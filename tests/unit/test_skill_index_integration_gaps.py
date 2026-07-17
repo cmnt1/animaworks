@@ -188,6 +188,7 @@ class TestReadMemoryFileBlocksBlockedSkills:
         mixin._descendant_state_files = []
         mixin._descendant_state_dirs = []
         mixin._read_paths = set()
+        mixin._check_file_permission = lambda _path: None
         mixin._is_skill_path = MemoryToolsMixin._is_skill_path
         mixin._record_skill_view_if_applicable = MagicMock()
 
@@ -216,6 +217,7 @@ class TestReadMemoryFileBlocksBlockedSkills:
         mixin._descendant_state_files = []
         mixin._descendant_state_dirs = []
         mixin._read_paths = set()
+        mixin._check_file_permission = lambda _path: None
         mixin._is_skill_path = MemoryToolsMixin._is_skill_path
         mixin._record_skill_view_if_applicable = MagicMock()
 
@@ -244,6 +246,7 @@ class TestReadMemoryFileBlocksBlockedSkills:
         mixin._descendant_state_files = []
         mixin._descendant_state_dirs = []
         mixin._read_paths = set()
+        mixin._check_file_permission = lambda _path: None
         mixin._is_skill_path = MemoryToolsMixin._is_skill_path
         mixin._record_skill_view_if_applicable = MagicMock()
 

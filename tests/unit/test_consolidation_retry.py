@@ -132,6 +132,7 @@ class TestDailyConsolidationRetryTrigger:
 
         with (
             patch("core.config.load_config") as mock_cfg,
+            patch("core.lifecycle.system_consolidation.should_skip_inactive_consolidation", return_value=False),
             patch(
                 "core.lifecycle.system_consolidation.evaluate_daily_consolidation_gate",
                 return_value=self._passing_gate(),
@@ -158,6 +159,7 @@ class TestDailyConsolidationRetryTrigger:
 
         with (
             patch("core.config.load_config") as mock_cfg,
+            patch("core.lifecycle.system_consolidation.should_skip_inactive_consolidation", return_value=False),
             patch(
                 "core.lifecycle.system_consolidation.evaluate_daily_consolidation_gate",
                 return_value=self._passing_gate(),
@@ -181,6 +183,7 @@ class TestDailyConsolidationRetryTrigger:
 
         with (
             patch("core.config.load_config") as mock_cfg,
+            patch("core.lifecycle.system_consolidation.should_skip_inactive_consolidation", return_value=False),
             patch(
                 "core.lifecycle.system_consolidation.evaluate_daily_consolidation_gate",
                 return_value=self._passing_gate(),

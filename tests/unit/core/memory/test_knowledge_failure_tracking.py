@@ -560,7 +560,7 @@ class TestIndexerMetadataExtraction:
                 "_generate_embeddings",
                 lambda texts: [[0.1] * 384 for _ in texts],
             )
-            total = indexer.index_directory(a_dir / "knowledge", "knowledge")
+            total = indexer.index_directory(a_dir / "knowledge", "knowledge").chunks_indexed
             assert total > 0
 
             coll = store.client.get_collection(name="idx_test_knowledge")

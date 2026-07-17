@@ -33,11 +33,13 @@ from core.config.models import (
     WorkerSystemConfig,
     _format_permissions_for_prompt,
     _match_pattern_table,
+    _normalise_mode,
     _pattern_specificity,
     get_config_path,
     invalidate_cache,
     load_config,
     load_model_config,
+    load_permissions,
     read_anima_supervisor,
     register_anima_in_config,
     resolve_anima_config,
@@ -183,6 +185,83 @@ class TestImageGenConfig:
 
 
 class TestFormatPermissionsForPrompt:
+    def test_file_roots_denied_defaults_empty(self):
+        assert PermissionsConfig().file_roots_denied == []
+
+    def test_file_roots_denied_requires_absolute_paths(self):
+        with pytest.raises(ValueError, match="absolute paths"):
+            PermissionsConfig(file_roots_denied=["relative/private"])
+
+    @pytest.mark.parametrize("root", ["/home/main/*/private", "/home/main/private?.txt"])
+    def test_file_roots_denied_rejects_globs(self, root: str):
+        with pytest.raises(ValueError, match="glob patterns"):
+            PermissionsConfig(file_roots_denied=[root])
+
+    def test_file_roots_denied_is_normalized(self, tmp_path: Path):
+        root = tmp_path / "missing" / ".." / "private"
+        config = PermissionsConfig(file_roots_denied=[str(root)])
+        assert config.file_roots_denied == [str(root.resolve())]
+
+    def test_invalid_explicit_deny_config_fails_closed(self, tmp_path: Path):
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir()
+        (anima_dir / "permissions.json").write_text(
+            json.dumps({"file_roots_denied": ["relative/private"]}),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="absolute paths"):
+            load_permissions(anima_dir)
+
+    def test_invalid_json_permissions_fails_closed(self, tmp_path: Path):
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir()
+        (anima_dir / "permissions.json").write_text('{"file_roots": [', encoding="utf-8")
+
+        with pytest.raises(json.JSONDecodeError):
+            load_permissions(anima_dir)
+
+    def test_invalid_schema_without_explicit_deny_fails_closed(self, tmp_path: Path):
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir()
+        (anima_dir / "permissions.json").write_text(
+            json.dumps({"commands": "not-an-object"}),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError):
+            load_permissions(anima_dir)
+
+    def test_unreadable_existing_permissions_fails_closed(self, tmp_path: Path):
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir()
+        permissions_path = anima_dir / "permissions.json"
+        permissions_path.write_text("{}", encoding="utf-8")
+
+        with (
+            patch.object(Path, "read_text", side_effect=OSError("permission denied")),
+            pytest.raises(OSError, match="permission denied"),
+        ):
+            load_permissions(anima_dir)
+
+    def test_missing_permissions_keeps_open_default(self, tmp_path: Path):
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir()
+
+        config = load_permissions(anima_dir)
+
+        assert config == PermissionsConfig()
+
+    def test_prompt_displays_denied_roots(self, tmp_path: Path):
+        denied = tmp_path / "private"
+        prompt = _format_permissions_for_prompt(
+            PermissionsConfig(file_roots_denied=[str(denied)]),
+            "sora",
+        )
+        assert "Denied file access" in prompt
+        assert str(denied.resolve()) in prompt
+        assert "overrides all grants" in prompt
+
     def test_windows_prompt_mentions_native_runtime(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr("core.config.schemas.sys.platform", "win32")
         config = PermissionsConfig(
@@ -770,6 +849,21 @@ class TestResolveExecutionModeWildcard:
     def test_openai_codex_provider_routes_to_c(self):
         config = AnimaWorksConfig()
         assert resolve_execution_mode(config, "openai-codex/gpt-5.3-codex") == "C"
+
+    def test_grok_model_routes_to_x(self):
+        config = AnimaWorksConfig()
+        assert resolve_execution_mode(config, "grok/grok-4.5") == "X"
+
+    def test_grok_wildcard_routes_future_models_to_x(self):
+        config = AnimaWorksConfig()
+        assert resolve_execution_mode(config, "grok/future-model") == "X"
+
+    def test_explicit_x_override_takes_priority(self):
+        config = AnimaWorksConfig(model_modes={"grok/*": "A"})
+        assert resolve_execution_mode(config, "grok/grok-4.5", "X") == "X"
+
+    def test_normalise_lowercase_x(self):
+        assert _normalise_mode("x") == "X"
 
     def test_ollama_a_models(self):
         config = AnimaWorksConfig()

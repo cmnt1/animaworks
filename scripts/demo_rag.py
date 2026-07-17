@@ -145,13 +145,13 @@ def demo_indexing(anima_dir: Path) -> None:
     # Index knowledge files
     logger.info("Indexing knowledge files...")
     knowledge_dir = anima_dir / "knowledge"
-    chunks = indexer.index_directory(knowledge_dir, "knowledge")
+    chunks = indexer.index_directory(knowledge_dir, "knowledge").chunks_indexed
     logger.info("  Indexed %d chunks from knowledge/", chunks)
 
     # Index episodes
     logger.info("Indexing episode files...")
     episodes_dir = anima_dir / "episodes"
-    chunks = indexer.index_directory(episodes_dir, "episodes")
+    chunks = indexer.index_directory(episodes_dir, "episodes").chunks_indexed
     logger.info("  Indexed %d chunks from episodes/", chunks)
 
     logger.info("Indexing complete!")

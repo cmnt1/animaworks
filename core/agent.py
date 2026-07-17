@@ -73,11 +73,14 @@ class AgentCore(
         memory: MemoryManager,
         model_config: ModelConfig | None = None,
         messenger: Messenger | None = None,
+        *,
+        codex_home: Path | None = None,
     ) -> None:
         self.anima_dir = anima_dir
         self.memory = memory
         self.model_config = model_config or ModelConfig()
         self.messenger = messenger
+        self._codex_home = codex_home
         self._interrupt_event: asyncio.Event | None = None
         self._tool_registry = self._init_tool_registry()
         self._personal_tools = self._discover_personal_tools()

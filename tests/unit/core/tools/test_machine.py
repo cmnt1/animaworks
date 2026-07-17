@@ -10,6 +10,7 @@ import io
 import json
 import os
 import subprocess
+import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -47,6 +48,25 @@ def _set_pipe_output(mock_proc: MagicMock, stdout_text: str, stderr_text: str = 
     """Provide file-like stdout/stderr mocks compatible with _stream_to_file()."""
     mock_proc.stdout = io.StringIO(stdout_text)
     mock_proc.stderr = io.StringIO(stderr_text)
+
+
+class _BlockingPipe:
+    """Iterator that stays blocked until another thread closes the pipe."""
+
+    def __init__(self) -> None:
+        self.read_started = threading.Event()
+        self.closed = threading.Event()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        self.read_started.set()
+        self.closed.wait(timeout=2)
+        raise StopIteration
+
+    def close(self) -> None:
+        self.closed.set()
 
 
 # ── Schema Tests ──────────────────────────────────────────
@@ -523,6 +543,37 @@ class TestRateLimiting:
 class TestDispatch:
     def setup_method(self):
         reset_call_counts()
+
+    def test_stream_reaps_reader_blocked_on_pipe(self, tmp_path, monkeypatch):
+        from core.tools import machine
+
+        blocked_stdout = _BlockingPipe()
+        fake_proc = MagicMock()
+        fake_proc.pid = 12345
+        fake_proc.stdout = blocked_stdout
+        fake_proc.stderr = io.StringIO("")
+        fake_proc.returncode = 0
+        fake_proc.wait.return_value = 0
+
+        monkeypatch.setattr(machine, "_PIPE_THREAD_JOIN_TIMEOUT", 0.01)
+        monkeypatch.setattr(machine, "_PIPE_THREAD_REJOIN_TIMEOUT", 0.5)
+
+        result = machine._stream_to_file(
+            fake_proc,
+            tmp_path / "machine_1.txt",
+            "claude",
+            "test",
+            str(tmp_path),
+            10,
+        )
+
+        assert result[0] == 0
+        assert blocked_stdout.read_started.is_set()
+        assert blocked_stdout.closed.is_set()
+        assert not any(
+            thread.name in {"machine-stdout-machine_1", "machine-stderr-machine_1"} and thread.is_alive()
+            for thread in threading.enumerate()
+        )
 
     def test_invalid_engine(self, tmp_path):
         result = json.loads(

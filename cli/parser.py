@@ -633,6 +633,58 @@ def cli_main() -> None:
     )
     p_anima_rename.set_defaults(func=_lazy_anima_rename)
 
+    # anima merge
+    p_anima_merge = anima_sub.add_parser("merge", help="Merge one anima into another")
+    p_anima_merge.add_argument("source", help="Anima to merge from")
+    p_anima_merge.add_argument("target", help="Anima to merge into")
+    merge_mode = p_anima_merge.add_mutually_exclusive_group()
+    merge_mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Generate a merge manifest without changing either anima (default)",
+    )
+    merge_mode.add_argument(
+        "--execute",
+        action="store_true",
+        help="Execute the merge through source tombstone",
+    )
+    p_anima_merge.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume an interrupted --execute operation",
+    )
+    p_anima_merge.add_argument(
+        "--force",
+        action="store_true",
+        help="Continue despite preflight warnings for recoverable in-progress state",
+    )
+    p_anima_merge.set_defaults(func=_lazy_anima_merge)
+
+    # anima merge-finalize
+    p_anima_merge_finalize = anima_sub.add_parser(
+        "merge-finalize",
+        help="Archive and unregister a completed merge tombstone",
+    )
+    p_anima_merge_finalize.add_argument("source", help="Tombstoned source anima")
+    p_anima_merge_finalize.add_argument("target", help="Merged target anima")
+    finalize_mode = p_anima_merge_finalize.add_mutually_exclusive_group()
+    finalize_mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate and show the finalize plan without changing data (default)",
+    )
+    finalize_mode.add_argument(
+        "--execute",
+        action="store_true",
+        help="Archive the source and remove its registration",
+    )
+    p_anima_merge_finalize.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume an interrupted --execute operation",
+    )
+    p_anima_merge_finalize.set_defaults(func=_lazy_anima_merge_finalize)
+
     # anima audit
     p_anima_audit = anima_sub.add_parser(
         "audit",
@@ -1039,6 +1091,18 @@ def _lazy_anima_rename(args: argparse.Namespace) -> None:
     from cli.commands.anima_mgmt import cmd_anima_rename
 
     cmd_anima_rename(args)
+
+
+def _lazy_anima_merge(args: argparse.Namespace) -> None:
+    from cli.commands.anima_merge import cmd_anima_merge
+
+    cmd_anima_merge(args)
+
+
+def _lazy_anima_merge_finalize(args: argparse.Namespace) -> None:
+    from cli.commands.anima_merge import cmd_anima_merge_finalize
+
+    cmd_anima_merge_finalize(args)
 
 
 def _lazy_anima_audit(args: argparse.Namespace) -> None:

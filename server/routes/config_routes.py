@@ -41,6 +41,7 @@ from core.i18n import t
 from core.paths import get_animas_dir, get_data_dir
 from core.platform.claude_code import is_claude_code_available
 from core.platform.codex import is_codex_cli_available, is_codex_login_available
+from core.platform.grok import is_grok_authenticated
 
 logger = logging.getLogger("animaworks.routes.config")
 
@@ -565,6 +566,8 @@ def _display_model_name(model_id: str, provider_label: str) -> str:
         return model_id.removeprefix("nanogpt/")
     if lower_provider == "ollama":
         return model_id.removeprefix("ollama/")
+    if lower_provider == "grok":
+        return model_id.removeprefix("grok/")
     return model_id
 
 
@@ -636,6 +639,10 @@ def _available_models_payload(config) -> list[dict[str, str]]:
     if is_codex_login_available():
         for model_id in _models_for_provider("codex", _known_codex_models()):
             add(model_id, route="C", provider_label="OpenAI", credential="codex")
+
+    if is_grok_authenticated():
+        for model_id in ("grok/grok-4.5", "grok/grok-composer-2.5-fast"):
+            add(model_id, route="C", provider_label="Grok", credential="grok")
 
     nanogpt_cred = config.credentials.get("nanogpt")
     if nanogpt_cred and nanogpt_cred.api_key:

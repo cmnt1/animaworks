@@ -48,6 +48,7 @@ def _make_handler(tmp_path: Path, anima_name: str = "test_anima"):
     handler._subordinate_management_files = []
     handler._subordinate_root_dirs = []
     handler._descendant_activity_dirs = []
+    handler._peer_activity_dirs = []
     handler._descendant_state_files = []
     handler._descendant_state_dirs = []
     handler._state_file_lock = None

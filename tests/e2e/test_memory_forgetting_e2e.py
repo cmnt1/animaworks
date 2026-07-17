@@ -122,7 +122,7 @@ def test_access_frequency_full_pipeline(anima_dir, vector_store, indexer, retrie
     knowledge_dir = anima_dir / "knowledge"
 
     # Index all knowledge files
-    total = indexer.index_directory(knowledge_dir, "knowledge")
+    total = indexer.index_directory(knowledge_dir, "knowledge").chunks_indexed
     assert total > 0, "Indexing should produce at least one chunk"
 
     # -- Step 1: Verify initial metadata fields --
@@ -235,7 +235,7 @@ def test_synaptic_downscaling_e2e(anima_dir, vector_store, indexer):
     knowledge_dir = anima_dir / "knowledge"
 
     # Index all knowledge files
-    total = indexer.index_directory(knowledge_dir, "knowledge")
+    total = indexer.index_directory(knowledge_dir, "knowledge").chunks_indexed
     assert total > 0
 
     collection_name = "test_anima_knowledge"

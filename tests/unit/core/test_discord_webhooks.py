@@ -77,6 +77,21 @@ class TestDiscordWebhookManager:
     def test_thread_map_unknown_id(self, mgr: DiscordWebhookManager):
         assert mgr.lookup_thread_anima("nonexistent") is None
 
+    def test_rewrite_anima_reference_updates_live_map_and_disk(
+        self,
+        mgr: DiscordWebhookManager,
+        tmp_path: Path,
+    ):
+        mgr.record_thread_mapping("source-message", "source")
+        mgr.record_thread_mapping("other-message", "other")
+
+        assert mgr.rewrite_anima_reference("source", "target") == 1
+
+        assert mgr.lookup_thread_anima("source-message") == "target"
+        assert mgr.lookup_thread_anima("other-message") == "other"
+        persisted = json.loads((tmp_path / "run" / "discord_thread_map.json").read_text(encoding="utf-8"))
+        assert persisted["source-message"]["anima"] == "target"
+
     def test_persistence_round_trip(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr("core.discord_webhooks.get_data_dir", lambda: tmp_path)
 

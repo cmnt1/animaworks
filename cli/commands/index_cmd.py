@@ -248,10 +248,11 @@ def _index_shared_collections(
                 anima_dir=base_dir,
                 collection_prefix="shared",
             )
-            chunks = shared_indexer.index_directory(src_dir, label, force=full)
-            total += chunks
-            _write_shared_hash(meta_path, meta_key, current_hash)
-            logger.info("    Indexed %d chunks", chunks)
+            result = shared_indexer.index_directory(src_dir, label, force=full)
+            total += result.chunks_indexed
+            if result.files_failed == 0:
+                _write_shared_hash(meta_path, meta_key, current_hash)
+            logger.info("    Indexed %d chunks", result.chunks_indexed)
 
     return total
 
@@ -328,6 +329,7 @@ def index_command(args: argparse.Namespace) -> None:
             ("episodes", anima_dir / "episodes"),
             ("procedures", anima_dir / "procedures"),
             ("skills", anima_dir / "skills"),
+            ("facts", anima_dir / "facts"),
         ]
 
         for memory_type, memory_dir in memory_types:
@@ -340,18 +342,20 @@ def index_command(args: argparse.Namespace) -> None:
             if args.dry_run:
                 if memory_type in ("skills", "common_skills"):
                     md_files = list(memory_dir.rglob("SKILL.md"))
+                elif memory_type == "facts":
+                    md_files = list(memory_dir.rglob("*.jsonl"))
                 else:
                     md_files = list(memory_dir.rglob("*.md"))
                 logger.info("  Would index %d files in %s/", len(md_files), memory_type)
                 continue
 
-            chunks = indexer.index_directory(
+            result = indexer.index_directory(
                 memory_dir,
                 memory_type,
                 force=args.full,
             )
-            total_chunks += chunks
-            logger.info("  Indexed %d chunks from %s/", chunks, memory_type)
+            total_chunks += result.chunks_indexed
+            logger.info("  Indexed %d chunks from %s/", result.chunks_indexed, memory_type)
 
         state_dir = anima_dir / "state"
         conv_file = state_dir / "conversation.json"
@@ -402,13 +406,13 @@ def index_command(args: argparse.Namespace) -> None:
             logger.info("  Would index %d user profiles", len(user_dirs))
         else:
             indexer = MemoryIndexer(shared_store, "shared", shared_users_dir.parent)
-            chunks = indexer.index_directory(
+            result = indexer.index_directory(
                 shared_users_dir,
                 "shared_users",
                 force=args.full,
             )
-            total_chunks += chunks
-            logger.info("  Indexed %d user profile chunks", chunks)
+            total_chunks += result.chunks_indexed
+            logger.info("  Indexed %d user profile chunks", result.chunks_indexed)
 
     logger.info("=" * 60)
     if args.dry_run:

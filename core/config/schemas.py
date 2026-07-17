@@ -100,6 +100,7 @@ class AnimaDefaults(BaseModel):
     max_recipients_per_run: int | None = None
     default_workspace: str = ""
     tool_compression: bool = True  # Enable RTK-inspired tool result compression
+    consolidation_enabled: bool = True
 
 
 # ── Local LLM defaults ───────────────────────────────────────────────────────
@@ -262,6 +263,7 @@ class RAGConfig(BaseModel):
     # and leaves schema-less stub DBs that re-trigger repair — a destructive loop.
     # Serialize repairs (1) by default so each rebuild runs in isolation.
     repair_max_concurrent: int = 1
+    upsert_quarantine_failure_threshold: int = Field(default=3, ge=1)
     startup_repair_preflight_enabled: bool = True
     startup_repair_window_minutes: int = 1440
     quick_check_timeout_seconds: float = 10.0
@@ -423,7 +425,11 @@ class ConsolidationConfig(BaseModel):
     knowledge_self_correction_timeout_seconds: int = Field(default=300, ge=1)
     knowledge_self_correction_recent_hours: int = Field(default=24, ge=1)
     weekly_full_contradiction_max_pairs: int = Field(default=50, ge=0)
+    contradiction_batch_size: int = Field(default=20, ge=1)
+    contradiction_nli_prefilter_threshold: float | None = Field(default=0.70, ge=0.0, le=1.0)
     post_processing_cooldown_seconds: int = Field(default=30, ge=0)
+    inactivity_skip_enabled: bool = True
+    inactivity_days: int = Field(default=7, ge=1)
 
 
 class ImageGenConfig(BaseModel):
@@ -537,6 +543,17 @@ class ZoomRTMSConfig(BaseModel):
     chunk_max_chars: int = 4000  # max chars per chunk (flush on whichever comes first)
 
 
+class GitHubWebhookConfig(BaseModel):
+    """Configuration for GitHub webhook-driven PR dispatch."""
+
+    enabled: bool = False
+    repos: list[str] = Field(default_factory=list)
+    reviewer_anima: str = "sumire"
+    dispatcher_anima: str = "rin"
+    bot_login: str = ""
+    quiet_seconds: float = Field(default=180, ge=0)
+
+
 class ExternalMessagingConfig(BaseModel):
     """Configuration for external messaging integration (inbound + outbound)."""
 
@@ -638,8 +655,59 @@ class BackgroundTaskConfig(BaseModel):
         "local_llm": BackgroundToolConfig(threshold_s=60),
         "run_command": BackgroundToolConfig(threshold_s=60),
     }
-    result_retention_hours: int = 24
+    result_retention_hours: int = 24  # disk cleanup retention (cleanup is explicitly invoked)
+    result_memory_retention_minutes: int = Field(default=60, ge=0)  # in-process result cache
+    max_completed_tasks_in_memory: int = Field(default=200, ge=0)
     max_parallel_llm_tasks: int = Field(default=3, ge=1, le=10)
+    worker_pool_size: int = Field(default=1, ge=1, le=10)
+
+
+def resolve_background_worker_pool_size(
+    anima_dir: Path,
+    default: int | None = None,
+) -> int:
+    """Resolve the TaskExec worker count, including a per-Anima override.
+
+    ``status.json`` may set ``background_worker_pool_size`` to opt one Anima
+    into a different pool size. Invalid or unreadable overrides are ignored so
+    a damaged status file cannot prevent the Anima from starting.
+    """
+    if default is None:
+        try:
+            from core.config.io import load_config
+
+            default = load_config().background_task.worker_pool_size
+        except Exception:
+            logger.debug(
+                "Failed to load background worker pool default for %s",
+                anima_dir.name,
+                exc_info=True,
+            )
+            default = 1
+
+    if isinstance(default, bool) or not isinstance(default, int) or not 1 <= default <= 10:
+        default = 1
+
+    status_path = anima_dir / "status.json"
+    try:
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default
+
+    if not isinstance(status, dict) or "background_worker_pool_size" not in status:
+        return default
+
+    override = status["background_worker_pool_size"]
+    if isinstance(override, int) and not isinstance(override, bool) and 1 <= override <= 10:
+        return override
+
+    logger.warning(
+        "Ignoring invalid background_worker_pool_size=%r for anima %s; using %d",
+        override,
+        anima_dir.name,
+        default,
+    )
+    return default
 
 
 class ActivityLogConfig(BaseModel):
@@ -911,9 +979,27 @@ class PermissionsConfig(BaseModel):
     version: int = 1
     file_roots: list[str] = Field(default_factory=lambda: ["/"])
     file_roots_readonly: list[str] = Field(default_factory=list)
+    file_roots_denied: list[str] = Field(default_factory=list)
     commands: CommandsPermission = Field(default_factory=CommandsPermission)
     external_tools: ExternalToolsPermission = Field(default_factory=ExternalToolsPermission)
     tool_creation: ToolCreationPermission = Field(default_factory=ToolCreationPermission)
+
+    @field_validator("file_roots_denied")
+    @classmethod
+    def _validate_file_roots_denied(cls, roots: list[str]) -> list[str]:
+        """Require unambiguous absolute deny roots and store canonical paths."""
+        normalized: list[str] = []
+        for root in roots:
+            if any(char in root for char in "*?["):
+                raise ValueError(f"file_roots_denied does not support glob patterns: {root!r}")
+            path = Path(root)
+            if not path.is_absolute():
+                raise ValueError(f"file_roots_denied entries must be absolute paths: {root!r}")
+            try:
+                normalized.append(str(path.resolve()))
+            except (OSError, RuntimeError) as exc:
+                raise ValueError(f"file_roots_denied entry cannot be resolved: {root!r}") from exc
+        return normalized
 
 
 def load_permissions(anima_dir: Path) -> PermissionsConfig:
@@ -923,12 +1009,27 @@ def load_permissions(anima_dir: Path) -> PermissionsConfig:
       1. permissions.json exists -> load and validate
       2. permissions.md only -> auto-migrate, return config
       3. Neither exists -> return default (open)
-      4. Invalid JSON -> warning + return default (open)
+      4. Existing but unreadable/invalid permissions.json -> raise (fail closed)
+
+    Once ``permissions.json`` exists, the whole document is a security
+    boundary.  Read, JSON parsing, and schema validation failures therefore
+    propagate instead of silently replacing the configured policy with open
+    defaults.  Only a genuinely absent file retains the legacy open default.
     """
     json_path = anima_dir / "permissions.json"
     md_path = anima_dir / "permissions.md"
 
-    if json_path.is_file():
+    try:
+        json_path.lstat()
+    except FileNotFoundError:
+        json_exists = False
+    except OSError:
+        logger.error("Failed to stat permissions.json at %s — refusing fail-open fallback", json_path, exc_info=True)
+        raise
+    else:
+        json_exists = True
+
+    if json_exists:
         try:
             data = json.loads(json_path.read_text(encoding="utf-8"))
             config = PermissionsConfig.model_validate(data)
@@ -936,12 +1037,13 @@ def load_permissions(anima_dir: Path) -> PermissionsConfig:
             if version is not None and version != 1:
                 logger.warning("permissions.json version %s is unknown; using known fields only", version)
             return config
-        except (json.JSONDecodeError, OSError) as exc:
-            logger.warning("Failed to parse permissions.json at %s: %s — using open defaults", json_path, exc)
-            return PermissionsConfig()
         except Exception as exc:
-            logger.warning("Invalid permissions.json at %s: %s — using open defaults", json_path, exc)
-            return PermissionsConfig()
+            logger.error(
+                "Failed to load permissions.json at %s — refusing fail-open fallback: %s",
+                json_path,
+                exc,
+            )
+            raise
 
     if md_path.is_file():
         from core.config.migrate import migrate_permissions_md_to_json
@@ -971,6 +1073,8 @@ def _format_permissions_for_prompt(config: PermissionsConfig, anima_name: str) -
             lines.append(f"- Read/write access: {', '.join(config.file_roots)}")
         if config.file_roots_readonly:
             lines.append(f"- Read-only access: {', '.join(config.file_roots_readonly)}")
+    if config.file_roots_denied:
+        lines.append(f"- Denied file access (read/write; overrides all grants): {', '.join(config.file_roots_denied)}")
     if config.commands.allow_all:
         lines.append("- Commands: all allowed (global permission blocks still apply)")
     else:
@@ -1029,7 +1133,7 @@ class AnimaWorksConfig(BaseModel):
     locale: str = "ja"
     system: SystemConfig = SystemConfig()
     credentials: dict[str, CredentialConfig] = {"anthropic": CredentialConfig()}
-    model_modes: dict[str, str] = {}  # モデル名 → "S"/"A"/"B" (legacy: "A1"/"A2" も可)
+    model_modes: dict[str, str] = {}  # モデル名 → "S"/"C"/"D"/"G"/"X"/"A"/"B" (legacy: "A1"/"A2" も可)
     model_context_windows: dict[str, int] = {}  # DEPRECATED: use models.json instead. Kept for backward compat only.
     model_max_tokens: dict[str, int] = {}  # モデル名パターン → デフォルト max_tokens
     anima_defaults: AnimaDefaults = AnimaDefaults()
@@ -1047,6 +1151,7 @@ class AnimaWorksConfig(BaseModel):
     server: ServerConfig = ServerConfig()
     llm_rate_guard: LlmRateGuardConfig = LlmRateGuardConfig()
     external_messaging: ExternalMessagingConfig = ExternalMessagingConfig()
+    github_webhook: GitHubWebhookConfig = GitHubWebhookConfig()
     background_task: BackgroundTaskConfig = BackgroundTaskConfig()
     activity_log: ActivityLogConfig = ActivityLogConfig()
     logging: LoggingConfig = LoggingConfig()
@@ -1100,6 +1205,7 @@ __all__ = [
     "ExternalMessagingChannelConfig",
     "ExternalMessagingConfig",
     "GatewaySystemConfig",
+    "GitHubWebhookConfig",
     "GPUConfig",
     "HeartbeatConfig",
     "HousekeepingConfig",

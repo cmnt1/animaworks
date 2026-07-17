@@ -24,6 +24,8 @@ logger = logging.getLogger("animaworks.rag.store")
 _T = TypeVar("_T")
 _SQLITE_REFUTABLE_SELF_HEAL_REASONS = {"chroma_corruption", "sqlite_malformed"}
 _SQLITE_LIGHTWEIGHT_RETRY_STATUSES = {"ok", "busy"}
+_persistent_client_init_lock = threading.Lock()
+_lightweight_failure_marker_lock = threading.Lock()
 
 # ── Data structures ────────────────────────────────────────────────
 
@@ -195,10 +197,12 @@ class ChromaVectorStore(VectorStore):
 
         prepare_chroma_sqlite_for_startup(persist_dir, anima_name=anima_name)
         logger.debug("Initializing ChromaDB at %s", persist_dir)
-        self.client = chromadb.PersistentClient(path=str(persist_dir))
+        with _persistent_client_init_lock:
+            self.client = chromadb.PersistentClient(path=str(persist_dir))
         self.persist_dir = persist_dir
         self.anima_name = anima_name
         self._closed = False
+        self._lightweight_self_heal_failures = 0
         post_init_pragma = configure_chroma_sqlite_pragmas(persist_dir)
         if not post_init_pragma.ok and post_init_pragma.status != "missing":
             logger.warning(
@@ -359,6 +363,8 @@ class ChromaVectorStore(VectorStore):
         try:
             return action(self)
         except Exception as retry_error:
+            with _lightweight_failure_marker_lock:
+                self._lightweight_self_heal_failures = int(getattr(self, "_lightweight_self_heal_failures", 0)) + 1
             self._report_chroma_error(collection, retry_error, operation)
             logger.warning(
                 "ChromaDB lightweight self-heal retry failed during %s: owner=%s db_path=%s collection=%s error=%s",
@@ -369,6 +375,15 @@ class ChromaVectorStore(VectorStore):
                 retry_error,
             )
             raise
+
+    def consume_lightweight_self_heal_failure(self) -> bool:
+        """Consume one failed lightweight retry for worker-level escalation."""
+        with _lightweight_failure_marker_lock:
+            failures = int(getattr(self, "_lightweight_self_heal_failures", 0))
+            if failures <= 0:
+                return False
+            self._lightweight_self_heal_failures = failures - 1
+            return True
 
     def _reset_for_self_heal(
         self,

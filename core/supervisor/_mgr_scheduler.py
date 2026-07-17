@@ -393,6 +393,7 @@ class SchedulerMixin:
         from core.lifecycle.system_consolidation import (
             evaluate_daily_consolidation_gate,
             run_daily_consolidation_post_processing,
+            should_skip_inactive_consolidation,
         )
 
         defaults = ConsolidationConfig()
@@ -406,6 +407,8 @@ class SchedulerMixin:
 
         for anima_name, anima_dir in self._iter_consolidation_targets():
             summary["targets"] = int(summary["targets"]) + 1
+            if should_skip_inactive_consolidation(anima_dir, anima_name, consolidation_cfg):
+                continue
             handle = self.processes.get(anima_name)
             if not handle or handle.state != ProcessState.RUNNING:
                 summary["skipped_not_running"] = int(summary["skipped_not_running"]) + 1
@@ -573,7 +576,10 @@ class SchedulerMixin:
             consolidation_cfg = None
 
         from core.config.models import ConsolidationConfig as _CC
-        from core.lifecycle.system_consolidation import run_weekly_integration_post_processing
+        from core.lifecycle.system_consolidation import (
+            run_weekly_integration_post_processing,
+            should_skip_inactive_consolidation,
+        )
 
         defaults = _CC()
         max_turns = defaults.max_turns
@@ -583,6 +589,8 @@ class SchedulerMixin:
             model = getattr(consolidation_cfg, "llm_model", model)
 
         for anima_name, anima_dir in self._iter_consolidation_targets():
+            if should_skip_inactive_consolidation(anima_dir, anima_name, consolidation_cfg):
+                continue
             handle = self.processes.get(anima_name)
             if not handle or handle.state != ProcessState.RUNNING:
                 logger.info(
@@ -854,13 +862,13 @@ class SchedulerMixin:
                 for memory_type, memory_dir in memory_types:
                     if not memory_dir.is_dir():
                         continue
-                    chunks = await loop.run_in_executor(
+                    result = await loop.run_in_executor(
                         None,
                         indexer.index_directory,
                         memory_dir,
                         memory_type,
                     )
-                    total_chunks += chunks
+                    total_chunks += result.chunks_indexed
 
                 conv_file = anima_dir / "state" / "conversation.json"
                 if conv_file.is_file():
@@ -936,15 +944,16 @@ class SchedulerMixin:
                         anima_dir=base_dir,
                         collection_prefix="shared",
                     )
-                    chunks = await loop.run_in_executor(
+                    result = await loop.run_in_executor(
                         None,
                         shared_indexer.index_directory,
                         src_dir,
                         label,
                         force,
                     )
-                    total_chunks += chunks
-                    _write_shared_hash(meta_path, meta_key, current_hash)
+                    total_chunks += result.chunks_indexed
+                    if result.files_failed == 0:
+                        _write_shared_hash(meta_path, meta_key, current_hash)
 
                 logger.info("Daily indexing for %s complete", anima_name)
 

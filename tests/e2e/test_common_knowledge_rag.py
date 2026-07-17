@@ -198,7 +198,7 @@ def test_shared_knowledge_indexing_and_retrieval(temp_dirs, vector_store):
     personal_chunks = personal_indexer.index_directory(
         anima_dir / "knowledge",
         "knowledge",
-    )
+    ).chunks_indexed
     assert personal_chunks > 0, "Personal knowledge should produce chunks"
 
     # 2. Index shared (common_knowledge) — uses data_dir as anima_dir
@@ -212,7 +212,7 @@ def test_shared_knowledge_indexing_and_retrieval(temp_dirs, vector_store):
     shared_chunks = shared_indexer.index_directory(
         common_knowledge_dir,
         "common_knowledge",
-    )
+    ).chunks_indexed
     assert shared_chunks > 0, "Common knowledge should produce chunks"
 
     # 3. Verify shared_common_knowledge collection was created

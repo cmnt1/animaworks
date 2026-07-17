@@ -131,6 +131,7 @@ class ExecutorFactoryMixin:
                     tool_registry=self._tool_registry,
                     personal_tools=self._personal_tools,
                     interrupt_event=self._interrupt_event,
+                    codex_home=self._codex_home,
                 )
             except ImportError:
                 logger.warning(
@@ -230,6 +231,44 @@ class ExecutorFactoryMixin:
                         fallback_model_config.model = f"google/gemini-{bare}"
                     logger.warning(
                         "Mode G fallback remapped model: %s -> %s",
+                        active_config.model,
+                        fallback_model_config.model,
+                    )
+                return LiteLLMExecutor(
+                    model_config=fallback_model_config,
+                    anima_dir=self.anima_dir,
+                    tool_handler=self._tool_handler,
+                    tool_registry=self._tool_registry,
+                    memory=self.memory,
+                    personal_tools=self._personal_tools,
+                    interrupt_event=self._interrupt_event,
+                )
+
+        if mode == "x":
+            try:
+                from core.execution.grok_cli import (
+                    GrokCLIExecutor,
+                    is_grok_cli_available,
+                )
+
+                if not is_grok_cli_available():
+                    raise ImportError("grok CLI not found")
+                return GrokCLIExecutor(
+                    model_config=active_config,
+                    anima_dir=self.anima_dir,
+                    tool_registry=self._tool_registry,
+                    personal_tools=self._personal_tools,
+                    interrupt_event=self._interrupt_event,
+                )
+            except ImportError:
+                logger.warning("GrokCLIExecutor unavailable (grok CLI not installed), falling back to LiteLLM (Mode A)")
+                fallback_model_config = active_config.model_copy(deep=True)
+                model_name = fallback_model_config.model
+                if model_name.startswith("grok/"):
+                    bare = model_name.split("/", 1)[1]
+                    fallback_model_config.model = f"xai/{bare}"
+                    logger.warning(
+                        "Mode X fallback remapped model: %s -> %s",
                         active_config.model,
                         fallback_model_config.model,
                     )

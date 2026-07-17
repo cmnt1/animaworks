@@ -14,6 +14,7 @@ from core.config.models import (
     GPUConfig,
     PrimingConfig,
     ServerConfig,
+    resolve_background_worker_pool_size,
 )
 
 # ── ServerConfig ─────────────────────────────────────────────
@@ -88,7 +89,53 @@ class TestBackgroundTaskConfig:
         btc = BackgroundTaskConfig()
         assert btc.enabled is True
         assert btc.result_retention_hours == 24
+        assert btc.result_memory_retention_minutes == 60
+        assert btc.max_completed_tasks_in_memory == 200
+        assert btc.worker_pool_size == 1
         assert isinstance(btc.eligible_tools, dict)
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("result_memory_retention_minutes", -1),
+            ("max_completed_tasks_in_memory", -1),
+        ],
+    )
+    def test_background_task_config_rejects_negative_memory_limits(self, field, value):
+        with pytest.raises(ValueError):
+            BackgroundTaskConfig(**{field: value})
+
+    @pytest.mark.parametrize("value", [0, 11, -1])
+    def test_background_task_config_rejects_invalid_worker_pool_size(self, value):
+        with pytest.raises(ValueError):
+            BackgroundTaskConfig(worker_pool_size=value)
+
+    def test_background_task_config_accepts_worker_pool_size_bounds(self):
+        assert BackgroundTaskConfig(worker_pool_size=1).worker_pool_size == 1
+        assert BackgroundTaskConfig(worker_pool_size=10).worker_pool_size == 10
+
+    def test_background_worker_pool_status_override(self, tmp_path):
+        (tmp_path / "status.json").write_text(
+            '{"background_worker_pool_size": 4}',
+            encoding="utf-8",
+        )
+
+        assert resolve_background_worker_pool_size(tmp_path, default=2) == 4
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            '{"background_worker_pool_size": 0}',
+            '{"background_worker_pool_size": 11}',
+            '{"background_worker_pool_size": true}',
+            '{"background_worker_pool_size": "3"}',
+            "not-json",
+        ],
+    )
+    def test_invalid_background_worker_pool_override_uses_default(self, tmp_path, status):
+        (tmp_path / "status.json").write_text(status, encoding="utf-8")
+
+        assert resolve_background_worker_pool_size(tmp_path, default=2) == 2
 
     def test_background_task_config_eligible_tools(self):
         """Eligible tools include image_gen schema names, local_llm, run_command."""
@@ -96,8 +143,13 @@ class TestBackgroundTaskConfig:
 
         # Image gen schema names (all threshold 30)
         for name in (
-            "generate_character_assets", "generate_fullbody", "generate_bustup",
-            "generate_icon", "generate_chibi", "generate_3d_model", "generate_rigged_model",
+            "generate_character_assets",
+            "generate_fullbody",
+            "generate_bustup",
+            "generate_icon",
+            "generate_chibi",
+            "generate_3d_model",
+            "generate_rigged_model",
             "generate_animations",
         ):
             assert name in btc.eligible_tools, f"{name} missing"
@@ -146,6 +198,8 @@ class TestAnimaWorksConfigBackground:
         # Modify background_task settings
         config.background_task.enabled = False
         config.background_task.result_retention_hours = 48
+        config.background_task.result_memory_retention_minutes = 30
+        config.background_task.max_completed_tasks_in_memory = 50
         config.background_task.eligible_tools["custom_tool"] = BackgroundToolConfig(
             threshold_s=90,
         )
@@ -158,6 +212,8 @@ class TestAnimaWorksConfigBackground:
         # Verify background_task round-trip
         assert restored.background_task.enabled is False
         assert restored.background_task.result_retention_hours == 48
+        assert restored.background_task.result_memory_retention_minutes == 30
+        assert restored.background_task.max_completed_tasks_in_memory == 50
         assert "custom_tool" in restored.background_task.eligible_tools
         assert restored.background_task.eligible_tools["custom_tool"].threshold_s == 90
 

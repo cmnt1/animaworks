@@ -69,10 +69,14 @@ def upsert_file_documents(
         return False
 
     if not indexer.vector_store.upsert(collection_name, documents):
-        logger.warning("Upsert failed for %s, skipping index_meta update", file_path)
+        transient_probe = getattr(indexer.vector_store, "is_transient_write_failure", None)
+        log = logger.debug if callable(transient_probe) and transient_probe(collection_name) else logger.warning
+        log("Upsert failed for %s, skipping index_meta update", file_path)
+        indexer._record_upsert_failure(collection_name, source_file, file_path)
         return False
 
     indexer._mark_collection_known(collection_name)
+    indexer._clear_upsert_failure(source_file, collection_name)
     current_ids = {document.id for document in documents}
     stale_ids = [document_id for document_id in existing_ids if document_id not in current_ids]
     if not delete_document_ids(indexer, collection_name, source_file, stale_ids):

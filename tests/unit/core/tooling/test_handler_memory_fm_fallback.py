@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -13,7 +14,6 @@ import pytest
 
 from core.memory.frontmatter import parse_frontmatter
 from core.tooling.handler_memory import MemoryToolsMixin
-
 
 # ── Fixture ──────────────────────────────────────────────
 
@@ -45,6 +45,9 @@ class _FakeWriteHandler(MemoryToolsMixin):
     def _check_tool_creation_permission(self, kind: str) -> bool:
         return True
 
+    def _check_file_permission(self, path: str, write: bool = False) -> None:
+        return None
+
 
 @pytest.fixture()
 def handler(tmp_path: Path) -> _FakeWriteHandler:
@@ -62,11 +65,13 @@ class TestParsefailedFrontmatterFallback:
 
     def test_broken_yaml_gets_valid_frontmatter(self, handler: _FakeWriteHandler) -> None:
         broken_content = "---\n{invalid yaml: [unclosed\n---\n\nActual knowledge body here."
-        handler._handle_write_memory_file({
-            "path": "knowledge/test.md",
-            "content": broken_content,
-            "mode": "overwrite",
-        })
+        handler._handle_write_memory_file(
+            {
+                "path": "knowledge/test.md",
+                "content": broken_content,
+                "mode": "overwrite",
+            }
+        )
 
         path = handler._anima_dir / "knowledge" / "test.md"
         text = path.read_text(encoding="utf-8")
@@ -79,15 +84,18 @@ class TestParsefailedFrontmatterFallback:
         assert "Actual knowledge body here" in body
 
     def test_auto_frontmatter_applied_prevents_origin_double_injection(
-        self, handler: _FakeWriteHandler,
+        self,
+        handler: _FakeWriteHandler,
     ) -> None:
         handler._min_trust_seen = 0
         broken_content = "---\n{broken: yaml\n---\n\nBody text."
-        handler._handle_write_memory_file({
-            "path": "knowledge/trust.md",
-            "content": broken_content,
-            "mode": "overwrite",
-        })
+        handler._handle_write_memory_file(
+            {
+                "path": "knowledge/trust.md",
+                "content": broken_content,
+                "mode": "overwrite",
+            }
+        )
 
         path = handler._anima_dir / "knowledge" / "trust.md"
         text = path.read_text(encoding="utf-8")
@@ -100,13 +108,15 @@ class TestParsefailedFrontmatterFallback:
             encoding="utf-8",
         )
 
-        handler._read_paths.add('knowledge/existing.md')
+        handler._read_paths.add("knowledge/existing.md")
         broken_content = "---\n!!!broken!!!\n---\n\nNew content here."
-        handler._handle_write_memory_file({
-            "path": "knowledge/existing.md",
-            "content": broken_content,
-            "mode": "overwrite",
-        })
+        handler._handle_write_memory_file(
+            {
+                "path": "knowledge/existing.md",
+                "content": broken_content,
+                "mode": "overwrite",
+            }
+        )
 
         text = path.read_text(encoding="utf-8")
         meta, body = parse_frontmatter(text)
@@ -115,11 +125,13 @@ class TestParsefailedFrontmatterFallback:
 
     def test_valid_yaml_frontmatter_still_works(self, handler: _FakeWriteHandler) -> None:
         valid_content = "---\nconfidence: 0.9\ntitle: my knowledge\n---\n\nGood body."
-        handler._handle_write_memory_file({
-            "path": "knowledge/valid.md",
-            "content": valid_content,
-            "mode": "overwrite",
-        })
+        handler._handle_write_memory_file(
+            {
+                "path": "knowledge/valid.md",
+                "content": valid_content,
+                "mode": "overwrite",
+            }
+        )
 
         path = handler._anima_dir / "knowledge" / "valid.md"
         text = path.read_text(encoding="utf-8")
@@ -129,11 +141,13 @@ class TestParsefailedFrontmatterFallback:
 
     def test_content_without_frontmatter_not_affected(self, handler: _FakeWriteHandler) -> None:
         plain_content = "# Knowledge Title\n\nSome knowledge without frontmatter."
-        handler._handle_write_memory_file({
-            "path": "knowledge/plain.md",
-            "content": plain_content,
-            "mode": "overwrite",
-        })
+        handler._handle_write_memory_file(
+            {
+                "path": "knowledge/plain.md",
+                "content": plain_content,
+                "mode": "overwrite",
+            }
+        )
 
         path = handler._anima_dir / "knowledge" / "plain.md"
         text = path.read_text(encoding="utf-8")

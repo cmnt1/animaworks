@@ -2,8 +2,10 @@ from __future__ import annotations
 
 """Tests for CommandRunner and Bash background execution."""
 
+import io
 import json
 import os
+import threading
 import time
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -11,6 +13,25 @@ from unittest.mock import MagicMock
 import pytest
 
 from core.tooling.handler_files import CommandRunner
+
+
+class _BlockingPipe:
+    """Iterator that stays blocked until another thread closes the pipe."""
+
+    def __init__(self) -> None:
+        self.read_started = threading.Event()
+        self.closed = threading.Event()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        self.read_started.set()
+        self.closed.wait(timeout=2)
+        raise StopIteration
+
+    def close(self) -> None:
+        self.closed.set()
 
 
 @pytest.fixture(autouse=True)
@@ -131,6 +152,38 @@ class TestCommandRunnerTimeout:
         content = (output_dir / f"{cmd_id}.txt").read_text()
         assert "--- FINISHED ---" in content
         assert "timed_out: true" in content
+
+
+class TestCommandRunnerThreadCleanup:
+    def test_blocked_pipe_reader_is_closed_and_reaped(self, tmp_path: Path, monkeypatch):
+        from core.tooling import handler_files
+
+        blocked_stdout = _BlockingPipe()
+        fake_proc = MagicMock()
+        fake_proc.pid = 12345
+        fake_proc.stdout = blocked_stdout
+        fake_proc.stderr = io.StringIO("")
+        fake_proc.returncode = 0
+        fake_proc.wait.return_value = 0
+
+        monkeypatch.setattr(handler_files, "_PIPE_THREAD_JOIN_TIMEOUT", 0.01)
+        monkeypatch.setattr(handler_files, "_PIPE_THREAD_REJOIN_TIMEOUT", 0.5)
+        monkeypatch.setattr(handler_files.subprocess, "Popen", MagicMock(return_value=fake_proc))
+
+        runner = CommandRunner("fake-command", tmp_path, timeout=10)
+        cmd_id = runner.start(tmp_path / "state" / "cmd_output")
+        assert blocked_stdout.read_started.wait(timeout=1)
+
+        deadline = time.monotonic() + 2
+        while cmd_id in CommandRunner._active and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        assert blocked_stdout.closed.is_set()
+        assert cmd_id not in CommandRunner._active
+        assert not any(
+            thread.name in {f"cmd-stdout-{cmd_id}", f"cmd-stderr-{cmd_id}"} and thread.is_alive()
+            for thread in threading.enumerate()
+        )
 
 
 class TestHandleExecuteCommandBackground:

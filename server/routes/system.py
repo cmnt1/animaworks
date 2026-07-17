@@ -152,6 +152,66 @@ def _parse_cron_jobs(animas_dir: Path, anima_names: list[str]) -> list[dict]:
     return jobs
 
 
+def _collect_running_background_tasks(
+    animas_dir: Path,
+    shared_dir: Path,
+    anima_names: list[str],
+) -> list[dict[str, object]]:
+    """Join background-worker busy lanes with task queue titles.
+
+    Busy sidecars are the runtime source of truth for which worker slots are
+    active.  ``task_queue.jsonl`` supplies the human-readable task title.  A
+    malformed or concurrently replaced sidecar is treated as an empty state so
+    the activity page remains available while workers update their marker.
+    """
+    from core.memory.task_queue import TaskQueueManager
+
+    sidecar_dir = shared_dir.parent / "run" / "animas"
+    result: list[dict[str, object]] = []
+
+    for name in anima_names:
+        tasks: list[dict[str, object]] = []
+        sidecar_path = sidecar_dir / f"{name}.busy.json"
+        try:
+            sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            sidecar = {}
+
+        if isinstance(sidecar, dict) and sidecar.get("is_busy") is not False:
+            task_queue = TaskQueueManager(animas_dir / name)
+            started_at = str(sidecar.get("busy_since") or "")
+            lanes = sidecar.get("lanes", [])
+            workers_by_slot: dict[int, dict[str, object]] = {}
+            if isinstance(lanes, list):
+                for lane in lanes:
+                    if not isinstance(lane, str) or not lane.startswith("background-worker:"):
+                        continue
+                    parts = lane.split(":", 2)
+                    if len(parts) != 3 or not parts[2]:
+                        continue
+                    try:
+                        slot_id = int(parts[1])
+                    except ValueError:
+                        continue
+                    task_id = parts[2]
+                    # The worker sidecar can briefly outlive a terminal queue
+                    # update.  Look up all statuses so its title remains stable
+                    # until the slot is actually released.
+                    queue_entry = task_queue.get_task_by_id(task_id)
+                    title = queue_entry.summary if queue_entry is not None else task_id
+                    workers_by_slot[slot_id] = {
+                        "slot_id": slot_id,
+                        "task_id": task_id,
+                        "title": title,
+                        "started_at": started_at,
+                    }
+            tasks = [workers_by_slot[slot] for slot in sorted(workers_by_slot)]
+
+        result.append({"name": name, "tasks": tasks})
+
+    return result
+
+
 async def _vector_worker_status(request: Request) -> dict:
     manager = getattr(request.app.state, "vector_worker", None)
     if manager is None:
@@ -486,6 +546,25 @@ def create_system_router() -> APIRouter:
         return {"pending": pending, "in_progress": in_progress, "total_active": pending + in_progress}
 
     # ── Activity ───────────────────────────────────────────
+
+    @router.get("/activity/running-tasks")
+    async def get_running_activity_tasks(
+        request: Request,
+        anima: str | None = None,
+    ):
+        """Return active background TaskExec workers grouped by Anima."""
+        animas_dir = request.app.state.animas_dir
+        shared_dir = request.app.state.shared_dir
+        anima_names = request.app.state.anima_names
+        target_names = [anima] if anima and anima in anima_names else list(anima_names)
+
+        running = _collect_running_background_tasks(
+            animas_dir,
+            shared_dir,
+            target_names,
+        )
+        total = sum(len(item["tasks"]) for item in running)
+        return {"animas": running, "total": total}
 
     @router.get("/activity/recent")
     async def get_recent_activity(
@@ -1228,6 +1307,86 @@ def create_system_router() -> APIRouter:
             asyncio.create_task(supervisor.run_missed_system_consolidations())
 
         return RedirectResponse(url="/#/server", status_code=303)
+
+    @router.post("/system/anima-merge/rewrite-runtime-refs")
+    async def rewrite_anima_merge_runtime_refs(request: Request):
+        """Synchronize live caches after REWRITE_REFS updates disk state."""
+        try:
+            payload = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+        source = payload.get("source") if isinstance(payload, dict) else None
+        target = payload.get("target") if isinstance(payload, dict) else None
+        if not isinstance(source, str) or not isinstance(target, str) or source == target:
+            return JSONResponse({"error": "Invalid source/target"}, status_code=400)
+
+        from core.anima_factory import validate_anima_name
+
+        if validate_anima_name(source) or validate_anima_name(target):
+            return JSONResponse({"error": "Invalid source/target"}, status_code=400)
+
+        from core.discord_webhooks import get_webhook_manager
+
+        discord_updated = get_webhook_manager().rewrite_anima_reference(source, target)
+
+        governor_updated = False
+        governor = getattr(request.app.state, "usage_governor", None)
+        if governor is not None:
+            suspended: list[str] = []
+            for name in governor.state.suspended_animas:
+                mapped = target if name == source else name
+                if mapped not in suspended:
+                    suspended.append(mapped)
+            governor_updated = suspended != governor.state.suspended_animas
+            if governor_updated:
+                governor.state.suspended_animas = suspended
+                governor.state.save()
+
+        bootstrap_retry_removed = False
+        supervisor = getattr(request.app.state, "supervisor", None)
+        if supervisor is not None and source in supervisor._bootstrap_retry_counts:  # noqa: SLF001
+            supervisor._bootstrap_retry_counts.pop(source, None)  # noqa: SLF001
+            supervisor._save_bootstrap_retries()  # noqa: SLF001
+            bootstrap_retry_removed = True
+
+        rooms_reloaded = 0
+        room_manager = getattr(request.app.state, "room_manager", None)
+        if room_manager is not None:
+            room_manager.load_all_rooms()
+            rooms_reloaded = len(room_manager.list_rooms(include_closed=True))
+
+        discord_gateway_reloaded = False
+        discord_gateway = getattr(request.app.state, "discord_gateway_manager", None)
+        if discord_gateway is not None:
+            discord_gateway.reload()
+            discord_gateway_reloaded = True
+
+        github_gateway_reloaded = False
+        github_gateway = getattr(request.app.state, "github_gateway_manager", None)
+        if github_gateway is not None:
+            github_gateway.reload()
+            github_gateway_reloaded = True
+
+        config_reloaded = False
+        reload_manager = getattr(request.app.state, "reload_manager", None)
+        if reload_manager is not None:
+            reload_result = await reload_manager.reload_all()
+            config_reloaded = not any(
+                isinstance(item, dict) and item.get("status") == "error" for item in reload_result.values()
+            )
+
+        result = {
+            "discord_mappings_updated": discord_updated,
+            "usage_state_updated": governor_updated,
+            "bootstrap_retry_removed": bootstrap_retry_removed,
+            "rooms_reloaded": rooms_reloaded,
+            "discord_gateway_reloaded": discord_gateway_reloaded,
+            "github_gateway_reloaded": github_gateway_reloaded,
+            "config_reloaded": config_reloaded,
+        }
+        if not config_reloaded:
+            return JSONResponse(result, status_code=503)
+        return result
 
     # ── Health Check ────────────────────────────────────────
 

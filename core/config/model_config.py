@@ -250,6 +250,7 @@ _FAMILY_CREDENTIAL_MAP: dict[str, str] = {
     "bedrock": "anthropic",
     "cursor": "anthropic",
     "opencode-go": "opencode-go",
+    "grok": "grok",
 }
 
 

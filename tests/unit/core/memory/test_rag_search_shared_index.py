@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core.memory.rag.indexer import IndexDirectoryResult
 from core.memory.rag_search import (
     RAGMemorySearch,
     _compute_dir_hash,
@@ -188,7 +189,7 @@ class TestEnsureSharedKnowledgeChangeDetection:
 
         with patch("core.memory.rag.MemoryIndexer") as MockIdx:
             mock_shared = MagicMock()
-            mock_shared.index_directory.return_value = 5
+            mock_shared.index_directory.return_value = IndexDirectoryResult(chunks_indexed=5, files_indexed=1)
             MockIdx.return_value = mock_shared
 
             rag._ensure_shared_knowledge_indexed(mock_vs)
@@ -197,6 +198,25 @@ class TestEnsureSharedKnowledgeChangeDetection:
         assert meta_path.exists()
         stored = _read_shared_hash(meta_path, "shared_common_knowledge_hash")
         assert stored is not None
+
+    def test_does_not_write_hash_when_any_file_failed(
+        self,
+        rag: RAGMemorySearch,
+        common_knowledge_dir: Path,
+    ) -> None:
+        (common_knowledge_dir / "guide.md").write_text("# Guide")
+        rag._indexer = MagicMock()
+
+        with patch("core.memory.rag.MemoryIndexer") as MockIdx:
+            MockIdx.return_value.index_directory.return_value = IndexDirectoryResult(
+                files_failed=1,
+                transient_failures=1,
+                failed_sources=("guide.md",),
+            )
+            rag._ensure_shared_knowledge_indexed(MagicMock())
+
+        meta_path = rag._anima_dir / "index_meta.json"
+        assert _read_shared_hash(meta_path, "shared_common_knowledge_hash") is None
 
     def test_skips_on_second_call_unchanged(
         self,
@@ -213,7 +233,7 @@ class TestEnsureSharedKnowledgeChangeDetection:
 
         with patch("core.memory.rag.MemoryIndexer") as MockIdx:
             mock_shared = MagicMock()
-            mock_shared.index_directory.return_value = 5
+            mock_shared.index_directory.return_value = IndexDirectoryResult(chunks_indexed=5, files_indexed=1)
             MockIdx.return_value = mock_shared
 
             rag._ensure_shared_knowledge_indexed(mock_vs)
@@ -236,7 +256,7 @@ class TestEnsureSharedKnowledgeChangeDetection:
 
         with patch("core.memory.rag.MemoryIndexer") as MockIdx:
             mock_shared = MagicMock()
-            mock_shared.index_directory.return_value = 3
+            mock_shared.index_directory.return_value = IndexDirectoryResult(chunks_indexed=3, files_indexed=1)
             MockIdx.return_value = mock_shared
 
             rag._ensure_shared_knowledge_indexed(mock_vs)
@@ -269,7 +289,7 @@ class TestEnsureSharedKnowledgeChangeDetection:
 
         with patch("core.memory.rag.MemoryIndexer") as MockIdx:
             mock_shared = MagicMock()
-            mock_shared.index_directory.return_value = 5
+            mock_shared.index_directory.return_value = IndexDirectoryResult(chunks_indexed=5, files_indexed=1)
             MockIdx.return_value = mock_shared
 
             rag._ensure_shared_knowledge_indexed(mock_vs)
@@ -319,7 +339,7 @@ class TestEnsureSharedSkillsChangeDetection:
 
         with patch("core.memory.rag.MemoryIndexer") as MockIdx:
             mock_shared = MagicMock()
-            mock_shared.index_directory.return_value = 2
+            mock_shared.index_directory.return_value = IndexDirectoryResult(chunks_indexed=2, files_indexed=1)
             MockIdx.return_value = mock_shared
 
             rag._ensure_shared_skills_indexed(mock_vs)
@@ -343,7 +363,7 @@ class TestEnsureSharedSkillsChangeDetection:
 
         with patch("core.memory.rag.MemoryIndexer") as MockIdx:
             mock_shared = MagicMock()
-            mock_shared.index_directory.return_value = 2
+            mock_shared.index_directory.return_value = IndexDirectoryResult(chunks_indexed=2, files_indexed=1)
             MockIdx.return_value = mock_shared
 
             rag._ensure_shared_skills_indexed(mock_vs)
@@ -370,7 +390,7 @@ class TestEnsureSharedSkillsChangeDetection:
 
         with patch("core.memory.rag.MemoryIndexer") as MockIdx:
             mock_shared = MagicMock()
-            mock_shared.index_directory.return_value = 2
+            mock_shared.index_directory.return_value = IndexDirectoryResult(chunks_indexed=2, files_indexed=1)
             MockIdx.return_value = mock_shared
 
             rag._ensure_shared_skills_indexed(mock_vs)

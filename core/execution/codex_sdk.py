@@ -28,6 +28,7 @@ import os
 import re
 import shutil
 import sys
+import threading
 from collections.abc import AsyncGenerator
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -98,6 +99,8 @@ _WINDOWS_TASKKILL_SUCCESS_RE = re.compile(
 _CODEX_REASONING_SUMMARY_DEFAULT = "concise"
 _CODEX_REASONING_SUMMARY_VALUES = {"auto", "concise", "detailed", "none"}
 _CODEX_THREAD_SESSION_ID_PATCHED = False
+_CODEX_CLIENT_PROCESS_WAIT_TIMEOUT_SEC = 2.0
+_CODEX_CLIENT_READER_JOIN_TIMEOUT_SEC = 2.0
 
 
 # 笏笏 Model name helpers 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
@@ -244,7 +247,25 @@ def _resolve_codex_provider_config(model_config: ModelConfig) -> _CodexProviderC
 
 def _escape_toml_string(value: str) -> str:
     """Escape a string for safe embedding in a TOML double-quoted value."""
-    return value.replace("\\", "\\\\").replace('"', '\\"')
+    escapes = {
+        "\\": "\\\\",
+        '"': '\\"',
+        "\b": "\\b",
+        "\t": "\\t",
+        "\n": "\\n",
+        "\f": "\\f",
+        "\r": "\\r",
+    }
+    result: list[str] = []
+    for char in value:
+        escaped = escapes.get(char)
+        if escaped is not None:
+            result.append(escaped)
+        elif ord(char) < 0x20 or ord(char) == 0x7F:
+            result.append(f"\\u{ord(char):04X}")
+        else:
+            result.append(char)
+    return "".join(result)
 
 
 def _format_toml_override_value(value: Any) -> str:
@@ -916,13 +937,113 @@ async def _maybe_await(value: Any) -> Any:
     return value
 
 
+def _declared_codex_private_attr(owner: Any, attr_name: str) -> Any:
+    """Read a declared SDK private attribute without triggering dynamic mocks."""
+    try:
+        attributes = vars(owner)
+        if attr_name not in attributes:
+            return None
+        return getattr(owner, attr_name, None)
+    except Exception:
+        logger.warning(
+            "Failed to inspect Codex SDK cleanup resource %s",
+            attr_name,
+            exc_info=True,
+        )
+        return None
+
+
+def _codex_client_transport_resources(client: Any) -> tuple[Any, threading.Thread | None, threading.Thread | None]:
+    """Snapshot SDK transport resources before ``close()`` clears them.
+
+    Current ``AsyncCodex`` nests the transport at ``_client._sync``;
+    older/test clients may expose it at ``_sync`` or directly.  These are
+    private SDK details, so every ``getattr`` is deliberately best-effort.
+    """
+    owners = [client]
+    for link_name in ("_client", "_sync"):
+        for owner in tuple(owners):
+            nested = _declared_codex_private_attr(owner, link_name)
+            if nested is not None and all(nested is not existing for existing in owners):
+                owners.append(nested)
+
+    resources: list[Any] = [None, None, None]
+    for attr_name in ("_proc", "_reader_thread", "_stderr_thread"):
+        resource_index = ("_proc", "_reader_thread", "_stderr_thread").index(attr_name)
+        for owner in owners:
+            value = _declared_codex_private_attr(owner, attr_name)
+            if value is not None:
+                resources[resource_index] = value
+                break
+
+    proc, reader_thread, stderr_thread = resources
+    return (
+        proc,
+        reader_thread if isinstance(reader_thread, threading.Thread) else None,
+        stderr_thread if isinstance(stderr_thread, threading.Thread) else None,
+    )
+
+
+def _finish_codex_client_transport(
+    proc: Any,
+    reader_thread: threading.Thread | None,
+    stderr_thread: threading.Thread | None,
+) -> None:
+    """Force-close a Codex SDK transport after the SDK's own cleanup."""
+    if proc is not None:
+        try:
+            poll = getattr(proc, "poll", None)
+            is_running = callable(poll) and poll() is None
+            if is_running:
+                proc.kill()
+                proc.wait(timeout=_CODEX_CLIENT_PROCESS_WAIT_TIMEOUT_SEC)
+        except Exception:
+            logger.warning("Failed to reap Codex SDK subprocess during cleanup", exc_info=True)
+
+        # Close pipes before joining readers so a blocked readline receives EOF.
+        try:
+            _close_subprocess_stdio(proc)
+        except Exception:
+            logger.warning("Failed to close Codex SDK subprocess pipes", exc_info=True)
+
+    for thread_name, thread in (
+        ("reader", reader_thread),
+        ("stderr", stderr_thread),
+    ):
+        if thread is None:
+            continue
+        try:
+            if thread.is_alive():
+                thread.join(timeout=_CODEX_CLIENT_READER_JOIN_TIMEOUT_SEC)
+            if thread.is_alive():
+                logger.warning("Codex SDK %s thread is still alive after cleanup", thread_name)
+        except Exception:
+            logger.warning("Failed to join Codex SDK %s thread", thread_name, exc_info=True)
+
+
 async def _close_codex_client(client: Any) -> None:
-    close = getattr(client, "close", None)
+    proc, reader_thread, stderr_thread = _codex_client_transport_resources(client)
+
+    try:
+        close = getattr(client, "close", None)
+    except Exception:
+        logger.warning("Failed to inspect Codex SDK close method", exc_info=True)
+        close = None
     if callable(close):
         try:
             await _maybe_await(close())
         except Exception:
-            logger.debug("Failed to close Codex SDK client", exc_info=True)
+            logger.warning("Failed to close Codex SDK client", exc_info=True)
+
+    try:
+        await asyncio.to_thread(
+            _finish_codex_client_transport,
+            proc,
+            reader_thread,
+            stderr_thread,
+        )
+    except Exception:
+        logger.warning("Failed to finish Codex SDK transport cleanup", exc_info=True)
 
 
 # 笏笏 Executor 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
@@ -942,11 +1063,12 @@ class CodexSDKExecutor(BaseExecutor):
         tool_registry: list[str] | None = None,
         personal_tools: dict[str, str] | None = None,
         interrupt_event: asyncio.Event | None = None,
+        codex_home: Path | None = None,
     ) -> None:
         super().__init__(model_config, anima_dir, interrupt_event=interrupt_event)
         self._tool_registry = tool_registry or []
         self._personal_tools = personal_tools or {}
-        self._codex_home = anima_dir / ".codex_home"
+        self._codex_home = codex_home or anima_dir / ".codex_home"
         self._use_default_codex_home = False
 
     @property
@@ -1215,11 +1337,90 @@ class CodexSDKExecutor(BaseExecutor):
 
         permissions_config = load_permissions(self._anima_dir)
 
-        if "/" in permissions_config.file_roots:
-            sandbox_mode = "danger-full-access"
-            sandbox_section = ""
+        denied_roots = list(getattr(permissions_config, "file_roots_denied", []))
+        if denied_roots:
+            from core.file_access_policy import shell_internal_deny_paths
+
+            # Permission profiles and the legacy sandbox settings are mutually
+            # exclusive.  Start with broad read access, retain the legacy
+            # writable roots (including temp for workspace-write parity), and
+            # carve denied subtrees out with more-specific ``deny`` rules.
+            root_is_writable = "/" in permissions_config.file_roots
+            data_dir = self._anima_dir.resolve().parent.parent
+            explicit_write_roots = [Path(root).resolve() for root in permissions_config.file_roots]
+            if self._task_cwd:
+                explicit_write_roots.append(self._task_cwd.resolve())
+
+            # The model-facing shell must not be able to replace trusted
+            # runtime inputs with symlinks that a later host-side prompt
+            # assembly would follow.  Runtime-data writes go through the
+            # constrained MCP APIs instead.
+            shell_filesystem_rules: dict[str, str] = {
+                ":root": "read",
+                ":tmpdir": "write",
+                ":slash_tmp": "write",
+            }
+            for root in explicit_write_roots:
+                if root == Path("/") or root.is_relative_to(data_dir) or data_dir.is_relative_to(root):
+                    continue
+                shell_filesystem_rules[str(root)] = "write"
+
+            # The MCP server needs the legacy writable roots for constrained
+            # memory and messaging tools.  It uses a separate profile and
+            # does not expose arbitrary machine execution while deny is on.
+            mcp_filesystem_rules: dict[str, str] = {
+                ":root": "write" if root_is_writable else "read",
+            }
+            if not root_is_writable:
+                mcp_filesystem_rules[":tmpdir"] = "write"
+                mcp_filesystem_rules[":slash_tmp"] = "write"
+                mcp_filesystem_rules[str(self._anima_dir.resolve())] = "write"
+                for root in explicit_write_roots:
+                    mcp_filesystem_rules[str(root)] = "write"
+
+            for root in denied_roots:
+                resolved_root = str(Path(root).resolve())
+                shell_filesystem_rules[resolved_root] = "deny"
+                mcp_filesystem_rules[resolved_root] = "deny"
+
+            # Authentication and all runtime state/cache copies must never be
+            # directly readable from the model shell.  The MCP profile keeps
+            # cache access for trusted, source-filtered search services.
+            for internal_path in shell_internal_deny_paths(self._anima_dir):
+                shell_filesystem_rules[str(internal_path)] = "deny"
+
+            # The sandboxed Anima must not be able to remove or weaken the
+            # policy that will be used to build its next session's profile.
+            # A file-specific read rule is more specific than the writable
+            # Anima root (and remains read-only even when ``:root`` is write).
+            permissions_path = str((self._anima_dir / "permissions.json").resolve())
+            mcp_filesystem_rules[permissions_path] = "read"
+
+            shell_filesystem_lines = "\n".join(
+                f'"{esc(path)}" = "{access}"' for path, access in shell_filesystem_rules.items()
+            )
+            mcp_filesystem_lines = "\n".join(
+                f'"{esc(path)}" = "{access}"' for path, access in mcp_filesystem_rules.items()
+            )
+            sandbox_lines = (
+                'default_permissions = "animaworks"\n'
+                'approval_policy = "never"\n'
+                "\n"
+                "[permissions.animaworks.filesystem]\n"
+                f"{shell_filesystem_lines}\n"
+                "\n"
+                "[permissions.animaworks.network]\n"
+                "enabled = true\n"
+                "\n"
+                "[permissions.animaworks_mcp.filesystem]\n"
+                f"{mcp_filesystem_lines}\n"
+                "\n"
+                "[permissions.animaworks_mcp.network]\n"
+                "enabled = true\n"
+            )
+        elif "/" in permissions_config.file_roots:
+            sandbox_lines = 'sandbox_mode = "danger-full-access"\napproval_policy = "never"\n'
         else:
-            sandbox_mode = "workspace-write"
             writable_roots = [str(self._anima_dir)]
             for root in permissions_config.file_roots:
                 resolved = str(Path(root).resolve())
@@ -1231,12 +1432,45 @@ class CodexSDKExecutor(BaseExecutor):
                     writable_roots.append(cwd_str)
             roots_list = ", ".join(f'"{esc(r)}"' for r in writable_roots)
             root_comments = "".join(f"# writable_root = {r}\n" for r in writable_roots)
-            sandbox_section = (
-                f"\n[sandbox_workspace_write]\n{root_comments}writable_roots = [{roots_list}]\nnetwork_access = true\n"
+            sandbox_lines = (
+                'sandbox_mode = "workspace-write"\n'
+                'approval_policy = "never"\n'
+                "\n"
+                "[sandbox_workspace_write]\n"
+                f"{root_comments}"
+                f"writable_roots = [{roots_list}]\n"
+                "network_access = true\n"
             )
 
         mcp_env = self._build_mcp_env()
+        if denied_roots:
+            # The nested ``codex sandbox`` resolves the named profile from
+            # this per-Anima CODEX_HOME.  Set it explicitly rather than
+            # relying on the MCP launcher inheriting the parent environment.
+            mcp_env["CODEX_HOME"] = str(self._codex_home)
+            mcp_env["ANIMAWORKS_FILE_DENY_ACTIVE"] = "1"
         mcp_env_lines = "\n".join(f'{k} = "{esc(v)}"' for k, v in mcp_env.items())
+        if denied_roots:
+            mcp_command = get_codex_executable()
+            if not mcp_command:
+                raise RuntimeError(
+                    "Codex CLI executable is required to sandbox the MCP server when file_roots_denied is configured"
+                )
+            mcp_args = [
+                "sandbox",
+                "-P",
+                "animaworks_mcp",
+                "--",
+                sys.executable,
+                "-m",
+                "core.mcp.server",
+            ]
+        else:
+            # Preserve the pre-profile MCP command exactly for Animas that do
+            # not opt in to read-deny enforcement.
+            mcp_command = sys.executable
+            mcp_args = ["-m", "core.mcp.server"]
+        mcp_args_toml = ", ".join(f'"{esc(arg)}"' for arg in mcp_args)
         provider_section = ""
         if provider_config.is_azure:
             provider_section = (
@@ -1270,14 +1504,12 @@ class CodexSDKExecutor(BaseExecutor):
             f'developer_instructions = "{esc(self._CODEX_DEVELOPER_INSTRUCTIONS)}"\n'
             f'personality = "friendly"\n'
             f'model_verbosity = "high"\n'
-            f'sandbox_mode = "{sandbox_mode}"\n'
-            f'approval_policy = "never"\n'
-            f"{sandbox_section}"
+            f"{sandbox_lines}"
             f"{provider_section}"
             f"\n"
             f"[mcp_servers.aw]\n"
-            f'command = "{esc(sys.executable)}"\n'
-            f'args = ["-m", "core.mcp.server"]\n'
+            f'command = "{esc(mcp_command)}"\n'
+            f"args = [{mcp_args_toml}]\n"
             f'default_tools_approval_mode = "approve"\n'
             f"\n"
             f"[mcp_servers.aw.env]\n"
@@ -1344,15 +1576,20 @@ class CodexSDKExecutor(BaseExecutor):
 
     def _codex_thread_kwargs(self, system_prompt: str) -> dict[str, Any]:
         provider_config = _resolve_codex_provider_config(self._model_config)
-        return {
+        kwargs: dict[str, Any] = {
             "approval_mode": self._sdk_approval_mode(),
             "base_instructions": system_prompt or None,
             "cwd": str(self._task_cwd or self._anima_dir),
             "developer_instructions": self._CODEX_DEVELOPER_INSTRUCTIONS,
             "model": provider_config.model,
             "model_provider": provider_config.provider,
-            "sandbox": self._sdk_sandbox(),
         }
+        from core.config.models import load_permissions
+
+        permissions_config = load_permissions(self._anima_dir)
+        if not getattr(permissions_config, "file_roots_denied", []):
+            kwargs["sandbox"] = self._sdk_sandbox()
+        return kwargs
 
     def _codex_turn_kwargs(self) -> dict[str, Any]:
         provider_config = _resolve_codex_provider_config(self._model_config)

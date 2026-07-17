@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from core.memory.rag.indexer import IndexDirectoryResult
 from core.memory.rag.repair import (
     RAGRepairService,
     RepairResult,
@@ -777,7 +778,7 @@ def _patch_atomic_build(monkeypatch, *, chunks_per_dir=2, collections=None, inde
         def index_directory(self, *args, **kwargs):
             if indexer_calls is not None:
                 indexer_calls.append((self.anima_name, str(args[1])))
-            return chunks_per_dir
+            return IndexDirectoryResult(chunks_indexed=chunks_per_dir, files_indexed=1)
 
         def index_conversation_summary(self, *args, **kwargs):
             return chunks_per_dir
@@ -823,6 +824,46 @@ def test_repair_rebuilds_swaps_and_archives(data_dir: Path, monkeypatch):
     assert state["status"] == "success"
     assert state["consecutive_failures"] == 0
     assert state["last_chunks_indexed"] == 4
+
+
+def test_atomic_rebuild_includes_facts_and_conversation_summary(data_dir: Path, monkeypatch):
+    """The shared rebuild path indexes every canonical vector category."""
+    from core.memory.rag.repair_rebuild import atomic_rebuild_vectordb
+
+    anima_dir = data_dir / "animas" / "sora"
+    for memory_type, filename in (
+        ("knowledge", "note.md"),
+        ("episodes", "episode.md"),
+        ("procedures", "procedure.md"),
+        ("skills", "SKILL.md"),
+        ("facts", "facts.jsonl"),
+    ):
+        directory = anima_dir / memory_type
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / filename).write_text("content", encoding="utf-8")
+    (anima_dir / "state").mkdir()
+    (anima_dir / "state" / "conversation.json").write_text(
+        '{"compressed_summary": "A sufficiently long summary for indexing"}',
+        encoding="utf-8",
+    )
+    calls: list[tuple[str | None, str]] = []
+    _patch_atomic_build(monkeypatch, chunks_per_dir=2, indexer_calls=calls)
+    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda anima_name=None: None)
+
+    chunks, _archive = atomic_rebuild_vectordb(
+        "sora",
+        include_shared=False,
+        anima_dir=anima_dir,
+    )
+
+    assert chunks == 12
+    assert [memory_type for _name, memory_type in calls] == [
+        "knowledge",
+        "episodes",
+        "procedures",
+        "skills",
+        "facts",
+    ]
 
 
 def test_repair_skips_rebuild_when_sqlite_healthy_after_stop(data_dir: Path, monkeypatch):

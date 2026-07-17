@@ -162,6 +162,18 @@ class TestBuildMcpTools:
         assert "machine_run" not in {t.name for t in tools}
         assert "machine_run" not in exposed
 
+    def test_machine_run_hidden_when_file_deny_is_active(self) -> None:
+        from core.mcp.server import _build_mcp_tools
+
+        with (
+            patch.dict("os.environ", {"ANIMAWORKS_FILE_DENY_ACTIVE": "1"}),
+            patch("core.tools.machine._get_available_engines", return_value=["codex"]),
+        ):
+            tools, exposed = _build_mcp_tools()
+
+        assert "machine_run" not in {t.name for t in tools}
+        assert "machine_run" not in exposed
+
 
 # ── TestListToolsHandler ─────────────────────────────────────────────
 

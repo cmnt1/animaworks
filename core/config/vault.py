@@ -28,6 +28,10 @@ from typing import Any
 
 logger = logging.getLogger("animaworks.config.vault")
 
+_missing_key_log_lock = threading.Lock()
+_missing_key_error_logged = False
+_missing_key_decrypt_warned = False
+
 # ── PyNaCl import guard ──────────────────────────────────────────────────────
 
 try:
@@ -46,6 +50,32 @@ from core.exceptions import ConfigError
 
 class VaultError(ConfigError):
     """Vault-specific errors (missing key, decryption failure)."""
+
+
+def resolve_vault_references(value: Any, data_dir: Path) -> Any:
+    """Recursively resolve ``{"$vault": "KEY"}`` references.
+
+    Config references use the existing flat ``shared`` section of
+    ``vault.json``.  Other dictionaries and plaintext scalar values are
+    returned unchanged, preserving backwards compatibility with existing
+    configuration files.
+    """
+    if isinstance(value, list):
+        return [resolve_vault_references(item, data_dir) for item in value]
+
+    if not isinstance(value, dict):
+        return value
+
+    if set(value) == {"$vault"}:
+        key = value["$vault"]
+        if not isinstance(key, str) or not key.strip():
+            raise VaultError("A $vault reference must contain a non-empty string key")
+        resolved = VaultManager(data_dir).get("shared", key)
+        if resolved is None:
+            raise VaultError(f"Vault key not found in shared section: {key}")
+        return resolved
+
+    return {key: resolve_vault_references(item, data_dir) for key, item in value.items()}
 
 
 # ── VaultManager ─────────────────────────────────────────────────────────────
@@ -100,6 +130,9 @@ class VaultManager:
         Returns:
             True if the key was generated, False if PyNaCl is missing.
         """
+        if self.has_key:
+            raise VaultError(f"Vault key already exists: {self._key_path}")
+
         if not _HAS_NACL:
             logger.warning(
                 "PyNaCl is not installed; vault key generation skipped. Install with: pip install PyNaCl>=1.5.0"
@@ -125,7 +158,14 @@ class VaultManager:
         """
         if self._private_key is not None:
             return self._private_key
-        if not _HAS_NACL or not self._key_path.is_file():
+        if not _HAS_NACL:
+            return None
+        if not self._key_path.is_file():
+            global _missing_key_error_logged
+            with _missing_key_log_lock:
+                if not _missing_key_error_logged:
+                    logger.error("Vault key file not found: %s", self._key_path)
+                    _missing_key_error_logged = True
             return None
         try:
             raw = base64.b64decode(self._key_path.read_text(encoding="utf-8").strip())
@@ -176,7 +216,13 @@ class VaultManager:
 
         sk = self._load_key()
         if sk is None:
-            logger.warning("Vault key not found; returning value as-is")
+            global _missing_key_decrypt_warned
+            with _missing_key_log_lock:
+                if not _missing_key_decrypt_warned:
+                    logger.warning("Vault key not found; returning value as-is")
+                    _missing_key_decrypt_warned = True
+                else:
+                    logger.debug("Vault key not found; returning value as-is")
             return ciphertext
 
         try:
@@ -186,6 +232,20 @@ class VaultManager:
             # Might be a plaintext value from before encryption was enabled
             logger.debug("Decryption failed; returning value as-is (likely plaintext)")
             return ciphertext
+
+    def is_encrypted_value(self, value: str) -> bool:
+        """Return whether *value* is a SealedBox ciphertext decryptable by the current key."""
+        if not value or not _HAS_NACL:
+            return False
+        sk = self._load_key()
+        if sk is None:
+            return False
+        try:
+            raw = base64.b64decode(value, validate=True)
+            box_decrypt(sk, raw)
+            return True
+        except Exception:
+            return False
 
     # ── Config credentials encrypt / decrypt ─────────────────────
 

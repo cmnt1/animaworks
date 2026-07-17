@@ -15,12 +15,16 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import time
+from pathlib import Path
 
+from dotenv import dotenv_values
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from core.config.models import load_config
+from core.i18n import t
 from core.messenger import Messenger
 from core.paths import get_data_dir
 from core.tools._base import ToolConfigError, get_credential
@@ -28,6 +32,29 @@ from core.tools._base import ToolConfigError, get_credential
 logger = logging.getLogger("animaworks.webhooks")
 
 _slack_bot_user_ids: dict[str, str] = {}
+
+
+def _github_webhook_secret() -> str | None:
+    """Read the GitHub webhook secret from the repository environment."""
+    secret = os.environ.get("GITHUB_WEBHOOK_SECRET", "").strip()
+    if secret:
+        return secret
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    value = dotenv_values(env_path).get("GITHUB_WEBHOOK_SECRET")
+    return str(value).strip() if value else None
+
+
+def _verify_github_signature(body: bytes, signature: str, secret: str) -> bool:
+    """Verify GitHub's ``X-Hub-Signature-256`` HMAC."""
+    expected = (
+        "sha256="
+        + hmac.new(
+            secret.encode("utf-8"),
+            body,
+            hashlib.sha256,
+        ).hexdigest()
+    )
+    return hmac.compare_digest(expected, signature)
 
 
 def create_webhooks_router() -> APIRouter:
@@ -329,6 +356,38 @@ def create_webhooks_router() -> APIRouter:
 
         return {"ok": True}
 
+    # ── GitHub ─────────────────────────────────────────────
+
+    @router.post("/github")
+    async def github_webhook(request: Request) -> dict:
+        """Authenticate and enqueue a GitHub webhook event."""
+        body = await request.body()
+
+        # Signature verification deliberately precedes JSON parsing, event
+        # routing, ping handling, and manager lookup.
+        secret = _github_webhook_secret()
+        if secret is None:
+            raise HTTPException(status_code=503, detail="GitHub webhook not configured")
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        if not _verify_github_signature(body, signature, secret):
+            raise HTTPException(status_code=401, detail="Invalid signature")
+
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid JSON") from None
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=400, detail="Invalid JSON")
+
+        event = request.headers.get("X-GitHub-Event", "")
+        if event == "ping":
+            return {"ok": True}
+
+        manager = getattr(request.app.state, "github_gateway_manager", None)
+        if manager is not None:
+            manager.dispatch_event(event, data)
+        return {"ok": True}
+
     # ── Zoom RTMS ──────────────────────────────────────────
 
     def _zoom_secret_token() -> str | None:
@@ -382,8 +441,8 @@ def create_webhooks_router() -> APIRouter:
             "<!doctype html><html lang='ja'><meta charset='utf-8'>"
             "<title>AnimaWorks</title>"
             "<body style='font-family:sans-serif;text-align:center;margin-top:20vh'>"
-            "<h2>Zoom 連携の認可が完了しました</h2>"
-            "<p>このタブは閉じてかまいません。</p></body></html>"
+            f"<h2>{t('zoom.oauth_complete_title')}</h2>"
+            f"<p>{t('zoom.oauth_complete_body')}</p></body></html>"
         )
 
     @router.post("/zoom")

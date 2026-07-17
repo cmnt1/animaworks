@@ -249,5 +249,21 @@ class TestAnimaRunnerCleanupDelegation:
         mock_limiter = MagicMock(spec=InboxRateLimiter)
         runner._inbox_limiter = mock_limiter
 
-        await runner._cleanup()
+        with patch("core.execution._litellm_tools.shutdown_tool_executors") as shutdown_executors:
+            await runner._cleanup()
         mock_limiter.cancel_deferred_timer.assert_called_once()
+        shutdown_executors.assert_called_once_with()
+
+    def test_mode_a_executor_shutdown_cancels_pending_work(self):
+        from core.execution import _litellm_tools
+
+        quick_executor = MagicMock()
+        background_executor = MagicMock()
+        with (
+            patch.object(_litellm_tools, "_tool_executor", quick_executor),
+            patch.object(_litellm_tools, "_bg_tool_executor", background_executor),
+        ):
+            _litellm_tools.shutdown_tool_executors()
+
+        quick_executor.shutdown.assert_called_once_with(wait=False, cancel_futures=True)
+        background_executor.shutdown.assert_called_once_with(wait=False, cancel_futures=True)

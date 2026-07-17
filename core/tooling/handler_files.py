@@ -108,6 +108,8 @@ def _build_fuzzy_cjk_latin_pattern(old: str) -> re.Pattern[str] | None:
 
 _BG_CMD_TIMEOUT_DEFAULT = 1800  # 30 minutes
 _BG_CMD_OUTPUT_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+_PIPE_THREAD_JOIN_TIMEOUT = 5.0
+_PIPE_THREAD_REJOIN_TIMEOUT = 1.0
 
 
 def _resolve_rtk_bin() -> str | None:
@@ -345,8 +347,37 @@ class CommandRunner:
                 except subprocess.TimeoutExpired:
                     pass
 
-        stdout_thread.join(timeout=5)
-        stderr_thread.join(timeout=5)
+        pipe_readers = (
+            ("stdout", proc.stdout, stdout_thread),
+            ("stderr", proc.stderr, stderr_thread),
+        )
+        for _, _, thread in pipe_readers:
+            thread.join(timeout=_PIPE_THREAD_JOIN_TIMEOUT)
+
+        # Preserve all output available during the normal drain window.  Only
+        # force-close a pipe when its reader did not finish, then give the
+        # reader one final chance to observe EOF before dropping the runner
+        # from the active registry.
+        for pipe_name, pipe, thread in pipe_readers:
+            if not thread.is_alive():
+                continue
+            if pipe is not None:
+                try:
+                    pipe.close()
+                except (OSError, ValueError):
+                    logger.warning(
+                        "background_cmd failed to close %s pipe cmd_id=%s",
+                        pipe_name,
+                        self.cmd_id,
+                        exc_info=True,
+                    )
+            thread.join(timeout=_PIPE_THREAD_REJOIN_TIMEOUT)
+            if thread.is_alive():
+                logger.warning(
+                    "background_cmd %s reader still alive after pipe close cmd_id=%s",
+                    pipe_name,
+                    self.cmd_id,
+                )
 
         elapsed = time.monotonic() - self._start_time
         exit_code = proc.returncode if proc.returncode is not None else -1
@@ -702,6 +733,67 @@ class FileToolsMixin:
 
     # ── Search ────────────────────────────────────────────────
 
+    @staticmethod
+    def _matches_recursive_pattern(relative_path: Path, pattern: str) -> bool:
+        """Match pathlib-style recursive patterns, including root-level ``**/`` matches."""
+        if not pattern:
+            return True
+        if relative_path.match(pattern):
+            return True
+        while pattern.startswith("**/"):
+            pattern = pattern[3:]
+            if relative_path.match(pattern):
+                return True
+        return False
+
+    def _iter_permitted_tree_paths(
+        self,
+        root: Path,
+        *,
+        pattern: str = "",
+        config: Any,
+        denied_roots: tuple[Path, ...],
+    ) -> list[Path]:
+        """Walk *root* without entering or returning inaccessible subtrees.
+
+        ``Path.rglob`` cannot prune a deny subtree before enumerating it.  A
+        top-down walk lets us remove denied directories from ``dirnames`` and
+        apply the same permission check to every returned file and directory.
+        """
+        visible: list[Path] = []
+        try:
+            for current, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+                current_path = Path(current)
+                permitted_dirs: list[str] = []
+                for name in dirnames:
+                    candidate = current_path / name
+                    if self._check_file_permission(
+                        str(candidate),
+                        config=config,
+                        denied_roots=denied_roots,
+                    ):
+                        continue
+                    permitted_dirs.append(name)
+                    relative = candidate.relative_to(root)
+                    if self._matches_recursive_pattern(relative, pattern):
+                        visible.append(candidate)
+                dirnames[:] = permitted_dirs
+
+                for name in filenames:
+                    candidate = current_path / name
+                    if self._check_file_permission(
+                        str(candidate),
+                        config=config,
+                        denied_roots=denied_roots,
+                    ):
+                        continue
+                    relative = candidate.relative_to(root)
+                    if self._matches_recursive_pattern(relative, pattern):
+                        visible.append(candidate)
+        except OSError:
+            logger.debug("Failed while walking %s", root, exc_info=True)
+        return visible
+
     def _handle_search_code(self, args: dict[str, Any]) -> str:
         import re as _re
 
@@ -723,13 +815,15 @@ class FileToolsMixin:
             )
 
         search_path_str = args.get("path", "")
+        config = self._load_permissions_config()
+        denied_roots = self._resolved_file_deny_roots(config)
         if search_path_str:
             search_path = Path(search_path_str)
-            err = self._check_file_permission(search_path_str)
-            if err:
-                return err
         else:
             search_path = self._anima_dir
+        err = self._check_file_permission(str(search_path), config=config, denied_roots=denied_roots)
+        if err:
+            return err
 
         if not search_path.exists():
             return _error_result(
@@ -745,9 +839,18 @@ class FileToolsMixin:
         if search_path.is_file():
             files = [search_path]
         elif glob_pattern:
-            files = list(search_path.rglob(glob_pattern))
+            files = self._iter_permitted_tree_paths(
+                search_path,
+                pattern=glob_pattern,
+                config=config,
+                denied_roots=denied_roots,
+            )
         else:
-            files = list(search_path.rglob("*"))
+            files = self._iter_permitted_tree_paths(
+                search_path,
+                config=config,
+                denied_roots=denied_roots,
+            )
 
         for fpath in files:
             if not fpath.is_file():
@@ -779,13 +882,15 @@ class FileToolsMixin:
 
     def _handle_list_directory(self, args: dict[str, Any]) -> str:
         dir_path_str = args.get("path", "")
+        config = self._load_permissions_config()
+        denied_roots = self._resolved_file_deny_roots(config)
         if dir_path_str:
             dir_path = Path(dir_path_str)
-            err = self._check_file_permission(dir_path_str)
-            if err:
-                return err
         else:
             dir_path = self._anima_dir
+        err = self._check_file_permission(str(dir_path), config=config, denied_roots=denied_roots)
+        if err:
+            return err
 
         if not dir_path.exists():
             return _error_result(
@@ -808,13 +913,38 @@ class FileToolsMixin:
 
         if pattern:
             if recursive:
-                items = list(dir_path.rglob(pattern))
+                items = self._iter_permitted_tree_paths(
+                    dir_path,
+                    pattern=pattern,
+                    config=config,
+                    denied_roots=denied_roots,
+                )
             else:
-                items = list(dir_path.glob(pattern))
+                items = [
+                    item
+                    for item in dir_path.glob(pattern)
+                    if not self._check_file_permission(
+                        str(item),
+                        config=config,
+                        denied_roots=denied_roots,
+                    )
+                ]
         elif recursive:
-            items = list(dir_path.rglob("*"))
+            items = self._iter_permitted_tree_paths(
+                dir_path,
+                config=config,
+                denied_roots=denied_roots,
+            )
         else:
-            items = list(dir_path.iterdir())
+            items = [
+                item
+                for item in dir_path.iterdir()
+                if not self._check_file_permission(
+                    str(item),
+                    config=config,
+                    denied_roots=denied_roots,
+                )
+            ]
 
         for item in sorted(items)[:max_entries]:
             suffix = "/" if item.is_dir() else ""

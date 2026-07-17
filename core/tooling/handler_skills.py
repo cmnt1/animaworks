@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.i18n import t
+from core.memory._io import atomic_write_text
 from core.time_utils import now_iso, now_local
 from core.tooling.handler_base import _error_result
 
@@ -716,9 +717,9 @@ class SkillsToolsMixin:
         pending_dir = self._anima_dir / "state" / "pending"
         pending_dir.mkdir(parents=True, exist_ok=True)
         path = pending_dir / f"{entry.task_id}.json"
-        path.write_text(
+        atomic_write_text(
+            path,
             _json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
         )
 
         # Wake the pending executor
@@ -863,9 +864,9 @@ class SkillsToolsMixin:
 
             # Layer 1: Write JSON to state/pending/
             path = pending_dir / f"{t['task_id']}.json"
-            path.write_text(
+            atomic_write_text(
+                path,
                 _json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
             )
 
             # Layer 2: Register in task_queue.jsonl

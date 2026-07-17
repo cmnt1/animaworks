@@ -77,6 +77,7 @@ from core.config.schemas import (
     ExternalMessagingConfig,
     ExternalToolsPermission,
     GatewaySystemConfig,
+    GitHubWebhookConfig,
     GPUConfig,
     HeartbeatConfig,
     HousekeepingConfig,
@@ -110,6 +111,7 @@ from core.config.schemas import (
     WorkerSystemConfig,
     _format_permissions_for_prompt,
     load_permissions,
+    resolve_background_worker_pool_size,
     resolve_outbound_limits,
 )
 from core.exceptions import ConfigError  # noqa: F401

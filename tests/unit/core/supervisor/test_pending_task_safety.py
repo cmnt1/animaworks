@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -22,6 +24,11 @@ import pytest
 
 from core.memory.task_queue import TaskQueueManager
 from core.messenger import Messenger
+from core.platform.processing_lease import (
+    is_processing_lease_live,
+    processing_lease_path,
+    write_processing_lease,
+)
 from core.schemas import ModelConfig
 from core.supervisor.pending_executor import PendingTaskExecutor
 from core.taskboard.models import AttentionDecision
@@ -214,6 +221,101 @@ class TestRecoverProcessing:
         failed_dir.mkdir()
         PendingTaskExecutor._recover_processing(processing_dir, failed_dir)
 
+    def test_live_lease_skips_recovery(self, tmp_path: Path) -> None:
+        from core.memory.task_queue import TaskQueueManager
+
+        anima_dir = tmp_path / "test-anima"
+        (anima_dir / "state").mkdir(parents=True)
+        queue = TaskQueueManager(anima_dir)
+        queue.add_task(
+            source="human",
+            original_instruction="still running",
+            assignee="test-anima",
+            summary="live",
+            status="in_progress",
+            task_id="live",
+        )
+        processing_dir = tmp_path / "processing"
+        processing_dir.mkdir()
+        failed_dir = tmp_path / "failed"
+        failed_dir.mkdir()
+        orphan = processing_dir / "live.json"
+        orphan.write_text('{"task_id":"live"}', encoding="utf-8")
+        lease = write_processing_lease(
+            orphan,
+            anima="test-anima",
+            task_id="live",
+            pid=os.getpid(),
+        )
+
+        with patch(
+            "core.platform.processing_lease._read_proc_cmdline",
+            return_value="python -m core.supervisor.runner --anima-name test-anima",
+        ):
+            PendingTaskExecutor._recover_processing(processing_dir, failed_dir, anima_dir)
+
+        assert orphan.exists()
+        assert lease.exists()
+        assert not list(failed_dir.iterdir())
+        assert queue.get_task_by_id("live").status == "in_progress"
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="cmdline check requires /proc; leases are conservatively live without it",
+    )
+    def test_live_lease_rejects_reused_pid_with_wrong_cmdline(self, tmp_path: Path) -> None:
+        descriptor = tmp_path / "reused.json"
+        descriptor.write_text('{"task_id":"reused"}', encoding="utf-8")
+        write_processing_lease(
+            descriptor,
+            anima="test-anima",
+            task_id="reused",
+            pid=os.getpid(),
+        )
+
+        with patch(
+            "core.platform.processing_lease._read_proc_cmdline",
+            return_value="python unrelated-process --anima-name test-anima",
+        ):
+            assert not is_processing_lease_live(descriptor, expected_anima="test-anima")
+
+    def test_live_lease_treats_unreadable_proc_as_live(self, tmp_path: Path) -> None:
+        descriptor = tmp_path / "unknown.json"
+        descriptor.write_text('{"task_id":"unknown"}', encoding="utf-8")
+        write_processing_lease(
+            descriptor,
+            anima="test-anima",
+            task_id="unknown",
+            pid=os.getpid(),
+        )
+
+        with patch(
+            "core.platform.processing_lease._read_proc_cmdline",
+            side_effect=PermissionError("denied"),
+        ):
+            assert is_processing_lease_live(descriptor, expected_anima="test-anima")
+
+    @pytest.mark.parametrize("malformed", ["invalid_utf8", "huge_json_integer", "huge_pid"])
+    def test_malformed_lease_is_not_live(self, tmp_path: Path, malformed: str) -> None:
+        descriptor = tmp_path / f"{malformed}.json"
+        descriptor.write_text('{"task_id":"malformed"}', encoding="utf-8")
+        if malformed == "invalid_utf8":
+            processing_lease_path(descriptor).write_bytes(b"\xff\xfe")
+        elif malformed == "huge_json_integer":
+            processing_lease_path(descriptor).write_text(
+                '{"pid":' + ("9" * 5000) + ',"anima":"test-anima","leased_at":1,"task_id":"malformed"}',
+                encoding="utf-8",
+            )
+        else:
+            write_processing_lease(
+                descriptor,
+                anima="test-anima",
+                task_id="malformed",
+                pid=10**100,
+            )
+
+        assert not is_processing_lease_live(descriptor, expected_anima="test-anima")
+
     def test_syncs_layer2_task_queue_to_failed(self, tmp_path: Path) -> None:
         # F7: recovering an orphaned processing file also transitions the
         # matching Layer2 task_queue entry from in_progress to failed.
@@ -239,7 +341,12 @@ class TestRecoverProcessing:
         PendingTaskExecutor._recover_processing(processing_dir, failed_dir, anima_dir)
 
         assert (failed_dir / f"{entry.task_id}.json").exists()
-        assert tqm.get_task_by_id(entry.task_id).status == "failed"
+        recovered = tqm.get_task_by_id(entry.task_id)
+        assert recovered.status == "failed"
+        assert recovered.summary == (
+            "INTERRUPTED: task was interrupted by a restart and may have PARTIALLY EXECUTED "
+            "(commits/messages may already exist). Verify actual completion state before re-delegating."
+        )
 
     def test_layer2_sync_leaves_terminal_tasks_untouched(self, tmp_path: Path) -> None:
         # A task that already reached a terminal state must not be flipped.
@@ -302,6 +409,25 @@ class TestRecoverProcessing:
         assert not list(cmd_processing.glob("*.json"))
         assert not list(llm_processing.glob("*.json"))
         assert queue.get_task_by_id("ol").status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_processing_descriptor_touch_loop_updates_mtime(tmp_path: Path) -> None:
+    executor = _make_executor(tmp_path)
+    processing_path = tmp_path / "processing.json"
+    processing_path.write_text("{}", encoding="utf-8")
+
+    with (
+        patch(
+            "core.supervisor.pending_executor.asyncio.sleep",
+            new=AsyncMock(side_effect=[None, asyncio.CancelledError()]),
+        ),
+        patch("core.supervisor.pending_executor.os.utime") as touch,
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await executor._touch_processing_descriptor(processing_path)
+
+    touch.assert_called_once_with(processing_path, None)
 
 
 # ── TestExecuteLLMTaskFailureHandling ────────────────────────

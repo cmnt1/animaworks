@@ -14,6 +14,7 @@ import logging
 import os
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from typing import Any
@@ -29,6 +30,9 @@ logger = logging.getLogger("animaworks.rag.vector_worker")
 _CIRCUIT_FAILURE_THRESHOLD = int(os.environ.get("ANIMAWORKS_VECTOR_CIRCUIT_FAILURE_THRESHOLD", "3"))
 _CIRCUIT_BACKOFF_BASE_SECONDS = float(os.environ.get("ANIMAWORKS_VECTOR_CIRCUIT_BACKOFF_BASE_SECONDS", "1"))
 _CIRCUIT_BACKOFF_MAX_SECONDS = float(os.environ.get("ANIMAWORKS_VECTOR_CIRCUIT_BACKOFF_MAX_SECONDS", "300"))
+_CIRCUIT_REJECTION_LOG_INTERVAL_SECONDS = float(
+    os.environ.get("ANIMAWORKS_VECTOR_CIRCUIT_REJECTION_LOG_INTERVAL_SECONDS", "60")
+)
 _write_circuit_breakers: dict[str, dict[str, Any]] = {}
 _VECTOR_ACTION_ERROR = object()
 _LATCH_RECOVERY_BACKOFF_SECONDS = float(os.environ.get("ANIMAWORKS_VECTOR_LATCH_RECOVERY_BACKOFF_SECONDS", "5"))
@@ -38,11 +42,111 @@ _ACTIVE_REPAIR_WRITE_RETRY_AFTER_SECONDS = int(os.environ.get("ANIMAWORKS_VECTOR
 _latched_store_recovery_lock = threading.Lock()
 _latched_store_recovery_backoff_until: dict[str, float] = {}
 _latched_store_recovery_in_progress: set[str] = set()
+_SELF_HEAL_ESCALATION_THRESHOLD = 3
+_SELF_HEAL_ESCALATION_WINDOW_SECONDS = 600.0
+_SELF_HEAL_ESCALATION_COOLDOWN_SECONDS = 600.0
+_self_heal_escalation_lock = threading.Lock()
+_self_heal_failures: dict[str, deque[float]] = {}
+_self_heal_last_escalated_at: dict[str, float] = {}
 
 _native_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=1,
     thread_name_prefix="vector-worker-native",
 )
+_VECTOR_QUEUE_LIMIT_DEFAULT = 64
+_VECTOR_QUEUE_RETRY_AFTER_SECONDS = 1
+
+
+class _NativeQueueFull(RuntimeError):
+    """Raised when no more work can be admitted to the native queue."""
+
+    def __init__(self, queue_limit: int) -> None:
+        super().__init__("Vector worker queue full")
+        self.queue_limit = queue_limit
+
+
+class _NativeResultFuture(asyncio.Future[Any]):
+    """Future that publishes cancellation to the executor thread immediately."""
+
+    def __init__(self, cancel_event: threading.Event) -> None:
+        super().__init__()
+        self._cancel_event = cancel_event
+
+    def cancel(self, msg: str | None = None) -> bool:
+        self._cancel_event.set()
+        return super().cancel(msg)
+
+
+class _NativeAdmission:
+    """Thread-safe admission and metrics for the single native executor."""
+
+    def __init__(self, queue_limit: int) -> None:
+        self.queue_limit = queue_limit
+        self._lock = threading.Lock()
+        self._pending = 0
+        self._in_flight = 0
+        self._submitted = 0
+        self._completed = 0
+        self._rejected = 0
+
+    def admit(self) -> bool:
+        with self._lock:
+            if self._pending >= self.queue_limit:
+                self._rejected += 1
+                return False
+            self._pending += 1
+            self._submitted += 1
+            return True
+
+    def submission_failed(self) -> None:
+        with self._lock:
+            self._pending -= 1
+            self._submitted -= 1
+
+    def start(self, *, cancelled: bool) -> bool:
+        with self._lock:
+            self._pending -= 1
+            if cancelled:
+                self._completed += 1
+                return False
+            self._in_flight += 1
+            return True
+
+    def finish(self) -> None:
+        with self._lock:
+            self._in_flight -= 1
+            self._completed += 1
+
+    def status(self) -> dict[str, int]:
+        with self._lock:
+            return {
+                "queue_limit": self.queue_limit,
+                "queue_depth": self._pending,
+                "in_flight": self._in_flight,
+                "submitted": self._submitted,
+                "completed": self._completed,
+                "rejected": self._rejected,
+            }
+
+
+def _get_vector_queue_limit() -> int:
+    raw_limit = os.environ.get("ANIMAWORKS_VECTOR_QUEUE_LIMIT", str(_VECTOR_QUEUE_LIMIT_DEFAULT))
+    try:
+        queue_limit = int(raw_limit)
+    except ValueError:
+        logger.warning(
+            "Invalid ANIMAWORKS_VECTOR_QUEUE_LIMIT=%r; using default=%d",
+            raw_limit,
+            _VECTOR_QUEUE_LIMIT_DEFAULT,
+        )
+        return _VECTOR_QUEUE_LIMIT_DEFAULT
+    if queue_limit < 1:
+        logger.warning(
+            "ANIMAWORKS_VECTOR_QUEUE_LIMIT must be positive; using default=%d",
+            _VECTOR_QUEUE_LIMIT_DEFAULT,
+        )
+        return _VECTOR_QUEUE_LIMIT_DEFAULT
+    return queue_limit
 
 
 class VectorQueryRequest(BaseModel):
@@ -101,10 +205,57 @@ class VectorQuickCheckRequest(BaseModel):
     record_repair: bool = True
 
 
-async def _run_native(fn, *args, **kwargs):
+def _set_future_result(future: asyncio.Future[Any], result: Any) -> None:
+    if not future.done():
+        future.set_result(result)
+
+
+def _set_future_exception(future: asyncio.Future[Any], exc: BaseException) -> None:
+    if not future.done():
+        future.set_exception(exc)
+
+
+async def _run_native(fn, *args, _admission: _NativeAdmission | None = None, **kwargs):
     loop = asyncio.get_running_loop()
     call = functools.partial(fn, *args, **kwargs)
-    return await loop.run_in_executor(_native_executor, call)
+    if _admission is None:
+        return await loop.run_in_executor(_native_executor, call)
+    if not _admission.admit():
+        raise _NativeQueueFull(_admission.queue_limit)
+
+    cancelled = threading.Event()
+    result_future = _NativeResultFuture(cancelled)
+
+    def run() -> None:
+        if not _admission.start(cancelled=cancelled.is_set()):
+            return
+        try:
+            result = call()
+        except BaseException as exc:
+            _admission.finish()
+            try:
+                loop.call_soon_threadsafe(_set_future_exception, result_future, exc)
+            except RuntimeError:
+                pass
+        else:
+            _admission.finish()
+            try:
+                loop.call_soon_threadsafe(_set_future_result, result_future, result)
+            except RuntimeError:
+                pass
+
+    try:
+        _native_executor.submit(run)
+    except BaseException:
+        _admission.submission_failed()
+        raise
+
+    try:
+        return await result_future
+    except asyncio.CancelledError:
+        cancelled.set()
+        result_future.cancel()
+        raise
 
 
 def _has_active_repair_state(anima_name: str) -> bool:
@@ -211,7 +362,7 @@ def _try_recover_latched_store(anima_name: str | None) -> Any | None:
 
 
 def _call_vector_store(anima_name: str | None, action: Callable[[Any], Any]) -> Any | None:
-    from core.memory.rag.singleton import get_vector_store, reset_vector_store_after_error
+    from core.memory.rag.singleton import get_vector_store, reset_vector_store, reset_vector_store_after_error
 
     try:
         store = get_vector_store(anima_name)
@@ -219,7 +370,26 @@ def _call_vector_store(anima_name: str | None, action: Callable[[Any], Any]) -> 
             store = _try_recover_latched_store(anima_name)
             if store is None:
                 return None
-        return action(store)
+        result = action(store)
+        consume_failure = getattr(type(store), "consume_lightweight_self_heal_failure", None)
+        if not callable(consume_failure) or not consume_failure(store) or not _record_self_heal_failure(anima_name):
+            return result
+
+        owner = anima_name or "shared"
+        logger.warning(
+            "Escalating repeated lightweight ChromaDB self-heal failures to full vector-store reset: "
+            "owner=%s failures=%d window=%ss cooldown=%ss",
+            owner,
+            _SELF_HEAL_ESCALATION_THRESHOLD,
+            int(_SELF_HEAL_ESCALATION_WINDOW_SECONDS),
+            int(_SELF_HEAL_ESCALATION_COOLDOWN_SECONDS),
+        )
+        reset_vector_store(anima_name)
+        _clear_owner_write_circuit_breakers(anima_name)
+        fresh_store = get_vector_store(anima_name)
+        if fresh_store is None:
+            return result
+        return action(fresh_store)
     except Exception:
         logger.warning("Vector worker native store action failed for owner=%s", anima_name or "shared", exc_info=True)
         try:
@@ -231,6 +401,33 @@ def _call_vector_store(anima_name: str | None, action: Callable[[Any], Any]) -> 
                 exc_info=True,
             )
         return _VECTOR_ACTION_ERROR
+
+
+def _record_self_heal_failure(anima_name: str | None) -> bool:
+    """Return True once three lightweight retry failures require escalation."""
+    owner = anima_name or "shared"
+    now = time.monotonic()
+    with _self_heal_escalation_lock:
+        failures = _self_heal_failures.setdefault(owner, deque())
+        cutoff = now - _SELF_HEAL_ESCALATION_WINDOW_SECONDS
+        while failures and failures[0] < cutoff:
+            failures.popleft()
+        failures.append(now)
+        last_escalated = _self_heal_last_escalated_at.get(owner)
+        if len(failures) < _SELF_HEAL_ESCALATION_THRESHOLD:
+            return False
+        if last_escalated is not None and now - last_escalated < _SELF_HEAL_ESCALATION_COOLDOWN_SECONDS:
+            return False
+        failures.clear()
+        _self_heal_last_escalated_at[owner] = now
+        return True
+
+
+def _clear_owner_self_heal_escalation(anima_name: str | None) -> None:
+    owner = anima_name or "shared"
+    with _self_heal_escalation_lock:
+        _self_heal_failures.pop(owner, None)
+        _self_heal_last_escalated_at.pop(owner, None)
 
 
 def _vector_write_failed(operation: str, collection: str) -> JSONResponse:
@@ -283,13 +480,21 @@ def _before_vector_write(anima_name: str | None, collection: str) -> JSONRespons
     if retry_at <= now:
         return None
     retry_after = max(1, int(retry_at - now))
-    logger.error(
-        "Vector write circuit breaker open: owner=%s collection=%s failures=%s retry_after=%ss",
-        anima_name or "shared",
-        collection,
-        state.get("consecutive_failures", 0),
-        retry_after,
-    )
+    last_logged_at = float(state.get("last_logged_at") or 0.0)
+    suppressed_count = int(state.get("suppressed_count") or 0)
+    if not last_logged_at or now - last_logged_at >= _CIRCUIT_REJECTION_LOG_INTERVAL_SECONDS:
+        logger.error(
+            "Vector write circuit breaker open: owner=%s collection=%s failures=%s retry_after=%ss suppressed=%d",
+            anima_name or "shared",
+            collection,
+            state.get("consecutive_failures", 0),
+            retry_after,
+            suppressed_count,
+        )
+        state["last_logged_at"] = now
+        state["suppressed_count"] = 0
+    else:
+        state["suppressed_count"] = suppressed_count + 1
     return JSONResponse(
         status_code=429,
         content={
@@ -328,6 +533,8 @@ def _record_vector_write_failure(anima_name: str | None, collection: str, operat
             "threshold": _CIRCUIT_FAILURE_THRESHOLD,
         }
     )
+    state.setdefault("last_logged_at", 0.0)
+    state.setdefault("suppressed_count", 0)
     _write_circuit_breakers[key] = state
     log = logger.error if failures >= _CIRCUIT_FAILURE_THRESHOLD else logger.warning
     log(
@@ -408,6 +615,7 @@ async def _close_native_vector_stores() -> None:
     from core.memory.rag.singleton import close_all_vector_stores
 
     logger.info("Vector worker shutdown: closing cached vector stores")
+    # This is one internal shutdown job and must not be rejected by HTTP admission.
     await _run_native(close_all_vector_stores)
 
 
@@ -416,9 +624,15 @@ def create_app() -> FastAPI:
     _write_circuit_breakers.clear()
     _latched_store_recovery_backoff_until.clear()
     _latched_store_recovery_in_progress.clear()
+    _self_heal_failures.clear()
+    _self_heal_last_escalated_at.clear()
     from core.memory.rag.direct_access import enable_direct_chroma_for_process
 
     enable_direct_chroma_for_process()
+    admission = _NativeAdmission(_get_vector_queue_limit())
+
+    async def run_native(fn, *args, **kwargs):
+        return await _run_native(fn, *args, _admission=admission, **kwargs)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -429,6 +643,18 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="AnimaWorks Vector Worker", lifespan=lifespan)
 
+    @app.exception_handler(_NativeQueueFull)
+    async def native_queue_full(_request: Any, exc: _NativeQueueFull) -> JSONResponse:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "Vector worker queue full",
+                "queue_limit": exc.queue_limit,
+                "retry_after_seconds": _VECTOR_QUEUE_RETRY_AFTER_SECONDS,
+            },
+            headers={"Retry-After": str(_VECTOR_QUEUE_RETRY_AFTER_SECONDS)},
+        )
+
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -437,19 +663,25 @@ def create_app() -> FastAPI:
     async def status() -> dict[str, Any]:
         from core.gpu import get_gpu_status
 
-        return {"status": "ok", "write_circuit_breakers": _breaker_status(), "gpu": get_gpu_status()}
+        return {
+            "status": "ok",
+            "write_circuit_breakers": _breaker_status(),
+            "gpu": get_gpu_status(),
+            **admission.status(),
+        }
 
     @app.post("/reset-store")
     async def vector_reset_store(body: VectorListCollectionsRequest) -> dict[str, str]:
         from core.memory.rag.singleton import reset_vector_store
 
-        await _run_native(reset_vector_store, body.anima_name)
+        await run_native(reset_vector_store, body.anima_name)
         _clear_owner_write_circuit_breakers(body.anima_name)
+        _clear_owner_self_heal_escalation(body.anima_name)
         return {"status": "ok"}
 
     @app.post("/query")
     async def vector_query(body: VectorQueryRequest):
-        results = await _run_native(
+        results = await run_native(
             _call_vector_store,
             body.anima_name,
             lambda store: store.query(
@@ -481,7 +713,7 @@ def create_app() -> FastAPI:
             )
             for d in body.documents
         ]
-        ok = await _run_native(
+        ok = await run_native(
             _call_vector_store,
             body.anima_name,
             lambda store: store.upsert(body.collection, docs),
@@ -497,7 +729,7 @@ def create_app() -> FastAPI:
         breaker = _before_vector_write(body.anima_name, body.collection)
         if breaker is not None:
             return breaker
-        ok = await _run_native(
+        ok = await run_native(
             _call_vector_store,
             body.anima_name,
             lambda store: store.update_metadata(
@@ -517,7 +749,7 @@ def create_app() -> FastAPI:
         breaker = _before_vector_write(body.anima_name, body.collection)
         if breaker is not None:
             return breaker
-        ok = await _run_native(
+        ok = await run_native(
             _call_vector_store,
             body.anima_name,
             lambda store: store.delete_documents(body.collection, body.ids),
@@ -530,7 +762,7 @@ def create_app() -> FastAPI:
 
     @app.post("/get-by-metadata")
     async def vector_get_by_metadata(body: VectorGetByMetadataRequest):
-        results = await _run_native(
+        results = await run_native(
             _call_vector_store,
             body.anima_name,
             lambda store: store.get_by_metadata(
@@ -547,7 +779,7 @@ def create_app() -> FastAPI:
 
     @app.post("/get-by-ids")
     async def vector_get_by_ids(body: VectorGetByIdsRequest):
-        docs = await _run_native(
+        docs = await run_native(
             _call_vector_store,
             body.anima_name,
             lambda store: store.get_by_ids(body.collection, body.ids),
@@ -563,7 +795,7 @@ def create_app() -> FastAPI:
         breaker = _before_vector_write(body.anima_name, body.collection)
         if breaker is not None:
             return breaker
-        ok = await _run_native(
+        ok = await run_native(
             _call_vector_store,
             body.anima_name,
             lambda store: store.create_collection(body.collection),
@@ -572,14 +804,14 @@ def create_app() -> FastAPI:
             return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
         if _is_vector_action_error(ok) or not ok:
             return _write_failure_response(body.anima_name, body.collection, "create-collection")
-        return _write_success_response(body.anima_name, body.collection)
+        return {"status": "ok"}
 
     @app.post("/delete-collection")
     async def vector_delete_collection(body: VectorCollectionRequest):
         breaker = _before_vector_write(body.anima_name, body.collection)
         if breaker is not None:
             return breaker
-        ok = await _run_native(
+        ok = await run_native(
             _call_vector_store,
             body.anima_name,
             lambda store: store.delete_collection(body.collection),
@@ -592,7 +824,7 @@ def create_app() -> FastAPI:
 
     @app.post("/list-collections")
     async def vector_list_collections(body: VectorListCollectionsRequest):
-        collections = await _run_native(
+        collections = await run_native(
             _call_vector_store,
             body.anima_name,
             lambda store: store.list_collections(),
@@ -607,7 +839,7 @@ def create_app() -> FastAPI:
     async def vector_quick_check(body: VectorQuickCheckRequest):
         from core.memory.rag.sqlite_health import check_anima_vectordb_health
 
-        result = await _run_native(
+        result = await run_native(
             check_anima_vectordb_health,
             body.anima_name,
             timeout_seconds=body.timeout_seconds,

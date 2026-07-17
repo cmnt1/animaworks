@@ -58,6 +58,55 @@ def _make_test_app(
     return app
 
 
+class TestAnimaMergeRuntimeRefs:
+    async def test_rewrites_all_live_caches(self):
+        app = _make_test_app()
+        app.state.supervisor._bootstrap_retry_counts = {"source": 3, "target": 1}
+        governor = MagicMock()
+        governor.state.suspended_animas = ["source", "target"]
+        app.state.usage_governor = governor
+        webhook_manager = MagicMock()
+        webhook_manager.rewrite_anima_reference.return_value = 2
+        room_manager = MagicMock()
+        room_manager.list_rooms.return_value = [MagicMock(), MagicMock()]
+        app.state.room_manager = room_manager
+        app.state.discord_gateway_manager = MagicMock()
+        app.state.github_gateway_manager = MagicMock()
+        reload_manager = MagicMock()
+        reload_manager.reload_all = AsyncMock(
+            return_value={"config": {"status": "ok"}, "zoom": {"status": "ok"}}
+        )
+        app.state.reload_manager = reload_manager
+
+        transport = ASGITransport(app=app)
+        with patch("core.discord_webhooks.get_webhook_manager", return_value=webhook_manager):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/system/anima-merge/rewrite-runtime-refs",
+                    json={"source": "source", "target": "target"},
+                )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "discord_mappings_updated": 2,
+            "usage_state_updated": True,
+            "bootstrap_retry_removed": True,
+            "rooms_reloaded": 2,
+            "discord_gateway_reloaded": True,
+            "github_gateway_reloaded": True,
+            "config_reloaded": True,
+        }
+        webhook_manager.rewrite_anima_reference.assert_called_once_with("source", "target")
+        assert governor.state.suspended_animas == ["target"]
+        governor.state.save.assert_called_once_with()
+        assert app.state.supervisor._bootstrap_retry_counts == {"target": 1}
+        app.state.supervisor._save_bootstrap_retries.assert_called_once_with()
+        room_manager.load_all_rooms.assert_called_once_with()
+        app.state.discord_gateway_manager.reload.assert_called_once_with()
+        app.state.github_gateway_manager.reload.assert_called_once_with()
+        reload_manager.reload_all.assert_awaited_once_with()
+
+
 # ── GET /shared/users ────────────────────────────────────
 
 

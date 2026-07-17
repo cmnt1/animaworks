@@ -964,10 +964,16 @@ class AnimaRunner:
         is_busy = False
         if self.anima is not None:
             try:
-                any_conversation_locked = any(lock.locked() for lock in self.anima._conversation_locks.values())
-                is_busy = (
-                    any_conversation_locked or self.anima._background_lock.locked() or self.anima._inbox_lock.locked()
-                )
+                busy_getter = getattr(self.anima, "_has_active_busy_lock", None)
+                if callable(busy_getter):
+                    is_busy = bool(busy_getter())
+                else:
+                    any_conversation_locked = any(lock.locked() for lock in self.anima._conversation_locks.values())
+                    is_busy = (
+                        any_conversation_locked
+                        or self.anima._background_lock.locked()
+                        or self.anima._inbox_lock.locked()
+                    )
             except Exception:
                 logger.debug("Failed to compute ping busy status", exc_info=True)
         last_progress_at = None
@@ -1074,6 +1080,12 @@ class AnimaRunner:
         # Stop IPC server
         if self.ipc_server:
             await self.ipc_server.stop()
+
+        # These pools are process-global and must remain available throughout
+        # the runner lifetime.  Shut them down only from this terminal cleanup.
+        from core.execution._litellm_tools import shutdown_tool_executors
+
+        shutdown_tool_executors()
 
         logger.info("Cleanup completed for %s", self.anima_name)
 

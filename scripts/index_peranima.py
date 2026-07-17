@@ -52,7 +52,7 @@ try:
         ix = MemoryIndexer(vs, name, ad)
         total = 0
         for mt in need:
-            c = ix.index_directory(ad / mt, mt, force=True)
+            c = ix.index_directory(ad / mt, mt, force=True).chunks_indexed
             total += c
             print(f"{name}: {mt} -> {c} chunks", flush=True)
 

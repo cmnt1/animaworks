@@ -11,7 +11,9 @@ All tests use mocks — no Codex CLI binary or API key required.
 import asyncio
 import logging
 import os
+import subprocess
 import sys
+import threading
 import tomllib
 import types
 from pathlib import Path
@@ -20,10 +22,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core._agent_executor import ExecutorFactoryMixin
 from core.execution.base import ExecutionResult
 from core.execution.codex_sdk import (
     CodexSDKExecutor,
     _clear_thread_id,
+    _close_codex_client,
     _close_subprocess_stdio,
     _codex_item_tool_name,
     _default_home_dir,
@@ -383,6 +387,63 @@ class TestHelpers:
         assert stdout._transport.close_calls == 1
         assert stderr._transport.close_calls == 1
 
+    @pytest.mark.asyncio
+    async def test_close_codex_client_reaps_subprocess_and_reader_threads(self):
+        proc = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert proc.stdout is not None
+        assert proc.stderr is not None
+
+        reader_thread = threading.Thread(target=proc.stdout.readline, daemon=True)
+        stderr_thread = threading.Thread(target=proc.stderr.readline, daemon=True)
+        reader_thread.start()
+        stderr_thread.start()
+
+        sync_client = SimpleNamespace(
+            _proc=proc,
+            _reader_thread=reader_thread,
+            _stderr_thread=stderr_thread,
+        )
+
+        class _FakeAsyncCodex:
+            def __init__(self):
+                self._client = SimpleNamespace(_sync=sync_client)
+                self.close_called = False
+
+            async def close(self):
+                self.close_called = True
+                # Match the SDK behavior that clears its private references
+                # before all resources have necessarily been reclaimed.
+                self._client._sync._proc = None
+                self._client._sync._reader_thread = None
+                self._client._sync._stderr_thread = None
+
+        client = _FakeAsyncCodex()
+        try:
+            await _close_codex_client(client)
+
+            assert client.close_called
+            assert proc.poll() is not None
+            assert not reader_thread.is_alive()
+            assert not stderr_thread.is_alive()
+            assert proc.stdin is not None and proc.stdin.closed
+            assert proc.stdout.closed
+            assert proc.stderr.closed
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=2)
+            for stream in (proc.stdin, proc.stdout, proc.stderr):
+                if stream is not None and not stream.closed:
+                    stream.close()
+            reader_thread.join(timeout=2)
+            stderr_thread.join(timeout=2)
+
 
 # ── Session persistence tests ────────────────────────────────
 
@@ -553,6 +614,26 @@ class TestExecutorInit:
         assert "summary" not in kwargs
         assert "sandbox" not in kwargs
 
+    def test_codex_thread_kwargs_keeps_legacy_sandbox_without_denied_roots(self, executor):
+        permissions = SimpleNamespace(file_roots=["/"], file_roots_denied=[])
+
+        with patch("core.config.models.load_permissions", return_value=permissions):
+            kwargs = executor._codex_thread_kwargs("prompt")
+
+        assert kwargs["sandbox"] == "full_access"
+
+    def test_codex_thread_kwargs_omits_sandbox_with_denied_roots(self, executor):
+        permissions = SimpleNamespace(file_roots=["/"], file_roots_denied=["/private"])
+
+        with (
+            patch("core.config.models.load_permissions", return_value=permissions),
+            patch.object(executor, "_sdk_sandbox") as sdk_sandbox,
+        ):
+            kwargs = executor._codex_thread_kwargs("prompt")
+
+        assert "sandbox" not in kwargs
+        sdk_sandbox.assert_not_called()
+
     def test_codex_turn_kwargs_invalid_reasoning_summary_falls_back_to_concise(self, model_config, anima_dir, caplog):
         caplog.set_level(logging.WARNING, logger="animaworks.execution.codex_sdk")
         model_config.extra_keys = {"codex_reasoning_summary": "verbose"}
@@ -585,7 +666,10 @@ class TestConfigWriting:
         assert 'approval_policy = "never"' in config_toml
         assert "[mcp_servers.aw]" in config_toml
         parsed = tomllib.loads(config_toml)
+        assert parsed["approval_policy"] == "never"
         assert parsed["mcp_servers"]["aw"]["default_tools_approval_mode"] == "approve"
+        assert parsed["mcp_servers"]["aw"]["command"] == sys.executable
+        assert parsed["mcp_servers"]["aw"]["args"] == ["-m", "core.mcp.server"]
 
     def test_write_codex_config_restricted_sandbox(self, model_config, anima_dir):
         """Restricted file_roots produces workspace-write with writable_roots."""
@@ -605,7 +689,137 @@ class TestConfigWriting:
         assert "workspace-write" in config_toml
         assert "writable_roots" in config_toml
         parsed = tomllib.loads(config_toml)
+        assert parsed["approval_policy"] == "never"
         assert parsed["sandbox_workspace_write"]["network_access"] is True
+
+    def test_write_codex_config_permission_profile_for_denied_roots(self, model_config, anima_dir, tmp_path):
+        external_root = tmp_path.parent / f"{tmp_path.name}-external"
+        writable_root = external_root / "shared"
+        task_cwd = external_root / "tasks" / "current"
+        denied_root = writable_root / 'private"with\\slash\nand-control\x01'
+        permissions = SimpleNamespace(
+            file_roots=[str(writable_root)],
+            file_roots_denied=[str(denied_root)],
+        )
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+        exc.set_task_cwd(task_cwd)
+        (anima_dir / "vectordb.staging-123").mkdir()
+        (anima_dir / "vectordb-corrupt-old").mkdir()
+
+        with (
+            patch("core.config.models.load_permissions", return_value=permissions),
+            patch("core.execution.codex_sdk.get_codex_executable", return_value="/opt/codex/bin/codex"),
+        ):
+            exc._write_codex_config("prompt")
+
+        config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
+        parsed = tomllib.loads(config_toml)
+        assert "sandbox_mode" not in parsed
+        assert "sandbox_workspace_write" not in parsed
+        assert parsed["default_permissions"] == "animaworks"
+        assert parsed["approval_policy"] == "never"
+
+        profile = parsed["permissions"]["animaworks"]
+        filesystem = profile["filesystem"]
+        assert filesystem[":root"] == "read"
+        assert filesystem[":tmpdir"] == "write"
+        assert filesystem[":slash_tmp"] == "write"
+        assert str(anima_dir.resolve()) not in filesystem
+        assert filesystem[str(writable_root.resolve())] == "write"
+        assert filesystem[str(task_cwd.resolve())] == "write"
+        assert filesystem[str(denied_root.resolve())] == "deny"
+        assert filesystem[str((anima_dir / ".codex_home").resolve())] == "deny"
+        assert filesystem[str((anima_dir / "state").resolve())] == "deny"
+        assert filesystem[str((anima_dir / "archive").resolve())] == "deny"
+        assert filesystem[str((anima_dir / "vectordb").resolve())] == "deny"
+        assert filesystem[str(anima_dir.resolve() / "vectordb-*")] == "deny"
+        assert filesystem[str(anima_dir.resolve() / "vectordb.*")] == "deny"
+        assert filesystem[str(anima_dir.resolve() / "vectordb_*")] == "deny"
+        assert filesystem[str((anima_dir / "vectordb.staging-123").resolve())] == "deny"
+        assert filesystem[str((anima_dir / "vectordb-corrupt-old").resolve())] == "deny"
+        assert profile["network"]["enabled"] is True
+        mcp_profile = parsed["permissions"]["animaworks_mcp"]
+        mcp_filesystem = mcp_profile["filesystem"]
+        assert mcp_filesystem[str(anima_dir.resolve())] == "write"
+        assert mcp_filesystem[str(writable_root.resolve())] == "write"
+        assert mcp_filesystem[str(task_cwd.resolve())] == "write"
+        assert mcp_filesystem[str(denied_root.resolve())] == "deny"
+        assert mcp_filesystem[str((anima_dir / "permissions.json").resolve())] == "read"
+        assert str((anima_dir / "state").resolve()) not in mcp_filesystem
+        assert str((anima_dir / "archive").resolve()) not in mcp_filesystem
+        assert str((anima_dir / "vectordb").resolve()) not in mcp_filesystem
+        assert mcp_profile["network"]["enabled"] is True
+        assert parsed["mcp_servers"]["aw"]["command"] == "/opt/codex/bin/codex"
+        assert parsed["mcp_servers"]["aw"]["args"] == [
+            "sandbox",
+            "-P",
+            "animaworks_mcp",
+            "--",
+            sys.executable,
+            "-m",
+            "core.mcp.server",
+        ]
+        assert parsed["mcp_servers"]["aw"]["env"]["CODEX_HOME"] == str(anima_dir / ".codex_home")
+        assert parsed["mcp_servers"]["aw"]["env"]["ANIMAWORKS_FILE_DENY_ACTIVE"] == "1"
+
+    def test_write_codex_config_root_write_profile_keeps_specific_deny(self, model_config, anima_dir, tmp_path):
+        denied_root = tmp_path / "private"
+        permissions = SimpleNamespace(
+            file_roots=["/"],
+            file_roots_denied=[str(denied_root)],
+        )
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        with (
+            patch("core.config.models.load_permissions", return_value=permissions),
+            patch("core.execution.codex_sdk.get_codex_executable", return_value="/opt/codex/bin/codex"),
+        ):
+            exc._write_codex_config("prompt")
+
+        parsed = tomllib.loads((anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8"))
+        shell_filesystem = parsed["permissions"]["animaworks"]["filesystem"]
+        assert shell_filesystem[":root"] == "read"
+        assert shell_filesystem[str(denied_root.resolve())] == "deny"
+        assert shell_filesystem[":tmpdir"] == "write"
+        assert shell_filesystem[":slash_tmp"] == "write"
+        mcp_filesystem = parsed["permissions"]["animaworks_mcp"]["filesystem"]
+        assert mcp_filesystem[":root"] == "write"
+        assert mcp_filesystem[str(denied_root.resolve())] == "deny"
+        assert mcp_filesystem[str((anima_dir / "permissions.json").resolve())] == "read"
+        assert ":tmpdir" not in mcp_filesystem
+        assert ":slash_tmp" not in mcp_filesystem
+
+    def test_write_codex_config_deny_overrides_same_writable_root(self, model_config, anima_dir, tmp_path):
+        denied_root = tmp_path / "shared-private"
+        permissions = SimpleNamespace(
+            file_roots=[str(denied_root)],
+            file_roots_denied=[str(denied_root)],
+        )
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        with (
+            patch("core.config.models.load_permissions", return_value=permissions),
+            patch("core.execution.codex_sdk.get_codex_executable", return_value="/opt/codex/bin/codex"),
+        ):
+            exc._write_codex_config("prompt")
+
+        parsed = tomllib.loads((anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8"))
+        filesystem = parsed["permissions"]["animaworks"]["filesystem"]
+        assert filesystem[str(denied_root.resolve())] == "deny"
+
+    def test_write_codex_config_denied_roots_require_codex_for_mcp_wrapper(self, model_config, anima_dir, tmp_path):
+        permissions = SimpleNamespace(
+            file_roots=[str(anima_dir)],
+            file_roots_denied=[str(tmp_path / "private")],
+        )
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        with (
+            patch("core.config.models.load_permissions", return_value=permissions),
+            patch("core.execution.codex_sdk.get_codex_executable", return_value=None),
+            pytest.raises(RuntimeError, match="sandbox the MCP server"),
+        ):
+            exc._write_codex_config("prompt")
 
     def test_write_codex_config_includes_model_name(self, executor, anima_dir):
         """config.toml must include model = "o4-mini" (stripped prefix)."""
@@ -735,6 +949,7 @@ class TestConfigWriting:
 
         assert _escape_toml_string('path/with"quote') == 'path/with\\"quote'
         assert _escape_toml_string("path\\back") == "path\\\\back"
+        assert _escape_toml_string("line\ncontrol\x01") == "line\\ncontrol\\u0001"
 
     def test_propagate_auth_copies_when_links_unavailable(self, executor, anima_dir):
         default_codex = anima_dir.parent.parent / "home" / ".codex"
@@ -754,6 +969,70 @@ class TestConfigWriting:
         assert target_auth.exists()
         assert not target_auth.is_symlink()
         assert target_auth.read_text(encoding="utf-8") == '{"token":"abc"}'
+
+    @pytest.mark.skipif(os.name == "nt", reason="config.toml escapes Windows path separators")
+    def test_worker_codex_home_isolated_and_shares_auth(self, model_config, anima_dir):
+        """Worker slots write config/instructions only inside their own homes."""
+        default_codex = anima_dir.parent / "user-home" / ".codex"
+        default_codex.mkdir(parents=True)
+        source_auth = default_codex / "auth.json"
+        source_auth.write_text('{"token":"shared"}', encoding="utf-8")
+        worker_zero_home = anima_dir / ".codex_home" / "workers" / "0"
+        worker_one_home = anima_dir / ".codex_home" / "workers" / "1"
+
+        zero = CodexSDKExecutor(
+            model_config=model_config,
+            anima_dir=anima_dir,
+            codex_home=worker_zero_home,
+        )
+        one = CodexSDKExecutor(
+            model_config=model_config,
+            anima_dir=anima_dir,
+            codex_home=worker_one_home,
+        )
+
+        with patch("core.execution.codex_sdk.Path.home", return_value=default_codex.parent):
+            zero._write_codex_config("slot zero prompt")
+            one._write_codex_config("slot one prompt")
+
+        assert zero._build_env()["CODEX_HOME"] == str(worker_zero_home)
+        assert one._build_env()["CODEX_HOME"] == str(worker_one_home)
+        assert (worker_zero_home / "instructions.md").read_text(encoding="utf-8") == "slot zero prompt"
+        assert (worker_one_home / "instructions.md").read_text(encoding="utf-8") == "slot one prompt"
+        assert str(worker_zero_home / "instructions.md") in (worker_zero_home / "config.toml").read_text(
+            encoding="utf-8"
+        )
+        assert str(worker_one_home / "instructions.md") in (worker_one_home / "config.toml").read_text(encoding="utf-8")
+        assert (worker_zero_home / "auth.json").resolve() == source_auth.resolve()
+        assert (worker_one_home / "auth.json").resolve() == source_auth.resolve()
+        assert not (anima_dir / ".codex_home" / "config.toml").exists()
+
+    def test_default_codex_home_remains_backward_compatible(self, model_config, anima_dir):
+        exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
+
+        assert exc._codex_home == anima_dir / ".codex_home"
+
+
+def test_agent_executor_factory_forwards_worker_codex_home(model_config, anima_dir):
+    worker_home = anima_dir / ".codex_home" / "workers" / "0"
+    factory = ExecutorFactoryMixin()
+    factory.model_config = model_config
+    factory.anima_dir = anima_dir
+    factory._tool_registry = []
+    factory._personal_tools = {}
+    factory._interrupt_event = None
+    factory._codex_home = worker_home
+    factory._resolve_execution_mode = lambda _config=None: "c"
+
+    sentinel = SimpleNamespace()
+    with (
+        patch("core.execution.codex_sdk.is_codex_sdk_available", return_value=True),
+        patch("core.execution.codex_sdk.CodexSDKExecutor", return_value=sentinel) as constructor,
+    ):
+        result = factory._create_executor()
+
+    assert result is sentinel
+    assert constructor.call_args.kwargs["codex_home"] == worker_home
 
 
 # ── Blocking execution tests ─────────────────────────────────

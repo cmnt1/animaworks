@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("animaworks.rag.indexer")
 
 INDEX_META_FILE = "index_meta.json"
+UPSERT_FAILURE_STATE_FILE = "rag_upsert_failures.json"
 
 
 def access_tracking_metadata() -> dict[str, str | int | float]:
@@ -58,6 +59,30 @@ class MemoryChunk:
     metadata: dict[str, str | int | float | bool | list[str]]
 
 
+@dataclass(frozen=True)
+class IndexDirectoryResult:
+    """Structured outcome for one directory indexing run."""
+
+    chunks_indexed: int = 0
+    files_indexed: int = 0
+    files_failed: int = 0
+    files_unchanged: int = 0
+    files_skipped: int = 0
+    transient_failures: int = 0
+    failed_sources: tuple[str, ...] = ()
+
+    @property
+    def transient(self) -> bool:
+        """Return True when every failed file was caused by a transient circuit."""
+        return self.files_failed > 0 and self.transient_failures == self.files_failed
+
+
+@dataclass(frozen=True)
+class _IndexFileOutcome:
+    status: Literal["indexed", "failed", "unchanged", "skipped"]
+    transient: bool = False
+
+
 # ── MemoryIndexer ───────────────────────────────────────────────────
 
 
@@ -76,6 +101,7 @@ class MemoryIndexer:
         *,
         collection_prefix: str | None = None,
         embedding_model: SentenceTransformer | None = None,
+        upsert_quarantine_failure_threshold: int | None = None,
     ) -> None:
         """Initialize indexer.
 
@@ -97,6 +123,17 @@ class MemoryIndexer:
         self.anima_dir = anima_dir
         self.collection_prefix = collection_prefix or anima_name
         self._embedding_model_name_override = embedding_model_name
+        if upsert_quarantine_failure_threshold is None:
+            try:
+                from core.config import load_config
+
+                upsert_quarantine_failure_threshold = load_config().rag.upsert_quarantine_failure_threshold
+            except Exception:
+                from core.config.models import RAGConfig
+
+                upsert_quarantine_failure_threshold = RAGConfig().upsert_quarantine_failure_threshold
+        self.upsert_quarantine_failure_threshold = max(1, upsert_quarantine_failure_threshold)
+        self.upsert_failure_state_path = anima_dir / "state" / UPSERT_FAILURE_STATE_FILE
 
         # Use injected embedding model or initialize via singleton.
         # When ANIMAWORKS_EMBED_URL is set (child processes), skip local
@@ -220,7 +257,129 @@ class MemoryIndexer:
         except Exception as e:
             logger.warning("Failed to save index metadata: %s", e)
 
+    def _load_upsert_failure_state(self) -> dict:
+        """Load persistent per-file upsert failures and quarantine history."""
+        state_path = getattr(
+            self,
+            "upsert_failure_state_path",
+            self.anima_dir / "state" / UPSERT_FAILURE_STATE_FILE,
+        )
+        try:
+            data = json.loads(state_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                data.setdefault("failures", {})
+                data.setdefault("quarantined", [])
+                return data
+        except (OSError, json.JSONDecodeError):
+            pass
+        return {"failures": {}, "quarantined": []}
+
+    def _save_upsert_failure_state(self, state: dict) -> None:
+        """Persist failure counters and the inspectable quarantine list."""
+        state_path = getattr(
+            self,
+            "upsert_failure_state_path",
+            self.anima_dir / "state" / UPSERT_FAILURE_STATE_FILE,
+        )
+        try:
+            state_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = state_path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+            temporary.replace(state_path)
+        except OSError:
+            logger.warning("Failed to save RAG upsert failure state", exc_info=True)
+
+    def _clear_upsert_failure(self, source_file: str, collection_name: str | None = None) -> None:
+        """Reset the consecutive counter after a successful upsert."""
+        state = self._load_upsert_failure_state()
+        if state["failures"].pop(source_file, None) is not None:
+            self._save_upsert_failure_state(state)
+        if collection_name is not None:
+            failures_by_collection = getattr(self, "_run_upsert_failures", None)
+            if failures_by_collection is not None:
+                failures_by_collection.pop(collection_name, None)
+
+    def _is_upsert_quarantined(self, source_file: str) -> bool:
+        """Return whether a source is on the persistent non-destructive skip list."""
+        state = self._load_upsert_failure_state()
+        return any(item.get("source_file") == source_file for item in state["quarantined"])
+
+    def _record_upsert_failure(self, collection_name: str, source_file: str, file_path: Path) -> None:
+        """Increment a persistent counter and add repeat offenders to the skip list.
+
+        An open HTTP write circuit is a service-wide/transient signal and is
+        never attributed to an individual file. Two distinct failures in the
+        same collection during one indexing run are also treated as a global
+        outage; counters recorded by that run are rolled back conservatively.
+        """
+        transient_probe = getattr(self.vector_store, "is_transient_write_failure", None)
+        if callable(transient_probe) and transient_probe(collection_name):
+            logger.info("Not counting transient vector service failure for %s", file_path)
+            return
+
+        state = self._load_upsert_failure_state()
+        if getattr(self, "_index_directory_active", False):
+            failures_by_collection = self._run_upsert_failures
+            failed_sources = failures_by_collection.setdefault(collection_name, set())
+            failed_sources.add(source_file)
+            if len(failed_sources) > 1:
+                for failed_source in failed_sources:
+                    state["failures"].pop(failed_source, None)
+                # The first failure in this run may have reached the threshold
+                # before a second source proved the outage was collection-wide.
+                # Roll back only entries for sources observed in this run;
+                # previously quarantined sources are skipped before indexing and
+                # therefore cannot appear in ``failed_sources``.
+                state["quarantined"] = [
+                    item for item in state["quarantined"] if item.get("source_file") not in failed_sources
+                ]
+                self._save_upsert_failure_state(state)
+                logger.info(
+                    "Not counting likely service-wide upsert outage: collection=%s failed_sources=%d",
+                    collection_name,
+                    len(failed_sources),
+                )
+                return
+
+        previous = state["failures"].get(source_file, {})
+        count = int(previous.get("consecutive_failures", 0)) + 1
+        state["failures"][source_file] = {
+            "consecutive_failures": count,
+            "last_failed_at": now_iso(),
+        }
+
+        threshold = getattr(self, "upsert_quarantine_failure_threshold", 3)
+        if count < threshold:
+            self._save_upsert_failure_state(state)
+            return
+
+        state["failures"].pop(source_file, None)
+        state["quarantined"].append(
+            {
+                "source_file": source_file,
+                "failure_count": count,
+                "quarantined_at": now_iso(),
+                "reason": "consecutive_upsert_failures",
+            }
+        )
+        self._save_upsert_failure_state(state)
+        logger.warning(
+            "Quarantined RAG source from indexing after %d consecutive upsert failures (source retained): %s",
+            count,
+            file_path,
+        )
+
     # ── Main indexing API ───────────────────────────────────────────
+
+    def _finish_index_file(
+        self,
+        chunks: int,
+        status: Literal["indexed", "failed", "unchanged", "skipped"],
+        *,
+        transient: bool = False,
+    ) -> int:
+        self._last_index_file_outcome = _IndexFileOutcome(status=status, transient=transient)
+        return chunks
 
     def index_file(
         self,
@@ -243,10 +402,11 @@ class MemoryIndexer:
         """
         from core import startup_progress
 
+        self._last_index_file_outcome = _IndexFileOutcome(status="failed")
         startup_progress.raise_if_cancelled()
         if not file_path.exists():
             logger.warning("File not found: %s", file_path)
-            return 0
+            return self._finish_index_file(0, "failed")
 
         collection_name = f"{self.collection_prefix}_{memory_type}"
         try:
@@ -254,13 +414,17 @@ class MemoryIndexer:
         except ValueError:
             file_key = str(file_path)
 
+        if self._is_upsert_quarantined(file_key):
+            logger.debug("Skipping quarantined RAG source: %s", file_path)
+            return self._finish_index_file(0, "skipped")
+
         # Check .ragignore exclusion. Remove any previously-indexed chunks so
         # a file that matches .ragignore only after indexing does not linger
         # in the collection (mirrors the curator-denied path below).
         if self.is_ragignored(file_path):
             logger.debug("Skipping ragignored file: %s", file_path)
             self.delete_indexed_file(file_path, memory_type)
-            return 0
+            return self._finish_index_file(0, "skipped")
 
         if memory_type in ("skills", "common_skills") and file_path.name == "SKILL.md":
             try:
@@ -280,7 +444,7 @@ class MemoryIndexer:
                 if not allowed:
                     logger.info("Skipping non-loadable skill from RAG index: %s (%s)", file_path, reason)
                     self.delete_indexed_file(file_path, memory_type)
-                    return 0
+                    return self._finish_index_file(0, "skipped")
             except Exception:
                 logger.debug("Failed to evaluate skill curator access for %s", file_path, exc_info=True)
 
@@ -296,7 +460,7 @@ class MemoryIndexer:
                 # would never be re-created.
                 if self._collection_exists(collection_name):
                     logger.debug("File unchanged, skipping: %s", file_path)
-                    return 0
+                    return self._finish_index_file(0, "unchanged")
                 logger.info(
                     "Collection '%s' missing despite tracked hash, forcing re-index of %s",
                     collection_name,
@@ -310,7 +474,7 @@ class MemoryIndexer:
             content = file_path.read_text(encoding="utf-8")
         except Exception as e:
             logger.error("Failed to read file %s: %s", file_path, e)
-            return 0
+            return self._finish_index_file(0, "failed")
 
         # Chunk the content
         chunks = self._chunk_file(file_path, content, memory_type, origin=origin)
@@ -318,7 +482,7 @@ class MemoryIndexer:
         if not chunks:
             logger.debug("No chunks extracted from %s", file_path)
             self.delete_indexed_file(file_path, memory_type)
-            return 0
+            return self._finish_index_file(0, "indexed")
 
         source_mtime_ns = file_path.stat().st_mtime_ns
         for chunk in chunks:
@@ -342,7 +506,9 @@ class MemoryIndexer:
         ]
 
         if not indexer_delete.upsert_file_documents(self, collection_name, file_key, file_path, documents):
-            return 0
+            transient_probe = getattr(self.vector_store, "is_transient_write_failure", None)
+            transient = bool(callable(transient_probe) and transient_probe(collection_name))
+            return self._finish_index_file(0, "failed", transient=transient)
 
         self.index_meta[file_key] = {
             "hash": file_hash,
@@ -352,7 +518,7 @@ class MemoryIndexer:
         self._save_index_meta()
 
         logger.info("Indexed %d chunks from %s", len(chunks), file_path)
-        return len(chunks)
+        return self._finish_index_file(len(chunks), "indexed")
 
     def delete_indexed_file(self, file_path: Path, memory_type: str) -> int:
         return indexer_delete.delete_indexed_file(self, file_path, memory_type)
@@ -365,7 +531,7 @@ class MemoryIndexer:
         directory: Path,
         memory_type: str,
         force: bool = False,
-    ) -> int:
+    ) -> IndexDirectoryResult:
         """Index all .md files in a directory.
 
         Args:
@@ -374,15 +540,24 @@ class MemoryIndexer:
             force: Force re-indexing
 
         Returns:
-            Total number of chunks indexed
+            Structured counts that distinguish unchanged files from failures.
         """
+        collection_name = f"{self.collection_prefix}_{memory_type}"
         if not directory.is_dir():
             logger.warning("Directory not found: %s", directory)
-            return 0
+            result = IndexDirectoryResult()
+            self._log_index_directory_summary(collection_name, result)
+            return result
 
         patterns = {"facts": "*.jsonl", "skills": "SKILL.md", "common_skills": "SKILL.md"}
         md_files = sorted(directory.rglob(patterns.get(memory_type, "*.md")))
         total_chunks = 0
+        files_indexed = 0
+        files_failed = 0
+        files_unchanged = 0
+        files_skipped = 0
+        transient_failures = 0
+        failed_sources: list[str] = []
         try:
             from core import startup_progress
 
@@ -399,30 +574,80 @@ class MemoryIndexer:
                 total_count=len(md_files),
             )
 
-        for index, md_file in enumerate(md_files):
-            if startup_progress is not None:
-                startup_progress.raise_if_cancelled()
-                if track_startup:
+        previous_active = getattr(self, "_index_directory_active", False)
+        previous_failures = getattr(self, "_run_upsert_failures", {})
+        self._index_directory_active = True
+        self._run_upsert_failures = {}
+        try:
+            for index, md_file in enumerate(md_files):
+                if startup_progress is not None:
+                    startup_progress.raise_if_cancelled()
+                    if track_startup:
+                        startup_progress.update_progress(
+                            detail=str(md_file),
+                            done_count=index,
+                            total_count=len(md_files),
+                        )
+                try:
+                    total_chunks += self.index_file(md_file, memory_type, force=force)
+                except Exception:
+                    files_failed += 1
+                    failed_sources.append(self._directory_source(md_file, directory))
+                    raise
+                outcome = getattr(self, "_last_index_file_outcome", _IndexFileOutcome(status="failed"))
+                if outcome.status == "indexed":
+                    files_indexed += 1
+                elif outcome.status == "failed":
+                    files_failed += 1
+                    transient_failures += int(outcome.transient)
+                    failed_sources.append(self._directory_source(md_file, directory))
+                elif outcome.status == "unchanged":
+                    files_unchanged += 1
+                else:
+                    files_skipped += 1
+                if track_startup and startup_progress is not None:
                     startup_progress.update_progress(
                         detail=str(md_file),
-                        done_count=index,
+                        done_count=index + 1,
                         total_count=len(md_files),
                     )
-            total_chunks += self.index_file(md_file, memory_type, force=force)
-            if track_startup and startup_progress is not None:
-                startup_progress.update_progress(
-                    detail=str(md_file),
-                    done_count=index + 1,
-                    total_count=len(md_files),
-                )
+        finally:
+            self._index_directory_active = previous_active
+            self._run_upsert_failures = previous_failures
+            result = IndexDirectoryResult(
+                chunks_indexed=total_chunks,
+                files_indexed=files_indexed,
+                files_failed=files_failed,
+                files_unchanged=files_unchanged,
+                files_skipped=files_skipped,
+                transient_failures=transient_failures,
+                failed_sources=tuple(failed_sources),
+            )
+            self._log_index_directory_summary(collection_name, result)
+        return result
 
+    @staticmethod
+    def _directory_source(file_path: Path, directory: Path) -> str:
+        try:
+            return str(file_path.relative_to(directory))
+        except ValueError:
+            return str(file_path)
+
+    @staticmethod
+    def _log_index_directory_summary(collection_name: str, result: IndexDirectoryResult) -> None:
+        examples = list(result.failed_sources[:3])
         logger.info(
-            "Indexed directory %s: %d total chunks (type=%s)",
-            directory,
-            total_chunks,
-            memory_type,
+            "Index directory summary: collection=%s successful=%d failed=%d "
+            "failed_sources=%s transient=%s unchanged=%d skipped=%d chunks=%d",
+            collection_name,
+            result.files_indexed,
+            result.files_failed,
+            examples,
+            result.transient,
+            result.files_unchanged,
+            result.files_skipped,
+            result.chunks_indexed,
         )
-        return total_chunks
 
     def index_conversation_summary(
         self,
