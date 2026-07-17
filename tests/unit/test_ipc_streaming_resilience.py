@@ -160,6 +160,7 @@ class TestHandleProcessFailureSetsRestarting:
         supervisor = ProcessSupervisor.__new__(ProcessSupervisor)
         supervisor._restarting = set()
         supervisor._restart_counts = {}
+        supervisor.animas_dir = tmp_path / "animas"
         supervisor.restart_policy = MagicMock()
         supervisor.restart_policy.max_retries = 3
         supervisor.restart_policy.backoff_base_sec = 0.01
