@@ -158,8 +158,7 @@ class TestStopServer:
         # listening; never let unit tests reach a live instance.
         with patch(
             "cli.commands.server._request_supervisor_shutdown", return_value=False
-        ) as mock_shutdown:
-            self.mock_supervisor_shutdown = mock_shutdown
+        ):
             yield
 
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
