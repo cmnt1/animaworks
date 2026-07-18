@@ -60,14 +60,18 @@ class _MockAgentCore:
     """Small AgentCore stand-in that preserves the run_cycle_streaming boundary."""
 
     def __init__(self, recorder: _OverlapRecorder) -> None:
+        from core.schemas import ModelConfig
+
         self.background_manager = None
         self._tool_handler = MagicMock()
         self._executor = _MockExecutor(recorder)
         self._progress_callback = None
+        self.model_config = ModelConfig()
         self.set_interrupt_event = MagicMock()
         self.set_task_cwd = MagicMock()
         self.reset_reply_tracking = MagicMock()
         self.reset_read_paths = MagicMock()
+        self.update_model_config = MagicMock(side_effect=lambda cfg: setattr(self, "model_config", cfg))
 
     async def run_cycle_streaming(
         self,
