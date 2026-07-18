@@ -29,6 +29,8 @@ Keep `injection.md` under a **2,000 character target** as a constitution plus po
 If it exceeds 2,000 characters, do not create a proposal file. Rewrite it directly during this consolidation with `write_memory_file(path="injection.md", mode="overwrite")`.
 Even when it is already within 2,000 characters, check whether detailed prose has accumulated and shorten it with the same policy when needed.
 
+{hygiene_section}
+
 ### Step 1: Merge duplicate files (highest priority — MUST)
 
 When merge candidates are provided, process **every pair**.

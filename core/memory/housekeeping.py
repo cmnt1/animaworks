@@ -67,6 +67,7 @@ async def run_housekeeping(
     suppressed_messages_max_size_mb: int = 10,
     suppressed_messages_keep_generations: int = 5,
     archive_superseded_retention_days: int = 7,
+    hygiene_grace_days: int = 21,
     inbox_ttl_hours: float = 24.0,
     inbox_expired_retention_days: int = 7,
     inbox_processed_retention_days: int = 30,
@@ -77,6 +78,19 @@ async def run_housekeeping(
     results: dict[str, Any] = {}
 
     animas_dir = data_dir / "animas"
+
+    # Memory hygiene scan and stale semantic-cleanup fallback
+    try:
+        r = await loop.run_in_executor(
+            None,
+            _archive_stale_merge_leftovers,
+            animas_dir,
+            hygiene_grace_days,
+        )
+        results["memory_hygiene"] = r
+    except Exception:
+        logger.exception("Housekeeping: memory hygiene fallback failed")
+        results["memory_hygiene"] = {"error": True}
 
     # 1. Prompt logs
     try:
@@ -362,6 +376,164 @@ async def run_housekeeping(
 
 
 # ── Sub-functions ───────────────────────────────────────────────
+
+
+def _archive_stale_merge_leftovers(animas_dir: Path, hygiene_grace_days: int) -> dict[str, Any]:
+    """Move stale merge leftovers to the canonical archive without deleting them."""
+    if not animas_dir.is_dir():
+        return {"skipped": True, "scanned_animas": 0, "moved_items": 0}
+
+    from core.memory.hygiene import scan_memory_hygiene
+
+    scanned_animas = 0
+    moved_items = 0
+    for anima_dir in sorted(path for path in animas_dir.iterdir() if path.is_dir()):
+        try:
+            report = scan_memory_hygiene(anima_dir)
+            scanned_animas += 1
+            moved_for_anima = _archive_stale_hygiene_entries(
+                anima_dir,
+                report,
+                hygiene_grace_days,
+            )
+            moved_items += moved_for_anima
+            if moved_for_anima:
+                # Refresh all categories so entries nested below a moved inherited
+                # directory also disappear while unaffected first_seen dates remain.
+                scan_memory_hygiene(anima_dir)
+        except Exception:
+            logger.exception("Memory hygiene fallback failed for %s", anima_dir)
+
+    return {"scanned_animas": scanned_animas, "moved_items": moved_items}
+
+
+def _archive_stale_hygiene_entries(
+    anima_dir: Path,
+    report: dict[str, list[dict[str, Any]]],
+    hygiene_grace_days: int,
+) -> int:
+    knowledge_dir = anima_dir / "knowledge"
+    archive_dir = knowledge_dir / "archive" / "unmerged"
+    moved = 0
+
+    # Moving an inherited directory first prevents separately moving leftovers
+    # contained inside that same directory.
+    for category in ("inherited_dirs", "merged_leftovers"):
+        for entry in report.get(category, []):
+            if not _hygiene_entry_is_stale(entry, hygiene_grace_days):
+                continue
+            source = _validated_hygiene_source(anima_dir, knowledge_dir, entry, category)
+            if source is None or not source.exists():
+                continue
+            try:
+                relative = source.relative_to(knowledge_dir)
+                destination_base = archive_dir / relative
+                if not _prepare_hygiene_destination_parent(
+                    knowledge_dir,
+                    archive_dir,
+                    destination_base.parent,
+                ):
+                    continue
+                destination = _unique_hygiene_destination(destination_base)
+                shutil.move(str(source), str(destination))
+                moved += 1
+                logger.info("Archived stale memory hygiene item: %s -> %s", source, destination)
+            except (OSError, RuntimeError):
+                logger.exception("Failed to archive stale memory hygiene item: %s", source)
+    return moved
+
+
+def _hygiene_entry_is_stale(entry: dict[str, Any], hygiene_grace_days: int) -> bool:
+    first_seen = entry.get("first_seen")
+    if not isinstance(first_seen, str):
+        return False
+    try:
+        first_seen_date = date.fromisoformat(first_seen[:10])
+    except ValueError:
+        return False
+    return (today_local() - first_seen_date).days > hygiene_grace_days
+
+
+def _validated_hygiene_source(
+    anima_dir: Path,
+    knowledge_dir: Path,
+    entry: dict[str, Any],
+    category: str,
+) -> Path | None:
+    raw_path = entry.get("path")
+    if not isinstance(raw_path, str):
+        return None
+    relative = Path(raw_path)
+    if relative.is_absolute() or ".." in relative.parts:
+        return None
+    source = anima_dir / relative
+    try:
+        source.resolve().relative_to(knowledge_dir.resolve())
+    except (OSError, ValueError):
+        return None
+    knowledge_relative = source.relative_to(knowledge_dir)
+    if "archive" in knowledge_relative.parts:
+        return None
+    if category == "inherited_dirs":
+        if source.parent != knowledge_dir or not source.name.startswith("inherited-") or not source.is_dir():
+            return None
+    elif not source.name.startswith("_merged_") or not source.is_file():
+        return None
+    return source
+
+
+def _unique_hygiene_destination(destination: Path) -> Path:
+    if not destination.exists():
+        return destination
+    stem = destination.stem
+    suffix = destination.suffix
+    for index in range(1, 10_000):
+        candidate = destination.with_name(f"{stem}-{index}{suffix}")
+        if not candidate.exists():
+            return candidate
+    raise RuntimeError(f"Could not allocate archive destination for {destination}")
+
+
+def _prepare_hygiene_destination_parent(
+    knowledge_dir: Path,
+    archive_dir: Path,
+    destination_parent: Path,
+) -> bool:
+    """Create and validate an archive parent without traversing symlinks."""
+    try:
+        relative_parent = destination_parent.relative_to(knowledge_dir)
+        destination_parent.relative_to(archive_dir)
+    except ValueError:
+        logger.warning("Skipping memory hygiene archive outside unmerged directory: %s", destination_parent)
+        return False
+
+    current = knowledge_dir
+    for part in relative_parent.parts:
+        current /= part
+        if current.is_symlink():
+            logger.warning("Skipping memory hygiene archive through symlink: %s", current)
+            return False
+
+    destination_parent.mkdir(parents=True, exist_ok=True)
+
+    # Recheck after creation and confirm the physical path remains within both
+    # the canonical unmerged directory and the resolved knowledge directory.
+    current = knowledge_dir
+    for part in relative_parent.parts:
+        current /= part
+        if current.is_symlink():
+            logger.warning("Skipping memory hygiene archive through symlink: %s", current)
+            return False
+    try:
+        resolved_knowledge = knowledge_dir.resolve(strict=True)
+        resolved_archive = archive_dir.resolve(strict=True)
+        resolved_parent = destination_parent.resolve(strict=True)
+        resolved_archive.relative_to(resolved_knowledge)
+        resolved_parent.relative_to(resolved_archive)
+    except (OSError, ValueError):
+        logger.warning("Skipping unsafe memory hygiene archive destination: %s", destination_parent)
+        return False
+    return True
 
 
 def _run_skill_curator_reports(animas_dir: Path) -> dict[str, Any]:

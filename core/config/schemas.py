@@ -772,6 +772,7 @@ class HousekeepingConfig(BaseModel):
     suppressed_messages_max_size_mb: int = Field(default=10, ge=1)
     suppressed_messages_keep_generations: int = Field(default=5, ge=1)
     archive_superseded_retention_days: int = Field(default=7, ge=1)
+    hygiene_grace_days: int = Field(default=21, ge=1)
 
 
 class InboxConfig(BaseModel):

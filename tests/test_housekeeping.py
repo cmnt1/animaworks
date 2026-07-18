@@ -51,6 +51,7 @@ class TestHousekeepingConfig:
         assert cfg.anima_local_log_retention_days == 30
         assert cfg.suppressed_messages_max_size_mb == 10
         assert cfg.suppressed_messages_keep_generations == 5
+        assert cfg.hygiene_grace_days == 21
 
     def test_custom_values(self):
         from core.config.models import HousekeepingConfig
@@ -950,6 +951,139 @@ class TestRunHousekeeping:
         assert (inbox / "expired" / "old.json").exists()
         assert (inbox / "delegation.json").exists()
         assert not old_processed.exists()
+
+
+# ── Task results cleanup tests ──────────────────────────────────
+
+
+class TestMemoryHygieneFallback:
+    """Test the grace-period archive fallback for semantic cleanup items."""
+
+    def test_moves_only_stale_merge_items_and_refreshes_report(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        from datetime import date
+
+        from core.memory.housekeeping import _archive_stale_merge_leftovers
+
+        fixed_today = date(2026, 7, 18)
+        monkeypatch.setattr("core.memory.hygiene.today_local", lambda: fixed_today)
+        monkeypatch.setattr("core.memory.housekeeping.today_local", lambda: fixed_today)
+
+        anima_dir = tmp_path / "animas" / "alice"
+        knowledge = anima_dir / "knowledge"
+        inherited = knowledge / "inherited-team"
+        inherited.mkdir(parents=True)
+        (inherited / "notes.md").write_text("inherited", encoding="utf-8")
+        stale = knowledge / "_merged_stale.md"
+        stale.write_text("stale", encoding="utf-8")
+        recent = knowledge / "_merged_recent.md"
+        recent.write_text("recent", encoding="utf-8")
+        mdc = knowledge / "legacy.mdc"
+        mdc.write_text("legacy", encoding="utf-8")
+
+        state = anima_dir / "state"
+        state.mkdir()
+        report = {
+            "merged_leftovers": [
+                {"path": "knowledge/_merged_stale.md", "first_seen": "2026-06-26"},
+                {"path": "knowledge/_merged_recent.md", "first_seen": "2026-06-28"},
+            ],
+            "inherited_dirs": [{"path": "knowledge/inherited-team", "first_seen": "2026-06-26"}],
+            "mdc_files": [{"path": "knowledge/legacy.mdc", "first_seen": "2026-06-01"}],
+            "oversized_knowledge": [],
+            "noncanonical_archive_dirs": [],
+        }
+        (state / "memory_hygiene.json").write_text(json.dumps(report), encoding="utf-8")
+
+        result = _archive_stale_merge_leftovers(tmp_path / "animas", hygiene_grace_days=21)
+
+        assert result == {"scanned_animas": 1, "moved_items": 2}
+        archive = knowledge / "archive" / "unmerged"
+        assert (archive / "_merged_stale.md").read_text(encoding="utf-8") == "stale"
+        assert (archive / "inherited-team" / "notes.md").read_text(encoding="utf-8") == "inherited"
+        assert not stale.exists()
+        assert not inherited.exists()
+        assert recent.read_text(encoding="utf-8") == "recent"
+        assert mdc.read_text(encoding="utf-8") == "legacy"
+
+        refreshed = json.loads((state / "memory_hygiene.json").read_text(encoding="utf-8"))
+        assert [item["path"] for item in refreshed["merged_leftovers"]] == ["knowledge/_merged_recent.md"]
+        assert refreshed["inherited_dirs"] == []
+        assert [item["path"] for item in refreshed["mdc_files"]] == ["knowledge/legacy.mdc"]
+
+    def test_rejects_symlink_in_archive_destination(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+        caplog,
+    ) -> None:
+        from datetime import date
+
+        from core.memory.housekeeping import _archive_stale_merge_leftovers
+
+        fixed_today = date(2026, 7, 18)
+        monkeypatch.setattr("core.memory.hygiene.today_local", lambda: fixed_today)
+        monkeypatch.setattr("core.memory.housekeeping.today_local", lambda: fixed_today)
+
+        anima_dir = tmp_path / "animas" / "alice"
+        knowledge = anima_dir / "knowledge"
+        knowledge.mkdir(parents=True)
+        source = knowledge / "_merged_stale.md"
+        source.write_text("stale", encoding="utf-8")
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        archive = knowledge / "archive"
+        archive.mkdir()
+        (archive / "unmerged").symlink_to(outside, target_is_directory=True)
+        state = anima_dir / "state"
+        state.mkdir()
+        (state / "memory_hygiene.json").write_text(
+            json.dumps({"merged_leftovers": [{"path": "knowledge/_merged_stale.md", "first_seen": "2026-06-26"}]}),
+            encoding="utf-8",
+        )
+
+        with caplog.at_level("WARNING", logger="animaworks.housekeeping"):
+            result = _archive_stale_merge_leftovers(tmp_path / "animas", hygiene_grace_days=21)
+
+        assert result["moved_items"] == 0
+        assert source.read_text(encoding="utf-8") == "stale"
+        assert list(outside.iterdir()) == []
+        assert "symlink" in caplog.text
+
+    def test_suffixes_archive_destination_when_name_exists(self, tmp_path: Path, monkeypatch) -> None:
+        from datetime import date
+
+        from core.memory.housekeeping import _archive_stale_merge_leftovers
+
+        fixed_today = date(2026, 7, 18)
+        monkeypatch.setattr("core.memory.hygiene.today_local", lambda: fixed_today)
+        monkeypatch.setattr("core.memory.housekeeping.today_local", lambda: fixed_today)
+
+        anima_dir = tmp_path / "animas" / "alice"
+        knowledge = anima_dir / "knowledge"
+        knowledge.mkdir(parents=True)
+        source = knowledge / "_merged_stale.md"
+        source.write_text("new", encoding="utf-8")
+        archive = knowledge / "archive" / "unmerged"
+        archive.mkdir(parents=True)
+        existing = archive / "_merged_stale.md"
+        existing.write_text("existing", encoding="utf-8")
+        state = anima_dir / "state"
+        state.mkdir()
+        (state / "memory_hygiene.json").write_text(
+            json.dumps({"merged_leftovers": [{"path": "knowledge/_merged_stale.md", "first_seen": "2026-06-26"}]}),
+            encoding="utf-8",
+        )
+
+        result = _archive_stale_merge_leftovers(tmp_path / "animas", hygiene_grace_days=21)
+
+        assert result["moved_items"] == 1
+        assert existing.read_text(encoding="utf-8") == "existing"
+        assert (archive / "_merged_stale-1.md").read_text(encoding="utf-8") == "new"
+        assert not source.exists()
 
 
 # ── Task results cleanup tests ──────────────────────────────────

@@ -233,4 +233,62 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "（エラーなし / No errors）",
         "en": "(No errors)",
     },
+    "memory_hygiene.header": {
+        "ja": "## 記憶衛生の整理対象",
+        "en": "## Memory hygiene items to organize",
+        "ko": "## 기억 위생 정리 대상",
+    },
+    "memory_hygiene.merged_leftovers": {
+        "ja": (
+            "### 統合遺物 (`_merged_*`)\n"
+            "内容を確認し、既存のknowledgeファイルへ吸収するか正式名にリネームし、重複を削除してください。"
+        ),
+        "en": (
+            "### Merge leftovers (`_merged_*`)\n"
+            "Review the contents, absorb them into existing knowledge files or rename them formally, "
+            "and remove duplicates."
+        ),
+        "ko": (
+            "### 통합 잔재 (`_merged_*`)\n"
+            "내용을 확인하고 기존 knowledge 파일에 흡수하거나 정식 이름으로 변경한 뒤 중복을 제거하세요."
+        ),
+    },
+    "memory_hygiene.inherited_dirs": {
+        "ja": (
+            "### 継承ディレクトリ (`inherited-*/`)\n"
+            "有効な内容は自分のknowledge体系へ移し、残骸は `archive_memory_file` でアーカイブしてください。"
+        ),
+        "en": (
+            "### Inherited directories (`inherited-*/`)\n"
+            "Move useful content into your knowledge structure and archive remnants with "
+            "`archive_memory_file`."
+        ),
+        "ko": (
+            "### 상속 디렉터리 (`inherited-*/`)\n"
+            "유효한 내용은 자신의 knowledge 체계로 옮기고 잔재는 `archive_memory_file`로 아카이브하세요."
+        ),
+    },
+    "memory_hygiene.mdc_files": {
+        "ja": ("### `.mdc` ファイル\n内容を確認して `.md` として保存し直し、元ファイルをアーカイブしてください。"),
+        "en": ("### `.mdc` files\nReview each file, save it again as `.md`, and archive the original."),
+        "ko": ("### `.mdc` 파일\n내용을 확인하여 `.md`로 다시 저장하고 원본 파일을 아카이브하세요."),
+    },
+    "memory_hygiene.oversized_knowledge": {
+        "ja": ("### 32KB超のknowledgeファイル\nテーマ別に分割するか、要点へ圧縮してください。"),
+        "en": ("### Knowledge files over 32 KB\nSplit them by topic or compress them to their essential points."),
+        "ko": ("### 32KB를 초과하는 knowledge 파일\n주제별로 분할하거나 핵심 내용으로 압축하세요."),
+    },
+    "memory_hygiene.noncanonical_archive_dirs": {
+        "ja": ("### 非標準のアーカイブディレクトリ\n内容を確認し、標準の `knowledge/archive/` へ整理してください。"),
+        "en": (
+            "### Non-canonical archive directories\n"
+            "Review their contents and organize them under the canonical `knowledge/archive/`."
+        ),
+        "ko": ("### 비표준 아카이브 디렉터리\n내용을 확인하여 표준 `knowledge/archive/` 아래로 정리하세요."),
+    },
+    "memory_hygiene.remaining": {
+        "ja": "- ほか {count}件",
+        "en": "- {count} more item(s)",
+        "ko": "- 그 외 {count}건",
+    },
 }

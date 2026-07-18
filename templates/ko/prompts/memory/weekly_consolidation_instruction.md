@@ -29,6 +29,8 @@
 2,000자를 초과하면 제안 파일을 만들지 말고, 이 consolidation 안에서 `write_memory_file(path="injection.md", mode="overwrite")`로 직접 정리하세요.
 이미 2,000자 이내여도 상세 본문이 늘어나지 않았는지 확인하고, 필요하면 같은 방침으로 줄이세요.
 
+{hygiene_section}
+
 ### Step 1: 중복 파일 통합 (최우선 — MUST)
 
 병합 후보가 제시된 경우, **모든 쌍에 대해** 통합을 수행하세요.
