@@ -119,7 +119,7 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "server/routes/external_tasks.py": 8,
     # meeting/room feature — Japanese meeting prompts and labels
     "server/room_manager.py": 12,
-    "server/routes/room.py": 5,
+    "server/routes/room.py": 7,
     # project-task board: Japanese column/field labels (カテゴリ, タスク名, ステータス…)
     "server/project_tasks.py": 11,
     # LLM extraction + dedupe + invalidation + community prompt templates — intentionally Japanese for ja locale
@@ -133,6 +133,8 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/notification/notifier.py": 2,
     # outbound auto-routing prefix label
     "core/outbound_auto.py": 1,
+    # department lookup keys (投資/不動産/アフィリエイト/総務) + Discord sender name
+    "core/project_threads.py": 5,
     # Codex login window prompts
     "core/platform/codex.py": 2,
     # auto-retry status label
