@@ -120,6 +120,30 @@ def test_git_commit_criterion(tmp_path: Path) -> None:
     assert len(failures) == 1
 
 
+def test_channel_post_criterion(tmp_path: Path, monkeypatch) -> None:
+    import json
+
+    channels = tmp_path / "shared" / "channels"
+    channels.mkdir(parents=True)
+    (channels / "finance.jsonl").write_text(
+        json.dumps({"ts": "2026-07-18T18:00:00+09:00", "from": "airi", "text": "FIN-047 進捗: 一致検証OK"}, ensure_ascii=False)
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("core.paths.get_shared_dir", lambda: tmp_path / "shared")
+
+    base = {"type": "channel_post", "channel": "finance", "sender": "airi", "pattern": "(?i)fin-?047"}
+    assert verify_completion_criteria([dict(base)]) == []
+    # since_ts より前の投稿は無効
+    assert verify_completion_criteria([dict(base, since_ts="2026-07-18T18:30:00+09:00")]) != []
+    # 別 sender は不一致
+    assert verify_completion_criteria([dict(base, sender="momoka")]) != []
+    # pattern 不一致
+    assert verify_completion_criteria([dict(base, pattern="FIN-099")]) != []
+    # チャンネルログなし
+    assert verify_completion_criteria([dict(base, channel="nosuch")]) != []
+
+
 # ── done-gate in TaskQueueManager.update_status ────────────────────────
 
 

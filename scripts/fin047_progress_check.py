@@ -323,6 +323,104 @@ def process_directives(snapshot: dict, *, dry_run: bool) -> tuple[list[dict], li
     return fresh, unreflected_directives([d for d in seen if not d.get("bootstrap")])
 
 
+# ── Daily per-assignee reports ─────────────────────────────────────────
+
+
+def _daily_report_summary(anima: str, date_str: str) -> str:
+    return f"[FIN-047] 日次報告 {date_str} を #finance スレッドへ投稿する ({anima})"
+
+
+def seed_daily_report_tasks(now: datetime, *, dry_run: bool) -> list[str]:
+    """各担当アニマに「本日の FIN-047 日次報告」タスクを冪等投入する.
+
+    完了条件は channel_post 機械検証 (投入時刻以降に #finance へ FIN-047 言及の
+    投稿があること)。前日以前の未消化日次報告タスクは自動キャンセルして堆積を防ぐ。
+    """
+    from core.memory.task_queue import TaskQueueManager
+
+    date_str = now.strftime("%Y-%m-%d")
+    deadline = now.replace(hour=18, minute=30, second=0, microsecond=0)
+    since_ts = now.isoformat()
+    seeded: list[str] = []
+    for anima in ASSIGNEES:
+        anima_dir = DATA_DIR / "animas" / anima
+        if not anima_dir.is_dir():
+            continue
+        tqm = TaskQueueManager(anima_dir)
+        summary = _daily_report_summary(anima, date_str)
+
+        # 前日以前の日次報告タスクが残っていれば失効キャンセル
+        if not dry_run:
+            for task in tqm.load_active_tasks().values():
+                if (
+                    task.summary.startswith("[FIN-047] 日次報告 ")
+                    and task.summary != summary
+                    and (task.meta or {}).get("fin047_daily_report")
+                ):
+                    tqm.update_status(task.task_id, "cancelled", note="日次報告期限超過のため失効 (未報告として記録済み)")
+
+        instruction = f"""FIN-047 の本日分 ({date_str}) の状況を、18:30 までに #finance チャンネルへ報告してください
+(投稿は自動で FIN-047 専用 Discord スレッドにルーティングされます)。
+
+報告ルール:
+- **進捗や問題が発生したら、18:30 を待たずその都度 #finance に報告してよい** (推奨)。
+- 18:30 の日次報告は**進捗ゼロでも必須**。その場合は「進捗なし」とその理由 (何にブロックされているか) を明記する。
+- 報告には自分の担当マイルストーン (task_queue の [FIN-047] タスク) の現在状態を含める。
+
+このタスクは、{since_ts} 以降に #finance へ FIN-047 に言及する投稿を行うと done にできます (機械検証)。"""
+
+        if dry_run:
+            seeded.append(f"{anima} (dry-run)")
+            continue
+        entry = tqm.add_task_if_absent(
+            lambda t, s=summary: t.summary == s,
+            source="human",
+            original_instruction=instruction,
+            assignee=anima,
+            summary=summary,
+            deadline=deadline.isoformat(),
+            meta={
+                "project": "FIN-047",
+                "fin047_daily_report": date_str,
+                "completion_criteria": [
+                    {
+                        "type": "channel_post",
+                        "channel": "finance",
+                        "sender": anima,
+                        "pattern": "(?i)fin-?047",
+                        "since_ts": since_ts,
+                    }
+                ],
+            },
+        )
+        if entry is not None:
+            seeded.append(f"{anima}: {entry.task_id}")
+    return seeded
+
+
+def collect_daily_report_status(now: datetime) -> dict[str, bool]:
+    """本日 17:00 以降に #finance へ FIN-047 言及投稿をしたかを担当別に返す."""
+    cutoff = now.replace(hour=17, minute=0, second=0, microsecond=0).isoformat()
+    status = {anima: False for anima in ASSIGNEES}
+    if not FINANCE_CHANNEL_JSONL.is_file():
+        return status
+    for line in FINANCE_CHANNEL_JSONL.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        sender = msg.get("from") or msg.get("sender") or msg.get("author") or ""
+        if sender not in status:
+            continue
+        ts = msg.get("ts") or msg.get("timestamp") or ""
+        if ts < cutoff:
+            continue
+        text = msg.get("text") or msg.get("content") or ""
+        if re.search(r"(?i)fin-?047", text):
+            status[sender] = True
+    return status
+
+
 def build_report(now: datetime) -> tuple[str, dict]:
     git = collect_git()
     spec = collect_openspec()
@@ -376,6 +474,10 @@ def build_report(now: datetime) -> tuple[str, dict]:
     if not any_active:
         lines.append("- 担当アニマの task_queue: ⚠️ FIN-047 のアクティブタスクなし (全員 idle)")
 
+    reports = collect_daily_report_status(now)
+    parts = [f"{a} {'✅' if ok else '❌未報告'}" for a, ok in reports.items()]
+    lines.append("- 本日の各自報告 (17:00以降): " + " / ".join(parts))
+
     snapshot = {
         "ts": now.isoformat(),
         "ahead": ahead_now if ahead_now >= 0 else prev.get("ahead"),
@@ -426,9 +528,22 @@ def main() -> int:
         action="store_true",
         help="毎時実行用: オーナー指示の検知・反映タスク投入のみ (新規指示が無ければ NOOP)",
     )
+    parser.add_argument(
+        "--seed-daily-reports",
+        action="store_true",
+        help="17:30実行用: 各担当に本日分の日次報告タスクを投入する (Discord 投稿なし)",
+    )
     args = parser.parse_args()
 
     now = datetime.now().astimezone()
+
+    if args.seed_daily_reports:
+        seeded = seed_daily_report_tasks(now, dry_run=args.dry_run)
+        if seeded:
+            print("seeded daily report tasks: " + ", ".join(seeded))
+        else:
+            print("NOOP_ALREADY_SEEDED: daily report tasks already exist for today")
+        return 0
 
     if args.directives_only:
         snapshot = load_snapshot()

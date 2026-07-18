@@ -24,6 +24,11 @@ Criterion schema (each item is a dict with a ``type`` key):
    "pattern": "<regex>"}``
   Every ``- [ ] / - [x]`` checkbox line in ``tasks_md`` matching
   ``pattern`` must be checked.  Fails when no line matches.
+- ``{"type": "channel_post", "channel": "finance", "sender": "<anima>",
+   "pattern": "<regex>", "since_ts": "<ISO8601>"}``
+  The shared channel log must contain a post from ``sender`` matching
+  ``pattern`` at or after ``since_ts`` (both pattern and since_ts optional).
+  Used for "report to the channel" obligations.
 
 Verification is fail-closed: malformed criteria, unknown types, and
 checker errors all count as unmet.
@@ -176,10 +181,49 @@ def _check_openspec_tasks_checked(c: dict[str, Any]) -> str | None:
     return None
 
 
+def _check_channel_post(c: dict[str, Any]) -> str | None:
+    import json
+
+    channel = c.get("channel")
+    sender = c.get("sender")
+    if not channel or not sender:
+        return "missing 'channel' or 'sender'"
+    pattern = c.get("pattern")
+    since_ts = c.get("since_ts") or ""
+
+    from core.paths import get_shared_dir
+
+    log_path = get_shared_dir() / "channels" / f"{channel}.jsonl"
+    if not log_path.is_file():
+        return f"channel log does not exist: {log_path}"
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as e:
+        return f"cannot read {log_path}: {e}"
+    for line in lines:
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if (msg.get("from") or msg.get("sender") or msg.get("author")) != sender:
+            continue
+        ts = msg.get("ts") or msg.get("timestamp") or ""
+        if since_ts and ts < since_ts:
+            continue
+        text = msg.get("text") or msg.get("content") or ""
+        if pattern and not re.search(pattern, text):
+            continue
+        return None
+    detail = f" matching {pattern!r}" if pattern else ""
+    since = f" since {since_ts}" if since_ts else ""
+    return f"no #{channel} post by {sender}{detail}{since}"
+
+
 _CHECKERS = {
     "path_exists": _check_path_exists,
     "file_contains": _check_file_contains,
     "git_commit": _check_git_commit,
     "http_ok": _check_http_ok,
     "openspec_tasks_checked": _check_openspec_tasks_checked,
+    "channel_post": _check_channel_post,
 }
