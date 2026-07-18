@@ -499,6 +499,11 @@ class TaskQueueManager:
             note = summary if not note else f"{note}\n{summary}"
             logger.warning("Storing report-like update summary as status note for task %s", task_id)
 
+        if status == "done":
+            rejected = self._reject_unmet_completion_criteria(task)
+            if rejected is not None:
+                return rejected
+
         now = now_iso()
         merged_meta: dict[str, Any] | None = None
         if note:
@@ -526,6 +531,43 @@ class TaskQueueManager:
         if merged_meta is not None:
             task.meta = merged_meta
         logger.info("Task updated: id=%s status=%s", task_id, status)
+        return task
+
+    def _reject_unmet_completion_criteria(self, task: TaskEntry) -> TaskEntry | None:
+        """Gate the transition to ``done`` behind machine-verified criteria.
+
+        Returns the task unchanged (status preserved, rejection recorded as a
+        status note) when ``meta.completion_criteria`` is present and unmet,
+        or None when the transition may proceed.
+        """
+        from core.memory.task_verification import extract_criteria, verify_completion_criteria
+
+        criteria = extract_criteria(task.meta)
+        if not criteria:
+            return None
+        failures = verify_completion_criteria(criteria)
+        if not failures:
+            return None
+
+        now = now_iso()
+        rejection_note = "done rejected — completion criteria unmet:\n" + "\n".join(f"- {f}" for f in failures)
+        merged_meta = _append_status_note(task.meta or {}, note=rejection_note, status=task.status, ts=now)
+        self._append(
+            {
+                "task_id": task.task_id,
+                "status": task.status,
+                "updated_at": now,
+                "meta": merged_meta,
+                "_event": "update",
+            }
+        )
+        task.updated_at = now
+        task.meta = merged_meta
+        logger.warning(
+            "Task %s: done rejected, %d completion criteria unmet",
+            task.task_id,
+            len(failures),
+        )
         return task
 
     def _cancel_delegated_child(self, task: TaskEntry, *, summary: str | None = None) -> bool:

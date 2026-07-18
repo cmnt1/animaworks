@@ -611,6 +611,15 @@ class SkillsToolsMixin:
                 f"Task not found or invalid status: {task_id}",
             )
 
+        if status == "done" and entry.status != "done":
+            notes = (entry.meta or {}).get("status_notes") or []
+            detail = notes[-1].get("note", "") if notes and isinstance(notes[-1], dict) else ""
+            return _error_result(
+                "CompletionCriteriaUnmet",
+                f"Task {task_id} cannot be marked done: machine-verified completion criteria are unmet. "
+                f"Produce the required artifacts first.\n{detail}",
+            )
+
         self._activity.log(
             "task_updated",
             summary=t("handler.task_update_log", summary=entry.summary[:100], status=status),
