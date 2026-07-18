@@ -567,6 +567,20 @@ def _bm25_docs_for_file(anima_dir: Path, path: Path, memory_type: str) -> list[d
     total = len(chunks)
     docs: list[dict[str, Any]] = []
     for idx, content in enumerate(chunks):
+        # Contextual headers for episodes/knowledge so date/title tokens are searchable.
+        if memory_type in ("knowledge", "episodes"):
+            try:
+                from core.memory.rag.contextual_header import apply_contextual_header
+
+                content = apply_contextual_header(
+                    content,
+                    file_path=path,
+                    body=body,
+                    memory_type=memory_type,
+                    frontmatter=frontmatter,
+                )
+            except Exception:
+                logger.debug("Failed to apply contextual header for BM25 file %s", path, exc_info=True)
         tokens = tokenize(content)
         if not tokens:
             continue

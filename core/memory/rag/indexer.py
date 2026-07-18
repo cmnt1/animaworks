@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Literal
 
 from core.memory.rag import indexer_delete
+from core.memory.rag.contextual_header import apply_contextual_header
 from core.memory.rag.episode_time import apply_episode_heading_event_time
 from core.memory.rag.facts_chunker import chunk_facts_jsonl
 from core.time_utils import ensure_aware, now_iso
@@ -910,7 +911,14 @@ class MemoryIndexer:
             chunks.append(
                 MemoryChunk(
                     id=chunk_id,
-                    content=preamble,
+                    content=apply_contextual_header(
+                        preamble,
+                        file_path=file_path,
+                        body=content,
+                        memory_type=memory_type,
+                        frontmatter=frontmatter,
+                        heading_path=None,
+                    ),
                     metadata=metadata,
                 )
             )
@@ -936,10 +944,18 @@ class MemoryIndexer:
                     )
                     if memory_type == "episodes":
                         apply_episode_heading_event_time(metadata, heading)
+                    heading_path = re.sub(r"^#+\s*", "", heading).strip() or None
                     chunks.append(
                         MemoryChunk(
                             id=chunk_id,
-                            content=section_content,
+                            content=apply_contextual_header(
+                                section_content,
+                                file_path=file_path,
+                                body=content,
+                                memory_type=memory_type,
+                                frontmatter=frontmatter,
+                                heading_path=heading_path,
+                            ),
                             metadata=metadata,
                         )
                     )
@@ -1000,10 +1016,18 @@ class MemoryIndexer:
                             except (ValueError, TypeError):
                                 pass
 
+                    heading_path = re.sub(r"^#+\s*", "", heading).strip() or None
                     chunks.append(
                         MemoryChunk(
                             id=chunk_id,
-                            content=section_content,
+                            content=apply_contextual_header(
+                                section_content,
+                                file_path=file_path,
+                                body=content,
+                                memory_type=memory_type,
+                                frontmatter=frontmatter,
+                                heading_path=heading_path,
+                            ),
                             metadata=metadata,
                         )
                     )
