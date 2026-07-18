@@ -187,17 +187,27 @@ class SlackChannel(NotificationChannel):
 
                 if anima_name and data.get("ts"):
                     try:
+                        import asyncio
+
                         from core.notification.reply_routing import (
-                            save_notification_mapping,
+                            save_notification_mapping_resilient,
                         )
 
-                        save_notification_mapping(
-                            ts=data["ts"],
-                            channel=data.get("channel", channel),
-                            anima_name=anima_name,
+                        # Falls back to the server internal API when the
+                        # direct run/ write fails (sandboxed MCP server).
+                        saved = await asyncio.to_thread(
+                            save_notification_mapping_resilient,
+                            data["ts"],
+                            data.get("channel", channel),
+                            anima_name,
                             notification_text=f"{subject}\n{body}"[:2000],
                             callback_id=interaction.callback_id if interaction is not None else "",
                         )
+                        if not saved:
+                            logger.warning(
+                                "Notification mapping not saved for ts=%s; thread replies will not route back",
+                                data["ts"],
+                            )
                     except Exception:
                         logger.debug(
                             "Failed to save notification mapping",

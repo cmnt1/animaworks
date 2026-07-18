@@ -93,6 +93,28 @@ class VectorQuickCheckRequest(BaseModel):
     record_repair: bool = True
 
 
+class NotificationMappingRequest(BaseModel):
+    ts: str
+    channel: str
+    anima_name: str
+    notification_text: str = ""
+    callback_id: str = ""
+
+
+class InteractionCreateRequest(BaseModel):
+    anima_name: str
+    category: str = "approval"
+    options: list[str]
+    allowed_users: dict[str, list[str]] | None = None
+    callback_id: str = ""
+
+
+class InteractionMessageTsRequest(BaseModel):
+    callback_id: str
+    platform: str = "slack"
+    ts: str
+
+
 def create_internal_router() -> APIRouter:
     router = APIRouter()
 
@@ -255,6 +277,54 @@ def create_internal_router() -> APIRouter:
     @router.post("/internal/vector/quick-check")
     async def vector_quick_check(body: VectorQuickCheckRequest, request: Request):
         return await _require_vector_worker(request, "/quick-check", body)
+
+    # ── Notification / interaction persistence for sandboxed CLIs ──
+    #
+    # ``animaworks-tool call_human`` runs inside execution sandboxes where
+    # ``{data_dir}/run/`` is read-only.  These endpoints let the sandboxed
+    # process delegate the run-state writes to the server so that Slack
+    # thread replies and interactive approvals still route back correctly.
+
+    @router.post("/internal/notification-mapping")
+    async def internal_notification_mapping(body: NotificationMappingRequest):
+        from core.notification.reply_routing import save_notification_mapping
+
+        ok = await asyncio.to_thread(
+            save_notification_mapping,
+            body.ts,
+            body.channel,
+            body.anima_name,
+            notification_text=body.notification_text,
+            callback_id=body.callback_id,
+        )
+        return {"ok": ok}
+
+    @router.post("/internal/interaction/create")
+    async def internal_interaction_create(body: InteractionCreateRequest):
+        from core.notification.interactive import get_interaction_router
+
+        try:
+            req = await get_interaction_router().create(
+                body.anima_name,
+                body.category,
+                body.options,
+                allowed_users=body.allowed_users,
+                callback_id=body.callback_id or None,
+            )
+        except ValueError as exc:
+            return JSONResponse(status_code=409, content={"detail": str(exc)})
+        return {"ok": True, "request": req.model_dump(mode="json")}
+
+    @router.post("/internal/interaction/message-ts")
+    async def internal_interaction_message_ts(body: InteractionMessageTsRequest):
+        from core.notification.interactive import get_interaction_router
+
+        await get_interaction_router().update_message_ts(
+            body.callback_id,
+            body.platform,
+            body.ts,
+        )
+        return {"ok": True}
 
     @router.post("/internal/vector/reset-store")
     async def vector_reset_store(body: VectorListCollectionsRequest, request: Request):

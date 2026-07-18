@@ -150,18 +150,28 @@ async def _send_slack(
 
             ts_val: str | None = str(data["ts"]) if data.get("ts") else None
 
-            # Save ts→anima mapping so Slack thread replies are routed back
+            # Save ts→anima mapping so Slack thread replies are routed back.
+            # Direct file write fails inside execution sandboxes (read-only
+            # {data_dir}/run/), so fall back to the server internal API.
             if username and ts_val and notification_text:
                 try:
-                    from core.notification.reply_routing import save_notification_mapping
+                    from core.notification.reply_routing import (
+                        save_notification_mapping_resilient,
+                    )
 
-                    save_notification_mapping(
+                    saved = save_notification_mapping_resilient(
                         ts=ts_val,
                         channel=data.get("channel", channel),
                         anima_name=username,
                         notification_text=notification_text[:2000],
                         callback_id=interaction.callback_id if interaction is not None else "",
                     )
+                    if not saved:
+                        print(
+                            "WARNING: notification mapping not saved; "
+                            "Slack thread replies will not be routed back",
+                            file=sys.stderr,
+                        )
                 except Exception:
                     logger.debug("Failed to save notification mapping", exc_info=True)
 
@@ -170,11 +180,87 @@ async def _send_slack(
         return f"ERROR: {e}", None
 
 
-async def _persist_interaction_slack_ts(callback_id: str, ts_val: str) -> None:
-    """Store Slack message ts on the interaction record (CLI path)."""
+def _server_base_url() -> str:
+    return os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500").rstrip("/")
+
+
+def _create_interaction_via_server(
+    anima_name: str,
+    category: str,
+    options: list[str],
+    allowed_users: dict[str, list[str]] | None,
+    callback_id: str,
+) -> InteractionRequest:
+    """Create an interaction record, preferring the server internal API.
+
+    The CLI usually runs inside an execution sandbox where the interaction
+    map ({data_dir}/run/interaction_map.json) is read-only; a local write
+    would fail silently and the server could never resolve the buttons.
+    Falls back to the local router when the server is unreachable.
+    """
+    try:
+        resp = httpx.post(
+            f"{_server_base_url()}/api/internal/interaction/create",
+            json={
+                "anima_name": anima_name,
+                "category": category,
+                "options": options,
+                "allowed_users": allowed_users,
+                "callback_id": callback_id,
+            },
+            timeout=10.0,
+        )
+        if resp.status_code == 409:
+            raise ValueError(resp.json().get("detail", "callback_id already in use"))
+        resp.raise_for_status()
+        return InteractionRequest.model_validate(resp.json()["request"])
+    except ValueError:
+        raise
+    except Exception:
+        logger.warning(
+            "Interaction create via server API failed; falling back to local router",
+            exc_info=True,
+        )
+        from core.notification.interactive import get_interaction_router
+
+        async def _create_local() -> InteractionRequest:
+            return await get_interaction_router().create(
+                anima_name,
+                category,
+                options,
+                allowed_users=allowed_users,
+                callback_id=callback_id or None,
+            )
+
+        return asyncio.run(_create_local())
+
+
+def _persist_interaction_slack_ts(callback_id: str, ts_val: str) -> None:
+    """Store Slack message ts on the interaction record (CLI path).
+
+    Prefers the server internal API for the same sandbox reason as
+    :func:`_create_interaction_via_server`.
+    """
+    try:
+        resp = httpx.post(
+            f"{_server_base_url()}/api/internal/interaction/message-ts",
+            json={"callback_id": callback_id, "platform": "slack", "ts": ts_val},
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        return
+    except Exception:
+        logger.warning(
+            "Interaction message-ts update via server API failed; falling back to local router",
+            exc_info=True,
+        )
+
     from core.notification.interactive import get_interaction_router
 
-    await get_interaction_router().update_message_ts(callback_id, "slack", ts_val)
+    async def _update_local() -> None:
+        await get_interaction_router().update_message_ts(callback_id, "slack", ts_val)
+
+    asyncio.run(_update_local())
 
 
 def get_cli_guide() -> str:
@@ -259,22 +345,17 @@ def cli_main(args: list[str]) -> None:
 
     interaction: InteractionRequest | None = None
     if ns.interactive:
-        from core.notification.interactive import get_interaction_router
-
         anima_name = _resolve_cli_anima_name()
         opts_list = [p.strip() for p in ns.options.split(",") if p.strip()]
 
-        async def _create_interaction() -> InteractionRequest:
-            return await get_interaction_router().create(
+        try:
+            interaction = _create_interaction_via_server(
                 anima_name,
                 ns.category,
                 opts_list,
-                allowed_users={"slack": []},
-                callback_id=ns.callback_id or None,
+                {"slack": []},
+                ns.callback_id,
             )
-
-        try:
-            interaction = asyncio.run(_create_interaction())
         except ValueError as e:
             print(f"ERROR: {e}", file=sys.stderr)
             sys.exit(1)
@@ -311,9 +392,7 @@ def cli_main(args: list[str]) -> None:
             results.append(f"slack: {status}")
 
             if ns.interactive and interaction is not None and status == "OK" and slack_ts:
-                asyncio.run(
-                    _persist_interaction_slack_ts(interaction.callback_id, str(slack_ts)),
-                )
+                _persist_interaction_slack_ts(interaction.callback_id, str(slack_ts))
         else:
             results.append(f"{ch_type}: not supported in CLI mode")
 
