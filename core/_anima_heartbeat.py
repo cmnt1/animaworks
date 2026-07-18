@@ -419,35 +419,52 @@ class HeartbeatMixin:
             len(trimmed),
         )
 
+    def _build_state_cleanup_instruction(self) -> str | None:
+        """Return a self-cleanup instruction when current_state.md nears the limit.
+
+        Triggers at 80% of ``heartbeat.current_state_max_chars``: the
+        post-session hard trim leaves the file just *under* the limit, so a
+        trigger at 100% would never fire again once trimming starts — the
+        anima would stay in a machine-trim equilibrium and never see the
+        instruction.  Returns ``None`` when trimming is disabled or the
+        state is below the soft threshold.
+        """
+        max_chars = self._get_current_state_max_chars()
+        if max_chars <= 0:
+            return None
+        state = self.memory.read_current_state()
+        state_len = len(state)
+        soft_threshold = int(max_chars * 0.8)
+        if state_len <= soft_threshold:
+            return None
+        logger.info(
+            "[%s] current_state.md nears limit (%d > %d of max %d), injecting cleanup instruction",
+            self.name,
+            state_len,
+            soft_threshold,
+            max_chars,
+        )
+        return t(
+            "heartbeat.current_state_cleanup_required",
+            current_chars=state_len,
+            max_chars=max_chars,
+            target_chars=max_chars // 2,
+        )
+
     async def _build_heartbeat_prompt(self) -> list[str]:
         """Build heartbeat prompt parts.
 
         Heartbeat-specific header + shared background context.
-        When current_state.md exceeds the cleanup threshold, a compression
+        When current_state.md nears the cleanup threshold, a compression
         instruction is prepended so the anima trims it first.
         """
         hb_config = self.memory.read_heartbeat_config()
         checklist = hb_config or load_prompt("heartbeat_default_checklist")
         parts = [load_prompt("heartbeat", checklist=checklist)]
 
-        _max_chars = self._get_current_state_max_chars()
-        if _max_chars > 0:
-            state = self.memory.read_current_state()
-            state_len = len(state)
-            if state_len > _max_chars:
-                parts.append(
-                    t(
-                        "heartbeat.current_state_cleanup_required",
-                        current_chars=state_len,
-                        max_chars=_max_chars,
-                    )
-                )
-                logger.info(
-                    "[%s] current_state.md exceeds threshold (%d > %d), injecting cleanup instruction",
-                    self.name,
-                    state_len,
-                    _max_chars,
-                )
+        cleanup = self._build_state_cleanup_instruction()
+        if cleanup:
+            parts.append(cleanup)
 
         parts.extend(self._build_background_context_parts())
 
@@ -485,6 +502,12 @@ class HeartbeatMixin:
         )
         if cron_prompt:
             parts.append(cron_prompt)
+
+        # Cron sessions append to current_state.md far more often than
+        # heartbeats do, so they need the cleanup nudge as well.
+        cleanup = self._build_state_cleanup_instruction()
+        if cleanup:
+            parts.append(cleanup)
 
         # Inject command output if this is a follow-up to a command cron
         if command_output:

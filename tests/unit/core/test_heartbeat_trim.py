@@ -86,6 +86,9 @@ class TestHeartbeatPromptCleanupInstruction:
     @pytest.mark.asyncio
     async def test_no_injection_when_disabled(self, mixin):
         mixin._get_current_state_max_chars = MagicMock(return_value=0)
+        mixin._build_state_cleanup_instruction = (
+            lambda: HeartbeatMixin._build_state_cleanup_instruction(mixin)
+        )
         mixin.memory.read_heartbeat_config.return_value = None
         mixin._build_background_context_parts = MagicMock(return_value=[])
 
@@ -98,6 +101,9 @@ class TestHeartbeatPromptCleanupInstruction:
     async def test_injection_when_over_threshold(self, mixin):
         mixin._get_current_state_max_chars = MagicMock(return_value=100)
         mixin.memory.read_current_state.return_value = "x" * 200
+        mixin._build_state_cleanup_instruction = (
+            lambda: HeartbeatMixin._build_state_cleanup_instruction(mixin)
+        )
         mixin.memory.read_heartbeat_config.return_value = None
         mixin._build_background_context_parts = MagicMock(return_value=[])
 
@@ -105,4 +111,58 @@ class TestHeartbeatPromptCleanupInstruction:
             parts = await HeartbeatMixin._build_heartbeat_prompt(mixin)
 
         assert len(parts) == 2
-        assert "current_state" in parts[1] or "200" in parts[1] or "100" in parts[1]
+        assert "current_state.md" in parts[1]
+        assert "200" in parts[1] and "100" in parts[1]
+
+
+class TestStateCleanupInstruction:
+    """_build_state_cleanup_instruction fires at 80% of the limit."""
+
+    def test_i18n_string_defined(self):
+        """Regression: the cleanup key must exist in the i18n catalog.
+
+        When the key is missing, t() silently returns the raw key string and
+        animas receive a meaningless token instead of an instruction.
+        """
+        from core.i18n import _STRINGS
+
+        assert "heartbeat.current_state_cleanup_required" in _STRINGS
+
+    def test_none_when_disabled(self, mixin):
+        mixin._get_current_state_max_chars = MagicMock(return_value=0)
+
+        assert HeartbeatMixin._build_state_cleanup_instruction(mixin) is None
+
+    def test_fires_above_soft_threshold(self, mixin):
+        """State between 80% and 100% of the limit must trigger the nudge.
+
+        The hard trim keeps the file just under the limit, so a 100% trigger
+        would never fire again once trimming starts.
+        """
+        mixin._get_current_state_max_chars = MagicMock(return_value=100)
+        mixin.memory.read_current_state.return_value = "x" * 90
+
+        result = HeartbeatMixin._build_state_cleanup_instruction(mixin)
+
+        assert result is not None
+        assert "current_state.md" in result
+        assert result != "heartbeat.current_state_cleanup_required"
+
+    def test_none_below_soft_threshold(self, mixin):
+        mixin._get_current_state_max_chars = MagicMock(return_value=100)
+        mixin.memory.read_current_state.return_value = "x" * 70
+
+        assert HeartbeatMixin._build_state_cleanup_instruction(mixin) is None
+
+    def test_cron_prompt_includes_cleanup(self, mixin):
+        mixin._get_current_state_max_chars = MagicMock(return_value=100)
+        mixin.memory.read_current_state.return_value = "x" * 200
+        mixin._build_state_cleanup_instruction = (
+            lambda: HeartbeatMixin._build_state_cleanup_instruction(mixin)
+        )
+        mixin._build_background_context_parts = MagicMock(return_value=[])
+
+        with patch("core._anima_heartbeat.load_prompt", return_value="cron"):
+            prompt = HeartbeatMixin._build_cron_prompt(mixin, "task", "desc")
+
+        assert "current_state.md" in prompt
