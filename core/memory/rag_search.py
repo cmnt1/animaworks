@@ -140,42 +140,40 @@ class RAGMemorySearch:
             self._indexer = MemoryIndexer(vector_store, anima_name, self._anima_dir)
             logger.debug("RAG indexer initialized for anima=%s", anima_name)
 
-            # Index procedures directory alongside knowledge
-            procedures_dir = self._anima_dir / "procedures"
-            if procedures_dir.is_dir() and any(procedures_dir.glob("*.md")):
+            # Cold catch-up: index personal memory dirs that have sources.
+            # index_directory uses index_meta hash + collection existence checks
+            # so unchanged files are skipped on subsequent inits (no full re-embed).
+            # knowledge/episodes/skills were previously only covered by CLI full
+            # index or daily scheduler; without those they never entered dense search.
+            cold_sources: list[tuple[str, Path, str]] = [
+                ("knowledge", self._anima_dir / "knowledge", "*.md"),
+                ("episodes", self._anima_dir / "episodes", "*.md"),
+                ("procedures", self._anima_dir / "procedures", "*.md"),
+                ("skills", self._anima_dir / "skills", "SKILL.md"),
+                ("facts", self._anima_dir / "facts", "*.jsonl"),
+            ]
+            for memory_type, memory_dir, pattern in cold_sources:
+                if not memory_dir.is_dir() or not any(memory_dir.rglob(pattern)):
+                    continue
                 try:
-                    indexed = self._indexer.index_directory(
-                        procedures_dir,
-                        "procedures",
-                    )
+                    indexed = self._indexer.index_directory(memory_dir, memory_type)
                     if indexed.chunks_indexed > 0:
                         logger.debug(
-                            "Indexed %d chunks from procedures/",
+                            "Indexed %d chunks from %s/",
                             indexed.chunks_indexed,
+                            memory_type,
                         )
                 except Exception as e:
-                    logger.warning("Failed to index procedures: %s", e)
-
-            facts_dir = self._anima_dir / "facts"
-            if facts_dir.is_dir() and any(facts_dir.glob("*.jsonl")):
-                try:
-                    indexed = self._indexer.index_directory(
-                        facts_dir,
-                        "facts",
-                    )
-                    if indexed.chunks_indexed > 0:
-                        logger.debug(
-                            "Indexed %d chunks from facts/",
-                            indexed.chunks_indexed,
+                    if memory_type == "facts":
+                        warn_rate_limited(
+                            logger,
+                            "fact_extraction.rag_search_facts_index",
+                            "Failed to index facts for anima=%s",
+                            anima_name,
+                            exc_info=(type(e), e, e.__traceback__),
                         )
-                except Exception as e:
-                    warn_rate_limited(
-                        logger,
-                        "fact_extraction.rag_search_facts_index",
-                        "Failed to index facts for anima=%s",
-                        anima_name,
-                        exc_info=(type(e), e, e.__traceback__),
-                    )
+                    else:
+                        logger.warning("Failed to index %s: %s", memory_type, e)
 
             # Index conversation summary (compressed_summary)
             state_dir = self._anima_dir / "state"
@@ -721,8 +719,9 @@ class RAGMemorySearch:
         """Sparse keyword search used alongside vectors and as fallback.
 
         Long-term personal memory uses the persisted BM25 corpus. Shared
-        common_knowledge, facts, and conversation summary keep the legacy file
-        scan because they are outside the per-anima long-term BM25 index.
+        common_knowledge, skills/common_skills, facts, and conversation summary
+        keep the legacy file scan because they are outside the per-anima
+        long-term BM25 index.
         """
         dirs: list[tuple[Path, str]] = []
         longterm_types: list[str] = []
@@ -803,6 +802,12 @@ class RAGMemorySearch:
                         **self._keyword_file_metadata(f, memory_type),
                     }
 
+        if scope in ("skills", "all"):
+            for hit in self._keyword_search_skills(tokens):
+                rel_path = hit["source_file"]
+                if rel_path not in file_scores or file_scores[rel_path]["score"] < hit["score"]:
+                    file_scores[rel_path] = hit
+
         if scope in ("facts", "all"):
             for hit in self._keyword_search_facts(query, tokens):
                 rel_path = f"{hit['source_file']}:{hit.get('fact_id', '')}"
@@ -872,6 +877,86 @@ class RAGMemorySearch:
         if scope == "all":
             return ["facts", "knowledge", "episodes", "procedures", "skills", "conversation_summary"]
         return ["knowledge"]
+
+    def _keyword_search_skills(self, tokens: list[str]) -> list[dict]:
+        """Sparse keyword search over personal and shared SKILL.md files.
+
+        Used when vector search is unavailable. Applies the same curator deny
+        constraints as the vector path (indexer skip + retriever filter).
+        """
+        if not tokens:
+            return []
+
+        try:
+            from core.skills.curator import curator_allows_access, replay_curator_state
+            from core.skills.loader import load_skill_metadata
+        except ImportError:
+            return []
+
+        try:
+            replay = replay_curator_state(self._anima_dir)
+        except Exception:
+            logger.debug("Failed to replay curator state for skill keyword search", exc_info=True)
+            replay = None
+
+        skill_roots: list[tuple[Path, str, Path]] = []
+        personal_skills = self._anima_dir / "skills"
+        if personal_skills.is_dir():
+            skill_roots.append((personal_skills, "skills", self._anima_dir))
+        if self._common_skills_dir.is_dir():
+            # source_file for shared skills is ``common_skills/<name>/SKILL.md``
+            # relative to the data dir parent of common_skills/.
+            skill_roots.append(
+                (self._common_skills_dir, "common_skills", self._common_skills_dir.parent)
+            )
+
+        results: list[dict] = []
+        for root_dir, memory_type, rel_base in skill_roots:
+            for skill_path in sorted(root_dir.rglob("SKILL.md")):
+                if not skill_path.is_file():
+                    continue
+                try:
+                    meta = load_skill_metadata(skill_path)
+                    allowed, _reason = curator_allows_access(meta, replay=replay)
+                except Exception:
+                    logger.debug(
+                        "Failed to evaluate skill curator access for keyword search: %s",
+                        skill_path,
+                        exc_info=True,
+                    )
+                    continue
+                if not allowed:
+                    continue
+                try:
+                    content = skill_path.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                content_lower = content.lower()
+                matched = sum(1 for tok in tokens if _keyword_token_matches(tok, content_lower))
+                if matched == 0:
+                    continue
+                score = matched / len(tokens)
+                try:
+                    rel_path = str(skill_path.relative_to(rel_base)).replace("\\", "/")
+                except ValueError:
+                    rel_path = f"{memory_type}/{skill_path.parent.name}/SKILL.md"
+                lines = content.split("\n")
+                preview = "\n".join(lines[:30])
+                results.append(
+                    {
+                        "source_file": rel_path,
+                        "content": preview,
+                        "score": score,
+                        "chunk_index": 0,
+                        "total_chunks": 1,
+                        "memory_type": memory_type,
+                        "search_method": "keyword_fallback",
+                        **self._keyword_file_metadata(skill_path, memory_type),
+                    }
+                )
+
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results
 
     def _keyword_search_facts(self, query: str, tokens: list[str] | None = None) -> list[dict]:
         """Keyword search over active legacy facts JSONL records."""

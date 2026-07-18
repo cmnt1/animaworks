@@ -593,7 +593,7 @@ class SchedulerMixin:
         """Run daily RAG indexing for all animas.
 
         Incrementally indexes all memory files (knowledge, episodes,
-        procedures, skills) into each anima's per-anima vectordb.
+        procedures, skills, facts) into each anima's per-anima vectordb.
         Also indexes shared collections (common_knowledge, common_skills).
         Runs at 04:00 (configured TZ), after consolidation (02:00) and
         weekly/monthly jobs (03:00) to capture all generated/modified files.
@@ -707,6 +707,7 @@ class SchedulerMixin:
                     ("episodes", anima_dir / "episodes"),
                     ("procedures", anima_dir / "procedures"),
                     ("skills", anima_dir / "skills"),
+                    ("facts", anima_dir / "facts"),
                 ]
 
                 for memory_type, memory_dir in memory_types:
