@@ -967,6 +967,7 @@ class SchedulerMixin:
                 suppressed_messages_max_size_mb=hk_cfg.suppressed_messages_max_size_mb,
                 suppressed_messages_keep_generations=hk_cfg.suppressed_messages_keep_generations,
                 archive_superseded_retention_days=hk_cfg.archive_superseded_retention_days,
+                hygiene_grace_days=hk_cfg.hygiene_grace_days,
                 inbox_ttl_hours=inbox_cfg.ttl_hours,
                 inbox_expired_retention_days=inbox_cfg.expired_retention_days,
                 inbox_processed_retention_days=inbox_cfg.processed_retention_days,

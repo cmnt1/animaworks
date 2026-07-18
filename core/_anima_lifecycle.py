@@ -19,6 +19,7 @@ from typing import Any
 
 from core.execution._sanitize import ORIGIN_SYSTEM
 from core.i18n import t
+from core.memory.hygiene import scan_memory_hygiene
 from core.paths import load_prompt
 from core.schemas import CycleResult
 from core.time_utils import now_local
@@ -66,6 +67,38 @@ def _format_merge_candidates(candidates: list[tuple[str, str, float]]) -> str:
     for a, b, sim in candidates:
         lines.append(f"- {a} ↔ {b} (similarity: {sim:.2f})")
     return "\n".join(lines)
+
+
+def _format_hygiene_section(
+    report: dict[str, list[dict[str, Any]]],
+    *,
+    locale: str | None = None,
+) -> str:
+    """Format detected memory hygiene items for the weekly prompt."""
+    categories = (
+        ("merged_leftovers", "memory_hygiene.merged_leftovers"),
+        ("inherited_dirs", "memory_hygiene.inherited_dirs"),
+        ("mdc_files", "memory_hygiene.mdc_files"),
+        ("oversized_knowledge", "memory_hygiene.oversized_knowledge"),
+        ("noncanonical_archive_dirs", "memory_hygiene.noncanonical_archive_dirs"),
+    )
+    sections: list[str] = []
+    for category, title_key in categories:
+        items = report.get(category, [])
+        if not items:
+            continue
+        lines = [t(title_key, locale=locale)]
+        for item in items[:20]:
+            path = str(item.get("path", ""))
+            if category == "oversized_knowledge" and isinstance(item.get("size_bytes"), int):
+                path = f"{path} ({item['size_bytes'] / 1024:.1f} KB)"
+            lines.append(f"- {path}")
+        if len(items) > 20:
+            lines.append(t("memory_hygiene.remaining", locale=locale, count=len(items) - 20))
+        sections.append("\n".join(lines))
+    if not sections:
+        return ""
+    return t("memory_hygiene.header", locale=locale) + "\n\n" + "\n\n".join(sections)
 
 
 _PROVIDER_ENV_MAP: dict[str, str] = {
@@ -681,12 +714,23 @@ class LifecycleMixin:
             merge_candidates = []
         merge_candidates_text = _format_merge_candidates(merge_candidates)
 
+        try:
+            hygiene_report = scan_memory_hygiene(self.anima_dir)
+            hygiene_section = _format_hygiene_section(
+                hygiene_report,
+                locale=getattr(cfg, "locale", None),
+            )
+        except Exception:
+            logger.warning("[%s] memory hygiene scan failed", self.name, exc_info=True)
+            hygiene_section = ""
+
         prompt = load_prompt(
             "memory/weekly_consolidation_instruction",
             anima_name=self.name,
             knowledge_files_list=knowledge_list_text,
             merge_candidates=merge_candidates_text,
             total_knowledge_count=len(knowledge_files),
+            hygiene_section=hygiene_section,
         )
 
         base_model_config = self.memory.read_model_config()

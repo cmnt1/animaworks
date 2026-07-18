@@ -1228,6 +1228,12 @@ def register_all_steps(runner: Any) -> None:
         ),
         MigrationStep("prompt_resync", "Resync prompts/ from templates", "template_sync", step_prompt_resync),
         MigrationStep(
+            "memory_hygiene_prompt_resync_20260718",
+            "Resync prompts for memory hygiene section",
+            "template_sync",
+            step_prompt_resync,
+        ),
+        MigrationStep(
             "common_knowledge_resync", "Resync common_knowledge/", "template_sync", step_common_knowledge_resync
         ),
         MigrationStep("common_skills_resync", "Resync common_skills/", "template_sync", step_common_skills_resync),
