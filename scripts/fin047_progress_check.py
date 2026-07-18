@@ -403,8 +403,19 @@ def directive_lines(fresh: list[dict], pending: list[dict]) -> list[str]:
 def post_to_discord(text: str) -> str:
     from core.discord_webhooks import get_webhook_manager
 
+    # 専用スレッドが登録されていればそこへ、なければ #finance トップへ
+    channel_id, thread_id = DISCORD_FINANCE_CHANNEL_ID, None
+    try:
+        from core.project_threads import resolve_thread_for_code
+
+        resolved = resolve_thread_for_code("FIN-047")
+        if resolved:
+            channel_id, thread_id = resolved
+    except Exception:
+        pass
+
     wm = get_webhook_manager()
-    return wm.send_as_anima(DISCORD_FINANCE_CHANNEL_ID, REPORTER_NAME, text)
+    return wm.send_as_anima(channel_id, REPORTER_NAME, text, thread_id=thread_id)
 
 
 def main() -> int:

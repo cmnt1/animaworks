@@ -499,12 +499,26 @@ class BoardDiscordSync:
         if not discord_cfg.enabled:
             return None
 
-        # Reverse lookup: board_name -> discord_channel_id
-        channel_id = None
-        for ch_id, bname in discord_cfg.board_mapping.items():
-            if bname == board_name:
-                channel_id = ch_id
-                break
+        # Project-thread routing: posts mentioning a registered project task
+        # code (e.g. FIN-047) go INTO its dedicated thread instead of
+        # scattering across the top level of #finance / #management.
+        thread_id: str | None = None
+        channel_id: str | None = None
+        try:
+            from core.project_threads import resolve_thread_for_text
+
+            routed = resolve_thread_for_text(text)
+            if routed is not None:
+                _code, channel_id, thread_id = routed
+        except Exception:
+            logger.warning("BoardDiscordSync: project-thread routing failed", exc_info=True)
+
+        if channel_id is None:
+            # Reverse lookup: board_name -> discord_channel_id
+            for ch_id, bname in discord_cfg.board_mapping.items():
+                if bname == board_name:
+                    channel_id = ch_id
+                    break
         if not channel_id:
             return None
 
@@ -514,9 +528,14 @@ class BoardDiscordSync:
 
             wm = get_webhook_manager()
             discord_text = md_to_discord(text)
-            msg_id = wm.send_as_anima(channel_id, from_person, discord_text)
+            msg_id = wm.send_as_anima(channel_id, from_person, discord_text, thread_id=thread_id)
             if msg_id:
-                logger.info("BoardDiscordSync: synced '%s' -> %s", board_name, channel_id)
+                logger.info(
+                    "BoardDiscordSync: synced '%s' -> %s%s",
+                    board_name,
+                    channel_id,
+                    f" (thread {thread_id})" if thread_id else "",
+                )
                 return msg_id
             return None
         except Exception:

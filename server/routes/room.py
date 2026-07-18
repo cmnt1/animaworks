@@ -297,6 +297,50 @@ class ActionItemsRequest(BaseModel):
 # ── Helpers ─────────────────────────────────────────────────
 
 
+def _ensure_project_thread_for_room(
+    task_code: str,
+    task_title: str,
+    department: str,
+    room_title: str,
+    action_items: list[dict],
+) -> None:
+    """会議クローズ時にプロジェクト専用 Discord スレッドを確立し、キックオフを投稿する.
+
+    以後、タスクコードに言及する board 投稿は BoardDiscordSync がこのスレッドへ
+    ルーティングする (core/project_threads.py)。失敗しても close は妨げない。
+    """
+    try:
+        from core.project_threads import ensure_project_thread, resolve_thread_for_code
+
+        already = resolve_thread_for_code(task_code.strip())
+        lines = [f"**[{task_code}] {task_title or room_title}** のミーティングがクローズされました。"]
+        if action_items:
+            lines.append("")
+            lines.append("**アクションアイテム:**")
+            for item in action_items:
+                assignee = item.get("assignee", "?")
+                text = (item.get("text") or "")[:200]
+                lines.append(f"- {assignee}: {text}")
+        lines.append("")
+        lines.append(f"以後、{task_code} に関する報告・進捗はこのスレッドに集約されます。")
+        kickoff = "\n".join(lines)
+
+        result = ensure_project_thread(
+            task_code,
+            title=task_title or room_title,
+            department=department,
+            kickoff_text=kickoff,
+        )
+        if result and already:
+            # 既存スレッド再利用時もクローズ通知は流す
+            from core.discord_webhooks import get_webhook_manager
+
+            channel_id, thread_id = result
+            get_webhook_manager().send_as_anima(channel_id, "AnimaWorks 会議", kickoff, thread_id=thread_id)
+    except Exception:
+        logger.exception("Project thread setup failed for %s", task_code)
+
+
 def _get_room_manager(request: Request) -> RoomManager:
     """Get RoomManager from app state. Raises 503 if not available."""
     room_manager = getattr(request.app.state, "room_manager", None)
@@ -847,6 +891,21 @@ def create_room_router() -> APIRouter:
             room_manager.close_room(room_id)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from None
+
+        # Project meeting: ensure a dedicated Discord thread exists and post
+        # the kickoff summary (fire-and-forget; failures never block close).
+        room = room_manager.get_room(room_id)
+        if room is not None and room.project_task_code:
+            asyncio.create_task(
+                asyncio.to_thread(
+                    _ensure_project_thread_for_room,
+                    room.project_task_code,
+                    room.project_task_title,
+                    room.project_department,
+                    room.title,
+                    list(room.action_items or []),
+                )
+            )
 
         # Generate minutes
         try:

@@ -398,3 +398,26 @@ class DiscordClient:
         """GET /guilds/{guild_id}/channels — all channels (including categories)."""
         result = self._request("GET", f"/guilds/{guild_id}/channels")
         return result if isinstance(result, list) else []
+
+    # ── Threads ───────────────────────────────────────────────
+
+    _CHANNEL_TYPE_PUBLIC_THREAD = 11
+
+    def start_thread(
+        self,
+        channel_id: str,
+        name: str,
+        *,
+        auto_archive_duration: int = 10080,
+    ) -> dict:
+        """POST /channels/{channel_id}/threads — start a public thread (no source message)."""
+        result = self._request(
+            "POST",
+            f"/channels/{channel_id}/threads",
+            json={
+                "name": name,
+                "type": self._CHANNEL_TYPE_PUBLIC_THREAD,
+                "auto_archive_duration": auto_archive_duration,
+            },
+        )
+        return result if isinstance(result, dict) else {}
