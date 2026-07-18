@@ -39,14 +39,58 @@ import re
 import subprocess
 import urllib.error
 import urllib.request
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("animaworks.task_verification")
 
 _GIT_TIMEOUT_S = 15
+_GIT_LOG_MAX_COUNT = 500
 _HTTP_DEFAULT_TIMEOUT_S = 5
-_CHECKBOX_RE = re.compile(r"^\s*[-*]\s*\[([ xX])\]\s*(.*)$")
+CHECKBOX_RE = re.compile(r"^\s*[-*]\s*\[([ xX])\]\s*(.*)$")
+
+
+def iter_checkboxes(text: str) -> Iterator[tuple[bool, str]]:
+    """Yield (checked, label) for every markdown checkbox line in text."""
+    for line in text.splitlines():
+        m = CHECKBOX_RE.match(line)
+        if m:
+            yield m.group(1) != " ", m.group(2)
+
+
+def parse_channel_line(line: str) -> dict[str, str] | None:
+    """Parse one shared-channel JSONL line into {sender, ts, text} (None on failure).
+
+    Channel logs are written by ``Messenger`` with ``from``/``ts``/``text``;
+    the fallbacks tolerate older/alternate key spellings. This is the single
+    place that knows the channel-log message schema.
+    """
+    import json
+
+    try:
+        msg = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(msg, dict):
+        return None
+    return {
+        "sender": msg.get("from") or msg.get("sender") or msg.get("author") or "",
+        "ts": msg.get("ts") or msg.get("timestamp") or "",
+        "text": msg.get("text") or msg.get("content") or "",
+    }
+
+
+def iter_channel_posts(log_path: Path) -> Iterator[dict[str, str]]:
+    """Yield parsed posts from a shared-channel JSONL log, oldest first."""
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return
+    for line in lines:
+        msg = parse_channel_line(line)
+        if msg is not None:
+            yield msg
 
 
 def extract_criteria(meta: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -111,7 +155,7 @@ def _check_git_commit(c: dict[str, Any]) -> str | None:
         return f"repo does not exist: {repo}"
     branch = c.get("branch")
     ref = branch or "HEAD"
-    cmd = ["git", "-C", str(repo), "log", "--format=%s", ref]
+    cmd = ["git", "-C", str(repo), "log", "--format=%s", f"--max-count={_GIT_LOG_MAX_COUNT}", ref]
     try:
         proc = subprocess.run(
             cmd,
@@ -160,20 +204,17 @@ def _check_openspec_tasks_checked(c: dict[str, Any]) -> str | None:
     if not p.is_file():
         return f"tasks file does not exist: {tasks_md}"
     try:
-        lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+        text = p.read_text(encoding="utf-8", errors="replace")
     except OSError as e:
         return f"cannot read {tasks_md}: {e}"
     matched = 0
     unchecked: list[str] = []
-    for line in lines:
-        m = _CHECKBOX_RE.match(line)
-        if not m:
-            continue
-        if not re.search(pattern, m.group(2)):
+    for checked, label in iter_checkboxes(text):
+        if not re.search(pattern, label):
             continue
         matched += 1
-        if m.group(1) == " ":
-            unchecked.append(m.group(2).strip()[:80])
+        if not checked:
+            unchecked.append(label.strip()[:80])
     if matched == 0:
         return f"no checkbox matching {pattern!r} in {tasks_md}"
     if unchecked:
@@ -182,8 +223,6 @@ def _check_openspec_tasks_checked(c: dict[str, Any]) -> str | None:
 
 
 def _check_channel_post(c: dict[str, Any]) -> str | None:
-    import json
-
     channel = c.get("channel")
     sender = c.get("sender")
     if not channel or not sender:
@@ -200,18 +239,17 @@ def _check_channel_post(c: dict[str, Any]) -> str | None:
         lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError as e:
         return f"cannot read {log_path}: {e}"
-    for line in lines:
-        try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
+    # Newest-first: since_ts-gated matches live at the tail of the log, and the
+    # cheap substring prefilter avoids json-parsing the (unbounded) history.
+    for line in reversed(lines):
+        if sender not in line:
             continue
-        if (msg.get("from") or msg.get("sender") or msg.get("author")) != sender:
+        msg = parse_channel_line(line)
+        if msg is None or msg["sender"] != sender:
             continue
-        ts = msg.get("ts") or msg.get("timestamp") or ""
-        if since_ts and ts < since_ts:
+        if since_ts and msg["ts"] < since_ts:
             continue
-        text = msg.get("text") or msg.get("content") or ""
-        if pattern and not re.search(pattern, text):
+        if pattern and not re.search(pattern, msg["text"]):
             continue
         return None
     detail = f" matching {pattern!r}" if pattern else ""

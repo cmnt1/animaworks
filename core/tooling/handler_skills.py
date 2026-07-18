@@ -612,8 +612,9 @@ class SkillsToolsMixin:
             )
 
         if status == "done" and entry.status != "done":
-            notes = (entry.meta or {}).get("status_notes") or []
-            detail = notes[-1].get("note", "") if notes and isinstance(notes[-1], dict) else ""
+            rejection = (entry.meta or {}).get("completion_rejection") or {}
+            failures = rejection.get("failures") or []
+            detail = "\n".join(f"- {f}" for f in failures)
             return _error_result(
                 "CompletionCriteriaUnmet",
                 f"Task {task_id} cannot be marked done: machine-verified completion criteria are unmet. "

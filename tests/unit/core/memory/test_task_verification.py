@@ -160,11 +160,33 @@ def test_done_rejected_while_criteria_unmet(tmp_path: Path) -> None:
     assert result.status == "pending"  # unchanged
     notes = result.meta.get("status_notes")
     assert notes and "completion criteria unmet" in notes[-1]["note"]
+    rejection = result.meta.get("completion_rejection")
+    assert rejection and rejection["failures"]
 
     # Persisted state also unchanged
     reloaded = tqm.get_task_by_id(entry.task_id)
     assert reloaded is not None
     assert reloaded.status == "pending"
+
+
+def test_repeat_identical_rejection_not_reappended(tmp_path: Path) -> None:
+    """Retry loops must not grow the queue log with identical rejections."""
+    tqm = _make_manager(tmp_path)
+    entry = _add_task(
+        tqm,
+        meta={"completion_criteria": [{"type": "path_exists", "path": str(tmp_path / "never")}]},
+    )
+
+    tqm.update_status(entry.task_id, "done")
+    size_after_first = tqm.queue_path.stat().st_size
+    tqm.update_status(entry.task_id, "done")
+    tqm.update_status(entry.task_id, "done")
+    assert tqm.queue_path.stat().st_size == size_after_first
+
+    reloaded = tqm.get_task_by_id(entry.task_id)
+    assert reloaded is not None
+    notes = reloaded.meta.get("status_notes") or []
+    assert len([n for n in notes if "completion criteria unmet" in n["note"]]) == 1
 
 
 def test_done_allowed_once_criteria_met(tmp_path: Path) -> None:

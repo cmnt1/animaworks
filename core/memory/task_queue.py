@@ -536,9 +536,12 @@ class TaskQueueManager:
     def _reject_unmet_completion_criteria(self, task: TaskEntry) -> TaskEntry | None:
         """Gate the transition to ``done`` behind machine-verified criteria.
 
-        Returns the task unchanged (status preserved, rejection recorded as a
-        status note) when ``meta.completion_criteria`` is present and unmet,
-        or None when the transition may proceed.
+        Returns the task unchanged (status preserved, failures recorded in
+        ``meta.completion_rejection`` and as a status note) when
+        ``meta.completion_criteria`` is present and unmet, or None when the
+        transition may proceed. Repeat rejections with identical failures are
+        not re-appended, so retry loops (e.g. delegated-task sync on every
+        heartbeat) do not grow the queue log.
         """
         from core.memory.task_verification import extract_criteria, verify_completion_criteria
 
@@ -549,9 +552,15 @@ class TaskQueueManager:
         if not failures:
             return None
 
+        prev_rejection = (task.meta or {}).get("completion_rejection") or {}
+        if prev_rejection.get("failures") == failures:
+            logger.info("Task %s: done rejected again with identical failures (not re-recorded)", task.task_id)
+            return task
+
         now = now_iso()
         rejection_note = "done rejected — completion criteria unmet:\n" + "\n".join(f"- {f}" for f in failures)
         merged_meta = _append_status_note(task.meta or {}, note=rejection_note, status=task.status, ts=now)
+        merged_meta["completion_rejection"] = {"ts": now, "failures": failures}
         self._append(
             {
                 "task_id": task.task_id,

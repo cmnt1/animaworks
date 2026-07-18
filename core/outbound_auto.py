@@ -514,11 +514,9 @@ class BoardDiscordSync:
             logger.warning("BoardDiscordSync: project-thread routing failed", exc_info=True)
 
         if channel_id is None:
-            # Reverse lookup: board_name -> discord_channel_id
-            for ch_id, bname in discord_cfg.board_mapping.items():
-                if bname == board_name:
-                    channel_id = ch_id
-                    break
+            from core.project_threads import board_to_channel_id
+
+            channel_id = board_to_channel_id(board_name)
         if not channel_id:
             return None
 

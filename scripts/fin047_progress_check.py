@@ -43,6 +43,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+from core.memory.task_verification import iter_channel_posts, iter_checkboxes  # noqa: E402
+from core.paths import get_animas_dir, get_data_dir, get_shared_dir  # noqa: E402
+from core.time_utils import now_local  # noqa: E402
+
 # ── FIN-047 configuration ──────────────────────────────────────────────
 
 FINANCE_REPO = Path(r"E:\OneDriveBiz\Tools\Finance")
@@ -59,13 +63,14 @@ OPENSPEC_CHANGE_DIR = OPENSPEC_TASKS_MD.parent
 OPENSPEC_ARCHIVE_DIR = FINANCE_REPO / "openspec" / "changes" / "archive"
 OBSIDIAN_PROJECTS_DIR = Path(r"E:\OneDriveBiz\Obsidian") / "_notes" / "Projects"
 
-DATA_DIR = Path.home() / ".animaworks"
-SNAPSHOT_PATH = DATA_DIR / "state" / "fin047_progress_snapshot.json"
-FINANCE_CHANNEL_JSONL = DATA_DIR / "shared" / "channels" / "finance.jsonl"
+SNAPSHOT_PATH = get_data_dir() / "state" / "fin047_progress_snapshot.json"
+FINANCE_CHANNEL_JSONL = get_shared_dir() / "channels" / "finance.jsonl"
 OWNER_NAMES = {"室町", "cmnt"}
 DIRECTIVE_ASSIGNEE = "ayane"
 
-_CHECKBOX_RE = re.compile(r"^\s*[-*]\s*\[([ xX])\]\s*(.*)$")
+# FIN-047 言及判定 (seed する channel_post criteria の pattern と同一に保つこと)
+FIN047_PATTERN = r"(?i)fin-?047"
+FIN047_RE = re.compile(FIN047_PATTERN)
 
 
 # ── Collectors (each fail-soft: return a dict with an "error" key) ─────
@@ -144,15 +149,12 @@ def collect_openspec() -> dict:
         if line.startswith("#"):
             current = line.lstrip("#").strip()
             continue
-        m = _CHECKBOX_RE.match(line)
-        if not m:
-            continue
-        total += 1
-        done = m.group(1) != " "
-        checked += int(done)
-        sec = sections.setdefault(current, [0, 0])
-        sec[0] += int(done)
-        sec[1] += 1
+        for done, _label in iter_checkboxes(line):
+            total += 1
+            checked += int(done)
+            sec = sections.setdefault(current, [0, 0])
+            sec[0] += int(done)
+            sec[1] += 1
     return {"checked": checked, "total": total, "sections": sections}
 
 
@@ -170,28 +172,17 @@ def collect_servers() -> dict:
 
 def collect_tasks() -> dict:
     """各担当アニマの task_queue から FIN-047 関連のアクティブタスクを読む (read-only)."""
-    active_statuses = {"pending", "in_progress", "blocked", "delegated"}
+    from core.memory.task_queue import TaskQueueManager
+
     result: dict[str, list[str]] = {}
     for anima in ASSIGNEES:
-        queue = DATA_DIR / "animas" / anima / "state" / "task_queue.jsonl"
-        tasks: dict[str, dict] = {}
-        if queue.is_file():
-            for line in queue.read_text(encoding="utf-8", errors="replace").splitlines():
-                try:
-                    ev = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                tid = ev.get("task_id")
-                if not tid:
-                    continue
-                tasks.setdefault(tid, {}).update({k: v for k, v in ev.items() if v is not None})
         entries = []
-        for t in tasks.values():
-            text = f"{t.get('summary', '')} {t.get('original_instruction', '')} {json.dumps(t.get('meta') or {}, ensure_ascii=False)}"
-            if "FIN-047" not in text and "fin047" not in text.lower():
-                continue
-            if t.get("status") in active_statuses:
-                entries.append(f"[{t.get('status')}] {t.get('summary', '')[:60]}")
+        anima_dir = get_animas_dir() / anima
+        if anima_dir.is_dir():
+            for task in TaskQueueManager(anima_dir).load_active_tasks().values():
+                text = f"{task.summary} {task.original_instruction} {json.dumps(task.meta or {}, ensure_ascii=False)}"
+                if FIN047_RE.search(text):
+                    entries.append(f"[{task.status}] {task.summary[:60]}")
         result[anima] = entries
     return result
 
@@ -239,25 +230,14 @@ def collect_owner_directives(seen_ids: set[str]) -> list[dict]:
     オーナーの Discord 投稿は inbound ミラーで finance.jsonl に記録されるため、
     ここを読むだけで Discord 側の指示を拾える (read-only)。
     """
-    if not FINANCE_CHANNEL_JSONL.is_file():
-        return []
     directives = []
-    for line in FINANCE_CHANNEL_JSONL.read_text(encoding="utf-8", errors="replace").splitlines():
-        try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
+    for msg in iter_channel_posts(FINANCE_CHANNEL_JSONL):
+        if msg["sender"] not in OWNER_NAMES or not FIN047_RE.search(msg["text"]):
             continue
-        sender = msg.get("from") or msg.get("sender") or msg.get("author") or ""
-        if sender not in OWNER_NAMES:
-            continue
-        text = msg.get("text") or msg.get("content") or ""
-        if "FIN-047" not in text and "fin047" not in text.lower():
-            continue
-        ts = msg.get("ts") or msg.get("timestamp") or ""
-        did = _directive_id(ts, text)
+        did = _directive_id(msg["ts"], msg["text"])
         if did in seen_ids:
             continue
-        directives.append({"id": did, "ts": ts, "text": text})
+        directives.append({"id": did, "ts": msg["ts"], "text": msg["text"]})
     return directives
 
 
@@ -269,7 +249,7 @@ def seed_reflection_task(directive: dict) -> str | None:
     """オーナー指示ごとに ayane へ計画反映タスクを冪等投入する."""
     from core.memory.task_queue import TaskQueueManager
 
-    anima_dir = DATA_DIR / "animas" / DIRECTIVE_ASSIGNEE
+    anima_dir = get_animas_dir() / DIRECTIVE_ASSIGNEE
     if not anima_dir.is_dir():
         return None
     marker = reflection_marker(directive["id"])
@@ -377,7 +357,7 @@ def seed_daily_report_tasks(now: datetime, *, dry_run: bool) -> list[str]:
     since_ts = now.isoformat()
     seeded: list[str] = []
     for anima in ASSIGNEES:
-        anima_dir = DATA_DIR / "animas" / anima
+        anima_dir = get_animas_dir() / anima
         if not anima_dir.is_dir():
             continue
         tqm = TaskQueueManager(anima_dir)
@@ -421,7 +401,7 @@ def seed_daily_report_tasks(now: datetime, *, dry_run: bool) -> list[str]:
                         "type": "channel_post",
                         "channel": "finance",
                         "sender": anima,
-                        "pattern": "(?i)fin-?047",
+                        "pattern": FIN047_PATTERN,
                         "since_ts": since_ts,
                     }
                 ],
@@ -436,22 +416,9 @@ def collect_daily_report_status(now: datetime) -> dict[str, bool]:
     """本日 17:00 以降に #finance へ FIN-047 言及投稿をしたかを担当別に返す."""
     cutoff = now.replace(hour=17, minute=0, second=0, microsecond=0).isoformat()
     status = {anima: False for anima in ASSIGNEES}
-    if not FINANCE_CHANNEL_JSONL.is_file():
-        return status
-    for line in FINANCE_CHANNEL_JSONL.read_text(encoding="utf-8", errors="replace").splitlines():
-        try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        sender = msg.get("from") or msg.get("sender") or msg.get("author") or ""
-        if sender not in status:
-            continue
-        ts = msg.get("ts") or msg.get("timestamp") or ""
-        if ts < cutoff:
-            continue
-        text = msg.get("text") or msg.get("content") or ""
-        if re.search(r"(?i)fin-?047", text):
-            status[sender] = True
+    for msg in iter_channel_posts(FINANCE_CHANNEL_JSONL):
+        if msg["sender"] in status and msg["ts"] >= cutoff and FIN047_RE.search(msg["text"]):
+            status[msg["sender"]] = True
     return status
 
 
@@ -577,7 +544,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    now = datetime.now().astimezone()
+    # now_local(): チャンネルログの ts (now_iso 由来) と同一タイムゾーンで揃え、
+    # since_ts / cutoff の辞書式比較が TZ ずれで壊れないようにする
+    now = now_local()
 
     # 終了条件 (OpenSpec Archive + Projects DB 完了) 充足後は全モード NOOP。
     # 完了検知の初回だけ最終報告を投稿してループを閉じる。

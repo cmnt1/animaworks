@@ -75,11 +75,9 @@ def load_registry() -> dict[str, dict[str, Any]]:
 
 
 def _save_registry(registry: dict[str, dict[str, Any]]) -> None:
-    path = _registry_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(registry, ensure_ascii=False, indent=1), encoding="utf-8")
-    tmp.replace(path)
+    from core.memory._io import atomic_write_text
+
+    atomic_write_text(_registry_path(), json.dumps(registry, ensure_ascii=False, indent=1))
 
 
 def register_thread(code: str, *, channel_id: str, thread_id: str, title: str = "") -> None:
@@ -119,11 +117,19 @@ def resolve_thread_for_code(code: str) -> tuple[str, str] | None:
     return None
 
 
-def _resolve_board_channel(code: str, department: str) -> str | None:
-    """Resolve the Discord channel id for a project code / department."""
+def board_to_channel_id(board_name: str) -> str | None:
+    """Reverse-lookup the Discord channel id for a board name."""
     from core.config.models import load_config
 
-    discord_cfg = load_config().external_messaging.discord
+    board_mapping = load_config().external_messaging.discord.board_mapping
+    for ch_id, bname in board_mapping.items():
+        if bname == board_name:
+            return str(ch_id)
+    return None
+
+
+def _resolve_board_channel(code: str, department: str) -> str | None:
+    """Resolve the Discord channel id for a project code / department."""
     prefix = code.split("-", 1)[0].upper() if code else ""
     board = _CODE_PREFIX_BOARDS.get(prefix)
     if board is None and department:
@@ -131,10 +137,7 @@ def _resolve_board_channel(code: str, department: str) -> str | None:
         board = _DEPARTMENT_BOARDS.get(dept) or _DEPARTMENT_BOARDS.get(dept.lower())
     if board is None:
         return None
-    for ch_id, bname in discord_cfg.board_mapping.items():
-        if bname == board:
-            return str(ch_id)
-    return None
+    return board_to_channel_id(board)
 
 
 def ensure_project_thread(
@@ -143,10 +146,12 @@ def ensure_project_thread(
     title: str = "",
     department: str = "",
     kickoff_text: str = "",
+    post_kickoff_on_reuse: bool = False,
 ) -> tuple[str, str] | None:
     """Return the project's (channel_id, thread_id), creating the thread if needed.
 
-    Reuses a registered thread when present. Otherwise creates a public thread
+    Reuses a registered thread when present (posting ``kickoff_text`` into it
+    only when ``post_kickoff_on_reuse``). Otherwise creates a public thread
     named ``[CODE] title`` in the department's mapped channel, posts
     ``kickoff_text`` into it, and records the mapping.  Fail-soft: returns
     None when Discord is disabled or the channel cannot be resolved.
@@ -158,6 +163,8 @@ def ensure_project_thread(
 
     existing = resolve_thread_for_code(code)
     if existing:
+        if kickoff_text and post_kickoff_on_reuse:
+            _post_kickoff(existing[0], existing[1], kickoff_text, code)
         return existing
 
     from core.config.models import load_config
@@ -191,11 +198,15 @@ def ensure_project_thread(
     register_thread(code, channel_id=channel_id, thread_id=thread_id, title=title)
 
     if kickoff_text:
-        try:
-            from core.discord_webhooks import get_webhook_manager
-
-            get_webhook_manager().send_as_anima(channel_id, "AnimaWorks 会議", kickoff_text, thread_id=thread_id)
-        except Exception:
-            logger.exception("ensure_project_thread: kickoff post failed for %s", code)
+        _post_kickoff(channel_id, thread_id, kickoff_text, code)
 
     return channel_id, thread_id
+
+
+def _post_kickoff(channel_id: str, thread_id: str, kickoff_text: str, code: str) -> None:
+    try:
+        from core.discord_webhooks import get_webhook_manager
+
+        get_webhook_manager().send_as_anima(channel_id, "AnimaWorks 会議", kickoff_text, thread_id=thread_id)
+    except Exception:
+        logger.exception("ensure_project_thread: kickoff post failed for %s", code)
