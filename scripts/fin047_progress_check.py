@@ -68,6 +68,11 @@ FINANCE_CHANNEL_JSONL = get_shared_dir() / "channels" / "finance.jsonl"
 OWNER_NAMES = {"室町", "cmnt"}
 DIRECTIVE_ASSIGNEE = "ayane"
 
+# 日次報告の締切時刻 (2026-07-19 以降 16:00。cron: 15:00 seed / 16:00 report)
+REPORT_HOUR = 16
+REPORT_MINUTE = 0
+REPORT_DEADLINE_STR = f"{REPORT_HOUR:02d}:{REPORT_MINUTE:02d}"
+
 # FIN-047 言及判定 (seed する channel_post criteria の pattern と同一に保つこと)
 FIN047_PATTERN = r"(?i)fin-?047"
 FIN047_RE = re.compile(FIN047_PATTERN)
@@ -353,7 +358,7 @@ def seed_daily_report_tasks(now: datetime, *, dry_run: bool) -> list[str]:
     from core.memory.task_queue import TaskQueueManager
 
     date_str = now.strftime("%Y-%m-%d")
-    deadline = now.replace(hour=18, minute=30, second=0, microsecond=0)
+    deadline = now.replace(hour=REPORT_HOUR, minute=REPORT_MINUTE, second=0, microsecond=0)
     since_ts = now.isoformat()
     seeded: list[str] = []
     for anima in ASSIGNEES:
@@ -373,12 +378,12 @@ def seed_daily_report_tasks(now: datetime, *, dry_run: bool) -> list[str]:
                 ):
                     tqm.update_status(task.task_id, "cancelled", note="日次報告期限超過のため失効 (未報告として記録済み)")
 
-        instruction = f"""FIN-047 の本日分 ({date_str}) の状況を、18:30 までに #finance チャンネルへ報告してください
+        instruction = f"""FIN-047 の本日分 ({date_str}) の状況を、{REPORT_DEADLINE_STR} までに #finance チャンネルへ報告してください
 (投稿は自動で FIN-047 専用 Discord スレッドにルーティングされます)。
 
 報告ルール:
-- **進捗や問題が発生したら、18:30 を待たずその都度 #finance に報告してよい** (推奨)。
-- 18:30 の日次報告は**進捗ゼロでも必須**。その場合は「進捗なし」とその理由 (何にブロックされているか) を明記する。
+- **進捗や問題が発生したら、{REPORT_DEADLINE_STR} を待たずその都度 #finance に報告してよい** (推奨)。
+- {REPORT_DEADLINE_STR} の日次報告は**進捗ゼロでも必須**。その場合は「進捗なし」とその理由 (何にブロックされているか) を明記する。
 - 報告には自分の担当マイルストーン (task_queue の [FIN-047] タスク) の現在状態を含める。
 
 このタスクは、{since_ts} 以降に #finance へ FIN-047 に言及する投稿を行うと done にできます (機械検証)。"""
@@ -412,9 +417,15 @@ def seed_daily_report_tasks(now: datetime, *, dry_run: bool) -> list[str]:
     return seeded
 
 
+def _daily_report_cutoff(now: datetime) -> datetime:
+    """各自報告のカウント開始時刻 (締切の1.5h前)."""
+    minutes = REPORT_HOUR * 60 + REPORT_MINUTE - 90
+    return now.replace(hour=minutes // 60, minute=minutes % 60, second=0, microsecond=0)
+
+
 def collect_daily_report_status(now: datetime) -> dict[str, bool]:
-    """本日 17:00 以降に #finance へ FIN-047 言及投稿をしたかを担当別に返す."""
-    cutoff = now.replace(hour=17, minute=0, second=0, microsecond=0).isoformat()
+    """締切 1.5h 前以降に #finance へ FIN-047 言及投稿をしたかを担当別に返す."""
+    cutoff = _daily_report_cutoff(now).isoformat()
     status = {anima: False for anima in ASSIGNEES}
     for msg in iter_channel_posts(FINANCE_CHANNEL_JSONL):
         if msg["sender"] in status and msg["ts"] >= cutoff and FIN047_RE.search(msg["text"]):
@@ -477,7 +488,7 @@ def build_report(now: datetime) -> tuple[str, dict]:
 
     reports = collect_daily_report_status(now)
     parts = [f"{a} {'✅' if ok else '❌未報告'}" for a, ok in reports.items()]
-    lines.append("- 本日の各自報告 (17:00以降): " + " / ".join(parts))
+    lines.append(f"- 本日の各自報告 ({_daily_report_cutoff(now).strftime('%H:%M')}以降): " + " / ".join(parts))
 
     comp = completion_status()
     lines.append(
