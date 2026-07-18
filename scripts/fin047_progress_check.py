@@ -55,6 +55,10 @@ DISCORD_FINANCE_CHANNEL_ID = "1489903546517164052"
 REPORTER_NAME = "FIN-047 Progress"
 ASSIGNEES = ("ayane", "sakura", "airi", "momoka", "rika")
 
+OPENSPEC_CHANGE_DIR = OPENSPEC_TASKS_MD.parent
+OPENSPEC_ARCHIVE_DIR = FINANCE_REPO / "openspec" / "changes" / "archive"
+OBSIDIAN_PROJECTS_DIR = Path(r"E:\OneDriveBiz\Obsidian") / "_notes" / "Projects"
+
 DATA_DIR = Path.home() / ".animaworks"
 SNAPSHOT_PATH = DATA_DIR / "state" / "fin047_progress_snapshot.json"
 FINANCE_CHANNEL_JSONL = DATA_DIR / "shared" / "channels" / "finance.jsonl"
@@ -190,6 +194,36 @@ def collect_tasks() -> dict:
                 entries.append(f"[{t.get('status')}] {t.get('summary', '')[:60]}")
         result[anima] = entries
     return result
+
+
+# ── Completion (loop termination) ──────────────────────────────────────
+
+
+def completion_status() -> dict:
+    """終了条件の充足状況を返す。両方 True になるまで日次ループは続く.
+
+    1. OpenSpec Archive: change dir が active から消え、archive/ 配下に移動済み
+    2. Projects DB 完了: Obsidian _notes/Projects の FIN-047 ノート frontmatter が ステータス: 完了
+    """
+    openspec_archived = (not OPENSPEC_CHANGE_DIR.exists()) and any(
+        OPENSPEC_ARCHIVE_DIR.glob("*fin-047-vix-scenario-pl-chg-optimization*")
+    )
+
+    projects_done = False
+    try:
+        for note in OBSIDIAN_PROJECTS_DIR.glob("*.md"):
+            head = note.read_text(encoding="utf-8", errors="replace")[:2000]
+            if re.search(r"^タスクコード:\s*FIN-047\s*$", head, flags=re.MULTILINE):
+                projects_done = bool(re.search(r"^ステータス:\s*完了\s*$", head, flags=re.MULTILINE))
+                break
+    except OSError:
+        pass
+
+    return {
+        "openspec_archived": openspec_archived,
+        "projects_done": projects_done,
+        "complete": openspec_archived and projects_done,
+    }
 
 
 # ── Owner directives ───────────────────────────────────────────────────
@@ -478,6 +512,14 @@ def build_report(now: datetime) -> tuple[str, dict]:
     parts = [f"{a} {'✅' if ok else '❌未報告'}" for a, ok in reports.items()]
     lines.append("- 本日の各自報告 (17:00以降): " + " / ".join(parts))
 
+    comp = completion_status()
+    lines.append(
+        "- 終了条件: OpenSpec Archive "
+        f"{'✅' if comp['openspec_archived'] else '❌'} / Projects DB 完了 "
+        f"{'✅' if comp['projects_done'] else '❌'}"
+        " — 両方 ✅ になるまで本監視は毎日続く"
+    )
+
     snapshot = {
         "ts": now.isoformat(),
         "ahead": ahead_now if ahead_now >= 0 else prev.get("ahead"),
@@ -536,6 +578,28 @@ def main() -> int:
     args = parser.parse_args()
 
     now = datetime.now().astimezone()
+
+    # 終了条件 (OpenSpec Archive + Projects DB 完了) 充足後は全モード NOOP。
+    # 完了検知の初回だけ最終報告を投稿してループを閉じる。
+    comp = completion_status()
+    if comp["complete"]:
+        snapshot = load_snapshot()
+        if snapshot.get("completion_announced"):
+            print("NOOP_PROJECT_COMPLETE: FIN-047 is complete; monitoring closed")
+            return 0
+        final = (
+            f"**FIN-047 完了を確認** {now.strftime('%Y-%m-%d %H:%M')}\n"
+            "- OpenSpec: Archive 済み ✅\n"
+            "- Projects DB: ステータス 完了 ✅\n"
+            "日次進捗監視・日次報告義務・指示検知を終了します。お疲れさまでした。"
+        )
+        print(final)
+        if not args.dry_run:
+            msg_id = post_to_discord(final)
+            print(f"\n[posted to Discord #finance: message_id={msg_id}]")
+            snapshot["completion_announced"] = now.isoformat()
+            save_snapshot(snapshot)
+        return 0
 
     if args.seed_daily_reports:
         seeded = seed_daily_report_tasks(now, dry_run=args.dry_run)
