@@ -280,6 +280,8 @@ class RAGConfig(BaseModel):
     abstain_on_low_confidence: bool = True
     confidence_threshold: float = 0.35
     rrf_confidence_threshold: float = 0.02
+    iterative_retrieval_enabled: bool = True
+    iterative_min_results: int = 2
     facts_extraction_enabled: bool = True
     fact_extraction_timeout_seconds: int = Field(
         default=120,
