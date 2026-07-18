@@ -414,6 +414,24 @@ def seed_daily_report_tasks(now: datetime, *, dry_run: bool) -> list[str]:
         )
         if entry is not None:
             seeded.append(f"{anima}: {entry.task_id}")
+            # task_queue だけだと heartbeat 任せで気づかれない (2026-07-18 に全員スルーの実績)。
+            # inbox にも通知を落とし、intent filter 経由の即時処理を促す。
+            try:
+                from core.messenger import Messenger
+
+                Messenger(get_shared_dir(), "cmnt").send(
+                    to=anima,
+                    content=(
+                        f"[FIN-047] 本日の日次報告タスク ({entry.task_id}) を投入しました。"
+                        f"{REPORT_DEADLINE_STR} までに #finance へ日次報告を投稿してください"
+                        f" (進捗ゼロでも理由付きで必須。投稿すればタスクは done にできます)。"
+                    ),
+                    msg_type="message",
+                    intent="report",
+                    source="human",
+                )
+            except Exception as e:
+                print(f"WARN: inbox notify failed for {anima}: {e}", file=sys.stderr)
     return seeded
 
 
