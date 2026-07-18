@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -7,7 +8,7 @@ from typing import Any
 import pytest
 
 from core.memory.retrieval.pipeline import PipelineResult
-from core.memory.retrieval.unified_search import UnifiedMemorySearch
+from core.memory.retrieval.unified_search import UnifiedMemorySearch, build_iterative_queries
 
 
 class FakeRAGSearch:
@@ -16,6 +17,7 @@ class FakeRAGSearch:
         self._common_knowledge_dir = anima_dir.parent.parent / "common_knowledge"
         self._common_skills_dir = anima_dir.parent.parent / "common_skills"
         self.vector_returns: dict[str, list[dict[str, Any]]] = {}
+        self.vector_query_returns: dict[tuple[str, str], list[dict[str, Any]]] = {}
         self.keyword_returns: dict[str, list[dict[str, Any]]] = {}
         self.graph_returns: list[dict[str, Any]] = []
         self.vector_scopes: list[str] = []
@@ -23,6 +25,8 @@ class FakeRAGSearch:
         self.keyword_scopes: list[str] = []
         self.keyword_queries: list[str] = []
         self.graph_calls = 0
+        self.iterative_retrieval_enabled = False
+        self.iterative_min_results = 2
 
     def _load_rag_pipeline_settings(self) -> dict[str, object]:
         return {
@@ -32,6 +36,10 @@ class FakeRAGSearch:
             "abstain_on_low_confidence": True,
             "confidence_threshold": 0.35,
             "rrf_confidence_threshold": 0.02,
+            # Existing tests exercise the pre-iterative orchestration unless a
+            # test explicitly opts in to the new second round.
+            "iterative_retrieval_enabled": self.iterative_retrieval_enabled,
+            "iterative_min_results": self.iterative_min_results,
         }
 
     def _build_entity_boost_config(self, query: str, settings: dict[str, object] | None = None) -> None:
@@ -43,6 +51,8 @@ class FakeRAGSearch:
     def _vector_search_primary(self, query: str, scope: str, *args, **kwargs) -> list[dict[str, Any]]:
         self.vector_queries.append(query)
         self.vector_scopes.append(scope)
+        if (query, scope) in self.vector_query_returns:
+            return self.vector_query_returns[(query, scope)]
         return self.vector_returns.get(scope, [])
 
     def _graph_episodes_search(self, query: str, pool_k: int, knowledge_dir: Path) -> list[dict[str, Any]]:
@@ -415,3 +425,160 @@ def test_tool_and_priming_overlap_share_top_doc_ids(
     ]
 
     assert priming_doc_ids == tool_doc_ids
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            'What did Alice say about "Project Aurora"?',
+            ["Alice say Project Aurora", "Alice Project Aurora"],
+        ),
+        (
+            "田中さんは「Project Aurora」について何を話しましたか？",
+            ["田中さん Project Aurora 話し", "Project Aurora"],
+        ),
+    ],
+)
+def test_build_iterative_queries_is_deterministic_for_english_and_japanese(
+    query: str,
+    expected: list[str],
+) -> None:
+    assert build_iterative_queries(query) == expected
+    assert build_iterative_queries(query) == expected
+
+
+def test_iterative_retrieval_zero_hit_runs_transformed_round_and_returns_result(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise search -> search_many -> non-recursive search with real orchestration."""
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.iterative_retrieval_enabled = True
+    query = "What did Alice decide about Project Aurora?"
+    transformed = build_iterative_queries(query)
+    assert transformed
+    fake_rag.vector_query_returns[(transformed[0], "knowledge")] = [
+        {"doc_id": "round-2", "content": "Alice chose Aurora", "score": 0.9},
+    ]
+
+    results = _searcher(fake_rag).search(query, scope="knowledge", limit=3, trigger="tool")
+
+    assert [item["doc_id"] for item in results] == ["round-2"]
+    assert results[0]["retrieval_round"] == 2
+    assert fake_rag.vector_queries == [query, *transformed]
+
+
+def test_iterative_retrieval_minimum_results_skips_second_round(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.iterative_retrieval_enabled = True
+    fake_rag.iterative_min_results = 2
+    fake_rag.vector_returns["knowledge"] = [
+        {"doc_id": "first", "content": "first", "score": 0.9},
+        {"doc_id": "second", "content": "second", "score": 0.8},
+    ]
+
+    results = _searcher(fake_rag).search(
+        "What did Alice decide?",
+        scope="knowledge",
+        limit=3,
+        trigger="tool",
+    )
+
+    assert [item["doc_id"] for item in results] == ["first", "second"]
+    assert fake_rag.vector_queries == ["What did Alice decide?"]
+    assert len(CapturingPipeline.calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("trigger", "expects_second_round"),
+    [("chat", False), ("tool", True), ("task", True)],
+)
+def test_iterative_retrieval_is_limited_to_eligible_triggers(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+    trigger: str,
+    expects_second_round: bool,
+) -> None:
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.iterative_retrieval_enabled = True
+    query = "What did Alice decide?"
+
+    assert _searcher(fake_rag).search(query, scope="knowledge", limit=3, trigger=trigger) == []
+
+    expected_queries = [query, *build_iterative_queries(query)] if expects_second_round else [query]
+    assert fake_rag.vector_queries == expected_queries
+
+
+def test_iterative_retrieval_adds_entity_alias_substitution(fake_rag: FakeRAGSearch) -> None:
+    state_dir = fake_rag._anima_dir / "state"
+    state_dir.mkdir()
+    (state_dir / "entity_registry.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "entities": {
+                    "project aurora": {
+                        "canonical": "Project Aurora",
+                        "aliases": ["Aurora計画"],
+                        "source_fact_ids": [],
+                    }
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    queries = _searcher(fake_rag)._build_iterative_queries("What is the Project Aurora status?")
+
+    assert "What is the aurora計画 status?" in queries
+
+
+def test_iterative_retrieval_disabled_preserves_single_round_behavior(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.iterative_retrieval_enabled = False
+    query = "What did Alice decide?"
+
+    assert _searcher(fake_rag).search(query, scope="knowledge", limit=3, trigger="tool") == []
+
+    assert fake_rag.vector_queries == [query]
+    assert CapturingPipeline.calls == []
+
+
+def test_iterative_retrieval_merges_deduplicates_and_marks_round_two(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.iterative_retrieval_enabled = True
+    fake_rag.iterative_min_results = 2
+    query = "What did Alice decide about Project Aurora?"
+    transformed = build_iterative_queries(query)
+    fake_rag.vector_query_returns[(query, "knowledge")] = [
+        {"doc_id": "duplicate", "content": "old", "score": 0.4},
+    ]
+    fake_rag.vector_query_returns[(transformed[0], "knowledge")] = [
+        {"doc_id": "duplicate", "content": "better", "score": 0.9},
+        {"doc_id": "new", "content": "new", "score": 0.8},
+    ]
+
+    results = _searcher(fake_rag).search(query, scope="knowledge", limit=2, trigger="tool")
+
+    assert [(item["doc_id"], item["score"]) for item in results] == [
+        ("duplicate", 0.9),
+        ("new", 0.8),
+    ]
+    assert all(item["retrieval_round"] == 2 for item in results)
+    assert fake_rag.vector_queries == [query, *transformed]
