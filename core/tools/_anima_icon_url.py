@@ -115,14 +115,16 @@ def _format_template(template: str, anima_name: str) -> str:
     Uses :meth:`str.format_map` with a fallback dict so that stray
     placeholders (e.g. ``{foo}``) do not raise :class:`KeyError`.
     """
-    safe_map: dict[str, str] = {"name": anima_name}
+    # URL-encode the name for both external and internal templates — a name
+    # with a space or non-ASCII would otherwise produce an invalid URL that
+    # Discord rejects with 400 Invalid Form Body.
+    safe_map: dict[str, str] = {"name": quote(anima_name, safe="")}
     try:
         if template_is_external_icon_url(template):
             return template.format_map(safe_map)
         base = os.environ.get("ANIMAWORKS_SERVER_URL", "").strip().rstrip("/")
         if not base:
             return ""
-        safe_map["name"] = quote(anima_name, safe="")
         path_resolved = template.format_map(safe_map)
         if not path_resolved.startswith("/"):
             path_resolved = "/" + path_resolved
