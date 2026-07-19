@@ -85,6 +85,7 @@ class ProcessHandle:
         log_dir: Path | None = None,
         child_env_urls: dict[str, str] | None = None,
         startup_ready_timeout: float = 120.0,
+        socket_create_timeout: float = 30.0,
     ):
         self.anima_name = anima_name
         self.socket_path = socket_path
@@ -93,6 +94,7 @@ class ProcessHandle:
         self.log_dir = log_dir
         self._child_env_urls = child_env_urls or {}
         self.startup_ready_timeout = startup_ready_timeout
+        self.socket_create_timeout = socket_create_timeout
 
         self.state = ProcessState.STOPPED
         self.process: subprocess.Popen | None = None
@@ -188,7 +190,7 @@ class ProcessHandle:
 
             # Wait for socket to be created (IPC server starts before
             # heavy DigitalAnima init, so this should be quick)
-            await self._wait_for_socket(timeout=15.0)
+            await self._wait_for_socket(timeout=self.socket_create_timeout)
 
             # Connect IPC client
             self.ipc_client = IPCClient(self.socket_path)

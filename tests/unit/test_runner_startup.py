@@ -132,7 +132,7 @@ class TestAnimaRunnerPingReadiness:
                 return_value=mock_ipc_server,
             ),
             patch(
-                "core.supervisor.runner.DigitalAnima",
+                "core.anima.DigitalAnima",
                 side_effect=mock_anima_init,
             ),
         ):
@@ -181,7 +181,7 @@ class TestAnimaRunnerPingReadiness:
 
         with (
             patch("core.supervisor.runner.IPCServer", return_value=mock_ipc_server),
-            patch("core.supervisor.runner.DigitalAnima", return_value=mock_anima),
+            patch("core.anima.DigitalAnima", return_value=mock_anima),
             patch("core.supervisor.runner.SchedulerManager", return_value=mock_scheduler),
             patch("core.supervisor.runner.InboxRateLimiter", return_value=mock_inbox_limiter),
             patch("core.supervisor.runner.PendingTaskExecutor", return_value=mock_pending_executor),
@@ -266,7 +266,7 @@ class TestAnimaRunnerPingReadiness:
         mock_pending_executor.watcher_loop = pending_watcher_loop
 
         with (
-            patch("core.supervisor.runner.DigitalAnima", return_value=mock_anima),
+            patch("core.anima.DigitalAnima", return_value=mock_anima),
             patch("core.supervisor.runner.SchedulerManager", return_value=mock_scheduler),
             patch("core.supervisor.runner.InboxRateLimiter", return_value=mock_inbox_limiter),
             patch("core.supervisor.runner.PendingTaskExecutor", return_value=mock_pending_executor),

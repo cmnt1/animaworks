@@ -599,6 +599,12 @@ class ServerConfig(BaseModel):
     max_streaming_duration: int = 1800  # max streaming duration before hang (seconds)
     busy_hang_threshold: int = 900  # no-progress timeout for busy processes (seconds)
     anima_startup_ready_timeout: int = Field(default=120, ge=1)
+    # Seconds to wait for a child to create its IPC socket. The child binds the
+    # socket before the heavy DigitalAnima import, so this is normally quick — but
+    # a cold OneDrive-backed disk can make even the light import slow, so allow a
+    # generous default rather than the old hard-coded 15s that caused spurious
+    # "Socket file not created" startup failures.
+    anima_socket_create_timeout: int = Field(default=30, ge=1)
     health_check_warmup_seconds: int = Field(default=300, ge=0)
     runner_warmup_seconds: int = Field(default=180, ge=0)
     spawn_timeout: int = Field(default=300, ge=1)

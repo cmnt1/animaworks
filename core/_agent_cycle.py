@@ -51,12 +51,12 @@ _STREAM_RETRY_AFTER_BUFFER_S = 1.0
 _MEETING_CONT_MAX_RETRIES = 2
 
 # The server wraps each meeting speaker's whole stream in a fixed wall-clock budget
-# (server.routes.room.MEETING_MIN_STREAM_TIMEOUT = 180s). Each continuation pass
+# (server.routes.room.MEETING_MIN_STREAM_TIMEOUT = 120s). Each continuation pass
 # runs inside that same budget, so we must not START a new pass once we are close
 # to it — otherwise the server emits STREAM_TIMEOUT and discards the work. This
-# deadline (seconds of elapsed wall time in the child) leaves margin for an
-# in-flight continuation pass to finish and stream back under the server budget.
-_MEETING_CONT_DEADLINE_S = 120.0
+# deadline (seconds of elapsed wall time in the child) stays comfortably under the
+# server MIN so an in-flight continuation pass can finish and stream back in time.
+_MEETING_CONT_DEADLINE_S = 90.0
 
 
 def _strip_meeting_sentinel(text: str) -> str:

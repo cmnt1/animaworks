@@ -24,11 +24,10 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import psutil
 
-from core.anima import DigitalAnima
 from core.exceptions import AnimaNotRunningError, ExecutionError, MemoryWriteError, ProcessError  # noqa: F401
 from core.i18n import t
 from core.memory.streaming_journal import StreamingJournal
@@ -40,6 +39,9 @@ from core.supervisor.pending_executor import PendingTaskExecutor
 from core.supervisor.scheduler_manager import SchedulerManager
 from core.supervisor.streaming_handler import StreamingIPCHandler
 from core.time_utils import ensure_aware, now_local
+
+if TYPE_CHECKING:
+    from core.anima import DigitalAnima
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +209,12 @@ class AnimaRunner:
             await self.ipc_server.start()
 
             logger.info("Initializing Anima: %s", self.anima_name)
+
+            # Deferred import: pulling in DigitalAnima loads the heavy RAG/model
+            # stack (~4.5s warm, far more on a cold OneDrive-backed disk). Keeping
+            # it out of module import means the socket above binds immediately, so
+            # the parent's _wait_for_socket window is not consumed by model loading.
+            from core.anima import DigitalAnima
 
             # Initialize DigitalAnima (heavy: RAG indexer, model loading)
             self.anima = DigitalAnima(anima_dir=self._anima_dir, shared_dir=self.shared_dir)

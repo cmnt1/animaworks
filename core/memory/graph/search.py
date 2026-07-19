@@ -142,6 +142,15 @@ class HybridSearch:
                 if r.get("type", "fact") == "fact" and r.get("edge_type", "RELATES_TO") == edge_type_filter
             ]
 
+        # Meeting turns skip the CPU-bound cross-encoder rerank and fall back to
+        # the RRF merge order (already relevance-sorted). Reuses the existing
+        # per-turn meeting_mode signal — set/reset with a token around the whole
+        # meeting turn in core/_anima_messaging.py — rather than a private flag.
+        from core.tooling.handler_base import meeting_mode
+
+        if meeting_mode.get():
+            return merged[:limit]
+
         try:
             from core.memory.graph.reranker import get_reranker
 

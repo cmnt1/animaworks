@@ -140,6 +140,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         # while still catching truly stuck streams.
         self._max_streaming_duration_sec: int = 1800
         self._anima_startup_ready_timeout: float = 120.0
+        self._anima_socket_create_timeout: float = 30.0
         self._spawn_timeout_sec: float = 300.0
         try:
             from core.config import load_config
@@ -152,6 +153,9 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             )
             self._anima_startup_ready_timeout = float(
                 getattr(srv, "anima_startup_ready_timeout", 120),
+            )
+            self._anima_socket_create_timeout = float(
+                getattr(srv, "anima_socket_create_timeout", 30),
             )
             self._spawn_timeout_sec = float(getattr(srv, "spawn_timeout", 300))
             if restart_policy is None:
@@ -399,6 +403,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 log_dir=self.log_dir,
                 child_env_urls=self.child_env_urls,
                 startup_ready_timeout=self._anima_startup_ready_timeout,
+                socket_create_timeout=self._anima_socket_create_timeout,
             )
 
             try:

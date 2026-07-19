@@ -29,21 +29,57 @@ from server.routes.chat_chunk_handler import _chunk_to_event, _format_sse
 from server.routes.chat_emotion import extract_emotion
 
 logger = logging.getLogger(__name__)
-# Meeting turns may now use read-only tools to verify before answering, so a
+# Meeting turns may use read-only tools to verify before answering, so a
 # speaker's whole stream needs a larger wall-clock budget than the old
-# reference-only turns. Keep the child-side continuation deadline
-# (_agent_cycle._MEETING_CONT_DEADLINE_S) comfortably under MIN.
-MEETING_MIN_STREAM_TIMEOUT = 180.0
-MEETING_MAX_STREAM_TIMEOUT = 300.0
+# reference-only turns — but the previous 300s cap let a single looping speaker
+# (e.g. one that never emits its completion sentinel) stall the whole round.
+# Keep the child-side continuation deadline (_agent_cycle._MEETING_CONT_DEADLINE_S,
+# now 90s) comfortably under MIN so the child stops self-continuing before the
+# server cuts the stream.
+MEETING_MIN_STREAM_TIMEOUT = 120.0
+MEETING_MAX_STREAM_TIMEOUT = 150.0
+# A speaker that emits no chunk at all (not even a keepalive) for this long is
+# treated as hung and skipped early, well before the wall-clock cap above.
+MEETING_IDLE_SKIP_TIMEOUT = 90.0
 MEETING_CONTEXT_MAX_MESSAGES = 8
 MEETING_CONTEXT_MAX_CHARS = 6000
 MEETING_CONTEXT_ENTRY_MAX_CHARS = 900
 MEETING_TASK_CONTEXT_MAX_CHARS = 4000
 
 
-async def _with_wall_timeout(stream: AsyncIterator[Any], timeout: float) -> AsyncIterator[Any]:
+class _MeetingStreamIdle(Exception):
+    """Raised when a meeting speaker emits no chunk within the idle window."""
+
+
+async def _with_wall_timeout(
+    stream: AsyncIterator[Any],
+    timeout: float,
+    *,
+    idle_timeout: float,
+) -> AsyncIterator[Any]:
+    """Yield from ``stream`` under a hard wall-clock cap and an inter-chunk idle cap.
+
+    ``timeout`` bounds the speaker's whole turn and raises ``TimeoutError`` when
+    breached. ``idle_timeout`` bounds the gap between consecutive chunks
+    (keepalives included) and raises :class:`_MeetingStreamIdle`, so a hung
+    stream is abandoned early with a distinct reason instead of burning the full
+    wall budget. It is deliberately tighter than the IPC layer's own per-chunk
+    timeout (``supervisor.send_request_stream``) — that one resets on every
+    chunk and governs liveness, this one gives the meeting round a shorter,
+    separately-reported skip for a truly silent speaker.
+    """
+    iterator = stream.__aiter__()
     async with asyncio.timeout(timeout):
-        async for item in stream:
+        while True:
+            try:
+                item = await asyncio.wait_for(iterator.__anext__(), timeout=idle_timeout)
+            except StopAsyncIteration:
+                return
+            except TimeoutError as exc:
+                # wait_for's own timeout means no chunk arrived within the idle
+                # window; the wall cap instead surfaces as CancelledError here
+                # and converts to TimeoutError at the `async with` boundary.
+                raise _MeetingStreamIdle from exc
             yield item
 
 
@@ -616,6 +652,7 @@ async def _meeting_stream(
         full_response = ""
         text_delta_seen = False
         speaker_failed = False
+        speaker_started = time.monotonic()
 
         try:
             async for ipc_response in _with_wall_timeout(
@@ -626,6 +663,7 @@ async def _meeting_stream(
                     timeout=_timeout,
                 ),
                 _timeout,
+                idle_timeout=MEETING_IDLE_SKIP_TIMEOUT,
             ):
                 if ipc_response.error:
                     err = ipc_response.error
@@ -714,14 +752,17 @@ async def _meeting_stream(
                 if ipc_response.result and not full_response:
                     full_response = ipc_response.result.get("response", "")
 
-        except TimeoutError:
+        except (_MeetingStreamIdle, TimeoutError) as exc:
             speaker_failed = True
-            logger.warning("Meeting stream timed out for %s after %.1fs", target_name, _timeout)
+            idle = isinstance(exc, _MeetingStreamIdle)
+            reason = "went idle" if idle else "timed out"
+            elapsed = time.monotonic() - speaker_started
+            logger.warning("Meeting stream %s for %s after %.1fs", reason, target_name, elapsed)
             yield _format_sse(
                 "error",
                 {
-                    "code": "STREAM_TIMEOUT",
-                    "message": f"Timed out waiting for {target_name} after {_timeout:.0f}s",
+                    "code": "STREAM_IDLE_SKIP" if idle else "STREAM_TIMEOUT",
+                    "message": f"{target_name} {reason} after {elapsed:.0f}s",
                     "speaker": target_name,
                 },
             )
