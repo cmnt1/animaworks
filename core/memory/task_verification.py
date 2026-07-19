@@ -29,6 +29,10 @@ Criterion schema (each item is a dict with a ``type`` key):
   The shared channel log must contain a post from ``sender`` matching
   ``pattern`` at or after ``since_ts`` (both pattern and since_ts optional).
   Used for "report to the channel" obligations.
+- ``{"type": "port_process", "port": 8520, "cmdline_pattern": "<regex>"}``
+  A process must be LISTENing on ``port`` and its command line must match
+  ``cmdline_pattern``. Guards against "some server answers on the port but
+  it is the wrong app" (a bare http_ok cannot tell the difference).
 
 Verification is fail-closed: malformed criteria, unknown types, and
 checker errors all count as unmet.
@@ -257,6 +261,37 @@ def _check_channel_post(c: dict[str, Any]) -> str | None:
     return f"no #{channel} post by {sender}{detail}{since}"
 
 
+def _check_port_process(c: dict[str, Any]) -> str | None:
+    port = c.get("port")
+    pattern = c.get("cmdline_pattern")
+    if not port or not pattern:
+        return "missing 'port' or 'cmdline_pattern'"
+    try:
+        import psutil
+    except ImportError:
+        return "psutil not available"
+    port = int(port)
+    pids: set[int] = set()
+    try:
+        for conn in psutil.net_connections(kind="tcp"):
+            if conn.laddr and conn.laddr.port == port and conn.status == psutil.CONN_LISTEN and conn.pid:
+                pids.add(conn.pid)
+    except (psutil.Error, OSError) as e:
+        return f"cannot enumerate connections: {e}"
+    if not pids:
+        return f"no process listening on port {port}"
+    cmdlines = []
+    for pid in pids:
+        try:
+            cmdline = " ".join(psutil.Process(pid).cmdline())
+        except (psutil.Error, OSError):
+            continue
+        if re.search(pattern, cmdline):
+            return None
+        cmdlines.append(cmdline[:120])
+    return f"process on port {port} does not match {pattern!r}: {'; '.join(cmdlines) or '(cmdline unreadable)'}"
+
+
 _CHECKERS = {
     "path_exists": _check_path_exists,
     "file_contains": _check_file_contains,
@@ -264,4 +299,5 @@ _CHECKERS = {
     "http_ok": _check_http_ok,
     "openspec_tasks_checked": _check_openspec_tasks_checked,
     "channel_post": _check_channel_post,
+    "port_process": _check_port_process,
 }

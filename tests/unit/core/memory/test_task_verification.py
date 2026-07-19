@@ -144,6 +144,46 @@ def test_channel_post_criterion(tmp_path: Path, monkeypatch) -> None:
     assert verify_completion_criteria([dict(base, channel="nosuch")]) != []
 
 
+def test_port_process_criterion(monkeypatch) -> None:
+    import types
+
+    class _Addr:
+        def __init__(self, port):
+            self.port = port
+
+    class _Conn:
+        def __init__(self, port, pid, status="LISTEN"):
+            self.laddr = _Addr(port)
+            self.pid = pid
+            self.status = status
+
+    class _Proc:
+        def __init__(self, pid):
+            self.pid = pid
+
+        def cmdline(self):
+            return ["python.exe", "streamlit.exe", "run", "optim_console.py", "--server.port", "8520"]
+
+    fake_psutil = types.SimpleNamespace(
+        net_connections=lambda kind="tcp": [_Conn(8520, 111)],
+        Process=_Proc,
+        CONN_LISTEN="LISTEN",
+        Error=Exception,
+    )
+    import sys as _sys
+
+    monkeypatch.setitem(_sys.modules, "psutil", fake_psutil)
+
+    base = {"type": "port_process", "port": 8520, "cmdline_pattern": r"optim_console\.py"}
+    assert verify_completion_criteria([dict(base)]) == []
+    # 別アプリのコマンドラインは不一致
+    failures = verify_completion_criteria([dict(base, cmdline_pattern=r"vix_scn_hist_explain\.py")])
+    assert failures and "does not match" in failures[0]
+    # 誰も LISTEN していないポート
+    failures = verify_completion_criteria([dict(base, port=59999)])
+    assert failures and "no process listening" in failures[0]
+
+
 # ── done-gate in TaskQueueManager.update_status ────────────────────────
 
 
