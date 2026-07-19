@@ -388,8 +388,12 @@ function _renderUsageBar(label, utilization, resetAt, windowSeconds, displayWind
     forecastHtml += `</div>`;
   }
 
+  // The weekly (>=7d) window anchors to the bottom of the card so it stays low
+  // even when a shorter window above it is absent; shorter windows (5h, Daily)
+  // stay top-aligned and do not sink to the bottom.
+  const rowClass = windowSeconds >= 604800 ? "usage-row usage-row--week" : "usage-row";
   return `
-    <div class="usage-row">
+    <div class="${rowClass}">
       <div class="usage-row-header">
         <span class="usage-label">${escapeHtml(label)}</span>
         <span class="usage-pct" style="color:${color}">${remaining.toFixed(0)}%${deficitHtml}</span>

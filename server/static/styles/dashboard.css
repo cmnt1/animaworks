@@ -536,11 +536,16 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  /* Fill the card and bottom-align bars so the longest-window bar (Week / 7d)
-     sits at the bottom of every card — a card with fewer windows keeps its bar
-     low instead of floating to the top. */
+  /* Fill the card height so the weekly row's `margin-top:auto` has room to push
+     it to the bottom. Shorter windows (5h, Daily) stay top-aligned. */
   flex: 1 1 auto;
-  justify-content: flex-end;
+}
+
+/* Keep the weekly (Week / 7d) bar pinned to the bottom of its card even when a
+   shorter window above it disappears — but a card that only has a shorter
+   window (e.g. Gemini Daily) keeps that bar at the top, not the bottom. */
+.usage-card-body .usage-row--week {
+  margin-top: auto;
 }
 
 .usage-card--compact .usage-card-body {
