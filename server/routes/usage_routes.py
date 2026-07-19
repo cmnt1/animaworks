@@ -262,15 +262,29 @@ _ANTHROPIC_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"  # Claude Code pub
 
 
 def _refresh_claude_token(cred_path: Path, refresh_token: str) -> str | None:
-    """Use the refresh token to obtain a new access token and persist it."""
+    """Use the refresh token to obtain a new access token and persist it.
+
+    The request echoes the token's existing scopes so a refresh cannot silently
+    drop ``user:profile`` — the usage endpoint requires it, and losing it only
+    surfaces as an opaque 403 that forces a manual ``claude /login``.
+    """
     try:
-        body = json.dumps(
-            {
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_token,
-                "client_id": _ANTHROPIC_CLIENT_ID,
-            }
-        ).encode("utf-8")
+        existing_scopes: list[str] = []
+        try:
+            existing_scopes = (
+                json.loads(cred_path.read_text("utf-8")).get("claudeAiOauth", {}).get("scopes") or []
+            )
+        except Exception:
+            existing_scopes = []
+
+        payload: dict[str, Any] = {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": _ANTHROPIC_CLIENT_ID,
+        }
+        if existing_scopes:
+            payload["scope"] = " ".join(existing_scopes)
+        body = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             _ANTHROPIC_TOKEN_URL,
             data=body,
@@ -289,6 +303,14 @@ def _refresh_claude_token(cred_path: Path, refresh_token: str) -> str | None:
         if not new_access:
             return None
 
+        granted = data.get("scope")
+        new_scopes = granted.split() if isinstance(granted, str) and granted else existing_scopes
+        if existing_scopes and "user:profile" in existing_scopes and "user:profile" not in new_scopes:
+            logger.warning(
+                "Claude token refresh dropped the user:profile scope; the usage "
+                "endpoint will 403 until 'claude /login' is run again"
+            )
+
         # Update the credentials file
         try:
             cred_data = json.loads(cred_path.read_text("utf-8"))
@@ -298,6 +320,8 @@ def _refresh_claude_token(cred_path: Path, refresh_token: str) -> str | None:
         oauth["accessToken"] = new_access
         oauth["refreshToken"] = new_refresh
         oauth["expiresAt"] = int(time.time() * 1000) + expires_in * 1000
+        if new_scopes:
+            oauth["scopes"] = new_scopes
         cred_path.write_text(json.dumps(cred_data, ensure_ascii=False), encoding="utf-8")
         logger.info("Refreshed Claude OAuth token, persisted to %s", cred_path)
         return new_access
@@ -570,6 +594,23 @@ def _fetch_claude_usage(skip_cache: bool = False) -> dict[str, Any]:
                 e.headers.get("Retry-After"),
             )
             return _rate_limited_result("claude")
+        elif e.code == 403:
+            # The usage endpoint needs the user:profile scope.  A token refreshed
+            # down to inference-only answers 403 permission_error — distinguish it
+            # so the dashboard can tell the user to re-login rather than showing a
+            # bare "HTTP 403" (a token refresh cannot restore a dropped scope).
+            body = ""
+            try:
+                body = e.read().decode("utf-8", "replace")
+            except Exception:
+                pass
+            if "user:profile" in body or "permission_error" in body or "scope" in body:
+                result = {
+                    "error": "scope_insufficient",
+                    "message": "OAuth scope missing (user:profile) — run 'claude /login' to re-authenticate",
+                }
+            else:
+                result = {"error": "http_error", "message": "HTTP 403"}
         else:
             result = {"error": "http_error", "message": f"HTTP {e.code}"}
         _set_cache("claude", result)

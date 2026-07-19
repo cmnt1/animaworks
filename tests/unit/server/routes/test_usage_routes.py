@@ -375,6 +375,92 @@ def test_fetch_claude_usage_backoff_short_circuits_network(monkeypatch):
     assert result["error"] == "rate_limited"
 
 
+# ── 403 scope handling & scope-preserving refresh ────────────────────────────
+
+
+def _http_error_body(code: int, body: bytes) -> urllib.error.HTTPError:
+    return urllib.error.HTTPError("https://x", code, "err", email.message.Message(), io.BytesIO(body))
+
+
+def test_fetch_claude_usage_403_scope_returns_scope_insufficient(monkeypatch):
+    monkeypatch.setattr(usage_routes, "_CACHE", {})
+    monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {})
+    monkeypatch.setattr(usage_routes, "_read_claude_token", lambda: "access-token")
+    body = b'{"error":{"type":"permission_error","message":"OAuth token does not meet scope requirement any_of(user:profile)"}}'
+    monkeypatch.setattr(
+        usage_routes.urllib.request,
+        "urlopen",
+        lambda req, timeout=0: (_ for _ in ()).throw(_http_error_body(403, body)),
+    )
+
+    result = usage_routes._fetch_claude_usage()
+
+    assert result["error"] == "scope_insufficient"
+    assert "claude /login" in result["message"]
+
+
+def test_fetch_claude_usage_403_non_scope_stays_http_error(monkeypatch):
+    monkeypatch.setattr(usage_routes, "_CACHE", {})
+    monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {})
+    monkeypatch.setattr(usage_routes, "_read_claude_token", lambda: "access-token")
+    monkeypatch.setattr(
+        usage_routes.urllib.request,
+        "urlopen",
+        lambda req, timeout=0: (_ for _ in ()).throw(_http_error_body(403, b'{"error":"region_blocked"}')),
+    )
+
+    result = usage_routes._fetch_claude_usage()
+
+    assert result == {"error": "http_error", "message": "HTTP 403"}
+
+
+def test_refresh_claude_token_echoes_and_preserves_scopes(tmp_path: Path, monkeypatch):
+    cred = tmp_path / "creds.json"
+    cred.write_text(
+        json.dumps({"claudeAiOauth": {"accessToken": "old", "refreshToken": "r1", "scopes": ["user:inference", "user:profile"]}}),
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(req, timeout=0):
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        return _FakeResponse({"access_token": "new-tok", "refresh_token": "r2", "expires_in": 3600, "scope": "user:inference user:profile"})
+
+    monkeypatch.setattr(usage_routes.urllib.request, "urlopen", fake_urlopen)
+
+    tok = usage_routes._refresh_claude_token(cred, "r1")
+
+    assert tok == "new-tok"
+    # The refresh echoes the token's scopes so it cannot silently narrow them.
+    assert captured["body"]["scope"] == "user:inference user:profile"
+    saved = json.loads(cred.read_text("utf-8"))["claudeAiOauth"]
+    assert saved["accessToken"] == "new-tok"
+    assert saved["scopes"] == ["user:inference", "user:profile"]
+
+
+def test_refresh_claude_token_warns_when_profile_scope_dropped(tmp_path: Path, monkeypatch, caplog):
+    import logging
+
+    cred = tmp_path / "creds.json"
+    cred.write_text(
+        json.dumps({"claudeAiOauth": {"refreshToken": "r1", "scopes": ["user:inference", "user:profile"]}}),
+        encoding="utf-8",
+    )
+    # Server narrows to inference-only despite the echoed request.
+    monkeypatch.setattr(
+        usage_routes.urllib.request,
+        "urlopen",
+        lambda req, timeout=0: _FakeResponse({"access_token": "new", "expires_in": 3600, "scope": "user:inference"}),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        usage_routes._refresh_claude_token(cred, "r1")
+
+    assert any("user:profile" in r.message for r in caplog.records)
+    saved = json.loads(cred.read_text("utf-8"))["claudeAiOauth"]
+    assert saved["scopes"] == ["user:inference"]
+
+
 def test_fetch_claude_usage_success_clears_backoff(monkeypatch):
     # A stale (expired) backoff entry must be cleared once a fetch succeeds.
     monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {"claude": time.time() - 10})
