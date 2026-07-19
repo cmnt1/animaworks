@@ -89,6 +89,7 @@ class TestProcessGroupIsolation:
             animas_dir=tmp_path / "animas",
             shared_dir=tmp_path / "shared",
             log_dir=tmp_path / "logs",
+            socket_create_timeout=1.0,
         )
 
         with patch("core.supervisor.process_handle.subprocess.Popen") as mock_popen:
