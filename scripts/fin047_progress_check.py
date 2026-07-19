@@ -62,6 +62,9 @@ ASSIGNEES = ("ayane", "sakura", "airi", "momoka", "rika")
 OPENSPEC_CHANGE_DIR = OPENSPEC_TASKS_MD.parent
 OPENSPEC_ARCHIVE_DIR = FINANCE_REPO / "openspec" / "changes" / "archive"
 OBSIDIAN_PROJECTS_DIR = Path(r"E:\OneDriveBiz\Obsidian") / "_notes" / "Projects"
+PROJECT_NOTE = OBSIDIAN_PROJECTS_DIR / "VIXシナリオ別PL_Chg低減最適化.md"
+DELIVERABLES_START = "<!-- FIN047-DELIVERABLES:START"
+DELIVERABLES_END = "<!-- FIN047-DELIVERABLES:END -->"
 
 SNAPSHOT_PATH = get_data_dir() / "state" / "fin047_progress_snapshot.json"
 FINANCE_CHANNEL_JSONL = get_shared_dir() / "channels" / "finance.jsonl"
@@ -190,6 +193,84 @@ def collect_tasks() -> dict:
                     entries.append(f"[{task.status}] {task.summary[:60]}")
         result[anima] = entries
     return result
+
+
+# ── Project note deliverables sync ─────────────────────────────────────
+
+
+def _file_uri(path: Path) -> str:
+    from urllib.request import pathname2url
+
+    return "file:" + pathname2url(str(path))
+
+
+def sync_project_note() -> str:
+    """fin047 コミットの成果物リンクを Obsidian プロジェクトノートへ自動同期する.
+
+    「◯◯にまとめました」報告だけでは成果物へ辿れない問題への決定論対策。
+    ノート内の管理ブロック (DELIVERABLES markers) を、ブランチ上の fin047
+    コミット一覧 + 変更ファイルへの file リンク (worktree 実体) で毎回再生成する。
+    Returns a short status string for the report.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(FINANCE_REPO), "log", "--format=%h|%ad|%s", "--date=format:%Y-%m-%d %H:%M", BRANCH],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return f"note sync failed: git log: {e}"
+    if proc.returncode != 0:
+        return "note sync skipped: branch not found"
+
+    lines: list[str] = []
+    for raw in proc.stdout.splitlines():
+        parts = raw.split("|", 2)
+        if len(parts) != 3 or not FIN047_RE.search(parts[2]):
+            continue
+        commit, cdate, subject = parts
+        try:
+            files_proc = subprocess.run(
+                ["git", "-C", str(FINANCE_REPO), "show", "--name-only", "--format=", commit],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+            )
+            files = [f for f in files_proc.stdout.splitlines() if f.strip()]
+        except (OSError, subprocess.TimeoutExpired):
+            files = []
+        links = []
+        for f in files:
+            target = STAGING_WORKTREE / f
+            label = f.split("/")[-1]
+            if target.exists():
+                links.append(f"[{label}]({_file_uri(target)})")
+            else:
+                links.append(f"`{f}`")
+        lines.append(f"- {cdate} `{commit}` {subject}" + (" — " + " / ".join(links) if links else ""))
+
+    if not lines:
+        lines = ["- (fin047 コミットなし)"]
+
+    try:
+        note_text = PROJECT_NOTE.read_text(encoding="utf-8")
+    except OSError as e:
+        return f"note sync failed: {e}"
+    start = note_text.find(DELIVERABLES_START)
+    end = note_text.find(DELIVERABLES_END)
+    if start == -1 or end == -1 or end < start:
+        return "note sync skipped: markers not found"
+    marker_line_end = note_text.index("\n", start)
+    new_text = note_text[: marker_line_end + 1] + "\n".join(lines) + "\n" + note_text[end:]
+    if new_text != note_text:
+        PROJECT_NOTE.write_text(new_text, encoding="utf-8")
+        return f"note synced: {len(lines)} 成果物エントリ"
+    return f"note up-to-date: {len(lines)} 成果物エントリ"
 
 
 # ── Completion (loop termination) ──────────────────────────────────────
@@ -384,7 +465,16 @@ def seed_daily_report_tasks(now: datetime, *, dry_run: bool) -> list[str]:
 報告ルール:
 - **進捗や問題が発生したら、{REPORT_DEADLINE_STR} を待たずその都度 #finance に報告してよい** (推奨)。
 - {REPORT_DEADLINE_STR} の日次報告は**進捗ゼロでも必須**。その場合は「進捗なし」とその理由 (何にブロックされているか) を明記する。
-- 報告には自分の担当マイルストーン (task_queue の [FIN-047] タスク) の現在状態を含める。
+
+報告書式 (オーナー指示 2026-07-19、以下3点は必須):
+1. **担当スコープ**: 正典 tasks.md のどの番号を担当しているか (例: Phase1 の 1.2-1.3)
+2. **進捗状態**: 未着手/実装中/検証中/完了 + 今日進んだ内容と残作業
+3. **成果物の所在**: コミットハッシュ、またはファイルの絶対パス。
+   git 管理外の成果物 (分析メモ・検証結果等) はプロジェクトノート
+   E:\\OneDriveBiz\\Obsidian\\_notes\\Projects\\VIXシナリオ別PL_Chg低減最適化.md の
+   「成果物 (手動追記)」セクションに `- 日付 担当: [説明](file:///絶対パス)` 形式で追記する。
+「◯◯のファイルにまとめました」だけの報告は不可 — オーナーがリンクで成果物に辿れること。
+(ブランチへの fin047 コミットは自動でノートにリンクされるので追記不要)
 
 このタスクは、{since_ts} 以降に #finance へ FIN-047 に言及する投稿を行うと done にできます (機械検証)。"""
 
@@ -623,7 +713,9 @@ def main() -> int:
             save_snapshot(snapshot)
         return 0
 
+    note_status = sync_project_note() if not args.dry_run else "(dry-run: note sync skipped)"
     report, snapshot = build_report(now)
+    report += f"\n- 成果物リンク: プロジェクトノート「進捗と成果物」に自動同期済み ({note_status})"
     fresh, pending = process_directives(snapshot, dry_run=args.dry_run)
     dlines = directive_lines(fresh, pending)
     if dlines:
