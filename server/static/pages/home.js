@@ -548,10 +548,6 @@ function _renderClaudeUsage(data, opts = {}) {
 
   const stale = !!opts.stale;
   let html = "";
-  if (stale) {
-    const at = opts.snapshotAt ? _resetToJst(opts.snapshotAt) : "";
-    html += `<div class="usage-stale">&#x26A0; 使用量を取得できず前回値を表示中${at ? `（${escapeHtml(at)}時点）` : ""}</div>`;
-  }
   if (data.five_hour) {
     html += _renderUsageBar("5h", data.five_hour.utilization, data.five_hour.resets_at, data.five_hour.window_seconds, null, { stale });
   }
@@ -564,6 +560,11 @@ function _renderClaudeUsage(data, opts = {}) {
     const limit = _formatCredits(ex.monthly_limit, ex.currency, ex.decimal_places);
     const label = used && limit ? `Extra (${used}/${limit})` : "Extra";
     html += _renderUsageBar(label, ex.utilization, null, null, null, { stale });
+  }
+  // Stale notice goes at the BOTTOM of the card (after the bars), not the top.
+  if (stale) {
+    const at = opts.snapshotAt ? _resetToJst(opts.snapshotAt) : "";
+    html += `<div class="usage-stale">&#x26A0; 使用量を取得できず前回値を表示中${at ? `（${escapeHtml(at)}時点）` : ""}</div>`;
   }
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
