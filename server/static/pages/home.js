@@ -401,7 +401,10 @@ function _renderUsageBar(label, utilization, resetAt, windowSeconds, displayWind
 }
 
 function _usageCanRelogin(errorCode) {
-  return new Set(["rate_limited", "unauthorized", "no_credentials"]).has(errorCode);
+  // Mirror the governor bar: only genuine auth problems get a re-auth button.
+  // ``rate_limited`` is a usage-endpoint 429, not an expired token, so a
+  // re-login can never clear it — showing the button just loops.
+  return new Set(["unauthorized", "no_credentials"]).has(errorCode);
 }
 
 function _renderGovernorReason(reasonText) {
@@ -716,7 +719,11 @@ function _renderGovernor(gov) {
       }
     }
   }
-  const _reloginPat = /rate_limited|unauthorized|no_credentials/;
+  // Only genuine auth problems warrant a re-auth button.  A ``rate_limited``
+  // reason means the *usage endpoint* returned 429 — the OAuth token is fine,
+  // so refreshing it can never clear the condition (it would just loop the
+  // "token already fresh" dialog).  Keep it out of the relogin trigger.
+  const _reloginPat = /unauthorized|no_credentials/;
 
   // ── Number formatters ──────────────────────────────
   const fmt = (v, digits = 1) =>

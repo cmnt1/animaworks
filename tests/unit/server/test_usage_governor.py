@@ -488,3 +488,103 @@ async def test_tick_only_keeps_suspended_animas_for_provider_with_fetch_failure(
     assert governor.state.suspended_animas == ["alice"]
     supervisor.start_anima.assert_awaited_once_with("bob")
     supervisor.stop_anima.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_tick_bridges_rate_limited_with_last_good_usage(tmp_path, monkeypatch):
+    """A transient ``rate_limited`` on the usage endpoint must not collapse the
+    provider to a "usage unavailable" reason when a prior good reading exists —
+    otherwise a re-auth button appears that a token refresh can never clear."""
+    data_dir = tmp_path / "data"
+    animas_dir = tmp_path / "animas"
+    _write_status(animas_dir, "alice", "anthropic")
+
+    supervisor = SimpleNamespace(
+        processes={"alice": object()},
+        start_anima=AsyncMock(),
+        stop_anima=AsyncMock(),
+    )
+    app = SimpleNamespace(state=SimpleNamespace(supervisor=supervisor))
+    governor = UsageGovernor(app, data_dir, animas_dir)
+    governor._notify_supervisor = AsyncMock()  # type: ignore[method-assign]
+
+    # Seed a previously-successful reading so the soft error can be bridged.
+    governor.state.last_good_usage["claude"] = {
+        "provider": "claude",
+        "five_hour": {"remaining": 80, "resets_at": 4102444800, "window_seconds": 18000},
+        "seven_day": {"remaining": 80, "resets_at": 4102444800, "window_seconds": 604800},
+    }
+
+    relogin_spy = AsyncMock()
+
+    def _fake_relogin(*args, **kwargs):
+        relogin_spy(*args, **kwargs)
+        return ({"success": True}, 200)
+
+    monkeypatch.setattr(
+        "server.routes.usage_routes._fetch_claude_usage",
+        lambda **kwargs: {"error": "rate_limited", "message": "retry shortly"},
+    )
+    monkeypatch.setattr(
+        "server.routes.usage_routes._fetch_openai_usage",
+        lambda **kwargs: {"provider": "openai"},
+    )
+    monkeypatch.setattr(
+        "server.routes.usage_routes._fetch_gemini_usage",
+        lambda **kwargs: {"provider": "gemini"},
+    )
+    monkeypatch.setattr(
+        "server.routes.usage_routes._fetch_nanogpt_usage",
+        lambda **kwargs: {"provider": "nanogpt"},
+    )
+    monkeypatch.setattr("server.routes.usage_routes._relogin_claude", _fake_relogin)
+
+    await governor._tick(DEFAULT_POLICY)
+
+    # No "usage unavailable" reason and claude is still evaluated…
+    assert "claude usage unavailable" not in governor.state.reason
+    assert "claude" in governor.state.front_activity_level_by_provider
+    # …and rate_limited never triggers an auto-relogin (it is not an auth error).
+    relogin_spy.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_tick_records_last_good_usage_on_success(tmp_path, monkeypatch):
+    data_dir = tmp_path / "data"
+    animas_dir = tmp_path / "animas"
+    _write_status(animas_dir, "alice", "anthropic")
+
+    supervisor = SimpleNamespace(
+        processes={"alice": object()},
+        start_anima=AsyncMock(),
+        stop_anima=AsyncMock(),
+    )
+    app = SimpleNamespace(state=SimpleNamespace(supervisor=supervisor))
+    governor = UsageGovernor(app, data_dir, animas_dir)
+    governor._notify_supervisor = AsyncMock()  # type: ignore[method-assign]
+
+    good_claude = {
+        "provider": "claude",
+        "five_hour": {"remaining": 80, "resets_at": 4102444800, "window_seconds": 18000},
+        "seven_day": {"remaining": 80, "resets_at": 4102444800, "window_seconds": 604800},
+    }
+    monkeypatch.setattr(
+        "server.routes.usage_routes._fetch_claude_usage",
+        lambda **kwargs: good_claude,
+    )
+    monkeypatch.setattr(
+        "server.routes.usage_routes._fetch_openai_usage",
+        lambda **kwargs: {"provider": "openai"},
+    )
+    monkeypatch.setattr(
+        "server.routes.usage_routes._fetch_gemini_usage",
+        lambda **kwargs: {"provider": "gemini"},
+    )
+    monkeypatch.setattr(
+        "server.routes.usage_routes._fetch_nanogpt_usage",
+        lambda **kwargs: {"provider": "nanogpt"},
+    )
+
+    await governor._tick(DEFAULT_POLICY)
+
+    assert governor.state.last_good_usage.get("claude") == good_claude

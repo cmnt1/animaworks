@@ -181,6 +181,17 @@ _HISTORY_RETENTION_SEC = 7 * 24 * 3600
 _RELOGIN_MAX_PER_HOUR = 3
 _RELOGIN_COOLDOWN_SECONDS = 600  # 10 min after consecutive failures
 
+# Transient usage-fetch errors that do NOT indicate lost quota or a bad
+# credential — the *usage endpoint* itself is throttling us.  For these we fall
+# back to the last successful reading so the provider stays evaluated instead of
+# vanishing behind a "usage unavailable" reason (which also spawns a re-auth
+# button that a token refresh can never clear).
+_SOFT_USAGE_ERRORS = frozenset({"rate_limited"})
+
+# Usage-fetch errors that a silent token refresh / re-login can actually fix.
+# ``rate_limited`` is intentionally NOT here — a 429 is not an expired token.
+_AUTH_USAGE_ERRORS = frozenset({"unauthorized", "no_credentials"})
+
 
 class GovernorState:
     """Mutable runtime state persisted to ``usage_governor_state.json``."""
@@ -192,6 +203,9 @@ class GovernorState:
         self.since: str = ""
         self.last_check: float = 0.0
         self.last_usage: dict[str, Any] = {}
+        # Per-provider last *successful* usage reading, used to bridge over
+        # transient soft errors (see ``_SOFT_USAGE_ERRORS``).
+        self.last_good_usage: dict[str, Any] = {}
         # Legacy-compatible provider activity map.  New readers prefer the
         # explicit front/background maps below.
         self.governor_activity_level_by_provider: dict[str, int | None] = {}
@@ -258,6 +272,9 @@ class GovernorState:
             calib = data.get("calibration_by_provider")
             if isinstance(calib, dict):
                 self.calibration_by_provider = {k: dict(v) for k, v in calib.items() if isinstance(v, dict)}
+            good = data.get("last_good_usage")
+            if isinstance(good, dict):
+                self.last_good_usage = {k: v for k, v in good.items() if isinstance(v, dict)}
         except Exception:
             logger.debug("Failed to load governor state", exc_info=True)
 
@@ -270,6 +287,7 @@ class GovernorState:
             "front_activity_level_by_provider": self.front_activity_level_by_provider,
             "background_activity_level_by_provider": self.background_activity_level_by_provider,
             "calibration_by_provider": self.calibration_by_provider,
+            "last_good_usage": self.last_good_usage,
         }
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -1248,11 +1266,13 @@ class UsageGovernor:
             "nanogpt": _fetch_nanogpt_usage(),
         }
 
-        # Auto-recovery: if Claude fetch failed with recoverable error,
-        # try token refresh / relogin then retry (rate-limited to avoid
-        # excessive OAuth requests).
+        # Auto-recovery: if Claude fetch failed with a genuine auth error, try a
+        # silent token refresh then retry (rate-limited to avoid excessive OAuth
+        # requests).  ``rate_limited`` is deliberately excluded — it is a usage
+        # endpoint 429, not an auth failure, and ``_fetch_claude_usage`` already
+        # attempts a single refresh+retry for the stale-token-429 case.
         claude_error = usage_data.get("claude", {}).get("error", "")
-        if claude_error in ("rate_limited", "unauthorized", "no_credentials"):
+        if claude_error in _AUTH_USAGE_ERRORS:
             if self._state.can_relogin("claude"):
                 logger.info("Governor: Claude usage fetch failed (%s), attempting silent token refresh", claude_error)
                 # Automatic path: never spawn an interactive CMD /login window.
@@ -1271,6 +1291,22 @@ class UsageGovernor:
                     )
             else:
                 logger.info("Governor: skipping relogin for claude (rate-limited / cooldown)")
+
+        # Bridge transient soft errors with the last successful reading so the
+        # provider keeps being evaluated (activity stays visible) instead of
+        # collapsing to a "usage unavailable" reason.  Fresh good readings are
+        # remembered here.
+        for pkey, pdata in usage_data.items():
+            err = (pdata or {}).get("error", "")
+            if not err:
+                self._state.last_good_usage[pkey] = pdata
+            elif err in _SOFT_USAGE_ERRORS:
+                prev_good = self._state.last_good_usage.get(pkey)
+                if prev_good:
+                    logger.info(
+                        "Governor: %s usage %s — using last successful reading", pkey, err
+                    )
+                    usage_data[pkey] = prev_good
 
         self._state.last_check = time.time()
         self._state.last_usage = usage_data
