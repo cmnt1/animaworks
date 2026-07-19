@@ -10,11 +10,13 @@ from pathlib import Path
 from server.routes import usage_routes
 
 
-def _http_error(url: str, code: int, retry_after: str | None = None) -> urllib.error.HTTPError:
+def _http_error(
+    code: int, *, url: str = "https://x", retry_after: str | None = None, body: bytes = b"{}"
+) -> urllib.error.HTTPError:
     hdrs = email.message.Message()
     if retry_after is not None:
         hdrs["Retry-After"] = retry_after
-    return urllib.error.HTTPError(url, code, "err", hdrs, io.BytesIO(b"{}"))
+    return urllib.error.HTTPError(url, code, "err", hdrs, io.BytesIO(body))
 
 
 def _jwt(payload: dict[str, object]) -> str:
@@ -349,7 +351,7 @@ def test_fetch_claude_usage_429_sets_backoff_without_refresh(monkeypatch):
     monkeypatch.setattr(
         usage_routes.urllib.request,
         "urlopen",
-        lambda req, timeout=0: (_ for _ in ()).throw(_http_error("https://x", 429, retry_after="90")),
+        lambda req, timeout=0: (_ for _ in ()).throw(_http_error(429, retry_after="90")),
     )
 
     result = usage_routes._fetch_claude_usage()
@@ -378,10 +380,6 @@ def test_fetch_claude_usage_backoff_short_circuits_network(monkeypatch):
 # ── 403 scope handling & scope-preserving refresh ────────────────────────────
 
 
-def _http_error_body(code: int, body: bytes) -> urllib.error.HTTPError:
-    return urllib.error.HTTPError("https://x", code, "err", email.message.Message(), io.BytesIO(body))
-
-
 def test_fetch_claude_usage_403_scope_returns_scope_insufficient(monkeypatch):
     monkeypatch.setattr(usage_routes, "_CACHE", {})
     monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {})
@@ -390,7 +388,7 @@ def test_fetch_claude_usage_403_scope_returns_scope_insufficient(monkeypatch):
     monkeypatch.setattr(
         usage_routes.urllib.request,
         "urlopen",
-        lambda req, timeout=0: (_ for _ in ()).throw(_http_error_body(403, body)),
+        lambda req, timeout=0: (_ for _ in ()).throw(_http_error(403, body=body)),
     )
 
     result = usage_routes._fetch_claude_usage()
@@ -400,13 +398,16 @@ def test_fetch_claude_usage_403_scope_returns_scope_insufficient(monkeypatch):
 
 
 def test_fetch_claude_usage_403_non_scope_stays_http_error(monkeypatch):
+    # permission_error is the type for every 403 here, so a non-scope permission
+    # failure must still read as a plain http_error rather than a re-login hint.
     monkeypatch.setattr(usage_routes, "_CACHE", {})
     monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {})
     monkeypatch.setattr(usage_routes, "_read_claude_token", lambda: "access-token")
+    body = b'{"error":{"type":"permission_error","message":"Organization policy forbids this resource"}}'
     monkeypatch.setattr(
         usage_routes.urllib.request,
         "urlopen",
-        lambda req, timeout=0: (_ for _ in ()).throw(_http_error_body(403, b'{"error":"region_blocked"}')),
+        lambda req, timeout=0: (_ for _ in ()).throw(_http_error(403, body=body)),
     )
 
     result = usage_routes._fetch_claude_usage()
@@ -414,7 +415,11 @@ def test_fetch_claude_usage_403_non_scope_stays_http_error(monkeypatch):
     assert result == {"error": "http_error", "message": "HTTP 403"}
 
 
-def test_refresh_claude_token_echoes_and_preserves_scopes(tmp_path: Path, monkeypatch):
+def test_refresh_claude_token_does_not_send_or_persist_scopes(tmp_path: Path, monkeypatch):
+    # RFC 6749 §6: an omitted scope means "everything originally granted", so
+    # echoing the stored scopes could only narrow them.  Persisting a narrowed
+    # set would then make the next refresh request it explicitly — a one-way
+    # ratchet.  Neither may happen.
     cred = tmp_path / "creds.json"
     cred.write_text(
         json.dumps({"claudeAiOauth": {"accessToken": "old", "refreshToken": "r1", "scopes": ["user:inference", "user:profile"]}}),
@@ -424,17 +429,17 @@ def test_refresh_claude_token_echoes_and_preserves_scopes(tmp_path: Path, monkey
 
     def fake_urlopen(req, timeout=0):
         captured["body"] = json.loads(req.data.decode("utf-8"))
-        return _FakeResponse({"access_token": "new-tok", "refresh_token": "r2", "expires_in": 3600, "scope": "user:inference user:profile"})
+        return _FakeResponse({"access_token": "new-tok", "refresh_token": "r2", "expires_in": 3600, "scope": "user:inference"})
 
     monkeypatch.setattr(usage_routes.urllib.request, "urlopen", fake_urlopen)
 
     tok = usage_routes._refresh_claude_token(cred, "r1")
 
     assert tok == "new-tok"
-    # The refresh echoes the token's scopes so it cannot silently narrow them.
-    assert captured["body"]["scope"] == "user:inference user:profile"
+    assert "scope" not in captured["body"]
     saved = json.loads(cred.read_text("utf-8"))["claudeAiOauth"]
     assert saved["accessToken"] == "new-tok"
+    # A narrowed grant must not be written back over the stored scopes.
     assert saved["scopes"] == ["user:inference", "user:profile"]
 
 
@@ -446,7 +451,6 @@ def test_refresh_claude_token_warns_when_profile_scope_dropped(tmp_path: Path, m
         json.dumps({"claudeAiOauth": {"refreshToken": "r1", "scopes": ["user:inference", "user:profile"]}}),
         encoding="utf-8",
     )
-    # Server narrows to inference-only despite the echoed request.
     monkeypatch.setattr(
         usage_routes.urllib.request,
         "urlopen",
@@ -457,8 +461,6 @@ def test_refresh_claude_token_warns_when_profile_scope_dropped(tmp_path: Path, m
         usage_routes._refresh_claude_token(cred, "r1")
 
     assert any("user:profile" in r.message for r in caplog.records)
-    saved = json.loads(cred.read_text("utf-8"))["claudeAiOauth"]
-    assert saved["scopes"] == ["user:inference"]
 
 
 def test_fetch_claude_usage_success_clears_backoff(monkeypatch):
