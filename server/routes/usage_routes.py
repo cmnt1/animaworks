@@ -49,6 +49,61 @@ def _set_cache(key: str, data: dict[str, Any]) -> None:
     _CACHE[key] = (data, time.time())
 
 
+# ── Rate-limit backoff ───────────────────────────────────────────────────────
+# The usage endpoints (notably Claude's ``/api/oauth/usage``) enforce their own
+# rate limit and answer 429 with a ``Retry-After`` of tens of minutes.  Polling
+# every ~2 min through that window keeps us permanently limited, so we record a
+# per-provider "don't hit before" deadline and short-circuit until it passes.
+_RATE_LIMIT_UNTIL: dict[str, float] = {}
+_RATE_LIMIT_BACKOFF_MAX = 3600  # clamp a single backoff window to 1h
+_RATE_LIMIT_BACKOFF_DEFAULT = 300  # used when no Retry-After header is present
+
+
+def _parse_retry_after(value: str | None) -> float:
+    """Seconds to back off, from a ``Retry-After`` header (delta-seconds or
+    HTTP-date), clamped to ``[0, _RATE_LIMIT_BACKOFF_MAX]``."""
+    if not value:
+        return _RATE_LIMIT_BACKOFF_DEFAULT
+    value = value.strip()
+    try:
+        secs = float(value)
+    except ValueError:
+        try:
+            from email.utils import parsedate_to_datetime
+
+            secs = parsedate_to_datetime(value).timestamp() - time.time()
+        except Exception:
+            secs = _RATE_LIMIT_BACKOFF_DEFAULT
+    return max(0.0, min(secs, _RATE_LIMIT_BACKOFF_MAX))
+
+
+def _rate_limit_remaining(key: str) -> float:
+    return max(0.0, _RATE_LIMIT_UNTIL.get(key, 0.0) - time.time())
+
+
+def _in_rate_limit_backoff(key: str) -> bool:
+    return _rate_limit_remaining(key) > 0
+
+
+def _enter_rate_limit_backoff(key: str, retry_after: str | None) -> float:
+    secs = _parse_retry_after(retry_after)
+    _RATE_LIMIT_UNTIL[key] = time.time() + secs
+    return secs
+
+
+def _clear_rate_limit_backoff(key: str) -> None:
+    _RATE_LIMIT_UNTIL.pop(key, None)
+
+
+def _rate_limited_result(key: str) -> dict[str, Any]:
+    remaining = round(_rate_limit_remaining(key))
+    return {
+        "error": "rate_limited",
+        "message": f"Rate limited — backing off {remaining}s",
+        "retry_after_s": remaining,
+    }
+
+
 def _usage_snapshot_path() -> Path:
     from core.paths import get_data_dir
 
@@ -447,6 +502,10 @@ def _fetch_claude_usage(skip_cache: bool = False) -> dict[str, Any]:
         if cached is not None:
             return cached
 
+    # Honor a prior 429 Retry-After: do not touch the endpoint while backing off.
+    if _in_rate_limit_backoff("claude"):
+        return _rate_limited_result("claude")
+
     token = _read_claude_token()
     if not token:
         result: dict[str, Any] = {"error": "no_credentials", "message": "Claude credentials not found"}
@@ -493,6 +552,7 @@ def _fetch_claude_usage(skip_cache: bool = False) -> dict[str, Any]:
             clear_alert("claude")
         except Exception:
             pass
+        _clear_rate_limit_backoff("claude")
         _set_cache("claude", result)
         return result
 
@@ -500,16 +560,16 @@ def _fetch_claude_usage(skip_cache: bool = False) -> dict[str, Any]:
         if e.code == 401:
             result = {"error": "unauthorized", "message": "Token expired — re-login to Claude Code"}
         elif e.code == 429:
-            # Token might be stale — try refresh once before giving up
-            if not skip_cache:
-                best_path, _bt, best_refresh, _be = _select_best_claude_credential()
-                if best_path and best_refresh:
-                    refreshed = _refresh_claude_token(best_path, best_refresh)
-                    if refreshed:
-                        logger.info("Token refreshed after 429, retrying usage fetch")
-                        return _fetch_claude_usage(skip_cache=True)
-            # Don't cache rate-limit errors — retry sooner
-            return {"error": "rate_limited", "message": "Rate limited — retry shortly"}
+            # A 429 is a usage-endpoint rate limit, not an expired token, so a
+            # refresh/retry would only add load.  Record the server's Retry-After
+            # and back off; callers fall back to the last good reading meanwhile.
+            secs = _enter_rate_limit_backoff("claude", e.headers.get("Retry-After"))
+            logger.info(
+                "Claude usage rate-limited (429); backing off %.0fs (Retry-After=%s)",
+                secs,
+                e.headers.get("Retry-After"),
+            )
+            return _rate_limited_result("claude")
         else:
             result = {"error": "http_error", "message": f"HTTP {e.code}"}
         _set_cache("claude", result)
@@ -710,6 +770,9 @@ def _fetch_openai_usage(skip_cache: bool = False, allow_refresh: bool = True) ->
         if cached is not None:
             return cached
 
+    if _in_rate_limit_backoff("openai"):
+        return _rate_limited_result("openai")
+
     try:
         headers = get_openai_subscription_auth_headers()
     except RuntimeError:
@@ -747,6 +810,7 @@ def _fetch_openai_usage(skip_cache: bool = False, allow_refresh: bool = True) ->
             clear_alert("openai")
         except Exception:
             pass
+        _clear_rate_limit_backoff("openai")
         _set_cache("openai", result)
         return result
 
@@ -762,7 +826,8 @@ def _fetch_openai_usage(skip_cache: bool = False, allow_refresh: bool = True) ->
                     return _fetch_openai_usage(skip_cache=True, allow_refresh=False)
             result = {"error": "unauthorized", "message": "Codex token expired — re-login to Codex"}
         elif e.code == 429:
-            return {"error": "rate_limited", "message": "Rate limited — retry shortly"}
+            _enter_rate_limit_backoff("openai", e.headers.get("Retry-After"))
+            return _rate_limited_result("openai")
         else:
             result = {"error": "http_error", "message": f"HTTP {e.code}"}
         _set_cache("openai", result)
@@ -796,6 +861,9 @@ def _fetch_nanogpt_usage(skip_cache: bool = False) -> dict[str, Any]:
         cached = _cached("nanogpt")
         if cached is not None:
             return cached
+
+    if _in_rate_limit_backoff("nanogpt"):
+        return _rate_limited_result("nanogpt")
 
     api_key = _read_nanogpt_api_key()
     if not api_key:
@@ -849,6 +917,7 @@ def _fetch_nanogpt_usage(skip_cache: bool = False) -> dict[str, Any]:
         # Subscription state
         result["state"] = raw.get("state", "unknown")
 
+        _clear_rate_limit_backoff("nanogpt")
         _set_cache("nanogpt", result)
         return result
 
@@ -856,7 +925,8 @@ def _fetch_nanogpt_usage(skip_cache: bool = False) -> dict[str, Any]:
         if e.code == 401:
             result = {"error": "unauthorized", "message": "nanoGPT API key invalid"}
         elif e.code == 429:
-            return {"error": "rate_limited", "message": "Rate limited — retry shortly"}
+            _enter_rate_limit_backoff("nanogpt", e.headers.get("Retry-After"))
+            return _rate_limited_result("nanogpt")
         else:
             result = {"error": "http_error", "message": f"HTTP {e.code}"}
         _set_cache("nanogpt", result)

@@ -332,15 +332,19 @@ function _fmtRemainLine(fc) {
     + `<b>${remainTimeStr}</b> (${remainTimePct}) / <b>${timeToResetStr}</b> (${timeToResetPct}) ${deltaStr}</span>`;
 }
 
-function _renderUsageBar(label, utilization, resetAt, windowSeconds, displayWindowSeconds = null) {
+function _renderUsageBar(label, utilization, resetAt, windowSeconds, displayWindowSeconds = null, opts = {}) {
+  const stale = !!opts.stale;
   const resetMs = resetAt
     ? (typeof resetAt === "number" ? (resetAt < 1e12 ? resetAt * 1000 : resetAt) : new Date(resetAt).getTime())
     : 0;
   const resetInPast = resetMs > 0 && resetMs <= Date.now();
-  // Window already reset — treat as fully available
-  const effectiveUtil = resetInPast ? 0 : utilization;
+  // Window already reset — treat as fully available. But when the data is a
+  // stale fallback (fetch failed, last-good shown), a past reset does NOT mean
+  // "fully available" — the real post-reset usage is unknown — so keep the last
+  // known utilization rather than falsely showing 100%.
+  const effectiveUtil = (resetInPast && !stale) ? 0 : utilization;
   const remaining = Math.max(0, 100 - effectiveUtil);
-  const resetStr = resetInPast ? "" : (resetAt ? _resetToJst(resetAt) : "");
+  const resetStr = (resetInPast && !stale) ? "" : (resetAt ? _resetToJst(resetAt) : "");
 
   // Time-proportional marker — shown on ALL windows (5h and 7d)
   const timePct = _calcTimePct(resetAt, displayWindowSeconds ?? windowSeconds);
@@ -360,9 +364,9 @@ function _renderUsageBar(label, utilization, resetAt, windowSeconds, displayWind
     }
   }
 
-  // Forecast: Runway + 着地予測
+  // Forecast: Runway + 着地予測 (meaningless on stale/last-good data)
   let forecastHtml = "";
-  const fc = resetInPast ? null : _usageForecast(utilization, resetAt, windowSeconds, displayWindowSeconds);
+  const fc = (resetInPast || stale) ? null : _usageForecast(utilization, resetAt, windowSeconds, displayWindowSeconds);
   if (fc) {
     forecastHtml = `<div class="usage-forecast">`;
     // Line 1: 残り Xd (YY%) / Zd (AA%) ▲delta
@@ -516,17 +520,21 @@ async function _runUsageRelogin(provider) {
   await _loadUsage();
 }
 
-function _renderClaudeUsage(data) {
+function _renderClaudeUsage(data, opts = {}) {
   const el = document.getElementById("usageClaudeBody");
   if (!el) return;
 
   if (data.error) {
-    if (data.error === "rate_limited" && data._show_relogin) {
-      // Auto token refresh succeeded but still rate-limited → show relogin button
-      const msg = data._relogin_message || "Token refreshed but still rate-limited — try re-login";
-      el.innerHTML = _renderUsageError("claude", data, msg);
-      const btn = el.querySelector("[data-provider='claude']");
-      btn?.addEventListener("click", () => _runUsageRelogin("claude"));
+    if (data.error === "rate_limited") {
+      // A 429 on the usage endpoint is a rate limit, not an expired token — a
+      // re-login can't clear it (the server backs off via Retry-After and
+      // recovers automatically). Show a self-clearing notice, no relogin button.
+      const secs = data.retry_after_s;
+      const mins = secs ? Math.max(1, Math.ceil(secs / 60)) : null;
+      const msg = mins
+        ? `使用量取得がレート制限中です（約${mins}分後に自動復帰）`
+        : "使用量取得がレート制限中です（自動復帰します）";
+      el.innerHTML = `<div class="usage-stale">${escapeHtml(msg)}</div>`;
       return;
     }
     const msg = data.error === "no_credentials"
@@ -538,19 +546,24 @@ function _renderClaudeUsage(data) {
     return;
   }
 
+  const stale = !!opts.stale;
   let html = "";
+  if (stale) {
+    const at = opts.snapshotAt ? _resetToJst(opts.snapshotAt) : "";
+    html += `<div class="usage-stale">&#x26A0; 使用量を取得できず前回値を表示中${at ? `（${escapeHtml(at)}時点）` : ""}</div>`;
+  }
   if (data.five_hour) {
-    html += _renderUsageBar("5h", data.five_hour.utilization, data.five_hour.resets_at, data.five_hour.window_seconds);
+    html += _renderUsageBar("5h", data.five_hour.utilization, data.five_hour.resets_at, data.five_hour.window_seconds, null, { stale });
   }
   if (data.seven_day) {
-    html += _renderUsageBar("7d", data.seven_day.utilization, data.seven_day.resets_at, data.seven_day.window_seconds);
+    html += _renderUsageBar("7d", data.seven_day.utilization, data.seven_day.resets_at, data.seven_day.window_seconds, null, { stale });
   }
   if (data.extra_usage) {
     const ex = data.extra_usage;
     const used = _formatCredits(ex.used_credits, ex.currency, ex.decimal_places);
     const limit = _formatCredits(ex.monthly_limit, ex.currency, ex.decimal_places);
     const label = used && limit ? `Extra (${used}/${limit})` : "Extra";
-    html += _renderUsageBar(label, ex.utilization, null, null);
+    html += _renderUsageBar(label, ex.utilization, null, null, null, { stale });
   }
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
@@ -953,37 +966,17 @@ async function _loadUsage(forceRefresh = false) {
     const url = forceRefresh ? "/api/usage?skip_cache=true" : "/api/usage";
     const data = await api(url);
 
-    // Auto-refresh: if Claude returns rate_limited, try relogin (token refresh)
-    // then retry once before showing the error
-    if (data.claude?.error === "rate_limited") {
-      try {
-        const reloginRes = await fetch(`${basePath}/api/usage/claude/relogin`, {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-        });
-        const reloginData = await reloginRes.json().catch(() => ({}));
-        if (reloginData.success) {
-          // Token refreshed — retry usage fetch (skip_cache)
-          const retry = await api("/api/usage?skip_cache=true");
-          if (retry.claude && !retry.claude.error) {
-            data.claude = retry.claude;
-          } else if (retry.claude?.error === "rate_limited") {
-            // Still rate-limited after refresh — show relogin button
-            data.claude = {
-              ...retry.claude,
-              _show_relogin: true,
-              _relogin_message: reloginData.message,
-            };
-          }
-        } else {
-          // Refresh failed — show relogin button
-          data.claude._show_relogin = true;
-        }
-      } catch { /* ignore — will render original error */ }
-    }
+    // A rate_limited Claude usage is a usage-endpoint 429, not an expired token,
+    // so we no longer auto-relogin/retry here (a fresh token can't clear a 429,
+    // and re-hitting the endpoint only extends the server's backoff). The card
+    // shows either the last-good fallback (marked stale) or a self-clearing
+    // rate-limit notice.
+    const staleProviders = new Set(
+      Array.isArray(data.snapshot_used) ? data.snapshot_used : [],
+    );
+    const snapshotAt = data.snapshot_cached_at ?? null;
 
-    if (data.claude) _renderClaudeUsage(data.claude);
+    if (data.claude) _renderClaudeUsage(data.claude, { stale: staleProviders.has("claude"), snapshotAt });
     if (data.openai) _renderOpenaiUsage(data.openai);
     if (data.gemini) _renderGeminiUsage(data.gemini);
     if (data.nanogpt) _renderNanogptUsage(data.nanogpt);

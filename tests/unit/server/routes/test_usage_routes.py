@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import email.message
 import io
 import json
 import time
@@ -7,6 +8,13 @@ import urllib.error
 from pathlib import Path
 
 from server.routes import usage_routes
+
+
+def _http_error(url: str, code: int, retry_after: str | None = None) -> urllib.error.HTTPError:
+    hdrs = email.message.Message()
+    if retry_after is not None:
+        hdrs["Retry-After"] = retry_after
+    return urllib.error.HTTPError(url, code, "err", hdrs, io.BytesIO(b"{}"))
 
 
 def _jwt(payload: dict[str, object]) -> str:
@@ -154,7 +162,9 @@ def test_openai_subscription_codex_home_uses_usage_governor_auth_path(tmp_path: 
     auth_path.parent.mkdir()
     auth_path.write_text(json.dumps({"tokens": {"access_token": "token"}}), encoding="utf-8")
 
-    monkeypatch.setattr(usage_routes, "_read_codex_auth_data", lambda: (auth_path, {"tokens": {"access_token": "token"}}))
+    monkeypatch.setattr(
+        usage_routes, "_read_codex_auth_data", lambda: (auth_path, {"tokens": {"access_token": "token"}})
+    )
 
     assert usage_routes.get_openai_subscription_codex_home() == auth_path.parent
 
@@ -313,3 +323,67 @@ def test_fetch_claude_usage_omits_extra_usage_when_disabled(monkeypatch):
 
     assert "extra_usage" not in result
     assert result["five_hour"]["utilization"] == 1.0
+
+
+# ── Rate-limit backoff (Retry-After) ─────────────────────────────────────────
+
+
+def test_parse_retry_after_variants():
+    assert usage_routes._parse_retry_after("120") == 120.0
+    # Missing header → default backoff.
+    assert usage_routes._parse_retry_after(None) == usage_routes._RATE_LIMIT_BACKOFF_DEFAULT
+    # Oversized value is clamped to the max window.
+    assert usage_routes._parse_retry_after("99999") == usage_routes._RATE_LIMIT_BACKOFF_MAX
+
+
+def test_fetch_claude_usage_429_sets_backoff_without_refresh(monkeypatch):
+    monkeypatch.setattr(usage_routes, "_CACHE", {})
+    monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {})
+    monkeypatch.setattr(usage_routes, "_read_claude_token", lambda: "access-token")
+
+    # A 429 must NOT trigger a token refresh — that would only add load.
+    def _no_refresh(*a, **k):
+        raise AssertionError("token refresh must not be attempted on 429")
+
+    monkeypatch.setattr(usage_routes, "_refresh_claude_token", _no_refresh)
+    monkeypatch.setattr(
+        usage_routes.urllib.request,
+        "urlopen",
+        lambda req, timeout=0: (_ for _ in ()).throw(_http_error("https://x", 429, retry_after="90")),
+    )
+
+    result = usage_routes._fetch_claude_usage()
+
+    assert result["error"] == "rate_limited"
+    assert result["retry_after_s"] > 0
+    assert usage_routes._in_rate_limit_backoff("claude")
+
+
+def test_fetch_claude_usage_backoff_short_circuits_network(monkeypatch):
+    monkeypatch.setattr(usage_routes, "_CACHE", {})
+    monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {"claude": time.time() + 300})
+
+    def _no_network(*a, **k):
+        raise AssertionError("must not hit the endpoint while backing off")
+
+    monkeypatch.setattr(usage_routes, "_read_claude_token", lambda: "access-token")
+    monkeypatch.setattr(usage_routes.urllib.request, "urlopen", _no_network)
+
+    # Even an explicit skip_cache refresh must honor the backoff window.
+    result = usage_routes._fetch_claude_usage(skip_cache=True)
+
+    assert result["error"] == "rate_limited"
+
+
+def test_fetch_claude_usage_success_clears_backoff(monkeypatch):
+    # A stale (expired) backoff entry must be cleared once a fetch succeeds.
+    monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {"claude": time.time() - 10})
+    _stub_claude_usage(
+        monkeypatch,
+        {"seven_day": {"utilization": 9.0, "resets_at": "2026-07-25T09:59:59+00:00"}},
+    )
+
+    result = usage_routes._fetch_claude_usage()
+
+    assert result["provider"] == "claude"
+    assert "claude" not in usage_routes._RATE_LIMIT_UNTIL

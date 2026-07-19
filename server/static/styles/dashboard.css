@@ -673,6 +673,12 @@
   padding: 8px 0;
 }
 
+.usage-stale {
+  font-size: 0.75rem;
+  color: var(--aw-color-warning, #d97706);
+  padding: 4px 0;
+}
+
 .usage-loading {
   font-size: 0.82rem;
   color: var(--aw-color-text-faint);
