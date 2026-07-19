@@ -64,6 +64,7 @@ def create_animas_router() -> APIRouter:
             role = None
             department = ""
             title = ""
+            company = ""
             anima_supervisor = None
             anima_speciality = None
             try:
@@ -77,6 +78,7 @@ def create_animas_router() -> APIRouter:
                     role = status_data.get("role")
                     department = status_data.get("department", "")
                     title = status_data.get("title", "")
+                    company = status_data.get("company", "")
             except Exception:
                 logger.debug("Failed to resolve config for anima '%s'", name, exc_info=True)
 
@@ -100,6 +102,7 @@ def create_animas_router() -> APIRouter:
                 "model": model,
                 "department": department,
                 "title": title,
+                "company": company,
             }
             result.append(data)
 
@@ -718,6 +721,7 @@ def create_animas_router() -> APIRouter:
             anima_speciality = None
             department = ""
             title = ""
+            company = ""
             enabled = name in request.app.state.anima_names
             try:
                 resolved, _ = resolve_anima_config(config, name, anima_dir=anima_dir)
@@ -734,6 +738,7 @@ def create_animas_router() -> APIRouter:
                     sdata = json.loads(status_path.read_text(encoding="utf-8"))
                     department = sdata.get("department", "")
                     title = sdata.get("title", "")
+                    company = sdata.get("company", "")
                 except Exception:
                     pass
 
@@ -748,6 +753,7 @@ def create_animas_router() -> APIRouter:
                 "model": model,
                 "department": department,
                 "title": title,
+                "company": company,
                 "status": status,
                 "enabled": enabled,
             }
@@ -762,6 +768,7 @@ def create_animas_router() -> APIRouter:
                 "model": info["model"],
                 "department": info.get("department", ""),
                 "title": info.get("title", ""),
+                "company": info.get("company", ""),
                 "status": info["status"],
                 "enabled": info["enabled"],
                 "children": [_build_node(c) for c in children_names],
@@ -800,11 +807,21 @@ def create_animas_router() -> APIRouter:
 
             return PlainTextResponse("\n".join(lines))
 
+        companies_meta: dict[str, dict] = {}
+        try:
+            from core.company import list_companies
+
+            summaries, _ = list_companies(data_dir=animas_dir.parent)
+            companies_meta = {s.name: {"display_name": s.display_name} for s in summaries}
+        except Exception:
+            logger.debug("Failed to list companies for org chart", exc_info=True)
+
         return {
             "generated_at": datetime.now(tz=timezone(timedelta(hours=9))).isoformat(),
             "total": len(flat),
             "tree": tree,
             "flat": flat,
+            "companies": companies_meta,
         }
 
     # ── Team Deploy ─────────────────────────────────────

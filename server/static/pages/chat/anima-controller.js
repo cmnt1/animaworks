@@ -5,6 +5,7 @@ import {
   fetchChatUiState, scheduleSaveChatUiState, mergeThreadsFromSessions,
 } from "./ctx.js";
 import { bustupCandidates, resolveCachedAvatar } from "../../modules/avatar-resolver.js";
+import { companyColor } from "../../shared/avatar-utils.js";
 
 export function createAnimaController(ctx) {
   const $ = ctx.$;
@@ -66,22 +67,30 @@ export function createAnimaController(ctx) {
     return state.animaTabAvatarLoading[name];
   }
 
+  function companyRingStyle(name) {
+    const anima = (state.animas || []).find(a => a.name === name);
+    const color = companyColor(anima?.company);
+    return color ? ` style="box-shadow:0 0 0 2px ${color}"` : "";
+  }
+
   function buildAnimaTabAvatar(name) {
     const initial = escapeHtml((name || "").charAt(0).toUpperCase() || "?");
     const url = state.animaTabAvatarUrls[name];
+    const ring = companyRingStyle(name);
     if (url) {
-      return `<img class="anima-tab-avatar anima-tab-avatar-img" src="${escapeHtml(url)}" alt="${escapeHtml(name)}">`;
+      return `<img class="anima-tab-avatar anima-tab-avatar-img" src="${escapeHtml(url)}" alt="${escapeHtml(name)}"${ring}>`;
     }
-    return `<span class="anima-tab-avatar anima-tab-avatar-initial">${initial}</span>`;
+    return `<span class="anima-tab-avatar anima-tab-avatar-initial"${ring}>${initial}</span>`;
   }
 
   function buildAddConversationAvatar(name) {
     const initial = escapeHtml((name || "").charAt(0).toUpperCase() || "?");
     const url = state.animaTabAvatarUrls[name];
+    const ring = companyRingStyle(name);
     if (url) {
-      return `<img class="add-conversation-avatar add-conversation-avatar-img" src="${escapeHtml(url)}" alt="${escapeHtml(name)}">`;
+      return `<img class="add-conversation-avatar add-conversation-avatar-img" src="${escapeHtml(url)}" alt="${escapeHtml(name)}"${ring}>`;
     }
-    return `<span class="add-conversation-avatar add-conversation-avatar-initial">${initial}</span>`;
+    return `<span class="add-conversation-avatar add-conversation-avatar-initial"${ring}>${initial}</span>`;
   }
 
   function renderAddConversationMenu() {

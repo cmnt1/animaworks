@@ -19,6 +19,7 @@ import {
 import { createScrollObserver } from "../../shared/chat/scroll-observer.js";
 import { mergePolledHistory } from "../../shared/chat/history-loader.js";
 import { initTextArtifactHandlers } from "../../shared/text-artifact.js";
+import { companyColor } from "../../shared/avatar-utils.js";
 
 export function createChatRenderer(ctx) {
   const $ = ctx.$;
@@ -64,6 +65,11 @@ export function createChatRenderer(ctx) {
     escapeHtml, renderMarkdown, smartTimestamp, renderChatImages,
     animaName: state.selectedAnima,
     avatarMap: state.animaTabAvatarUrls || {},
+    companyColors: Object.fromEntries(
+      (state.animas || [])
+        .filter((a) => a.company)
+        .map((a) => [a.name, companyColor(a.company)]),
+    ),
     knownAnimaNames: new Set((state.animas || []).map((a) => a.name).filter(Boolean)),
     knownUserNames: new Set([
       "human",

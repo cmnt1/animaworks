@@ -278,19 +278,41 @@
   min-width: min-content;
 }
 
+/* Company group: labeled box around one company's columns */
+.org-company-group {
+  flex: 0 0 auto;
+  border: 1.5px solid var(--company-color, var(--aw-color-border));
+  border-radius: 12px;
+  padding: 10px 12px 12px;
+  min-width: min-content;
+}
+
+.org-company-label {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--company-color, var(--aw-color-text-secondary));
+  border-radius: 6px;
+  padding: 2px 10px;
+  margin-bottom: 10px;
+}
+
 /* Each top-level column: root card + vertical subtree */
 .org-tree-column {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   flex: 0 0 auto;
   min-width: 0;
 }
 
-/* Vertical line from root card to subtree */
+/* Vertical line from root card to subtree.
+   x = 6px matches the sibling rail (list padding 20px - rail offset 14px). */
 .org-tree-stem {
   width: 1.5px;
   height: 14px;
+  margin-left: 6px;
   background: var(--aw-color-border);
 }
 
@@ -320,16 +342,16 @@
 }
 
 .org-tree-list > .org-tree-node:last-child::before {
-  height: 22px;
+  height: 28px;
 }
 
-/* Horizontal arm to card */
+/* Horizontal arm to card (y = node padding 3px + card height 50px / 2) */
 .org-tree-list > .org-tree-node::after {
   content: "";
   position: absolute;
   left: -14px;
-  top: 22px;
-  width: 12px;
+  top: 28px;
+  width: 14px;
   height: 1.5px;
   background: var(--aw-color-border);
 }
@@ -448,6 +470,9 @@
   .org-tree-top-row {
     flex-wrap: wrap;
     gap: 16px;
+  }
+  .org-company-group {
+    min-width: 100%;
   }
   .org-tree-column {
     min-width: calc(50% - 8px);

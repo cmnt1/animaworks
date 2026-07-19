@@ -4,6 +4,7 @@ import { basePath } from "/shared/base-path.js";
 import { api } from "../modules/api.js";
 import { escapeHtml, timeStr, statusClass } from "../modules/state.js";
 import { animaHashColor } from "../modules/animas.js";
+import { companyColor } from "../shared/avatar-utils.js";
 import { getIcon, getDisplaySummary } from "../shared/activity-types.js";
 import { bustupCandidates, resolveAvatar } from "../modules/avatar-resolver.js";
 
@@ -580,10 +581,38 @@ async function _loadOrgChart() {
       return;
     }
 
+    const companiesMeta = data.companies || {};
+
+    // Group top-level nodes by company
+    const groups = new Map();
+    for (const node of tree) {
+      const key = node.company || "";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(node);
+    }
+
     const topRow = document.createElement("div");
     topRow.className = "org-tree-top-row";
-    for (const node of tree) {
-      topRow.appendChild(_renderColumn(node));
+    for (const [key, nodes] of groups) {
+      const group = document.createElement("div");
+      group.className = "org-company-group";
+      const color = companyColor(key);
+      if (color) group.style.setProperty("--company-color", color);
+
+      const label = document.createElement("div");
+      label.className = "org-company-label";
+      label.textContent = key
+        ? (companiesMeta[key]?.display_name || key)
+        : t("home.org_unassigned");
+      group.appendChild(label);
+
+      const groupRow = document.createElement("div");
+      groupRow.className = "org-tree-top-row";
+      for (const node of nodes) {
+        groupRow.appendChild(_renderColumn(node));
+      }
+      group.appendChild(groupRow);
+      topRow.appendChild(group);
     }
     container.innerHTML = "";
     container.appendChild(topRow);
@@ -665,8 +694,10 @@ function _buildCard(node, isRoot = false) {
   if (role) metaParts.push(`<span class="org-tree-role">${escapeHtml(role)}</span>`);
   if (model) metaParts.push(`<span class="org-tree-model">${escapeHtml(model)}</span>`);
 
+  const ring = companyColor(node.company);
+  const ringStyle = ring ? `box-shadow:0 0 0 2px ${ring};` : "";
   card.innerHTML = `
-    <div class="org-tree-avatar" id="orgAvatar_${escapeHtml(node.name)}" style="background:${color};">
+    <div class="org-tree-avatar" id="orgAvatar_${escapeHtml(node.name)}" style="background:${color};${ringStyle}">
       ${initial}
     </div>
     <div class="org-tree-info">

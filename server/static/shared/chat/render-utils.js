@@ -342,15 +342,17 @@ function _stripVoiceSuffix(text) {
 
 const _USER_SVG = `<svg class="chat-msg-avatar-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>`;
 
-function _renderAvatar(name, avatarMap) {
+function _renderAvatar(name, avatarMap, companyColors) {
   if (!avatarMap) return "";
+  const ringColor = name && companyColors ? companyColors[name] : "";
+  const ring = ringColor ? ` style="box-shadow:0 0 0 2px ${ringColor}"` : "";
   const url = avatarMap[name];
   if (url) {
-    return `<div class="chat-msg-avatar"><img class="chat-msg-avatar-img" src="${url}" alt=""></div>`;
+    return `<div class="chat-msg-avatar"${ring}><img class="chat-msg-avatar-img" src="${url}" alt=""></div>`;
   }
   if (name) {
     const ch = (name.charAt(0) || "?").toUpperCase();
-    return `<div class="chat-msg-avatar"><span class="chat-msg-avatar-initial">${ch}</span></div>`;
+    return `<div class="chat-msg-avatar"${ring}><span class="chat-msg-avatar-initial">${ch}</span></div>`;
   }
   return `<div class="chat-msg-avatar">${_USER_SVG}</div>`;
 }
@@ -423,7 +425,7 @@ export function renderHistoryMessage(msg, opts) {
     const actionsHtml = _bubbleActionsHtml(rawText);
     const dataAttr = rawText ? ` data-raw-text="${_escapeAttr(rawText)}"` : "";
     const bubble = `<div class="chat-bubble assistant"${dataAttr}>${actionsHtml}${speakerLabel}${metaHtml}${thinkingHtml}${content}${imagesHtml}${toolHtml}${tsHtml}</div>`;
-    return _wrapRow("assistant", bubble, _renderAvatar(speakerName, avatarMap));
+    return _wrapRow("assistant", bubble, _renderAvatar(speakerName, avatarMap, opts.companyColors));
   }
 
   const isAnima = msg.from_person && msg.from_person !== "human";
@@ -436,7 +438,7 @@ export function renderHistoryMessage(msg, opts) {
     : `<div class="chat-text">${escapeHtml(userContent)}</div>`;
   const bubbleWs = isAnima ? ' style="white-space:normal"' : "";
   const bubble = `<div class="chat-bubble user"${bubbleWs}>${fromLabel}${contentHtml}${tsHtml}</div>`;
-  const avatarHtml = _renderAvatar(isAnima ? msg.from_person : null, avatarMap);
+  const avatarHtml = _renderAvatar(isAnima ? msg.from_person : null, avatarMap, opts.companyColors);
   return _wrapRow("user", bubble, avatarHtml);
 }
 
@@ -923,7 +925,7 @@ export function renderLiveBubble(msg, opts) {
   if (msg.role === "thinking") {
     const thinkLabel = labels.thinking || t("chat.thinking");
     const bubble = `<div class="chat-bubble thinking"><span class="thinking-animation">${thinkLabel}</span></div>`;
-    return _wrapRow("assistant", bubble, _renderAvatar(opts.animaName, avatarMap));
+    return _wrapRow("assistant", bubble, _renderAvatar(opts.animaName, avatarMap, opts.companyColors));
   }
 
   if (msg.role === "system") {
@@ -983,7 +985,7 @@ export function renderLiveBubble(msg, opts) {
   const actionsHtml = msg.streaming ? "" : _bubbleActionsHtml(rawText);
   const dataRawAttr = rawText && !msg.streaming ? ` data-raw-text="${_escapeAttr(rawText)}"` : "";
   const bubble = `<div class="chat-bubble assistant${streamClass}"${streamIdAttr}${dataRawAttr}>${actionsHtml}${speakerLabel}${metaHtml}${content}${imagesHtml}${compressionHtml}${toolHtml}${thinkingHtml}${tsHtml}</div>`;
-  return _wrapRow("assistant", bubble, _renderAvatar(speakerName, avatarMap));
+  return _wrapRow("assistant", bubble, _renderAvatar(speakerName, avatarMap, opts.companyColors));
 }
 
 /**
