@@ -1303,9 +1303,7 @@ class UsageGovernor:
             elif err in _SOFT_USAGE_ERRORS:
                 prev_good = self._state.last_good_usage.get(pkey)
                 if prev_good:
-                    logger.info(
-                        "Governor: %s usage %s — using last successful reading", pkey, err
-                    )
+                    logger.info("Governor: %s usage %s — using last successful reading", pkey, err)
                     usage_data[pkey] = prev_good
 
         self._state.last_check = time.time()
