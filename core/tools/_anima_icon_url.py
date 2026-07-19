@@ -222,32 +222,39 @@ def resolve_anima_icon_url(
     if not anima_name:
         return ""
 
+    # Anima directories and uploaded CDN assets use canonical lowercase IDs,
+    # while callers may pass a presentation name such as "Airi". Normalize
+    # only the icon lookup key; the caller remains free to display mixed case.
+    icon_name = anima_name.strip().casefold()
+    if not icon_name:
+        return ""
+
     # 1. Per-Anima override
-    per_anima = _get_per_anima_icon_url(anima_name)
+    per_anima = _get_per_anima_icon_url(icon_name)
     if per_anima:
         return per_anima
 
     # 2. Env var template
     env_template = os.environ.get(_ICON_URL_TEMPLATE_ENV_KEY, "").strip()
     if env_template:
-        return _format_template(env_template, anima_name)
+        return _format_template(env_template, icon_name)
 
     # 3. Top-level config template
     global_template = _get_global_icon_url_template()
     if global_template:
-        return _format_template(global_template, anima_name)
+        return _format_template(global_template, icon_name)
 
     # 4. Per-channel template (legacy backward compat)
     ch_template = _get_icon_path_template(channel_config)
     if ch_template:
-        return _format_template(ch_template, anima_name)
+        return _format_template(ch_template, icon_name)
 
     # 5. Internal asset fallback
     base = os.environ.get("ANIMAWORKS_SERVER_URL", "").strip().rstrip("/")
-    asset = _icon_asset_for_url(anima_name)
+    asset = _icon_asset_for_url(icon_name)
     if asset is not None and base:
         _, filename = asset
-        return f"{base}/api/animas/{quote(anima_name, safe='')}/assets/{filename}"
+        return f"{base}/api/animas/{quote(icon_name, safe='')}/assets/{filename}"
 
     return ""
 

@@ -482,7 +482,10 @@ class TestCompleteForgettingProcedures:
 
     def test_procedure_archived_and_deleted(self, engine, anima_dir):
         """Low-activation procedure is archived and deleted from vector store."""
-        old_low_since = (datetime.now(tz=JST) - timedelta(days=90)).isoformat()
+        # 91 days, not 90: the engine requires days_low to be strictly > 90, and
+        # the Windows wall clock advances in ~1-15.6ms ticks, so "now - 90 days"
+        # can equal the engine's own now_local() exactly and land ON the boundary.
+        old_low_since = (datetime.now(tz=JST) - timedelta(days=91)).isoformat()
 
         # Create source file
         source_file = anima_dir / "procedures" / "old-deploy.md"

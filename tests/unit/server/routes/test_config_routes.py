@@ -266,11 +266,47 @@ class TestOpenAIAuthSettings:
         models = resp.json()["models"]
         ids = {item["id"] for item in models}
 
+        assert "codex/gpt-5.6-sol" in ids
+        assert "codex/gpt-5.6-terra" in ids
+        assert "codex/gpt-5.6-luna" in ids
         assert "codex/gpt-5.5" in ids
         assert "codex/gpt-5.4" in ids
         assert "codex/gpt-5.4-mini" in ids
         assert "codex/gpt-5.3-codex" in ids
         assert "openai-codex/gpt-5.3-codex" not in ids
+
+    async def test_refresh_available_models_uses_codex_subscription_catalog(self, tmp_path):
+        config = AnimaWorksConfig(
+            credentials={
+                "openai": CredentialConfig(type="codex_login"),
+            }
+        )
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("server.routes.config_routes.load_config", return_value=config),
+            patch("server.routes.config_routes.get_data_dir", return_value=tmp_path),
+            patch("server.routes.config_routes.is_codex_login_available", return_value=True),
+            patch(
+                "server.routes.config_routes._list_codex_subscription_models",
+                return_value=["codex/gpt-5.6-sol", "codex/gpt-5.6-terra"],
+            ),
+            patch("server.routes.config_routes._list_ollama_models", return_value=[]),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/system/available-models/refresh",
+                    json={"providers": ["codex"]},
+                )
+
+        assert resp.status_code == 200
+        result = resp.json()["providers"][0]
+        assert result["status"] == "ok"
+        assert result["source"] == "subscription"
+        assert result["dynamic"] is True
+        cache = json.loads((tmp_path / "model_catalog_cache.json").read_text(encoding="utf-8"))
+        assert cache["providers"]["codex"]["models"] == ["codex/gpt-5.6-sol", "codex/gpt-5.6-terra"]
 
     async def test_refresh_available_models_updates_codex_cache(self, tmp_path):
         config = AnimaWorksConfig(
@@ -302,7 +338,7 @@ class TestOpenAIAuthSettings:
         assert data["providers"][0]["source"] == "api"
         assert data["providers"][0]["dynamic"] is True
         assert "codex/gpt-5.6" in ids
-        assert "codex/gpt-5.5" in ids
+        assert "codex/gpt-5.5" not in ids
 
         cache = json.loads((tmp_path / "model_catalog_cache.json").read_text(encoding="utf-8"))
         assert "codex/gpt-5.6" in cache["providers"]["codex"]["models"]
@@ -321,6 +357,10 @@ class TestOpenAIAuthSettings:
             patch("server.routes.config_routes.get_data_dir", return_value=tmp_path),
             patch("server.routes.config_routes._list_ollama_models", return_value=[]),
             patch("server.routes.config_routes.is_codex_login_available", return_value=True),
+            patch(
+                "server.routes.config_routes._list_codex_subscription_models",
+                side_effect=RuntimeError("subscription model listing unavailable"),
+            ),
             patch("server.routes.config_routes._load_abconfig_credentials", return_value={}),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:

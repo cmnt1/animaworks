@@ -40,7 +40,7 @@ from core.config.opencode_go import (
 from core.i18n import t
 from core.paths import get_animas_dir, get_data_dir
 from core.platform.claude_code import is_claude_code_available
-from core.platform.codex import is_codex_cli_available, is_codex_login_available
+from core.platform.codex import get_codex_executable, is_codex_cli_available, is_codex_login_available
 from core.platform.grok import is_grok_authenticated
 
 logger = logging.getLogger("animaworks.routes.config")
@@ -66,7 +66,7 @@ def _known_codex_models() -> list[str]:
         for item in KNOWN_MODELS
         if item.get("mode") == "C" and str(item.get("name", "")).startswith("codex/")
     ]
-    return _unique_model_ids(["codex/gpt-5.5", *models])
+    return _unique_model_ids(models)
 
 
 def _known_claude_code_models() -> list[str]:
@@ -185,7 +185,8 @@ def _cache_provider_models(provider: str, models: list[str], *, status: str, mes
 
 
 def _models_for_provider(provider: str, fallback: list[str]) -> list[str]:
-    return _unique_model_ids([*fallback, *_cached_provider_models(provider)])
+    cached = _cached_provider_models(provider)
+    return cached or _unique_model_ids(fallback)
 
 
 class UpdateAnthropicAuthRequest(BaseModel):
@@ -329,6 +330,26 @@ def _list_openai_models(api_key: str, organization: str = "") -> list[str]:
     return _unique_model_ids([f"codex/{model_id}" for model_id in sorted(ids) if model_id.startswith(("gpt-", "o"))])
 
 
+def _list_codex_subscription_models() -> list[str]:
+    """Return models exposed by the authenticated Codex subscription runtime."""
+    from openai_codex import Codex
+    from openai_codex.client import CodexConfig
+
+    executable = get_codex_executable()
+    if not executable:
+        raise RuntimeError("Codex CLI is not available")
+
+    with Codex(CodexConfig(codex_bin=executable)) as codex:
+        response = codex.models(include_hidden=True)
+
+    models = [
+        f"codex/{model.id}" for model in response.data if model.id and not str(model.id).startswith("codex-auto-")
+    ]
+    if not models:
+        raise RuntimeError("Codex returned an empty subscription model list")
+    return _unique_model_ids(models)
+
+
 def _list_opencode_go_models(api_key: str = "") -> list[str]:
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     response = httpx.get(
@@ -425,6 +446,44 @@ def _refresh_claude_code_models(config) -> dict[str, object]:
 def _refresh_codex_models(config) -> dict[str, object]:
     credential = config.credentials.get("openai", CredentialConfig())
     fallback = _known_codex_models()
+    if is_codex_login_available():
+        try:
+            models = _list_codex_subscription_models()
+        except Exception as exc:
+            logger.warning("Failed to list Codex subscription models", exc_info=True)
+            if not _first_secret(
+                credential.api_key,
+                os.environ.get("OPENAI_API_KEY"),
+                _abconfig_value("openai_key"),
+            ):
+                cached = _cached_provider_models("codex")
+                if cached:
+                    return {
+                        "provider": "codex",
+                        "status": "cached",
+                        "source": "cache",
+                        "dynamic": False,
+                        "count": len(cached),
+                        "message": str(exc),
+                    }
+                _cache_provider_models("codex", fallback, status="fallback", message=str(exc))
+                return {
+                    "provider": "codex",
+                    "status": "fallback",
+                    "source": "known",
+                    "dynamic": False,
+                    "count": len(fallback),
+                    "message": str(exc),
+                }
+        else:
+            _cache_provider_models("codex", models, status="ok")
+            return {
+                "provider": "codex",
+                "status": "ok",
+                "source": "subscription",
+                "dynamic": True,
+                "count": len(models),
+            }
     api_key = _first_secret(credential.api_key, os.environ.get("OPENAI_API_KEY"), _abconfig_value("openai_key"))
     if not api_key:
         _cache_provider_models("codex", fallback, status="fallback", message="No OpenAI API key configured.")

@@ -96,6 +96,12 @@ class TestEnvVarTemplate:
         monkeypatch.delenv("ANIMAWORKS_SERVER_URL", raising=False)
         assert resolve_anima_icon_url("alice") == "https://github.example/alice.png"
 
+    def test_display_name_is_normalized_for_icon_lookup(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv(_ICON_URL_TEMPLATE_ENV_KEY, "https://github.example/{name}.png")
+        monkeypatch.delenv("ANIMAWORKS_SERVER_URL", raising=False)
+        assert resolve_anima_icon_url("Airi") == "https://github.example/airi.png"
+
     def test_malformed_template_returns_empty(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
         monkeypatch.setenv(_ICON_URL_TEMPLATE_ENV_KEY, "https://cdn/{name}/{foo}.png")

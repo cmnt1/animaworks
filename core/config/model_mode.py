@@ -97,7 +97,8 @@ DEFAULT_MODEL_MODES = DEFAULT_MODEL_MODE_PATTERNS
 # informational and does NOT restrict which models can be used.
 KNOWN_MODELS: list[dict[str, str]] = [
     # ── Claude / Anthropic (Mode S) ──────────────────────────────────────────
-    {"name": "claude-opus-4-8", "mode": "S", "note": "最高性能・最新"},
+    {"name": "claude-fable-5", "mode": "S", "note": "最高性能・長時間タスク（usage credits）"},
+    {"name": "claude-opus-4-8", "mode": "S", "note": "Opus最高性能・推奨"},
     {"name": "claude-opus-4-7", "mode": "S", "note": "最高性能"},
     {"name": "claude-opus-4-6", "mode": "S", "note": "最高性能・推奨"},
     {"name": "claude-sonnet-5", "mode": "S", "note": "次世代Sonnet・最新"},
@@ -107,7 +108,6 @@ KNOWN_MODELS: list[dict[str, str]] = [
     {"name": "claude-opus-4-5-20251101", "mode": "S", "note": "旧フラッグシップ"},
     {"name": "claude-opus-4-1-20250805", "mode": "S", "note": "旧Opus"},
     {"name": "claude-sonnet-4-5-20250929", "mode": "S", "note": "旧Sonnet"},
-    {"name": "claude-sonnet-4-20250514", "mode": "S", "note": "旧Sonnet4"},
     # ── OpenAI (Mode A) ──────────────────────────────────────────────────────
     {"name": "openai/gpt-4.1", "mode": "A", "note": "最新・コーディング強"},
     {"name": "openai/gpt-4.1-mini", "mode": "A", "note": "高速・低コスト"},
@@ -141,9 +141,15 @@ KNOWN_MODELS: list[dict[str, str]] = [
     {"name": "ollama/qwen3:14b", "mode": "A", "note": "ローカル中型"},
     {"name": "ollama/qwen3:32b", "mode": "A", "note": "ローカル大型"},
     # ── Codex (Mode C) ──────────────────────────────────────────────────────
-    {"name": "codex/gpt-5.4", "mode": "C", "note": "Codex CLI経由・最新"},
-    {"name": "codex/gpt-5.4-mini", "mode": "C", "note": "Codex CLI経由・高速"},
+    {"name": "codex/gpt-5.6-sol", "mode": "C", "note": "Codex CLI経由・最高性能"},
+    {"name": "codex/gpt-5.6-terra", "mode": "C", "note": "Codex CLI経由・バランス型"},
+    {"name": "codex/gpt-5.6-luna", "mode": "C", "note": "Codex CLI経由・高速"},
+    {"name": "codex/gpt-5.5", "mode": "C", "note": "Codex CLI経由・旧フラッグシップ"},
+    {"name": "codex/gpt-5.4", "mode": "C", "note": "Codex CLI経由・レガシー"},
+    {"name": "codex/gpt-5.4-mini", "mode": "C", "note": "Codex CLI経由・高速（レガシー）"},
+    {"name": "codex/gpt-5.3-codex-spark", "mode": "C", "note": "Codex CLI経由・超高速"},
     {"name": "codex/gpt-5.3-codex", "mode": "C", "note": "Codex CLI経由・コーディング"},
+    {"name": "codex/gpt-5.2", "mode": "C", "note": "Codex CLI経由・レガシー"},
     {"name": "codex/o4-mini", "mode": "C", "note": "Codex CLI経由・高速"},
     {"name": "codex/o3", "mode": "C", "note": "Codex CLI経由・推論"},
     {"name": "codex/gpt-4.1", "mode": "C", "note": "Codex CLI経由・コーディング"},

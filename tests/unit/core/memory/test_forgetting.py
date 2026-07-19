@@ -631,11 +631,14 @@ class TestCompleteForgetting:
     def test_complete_forgetting_archives_and_deletes(self, forgetting_engine, anima_dir):
         """Test that low-activation chunks are archived and deleted.
 
-        Chunks with low_activation_since > 60 days ago and access_count=0
+        Chunks with low_activation_since > 90 days ago and access_count=0
         should have their source files moved to archive/forgotten/ and
         be deleted from the vector store.
         """
-        old_low_since = (now_jst() - timedelta(days=90)).isoformat()
+        # 91 days, not 90: the engine requires days_low to be strictly > 90, and
+        # the Windows wall clock advances in ~1-15.6ms ticks, so "now - 90 days"
+        # can equal the engine's own now_local() exactly and land ON the boundary.
+        old_low_since = (now_jst() - timedelta(days=91)).isoformat()
 
         # Create source file in the anima dir
         source_file = anima_dir / "knowledge" / "forgotten-topic.md"
