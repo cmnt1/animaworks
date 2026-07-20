@@ -201,6 +201,11 @@ class TestStopThenStartLifecycle:
                 "bootstrapping": False,
                 "uptime_sec": None,
             }
+            # The route checks supervisor.processes after start_anima to detect
+            # refused starts; give the mock a side effect that mirrors real behaviour.
+            async def _do_start(n: str) -> None:
+                supervisor.processes[n] = MagicMock()
+            supervisor.start_anima.side_effect = _do_start
             start_resp = await client.post("/api/animas/sakura/start")
             assert start_resp.status_code == 200
             start_data = start_resp.json()
