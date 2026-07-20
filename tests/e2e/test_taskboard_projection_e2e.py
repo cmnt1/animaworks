@@ -82,3 +82,53 @@ def test_taskboard_projection_uses_jsonl_queue_and_sqlite_metadata(tmp_path: Pat
         "metadata_upserted",
         "surface_recorded",
     ]
+
+
+def test_terminal_status_syncs_metadata_and_hides_from_active_board(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Completing a delegated task archives board metadata and drops it from the active view."""
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(data_dir))
+    animas_dir = data_dir / "animas"
+    sakura_dir = animas_dir / "sakura"
+    (sakura_dir / "state").mkdir(parents=True)
+
+    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
+    queue = TaskQueueManager(sakura_dir)
+    task = queue.add_task(
+        source="human",
+        original_instruction="delegated work",
+        assignee="sakura",
+        summary="delegated work",
+        task_id="task-complete",
+    )
+    store.upsert_metadata(
+        anima_name="sakura",
+        task_id=task.task_id,
+        actor="delegator",
+        visibility="active",
+        column="waiting",
+    )
+
+    updated = queue.update_status(task.task_id, "done", summary="delegated work done")
+    assert updated is not None
+    assert updated.status == "done"
+
+    meta = store.get_metadata("sakura", task.task_id)
+    assert meta is not None
+    assert meta.visibility == AttentionVisibility.ARCHIVED
+    assert meta.column == BoardColumn.DONE
+
+    active = project_all(animas_dir, store)
+    assert all(t.task_id != task.task_id for t in active)
+
+    archived = project_all(animas_dir, store, include_archived=True)
+    by_id = {t.task_id: t for t in archived}
+    assert by_id[task.task_id].visibility == AttentionVisibility.ARCHIVED
+    assert by_id[task.task_id].column == BoardColumn.DONE
+    assert by_id[task.task_id].queue_status == "done"
+    assert any(
+        event["event_type"] == "archived"
+        for event in store.list_events(anima_name="sakura", task_id=task.task_id)
+    )

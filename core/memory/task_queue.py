@@ -387,7 +387,39 @@ class TaskQueueManager:
         if summary is not None:
             task.summary = summary
         logger.info("Task updated: id=%s status=%s", task_id, status)
+
+        if status in _TERMINAL_STATUSES:
+            self._sync_taskboard_archived(task_id)
+
         return task
+
+    def _sync_taskboard_archived(self, task_id: str) -> None:
+        """Best-effort: close TaskBoard metadata when a task reaches terminal status.
+
+        Only updates an existing metadata row; never creates one. Failures are
+        swallowed so the queue update remains authoritative.
+        """
+        try:
+            from core.taskboard.store import TaskBoardStore
+
+            anima_name = self.anima_dir.name
+            store = TaskBoardStore()
+            if store.get_metadata(anima_name, task_id) is None:
+                return
+            store.upsert_metadata(
+                anima_name=anima_name,
+                task_id=task_id,
+                actor=anima_name,
+                event_type="archived",
+                visibility="archived",
+                column="done",
+            )
+        except Exception:
+            logger.debug(
+                "Failed to archive TaskBoard metadata for task %s",
+                task_id,
+                exc_info=True,
+            )
 
     def update_meta(
         self,

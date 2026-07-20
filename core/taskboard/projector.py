@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import datetime
 from pathlib import Path
 
 from core.memory.task_queue import TaskEntry, TaskQueueManager
@@ -108,6 +109,26 @@ def _load_queue_tasks(anima_dir: Path) -> list[TaskEntry]:
     return list(manager._load_all().values())
 
 
+def _metadata_older_than_queue(metadata_updated_at: str | None, queue_updated_at: str | None) -> bool:
+    """Return True when metadata timestamp is strictly older than the queue timestamp.
+
+    Parse failures or missing values return False so callers keep metadata-first
+    precedence (safe fallback for legacy / malformed data).
+    """
+    if not metadata_updated_at or not queue_updated_at:
+        return False
+    try:
+        meta_dt = datetime.fromisoformat(metadata_updated_at)
+        queue_dt = datetime.fromisoformat(queue_updated_at)
+    except (TypeError, ValueError):
+        return False
+    # Compare naive and aware only when both share the same awareness; otherwise
+    # fall back to metadata-first to avoid TypeError on mixed tz forms.
+    if (meta_dt.tzinfo is None) != (queue_dt.tzinfo is None):
+        return False
+    return meta_dt < queue_dt
+
+
 def _project_queue_task(
     *,
     task: TaskEntry,
@@ -118,8 +139,20 @@ def _project_queue_task(
     default_visibility = (
         AttentionVisibility.ARCHIVED if task.status in ARCHIVED_QUEUE_STATUSES else AttentionVisibility.ACTIVE
     )
-    visibility = metadata.visibility if metadata is not None else default_visibility
-    column = metadata.column if metadata is not None and metadata.column is not None else default_column
+    # Metadata wins for visibility/column unless the queue is already terminal
+    # (done/cancelled) and the metadata row is stale relative to the queue update
+    # (ghost active/waiting after completion without metadata sync).
+    prefer_defaults = (
+        metadata is not None
+        and task.status in ARCHIVED_QUEUE_STATUSES
+        and _metadata_older_than_queue(metadata.updated_at, task.updated_at)
+    )
+    if metadata is not None and not prefer_defaults:
+        visibility = metadata.visibility
+        column = metadata.column if metadata.column is not None else default_column
+    else:
+        visibility = default_visibility
+        column = default_column
 
     return BoardTask(
         anima_name=anima_name,
