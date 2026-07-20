@@ -190,6 +190,18 @@ class TestFindServerPidByProcess:
         assert _find_server_pid_by_process(port=18500) is None
         assert mock_find.call_count == 2
 
+    @patch("cli.commands.server.psutil.Process")
+    def test_resolves_relative_data_dir_from_candidate_cwd(self, mock_process):
+        """Relative candidate paths use the server process working directory."""
+        from cli.commands.server import _process_data_dir
+
+        mock_process.return_value.cwd.return_value = "/srv/animaworks"
+
+        result = _process_data_dir(12345, ["animaworks", "--data-dir", "runtime", "start"])
+
+        assert result == Path("/srv/animaworks/runtime")
+        mock_process.assert_called_once_with(12345)
+
 
 # ── _stop_server ─────────────────────────────────────────
 

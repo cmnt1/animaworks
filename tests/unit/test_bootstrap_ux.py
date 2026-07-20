@@ -10,6 +10,7 @@ import yaml
 
 STATIC_DIR = Path(__file__).resolve().parents[2] / "server" / "static"
 DEMO_DIR = Path(__file__).resolve().parents[2] / "demo"
+REPO_DIR = Path(__file__).resolve().parents[2]
 
 BOOTSTRAP_I18N_KEYS = [
     "chat.anima_starting",
@@ -108,6 +109,15 @@ class TestDockerComposeDev:
         volumes = svc["volumes"]
         data_mount = [v for v in volumes if "animaworks-demo-data" in str(v)]
         assert len(data_mount) >= 1, "Missing animaworks-demo-data volume"
+
+
+class TestRootDockerBuild:
+    """Root Docker context preserves runtime bootstrap templates."""
+
+    def test_dockerignore_includes_markdown_templates(self):
+        dockerignore = (REPO_DIR / ".dockerignore").read_text(encoding="utf-8")
+
+        assert "!templates/**/*.md" in dockerignore.splitlines()
 
 
 class TestBootstrapCssClasses:

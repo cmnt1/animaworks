@@ -200,8 +200,11 @@ def _process_data_dir(pid: int, cmdline: list[str] | None) -> Path | None:
         if raw_data_dir is None:
             return Path.home() / ".animaworks"
     try:
-        return Path(raw_data_dir).expanduser().resolve()
-    except OSError:
+        candidate = Path(raw_data_dir).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path(psutil.Process(pid).cwd()) / candidate
+        return candidate.resolve()
+    except (OSError, psutil.Error):
         return None
 
 
