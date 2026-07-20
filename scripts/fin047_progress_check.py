@@ -51,7 +51,9 @@ from core.time_utils import now_local  # noqa: E402
 
 FINANCE_REPO = Path(r"E:\OneDriveBiz\Tools\Finance")
 STAGING_WORKTREE = FINANCE_REPO / ".claude" / ".claude" / "worktrees" / "wt-8520-fin047-staging"
-BRANCH = "feature/fin047-8520-staging"
+# 2026-07-20 の 8519 統合 (merge 0c5ba4a) 以降、fin047 コミットは main に入る。
+# ブランチ時代のコミットも main の履歴に含まれるため main を参照する。
+BRANCH = "main"
 OPENSPEC_TASKS_MD = FINANCE_REPO / "openspec" / "changes" / "fin-047-vix-scenario-pl-chg-optimization" / "tasks.md"
 OPTIMIZER_8519_URL = "http://localhost:8519/"
 STAGING_8520_URL = "http://localhost:8520/"
