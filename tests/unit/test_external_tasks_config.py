@@ -9,9 +9,9 @@ from __future__ import annotations
 from core.config.schemas import AnimaWorksConfig, ExternalTasksConfig, ExternalTasksSourcesConfig
 
 
-def test_external_tasks_config_defaults_disabled() -> None:
+def test_external_tasks_config_defaults_enabled() -> None:
     cfg = ExternalTasksConfig()
-    assert cfg.enabled is False
+    assert cfg.enabled is True
     assert cfg.interval_minutes == 5
     assert isinstance(cfg.sources, ExternalTasksSourcesConfig)
     assert cfg.sources.github is True
@@ -23,7 +23,7 @@ def test_external_tasks_config_defaults_disabled() -> None:
 def test_anima_works_config_includes_external_tasks() -> None:
     root = AnimaWorksConfig()
     assert isinstance(root.external_tasks, ExternalTasksConfig)
-    assert root.external_tasks.enabled is False
+    assert root.external_tasks.enabled is True
     assert root.external_tasks.interval_minutes == 5
     assert root.external_tasks.sources.github is True
 

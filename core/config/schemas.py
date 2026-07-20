@@ -572,9 +572,13 @@ class ExternalTasksSourcesConfig(BaseModel):
 
 
 class ExternalTasksConfig(BaseModel):
-    """Configuration for the external tasks dashboard widget collector."""
+    """Configuration for the external tasks dashboard widget collector.
 
-    enabled: bool = False
+    Enabled by default; sources without credentials are simply reported as
+    ``unavailable`` by the collector, so this is safe on fresh installs.
+    """
+
+    enabled: bool = True
     interval_minutes: int = 5
     sources: ExternalTasksSourcesConfig = Field(default_factory=ExternalTasksSourcesConfig)
 
