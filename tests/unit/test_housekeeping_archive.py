@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import time
+import os
+from datetime import UTC, datetime
 
 from core.memory.housekeeping import _rotate_archive_superseded, _rotate_daemon_log
 
@@ -16,17 +17,20 @@ class TestRotateArchiveSuperseded:
         result = _rotate_archive_superseded(animas, 7)
         assert result["deleted_files"] == 0
 
-    def test_deletes_old_files(self, tmp_path):
+    def test_deletes_old_files(self, tmp_path, monkeypatch):
         animas = tmp_path / "animas"
         archive = animas / "rin" / "archive" / "superseded"
         archive.mkdir(parents=True)
 
+        # Pin both the file mtime and now_local to fixed values so the test is
+        # independent of the system clock and os.utime precision on CI runners.
+        ref_ts = 1_700_000_000.0  # 2024-11-15 ~06:13 UTC
+        fixed_now = datetime.fromtimestamp(ref_ts, tz=UTC)
+        monkeypatch.setattr("core.memory.housekeeping.now_local", lambda: fixed_now)
+
         old_file = archive / "old.md"
         old_file.write_text("old content")
-        eight_days_ago = time.time() - (8 * 86400)
-        import os
-
-        os.utime(old_file, (eight_days_ago, eight_days_ago))
+        os.utime(old_file, (ref_ts - 8 * 86400, ref_ts - 8 * 86400))
 
         new_file = archive / "new.md"
         new_file.write_text("new content")
@@ -48,17 +52,18 @@ class TestRotateArchiveSuperseded:
         assert result["deleted_files"] == 0
         assert recent.exists()
 
-    def test_multiple_animas(self, tmp_path):
+    def test_multiple_animas(self, tmp_path, monkeypatch):
+        ref_ts = 1_700_000_000.0
+        fixed_now = datetime.fromtimestamp(ref_ts, tz=UTC)
+        monkeypatch.setattr("core.memory.housekeeping.now_local", lambda: fixed_now)
+
         animas = tmp_path / "animas"
         for name in ("rin", "sakura", "natsume"):
             archive = animas / name / "archive" / "superseded"
             archive.mkdir(parents=True)
             old = archive / "old.md"
             old.write_text("old")
-            import os
-
-            eight_days_ago = time.time() - (8 * 86400)
-            os.utime(old, (eight_days_ago, eight_days_ago))
+            os.utime(old, (ref_ts - 8 * 86400, ref_ts - 8 * 86400))
 
         result = _rotate_archive_superseded(animas, 7)
         assert result["deleted_files"] == 3
