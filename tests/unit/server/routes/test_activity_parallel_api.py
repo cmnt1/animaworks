@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from core.memory.task_queue import TaskQueueManager
+from core.time_utils import now_local
 from server.routes.system import create_system_router
 
 
@@ -142,7 +143,9 @@ class TestRecentActivityContextCompatibility:
         app = _app(tmp_path, ["alice"])
         anima_dir = app.state.animas_dir / "alice"
         anima_dir.mkdir()
-        now = datetime.now(UTC)
+        # Activity log files are partitioned by app-local date (now_iso), and
+        # recent_page(hours=...) cuts off against now_local(). Use the same TZ.
+        now = now_local()
         _write_activity(
             anima_dir,
             [

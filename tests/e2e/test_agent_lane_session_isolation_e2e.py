@@ -27,8 +27,11 @@ def _prepare_anima_dirs(tmp_path: Path) -> tuple[Path, Path]:
         directory.mkdir(parents=True, exist_ok=True)
     (anima_dir / "identity.md").write_text("# Lane E2E", encoding="utf-8")
     (anima_dir / "injection.md").write_text("Lane isolation", encoding="utf-8")
+    # Keep a single background worker so AgentCore is created once per lane
+    # (chat / background / inbox) and the legacy lane mock wiring stays valid.
     (anima_dir / "status.json").write_text(
-        '{"enabled": true, "role": "general", "model": "claude-sonnet-4-6"}',
+        '{"enabled": true, "role": "general", "model": "claude-sonnet-4-6",'
+        ' "background_worker_pool_size": 1}',
         encoding="utf-8",
     )
     return anima_dir, shared_dir

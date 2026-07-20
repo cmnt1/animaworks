@@ -32,6 +32,27 @@ def _codex_supports_permission_profiles(codex: str) -> bool:
     return bool(match and tuple(int(part) for part in match.groups()) >= (0, 138, 0))
 
 
+def _linux_user_namespaces_available() -> bool:
+    """Return True when bubblewrap can create an unprivileged user namespace.
+
+    Ubuntu enables ``kernel.apparmor_restrict_unprivileged_userns`` on some
+    hosts, which makes ``bwrap`` fail with ``setting up uid map: Permission
+    denied`` before any profile mounts are applied.  That is an environment
+    capability, not a product regression.
+    """
+    bwrap = shutil.which("bwrap")
+    if bwrap is None:
+        return False
+    probe = subprocess.run(
+        [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "true"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    return probe.returncode == 0
+
+
 @pytest.mark.e2e
 def test_generated_profile_denies_direct_and_symlink_reads(
     tmp_path: Path,
@@ -44,6 +65,8 @@ def test_generated_profile_denies_direct_and_symlink_reads(
     codex = shutil.which("codex")
     if codex is None or not _codex_supports_permission_profiles(codex):
         pytest.skip("Codex 0.138.0 or newer is required for permission profiles")
+    if not _linux_user_namespaces_available():
+        pytest.skip("Unprivileged user namespaces (bwrap) are unavailable on this host")
 
     runtime_root = Path.cwd() / f".e2e-read-deny-{tmp_path.name}"
     request.addfinalizer(lambda: shutil.rmtree(runtime_root, ignore_errors=True))

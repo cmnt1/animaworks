@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
 
 from core.memory.task_queue import TaskQueueManager
+from core.time_utils import now_local
 
 
 def _create_app(tmp_path: Path):
@@ -78,7 +78,8 @@ async def test_parallel_activity_data_through_application_router(tmp_path: Path)
         encoding="utf-8",
     )
 
-    now = datetime.now(UTC).isoformat()
+    # Match ActivityLogger partitioning / hours cutoff (app-local TZ).
+    now = now_local().isoformat()
     activity_dir = anima_dir / "activity_log"
     activity_dir.mkdir()
     activity_dir.joinpath(f"{now[:10]}.jsonl").write_text(
