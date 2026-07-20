@@ -113,12 +113,20 @@ def _make_supervisor_mock(
     statuses = statuses or {}
     sup = MagicMock()
     sup.get_all_status.return_value = statuses
+    # The start endpoint checks ``name in supervisor.processes`` after calling
+    # start_anima to detect refused starts.  Use a real dict and a side effect
+    # that mirrors ProcessSupervisor behaviour so the check passes.
+    sup.processes = {}
 
     def _get_process_status(name: str) -> dict:
         return statuses.get(name, {"status": "not_found", "bootstrapping": False})
 
     sup.get_process_status = MagicMock(side_effect=_get_process_status)
-    sup.start_anima = AsyncMock()
+
+    async def _do_start(name: str) -> None:
+        sup.processes[name] = MagicMock()
+
+    sup.start_anima = AsyncMock(side_effect=_do_start)
     return sup
 
 
