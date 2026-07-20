@@ -146,6 +146,9 @@ def collect_git() -> dict:
     }
 
 
+_MOJIBAKE_RE = re.compile(r"[縺繝繧蜷蝣ｱ]|・ｽ")
+
+
 def collect_openspec() -> dict:
     if not OPENSPEC_TASKS_MD.is_file():
         return {"error": f"tasks.md not found: {OPENSPEC_TASKS_MD}"}
@@ -153,7 +156,9 @@ def collect_openspec() -> dict:
     total = 0
     sections: dict[str, list[int]] = {}
     current = "(前文)"
-    for line in OPENSPEC_TASKS_MD.read_text(encoding="utf-8", errors="replace").splitlines():
+    text = OPENSPEC_TASKS_MD.read_text(encoding="utf-8", errors="replace")
+    mojibake = bool(_MOJIBAKE_RE.search(text))
+    for line in text.splitlines():
         if line.startswith("#"):
             current = line.lstrip("#").strip()
             continue
@@ -163,7 +168,11 @@ def collect_openspec() -> dict:
             sec = sections.setdefault(current, [0, 0])
             sec[0] += int(done)
             sec[1] += 1
-    return {"checked": checked, "total": total, "sections": sections}
+    result = {"checked": checked, "total": total, "sections": sections}
+    if mojibake:
+        # cp932 往復破損の検知 (2026-07-19 に実際に発生)。放置すると正典が読めなくなる
+        result["mojibake"] = True
+    return result
 
 
 def _http_up(url: str) -> bool:
@@ -568,6 +577,8 @@ def build_report(now: datetime) -> tuple[str, dict]:
     if "error" in spec:
         lines.append(f"- OpenSpec: ❌ {spec['error']}")
     else:
+        if spec.get("mojibake"):
+            lines.append("- ⚠️ **tasks.md にエンコーディング破損 (文字化け) を検知** — cp932 編集の疑い。即時修復が必要")
         lines.append(f"- OpenSpec tasks.md: {spec['checked']}/{spec['total']} 完了")
         for sec, (c, t) in spec.get("sections", {}).items():
             lines.append(f"    - {sec}: {c}/{t}")
