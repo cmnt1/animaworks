@@ -1391,7 +1391,12 @@ def _rotate_archive_superseded(
             if not f.is_file():
                 continue
             try:
-                if f.stat().st_mtime < cutoff_ts:
+                # mtime is preserved by shutil.move, so a file archived today can
+                # carry an old mtime and be deleted immediately. ctime is updated
+                # by the move itself, so max(mtime, ctime) approximates the time
+                # the file entered archive/superseded.
+                st = f.stat()
+                if max(st.st_mtime, st.st_ctime) < cutoff_ts:
                     f.unlink()
                     total_deleted += 1
             except OSError:
