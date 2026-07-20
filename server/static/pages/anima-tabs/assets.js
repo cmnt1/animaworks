@@ -210,9 +210,18 @@ async function _loadGallery() {
   _bindStepAssetButtons();
 }
 
+// Metadata APIのurlはroot相対("/api/...")。base path配下デプロイ(/app等)では
+// クライアント側で前置しないと画像が404になる（avatar-resolver.jsと同じ扱い）。
+function _assetUrl(url) {
+  if (!url || !basePath) return url;
+  if (!url.startsWith("/") || url.startsWith(`${basePath}/`)) return url;
+  return basePath + url;
+}
+
 function _cacheBust(url) {
   if (!url) return url;
-  return url + (url.includes("?") ? "&" : "?") + "t=" + Date.now();
+  const resolved = _assetUrl(url);
+  return resolved + (resolved.includes("?") ? "&" : "?") + "t=" + Date.now();
 }
 function _renderThumbnailWithActions(label, assetInfo, step, opts = {}) {
   const showUpload = !!opts.showUpload;
@@ -484,9 +493,9 @@ function _openRemakeModal() {
   const isReal = imgStyle === "realistic";
   const animeAssets = _metadata.assets || {};
   const realAssets = _metadata.assets_realistic || {};
-  const currentFullbodyUrl = isReal
+  const currentFullbodyUrl = _assetUrl(isReal
     ? (realAssets.avatar_fullbody_realistic?.url || "")
-    : (animeAssets.avatar_fullbody?.url || "");
+    : (animeAssets.avatar_fullbody?.url || ""));
 
   // Build style-from options: "None" first, then other animas
   let styleOptions = `<option value="">${t("assets.generate_from_scratch")}</option>`;
@@ -670,8 +679,8 @@ function _openRemakeModal() {
 
   const imageStyleSelect = document.getElementById("assetsImageStyle");
   const currentCol = overlay.querySelector(".assets-modal-col:first-child");
-  const animeUrl = animeAssets.avatar_fullbody?.url || "";
-  const realUrl = realAssets.avatar_fullbody_realistic?.url || "";
+  const animeUrl = _assetUrl(animeAssets.avatar_fullbody?.url || "");
+  const realUrl = _assetUrl(realAssets.avatar_fullbody_realistic?.url || "");
   if (imageStyleSelect && currentCol) {
     imageStyleSelect.addEventListener("change", () => {
       const style = imageStyleSelect.value;
