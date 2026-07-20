@@ -31,9 +31,7 @@ def _make_config(animas: dict[str, dict]):
     from core.config.models import AnimaModelConfig, AnimaWorksConfig
 
     cfg = AnimaWorksConfig()
-    cfg.animas = {
-        name: AnimaModelConfig(**data) for name, data in animas.items()
-    }
+    cfg.animas = {name: AnimaModelConfig(**data) for name, data in animas.items()}
     return cfg
 
 
@@ -54,6 +52,8 @@ def handler_with_sub(animas_dir: Path):
 
     alice_dir = animas_dir / "alice"
     (alice_dir / "state").mkdir(parents=True)
+    (boss_dir / "status.json").write_text("{}", encoding="utf-8")
+    (alice_dir / "status.json").write_text("{}", encoding="utf-8")
 
     memory = MagicMock()
     messenger = MagicMock()
@@ -73,10 +73,12 @@ def handler_with_sub(animas_dir: Path):
         descendants=["alice"],
     )
 
-    cfg = _make_config({
-        "boss": {"supervisor": None},
-        "alice": {"supervisor": "boss"},
-    })
+    cfg = _make_config(
+        {
+            "boss": {"supervisor": None},
+            "alice": {"supervisor": "boss"},
+        }
+    )
 
     return handler, animas_dir, cfg
 
@@ -91,15 +93,20 @@ class TestDelegateTaskWritesPending:
         handler, animas_dir, cfg = handler_with_sub
         alice_dir = animas_dir / "alice"
 
-        with patch("core.paths.get_animas_dir", return_value=animas_dir), \
-             patch("core.config.models.load_config", return_value=cfg), \
-             patch("core.tooling.handler_delegation.build_outgoing_origin_chain", return_value=["anima"]):
-            result = handler.handle("delegate_task", {
-                "name": "alice",
-                "instruction": "Implement the login form",
-                "summary": "Login form implementation",
-                "deadline": "1d",
-            })
+        with (
+            patch("core.paths.get_animas_dir", return_value=animas_dir),
+            patch("core.config.models.load_config", return_value=cfg),
+            patch("core.tooling.handler_delegation.build_outgoing_origin_chain", return_value=["anima"]),
+        ):
+            result = handler.handle(
+                "delegate_task",
+                {
+                    "name": "alice",
+                    "instruction": "Implement the login form",
+                    "summary": "Login form implementation",
+                    "deadline": "1d",
+                },
+            )
 
         pending_dir = alice_dir / "state" / "pending"
         pending_files = list(pending_dir.glob("*.json"))
@@ -119,15 +126,20 @@ class TestDelegateTaskWritesPending:
         handler, animas_dir, cfg = handler_with_sub
         alice_dir = animas_dir / "alice"
 
-        with patch("core.paths.get_animas_dir", return_value=animas_dir), \
-             patch("core.config.models.load_config", return_value=cfg), \
-             patch("core.tooling.handler_delegation.build_outgoing_origin_chain", return_value=["anima"]):
-            handler.handle("delegate_task", {
-                "name": "alice",
-                "instruction": "Do something",
-                "summary": "Task summary",
-                "deadline": "2h",
-            })
+        with (
+            patch("core.paths.get_animas_dir", return_value=animas_dir),
+            patch("core.config.models.load_config", return_value=cfg),
+            patch("core.tooling.handler_delegation.build_outgoing_origin_chain", return_value=["anima"]),
+        ):
+            handler.handle(
+                "delegate_task",
+                {
+                    "name": "alice",
+                    "instruction": "Do something",
+                    "summary": "Task summary",
+                    "deadline": "2h",
+                },
+            )
 
         pending_files = list((alice_dir / "state" / "pending").glob("*.json"))
         pending_task = json.loads(pending_files[0].read_text(encoding="utf-8"))
@@ -142,22 +154,33 @@ class TestDelegateTaskWritesPending:
         handler, animas_dir, cfg = handler_with_sub
         alice_dir = animas_dir / "alice"
 
-        with patch("core.paths.get_animas_dir", return_value=animas_dir), \
-             patch("core.config.models.load_config", return_value=cfg), \
-             patch("core.tooling.handler_delegation.build_outgoing_origin_chain", return_value=["anima"]):
-            handler.handle("delegate_task", {
-                "name": "alice",
-                "instruction": "Test instruction",
-                "summary": "Test summary",
-                "deadline": "30m",
-            })
+        with (
+            patch("core.paths.get_animas_dir", return_value=animas_dir),
+            patch("core.config.models.load_config", return_value=cfg),
+            patch("core.tooling.handler_delegation.build_outgoing_origin_chain", return_value=["anima"]),
+        ):
+            handler.handle(
+                "delegate_task",
+                {
+                    "name": "alice",
+                    "instruction": "Test instruction",
+                    "summary": "Test summary",
+                    "deadline": "30m",
+                },
+            )
 
         pending_files = list((alice_dir / "state" / "pending").glob("*.json"))
         task_data = json.loads(pending_files[0].read_text(encoding="utf-8"))
 
         required_fields = [
-            "task_type", "task_id", "title", "description",
-            "submitted_by", "submitted_at", "reply_to", "source",
+            "task_type",
+            "task_id",
+            "title",
+            "description",
+            "submitted_by",
+            "submitted_at",
+            "reply_to",
+            "source",
         ]
         for field in required_fields:
             assert field in task_data, f"Missing required field: {field}"
@@ -217,10 +240,7 @@ class TestSelectSubordinateExplicitOnly:
 
     def _make_config(self, animas: dict[str, dict]):
         cfg = SimpleNamespace()
-        cfg.animas = {
-            name: SimpleNamespace(**data)
-            for name, data in animas.items()
-        }
+        cfg.animas = {name: SimpleNamespace(**data) for name, data in animas.items()}
         return cfg
 
     @pytest.fixture(autouse=True)
@@ -239,15 +259,18 @@ class TestSelectSubordinateExplicitOnly:
             d = animas_dir / name
             d.mkdir(parents=True)
             (d / "status.json").write_text(
-                json.dumps({"enabled": True, "role": "engineer"}), encoding="utf-8",
+                json.dumps({"enabled": True, "role": "engineer"}),
+                encoding="utf-8",
             )
 
         mock_animas_dir.return_value = animas_dir
-        mock_load.return_value = self._make_config({
-            "boss": {"supervisor": None},
-            "alice": {"supervisor": "boss"},
-            "bob": {"supervisor": "boss"},
-        })
+        mock_load.return_value = self._make_config(
+            {
+                "boss": {"supervisor": None},
+                "alice": {"supervisor": "boss"},
+                "bob": {"supervisor": "boss"},
+            }
+        )
 
         result = _select_subordinate(animas_dir / "boss", "fix the authentication bug")
         assert result is None
@@ -263,15 +286,18 @@ class TestSelectSubordinateExplicitOnly:
             d = animas_dir / name
             d.mkdir(parents=True)
             (d / "status.json").write_text(
-                json.dumps({"enabled": True}), encoding="utf-8",
+                json.dumps({"enabled": True}),
+                encoding="utf-8",
             )
 
         mock_animas_dir.return_value = animas_dir
-        mock_load.return_value = self._make_config({
-            "boss": {"supervisor": None},
-            "alice": {"supervisor": "boss"},
-            "bob": {"supervisor": "boss"},
-        })
+        mock_load.return_value = self._make_config(
+            {
+                "boss": {"supervisor": None},
+                "alice": {"supervisor": "boss"},
+                "bob": {"supervisor": "boss"},
+            }
+        )
 
         result = _select_subordinate(animas_dir / "boss", "Ask bob to handle the deployment")
         assert result == "bob"
@@ -286,17 +312,20 @@ class TestSelectSubordinateExplicitOnly:
         alice_dir = animas_dir / "alice"
         alice_dir.mkdir(parents=True)
         (alice_dir / "status.json").write_text(
-            json.dumps({"enabled": True, "role": "engineer"}), encoding="utf-8",
+            json.dumps({"enabled": True, "role": "engineer"}),
+            encoding="utf-8",
         )
 
         boss_dir = animas_dir / "boss"
         boss_dir.mkdir(parents=True)
 
         mock_animas_dir.return_value = animas_dir
-        mock_load.return_value = self._make_config({
-            "boss": {"supervisor": None},
-            "alice": {"supervisor": "boss"},
-        })
+        mock_load.return_value = self._make_config(
+            {
+                "boss": {"supervisor": None},
+                "alice": {"supervisor": "boss"},
+            }
+        )
 
         result = _select_subordinate(boss_dir, "need an engineer to fix the bug")
         assert result is None

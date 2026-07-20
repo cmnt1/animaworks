@@ -10,6 +10,15 @@
 from __future__ import annotations
 
 STRINGS: dict[str, dict[str, str]] = {
+    "handler.company_boundary_unverifiable": {
+        "ja": "エラー: 会社境界を確認できないため、この操作は安全のためブロックされました。しばらくしてから再試行するか、人間のオーナーへエスカレーションしてください。",
+        "en": (
+            "Error: The company boundary could not be verified, so this operation was blocked for safety. "
+            "Try again later or escalate this matter to the human owner."
+        ),
+        "zh": "错误：无法验证公司边界，因此为确保安全，此操作已被阻止。请稍后重试或将此事项升级给人类所有者处理。",
+        "ko": "오류: 회사 경계를 확인할 수 없어 안전을 위해 이 작업이 차단되었습니다. 나중에 다시 시도하거나 인간 소유자에게 에스컬레이션하세요.",
+    },
     "handler.cross_company_delegation_blocked": {
         "ja": (
             "エラー: 委任先は別会社「{display_name}」に所属しています。会社間の直接のタスク委任は禁止されています。"

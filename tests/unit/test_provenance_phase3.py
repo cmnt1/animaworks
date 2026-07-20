@@ -22,6 +22,12 @@ from core.execution._sanitize import (
     ORIGIN_SYSTEM,
 )
 
+
+@pytest.fixture(autouse=True)
+def _isolated_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+
+
 # ── Messenger.send() origin_chain ─────────────────────────────
 
 
@@ -165,13 +171,14 @@ class TestSendMessageOriginPropagation:
 
         # Create sender anima dir
         anima_dir = tmp_path / "animas" / "sender"
-        for sub in ("activity_log", "episodes", "knowledge", "procedures",
-                     "skills", "state", "run"):
+        for sub in ("activity_log", "episodes", "knowledge", "procedures", "skills", "state", "run"):
             (anima_dir / sub).mkdir(parents=True)
 
         # Create target anima dir (so it's recognized as internal)
         target_dir = tmp_path / "animas" / "target"
         target_dir.mkdir(parents=True)
+        (anima_dir / "status.json").write_text("{}", encoding="utf-8")
+        (target_dir / "status.json").write_text("{}", encoding="utf-8")
 
         # Create shared dir with inbox
         shared = tmp_path / "shared"
@@ -209,13 +216,17 @@ class TestSendMessageOriginPropagation:
         handler = setup["handler"]
         handler.set_session_origin(ORIGIN_HUMAN)
 
-        with patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient), \
-             patch("core.config.models.load_config", return_value=self._mock_config()):
-            result = handler._handle_send_message({
-                "to": "target",
-                "content": "hello from human session",
-                "intent": "report",
-            })
+        with (
+            patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
+            patch("core.config.models.load_config", return_value=self._mock_config()),
+        ):
+            result = handler._handle_send_message(
+                {
+                    "to": "target",
+                    "content": "hello from human session",
+                    "intent": "report",
+                }
+            )
 
         assert "Message sent" in result
         inbox_file = list((setup["shared"] / "inbox" / "target").glob("*.json"))
@@ -231,13 +242,17 @@ class TestSendMessageOriginPropagation:
             ["external_platform"],
         )
 
-        with patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient), \
-             patch("core.config.models.load_config", return_value=self._mock_config()):
-            result = handler._handle_send_message({
-                "to": "target",
-                "content": "relayed from slack",
-                "intent": "report",
-            })
+        with (
+            patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
+            patch("core.config.models.load_config", return_value=self._mock_config()),
+        ):
+            result = handler._handle_send_message(
+                {
+                    "to": "target",
+                    "content": "relayed from slack",
+                    "intent": "report",
+                }
+            )
 
         assert "Message sent" in result
         inbox_file = list((setup["shared"] / "inbox" / "target").glob("*.json"))
@@ -251,13 +266,17 @@ class TestSendMessageOriginPropagation:
         handler = setup["handler"]
         handler.set_session_origin(ORIGIN_SYSTEM)
 
-        with patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient), \
-             patch("core.config.models.load_config", return_value=self._mock_config()):
-            result = handler._handle_send_message({
-                "to": "target",
-                "content": "heartbeat observation",
-                "intent": "report",
-            })
+        with (
+            patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
+            patch("core.config.models.load_config", return_value=self._mock_config()),
+        ):
+            result = handler._handle_send_message(
+                {
+                    "to": "target",
+                    "content": "heartbeat observation",
+                    "intent": "report",
+                }
+            )
 
         assert "Message sent" in result
         inbox_file = list((setup["shared"] / "inbox" / "target").glob("*.json"))
@@ -273,13 +292,17 @@ class TestSendMessageOriginPropagation:
             ["external_platform", "anima"],
         )
 
-        with patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient), \
-             patch("core.config.models.load_config", return_value=self._mock_config()):
-            result = handler._handle_send_message({
-                "to": "target",
-                "content": "multi-hop relay",
-                "intent": "report",
-            })
+        with (
+            patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
+            patch("core.config.models.load_config", return_value=self._mock_config()),
+        ):
+            result = handler._handle_send_message(
+                {
+                    "to": "target",
+                    "content": "multi-hop relay",
+                    "intent": "report",
+                }
+            )
 
         assert "Message sent" in result
         inbox_file = list((setup["shared"] / "inbox" / "target").glob("*.json"))
@@ -295,13 +318,17 @@ class TestSendMessageOriginPropagation:
         long_chain = ["external_platform"] + ["anima"] * (MAX_ORIGIN_CHAIN_LENGTH + 5)
         handler.set_session_origin(ORIGIN_ANIMA, long_chain)
 
-        with patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient), \
-             patch("core.config.models.load_config", return_value=self._mock_config()):
-            handler._handle_send_message({
-                "to": "target",
-                "content": "long chain",
-                "intent": "report",
-            })
+        with (
+            patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
+            patch("core.config.models.load_config", return_value=self._mock_config()),
+        ):
+            handler._handle_send_message(
+                {
+                    "to": "target",
+                    "content": "long chain",
+                    "intent": "report",
+                }
+            )
 
         inbox_file = list((setup["shared"] / "inbox" / "target").glob("*.json"))
         assert len(inbox_file) == 1
@@ -312,13 +339,17 @@ class TestSendMessageOriginPropagation:
         """When session origin is not set, only 'anima' appears in chain."""
         handler = setup["handler"]
 
-        with patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient), \
-             patch("core.config.models.load_config", return_value=self._mock_config()):
-            handler._handle_send_message({
-                "to": "target",
-                "content": "no origin set",
-                "intent": "report",
-            })
+        with (
+            patch("core.outbound.resolve_recipient", side_effect=self._mock_resolve_recipient),
+            patch("core.config.models.load_config", return_value=self._mock_config()),
+        ):
+            handler._handle_send_message(
+                {
+                    "to": "target",
+                    "content": "no origin set",
+                    "intent": "report",
+                }
+            )
 
         inbox_file = list((setup["shared"] / "inbox" / "target").glob("*.json"))
         assert len(inbox_file) == 1
@@ -339,14 +370,15 @@ class TestDelegateTaskOriginPropagation:
 
         # Create supervisor anima dir
         anima_dir = tmp_path / "animas" / "supervisor"
-        for sub in ("activity_log", "episodes", "knowledge", "procedures",
-                     "skills", "state", "run"):
+        for sub in ("activity_log", "episodes", "knowledge", "procedures", "skills", "state", "run"):
             (anima_dir / sub).mkdir(parents=True)
 
         # Create subordinate anima dir with task queue
         sub_dir = tmp_path / "animas" / "worker"
         (sub_dir / "state").mkdir(parents=True)
         (sub_dir / "activity_log").mkdir(parents=True)
+        (anima_dir / "status.json").write_text("{}", encoding="utf-8")
+        (sub_dir / "status.json").write_text("{}", encoding="utf-8")
 
         shared = tmp_path / "shared"
         shared.mkdir(parents=True)
@@ -368,15 +400,18 @@ class TestDelegateTaskOriginPropagation:
         handler.set_session_origin(ORIGIN_HUMAN)
 
         # Mock descendant check to pass
-        with patch.object(handler, "_check_subordinate", return_value=None), \
-             patch("core.paths.get_animas_dir",
-                   return_value=setup["tmp_path"] / "animas"), \
-             patch("core.config.models.load_config", return_value=AnimaWorksConfig()):
-            result = handler._handle_delegate_task({
-                "name": "worker",
-                "instruction": "do the thing",
-                "deadline": "2h",
-            })
+        with (
+            patch.object(handler, "_check_subordinate", return_value=None),
+            patch("core.paths.get_animas_dir", return_value=setup["tmp_path"] / "animas"),
+            patch("core.config.models.load_config", return_value=AnimaWorksConfig()),
+        ):
+            result = handler._handle_delegate_task(
+                {
+                    "name": "worker",
+                    "instruction": "do the thing",
+                    "deadline": "2h",
+                }
+            )
 
         assert "worker" in result
         # Check inbox for the DM
@@ -410,9 +445,7 @@ class TestInboxOriginResolution:
         origins = [ORIGIN_ANIMA, ORIGIN_EXTERNAL_PLATFORM, ORIGIN_HUMAN]
         worst = min(
             origins,
-            key=lambda o: {"untrusted": 0, "medium": 1, "trusted": 2}.get(
-                resolve_trust(o), 0
-            ),
+            key=lambda o: {"untrusted": 0, "medium": 1, "trusted": 2}.get(resolve_trust(o), 0),
         )
         assert worst == ORIGIN_EXTERNAL_PLATFORM
 
@@ -430,7 +463,8 @@ class TestE2EOriginChainScenarios:
         return shared
 
     def test_slack_to_anima_a_to_anima_b_preserves_external(
-        self, shared_dir: Path,
+        self,
+        shared_dir: Path,
     ) -> None:
         """Slack → Anima A (inbox) → send_message → Anima B: external_platform preserved."""
         from core.messenger import Messenger
@@ -460,7 +494,8 @@ class TestE2EOriginChainScenarios:
         assert ORIGIN_ANIMA in messages[0].origin_chain
 
     def test_human_chat_to_anima_a_to_anima_b(
-        self, shared_dir: Path,
+        self,
+        shared_dir: Path,
     ) -> None:
         """Chat API → Anima A → send_message → Anima B: origin_chain=['human', 'anima']."""
         from core.messenger import Messenger
@@ -533,7 +568,8 @@ class TestE2EOriginChainScenarios:
         assert len(msg.origin_chain) == MAX_ORIGIN_CHAIN_LENGTH + 5
 
     def test_backward_compat_old_message_without_chain(
-        self, shared_dir: Path,
+        self,
+        shared_dir: Path,
     ) -> None:
         """Pre-Phase 3 inbox JSON without origin_chain loads with empty list."""
         inbox_dir = shared_dir / "inbox" / "anima-x"
@@ -546,7 +582,8 @@ class TestE2EOriginChainScenarios:
             "source": "anima",
         }
         (inbox_dir / "20260228_120000_000001.json").write_text(
-            json.dumps(old_msg), encoding="utf-8",
+            json.dumps(old_msg),
+            encoding="utf-8",
         )
 
         from core.messenger import Messenger
@@ -579,7 +616,8 @@ class TestBuildOutgoingOriginChain:
         from core.tooling.handler_base import build_outgoing_origin_chain
 
         chain = build_outgoing_origin_chain(
-            ORIGIN_HUMAN, [ORIGIN_EXTERNAL_PLATFORM],
+            ORIGIN_HUMAN,
+            [ORIGIN_EXTERNAL_PLATFORM],
         )
         assert chain == [ORIGIN_EXTERNAL_PLATFORM, ORIGIN_HUMAN, ORIGIN_ANIMA]
 
@@ -587,7 +625,8 @@ class TestBuildOutgoingOriginChain:
         from core.tooling.handler_base import build_outgoing_origin_chain
 
         chain = build_outgoing_origin_chain(
-            ORIGIN_ANIMA, [ORIGIN_EXTERNAL_PLATFORM, ORIGIN_ANIMA],
+            ORIGIN_ANIMA,
+            [ORIGIN_EXTERNAL_PLATFORM, ORIGIN_ANIMA],
         )
         # ORIGIN_ANIMA already in chain, should not be duplicated
         assert chain == [ORIGIN_EXTERNAL_PLATFORM, ORIGIN_ANIMA]

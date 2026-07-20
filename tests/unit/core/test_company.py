@@ -11,6 +11,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from core.company import (
+    BoundaryCheck,
+    check_company_boundary,
     get_company,
     get_company_display_name,
     is_cross_company,
@@ -21,6 +23,7 @@ from core.config.models import (
     AnimaWorksConfig,
     invalidate_cache,
     read_anima_company,
+    read_anima_company_checked,
     save_config,
 )
 from core.messenger import Messenger
@@ -85,6 +88,25 @@ class TestCompanyResolution:
         assert read_anima_company(non_string) is None
         assert read_anima_company(non_object) is None
 
+    def test_checked_membership_distinguishes_permission_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        anima_dir = _make_anima(tmp_path, "alice", company="alpha")
+        status_path = anima_dir / "status.json"
+        original_read_text = Path.read_text
+
+        def denied_read(path: Path, *args: object, **kwargs: object) -> str:
+            if path == status_path:
+                raise PermissionError(13, "Permission denied", str(path))
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", denied_read)
+
+        assert read_anima_company_checked(anima_dir) == (False, None)
+        assert read_anima_company(anima_dir) is None
+
     def test_reads_company_json_and_display_name(self, tmp_path: Path) -> None:
         _write_company(tmp_path, "acme", "Acme Holdings")
 
@@ -99,6 +121,26 @@ class TestCompanyResolution:
         (tmp_path / "company.json").write_text('{"display_name": "outside"}', encoding="utf-8")
 
         assert read_company_config("..", data_dir=tmp_path) is None
+
+    def test_company_config_stat_permission_error_is_swallowed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """Regression: Path.is_file raised the incident's unhandled EACCES."""
+        _write_company(tmp_path, "fs", "FS Corporation")
+        config_path = tmp_path / "companies" / "fs" / "company.json"
+        original_is_file = Path.is_file
+
+        def denied_is_file(path: Path) -> bool:
+            if path == config_path:
+                raise PermissionError(13, "Permission denied", str(path))
+            return original_is_file(path)
+
+        monkeypatch.setattr(Path, "is_file", denied_is_file)
+
+        assert read_company_config("fs", data_dir=tmp_path) is None
+        assert get_company_display_name("fs", data_dir=tmp_path) == "fs"
 
     @pytest.mark.parametrize(
         ("company_a", "company_b", "expected"),
@@ -130,6 +172,133 @@ class TestCompanyResolution:
         (alice / "status.json").write_text(json.dumps({"company": "beta"}), encoding="utf-8")
 
         assert not is_cross_company("alice", "bob", data_dir=tmp_path)
+
+
+class TestBoundaryCheck:
+    def test_readable_same_company_is_allowed_locally(self, tmp_path: Path) -> None:
+        """(a) Both memberships readable and equal -> allow."""
+        _make_anima(tmp_path, "alice", company="alpha")
+        _make_anima(tmp_path, "bob", company="alpha")
+
+        result = check_company_boundary("alice", "bob", data_dir=tmp_path)
+
+        assert result == BoundaryCheck(False, "alpha", "alpha", "local")
+
+    def test_readable_cross_company_is_blocked_with_display_name(self, tmp_path: Path) -> None:
+        """(b) Both readable but different -> block with display name."""
+        _make_anima(tmp_path, "alice", company="alpha")
+        _make_anima(tmp_path, "bob", company="beta")
+        _write_company(tmp_path, "beta", "Beta Corporation")
+
+        result = check_company_boundary("alice", "bob", data_dir=tmp_path)
+
+        assert result == BoundaryCheck(True, "beta", "Beta Corporation", "local")
+
+    @pytest.mark.parametrize(
+        ("server_cross_company", "expected_blocked"),
+        [(True, True), (False, False)],
+        ids=["cross-company-blocked", "same-company-allowed"],
+    )
+    def test_unreadable_target_uses_server_response(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        server_cross_company: bool,
+        expected_blocked: bool,
+    ) -> None:
+        """(c,d) An unreadable target trusts a valid host response."""
+        _make_anima(tmp_path, "alice", company="alpha")
+        bob_dir = _make_anima(tmp_path, "bob", company="beta")
+        status_path = bob_dir / "status.json"
+        original_read_text = Path.read_text
+
+        def denied_read(path: Path, *args: object, **kwargs: object) -> str:
+            if path == status_path:
+                raise PermissionError(13, "Permission denied", str(path))
+            return original_read_text(path, *args, **kwargs)
+
+        response = MagicMock(status_code=200)
+        response.json.return_value = {
+            "from_company": "alpha" if server_cross_company else "beta",
+            "to_company": "beta",
+            "cross_company": server_cross_company,
+            "to_display_name": "Beta Corporation",
+        }
+        monkeypatch.setattr(Path, "read_text", denied_read)
+        monkeypatch.setattr("httpx.get", MagicMock(return_value=response))
+
+        result = check_company_boundary("alice", "bob", data_dir=tmp_path)
+
+        assert result.cross_company is expected_blocked
+        assert result.to_company == "beta"
+        assert result.display_name == "Beta Corporation"
+        assert result.resolved_via == "server"
+
+    @pytest.mark.parametrize(
+        ("from_company", "to_company", "cross_company"),
+        [("alpha", "beta", False), ("alpha", "alpha", True)],
+        ids=["different-but-allowed", "same-but-blocked"],
+    )
+    def test_inconsistent_server_response_fails_closed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        from_company: str,
+        to_company: str,
+        cross_company: bool,
+    ) -> None:
+        _make_anima(tmp_path, "alice", company="alpha")
+        response = MagicMock(status_code=200)
+        response.json.return_value = {
+            "from_company": from_company,
+            "to_company": to_company,
+            "cross_company": cross_company,
+            "to_display_name": "Target Company",
+        }
+        monkeypatch.setattr("httpx.get", MagicMock(return_value=response))
+
+        result = check_company_boundary("alice", "missing", data_dir=tmp_path)
+
+        assert result == BoundaryCheck(True, None, "", "fail_closed")
+
+    def test_unreachable_server_fails_closed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """(e) An unreadable target plus API failure -> fail closed."""
+        _make_anima(tmp_path, "alice", company="alpha")
+        monkeypatch.setattr("httpx.get", MagicMock(side_effect=OSError("connection refused")))
+
+        result = check_company_boundary("alice", "missing", data_dir=tmp_path)
+
+        assert result == BoundaryCheck(True, None, "", "fail_closed")
+
+    def test_display_name_error_falls_back_to_company_name(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """(f) Display-name resolution cannot break a boundary rejection."""
+        _make_anima(tmp_path, "alice", company="alpha")
+        _make_anima(tmp_path, "bob", company="beta")
+        monkeypatch.setattr(
+            "core.company.get_company_display_name",
+            MagicMock(side_effect=PermissionError("denied")),
+        )
+
+        result = check_company_boundary("alice", "bob", data_dir=tmp_path)
+
+        assert result == BoundaryCheck(True, "beta", "beta", "local")
+
+    def test_unassigned_animas_keep_legacy_fail_open(self, tmp_path: Path) -> None:
+        """(g) Confirmed unassigned memberships remain unrestricted."""
+        _make_anima(tmp_path, "alice")
+        _make_anima(tmp_path, "bob")
+
+        result = check_company_boundary("alice", "bob", data_dir=tmp_path)
+
+        assert result == BoundaryCheck(False, None, "", "local")
 
 
 def test_anima_model_config_supports_company() -> None:
@@ -186,9 +355,7 @@ def test_send_message_rejects_cross_company_with_display_name(
     messenger = Messenger(tmp_path / "shared", "boss")
     handler = _make_tool_handler(boss_dir, messenger)
 
-    result = handler._handle_send_message(
-        {"to": "worker", "content": "hello", "intent": "report"}
-    )
+    result = handler._handle_send_message({"to": "worker", "content": "hello", "intent": "report"})
 
     assert "Beta Corporation" in result
     assert "owner" in result.lower() or "オーナー" in result
@@ -206,9 +373,7 @@ def test_send_message_allows_same_company(
     messenger = Messenger(tmp_path / "shared", "boss")
     handler = _make_tool_handler(boss_dir, messenger)
 
-    result = handler._handle_send_message(
-        {"to": "worker", "content": "hello", "intent": "report"}
-    )
+    result = handler._handle_send_message({"to": "worker", "content": "hello", "intent": "report"})
 
     assert "Message sent to worker" in result
     assert len(list((tmp_path / "shared" / "inbox" / "worker").glob("*.json"))) == 1
@@ -228,14 +393,40 @@ def test_send_message_meeting_redirect_rejects_cross_company(
     mode_token = meeting_mode.set(True)
     context_token = meeting_context.set({"participants": ["worker"]})
     try:
-        result = handler._handle_send_message(
-            {"to": "worker", "content": "hello", "intent": "report"}
-        )
+        result = handler._handle_send_message({"to": "worker", "content": "hello", "intent": "report"})
     finally:
         meeting_context.reset(context_token)
         meeting_mode.reset(mode_token)
 
     assert "Beta Corporation" in result
+    assert not list((tmp_path / "shared" / "inbox" / "worker").glob("*.json"))
+
+
+def test_send_message_unverifiable_boundary_fails_closed_with_stable_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+    boss_dir = _make_anima(tmp_path, "boss", company="alpha")
+    worker_dir = _make_anima(tmp_path, "worker", company="beta")
+    _save_org_config(tmp_path)
+    messenger = Messenger(tmp_path / "shared", "boss")
+    handler = _make_tool_handler(boss_dir, messenger)
+    worker_status = worker_dir / "status.json"
+    original_read_text = Path.read_text
+
+    def denied_read(path: Path, *args: object, **kwargs: object) -> str:
+        if path == worker_status:
+            raise PermissionError(13, "Permission denied", str(path))
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", denied_read)
+    monkeypatch.setattr("httpx.get", MagicMock(side_effect=OSError("connection refused")))
+
+    result = handler._handle_send_message({"to": "worker", "content": "hello", "intent": "report"})
+
+    assert "会社境界" in result or "company boundary" in result.lower()
+    assert "Permission denied" not in result
     assert not list((tmp_path / "shared" / "inbox" / "worker").glob("*.json"))
 
 

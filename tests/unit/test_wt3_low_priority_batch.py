@@ -36,6 +36,10 @@ def _make_handler(tmp_path: Path, anima_name: str = "alice") -> ToolHandler:
     anima_dir = tmp_path / "animas" / anima_name
     anima_dir.mkdir(parents=True)
     (anima_dir / "permissions.md").write_text("", encoding="utf-8")
+    for name in {anima_name, "bob", "carol", "dave", "eve"}:
+        candidate = tmp_path / "animas" / name
+        candidate.mkdir(parents=True, exist_ok=True)
+        (candidate / "status.json").write_text("{}", encoding="utf-8")
 
     memory = MagicMock()
     memory.read_permissions.return_value = ""

@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from core.config.models import read_anima_company
+from core.config.models import read_anima_company, read_anima_company_checked
 from core.i18n import t
 
 logger = logging.getLogger(__name__)
@@ -72,6 +72,16 @@ class ExportResult:
     members: tuple[str, ...]
     skipped_symlinks: tuple[str, ...]
     scan_hit_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class BoundaryCheck:
+    """Result of a company boundary decision."""
+
+    cross_company: bool
+    to_company: str | None
+    display_name: str
+    resolved_via: str
 
 
 def _resolve_data_dir(data_dir: Path | None) -> Path:
@@ -1061,17 +1071,17 @@ def read_company_config(
     """Read ``companies/<name>/company.json`` when it is a JSON object."""
     if not isinstance(company_name, str) or not company_name.strip():
         return None
-    root = _resolve_data_dir(data_dir)
-    directory = _company_dir(company_name.strip(), root)
-    if directory is None:
-        return None
-    config_path = directory / "company.json"
-    if not config_path.is_file():
-        return None
     try:
+        root = _resolve_data_dir(data_dir)
+        directory = _company_dir(company_name.strip(), root)
+        if directory is None:
+            return None
+        config_path = directory / "company.json"
+        if not config_path.is_file():
+            return None
         value = json.loads(config_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as exc:
-        logger.warning("Failed to read %s: %s", config_path, exc)
+        logger.warning("Failed to read company config for %r: %s", company_name, exc)
         return None
     return value if isinstance(value, dict) else None
 
@@ -1122,3 +1132,99 @@ def is_cross_company(
     company_a = get_company(anima_a, animas_dir=root)
     company_b = get_company(anima_b, animas_dir=root)
     return company_a is not None and company_b is not None and company_a != company_b
+
+
+def _checked_company_membership(anima_name: str, animas_dir: Path) -> tuple[bool, str | None]:
+    """Resolve one membership without allowing an anima path escape."""
+    if not isinstance(anima_name, str) or not anima_name:
+        return False, None
+    try:
+        root = animas_dir.resolve()
+        candidate = (root / anima_name).resolve()
+    except (OSError, RuntimeError):
+        return False, None
+    if candidate.parent != root:
+        logger.warning("Ignoring unsafe anima name: %r", anima_name)
+        return False, None
+    return read_anima_company_checked(candidate)
+
+
+def _safe_company_display_name(company_name: str | None, data_dir: Path) -> str:
+    if not company_name:
+        return ""
+    try:
+        return get_company_display_name(company_name, data_dir=data_dir)
+    except Exception:
+        logger.warning("Failed to resolve display name for company %r", company_name, exc_info=True)
+        return company_name
+
+
+def check_company_boundary(
+    from_anima: str,
+    to_anima: str,
+    *,
+    data_dir: Path | None = None,
+    animas_dir: Path | None = None,
+) -> BoundaryCheck:
+    """Resolve a company boundary locally, then via the host server if needed."""
+    root = _resolve_animas_dir(data_dir=data_dir, animas_dir=animas_dir)
+    effective_data_dir = data_dir if data_dir is not None else root.parent
+    from_readable, from_company = _checked_company_membership(from_anima, root)
+    to_readable, to_company = _checked_company_membership(to_anima, root)
+
+    if from_readable and to_readable:
+        cross_company = from_company is not None and to_company is not None and from_company != to_company
+        return BoundaryCheck(
+            cross_company=cross_company,
+            to_company=to_company,
+            display_name=_safe_company_display_name(to_company, effective_data_dir),
+            resolved_via="local",
+        )
+
+    try:
+        import httpx
+
+        server_url = os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500").rstrip("/")
+        response = httpx.get(
+            f"{server_url}/api/internal/company/boundary",
+            params={"from_anima": from_anima, "to_anima": to_anima},
+            timeout=5.0,
+        )
+        if response.status_code != 200:
+            raise ValueError(f"unexpected status {response.status_code}")
+        payload = response.json()
+        if not isinstance(payload, dict) or not isinstance(payload.get("cross_company"), bool):
+            raise ValueError("invalid boundary response")
+        server_from_company = payload.get("from_company")
+        if server_from_company is not None and (not isinstance(server_from_company, str) or not server_from_company):
+            raise ValueError("invalid from_company in boundary response")
+        server_to_company = payload.get("to_company")
+        if server_to_company is not None and (not isinstance(server_to_company, str) or not server_to_company):
+            raise ValueError("invalid to_company in boundary response")
+        server_cross_company = payload["cross_company"]
+        if server_from_company is not None and server_to_company is not None:
+            expected_cross_company = server_from_company != server_to_company
+            if server_cross_company is not expected_cross_company:
+                raise ValueError("inconsistent company boundary response")
+        display_name = payload.get("to_display_name")
+        if not isinstance(display_name, str) or not display_name.strip():
+            display_name = server_to_company or ""
+        return BoundaryCheck(
+            cross_company=server_cross_company,
+            to_company=server_to_company,
+            display_name=display_name,
+            resolved_via="server",
+        )
+    except Exception as exc:
+        logger.warning(
+            "Company boundary server fallback failed for %r -> %r: %s",
+            from_anima,
+            to_anima,
+            exc,
+        )
+        return BoundaryCheck(
+            cross_company=True,
+            to_company=None,
+            display_name="",
+            resolved_via="fail_closed",
+        )

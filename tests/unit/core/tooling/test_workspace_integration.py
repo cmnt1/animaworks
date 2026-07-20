@@ -175,6 +175,8 @@ class TestDelegateTaskWorkspace:
         for d in ["state", "episodes", "knowledge", "procedures", "skills"]:
             (anima_dir / d).mkdir(parents=True)
             (sub_dir / d).mkdir(parents=True)
+        (anima_dir / "status.json").write_text("{}", encoding="utf-8")
+        (sub_dir / "status.json").write_text("{}", encoding="utf-8")
         memory = MemoryManager(anima_dir)
         cfg = AnimaWorksConfig()
         cfg.animas = {

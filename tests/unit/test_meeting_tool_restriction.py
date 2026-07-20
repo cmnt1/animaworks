@@ -21,11 +21,20 @@ from server.room_manager import SUMMARY_THRESHOLD, RoomManager
 # ── ToolHandler meeting mode tests ──────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def _isolated_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+
+
 def _make_handler(tmp_path: Path, messenger=None) -> ToolHandler:
     """Create a ToolHandler with minimal mocked dependencies."""
     anima_dir = tmp_path / "animas" / "test"
     anima_dir.mkdir(parents=True)
     (anima_dir / "permissions.md").write_text("", encoding="utf-8")
+    for name in ("test", "rin", "mei", "kai", "yui"):
+        candidate = tmp_path / "animas" / name
+        candidate.mkdir(parents=True, exist_ok=True)
+        (candidate / "status.json").write_text("{}", encoding="utf-8")
 
     memory = MagicMock()
     memory.read_permissions.return_value = ""
@@ -155,7 +164,9 @@ class TestMeetingModeToolBlocking:
                 return_value={"max_recipients_per_run": 2},
             ):
                 results = [
-                    handler.handle("send_message", {"to": name, "content": f"Question for {name}", "intent": "question"})
+                    handler.handle(
+                        "send_message", {"to": name, "content": f"Question for {name}", "intent": "question"}
+                    )
                     for name in ("rin", "mei", "kai", "yui")
                 ]
         finally:
@@ -228,7 +239,9 @@ class TestMeetingModeToolBlocking:
         context_token = meeting_context.set(context)
         try:
             first = handler.handle("send_message", {"to": "rin", "content": "Please review", "intent": "question"})
-            second = handler.handle("send_message", {"to": "rin", "content": "Please review again", "intent": "question"})
+            second = handler.handle(
+                "send_message", {"to": "rin", "content": "Please review again", "intent": "question"}
+            )
         finally:
             meeting_context.reset(context_token)
             meeting_mode_var.reset(meeting_token)

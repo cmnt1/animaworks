@@ -126,6 +126,52 @@ class AnimaCreateRequest(BaseModel):
 def create_internal_router() -> APIRouter:
     router = APIRouter()
 
+    @router.get("/internal/company/boundary")
+    async def internal_company_boundary(from_anima: str, to_anima: str):
+        """Resolve company membership on the host for sandboxed handlers."""
+        from core.anima_factory import validate_anima_name
+        from core.company import get_company_display_name
+        from core.config.models import read_anima_company_checked
+        from core.paths import get_animas_dir
+
+        if validate_anima_name(from_anima) or validate_anima_name(to_anima):
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Invalid anima name"},
+            )
+
+        animas_dir = get_animas_dir()
+        from_readable, from_company = read_anima_company_checked(animas_dir / from_anima)
+        to_readable, to_company = read_anima_company_checked(animas_dir / to_anima)
+        if not from_readable or not to_readable:
+            unreadable = [
+                name for name, readable in ((from_anima, from_readable), (to_anima, to_readable)) if not readable
+            ]
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "detail": f"Company membership unreadable for: {', '.join(unreadable)}",
+                },
+            )
+
+        cross_company = from_company is not None and to_company is not None and from_company != to_company
+        try:
+            display_name = get_company_display_name(to_company or "")
+        except Exception:
+            logger.warning(
+                "Failed to resolve company display name for %r",
+                to_company,
+                exc_info=True,
+            )
+            display_name = to_company or ""
+
+        return {
+            "from_company": from_company,
+            "to_company": to_company,
+            "cross_company": cross_company,
+            "to_display_name": display_name,
+        }
+
     @router.post("/internal/message-sent")
     async def internal_message_sent(body: MessageSentNotification, request: Request):
         """Notify the server that a message was sent via CLI.

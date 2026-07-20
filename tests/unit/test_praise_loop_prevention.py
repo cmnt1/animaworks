@@ -179,6 +179,7 @@ class TestSuppressBoardFanout:
         d = tmp_path / "animas" / "test-anima"
         d.mkdir(parents=True)
         (d / "permissions.md").write_text("", encoding="utf-8")
+        (d / "status.json").write_text("{}", encoding="utf-8")
         return d
 
     @pytest.fixture
