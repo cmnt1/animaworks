@@ -88,6 +88,243 @@ function _animaKey(evt) {
   return "";
 }
 
+function _taskContext(evt) {
+  if (typeof evt?.ctx !== "string" || !evt.ctx.startsWith("task:") || evt.ctx.length <= 5) {
+    return null;
+  }
+  return evt.ctx;
+}
+
+function _validEventTime(evt) {
+  if (!evt?.ts && !evt?.timestamp) return null;
+  const value = new Date(evt.ts || evt.timestamp).getTime();
+  return Number.isFinite(value) ? value : null;
+}
+
+function _laneTitle(startEvent, taskId) {
+  const meta = startEvent?.meta;
+  if (meta && typeof meta === "object") {
+    for (const value of [meta.title, meta.task_title, meta.task_name]) {
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+  }
+  if (typeof startEvent?.summary === "string" && startEvent.summary.trim()) {
+    return startEvent.summary.trim();
+  }
+  return `task:${taskId.slice(0, 8)}`;
+}
+
+function _buildTaskIntervals(indexedEvents) {
+  const bucketsByAnima = new Map();
+  for (const item of indexedEvents) {
+    const ctx = _taskContext(item.evt);
+    if (!ctx || item.time === null) continue;
+    const anima = _animaKey(item.evt);
+    let byContext = bucketsByAnima.get(anima);
+    if (!byContext) {
+      byContext = new Map();
+      bucketsByAnima.set(anima, byContext);
+    }
+    let bucket = byContext.get(ctx);
+    if (!bucket) {
+      bucket = [];
+      byContext.set(ctx, bucket);
+    }
+    bucket.push(item);
+  }
+
+  const intervalsByAnima = new Map();
+  for (const [anima, byContext] of bucketsByAnima) {
+    const intervals = [];
+    for (const [ctx, bucket] of byContext) {
+      bucket.sort((a, b) => a.time - b.time || a.index - b.index);
+      let open = null;
+      const closeOpen = (end) => {
+        if (!open) return;
+        intervals.push({
+          anima,
+          ctx,
+          taskId: ctx.slice(5),
+          start: open.start,
+          end: Math.max(open.start, end),
+          startEvent: open.startEvent,
+          items: open.items,
+        });
+        open = null;
+      };
+
+      for (const item of bucket) {
+        if (item.evt.type === "task_exec_start") {
+          if (open) closeOpen(open.items[open.items.length - 1].time);
+          open = {
+            start: item.time,
+            startEvent: item.evt,
+            items: [item],
+          };
+          continue;
+        }
+        if (!open) continue;
+        open.items.push(item);
+        if (item.evt.type === "task_exec_end") closeOpen(item.time);
+      }
+      if (open) closeOpen(open.items[open.items.length - 1].time);
+    }
+    intervalsByAnima.set(anima, intervals);
+  }
+  return intervalsByAnima;
+}
+
+function _parallelWindows(intervals) {
+  const boundaries = [];
+  for (const interval of intervals) {
+    if (interval.end <= interval.start) continue;
+    boundaries.push({ time: interval.start, kind: "start", interval });
+    boundaries.push({ time: interval.end, kind: "end", interval });
+  }
+  boundaries.sort((a, b) => a.time - b.time);
+  if (boundaries.length === 0) return [];
+
+  const active = new Set();
+  const windows = [];
+  let previousTime = boundaries[0].time;
+  let cursor = 0;
+
+  while (cursor < boundaries.length) {
+    const time = boundaries[cursor].time;
+    if (time > previousTime) {
+      const taskIds = new Set(Array.from(active, (interval) => interval.taskId));
+      if (taskIds.size >= 2) {
+        const last = windows[windows.length - 1];
+        if (last && last.end === previousTime) {
+          last.end = time;
+          for (const interval of active) last.intervals.add(interval);
+        } else {
+          windows.push({
+            start: previousTime,
+            end: time,
+            intervals: new Set(active),
+          });
+        }
+      }
+    }
+
+    const atTime = [];
+    while (cursor < boundaries.length && boundaries[cursor].time === time) {
+      atTime.push(boundaries[cursor]);
+      cursor += 1;
+    }
+    for (const boundary of atTime) {
+      if (boundary.kind === "end") active.delete(boundary.interval);
+    }
+    for (const boundary of atTime) {
+      if (boundary.kind === "start") active.add(boundary.interval);
+    }
+    previousTime = time;
+  }
+
+  return windows;
+}
+
+/**
+ * Build nested lane data for time windows with two or more concurrent tasks.
+ *
+ * Only task events inside an actual overlap window enter a lane. Task events
+ * before or after that window remain available to the caller for flat display.
+ * Non-task activity from the same Anima is returned in flatEvents so it can be
+ * rendered directly under the Anima group instead of inside a task lane.
+ */
+export function buildParallelGroups(events) {
+  const source = Array.isArray(events) ? events : [];
+  const indexed = source.map((evt, index) => ({
+    evt,
+    index,
+    time: _validEventTime(evt),
+  }));
+  const intervalsByAnima = _buildTaskIntervals(indexed);
+  const indexedByAnima = new Map();
+  for (const item of indexed) {
+    if (item.time === null) continue;
+    const anima = _animaKey(item.evt);
+    let animaItems = indexedByAnima.get(anima);
+    if (!animaItems) {
+      animaItems = [];
+      indexedByAnima.set(anima, animaItems);
+    }
+    animaItems.push(item);
+  }
+  for (const animaItems of indexedByAnima.values()) {
+    animaItems.sort((a, b) => a.time - b.time || a.index - b.index);
+  }
+  const groups = [];
+
+  for (const [anima, intervals] of intervalsByAnima) {
+    const intervalByEventIndex = new Map();
+    for (const interval of intervals) {
+      for (const item of interval.items) intervalByEventIndex.set(item.index, interval);
+    }
+    const windows = _parallelWindows(intervals).map((window) => {
+      const lanesByTask = new Map();
+      for (const interval of window.intervals) {
+        let lane = lanesByTask.get(interval.taskId);
+        if (!lane) {
+          lane = {
+            taskId: interval.taskId,
+            title: _laneTitle(interval.startEvent, interval.taskId),
+            eventsByIndex: new Map(),
+            firstStart: interval.start,
+          };
+          lanesByTask.set(interval.taskId, lane);
+        }
+        lane.firstStart = Math.min(lane.firstStart, interval.start);
+      }
+      return { ...window, lanesByTask, flatItems: [], anchor: source.length };
+    });
+
+    let windowIndex = 0;
+    for (const item of indexedByAnima.get(anima) || []) {
+      while (windowIndex < windows.length && item.time > windows[windowIndex].end) {
+        windowIndex += 1;
+      }
+      const window = windows[windowIndex];
+      if (!window || item.time < window.start) continue;
+
+      const ctx = _taskContext(item.evt);
+      if (!ctx) {
+        window.flatItems.push(item);
+        window.anchor = Math.min(window.anchor, item.index);
+        continue;
+      }
+      const interval = intervalByEventIndex.get(item.index);
+      if (!interval || !window.intervals.has(interval)) continue;
+      const lane = window.lanesByTask.get(interval.taskId);
+      if (!lane) continue;
+      lane.eventsByIndex.set(item.index, item.evt);
+      window.anchor = Math.min(window.anchor, item.index);
+    }
+
+    for (const window of windows) {
+      const lanes = Array.from(window.lanesByTask.values())
+        .sort((a, b) => a.firstStart - b.firstStart || a.taskId.localeCompare(b.taskId))
+        .map((lane) => ({
+          taskId: lane.taskId,
+          title: lane.title,
+          events: Array.from(lane.eventsByIndex.entries())
+            .sort((a, b) => a[0] - b[0])
+            .map((entry) => entry[1]),
+        }));
+      const flatEvents = window.flatItems
+        .sort((a, b) => a.index - b.index)
+        .map((item) => item.evt);
+      const group = { anima, lanes, flatEvents };
+      groups.push({ group, anchor: window.anchor });
+    }
+  }
+
+  return groups
+    .sort((a, b) => a.anchor - b.anchor)
+    .map((entry) => entry.group);
+}
+
 /**
  * Compute concurrent task counts for rendered events.
  *
