@@ -23,7 +23,6 @@ from server.routes.sessions import create_sessions_router
 from server.routes.skills import create_skills_router
 from server.routes.system import create_system_router
 from server.routes.taskboard import create_taskboard_router
-from server.routes.tool_prompts import create_tool_prompts_router
 from server.routes.usage_routes import create_usage_router
 from server.routes.users import create_users_router
 from server.routes.voice import create_voice_router
@@ -51,7 +50,6 @@ def create_router() -> APIRouter:
     api.include_router(create_assets_router())
     api.include_router(create_internal_router())
     api.include_router(create_auth_router())
-    api.include_router(create_tool_prompts_router())
     api.include_router(create_users_router())
     api.include_router(create_activity_report_router())
     api.include_router(create_external_tasks_router())
