@@ -336,14 +336,10 @@ def step_knowledge_archive_unify(data_dir: Path, dry_run: bool, verbose: bool) -
                     continue
                 archive_entries = list(archive_dir.rglob("*")) if archive_dir.is_dir() else []
                 occupied_files = {
-                    path.relative_to(archive_dir)
-                    for path in archive_entries
-                    if path.is_file() or path.is_symlink()
+                    path.relative_to(archive_dir) for path in archive_entries if path.is_file() or path.is_symlink()
                 }
                 occupied_dirs = {
-                    path.relative_to(archive_dir)
-                    for path in archive_entries
-                    if path.is_dir() and not path.is_symlink()
+                    path.relative_to(archive_dir) for path in archive_entries if path.is_dir() and not path.is_symlink()
                 }
 
                 for legacy_dir_name in _LEGACY_ARCHIVE_DIRS:
@@ -354,11 +350,7 @@ def step_knowledge_archive_unify(data_dir: Path, dry_run: bool, verbose: bool) -
                     if not legacy_dir.is_dir():
                         continue
                     legacy_files = sorted(
-                        (
-                            path
-                            for path in legacy_dir.rglob("*")
-                            if path.is_file() or path.is_symlink()
-                        ),
+                        (path for path in legacy_dir.rglob("*") if path.is_file() or path.is_symlink()),
                         key=lambda path: str(path.relative_to(legacy_dir)),
                     )
                     for source in legacy_files:
@@ -428,7 +420,9 @@ def step_ragignore_archive_patterns(data_dir: Path, dry_run: bool, verbose: bool
 
         details = [f"Added .ragignore pattern: {pattern}" for pattern in missing_patterns]
         if dry_run:
-            return StepResult(changed=1, skipped=0, details=[detail.replace("Added", "Would add") for detail in details])
+            return StepResult(
+                changed=1, skipped=0, details=[detail.replace("Added", "Would add") for detail in details]
+            )
 
         additions: list[str] = []
         if _RAGIGNORE_ARCHIVE_COMMENT not in existing_lines:

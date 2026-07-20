@@ -20,8 +20,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "is prohibited. Escalate this matter to the human owner."
         ),
         "zh": (
-            "错误：委派对象属于另一家公司“{display_name}”。禁止公司之间直接委派任务。"
-            "请将此事项升级给人类所有者处理。"
+            "错误：委派对象属于另一家公司“{display_name}”。禁止公司之间直接委派任务。请将此事项升级给人类所有者处理。"
         ),
         "ko": (
             "오류: 위임 대상은 다른 회사인 ‘{display_name}’에 소속되어 있습니다. 회사 간 직접 업무 위임은 "
@@ -37,10 +36,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "Error: The recipient belongs to another company, {display_name}. Direct communication between companies "
             "is prohibited. Escalate this matter to the human owner."
         ),
-        "zh": (
-            "错误：收件人属于另一家公司“{display_name}”。禁止公司之间直接联系。"
-            "请将此事项升级给人类所有者处理。"
-        ),
+        "zh": ("错误：收件人属于另一家公司“{display_name}”。禁止公司之间直接联系。请将此事项升级给人类所有者处理。"),
         "ko": (
             "오류: 수신자는 다른 회사인 ‘{display_name}’에 소속되어 있습니다. 회사 간 직접 연락은 금지되어 "
             "있습니다. 이 사안을 인간 소유자에게 에스컬레이션하세요."

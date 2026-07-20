@@ -168,8 +168,7 @@ async def _send_slack(
                     )
                     if not saved:
                         print(
-                            "WARNING: notification mapping not saved; "
-                            "Slack thread replies will not be routed back",
+                            "WARNING: notification mapping not saved; Slack thread replies will not be routed back",
                             file=sys.stderr,
                         )
                 except Exception:

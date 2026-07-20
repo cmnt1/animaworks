@@ -90,19 +90,13 @@ _ENGLISH_QUERY_STOPWORDS = frozenset(
         "with",
     },
 )
-_JAPANESE_QUERY_WORDS_RE = re.compile(
-    r"(?:どちら|どなた|いかが|どんな|どれ|どこ|いつ|だれ|誰|なぜ|どう|どの|なん|何)"
-)
+_JAPANESE_QUERY_WORDS_RE = re.compile(r"(?:どちら|どなた|いかが|どんな|どれ|どこ|いつ|だれ|誰|なぜ|どう|どの|なん|何)")
 _JAPANESE_AUXILIARIES_RE = re.compile(
     r"(?:について|における|に関する|による|という|でした|ません|ました|ます|です|ください)"
 )
 _JAPANESE_PARTICLES_RE = re.compile(r"[はがをにへでとのもや]")
-_QUERY_TOKEN_RE = re.compile(
-    r"[A-Za-z][A-Za-z0-9_+'-]*|\d+(?:[.-]\d+)*|[\u3040-\u30ff\u3400-\u9fffー]+"
-)
-_QUOTED_PHRASE_RE = re.compile(
-    r'"([^"\n]+)"|“([^”\n]+)”|「([^」\n]+)」|『([^』\n]+)』|(?<!\w)\'([^\'\n]+)\'(?!\w)'
-)
+_QUERY_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_+'-]*|\d+(?:[.-]\d+)*|[\u3040-\u30ff\u3400-\u9fffー]+")
+_QUOTED_PHRASE_RE = re.compile(r'"([^"\n]+)"|“([^”\n]+)”|「([^」\n]+)」|『([^』\n]+)』|(?<!\w)\'([^\'\n]+)\'(?!\w)')
 _CAPITALIZED_PHRASE_RE = re.compile(
     r"\b(?:[A-Z][A-Za-z0-9+&'.-]*|[A-Z]{2,}[A-Za-z0-9+&'.-]*)"
     r"(?:\s+(?:of|the|and|for|to|by|in|on|at|with|"
@@ -550,18 +544,14 @@ class UnifiedMemorySearch:
         for item in first_round:
             key = self._result_key(item)
             current = best.get(key)
-            if current is None or float(item.get("score", 0.0) or 0.0) > float(
-                current.get("score", 0.0) or 0.0
-            ):
+            if current is None or float(item.get("score", 0.0) or 0.0) > float(current.get("score", 0.0) or 0.0):
                 best[key] = item
         for item in second_round:
             marked = dict(item)
             marked["retrieval_round"] = 2
             key = self._result_key(marked)
             current = best.get(key)
-            if current is None or float(marked.get("score", 0.0) or 0.0) > float(
-                current.get("score", 0.0) or 0.0
-            ):
+            if current is None or float(marked.get("score", 0.0) or 0.0) > float(current.get("score", 0.0) or 0.0):
                 best[key] = marked
 
         merged = sorted(
@@ -571,14 +561,10 @@ class UnifiedMemorySearch:
         )[:limit]
         self._last_search_meta = {
             **first_meta,
-            "abstain": (
-                bool(first_meta.get("abstain", False)) or bool(second_meta.get("abstain", False))
-            )
+            "abstain": (bool(first_meta.get("abstain", False)) or bool(second_meta.get("abstain", False)))
             and not merged,
             "abstain_reason": (
-                str(second_meta.get("abstain_reason", "") or first_meta.get("abstain_reason", ""))
-                if not merged
-                else ""
+                str(second_meta.get("abstain_reason", "") or first_meta.get("abstain_reason", "")) if not merged else ""
             ),
             "iterative_retrieval": {
                 "attempted": True,
@@ -617,11 +603,7 @@ class UnifiedMemorySearch:
             if owner in used_owners or len(surface) < 2 or surface not in normalized:
                 continue
             alternatives = sorted(
-                (
-                    synonym
-                    for synonym in index.synonyms.get(owner, ())
-                    if synonym.casefold() != surface.casefold()
-                ),
+                (synonym for synonym in index.synonyms.get(owner, ()) if synonym.casefold() != surface.casefold()),
                 key=lambda value: (value.casefold(), value),
             )
             if not alternatives:

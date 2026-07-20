@@ -817,7 +817,8 @@ class RAGMemorySearch:
         return (
             resources is not None
             and ".." not in path.parts
-            and path.parts[:3] in {
+            and path.parts[:3]
+            in {
                 ("companies", resources.name, "knowledge"),
                 ("companies", resources.name, "skills"),
             }
@@ -1029,14 +1030,10 @@ class RAGMemorySearch:
         if self._common_skills_dir.is_dir():
             # source_file for shared skills is ``common_skills/<name>/SKILL.md``
             # relative to the data dir parent of common_skills/.
-            skill_roots.append(
-                (self._common_skills_dir, "common_skills", self._common_skills_dir.parent)
-            )
+            skill_roots.append((self._common_skills_dir, "common_skills", self._common_skills_dir.parent))
         company_resources = get_company_resources(self._anima_dir)
         if company_resources is not None and company_resources.skills_dir.is_dir():
-            skill_roots.append(
-                (company_resources.skills_dir, "common_skills", infer_data_dir(self._anima_dir))
-            )
+            skill_roots.append((company_resources.skills_dir, "common_skills", infer_data_dir(self._anima_dir)))
 
         results: list[dict] = []
         for root_dir, memory_type, rel_base in skill_roots:

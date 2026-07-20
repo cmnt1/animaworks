@@ -295,9 +295,7 @@ def _filter_company_visible_animas(
         return all_animas
 
     visible = {
-        name: config
-        for name, config in all_animas.items()
-        if getattr(config, "company", None) in (None, company)
+        name: config for name, config in all_animas.items() if getattr(config, "company", None) in (None, company)
     }
 
     # If a visible Anima reported to a hidden supervisor, promote it to a

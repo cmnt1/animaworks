@@ -139,9 +139,7 @@ def post_notification_mapping_via_api(
         resp.raise_for_status()
         return bool(resp.json().get("ok"))
     except Exception:
-        logger.warning(
-            "Failed to save notification mapping via API for ts=%s", ts, exc_info=True
-        )
+        logger.warning("Failed to save notification mapping via API for ts=%s", ts, exc_info=True)
         return False
 
 

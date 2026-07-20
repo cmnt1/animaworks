@@ -234,10 +234,7 @@ class SkillIndex:
             return
         company_resources = get_company_resources(self._anima_dir)
         company_marker = company_resources.name if company_resources is not None else None
-        if (
-            self._read_curator_state_marker() != self._curator_state_marker
-            or company_marker != self._company_marker
-        ):
+        if self._read_curator_state_marker() != self._curator_state_marker or company_marker != self._company_marker:
             self.invalidate()
 
     @staticmethod

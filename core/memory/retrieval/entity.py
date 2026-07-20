@@ -276,9 +276,7 @@ def apply_entity_boost(
             query_surfaces.update(alias_index.synonyms.get(key, ()))
 
     related_boost_value = (
-        float(config.related_boost)
-        if config.related_boost is not None
-        else max(0.0, float(config.boost)) * 0.5
+        float(config.related_boost) if config.related_boost is not None else max(0.0, float(config.boost)) * 0.5
     )
     primary_boost = max(0.0, float(config.boost))
     max_boost = max(0.0, float(config.max_boost))
@@ -319,9 +317,7 @@ def apply_entity_boost(
             phrase_overlap = {entity for entity in phrase_overlap if len(entity.split()) > 1}
             if alias_index:
                 primary_keys = {
-                    key
-                    for key in primary_keys
-                    if any(len(s.split()) > 1 for s in alias_index.synonyms.get(key, ()))
+                    key for key in primary_keys if any(len(s.split()) > 1 for s in alias_index.synonyms.get(key, ()))
                 }
                 related_keys_hit = {
                     key
