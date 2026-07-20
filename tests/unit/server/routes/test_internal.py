@@ -6,7 +6,8 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
 
@@ -22,6 +23,99 @@ def _make_test_app():
     router = create_internal_router()
     app.include_router(router, prefix="/api")
     return app
+
+
+# ── GET /internal/company/boundary ───────────────────────
+
+
+class TestInternalCompanyBoundary:
+    async def test_returns_host_boundary_with_display_name(self):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        with (
+            patch(
+                "core.config.models.read_anima_company_checked",
+                side_effect=[(True, "alpha"), (True, "beta")],
+            ),
+            patch("core.company.get_company_display_name", return_value="Beta Corporation"),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get(
+                    "/api/internal/company/boundary",
+                    params={"from_anima": "alice", "to_anima": "bob"},
+                )
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "from_company": "alpha",
+            "to_company": "beta",
+            "cross_company": True,
+            "to_display_name": "Beta Corporation",
+        }
+
+    async def test_status_permission_error_returns_503(
+        self,
+        monkeypatch,
+        tmp_path: Path,
+    ):
+        animas_dir = tmp_path / "animas"
+        alice_status = animas_dir / "alice" / "status.json"
+        bob_status = animas_dir / "bob" / "status.json"
+        alice_status.parent.mkdir(parents=True)
+        bob_status.parent.mkdir(parents=True)
+        alice_status.write_text('{"company": "alpha"}', encoding="utf-8")
+        bob_status.write_text('{"company": "beta"}', encoding="utf-8")
+        original_read_text = Path.read_text
+
+        def denied_read(path: Path, *args, **kwargs):
+            if path == bob_status:
+                raise PermissionError(13, "Permission denied", str(path))
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", denied_read)
+        monkeypatch.setattr("core.paths.get_animas_dir", lambda: animas_dir)
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(
+                "/api/internal/company/boundary",
+                params={"from_anima": "alice", "to_anima": "bob"},
+            )
+
+        assert resp.status_code == 503
+        assert "bob" in resp.json()["detail"]
+
+    async def test_corrupt_status_returns_503(self, monkeypatch, tmp_path: Path):
+        animas_dir = tmp_path / "animas"
+        alice_status = animas_dir / "alice" / "status.json"
+        bob_status = animas_dir / "bob" / "status.json"
+        alice_status.parent.mkdir(parents=True)
+        bob_status.parent.mkdir(parents=True)
+        alice_status.write_text('{"company": "alpha"}', encoding="utf-8")
+        bob_status.write_text("{invalid", encoding="utf-8")
+        monkeypatch.setattr("core.paths.get_animas_dir", lambda: animas_dir)
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(
+                "/api/internal/company/boundary",
+                params={"from_anima": "alice", "to_anima": "bob"},
+            )
+
+        assert resp.status_code == 503
+        assert "bob" in resp.json()["detail"]
+
+    async def test_invalid_anima_names_return_400(self):
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(
+                "/api/internal/company/boundary",
+                params={"from_anima": "../alice", "to_anima": "bob"},
+            )
+
+        assert resp.status_code == 400
+        assert resp.json() == {"detail": "Invalid anima name"}
 
 
 # ── POST /internal/message-sent ──────────────────────────

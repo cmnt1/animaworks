@@ -32,6 +32,26 @@ if TYPE_CHECKING:
 logger = logging.getLogger("animaworks.tool_handler")
 
 
+def _company_boundary_error(
+    from_anima: str,
+    to_anima: str,
+    *,
+    animas_dir: Any,
+) -> str | None:
+    """Return a stable user-facing error when a company boundary blocks access."""
+    from core.company import check_company_boundary
+
+    boundary = check_company_boundary(from_anima, to_anima, animas_dir=animas_dir)
+    if not boundary.cross_company:
+        return None
+    if boundary.resolved_via == "fail_closed":
+        return t("handler.company_boundary_unverifiable")
+    return t(
+        "handler.cross_company_message_blocked",
+        display_name=boundary.display_name,
+    )
+
+
 class CommsToolsMixin:
     """Message sending, channel posting/reading, DM history, and human notification."""
 
@@ -85,20 +105,16 @@ class CommsToolsMixin:
             return t("handler.dm_already_sent", to=effective_to)
 
         if meeting_target:
-            from core.company import get_company, get_company_display_name, is_cross_company
             from core.paths import get_animas_dir
 
             animas_dir = get_animas_dir()
-            if is_cross_company(self._anima_name, meeting_target, animas_dir=animas_dir):
-                target_company = get_company(meeting_target, animas_dir=animas_dir)
-                display_name = get_company_display_name(
-                    target_company or "",
-                    data_dir=animas_dir.parent,
-                )
-                return t(
-                    "handler.cross_company_message_blocked",
-                    display_name=display_name,
-                )
+            company_error = _company_boundary_error(
+                self._anima_name,
+                meeting_target,
+                animas_dir=animas_dir,
+            )
+            if company_error is not None:
+                return company_error
             try:
                 record_meeting_redirect(
                     from_name=self._anima_name,
@@ -168,19 +184,14 @@ class CommsToolsMixin:
             )
 
         if resolved is None or resolved.is_internal:
-            from core.company import get_company, get_company_display_name, is_cross_company
-
             internal_to = resolved.name if resolved is not None else to
-            if is_cross_company(self._anima_name, internal_to, animas_dir=animas_dir):
-                target_company = get_company(internal_to, animas_dir=animas_dir)
-                display_name = get_company_display_name(
-                    target_company or "",
-                    data_dir=animas_dir.parent,
-                )
-                return t(
-                    "handler.cross_company_message_blocked",
-                    display_name=display_name,
-                )
+            company_error = _company_boundary_error(
+                self._anima_name,
+                internal_to,
+                animas_dir=animas_dir,
+            )
+            if company_error is not None:
+                return company_error
 
         # ── Build outgoing origin_chain (provenance Phase 3) ──
         outgoing_chain = build_outgoing_origin_chain(
@@ -319,21 +330,15 @@ class CommsToolsMixin:
 
     def _cross_company_communication_error(self, peers: list[str]) -> str | None:
         """Return the standard DM boundary error for the first cross-company peer."""
-        from core.company import get_company, get_company_display_name, is_cross_company
-
         animas_dir = self._anima_dir.parent
         for peer in sorted(set(peers)):
-            if not is_cross_company(self._anima_name, peer, animas_dir=animas_dir):
-                continue
-            target_company = get_company(peer, animas_dir=animas_dir)
-            display_name = get_company_display_name(
-                target_company or "",
-                data_dir=animas_dir.parent,
+            company_error = _company_boundary_error(
+                self._anima_name,
+                peer,
+                animas_dir=animas_dir,
             )
-            return t(
-                "handler.cross_company_message_blocked",
-                display_name=display_name,
-            )
+            if company_error is not None:
+                return company_error
         return None
 
     def _channel_company_boundary_error(self, channel: str) -> str | None:

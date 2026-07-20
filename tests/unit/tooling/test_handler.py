@@ -69,13 +69,21 @@ def _perms_config_from_md(text: str) -> PermissionsConfig:
     )
 
 
+def _make_unassigned_anima(animas_dir: Path, name: str) -> Path:
+    anima_dir = animas_dir / name
+    anima_dir.mkdir(exist_ok=True)
+    (anima_dir / "status.json").write_text("{}", encoding="utf-8")
+    return anima_dir
+
+
 # ── Fixtures ──────────────────────────────────────────────────
 
 
 @pytest.fixture
 def anima_dir(tmp_path: Path) -> Path:
-    d = tmp_path / "animas" / "test-anima"
-    d.mkdir(parents=True)
+    animas_dir = tmp_path / "animas"
+    animas_dir.mkdir(parents=True)
+    d = _make_unassigned_anima(animas_dir, "test-anima")
     # Permissive default: file_roots=["/"], commands.allow_all=true for most tests.
     # Tests needing restrictive permissions patch load_permissions.
     (d / "permissions.json").write_text(
@@ -145,8 +153,7 @@ class TestProperties:
     def test_reset_replied_to(self, handler_with_messenger: ToolHandler, anima_dir: Path):
         h = handler_with_messenger
         # Create "alice" directory so outbound resolver recognises it as internal
-        alice_dir = anima_dir.parent / "alice"
-        alice_dir.mkdir(exist_ok=True)
+        _make_unassigned_anima(anima_dir.parent, "alice")
         with patch("core.paths.get_animas_dir", return_value=anima_dir.parent):
             h.handle("send_message", {"to": "alice", "content": "hi", "intent": "report"})
         assert "alice" in h.replied_to
@@ -353,8 +360,7 @@ class TestHandleRouting:
         handler_with_messenger: ToolHandler,
         anima_dir: Path,
     ):
-        alice_dir = anima_dir.parent / "alice"
-        alice_dir.mkdir(exist_ok=True)
+        _make_unassigned_anima(anima_dir.parent, "alice")
         with patch("core.paths.get_animas_dir", return_value=anima_dir.parent):
             result = handler_with_messenger.handle(
                 "send_message",
@@ -369,8 +375,7 @@ class TestHandleRouting:
         anima_dir: Path,
     ):
         """intent='delegation' is deprecated and returns an error."""
-        alice_dir = anima_dir.parent / "alice"
-        alice_dir.mkdir(exist_ok=True)
+        _make_unassigned_anima(anima_dir.parent, "alice")
         with patch("core.paths.get_animas_dir", return_value=anima_dir.parent):
             result = handler_with_messenger.handle(
                 "send_message",
@@ -385,8 +390,7 @@ class TestHandleRouting:
         anima_dir: Path,
     ):
         """Empty intent (no intent provided) is rejected by the new DM restriction."""
-        alice_dir = anima_dir.parent / "alice"
-        alice_dir.mkdir(exist_ok=True)
+        _make_unassigned_anima(anima_dir.parent, "alice")
         with patch("core.paths.get_animas_dir", return_value=anima_dir.parent):
             result = handler_with_messenger.handle(
                 "send_message",
@@ -402,8 +406,7 @@ class TestHandleRouting:
         anima_dir: Path,
     ):
         """Intent that is not 'report' or 'delegation' is rejected."""
-        alice_dir = anima_dir.parent / "alice"
-        alice_dir.mkdir(exist_ok=True)
+        _make_unassigned_anima(anima_dir.parent, "alice")
         long_intent = "x" * 100
         with patch("core.paths.get_animas_dir", return_value=anima_dir.parent):
             result = handler_with_messenger.handle(
@@ -421,8 +424,7 @@ class TestHandleRouting:
     ):
         callback = MagicMock()
         handler_with_messenger.on_message_sent = callback
-        alice_dir = anima_dir.parent / "alice"
-        alice_dir.mkdir(exist_ok=True)
+        _make_unassigned_anima(anima_dir.parent, "alice")
         with patch("core.paths.get_animas_dir", return_value=anima_dir.parent):
             handler_with_messenger.handle(
                 "send_message",
@@ -437,8 +439,7 @@ class TestHandleRouting:
     ):
         callback = MagicMock(side_effect=RuntimeError("boom"))
         handler_with_messenger.on_message_sent = callback
-        alice_dir = anima_dir.parent / "alice"
-        alice_dir.mkdir(exist_ok=True)
+        _make_unassigned_anima(anima_dir.parent, "alice")
         with patch("core.paths.get_animas_dir", return_value=anima_dir.parent):
             # Should not raise
             result = handler_with_messenger.handle(
@@ -453,8 +454,7 @@ class TestHandleRouting:
         anima_dir: Path,
     ):
         """Sending a second message to the same recipient returns an error."""
-        alice_dir = anima_dir.parent / "alice"
-        alice_dir.mkdir(exist_ok=True)
+        _make_unassigned_anima(anima_dir.parent, "alice")
         with patch("core.paths.get_animas_dir", return_value=anima_dir.parent):
             result1 = handler_with_messenger.handle(
                 "send_message",
@@ -474,12 +474,9 @@ class TestHandleRouting:
         anima_dir: Path,
     ):
         """After sending to 2 recipients, a 3rd recipient is rejected."""
-        alice_dir = anima_dir.parent / "alice"
-        alice_dir.mkdir(exist_ok=True)
-        bob_dir = anima_dir.parent / "bob"
-        bob_dir.mkdir(exist_ok=True)
-        charlie_dir = anima_dir.parent / "charlie"
-        charlie_dir.mkdir(exist_ok=True)
+        _make_unassigned_anima(anima_dir.parent, "alice")
+        _make_unassigned_anima(anima_dir.parent, "bob")
+        _make_unassigned_anima(anima_dir.parent, "charlie")
         with patch("core.paths.get_animas_dir", return_value=anima_dir.parent):
             result1 = handler_with_messenger.handle(
                 "send_message",
@@ -504,10 +501,8 @@ class TestHandleRouting:
         anima_dir: Path,
     ):
         """Sending to two different recipients should both succeed."""
-        alice_dir = anima_dir.parent / "alice"
-        alice_dir.mkdir(exist_ok=True)
-        bob_dir = anima_dir.parent / "bob"
-        bob_dir.mkdir(exist_ok=True)
+        _make_unassigned_anima(anima_dir.parent, "alice")
+        _make_unassigned_anima(anima_dir.parent, "bob")
         with patch("core.paths.get_animas_dir", return_value=anima_dir.parent):
             result1 = handler_with_messenger.handle(
                 "send_message",

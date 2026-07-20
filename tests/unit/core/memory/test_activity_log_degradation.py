@@ -77,12 +77,15 @@ class TestReadSharedChannels:
         channels_dir = shared_dir / "channels"
         channels_dir.mkdir(parents=True)
         now = now_jst()
-        entry = json.dumps({
-            "ts": now.isoformat(),
-            "from": "alice",
-            "text": "Hello everyone",
-            "source": "anima",
-        }, ensure_ascii=False)
+        entry = json.dumps(
+            {
+                "ts": now.isoformat(),
+                "from": "alice",
+                "text": "Hello everyone",
+                "source": "anima",
+            },
+            ensure_ascii=False,
+        )
         (channels_dir / "general.jsonl").write_text(entry + "\n", encoding="utf-8")
 
         engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
@@ -125,7 +128,8 @@ class TestReadSharedChannels:
             "{broken json",
         ]
         (channels_dir / "general.jsonl").write_text(
-            "\n".join(lines) + "\n", encoding="utf-8",
+            "\n".join(lines) + "\n",
+            encoding="utf-8",
         )
 
         engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
@@ -150,11 +154,20 @@ class TestReadSharedChannels:
             text = f"Message {i}"
             if i == 2:
                 text = "Hey @test-anima please review"
-            entries.append(json.dumps({
-                "ts": ts, "from": f"user{i}", "text": text, "source": "anima",
-            }, ensure_ascii=False))
+            entries.append(
+                json.dumps(
+                    {
+                        "ts": ts,
+                        "from": f"user{i}",
+                        "text": text,
+                        "source": "anima",
+                    },
+                    ensure_ascii=False,
+                )
+            )
         (channels_dir / "general.jsonl").write_text(
-            "\n".join(entries) + "\n", encoding="utf-8",
+            "\n".join(entries) + "\n",
+            encoding="utf-8",
         )
 
         engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
@@ -177,11 +190,20 @@ class TestReadSharedChannels:
         for i in range(10):
             ts = (now_jst() - timedelta(hours=10 - i)).isoformat()
             source = "human" if i == 1 else "anima"
-            entries.append(json.dumps({
-                "ts": ts, "from": f"user{i}", "text": f"Msg {i}", "source": source,
-            }, ensure_ascii=False))
+            entries.append(
+                json.dumps(
+                    {
+                        "ts": ts,
+                        "from": f"user{i}",
+                        "text": f"Msg {i}",
+                        "source": source,
+                    },
+                    ensure_ascii=False,
+                )
+            )
         (channels_dir / "ops.jsonl").write_text(
-            "\n".join(entries) + "\n", encoding="utf-8",
+            "\n".join(entries) + "\n",
+            encoding="utf-8",
         )
 
         engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
@@ -202,11 +224,20 @@ class TestReadSharedChannels:
         entries = []
         for i in range(20):
             ts = (now_jst() - timedelta(days=2, hours=20 - i)).isoformat()
-            entries.append(json.dumps({
-                "ts": ts, "from": f"bot{i}", "text": f"Bot message {i}", "source": "anima",
-            }, ensure_ascii=False))
+            entries.append(
+                json.dumps(
+                    {
+                        "ts": ts,
+                        "from": f"bot{i}",
+                        "text": f"Bot message {i}",
+                        "source": "anima",
+                    },
+                    ensure_ascii=False,
+                )
+            )
         (channels_dir / "general.jsonl").write_text(
-            "\n".join(entries) + "\n", encoding="utf-8",
+            "\n".join(entries) + "\n",
+            encoding="utf-8",
         )
 
         engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
@@ -231,21 +262,24 @@ class TestChannelBRecentActivity:
         channels_dir = shared_dir / "channels"
         channels_dir.mkdir(parents=True)
         now = now_jst()
-        channel_entry = json.dumps({
-            "ts": now.isoformat(),
-            "from": "alice",
-            "text": "Shared channel message",
-            "source": "anima",
-        }, ensure_ascii=False)
+        channel_entry = json.dumps(
+            {
+                "ts": now.isoformat(),
+                "from": "alice",
+                "text": "Shared channel message",
+                "source": "anima",
+            },
+            ensure_ascii=False,
+        )
         (channels_dir / "general.jsonl").write_text(
-            channel_entry + "\n", encoding="utf-8",
+            channel_entry + "\n",
+            encoding="utf-8",
         )
 
         engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
 
         # Mock to avoid needing actual paths and RAG
-        with patch("core.memory.priming.PrimingEngine._fallback_episodes_and_channels",
-                    return_value=""):
+        with patch("core.memory.priming.PrimingEngine._fallback_episodes_and_channels", return_value=""):
             result = await engine._channel_b_recent_activity("alice", ["test"])
 
         # The result should contain shared channel content
@@ -261,14 +295,14 @@ class TestChannelBRecentActivity:
         with patch("core.memory.activity.ActivityLogger.recent") as mock_recent:
             mock_recent.return_value = []
             with patch.object(engine, "_read_shared_channels", return_value=[]):
-                with patch.object(engine, "_fallback_episodes_and_channels",
-                                  return_value="fallback"):
+                with patch.object(engine, "_fallback_episodes_and_channels", return_value="fallback"):
                     result = await engine._channel_b_recent_activity("alice", [])
 
             # Verify recent() was called with days=2 and no limit keyword
             call_kwargs = mock_recent.call_args
-            assert call_kwargs[1].get("days", call_kwargs[0][0] if call_kwargs[0] else None) == 2 or \
-                   mock_recent.call_args == ((), {"days": 2})
+            assert call_kwargs[1].get(
+                "days", call_kwargs[0][0] if call_kwargs[0] else None
+            ) == 2 or mock_recent.call_args == ((), {"days": 2})
 
 
 # ── 3. messenger.py — send() records dm_sent in Activity Log ───────
@@ -350,6 +384,7 @@ class TestFanoutBoardMentionsStoppedAnimas:
     def _bypass_acl(self):
         """Bypass channel ACL checks — these tests use MagicMock messenger."""
         from unittest.mock import patch
+
         with patch("core.messenger.is_channel_member", return_value=True):
             yield
 
@@ -372,6 +407,8 @@ class TestFanoutBoardMentionsStoppedAnimas:
 
         # Self anima
         (animas_dir / "self-anima").mkdir(parents=True)
+        for name in ("running-anima", "stopped-anima", "self-anima"):
+            (animas_dir / name / "status.json").write_text("{}", encoding="utf-8")
 
         # Create shared dir for messenger
         shared_dir = tmp_path / "shared"
@@ -424,6 +461,8 @@ class TestFanoutBoardMentionsStoppedAnimas:
 
         # self_anima
         (animas_dir / "self_anima").mkdir(parents=True)
+        for name in ("running_anima", "stopped_anima", "self_anima"):
+            (animas_dir / name / "status.json").write_text("{}", encoding="utf-8")
 
         shared_dir = tmp_path / "shared"
         (shared_dir / "inbox" / "self_anima").mkdir(parents=True)
@@ -462,6 +501,8 @@ class TestFanoutBoardMentionsStoppedAnimas:
 
         (animas_dir / "stopped_target").mkdir(parents=True)
         (animas_dir / "self_anima").mkdir(parents=True)
+        for name in ("stopped_target", "self_anima"):
+            (animas_dir / name / "status.json").write_text("{}", encoding="utf-8")
 
         shared_dir = tmp_path / "shared"
         (shared_dir / "inbox" / "self_anima").mkdir(parents=True)
@@ -503,10 +544,8 @@ class TestAnimaDmReceiveLimit:
         # _process_inbox_messages (called from run_heartbeat).
         source = inspect.getsource(DigitalAnima._process_inbox_messages)
         # The fix changed [:10] to [:50]
-        assert "_recordable[:50]" in source, \
-            "_process_inbox_messages should use _recordable[:50] (not [:10])"
-        assert "_recordable[:10]" not in source, \
-            "_process_inbox_messages should NOT use _recordable[:10] anymore"
+        assert "_recordable[:50]" in source, "_process_inbox_messages should use _recordable[:50] (not [:10])"
+        assert "_recordable[:10]" not in source, "_process_inbox_messages should NOT use _recordable[:10] anymore"
 
 
 # ── 8. activity.py — format_for_priming() with content_trim ───────
@@ -567,7 +606,9 @@ class TestFormatForPrimingContentTrim:
             ),
         ]
         result = activity.format_for_priming(
-            entries, budget_tokens=5000, content_trim=0,
+            entries,
+            budget_tokens=5000,
+            content_trim=0,
         )
         # The full text should be present (no truncation marker)
         assert long_text in result
@@ -715,8 +756,7 @@ class TestFormatEntryContentTrim:
                 content="test",
             )
             result = ActivityLogger._format_entry(entry)
-            assert expected_icon in result, \
-                f"Expected '{expected_icon}' in output for type '{event_type}'"
+            assert expected_icon in result, f"Expected '{expected_icon}' in output for type '{event_type}'"
 
 
 # ── Additional integration tests ────────────────────────────────────
@@ -798,10 +838,7 @@ class TestMessengerSendIntegration:
         today = now_jst().strftime("%Y-%m-%d")
         activity_file = anima_dir / "activity_log" / f"{today}.jsonl"
         assert activity_file.exists()
-        activity_entries = [
-            json.loads(line)
-            for line in activity_file.read_text(encoding="utf-8").strip().splitlines()
-        ]
+        activity_entries = [json.loads(line) for line in activity_file.read_text(encoding="utf-8").strip().splitlines()]
         message_sent_entries = [e for e in activity_entries if e.get("type") == "message_sent"]
         assert len(message_sent_entries) >= 1
 

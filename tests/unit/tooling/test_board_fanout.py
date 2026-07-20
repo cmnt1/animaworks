@@ -17,8 +17,13 @@ from core.tooling.handler import ToolHandler
 
 @pytest.fixture
 def anima_dir(tmp_path: Path) -> Path:
-    d = tmp_path / "animas" / "test-anima"
-    d.mkdir(parents=True)
+    animas_dir = tmp_path / "animas"
+    animas_dir.mkdir(parents=True)
+    for name in ("test-anima", "alice", "bob", "charlie"):
+        candidate = animas_dir / name
+        candidate.mkdir()
+        (candidate / "status.json").write_text("{}", encoding="utf-8")
+    d = animas_dir / "test-anima"
     (d / "permissions.md").write_text("", encoding="utf-8")
     return d
 
@@ -46,7 +51,9 @@ def messenger(tmp_path: Path) -> MagicMock:
 
 @pytest.fixture
 def handler_with_messenger(
-    anima_dir: Path, memory: MagicMock, messenger: MagicMock,
+    anima_dir: Path,
+    memory: MagicMock,
+    messenger: MagicMock,
 ) -> ToolHandler:
     return ToolHandler(
         anima_dir=anima_dir,
@@ -89,13 +96,15 @@ class TestBoardMentionFanout:
 
         with patch("core.paths.get_data_dir", return_value=tmp_path):
             handler_with_messenger.handle(
-                "post_channel", {"channel": "general", "text": "Hello @all!"},
+                "post_channel",
+                {"channel": "general", "text": "Hello @all!"},
             )
 
         # messenger.send is called for post_channel internals + fanout DMs.
         # Fanout targets: alice and bob (test-anima excluded as poster).
         fanout_calls = [
-            c for c in messenger.send.call_args_list
+            c
+            for c in messenger.send.call_args_list
             if c.kwargs.get("msg_type") == "board_mention"
             or (len(c.args) == 0 and c.kwargs.get("msg_type") == "board_mention")
         ]
@@ -115,13 +124,11 @@ class TestBoardMentionFanout:
 
         with patch("core.paths.get_data_dir", return_value=tmp_path):
             handler_with_messenger.handle(
-                "post_channel", {"channel": "dev", "text": "Hey @bob, check this"},
+                "post_channel",
+                {"channel": "dev", "text": "Hey @bob, check this"},
             )
 
-        fanout_calls = [
-            c for c in messenger.send.call_args_list
-            if c.kwargs.get("msg_type") == "board_mention"
-        ]
+        fanout_calls = [c for c in messenger.send.call_args_list if c.kwargs.get("msg_type") == "board_mention"]
         targets = {c.kwargs["to"] for c in fanout_calls}
         assert targets == {"bob"}
 
@@ -138,13 +145,11 @@ class TestBoardMentionFanout:
 
         with patch("core.paths.get_data_dir", return_value=tmp_path):
             handler_with_messenger.handle(
-                "post_channel", {"channel": "general", "text": "No mentions here"},
+                "post_channel",
+                {"channel": "general", "text": "No mentions here"},
             )
 
-        fanout_calls = [
-            c for c in messenger.send.call_args_list
-            if c.kwargs.get("msg_type") == "board_mention"
-        ]
+        fanout_calls = [c for c in messenger.send.call_args_list if c.kwargs.get("msg_type") == "board_mention"]
         assert len(fanout_calls) == 0
 
     def test_fanout_excludes_self(
@@ -161,13 +166,11 @@ class TestBoardMentionFanout:
 
         with patch("core.paths.get_data_dir", return_value=tmp_path):
             handler_with_messenger.handle(
-                "post_channel", {"channel": "general", "text": "@all standup time"},
+                "post_channel",
+                {"channel": "general", "text": "@all standup time"},
             )
 
-        fanout_calls = [
-            c for c in messenger.send.call_args_list
-            if c.kwargs.get("msg_type") == "board_mention"
-        ]
+        fanout_calls = [c for c in messenger.send.call_args_list if c.kwargs.get("msg_type") == "board_mention"]
         targets = {c.kwargs["to"] for c in fanout_calls}
         assert "test-anima" not in targets
         assert "alice" in targets
@@ -185,13 +188,11 @@ class TestBoardMentionFanout:
 
         with patch("core.paths.get_data_dir", return_value=tmp_path):
             handler_with_messenger.handle(
-                "post_channel", {"channel": "dev", "text": "Hey @bob, are you there?"},
+                "post_channel",
+                {"channel": "dev", "text": "Hey @bob, are you there?"},
             )
 
-        fanout_calls = [
-            c for c in messenger.send.call_args_list
-            if c.kwargs.get("msg_type") == "board_mention"
-        ]
+        fanout_calls = [c for c in messenger.send.call_args_list if c.kwargs.get("msg_type") == "board_mention"]
         assert len(fanout_calls) == 0
 
     def test_fanout_dm_content_format(
@@ -207,13 +208,11 @@ class TestBoardMentionFanout:
         original_text = "Hey @bob, please review the PR"
         with patch("core.paths.get_data_dir", return_value=tmp_path):
             handler_with_messenger.handle(
-                "post_channel", {"channel": "dev", "text": original_text},
+                "post_channel",
+                {"channel": "dev", "text": original_text},
             )
 
-        fanout_calls = [
-            c for c in messenger.send.call_args_list
-            if c.kwargs.get("msg_type") == "board_mention"
-        ]
+        fanout_calls = [c for c in messenger.send.call_args_list if c.kwargs.get("msg_type") == "board_mention"]
         assert len(fanout_calls) == 1
         content = fanout_calls[0].kwargs["content"]
 
@@ -237,13 +236,11 @@ class TestBoardMentionFanout:
 
         with patch("core.paths.get_data_dir", return_value=tmp_path):
             handler_with_messenger.handle(
-                "post_channel", {"channel": "general", "text": "@all hello"},
+                "post_channel",
+                {"channel": "general", "text": "@all hello"},
             )
 
-        fanout_calls = [
-            c for c in messenger.send.call_args_list
-            if c.kwargs.get("msg_type") == "board_mention"
-        ]
+        fanout_calls = [c for c in messenger.send.call_args_list if c.kwargs.get("msg_type") == "board_mention"]
         assert len(fanout_calls) >= 1
         for call in fanout_calls:
             assert call.kwargs["msg_type"] == "board_mention"
@@ -266,10 +263,7 @@ class TestBoardMentionFanout:
                 {"channel": "project", "text": "@bob @charlie please review"},
             )
 
-        fanout_calls = [
-            c for c in messenger.send.call_args_list
-            if c.kwargs.get("msg_type") == "board_mention"
-        ]
+        fanout_calls = [c for c in messenger.send.call_args_list if c.kwargs.get("msg_type") == "board_mention"]
         targets = {c.kwargs["to"] for c in fanout_calls}
         assert targets == {"bob", "charlie"}
         # alice should NOT receive a DM (not mentioned)
@@ -287,18 +281,17 @@ class TestBoardMentionFanout:
 
         # Set session origin to simulate an external-originated message
         handler_with_messenger.set_session_origin(
-            "external_platform", ["external_platform"],
+            "external_platform",
+            ["external_platform"],
         )
 
         with patch("core.paths.get_data_dir", return_value=tmp_path):
             handler_with_messenger.handle(
-                "post_channel", {"channel": "dev", "text": "Hey @bob"},
+                "post_channel",
+                {"channel": "dev", "text": "Hey @bob"},
             )
 
-        fanout_calls = [
-            c for c in messenger.send.call_args_list
-            if c.kwargs.get("msg_type") == "board_mention"
-        ]
+        fanout_calls = [c for c in messenger.send.call_args_list if c.kwargs.get("msg_type") == "board_mention"]
         assert len(fanout_calls) == 1
         chain = fanout_calls[0].kwargs.get("origin_chain")
         assert chain is not None

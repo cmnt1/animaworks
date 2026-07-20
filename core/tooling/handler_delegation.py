@@ -102,20 +102,22 @@ class DelegationMixin(OrgHelpersMixin):
         if err:
             return err
 
-        from core.company import get_company, get_company_display_name, is_cross_company
+        from core.company import check_company_boundary
         from core.memory.task_queue import TaskQueueManager
         from core.paths import get_animas_dir
 
         animas_dir = get_animas_dir()
-        if is_cross_company(self._anima_name, target_name, animas_dir=animas_dir):
-            target_company = get_company(target_name, animas_dir=animas_dir)
-            display_name = get_company_display_name(
-                target_company or "",
-                data_dir=animas_dir.parent,
-            )
+        boundary = check_company_boundary(
+            self._anima_name,
+            target_name,
+            animas_dir=animas_dir,
+        )
+        if boundary.cross_company:
+            if boundary.resolved_via == "fail_closed":
+                return t("handler.company_boundary_unverifiable")
             return t(
                 "handler.cross_company_delegation_blocked",
-                display_name=display_name,
+                display_name=boundary.display_name,
             )
 
         target_dir = animas_dir / target_name
