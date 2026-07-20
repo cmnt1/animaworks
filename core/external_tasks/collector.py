@@ -97,7 +97,17 @@ def collect_all(
                 error=None,
             )
         except Exception as exc:
-            logger.warning(
+            err_msg = str(exc)
+            prev_health = previous.sources.get(source_name)
+            # Suppress repeated identical credential/source errors to avoid WARN noise
+            # every collection interval (e.g. every 5 minutes).
+            same_error = (
+                prev_health is not None
+                and prev_health.error is not None
+                and prev_health.error == err_msg
+            )
+            log_fn = logger.debug if same_error else logger.warning
+            log_fn(
                 "External tasks source %s failed: %s",
                 source_name,
                 exc,
@@ -108,7 +118,7 @@ def collect_all(
             new_sources[source_name] = SourceHealth(
                 status="unavailable",
                 collected_at=collected_at,
-                error=str(exc),
+                error=err_msg,
             )
 
     return Snapshot(
