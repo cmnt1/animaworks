@@ -7,7 +7,7 @@ import sqlite3
 from pathlib import Path
 from unittest.mock import patch
 
-from core.migrations.registry import MigrationRunner
+from core.migrations.registry import MigrationRunner, MigrationStep
 from core.migrations.steps import register_all_steps, step_tool_prompts_db_to_md
 
 
@@ -76,6 +76,32 @@ def test_second_run_has_no_changes(tmp_path: Path) -> None:
     assert second.error is None
     assert second.changed == 0
     assert second.skipped == 3
+
+
+def test_runner_records_changed_step_and_skips_second_run(tmp_path: Path) -> None:
+    db_path = tmp_path / "tool_prompts.sqlite3"
+    templates_dir = tmp_path / "templates"
+    _create_db(db_path)
+    runner = MigrationRunner(tmp_path)
+    runner.register(
+        MigrationStep(
+            "tool_prompts_db_to_md",
+            "Write legacy tool prompt DB to Markdown templates",
+            "db_sync",
+            step_tool_prompts_db_to_md,
+        )
+    )
+
+    with patch("core.paths.TEMPLATES_DIR", templates_dir):
+        first_report = runner.run_all()
+        second_report = runner.run_all()
+
+    assert first_report.total_changed == 3
+    assert runner.tracker.is_step_applied("tool_prompts_db_to_md")
+    second_result = second_report.steps[0][1]
+    assert second_result.changed == 0
+    assert second_result.skipped == 1
+    assert second_result.details == ["already applied"]
 
 
 def test_read_only_destination_returns_error(tmp_path: Path) -> None:
