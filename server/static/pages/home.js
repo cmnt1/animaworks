@@ -2,7 +2,7 @@
 import { t } from "/shared/i18n.js";
 import { basePath } from "/shared/base-path.js";
 import { api } from "../modules/api.js";
-import { escapeHtml, timeStr, statusClass } from "../modules/state.js";
+import { escapeHtml, escapeAttr, timeStr, statusClass } from "../modules/state.js";
 import { animaHashColor } from "../modules/animas.js";
 import { companyColor } from "../shared/avatar-utils.js";
 import { getIcon, getDisplaySummary } from "../shared/activity-types.js";
@@ -826,15 +826,14 @@ function _renderTaskItem(task) {
   const statusColor = _STATUS_COLORS[task.status] || _STATUS_COLORS.open;
   const statusLabel = task.status === "in_progress" ? "in progress" : task.status;
   const relTime = _relativeTime(task.last_updated_at);
-  const clickAttr = task.source_url
-    ? `onclick="window.open('${escapeHtml(task.source_url)}','_blank')"`
-    : "";
-  const cursorStyle = task.source_url ? "cursor:pointer;" : "";
+  const titleHtml = task.source_url
+    ? `<a href="${escapeAttr(task.source_url)}" target="_blank" rel="noopener noreferrer" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit;text-decoration:none;">${title}</a>`
+    : `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${title}</span>`;
 
   return `
-    <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0;border-bottom:1px solid var(--border-color,#eee);${cursorStyle}" ${clickAttr} role="link" tabindex="0" aria-label="${escapeHtml(task.title)}">
+    <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0;border-bottom:1px solid var(--border-color,#eee);" aria-label="${escapeHtml(task.title)}">
       <span style="flex-shrink:0;font-size:1.1rem;" aria-label="${escapeHtml(task.source_type)}">${icon}</span>
-      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${title}</span>
+      ${titleHtml}
       <span style="flex-shrink:0;font-size:0.7rem;padding:0.15rem 0.4rem;border-radius:4px;background:${statusColor};color:#fff;">${escapeHtml(statusLabel)}</span>
       <span style="flex-shrink:0;font-size:0.75rem;color:var(--text-secondary,#666);min-width:3.5rem;text-align:right;">${escapeHtml(relTime)}</span>
     </div>
@@ -866,8 +865,19 @@ async function _loadExternalTasks(forceRefresh = false) {
     }
 
     if (lastUpdEl) {
-      lastUpdEl.textContent = `${t("home.ext_last_updated")}: ${timeStr(new Date().toISOString())}`;
+      let lastUpdText = `${t("home.ext_last_updated")}: ${timeStr(new Date().toISOString())}`;
+      if (data.meta?.last_collected_at) {
+        lastUpdText += ` · ${t("home.ext_last_collected")}: ${_relativeTime(data.meta.last_collected_at)}`;
+      }
+      lastUpdEl.textContent = lastUpdText;
     }
+
+    const unavailableSources = Object.entries(data.meta?.sources || {})
+      .filter(([, health]) => health && health.status === "unavailable")
+      .map(([name]) => name);
+    const unavailableHtml = unavailableSources.length
+      ? `<div style="font-size:0.75rem;color:var(--text-secondary,#888);margin-top:0.5rem;">&#x26A0; ${escapeHtml(t("home.ext_source_unavailable", { sources: unavailableSources.join(", ") }))}</div>`
+      : "";
 
     if (tasks.length === 0) {
       listEl.innerHTML = `
@@ -876,6 +886,7 @@ async function _loadExternalTasks(forceRefresh = false) {
           <div>${t("home.ext_empty")}</div>
           <div style="font-size:0.8rem;margin-top:0.25rem;">${t("home.ext_empty_hint")}</div>
         </div>
+        ${unavailableHtml}
       `;
       _extTasksRetryCount = 0;
       return;
@@ -889,6 +900,7 @@ async function _loadExternalTasks(forceRefresh = false) {
         </a>
       </div>`;
     }
+    html += unavailableHtml;
 
     listEl.innerHTML = html;
 
