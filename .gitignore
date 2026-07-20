@@ -153,3 +153,6 @@ swe/results/
 .codex/
 .claude/worktrees/
 vendor/
+
+# FE vendoredライブラリは追跡する（~/vendor/クローン用ignoreの例外）
+!server/static/vendor/
