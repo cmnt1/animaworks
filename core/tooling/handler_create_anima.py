@@ -228,6 +228,6 @@ def _extract_detail(resp: Any) -> str:
         if isinstance(data, dict):
             detail = data.get("detail", data)
             return str(detail)
-    except Exception:
+    except (ValueError, AttributeError):
         pass
     return resp.text or f"HTTP {resp.status_code}"
