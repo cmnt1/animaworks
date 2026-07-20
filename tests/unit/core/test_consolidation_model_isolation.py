@@ -364,6 +364,56 @@ async def test_weekly_consolidation_uses_consolidation_model_without_mutating_ag
     assert override.resolved_mode == "D"
 
 
+@pytest.mark.parametrize(
+    ("report", "expected"),
+    [
+        (
+            {
+                "merged_leftovers": [{"path": "knowledge/_merged_team.md", "first_seen": "2026-07-18"}],
+                "inherited_dirs": [],
+                "mdc_files": [],
+                "oversized_knowledge": [],
+                "noncanonical_archive_dirs": [],
+            },
+            "knowledge/_merged_team.md",
+        ),
+        (
+            {
+                "merged_leftovers": [],
+                "inherited_dirs": [],
+                "mdc_files": [],
+                "oversized_knowledge": [],
+                "noncanonical_archive_dirs": [],
+            },
+            "",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_weekly_consolidation_injects_memory_hygiene_section(report, expected):
+    status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
+    anima = _make_lifecycle(status_config)
+    anima.anima_dir = Path("/tmp/test-weekly-hygiene")
+    prompt_kwargs: dict = {}
+
+    def capture_prompt(name: str, **kwargs):
+        prompt_kwargs.update(kwargs)
+        return "weekly prompt"
+
+    with (
+        patch("core.config.load_config", return_value=_mock_config()),
+        patch("core.config.resolve_execution_mode", return_value="D"),
+        patch("core._anima_lifecycle.scan_memory_hygiene", return_value=report),
+        patch("core._anima_lifecycle.load_prompt", side_effect=capture_prompt),
+    ):
+        await anima._run_weekly_consolidation(_FakeEngine(), max_turns=11)
+
+    if expected:
+        assert expected in prompt_kwargs["hygiene_section"]
+    else:
+        assert prompt_kwargs["hygiene_section"] == ""
+
+
 class _FakeExecutor:
     supports_streaming = True
 

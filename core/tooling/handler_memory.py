@@ -85,7 +85,7 @@ def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
 
     # Prefix-qualified paths with .. must NOT be normalized here — they must
     # go through the downstream prefix-specific traversal checks unchanged.
-    _PREFIX_DIRS = ("common_knowledge/", "reference/", "common_skills/")
+    _PREFIX_DIRS = ("common_knowledge/", "reference/", "common_skills/", "companies/")
     if any(raw.startswith(p) for p in _PREFIX_DIRS) and ".." in raw:
         return _PathNormResult(rel=raw)
 
@@ -154,6 +154,14 @@ def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
             return result
         except ValueError:
             pass
+
+    from core.company_resources import company_resource_pointer, get_company_resources
+
+    company_resources = get_company_resources(anima_dir)
+    if company_resources is not None and resolved.is_relative_to(company_resources.root):
+        pointer = company_resource_pointer(resolved)
+        if pointer is not None:
+            return _PathNormResult(rel=pointer)
 
     channels_dir = (get_data_dir() / "shared" / "channels").resolve()
     if resolved.is_relative_to(channels_dir):
@@ -315,6 +323,7 @@ class MemoryToolsMixin:
                         query,
                         scope=neo4j_scope,
                         limit=limit,
+                        trigger="tool",
                         time_start=time_start,
                         time_end=time_end,
                         as_of_time=as_of_time,
@@ -568,11 +577,17 @@ class MemoryToolsMixin:
                 if neo4j_result:
                     return neo4j_result
 
+        legacy_time_range: dict[str, str] = {}
+        if time_start is not None:
+            legacy_time_range["time_start"] = time_start
+        if time_end is not None:
+            legacy_time_range["time_end"] = time_end
         results = self._memory.search_memory_text(
             query,
             scope=scope,
             offset=offset,
             context_window=getattr(self, "_context_window", _SEARCH_CONTEXT_BASE),
+            **legacy_time_range,
         )
         if denied_roots:
             results = [
@@ -655,6 +670,8 @@ class MemoryToolsMixin:
         if rel.startswith("skills/") and "SKILL.md" in rel:
             return True
         if rel.startswith("common_skills/") and "SKILL.md" in rel:
+            return True
+        if rel.startswith("companies/") and "/skills/" in rel and rel.endswith("/SKILL.md"):
             return True
         return rel.startswith("procedures/") and rel.endswith(".md")
 
@@ -746,6 +763,16 @@ class MemoryToolsMixin:
                 return _error_result(
                     "PermissionDenied",
                     "Path traversal detected — access denied.",
+                )
+        elif rel.startswith("companies/"):
+            from core.company_resources import get_company_resources
+
+            resources = get_company_resources(self._anima_dir)
+            path = (resources.root.parent.parent / rel).resolve() if resources is not None else None
+            if path is None or not path.is_relative_to(resources.root):
+                return _error_result(
+                    "PermissionDenied",
+                    "Company resource access is limited to your assigned company.",
                 )
         else:
             path = self._anima_dir / rel
@@ -861,6 +888,11 @@ class MemoryToolsMixin:
             return _error_result(
                 "PermissionDenied",
                 "reference/ is read-only. Use common_knowledge/ for shared writable documents.",
+            )
+        if rel.startswith("companies/"):
+            return _error_result(
+                "PermissionDenied",
+                "Company knowledge and skills are read-only.",
             )
 
         # Support common_knowledge/ prefix — resolve to shared dir

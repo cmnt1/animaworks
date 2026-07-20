@@ -102,7 +102,7 @@ _PATCH_VDBDIR = "core.paths.get_anima_vectordb_dir"
 
 class TestIndexSharedCollections:
     @pytest.fixture
-    def base_dir(self, tmp_path: Path) -> Path:
+    def base_dir(self, tmp_path: Path, data_dir: Path) -> Path:
         """Set up a minimal base directory with common_knowledge."""
         d = tmp_path / "data"
         d.mkdir(exist_ok=True)
@@ -276,7 +276,7 @@ class TestIndexSharedCollections:
             assert total == 2 * len(anima_dirs)
 
 
-def test_index_command_skips_repair_locked_anima(tmp_path: Path) -> None:
+def test_index_command_skips_repair_locked_anima(tmp_path: Path, data_dir: Path) -> None:
     """CLI indexing must not open a local vector store while repair lock is held."""
     animas_dir = tmp_path / "animas"
     anima_dir = animas_dir / "alice"

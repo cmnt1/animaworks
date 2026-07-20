@@ -76,3 +76,61 @@ def test_reranker_cuda_inference_failure_falls_back_to_cpu_and_records_status(
     ]
     assert status["degraded"] is True
     assert "CUDA device lost" in str(status["last_error"])
+
+
+def test_concurrent_ensure_model_loads_once(
+    mock_sentence_transformers_cross_encoder,
+) -> None:
+    """Concurrent first-use callers must share one CrossEncoder load.
+
+    Regression test for the triple simultaneous "Loading weights" bursts
+    observed on 2026-07-17: _ensure_model() had no lock, so racing threads
+    each loaded (and leaked) their own model copy.
+    """
+    import threading
+    import time
+
+    def slow_cross_encoder(*args, **kwargs):
+        time.sleep(0.05)
+        return MagicMock()
+
+    mock_sentence_transformers_cross_encoder.side_effect = slow_cross_encoder
+    config = AnimaWorksConfig(gpu=GPUConfig(reranker_device="cpu"))
+
+    with patch("core.config.load_config", return_value=config):
+        from core.memory.retrieval.reranker import CrossEncoderReranker
+
+        reranker = CrossEncoderReranker("test-reranker")
+        threads = [threading.Thread(target=reranker._ensure_model) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+    assert mock_sentence_transformers_cross_encoder.call_count == 1
+
+
+def test_get_reranker_returns_same_instance_across_threads(
+    mock_sentence_transformers_cross_encoder,
+) -> None:
+    import threading
+
+    config = AnimaWorksConfig(gpu=GPUConfig(reranker_device="cpu"))
+    results: list[object] = []
+
+    with patch("core.config.load_config", return_value=config):
+        import core.memory.retrieval.reranker as reranker_mod
+
+        reranker_mod._reranker = None
+        threads = [
+            threading.Thread(target=lambda: results.append(reranker_mod.get_reranker("test-r")))
+            for _ in range(8)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+        reranker_mod._reranker = None
+
+    assert len(results) == 8
+    assert all(r is results[0] for r in results)

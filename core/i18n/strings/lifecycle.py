@@ -38,6 +38,29 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "- {ts}: [計画] {plan}",
         "en": "- {ts}: [Plan] {plan}",
     },
+    "heartbeat.current_state_cleanup_required": {
+        "ja": (
+            "【要整理】current_state.md が {current_chars} 文字あり、上限 {max_chars} 文字に近づいています。"
+            "本題に入る前に current_state.md を自分で整理してください: "
+            "(1) 完了・解決済み・期限切れの項目を削除する（経緯はepisodesに自動記録済みなので消してよい）、"
+            "(2) 継続中の案件は1件につき見出し1行＋要点数行に圧縮する、"
+            "(3) cronの実行記録・同期カーソル・定期チェックの「差分なし」報告は current_state.md ではなく "
+            "state/ 配下の専用ファイル（例: state/<タスク名>-cursor.md）に移す。"
+            "整理後は {target_chars} 文字以内を目安とする。"
+            "放置すると上限超過時にシステムが古い方から機械的に切り捨てるため、重要な項目が失われる恐れがあります。"
+        ),
+        "en": (
+            "[Cleanup required] Your current_state.md is {current_chars} chars, approaching the {max_chars}-char limit. "
+            "Before the main task, reorganize current_state.md yourself: "
+            "(1) delete completed/resolved/expired items (their history is already auto-recorded in episodes), "
+            "(2) compress each ongoing item to one heading plus a few key lines, "
+            "(3) move cron run records, sync cursors, and no-diff check reports out of current_state.md "
+            "into dedicated files under state/ (e.g. state/<task>-cursor.md). "
+            "Aim for {target_chars} chars or less after cleanup. "
+            "If left as is, the system will mechanically drop the oldest content once the limit is exceeded, "
+            "and important items may be lost."
+        ),
+    },
     "scheduler.cron_fallback_description": {
         "ja": "cron.mdの「{task_name}」の指示に従って処理してください。",
         "en": "Follow the instructions for '{task_name}' in cron.md.",

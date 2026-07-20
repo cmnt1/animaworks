@@ -74,6 +74,31 @@ class TestBuildMcpEnv:
             env = executor._build_mcp_env()
         assert env["PATH"] == "/usr/bin:/bin"
 
+    def test_passes_embed_and_vector_urls(self, tmp_path: Path) -> None:
+        """Embed/vector URLs propagate so the MCP server delegates over HTTP."""
+        executor = _make_executor(tmp_path / "animas" / "test-anima")
+        with patch.dict(
+            os.environ,
+            {
+                "ANIMAWORKS_EMBED_URL": "http://127.0.0.1:18500/api/internal/embed",
+                "ANIMAWORKS_VECTOR_URL": "http://127.0.0.1:18500/api/internal/vector",
+            },
+        ):
+            env = executor._build_mcp_env()
+        assert env["ANIMAWORKS_EMBED_URL"] == "http://127.0.0.1:18500/api/internal/embed"
+        assert env["ANIMAWORKS_VECTOR_URL"] == "http://127.0.0.1:18500/api/internal/vector"
+
+    def test_omits_embed_and_vector_urls_when_unset(self, tmp_path: Path) -> None:
+        """No stale/empty URL keys when the parent process has none."""
+        executor = _make_executor(tmp_path / "animas" / "test-anima")
+        env_copy = os.environ.copy()
+        env_copy.pop("ANIMAWORKS_EMBED_URL", None)
+        env_copy.pop("ANIMAWORKS_VECTOR_URL", None)
+        with patch.dict(os.environ, env_copy, clear=True):
+            env = executor._build_mcp_env()
+        assert "ANIMAWORKS_EMBED_URL" not in env
+        assert "ANIMAWORKS_VECTOR_URL" not in env
+
 
 class TestBuildSdkEnv:
     """Tests for AgentSDKExecutor._build_env()."""

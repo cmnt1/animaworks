@@ -220,6 +220,7 @@ class TestHeartbeatPromptCleanup:
         mixin.memory = memory_mock
         # Snapshot part is optional; default to empty so it is not appended.
         mixin._build_preobserved_heartbeat_snapshot_part = MagicMock(return_value="")
+        mixin._build_state_cleanup_instruction = lambda: HeartbeatMixin._build_state_cleanup_instruction(mixin)
 
         return mixin
 

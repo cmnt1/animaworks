@@ -22,9 +22,12 @@ When extracting knowledge from them, note the following:
 
 {knowledge_files_list}
 
-## Merge candidates (similar file pairs)
+## Merge candidates (similar file pairs — advisory only)
 
 {merge_candidates}
+
+※ The pairs above are **mechanical suggestions** based on vector similarity, not merge instructions.
+In a narrow domain, files about different subjects (e.g. customer A vs customer B) can score highly similar. Decide whether to merge by **reading the contents yourself**, following the criteria in Step 1.
 
 ## Error patterns (past 24 hours)
 
@@ -48,26 +51,31 @@ Keep `injection.md` under a **2,000 character target** as a constitution plus po
 If it exceeds 2,000 characters, do not create a proposal file. Rewrite it directly during this consolidation with `write_memory_file(path="injection.md", mode="overwrite")`.
 Even when it is already within 2,000 characters, check whether detailed prose has accumulated and shorten it with the same policy when needed.
 
-### Step 1: Merge duplicate files (MUST — highest priority)
+### Step 1: Review duplicate files (merge at your own judgment)
 
-**When merge candidates are provided, process every pair.**
-Additionally, review the file list above and find duplicate files covering the same topic yourself.
+Review each merge-candidate pair and the file list above, and merge **only true duplicates**.
+Merge candidates are advisory; there is no obligation to merge every pair.
 
-Merge procedure:
+Decision criteria:
+- **Merge**: genuine duplicates or fragments of the same topic (old/new versions of the same procedure, restatements of the same fact)
+- **Do NOT merge**: files about different entities (per-customer, per-project, per-person, per-system context files). Keep them as **separate files** even when similarity is high
+- **When in doubt, do not merge**. Preserving information granularity and searchability takes priority
+
+For pairs you decide to merge:
 1. Use `read_memory_file` to review both contents
-2. Combine the information and write to one file with `write_memory_file`
-3. Archive the redundant one with `archive_memory_file`
+2. Combine the information **without losing details** and write to one file with `write_memory_file` (do not discard specifics through summarization)
+3. Archive the redundant one with `archive_memory_file` (state the merge target and your reasoning in the reason)
 4. If `[IMPORTANT]` tag exists, preserve it in the merged file
 
-- "Merge later" or "too complex, skip" is NOT allowed. Complete all merges now
-- Always prefer merging into existing files over creating new ones
+- Do not defer pairs you decided to merge. Complete them now
 
 ### Step 2: Knowledge extraction from episodes
 
 Review today's episodes; if substantive information exists:
 1. Use `search_memory` to find related existing knowledge/ and procedures/
-2. If relevant files found, review with `read_memory_file` and update with `write_memory_file`
-3. Create new files only when no existing file covers the topic
+2. If an existing file covers the same topic, review with `read_memory_file` and update with `write_memory_file`
+3. Create a new file when no existing file covers the topic
+4. Keep knowledge about individual entities (customers, projects, people) in **per-entity files** (e.g. `customer-context-{{name}}.md`). Do not mix customer-specific details into generic rule files
 
 ### Step 2.5: Error pattern analysis
 
@@ -102,7 +110,7 @@ version: 1
 
 ## Critical constraints
 - **You MUST perform this work yourself directly**. Do NOT use `delegate_task`, `submit_tasks`, or `send_message`. Complete all work using only memory operation tools
-- **Do NOT skip Step 1 merging**. If duplicate files exist and you fail to merge them, the task is considered a failure
+- Do NOT skip the Step 1 review. Whether to merge is your judgment based on content — **merging files about different entities purely because of similarity scores is considered a failure**
 
 ## Notes
 - Do not convert greetings-only or substantively empty exchanges into knowledge

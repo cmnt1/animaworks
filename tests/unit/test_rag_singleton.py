@@ -120,6 +120,25 @@ class TestGetEmbeddingModel:
 
         mock_sentence_transformers.assert_called_once()
 
+    def test_device_flap_does_not_reload(self, tmp_path, monkeypatch, mock_sentence_transformers):
+        """A flapping resolve_device() must not discard and reload the model.
+
+        Regression test for the 2026-07-17 OOM incident: repeated
+        cuda<->cpu probe flips reloaded the SentenceTransformer on every
+        call, ratcheting RSS up by ~0.5GB per reload.
+        """
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+
+        from core.memory.rag.singleton import get_embedding_model
+
+        with patch("core.gpu.resolve_device", side_effect=["cpu", "cuda", "cpu", "cuda"]):
+            model1 = get_embedding_model()
+            model2 = get_embedding_model()
+            model3 = get_embedding_model()
+
+        assert model1 is model2 is model3
+        mock_sentence_transformers.assert_called_once()
+
     def test_creates_cache_dir(self, tmp_path, monkeypatch, mock_sentence_transformers):
         """get_embedding_model() should create the models cache directory."""
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))

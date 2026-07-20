@@ -95,6 +95,36 @@ class VectorQuickCheckRequest(BaseModel):
     record_repair: bool = True
 
 
+class NotificationMappingRequest(BaseModel):
+    ts: str
+    channel: str
+    anima_name: str
+    notification_text: str = ""
+    callback_id: str = ""
+
+
+class InteractionCreateRequest(BaseModel):
+    anima_name: str
+    category: str = "approval"
+    options: list[str]
+    allowed_users: dict[str, list[str]] | None = None
+    callback_id: str = ""
+
+
+class InteractionMessageTsRequest(BaseModel):
+    callback_id: str
+    platform: str = "slack"
+    ts: str
+
+
+class AnimaCreateRequest(BaseModel):
+    character_sheet_content: str | None = None
+    character_sheet_path: str | None = None
+    name: str | None = None
+    supervisor: str | None = None
+    calling_anima: str = ""  # supervisor fallback when status.json has none
+
+
 def create_internal_router() -> APIRouter:
     router = APIRouter()
 
@@ -276,6 +306,128 @@ def create_internal_router() -> APIRouter:
     @router.post("/internal/vector/quick-check")
     async def vector_quick_check(body: VectorQuickCheckRequest, request: Request):
         return await _require_vector_worker(request, "/quick-check", body)
+
+    # ── Notification / interaction persistence for sandboxed CLIs ──
+    #
+    # ``animaworks-tool call_human`` runs inside execution sandboxes where
+    # ``{data_dir}/run/`` is read-only.  These endpoints let the sandboxed
+    # process delegate the run-state writes to the server so that Slack
+    # thread replies and interactive approvals still route back correctly.
+
+    @router.post("/internal/notification-mapping")
+    async def internal_notification_mapping(body: NotificationMappingRequest):
+        from core.notification.reply_routing import save_notification_mapping
+
+        ok = await asyncio.to_thread(
+            save_notification_mapping,
+            body.ts,
+            body.channel,
+            body.anima_name,
+            notification_text=body.notification_text,
+            callback_id=body.callback_id,
+        )
+        return {"ok": ok}
+
+    @router.post("/internal/interaction/create")
+    async def internal_interaction_create(body: InteractionCreateRequest):
+        from core.notification.interactive import get_interaction_router
+
+        try:
+            req = await get_interaction_router().create(
+                body.anima_name,
+                body.category,
+                body.options,
+                allowed_users=body.allowed_users,
+                callback_id=body.callback_id or None,
+            )
+        except ValueError as exc:
+            return JSONResponse(status_code=409, content={"detail": str(exc)})
+        return {"ok": True, "request": req.model_dump(mode="json")}
+
+    @router.post("/internal/interaction/message-ts")
+    async def internal_interaction_message_ts(body: InteractionMessageTsRequest):
+        from core.notification.interactive import get_interaction_router
+
+        await get_interaction_router().update_message_ts(
+            body.callback_id,
+            body.platform,
+            body.ts,
+        )
+        return {"ok": True}
+
+    @router.post("/internal/anima/create")
+    async def internal_anima_create(body: AnimaCreateRequest):
+        """Create an anima outside sandbox EROFS constraints.
+
+        Sandboxed Mode C MCP subprocesses cannot write to animas/ root.
+        They fall back here so create_from_md runs on the host server.
+        """
+        if not body.character_sheet_content and not body.character_sheet_path:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "detail": ("Either character_sheet_content or character_sheet_path is required"),
+                },
+            )
+
+        def _create() -> Path:
+            from core.anima_factory import create_from_md
+            from core.paths import get_animas_dir, get_data_dir
+
+            md_path = Path(body.character_sheet_path) if body.character_sheet_path else None
+            anima_dir = create_from_md(
+                get_animas_dir(),
+                md_path,
+                name=body.name,
+                content=body.character_sheet_content,
+                supervisor=body.supervisor,
+            )
+
+            # Supervisor fallback (same as _handle_create_anima local path)
+            status_path = anima_dir / "status.json"
+            if status_path.exists() and body.calling_anima:
+                try:
+                    status_data = json.loads(status_path.read_text(encoding="utf-8"))
+                    if not status_data.get("supervisor"):
+                        status_data["supervisor"] = body.calling_anima
+                        status_path.write_text(
+                            json.dumps(status_data, ensure_ascii=False, indent=2) + "\n",
+                            encoding="utf-8",
+                        )
+                except (OSError, json.JSONDecodeError):
+                    logger.warning(
+                        "Failed to set fallback supervisor for '%s'",
+                        anima_dir.name,
+                        exc_info=True,
+                    )
+
+            try:
+                from cli.commands.init_cmd import _register_anima_in_config
+
+                _register_anima_in_config(get_data_dir(), anima_dir.name)
+            except Exception:
+                logger.warning(
+                    "Failed to register anima '%s' in config.json",
+                    anima_dir.name,
+                    exc_info=True,
+                )
+
+            return anima_dir
+
+        try:
+            loop = asyncio.get_running_loop()
+            anima_dir = await loop.run_in_executor(_native_executor, _create)
+        except FileExistsError as exc:
+            return JSONResponse(status_code=409, content={"detail": str(exc)})
+        except ValueError as exc:
+            return JSONResponse(status_code=422, content={"detail": str(exc)})
+        except FileNotFoundError as exc:
+            return JSONResponse(status_code=422, content={"detail": str(exc)})
+        except Exception as exc:
+            logger.exception("internal anima create failed")
+            return JSONResponse(status_code=500, content={"detail": str(exc)})
+
+        return {"status": "ok", "anima_dir": str(anima_dir)}
 
     @router.post("/internal/vector/reset-store")
     async def vector_reset_store(body: VectorListCollectionsRequest, request: Request):

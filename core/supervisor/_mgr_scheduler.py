@@ -743,7 +743,7 @@ class SchedulerMixin:
         """Run daily RAG indexing for all animas.
 
         Incrementally indexes all memory files (knowledge, episodes,
-        procedures, skills) into each anima's per-anima vectordb.
+        procedures, skills, facts) into each anima's per-anima vectordb.
         Also indexes shared collections (common_knowledge, common_skills).
         Runs at 04:00 (configured TZ), after consolidation (02:00) and
         weekly/monthly jobs (03:00) to capture all generated/modified files.
@@ -857,6 +857,7 @@ class SchedulerMixin:
                     ("episodes", anima_dir / "episodes"),
                     ("procedures", anima_dir / "procedures"),
                     ("skills", anima_dir / "skills"),
+                    ("facts", anima_dir / "facts"),
                 ]
 
                 for memory_type, memory_dir in memory_types:
@@ -1098,6 +1099,9 @@ class SchedulerMixin:
                 dm_log_archive_retention_days=hk_cfg.dm_log_archive_retention_days,
                 cron_log_retention_days=hk_cfg.cron_log_retention_days,
                 shortterm_retention_days=hk_cfg.shortterm_retention_days,
+                shortterm_archive_retention_days=hk_cfg.shortterm_archive_retention_days,
+                shortterm_thread_gc_days=hk_cfg.shortterm_thread_gc_days,
+                facts_lock_stale_hours=hk_cfg.facts_lock_stale_hours,
                 task_results_retention_days=hk_cfg.task_results_retention_days,
                 pending_failed_retention_days=hk_cfg.pending_failed_retention_days,
                 corrupt_vectordb_keep_generations=hk_cfg.corrupt_vectordb_keep_generations,
@@ -1115,6 +1119,7 @@ class SchedulerMixin:
                 suppressed_messages_max_size_mb=hk_cfg.suppressed_messages_max_size_mb,
                 suppressed_messages_keep_generations=hk_cfg.suppressed_messages_keep_generations,
                 archive_superseded_retention_days=hk_cfg.archive_superseded_retention_days,
+                hygiene_grace_days=hk_cfg.hygiene_grace_days,
                 inbox_ttl_hours=inbox_cfg.ttl_hours,
                 inbox_expired_retention_days=inbox_cfg.expired_retention_days,
                 inbox_processed_retention_days=inbox_cfg.processed_retention_days,

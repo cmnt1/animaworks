@@ -31,6 +31,9 @@ class CrossEncoderReranker:
         if self._model is not None:
             return True
         with self._lock:
+            # Double-check under the lock: concurrent first-use callers used to
+            # each load their own CrossEncoder (observed as triple simultaneous
+            # "Loading weights" bursts per process), leaking the extra copies.
             if not self._available:
                 return False
             if self._model is not None:

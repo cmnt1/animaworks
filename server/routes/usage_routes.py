@@ -271,9 +271,7 @@ def _refresh_claude_token(cred_path: Path, refresh_token: str) -> str | None:
     try:
         existing_scopes: list[str] = []
         try:
-            existing_scopes = (
-                json.loads(cred_path.read_text("utf-8")).get("claudeAiOauth", {}).get("scopes") or []
-            )
+            existing_scopes = json.loads(cred_path.read_text("utf-8")).get("claudeAiOauth", {}).get("scopes") or []
         except Exception:
             existing_scopes = []
 

@@ -546,6 +546,13 @@ class HealthMixin:
         Runs as an independent task so the health-check loop is not blocked
         by backoff sleeps.  A per-anima guard prevents duplicate restarts.
         """
+        # Entrance guard: during shutdown the whole failure/restart machinery
+        # is a no-op — shutdown_all stops every process anyway, and any state
+        # recorded here (_restart_counts, _permanently_failed, ...) would only
+        # pollute the next server start.
+        if self._shutdown:
+            logger.info("Skip failure handling during shutdown: %s", anima_name)
+            return
         if anima_name in self._restarting:
             return
         self._restarting.add(anima_name)
@@ -554,6 +561,16 @@ class HealthMixin:
         handle.state = ProcessState.RESTARTING
 
         try:
+            # Disabled before any retry/max-retry logic: clean stop, no pollution.
+            if not self.read_anima_enabled(self.animas_dir / anima_name):
+                logger.info(
+                    "Skip restart: anima disabled: %s",
+                    anima_name,
+                )
+                if anima_name in self.processes:
+                    await self.stop_anima(anima_name)
+                return
+
             # Check restart count (supervisor-level, survives handle recreation)
             count = self._restart_counts.get(anima_name, 0)
             if count >= self.restart_policy.max_retries:
@@ -589,6 +606,16 @@ class HealthMixin:
             # Wait and restart
             await asyncio.sleep(backoff)
 
+            # Disabled during backoff: clean stop, no error / retry pollution.
+            if not self.read_anima_enabled(self.animas_dir / anima_name):
+                logger.info(
+                    "Skip restart: anima disabled: %s",
+                    anima_name,
+                )
+                if anima_name in self.processes:
+                    await self.stop_anima(anima_name)
+                return
+
             self._restart_counts[anima_name] = count + 1
             new_handle = await self._respawn_anima_transaction(anima_name)
 
@@ -601,6 +628,20 @@ class HealthMixin:
                     self.restart_policy.max_retries,
                 )
             else:
+                # Disabled/shutdown mid-respawn is a clean skip (respawn
+                # returns None without marking permanently failed). Roll back
+                # the count increment so a later re-enable/restart starts
+                # from a clean slate.
+                if self._shutdown or not self.read_anima_enabled(self.animas_dir / anima_name):
+                    if count == 0:
+                        self._restart_counts.pop(anima_name, None)
+                    else:
+                        self._restart_counts[anima_name] = count
+                    logger.info(
+                        "Restart skipped (disabled or shutdown): %s",
+                        anima_name,
+                    )
+                    return
                 logger.error(
                     "Restart transaction failed with no handle: %s",
                     anima_name,
@@ -645,6 +686,8 @@ class HealthMixin:
             return True  # Backward compatibility: no file = enabled
         try:
             data = json.loads(status_file.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                return True  # Malformed (non-object) status = enabled
             return bool(data.get("enabled", True))
         except (json.JSONDecodeError, OSError):
             return True  # Treat unreadable file as enabled

@@ -10,8 +10,10 @@ rate limiting to prevent cascade loops between Animas.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from core.config.models import load_config
@@ -22,6 +24,9 @@ if TYPE_CHECKING:
     from core.supervisor.scheduler_manager import SchedulerManager
 
 logger = logging.getLogger(__name__)
+
+# Min interval between "disabled, skip inbox" info logs (watcher polls ~2s).
+_DISABLED_SKIP_LOG_COOLDOWN_SEC = 30.0
 
 
 def _is_immediately_actionable_intent(intent: str, source: str, actionable_intents: list[str]) -> bool:
@@ -34,6 +39,24 @@ def _is_immediately_actionable_intent(intent: str, source: str, actionable_inten
     if intent in actionable_intents:
         return True
     return intent == "delegation" and source not in {"human", *EXTERNAL_PLATFORM_SOURCES}
+
+
+def _read_anima_enabled(anima_dir: Path) -> bool:
+    """Read status.json ``enabled`` flag (default True if missing/unreadable).
+
+    Local helper mirroring ``ProcessSupervisor.read_anima_enabled`` to avoid
+    importing the heavy manager module from the runner path.
+    """
+    status_file = anima_dir / "status.json"
+    if not status_file.exists():
+        return True
+    try:
+        data = json.loads(status_file.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return True
+        return bool(data.get("enabled", True))
+    except (json.JSONDecodeError, OSError):
+        return True
 
 
 class InboxRateLimiter:
@@ -60,6 +83,7 @@ class InboxRateLimiter:
         self._deferred_timer: asyncio.Handle | None = None
         self._last_msg_heartbeat_end: float = 0.0
         self._pair_heartbeat_times: dict[tuple[str, str], list[float]] = {}
+        self._last_disabled_skip_log: float = 0.0
 
     # ── Cooldown ─────────────────────────────────────────────────
 
@@ -204,6 +228,19 @@ class InboxRateLimiter:
             self._pending_trigger = False
             return
 
+        # Shared gate for poll / deferred timer / lock-released paths.
+        # Disabled → leave inbox unread; clear pending so watcher can resume.
+        if not _read_anima_enabled(self._anima.anima_dir):
+            now = time.monotonic()
+            if now - self._last_disabled_skip_log >= _DISABLED_SKIP_LOG_COOLDOWN_SEC:
+                logger.info(
+                    "Inbox processing skip: anima disabled (%s); messages left unread",
+                    self._anima_name,
+                )
+                self._last_disabled_skip_log = now
+            self._pending_trigger = False
+            return
+
         if self._scheduler_mgr.heartbeat_running:
             logger.info("Message-triggered inbox SKIPPED (heartbeat already running): %s", self._anima_name)
             self._pending_trigger = False
@@ -290,6 +327,19 @@ class InboxRateLimiter:
                     continue
                 if self._anima._background_lock.locked():
                     self.schedule_deferred_trigger()
+                    await asyncio.sleep(2.0)
+                    continue
+
+                # Unread exists: only then read status.json (avoid per-poll I/O).
+                # Disabled → leave inbox files intact; do not trigger processing.
+                if not _read_anima_enabled(self._anima.anima_dir):
+                    now = time.monotonic()
+                    if now - self._last_disabled_skip_log >= _DISABLED_SKIP_LOG_COOLDOWN_SEC:
+                        logger.info(
+                            "Inbox watcher skip: anima disabled (%s); messages left unread",
+                            self._anima_name,
+                        )
+                        self._last_disabled_skip_log = now
                     await asyncio.sleep(2.0)
                     continue
 

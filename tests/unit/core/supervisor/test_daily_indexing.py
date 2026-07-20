@@ -102,6 +102,47 @@ async def test_daily_indexing_incremental(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_daily_indexing_includes_facts(tmp_path: Path) -> None:
+    """Daily vector indexing must cover facts alongside knowledge/episodes/etc."""
+    sup = _make_supervisor(tmp_path)
+    anima = sup.animas_dir / "sakura"
+    _create_anima_dir(sup.animas_dir, "sakura", with_knowledge=True)
+    facts_dir = anima / "facts"
+    facts_dir.mkdir(exist_ok=True)
+    (facts_dir / "2026-07-01.jsonl").write_text(
+        '{"fact_id":"f1","text":"Alice likes tea"}\n',
+        encoding="utf-8",
+    )
+
+    index_dir_calls: list[tuple] = []
+
+    def capture_index_dir(directory, memory_type, force=False):
+        index_dir_calls.append((Path(directory), memory_type, force))
+        return IndexDirectoryResult()
+
+    mock_store = MagicMock()
+    with (
+        patch("core.paths.get_data_dir", return_value=tmp_path),
+        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
+        patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
+        patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
+    ):
+        mock_indexer = MagicMock()
+        mock_indexer.index_directory = MagicMock(side_effect=capture_index_dir)
+        mock_indexer.index_conversation_summary = MagicMock(return_value=0)
+        mock_indexer_cls.return_value = mock_indexer
+
+        await sup._run_daily_indexing()
+
+    types_called = {memory_type for _, memory_type, _ in index_dir_calls}
+    assert "facts" in types_called
+    facts_calls = [c for c in index_dir_calls if c[1] == "facts"]
+    assert len(facts_calls) == 1
+    assert facts_calls[0][0] == facts_dir
+
+
+@pytest.mark.asyncio
 async def test_daily_indexing_rebuilds_longterm_bm25(tmp_path: Path) -> None:
     sup = _make_supervisor(tmp_path)
     _create_anima_dir(sup.animas_dir, "sakura", with_knowledge=True)

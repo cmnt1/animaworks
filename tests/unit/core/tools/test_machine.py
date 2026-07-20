@@ -389,6 +389,12 @@ class TestValidateWorkingDirectory:
 # ── Rate Limiting Tests ───────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def _default_machine_to_unsandboxed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep execution tests independent of the host filesystem sandbox."""
+    monkeypatch.setattr("core.tools.machine._is_fs_sandboxed", lambda: False)
+
+
 class TestRateLimiting:
     def setup_method(self):
         reset_call_counts()

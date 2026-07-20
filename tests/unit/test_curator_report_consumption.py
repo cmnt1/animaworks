@@ -7,6 +7,7 @@ from __future__ import annotations
 """Unit tests for Curator report consumption (heartbeat injection loop)."""
 
 import json
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -131,7 +132,12 @@ def test_heartbeat_part_absent_after_ack(tmp_path: Path) -> None:
     from core.tooling.handler_skills import SkillsToolsMixin
 
     anima_dir = tmp_path / "alice"
-    _write_report(anima_dir, suggestions=[_SUGGESTION])
+    report_path = _write_report(anima_dir, suggestions=[_SUGGESTION])
+    # Age the report so its mtime is unambiguously older than the review
+    # marker: coarse filesystem timestamp resolution (~1-15.6ms on Windows)
+    # otherwise lets both land in the same tick and the report reads unreviewed.
+    old = (datetime.now(UTC) - timedelta(minutes=5)).timestamp()
+    os.utime(report_path, (old, old))
 
     # Simulate curate_skills marking the report reviewed.
     marker_holder = SimpleNamespace(_anima_dir=anima_dir)

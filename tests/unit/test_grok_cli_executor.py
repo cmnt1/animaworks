@@ -200,6 +200,32 @@ class TestDiscoveryAndHelpers:
     def test_model_prefix(self, model: str, expected: str):
         assert _resolve_grok_model(model) == expected
 
+    def test_mcp_env_passes_embed_and_vector_urls(self, executor: GrokCLIExecutor):
+        """MCP server env must include embed/vector URLs so it delegates over
+        HTTP instead of loading SentenceTransformer models in-process
+        (2026-07-17 OOM incident)."""
+        with patch.dict(
+            os.environ,
+            {
+                "ANIMAWORKS_EMBED_URL": "http://127.0.0.1:18500/api/internal/embed",
+                "ANIMAWORKS_VECTOR_URL": "http://127.0.0.1:18500/api/internal/vector",
+            },
+        ):
+            servers = executor._mcp_servers()
+        env_map = {item["name"]: item["value"] for item in servers[0]["env"]}
+        assert env_map["ANIMAWORKS_EMBED_URL"] == "http://127.0.0.1:18500/api/internal/embed"
+        assert env_map["ANIMAWORKS_VECTOR_URL"] == "http://127.0.0.1:18500/api/internal/vector"
+
+    def test_mcp_env_omits_urls_when_unset(self, executor: GrokCLIExecutor):
+        env_copy = os.environ.copy()
+        env_copy.pop("ANIMAWORKS_EMBED_URL", None)
+        env_copy.pop("ANIMAWORKS_VECTOR_URL", None)
+        with patch.dict(os.environ, env_copy, clear=True):
+            servers = executor._mcp_servers()
+        env_names = {item["name"] for item in servers[0]["env"]}
+        assert "ANIMAWORKS_EMBED_URL" not in env_names
+        assert "ANIMAWORKS_VECTOR_URL" not in env_names
+
     def test_session_paths_and_trigger_normalization(self, anima_dir: Path):
         assert _resolve_session_type("message:user") == "chat"
         assert _resolve_session_type("chat:web") == "chat"

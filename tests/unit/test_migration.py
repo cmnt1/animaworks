@@ -572,6 +572,20 @@ class TestRegisterAllSteps:
         ids = [s["id"] for s in runner.list_steps()]
         assert len(ids) == len(set(ids))
 
+    def test_memory_hygiene_prompt_resync_has_new_migration_id(self, tmp_path: Path) -> None:
+        from core.migrations.steps import register_all_steps, step_prompt_resync
+
+        runner = MigrationRunner(tmp_path)
+        register_all_steps(runner)
+        runner.tracker.mark_applied("prompt_resync")
+
+        step = next(s for s in runner._steps if s.id == "memory_hygiene_prompt_resync_20260718")
+        assert step.category == "template_sync"
+        assert step.fn is step_prompt_resync
+        listed = {item["id"]: item for item in runner.list_steps()}
+        assert listed["prompt_resync"]["applied"] is True
+        assert listed["memory_hygiene_prompt_resync_20260718"]["applied"] is False
+
     def test_all_categories_present(self, tmp_path: Path) -> None:
         from core.migrations.steps import register_all_steps
 

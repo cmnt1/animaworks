@@ -11,7 +11,10 @@ existing RAG search helpers for vector, graph, keyword, and activity sources.
 """
 
 import logging
+import re
+import unicodedata
 from dataclasses import dataclass
+from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +36,131 @@ _TOOL_ALL_SCOPES: tuple[str, ...] = (
     "activity_log",
 )
 _EXPLICIT_SCOPES = _TOOL_ALL_SCOPES
+
+_ITERATIVE_TRIGGERS = frozenset({"task", "tool"})
+_ENGLISH_QUERY_STOPWORDS = frozenset(
+    {
+        "a",
+        "about",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "been",
+        "by",
+        "did",
+        "do",
+        "does",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "he",
+        "her",
+        "him",
+        "his",
+        "how",
+        "in",
+        "is",
+        "it",
+        "its",
+        "of",
+        "on",
+        "or",
+        "she",
+        "that",
+        "the",
+        "their",
+        "them",
+        "they",
+        "this",
+        "to",
+        "was",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "whose",
+        "why",
+        "with",
+    },
+)
+_JAPANESE_QUERY_WORDS_RE = re.compile(r"(?:どちら|どなた|いかが|どんな|どれ|どこ|いつ|だれ|誰|なぜ|どう|どの|なん|何)")
+_JAPANESE_AUXILIARIES_RE = re.compile(
+    r"(?:について|における|に関する|による|という|でした|ません|ました|ます|です|ください)"
+)
+_JAPANESE_PARTICLES_RE = re.compile(r"[はがをにへでとのもや]")
+_QUERY_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_+'-]*|\d+(?:[.-]\d+)*|[\u3040-\u30ff\u3400-\u9fffー]+")
+_QUOTED_PHRASE_RE = re.compile(r'"([^"\n]+)"|“([^”\n]+)”|「([^」\n]+)」|『([^』\n]+)』|(?<!\w)\'([^\'\n]+)\'(?!\w)')
+_CAPITALIZED_PHRASE_RE = re.compile(
+    r"\b(?:[A-Z][A-Za-z0-9+&'.-]*|[A-Z]{2,}[A-Za-z0-9+&'.-]*)"
+    r"(?:\s+(?:of|the|and|for|to|by|in|on|at|with|"
+    r"[A-Z][A-Za-z0-9+&'.-]*|[A-Z]{2,}[A-Za-z0-9+&'.-]*)){0,4}"
+)
+
+
+def build_iterative_queries(query: str) -> list[str]:
+    """Build deterministic, LLM-free fallback queries for a second retrieval round.
+
+    The first query removes common English stopwords and Japanese question,
+    auxiliary, and particle forms.  The second retains quoted phrases and
+    English proper-name-like phrases.  Empty queries and exact duplicates of
+    the original are omitted.
+    """
+    original = unicodedata.normalize("NFKC", str(query or "")).strip()
+    if not original:
+        return []
+
+    keyword_parts: list[str] = []
+    for token in _QUERY_TOKEN_RE.findall(original):
+        if token[0].isascii():
+            if token.casefold() not in _ENGLISH_QUERY_STOPWORDS:
+                keyword_parts.append(token)
+            continue
+        cleaned = _JAPANESE_QUERY_WORDS_RE.sub(" ", token)
+        cleaned = _JAPANESE_AUXILIARIES_RE.sub(" ", cleaned)
+        cleaned = _JAPANESE_PARTICLES_RE.sub(" ", cleaned)
+        keyword_parts.extend(part for part in cleaned.split() if part and part != "か")
+    keyword_query = " ".join(keyword_parts)
+
+    entity_spans: list[tuple[int, int, str]] = []
+    quoted_spans: list[tuple[int, int]] = []
+    for match in _QUOTED_PHRASE_RE.finditer(original):
+        phrase = next((group for group in match.groups() if group is not None), "").strip()
+        if phrase:
+            entity_spans.append((match.start(), match.end(), phrase))
+            quoted_spans.append((match.start(), match.end()))
+    for match in _CAPITALIZED_PHRASE_RE.finditer(original):
+        if any(start <= match.start() and match.end() <= end for start, end in quoted_spans):
+            continue
+        phrase = match.group(0).strip()
+        if phrase.casefold() in _ENGLISH_QUERY_STOPWORDS:
+            continue
+        entity_spans.append((match.start(), match.end(), phrase))
+
+    entity_parts: list[str] = []
+    seen_entities: set[str] = set()
+    for _start, _end, phrase in sorted(entity_spans, key=lambda item: (item[0], item[1])):
+        key = phrase.casefold()
+        if key not in seen_entities:
+            entity_parts.append(phrase)
+            seen_entities.add(key)
+    entity_query = " ".join(entity_parts)
+
+    transformed: list[str] = []
+    seen = {original.casefold()}
+    for candidate in (keyword_query, entity_query):
+        candidate = " ".join(candidate.split()).strip()
+        key = candidate.casefold()
+        if candidate and key not in seen:
+            transformed.append(candidate)
+            seen.add(key)
+    return transformed
 
 
 @dataclass(frozen=True)
@@ -77,6 +205,38 @@ TRIGGER_POLICIES: dict[str, TriggerPolicy] = {
         scopes=_TOOL_ALL_SCOPES,
     ),
 }
+
+
+def _explicit_time_range(*, time_start: str | None, time_end: str | None) -> Any | None:
+    """Convert schema ISO bounds into the same inclusive range used by query extraction."""
+    if not time_start and not time_end:
+        return None
+
+    from core.memory.retrieval.time_expr import TimeRange
+
+    start = _parse_time_bound(time_start, end_of_day=False)
+    end = _parse_time_bound(time_end, end_of_day=True)
+    if start is None and end is None:
+        return None
+    if start is not None and end is not None and start > end:
+        start, end = end, start
+    return TimeRange(start=start, end=end)
+
+
+def _parse_time_bound(value: str | None, *, end_of_day: bool) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed_date = date.fromisoformat(text)
+    except ValueError:
+        normalized = f"{text[:-1]}+00:00" if text.endswith("Z") else text
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        return parsed.replace(tzinfo=None) if parsed.tzinfo is not None else parsed
+    return datetime.combine(parsed_date, time.max if end_of_day else time.min)
 
 
 class UnifiedMemorySearch:
@@ -130,6 +290,7 @@ class UnifiedMemorySearch:
         temporal_boost: Any | None = None,
         entity_boost: Any | None = None,
         reference_time: Any | None = None,
+        _allow_iterative: bool = True,
     ) -> list[dict[str, Any]]:
         """Search Legacy memories through a trigger-aware shared policy."""
         limit = max(0, int(limit))
@@ -141,6 +302,11 @@ class UnifiedMemorySearch:
         scopes = self._target_scopes(scope, policy, scope_override=scope_override)
         rag = self._ensure_rag_search()
         settings = dict(pipeline_settings or rag._load_rag_pipeline_settings())
+        iterative_enabled = bool(settings.get("iterative_retrieval_enabled", True))
+        try:
+            iterative_min_results = max(0, int(settings.get("iterative_min_results", 2) or 0))
+        except (TypeError, ValueError):
+            iterative_min_results = 2
         pool_k = max(int(settings.get("rerank_candidate_pool", policy.pool_k) or policy.pool_k), limit)
         if pipeline_settings is None:
             pool_k = max(policy.pool_k, limit)
@@ -154,7 +320,8 @@ class UnifiedMemorySearch:
             filter_ranked_lists_by_time_hint,
         )
 
-        expanded = expand_query(query, reference_time=coerce_reference_time(reference_time))
+        coerced_reference_time = coerce_reference_time(reference_time)
+        expanded = expand_query(query, reference_time=coerced_reference_time)
         # Sparse (BM25/keyword) query carries expanded ISO dates and lowercased
         # tokens; dense (vector/graph) query keeps natural text plus quoted
         # phrases only. See F19.
@@ -162,8 +329,18 @@ class UnifiedMemorySearch:
         dense_query = expanded.dense_text or query
         time_hint_start = time_start or expanded.time_hint_start
         time_hint_end = time_end or expanded.time_hint_end
+        iterative_entity_boost = entity_boost
+        iterative_temporal_boost = temporal_boost
         if entity_boost is None:
             entity_boost = rag._build_entity_boost_config(dense_query, settings)
+        if temporal_boost is None:
+            temporal_boost = self._build_temporal_boost_config(
+                query,
+                settings,
+                time_start=time_start,
+                time_end=time_end,
+                reference_time=coerced_reference_time,
+            )
         access_boost = None
         access_boost_builder = getattr(rag, "_build_access_boost_config", None)
         if callable(access_boost_builder):
@@ -199,7 +376,25 @@ class UnifiedMemorySearch:
                     "time_hint_end": time_hint_end,
                 },
             }
-            return []
+            return self._maybe_iterative_search(
+                [],
+                query=query,
+                scope=scope,
+                limit=limit,
+                trigger=trigger,
+                offset=offset,
+                min_score=min_score,
+                time_start=time_start,
+                time_end=time_end,
+                scope_override=scope_override,
+                pipeline_settings=pipeline_settings,
+                temporal_boost=iterative_temporal_boost,
+                entity_boost=iterative_entity_boost,
+                reference_time=coerced_reference_time,
+                enabled=iterative_enabled,
+                min_results=iterative_min_results,
+                allow_iterative=_allow_iterative,
+            )
         if self._is_keyword_only_fallback(ranked_lists):
             self._last_search_meta = {
                 "abstain": False,
@@ -214,7 +409,25 @@ class UnifiedMemorySearch:
             items = ranked_lists[0][offset : offset + limit]
             if min_score > 0.0:
                 items = [item for item in items if float(item.get("score", 0.0) or 0.0) >= min_score]
-            return items
+            return self._maybe_iterative_search(
+                items,
+                query=query,
+                scope=scope,
+                limit=limit,
+                trigger=trigger,
+                offset=offset,
+                min_score=min_score,
+                time_start=time_start,
+                time_end=time_end,
+                scope_override=scope_override,
+                pipeline_settings=pipeline_settings,
+                temporal_boost=iterative_temporal_boost,
+                entity_boost=iterative_entity_boost,
+                reference_time=coerced_reference_time,
+                enabled=iterative_enabled,
+                min_results=iterative_min_results,
+                allow_iterative=_allow_iterative,
+            )
 
         from core.memory.retrieval.pipeline import RetrievalPipeline
 
@@ -253,7 +466,197 @@ class UnifiedMemorySearch:
         # guards quality there. See F2.
         if min_score > 0.0 and self._rerank_was_applied(items):
             items = [item for item in items if float(item.get("score", 0.0) or 0.0) >= min_score]
-        return items
+        return self._maybe_iterative_search(
+            items,
+            query=query,
+            scope=scope,
+            limit=limit,
+            trigger=trigger,
+            offset=offset,
+            min_score=min_score,
+            time_start=time_start,
+            time_end=time_end,
+            scope_override=scope_override,
+            pipeline_settings=pipeline_settings,
+            temporal_boost=iterative_temporal_boost,
+            entity_boost=iterative_entity_boost,
+            reference_time=coerced_reference_time,
+            enabled=iterative_enabled,
+            min_results=iterative_min_results,
+            allow_iterative=_allow_iterative,
+        )
+
+    def _maybe_iterative_search(
+        self,
+        first_round: list[dict[str, Any]],
+        *,
+        query: str,
+        scope: str,
+        limit: int,
+        trigger: str,
+        offset: int,
+        min_score: float,
+        time_start: str | None,
+        time_end: str | None,
+        scope_override: tuple[str, ...] | None,
+        pipeline_settings: dict[str, object] | None,
+        temporal_boost: Any | None,
+        entity_boost: Any | None,
+        reference_time: datetime | None,
+        enabled: bool,
+        min_results: int,
+        allow_iterative: bool,
+    ) -> list[dict[str, Any]]:
+        """Run and merge an optional, strictly non-recursive second round."""
+        normalized_trigger = (trigger or "chat").strip().lower()
+        if (
+            not allow_iterative
+            or not enabled
+            or normalized_trigger not in _ITERATIVE_TRIGGERS
+            or len(first_round) >= min_results
+        ):
+            return first_round
+
+        queries = self._build_iterative_queries(query)
+        if not queries:
+            return first_round
+
+        first_meta = self.last_search_meta
+        second_round = self.search_many(
+            queries,
+            scope=scope,
+            limit=limit,
+            trigger=trigger,
+            offset=offset,
+            min_score=min_score,
+            time_start=time_start,
+            time_end=time_end,
+            scope_override=scope_override,
+            pipeline_settings=pipeline_settings,
+            temporal_boost=temporal_boost,
+            entity_boost=entity_boost,
+            reference_time=reference_time,
+            _allow_iterative=False,
+        )
+        second_meta = self.last_search_meta
+
+        best: dict[str, dict[str, Any]] = {}
+        for item in first_round:
+            key = self._result_key(item)
+            current = best.get(key)
+            if current is None or float(item.get("score", 0.0) or 0.0) > float(current.get("score", 0.0) or 0.0):
+                best[key] = item
+        for item in second_round:
+            marked = dict(item)
+            marked["retrieval_round"] = 2
+            key = self._result_key(marked)
+            current = best.get(key)
+            if current is None or float(marked.get("score", 0.0) or 0.0) > float(current.get("score", 0.0) or 0.0):
+                best[key] = marked
+
+        merged = sorted(
+            best.values(),
+            key=lambda item: float(item.get("score", 0.0) or 0.0),
+            reverse=True,
+        )[:limit]
+        self._last_search_meta = {
+            **first_meta,
+            "abstain": (bool(first_meta.get("abstain", False)) or bool(second_meta.get("abstain", False)))
+            and not merged,
+            "abstain_reason": (
+                str(second_meta.get("abstain_reason", "") or first_meta.get("abstain_reason", "")) if not merged else ""
+            ),
+            "iterative_retrieval": {
+                "attempted": True,
+                "queries": queries,
+                "second_round_results": len(second_round),
+            },
+        }
+        return merged
+
+    def _build_iterative_queries(self, query: str) -> list[str]:
+        """Build keyword/entity transformations plus one registry alias variant."""
+        queries = build_iterative_queries(query)
+        alias_query = self._alias_substitution_query(query)
+        seen = {str(query or "").strip().casefold(), *(item.casefold() for item in queries)}
+        if alias_query and alias_query.casefold() not in seen:
+            queries.append(alias_query)
+        return queries[:3]
+
+    def _alias_substitution_query(self, query: str) -> str | None:
+        """Replace matched registry surfaces with deterministic alternate aliases."""
+        try:
+            from core.memory.retrieval.entity import load_entity_alias_index
+
+            index = load_entity_alias_index(self._anima_dir)
+        except Exception:
+            logger.debug("Iterative retrieval alias index load failed", exc_info=True)
+            return None
+        if index is None:
+            return None
+
+        original = str(query or "").strip()
+        normalized = original.casefold()
+        replacements: list[tuple[str, str, str]] = []
+        used_owners: set[str] = set()
+        for surface, owner in sorted(index.alias_owner.items(), key=lambda item: (-len(item[0]), item[0])):
+            if owner in used_owners or len(surface) < 2 or surface not in normalized:
+                continue
+            alternatives = sorted(
+                (synonym for synonym in index.synonyms.get(owner, ()) if synonym.casefold() != surface.casefold()),
+                key=lambda value: (value.casefold(), value),
+            )
+            if not alternatives:
+                continue
+            replacements.append((surface, alternatives[0], owner))
+            used_owners.add(owner)
+
+        transformed = original
+        for surface, replacement, _owner in replacements:
+            transformed = re.sub(re.escape(surface), replacement, transformed, count=1, flags=re.IGNORECASE)
+        transformed = " ".join(transformed.split()).strip()
+        if not transformed or transformed.casefold() == original.casefold():
+            return None
+        return transformed
+
+    @staticmethod
+    def _build_temporal_boost_config(
+        query: str,
+        settings: dict[str, object],
+        *,
+        time_start: str | None,
+        time_end: str | None,
+        reference_time: datetime | None,
+    ) -> Any | None:
+        """Build automatic temporal ranking config from explicit or query time intent."""
+        if not bool(settings.get("temporal_boost_enabled", True)):
+            return None
+
+        from core.memory.retrieval.temporal import TemporalBoostConfig
+        from core.memory.retrieval.time_expr import TimeRange, extract_time_range
+
+        now = reference_time or datetime.now()
+        if now.tzinfo is not None:
+            now = now.replace(tzinfo=None)
+
+        explicit = _explicit_time_range(time_start=time_start, time_end=time_end)
+        resolved = explicit or extract_time_range(query, now=now)
+        if resolved is None:
+            return None
+        return TemporalBoostConfig(
+            enabled=True,
+            boost=float(settings.get("temporal_boost", 0.05) or 0.0),
+            max_boost=float(settings.get("temporal_boost_max", 0.10) or 0.0),
+            category=None,
+            time_range=TimeRange(
+                start=resolved.start,
+                end=resolved.end,
+                recency=resolved.recency,
+            ),
+            recency=resolved.recency,
+            half_life_days=float(settings.get("temporal_half_life_days", 7.0) or 7.0),
+            now=now,
+        )
 
     @staticmethod
     def _rerank_was_applied(items: list[dict[str, Any]]) -> bool:
@@ -267,7 +670,16 @@ class UnifiedMemorySearch:
         scope: str,
         limit: int,
         trigger: str,
+        offset: int = 0,
         min_score: float = 0.0,
+        time_start: str | None = None,
+        time_end: str | None = None,
+        scope_override: tuple[str, ...] | None = None,
+        pipeline_settings: dict[str, object] | None = None,
+        temporal_boost: Any | None = None,
+        entity_boost: Any | None = None,
+        reference_time: Any | None = None,
+        _allow_iterative: bool = False,
     ) -> list[dict[str, Any]]:
         """Run multiple queries and merge by stable document identity."""
         best: dict[str, dict[str, Any]] = {}
@@ -279,7 +691,16 @@ class UnifiedMemorySearch:
                 scope=scope,
                 limit=limit,
                 trigger=trigger,
+                offset=offset,
                 min_score=min_score,
+                time_start=time_start,
+                time_end=time_end,
+                scope_override=scope_override,
+                pipeline_settings=pipeline_settings,
+                temporal_boost=temporal_boost,
+                entity_boost=entity_boost,
+                reference_time=reference_time,
+                _allow_iterative=_allow_iterative,
             )
             meta = self.last_search_meta
             if bool(meta.get("abstain", False)):

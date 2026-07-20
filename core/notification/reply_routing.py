@@ -55,7 +55,7 @@ def save_notification_mapping(
     *,
     notification_text: str = "",
     callback_id: str = "",
-) -> None:
+) -> bool:
     """Persist a Slack message ts → Anima mapping for reply routing.
 
     Args:
@@ -65,11 +65,15 @@ def save_notification_mapping(
         notification_text: Original notification content (subject + body)
             so that thread replies can include context about what was notified.
         callback_id: When set, thread replies with a number resolve interactive approval.
+
+    Returns:
+        True when the mapping was written, False when the write failed
+        (e.g. read-only filesystem inside an execution sandbox).
     """
     path = _map_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a+", encoding="utf-8") as fd, file_lock(fd, exclusive=True):
             fd.seek(0)
             raw = fd.read()
@@ -93,6 +97,82 @@ def save_notification_mapping(
             fd.flush()
     except OSError:
         logger.exception("Failed to save notification mapping for ts=%s", ts)
+        return False
+    return True
+
+
+def _server_base_url() -> str:
+    import os
+
+    return os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500").rstrip("/")
+
+
+def post_notification_mapping_via_api(
+    ts: str,
+    channel: str,
+    anima_name: str,
+    *,
+    notification_text: str = "",
+    callback_id: str = "",
+    timeout: float = 10.0,
+) -> bool:
+    """Save a notification mapping through the server's internal API.
+
+    Sandboxed subprocesses (Codex workspace-write / deny profiles) cannot
+    write ``{data_dir}/run/`` directly, so they delegate the write to the
+    server process via ``POST /api/internal/notification-mapping``.
+    """
+    import httpx
+
+    try:
+        resp = httpx.post(
+            f"{_server_base_url()}/api/internal/notification-mapping",
+            json={
+                "ts": ts,
+                "channel": channel,
+                "anima_name": anima_name,
+                "notification_text": notification_text[:2000],
+                "callback_id": callback_id,
+            },
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return bool(resp.json().get("ok"))
+    except Exception:
+        logger.warning("Failed to save notification mapping via API for ts=%s", ts, exc_info=True)
+        return False
+
+
+def save_notification_mapping_resilient(
+    ts: str,
+    channel: str,
+    anima_name: str,
+    *,
+    notification_text: str = "",
+    callback_id: str = "",
+) -> bool:
+    """Save a mapping directly, falling back to the server internal API.
+
+    The direct write fails with EROFS when called from inside an execution
+    sandbox; without the fallback, Slack thread replies to the notification
+    are never routed back to the Anima (delivered as intent=observe and
+    ignored).
+    """
+    if save_notification_mapping(
+        ts,
+        channel,
+        anima_name,
+        notification_text=notification_text,
+        callback_id=callback_id,
+    ):
+        return True
+    return post_notification_mapping_via_api(
+        ts,
+        channel,
+        anima_name,
+        notification_text=notification_text,
+        callback_id=callback_id,
+    )
 
 
 def lookup_notification_mapping(thread_ts: str) -> dict[str, str] | None:

@@ -108,7 +108,9 @@ class TestStartAnima:
     async def test_start_stopped_anima(self, tmp_path):
         """Starting an anima with status 'not_found' should call start_anima."""
         animas_dir = tmp_path / "animas"
-        (animas_dir / "alice").mkdir(parents=True)
+        alice_dir = animas_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
 
         app = _make_test_app(
             animas_dir=animas_dir,
@@ -117,7 +119,13 @@ class TestStartAnima:
         app.state.supervisor.get_process_status.return_value = {
             "status": "not_found",
         }
-        app.state.supervisor.start_anima = AsyncMock()
+        supervisor = app.state.supervisor
+        supervisor.processes = {}
+
+        async def _start(name: str) -> None:
+            supervisor.processes[name] = MagicMock()
+
+        supervisor.start_anima = AsyncMock(side_effect=_start)
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -126,12 +134,14 @@ class TestStartAnima:
         assert resp.status_code == 200
         data = resp.json()
         assert data == {"status": "started", "name": "alice"}
-        app.state.supervisor.start_anima.assert_awaited_once_with("alice")
+        supervisor.start_anima.assert_awaited_once_with("alice")
 
     async def test_start_already_running_anima(self, tmp_path):
         """Starting an anima already running should return already_running without calling start."""
         animas_dir = tmp_path / "animas"
-        (animas_dir / "alice").mkdir(parents=True)
+        alice_dir = animas_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
 
         app = _make_test_app(
             animas_dir=animas_dir,
@@ -153,7 +163,7 @@ class TestStartAnima:
         app.state.supervisor.start_anima.assert_not_awaited()
 
     async def test_start_unknown_anima(self):
-        """Starting an anima not in anima_names should return 404."""
+        """Starting an anima with no disk identity should return 404."""
         app = _make_test_app(anima_names=[])
         app.state.supervisor.start_anima = AsyncMock()
 
@@ -168,7 +178,9 @@ class TestStartAnima:
     async def test_start_stopped_anima_status_stopped(self, tmp_path):
         """Starting an anima with status 'stopped' should call start_anima."""
         animas_dir = tmp_path / "animas"
-        (animas_dir / "alice").mkdir(parents=True)
+        alice_dir = animas_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
 
         app = _make_test_app(
             animas_dir=animas_dir,
@@ -177,7 +189,13 @@ class TestStartAnima:
         app.state.supervisor.get_process_status.return_value = {
             "status": "stopped",
         }
-        app.state.supervisor.start_anima = AsyncMock()
+        supervisor = app.state.supervisor
+        supervisor.processes = {}
+
+        async def _start(name: str) -> None:
+            supervisor.processes[name] = MagicMock()
+
+        supervisor.start_anima = AsyncMock(side_effect=_start)
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -186,4 +204,4 @@ class TestStartAnima:
         assert resp.status_code == 200
         data = resp.json()
         assert data == {"status": "started", "name": "alice"}
-        app.state.supervisor.start_anima.assert_awaited_once_with("alice")
+        supervisor.start_anima.assert_awaited_once_with("alice")

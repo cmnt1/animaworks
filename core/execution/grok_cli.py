@@ -230,9 +230,15 @@ class GrokCLIExecutor(BaseExecutor):
             return False
 
         from core.config.models import load_permissions
+        from core.file_access_policy import resolve_effective_denied_roots
 
         permissions_config = load_permissions(self._anima_dir)
-        denied_roots = list(getattr(permissions_config, "file_roots_denied", []))
+        denied_roots = list(
+            resolve_effective_denied_roots(
+                self._anima_dir,
+                getattr(permissions_config, "file_roots_denied", []),
+            )
+        )
         if not denied_roots and "/" in permissions_config.file_roots:
             return False
 
@@ -317,11 +323,20 @@ class GrokCLIExecutor(BaseExecutor):
                 # ACP expects EnvVariable objects, not a plain mapping
                 # (a dict fails schema validation: "did not match any variant
                 # of untagged enum McpServer").
+                # The MCP server runs with ONLY these variables — without the
+                # embed/vector URLs it silently falls back to loading
+                # SentenceTransformer models in-process (2026-07-17 OOM:
+                # a 61.8GB python3 killed the whole fleet).
                 "env": [
                     {"name": "ANIMAWORKS_ANIMA_DIR", "value": str(self._anima_dir)},
                     {"name": "ANIMAWORKS_PROJECT_DIR", "value": str(PROJECT_DIR)},
                     {"name": "PYTHONPATH", "value": str(PROJECT_DIR)},
                     {"name": "PATH", "value": os.environ.get("PATH", "/usr/bin:/bin")},
+                    *(
+                        {"name": key, "value": os.environ[key]}
+                        for key in ("ANIMAWORKS_EMBED_URL", "ANIMAWORKS_VECTOR_URL")
+                        if os.environ.get(key)
+                    ),
                 ],
             }
         ]

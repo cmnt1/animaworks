@@ -824,7 +824,7 @@ class TestCmdRestart:
 
 class TestSpawnRestartHelper:
     @patch("cli.commands.server._get_daemon_log_path")
-    def test_helper_starts_detached_process(self, mock_log_path, tmp_path):
+    def test_helper_starts_detached_process(self, mock_log_path, tmp_path, data_dir):
         from cli.commands.server import _spawn_restart_helper
 
         log_file = tmp_path / "daemon.log"
@@ -854,7 +854,7 @@ class TestSpawnRestartHelper:
         assert "os.killpg" not in helper_code
 
     @patch("cli.commands.server._get_daemon_log_path")
-    def test_helper_accepts_none_old_pid(self, mock_log_path, tmp_path):
+    def test_helper_accepts_none_old_pid(self, mock_log_path, tmp_path, data_dir):
         from cli.commands.server import _spawn_restart_helper
 
         log_file = tmp_path / "daemon.log"

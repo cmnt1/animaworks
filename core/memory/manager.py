@@ -308,6 +308,16 @@ class MemoryManager:
         return _strip_frontmatter(_resolve_at_imports(self._read_raw(path)))
 
     def read_company_vision(self) -> str:
+        from core.company import get_company
+
+        company = get_company(self.anima_dir.name, animas_dir=self.anima_dir.parent)
+        if company is not None:
+            companies_dir = (self.company_dir.parent / "companies").resolve()
+            company_dir = (companies_dir / company).resolve()
+            if company_dir.parent == companies_dir:
+                vision_path = company_dir / "vision.md"
+                if vision_path.is_file():
+                    return self._read(vision_path)
         return self._read(self.company_dir / "vision.md")
 
     def read_identity(self) -> str:
@@ -680,6 +690,8 @@ class MemoryManager:
         *,
         offset: int = 0,
         context_window: int = 128_000,
+        time_start: str | None = None,
+        time_end: str | None = None,
     ) -> list[dict]:
         """Facade: RAGMemorySearch.search_memory_text."""
         return self._rag.search_memory_text(
@@ -691,6 +703,8 @@ class MemoryManager:
             episodes_dir=self.episodes_dir,
             procedures_dir=self.procedures_dir,
             common_knowledge_dir=self.common_knowledge_dir,
+            time_start=time_start,
+            time_end=time_end,
         )
 
     @property

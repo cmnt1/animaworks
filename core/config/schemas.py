@@ -62,6 +62,7 @@ class AnimaModelConfig(BaseModel):
     """Per-anima config in config.json. Organization structure only."""
 
     supervisor: str | None = None
+    company: str | None = None
     speciality: str | None = None
     model: str | None = None
     aliases: list[str] = []
@@ -281,6 +282,8 @@ class RAGConfig(BaseModel):
     abstain_on_low_confidence: bool = True
     confidence_threshold: float = 0.35
     rrf_confidence_threshold: float = 0.02
+    iterative_retrieval_enabled: bool = True
+    iterative_min_results: int = 2
     facts_extraction_enabled: bool = True
     fact_extraction_timeout_seconds: int = Field(
         default=120,
@@ -303,9 +306,13 @@ class RAGConfig(BaseModel):
         description="Maximum similar active facts considered during legacy fact reconciliation.",
     )
     entity_registry_enabled: bool = True
-    entity_boost_enabled: bool = False
+    entity_boost_enabled: bool = True
     entity_boost: float = 0.20
     entity_boost_cap: float = 0.80
+    temporal_boost_enabled: bool = True
+    temporal_boost: float = 0.05
+    temporal_boost_max: float = 0.10
+    temporal_half_life_days: float = 7.0
     access_boost_enabled: bool = True
     access_boost_weight: float = 0.05
     access_boost_cap: float = 0.25
@@ -415,6 +422,7 @@ class ConsolidationConfig(BaseModel):
     weekly_time: str = "sun:03:00"  # Format: day:HH:MM
     duplicate_threshold: float = 0.85  # Similarity threshold for duplicate detection
     episode_retention_days: int = 30  # Days to retain uncompressed episodes
+    episode_retention_batch_limit: int = Field(default=200, ge=0)
     monthly_enabled: bool = True  # Monthly forgetting toggle
     monthly_time: str = "1:04:00"  # Format: day:HH:MM (day of month)
     indexing_enabled: bool = True  # Daily RAG indexing toggle
@@ -765,6 +773,9 @@ class HousekeepingConfig(BaseModel):
     dm_log_archive_retention_days: int = 30
     cron_log_retention_days: int = 30
     shortterm_retention_days: int = 7
+    shortterm_archive_retention_days: int = Field(default=30, ge=1)
+    shortterm_thread_gc_days: int = Field(default=30, ge=1)
+    facts_lock_stale_hours: int = Field(default=24, ge=1)
     task_results_retention_days: int = 7
     pending_failed_retention_days: int = 14
     corrupt_vectordb_keep_generations: int = Field(default=2, ge=0)
@@ -782,6 +793,7 @@ class HousekeepingConfig(BaseModel):
     suppressed_messages_max_size_mb: int = Field(default=10, ge=1)
     suppressed_messages_keep_generations: int = Field(default=5, ge=1)
     archive_superseded_retention_days: int = Field(default=7, ge=1)
+    hygiene_grace_days: int = Field(default=21, ge=1)
 
 
 class InboxConfig(BaseModel):
@@ -800,7 +812,7 @@ class HeartbeatConfig(BaseModel):
         default=30, ge=1, le=1440
     )  # heartbeat interval (config-driven, not parsed from heartbeat.md)
     current_state_max_chars: int = Field(
-        default=0,
+        default=8000,
         ge=0,
         description="Max chars for current_state.md before trim; 0 = disabled",
     )
