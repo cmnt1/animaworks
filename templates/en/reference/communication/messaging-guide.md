@@ -61,7 +61,7 @@ When resolved to an external route, `send_message` sends via API from `core/outb
 - **Try order**: First send on the resolved `channel` (`slack` or `chatwork`); on failure, follow `_build_channel_order` — if the peer has **both** Slack and Chatwork IDs, the other channel is tried in turn.
 - **Slack**: Token used by `core/outbound._send_via_slack` is **`SLACK_BOT_TOKEN__{sending_anima_name}`** from Vault / shared credentials when present. Body is formatted with `md_to_slack_mrkdwn`. If `core/tools._anima_icon_url` resolves an icon URL, it is passed to `post_message`.
   - **`[Sender name]` prefix on the body**: Only when there is **no** per-Anima bot token, the body is prefixed with `[{sending_anima_name}] ` so the DM shows who sent it. **When a token exists**, no such prefix is added; sender is shown via `username` (Anima name) and `icon_url`.
-- **Chatwork**: Post to the room via the write token (`CHATWORK_API_TOKEN_WRITE` family). If a sending Anima name is known, prefix the body with `[Sender name] ` and format with `md_to_chatwork`.
+- **Chatwork**: Post to the room via the sending Anima's own identity token (`CHATWORK_API_TOKEN__<anima_name>`). If a sending Anima name is known, prefix the body with `[Sender name] ` and format with `md_to_chatwork`.
 
 ### Basic Send Example
 

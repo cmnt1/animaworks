@@ -61,7 +61,7 @@
 - **試行順**: まず解決結果の `channel`（`slack` または `chatwork`）で送り、例外時は `_build_channel_order` に従い、相手先に Slack ID と Chatwork ルーム ID の**両方**があれば、もう一方のチャネルも順に試す。
 - **Slack**: `core/outbound._send_via_slack` が利用するトークンは、Vault／共有クレデンシャルの **`SLACK_BOT_TOKEN__{送信元Anima名}`**（あれば）。本文は `md_to_slack_mrkdwn` で Slack 向けに整形される。`core/tools._anima_icon_url` でアイコン URL が解決できれば `post_message` に渡される。
   - **本文先頭の `[送信者名]` プレフィックス**: **Anima 専用 Bot トークンが無い**場合のみ、本文の先頭に `[{送信元Anima名}] ` が付く（誰からの文面かを DM 上で示すため）。**トークンがある**場合はプレフィックスは付けず、`username`（Anima 名）と `icon_url` で送信者を表す。
-- **Chatwork**: 書き込み用トークン（`CHATWORK_API_TOKEN_WRITE` 系）経由でルームに投稿。送信元 Anima 名があれば本文先頭に `[送信者名] ` を付け、`md_to_chatwork` で整形される。
+- **Chatwork**: 送信Anima自身のidentityトークン（`CHATWORK_API_TOKEN__<Anima名>`）経由でルームに投稿。送信元 Anima 名があれば本文先頭に `[送信者名] ` を付け、`md_to_chatwork` で整形される。
 
 ### 基本的な送信例
 

@@ -34,7 +34,7 @@
 - 各チャネルで例外が出た場合は次チャネルを試し、すべて失敗すると JSON 文字列で `status: "error"`, `error_type: "DeliveryFailed"` を返す。
 - 外部チャネルが一つも組み立てられない場合は `NoChannelConfigured`（`external_messaging` の設定不足を示すメッセージ）。
 - **Slack**: Anima ごとの `SLACK_BOT_TOKEN__{anima名}`（vault / shared）があれば Bot トークンで `chat.postMessage`。無い場合はプレフィックス `[送信者名] ` を本文に付与したうえで投稿。表示名は `anima_name`（または `sender_name`）、`icon_url` は `core.tools._anima_icon_url.resolve_anima_icon_url`（`outbound` 内 `_resolve_outbound_icon`）。
-- **Chatwork**: `CHATWORK_API_TOKEN_WRITE`（`get_credential` 経由）で投稿。本文は同様に `[送信者名] ` プレフィックス可。Markdown は `md_to_chatwork` で変換。
+- **Chatwork**: 各Anima専用トークン `CHATWORK_API_TOKEN__<Anima名>`（identity解決経由。未割当のAnimaは送信不可）で投稿。本文は同様に `[送信者名] ` プレフィックス可。Markdown は `md_to_chatwork` で変換。
 
 ## 統一アウトバウンド予算（DM + Board）
 

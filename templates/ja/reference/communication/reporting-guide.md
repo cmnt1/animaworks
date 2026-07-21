@@ -47,7 +47,7 @@
 - 外部チャネルが構成されていないなどの理由で送れない場合は、ツール結果に JSON で `NoChannelConfigured` や `DeliveryFailed` が返ることがある
 - 本文は **Markdown → Slack mrkdwn / Chatwork 向け**に変換される
 - **Slack**: Anima 名に紐づく `SLACK_BOT_TOKEN__{anima名}`（Vault または共有 credentials）があれば Bot トークンで送信し、表示名（Anima 名）と **アイコン URL**（Anima アセット由来）を付与。**Bot トークンが無い**場合は本文先頭に `[送信者Anima名] ` を付けて送る
-- **Chatwork**: 書き込み用トークン（環境変数 `CHATWORK_API_TOKEN_WRITE` 等で解決）を使用。`send_message` 経由では本文先頭に `[Anima名] ` プレフィックスが付く
+- **Chatwork**: 送信Anima自身のidentityトークン（`CHATWORK_API_TOKEN__<Anima名>`）を使用。`send_message` 経由では本文先頭に `[Anima名] ` プレフィックスが付く
 
 **送信制限（実装に基づく）**:
 

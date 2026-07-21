@@ -47,7 +47,7 @@ The `to` field of `send_message` is resolved to an internal inbox or external de
 - If delivery cannot proceed (e.g. external channel not configured), the tool result may return JSON such as `NoChannelConfigured` or `DeliveryFailed`
 - Body text is converted from **Markdown to Slack mrkdwn / Chatwork**-appropriate format
 - **Slack**: If `SLACK_BOT_TOKEN__{anima_name}` (Vault or shared credentials) exists for the Anima, send with the bot token and apply display name (Anima name) and **icon URL** (from Anima assets). **If there is no bot token**, prepend `[SenderAnimaName] ` to the body before sending
-- **Chatwork**: Uses the write token (resolved via environment variables such as `CHATWORK_API_TOKEN_WRITE`, etc.). Via `send_message`, the body is prefixed with `[AnimaName] `
+- **Chatwork**: Uses the sending Anima's own identity token (`CHATWORK_API_TOKEN__<anima_name>`). Via `send_message`, the body is prefixed with `[AnimaName] `
 
 **Send limits (implementation-based)**:
 
