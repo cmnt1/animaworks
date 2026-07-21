@@ -80,8 +80,6 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/_anima_inbox.py": 4,
     # MD section names used for parsing (基本情報, 人格, etc.)
     "core/anima_factory.py": 8,
-    # label "コマンド:" in audit output
-    "core/audit.py": 1,
     # error messages returned to Anima (GlobalOutboundLimitExceeded etc.)
     "core/cascade_limiter.py": 4,
     # deprecation warning message
