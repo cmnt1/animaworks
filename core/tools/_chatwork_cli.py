@@ -16,9 +16,15 @@ import sys
 import time
 from pathlib import Path
 
-from core.tools._base import ToolConfigError, get_credential, logger
-from core.tools._chatwork_cache import DEFAULT_CACHE_DIR, MessageCache, _format_timestamp
+from core.tools._base import ToolConfigError, logger
+from core.tools._chatwork_cache import (
+    DEFAULT_CACHE_DIR,
+    MessageCache,
+    _format_timestamp,
+    resolve_cache_db_path,
+)
 from core.tools._chatwork_client import ChatworkClient
+from core.tools._chatwork_identity import check_write_allowed, resolve_identity
 from core.tools._chatwork_markdown import md_to_chatwork
 from core.tools._comm_cli import run_cli_safely
 
@@ -92,7 +98,8 @@ animaworks-tool chatwork tasks <ルーム名またはID> [--done]
 animaworks-tool chatwork files <ルーム名またはID> [--account-id ID]
 animaworks-tool chatwork download <ルーム名またはID> <file_id> [-o 保存先パス]
 animaworks-tool chatwork stats
-```"""
+```
+全サブコマンドで `--as <identity>` を指定すると、委任されたidentityとして実行できます。"""
 
 
 # ── CLI Main ─────────────────────────────────────────────────
@@ -201,6 +208,14 @@ def cli_main(argv: list[str] | None = None) -> None:
         # stats
         sub.add_parser("stats", help="Show cache statistics")
 
+        for command_parser in sub.choices.values():
+            command_parser.add_argument(
+                "--as",
+                dest="as_identity",
+                metavar="IDENTITY",
+                help="Use a delegated Chatwork identity",
+            )
+
         args = parser.parse_args(argv)
 
         if not args.command:
@@ -208,29 +223,28 @@ def cli_main(argv: list[str] | None = None) -> None:
             sys.exit(0)
 
         try:
-            client = ChatworkClient()
+            identity = resolve_identity(args.as_identity)
+            if args.command in {"send", "delete", "task"}:
+                check_write_allowed(args.as_identity)
+            client = ChatworkClient(api_token=identity.token)
         except ToolConfigError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)
 
         if args.command == "send":
-            write_token = get_credential("chatwork_write", "chatwork", env_var="CHATWORK_API_TOKEN_WRITE")
-            write_client = ChatworkClient(api_token=write_token)
             room_id = client.resolve_room_id(args.room)
             message = md_to_chatwork(" ".join(args.message))
-            result = write_client.post_message(room_id, message)
+            result = client.post_message(room_id, message)
             if result and "message_id" in result:
                 print(f"Sent (message_id: {result['message_id']})")
             else:
                 print(f"Result: {result}")
 
         elif args.command == "delete":
-            write_token = get_credential("chatwork_write", "chatwork", env_var="CHATWORK_API_TOKEN_WRITE")
-            write_client = ChatworkClient(api_token=write_token)
             room_id = client.resolve_room_id(args.room)
             message_id = args.message_id
             # Ownership check
-            my_info = write_client.me()
+            my_info = client.me()
             my_account_id = str(my_info["account_id"])
             msg = client.get_message(room_id, message_id)
             msg_account_id = str(msg["account"]["account_id"])
@@ -243,12 +257,12 @@ def cli_main(argv: list[str] | None = None) -> None:
                     file=sys.stderr,
                 )
                 sys.exit(1)
-            write_client.delete_message(room_id, message_id)
+            client.delete_message(room_id, message_id)
             print(f"Deleted message {message_id} from room {room_id}")
 
         elif args.command == "messages":
             room_id = client.resolve_room_id(args.room)
-            cache = MessageCache()
+            cache = MessageCache(db_path=resolve_cache_db_path(client))
             try:
                 msgs = client.get_messages(room_id, force=True)
                 if msgs:
@@ -273,7 +287,7 @@ def cli_main(argv: list[str] | None = None) -> None:
                 cache.close()
 
         elif args.command == "search":
-            cache = MessageCache()
+            cache = MessageCache(db_path=resolve_cache_db_path(client))
             try:
                 keyword = " ".join(args.keyword)
                 room_id = None
@@ -298,7 +312,7 @@ def cli_main(argv: list[str] | None = None) -> None:
                 cache.close()
 
         elif args.command == "unreplied":
-            cache = MessageCache()
+            cache = MessageCache(db_path=resolve_cache_db_path(client))
             try:
                 my_info = client.me()
                 my_id = str(my_info["account_id"])
@@ -353,7 +367,7 @@ def cli_main(argv: list[str] | None = None) -> None:
                 cache.close()
 
         elif args.command == "rooms":
-            cache = MessageCache()
+            cache = MessageCache(db_path=resolve_cache_db_path(client))
             try:
                 rooms_data = client.rooms()
                 for room in rooms_data:
@@ -368,7 +382,7 @@ def cli_main(argv: list[str] | None = None) -> None:
                 cache.close()
 
         elif args.command == "sync":
-            cache = MessageCache()
+            cache = MessageCache(db_path=resolve_cache_db_path(client))
             try:
                 if args.room:
                     room_id = client.resolve_room_id(args.room)
@@ -491,7 +505,7 @@ def cli_main(argv: list[str] | None = None) -> None:
                 print()
 
         elif args.command == "mentions":
-            cache = MessageCache()
+            cache = MessageCache(db_path=resolve_cache_db_path(client))
             try:
                 my_info = client.me()
                 my_id = str(my_info["account_id"])
@@ -586,7 +600,7 @@ def cli_main(argv: list[str] | None = None) -> None:
             print(f"done ({size:,} bytes)")
 
         elif args.command == "stats":
-            cache = MessageCache()
+            cache = MessageCache(db_path=resolve_cache_db_path(client))
             try:
                 stats = cache.get_stats()
                 print("Cache statistics:")

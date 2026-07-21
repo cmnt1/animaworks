@@ -43,12 +43,24 @@ def collect_chatwork() -> list[ExternalTask]:
     from core.external_tasks.collector import CredentialNotFoundError
 
     try:
+        from core.tools._base import resolve_env_style_credential
         from core.tools._chatwork_client import ChatworkClient
     except ImportError as exc:
         raise CredentialNotFoundError(f"Chatwork dependencies unavailable: {exc}") from exc
 
+    # Human-owner task / unreplied collector — always use owner identity.
     try:
-        client = ChatworkClient()
+        token = resolve_env_style_credential("CHATWORK_API_TOKEN__owner")
+    except Exception as exc:
+        raise CredentialNotFoundError(str(exc)) from exc
+    if not token:
+        raise CredentialNotFoundError(
+            "Chatwork owner token not registered. "
+            "Register CHATWORK_API_TOKEN__owner in the vault."
+        )
+
+    try:
+        client = ChatworkClient(api_token=token)
     except ToolConfigError as exc:
         raise CredentialNotFoundError(str(exc)) from exc
     except ImportError as exc:
@@ -101,7 +113,7 @@ def _collect_unreplied_mentions(client: Any) -> list[ExternalTask]:
     tasks still surface.
     """
     try:
-        from core.tools._chatwork_cache import MessageCache
+        from core.tools._chatwork_cache import MessageCache, resolve_cache_db_path
     except ImportError:
         logger.debug("Chatwork MessageCache unavailable; skipping unreplied mentions")
         return []
@@ -115,7 +127,16 @@ def _collect_unreplied_mentions(client: Any) -> list[ExternalTask]:
         logger.warning("Chatwork me() failed; skipping unreplied mentions: %s", exc)
         return []
 
-    cache = MessageCache()
+    try:
+        db_path = resolve_cache_db_path(client)
+    except Exception as exc:
+        logger.warning(
+            "Chatwork cache path resolution failed; skipping unreplied mentions: %s",
+            exc,
+        )
+        return []
+
+    cache = MessageCache(db_path)
     try:
         mentions = cache.find_unreplied(my_account_id, limit=_MENTION_LIMIT)
         cutoff = int(time.time() - timedelta(days=_LOOKBACK_DAYS).total_seconds())

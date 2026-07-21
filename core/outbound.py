@@ -228,7 +228,7 @@ def send_external(
             if channel == "slack":
                 return _send_via_slack(resolved.slack_user_id, content, sender_name, anima_name)
             elif channel == "chatwork":
-                return _send_via_chatwork(resolved.chatwork_room_id, content, sender_name)
+                return _send_via_chatwork(resolved.chatwork_room_id, content, sender_name, anima_name)
             elif channel == "discord":
                 return _send_via_discord(resolved.discord_user_id, content, sender_name, anima_name)
             else:
@@ -356,17 +356,22 @@ def _send_via_discord(user_id: str, content: str, sender_name: str, anima_name: 
     )
 
 
-def _send_via_chatwork(room_id: str, content: str, sender_name: str) -> str:
+def _send_via_chatwork(
+    room_id: str,
+    content: str,
+    sender_name: str,
+    anima_name: str = "",
+) -> str:
     """Send a message via Chatwork API."""
-    from core.tools._base import get_credential
+    from core.tools._chatwork_identity import resolve_identity
     from core.tools.chatwork import ChatworkClient, md_to_chatwork
 
     prefix = f"[{sender_name}] " if sender_name else ""
     body = f"{prefix}{content}"
     body = md_to_chatwork(body)
 
-    write_token = get_credential("chatwork_write", "chatwork", env_var="CHATWORK_API_TOKEN_WRITE")
-    client = ChatworkClient(api_token=write_token)
+    identity = resolve_identity(anima_dir=anima_name or None)
+    client = ChatworkClient(api_token=identity.token)
     response = client.post_message(room_id, body)
     message_id = response.get("message_id", "") if response else ""
 
