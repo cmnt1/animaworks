@@ -46,34 +46,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "タスク実行開始",
         "en": "Task execution started",
     },
-    "activity_report.future_date": {
-        "ja": "未来の日付は指定できません",
-        "en": "Future dates are not allowed",
-    },
-    "activity_report.invalid_date": {
-        "ja": "日付の形式が不正です（YYYY-MM-DD）",
-        "en": "Invalid date format (YYYY-MM-DD)",
-    },
-    "activity_report.invalid_model": {
-        "ja": "指定されたモデルは利用できません",
-        "en": "The specified model is not available",
-    },
-    "activity_report.llm_system_prompt": {
-        "ja": (
-            "あなたは組織活動レポーターです。\n以下の「組織タイムライン」を読み、1日の活動をストーリー仕立てのMarkdownレポートにまとめてください。\n\nタイムラインのフォーマット:\n- [HH:MM] 名前 アイコン イベント種別 の形式で時系列に並んでいます\n- 末尾にツール使用サマリーと統計があります\n\n要件:\n- 見出し: 日付 + 組織活動レポート\n- ハイライト: 最も重要な成果を3-5個\n- ストーリー形式: 時系列に沿って「誰が」「何をして」「どうなったか」を自然な文章で記述\n- 関連する出来事（指示→実行→完了など）を因果関係でつなげて読みやすくする\n- エラーや問題があれば「課題・注意事項」セクションに記載\n- 末尾の統計データを引用して全体像を補足\n- 日本語で出力"
-        ),
-        "en": (
-            'You are an organisational activity reporter.\nRead the \'Org Timeline\' below and produce a narrative-style Markdown report of the day\'s activities.\n\nTimeline format:\n- Each line is [HH:MM] name icon event_type, sorted chronologically\n- Tool usage summary and statistics are at the bottom\n\nRequirements:\n- Heading: Date + Organisation Activity Report\n- Highlights: 3-5 most important outcomes\n- Narrative style: describe chronologically "who" "did what" "with what result" in natural prose\n- Connect related events (instruction → execution → completion) with causal links for readability\n- Include an "Issues & Notes" section for errors or problems\n- Cite the statistics at the bottom to provide the big picture\n- Output in English'
-        ),
-    },
-    "activity_report.llm_user_prompt": {
-        "ja": ("以下の組織タイムラインに基づいて活動レポートを生成してください。\n\n{data}"),
-        "en": ("Generate an activity report based on the following org timeline.\n\n{data}"),
-    },
-    "activity_report.not_found": {
-        "ja": "この日付のレポートはキャッシュされていません",
-        "en": "No cached report found for this date",
-    },
     "asset_reconciler.llm_user_prompt": {
         "ja": (
             "以下のキャラクターシートから外見情報を読み取り、NovelAI 互換の画像生成タグに変換してください:\n\n{character_text}"

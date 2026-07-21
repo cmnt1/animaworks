@@ -18,6 +18,7 @@ export const REDIRECTS = {
   "/setup": "#/settings",
   "/memory": "#/animas",
   "/assets": "#/animas",
+  "/activity-report": "#/",
 };
 
 /**
@@ -129,7 +130,7 @@ function registerRoutes() {
   // /memory removed — redirected to #/animas (see REDIRECTS)
   // /assets removed — redirected to #/animas (see REDIRECTS)
   routes["/logs"] = () => import("../pages/logs.js" + _v);
-  routes["/activity-report"] = () => import("../pages/activity-report.js" + _v);
+  // /activity-report removed — redirected to #/ (see REDIRECTS)
   routes["/settings"] = () => import("../pages/settings.js" + _v);
 }
 

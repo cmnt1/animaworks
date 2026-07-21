@@ -5,7 +5,6 @@ from __future__ import annotations
 # SPDX-License-Identifier: Apache-2.0
 from fastapi import APIRouter
 
-from server.routes.activity_report import create_activity_report_router
 from server.routes.animas import create_animas_router
 from server.routes.approve import create_approve_router
 from server.routes.assets import create_assets_router
@@ -51,7 +50,6 @@ def create_router() -> APIRouter:
     api.include_router(create_internal_router())
     api.include_router(create_auth_router())
     api.include_router(create_users_router())
-    api.include_router(create_activity_report_router())
     api.include_router(create_external_tasks_router())
     api.include_router(create_usage_router())
     api.include_router(create_webhooks_router())

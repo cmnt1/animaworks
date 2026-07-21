@@ -181,7 +181,7 @@ animaworks/
 │   │   ├── internal.py        # Internal API (embed/vector, CLI integration notifications, message fetch)
 │   │   ├── auth.py            # UI session authentication
 │   │   ├── setup.py           # First-run setup API (`/api/setup/*`)
-│   │   ├── activity_report.py, brainstorm.py
+│   │   ├── brainstorm.py
 │   │   ├── external_tasks.py, team_presets.py
 │   │   ├── chat_ui_state.py, tool_prompts.py, users.py
 │   │   ├── system.py, assets.py, config_routes.py
