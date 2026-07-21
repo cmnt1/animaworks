@@ -1,6 +1,6 @@
 // ── Activity page (tab host) ─────────────────
-// Tabs: timeline (default) | report | logs
-// Hash routes: #/activity | #/activity/report | #/activity/logs
+// Tabs: timeline (default) | logs
+// Hash routes: #/activity | #/activity/logs
 
 import { createPageTabs } from "../shared/page-tabs.js";
 import { t } from "/shared/i18n.js";
@@ -13,7 +13,6 @@ let _container = null;
 /** Tab definitions: id used in subPath (timeline is default empty). */
 const _TABS = [
   { id: "timeline", labelKey: "activity.tab_timeline" },
-  { id: "report", labelKey: "activity.tab_report" },
   { id: "logs", labelKey: "activity.tab_logs" },
 ];
 
@@ -21,13 +20,12 @@ const _TABS = [
  * Resolve activity tab id from router subPath.
  * Pure helper — exported for unit tests.
  * @param {string} [subPath]
- * @returns {"timeline"|"report"|"logs"}
+ * @returns {"timeline"|"logs"}
  */
 export function resolveActivityTab(subPath) {
   const head = String(subPath || "")
     .split("/")
     .filter(Boolean)[0] || "";
-  if (head === "report") return "report";
   if (head === "logs") return "logs";
   return "timeline";
 }
@@ -38,7 +36,6 @@ export function resolveActivityTab(subPath) {
  * @returns {string}
  */
 export function buildActivityTabHash(tabId) {
-  if (tabId === "report") return "#/activity/report";
   if (tabId === "logs") return "#/activity/logs";
   return "#/activity";
 }
@@ -49,7 +46,6 @@ export function buildActivityTabHash(tabId) {
  * @returns {() => Promise<{ render: Function, destroy?: Function }>}
  */
 export function activityTabLoader(tabId) {
-  if (tabId === "report") return () => import("./activity-report.js");
   if (tabId === "logs") return () => import("./logs.js");
   return () => import("./activity-timeline.js");
 }

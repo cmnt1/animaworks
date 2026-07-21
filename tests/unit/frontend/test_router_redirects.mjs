@@ -56,8 +56,8 @@ describe("REDIRECTS table", () => {
     assert.equal(REDIRECTS["/assets"], "#/animas");
   });
 
-  it("maps /activity-report to #/activity/report", () => {
-    assert.equal(REDIRECTS["/activity-report"], "#/activity/report");
+  it("maps /activity-report to #/activity", () => {
+    assert.equal(REDIRECTS["/activity-report"], "#/activity");
   });
 
   it("maps /logs to #/activity/logs", () => {
@@ -98,8 +98,8 @@ describe("resolveRedirect", () => {
     assert.equal(resolveRedirect("/assets/anything"), "#/animas");
   });
 
-  it("redirects /activity-report to #/activity/report", () => {
-    assert.equal(resolveRedirect("/activity-report"), "#/activity/report");
+  it("redirects /activity-report to #/activity", () => {
+    assert.equal(resolveRedirect("/activity-report"), "#/activity");
   });
 
   it("redirects /logs and nested paths to #/activity/logs", () => {

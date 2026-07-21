@@ -161,7 +161,6 @@ animaworks start
 - **メモリ** — 各Animaのエピソード・知識・手順書などをブラウズ
 - **ログ** — ログ閲覧
 - **アセット** — 画像・3Dなどキャラクターアセットの管理
-- **アクティビティレポート** — 組織横断の活動データに基づく監査・LLMによる日次ナラティブ生成（キャッシュ付き）
 - **プロンプト設定** — ツール実行まわりのプロンプト調整
 - **AIブレスト** — 複数の視点プリセット（現実主義・挑戦者など）でアイデアを広げるLLMセッション
 - **チームビルダー / チーム編集** — 業種・目的に沿ったプリセットから複数Animaのロール構成を組み立て・調整
@@ -466,7 +465,7 @@ animaworks/
 │   ├── reload_manager.py   # 設定ホットリロード
 │   ├── slack_socket.py     # Slack Socket Mode
 │   ├── localhost.py        # ローカル信頼リクエスト判定
-│   ├── routes/          # REST/WebSocketルート（chat, room, voice, activity_report, brainstorm, team_presets, …）
+│   ├── routes/          # REST/WebSocketルート（chat, room, voice, brainstorm, team_presets, …）
 │   └── static/          # ダッシュボード（modules/, pages/, styles/, i18n/）、setup/（多言語ウィザード）、workspace/（3Dクライアント）
 └── templates/           # 初期化テンプレート（ja / en）
 ```

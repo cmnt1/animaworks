@@ -45,9 +45,8 @@ describe("resolveActivityTab", () => {
     assert.equal(resolveActivityTab(null), "timeline");
   });
 
-  it("maps report subPath to report tab", () => {
-    assert.equal(resolveActivityTab("report"), "report");
-    assert.equal(resolveActivityTab("report/extra"), "report");
+  it("maps removed report subPath to timeline tab", () => {
+    assert.equal(resolveActivityTab("report"), "timeline");
   });
 
   it("maps logs subPath to logs tab", () => {
@@ -64,7 +63,6 @@ describe("resolveActivityTab", () => {
 describe("buildActivityTabHash", () => {
   it("builds hashes for each tab", () => {
     assert.equal(buildActivityTabHash("timeline"), "#/activity");
-    assert.equal(buildActivityTabHash("report"), "#/activity/report");
     assert.equal(buildActivityTabHash("logs"), "#/activity/logs");
   });
 });
@@ -77,9 +75,6 @@ describe("activityTabLoader (subPath → module path)", () => {
     assert.match(String(fn), /activity-timeline\.js/);
   });
 
-  it("loads activity-report for report tab", () => {
-    assert.match(String(activityTabLoader("report")), /activity-report\.js/);
-  });
 
   it("loads logs for logs tab", () => {
     assert.match(String(activityTabLoader("logs")), /logs\.js/);

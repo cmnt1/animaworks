@@ -233,7 +233,6 @@ Real-time replies via SSE streaming. Past conversations load with infinite scrol
 | **Memory browser** (`#/memory`) | Browse memory files |
 | **Logs** (`#/logs`) | Log viewer |
 | **Assets** (`#/assets`) | Image / 3D pipelines, step-wise regeneration, uploads, expression variants (`server/routes/assets.py`) |
-| **Activity report** (`#/activity-report`) | Cross-org activity by date with LLM-generated narrative (cache + SSE stream) |
 | **Tool prompts** (`#/tool-prompts`) | Tool descriptions, dynamic guides, section edits, per-Anima system prompt preview |
 | **AI brainstorm** (`#/brainstorm`) | Multi-persona discussion (realist, challenger, etc.) |
 | **Team builder** (`#/team-builder` / `#/team-edit`) | Build and edit role layout and initial task ideas from industry × goal presets (`server/routes/team_presets.py`) |

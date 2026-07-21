@@ -473,7 +473,7 @@ animaworks/
 │   ├── reload_manager.py   # Config hot reload
 │   ├── slack_socket.py     # Slack Socket Mode
 │   ├── localhost.py        # Local trusted-request detection
-│   ├── routes/          # REST/WebSocket routes (chat, room, voice, activity_report, brainstorm, team_presets, …)
+│   ├── routes/          # REST/WebSocket routes (chat, room, voice, brainstorm, team_presets, …)
 │   └── static/          # Dashboard (modules/, pages/, styles/, i18n/), setup/ (multilingual wizard), workspace/ (3D client)
 └── templates/           # Initialization templates (ja / en / ko)
 ```

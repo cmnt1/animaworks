@@ -182,7 +182,7 @@ animaworks/
 │   │   ├── internal.py        # 内部 API（埋め込み/ベクトル、CLI 連携通知、メッセージ取得）
 │   │   ├── auth.py            # UI セッション認証
 │   │   ├── setup.py           # 初回セットアップ API（`/api/setup/*`）
-│   │   ├── activity_report.py, brainstorm.py
+│   │   ├── brainstorm.py
 │   │   ├── external_tasks.py, team_presets.py
 │   │   ├── chat_ui_state.py, tool_prompts.py, users.py
 │   │   ├── system.py, assets.py, config_routes.py
