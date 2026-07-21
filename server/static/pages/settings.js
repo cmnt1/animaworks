@@ -1,4 +1,4 @@
-// ── Settings Page (tab host: general | users) ─
+// ── Settings Page (tab host: general | activity | api | users) ─
 import { api } from "../modules/api.js";
 import { escapeHtml } from "../modules/state.js";
 import { createPageTabs } from "../shared/page-tabs.js";
@@ -16,19 +16,21 @@ let _activeTab = "general";
 
 const _TABS = [
   { id: "general", labelKey: "settings.tab_general" },
+  { id: "activity", labelKey: "settings.tab_activity" },
+  { id: "api", labelKey: "settings.tab_api" },
   { id: "users", labelKey: "settings.tab_users" },
 ];
 
 /**
  * Resolve settings tab from router subPath.
  * @param {string} [subPath]
- * @returns {"general"|"users"}
+ * @returns {"general"|"activity"|"api"|"users"}
  */
 export function resolveSettingsTab(subPath) {
   const head = String(subPath || "")
     .split("/")
     .filter(Boolean)[0] || "";
-  return head === "users" ? "users" : "general";
+  return _TABS.some((tab) => tab.id === head) ? head : "general";
 }
 
 /**
@@ -36,7 +38,9 @@ export function resolveSettingsTab(subPath) {
  * @returns {string}
  */
 export function buildSettingsTabHash(tabId) {
-  return tabId === "users" ? "#/settings/users" : "#/settings";
+  return tabId === "general" || !_TABS.some((tab) => tab.id === tabId)
+    ? "#/settings"
+    : `#/settings/${tabId}`;
 }
 
 function _destroyActiveTab() {
@@ -122,13 +126,20 @@ export async function render(container, { subPath } = {}) {
     return;
   }
 
+  if (_activeTab === "activity") {
+    _renderActivity(content);
+    return;
+  }
+
+  if (_activeTab === "api") {
+    _renderApiAuth(content);
+    return;
+  }
+
   _renderGeneral(content);
 }
 
-function _renderGeneral(container) {
-  const currentMode = getDisplayMode();
-  const currentTheme = localStorage.getItem("aw-theme") || "default";
-
+function _renderApiAuth(container) {
   container.innerHTML = `
     <section class="settings-section" id="settingsApiAuthSection">
       <h3 class="settings-section-title">${t("settings.api_auth.title")}</h3>
@@ -159,7 +170,17 @@ function _renderGeneral(container) {
         <div class="loading-placeholder">${t("common.loading")}</div>
       </div>
     </section>
+  `;
 
+  _loadApiKeys();
+  _loadAnthropicAuthSettings();
+  _loadOpenAIAuthSettings();
+  _loadCliToolsAuth();
+  _loadAuthSettings();
+}
+
+function _renderActivity(container) {
+  container.innerHTML = `
     <section class="settings-section">
       <h3 class="settings-section-title">${t("settings.activity_level.title")}</h3>
       <p class="settings-section-desc">${t("settings.activity_level.desc")}</p>
@@ -198,7 +219,16 @@ function _renderGeneral(container) {
         </div>
       </div>
     </section>
+  `;
 
+  _initActivityLevel(container);
+}
+
+function _renderGeneral(container) {
+  const currentMode = getDisplayMode();
+  const currentTheme = localStorage.getItem("aw-theme") || "default";
+
+  container.innerHTML = `
     <section class="settings-section">
       <h3 class="settings-section-title">${t("settings.mode.title")}</h3>
       <p class="settings-section-desc">${t("settings.mode.desc")}</p>
@@ -278,9 +308,6 @@ function _renderGeneral(container) {
     try { localStorage.setItem(_LS_ENTER_SEND, e.target.checked ? "true" : "false"); } catch { /* */ }
   });
 
-  // Activity Level
-  _initActivityLevel(container);
-
   // Font Size
   const fontSlider = container.querySelector("#fontSizeSlider");
   const fontValue  = container.querySelector("#fontSizeValue");
@@ -293,13 +320,6 @@ function _renderGeneral(container) {
   container.querySelectorAll("[data-font]").forEach(btn => {
     btn.addEventListener("click", () => _applyFont(Number(btn.dataset.font)));
   });
-
-  // API & Authentication (migrated from SPA #/setup)
-  _loadApiKeys();
-  _loadAnthropicAuthSettings();
-  _loadOpenAIAuthSettings();
-  _loadCliToolsAuth();
-  _loadAuthSettings();
 }
 
 export function destroy() {
@@ -700,7 +720,8 @@ async function _loadApiKeys() {
   }
 }
 
-// ── Auth Settings (password / users) ───────
+// ── Auth Settings (mode summary) ───────────
+// Password change / user management live in the Users tab (#/settings/users).
 
 async function _loadAuthSettings() {
   const el = document.getElementById("authSettings");
@@ -708,172 +729,20 @@ async function _loadAuthSettings() {
 
   try {
     const me = await api("/api/auth/me");
-    const users = await api("/api/users");
-
-    let html = "";
 
     const modeLabel = {
       local_trust: t("settings.api_auth.auth_local_trust"),
       password: t("settings.api_auth.auth_password"),
       multi_user: t("settings.api_auth.auth_multi_user"),
     };
-    html += `<div style="margin-bottom: 1rem;">
-      <strong>${t("settings.api_auth.auth_mode")}:</strong> <code>${escapeHtml(modeLabel[me.auth_mode] || me.auth_mode || t("common.unknown"))}</code>
-    </div>`;
-
-    const isInitial = !me.has_password;
-    const skipCurrentPw = me.auth_mode === "local_trust";
-    html += `
-      <div style="margin-bottom: 1.5rem;">
-        <h4 style="margin-bottom: 0.5rem;">${isInitial ? t("settings.api_auth.password_set") : t("settings.api_auth.password_change")}</h4>
-        <form id="changePasswordForm" style="display:flex; flex-direction:column; gap:0.5rem; max-width:300px;">
-          ${isInitial || skipCurrentPw ? "" : `<input type="password" id="currentPassword" placeholder="${t("settings.api_auth.password_current")}" required>`}
-          <input type="password" id="newPassword" placeholder="${t("settings.api_auth.password_new")}" required>
-          <input type="password" id="confirmPassword" placeholder="${t("settings.api_auth.password_confirm")}" required>
-          <div id="pwChangeResult" class="login-error hidden"></div>
-          <button type="submit" class="btn-login" style="width:auto;">${isInitial ? t("settings.api_auth.password_set_btn") : t("settings.api_auth.password_change_btn")}</button>
-        </form>
+    el.innerHTML = `
+      <div style="margin-bottom: 0.75rem;">
+        <strong>${t("settings.api_auth.auth_mode")}:</strong> <code>${escapeHtml(modeLabel[me.auth_mode] || me.auth_mode || t("common.unknown"))}</code>
       </div>
+      <p style="margin:0; color:var(--text-secondary, #666); font-size:0.85rem;">
+        <a href="#/settings/users">${t("settings.api_auth.manage_in_users")}</a>
+      </p>
     `;
-
-    if (me.role === "owner") {
-      html += `
-        <div style="margin-bottom: 1.5rem;">
-          <h4 style="margin-bottom: 0.5rem;">${t("settings.api_auth.user_management")}</h4>
-          <table class="data-table">
-            <thead><tr><th>${t("settings.api_auth.user_username")}</th><th>${t("settings.api_auth.user_displayname")}</th><th>${t("settings.api_auth.user_role")}</th><th>${t("settings.api_auth.user_actions")}</th></tr></thead>
-            <tbody>
-              ${users.map(u => `
-                <tr>
-                  <td>${escapeHtml(u.username)}</td>
-                  <td>${escapeHtml(u.display_name)}</td>
-                  <td>${escapeHtml(u.role)}</td>
-                  <td>${u.role !== "owner" ? `<button class="btn-delete-user" data-user="${escapeHtml(u.username)}" style="color:#ef4444;cursor:pointer;border:none;background:none;">${t("settings.api_auth.user_delete")}</button>` : "-"}</td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
-        </div>
-
-        <div>
-          <h4 style="margin-bottom: 0.5rem;">${t("settings.api_auth.user_add")}</h4>
-          <form id="addUserForm" style="display:flex; flex-direction:column; gap:0.5rem; max-width:300px;">
-            <input type="text" id="newUsername" placeholder="${t("settings.api_auth.user_username")}" required>
-            <input type="text" id="newDisplayName" placeholder="${t("settings.api_auth.user_displayname")}">
-            <input type="password" id="newUserPassword" placeholder="${t("settings.api_auth.user_password")}" required>
-            <div id="addUserResult" class="login-error hidden"></div>
-            <button type="submit" class="btn-login" style="width:auto;">${t("settings.api_auth.user_add_btn")}</button>
-          </form>
-        </div>
-      `;
-    }
-
-    el.innerHTML = html;
-
-    const pwForm = document.getElementById("changePasswordForm");
-    if (pwForm) {
-      pwForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const result = document.getElementById("pwChangeResult");
-        const newPw = document.getElementById("newPassword").value;
-        const confirmPw = document.getElementById("confirmPassword").value;
-
-        if (newPw !== confirmPw) {
-          result.textContent = t("settings.api_auth.password_mismatch");
-          result.classList.remove("hidden");
-          return;
-        }
-
-        try {
-          const curPwEl = document.getElementById("currentPassword");
-          const res = await fetch(`${basePath}/api/users/me/password`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            credentials: "same-origin",
-            body: JSON.stringify({
-              current_password: curPwEl ? curPwEl.value : "",
-              new_password: newPw,
-            }),
-          });
-          const data = await res.json();
-          if (res.ok) {
-            const willReload = isInitial || skipCurrentPw;
-            result.textContent = willReload ? t("settings.api_auth.password_set_success") : t("settings.api_auth.password_change_success");
-            result.style.color = "#22c55e";
-            result.classList.remove("hidden");
-            pwForm.reset();
-            if (willReload) setTimeout(() => location.reload(), 1000);
-          } else {
-            result.style.color = "#ef4444";
-            result.textContent = data.error || t("settings.api_auth.password_failed");
-            result.classList.remove("hidden");
-          }
-        } catch {
-          result.style.color = "#ef4444";
-          result.textContent = t("settings.api_auth.network_error");
-          result.classList.remove("hidden");
-        }
-      });
-    }
-
-    el.querySelectorAll(".btn-delete-user").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const username = btn.dataset.user;
-        if (!confirm(t("settings.api_auth.user_delete_confirm", { username }))) return;
-
-        try {
-          const res = await fetch(`${basePath}/api/users/${username}`, {
-            method: "DELETE",
-            credentials: "same-origin",
-          });
-          if (res.ok) {
-            _loadAuthSettings();
-          } else {
-            const data = await res.json();
-            alert(data.error || t("settings.api_auth.user_delete_failed"));
-          }
-        } catch {
-          alert(t("settings.api_auth.network_error"));
-        }
-      });
-    });
-
-    const addForm = document.getElementById("addUserForm");
-    if (addForm) {
-      addForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const result = document.getElementById("addUserResult");
-
-        try {
-          const res = await fetch(`${basePath}/api/users`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "same-origin",
-            body: JSON.stringify({
-              username: document.getElementById("newUsername").value.trim(),
-              display_name: document.getElementById("newDisplayName").value.trim(),
-              password: document.getElementById("newUserPassword").value,
-            }),
-          });
-          const data = await res.json();
-          if (res.ok) {
-            result.textContent = t("settings.api_auth.user_add_success", { username: data.username });
-            result.style.color = "#22c55e";
-            result.classList.remove("hidden");
-            addForm.reset();
-            _loadAuthSettings();
-          } else {
-            result.style.color = "#ef4444";
-            result.textContent = data.error || t("settings.api_auth.user_add_failed");
-            result.classList.remove("hidden");
-          }
-        } catch {
-          result.style.color = "#ef4444";
-          result.textContent = t("settings.api_auth.network_error");
-          result.classList.remove("hidden");
-        }
-      });
-    }
   } catch {
     el.innerHTML = `<div class="loading-placeholder">${t("settings.api_auth.auth_fetch_failed")}</div>`;
   }
