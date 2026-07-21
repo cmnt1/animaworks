@@ -10,13 +10,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.tools.chatwork import cli_main, MessageCache
+from core.tools.chatwork import MessageCache, cli_main
 
 
 @pytest.fixture(autouse=True)
 def _mock_chatwork_env(monkeypatch, tmp_path):
     """Provide mocked Chatwork environment for all E2E tests."""
-    monkeypatch.setenv("CHATWORK_API_TOKEN", "test-token")
+    monkeypatch.delenv("ANIMAWORKS_ANIMA_DIR", raising=False)
+    monkeypatch.setenv("CHATWORK_API_TOKEN__owner", "test-token")
+    monkeypatch.setattr(
+        "core.tools._chatwork_cli.resolve_cache_db_path",
+        lambda client: tmp_path / "test.db",
+    )
     mock_requests = MagicMock()
     mock_session = MagicMock()
     mock_requests.Session.return_value = mock_session

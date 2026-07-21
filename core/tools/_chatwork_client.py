@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from core.tools._async_compat import run_sync
-from core.tools._base import get_credential, logger
+from core.tools._base import logger
 from core.tools._retry import retry_on_rate_limit
 
 # ── Constants ──────────────────────────────────────────────
@@ -47,10 +47,8 @@ def _require_requests():
 class ChatworkClient:
     """HTTP client for the Chatwork v2 API with rate-limit retry."""
 
-    def __init__(self, api_token: str | None = None):
+    def __init__(self, api_token: str):
         req = _require_requests()
-        if api_token is None:
-            api_token = get_credential("chatwork", "chatwork", env_var="CHATWORK_API_TOKEN")
         self.api_token = api_token
         self.session = req.Session()
         self.session.headers.update(

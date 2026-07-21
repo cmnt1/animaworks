@@ -9,12 +9,15 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from datetime import datetime
 from pathlib import Path
 
+from core.exceptions import ToolConfigError
 from core.tools._cache import BaseMessageCache
-from core.tools._chatwork_client import JST
+from core.tools._chatwork_client import JST, ChatworkClient
 
 # ── Constants ──────────────────────────────────────────────
 
@@ -58,6 +61,37 @@ def _format_timestamp(unix_ts: int) -> str:
     return datetime.fromtimestamp(unix_ts, tz=JST).strftime("%Y-%m-%d %H:%M")
 
 
+def resolve_cache_db_path(client: ChatworkClient) -> Path:
+    """Return the account-specific cache DB path for *client*."""
+    DEFAULT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    map_path = DEFAULT_CACHE_DIR / "identity_map.json"
+    token_fingerprint = hashlib.sha256(client.api_token.encode("utf-8")).hexdigest()[:16]
+
+    identity_map: dict[str, str] = {}
+    if map_path.exists():
+        try:
+            raw_map = json.loads(map_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ToolConfigError(f"Chatwork identity cache could not be read: {exc}") from exc
+        if not isinstance(raw_map, dict):
+            raise ToolConfigError("Chatwork identity cache must contain a JSON object")
+        identity_map = {str(key): str(value) for key, value in raw_map.items()}
+
+    account_id = identity_map.get(token_fingerprint)
+    if account_id is None:
+        me = client.me()
+        account_id = str(me["account_id"])
+        identity_map[token_fingerprint] = account_id
+        temp_path = map_path.with_suffix(".json.tmp")
+        temp_path.write_text(
+            json.dumps(identity_map, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        temp_path.replace(map_path)
+
+    return DEFAULT_CACHE_DIR / account_id / "messages.db"
+
+
 # ── MessageCache ─────────────────────────────────────────────
 
 
@@ -65,9 +99,7 @@ class MessageCache(BaseMessageCache):
     """SQLite-backed cache for Chatwork messages, enabling offline search and
     unreplied-mention detection."""
 
-    def __init__(self, db_path: Path | None = None):
-        if db_path is None:
-            db_path = DEFAULT_CACHE_DIR / "messages.db"
+    def __init__(self, db_path: Path):
         super().__init__(db_path, _CHATWORK_SCHEMA_SQL)
 
     def upsert_room(self, room: dict):

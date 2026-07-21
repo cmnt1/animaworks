@@ -69,10 +69,11 @@ animaworks-tool chatwork rooms
 animaworks-tool chatwork mentions [--json]
 animaworks-tool chatwork delete ROOM MESSAGE_ID
 animaworks-tool chatwork sync [ROOM]
+animaworks-tool chatwork <서브커맨드> ... --as <identity>
 ```
 
 ## 주의사항
 
-- API Token이 credentials에 사전 설정되어 있어야 합니다
+- 자신 전용 토큰 `CHATWORK_API_TOKEN__<자신의 이름>`으로 동작합니다. 미등록 시 사용할 수 없습니다
+- `--as <identity>`는 `chatwork_tool.grants`로 위임된 경우에만 사용 가능합니다. read 위임에서는 write(send/delete 등)를 할 수 없습니다
 - room은 룸 이름 또는 룸 ID로 지정 가능합니다
-- 메시지 송신 시 쓰기 전용 토큰이 필요할 수 있습니다

@@ -467,7 +467,12 @@ class ImageGenConfig(BaseModel):
 
 
 class NotificationChannelConfig(BaseModel):
-    """Configuration for a single human notification channel."""
+    """Configuration for a single human notification channel.
+
+    For ``type="chatwork"``, when ``config.api_token_env`` is omitted the
+    channel falls back to ``CHATWORK_API_TOKEN__kotoha`` (system notification
+    default identity: kotoha). Set ``api_token_env`` explicitly to override.
+    """
 
     type: str  # "slack", "line", "telegram", "chatwork", "ntfy"
     enabled: bool = True
@@ -1151,6 +1156,10 @@ class SkillsConfig(BaseModel):
     cron: SkillCronConfig = SkillCronConfig()
 
 
+class ChatworkToolConfig(BaseModel):
+    grants: dict[str, dict[str, str]] = {}
+
+
 class AnimaWorksConfig(BaseModel):
     version: int = 1
     setup_complete: bool = False
@@ -1167,6 +1176,7 @@ class AnimaWorksConfig(BaseModel):
     gpu: GPUConfig = GPUConfig()
     memory: MemoryConfig = MemoryConfig()
     skills: SkillsConfig = SkillsConfig()
+    chatwork_tool: ChatworkToolConfig = ChatworkToolConfig()
     prompt: PromptConfig = PromptConfig()
     priming: PrimingConfig = PrimingConfig()
     image_gen: ImageGenConfig = ImageGenConfig()
@@ -1209,6 +1219,7 @@ __all__ = [
     "AnimaWorksConfig",
     "BackgroundTaskConfig",
     "BackgroundToolConfig",
+    "ChatworkToolConfig",
     "ConsolidationConfig",
     "CredentialConfig",
     "DEFAULT_ANIMA_MODEL",

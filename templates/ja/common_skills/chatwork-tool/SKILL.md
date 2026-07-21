@@ -69,10 +69,11 @@ animaworks-tool chatwork rooms
 animaworks-tool chatwork mentions [--json]
 animaworks-tool chatwork delete ROOM MESSAGE_ID
 animaworks-tool chatwork sync [ROOM]
+animaworks-tool chatwork <サブコマンド> ... --as <identity>
 ```
 
 ## 注意事項
 
-- API Token は credentials に事前設定が必要
+- 自分専用トークン `CHATWORK_API_TOKEN__<自分の名前>` で動作する。未登録の場合は使用不可
+- `--as <identity>` は `chatwork_tool.grants` で委任された場合のみ利用可能。read 委任では write（send/delete 等）は不可
 - roomはルーム名でもルームIDでも指定可能
-- 送信には書き込み用トークンが必要な場合がある

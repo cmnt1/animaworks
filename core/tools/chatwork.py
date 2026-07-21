@@ -16,13 +16,17 @@ Provides:
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-from core.tools._base import ToolConfigError, get_credential, logger
-from core.tools._chatwork_cache import MessageCache, _format_timestamp  # noqa: F401
+from core.tools._base import ToolConfigError
+from core.tools._chatwork_cache import (  # noqa: F401
+    MessageCache,
+    _format_timestamp,
+    resolve_cache_db_path,
+)
 from core.tools._chatwork_cli import cli_main, get_cli_guide  # noqa: F401
 from core.tools._chatwork_client import ChatworkClient  # noqa: F401
+from core.tools._chatwork_identity import check_write_allowed, resolve_identity
 
 # ── Re-exports (backward compatibility) ──────────────────────
 from core.tools._chatwork_markdown import clean_chatwork_tags, md_to_chatwork  # noqa: F401
@@ -48,37 +52,6 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
     "download": {"expected_seconds": 60, "background_eligible": True},
     "delete": {"expected_seconds": 10, "background_eligible": False},
 }
-
-
-# ── Per-Anima credential resolution ──────────────────────────
-
-
-def _resolve_write_token(args: dict[str, Any]) -> str:
-    """Resolve the Chatwork write token for the calling Anima.
-
-    Uses ``CHATWORK_API_TOKEN_WRITE__<anima_name>`` if available in
-    shared/credentials.json, otherwise falls back to the default
-    ``CHATWORK_API_TOKEN_WRITE``.
-    """
-    from core.tools._base import _lookup_shared_credentials
-
-    anima_dir = args.get("anima_dir")
-    if anima_dir:
-        anima_name = Path(anima_dir).name
-        per_anima_key = f"CHATWORK_API_TOKEN_WRITE__{anima_name}"
-        token = _lookup_shared_credentials(per_anima_key)
-        if token:
-            logger.debug(
-                "Using per-Anima Chatwork write token for '%s'",
-                anima_name,
-            )
-            return token
-
-    return get_credential(
-        "chatwork_write",
-        "chatwork",
-        env_var="CHATWORK_API_TOKEN_WRITE",
-    )
 
 
 # ── Tool schemas ─────────────────────────────────────────────
@@ -116,17 +89,19 @@ def _sync_rooms(client: ChatworkClient, cache: MessageCache, sync_limit: int = 3
 
 def dispatch(name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call by schema name."""
+    as_identity = args.get("as")
+    anima_dir = args.get("anima_dir")
+    identity = resolve_identity(as_identity, anima_dir=anima_dir)
+    client = ChatworkClient(api_token=identity.token)
+
     if name == "chatwork_send":
-        write_token = _resolve_write_token(args)
-        write_client = ChatworkClient(api_token=write_token)
-        read_client = ChatworkClient()
-        room_id = read_client.resolve_room_id(args["room"])
-        message = md_to_chatwork(args["message"])
-        return write_client.post_message(room_id, message)
-    if name == "chatwork_messages":
-        client = ChatworkClient()
+        check_write_allowed(as_identity, anima_dir=anima_dir)
         room_id = client.resolve_room_id(args["room"])
-        cache = MessageCache()
+        message = md_to_chatwork(args["message"])
+        return client.post_message(room_id, message)
+    if name == "chatwork_messages":
+        room_id = client.resolve_room_id(args["room"])
+        cache = MessageCache(db_path=resolve_cache_db_path(client))
         try:
             msgs = client.get_messages(room_id, force=True)
             if msgs:
@@ -136,8 +111,7 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
         finally:
             cache.close()
     if name == "chatwork_search":
-        client = ChatworkClient()
-        cache = MessageCache()
+        cache = MessageCache(db_path=resolve_cache_db_path(client))
         try:
             room_id = None
             if args.get("room"):
@@ -150,8 +124,7 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
         finally:
             cache.close()
     if name == "chatwork_unreplied":
-        client = ChatworkClient()
-        cache = MessageCache()
+        cache = MessageCache(db_path=resolve_cache_db_path(client))
         try:
             my_info = client.me()
             my_id = str(my_info["account_id"])
@@ -164,15 +137,13 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
         finally:
             cache.close()
     if name == "chatwork_delete":
-        write_token = _resolve_write_token(args)
-        write_client = ChatworkClient(api_token=write_token)
-        read_client = ChatworkClient()
-        room_id = read_client.resolve_room_id(args["room"])
+        check_write_allowed(as_identity, anima_dir=anima_dir)
+        room_id = client.resolve_room_id(args["room"])
         message_id = args["message_id"]
         # Ownership check: only allow deleting own messages
-        my_info = write_client.me()
+        my_info = client.me()
         my_account_id = str(my_info["account_id"])
-        msg = read_client.get_message(room_id, message_id)
+        msg = client.get_message(room_id, message_id)
         msg_account_id = str(msg["account"]["account_id"])
         if msg_account_id != my_account_id:
             raise ToolConfigError(
@@ -181,21 +152,18 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
                 f"not by you (account_id={my_account_id}). "
                 f"You can only delete your own messages."
             )
-        _result = write_client.delete_message(room_id, message_id)
+        client.delete_message(room_id, message_id)
         return {"deleted": True, "message_id": message_id, "room_id": room_id}
     if name == "chatwork_rooms":
-        client = ChatworkClient()
         return client.rooms()
     if name == "chatwork_sync":
-        client = ChatworkClient()
-        cache = MessageCache()
+        cache = MessageCache(db_path=resolve_cache_db_path(client))
         try:
             return _sync_rooms(client, cache, sync_limit=args.get("limit", 30))
         finally:
             cache.close()
     if name == "chatwork_mentions":
-        client = ChatworkClient()
-        cache = MessageCache()
+        cache = MessageCache(db_path=resolve_cache_db_path(client))
         try:
             my_info = client.me()
             my_id = str(my_info["account_id"])

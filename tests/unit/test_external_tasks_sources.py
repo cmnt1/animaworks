@@ -317,11 +317,21 @@ def test_chatwork_collects_open_tasks() -> None:
     mock_cache.find_unreplied.return_value = []
 
     with (
-        patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client),
+        patch(
+            "core.tools._base.resolve_env_style_credential",
+            return_value="owner-token",
+        ) as resolve_cred,
+        patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client) as client_cls,
+        patch(
+            "core.tools._chatwork_cache.resolve_cache_db_path",
+            return_value=MagicMock(),
+        ),
         patch("core.tools._chatwork_cache.MessageCache", return_value=mock_cache),
     ):
         tasks = chatwork_src.collect_chatwork()
 
+    resolve_cred.assert_called_once_with("CHATWORK_API_TOKEN__owner")
+    client_cls.assert_called_once_with(api_token="owner-token")
     assert len(tasks) == 1
     t = tasks[0]
     assert t.id == "chatwork-task-99"
@@ -351,7 +361,12 @@ def test_chatwork_no_limit_time_uses_epoch() -> None:
     mock_cache.find_unreplied.return_value = []
 
     with (
+        patch("core.tools._base.resolve_env_style_credential", return_value="owner-token"),
         patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client),
+        patch(
+            "core.tools._chatwork_cache.resolve_cache_db_path",
+            return_value=MagicMock(),
+        ),
         patch("core.tools._chatwork_cache.MessageCache", return_value=mock_cache),
     ):
         tasks = chatwork_src.collect_chatwork()
@@ -381,7 +396,12 @@ def test_chatwork_collects_unreplied_mentions() -> None:
     ]
 
     with (
+        patch("core.tools._base.resolve_env_style_credential", return_value="owner-token"),
         patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client),
+        patch(
+            "core.tools._chatwork_cache.resolve_cache_db_path",
+            return_value=MagicMock(),
+        ),
         patch("core.tools._chatwork_cache.MessageCache", return_value=mock_cache),
     ):
         tasks = chatwork_src.collect_chatwork()
@@ -396,10 +416,10 @@ def test_chatwork_collects_unreplied_mentions() -> None:
 
 def test_chatwork_credential_missing() -> None:
     with patch(
-        "core.tools._chatwork_client.ChatworkClient",
-        side_effect=ToolConfigError("missing chatwork token"),
+        "core.tools._base.resolve_env_style_credential",
+        return_value=None,
     ):
-        with pytest.raises(CredentialNotFoundError, match="missing chatwork token"):
+        with pytest.raises(CredentialNotFoundError, match="CHATWORK_API_TOKEN__owner"):
             chatwork_src.collect_chatwork()
 
 
@@ -407,7 +427,10 @@ def test_chatwork_api_error_propagates() -> None:
     mock_client = MagicMock()
     mock_client.my_tasks.side_effect = RuntimeError("chatwork 500")
 
-    with patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client):
+    with (
+        patch("core.tools._base.resolve_env_style_credential", return_value="owner-token"),
+        patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client),
+    ):
         with pytest.raises(RuntimeError, match="chatwork 500"):
             chatwork_src.collect_chatwork()
 
@@ -417,7 +440,10 @@ def test_chatwork_mentions_skipped_when_me_fails() -> None:
     mock_client.my_tasks.return_value = []
     mock_client.me.side_effect = RuntimeError("me failed")
 
-    with patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client):
+    with (
+        patch("core.tools._base.resolve_env_style_credential", return_value="owner-token"),
+        patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client),
+    ):
         tasks = chatwork_src.collect_chatwork()
 
     assert tasks == []
@@ -428,7 +454,10 @@ def test_chatwork_mentions_skipped_when_account_id_empty() -> None:
     mock_client.my_tasks.return_value = []
     mock_client.me.return_value = {}
 
-    with patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client):
+    with (
+        patch("core.tools._base.resolve_env_style_credential", return_value="owner-token"),
+        patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client),
+    ):
         tasks = chatwork_src.collect_chatwork()
 
     assert tasks == []
@@ -452,7 +481,12 @@ def test_chatwork_mentions_filter_old_and_incomplete_rows() -> None:
     ]
 
     with (
+        patch("core.tools._base.resolve_env_style_credential", return_value="owner-token"),
         patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client),
+        patch(
+            "core.tools._chatwork_cache.resolve_cache_db_path",
+            return_value=MagicMock(),
+        ),
         patch("core.tools._chatwork_cache.MessageCache", return_value=mock_cache),
     ):
         tasks = chatwork_src.collect_chatwork()

@@ -71,6 +71,7 @@ from core.config.schemas import (
     AnimaWorksConfig,
     BackgroundTaskConfig,
     BackgroundToolConfig,
+    ChatworkToolConfig,
     CommandsPermission,
     ConsolidationConfig,
     CredentialConfig,
