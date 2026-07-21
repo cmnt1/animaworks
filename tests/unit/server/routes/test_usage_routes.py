@@ -443,6 +443,21 @@ def test_refresh_claude_token_does_not_send_or_persist_scopes(tmp_path: Path, mo
     assert saved["scopes"] == ["user:inference", "user:profile"]
 
 
+def test_merge_usage_snapshot_restores_window_timing_after_error(tmp_path: Path, monkeypatch):
+    # The snapshot carries each provider's last good entry forward, so an
+    # errored live fetch still exposes resets_at/window_seconds — the timing the
+    # dashboard needs to draw the progress bar at all.
+    snap = tmp_path / "usage_snapshot.json"
+    monkeypatch.setattr(usage_routes, "_usage_snapshot_path", lambda: snap)
+    good = {"provider": "claude", "five_hour": {"utilization": 8.0, "resets_at": "2026-07-19T10:00:00+00:00", "window_seconds": 18000}}
+    usage_routes._save_usage_snapshot({"claude": good})
+
+    merged = usage_routes._merge_usage_snapshot({"claude": {"error": "scope_insufficient"}})
+
+    assert merged["claude"]["five_hour"]["resets_at"] == "2026-07-19T10:00:00+00:00"
+    assert merged["snapshot_used"] == ["claude"]
+
+
 def test_refresh_claude_token_warns_when_profile_scope_dropped(tmp_path: Path, monkeypatch, caplog):
     import logging
 

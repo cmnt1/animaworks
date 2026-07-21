@@ -123,6 +123,9 @@ def _load_usage_snapshot() -> dict[str, Any] | None:
 
 
 def _save_usage_snapshot(payload: dict[str, Any]) -> None:
+    # Callers persist the already-merged payload, so an errored provider here
+    # has no last-good entry anywhere to keep — _merge_usage_snapshot has
+    # already carried forward any that existed.
     path = _usage_snapshot_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)

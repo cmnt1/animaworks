@@ -338,16 +338,33 @@ function _renderUsageBar(label, utilization, resetAt, windowSeconds, displayWind
     ? (typeof resetAt === "number" ? (resetAt < 1e12 ? resetAt * 1000 : resetAt) : new Date(resetAt).getTime())
     : 0;
   const resetInPast = resetMs > 0 && resetMs <= Date.now();
+  const winSec = displayWindowSeconds ?? windowSeconds;
+
+  // While a fetch keeps failing, the last-good reset eventually falls into the
+  // past and the bar would freeze. Roll it forward by whole windows so the
+  // marker keeps moving. This is an ESTIMATE: fixed-cadence windows (weekly)
+  // land close, but Claude's 5h window is a rolling session window that starts
+  // on first use, so the rolled reset can drift — hence the (推定) label and the
+  // dropped usage figure (the pre-reset utilization no longer describes the
+  // current window either).
+  let effResetAt = resetAt;
+  let usageUnknown = false;
+  if (stale && resetInPast && winSec > 0) {
+    const winMs = winSec * 1000;
+    effResetAt = resetMs + Math.ceil((Date.now() - resetMs) / winMs) * winMs;
+    usageUnknown = true;
+  }
+
   // Window already reset — treat as fully available. But when the data is a
   // stale fallback (fetch failed, last-good shown), a past reset does NOT mean
   // "fully available" — the real post-reset usage is unknown — so keep the last
   // known utilization rather than falsely showing 100%.
   const effectiveUtil = (resetInPast && !stale) ? 0 : utilization;
   const remaining = Math.max(0, 100 - effectiveUtil);
-  const resetStr = (resetInPast && !stale) ? "" : (resetAt ? _resetToJst(resetAt) : "");
+  const resetStr = (resetInPast && !stale) ? "" : (effResetAt ? _resetToJst(effResetAt) : "");
 
   // Time-proportional marker — shown on ALL windows (5h and 7d)
-  const timePct = _calcTimePct(resetAt, displayWindowSeconds ?? windowSeconds);
+  const timePct = _calcTimePct(effResetAt, winSec);
   const color = _remainingColor(remaining, timePct);
   let markerHtml = "";
   if (timePct !== null && windowSeconds) {
@@ -392,18 +409,27 @@ function _renderUsageBar(label, utilization, resetAt, windowSeconds, displayWind
   // even when a shorter window above it is absent; shorter windows (5h, Daily)
   // stay top-aligned and do not sink to the bottom.
   const rowClass = windowSeconds >= 604800 ? "usage-row usage-row--week" : "usage-row";
+  // Usage unknown: no figure and no fill — only the time marker is shown, and
+  // its reset is a rolled-forward estimate, so it is labelled 推定.
+  const pctHtml = usageUnknown
+    ? `<span class="usage-pct" style="color:var(--text-secondary,#888)">—</span>`
+    : `<span class="usage-pct" style="color:${color}">${remaining.toFixed(0)}%${deficitHtml}</span>`;
+  const fillHtml = usageUnknown
+    ? ""
+    : `<div class="usage-bar-fill" style="width:${remaining}%;background:${color}"></div>`;
+  const resetLabel = usageUnknown ? t("home.usage_reset_estimated") : t("home.usage_reset");
   return `
     <div class="${rowClass}">
       <div class="usage-row-header">
         <span class="usage-label">${escapeHtml(label)}</span>
-        <span class="usage-pct" style="color:${color}">${remaining.toFixed(0)}%${deficitHtml}</span>
+        ${pctHtml}
       </div>
       <div class="usage-bar-track">
-        <div class="usage-bar-fill" style="width:${remaining}%;background:${color}"></div>
+        ${fillHtml}
         ${markerHtml}
       </div>
       ${forecastHtml || `<div class="usage-forecast">&nbsp;</div>`}
-      ${resetStr ? `<div class="usage-reset">${t("home.usage_reset")}: ${escapeHtml(resetStr)}</div>` : `<div class="usage-reset">&nbsp;</div>`}
+      ${resetStr ? `<div class="usage-reset">${resetLabel}: ${escapeHtml(resetStr)}</div>` : `<div class="usage-reset">&nbsp;</div>`}
     </div>
   `;
 }
@@ -430,38 +456,6 @@ function _renderGovernorReason(reasonText) {
     /\bactivity\s+(\d+)%/g,
     'activity <strong class="governor-activity-level">$1%</strong>',
   );
-}
-
-function _renderCompactUsageBar(label, win) {
-  const utilization = win?.utilization ?? 0;
-  const resetAt = win?.resets_at;
-  const windowSeconds = win?.window_seconds;
-  const resetMs = resetAt
-    ? (typeof resetAt === "number" ? (resetAt < 1e12 ? resetAt * 1000 : resetAt) : new Date(resetAt).getTime())
-    : 0;
-  const resetInPast = resetMs > 0 && resetMs <= Date.now();
-  const effectiveUtil = resetInPast ? 0 : utilization;
-  const remaining = Math.max(0, 100 - effectiveUtil);
-  const timePct = _calcTimePct(resetAt, windowSeconds);
-  const color = _remainingColor(remaining, timePct);
-  const resetStr = resetInPast ? "" : (resetAt ? _resetToJst(resetAt) : "");
-  const markerHtml = timePct !== null && windowSeconds
-    ? `<div class="usage-bar-time-marker" style="left:${timePct}%" data-label="${timePct.toFixed(0)}%"></div>`
-    : "";
-
-  return `
-    <div class="usage-compact-row" title="${resetStr ? `${t("home.usage_reset")}: ${escapeHtml(resetStr)}` : ""}">
-      <div class="usage-compact-head">
-        <span class="usage-label">${escapeHtml(label)}</span>
-        <span class="usage-pct" style="color:${color}">${remaining.toFixed(0)}%</span>
-      </div>
-      <div class="usage-bar-track">
-        <div class="usage-bar-fill" style="width:${remaining}%;background:${color}"></div>
-        ${markerHtml}
-      </div>
-      <div class="usage-compact-reset">${resetStr ? escapeHtml(resetStr) : "&nbsp;"}</div>
-    </div>
-  `;
 }
 
 function _renderUsageError(provider, data, msg) {
@@ -573,7 +567,7 @@ function _renderClaudeUsage(data, opts = {}) {
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
 
-function _renderOpenaiUsage(data) {
+function _renderOpenaiUsage(data, opts = {}) {
   const el = document.getElementById("usageOpenaiBody");
   if (!el) return;
 
@@ -589,17 +583,18 @@ function _renderOpenaiUsage(data) {
     return;
   }
 
+  const stale = !!opts.stale;
   // Render usage windows (keys like "5h", "Week", etc.)
   const skip = new Set(["provider"]);
   let html = "";
   for (const [key, win] of Object.entries(data)) {
     if (skip.has(key) || !win || typeof win !== "object" || win.utilization === undefined) continue;
-    html += _renderUsageBar(key, win.utilization, win.resets_at, win.window_seconds);
+    html += _renderUsageBar(key, win.utilization, win.resets_at, win.window_seconds, null, { stale });
   }
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
 
-function _renderGeminiUsage(data) {
+function _renderGeminiUsage(data, opts = {}) {
   const el = document.getElementById("usageGeminiBody");
   const subEl = document.getElementById("usageGeminiSub");
   if (!el) return;
@@ -613,6 +608,7 @@ function _renderGeminiUsage(data) {
     return;
   }
 
+  const stale = !!opts.stale;
   // Order windows: 5h → daily (Free tier) → Week
   const order = ["five_hour", "daily", "Week"];
   const labels = { five_hour: "5h", daily: "Daily", Week: "Week" };
@@ -622,7 +618,7 @@ function _renderGeminiUsage(data) {
     const win = data[key];
     if (!win || typeof win !== "object" || win.utilization === undefined) continue;
     if (win.model_id && !modelIds.includes(win.model_id)) modelIds.push(win.model_id);
-    html += _renderUsageBar(labels[key] || key, win.utilization, win.resets_at, win.window_seconds);
+    html += _renderUsageBar(labels[key] || key, win.utilization, win.resets_at, win.window_seconds, null, { stale });
   }
   // Surface which model's quota is being displayed (the provider API returns
   // the tightest per-model bucket, so this can differ from the configured model).
@@ -630,7 +626,7 @@ function _renderGeminiUsage(data) {
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
 
-function _renderNanogptUsage(data) {
+function _renderNanogptUsage(data, opts = {}) {
   const el = document.getElementById("usageNanogptBody");
   if (!el) return;
 
@@ -642,12 +638,13 @@ function _renderNanogptUsage(data) {
     return;
   }
 
+  const stale = !!opts.stale;
   // Render usage windows (keys like "Week", "Images", etc.)
   const skip = new Set(["provider", "state"]);
   let html = "";
   for (const [key, win] of Object.entries(data)) {
     if (skip.has(key) || !win || typeof win !== "object" || win.utilization === undefined) continue;
-    html += _renderUsageBar(key, win.utilization, win.resets_at, win.window_seconds);
+    html += _renderUsageBar(key, win.utilization, win.resets_at, win.window_seconds, null, { stale });
   }
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
@@ -982,9 +979,9 @@ async function _loadUsage(forceRefresh = false) {
     const snapshotAt = data.snapshot_cached_at ?? null;
 
     if (data.claude) _renderClaudeUsage(data.claude, { stale: staleProviders.has("claude"), snapshotAt });
-    if (data.openai) _renderOpenaiUsage(data.openai);
-    if (data.gemini) _renderGeminiUsage(data.gemini);
-    if (data.nanogpt) _renderNanogptUsage(data.nanogpt);
+    if (data.openai) _renderOpenaiUsage(data.openai, { stale: staleProviders.has("openai") });
+    if (data.gemini) _renderGeminiUsage(data.gemini, { stale: staleProviders.has("gemini") });
+    if (data.nanogpt) _renderNanogptUsage(data.nanogpt, { stale: staleProviders.has("nanogpt") });
     _renderAuthAlerts(data.auth_alerts);
     _renderGovernor(data.governor);
     const serverFetchedAt = data.snapshot_cached_at ?? data.cached_at ?? null;

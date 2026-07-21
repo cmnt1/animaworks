@@ -372,6 +372,7 @@
   "home.usage_no_data": "データなし",
   "home.usage_not_available": "サブスクリプション枠内 (API未対応)",
   "home.usage_reset": "リセット",
+  "home.usage_reset_estimated": "リセット（推定）",
   "home.usage_within_limit": "サブスクリプション枠内",
   "init_status.animas": "Anima登録",
   "init_status.anthropic": "Anthropic APIキー",

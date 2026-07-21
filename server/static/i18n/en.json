@@ -372,6 +372,7 @@
   "home.usage_no_data": "No data",
   "home.usage_not_available": "Within subscription (API N/A)",
   "home.usage_reset": "Reset",
+  "home.usage_reset_estimated": "Reset (est.)",
   "home.usage_within_limit": "Within subscription limit",
   "init_status.animas": "Anima registration",
   "init_status.anthropic": "Anthropic API key",
