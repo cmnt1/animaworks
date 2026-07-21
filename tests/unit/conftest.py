@@ -42,13 +42,20 @@ def _reset_llm_rate_guard_singleton(tmp_path: Path) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _reset_config_caches_for_unit_tests() -> None:
-    """Clear runtime config singletons so data-dir monkeypatching is isolated."""
+def _reset_config_caches_for_unit_tests(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Isolate runtime config and event exporters from the developer machine."""
     from core.config import invalidate_cache, invalidate_vault_cache
+    from core.event_export import reset_event_exporters
 
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path / "_runtime"))
+    reset_event_exporters()
     invalidate_cache()
     invalidate_vault_cache()
     yield
+    reset_event_exporters()
     invalidate_cache()
     invalidate_vault_cache()
 

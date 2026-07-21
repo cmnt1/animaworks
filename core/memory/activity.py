@@ -185,6 +185,18 @@ class ActivityLogger(
         self._log_dir = anima_dir / "activity_log"
         self._anima_name = anima_dir.name
         self._ctx = ""
+        self._start_event_exporter()
+
+    def _start_event_exporter(self) -> None:
+        """Start delivery of any persisted spool entries on process startup."""
+        if not (self.anima_dir / "state" / "event_export_spool").is_dir():
+            return
+        try:
+            from core.event_export import get_event_exporter
+
+            get_event_exporter(self.anima_dir)
+        except Exception:
+            logger.warning("Failed to start activity event exporter", exc_info=True)
 
     def bind_runtime_session(self, ctx: RuntimeSessionContext) -> None:
         """Bind the execution context used by subsequent activity entries."""
@@ -267,14 +279,16 @@ class ActivityLogger(
             origin=origin,
             origin_chain=origin_chain or [],
         )
-        self._append(entry, safe=safe)
+        written = self._append(entry, safe=safe)
+        if written:
+            self._export_event(entry)
         if event_type in self._LIVE_EVENT_TYPES or event_type in ("tool_use", "tool_result"):
             allowed, dropped = self._live_rate_limiter.allow(self._anima_name)
             if allowed:
                 self._emit_live_event(entry, dropped=dropped)
         return entry
 
-    def _append(self, entry: ActivityEntry, *, safe: bool = False) -> None:
+    def _append(self, entry: ActivityEntry, *, safe: bool = False) -> bool:
         """Append *entry* to today's JSONL file with fsync."""
         try:
             self._log_dir.mkdir(parents=True, exist_ok=True)
@@ -285,16 +299,39 @@ class ActivityLogger(
                 f.write(line + "\n")
                 f.flush()
                 os.fsync(f.fileno())
+            return True
         except OSError as exc:
             logger.exception("Failed to append activity log")
             if safe:
-                return
+                return False
             raise MemoryWriteError(f"Activity log write failed: {exc}") from exc
         except (TypeError, ValueError, AttributeError, KeyError) as exc:
             logger.exception("Failed to append activity log")
             if safe:
-                return
+                return False
             raise MemoryWriteError(f"Activity log write failed: {exc}") from exc
+
+    def _export_event(self, entry: ActivityEntry) -> None:
+        """Best-effort export after the local activity write succeeds."""
+        try:
+            from core.config import load_config
+            from core.event_export import get_event_exporter
+
+            config = load_config().event_export
+            exporter = get_event_exporter(self.anima_dir, config)
+            if exporter is None:
+                return
+            if config.event_types is not None and entry.type not in config.event_types:
+                return
+            exporter.emit(
+                {
+                    "kind": "activity",
+                    "anima": self._anima_name,
+                    "event": entry.to_dict(),
+                }
+            )
+        except Exception:
+            logger.warning("Failed to export activity event", exc_info=True)
 
     def _emit_live_event(self, entry: ActivityEntry, *, dropped: int = 0) -> None:
         """Write event file for ProcessSupervisor to broadcast via WebSocket."""

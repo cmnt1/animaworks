@@ -135,9 +135,23 @@ class TokenUsageLogger:
     """Append-only JSONL logger for per-session token usage."""
 
     def __init__(self, anima_dir: Path) -> None:
+        self._anima_dir = anima_dir
+        self._anima_name = anima_dir.name
         self._dir = anima_dir / "token_usage"
         self._dir.mkdir(parents=True, exist_ok=True)
         self._pricing: dict[str, dict[str, float]] | None = None
+        self._start_event_exporter()
+
+    def _start_event_exporter(self) -> None:
+        """Start delivery of any persisted spool entries on process startup."""
+        if not (self._anima_dir / "state" / "event_export_spool").is_dir():
+            return
+        try:
+            from core.event_export import get_event_exporter
+
+            get_event_exporter(self._anima_dir)
+        except Exception:
+            logger.warning("Failed to start token usage event exporter", exc_info=True)
 
     def log(
         self,
@@ -190,6 +204,28 @@ class TokenUsageLogger:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         except OSError:
             logger.warning("Failed to write token usage log", exc_info=True)
+        else:
+            self._export_event(entry)
+
+    def _export_event(self, entry: dict[str, Any]) -> None:
+        """Best-effort export after the local token usage write succeeds."""
+        try:
+            from core.config import load_config
+            from core.event_export import get_event_exporter
+
+            config = load_config().event_export
+            exporter = get_event_exporter(self._anima_dir, config)
+            if exporter is None or not config.include_token_usage:
+                return
+            exporter.emit(
+                {
+                    "kind": "token_usage",
+                    "anima": self._anima_name,
+                    "event": entry,
+                }
+            )
+        except Exception:
+            logger.warning("Failed to export token usage event", exc_info=True)
 
     # ── Cost estimation ────────────────────────────────────
 

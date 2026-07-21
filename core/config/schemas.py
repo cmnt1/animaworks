@@ -555,6 +555,18 @@ class GitHubWebhookConfig(BaseModel):
     quiet_seconds: float = Field(default=180, ge=0)
 
 
+class EventExportConfig(BaseModel):
+    """Best-effort export of runtime activity and token usage events."""
+
+    url: str | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
+    event_types: list[str] | None = None
+    include_token_usage: bool = True
+    max_retries: int = Field(default=8, ge=0)
+    backoff_base_seconds: float = Field(default=2.0, ge=0)
+    spool_max_mb: int = Field(default=64, ge=0)
+
+
 class ExternalMessagingConfig(BaseModel):
     """Configuration for external messaging integration (inbound + outbound)."""
 
@@ -1188,6 +1200,7 @@ class AnimaWorksConfig(BaseModel):
     external_messaging: ExternalMessagingConfig = ExternalMessagingConfig()
     external_tasks: ExternalTasksConfig = Field(default_factory=ExternalTasksConfig)
     github_webhook: GitHubWebhookConfig = GitHubWebhookConfig()
+    event_export: EventExportConfig = EventExportConfig()
     background_task: BackgroundTaskConfig = BackgroundTaskConfig()
     activity_log: ActivityLogConfig = ActivityLogConfig()
     logging: LoggingConfig = LoggingConfig()
@@ -1231,6 +1244,7 @@ __all__ = [
     "DEFAULT_LOCAL_LLM_PRESETS",
     "DEFAULT_LOCAL_LLM_ROLE_PRESETS",
     "ElevenLabsVoiceConfig",
+    "EventExportConfig",
     "ExternalMessagingChannelConfig",
     "ExternalMessagingConfig",
     "ExternalTasksConfig",
