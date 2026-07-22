@@ -43,11 +43,10 @@ def cmd_board_read(args: argparse.Namespace) -> None:
 
 def cmd_board_post(args: argparse.Namespace) -> None:
     """Post a message to a shared channel."""
+    from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
     from core.init import ensure_runtime_dir
     from core.messenger import Messenger
     from core.paths import get_shared_dir
-
-    from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
 
     ensure_runtime_dir()
     messenger = Messenger(get_shared_dir(), args.from_anima)

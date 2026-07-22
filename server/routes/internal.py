@@ -515,9 +515,7 @@ def create_internal_router() -> APIRouter:
                 status_code=403,
                 content={
                     "detail": (
-                        f"Cross-company delegation blocked: "
-                        f"{body.delegator} -> {body.target} "
-                        f"({boundary.display_name})"
+                        f"Cross-company delegation blocked: {body.delegator} -> {body.target} ({boundary.display_name})"
                     ),
                 },
             )
@@ -579,8 +577,7 @@ def create_internal_router() -> APIRouter:
                 )
             except Exception:
                 logger.warning(
-                    "TaskBoard write failed in internal delegate-task; "
-                    "queue entries remain authoritative",
+                    "TaskBoard write failed in internal delegate-task; queue entries remain authoritative",
                     exc_info=True,
                 )
             return {

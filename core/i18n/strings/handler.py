@@ -234,11 +234,11 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "handler.channel_not_found": {
         "ja": (
-            'Error: チャネル #{channel} が見つかりません。'
+            "Error: チャネル #{channel} が見つかりません。"
             'manage_channel(action="create", channel="{channel}") で明示的に作成してください。'
         ),
         "en": (
-            'Error: Channel #{channel} not found. '
+            "Error: Channel #{channel} not found. "
             'Create it explicitly with manage_channel(action="create", channel="{channel}").'
         ),
     },

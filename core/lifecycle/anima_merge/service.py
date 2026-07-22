@@ -1665,9 +1665,7 @@ class AnimaMergeService:
         identity = f"{_safe_relative(source_path, self.source_dir)}\0{content}".encode()
         digest = hashlib.sha256(identity).hexdigest()[:12]
         date = now_local().strftime("%Y-%m-%d")
-        destination = (
-            self.target_dir / "episodes" / f"{date}_merged-{kind}-from-{self.source}-{digest}.md"
-        )
+        destination = self.target_dir / "episodes" / f"{date}_merged-{kind}-from-{self.source}-{digest}.md"
         destination.parent.mkdir(parents=True, exist_ok=True)
         if not destination.exists():
             destination.write_text(content, encoding="utf-8")

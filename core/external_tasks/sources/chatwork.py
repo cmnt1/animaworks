@@ -55,8 +55,7 @@ def collect_chatwork() -> list[ExternalTask]:
         raise CredentialNotFoundError(str(exc)) from exc
     if not token:
         raise CredentialNotFoundError(
-            "Chatwork owner token not registered. "
-            "Register CHATWORK_API_TOKEN__owner in the vault."
+            "Chatwork owner token not registered. Register CHATWORK_API_TOKEN__owner in the vault."
         )
 
     try:

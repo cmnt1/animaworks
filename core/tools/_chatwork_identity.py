@@ -48,9 +48,7 @@ def resolve_identity(
     identity_name = as_identity or anima_name
 
     if as_identity is not None and _get_grant(anima_name, as_identity) is None:
-        raise ToolConfigError(
-            f"Chatwork identity '{as_identity}' has not been delegated to anima '{anima_name}'."
-        )
+        raise ToolConfigError(f"Chatwork identity '{as_identity}' has not been delegated to anima '{anima_name}'.")
 
     token_key = f"CHATWORK_API_TOKEN__{identity_name}"
     token = resolve_env_style_credential(token_key)
@@ -74,9 +72,5 @@ def check_write_allowed(
     grant = _get_grant(anima_name, as_identity)
     if grant != "readwrite":
         if grant is None:
-            raise ToolConfigError(
-                f"Chatwork identity '{as_identity}' has not been delegated to anima '{anima_name}'."
-            )
-        raise ToolConfigError(
-            f"Delegation to identity {as_identity} is read-only; write operations are not allowed."
-        )
+            raise ToolConfigError(f"Chatwork identity '{as_identity}' has not been delegated to anima '{anima_name}'.")
+        raise ToolConfigError(f"Delegation to identity {as_identity} is read-only; write operations are not allowed.")

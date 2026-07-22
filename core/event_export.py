@@ -216,8 +216,7 @@ class EventExporter:
 
         if removed:
             logger.warning(
-                "Event export spool for %s exceeded %d MiB; discarded %d oldest "
-                "event(s) (%d bytes)",
+                "Event export spool for %s exceeded %d MiB; discarded %d oldest event(s) (%d bytes)",
                 self.anima_dir.name,
                 config.spool_max_mb,
                 removed,

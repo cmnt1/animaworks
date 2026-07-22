@@ -262,7 +262,8 @@ def _load_embedding_model_on_device(resolved_name: str, device: str) -> Sentence
         max_seq = int(getattr(load_config().rag, "embedding_max_seq_length", 2048))
     except Exception:
         max_seq = 2048
-    if max_seq > 0 and getattr(_embedding_model, "max_seq_length", 0) > max_seq:
+    model_max_seq = getattr(_embedding_model, "max_seq_length", None)
+    if max_seq > 0 and isinstance(model_max_seq, int) and model_max_seq > max_seq:
         _embedding_model.max_seq_length = max_seq
         logger.info("Embedding max_seq_length capped to %d", max_seq)
     _embedding_model_name = resolved_name

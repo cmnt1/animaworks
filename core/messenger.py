@@ -315,8 +315,7 @@ class Messenger:
                     channel,
                 )
                 raise ChannelNotFoundError(
-                    f"Channel '{channel}' not found. "
-                    "Create it with manage_channel action=create first."
+                    f"Channel '{channel}' not found. Create it with manage_channel action=create first."
                 )
             if meta.closed:
                 # Tombstone: refuse without resurrecting jsonl
@@ -325,9 +324,7 @@ class Messenger:
                     self.anima_name,
                     channel,
                 )
-                raise ChannelAccessDeniedError(
-                    f"Channel '{channel}' is closed"
-                )
+                raise ChannelAccessDeniedError(f"Channel '{channel}' is closed")
             # meta-only, closed=false: allow post and create jsonl
 
         # ── ACL check ──
@@ -337,9 +334,7 @@ class Messenger:
                 self.anima_name,
                 channel,
             )
-            raise ChannelAccessDeniedError(
-                f"Access denied to channel '{channel}'"
-            )
+            raise ChannelAccessDeniedError(f"Access denied to channel '{channel}'")
 
         # Validate from_name: must be a known anima or "human"
         if poster != "human":

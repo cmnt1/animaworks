@@ -89,9 +89,7 @@ def scan_memory_hygiene(anima_dir: Path) -> dict[str, list[dict[str, Any]]]:
             if _CANONICAL_EPISODE_NAME.match(path.name):
                 continue
             relative = path.relative_to(anima_dir).as_posix()
-            report["noncanonical_episodes"].append(
-                _entry(relative, previous["noncanonical_episodes"], today)
-            )
+            report["noncanonical_episodes"].append(_entry(relative, previous["noncanonical_episodes"], today))
 
     atomic_write_text(report_path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     return report

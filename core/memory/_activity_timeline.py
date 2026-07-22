@@ -229,8 +229,7 @@ class TimelineMixin:
                         "type": result_entry.type,
                         "content": result_entry.content or result_entry.summary,
                         "is_error": bool(
-                            result_entry.meta.get("is_error", False)
-                            or result_entry.meta.get("result_status") == "fail"
+                            result_entry.meta.get("is_error", False) or result_entry.meta.get("result_status") == "fail"
                         ),
                     }
                     paired_ids.add(id(result_entry))
