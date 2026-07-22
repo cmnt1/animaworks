@@ -239,6 +239,24 @@ def test_newer_metadata_respected_when_queue_is_done() -> None:
     assert projected.column == BoardColumn.REVIEW
 
 
+def test_stale_suppressed_metadata_respected_when_queue_is_done() -> None:
+    """A terminal queue update must preserve the explicit suppression reason."""
+    task = _queue_entry(status="cancelled", updated_at="2026-06-01T12:00:00+09:00")
+    metadata = TaskBoardMetadata(
+        anima_name="sakura",
+        task_id=task.task_id,
+        visibility=AttentionVisibility.EXPIRED,
+        column=BoardColumn.SUPPRESSED,
+        updated_at="2026-05-01T12:00:00+09:00",
+        updated_by="planner",
+    )
+
+    projected = _project_queue_task(task=task, anima_name="sakura", metadata=metadata)
+
+    assert projected.visibility == AttentionVisibility.EXPIRED
+    assert projected.column == BoardColumn.SUPPRESSED
+
+
 def test_pending_queue_keeps_metadata_precedence() -> None:
     """Non-archived queue statuses keep traditional metadata-first visibility/column."""
     task = _queue_entry(status="pending", updated_at="2026-06-01T12:00:00+09:00")

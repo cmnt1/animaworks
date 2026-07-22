@@ -211,7 +211,12 @@ describe("Now board live event flow", () => {
   it("keeps five tool rows when an omitted-events row is shown", () => {
     const documentRef = new MockDocument();
     const container = new MockElement("section");
-    const board = renderNowBoard(container, { documentRef, t: translate });
+    const currentTime = Date.parse("2026-07-21T10:00:10Z");
+    const board = renderNowBoard(container, {
+      documentRef,
+      now: () => currentTime,
+      t: translate,
+    });
 
     for (let index = 0; index < 4; index += 1) {
       board.handleToolActivity({

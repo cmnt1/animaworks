@@ -145,6 +145,7 @@ def _project_queue_task(
     prefer_defaults = (
         metadata is not None
         and task.status in ARCHIVED_QUEUE_STATUSES
+        and metadata.visibility in {AttentionVisibility.ACTIVE, AttentionVisibility.SNOOZED}
         and _metadata_older_than_queue(metadata.updated_at, task.updated_at)
     )
     if metadata is not None and not prefer_defaults:

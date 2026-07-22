@@ -754,6 +754,42 @@ def test_update_status_terminal_does_not_create_metadata_row(
     assert store.list_metadata(anima_name="sakura") == []
 
 
+@pytest.mark.parametrize("visibility", ["expired", "archived", "tombstoned"])
+def test_update_status_terminal_preserves_suppressed_visibility(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    visibility: str,
+) -> None:
+    """Terminal queue sync must not replace a more specific suppression reason."""
+    from core.taskboard.models import AttentionVisibility
+    from core.taskboard.store import TaskBoardStore
+
+    tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
+    entry = tqm.add_task(
+        source="human",
+        original_instruction="suppressed task",
+        assignee="sakura",
+        summary="suppressed task",
+        task_id=f"task-{visibility}",
+    )
+    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
+    store.upsert_metadata(
+        anima_name="sakura",
+        task_id=entry.task_id,
+        actor="planner",
+        visibility=visibility,
+        column="suppressed",
+    )
+
+    tqm.update_status(entry.task_id, "cancelled")
+
+    metadata = store.get_metadata("sakura", entry.task_id)
+    assert metadata is not None
+    assert metadata.visibility == AttentionVisibility(visibility)
+    assert metadata.column.value == "suppressed"
+    assert metadata.updated_by == "planner"
+
+
 def test_update_status_succeeds_when_taskboard_store_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

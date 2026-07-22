@@ -400,11 +400,19 @@ class TaskQueueManager:
         swallowed so the queue update remains authoritative.
         """
         try:
+            from core.taskboard.models import AttentionVisibility
             from core.taskboard.store import TaskBoardStore
 
             anima_name = self.anima_dir.name
             store = TaskBoardStore()
-            if store.get_metadata(anima_name, task_id) is None:
+            metadata = store.get_metadata(anima_name, task_id)
+            if metadata is None:
+                return
+            if metadata.visibility in {
+                AttentionVisibility.EXPIRED,
+                AttentionVisibility.ARCHIVED,
+                AttentionVisibility.TOMBSTONED,
+            }:
                 return
             store.upsert_metadata(
                 anima_name=anima_name,
