@@ -668,7 +668,7 @@ class TaskQueueManager:
                 total += len(line) + 1
 
             if overdue:
-                summaries_str = ", ".join(task.summary[:20] for task in overdue)
+                summaries_str = ", ".join(f"[{task.task_id[:8]}] {task.summary[:20]}" for task in overdue)
                 aggregate_line = t(
                     "task_queue.overdue_aggregate",
                     count=len(overdue),

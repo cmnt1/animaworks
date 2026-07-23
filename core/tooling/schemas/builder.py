@@ -234,9 +234,8 @@ def build_unified_tool_list(
             tools.extend(_submit_tasks_tools())
         tools.extend(_goal_tools())
     for t in _task_tools():
-        if t["name"] == "update_task":
+        if t["name"] in {"update_task", "list_tasks"}:
             tools.append(t)
-            break
 
     # AW-essential: session todo (planning aid for Mode A)
     tools.extend(_session_todo_tools())

@@ -71,6 +71,7 @@ _EXPOSED_TOOL_NAMES: frozenset[str] = frozenset(
         "delegate_task",
         "submit_tasks",
         "update_task",
+        "list_tasks",
         "goal",
         # AW-essential: workspace access grants
         "grant_workspace_access",

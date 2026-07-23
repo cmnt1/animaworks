@@ -55,7 +55,7 @@ def format_tasks_for_priming(
         total += len(line) + 1
 
     if overdue:
-        summaries = ", ".join(_summary(task)[:20] for task in overdue)
+        summaries = ", ".join(f"[{task.task_id[:8]}] {_summary(task)[:20]}" for task in overdue)
         aggregate_line = t("task_queue.overdue_aggregate", count=len(overdue), summaries=summaries)
         if total + len(aggregate_line) + 1 <= max_chars:
             lines.append(aggregate_line)
