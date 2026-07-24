@@ -49,7 +49,7 @@ def _make_shared_dir(tmp_path: Path) -> Path:
     (shared_dir / "inbox").mkdir(exist_ok=True)
     channels_dir = shared_dir / "channels"
     channels_dir.mkdir(exist_ok=True)
-    for name in ("general", "ops"):
+    for name in ("general", "ops", "updates"):
         path = channels_dir / f"{name}.jsonl"
         if not path.exists():
             path.write_text("", encoding="utf-8")
