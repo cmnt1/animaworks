@@ -1409,7 +1409,7 @@ class PendingTaskExecutor:
         if not processing_dir.exists():
             return recovered_task_ids
         active_statuses = {"pending", "in_progress", "blocked", "delegated"}
-        for orphan in processing_dir.glob("*.json"):
+        for orphan in sorted(processing_dir.glob("*.json")):
             expected_anima = anima_dir.name if anima_dir is not None else None
             if is_processing_lease_live(orphan, expected_anima=expected_anima):
                 logger.warning(
