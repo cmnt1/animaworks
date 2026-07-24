@@ -88,7 +88,7 @@ async def test_taskboard_operations_do_not_modify_board_channel_jsonl(tmp_path: 
         channels_resp = await client.get("/api/channels")
 
     assert patch_resp.status_code == 200
-    assert patch_resp.json()["task"]["visibility"] == "archived"
+    assert patch_resp.json()["task"]["visibility"] == "expired"
     assert channel_path.read_bytes() == before
     assert sorted(path.name for path in (app.state.shared_dir / "channels").glob("*.jsonl")) == before_channel_files
     assert (app.state.shared_dir / "taskboard.sqlite3").exists()
