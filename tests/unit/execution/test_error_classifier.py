@@ -11,6 +11,7 @@ import pytest
 from core.execution.error_classifier import (
     FailoverReason,
     classify_llm_error,
+    classify_llm_error_message,
     guard_key,
     litellm_realm_of,
     provider_family_of,
@@ -94,7 +95,7 @@ class TestLitellmRealm:
         assert litellm_realm_of("") == "api"
 
 
-# ── classification matrix (12 reasons) ──────────────────────────────────────
+# ── classification matrix (13 reasons) ──────────────────────────────────────
 
 
 class TestClassificationMatrix:
@@ -119,6 +120,30 @@ class TestClassificationMatrix:
     def test_billing_403_with_billing_body(self) -> None:
         reason, _ = classify_llm_error(_ApiError("insufficient credits", status_code=403))
         assert reason is FailoverReason.BILLING
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "usageLimitExceeded",
+            "Usage Limit Exceeded",
+            "Usage limit reached for this account",
+            "You have reached your weekly limit",
+            "code=usage_limit_reached",
+        ],
+    )
+    def test_quota_exhausted_messages(self, message: str) -> None:
+        reason, hint = classify_llm_error_message(message)
+        assert reason is FailoverReason.QUOTA_EXHAUSTED
+        assert hint.retryable is False
+        assert hint.fallback_ok is True
+        assert hint.is_terminal is True
+        assert hint.backoff_s == 1800.0
+
+    def test_quota_exhausted_exception(self) -> None:
+        reason, _ = classify_llm_error(
+            _ApiError("usageLimitExceeded: quota exceeded", status_code=429)
+        )
+        assert reason is FailoverReason.QUOTA_EXHAUSTED
 
     def test_rate_limit_429(self) -> None:
         reason, _ = classify_llm_error(_ApiError("Too Many Requests", status_code=429))
@@ -201,6 +226,12 @@ class TestClassificationMatrix:
 
 
 class TestDisambiguation:
+    def test_quota_precedes_overload_rate_and_billing(self) -> None:
+        reason, _ = classify_llm_error_message(
+            "usageLimitExceeded: overloaded, rate limit, insufficient credits"
+        )
+        assert reason is FailoverReason.QUOTA_EXHAUSTED
+
     def test_429_rate_vs_overloaded(self) -> None:
         rate, _ = classify_llm_error(_ApiError("rate limit exceeded", status_code=429))
         overloaded, _ = classify_llm_error(
@@ -274,10 +305,16 @@ def test_classifier_swallows_internal_errors() -> None:
     assert hint.retryable is True
 
 
+def test_message_classifier_unknown_degrades_safely() -> None:
+    reason, hint = classify_llm_error_message("something unrecognised")
+    assert reason is FailoverReason.UNKNOWN
+    assert hint.retryable is True
+
+
 @pytest.mark.parametrize("reason", list(FailoverReason))
 def test_every_reason_has_hint(reason: FailoverReason) -> None:
     # Every enum member must be reachable via a hint template (guards the
-    # 12-member contract).
+    # complete taxonomy contract).
     from core.execution.error_classifier import _HINTS
 
     assert reason in _HINTS

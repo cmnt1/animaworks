@@ -60,6 +60,16 @@ class TestClamp:
         remaining = guard.blocked_remaining("anthropic")
         assert 40 < remaining <= 45
 
+    def test_quota_block_uses_extended_quota_clamp(self, tmp_path: Path) -> None:
+        guard = _guard(
+            tmp_path,
+            max_block_seconds=600,
+            quota_block_seconds=1800,
+        )
+        guard.report_block("openai:codex", 1800, "quota_exhausted")
+        remaining = guard.blocked_remaining("openai:codex")
+        assert 1700 < remaining <= 1800
+
 
 class TestFailOpen:
     def test_corrupt_file_reads_as_unblocked(self, tmp_path: Path) -> None:

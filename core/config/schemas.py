@@ -81,6 +81,7 @@ class AnimaDefaults(BaseModel):
 
     model: str = DEFAULT_ANIMA_MODEL
     fallback_model: str | None = None
+    fallback_models: list[str] = Field(default_factory=list)
     background_model: str | None = None
     background_credential: str | None = None
     background_thinking_effort: str | None = None  # heartbeat/cron thinking effort override
@@ -680,6 +681,7 @@ class LlmRateGuardConfig(BaseModel):
     enabled: bool = True
     default_block_seconds: int = Field(default=60, ge=0)
     max_block_seconds: int = Field(default=600, ge=0)
+    quota_block_seconds: int = Field(default=1800, ge=0)
 
 
 class BackgroundToolConfig(BaseModel):

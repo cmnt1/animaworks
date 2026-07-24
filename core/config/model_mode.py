@@ -376,6 +376,50 @@ def resolve_execution_mode(
     return "B"  # unknown model → safe side
 
 
+def parse_fallback_entry(
+    entry: str,
+    config: AnimaWorksConfig,
+) -> tuple[str, str] | None:
+    """Parse one fallback-model entry into a lowercase mode and model.
+
+    Entries normally use ``"<mode>:<model>"``.  A model-only entry is also
+    accepted and its mode is resolved through :func:`resolve_execution_mode`.
+    Invalid explicit mode letters and empty values are skipped fail-open.
+    """
+    if not isinstance(entry, str) or not entry.strip():
+        logger.warning("Skipping empty fallback model entry")
+        return None
+
+    value = entry.strip()
+    if value.startswith(":"):
+        logger.warning("Skipping fallback model entry with invalid mode: %r", entry)
+        return None
+
+    # Only a one-letter prefix followed by ':' is an explicit mode.  This
+    # preserves model-only entries containing a tag colon, e.g.
+    # ``ollama/qwen3:14b``.
+    if len(value) >= 2 and value[1] == ":":
+        mode = value[0]
+        model = value[2:].strip()
+        if mode not in {"s", "c", "d", "g", "x", "a", "b"}:
+            logger.warning("Skipping fallback model entry with invalid mode: %r", entry)
+            return None
+        if not model:
+            logger.warning("Skipping fallback model entry with empty model: %r", entry)
+            return None
+        return mode, model
+
+    mode = resolve_execution_mode(config, value).lower()
+    if mode not in {"s", "c", "d", "g", "x", "a", "b"}:
+        logger.warning(
+            "Skipping fallback model entry with unresolved mode %r: %r",
+            mode,
+            entry,
+        )
+        return None
+    return mode, value
+
+
 __all__ = [
     "DEFAULT_MODEL_MODE_PATTERNS",
     "DEFAULT_MODEL_MODES",
@@ -385,6 +429,7 @@ __all__ = [
     "_match_pattern_table",
     "_normalise_mode",
     "resolve_execution_mode",
+    "parse_fallback_entry",
     "_load_models_json",
     "invalidate_models_json_cache",
     "_match_models_json",

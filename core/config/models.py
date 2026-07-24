@@ -26,8 +26,10 @@ from core.config.model_config import (
     _THINKING_MIN_MAX_TOKENS,
     DEFAULT_MAX_TOKENS,
     _match_model_max_tokens,
+    fallback_event_meta,
     infer_mode_s_auth,
     load_model_config,
+    resolve_effective_model_config,
     resolve_max_tokens,
     resolve_penalties,
     smart_update_model,
@@ -53,6 +55,7 @@ from core.config.model_mode import (
     _normalise_mode,
     _pattern_specificity,
     invalidate_models_json_cache,
+    parse_fallback_entry,
     resolve_execution_mode,
 )
 from core.config.resolver import _load_status_json, resolve_anima_config

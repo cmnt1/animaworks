@@ -584,7 +584,7 @@ class InboxMixin:
                     result: CycleResult | None = None
 
                     original_config = None
-                    bg_config = self._resolve_background_config()
+                    bg_config = self._resolve_background_config("inbox")
                     if bg_config is not None:
                         original_config = agent.model_config
                         agent.update_model_config(bg_config)

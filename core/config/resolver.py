@@ -50,6 +50,7 @@ def _load_status_json(anima_dir: Path) -> dict[str, Any]:
         "supervisor": "supervisor",
         "max_tokens": "max_tokens",
         "fallback_model": "fallback_model",
+        "fallback_models": "fallback_models",
         "thinking": "thinking",
         "thinking_effort": "thinking_effort",
         "background_thinking_effort": "background_thinking_effort",
