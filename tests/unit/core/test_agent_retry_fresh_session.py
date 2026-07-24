@@ -325,3 +325,70 @@ class TestRetryExhausted:
         cycle_result = done_events[0]["cycle_result"]
         assert cycle_result["action"] == "error"
         assert cycle_result["summary"] == error_msg
+
+
+class TestTerminalErrorChunk:
+    """A structured terminal error must bypass disconnect retries."""
+
+    @pytest.mark.asyncio
+    async def test_terminal_error_followed_by_done_finishes_as_error(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        agent = _make_agent(tmp_path, model="codex/o4-mini")
+        call_count = 0
+
+        async def _executor_stream(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            yield {
+                "type": "error",
+                "message": "[Codex turn failed: usageLimitExceeded]",
+                "terminal": True,
+                "reason": "quota_exhausted",
+            }
+            yield {
+                "type": "done",
+                "full_text": "",
+                "result_message": None,
+                "replied_to_from_transcript": set(),
+                "tool_call_records": [],
+                "force_chain": False,
+            }
+
+        agent._executor.execute_streaming = _executor_stream
+        agent._executor.supports_streaming = True
+
+        with (
+            patch("core._agent_cycle.build_system_prompt", return_value=_build_result_mock()),
+            patch("core._agent_cycle.inject_shortterm", side_effect=lambda sp, _stm: sp),
+            patch("core.agent.AgentCore._resolve_execution_mode", return_value="c"),
+            patch("core.agent.AgentCore._preflight_size_check") as mock_preflight,
+            patch("core.agent.AgentCore._load_stream_retry_config") as mock_retry_cfg,
+            patch("core._agent_cycle._save_prompt_log"),
+            patch("core.execution.codex_sdk.clear_codex_thread_ids") as mock_clear,
+            patch("core.agent.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
+        ):
+            mock_preflight.return_value = ("mocked system prompt", "test prompt", False)
+            mock_retry_cfg.return_value = {
+                "checkpoint_enabled": False,
+                "retry_max": 2,
+                "retry_delay_s": 0.0,
+            }
+            mock_priming.return_value = ("", "")
+
+            events = []
+            async for event in agent.run_cycle_streaming(
+                "test prompt",
+                trigger="chat",
+            ):
+                events.append(event)
+
+        assert call_count == 1
+        assert not any(e.get("type") == "retry_start" for e in events)
+        mock_clear.assert_not_called()
+        cycle_done = next(e for e in events if e.get("type") == "cycle_done")
+        assert cycle_done["cycle_result"]["action"] == "error"
+        assert cycle_done["cycle_result"]["summary"] == (
+            "[Codex turn failed: usageLimitExceeded]"
+        )

@@ -20,7 +20,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.config.schemas import LlmRateGuardConfig
 from core.exceptions import LLMAPIError
+from core.execution.rate_guard import LlmRateGuard
 from core.schemas import ModelConfig
 from tests.helpers.mocks import make_litellm_response
 
@@ -161,3 +163,19 @@ def test_cross_process_writes_stay_valid(shared_data_dir: Path) -> None:
     state = json.loads(guard_path.read_text())
     assert isinstance(state, dict)
     assert any(fam in state for fam in ("anthropic", "openai"))
+
+
+def test_quota_block_is_not_clamped_to_transient_max(
+    shared_data_dir: Path,
+) -> None:
+    guard = LlmRateGuard(
+        config=LlmRateGuardConfig(
+            max_block_seconds=600,
+            quota_block_seconds=1800,
+        ),
+        path=_guard_file(shared_data_dir),
+    )
+
+    guard.report_block("openai:codex", 1800, "quota_exhausted")
+
+    assert guard.blocked_remaining("openai:codex") > 1700

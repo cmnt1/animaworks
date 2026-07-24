@@ -224,6 +224,7 @@ class TestReadModelConfig:
         mock_resolved = MagicMock()
         mock_resolved.model = "gpt-4o"
         mock_resolved.fallback_model = None
+        mock_resolved.fallback_models = []
         mock_resolved.max_tokens = 4096
         mock_resolved.max_turns = 10000
         mock_resolved.credential = "openai"
@@ -297,6 +298,7 @@ class TestReadModelConfig:
         mock_resolved = MagicMock()
         mock_resolved.model = "claude-sonnet-4-6"
         mock_resolved.fallback_model = None
+        mock_resolved.fallback_models = []
         mock_resolved.max_tokens = 4096
         mock_resolved.max_turns = 10000
         mock_resolved.credential = "anthropic"

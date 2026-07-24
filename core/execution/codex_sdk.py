@@ -41,6 +41,13 @@ from core.execution.base import (
     ToolCallRecord,
     _truncate_for_record,
 )
+from core.execution.error_classifier import (
+    FailoverReason,
+    classify_llm_error_message,
+    guard_key,
+    provider_family_of,
+)
+from core.execution.rate_guard import get_rate_guard
 from core.execution.session_types import is_persistent_codex_session, resolve_runtime_session_type
 from core.memory.shortterm import ShortTermMemory
 from core.platform.codex import default_home_dir, get_codex_executable
@@ -111,6 +118,37 @@ def is_codex_sdk_available() -> bool:
         return True
     except Exception:
         return False
+
+
+def _codex_error_metadata(message: str, model: str) -> dict[str, Any]:
+    """Classify a Codex event error, report fleet blocks, and return chunk metadata."""
+    reason, hint = classify_llm_error_message(message)
+    if reason in {
+        FailoverReason.RATE_LIMIT,
+        FailoverReason.OVERLOADED,
+        FailoverReason.QUOTA_EXHAUSTED,
+    }:
+        try:
+            guard = get_rate_guard()
+            cfg = guard.config
+            block_seconds = (
+                cfg.quota_block_seconds
+                if reason is FailoverReason.QUOTA_EXHAUSTED
+                else cfg.default_block_seconds
+            )
+            guard.report_block(
+                guard_key(provider_family_of(model), "codex"),
+                block_seconds,
+                reason.value,
+            )
+        except Exception:
+            # Classification must not turn a provider error event into an
+            # executor failure.  The shared guard remains fail-open.
+            logger.debug("failed to report Codex error to rate guard", exc_info=True)
+
+    if hint.is_terminal or not hint.retryable:
+        return {"terminal": True, "reason": reason.value}
+    return {}
 
 
 def _patch_reasoning_effort_enum() -> None:
@@ -2123,7 +2161,11 @@ class CodexSDKExecutor(BaseExecutor):
                             end_chunk = _thinking_end_chunk()
                             if end_chunk:
                                 yield end_chunk
-                            yield {"type": "error", "message": f"[Codex turn failed: {error_msg}]"}
+                            yield {
+                                "type": "error",
+                                "message": f"[Codex turn failed: {error_msg}]",
+                                **_codex_error_metadata(error_msg, self._model_config.model),
+                            }
                         continue
 
                     if method == "turn/failed":
@@ -2133,7 +2175,11 @@ class CodexSDKExecutor(BaseExecutor):
                         end_chunk = _thinking_end_chunk()
                         if end_chunk:
                             yield end_chunk
-                        yield {"type": "error", "message": f"[Codex turn failed: {error_msg}]"}
+                        yield {
+                            "type": "error",
+                            "message": f"[Codex turn failed: {error_msg}]",
+                            **_codex_error_metadata(error_msg, self._model_config.model),
+                        }
                         continue
 
                     if method == "error":
@@ -2142,7 +2188,11 @@ class CodexSDKExecutor(BaseExecutor):
                         end_chunk = _thinking_end_chunk()
                         if end_chunk:
                             yield end_chunk
-                        yield {"type": "error", "message": f"[Codex error: {error_msg}]"}
+                        yield {
+                            "type": "error",
+                            "message": f"[Codex error: {error_msg}]",
+                            **_codex_error_metadata(error_msg, self._model_config.model),
+                        }
                         continue
 
                     if method in ("thread/started", "turn/started"):

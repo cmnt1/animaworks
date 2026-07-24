@@ -824,7 +824,7 @@ class LifecycleMixin:
                         _session_token = agent._tool_handler.set_active_session_type("cron")
                         agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
                         original_config = None
-                        bg_config = self._resolve_background_config()
+                        bg_config = self._resolve_background_config("cron")
                         if bg_config is not None:
                             original_config = agent.model_config
                             agent.update_model_config(bg_config)

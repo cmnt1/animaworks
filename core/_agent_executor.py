@@ -135,7 +135,11 @@ class ExecutorFactoryMixin:
                 )
             except ImportError:
                 logger.warning(
-                    "CodexSDKExecutor unavailable (openai-codex not installed), falling back to LiteLLM (Mode A)"
+                    "CodexSDKExecutor unavailable for model=%s resolved_mode=%s "
+                    "(openai-codex not installed); falling back to LiteLLM (Mode A) "
+                    "without changing resolved_mode",
+                    active_config.model,
+                    active_config.resolved_mode,
                 )
                 fallback_model_config = active_config.model_copy(deep=True)
                 fallback_model: str | None = fallback_model_config.fallback_model
@@ -261,7 +265,13 @@ class ExecutorFactoryMixin:
                     interrupt_event=self._interrupt_event,
                 )
             except ImportError:
-                logger.warning("GrokCLIExecutor unavailable (grok CLI not installed), falling back to LiteLLM (Mode A)")
+                logger.warning(
+                    "GrokCLIExecutor unavailable for model=%s resolved_mode=%s "
+                    "(grok CLI not installed); falling back to LiteLLM (Mode A) "
+                    "without changing resolved_mode",
+                    active_config.model,
+                    active_config.resolved_mode,
+                )
                 fallback_model_config = active_config.model_copy(deep=True)
                 model_name = fallback_model_config.model
                 if model_name.startswith("grok/"):

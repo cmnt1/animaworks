@@ -201,6 +201,58 @@ class TestResolveBackgroundConfig:
         assert result.max_tokens == 8192
         assert result.context_threshold == 0.8
 
+    def test_rate_guard_block_switches_main_config_to_fallback(self, tmp_path: Path):
+        """A heartbeat with no background override preflights the main model."""
+        from core.config.schemas import LlmRateGuardConfig
+        from core.execution.error_classifier import guard_key
+        from core.execution.rate_guard import LlmRateGuard
+
+        mc = ModelConfig(
+            model="codex/gpt-5.3-codex",
+            resolved_mode="C",
+            fallback_models=["x:grok/grok-4.5"],
+        )
+        mixin = _make_heartbeat_mixin(mc)
+        mixin._activity = MagicMock()
+
+        guard = LlmRateGuard(
+            config=LlmRateGuardConfig(enabled=True),
+            path=tmp_path / "llm_rate_guard.json",
+        )
+        guard.report_block(
+            guard_key("openai", "codex"),
+            300,
+            "quota_exhausted",
+        )
+
+        with (
+            patch(_PATCH_LOAD_CONFIG) as mock_config,
+            patch("core.config.io.load_config") as mock_io_config,
+            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+        ):
+            from core.config.models import CredentialConfig
+
+            mock_cfg = MagicMock()
+            mock_cfg.heartbeat.default_model = None
+            mock_cfg.credentials = {
+                "grok": CredentialConfig(api_key="grok-key"),
+            }
+            mock_config.return_value = mock_cfg
+            mock_io_config.return_value = mock_cfg
+
+            result = mixin._resolve_background_config("heartbeat")
+
+        assert result is not None
+        assert result.model == "grok/grok-4.5"
+        assert result.resolved_mode == "X"
+        mixin._activity.log.assert_called_once()
+        assert mixin._activity.log.call_args.args == ("model_fallback",)
+        assert mixin._activity.log.call_args.kwargs["meta"]["primary"] == "codex/gpt-5.3-codex"
+        assert mixin._activity.log.call_args.kwargs["meta"]["fallback"] == "x:grok/grok-4.5"
+        assert mixin._activity.log.call_args.kwargs["meta"]["phase"] == "preflight"
+        assert mixin._activity.log.call_args.kwargs["channel"] == "heartbeat"
+        assert mixin._activity.log.call_args.kwargs["safe"] is True
+
 
 # ── Heartbeat model swap integration ──────────────────────────
 

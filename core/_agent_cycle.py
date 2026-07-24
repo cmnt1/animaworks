@@ -1236,6 +1236,9 @@ class CycleMixin:
                         if chunk.get("truncated", False):
                             stream_truncated = True
                         stream_succeeded = True
+                    elif chunk["type"] == "error" and chunk.get("terminal") is True:
+                        terminal_error_message = chunk.get("message", "[Terminal LLM error]")
+                        yield chunk
                     elif chunk["type"] == "tool_end" and checkpoint_enabled:
                         record = chunk.get("record")
                         summary = (getattr(record, "result_summary", "") if record else "") or chunk.get(
@@ -1384,8 +1387,9 @@ class CycleMixin:
                 await asyncio.sleep(actual_delay)
                 continue
 
-            if stream_succeeded:
-                # Clear checkpoint on success
+            if stream_succeeded or terminal_error_message:
+                # A structured terminal provider error is a completed failure,
+                # not a disconnected stream eligible for retry.
                 shortterm.clear_checkpoint()
                 break
 

@@ -1993,7 +1993,7 @@ class TestProgressiveStreaming:
 
     @pytest.mark.asyncio
     async def test_turn_failed_yields_error(self, executor, anima_dir):
-        """turn.failed event should yield an error event."""
+        """A transient turn.failed event keeps the existing non-terminal shape."""
         failed_event = MagicMock()
         failed_event.type = "turn.failed"
         err = MagicMock()
@@ -2016,6 +2016,105 @@ class TestProgressiveStreaming:
         error_events = [e for e in events if e["type"] == "error"]
         assert len(error_events) >= 1
         assert "Rate limit" in error_events[0]["message"]
+        assert "terminal" not in error_events[0]
+
+    @pytest.mark.asyncio
+    async def test_turn_failed_quota_reports_guard_and_marks_terminal(self, executor):
+        failed_event = SimpleNamespace(
+            method="turn/failed",
+            payload=SimpleNamespace(
+                error=SimpleNamespace(message="usageLimitExceeded: weekly limit reached"),
+                turn_id="turn-1",
+                thread_id="thread-1",
+            ),
+        )
+        mock_thread = _mock_stream_thread("quota-thread", [failed_event])
+        mock_codex = _mock_codex(mock_thread)
+        guard = MagicMock()
+        guard.config = SimpleNamespace(
+            default_block_seconds=60,
+            quota_block_seconds=1800,
+        )
+
+        events = []
+        with (
+            patch.object(executor, "_create_codex_client", return_value=mock_codex),
+            patch("core.execution.codex_sdk.get_rate_guard", return_value=guard),
+        ):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for ev in executor.execute_streaming(
+                system_prompt="test",
+                prompt="fail",
+                tracker=tracker,
+            ):
+                events.append(ev)
+
+        guard.report_block.assert_called_once_with(
+            "openai:codex",
+            1800,
+            "quota_exhausted",
+        )
+        error_event = next(e for e in events if e["type"] == "error")
+        assert error_event["terminal"] is True
+        assert error_event["reason"] == "quota_exhausted"
+        assert any(e["type"] == "done" for e in events)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["turn/completed", "turn/failed", "error"])
+    async def test_all_error_notifications_are_classified(self, executor, method):
+        message = "usageLimitExceeded"
+        if method == "turn/completed":
+            payload = SimpleNamespace(
+                turn=SimpleNamespace(
+                    id="turn-1",
+                    error=SimpleNamespace(message=message),
+                ),
+                thread_id="thread-1",
+            )
+        elif method == "turn/failed":
+            payload = SimpleNamespace(
+                error=SimpleNamespace(message=message),
+                turn_id="turn-1",
+                thread_id="thread-1",
+            )
+        else:
+            payload = SimpleNamespace(
+                message=message,
+                turn_id="turn-1",
+                thread_id="thread-1",
+            )
+        mock_thread = _mock_stream_thread(
+            "classified-thread",
+            [SimpleNamespace(method=method, payload=payload)],
+        )
+        mock_codex = _mock_codex(mock_thread)
+        guard = MagicMock()
+        guard.config = SimpleNamespace(
+            default_block_seconds=60,
+            quota_block_seconds=1800,
+        )
+
+        events = []
+        with (
+            patch.object(executor, "_create_codex_client", return_value=mock_codex),
+            patch("core.execution.codex_sdk.get_rate_guard", return_value=guard),
+        ):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for event in executor.execute_streaming(
+                system_prompt="test",
+                prompt="fail",
+                tracker=tracker,
+            ):
+                events.append(event)
+
+        error_event = next(e for e in events if e["type"] == "error")
+        assert error_event["terminal"] is True
+        assert error_event["reason"] == "quota_exhausted"
+        guard.report_block.assert_called_once_with(
+            "openai:codex",
+            1800,
+            "quota_exhausted",
+        )
 
     @pytest.mark.asyncio
     async def test_no_duplicate_text_on_completed(self, executor, anima_dir):

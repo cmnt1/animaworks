@@ -75,6 +75,7 @@ class ModelConfig(BaseModel):
 
     model: str = DEFAULT_ANIMA_MODEL
     fallback_model: str | None = None
+    fallback_models: list[str] = Field(default_factory=list)
     max_tokens: int = 8192
     max_turns: int = 10000
     credential: str | None = None  # resolved credential name from config.json
