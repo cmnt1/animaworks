@@ -118,7 +118,10 @@ def handler_with_notifier_and_messenger(
 ) -> ToolHandler:
     shared_dir = tmp_path / "shared"
     (shared_dir / "inbox").mkdir(parents=True, exist_ok=True)
-    (shared_dir / "channels").mkdir(parents=True, exist_ok=True)
+    channels_dir = shared_dir / "channels"
+    channels_dir.mkdir(parents=True, exist_ok=True)
+    for channel_name in ("general", "ops"):
+        (channels_dir / f"{channel_name}.jsonl").touch()
     handler = ToolHandler(
         anima_dir=anima_dir,
         memory=memory,
@@ -337,10 +340,12 @@ class TestCallHumanHandler:
         )
         with (
             patch("core.config.models.load_config") as mock_load,
-            patch("core.notification.interactive.get_interaction_router") as mock_get_ir,
+            patch(
+                "core.notification.interactive.create_interaction_resilient",
+                return_value=req,
+            ) as mock_create,
         ):
             mock_load.return_value.interaction.default_approver_ids = ["U9"]
-            mock_get_ir.return_value.create = AsyncMock(return_value=req)
 
             result = handler_with_notifier.handle(
                 "call_human",
@@ -358,8 +363,8 @@ class TestCallHumanHandler:
         assert parsed.get("interactive") is True
         assert parsed.get("callback_id") == "cb_test_1"
         assert stub_channel.calls[0].get("interaction") == "cb_test_1"
-        mock_get_ir.return_value.create.assert_called_once()
-        _cargs, ckwargs = mock_get_ir.return_value.create.call_args
+        mock_create.assert_called_once()
+        _cargs, ckwargs = mock_create.call_args
         assert ckwargs["allowed_users"] == {"slack": ["U1", "U9"]}
 
     def test_ops_post_without_interactive_call_human_falls_back_to_general(

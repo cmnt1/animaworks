@@ -10,6 +10,7 @@ import {
   defaultLocalDateTime,
   isOverdue,
   shortId,
+  splitTaskDescription,
   statusClassSuffix,
   taskKey,
   visibilityLabel,
@@ -27,6 +28,8 @@ let _animaNames = [];
 let _activeColumn = "todo";
 let _drag = null;
 let _searchTimer = null; let _renderToken = 0;
+/** @type {Set<string>} task keys whose card body is expanded */
+let _expandedBodies = new Set();
 
 export async function render(container) {
   const token = ++_renderToken;
@@ -111,6 +114,7 @@ export function destroy() {
   _allTasks = [];
   _animaNames = [];
   _drag = null;
+  _expandedBodies = new Set();
 }
 function _bindEvents() {
   _container.querySelector("#taskboardRefresh")?.addEventListener("click", () => _loadBoard());
@@ -141,8 +145,29 @@ function _bindEvents() {
       _handleCopyTask(copy);
       return;
     }
+    // Action buttons first so they never toggle body expand.
     const action = event.target.closest("[data-task-action]");
-    if (action) _handleAction(action);
+    if (action) {
+      _handleAction(action);
+      return;
+    }
+    const expandBtn = event.target.closest("[data-task-expand]");
+    if (expandBtn) {
+      event.preventDefault();
+      _toggleCardBody(expandBtn.dataset.taskExpand);
+      return;
+    }
+    const bodyWrap = event.target.closest("[data-task-body-wrap]");
+    if (bodyWrap) {
+      const card = bodyWrap.closest(".taskboard-card");
+      const btn = card?.querySelector("[data-task-expand]");
+      const body = card?.querySelector(".taskboard-card-body");
+      // Only toggle when clamped (button visible) or already expanded.
+      if (body?.classList.contains("is-expanded") || (btn && !btn.hidden)) {
+        event.preventDefault();
+        _toggleCardBody(bodyWrap.dataset.taskBodyWrap);
+      }
+    }
   });
 
   _container.addEventListener("dragstart", _onDragStart);
@@ -254,6 +279,7 @@ function _renderBoard() {
   if (!columnsEl) return;
   columnsEl.innerHTML = COLUMNS.map((column) => _columnHtml(column)).join("");
   _refreshIcons();
+  _syncClampAffordances();
 }
 
 function _columnHtml(column) {
@@ -291,8 +317,10 @@ function _cardHtml(task) {
   const key = taskKey(task);
   const column = task.column || "todo";
   const overdue = isOverdue(task.deadline);
-  const title = task.display_title || task.summary || task.original_instruction || t("taskboard.untitled");
-  const diagnostic = task.diagnostic_summary && task.diagnostic_summary !== title
+  const description = task.summary || task.original_instruction || "";
+  const { title: splitTitle, body } = splitTaskDescription(description);
+  const displayTitle = task.display_title || splitTitle || t("taskboard.untitled");
+  const diagnostic = task.diagnostic_summary && task.diagnostic_summary !== displayTitle
     ? `<div class="taskboard-diagnostic">${escapeHtml(task.diagnostic_summary)}</div>`
     : "";
   const ref = _taskReference(task);
@@ -304,6 +332,8 @@ function _cardHtml(task) {
     ? `<span class="taskboard-needs-human-badge" title="${escapeAttr(reasonText)}">🙋 ${escapeHtml(t("taskboard.needs_human_badge"))}</span>`
     : "";
   const originBadge = _originBadgeHtml(task);
+  const expanded = _expandedBodies.has(key);
+  const hasBody = Boolean(body);
   return `
     <article class="${cardClass}" draggable="true" data-task-key="${escapeAttr(key)}" data-column="${escapeAttr(column)}">
       ${needsHumanBadge}
@@ -317,7 +347,15 @@ function _cardHtml(task) {
           title="${escapeAttr(t("taskboard.copy_title"))}"
         ><code>${escapeHtml(shortId(task.task_id))}</code></button>
       </div>
-      <h4>${escapeHtml(title)}</h4>
+      <div class="taskboard-card-title-row">
+        <h4 class="taskboard-card-title">${escapeHtml(displayTitle)}</h4>
+        ${hasBody ? `<button type="button" class="taskboard-card-expand" data-task-expand="${escapeAttr(key)}" aria-expanded="${expanded ? "true" : "false"}" title="${escapeAttr(expanded ? t("taskboard.show_less") : t("taskboard.show_more"))}">${expanded ? t("taskboard.show_less") : t("taskboard.show_more")}</button>` : ""}
+      </div>
+      ${hasBody ? `
+      <div class="taskboard-card-body-wrap" data-task-body-wrap="${escapeAttr(key)}">
+         <p class="taskboard-card-body${expanded ? " is-expanded" : ""}">${escapeHtml(body)}</p>
+       </div>
+       ` : ""}
       ${diagnostic}
       <div class="taskboard-task-ref">${escapeHtml(ref)}</div>
       ${_relatedTasksHtml(task)}
@@ -417,6 +455,46 @@ async function _handleCopyTask(button) {
       }
     }, 1200);
   }
+}
+
+function _toggleCardBody(key) {
+  if (!key || !_container) return;
+  const next = !_expandedBodies.has(key);
+  if (next) _expandedBodies.add(key);
+  else _expandedBodies.delete(key);
+
+  const card = [..._container.querySelectorAll(".taskboard-card")].find((el) => el.dataset.taskKey === key);
+  if (!card) return;
+  const body = card.querySelector(".taskboard-card-body");
+  const btn = card.querySelector("[data-task-expand]");
+  if (body) body.classList.toggle("is-expanded", next);
+  if (btn) {
+    btn.setAttribute("aria-expanded", next ? "true" : "false");
+    const label = next ? t("taskboard.show_less") : t("taskboard.show_more");
+    btn.textContent = label;
+    btn.title = label;
+  }
+  _syncClampAffordances(card);
+}
+
+/** Hide expand controls when body does not overflow 3 lines (unless already expanded). */
+function _syncClampAffordances(root = _container) {
+  if (!root) return;
+  const cards = root.classList?.contains("taskboard-card")
+    ? [root]
+    : [...root.querySelectorAll(".taskboard-card")];
+  cards.forEach((card) => {
+    const body = card.querySelector(".taskboard-card-body");
+    const btn = card.querySelector("[data-task-expand]");
+    if (!body || !btn) return;
+    if (body.classList.contains("is-expanded")) {
+      btn.hidden = false;
+      return;
+    }
+    // scrollHeight > clientHeight means line-clamp is truncating.
+    const clamped = body.scrollHeight > body.clientHeight + 1;
+    btn.hidden = !clamped;
+  });
 }
 
 function _actionButtons(task, key) {

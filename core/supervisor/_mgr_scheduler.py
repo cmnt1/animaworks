@@ -1116,6 +1116,7 @@ class SchedulerMixin:
                 cron_queue_stale_minutes=hk_cfg.cron_queue_stale_minutes,
                 current_state_stale_hours=hk_cfg.current_state_stale_hours,
                 taskboard_suppressed_retention_days=hk_cfg.taskboard_suppressed_retention_days,
+                taskboard_orphan_metadata_stale_hours=hk_cfg.taskboard_orphan_metadata_stale_hours,
                 suppressed_messages_max_size_mb=hk_cfg.suppressed_messages_max_size_mb,
                 suppressed_messages_keep_generations=hk_cfg.suppressed_messages_keep_generations,
                 archive_superseded_retention_days=hk_cfg.archive_superseded_retention_days,

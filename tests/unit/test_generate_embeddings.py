@@ -123,7 +123,7 @@ class TestGenerateEmbeddingsHTTP:
         mock_post.assert_called_once_with(
             "http://127.0.0.1:18500/api/internal/embed",
             json={"texts": ["hello", "world"], "purpose": "document", "priority": "interactive"},
-            timeout=30.0,
+            timeout=180.0,
         )
 
     def test_http_mode_propagates_bulk_priority(self, monkeypatch):
@@ -142,7 +142,7 @@ class TestGenerateEmbeddingsHTTP:
         mock_post.assert_called_once_with(
             "http://localhost/embed",
             json={"texts": ["bulk"], "purpose": "document", "priority": "bulk"},
-            timeout=30.0,
+            timeout=180.0,
         )
 
     def test_http_mode_batches_large_requests(self, monkeypatch):

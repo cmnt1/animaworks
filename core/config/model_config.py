@@ -68,6 +68,7 @@ def load_model_config(anima_dir: Path) -> ModelConfig:
     return ModelConfig(
         model=resolved.model,
         fallback_model=resolved.fallback_model,
+        fallback_models=resolved.fallback_models,
         background_model=resolved.background_model,
         background_credential=resolved.background_credential,
         max_tokens=resolved.max_tokens,
@@ -87,11 +88,184 @@ def load_model_config(anima_dir: Path) -> ModelConfig:
         thinking=resolved.thinking,
         thinking_effort=resolved.thinking_effort,
         background_thinking_effort=resolved.background_thinking_effort,
+        heartbeat_enabled=resolved.heartbeat_enabled,
+        token_budget_monthly=resolved.token_budget_monthly,
         llm_timeout=resolved.llm_timeout,
         extra_keys=credential.keys or {},
         mode_s_auth=resolved.mode_s_auth,
         extra_mcp_servers=resolved.extra_mcp_servers,
     )
+
+
+# ---------------------------------------------------------------------------
+# Runtime fallback resolution
+# ---------------------------------------------------------------------------
+
+
+def _resolved_mode_for_config(model_config: ModelConfig, config: AnimaWorksConfig) -> str:
+    """Return the canonical execution mode for a runtime ``ModelConfig``."""
+    from core.config.model_mode import resolve_execution_mode
+
+    mode = model_config.resolved_mode or model_config.execution_mode
+    if mode:
+        return resolve_execution_mode(config, model_config.model, mode)
+    return resolve_execution_mode(config, model_config.model)
+
+
+def _guard_key_for_model_config(model_config: ModelConfig, config: AnimaWorksConfig) -> str:
+    """Build the realm-qualified rate-guard key used by an execution mode."""
+    from core.execution.error_classifier import (
+        guard_key,
+        litellm_realm_of,
+        provider_family_of,
+    )
+
+    mode = _resolved_mode_for_config(model_config, config)
+    if mode == "C":
+        realm = "codex"
+    elif mode == "S":
+        realm = model_config.mode_s_auth or "max"
+    elif mode == "D":
+        realm = "cursor"
+    elif mode == "G":
+        realm = "gemini"
+    elif mode == "X":
+        realm = "grok"
+    else:
+        realm = litellm_realm_of(model_config.model)
+    return guard_key(provider_family_of(model_config.model), realm)
+
+
+def _fallback_credential_name(model: str) -> str | None:
+    """Resolve the configured credential name for a fallback model family."""
+    from core.execution.error_classifier import provider_family_of
+
+    model_family = _model_family(model)
+    return _FAMILY_CREDENTIAL_MAP.get(model_family) or _FAMILY_CREDENTIAL_MAP.get(provider_family_of(model))
+
+
+def resolve_effective_model_config(model_config: ModelConfig) -> ModelConfig:
+    """Select the first usable fallback while the primary realm is blocked.
+
+    The returned copy is ephemeral and never writes ``status.json``.  The
+    original object is returned unchanged when the primary is available, no
+    fallback is configured, or every fallback is unusable (fail-open).
+    """
+    from core.schemas import ModelConfig as RuntimeModelConfig
+
+    if not isinstance(model_config, RuntimeModelConfig):
+        return model_config
+    if not model_config.fallback_models:
+        return model_config
+
+    from core.config.io import load_config
+    from core.config.model_mode import parse_fallback_entry
+    from core.execution.rate_guard import get_rate_guard
+
+    config = load_config()
+    guard = get_rate_guard()
+    primary_key = _guard_key_for_model_config(model_config, config)
+    primary_remaining = guard.blocked_remaining(primary_key)
+    if primary_remaining <= 0:
+        return model_config
+
+    for entry in model_config.fallback_models:
+        parsed = parse_fallback_entry(entry, config)
+        if parsed is None:
+            continue
+        mode, model = parsed
+        resolved_mode = mode.upper()
+
+        if resolved_mode in {"C", "D", "G", "X"}:
+            # CLI-auth engines (Codex/Cursor/Gemini/Grok) authenticate via their
+            # own CLI credential stores, not config.credentials — keep the
+            # primary's credential fields untouched.
+            candidate = model_config.model_copy(
+                update={
+                    "model": model,
+                    "execution_mode": resolved_mode,
+                    "resolved_mode": resolved_mode,
+                },
+            )
+        else:
+            credential_name = _fallback_credential_name(model)
+            credential = config.credentials.get(credential_name) if credential_name else None
+            if credential is None:
+                logger.warning(
+                    "Skipping fallback %s:%s: no credential configured for model family",
+                    mode,
+                    model,
+                )
+                continue
+
+            credential_type = getattr(credential, "type", None)
+            if not isinstance(credential_type, str):
+                credential_type = None
+            mode_s_auth = (
+                infer_mode_s_auth(
+                    mode=resolved_mode,
+                    credential_name=credential_name,
+                    config=config,
+                )
+                if resolved_mode == "S"
+                else None
+            )
+            candidate = model_config.model_copy(
+                update={
+                    "model": model,
+                    "execution_mode": resolved_mode,
+                    "resolved_mode": resolved_mode,
+                    "credential": credential_name,
+                    "credential_type": credential_type,
+                    "api_key": credential.api_key or None,
+                    "api_key_env": f"{credential_name.upper()}_API_KEY",
+                    "api_base_url": credential.base_url,
+                    "extra_keys": dict(credential.keys or {}),
+                    "mode_s_auth": mode_s_auth,
+                },
+            )
+        candidate_key = _guard_key_for_model_config(candidate, config)
+        if guard.blocked_remaining(candidate_key) > 0:
+            continue
+
+        logger.warning(
+            "primary %s blocked (%.0fs) \u2192 fallback %s:%s",
+            model_config.model,
+            primary_remaining,
+            mode,
+            model,
+        )
+        return candidate
+
+    return model_config
+
+
+def fallback_event_meta(
+    primary: ModelConfig,
+    effective: ModelConfig,
+) -> dict[str, str | float] | None:
+    """Describe a selected fallback for activity-log callers.
+
+    ``None`` means the effective config is the primary config.  Remaining
+    seconds are re-read from the primary guard key so all execution paths can
+    share the same metadata construction without retaining mutable state.
+    """
+    primary_mode = (primary.resolved_mode or primary.execution_mode or "").upper()
+    effective_mode = (effective.resolved_mode or effective.execution_mode or "").upper()
+    if primary.model == effective.model and primary_mode == effective_mode:
+        return None
+
+    from core.config.io import load_config
+    from core.execution.rate_guard import get_rate_guard
+
+    config = load_config()
+    remaining = get_rate_guard().blocked_remaining(_guard_key_for_model_config(primary, config))
+    return {
+        "primary": primary.model,
+        "fallback": f"{effective_mode.lower()}:{effective.model}",
+        "reason": "rate_guard_blocked",
+        "remaining": remaining,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -382,6 +556,8 @@ def smart_update_model(
 
 __all__ = [
     "load_model_config",
+    "resolve_effective_model_config",
+    "fallback_event_meta",
     "resolve_penalties",
     "resolve_max_tokens",
     "DEFAULT_MAX_TOKENS",

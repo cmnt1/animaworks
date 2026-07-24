@@ -53,34 +53,39 @@ def _save_credentials(config_dir: Path, credentials: dict) -> None:
 
 
 class TestChatworkCredentialCascade:
-    """Chatwork client should resolve via config.json → env → error."""
+    """Chatwork identity resolution uses only identity-specific keys."""
 
-    def test_config_json_resolution(self, config_dir, monkeypatch):
+    def test_legacy_config_json_credential_is_not_used(self, config_dir, monkeypatch):
         _save_credentials(config_dir, {
             "chatwork": {"type": "api_token", "api_key": "cwt-config-test"},
         })
-        # Remove env var to ensure config.json is used
-        monkeypatch.delenv("CHATWORK_API_TOKEN", raising=False)
+        monkeypatch.delenv("ANIMAWORKS_ANIMA_DIR", raising=False)
+        monkeypatch.delenv("CHATWORK_API_TOKEN__owner", raising=False)
 
-        from core.tools.chatwork import ChatworkClient
-        client = ChatworkClient()
-        assert client.api_token == "cwt-config-test"
+        from core.tools._chatwork_identity import resolve_identity
+
+        with pytest.raises(ToolConfigError, match="CHATWORK_API_TOKEN__owner"):
+            resolve_identity()
 
     def test_env_fallback(self, config_dir, monkeypatch):
         _save_credentials(config_dir, {})  # No chatwork in config
-        monkeypatch.setenv("CHATWORK_API_TOKEN", "cwt-env-test")
+        monkeypatch.delenv("ANIMAWORKS_ANIMA_DIR", raising=False)
+        monkeypatch.setenv("CHATWORK_API_TOKEN__owner", "cwt-env-test")
 
-        from core.tools.chatwork import ChatworkClient
-        client = ChatworkClient()
-        assert client.api_token == "cwt-env-test"
+        from core.tools._chatwork_identity import resolve_identity
+
+        identity = resolve_identity()
+        assert identity.token == "cwt-env-test"
 
     def test_error_when_missing(self, config_dir, monkeypatch):
         _save_credentials(config_dir, {})
-        monkeypatch.delenv("CHATWORK_API_TOKEN", raising=False)
+        monkeypatch.delenv("ANIMAWORKS_ANIMA_DIR", raising=False)
+        monkeypatch.delenv("CHATWORK_API_TOKEN__owner", raising=False)
 
-        from core.tools.chatwork import ChatworkClient
-        with pytest.raises(ToolConfigError, match="chatwork"):
-            ChatworkClient()
+        from core.tools._chatwork_identity import resolve_identity
+
+        with pytest.raises(ToolConfigError, match="CHATWORK_API_TOKEN__owner"):
+            resolve_identity()
 
 
 class TestSlackCredentialCascade:

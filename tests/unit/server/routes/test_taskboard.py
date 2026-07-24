@@ -324,7 +324,7 @@ class TestTaskBoardPatch:
 
         assert resp.status_code == 200
         data = resp.json()["task"]
-        assert data["visibility"] == "archived"
+        assert data["visibility"] == "tombstoned"
         assert data["queue_status"] == "cancelled"
         assert queue.get_task_by_id(task.task_id).status == "cancelled"
         assert queue.get_task_by_id(task.task_id).summary == "tombstoned by TaskBoard: duplicate cron noise"

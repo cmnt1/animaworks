@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import sys
 import time
 
 from core.i18n import t
@@ -55,6 +56,7 @@ def cmd_board_read(args: argparse.Namespace) -> None:
 
 def cmd_board_post(args: argparse.Namespace) -> None:
     """Post a message to a shared channel."""
+    from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
     from core.init import ensure_runtime_dir
     from core.messenger import Messenger
     from core.paths import get_shared_dir
@@ -64,8 +66,15 @@ def cmd_board_post(args: argparse.Namespace) -> None:
     post_kwargs = {}
     if _is_human_alias(args.from_anima):
         post_kwargs = {"source": "human", "from_name": args.from_anima}
-    posted = messenger.post_channel(args.channel, args.text, **post_kwargs)
-    if not posted:
+    try:
+        posted = messenger.post_channel(args.channel, args.text, **post_kwargs)
+    except ChannelNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except ChannelAccessDeniedError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    if posted is False:
         print(f"Post denied or failed for #{args.channel}")
         return
     print(f"Posted to #{args.channel}")

@@ -80,8 +80,6 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/_anima_inbox.py": 3,
     # MD section names used for parsing (基本情報, 人格, etc.)
     "core/anima_factory.py": 8,
-    # label "コマンド:" in audit output
-    "core/audit.py": 1,
     # error messages returned to Anima (GlobalOutboundLimitExceeded etc.)
     "core/cascade_limiter.py": 4,
     # deprecation warning message
@@ -98,7 +96,6 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # label "個人ツール"
     "core/tooling/handler_memory.py": 1,
     # tool descriptions — already have ja/en dict structure
-    "core/tooling/prompt_db.py": 24,
     # Japanese field names in schema descriptions (上司, 基本情報)
     "core/tooling/schemas/admin.py": 2,
     # user-facing message (バックグラウンドタスク投入)
@@ -115,8 +112,7 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/reports/pending_review_surfacer.py": 8,
     "core/tools/_slack_cli.py": 1,
     # mock task data with Japanese titles
-    "server/routes/animas.py": 24,
-    "server/routes/external_tasks.py": 8,
+    "server/routes/animas.py": 0,
     # meeting/room feature — Japanese meeting prompts and labels
     "server/room_manager.py": 12,
     "server/routes/room.py": 7,

@@ -36,7 +36,7 @@ from core.prompt.builder import (
 )
 from core.prompt.context import CHARS_PER_TOKEN, ContextTracker
 from core.schemas import CycleResult, ImageData, ModelConfig
-from core.time_utils import now_iso
+from core.time_utils import now_iso, now_local
 
 logger = logging.getLogger("animaworks.agent")
 
@@ -120,6 +120,129 @@ def _log_session_token_usage(
 class CycleMixin:
     """Mixin: blocking and streaming execution cycles + session chaining."""
 
+    def _check_monthly_token_budget(
+        self,
+        *,
+        trigger: str,
+        model_config: ModelConfig,
+    ) -> CycleResult | None:
+        """Return a skipped result when the Anima has reached its monthly cap.
+
+        The unlimited path deliberately returns before constructing the usage
+        logger, preserving the pre-budget behaviour without aggregation I/O.
+        Usage-read failures are fail-closed when a budget is configured so a
+        transient observability problem cannot bypass the spending cap.
+        """
+        budget = model_config.token_budget_monthly
+        if budget is None:
+            return None
+
+        now = now_local()
+        try:
+            from core.memory.token_budget import calculate_token_budget_status
+            from core.memory.token_usage import TokenUsageLogger
+
+            consumed = TokenUsageLogger(self.anima_dir).monthly_total(now)
+            status = calculate_token_budget_status(budget, consumed)
+        except Exception as exc:
+            logger.warning(
+                "Failed to check monthly token budget for %s; blocking cycle",
+                self.anima_dir.name,
+                exc_info=True,
+            )
+            try:
+                from core.memory.activity import ActivityLogger
+
+                ActivityLogger(self.anima_dir).log(
+                    "budget_check_failed",
+                    summary="Monthly token budget could not be verified; LLM cycle skipped",
+                    meta={
+                        "budget": budget,
+                        "month": now.strftime("%Y-%m"),
+                        "trigger": trigger,
+                        "error": type(exc).__name__,
+                    },
+                    safe=True,
+                )
+            except Exception:
+                logger.warning("Failed to record budget_check_failed activity", exc_info=True)
+            return CycleResult(
+                trigger=trigger,
+                action="skipped",
+                summary="Monthly token budget could not be verified; LLM cycle skipped",
+            )
+
+        if not status.exceeded:
+            return None
+
+        month = now.strftime("%Y-%m")
+        meta = {
+            "budget": status.budget,
+            "consumed": status.consumed,
+            "month": month,
+            "trigger": trigger,
+        }
+        try:
+            from core.memory.activity import ActivityLogger
+
+            ActivityLogger(self.anima_dir).log(
+                "budget_exceeded",
+                summary="Monthly token budget reached; LLM cycle skipped",
+                meta=meta,
+                safe=True,
+            )
+        except Exception:
+            logger.warning("Failed to record budget_exceeded activity", exc_info=True)
+
+        self._write_budget_exceeded_notification(meta)
+        logger.warning(
+            "Monthly token budget reached for %s: consumed=%d budget=%d trigger=%s",
+            self.anima_dir.name,
+            status.consumed,
+            budget,
+            trigger,
+        )
+        return CycleResult(
+            trigger=trigger,
+            action="skipped",
+            summary="Monthly token budget reached; LLM cycle skipped",
+        )
+
+    def _write_budget_exceeded_notification(self, meta: dict[str, Any]) -> None:
+        """Write the owner notification at most once for each calendar month."""
+        month = str(meta["month"])
+        marker_dir = self.anima_dir / "state" / "token_budget_notifications"
+        marker_path = marker_dir / f"{month}.notified"
+        marker_created = False
+        try:
+            marker_dir.mkdir(parents=True, exist_ok=True)
+            # Exclusive creation makes duplicate suppression safe across lanes
+            # or processes that reach the cap concurrently.
+            with marker_path.open("x", encoding="utf-8") as marker:
+                marker.write(now_iso() + "\n")
+            marker_created = True
+
+            notif_dir = self.anima_dir / "state" / "background_notifications"
+            notif_dir.mkdir(parents=True, exist_ok=True)
+            notif_path = notif_dir / f"token_budget_exceeded_{month}.md"
+            notif_path.write_text(
+                "# Monthly token budget reached\n\n"
+                f"- month: {month}\n"
+                f"- budget: {meta['budget']}\n"
+                f"- consumed: {meta['consumed']}\n"
+                f"- trigger: {meta['trigger']}\n",
+                encoding="utf-8",
+            )
+        except FileExistsError:
+            return
+        except Exception:
+            if marker_created:
+                try:
+                    marker_path.unlink()
+                except OSError:
+                    pass
+            logger.warning("Failed to write token budget notification", exc_info=True)
+
     def _prepare_clean_start_session(
         self,
         *,
@@ -194,6 +317,12 @@ class CycleMixin:
         cycle_tokens = bind_cycle_context(uuid4().hex[:8], trigger)
         try:
             async with self._get_agent_lock(thread_id):
+                budget_result = self._check_monthly_token_budget(
+                    trigger=trigger,
+                    model_config=self.model_config,
+                )
+                if budget_result is not None:
+                    return budget_result
                 return await self._run_cycle_inner(
                     prompt,
                     trigger,
@@ -917,6 +1046,19 @@ class CycleMixin:
                 trigger=trigger,
             )
             async with self._get_agent_lock(thread_id):
+                budget_result = self._check_monthly_token_budget(
+                    trigger=trigger,
+                    model_config=self.model_config,
+                )
+                if budget_result is not None:
+                    budget_result.session_type = ctx.session_type
+                    budget_result.thread_id = ctx.thread_id
+                    budget_result.request_id = ctx.request_id
+                    yield {
+                        "type": "cycle_done",
+                        "cycle_result": budget_result.model_dump(mode="json"),
+                    }
+                    return
                 with runtime_session_scope(ctx):
                     self._tool_handler.bind_runtime_session(ctx)
                     token = self._tool_handler.set_active_session_type(session_type)
@@ -1242,6 +1384,9 @@ class CycleMixin:
                         if chunk.get("truncated", False):
                             stream_truncated = True
                         stream_succeeded = True
+                    elif chunk["type"] == "error" and chunk.get("terminal") is True:
+                        terminal_error_message = chunk.get("message", "[Terminal LLM error]")
+                        yield chunk
                     elif chunk["type"] == "tool_end" and checkpoint_enabled:
                         record = chunk.get("record")
                         summary = (getattr(record, "result_summary", "") if record else "") or chunk.get(
@@ -1448,8 +1593,9 @@ class CycleMixin:
                 await asyncio.sleep(actual_delay)
                 continue
 
-            if stream_succeeded:
-                # Clear checkpoint on success
+            if stream_succeeded or terminal_error_message:
+                # A structured terminal provider error is a completed failure,
+                # not a disconnected stream eligible for retry.
                 shortterm.clear_checkpoint()
                 break
 

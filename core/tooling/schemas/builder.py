@@ -11,10 +11,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.prompt.tool_content import apply_prompt_descriptions
 from core.skills.trust_gate import trust_skill_enabled_for_trigger
 from core.tooling.schemas.admin import _AW_CORE_NAMES, ADMIN_TOOLS, CC_TOOLS
 from core.tooling.schemas.channel import _channel_tools
-from core.tooling.schemas.converters import apply_db_descriptions
 from core.tooling.schemas.goal import _goal_tools
 from core.tooling.schemas.memory import (
     FILE_TOOLS,
@@ -172,7 +172,7 @@ def build_tool_list(
     if is_consolidation:
         tools = [t for t in tools if t["name"] not in _CONSOLIDATION_BLOCKED_TOOLS]
 
-    tools = apply_db_descriptions(tools)
+    tools = apply_prompt_descriptions(tools)
 
     if include_create_skill:
         tools.extend(_skill_authoring_schemas_for_trigger(trigger))
@@ -245,9 +245,8 @@ def build_unified_tool_list(
             tools.extend(_submit_tasks_tools())
         tools.extend(_goal_tools())
     for t in _task_tools():
-        if t["name"] == "update_task":
+        if t["name"] in {"update_task", "list_tasks"}:
             tools.append(t)
-            break
 
     # AW-essential: session todo (planning aid for Mode A)
     tools.extend(_session_todo_tools())
@@ -258,7 +257,7 @@ def build_unified_tool_list(
 
         tools.extend(_completion_gate_tools())
 
-    tools = apply_db_descriptions(tools)
+    tools = apply_prompt_descriptions(tools)
 
     if include_create_skill:
         tools.extend(

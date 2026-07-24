@@ -25,12 +25,14 @@ def subprocess_session_kwargs() -> dict[str, Any]:
 
 def is_process_alive(pid: int) -> bool:
     """Return True when ``pid`` exists and is not a zombie."""
-    if pid <= 0 or not psutil.pid_exists(pid):
+    if pid <= 0:
         return False
     try:
+        if not psutil.pid_exists(pid):
+            return False
         proc = psutil.Process(pid)
         return proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE
-    except psutil.Error:
+    except (OverflowError, ValueError, psutil.Error):
         return False
 
 

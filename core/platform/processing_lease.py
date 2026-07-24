@@ -11,6 +11,8 @@ import os
 import time
 from pathlib import Path
 
+from core.platform.process import is_process_alive
+
 
 def processing_lease_path(descriptor_path: Path) -> Path:
     """Return the lease sidecar path for a processing descriptor."""
@@ -76,13 +78,7 @@ def is_processing_lease_live(
     if expected_anima is not None and anima != expected_anima:
         return False
 
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        pass
-    except (OSError, OverflowError, ValueError):
+    if not is_process_alive(pid):
         return False
 
     proc_root = Path("/proc")

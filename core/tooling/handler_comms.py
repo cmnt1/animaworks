@@ -50,6 +50,26 @@ def _is_routine_heartbeat_ok_post(text: str) -> bool:
     return bool(_HEARTBEAT_OK_RE.search(text)) and not bool(_HEARTBEAT_REPORTABLE_RE.search(text))
 
 
+def _company_boundary_error(
+    from_anima: str,
+    to_anima: str,
+    *,
+    animas_dir: Any,
+) -> str | None:
+    """Return a stable user-facing error when a company boundary blocks access."""
+    from core.company import check_company_boundary
+
+    boundary = check_company_boundary(from_anima, to_anima, animas_dir=animas_dir)
+    if not boundary.cross_company:
+        return None
+    if boundary.resolved_via == "fail_closed":
+        return t("handler.company_boundary_unverifiable")
+    return t(
+        "handler.cross_company_message_blocked",
+        display_name=boundary.display_name,
+    )
+
+
 class CommsToolsMixin:
     """Message sending, channel posting/reading, DM history, and human notification."""
 
@@ -219,20 +239,16 @@ class CommsToolsMixin:
             return t("handler.dm_already_sent", to=effective_to)
 
         if meeting_target:
-            from core.company import get_company, get_company_display_name, is_cross_company
             from core.paths import get_animas_dir
 
             animas_dir = get_animas_dir()
-            if is_cross_company(self._anima_name, meeting_target, animas_dir=animas_dir):
-                target_company = get_company(meeting_target, animas_dir=animas_dir)
-                display_name = get_company_display_name(
-                    target_company or "",
-                    data_dir=animas_dir.parent,
-                )
-                return t(
-                    "handler.cross_company_message_blocked",
-                    display_name=display_name,
-                )
+            company_error = _company_boundary_error(
+                self._anima_name,
+                meeting_target,
+                animas_dir=animas_dir,
+            )
+            if company_error is not None:
+                return company_error
             try:
                 record_meeting_redirect(
                     from_name=self._anima_name,
@@ -302,19 +318,14 @@ class CommsToolsMixin:
             )
 
         if resolved is None or resolved.is_internal:
-            from core.company import get_company, get_company_display_name, is_cross_company
-
             internal_to = resolved.name if resolved is not None else to
-            if is_cross_company(self._anima_name, internal_to, animas_dir=animas_dir):
-                target_company = get_company(internal_to, animas_dir=animas_dir)
-                display_name = get_company_display_name(
-                    target_company or "",
-                    data_dir=animas_dir.parent,
-                )
-                return t(
-                    "handler.cross_company_message_blocked",
-                    display_name=display_name,
-                )
+            company_error = _company_boundary_error(
+                self._anima_name,
+                internal_to,
+                animas_dir=animas_dir,
+            )
+            if company_error is not None:
+                return company_error
 
         # ── Build outgoing origin_chain (provenance Phase 3) ──
         outgoing_chain = build_outgoing_origin_chain(
@@ -458,6 +469,64 @@ class CommsToolsMixin:
             logger.debug("Failed to build send feedback for %s", to, exc_info=True)
             return ""
 
+    def _cross_company_communication_error(self, peers: list[str]) -> str | None:
+        """Return the standard DM boundary error for the first cross-company peer."""
+        animas_dir = self._anima_dir.parent
+        for peer in sorted(set(peers)):
+            company_error = _company_boundary_error(
+                self._anima_name,
+                peer,
+                animas_dir=animas_dir,
+            )
+            if company_error is not None:
+                return company_error
+        return None
+
+    def _channel_company_boundary_error(self, channel: str) -> str | None:
+        """Enforce company scope for channel post/read access.
+
+        Decision order:
+        1. Restricted channels (non-empty members) → pair-check against members
+        2. Company-scoped open channels (meta.company set) → same-company only
+        3. Legacy open channels (no meta / empty members & company) → deny
+           company-assigned animas until company is configured; unassigned
+           animas keep legacy unrestricted access
+        """
+        if not self._messenger:
+            return None
+
+        from core.company import get_company, get_company_display_name
+        from core.messenger import load_channel_meta
+
+        meta = load_channel_meta(self._messenger.shared_dir, channel)
+        animas_dir = self._anima_dir.parent
+        data_dir = animas_dir.parent
+
+        # Restricted channel: keep existing member pair-check.
+        if meta is not None and meta.members:
+            return self._cross_company_communication_error(meta.members)
+
+        # Company-scoped open channel.
+        company = (meta.company if meta is not None else "") or ""
+        if company:
+            poster_company = get_company(self._anima_name, animas_dir=animas_dir)
+            if poster_company is None:
+                return None  # unassigned anima: legacy unrestricted
+            if poster_company == company:
+                return None
+            display_name = get_company_display_name(company, data_dir=data_dir)
+            return t(
+                "handler.cross_company_message_blocked",
+                display_name=display_name,
+            )
+
+        # Legacy open channel without company attribution.
+        # closed channels are already denied by ACL; leave boundary alone.
+        poster_company = get_company(self._anima_name, animas_dir=animas_dir)
+        if poster_company is None:
+            return None  # unassigned anima: legacy unrestricted
+        return t("handler.channel_company_unset", channel=channel)
+
     # ── Channel tool handlers ────────────────────────────────
 
     def _handle_post_channel(self, args: dict[str, Any]) -> str:
@@ -499,6 +568,9 @@ class CommsToolsMixin:
 
         if not is_channel_member(self._messenger.shared_dir, channel, self._anima_name):
             return t("handler.channel_acl_denied", channel=channel)
+        company_error = self._channel_company_boundary_error(channel)
+        if company_error is not None:
+            return company_error
 
         current_posted = self.posted_channels_for(active_session_type.get())
         if channel in current_posted:
@@ -555,7 +627,15 @@ class CommsToolsMixin:
 
         ops_callback_id = self._consume_ops_human_escalation() if channel == "ops" else ""
 
-        self._messenger.post_channel(channel, text)
+        from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
+
+        try:
+            self._messenger.post_channel(channel, text)
+        except ChannelNotFoundError:
+            return t("handler.channel_not_found", channel=channel)
+        except ChannelAccessDeniedError:
+            return t("handler.channel_acl_denied", channel=channel)
+
         self._posted_channels.setdefault(active_session_type.get(), set()).add(channel)
         logger.info(
             "post_channel channel=%s anima=%s ops_callback_id=%s fallback_from_ops=%s",
@@ -628,6 +708,10 @@ class CommsToolsMixin:
         from core.messenger import is_channel_member
 
         targets = {t for t in targets if is_channel_member(self._messenger.shared_dir, channel, t)}
+
+        # Defense in depth: the post gate rejects mixed-company channels, but
+        # membership may change before mention fan-out is delivered.
+        targets = {target for target in targets if self._cross_company_communication_error([target]) is None}
 
         if not targets:
             return
@@ -737,6 +821,9 @@ class CommsToolsMixin:
             return _error_result("InvalidArguments", f"Invalid channel name: {channel!r}")
         if not is_channel_member(self._messenger.shared_dir, channel, self._anima_name):
             return t("handler.channel_acl_denied", channel=channel)
+        company_error = self._channel_company_boundary_error(channel)
+        if company_error is not None:
+            return company_error
 
         limit = args.get("limit", 20)
         human_only = args.get("human_only", False)
@@ -751,6 +838,9 @@ class CommsToolsMixin:
         peer = args.get("peer", "")
         if not peer:
             return _error_result("InvalidArguments", "peer is required")
+        company_error = self._cross_company_communication_error([peer])
+        if company_error is not None:
+            return company_error
         limit = args.get("limit", 20)
         direction = args.get("direction", "both")
         hours = args.get("hours")
@@ -800,11 +890,18 @@ class CommsToolsMixin:
             members = args.get("members", [])
             if self._anima_name not in members:
                 members = [self._anima_name] + members
+            company_error = self._cross_company_communication_error(members)
+            if company_error is not None:
+                return company_error
+            from core.company import get_company
+
+            creator_company = get_company(self._anima_name, animas_dir=self._anima_dir.parent) or ""
             meta = ChannelMeta(
                 members=members,
                 created_by=self._anima_name,
                 created_at=now_iso(),
                 description=args.get("description", ""),
+                company=creator_company,
             )
             channels_dir = shared_dir / "channels"
             channels_dir.mkdir(parents=True, exist_ok=True)
@@ -828,6 +925,9 @@ class CommsToolsMixin:
             # Caller must be a member of the channel
             if not is_channel_member(shared_dir, channel, self._anima_name):
                 return t("handler.channel_acl_not_member", channel=channel)
+            company_error = self._cross_company_communication_error(new_members)
+            if company_error is not None:
+                return company_error
             for m in new_members:
                 if m not in meta.members:
                     meta.members.append(m)
@@ -858,11 +958,12 @@ class CommsToolsMixin:
             if not channel_file.exists():
                 return t("handler.channel_not_found", channel=channel)
             meta = load_channel_meta(shared_dir, channel)
-            if meta is None or not meta.members:
+            if meta is None or (not meta.members and not meta.closed):
                 return t("handler.channel_open", channel=channel)
             info = {
                 "channel": channel,
                 "members": meta.members,
+                "closed": meta.closed,
                 "created_by": meta.created_by,
                 "created_at": meta.created_at,
                 "description": meta.description,
@@ -917,7 +1018,7 @@ class CommsToolsMixin:
         interaction_req = None
         if interactive:
             from core.config.models import load_config
-            from core.notification.interactive import InteractionRequest, get_interaction_router
+            from core.notification.interactive import create_interaction_resilient
 
             cfg = load_config()
             defaults = list(cfg.interaction.default_approver_ids)
@@ -930,28 +1031,24 @@ class CommsToolsMixin:
                 opts_list = ["approve", "reject", "comment"]
             aud: dict[str, list[str]] = {"slack": merged} if merged else {}
 
-            async def _create_interaction() -> InteractionRequest:
-                return await get_interaction_router().create(
+            # Server-API-first: this handler runs inside sandboxed MCP servers
+            # where {data_dir}/run/ is read-only. A local-only write would be
+            # lost and every button would report "expired" on first click.
+            try:
+                interaction_req = create_interaction_resilient(
                     self._anima_name,
                     category,
                     opts_list,
                     allowed_users=aud or None,
                 )
-
-            try:
-                try:
-                    _loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    _loop = None
-                if _loop is not None:
-                    import concurrent.futures
-
-                    with concurrent.futures.ThreadPoolExecutor() as pool:
-                        interaction_req = pool.submit(asyncio.run, _create_interaction()).result(timeout=60)
-                else:
-                    interaction_req = asyncio.run(_create_interaction())
             except ValueError as ve:
                 return _error_result("InvalidArguments", str(ve))
+            except OSError as oe:
+                return _error_result(
+                    "InteractionPersistError",
+                    f"Failed to persist interactive request: {oe}",
+                    suggestion="Check that the AnimaWorks server is reachable from this process",
+                )
 
         try:
             coro = notifier.notify(

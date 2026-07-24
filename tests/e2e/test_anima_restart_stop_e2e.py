@@ -194,18 +194,19 @@ class TestStopThenStartLifecycle:
             animas = list_resp.json()
             assert animas[0]["status"] == "stopped"
 
-            # Step 3: Start the anima again
+            # Step 3: Start the anima again.
+            # Route verifies start success via membership in supervisor.processes
+            # (refuses with 409 when start is a no-op after concurrent disable).
             supervisor.get_process_status.return_value = {
                 "status": "not_found",
                 "pid": None,
                 "bootstrapping": False,
                 "uptime_sec": None,
             }
-            # The route checks supervisor.processes after start_anima to detect
-            # refused starts; give the mock a side effect that mirrors real behaviour.
-            async def _do_start(n: str) -> None:
-                supervisor.processes[n] = MagicMock()
-            supervisor.start_anima.side_effect = _do_start
+            async def _start_and_register(name: str) -> None:
+                supervisor.processes[name] = MagicMock()
+
+            supervisor.start_anima = AsyncMock(side_effect=_start_and_register)
             start_resp = await client.post("/api/animas/sakura/start")
             assert start_resp.status_code == 200
             start_data = start_resp.json()
@@ -214,7 +215,6 @@ class TestStopThenStartLifecycle:
             supervisor.start_anima.assert_awaited_once_with("sakura")
 
             # Step 4: Simulate running state
-            supervisor.processes = {"sakura": MagicMock()}
             supervisor.get_process_status.return_value = {
                 "status": "running",
                 "pid": 54321,

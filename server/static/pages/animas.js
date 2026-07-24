@@ -1,11 +1,25 @@
 // ── Anima Management ───────────────────────
 import { api } from "../modules/api.js";
-import { escapeHtml, statusClass, renderMarkdown } from "../modules/state.js";
+import { escapeHtml, renderMarkdown } from "../modules/state.js";
+import {
+  fetchAnimasList,
+  fetchAnimasWithProcessStatus,
+  healthIndicatorHtml,
+  formatUptime,
+  processActionButtonsHtml,
+  bindProcessActionButtons,
+  animaHashColor,
+} from "../modules/animas.js";
+import { companyColor, shortModel } from "../shared/avatar-utils.js";
+import { bustupCandidates, resolveCachedAvatar } from "../modules/avatar-resolver.js";
+import { createPageTabs } from "../shared/page-tabs.js";
+import { parseAnimaSubPath } from "../modules/router.js";
 import { t } from "/shared/i18n.js";
 import { basePath } from "/shared/base-path.js";
 
 let _viewMode = "list"; // "list" | "detail"
 let _selectedName = null;
+let _activeTab = "overview";
 let _container = null;
 let _modelsCache = null;
 let _toolsCache = null;
@@ -164,6 +178,32 @@ function _modelPickerHtml({ prefix, models, currentModel, allowNone = false }) {
   `;
 }
 
+let _listRefreshInterval = null;
+let _pageTabs = null;
+let _activeTabModule = null;
+
+/** Known detail tabs (overview is inlined; others load from anima-tabs/). */
+const _DETAIL_TABS = [
+  { id: "overview", labelKey: "animas.tab_overview" },
+  { id: "process", labelKey: "animas.tab_process" },
+  { id: "schedule", labelKey: "animas.tab_schedule" },
+  { id: "memory", labelKey: "animas.tab_memory" },
+  { id: "assets", labelKey: "animas.tab_assets" },
+];
+
+/**
+ * Build detail-view hash for an anima (+ optional tab).
+ * Pure helper — exported for unit tests.
+ * @param {string|null|undefined} name
+ * @param {string} [tab="overview"]
+ * @returns {string}
+ */
+export function buildAnimaDetailHash(name, tab = "overview") {
+  if (!name) return "#/animas";
+  const base = `#/animas/${encodeURIComponent(name)}`;
+  return tab && tab !== "overview" ? `${base}/${encodeURIComponent(tab)}` : base;
+}
+
 function _extractStatsCount(value) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (value && typeof value === "object") {
@@ -308,29 +348,247 @@ function _sortOptionHtml(value, labelKey) {
   return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(t(labelKey))}</option>`;
 }
 
+function _clearListPolling() {
+  if (_listRefreshInterval) {
+    clearInterval(_listRefreshInterval);
+    _listRefreshInterval = null;
+  }
+}
+
+function _destroyActiveTab() {
+  if (_activeTabModule && typeof _activeTabModule.destroy === "function") {
+    try {
+      _activeTabModule.destroy();
+    } catch {
+      /* ignore */
+    }
+  }
+  _activeTabModule = null;
+  if (_pageTabs) {
+    try {
+      _pageTabs.destroy();
+    } catch {
+      /* ignore */
+    }
+    _pageTabs = null;
+  }
+}
+
+/**
+ * Navigate within the animas page via hash so reload/deep-link works.
+ * @param {string|null} name
+ * @param {string} [tab]
+ */
+function _navigateAnimas(name, tab) {
+  window.location.hash = buildAnimaDetailHash(name, tab);
+}
+
 export function render(container, { subPath } = {}) {
   _container = container;
-  if (subPath) {
+  _clearListPolling();
+  _destroyActiveTab();
+
+  const { name, tab } = parseAnimaSubPath(subPath);
+  if (name) {
     _viewMode = "detail";
-    _selectedName = subPath;
-    _showDetail(subPath);
+    _selectedName = name;
+    _activeTab = tab || "overview";
+    _showDetail(name, _activeTab);
   } else {
     _viewMode = "list";
     _selectedName = null;
+    _activeTab = "overview";
     _renderList();
   }
 }
 
 export function destroy() {
+  _clearListPolling();
+  _destroyActiveTab();
+  document.removeEventListener("click", _onDocumentClickCloseKebab);
   _container = null;
   _viewMode = "list";
   _selectedName = null;
+  _activeTab = "overview";
 }
 
 // ── List View ──────────────────────────────
 
+/**
+ * Build subtext for an anima list row: company · speciality|role · short model.
+ * Pure helper — exported for unit tests.
+ * @param {object} p
+ * @returns {string}
+ */
+export function buildAnimaListSubtext(p) {
+  const specialty = p.speciality || p.role || "";
+  const model = shortModel(p.model);
+  return [p.company, specialty, model].filter(Boolean).join(" · ");
+}
+
+/**
+ * Integrated status HTML: health dot + status + uptime; PID in title tooltip.
+ * Pure helper — exported for unit tests.
+ * @param {object} p
+ * @returns {string}
+ */
+export function buildAnimaListStatusHtml(p) {
+  const status = p.status || "offline";
+  const missedPings = p.missed_pings || 0;
+  const health = healthIndicatorHtml(status, missedPings);
+  const uptime = p.uptime_sec ? formatUptime(p.uptime_sec) : "";
+  const parts = [status];
+  if (uptime && uptime !== "--") parts.push(uptime);
+
+  let tone = "neutral";
+  if (status === "error" || status === "down") tone = "error";
+  else if (missedPings > 0) tone = "warning";
+  else if (status === "running" || status === "idle") tone = "success";
+  else if (status === "stopped" || status === "not_found" || status === "offline") tone = "neutral";
+  else tone = "warning";
+
+  const pidTitle = p.pid != null && p.pid !== "" ? `PID: ${p.pid}` : "";
+  return `<span class="anima-list-status anima-list-status--${tone}" title="${escapeHtml(pidTitle)}">${health}<span class="anima-list-status-text">${escapeHtml(parts.join(" · "))}</span></span>`;
+}
+
+/**
+ * Split processActionButtonsHtml into exposed Heartbeat vs kebab menu content.
+ * Pure helper — exported for unit tests.
+ * @param {string} name
+ * @param {string} status
+ * @returns {{ triggerHtml: string, menuHtml: string, hasMenu: boolean }}
+ */
+export function splitProcessActionButtons(name, status) {
+  const full = processActionButtonsHtml(name, status);
+  const triggerRe = /<button\b[^>]*\bprocess-trigger-btn\b[^>]*>[\s\S]*?<\/button>/i;
+  const triggerMatch = full.match(triggerRe);
+  const triggerHtml = triggerMatch ? triggerMatch[0].trim() : "";
+  const menuHtml = full.replace(triggerRe, "").trim();
+  // Menu is useful when it contains buttons (destructive ops / start)
+  const hasMenu = /<button\b/i.test(menuHtml);
+  return { triggerHtml, menuHtml, hasMenu };
+}
+
+/**
+ * Anima cell HTML: 40px circular avatar (initial fallback) + name + subtext.
+ * Pure helper — exported for unit tests.
+ * @param {object} p
+ * @returns {string}
+ */
+export function buildAnimaListIdentityHtml(p) {
+  const name = p.name || "";
+  const initial = escapeHtml(name.charAt(0).toUpperCase());
+  const color = animaHashColor(name);
+  const ring = companyColor(p.company);
+  const ringStyle = ring ? `box-shadow:0 0 0 2px ${ring};` : "";
+  const sub = buildAnimaListSubtext(p);
+  const subHtml = sub
+    ? `<div class="anima-list-sub">${escapeHtml(sub)}</div>`
+    : "";
+  return `
+    <div class="anima-list-identity">
+      <div class="anima-list-avatar" id="listAvatar_${escapeHtml(name)}" style="background:${color};${ringStyle}" data-anima-avatar="${escapeHtml(name)}">${initial}</div>
+      <div class="anima-list-meta">
+        <div class="anima-list-name">${escapeHtml(name)}</div>
+        ${subHtml}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Actions cell: exposed Heartbeat + kebab menu for destructive ops.
+ * Pure helper — exported for unit tests.
+ * @param {object} p
+ * @returns {string}
+ */
+export function buildAnimaListActionsHtml(p) {
+  const status = p.status || "offline";
+  const { triggerHtml, menuHtml, hasMenu } = splitProcessActionButtons(p.name, status);
+
+  if (!triggerHtml && !hasMenu) {
+    // starting / restarting / unknown — keep processActionButtonsHtml output as-is
+    return `<div class="anima-list-actions process-actions">${processActionButtonsHtml(p.name, status)}</div>`;
+  }
+
+  const kebab = hasMenu
+    ? `
+      <div class="anima-list-kebab-wrap">
+        <button type="button" class="anima-list-kebab-btn" aria-label="${escapeHtml(t("animas.actions_menu"))}" aria-haspopup="true" aria-expanded="false" data-name="${escapeHtml(p.name)}">⋮</button>
+        <div class="anima-list-kebab-menu process-actions" hidden>
+          ${menuHtml}
+        </div>
+      </div>
+    `
+    : "";
+
+  return `
+    <div class="anima-list-actions">
+      ${triggerHtml ? `<div class="process-actions anima-list-primary-actions">${triggerHtml}</div>` : ""}
+      ${kebab}
+    </div>
+  `;
+}
+
+function _bindKebabMenus(root) {
+  if (!root) return;
+
+  root.querySelectorAll(".anima-list-kebab-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const wrap = btn.closest(".anima-list-kebab-wrap");
+      if (!wrap) return;
+      const wasOpen = wrap.classList.contains("open");
+      // Close others first
+      root.querySelectorAll(".anima-list-kebab-wrap.open").forEach((w) => {
+        w.classList.remove("open");
+        const menu = w.querySelector(".anima-list-kebab-menu");
+        if (menu) menu.hidden = true;
+        const b = w.querySelector(".anima-list-kebab-btn");
+        if (b) b.setAttribute("aria-expanded", "false");
+      });
+      if (!wasOpen) {
+        wrap.classList.add("open");
+        const menu = wrap.querySelector(".anima-list-kebab-menu");
+        if (menu) menu.hidden = false;
+        btn.setAttribute("aria-expanded", "true");
+      }
+    });
+  });
+
+  // Prevent row navigation when interacting with menu contents
+  root.querySelectorAll(".anima-list-kebab-menu").forEach((menu) => {
+    menu.addEventListener("click", (e) => e.stopPropagation());
+  });
+}
+
+function _onDocumentClickCloseKebab(e) {
+  if (e.target.closest && e.target.closest(".anima-list-kebab-wrap")) return;
+  document.querySelectorAll(".anima-list-kebab-wrap.open").forEach((w) => {
+    w.classList.remove("open");
+    const menu = w.querySelector(".anima-list-kebab-menu");
+    if (menu) menu.hidden = true;
+    const b = w.querySelector(".anima-list-kebab-btn");
+    if (b) b.setAttribute("aria-expanded", "false");
+  });
+}
+
+async function _loadListAvatars(root) {
+  if (!root) return;
+  const avatarEls = root.querySelectorAll("[id^='listAvatar_']");
+  const candidates = bustupCandidates();
+  for (const el of avatarEls) {
+    const name = el.id.replace("listAvatar_", "");
+    const url = await resolveCachedAvatar(name, candidates, "S");
+    if (url) {
+      el.innerHTML = `<img src="${escapeHtml(url)}" alt="${escapeHtml(name)}">`;
+    }
+  }
+}
+
 async function _renderList() {
   if (!_container) return;
+  _clearListPolling();
 
   _container.innerHTML = `
     <div class="page-header" style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
@@ -345,6 +603,11 @@ async function _renderList() {
     </div>
   `;
 
+  await _loadListContent();
+  _listRefreshInterval = setInterval(_loadListContent, 10000);
+}
+
+async function _loadListContent() {
   const content = document.getElementById("animasListContent");
   if (!content) return;
   _bindModelRefreshButton({
@@ -353,7 +616,7 @@ async function _renderList() {
   });
 
   try {
-    const animas = await api("/api/animas");
+    const animas = await fetchAnimasWithProcessStatus();
 
     if (animas.length === 0) {
       content.innerHTML = `<div class="loading-placeholder">${t("animas.not_registered")}</div>`;
@@ -400,27 +663,16 @@ async function _renderList() {
           </select>
         </div>
       </div>
-      <div class="data-table-wrapper">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>${t("animas.table_department")}</th>
-              <th>${t("animas.table_title")}</th>
-              <th>${t("animas.table_role")}</th>
-              <th>${t("animas.table_name")}</th>
-              <th>${t("animas.table_fr_model")}</th>
-              <th>${t("animas.table_fr_activity_level")}</th>
-              <th>${t("animas.table_bg_model")}</th>
-              <th>${t("animas.table_bg_activity_level")}</th>
-              <th>${t("animas.table_status")}</th>
-              <th>${t("animas.table_pid")}</th>
-              <th>${t("animas.table_uptime")}</th>
-              <th>${t("animas.table_actions")}</th>
-            </tr>
-          </thead>
-          <tbody id="animasTableBody"></tbody>
-        </table>
-      </div>
+      <table class="data-table anima-list-table">
+        <thead>
+          <tr>
+            <th>${t("animas.table_name")}</th>
+            <th>${t("animas.table_status")}</th>
+            <th>${t("animas.table_actions")}</th>
+          </tr>
+        </thead>
+        <tbody id="animasTableBody"></tbody>
+      </table>
     `;
 
     document.getElementById("animasSortSelect")?.addEventListener("change", (e) => {
@@ -441,75 +693,42 @@ async function _renderList() {
 
     const tbody = document.getElementById("animasTableBody");
     for (const p of _sortAnimas(_filterAnimas(animas))) {
-      const dotClass = statusClass(p.status);
-      const statusLabel = p.status || "offline";
-      const uptime = p.uptime_sec ? _formatUptime(p.uptime_sec) : "--";
-      const pid = p.pid || "--";
-      const department = p.department || "--";
-      const role = _displayRole(p.role);
-      const title = p.title || "--";
-
-      // Determine visual state class
-      let stateClass = "";
+      let stateClass = "anima-item anima-list-row";
       if (p.status === "bootstrapping" || p.bootstrapping) {
-        stateClass = "anima-item anima-item--loading";
+        stateClass = "anima-item anima-item--loading anima-list-row";
       } else if (p.status === "not_found" || p.status === "stopped") {
-        stateClass = "anima-item anima-item--sleeping";
-      } else {
-        stateClass = "anima-item";
+        stateClass = "anima-item anima-item--sleeping anima-list-row";
       }
 
       const tr = document.createElement("tr");
       tr.className = stateClass;
       tr.dataset.anima = p.name;
-      tr.style.cursor = "pointer";
       tr.innerHTML = `
-        <td>${escapeHtml(department)}</td>
-        <td>${escapeHtml(title)}</td>
-        <td>${escapeHtml(role)}</td>
-        <td style="font-weight:600;">${escapeHtml(p.name)}</td>
-        <td style="font-size:0.85rem;">${escapeHtml(_shortModel(p.model))}</td>
-        <td>${escapeHtml(_activityLevelLabel(p.fr_activity_level))}</td>
-        <td style="font-size:0.85rem;">${escapeHtml(_shortModel(p.background_model))}</td>
-        <td>${escapeHtml(_activityLevelLabel(p.bg_activity_level))}</td>
-        <td>
-          <span class="status-dot ${dotClass}" style="display:inline-block;"></span>
-          ${escapeHtml(statusLabel)}
-        </td>
-        <td>${escapeHtml(String(pid))}</td>
-        <td>${escapeHtml(uptime)}</td>
-        <td>
-          <button class="btn-secondary anima-detail-btn" data-name="${escapeHtml(p.name)}" style="font-size:0.8rem; padding:0.25rem 0.5rem;">${t("animas.detail")}</button>
-          <button class="btn-primary anima-trigger-btn" data-name="${escapeHtml(p.name)}" style="font-size:0.8rem; padding:0.25rem 0.5rem;">Heartbeat</button>
-        </td>
+        <td>${buildAnimaListIdentityHtml(p)}</td>
+        <td>${buildAnimaListStatusHtml(p)}</td>
+        <td>${buildAnimaListActionsHtml(p)}</td>
       `;
 
       tr.addEventListener("click", (e) => {
-        if (e.target.classList.contains("anima-trigger-btn")) return;
-        _showDetail(p.name);
+        if (
+          e.target.closest("button") ||
+          e.target.closest(".process-actions") ||
+          e.target.closest(".anima-list-kebab-wrap")
+        ) {
+          return;
+        }
+        _navigateAnimas(p.name);
       });
 
       tbody.appendChild(tr);
     }
 
-    // Bind trigger buttons
-    content.querySelectorAll(".anima-trigger-btn").forEach(btn => {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const name = btn.dataset.name;
-        btn.disabled = true;
-        btn.textContent = t("animas.running");
-        try {
-          await fetch(`${basePath}/api/animas/${encodeURIComponent(name)}/trigger`, { method: "POST" });
-          btn.textContent = t("animas.success");
-          setTimeout(() => { btn.textContent = "Heartbeat"; btn.disabled = false; }, 2000);
-        } catch {
-          btn.textContent = t("animas.failed");
-          setTimeout(() => { btn.textContent = "Heartbeat"; btn.disabled = false; }, 2000);
-        }
-      });
-    });
+    _bindKebabMenus(content);
+    document.removeEventListener("click", _onDocumentClickCloseKebab);
+    document.addEventListener("click", _onDocumentClickCloseKebab);
 
+    bindProcessActionButtons(content, { onReload: _loadListContent });
+    _loadListAvatars(content);
   } catch (err) {
     content.innerHTML = `<div class="loading-placeholder">${t("common.load_failed")}: ${escapeHtml(err.message)}</div>`;
   }
@@ -1272,32 +1491,128 @@ function _bindPermissionsCard(name, perm, availableTools) {
   });
 }
 
-// ── Show Detail ───────────────────────────
+// ── Show Detail (tabbed) ───────────────────
 
-async function _showDetail(name) {
+async function _showDetail(name, tabId = "overview") {
   if (!_container) return;
+  _clearListPolling();
+  _destroyActiveTab();
+
   _viewMode = "detail";
   _selectedName = name;
+  _activeTab = _DETAIL_TABS.some((t) => t.id === tabId) ? tabId : "overview";
 
   _container.innerHTML = `
-    <div class="page-header" style="display:flex; align-items:center; gap:1rem;">
+    <div class="page-header" style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
       <button class="btn-secondary" id="animasBackBtn" style="font-size:0.85rem;">&larr; ${t("animas.back")}</button>
-      <h2>${escapeHtml(name)}</h2>
+      <h2 id="animasDetailTitle">${escapeHtml(name)}</h2>
+      <label for="animasSwitcher" class="sr-only" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0;">${t("animas.switch_anima")}</label>
+      <select id="animasSwitcher" class="anima-dropdown" aria-label="${escapeHtml(t("animas.switch_anima"))}">
+        <option value="${escapeHtml(name)}" selected>${escapeHtml(name)}</option>
+      </select>
     </div>
-    <div id="animasDetailContent">
+    <div id="animasDetailTabs"></div>
+    <div id="animasTabContent">
       <div class="loading-placeholder">${t("common.loading")}</div>
     </div>
   `;
 
-  document.getElementById("animasBackBtn").addEventListener("click", () => {
-    _viewMode = "list";
-    _selectedName = null;
-    _renderList();
+  document.getElementById("animasBackBtn")?.addEventListener("click", () => {
+    _navigateAnimas(null);
   });
 
-  const content = document.getElementById("animasDetailContent");
+  _populateAnimaSwitcher(name, _activeTab);
+
+  const tabsHost = document.getElementById("animasDetailTabs");
+  if (tabsHost) {
+    _pageTabs = createPageTabs({
+      tabs: _DETAIL_TABS.map((tab) => ({ id: tab.id, label: t(tab.labelKey) })),
+      container: tabsHost,
+      activeId: _activeTab,
+      onChange: (id) => {
+        if (id === _activeTab) return;
+        _navigateAnimas(name, id);
+      },
+    });
+  }
+
+  await _loadDetailTab(name, _activeTab);
+}
+
+/**
+ * Fill the detail-header Anima switcher and wire navigation
+ * that keeps the current tab when switching names.
+ * @param {string} currentName
+ * @param {string} currentTab
+ */
+async function _populateAnimaSwitcher(currentName, currentTab) {
+  const select = document.getElementById("animasSwitcher");
+  if (!select) return;
+
+  try {
+    const animas = await fetchAnimasList();
+    if (!Array.isArray(animas) || animas.length === 0) return;
+
+    select.innerHTML = animas
+      .map((a) => {
+        const n = a.name;
+        const selected = n === currentName ? " selected" : "";
+        return `<option value="${escapeHtml(n)}"${selected}>${escapeHtml(n)}</option>`;
+      })
+      .join("");
+
+    // Ensure current name is present even if not in the list
+    if (currentName && !animas.some((a) => a.name === currentName)) {
+      const opt = document.createElement("option");
+      opt.value = currentName;
+      opt.textContent = currentName;
+      opt.selected = true;
+      select.appendChild(opt);
+    }
+  } catch {
+    /* keep the single current option */
+  }
+
+  select.addEventListener("change", () => {
+    const newName = select.value;
+    if (!newName || newName === currentName) return;
+    _navigateAnimas(newName, currentTab);
+  });
+}
+
+async function _loadDetailTab(name, tabId) {
+  const content = document.getElementById("animasTabContent");
   if (!content) return;
 
+  // Destroy previous external tab module (keep tab bar)
+  if (_activeTabModule && typeof _activeTabModule.destroy === "function") {
+    try {
+      _activeTabModule.destroy();
+    } catch {
+      /* ignore */
+    }
+  }
+  _activeTabModule = null;
+  content.innerHTML = `<div class="loading-placeholder">${t("common.loading")}</div>`;
+
+  if (tabId === "overview") {
+    await _renderOverviewTab(content, name);
+    return;
+  }
+
+  try {
+    const mod = await import(`./anima-tabs/${tabId}.js`);
+    _activeTabModule = mod;
+    content.innerHTML = "";
+    await mod.render(content, { animaName: name });
+  } catch (err) {
+    content.innerHTML = `<div class="loading-placeholder">${t("animas.detail_load_failed")}: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+// ── Overview tab (existing detail cards) ───
+
+async function _renderOverviewTab(content, name) {
   try {
     const [detail, models, availableTools] = await Promise.all([
       api(`/api/animas/${encodeURIComponent(name)}`),
@@ -1528,14 +1843,4 @@ async function _showDetail(name) {
   } catch (err) {
     content.innerHTML = `<div class="loading-placeholder">${t("animas.detail_load_failed")}: ${escapeHtml(err.message)}</div>`;
   }
-}
-
-// ── Helpers ────────────────────────────────
-
-function _formatUptime(seconds) {
-  if (!seconds || seconds < 0) return "--";
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (h > 0) return t("animas.uptime_hm", { h, m });
-  return t("animas.uptime_m", { m });
 }

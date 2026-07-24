@@ -430,7 +430,7 @@ class TestChannelVaultIntegration:
 
         assert result == "chatwork: OK"
         mock_rcv.assert_called_once_with(
-            "api_token_env", anima_name="charlie", fallback_env="CHATWORK_API_TOKEN",
+            "api_token_env", anima_name="charlie", fallback_env="CHATWORK_API_TOKEN__kotoha",
         )
 
     @pytest.mark.asyncio

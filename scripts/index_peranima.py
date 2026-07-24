@@ -5,6 +5,7 @@ from __future__ import annotations
 import gc
 import logging
 import sys
+from pathlib import Path
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -12,7 +13,7 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 
-sys.path.insert(0, "/home/main/dev/animaworks")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.memory.rag import MemoryIndexer  # noqa: E402
 from core.memory.rag.singleton import get_vector_store  # noqa: E402

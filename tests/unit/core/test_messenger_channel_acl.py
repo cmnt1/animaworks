@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
 from core.messenger import (
     ChannelMeta,
     Messenger,
@@ -17,6 +18,15 @@ from core.messenger import (
     load_channel_meta,
     save_channel_meta,
 )
+
+
+def _ensure_channel(shared_dir: Path, name: str) -> Path:
+    channels_dir = shared_dir / "channels"
+    channels_dir.mkdir(parents=True, exist_ok=True)
+    path = channels_dir / f"{name}.jsonl"
+    if not path.exists():
+        path.write_text("", encoding="utf-8")
+    return path
 
 
 @pytest.fixture
@@ -135,17 +145,14 @@ class TestIsChannelMember:
     def test_open_channel_no_meta(self, shared_dir: Path):
         assert is_channel_member(shared_dir, "general", "anyone") is True
 
-    def test_explicit_empty_members_is_closed(self, shared_dir: Path):
-        # A meta.json with an empty members list is an explicit lock-down:
-        # no Anima may post. (Channels without a meta.json at all stay open
-        # — see test_open_channel_no_meta.)
-        save_channel_meta(shared_dir, "locked-ch", ChannelMeta(members=[]))
+    def test_explicit_closed_channel_is_closed(self, shared_dir: Path):
+        save_channel_meta(shared_dir, "locked-ch", ChannelMeta(members=[], closed=True))
         assert is_channel_member(shared_dir, "locked-ch", "anyone") is False
 
-    def test_explicit_empty_members_human_still_allowed(self, shared_dir: Path):
+    def test_explicit_closed_channel_human_still_allowed(self, shared_dir: Path):
         # Gateway-sourced posts (source="human"/"discord") bypass ACL even
         # on an explicitly-closed channel.
-        save_channel_meta(shared_dir, "locked-ch", ChannelMeta(members=[]))
+        save_channel_meta(shared_dir, "locked-ch", ChannelMeta(members=[], closed=True))
         assert is_channel_member(shared_dir, "locked-ch", "anyone", source="human") is True
         assert is_channel_member(shared_dir, "locked-ch", "anyone", source="discord") is True
         assert is_channel_member(shared_dir, "locked-ch", "anyone", source="system_agent") is True
@@ -173,9 +180,12 @@ class TestIsChannelMember:
 
 class TestPostChannelACL:
     def test_open_channel_allows_post(self, shared_dir: Path, messenger: Messenger):
+        _ensure_channel(shared_dir, "general")
         messenger.post_channel("general", "Hello!")
         channel_file = shared_dir / "channels" / "general.jsonl"
         assert channel_file.exists()
+        lines = [ln for ln in channel_file.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        assert len(lines) == 1
 
     def test_member_can_post(self, shared_dir: Path, messenger: Messenger):
         save_channel_meta(shared_dir, "team", ChannelMeta(members=["alice", "bob"]))
@@ -188,7 +198,8 @@ class TestPostChannelACL:
         save_channel_meta(shared_dir, "private", ChannelMeta(members=["bob"]))
         (shared_dir / "channels" / "private.jsonl").write_text("", encoding="utf-8")
         alice = Messenger(shared_dir, "alice")
-        alice.post_channel("private", "Should not appear")
+        with pytest.raises(ChannelAccessDeniedError):
+            alice.post_channel("private", "Should not appear")
         content = (shared_dir / "channels" / "private.jsonl").read_text(encoding="utf-8").strip()
         assert content == ""
 
@@ -216,12 +227,20 @@ class TestPostChannelACL:
         assert entry["from"] == "daily-ops-dashboard"
         assert entry["source"] == "system_agent"
 
+    def test_nonexistent_channel_raises_without_creating_file(self, shared_dir: Path, messenger: Messenger):
+        before = set((shared_dir / "channels").iterdir())
+        with pytest.raises(ChannelNotFoundError):
+            messenger.post_channel("ghost", "nope")
+        assert set((shared_dir / "channels").iterdir()) == before
+        assert not (shared_dir / "channels" / "ghost.jsonl").exists()
+
 
 # ── read_channel with ACL ────────────────────────────────
 
 
 class TestReadChannelACL:
     def test_open_channel_readable(self, shared_dir: Path, messenger: Messenger):
+        _ensure_channel(shared_dir, "general")
         messenger.post_channel("general", "msg1")
         result = messenger.read_channel("general")
         assert len(result) == 1
@@ -269,6 +288,8 @@ class TestBackwardCompatibility:
         assert is_channel_member(shared_dir, "ops", "any-anima") is True
 
     def test_post_and_read_work_without_meta(self, shared_dir: Path, messenger: Messenger):
+        # Legacy open channel = existing jsonl without meta (no implicit create)
+        _ensure_channel(shared_dir, "general")
         messenger.post_channel("general", "Legacy works!")
         result = messenger.read_channel("general")
         assert len(result) == 1

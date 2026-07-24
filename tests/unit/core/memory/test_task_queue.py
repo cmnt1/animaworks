@@ -773,3 +773,191 @@ def test_format_for_priming_includes_failed_section(tmp_path: Path) -> None:
     assert "❌ Failed" in result or "Failed (要対処)" in result or "Failed (action required)" in result
     assert "xyz99999" in result or "xyz9999" in result  # truncated to 8 chars
     assert "データ取得" in result
+
+
+# ── TaskBoard metadata sync on terminal status ─────────────────────────
+
+
+def _tqm_with_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str = "sakura"):
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(data_dir))
+    anima_dir = data_dir / "animas" / name
+    (anima_dir / "state").mkdir(parents=True, exist_ok=True)
+    return TaskQueueManager(anima_dir), data_dir
+
+
+def test_update_status_terminal_archives_existing_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Terminal status closes existing TaskBoard metadata to archived/done."""
+    from core.taskboard.models import AttentionVisibility, BoardColumn
+    from core.taskboard.store import TaskBoardStore
+
+    tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
+    entry = tqm.add_task(
+        source="human",
+        original_instruction="delegate work",
+        assignee="sakura",
+        summary="delegate work",
+        task_id="task-term-1",
+    )
+    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
+    store.upsert_metadata(
+        anima_name="sakura",
+        task_id=entry.task_id,
+        actor="delegator",
+        visibility="active",
+        column="waiting",
+    )
+
+    for terminal in ("done", "cancelled", "failed"):
+        # Reset to active so each terminal path is exercised independently.
+        tqm.update_status(entry.task_id, "pending")
+        store.upsert_metadata(
+            anima_name="sakura",
+            task_id=entry.task_id,
+            actor="test",
+            visibility="active",
+            column="waiting",
+        )
+        result = tqm.update_status(entry.task_id, terminal)
+        assert result is not None
+        assert result.status == terminal
+        meta = store.get_metadata("sakura", entry.task_id)
+        assert meta is not None
+        assert meta.visibility == AttentionVisibility.ARCHIVED
+        assert meta.column == BoardColumn.DONE
+        assert meta.updated_by == "sakura"
+        events = store.list_events(anima_name="sakura", task_id=entry.task_id)
+        assert any(event["event_type"] == "archived" for event in events)
+
+
+def test_update_status_terminal_does_not_create_metadata_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Terminal status must not invent a TaskBoard metadata row when none exists."""
+    from core.taskboard.store import TaskBoardStore
+
+    tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
+    entry = tqm.add_task(
+        source="human",
+        original_instruction="plain task",
+        assignee="sakura",
+        summary="plain task",
+        task_id="task-no-meta",
+    )
+
+    result = tqm.update_status(entry.task_id, "done")
+    assert result is not None
+    assert result.status == "done"
+
+    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
+    assert store.get_metadata("sakura", entry.task_id) is None
+    assert store.list_metadata(anima_name="sakura") == []
+
+
+@pytest.mark.parametrize("visibility", ["expired", "archived", "tombstoned"])
+def test_update_status_terminal_preserves_suppressed_visibility(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    visibility: str,
+) -> None:
+    """Terminal queue sync must not replace a more specific suppression reason."""
+    from core.taskboard.models import AttentionVisibility
+    from core.taskboard.store import TaskBoardStore
+
+    tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
+    entry = tqm.add_task(
+        source="human",
+        original_instruction="suppressed task",
+        assignee="sakura",
+        summary="suppressed task",
+        task_id=f"task-{visibility}",
+    )
+    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
+    store.upsert_metadata(
+        anima_name="sakura",
+        task_id=entry.task_id,
+        actor="planner",
+        visibility=visibility,
+        column="suppressed",
+    )
+
+    tqm.update_status(entry.task_id, "cancelled")
+
+    metadata = store.get_metadata("sakura", entry.task_id)
+    assert metadata is not None
+    assert metadata.visibility == AttentionVisibility(visibility)
+    assert metadata.column.value == "suppressed"
+    assert metadata.updated_by == "planner"
+
+
+def test_update_status_succeeds_when_taskboard_store_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Queue terminal update remains successful if TaskBoard store fails."""
+    tqm, _data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
+    entry = tqm.add_task(
+        source="human",
+        original_instruction="resilient task",
+        assignee="sakura",
+        summary="resilient task",
+        task_id="task-resilient",
+    )
+
+    class _BoomStore:
+        def get_metadata(self, *args, **kwargs):
+            raise RuntimeError("store down")
+
+        def upsert_metadata(self, *args, **kwargs):
+            raise RuntimeError("store down")
+
+    with patch("core.taskboard.store.TaskBoardStore", return_value=_BoomStore()):
+        result = tqm.update_status(entry.task_id, "done")
+
+    assert result is not None
+    assert result.status == "done"
+    reloaded = TaskQueueManager(tqm.anima_dir).get_task_by_id(entry.task_id)
+    assert reloaded is not None
+    assert reloaded.status == "done"
+
+
+def test_update_status_non_terminal_does_not_touch_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Non-terminal transitions leave TaskBoard metadata unchanged."""
+    from core.taskboard.models import AttentionVisibility, BoardColumn
+    from core.taskboard.store import TaskBoardStore
+
+    tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
+    entry = tqm.add_task(
+        source="human",
+        original_instruction="active task",
+        assignee="sakura",
+        summary="active task",
+        task_id="task-active",
+    )
+    store = TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
+    store.upsert_metadata(
+        anima_name="sakura",
+        task_id=entry.task_id,
+        actor="planner",
+        visibility="active",
+        column="todo",
+        position=3.0,
+    )
+    before = store.get_metadata("sakura", entry.task_id)
+    assert before is not None
+    before_updated_at = before.updated_at
+
+    result = tqm.update_status(entry.task_id, "in_progress")
+    assert result is not None
+    assert result.status == "in_progress"
+
+    after = store.get_metadata("sakura", entry.task_id)
+    assert after is not None
+    assert after.visibility == AttentionVisibility.ACTIVE
+    assert after.column == BoardColumn.TODO
+    assert after.position == 3.0
+    assert after.updated_at == before_updated_at
+    assert after.updated_by == "planner"

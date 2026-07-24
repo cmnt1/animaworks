@@ -143,7 +143,9 @@ class TestRecentActivityContextCompatibility:
         app = _app(tmp_path, ["alice"])
         anima_dir = app.state.animas_dir / "alice"
         anima_dir.mkdir()
-        now = now_local()  # same tz as _load_entries so file date lookup matches
+        # Activity log files are partitioned by app-local date (now_iso), and
+        # recent_page(hours=...) cuts off against now_local(). Use the same TZ.
+        now = now_local()
         _write_activity(
             anima_dir,
             [

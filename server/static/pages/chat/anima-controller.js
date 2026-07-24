@@ -5,6 +5,7 @@ import {
   fetchChatUiState, scheduleSaveChatUiState, mergeThreadsFromSessions,
 } from "./ctx.js";
 import { bustupCandidates, resolveCachedAvatar } from "../../modules/avatar-resolver.js";
+import { companyColor } from "../../shared/avatar-utils.js";
 
 export function createAnimaController(ctx) {
   const $ = ctx.$;
@@ -57,7 +58,7 @@ export function createAnimaController(ctx) {
     if (state.animaTabAvatarLoading[name]) return state.animaTabAvatarLoading[name];
 
     state.animaTabAvatarLoading[name] = (async () => {
-      const found = await resolveCachedAvatar(name, bustupCandidates(), "S");
+      const found = await resolveCachedAvatar(name, bustupCandidates(), "M");
       state.animaTabAvatarUrls[name] = found;
       delete state.animaTabAvatarLoading[name];
       renderAnimaTabs();
@@ -66,22 +67,30 @@ export function createAnimaController(ctx) {
     return state.animaTabAvatarLoading[name];
   }
 
+  function companyRingStyle(name) {
+    const anima = (state.animas || []).find(a => a.name === name);
+    const color = companyColor(anima?.company);
+    return color ? ` style="box-shadow:0 0 0 2px ${color}"` : "";
+  }
+
   function buildAnimaTabAvatar(name) {
     const initial = escapeHtml((name || "").charAt(0).toUpperCase() || "?");
     const url = state.animaTabAvatarUrls[name];
+    const ring = companyRingStyle(name);
     if (url) {
-      return `<img class="anima-tab-avatar anima-tab-avatar-img" src="${escapeHtml(url)}" alt="${escapeHtml(name)}">`;
+      return `<img class="anima-tab-avatar anima-tab-avatar-img" src="${escapeHtml(url)}" alt="${escapeHtml(name)}"${ring}>`;
     }
-    return `<span class="anima-tab-avatar anima-tab-avatar-initial">${initial}</span>`;
+    return `<span class="anima-tab-avatar anima-tab-avatar-initial"${ring}>${initial}</span>`;
   }
 
   function buildAddConversationAvatar(name) {
     const initial = escapeHtml((name || "").charAt(0).toUpperCase() || "?");
     const url = state.animaTabAvatarUrls[name];
+    const ring = companyRingStyle(name);
     if (url) {
-      return `<img class="add-conversation-avatar add-conversation-avatar-img" src="${escapeHtml(url)}" alt="${escapeHtml(name)}">`;
+      return `<img class="add-conversation-avatar add-conversation-avatar-img" src="${escapeHtml(url)}" alt="${escapeHtml(name)}"${ring}>`;
     }
-    return `<span class="add-conversation-avatar add-conversation-avatar-initial">${initial}</span>`;
+    return `<span class="add-conversation-avatar add-conversation-avatar-initial"${ring}>${initial}</span>`;
   }
 
   function renderAddConversationMenu() {
@@ -184,6 +193,7 @@ export function createAnimaController(ctx) {
     state.selectedThreadId = state.activeThreadByAnima[name] || "default";
     clearUnreadForActiveThread(ctx, name, state.selectedThreadId);
     ctx.controllers.imageVoice.updateVoiceAnima(name);
+    ctx.controllers.workIndicator?.onAnimaChange();
 
     if (!state.threads[name]) {
       state.threads[name] = [{ id: "default", label: t("thread.default_label"), unread: false }];

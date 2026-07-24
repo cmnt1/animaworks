@@ -72,6 +72,7 @@ _EXPOSED_TOOL_NAMES: frozenset[str] = frozenset(
         "delegate_task",
         "submit_tasks",
         "update_task",
+        "list_tasks",
         "goal",
         # AW-essential: workspace access grants
         "grant_workspace_access",
@@ -250,10 +251,10 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
 
     exposed = _EXPOSED_TOOL_NAMES | {s["name"] for s in machine_schemas}
 
-    # Apply DB description overrides
-    from core.tooling.schemas import apply_db_descriptions
+    # Apply file-backed description overrides
+    from core.tooling.schemas import apply_prompt_descriptions
 
-    all_schemas = apply_db_descriptions(all_schemas)
+    all_schemas = apply_prompt_descriptions(all_schemas)
 
     # Cache original schemas for type coercion lookup
     for schema in all_schemas:

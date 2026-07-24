@@ -24,7 +24,10 @@ def shared_dir(tmp_path: Path) -> Path:
     d = tmp_path / "shared"
     d.mkdir()
     (d / "inbox").mkdir()
-    (d / "channels").mkdir()
+    channels_dir = d / "channels"
+    channels_dir.mkdir()
+    for name in ("general", "ops", "dev"):
+        (channels_dir / f"{name}.jsonl").write_text("", encoding="utf-8")
     (d / "dm_logs").mkdir()
     return d
 
@@ -51,6 +54,7 @@ def _make_anima_dir(tmp_path: Path, name: str) -> Path:
     (anima_dir / "identity.md").write_text(
         f"# {name}\n\nテスト用Anima。\n", encoding="utf-8",
     )
+    (anima_dir / "status.json").write_text("{}", encoding="utf-8")
     (anima_dir / "permissions.md").write_text(
         "# Permissions\n\n## メッセージング\n- send_message: OK\n- post_channel: OK\n",
         encoding="utf-8",

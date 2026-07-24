@@ -110,6 +110,8 @@ def test_delegate_task_atomically_publishes_pending_json(
     alice_dir = animas_dir / "alice"
     (boss_dir / "state").mkdir(parents=True)
     (alice_dir / "state").mkdir(parents=True)
+    (boss_dir / "status.json").write_text("{}", encoding="utf-8")
+    (alice_dir / "status.json").write_text("{}", encoding="utf-8")
 
     handler = object.__new__(DelegationMixin)
     handler._anima_dir = boss_dir

@@ -145,9 +145,10 @@ class LlmRateGuard:
     def report_block(self, provider_family: str, seconds: float, reason: str) -> None:
         """Record a block for *provider_family* lasting *seconds*.
 
-        ``seconds`` is clamped to ``[0, max_block_seconds]``; a non-positive
-        value falls back to ``default_block_seconds``.  The read-modify-write is
-        serialized with an advisory lock and the JSON body is replaced
+        ``seconds`` is clamped to ``[0, max_block_seconds]``; quota exhaustion
+        instead uses ``quota_block_seconds`` as its upper bound.  A non-positive
+        value falls back to ``default_block_seconds``.  The read-modify-write
+        is serialized with an advisory lock and the JSON body is replaced
         atomically; any failure is swallowed (fail-open).
         """
         cfg = self.config
@@ -160,7 +161,8 @@ class LlmRateGuard:
             block_s = float(cfg.default_block_seconds)
         if block_s <= 0:
             block_s = float(cfg.default_block_seconds)
-        block_s = min(block_s, float(cfg.max_block_seconds))
+        clamp_s = cfg.quota_block_seconds if reason == "quota_exhausted" else cfg.max_block_seconds
+        block_s = min(block_s, float(clamp_s))
 
         try:
             with self._locked():

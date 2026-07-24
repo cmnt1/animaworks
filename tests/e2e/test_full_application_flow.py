@@ -166,26 +166,20 @@ def mock_websocket():
 
 @pytest.fixture
 def mock_llm():
-    """Mock LiteLLM responses for consolidation tests.
+    """Mock LLM responses for consolidation and session finalization tests.
 
-    Returns different responses based on prompt content:
-    - Consolidation: Returns knowledge file updates/creations
-    - Merge: Returns merged file content
-    - Compression: Returns episode summary
+    Session finalization goes through ``one_shot_completion`` (Codex/Agent SDK
+    fallbacks), not only ``litellm.acompletion``.  Patch both entry points so
+    offline CI does not depend on a real Codex/LiteLLM credential.
     """
-    with patch("litellm.acompletion") as mock:
 
-        async def async_response(*args, **kwargs):
-            # Return different responses based on the prompt content
-            messages = kwargs.get("messages", [])
-            if not messages:
-                prompt = ""
-            else:
-                prompt = messages[0].get("content", "") if isinstance(messages[0], dict) else ""
+    def _content_for(system_or_first: str, user_content: str = "") -> str:
+        prompt = system_or_first or ""
+        user = user_content or ""
+        combined_user = f"{prompt}\n{user}".lower()
 
-            if "統合" in prompt and "ファイル" in prompt:
-                # Knowledge merge response
-                content = """## 統合ファイル名
+        if "統合" in prompt and "ファイル" in prompt:
+            return """## 統合ファイル名
 merged-knowledge.md
 
 ## 統合内容
@@ -193,12 +187,9 @@ merged-knowledge.md
 
 Combined content from both files with duplicates removed.
 """
-            elif "圧縮" in prompt or "要約" in prompt:
-                # Episode/session summary response
-                # Check user content for topic-specific keywords
-                user_content = messages[-1].get("content", "") if len(messages) > 1 else ""
-                if "microservices" in user_content.lower() or "architecture" in user_content.lower():
-                    content = """マイクロサービスアーキテクチャの進捗確認
+        if "圧縮" in prompt or "要約" in prompt or "session" in combined_user or user:
+            if "microservices" in combined_user or "architecture" in combined_user:
+                return """マイクロサービスアーキテクチャの進捗確認
 
 **相手**: developer
 **トピック**: microservices, architecture, FastAPI, PostgreSQL
@@ -208,8 +199,8 @@ Combined content from both files with duplicates removed.
 **決定事項**: なし
 **未解決**: なし
 """
-                elif "task x" in user_content.lower() or "help" in user_content.lower():
-                    content = """タスクXのサポート依頼
+            if "task x" in combined_user or "help" in combined_user:
+                return """タスクXのサポート依頼
 
 **相手**: human
 **トピック**: task X, help
@@ -219,16 +210,13 @@ Combined content from both files with duplicates removed.
 **決定事項**: なし
 **未解決**: なし
 """
-                else:
-                    content = """会話の要約
+            return """会話の要約
 
 - Completed main tasks
 - Attended meetings
 - Updated documentation
 """
-            else:
-                # Daily consolidation response
-                content = """## 既存ファイル更新
+        return """## 既存ファイル更新
 - ファイル名: knowledge/project-notes.md
   追加内容:
 
@@ -248,11 +236,36 @@ Combined content from both files with duplicates removed.
   - Use meaningful test names
 """
 
+    with (
+        patch("litellm.acompletion") as mock,
+        patch("core.memory.conversation_compression._call_llm", new_callable=AsyncMock) as mock_call_llm,
+        patch("core.memory._llm_utils.one_shot_completion", new_callable=AsyncMock) as mock_one_shot,
+    ):
+
+        async def async_response(*args, **kwargs):
+            messages = kwargs.get("messages", [])
+            if not messages:
+                system = ""
+                user = ""
+            else:
+                system = messages[0].get("content", "") if isinstance(messages[0], dict) else ""
+                user = messages[-1].get("content", "") if len(messages) > 1 and isinstance(messages[-1], dict) else ""
+            content = _content_for(system, user)
             mock_response = MagicMock()
             mock_response.choices = [MagicMock(message=MagicMock(content=content))]
             return mock_response
 
+        async def call_llm_response(system: str, user_content: str, max_tokens: int = 1000) -> str:
+            del max_tokens
+            return _content_for(system, user_content)
+
+        async def one_shot_response(prompt: str, *, system_prompt: str = "", **kwargs) -> str:
+            del kwargs
+            return _content_for(system_prompt, prompt)
+
         mock.side_effect = async_response
+        mock_call_llm.side_effect = call_llm_response
+        mock_one_shot.side_effect = one_shot_response
         yield mock
 
 

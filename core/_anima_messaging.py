@@ -21,6 +21,7 @@ from contextlib import nullcontext
 from hashlib import sha256
 from typing import Any
 
+from core.config.model_config import resolve_effective_model_config
 from core.exceptions import (
     ExecutionError,
     LLMAPIError,
@@ -28,6 +29,12 @@ from core.exceptions import (
     ToolError,
 )
 from core.execution._sanitize import ORIGIN_HUMAN, ORIGIN_SYSTEM
+from core.execution.error_classifier import (
+    FailoverReason,
+    classify_llm_error,
+    classify_llm_error_message,
+)
+from core.execution.fallback_activity import log_model_fallback
 from core.execution.session_types import resolve_runtime_session_type
 from core.i18n import t
 from core.image_artifacts import extract_image_artifacts_from_tool_records, resolve_local_image_paths
@@ -35,10 +42,220 @@ from core.memory.conversation import ConversationMemory, ToolRecord
 from core.memory.streaming_journal import StreamingJournal
 from core.paths import load_prompt
 from core.response_normalize import normalize_user_facing_response_text
-from core.schemas import EXTERNAL_PLATFORM_SOURCES, VALID_EMOTIONS, CycleResult, ImageData
+from core.schemas import EXTERNAL_PLATFORM_SOURCES, VALID_EMOTIONS, CycleResult, ImageData, ModelConfig
 from core.time_utils import now_local, today_local
 
 logger = logging.getLogger("animaworks.anima")
+
+_CHAT_FALLBACK_REASONS = frozenset(
+    {
+        FailoverReason.QUOTA_EXHAUSTED,
+        FailoverReason.RATE_LIMIT,
+    }
+)
+
+
+def _chat_fallback_reason_from_exception(exc: Exception) -> FailoverReason | None:
+    """Return a chat-retry reason for a classified provider exception."""
+    reason, _hint = classify_llm_error(exc)
+    return reason if reason in _CHAT_FALLBACK_REASONS else None
+
+
+def _chat_fallback_reason_from_result(result: CycleResult | dict[str, Any]) -> FailoverReason | None:
+    """Return a chat-retry reason from a terminal cycle result, if any."""
+    data = result.model_dump(mode="json") if isinstance(result, CycleResult) else result
+    if data.get("action") != "error":
+        return None
+    raw_reason = data.get("reason")
+    if isinstance(raw_reason, str):
+        try:
+            reason = FailoverReason(raw_reason)
+        except ValueError:
+            reason = None
+        if reason in _CHAT_FALLBACK_REASONS:
+            return reason
+    reason, _hint = classify_llm_error_message(str(data.get("summary") or ""))
+    return reason if reason in _CHAT_FALLBACK_REASONS else None
+
+
+def _same_effective_model(left: Any, right: Any) -> bool:
+    """Compare the fields that determine executor/model routing."""
+    return all(
+        getattr(left, field, None) == getattr(right, field, None)
+        for field in ("model", "execution_mode", "resolved_mode", "credential")
+    )
+
+
+def _resolve_chat_model_config(
+    owner: Any,
+    primary_config: Any,
+    *,
+    phase: str,
+) -> Any:
+    """Resolve and record the effective model for one chat attempt."""
+    if not isinstance(primary_config, ModelConfig):
+        # Some embedding/tests provide a lightweight config double.  Runtime
+        # configuration always resolves to ModelConfig.
+        return primary_config
+    effective_config = resolve_effective_model_config(primary_config)
+    log_model_fallback(
+        owner._activity,
+        primary_config,
+        effective_config,
+        channel="chat",
+        phase=phase,
+    )
+    return effective_config
+
+
+def _resolve_chat_retry_config(
+    owner: Any,
+    primary_config: Any,
+    active_config: Any,
+    reason: FailoverReason | None,
+) -> Any | None:
+    """Re-evaluate fallback selection and return a different config once."""
+    if reason not in _CHAT_FALLBACK_REASONS or not isinstance(primary_config, ModelConfig):
+        return None
+    retry_config = resolve_effective_model_config(primary_config)
+    if _same_effective_model(retry_config, active_config):
+        return None
+    log_model_fallback(
+        owner._activity,
+        primary_config,
+        retry_config,
+        channel="chat",
+        phase="runtime_retry",
+    )
+    return retry_config
+
+
+async def _run_chat_cycle_with_fallback(
+    owner: Any,
+    *,
+    prompt: str,
+    trigger: str,
+    message_intent: str,
+    images: list[ImageData] | None,
+    prior_messages: list[dict[str, Any]] | None,
+    thread_id: str,
+    primary_config: Any,
+    active_config: Any,
+    max_turns_override: int | None = None,
+    prompt_tier_override: str | None = None,
+) -> CycleResult:
+    """Run a blocking chat cycle, retrying once on quota/rate fallback."""
+
+    async def _run(config: Any) -> CycleResult:
+        return await owner.agent.run_cycle(
+            prompt,
+            trigger=trigger,
+            message_intent=message_intent,
+            images=images,
+            prior_messages=prior_messages,
+            thread_id=thread_id,
+            model_config_override=config,
+            max_turns_override=max_turns_override,
+            prompt_tier_override=prompt_tier_override,
+        )
+
+    try:
+        result = await _run(active_config)
+    except Exception as exc:
+        retry_config = _resolve_chat_retry_config(
+            owner,
+            primary_config,
+            active_config,
+            _chat_fallback_reason_from_exception(exc),
+        )
+        if retry_config is None:
+            raise
+        return await _run(retry_config)
+
+    retry_config = _resolve_chat_retry_config(
+        owner,
+        primary_config,
+        active_config,
+        _chat_fallback_reason_from_result(result),
+    )
+    if retry_config is None:
+        return result
+    return await _run(retry_config)
+
+
+async def _run_chat_stream_with_fallback(
+    owner: Any,
+    *,
+    prompt: str,
+    trigger: str,
+    message_intent: str,
+    images: list[ImageData] | None,
+    prior_messages: list[dict[str, Any]] | None,
+    thread_id: str,
+    primary_config: Any,
+    active_config: Any,
+    max_turns_override: int | None = None,
+    prompt_tier_override: str | None = None,
+) -> AsyncGenerator[dict[str, Any], None]:
+    """Stream a chat cycle, restarting at most once on terminal quota/rate errors."""
+    current_config = active_config
+    retry_used = False
+
+    while True:
+        retry_config = None
+        emitted_payload = False
+        try:
+            async for chunk in owner.agent.run_cycle_streaming(
+                prompt,
+                trigger=trigger,
+                message_intent=message_intent,
+                images=images,
+                prior_messages=prior_messages,
+                thread_id=thread_id,
+                model_config_override=current_config,
+                max_turns_override=max_turns_override,
+                prompt_tier_override=prompt_tier_override,
+            ):
+                chunk_type = chunk.get("type")
+                reason = None
+                if chunk_type == "error":
+                    try:
+                        reason = FailoverReason(str(chunk.get("reason") or ""))
+                    except ValueError:
+                        reason, _hint = classify_llm_error_message(str(chunk.get("message") or ""))
+                elif chunk_type == "cycle_done":
+                    raw_result = chunk.get("cycle_result")
+                    if isinstance(raw_result, dict):
+                        reason = _chat_fallback_reason_from_result(raw_result)
+
+                if not retry_used and not emitted_payload:
+                    retry_config = _resolve_chat_retry_config(
+                        owner,
+                        primary_config,
+                        current_config,
+                        reason,
+                    )
+                    if retry_config is not None:
+                        break
+
+                if chunk_type in {"text_delta", "tool_start", "tool_end"}:
+                    emitted_payload = True
+                yield chunk
+        except Exception as exc:
+            if not retry_used and not emitted_payload:
+                retry_config = _resolve_chat_retry_config(
+                    owner,
+                    primary_config,
+                    current_config,
+                    _chat_fallback_reason_from_exception(exc),
+                )
+            if retry_config is None:
+                raise
+
+        if retry_config is None:
+            return
+        current_config = retry_config
+        retry_used = True
 
 
 def _agent_session_context(owner: Any):
@@ -174,9 +391,29 @@ class MessagingMixin:
 
         Writes to ``shared/users/{from_person}/conversations/YYYY-MM-DD.jsonl``
         so that any Anima can search what the human discussed across all Animas.
+
+        Skips system/self senders and known anima names (exact match only) so
+        anima-to-anima traffic never creates directories under ``shared/users/``.
         """
         if from_person in ("system", "") or from_person == self.name:
             return
+        try:
+            from core.anima_roster import is_anima_name
+
+            if is_anima_name(from_person):
+                logger.info(
+                    "[%s] Skipping shared/users conversation log for anima sender '%s'",
+                    self.name,
+                    from_person,
+                )
+                return
+        except Exception:
+            logger.debug(
+                "[%s] Anima roster check failed for '%s'; proceeding with log",
+                self.name,
+                from_person,
+                exc_info=True,
+            )
         try:
             shared_dir = self.anima_dir.parent.parent / "shared" / "users" / from_person / "conversations"
             shared_dir.mkdir(parents=True, exist_ok=True)
@@ -429,7 +666,12 @@ class MessagingMixin:
 
                 # Human-facing chat must use the per-Anima status.json model,
                 # independent of any background/helper model in flight.
-                base_model_config = self.memory.read_model_config()
+                primary_model_config = self.memory.read_model_config()
+                base_model_config = _resolve_chat_model_config(
+                    self,
+                    primary_model_config,
+                    phase="preflight",
+                )
 
                 # Build history-aware prompt via conversation memory
                 conv_memory = ConversationMemory(self.anima_dir, base_model_config, thread_id=thread_id)
@@ -493,15 +735,18 @@ class MessagingMixin:
                     async with _agent_session_context(self):
                         self.agent.set_interrupt_event(self._get_interrupt_event(thread_id))
                         self.agent._tool_handler.set_session_origin(ORIGIN_HUMAN)
-                        result = await self.agent.run_cycle(
-                            prompt,
+                        result = await _run_chat_cycle_with_fallback(
+                            self,
+                            prompt=prompt,
                             trigger=f"message:{from_person}",
                             message_intent=intent,
                             images=images,
                             prior_messages=prior_messages,
                             max_turns_override=self._front_max_turns_override(),
+                            prompt_tier_override="meeting" if is_meeting_source else None,
                             thread_id=thread_id,
-                            model_config_override=base_model_config,
+                            primary_config=primary_model_config,
+                            active_config=base_model_config,
                         )
                     self._last_activity = now_local()
                     result.summary = normalize_user_facing_response_text(result.summary)
@@ -749,7 +994,12 @@ class MessagingMixin:
 
                 # Human-facing chat must use the per-Anima status.json model,
                 # independent of any background/helper model in flight.
-                base_model_config = self.memory.read_model_config()
+                primary_model_config = self.memory.read_model_config()
+                base_model_config = _resolve_chat_model_config(
+                    self,
+                    primary_model_config,
+                    phase="preflight",
+                )
 
                 # Build history-aware prompt via conversation memory
                 conv_memory = ConversationMemory(self.anima_dir, base_model_config, thread_id=thread_id)
@@ -830,16 +1080,18 @@ class MessagingMixin:
                         agent_session_acquired = True
                     self.agent.set_interrupt_event(self._get_interrupt_event(thread_id))
                     self.agent._tool_handler.set_session_origin(ORIGIN_HUMAN)
-                    async for chunk in self.agent.run_cycle_streaming(
-                        prompt,
+                    async for chunk in _run_chat_stream_with_fallback(
+                        self,
+                        prompt=prompt,
                         trigger=f"message:{from_person}",
                         message_intent=intent,
                         images=images,
                         prior_messages=prior_messages,
                         max_turns_override=self._front_max_turns_override(),
                         thread_id=thread_id,
-                        model_config_override=base_model_config,
                         prompt_tier_override="meeting" if source == "meeting" else None,
+                        primary_config=primary_model_config,
+                        active_config=base_model_config,
                     ):
                         if chunk.get("type") == "text_delta":
                             delta_text = chunk.get("text", "")

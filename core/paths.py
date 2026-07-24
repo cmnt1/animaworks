@@ -14,6 +14,7 @@ Runtime data directory can be overridden via ANIMAWORKS_DATA_DIR environment var
 from __future__ import annotations
 
 import os
+from importlib import resources
 from pathlib import Path
 
 # Project root: where the code lives (immutable, git-tracked)
@@ -26,11 +27,19 @@ def _resolve_templates_dir() -> Path:
     Resolution order:
       1. ANIMAWORKS_TEMPLATES_DIR env var (explicit override, e.g. Docker)
       2. PROJECT_DIR / "templates" (development / editable install)
+      3. Installed ``templates`` package resources
     """
     env = os.environ.get("ANIMAWORKS_TEMPLATES_DIR")
     if env:
         return Path(env).resolve()
-    return PROJECT_DIR / "templates"
+    project_templates = PROJECT_DIR / "templates"
+    if project_templates.exists():
+        return project_templates
+    try:
+        installed_templates = Path(str(resources.files("templates")))
+    except (ModuleNotFoundError, TypeError):
+        return project_templates
+    return installed_templates if installed_templates.exists() else project_templates
 
 
 TEMPLATES_DIR = _resolve_templates_dir()
@@ -57,6 +66,10 @@ def get_shared_dir() -> Path:
 
 def get_taskboard_db_path() -> Path:
     return get_shared_dir() / "taskboard.sqlite3"
+
+
+def get_external_tasks_store_path() -> Path:
+    return get_shared_dir() / "external_tasks.json"
 
 
 def get_company_dir() -> Path:
@@ -90,7 +103,7 @@ def get_anima_vectordb_dir(anima_name: str) -> Path:
 
 # --- Prompt templates ---
 
-# Cache loaded templates to avoid repeated disk reads
+# Compatibility mirror only; load_prompt always rereads Markdown from disk.
 _prompt_cache: dict[tuple[str, str], str] = {}
 
 
@@ -219,8 +232,18 @@ def resolve_template_path(
     raise FileNotFoundError(f"Template not found: {category}/{filename} (tried locales: {loc}, en, ja and _shared)")
 
 
+def load_prompt_text(name: str, *, locale: str | None = None) -> str:
+    """Read a locale-aware prompt Markdown file without formatting it."""
+    loc = locale or _get_locale()
+    key = (loc, name)
+    path = resolve_template_path("prompts", f"{name}.md", loc)
+    text = path.read_text(encoding="utf-8")
+    _prompt_cache[key] = text
+    return text
+
+
 def load_prompt(name: str, *, locale: str | None = None, **kwargs: object) -> str:
-    """Load a prompt template and format it with locale-aware resolution.
+    """Load and format a locale-aware prompt template.
 
     Templates use Python str.format_map() placeholders like {anima_dir}.
     Literal braces in templates should be doubled: {{ and }}.
@@ -234,11 +257,5 @@ def load_prompt(name: str, *, locale: str | None = None, **kwargs: object) -> st
         locale: Override locale. If None, uses config.locale.
         **kwargs: Values to substitute into the template placeholders.
     """
-    loc = locale or _get_locale()
-    key = (loc, name)
-    if key not in _prompt_cache:
-        path = resolve_template_path("prompts", f"{name}.md", loc)
-        raw = path.read_text(encoding="utf-8")
-        _prompt_cache[key] = _strip_frontmatter(_resolve_at_imports(raw))
-    template = _prompt_cache[key]
+    template = load_prompt_text(name, locale=locale)
     return template.format_map(_SafeFormatDict(kwargs))

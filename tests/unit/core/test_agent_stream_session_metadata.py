@@ -19,6 +19,10 @@ class _ToolHandlerStub:
 class _StreamingAgentStub(CycleMixin):
     def __init__(self) -> None:
         self._tool_handler = _ToolHandlerStub()
+        self.model_config = None
+
+    def _check_monthly_token_budget(self, **kwargs):
+        return None
 
     @asynccontextmanager
     async def _get_agent_lock(self, thread_id):

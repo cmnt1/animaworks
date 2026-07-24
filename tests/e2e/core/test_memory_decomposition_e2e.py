@@ -92,9 +92,11 @@ class TestFacadeDelegation:
     """MemoryManager methods delegate to the correct sub-service."""
 
     @pytest.fixture
-    def mm(self, tmp_path: Path) -> MemoryManager:
-        anima_dir = tmp_path / "animas" / "test-anima"
-        anima_dir.mkdir(parents=True)
+    def mm(self, data_dir: Path) -> MemoryManager:
+        # data_dir redirects ANIMAWORKS_DATA_DIR so ResolutionTracker writes
+        # to an isolated shared/resolutions.jsonl, not the host runtime tree.
+        anima_dir = data_dir / "animas" / "test-anima"
+        anima_dir.mkdir(parents=True, exist_ok=True)
         return MemoryManager(anima_dir)
 
     def test_cron_log_roundtrip(self, mm: MemoryManager) -> None:

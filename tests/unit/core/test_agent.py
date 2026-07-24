@@ -90,7 +90,7 @@ class TestIsClaude:
 
 
 class TestModeCFallback:
-    def test_mode_c_fallback_remaps_model_when_sdk_missing(self, tmp_path):
+    def test_mode_c_fallback_remaps_model_when_sdk_missing(self, tmp_path, caplog):
         agent = _make_agent(
             tmp_path,
             model="codex/gpt-5.3-codex",
@@ -106,6 +106,9 @@ class TestModeCFallback:
         assert created is sentinel_executor
         kwargs = mock_litellm.call_args.kwargs
         assert kwargs["model_config"].model == "openai/gpt-5.3-codex"
+        assert kwargs["model_config"].resolved_mode == "C"
+        assert "model=codex/gpt-5.3-codex resolved_mode=C" in caplog.text
+        assert "without changing resolved_mode" in caplog.text
 
     def test_mode_c_fallback_uses_anthropic_when_key_is_anthropic(self, tmp_path):
         agent = _make_agent(
@@ -152,7 +155,7 @@ class TestModeXExecutor:
             interrupt_event=agent._interrupt_event,
         )
 
-    def test_mode_x_fallback_remaps_grok_model_to_xai(self, tmp_path):
+    def test_mode_x_fallback_remaps_grok_model_to_xai(self, tmp_path, caplog):
         agent = _make_agent(
             tmp_path,
             model="grok/grok-4.5",
@@ -169,7 +172,10 @@ class TestModeXExecutor:
         assert created is sentinel_executor
         kwargs = mock_litellm.call_args.kwargs
         assert kwargs["model_config"].model == "xai/grok-4.5"
+        assert kwargs["model_config"].resolved_mode == "X"
         assert agent.model_config.model == "grok/grok-4.5"
+        assert "model=grok/grok-4.5 resolved_mode=X" in caplog.text
+        assert "without changing resolved_mode" in caplog.text
 
 
 # ── Callbacks / reply tracking ────────────────────────────

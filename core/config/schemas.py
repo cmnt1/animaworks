@@ -65,6 +65,8 @@ class AnimaModelConfig(BaseModel):
     company: str | None = None
     speciality: str | None = None
     model: str | None = None
+    heartbeat_enabled: bool | None = None
+    token_budget_monthly: int | None = None
     aliases: list[str] = []
     """Alternative names (e.g. Japanese) that resolve to this anima's canonical name."""
 
@@ -79,6 +81,7 @@ class AnimaDefaults(BaseModel):
 
     model: str = DEFAULT_ANIMA_MODEL
     fallback_model: str | None = None
+    fallback_models: list[str] = Field(default_factory=list)
     background_model: str | None = None
     background_credential: str | None = None
     background_thinking_effort: str | None = None  # heartbeat/cron thinking effort override
@@ -102,6 +105,8 @@ class AnimaDefaults(BaseModel):
     default_workspace: str = ""
     tool_compression: bool = True  # Enable RTK-inspired tool result compression
     consolidation_enabled: bool = True
+    heartbeat_enabled: bool = True  # 既定true。falseで定期heartbeatのみ無効化。メッセージ起因HB・cronは影響なし
+    token_budget_monthly: int | None = None  # None = monthly token usage is unlimited
 
 
 # ── Local LLM defaults ───────────────────────────────────────────────────────
@@ -223,6 +228,15 @@ class RAGConfig(BaseModel):
     )
     embedding_query_prefix: str = "query: "
     embedding_document_prefix: str = "passage: "
+    embedding_max_seq_length: int = Field(
+        default=2048,
+        ge=0,
+        description=(
+            "Cap on the embedding model's max sequence length (tokens). "
+            "Long-context models like ruri-v3 default to 8192, which blows up "
+            "GPU activation memory during bulk encode. 0 = use model default."
+        ),
+    )
     use_gpu: bool = False
     enable_spreading_activation: bool = True
     max_graph_hops: int = 2
@@ -466,7 +480,12 @@ class ImageGenConfig(BaseModel):
 
 
 class NotificationChannelConfig(BaseModel):
-    """Configuration for a single human notification channel."""
+    """Configuration for a single human notification channel.
+
+    For ``type="chatwork"``, when ``config.api_token_env`` is omitted the
+    channel falls back to ``CHATWORK_API_TOKEN__kotoha`` (system notification
+    default identity: kotoha). Set ``api_token_env`` explicitly to override.
+    """
 
     type: str  # "slack", "line", "telegram", "chatwork", "ntfy"
     enabled: bool = True
@@ -539,6 +558,7 @@ class ExternalMessagingChannelConfig(BaseModel):
     guild_id: str = ""  # Discord guild snowflake ID (Discord only)
     channel_members: dict[str, list[str]] = {}  # channel_id → [anima_name, ...] (Discord only)
     system_agents: dict[str, SystemAgentConfig] = {}  # external_user_id -> SystemAgentConfig
+    default_channel_company: str = ""  # company for auto-created boards (empty = no attribution)
 
 
 class ZoomRTMSConfig(BaseModel):
@@ -562,6 +582,18 @@ class GitHubWebhookConfig(BaseModel):
     quiet_seconds: float = Field(default=180, ge=0)
 
 
+class EventExportConfig(BaseModel):
+    """Best-effort export of runtime activity and token usage events."""
+
+    url: str | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
+    event_types: list[str] | None = None
+    include_token_usage: bool = True
+    max_retries: int = Field(default=8, ge=0)
+    backoff_base_seconds: float = Field(default=2.0, ge=0)
+    spool_max_mb: int = Field(default=64, ge=0)
+
+
 class ExternalMessagingConfig(BaseModel):
     """Configuration for external messaging integration (inbound + outbound)."""
 
@@ -571,6 +603,27 @@ class ExternalMessagingConfig(BaseModel):
     chatwork: ExternalMessagingChannelConfig = ExternalMessagingChannelConfig()
     discord: ExternalMessagingChannelConfig = ExternalMessagingChannelConfig()
     zoom: ZoomRTMSConfig = ZoomRTMSConfig()
+
+
+class ExternalTasksSourcesConfig(BaseModel):
+    """Per-source enable flags for external tasks collection."""
+
+    github: bool = True
+    slack: bool = True
+    chatwork: bool = True
+    gmail: bool = True
+
+
+class ExternalTasksConfig(BaseModel):
+    """Configuration for the external tasks dashboard widget collector.
+
+    Enabled by default; sources without credentials are simply reported as
+    ``unavailable`` by the collector, so this is safe on fresh installs.
+    """
+
+    enabled: bool = True
+    interval_minutes: int = 5
+    sources: ExternalTasksSourcesConfig = Field(default_factory=ExternalTasksSourcesConfig)
 
 
 class MediaProxyConfig(BaseModel):
@@ -645,6 +698,7 @@ class LlmRateGuardConfig(BaseModel):
     enabled: bool = True
     default_block_seconds: int = Field(default=60, ge=0)
     max_block_seconds: int = Field(default=600, ge=0)
+    quota_block_seconds: int = Field(default=1800, ge=0)
 
 
 class BackgroundToolConfig(BaseModel):
@@ -790,6 +844,7 @@ class HousekeepingConfig(BaseModel):
     cron_queue_stale_minutes: int = Field(default=30, ge=1)
     current_state_stale_hours: int = Field(default=24, ge=1)
     taskboard_suppressed_retention_days: int = Field(default=30, ge=1)
+    taskboard_orphan_metadata_stale_hours: int = Field(default=24, ge=1)
     suppressed_messages_max_size_mb: int = Field(default=10, ge=1)
     suppressed_messages_keep_generations: int = Field(default=5, ge=1)
     archive_superseded_retention_days: int = Field(default=7, ge=1)
@@ -863,6 +918,15 @@ class HeartbeatConfig(BaseModel):
         le=120.0,
         description="Minutes after last stream end to trigger idle auto-compaction",
     )
+
+
+class CronGuardConfig(BaseModel):
+    """Detection and optional auto-disable thresholds for cron tasks."""
+
+    mode: Literal["off", "warn", "disable"] = "warn"
+    max_fires_per_window: int = Field(default=60, ge=1)
+    window_minutes: int = Field(default=60, ge=1)
+    max_consecutive_failures: int = Field(default=5, ge=1)
 
 
 # ── Voice Chat Config ───────────────────────────────────────────────────────
@@ -1145,6 +1209,10 @@ class SkillsConfig(BaseModel):
     cron: SkillCronConfig = SkillCronConfig()
 
 
+class ChatworkToolConfig(BaseModel):
+    grants: dict[str, dict[str, str]] = {}
+
+
 class AnimaWorksConfig(BaseModel):
     version: int = 1
     setup_complete: bool = False
@@ -1161,6 +1229,7 @@ class AnimaWorksConfig(BaseModel):
     gpu: GPUConfig = GPUConfig()
     memory: MemoryConfig = MemoryConfig()
     skills: SkillsConfig = SkillsConfig()
+    chatwork_tool: ChatworkToolConfig = ChatworkToolConfig()
     prompt: PromptConfig = PromptConfig()
     priming: PrimingConfig = PrimingConfig()
     image_gen: ImageGenConfig = ImageGenConfig()
@@ -1169,17 +1238,22 @@ class AnimaWorksConfig(BaseModel):
     server: ServerConfig = ServerConfig()
     llm_rate_guard: LlmRateGuardConfig = LlmRateGuardConfig()
     external_messaging: ExternalMessagingConfig = ExternalMessagingConfig()
+    external_tasks: ExternalTasksConfig = Field(default_factory=ExternalTasksConfig)
     github_webhook: GitHubWebhookConfig = GitHubWebhookConfig()
+    event_export: EventExportConfig = EventExportConfig()
     background_task: BackgroundTaskConfig = BackgroundTaskConfig()
     activity_log: ActivityLogConfig = ActivityLogConfig()
     logging: LoggingConfig = LoggingConfig()
     heartbeat: HeartbeatConfig = HeartbeatConfig()
+    cron_guard: CronGuardConfig = CronGuardConfig()
     voice: VoiceConfig = VoiceConfig()
     housekeeping: HousekeepingConfig = HousekeepingConfig()
     inbox: InboxConfig = InboxConfig()
     machine: MachineConfig = MachineConfig()
     local_llm: LocalLLMConfig = LocalLLMConfig()
     workspaces: dict[str, str] = {}  # alias → absolute path
+    # channel name → company name for open-channel company attribution migration
+    channel_company_defaults: dict[str, str] = Field(default_factory=dict)
     activity_level: int = Field(
         default=100,
         ge=10,
@@ -1211,7 +1285,9 @@ __all__ = [
     "AnimaWorksConfig",
     "BackgroundTaskConfig",
     "BackgroundToolConfig",
+    "ChatworkToolConfig",
     "ConsolidationConfig",
+    "CronGuardConfig",
     "CredentialConfig",
     "DEFAULT_ANIMA_MODEL",
     "DEFAULT_CONSOLIDATION_MODEL",
@@ -1220,8 +1296,11 @@ __all__ = [
     "DEFAULT_LOCAL_LLM_PRESETS",
     "DEFAULT_LOCAL_LLM_ROLE_PRESETS",
     "ElevenLabsVoiceConfig",
+    "EventExportConfig",
     "ExternalMessagingChannelConfig",
     "ExternalMessagingConfig",
+    "ExternalTasksConfig",
+    "ExternalTasksSourcesConfig",
     "GatewaySystemConfig",
     "GitHubWebhookConfig",
     "GPUConfig",

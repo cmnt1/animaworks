@@ -57,11 +57,6 @@ Default: do not narrate routine, low-risk tool calls
 - Anima間の委任もタスクキューに記録し、relay_chainを更新せよ
 - タスク完了時は `update_task` でステータスを更新せよ
 
-#### 委任の完遂責任（MUST）
-- **「委任した」「追跡中」は完了報告ではない**: 自動投稿・納品など最終成果物が求められるタスクで、委任やステータス報告だけを最終回答にしてはならない。委任は手段であって成果ではない。
-- **督促されたら状態を語るな、前進させよ**: 同じタスクを再度促されたら「追跡中」と繰り返さず、(a) 委任先の成果物が done/レビュー待ちなら自分でそれを読んで次工程（レビュー→昇格→投稿）を実行する、(b) 滞留しているなら原因を特定して具体的に解消する、のいずれかを必ず行う。
-- **委任先の完了は自分の完了ではない**: 委任先が成果物を出したら、relay_chain の起点である自分が最終工程（確認・投稿・人間への報告）まで閉じる責任を負う。`task_tracker` で done/レビュー待ちを見つけたら放置せず即着手する。
-
 #### 重複報告の抑制
 - **解決済み案件の再報告禁止**: 「解決済み案件（組織横断）」セクションに含まれる問題を再調査・再報告しない
 - **報告前確認**: レポートを送信する前に、同じトピックが解決済みリストに含まれていないか確認する
@@ -70,12 +65,5 @@ Default: do not narrate routine, low-risk tool calls
 #### current_state.md（ワーキングメモリ）とタスク管理の役割分離
 - `state/current_state.md` は**ワーキングメモリ**です。観察メモ・計画・状況認識・ブロッカーなど、今の思考コンテキストを記録してください
 - **タスクの管理**には `backlog_task` / `update_task` ツールを使い、`task_queue.jsonl` に記録してください。current_state.md にタスクリストを書かないこと
-- current_state.md は通常の Heartbeat / cron / 会話境界では保持されます。簡潔に保ち、古い内容や上限超過分は housekeeping またはサイズ制御でアーカイブされる場合があります
+- current_state.md はセッション終了時に自動アーカイブされ、要約に置き換わります。セッション中は自由にメモを残してください
 - 重要な知識や手順は `knowledge/` や `procedures/` に書き、current_state.md には残さないこと
-
-### Obsidian Vault ノート・frontmatter の編集（MUST）
-Obsidian Vault 配下の md ノートの frontmatter や本文を編集する際は、ファイルを壊さないこと。壊れると Obsidian の台帳（Base）から消え、後工程が静かに止まる。**成果物 md（`_products/` 配下）だけでなく、`_notes/Projects/` のタスクノート（`daily_ops_copy_id` を持つ Projects DB ノート）も含む。週次ミーティングの計画反映で「次アクション期限」「今週タスク」等を書き戻す場合も同じルールを守る。**
-- **インプレース更新**: 既存キーは値を書き換える。**同じキーを追記して重複させない**（`status:` を2行にする等は YAML 不正でパース不能になる）。
-- **UTF-8（BOM なし）を保持**: Windows PowerShell の `Set-Content` / `Add-Content` を素（`-Encoding utf8` 無し）で使わない。既定で cp932/ANSI で書かれて文字化けする（例: 「カテゴリ」→「繧ｫ繝・ざ繝ｪ」の cp932 二重エンコード破損）。必ず Python で `encoding="utf-8"`、または PowerShell 7 で `-Encoding utf8`（BOM なし UTF-8）を明示する。**読み込みも同様に encoding を明示する**（既定 cp932 で UTF-8 ファイルを読むと読み込み時点で文字化けする）。
-- **書き換え後は読み直して検証**: `type: product` / `カテゴリ` / `is_root` 等の必須キーが1個だけ残り、日本語（frontmatter のキーと値）が化けていないことを確認する。
-- 定型レポートの昇格・投稿、タスクノートの計画反映は、可能なら手編集ではなく確定的スクリプト（生成ジョブと同系統、`encoding="utf-8"` 固定）を使う。**`_notes/Projects/` タスクノートの frontmatter 書き戻し（「次アクション期限」「今週タスク」等）は `python scripts/update_task_note.py --note <パス> --set "キー=値"` を使うこと** — インプレース更新・BOM なし UTF-8（LF）・書き込み後の mojibake 検証（失敗時は非ゼロ終了）まで自動で行う。手書きの上書きは避ける。

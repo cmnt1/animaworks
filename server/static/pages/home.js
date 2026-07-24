@@ -2,10 +2,11 @@
 import { t } from "/shared/i18n.js";
 import { basePath } from "/shared/base-path.js";
 import { api } from "../modules/api.js";
-import { escapeHtml, timeStr, statusClass } from "../modules/state.js";
+import { escapeHtml, escapeAttr, timeStr, statusClass } from "../modules/state.js";
 import { animaHashColor } from "../modules/animas.js";
+import { companyColor } from "../shared/avatar-utils.js";
 import { getIcon, getDisplaySummary } from "../shared/activity-types.js";
-import { bustupCandidates, resolveAvatar } from "../modules/avatar-resolver.js";
+import { bustupCandidates, resolveCachedAvatar } from "../modules/avatar-resolver.js";
 
 let _refreshInterval = null;
 let _usageInterval = null;
@@ -14,8 +15,26 @@ let _usageInterval = null;
 
 export function render(container) {
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header page-header--compact">
       <h2>${t("home.dashboard")}</h2>
+    </div>
+
+    <div class="card home-org-hero" id="homeOrgHeroCard">
+      <div class="card-header">${t("home.anima_list")}</div>
+      <div class="card-body">
+        <div class="org-tree" id="homeOrgTree">
+          <div class="loading-placeholder">${t("common.loading")}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card home-attention-card" id="homeAttentionCard">
+      <div class="card-header">${t("home.attention_title")}</div>
+      <div class="card-body">
+        <div class="home-chip-row" id="homeAttentionChips">
+          <div class="loading-placeholder">${t("common.loading")}</div>
+        </div>
+      </div>
     </div>
 
     <div class="usage-panel-header">
@@ -24,7 +43,7 @@ export function render(container) {
         <span class="usage-last-updated" id="usageLastUpdated">${t("home.ext_last_updated")}: --:--:--</span>
       </div>
     </div>
-    <div class="usage-panel" id="homeUsagePanel">
+    <div class="usage-panel usage-panel--compact" id="homeUsagePanel">
       <div class="usage-card" id="usageCardClaude">
         <div class="usage-card-header">
           <span class="usage-provider-name">Claude</span>
@@ -65,29 +84,21 @@ export function render(container) {
     <div id="usageAuthAlerts" style="display:none;"></div>
     <div id="usageGovernorBar" style="display:none;"></div>
 
-    <div class="card-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 1.5rem;">
-      <div class="stat-card" id="homeStatAnimas">
-        <div class="stat-label">${t("home.anima_count")}</div>
-        <div class="stat-value" id="homeAnimaCount">--</div>
-      </div>
-      <div class="stat-card" id="homeStatScheduler">
-        <div class="stat-label">${t("home.scheduler")}</div>
-        <div class="stat-value" id="homeSchedulerStatus">--</div>
-      </div>
-      <div class="stat-card" id="homeStatProcesses">
-        <div class="stat-label">${t("home.process_count")}</div>
-        <div class="stat-value" id="homeProcessCount">--</div>
-      </div>
+    <div class="home-status-bar" id="homeStatusBar" role="status">
+      <span class="home-status-dot" aria-hidden="true"></span>
+      <span class="home-status-label" id="homeStatusLabel">--</span>
+      <span class="home-status-sep" aria-hidden="true">&#x00B7;</span>
+      <span class="home-status-item" id="homeAnimaCount">--</span>
+      <span class="home-status-sep" aria-hidden="true">&#x00B7;</span>
+      <span class="home-status-item" id="homeProcessCount">--</span>
+      <span class="home-status-sep" aria-hidden="true">&#x00B7;</span>
+      <span class="home-status-item" id="homeJobCount">--</span>
+      <span class="home-status-sep" aria-hidden="true">&#x00B7;</span>
+      <span class="home-status-item" id="homeWsCount">--</span>
     </div>
-
-    <div class="card" style="margin-bottom: 1.5rem;">
-      <div class="card-header">${t("home.anima_list")}</div>
-      <div class="card-body">
-        <div class="org-tree" id="homeOrgTree">
-          <div class="loading-placeholder">${t("common.loading")}</div>
-        </div>
-      </div>
-    </div>
+    <!-- Legacy IDs kept for compatibility with pure helpers / tests -->
+    <div id="homeServerStatusBody" hidden></div>
+    <div id="homeSchedulerStatus" hidden></div>
 
     <div class="card" style="margin-bottom: 1.5rem;">
       <div class="card-header">${t("home.recent_activity")}</div>
@@ -111,16 +122,6 @@ export function render(container) {
         <div id="extTasksList">
           <div class="loading-placeholder">${t("common.loading")}</div>
         </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-header">${t("home.quick_links")}</div>
-      <div class="card-body" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-        <a href="/workspace/" class="btn-primary" style="text-decoration:none;">${t("home.link_workspace")}</a>
-        <a href="#/chat" class="btn-secondary" style="text-decoration:none;">${t("home.link_chat")}</a>
-        <a href="#/animas" class="btn-secondary" style="text-decoration:none;">${t("home.link_animas")}</a>
-        <a href="#/memory" class="btn-secondary" style="text-decoration:none;">${t("home.link_memory")}</a>
       </div>
     </div>
   `;
@@ -152,9 +153,264 @@ export function destroy() {
 
 async function _loadAll() {
   _loadSystemStatus();
+  _loadServerStatus();
+  _loadTaskboardSummary();
   _loadOrgChart();
   _loadActivity();
   _loadExternalTasks();
+}
+
+// ── Attention summary (TaskBoard + external resources) ──
+
+/**
+ * Build chip descriptors for the attention summary row (pure).
+ * @param {object|null|undefined} summary - TaskBoard summary payload
+ * @param {number} [extCount=0] - External resource open/in_progress count
+ * @param {(key: string, params?: object) => string} [translate]
+ * @returns {Array<{ key: string, label: string, count: number, href: string, emphasis: boolean }>}
+ */
+export function attentionSummaryChips(summary, extCount = 0, translate = t) {
+  const s = summary && typeof summary === "object" ? summary : {};
+  const blocked = Number(s.blocked) || 0;
+  const pending = Number(s.pending) || 0;
+  const inProgress = Number(s.in_progress) || 0;
+  const ext = Number(extCount) || 0;
+  return [
+    {
+      key: "blocked",
+      label: translate("home.attention_blocked", { count: blocked }),
+      count: blocked,
+      href: "#/task-board",
+      emphasis: blocked > 0,
+    },
+    {
+      key: "pending",
+      label: translate("home.attention_pending", { count: pending }),
+      count: pending,
+      href: "#/task-board",
+      emphasis: false,
+    },
+    {
+      key: "in_progress",
+      label: translate("home.attention_in_progress", { count: inProgress }),
+      count: inProgress,
+      href: "#/task-board",
+      emphasis: false,
+    },
+    {
+      key: "external",
+      label: translate("home.attention_external", { count: ext }),
+      count: ext,
+      href: "#homeExternalTasksCard",
+      emphasis: false,
+    },
+  ];
+}
+
+/**
+ * @param {Array<{ key: string, label: string, href: string, emphasis: boolean }>} chips
+ * @returns {string}
+ */
+export function attentionChipsHtml(chips) {
+  if (!Array.isArray(chips) || chips.length === 0) {
+    return `<span class="home-chip home-chip--muted">--</span>`;
+  }
+  return chips
+    .map((c) => {
+      const cls = c.emphasis ? "home-chip home-chip--danger" : "home-chip";
+      return `<a class="${cls}" href="${escapeAttr(c.href)}" data-attention="${escapeAttr(c.key)}">${escapeHtml(c.label)}</a>`;
+    })
+    .join("");
+}
+
+async function _loadTaskboardSummary() {
+  const el = document.getElementById("homeAttentionChips");
+  if (!el) return;
+  try {
+    const [summary, extData] = await Promise.all([
+      api("/api/task-board/summary").catch(() => ({})),
+      api("/api/external-tasks?limit=1&status=open,in_progress").catch(() => null),
+    ]);
+    const extCount = extData?.meta?.total_count ?? 0;
+    const chips = attentionSummaryChips(summary, extCount);
+    el.innerHTML = attentionChipsHtml(chips);
+    el.querySelectorAll("[data-attention]").forEach((node) => {
+      if (node.getAttribute("data-attention") === "external") {
+        node.addEventListener("click", (e) => {
+          e.preventDefault();
+          document.getElementById("homeExternalTasksCard")?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        });
+      }
+    });
+  } catch (err) {
+    el.innerHTML = `<span class="home-chip home-chip--muted">${escapeHtml(err.message || t("common.load_failed"))}</span>`;
+  }
+}
+
+// ── Server status card (compact, absorbed from server-page) ──
+
+/**
+ * Normalize scheduler API payload into a flat job list.
+ * @param {object|null|undefined} data
+ * @returns {object[]}
+ */
+export function extractSchedulerJobs(data) {
+  if (!data || typeof data !== "object") return [];
+  if (Array.isArray(data.jobs)) return data.jobs;
+  return [
+    ...(Array.isArray(data.system_jobs) ? data.system_jobs : []),
+    ...(Array.isArray(data.anima_jobs) ? data.anima_jobs : []),
+  ];
+}
+
+/**
+ * Summarize server metrics for the dashboard card (pure).
+ * @param {{ statusData?: object|null, connectionsData?: object|null, schedulerData?: object|null }} input
+ * @returns {{ reachable: boolean, wsCount: number, schedulerRunning: boolean, jobCount: number }}
+ */
+export function summarizeServerStatus({ statusData, connectionsData, schedulerData } = {}) {
+  const jobs = extractSchedulerJobs(schedulerData);
+  const rawWs = connectionsData?.websocket?.connected_clients;
+  const wsCount = typeof rawWs === "number" && Number.isFinite(rawWs) ? rawWs : 0;
+  const schedulerRunning = !!(
+    statusData?.scheduler_running ??
+    schedulerData?.running
+  );
+  return {
+    reachable: statusData != null,
+    wsCount,
+    schedulerRunning,
+    jobCount: jobs.length,
+  };
+}
+
+/**
+ * Build display rows for the server status card (pure).
+ * @param {{ reachable: boolean, wsCount: number, schedulerRunning: boolean, jobCount: number }} summary
+ * @param {(key: string) => string} [translate]
+ * @returns {Array<[string, string|number]>}
+ */
+export function serverStatusDisplayRows(summary, translate = t) {
+  return [
+    [translate("server.uptime_label"), summary.reachable ? translate("server.running") : translate("server.stopped")],
+    [translate("server.connections_label"), summary.wsCount],
+    [
+      translate("server.scheduler"),
+      summary.schedulerRunning ? translate("server.running") : translate("server.stopped"),
+    ],
+    [translate("server.jobs_label"), summary.jobCount],
+  ];
+}
+
+/**
+ * @param {Array<[string, string|number]>} rows
+ * @returns {string}
+ */
+export function serverStatusTableHtml(rows) {
+  return `
+    <table class="data-table">
+      <tbody>
+        ${rows
+          .map(
+            ([k, v]) =>
+              `<tr><td style="font-weight:500;">${escapeHtml(String(k))}</td><td>${escapeHtml(String(v))}</td></tr>`,
+          )
+          .join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+/**
+ * Build system status bar content model (pure).
+ * @param {{ reachable: boolean, schedulerRunning: boolean, animaCount: number, processCount: number, jobCount: number, wsCount: number }} input
+ * @param {(key: string, params?: object) => string} [translate]
+ * @returns {{ ok: boolean, statusLabel: string, animaLabel: string, processLabel: string, jobLabel: string, wsLabel: string }}
+ */
+export function systemStatusBarModel(input = {}, translate = t) {
+  const reachable = !!input.reachable;
+  const schedulerRunning = !!input.schedulerRunning;
+  const ok = reachable && schedulerRunning;
+  const statusLabel = !reachable
+    ? translate("server.stopped")
+    : schedulerRunning
+      ? translate("home.scheduler_running")
+      : translate("home.scheduler_stopped");
+  return {
+    ok,
+    statusLabel,
+    animaLabel: translate("home.status_bar_animas", { count: Number(input.animaCount) || 0 }),
+    processLabel: translate("home.status_bar_processes", { count: Number(input.processCount) || 0 }),
+    jobLabel: translate("home.status_bar_jobs", { count: Number(input.jobCount) || 0 }),
+    wsLabel: translate("home.status_bar_connections", { count: Number(input.wsCount) || 0 }),
+  };
+}
+
+function _applyStatusBar(model) {
+  const bar = document.getElementById("homeStatusBar");
+  if (bar) {
+    bar.classList.toggle("home-status-bar--error", !model.ok);
+  }
+  const setText = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  setText("homeStatusLabel", model.statusLabel);
+  setText("homeAnimaCount", model.animaLabel);
+  setText("homeProcessCount", model.processLabel);
+  setText("homeJobCount", model.jobLabel);
+  setText("homeWsCount", model.wsLabel);
+  // Legacy scheduler status element (hidden)
+  const schedEl = document.getElementById("homeSchedulerStatus");
+  if (schedEl) {
+    schedEl.textContent = model.ok
+      ? t("home.scheduler_running")
+      : t("home.scheduler_stopped");
+  }
+}
+
+async function _loadServerStatus() {
+  try {
+    const [statusData, connectionsData, schedulerData] = await Promise.all([
+      api("/api/system/status"),
+      api("/api/system/connections").catch(() => null),
+      api("/api/system/scheduler").catch(() => null),
+    ]);
+    const summary = summarizeServerStatus({ statusData, connectionsData, schedulerData });
+    const processes = statusData?.processes || {};
+    const processCount = Object.values(processes).filter((p) => p?.status === "running").length;
+    const model = systemStatusBarModel({
+      reachable: summary.reachable,
+      schedulerRunning: summary.schedulerRunning,
+      animaCount: statusData?.animas ?? 0,
+      processCount,
+      jobCount: summary.jobCount,
+      wsCount: summary.wsCount,
+    });
+    _applyStatusBar(model);
+    // Preserve exact table HTML for any consumer of the hidden body
+    const body = document.getElementById("homeServerStatusBody");
+    if (body) {
+      body.innerHTML = serverStatusTableHtml(serverStatusDisplayRows(summary));
+    }
+  } catch (err) {
+    const model = systemStatusBarModel({
+      reachable: false,
+      schedulerRunning: false,
+      animaCount: 0,
+      processCount: 0,
+      jobCount: 0,
+      wsCount: 0,
+    });
+    _applyStatusBar(model);
+    const label = document.getElementById("homeStatusLabel");
+    if (label) {
+      label.textContent = `${t("server.status_failed")}: ${err.message}`;
+    }
+  }
 }
 
 // ── Usage Panel ────────────────────────────
@@ -408,7 +664,10 @@ function _renderUsageBar(label, utilization, resetAt, windowSeconds, displayWind
   // The weekly (>=7d) window anchors to the bottom of the card so it stays low
   // even when a shorter window above it is absent; shorter windows (5h, Daily)
   // stay top-aligned and do not sink to the bottom.
-  const rowClass = windowSeconds >= 604800 ? "usage-row usage-row--week" : "usage-row";
+  const rowClasses = ["usage-row"];
+  if (windowSeconds >= 604800) rowClasses.push("usage-row--week");
+  if (!resetInPast && effectiveUtil >= 90) rowClasses.push("usage-row--high-util");
+  const rowClass = rowClasses.join(" ");
   // Usage unknown: no figure and no fill — only the time marker is shown, and
   // its reset is a rolled-forward estimate, so it is labelled 推定.
   const pctHtml = usageUnknown
@@ -428,8 +687,10 @@ function _renderUsageBar(label, utilization, resetAt, windowSeconds, displayWind
         ${fillHtml}
         ${markerHtml}
       </div>
-      ${forecastHtml || `<div class="usage-forecast">&nbsp;</div>`}
-      ${resetStr ? `<div class="usage-reset">${resetLabel}: ${escapeHtml(resetStr)}</div>` : `<div class="usage-reset">&nbsp;</div>`}
+      <div class="usage-row-details">
+        ${forecastHtml || `<div class="usage-forecast">&nbsp;</div>`}
+        ${resetStr ? `<div class="usage-reset">${resetLabel}: ${escapeHtml(resetStr)}</div>` : `<div class="usage-reset">&nbsp;</div>`}
+      </div>
     </div>
   `;
 }
@@ -1002,6 +1263,9 @@ async function _loadUsage(forceRefresh = false) {
 // ── System Status ──────────────────────────
 
 async function _loadSystemStatus() {
+  // Status bar is populated by _loadServerStatus (merged anima/process/jobs/ws).
+  // Keep this function for _loadAll call-order compatibility; no-op when bar exists.
+  if (document.getElementById("homeStatusBar")) return;
   try {
     const data = await api("/api/system/status");
     const animaCountEl = document.getElementById("homeAnimaCount");
@@ -1030,10 +1294,38 @@ async function _loadOrgChart() {
       return;
     }
 
+    const companiesMeta = data.companies || {};
+
+    // Group top-level nodes by company
+    const groups = new Map();
+    for (const node of tree) {
+      const key = node.company || "";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(node);
+    }
+
     const topRow = document.createElement("div");
     topRow.className = "org-tree-top-row";
-    for (const node of tree) {
-      topRow.appendChild(_renderColumn(node));
+    for (const [key, nodes] of groups) {
+      const group = document.createElement("div");
+      group.className = "org-company-group";
+      const color = companyColor(key);
+      if (color) group.style.setProperty("--company-color", color);
+
+      const label = document.createElement("div");
+      label.className = "org-company-label";
+      label.textContent = key
+        ? (companiesMeta[key]?.display_name || key)
+        : t("home.org_unassigned");
+      group.appendChild(label);
+
+      const groupRow = document.createElement("div");
+      groupRow.className = "org-tree-top-row";
+      for (const node of nodes) {
+        groupRow.appendChild(_renderColumn(node));
+      }
+      group.appendChild(groupRow);
+      topRow.appendChild(group);
     }
     container.innerHTML = "";
     container.appendChild(topRow);
@@ -1115,8 +1407,10 @@ function _buildCard(node, isRoot = false) {
   if (role) metaParts.push(`<span class="org-tree-role">${escapeHtml(role)}</span>`);
   if (model) metaParts.push(`<span class="org-tree-model">${escapeHtml(model)}</span>`);
 
+  const ring = companyColor(node.company);
+  const ringStyle = ring ? `box-shadow:0 0 0 2px ${ring};` : "";
   card.innerHTML = `
-    <div class="org-tree-avatar" id="orgAvatar_${escapeHtml(node.name)}" style="background:${color};">
+    <div class="org-tree-avatar" id="orgAvatar_${escapeHtml(node.name)}" style="background:${color};${ringStyle}">
       ${initial}
     </div>
     <div class="org-tree-info">
@@ -1135,7 +1429,7 @@ async function _loadOrgAvatars(root) {
   const avatarEls = root.querySelectorAll("[id^='orgAvatar_']");
   for (const el of avatarEls) {
     const name = el.id.replace("orgAvatar_", "");
-    const url = await resolveAvatar(name, bustupCandidates());
+    const url = await resolveCachedAvatar(name, bustupCandidates(), "S");
     if (url) {
       el.innerHTML = `<img src="${escapeHtml(url)}" alt="${escapeHtml(name)}">`;
     }
@@ -1183,6 +1477,7 @@ async function _loadActivity() {
 const _SOURCE_ICONS = {
   github: "\u{1F4BB}",
   slack: "\u{1F4AC}",
+  chatwork: "\u{1F4AD}",
   gmail: "\u{2709}\uFE0F",
   jira: "\u{1F4CB}",
   notion: "\u{1F4D3}",
@@ -1245,15 +1540,14 @@ function _renderTaskItem(task) {
   const statusColor = _STATUS_COLORS[task.status] || _STATUS_COLORS.open;
   const statusLabel = task.status === "in_progress" ? "in progress" : task.status;
   const relTime = _relativeTime(task.last_updated_at);
-  const clickAttr = task.source_url
-    ? `onclick="window.open('${escapeHtml(task.source_url)}','_blank')"`
-    : "";
-  const cursorStyle = task.source_url ? "cursor:pointer;" : "";
+  const titleHtml = task.source_url
+    ? `<a href="${escapeAttr(task.source_url)}" target="_blank" rel="noopener noreferrer" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit;text-decoration:none;">${title}</a>`
+    : `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${title}</span>`;
 
   return `
-    <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0;border-bottom:1px solid var(--border-color,#eee);${cursorStyle}" ${clickAttr} role="link" tabindex="0" aria-label="${escapeHtml(task.title)}">
+    <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0;border-bottom:1px solid var(--border-color,#eee);" aria-label="${escapeHtml(task.title)}">
       <span style="flex-shrink:0;font-size:1.1rem;" aria-label="${escapeHtml(task.source_type)}">${icon}</span>
-      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${title}</span>
+      ${titleHtml}
       <span style="flex-shrink:0;font-size:0.7rem;padding:0.15rem 0.4rem;border-radius:4px;background:${statusColor};color:#fff;">${escapeHtml(statusLabel)}</span>
       <span style="flex-shrink:0;font-size:0.75rem;color:var(--text-secondary,#666);min-width:3.5rem;text-align:right;">${escapeHtml(relTime)}</span>
     </div>
@@ -1285,8 +1579,19 @@ async function _loadExternalTasks(forceRefresh = false) {
     }
 
     if (lastUpdEl) {
-      lastUpdEl.textContent = `${t("home.ext_last_updated")}: ${timeStr(new Date().toISOString())}`;
+      let lastUpdText = `${t("home.ext_last_updated")}: ${timeStr(new Date().toISOString())}`;
+      if (data.meta?.last_collected_at) {
+        lastUpdText += ` · ${t("home.ext_last_collected")}: ${_relativeTime(data.meta.last_collected_at)}`;
+      }
+      lastUpdEl.textContent = lastUpdText;
     }
+
+    const unavailableSources = Object.entries(data.meta?.sources || {})
+      .filter(([, health]) => health && health.status === "unavailable")
+      .map(([name]) => name);
+    const unavailableHtml = unavailableSources.length
+      ? `<div style="font-size:0.75rem;color:var(--text-secondary,#888);margin-top:0.5rem;">&#x26A0; ${escapeHtml(t("home.ext_source_unavailable", { sources: unavailableSources.join(", ") }))}</div>`
+      : "";
 
     if (tasks.length === 0) {
       listEl.innerHTML = `
@@ -1295,6 +1600,7 @@ async function _loadExternalTasks(forceRefresh = false) {
           <div>${t("home.ext_empty")}</div>
           <div style="font-size:0.8rem;margin-top:0.25rem;">${t("home.ext_empty_hint")}</div>
         </div>
+        ${unavailableHtml}
       `;
       _extTasksRetryCount = 0;
       return;
@@ -1308,6 +1614,7 @@ async function _loadExternalTasks(forceRefresh = false) {
         </a>
       </div>`;
     }
+    html += unavailableHtml;
 
     listEl.innerHTML = html;
 

@@ -440,6 +440,240 @@ def step_ragignore_archive_patterns(data_dir: Path, dry_run: bool, verbose: bool
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
+def step_split_board_by_company(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Split the legacy ``board`` channel into company-scoped channels.
+
+    Company membership is deliberately resolved from every board member's
+    ``status.json`` during each invocation.  The legacy board history is never
+    copied or removed: only its metadata is closed after all successor channel
+    files and metadata have been written.
+    """
+    del verbose
+    channels_dir = data_dir / "shared" / "channels"
+    legacy_meta_path = channels_dir / "board.meta.json"
+    if not legacy_meta_path.is_file():
+        return StepResult(changed=0, skipped=1, details=["board.meta.json not found; skip"])
+
+    try:
+        from core.config.models import read_anima_company
+        from core.exceptions import RecipientNotFoundError
+        from core.messenger import _validate_name
+
+        legacy_meta = json.loads(legacy_meta_path.read_text(encoding="utf-8"))
+        if not isinstance(legacy_meta, dict):
+            raise ValueError("board.meta.json root must be an object")
+        raw_members = legacy_meta.get("members")
+        if not isinstance(raw_members, list) or not all(isinstance(member, str) for member in raw_members):
+            raise ValueError("board.meta.json members must be a list of strings")
+        if not raw_members:
+            return StepResult(changed=0, skipped=1, details=["Legacy board is already closed"])
+
+        members_by_company: dict[str, list[str]] = {}
+        unassigned_members: list[str] = []
+        for member in raw_members:
+            try:
+                _validate_name(member, "anima name")
+            except RecipientNotFoundError:
+                unassigned_members.append(member)
+                continue
+            company = read_anima_company(data_dir / "animas" / member)
+            if company is None:
+                unassigned_members.append(member)
+                continue
+            channel = f"board-{company}"
+            try:
+                _validate_name(channel, "channel name")
+            except RecipientNotFoundError as exc:
+                raise ValueError(f"Company {company!r} cannot be mapped to a board channel") from exc
+            members_by_company.setdefault(company, []).append(member)
+
+        if not members_by_company:
+            return StepResult(
+                changed=0,
+                skipped=1,
+                details=["No company-assigned legacy board members found; board left unchanged"],
+            )
+
+        # Preflight all existing successor metadata before making any changes.
+        successor_meta: dict[str, dict[str, Any]] = {}
+        for company, members in sorted(members_by_company.items()):
+            channel = f"board-{company}"
+            meta_path = channels_dir / f"{channel}.meta.json"
+            if meta_path.exists():
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                if not isinstance(meta, dict):
+                    raise ValueError(f"{meta_path.name} root must be an object")
+            else:
+                meta = dict(legacy_meta)
+            meta["members"] = members
+            meta["closed"] = False
+            successor_meta[channel] = meta
+
+        details: list[str] = []
+        changed = 0
+        for channel, meta in successor_meta.items():
+            channel_path = channels_dir / f"{channel}.jsonl"
+            meta_path = channels_dir / f"{channel}.meta.json"
+            if not channel_path.exists():
+                changed += 1
+                details.append(f"{'Would create' if dry_run else 'Created'} #{channel} channel")
+                if not dry_run:
+                    channel_path.write_text("", encoding="utf-8")
+
+            current_meta: dict[str, Any] | None = None
+            if meta_path.exists():
+                current_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            if current_meta != meta:
+                changed += 1
+                details.append(f"{'Would update' if dry_run else 'Updated'} #{channel} metadata")
+                if not dry_run:
+                    meta_path.write_text(
+                        json.dumps(meta, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+
+        closed_legacy_meta = dict(legacy_meta)
+        closed_legacy_meta["members"] = []
+        closed_legacy_meta["closed"] = True
+        if closed_legacy_meta != legacy_meta:
+            changed += 1
+            details.append(f"{'Would close' if dry_run else 'Closed'} legacy #board")
+            if not dry_run:
+                legacy_meta_path.write_text(
+                    json.dumps(closed_legacy_meta, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+
+        if unassigned_members:
+            details.append(
+                "Legacy board members without company assignment were not added to successor channels: "
+                + ", ".join(unassigned_members)
+            )
+        return StepResult(changed=changed, skipped=int(changed == 0), details=details)
+    except Exception as exc:
+        logger.exception("step_split_board_by_company failed")
+        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
+
+
+def step_channel_company_defaults(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Ensure open-channel meta exists and apply ``channel_company_defaults``.
+
+    For every open channel (empty members, not closed — including meta-less
+    legacy channels such as general/ops/legal):
+
+    * create/update ``*.meta.json`` so the channel is explicit
+    * set ``company`` from ``config.json`` → ``channel_company_defaults`` when
+      present; otherwise leave company empty (no auto-inference)
+    * skip when company is already set (idempotent)
+    * never touch restricted (non-empty members) or closed channels
+    * never modify jsonl history
+    """
+    del verbose
+    channels_dir = data_dir / "shared" / "channels"
+    if not channels_dir.is_dir():
+        return StepResult(changed=0, skipped=1, details=["shared/channels/ not found; skip"])
+
+    try:
+        defaults: dict[str, str] = {}
+        config_path = data_dir / "config.json"
+        if config_path.is_file():
+            raw_config = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(raw_config, dict):
+                raw_defaults = raw_config.get("channel_company_defaults") or {}
+                if isinstance(raw_defaults, dict):
+                    defaults = {
+                        str(k): str(v).strip()
+                        for k, v in raw_defaults.items()
+                        if isinstance(k, str) and isinstance(v, str) and str(v).strip()
+                    }
+
+        channel_names: set[str] = set()
+        for path in channels_dir.iterdir():
+            if not path.is_file():
+                continue
+            if path.name.endswith(".jsonl"):
+                channel_names.add(path.name[: -len(".jsonl")])
+            elif path.name.endswith(".meta.json"):
+                channel_names.add(path.name[: -len(".meta.json")])
+
+        details: list[str] = []
+        changed = 0
+        skipped = 0
+
+        for channel in sorted(channel_names):
+            meta_path = channels_dir / f"{channel}.meta.json"
+            desired_company = defaults.get(channel, "")
+
+            if meta_path.exists():
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                if not isinstance(meta, dict):
+                    details.append(f"#{channel}: invalid meta root; skip")
+                    skipped += 1
+                    continue
+                members = meta.get("members", [])
+                closed = bool(meta.get("closed", False))
+                # Preserve malformed metadata rather than risking a destructive
+                # rewrite.  Only an actual empty list is an open channel.
+                if not isinstance(members, list):
+                    details.append(f"#{channel}: invalid members field; skip")
+                    skipped += 1
+                    continue
+                # Restricted or closed channels: never touch.
+                if members or closed:
+                    skipped += 1
+                    continue
+                existing_company = (meta.get("company") or "").strip() if isinstance(meta.get("company"), str) else ""
+                if existing_company:
+                    skipped += 1
+                    continue
+                new_meta = dict(meta)
+                new_meta["company"] = desired_company
+                if "members" not in new_meta:
+                    new_meta["members"] = []
+                if new_meta == meta:
+                    skipped += 1
+                    continue
+                changed += 1
+                if desired_company:
+                    details.append(f"{'Would set' if dry_run else 'Set'} #{channel} company={desired_company!r}")
+                else:
+                    details.append(f"{'Would update' if dry_run else 'Updated'} #{channel} meta (company unset)")
+                if not dry_run:
+                    meta_path.write_text(
+                        json.dumps(new_meta, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+            else:
+                # meta-less open channel (legacy): create meta (company from defaults or empty).
+                new_meta = {
+                    "members": [],
+                    "created_by": "",
+                    "created_at": "",
+                    "description": "",
+                    "closed": False,
+                    "company": desired_company,
+                }
+                changed += 1
+                if desired_company:
+                    details.append(
+                        f"{'Would create' if dry_run else 'Created'} #{channel} meta with company={desired_company!r}"
+                    )
+                else:
+                    details.append(f"{'Would create' if dry_run else 'Created'} #{channel} meta (company unset)")
+                if not dry_run:
+                    meta_path.write_text(
+                        json.dumps(new_meta, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+
+        if changed == 0 and not details:
+            details.append("No open channels needed company defaults")
+        return StepResult(changed=changed, skipped=skipped, details=details)
+    except Exception as exc:
+        logger.exception("step_channel_company_defaults failed")
+        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
+
+
 def step_legacy_flat_skill_migration(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """Convert legacy flat local skill files to trusted SKILL.md bundles."""
     from core.migrations.legacy_flat_skills import migrate_legacy_flat_skills
@@ -934,108 +1168,6 @@ def step_global_permissions_create(data_dir: Path, dry_run: bool, verbose: bool)
 # ── Category 4: SQLite DB sync ──────────────────────────────────
 
 
-def step_tool_prompt_db_init(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Initialize tool prompt DB and run existing migrations."""
-    details: list[str] = []
-    try:
-        if dry_run:
-            db_path = data_dir / "tool_prompts.sqlite3"
-            details.append("Would ensure tool_prompts.sqlite3 initialized")
-            return StepResult(changed=1 if not db_path.exists() else 0, skipped=0, details=details)
-        _prime_tooling_imports()
-        from core.init import _ensure_tool_prompt_db
-
-        _ensure_tool_prompt_db(data_dir)
-        details.append("Tool prompt DB initialized")
-        return StepResult(changed=1, skipped=0, details=details)
-    except Exception as exc:
-        logger.exception("step_tool_prompt_db_init failed")
-        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
-
-
-def step_system_sections_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Resync system_sections from prompts/ into SQLite DB."""
-    details: list[str] = []
-    try:
-        _prime_tooling_imports()
-        from core.tooling.prompt_db import SECTION_CONDITIONS, ToolPromptStore
-
-        tool_db_path = data_dir / "tool_prompts.sqlite3"
-        if not tool_db_path.exists():
-            return StepResult(changed=0, skipped=1, details=["tool_prompts.sqlite3 not found"])
-        prompts_dir = data_dir / "prompts"
-        store = ToolPromptStore(tool_db_path)
-        updated: list[str] = []
-        for key, filename in _SECTION_FILES.items():
-            filepath = prompts_dir / filename
-            if not filepath.exists():
-                continue
-            content = filepath.read_text(encoding="utf-8").strip()
-            if not content:
-                continue
-            condition = SECTION_CONDITIONS.get(key)
-            if dry_run:
-                updated.append(key)
-                continue
-            store.set_section(key, content, condition)
-            updated.append(key)
-        if not dry_run:
-            try:
-                from core.prompt.builder import _build_emotion_instruction
-
-                emotion = _build_emotion_instruction()
-                if emotion:
-                    store.set_section("emotion_instruction", emotion, None)
-                    updated.append("emotion_instruction")
-            except Exception as _exc:
-                logger.debug("Skipping section resync for emotion_instruction: %s", _exc)
-        details.append(f"Resynced sections: {', '.join(updated)}")
-        return StepResult(changed=len(updated), skipped=0, details=details)
-    except Exception as exc:
-        logger.exception("step_system_sections_resync failed")
-        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
-
-
-def step_tool_descriptions_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Overwrite tool descriptions and guides from defaults."""
-    details: list[str] = []
-    try:
-        _prime_tooling_imports()
-        from core.paths import _get_locale
-        from core.tooling.prompt_db import (
-            DEFAULT_DESCRIPTIONS,
-            DEFAULT_GUIDES,
-            ToolPromptStore,
-            get_default_description,
-            get_default_guide,
-        )
-
-        tool_db_path = data_dir / "tool_prompts.sqlite3"
-        if not tool_db_path.exists():
-            return StepResult(changed=0, skipped=1, details=["tool_prompts.sqlite3 not found"])
-        locale = _get_locale()
-        store = ToolPromptStore(tool_db_path)
-        changed_count = 0
-        if dry_run:
-            changed_count = len(DEFAULT_DESCRIPTIONS) + len(DEFAULT_GUIDES)
-            details.append(f"Would overwrite {len(DEFAULT_DESCRIPTIONS)} descriptions, {len(DEFAULT_GUIDES)} guides")
-            return StepResult(changed=changed_count, skipped=0, details=details)
-        for name in DEFAULT_DESCRIPTIONS:
-            desc = get_default_description(name, locale)
-            if desc:
-                store.set_description(name, desc)
-                changed_count += 1
-        for key in DEFAULT_GUIDES:
-            guide = get_default_guide(key, locale)
-            store.set_guide(key, guide)
-            changed_count += 1
-        details.append(f"Overwrote {len(DEFAULT_DESCRIPTIONS)} descriptions, {len(DEFAULT_GUIDES)} guides")
-        return StepResult(changed=changed_count, skipped=0, details=details)
-    except Exception as exc:
-        logger.exception("step_tool_descriptions_resync failed")
-        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
-
-
 def step_v056_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """v0.5.6: Resync common_knowledge + prompts for message-quality-protocol."""
     details: list[str] = []
@@ -1046,44 +1178,7 @@ def step_v056_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult
     r2 = step_prompt_resync(data_dir, dry_run, verbose)
     total += r2.changed
     details.extend(r2.details)
-    r3 = step_system_sections_resync(data_dir, dry_run, verbose)
-    total += r3.changed
-    details.extend(r3.details)
     return StepResult(changed=total, skipped=0, details=details)
-
-
-def step_stale_sections_cleanup(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Remove stale entries from system_sections (e.g. hiring_context)."""
-    details: list[str] = []
-    try:
-        _prime_tooling_imports()
-        from core.tooling.prompt_db import ToolPromptStore
-
-        tool_db_path = data_dir / "tool_prompts.sqlite3"
-        if not tool_db_path.exists():
-            return StepResult(changed=0, skipped=1, details=["tool_prompts.sqlite3 not found"])
-        stale_keys = ["hiring_context"]
-        if dry_run:
-            details.append(f"Would remove stale keys: {stale_keys}")
-            return StepResult(changed=1, skipped=0, details=details)
-        store = ToolPromptStore(tool_db_path)
-        conn = store._connect()
-        removed = 0
-        try:
-            for key in stale_keys:
-                cur = conn.execute(
-                    "DELETE FROM system_sections WHERE key = ?",
-                    (key,),
-                )
-                removed += cur.rowcount
-            conn.commit()
-        finally:
-            conn.close()
-        details.append(f"Removed {removed} stale section(s)")
-        return StepResult(changed=removed, skipped=0, details=details)
-    except Exception as exc:
-        logger.exception("step_stale_sections_cleanup failed")
-        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
 def step_v056_heartbeat_quality_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
@@ -1142,8 +1237,6 @@ def step_v060_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult
         step_common_skills_resync,
         step_reference_resync,
         step_prompt_resync,
-        step_system_sections_resync,
-        step_tool_descriptions_resync,
     ):
         r = resync_fn(data_dir, dry_run, verbose)
         total += r.changed
@@ -1283,15 +1376,12 @@ def step_common_knowledge_team_design_resync(data_dir: Path, dry_run: bool, verb
 
 
 def step_v062_skill_removal_and_activity_log(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """v0.6.2: Resync templates + DB for skill tool removal, activity_log scope, completion_gate.
+    """v0.6.2: Resync templates for skill tool removal, activity_log scope, completion_gate.
 
     Covers:
     - common_knowledge/ resync (Channel D removal, skill→read_memory_file, activity_log scope)
     - prompts/ resync (2-phase consolidation, episode_extraction.md, memory_guide)
     - reference/ resync (Channel D removal, priming-channels)
-    - DB system_sections resync from prompts/
-    - DB tool_descriptions/guides resync (search_memory update, skill removal, completion_gate)
-    - DB stale 'skill' tool description cleanup
     """
     details: list[str] = []
     total = 0
@@ -1301,43 +1391,10 @@ def step_v062_skill_removal_and_activity_log(data_dir: Path, dry_run: bool, verb
         step_common_skills_resync,
         step_prompt_resync,
         step_reference_resync,
-        step_system_sections_resync,
-        step_tool_descriptions_resync,
     ):
         r = resync_fn(data_dir, dry_run, verbose)
         total += r.changed
         details.extend(r.details)
-
-    # Remove stale 'skill' tool description from DB
-    try:
-        _prime_tooling_imports()
-        from core.tooling.prompt_db import ToolPromptStore
-
-        tool_db_path = data_dir / "tool_prompts.sqlite3"
-        if tool_db_path.exists():
-            stale_tool_names = ["skill"]
-            if dry_run:
-                details.append(f"Would remove stale tool descriptions: {stale_tool_names}")
-                total += 1
-            else:
-                store = ToolPromptStore(tool_db_path)
-                conn = store._connect()
-                removed = 0
-                try:
-                    for name in stale_tool_names:
-                        cur = conn.execute(
-                            "DELETE FROM tool_descriptions WHERE name = ?",
-                            (name,),
-                        )
-                        removed += cur.rowcount
-                    conn.commit()
-                finally:
-                    conn.close()
-                if removed:
-                    details.append(f"Removed {removed} stale tool description(s): {stale_tool_names}")
-                    total += removed
-    except Exception as exc:
-        logger.warning("v062: stale skill description cleanup failed: %s", exc)
 
     return StepResult(changed=total, skipped=0, details=details)
 
@@ -1352,9 +1409,9 @@ def step_v063_behavior_rules_action_rules_skill_sync(
     This aggregate step deliberately re-runs the current sync helpers under a
     new migration ID so runtimes that already applied historical resync steps
     still receive the latest behavior_rules, common_knowledge, common_skills,
-    reference files, system_sections, and tool guide rows.
+    and reference files.
     """
-    details: list[str] = ["v063 aggregate resync: behavior rules, action rules, skill docs, prompts, DB"]
+    details: list[str] = ["v063 aggregate resync: behavior rules, action rules, skill docs, prompts"]
     total = 0
     skipped = 0
     errors: list[str] = []
@@ -1364,10 +1421,6 @@ def step_v063_behavior_rules_action_rules_skill_sync(
         step_common_skills_resync,
         step_reference_resync,
         step_prompt_resync,
-        step_tool_prompt_db_init,
-        step_system_sections_resync,
-        step_tool_descriptions_resync,
-        step_stale_sections_cleanup,
     ):
         result = resync_fn(data_dir, dry_run, verbose)
         total += result.changed
@@ -1378,6 +1431,35 @@ def step_v063_behavior_rules_action_rules_skill_sync(
 
     error = "; ".join(errors) if errors else None
     return StepResult(changed=total, skipped=skipped, details=details, error=error)
+
+
+# ── Category 4: Database sync ────────────────────────────────────
+
+
+def step_tool_prompts_db_to_md(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Write legacy tool prompt DB customizations to active templates."""
+    db_path = data_dir / "tool_prompts.sqlite3"
+    if not db_path.is_file():
+        return StepResult(changed=0, skipped=1, details=["tool_prompts.sqlite3 not found; skip"])
+
+    details: list[str] = []
+    try:
+        from core.migrations.tool_prompts import migrate_tool_prompts
+        from core.paths import TEMPLATES_DIR
+
+        written, skipped = migrate_tool_prompts(
+            db_path,
+            TEMPLATES_DIR,
+            dry_run=dry_run,
+            output=details.append,
+        )
+        if written == 0 and skipped == 0:
+            details.append("No tool prompt rows found; skip")
+            return StepResult(changed=0, skipped=1, details=details)
+        return StepResult(changed=written, skipped=skipped, details=details)
+    except Exception as exc:
+        logger.exception("step_tool_prompts_db_to_md failed")
+        return StepResult(changed=0, skipped=0, details=details, error=str(exc))
 
 
 # ── Category 5: Version tracking ────────────────────────────────
@@ -1449,12 +1531,6 @@ def register_all_steps(runner: Any) -> None:
             "template_sync",
             step_global_permissions_create,
         ),
-        MigrationStep("tool_prompt_db_init", "Init tool prompt DB", "db_sync", step_tool_prompt_db_init),
-        MigrationStep("system_sections_resync", "Resync system_sections in DB", "db_sync", step_system_sections_resync),
-        MigrationStep(
-            "tool_descriptions_resync", "Resync tool descriptions/guides", "db_sync", step_tool_descriptions_resync
-        ),
-        MigrationStep("stale_sections_cleanup", "Remove stale DB sections", "db_sync", step_stale_sections_cleanup),
         MigrationStep(
             "v056_resync",
             "v0.5.6: Resync common_knowledge + prompts (message-quality-protocol)",
@@ -1532,6 +1608,24 @@ def register_all_steps(runner: Any) -> None:
             "Add unified archive patterns to .ragignore",
             "structural",
             step_ragignore_archive_patterns,
+        ),
+        MigrationStep(
+            "split_board_by_company_20260720",
+            "Split legacy board into company channels",
+            "structural",
+            step_split_board_by_company,
+        ),
+        MigrationStep(
+            "channel_company_defaults_20260723",
+            "Apply channel_company_defaults to open channels",
+            "structural",
+            step_channel_company_defaults,
+        ),
+        MigrationStep(
+            "tool_prompts_db_to_md",
+            "Write legacy tool prompt DB to Markdown templates",
+            "db_sync",
+            step_tool_prompts_db_to_md,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

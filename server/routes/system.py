@@ -566,6 +566,31 @@ def create_system_router() -> APIRouter:
         total = sum(len(item["tasks"]) for item in running)
         return {"animas": running, "total": total}
 
+    @router.get("/activity/group")
+    async def get_activity_group(
+        request: Request,
+        anima: str,
+        id: str,
+    ):
+        """Return one complete trigger-based activity group by stable ID."""
+        from core.memory.activity import ActivityLogger
+
+        anima_names = request.app.state.anima_names
+        if anima not in anima_names:
+            return JSONResponse(
+                {"error": f"Anima not found: {anima}"},
+                status_code=404,
+            )
+
+        logger = ActivityLogger(request.app.state.animas_dir / anima)
+        group = logger.find_group_by_id(id)
+        if group is None:
+            return JSONResponse(
+                {"error": "Activity group not found"},
+                status_code=404,
+            )
+        return {"group": group}
+
     @router.get("/activity/recent")
     async def get_recent_activity(
         request: Request,
@@ -1165,6 +1190,42 @@ def create_system_router() -> APIRouter:
                     s = tul.summarize(days)
                     if s["total_sessions"] > 0:
                         result[ad.name] = s
+        return result
+
+    @router.get("/system/token-budget")
+    async def get_token_budget(
+        request: Request,
+        anima: str | None = None,
+    ):
+        """Return current-month token budget status for each Anima."""
+        from core.memory.token_budget import read_token_budget_status
+        from core.paths import get_data_dir
+
+        current = now_local()
+        animas_dir = get_data_dir() / "animas"
+
+        if anima:
+            if Path(anima).name != anima or anima in {".", ".."}:
+                return {"error": f"Anima '{anima}' not found"}
+            anima_dir = animas_dir / anima
+            if not anima_dir.is_dir():
+                return {"error": f"Anima '{anima}' not found"}
+            anima_dirs = [anima_dir]
+        elif animas_dir.is_dir():
+            anima_dirs = sorted(ad for ad in animas_dir.iterdir() if ad.is_dir())
+        else:
+            anima_dirs = []
+
+        result: dict[str, dict[str, object]] = {}
+        for anima_dir in anima_dirs:
+            status = read_token_budget_status(anima_dir, now=current)
+            result[anima_dir.name] = {
+                "month": current.strftime("%Y-%m"),
+                "budget": status.budget,
+                "consumed": status.consumed,
+                "remaining": status.remaining,
+                "exceeded": status.exceeded,
+            }
         return result
 
     # ── Hot Reload ─────────────────────────────────────────

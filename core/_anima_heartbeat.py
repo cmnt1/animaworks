@@ -129,75 +129,108 @@ class HeartbeatMixin:
 
     # ── Background model resolution ──────────────────────────
 
-    def _resolve_background_config(self) -> ModelConfig | None:  # noqa: F821
+    def _resolve_background_config(self, channel: str = "background") -> ModelConfig | None:  # noqa: F821
         """Resolve background model config for heartbeat/cron.
 
         Resolution order:
           1. status.json background_model (per-anima)
           2. config.heartbeat.default_model (global)
-          3. None (use main model)
+          3. main model
 
         Usage Governor may throttle background activity level, but it must not
         rewrite the configured background model.
+
+        The selected base config then passes through the shared rate-guard
+        fallback preflight used by heartbeat, cron, and inbox cycles.
         """
-        from core.config.model_config import _FAMILY_CREDENTIAL_MAP, _model_family, infer_mode_s_auth
+        from core.config.model_config import (
+            _FAMILY_CREDENTIAL_MAP,
+            _model_family,
+            infer_mode_s_auth,
+            resolve_effective_model_config,
+        )
         from core.config.models import load_config, resolve_execution_mode
+        from core.execution.fallback_activity import log_model_fallback
         from core.schemas import ModelConfig
 
-        bg_model = self.agent.model_config.background_model
-        bg_effort = self.agent.model_config.background_thinking_effort
+        main_config = self.agent.model_config
         config = load_config()
+        bg_model = main_config.background_model
+        bg_effort = main_config.background_thinking_effort
         if not bg_model:
             bg_model = config.heartbeat.default_model
 
-        if not bg_model or bg_model == self.agent.model_config.model:
+        if not bg_model or bg_model == main_config.model:
             # Same model: only thinking_effort may differ for background runs.
-            if bg_effort and bg_effort != self.agent.model_config.thinking_effort:
-                return self.agent.model_config.model_copy(update={"thinking_effort": bg_effort})
-            return None
+            if bg_effort and bg_effort != main_config.thinking_effort:
+                base_config = main_config.model_copy(update={"thinking_effort": bg_effort})
+            else:
+                base_config = main_config
+        else:
+            # Recalculate resolved_mode for the background model so that
+            # the correct executor type is created (e.g. claude-* → S, codex/* → C).
+            # Without this, model_copy carries the main model's resolved_mode,
+            # which may be incompatible with the background model name.
+            bg_resolved_mode = resolve_execution_mode(config, bg_model)
 
-        # Recalculate resolved_mode for the background model so that
-        # the correct executor type is created (e.g. claude-* → S, codex/* → C).
-        # Without this, model_copy carries the main model's resolved_mode,
-        # which may be incompatible with the background model name.
-        bg_resolved_mode = resolve_execution_mode(config, bg_model)
+            bg_credential = main_config.background_credential
+            bg_family = _model_family(bg_model)
+            main_family = _model_family(main_config.model)
+            if not bg_credential and bg_family != main_family:
+                mapped_credential = _FAMILY_CREDENTIAL_MAP.get(bg_family)
+                if mapped_credential in config.credentials:
+                    bg_credential = mapped_credential
 
-        bg_credential = self.agent.model_config.background_credential
-        bg_family = _model_family(bg_model)
-        main_family = _model_family(self.agent.model_config.model)
-        if not bg_credential and bg_family != main_family:
-            mapped_credential = _FAMILY_CREDENTIAL_MAP.get(bg_family)
-            if mapped_credential in config.credentials:
-                bg_credential = mapped_credential
-
-        updates: dict[str, Any] = {
-            "model": bg_model,
-            "resolved_mode": bg_resolved_mode,
-        }
-        if bg_effort:
-            updates["thinking_effort"] = bg_effort
-        if bg_credential:
-            if bg_credential in config.credentials:
-                cred = config.credentials[bg_credential]
-                updates.update(
-                    {
-                        "background_credential": bg_credential,
-                        "api_key": cred.api_key or None,
-                        "api_key_env": f"{bg_credential.upper()}_API_KEY",
-                        "api_base_url": cred.base_url or None,
-                        "extra_keys": dict(cred.keys) if cred.keys else {},
-                    }
-                )
-                if bg_resolved_mode == "S" and not self.agent.model_config.mode_s_auth:
-                    updates["mode_s_auth"] = infer_mode_s_auth(
-                        mode=bg_resolved_mode,
-                        credential_name=bg_credential,
-                        config=config,
+            updates: dict[str, Any] = {
+                "model": bg_model,
+                "resolved_mode": bg_resolved_mode,
+            }
+            if bg_effort:
+                updates["thinking_effort"] = bg_effort
+            if bg_credential:
+                if bg_credential in config.credentials:
+                    cred = config.credentials[bg_credential]
+                    updates.update(
+                        {
+                            "background_credential": bg_credential,
+                            "api_key": cred.api_key or None,
+                            "api_key_env": f"{bg_credential.upper()}_API_KEY",
+                            "api_base_url": cred.base_url or None,
+                            "extra_keys": dict(cred.keys) if cred.keys else {},
+                        }
                     )
-                elif bg_resolved_mode != "S":
-                    updates["mode_s_auth"] = None
-        new_config: ModelConfig = self.agent.model_config.model_copy(update=updates)
-        return new_config
+                    if bg_resolved_mode == "S" and not main_config.mode_s_auth:
+                        updates["mode_s_auth"] = infer_mode_s_auth(
+                            mode=bg_resolved_mode,
+                            credential_name=bg_credential,
+                            config=config,
+                        )
+                    elif bg_resolved_mode != "S":
+                        updates["mode_s_auth"] = None
+            base_config = main_config.model_copy(update=updates)
+
+        # A few lifecycle unit tests deliberately install a generic MagicMock
+        # model config.  Preserve the pre-existing background resolution result
+        # for those test doubles; runtime AgentCore configs are ModelConfig.
+        if not isinstance(base_config, ModelConfig):
+            return base_config
+
+        effective_config = resolve_effective_model_config(base_config)
+        activity = getattr(self, "_activity", None)
+        if activity is not None:
+            log_model_fallback(
+                activity,
+                base_config,
+                effective_config,
+                channel=channel,
+                phase="preflight",
+            )
+
+        # Preserve the existing no-swap signal when neither a background
+        # override nor a rate-guard fallback changed the main config.
+        if base_config is main_config and effective_config is main_config:
+            return None
+        return effective_config
 
     # ── Heartbeat history ────────────────────────────────────
 
@@ -635,7 +668,7 @@ class HeartbeatMixin:
 
         # ── Background model swap ──
         original_config = None
-        bg_config = self._resolve_background_config()
+        bg_config = self._resolve_background_config("heartbeat")
         if bg_config is not None:
             original_config = agent.model_config
             agent.update_model_config(bg_config)

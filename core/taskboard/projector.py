@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterable
+from datetime import datetime
 from pathlib import Path
 
 from core.memory.task_queue import (
@@ -680,16 +681,21 @@ def _project_queue_task(
     default_visibility = (
         AttentionVisibility.ARCHIVED if task.status in ARCHIVED_QUEUE_STATUSES else AttentionVisibility.ACTIVE
     )
-    visibility = metadata.visibility if metadata is not None else default_visibility
-    column = metadata.column if metadata is not None and metadata.column is not None else default_column
+    prefer_defaults = (
+        metadata is not None
+        and task.status in ARCHIVED_QUEUE_STATUSES
+        and metadata.visibility in {AttentionVisibility.ACTIVE, AttentionVisibility.SNOOZED}
+        and _metadata_older_than_queue(metadata.updated_at, task.updated_at)
+    )
+    if metadata is not None and not prefer_defaults:
+        visibility = metadata.visibility
+        column = metadata.column if metadata.column is not None else default_column
+    else:
+        visibility = default_visibility
+        column = default_column
     task_meta = task.meta or {}
     is_from_cron = bool(task_meta.get("from_cron"))
     cron_task_name = task_meta.get("cron_task_name") if is_from_cron else None
-    if task.status in ARCHIVED_QUEUE_STATUSES:
-        # Queue terminal state is authoritative. Old TaskBoard metadata should
-        # not keep completed/cancelled queue rows visible as active work.
-        visibility = AttentionVisibility.ARCHIVED
-        column = default_column
     if task.status in {"blocked", "failed"} and column in {BoardColumn.TODO, BoardColumn.RUNNING, BoardColumn.WAITING}:
         # Durable execution state should not be shown as fresh work just
         # because an older board column override still says "todo" or "waiting".
@@ -742,6 +748,20 @@ def _project_queue_task(
         is_from_cron=is_from_cron,
         cron_task_name=cron_task_name if isinstance(cron_task_name, str) else None,
     )
+
+
+def _metadata_older_than_queue(metadata_updated_at: str | None, queue_updated_at: str | None) -> bool:
+    """Return whether both comparable timestamps show metadata is stale."""
+    if not metadata_updated_at or not queue_updated_at:
+        return False
+    try:
+        metadata_dt = datetime.fromisoformat(metadata_updated_at)
+        queue_dt = datetime.fromisoformat(queue_updated_at)
+    except ValueError:
+        return False
+    if (metadata_dt.tzinfo is None) != (queue_dt.tzinfo is None):
+        return False
+    return metadata_dt < queue_dt
 
 
 def _resolve_instruction_origin(task: TaskEntry) -> str | None:

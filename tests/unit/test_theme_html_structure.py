@@ -7,21 +7,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
-
-INDEX_HTML = (
-    Path(__file__).resolve().parents[2]
-    / "server"
-    / "static"
-    / "index.html"
-)
-WS_INDEX_HTML = (
-    Path(__file__).resolve().parents[2]
-    / "server"
-    / "static"
-    / "workspace"
-    / "index.html"
-)
+INDEX_HTML = Path(__file__).resolve().parents[2] / "server" / "static" / "index.html"
+WS_INDEX_HTML = Path(__file__).resolve().parents[2] / "server" / "static" / "workspace" / "index.html"
 
 
 class TestMainIndexHTML:
@@ -54,19 +41,18 @@ class TestMainIndexHTML:
 
     def test_nav_lucide_mappings(self):
         content = INDEX_HTML.read_text(encoding="utf-8")
+        # Keep in sync with sidebar nav icons in index.html
         expected_icons = [
             "message-circle",
             "clipboard-list",
+            "kanban",
             "layout-dashboard",
             "activity",
-            "settings",
-            "users",
             "bot",
-            "cpu",
-            "globe",
-            "brain",
-            "file-text",
-            "palette",
+            "building-2",
+            "sliders-horizontal",
+            "users-round",
+            "search",
         ]
         for icon in expected_icons:
             assert icon in content, f"Missing Lucide icon: {icon}"

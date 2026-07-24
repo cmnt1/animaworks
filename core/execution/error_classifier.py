@@ -13,7 +13,7 @@ code consults instead of re-inspecting the exception.  The classifier follows
 the "classify once, recover by hint" principle: disambiguation lives here, the
 recovery side only reads the hint.
 
-The reason taxonomy is a 12-member subset covering the providers AnimaWorks
+The reason taxonomy is a 13-member subset covering the providers AnimaWorks
 actually uses (Anthropic family, OpenAI family, LiteLLM-generic).  Ambiguity
 resolution (429 rate-limit vs overloaded, 400 context-overflow vs invalid
 request, deterministic 5xx validation errors) mirrors the priority pipeline in
@@ -38,6 +38,7 @@ class FailoverReason(enum.Enum):
 
     AUTH = "auth"  # 401/403 — credential problem, human action
     BILLING = "billing"  # 402 / credit exhaustion — human action
+    QUOTA_EXHAUSTED = "quota_exhausted"  # subscription usage cap — long-lived block
     RATE_LIMIT = "rate_limit"  # 429 per-credential throttle — backoff
     OVERLOADED = "overloaded"  # 503/529 / server-busy 429 — backoff
     CONTEXT_OVERFLOW = "context_overflow"  # prompt too large — compress (future)
@@ -77,6 +78,7 @@ class RecoveryHint:
 _HINTS: dict[FailoverReason, RecoveryHint] = {
     FailoverReason.AUTH: RecoveryHint(retryable=False, fallback_ok=True, backoff_s=None, is_terminal=False),
     FailoverReason.BILLING: RecoveryHint(retryable=False, fallback_ok=True, backoff_s=None, is_terminal=False),
+    FailoverReason.QUOTA_EXHAUSTED: RecoveryHint(retryable=False, fallback_ok=True, backoff_s=1800.0, is_terminal=True),
     FailoverReason.RATE_LIMIT: RecoveryHint(retryable=True, fallback_ok=True, backoff_s=None, is_terminal=False),
     FailoverReason.OVERLOADED: RecoveryHint(retryable=True, fallback_ok=True, backoff_s=None, is_terminal=False),
     FailoverReason.CONTEXT_OVERFLOW: RecoveryHint(retryable=False, fallback_ok=True, backoff_s=None, is_terminal=False),
@@ -170,6 +172,18 @@ def provider_family_of(model: str) -> str:
 
 
 # ── Pattern tables (narrow, provider-verbatim) ──────────────────────────────
+
+# Subscription usage-cap exhaustion — unlike a transient 429, retrying the
+# same Codex credential is not useful until the long-lived quota window resets.
+# These run before overload/rate/billing patterns because provider messages can
+# contain overlapping words such as "limit" or "quota".
+_QUOTA_EXHAUSTED_PATTERNS = (
+    "usagelimitexceeded",
+    "usage limit exceeded",
+    "usage limit reached",
+    "weekly limit",
+    "usage_limit_reached",
+)
 
 # Safety-filter refusals — deterministic per prompt, must run before status
 # classification so a 400 safety block is not downgraded to invalid_request.
@@ -337,6 +351,27 @@ def classify_llm_error(
         return FailoverReason.UNKNOWN, _hint_for(FailoverReason.UNKNOWN)
 
 
+def classify_llm_error_message(message: str) -> tuple[FailoverReason, RecoveryHint]:
+    """Classify a provider error message when no exception object is available.
+
+    Codex App Server surfaces some failures only as event payload strings.  This
+    entry point reuses the same message-pattern pipeline as
+    :func:`classify_llm_error` and preserves the classifier's never-raises
+    contract.
+    """
+    try:
+        msg = message.lower()
+        if any(p in msg for p in _CONTENT_POLICY_PATTERNS):
+            return FailoverReason.CONTENT_POLICY, _hint_for(FailoverReason.CONTENT_POLICY)
+        retry_after = _extract_retry_after(Exception(message), msg)
+        classified = _classify_by_message(msg, retry_after)
+        if classified is not None:
+            return classified
+    except Exception:
+        logger.debug("message classifier raised; degrading to unknown", exc_info=True)
+    return FailoverReason.UNKNOWN, _hint_for(FailoverReason.UNKNOWN)
+
+
 def _classify(error: Exception, provider_family: str) -> tuple[FailoverReason, RecoveryHint]:
     status_code = _extract_status_code(error)
     error_type = type(error).__name__
@@ -349,18 +384,23 @@ def _classify(error: Exception, provider_family: str) -> tuple[FailoverReason, R
     if any(p in msg for p in _CONTENT_POLICY_PATTERNS):
         return FailoverReason.CONTENT_POLICY, _hint_for(FailoverReason.CONTENT_POLICY)
 
-    # 2. HTTP status code.
+    # 2. Long-lived subscription quota, before HTTP status routing so a 429
+    # carrying a quota message is not downgraded to a transient rate limit.
+    if any(p in msg for p in _QUOTA_EXHAUSTED_PATTERNS):
+        return FailoverReason.QUOTA_EXHAUSTED, _hint_for(FailoverReason.QUOTA_EXHAUSTED)
+
+    # 3. HTTP status code.
     if status_code is not None:
         classified = _classify_by_status(status_code, msg, retry_after)
         if classified is not None:
             return classified
 
-    # 3. Message-pattern matching (no usable status code).
+    # 4. Message-pattern matching (no usable status code).
     classified = _classify_by_message(msg, retry_after)
     if classified is not None:
         return classified
 
-    # 4. Transport heuristics.
+    # 5. Transport heuristics.
     if error_type in _TRANSPORT_ERROR_TYPES:
         reason = FailoverReason.TIMEOUT if "timeout" in error_type.lower() else FailoverReason.NETWORK
         return reason, _hint_for(reason)
@@ -369,7 +409,7 @@ def _classify(error: Exception, provider_family: str) -> tuple[FailoverReason, R
     if isinstance(error, (ConnectionError, OSError)):
         return FailoverReason.NETWORK, _hint_for(FailoverReason.NETWORK)
 
-    # 5. Fallback: unknown (degrades to current blind-fallback behavior).
+    # 6. Fallback: unknown (degrades to current blind-fallback behavior).
     return FailoverReason.UNKNOWN, _hint_for(FailoverReason.UNKNOWN)
 
 
@@ -378,6 +418,9 @@ def _classify_by_status(
     msg: str,
     retry_after: float | None,
 ) -> tuple[FailoverReason, RecoveryHint] | None:
+    if any(p in msg for p in _QUOTA_EXHAUSTED_PATTERNS):
+        return FailoverReason.QUOTA_EXHAUSTED, _hint_for(FailoverReason.QUOTA_EXHAUSTED)
+
     if status_code in {401, 403}:
         if status_code == 403 and any(p in msg for p in _BILLING_PATTERNS):
             return FailoverReason.BILLING, _hint_for(FailoverReason.BILLING)
@@ -394,6 +437,8 @@ def _classify_by_status(
     if status_code == 429:
         if any(p in msg for p in _OVERLOADED_PATTERNS):
             return FailoverReason.OVERLOADED, _hint_for(FailoverReason.OVERLOADED, retry_after)
+        if any(p in msg for p in _RATE_LIMIT_PATTERNS):
+            return FailoverReason.RATE_LIMIT, _hint_for(FailoverReason.RATE_LIMIT, retry_after)
         if any(p in msg for p in _BILLING_PATTERNS):
             return FailoverReason.BILLING, _hint_for(FailoverReason.BILLING)
         return FailoverReason.RATE_LIMIT, _hint_for(FailoverReason.RATE_LIMIT, retry_after)
@@ -428,10 +473,14 @@ def _classify_400(msg: str) -> tuple[FailoverReason, RecoveryHint]:
     ``max_tokens`` (a context-overflow token), which would otherwise mis-route
     a deterministic client error into the compression path.
     """
+    if any(p in msg for p in _QUOTA_EXHAUSTED_PATTERNS):
+        return FailoverReason.QUOTA_EXHAUSTED, _hint_for(FailoverReason.QUOTA_EXHAUSTED)
     if any(p in msg for p in _REQUEST_VALIDATION_PATTERNS):
         return FailoverReason.INVALID_REQUEST, _hint_for(FailoverReason.INVALID_REQUEST)
     if any(p in msg for p in _CONTEXT_OVERFLOW_PATTERNS):
         return FailoverReason.CONTEXT_OVERFLOW, _hint_for(FailoverReason.CONTEXT_OVERFLOW)
+    if any(p in msg for p in _OVERLOADED_PATTERNS):
+        return FailoverReason.OVERLOADED, _hint_for(FailoverReason.OVERLOADED)
     if any(p in msg for p in _RATE_LIMIT_PATTERNS):
         return FailoverReason.RATE_LIMIT, _hint_for(FailoverReason.RATE_LIMIT)
     if any(p in msg for p in _BILLING_PATTERNS):
@@ -443,14 +492,16 @@ def _classify_by_message(
     msg: str,
     retry_after: float | None,
 ) -> tuple[FailoverReason, RecoveryHint] | None:
-    # Overloaded before rate_limit/billing so a message-only overload does not
-    # fall through to the rate-limit default.
+    # Quota before overload/rate_limit/billing so long-lived subscription caps
+    # are never treated as transient throttles.
+    if any(p in msg for p in _QUOTA_EXHAUSTED_PATTERNS):
+        return FailoverReason.QUOTA_EXHAUSTED, _hint_for(FailoverReason.QUOTA_EXHAUSTED)
     if any(p in msg for p in _OVERLOADED_PATTERNS):
         return FailoverReason.OVERLOADED, _hint_for(FailoverReason.OVERLOADED, retry_after)
-    if any(p in msg for p in _BILLING_PATTERNS):
-        return FailoverReason.BILLING, _hint_for(FailoverReason.BILLING)
     if any(p in msg for p in _RATE_LIMIT_PATTERNS):
         return FailoverReason.RATE_LIMIT, _hint_for(FailoverReason.RATE_LIMIT, retry_after)
+    if any(p in msg for p in _BILLING_PATTERNS):
+        return FailoverReason.BILLING, _hint_for(FailoverReason.BILLING)
     if any(p in msg for p in _CONTEXT_OVERFLOW_PATTERNS):
         return FailoverReason.CONTEXT_OVERFLOW, _hint_for(FailoverReason.CONTEXT_OVERFLOW)
     if any(p in msg for p in _AUTH_PATTERNS):
@@ -572,6 +623,7 @@ __all__ = [
     "FailoverReason",
     "RecoveryHint",
     "classify_llm_error",
+    "classify_llm_error_message",
     "guard_key",
     "litellm_realm_of",
     "provider_family_of",

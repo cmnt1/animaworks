@@ -26,6 +26,7 @@ from core.memory._io import atomic_write_text
 from core.memory.backend.registry import resolve_backend_type
 from core.memory.facts import FactRecord, append_fact_records, iter_fact_records
 from core.platform.locks import acquire_file_lock, release_file_lock
+from core.platform.process import is_process_alive
 from core.time_utils import now_iso, now_local
 
 from .journal import MergeJournal, MergePhase
@@ -662,9 +663,8 @@ class AnimaMergeService:
             return False
         try:
             pid = int(path.read_text(encoding="utf-8").strip())
-            if pid <= 0:
+            if not is_process_alive(pid):
                 return False
-            os.kill(pid, 0)
         except (OSError, ValueError):
             return False
         return True
@@ -1337,7 +1337,7 @@ class AnimaMergeService:
             selected = [
                 str(path)
                 for path in conversation_paths
-                if isinstance(path, str) and "merged_conversation_" in Path(path).name
+                if isinstance(path, str) and "merged-conversation-" in Path(path).name
             ][:3]
             for target in selected:
                 probes.append(
@@ -1664,7 +1664,8 @@ class AnimaMergeService:
     def _write_generated_episode(self, kind: str, source_path: Path, content: str) -> str:
         identity = f"{_safe_relative(source_path, self.source_dir)}\0{content}".encode()
         digest = hashlib.sha256(identity).hexdigest()[:12]
-        destination = self.target_dir / "episodes" / f"merged_{kind}_from_{self.source}_{digest}.md"
+        date = now_local().strftime("%Y-%m-%d")
+        destination = self.target_dir / "episodes" / f"{date}_merged-{kind}-from-{self.source}-{digest}.md"
         destination.parent.mkdir(parents=True, exist_ok=True)
         if not destination.exists():
             destination.write_text(content, encoding="utf-8")

@@ -113,7 +113,10 @@ class TestBuildSystemPromptTiers:
                 return f"あなたは{anima_name}です。"
             return "section"
 
-        with patch("core.prompt.builder.load_prompt", side_effect=_load_prompt_section):
+        with (
+            patch("core.prompt.builder.load_prompt", side_effect=_load_prompt_section),
+            patch("core.prompt.builder.load_prompt_text", side_effect=_load_prompt_section),
+        ):
             return build_system_prompt(
                 memory,
                 execution_mode="a",
@@ -239,7 +242,10 @@ class TestMicroTierSectionExclusion:
                 return "[tool_data_interpretation content]"
             return "section"
 
-        with patch("core.prompt.builder.load_prompt", side_effect=_load_prompt_section):
+        with (
+            patch("core.prompt.builder.load_prompt", side_effect=_load_prompt_section),
+            patch("core.prompt.builder.load_prompt_text", side_effect=_load_prompt_section),
+        ):
             return build_system_prompt(
                 memory,
                 execution_mode="a",

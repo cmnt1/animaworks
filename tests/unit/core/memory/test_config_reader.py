@@ -237,6 +237,7 @@ class TestReadModelConfig:
         mock_resolved = MagicMock()
         mock_resolved.model = "gpt-4o"
         mock_resolved.fallback_model = None
+        mock_resolved.fallback_models = []
         mock_resolved.max_tokens = 4096
         mock_resolved.max_turns = 10000
         mock_resolved.credential = "openai"
@@ -252,6 +253,8 @@ class TestReadModelConfig:
         mock_resolved.background_model = None
         mock_resolved.background_credential = None
         mock_resolved.background_thinking_effort = None
+        mock_resolved.heartbeat_enabled = True
+        mock_resolved.token_budget_monthly = 100_000
         mock_resolved.mode_s_auth = None
         mock_resolved.extra_mcp_servers = {}
 
@@ -279,6 +282,7 @@ class TestReadModelConfig:
         assert mc.credential == "openai"
         assert mc.credential_type == "api_key"
         assert mc.resolved_mode == "A2"
+        assert mc.token_budget_monthly == 100_000
 
     def test_falls_back_to_config_md(
         self,
@@ -310,6 +314,7 @@ class TestReadModelConfig:
         mock_resolved = MagicMock()
         mock_resolved.model = "claude-sonnet-4-6"
         mock_resolved.fallback_model = None
+        mock_resolved.fallback_models = []
         mock_resolved.max_tokens = 4096
         mock_resolved.max_turns = 10000
         mock_resolved.credential = "anthropic"
@@ -325,6 +330,8 @@ class TestReadModelConfig:
         mock_resolved.background_model = None
         mock_resolved.background_credential = None
         mock_resolved.background_thinking_effort = None
+        mock_resolved.heartbeat_enabled = True
+        mock_resolved.token_budget_monthly = None
         mock_resolved.mode_s_auth = None
         mock_resolved.extra_mcp_servers = {}
 

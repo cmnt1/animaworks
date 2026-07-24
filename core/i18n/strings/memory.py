@@ -274,9 +274,21 @@ STRINGS: dict[str, dict[str, str]] = {
         "ko": ("### `.mdc` 파일\n내용을 확인하여 `.md`로 다시 저장하고 원본 파일을 아카이브하세요."),
     },
     "memory_hygiene.oversized_knowledge": {
-        "ja": ("### 32KB超のknowledgeファイル\nテーマ別に分割するか、要点へ圧縮してください。"),
-        "en": ("### Knowledge files over 32 KB\nSplit them by topic or compress them to their essential points."),
-        "ko": ("### 32KB를 초과하는 knowledge 파일\n주제별로 분할하거나 핵심 내용으로 압축하세요."),
+        "ja": (
+            "### 32KB超のknowledgeファイル\n"
+            "テーマ別に分割してください。要約による圧縮は禁止です。"
+            "固有名詞・数値・日付・ID・手順は必ず全て分割先ファイルに残してください。"
+        ),
+        "en": (
+            "### Knowledge files over 32 KB\n"
+            "Split them by topic. Compressing by summarization is forbidden: "
+            "every proper noun, number, date, ID, and procedure must be preserved in the split files."
+        ),
+        "ko": (
+            "### 32KB를 초과하는 knowledge 파일\n"
+            "주제별로 분할하세요. 요약을 통한 압축은 금지입니다. "
+            "고유명사·수치·날짜·ID·절차는 반드시 분할된 파일에 모두 남기세요."
+        ),
     },
     "memory_hygiene.noncanonical_archive_dirs": {
         "ja": ("### 非標準のアーカイブディレクトリ\n内容を確認し、標準の `knowledge/archive/` へ整理してください。"),

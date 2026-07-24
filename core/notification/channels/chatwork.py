@@ -38,7 +38,8 @@ class ChatworkChannel(NotificationChannel):
         token = self._resolve_credential_with_vault(
             "api_token_env",
             anima_name=anima_name,
-            fallback_env="CHATWORK_API_TOKEN",
+            # Default sender identity for system notifications is kotoha.
+            fallback_env="CHATWORK_API_TOKEN__kotoha",
         )
         if not token:
             return "chatwork: ERROR - api_token_env not configured or env var not set"

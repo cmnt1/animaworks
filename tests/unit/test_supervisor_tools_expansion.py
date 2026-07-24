@@ -31,6 +31,7 @@ def _make_handler(
     anima_dir.mkdir(parents=True, exist_ok=True)
     (anima_dir / "permissions.md").write_text("", encoding="utf-8")
     (anima_dir / "state").mkdir(exist_ok=True)
+    (anima_dir / "status.json").write_text("{}", encoding="utf-8")
 
     memory = MagicMock()
     memory.read_permissions.return_value = ""
@@ -62,7 +63,8 @@ def _setup_subordinate(
         "role": "general",
     }
     (anima_dir / "status.json").write_text(
-        json.dumps(status, indent=2), encoding="utf-8",
+        json.dumps(status, indent=2),
+        encoding="utf-8",
     )
     return anima_dir
 
@@ -71,10 +73,7 @@ def _mock_config(tmp_path: Path, animas: dict[str, dict]) -> MagicMock:
     from core.config.models import AnimaModelConfig
 
     config = MagicMock()
-    config.animas = {
-        name: AnimaModelConfig(**fields)
-        for name, fields in animas.items()
-    }
+    config.animas = {name: AnimaModelConfig(**fields) for name, fields in animas.items()}
     return config
 
 
@@ -86,42 +85,54 @@ class TestGetAllDescendants:
 
     def test_direct_subordinates(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "kotoha": {"supervisor": "sakura"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "kotoha": {"supervisor": "sakura"},
+            },
+        )
         with patch("core.config.models.load_config", return_value=mock_cfg):
             descendants = handler._get_all_descendants()
         assert set(descendants) == {"hinata", "kotoha"}
 
     def test_grandchildren(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "natsume": {"supervisor": "hinata"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "natsume": {"supervisor": "hinata"},
+            },
+        )
         with patch("core.config.models.load_config", return_value=mock_cfg):
             descendants = handler._get_all_descendants()
         assert set(descendants) == {"hinata", "natsume"}
 
     def test_circular_reference_no_infinite_loop(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {"supervisor": "hinata"},
-            "hinata": {"supervisor": "sakura"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {"supervisor": "hinata"},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with patch("core.config.models.load_config", return_value=mock_cfg):
             descendants = handler._get_all_descendants()
         assert "hinata" in descendants
 
     def test_no_descendants(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "mio": {"supervisor": "taka"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "mio": {"supervisor": "taka"},
+            },
+        )
         with patch("core.config.models.load_config", return_value=mock_cfg):
             descendants = handler._get_all_descendants()
         assert descendants == []
@@ -131,23 +142,28 @@ class TestGetAllDescendants:
 
 
 class TestCheckDescendant:
-
     def test_descendant_allowed(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "natsume": {"supervisor": "hinata"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "natsume": {"supervisor": "hinata"},
+            },
+        )
         with patch("core.config.models.load_config", return_value=mock_cfg):
             assert handler._check_descendant("natsume") is None
 
     def test_non_descendant_denied(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "mio": {"supervisor": "taka"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "mio": {"supervisor": "taka"},
+            },
+        )
         with patch("core.config.models.load_config", return_value=mock_cfg):
             result = handler._check_descendant("mio")
         assert result is not None
@@ -163,7 +179,6 @@ class TestCheckDescendant:
 
 
 class TestOrgDashboard:
-
     def test_no_descendants(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
         mock_cfg = _mock_config(tmp_path, {"sakura": {}})
@@ -177,13 +192,17 @@ class TestOrgDashboard:
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
         # Write a current state
         (tmp_path / "animas" / "hinata" / "state" / "current_state.md").write_text(
-            "レポート作成中", encoding="utf-8",
+            "レポート作成中",
+            encoding="utf-8",
         )
 
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
 
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
@@ -199,7 +218,6 @@ class TestOrgDashboard:
 
 
 class TestPingSubordinate:
-
     def test_ping_all_no_descendants(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
         mock_cfg = _mock_config(tmp_path, {"sakura": {}})
@@ -212,10 +230,13 @@ class TestPingSubordinate:
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
 
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
@@ -229,10 +250,13 @@ class TestPingSubordinate:
 
     def test_ping_non_descendant_denied(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "mio": {"supervisor": "taka"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "mio": {"supervisor": "taka"},
+            },
+        )
 
         with patch("core.config.models.load_config", return_value=mock_cfg):
             result = handler.handle("ping_subordinate", {"name": "mio"})
@@ -243,18 +267,21 @@ class TestPingSubordinate:
 
 
 class TestReadSubordinateState:
-
     def test_read_with_task(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
         sub_dir = _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
         (sub_dir / "state" / "current_state.md").write_text(
-            "API実装中", encoding="utf-8",
+            "API実装中",
+            encoding="utf-8",
         )
 
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
 
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
@@ -268,10 +295,13 @@ class TestReadSubordinateState:
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
 
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
@@ -292,14 +322,18 @@ class TestReadSubordinateState:
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
         sub_dir = _setup_subordinate(tmp_path, "natsume", supervisor="hinata")
         (sub_dir / "state" / "current_state.md").write_text(
-            "設計中", encoding="utf-8",
+            "設計中",
+            encoding="utf-8",
         )
 
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "natsume": {"supervisor": "hinata"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "natsume": {"supervisor": "hinata"},
+            },
+        )
 
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
@@ -314,7 +348,6 @@ class TestReadSubordinateState:
 
 
 class TestCheckPermissions:
-
     def test_returns_internal_tools(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
         result = handler.handle("check_permissions", {})
@@ -342,7 +375,6 @@ class TestCheckPermissions:
 
 
 class TestDelegateTask:
-
     def test_delegate_to_subordinate(self, tmp_path):
         messenger = MagicMock()
         msg_mock = MagicMock()
@@ -354,21 +386,27 @@ class TestDelegateTask:
         handler = _make_handler(tmp_path, "sakura", messenger=messenger)
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
 
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         ):
-            result = handler.handle("delegate_task", {
-                "name": "hinata",
-                "instruction": "レポートを作成してください",
-                "summary": "レポート作成",
-                "deadline": "2h",
-            })
+            result = handler.handle(
+                "delegate_task",
+                {
+                    "name": "hinata",
+                    "instruction": "レポートを作成してください",
+                    "summary": "レポート作成",
+                    "deadline": "2h",
+                },
+            )
 
         assert "委譲しました" in result
         assert "hinata" in result
@@ -420,17 +458,23 @@ class TestDelegateTask:
 
     def test_delegate_to_non_descendant(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "mio": {"supervisor": "taka"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "mio": {"supervisor": "taka"},
+            },
+        )
 
         with patch("core.config.models.load_config", return_value=mock_cfg):
-            result = handler.handle("delegate_task", {
-                "name": "mio",
-                "instruction": "test",
-                "deadline": "1h",
-            })
+            result = handler.handle(
+                "delegate_task",
+                {
+                    "name": "mio",
+                    "instruction": "test",
+                    "deadline": "1h",
+                },
+            )
         assert "PermissionDenied" in result
         assert "直属部下ではありません" in result
 
@@ -443,20 +487,26 @@ class TestDelegateTask:
         handler = _make_handler(tmp_path, "sakura", messenger=None)
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
 
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         ):
-            result = handler.handle("delegate_task", {
-                "name": "hinata",
-                "instruction": "test task",
-                "deadline": "1h",
-            })
+            result = handler.handle(
+                "delegate_task",
+                {
+                    "name": "hinata",
+                    "instruction": "test task",
+                    "deadline": "1h",
+                },
+            )
 
         assert "メッセンジャー未設定" in result
         # Task should still be added to queues
@@ -473,37 +523,39 @@ class TestDelegateTask:
 
         handler = _make_handler(tmp_path, "sakura", messenger=messenger)
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
 
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         ):
-            handler.handle("delegate_task", {
-                "name": "hinata",
-                "instruction": "Prepare the monthly report",
-                "summary": "Monthly report",
-                "deadline": "2h",
-            })
+            handler.handle(
+                "delegate_task",
+                {
+                    "name": "hinata",
+                    "instruction": "Prepare the monthly report",
+                    "summary": "Monthly report",
+                    "deadline": "2h",
+                },
+            )
             result = handler.handle("disable_subordinate", {"name": "hinata", "reason": "maintenance"})
 
         assert "再割当" in result or "reassignment" in result
         own_queue = tmp_path / "animas" / "sakura" / "state" / "task_queue.jsonl"
         records = [json.loads(line) for line in own_queue.read_text(encoding="utf-8").splitlines()]
-        assert any(
-            record.get("meta", {}).get("kind") == "disabled_delegation_reassignment"
-            for record in records
-        )
+        assert any(record.get("meta", {}).get("kind") == "disabled_delegation_reassignment" for record in records)
 
 
 # ── task_tracker tests ─────────────────────────────────────
 
 
 class TestTaskTracker:
-
     def test_no_delegated_tasks(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
         result = handler.handle("task_tracker", {})
@@ -520,21 +572,27 @@ class TestTaskTracker:
         handler = _make_handler(tmp_path, "sakura", messenger=messenger)
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
 
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         ):
             # First delegate a task
-            handler.handle("delegate_task", {
-                "name": "hinata",
-                "instruction": "テスト作成",
-                "deadline": "2h",
-            })
+            handler.handle(
+                "delegate_task",
+                {
+                    "name": "hinata",
+                    "instruction": "テスト作成",
+                    "deadline": "2h",
+                },
+            )
 
             # Then track it
             result = handler.handle("task_tracker", {"status": "all"})
@@ -549,7 +607,6 @@ class TestTaskTracker:
 
 
 class TestDescendantFilePermission:
-
     def test_descendant_activity_log_readable(self, tmp_path):
         """Supervisor can read descendant's activity_log via read_file."""
         animas_dir = tmp_path / "animas"
@@ -564,14 +621,18 @@ class TestDescendantFilePermission:
         natsume_dir.mkdir(parents=True)
         (natsume_dir / "activity_log").mkdir()
         (natsume_dir / "activity_log" / "2026-02-25.jsonl").write_text(
-            '{"ts":"2026-02-25T10:00:00","type":"test"}', encoding="utf-8",
+            '{"ts":"2026-02-25T10:00:00","type":"test"}',
+            encoding="utf-8",
         )
 
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "natsume": {"supervisor": "hinata"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "natsume": {"supervisor": "hinata"},
+            },
+        )
 
         memory = MagicMock()
         memory.read_permissions.return_value = ""
@@ -605,11 +666,14 @@ class TestDescendantFilePermission:
         (natsume_dir / "state").mkdir()
         (natsume_dir / "state" / "current_state.md").write_text("busy", encoding="utf-8")
 
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "natsume": {"supervisor": "hinata"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "natsume": {"supervisor": "hinata"},
+            },
+        )
 
         memory = MagicMock()
         memory.read_permissions.return_value = ""
@@ -653,11 +717,14 @@ def _make_handler_with_hierarchy(tmp_path: Path, *, anima_name: str = "sakura") 
         (d / "state" / "pending.md").write_text("", encoding="utf-8")
         (d / "state" / "task_queue.jsonl").write_text("", encoding="utf-8")
 
-    mock_cfg = _mock_config(tmp_path, {
-        anima_name: {},
-        "hinata": {"supervisor": anima_name},
-        "natsume": {"supervisor": "hinata"},
-    })
+    mock_cfg = _mock_config(
+        tmp_path,
+        {
+            anima_name: {},
+            "hinata": {"supervisor": anima_name},
+            "natsume": {"supervisor": "hinata"},
+        },
+    )
 
     memory = MagicMock()
     memory.read_permissions.return_value = ""
@@ -734,13 +801,17 @@ class TestDescendantOrgToolPermission:
     def test_disable_grandchild(self, tmp_path):
         handler, animas_dir = _make_handler_with_hierarchy(tmp_path)
         (animas_dir / "natsume" / "status.json").write_text(
-            json.dumps({"enabled": True, "supervisor": "hinata"}), encoding="utf-8",
+            json.dumps({"enabled": True, "supervisor": "hinata"}),
+            encoding="utf-8",
         )
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "natsume": {"supervisor": "hinata"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "natsume": {"supervisor": "hinata"},
+            },
+        )
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
             patch("core.paths.get_animas_dir", return_value=animas_dir),
@@ -753,13 +824,17 @@ class TestDescendantOrgToolPermission:
     def test_enable_grandchild(self, tmp_path):
         handler, animas_dir = _make_handler_with_hierarchy(tmp_path)
         (animas_dir / "natsume" / "status.json").write_text(
-            json.dumps({"enabled": False, "supervisor": "hinata"}), encoding="utf-8",
+            json.dumps({"enabled": False, "supervisor": "hinata"}),
+            encoding="utf-8",
         )
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "natsume": {"supervisor": "hinata"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "natsume": {"supervisor": "hinata"},
+            },
+        )
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
             patch("core.paths.get_animas_dir", return_value=animas_dir),
@@ -770,13 +845,17 @@ class TestDescendantOrgToolPermission:
     def test_restart_grandchild(self, tmp_path):
         handler, animas_dir = _make_handler_with_hierarchy(tmp_path)
         (animas_dir / "natsume" / "status.json").write_text(
-            json.dumps({"enabled": True, "supervisor": "hinata"}), encoding="utf-8",
+            json.dumps({"enabled": True, "supervisor": "hinata"}),
+            encoding="utf-8",
         )
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "natsume": {"supervisor": "hinata"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "natsume": {"supervisor": "hinata"},
+            },
+        )
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
             patch("core.paths.get_animas_dir", return_value=animas_dir),
@@ -795,21 +874,27 @@ class TestDescendantOrgToolPermission:
         handler, animas_dir = _make_handler_with_hierarchy(tmp_path)
         handler._messenger = messenger
 
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "natsume": {"supervisor": "hinata"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "natsume": {"supervisor": "hinata"},
+            },
+        )
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
             patch("core.paths.get_animas_dir", return_value=animas_dir),
         ):
-            result = handler.handle("delegate_task", {
-                "name": "natsume",
-                "instruction": "テストタスク",
-                "summary": "テスト",
-                "deadline": "2h",
-            })
+            result = handler.handle(
+                "delegate_task",
+                {
+                    "name": "natsume",
+                    "instruction": "テストタスク",
+                    "summary": "テスト",
+                    "deadline": "2h",
+                },
+            )
         assert "PermissionDenied" in result
         assert "直属部下ではありません" in result
 
@@ -817,12 +902,15 @@ class TestDescendantOrgToolPermission:
         """Org tools should still block non-descendant targets."""
         handler, animas_dir = _make_handler_with_hierarchy(tmp_path)
         _setup_subordinate(tmp_path, "mio", supervisor="taka")
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "natsume": {"supervisor": "hinata"},
-            "mio": {"supervisor": "taka"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "natsume": {"supervisor": "hinata"},
+                "mio": {"supervisor": "taka"},
+            },
+        )
         with patch("core.config.models.load_config", return_value=mock_cfg):
             result = handler.handle("disable_subordinate", {"name": "mio"})
         assert "PermissionDenied" in result
@@ -845,11 +933,14 @@ class TestSdkHooksDescendantManagementFiles:
             d.mkdir(parents=True, exist_ok=True)
             (d / "state").mkdir(exist_ok=True)
 
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "natsume": {"supervisor": "hinata"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "natsume": {"supervisor": "hinata"},
+            },
+        )
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
             patch("core.paths.get_animas_dir", return_value=animas_dir),
@@ -871,11 +962,14 @@ class TestSdkHooksDescendantManagementFiles:
             d.mkdir(parents=True, exist_ok=True)
             (d / "state").mkdir(exist_ok=True)
 
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "natsume": {"supervisor": "hinata"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "natsume": {"supervisor": "hinata"},
+            },
+        )
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
             patch("core.paths.get_animas_dir", return_value=animas_dir),
@@ -891,7 +985,6 @@ class TestSdkHooksDescendantManagementFiles:
 
 
 class TestBuildToolListIntegration:
-
     def test_check_permissions_always_included(self):
         """check_permissions should always be in the tool list."""
         from core.tooling.schemas import build_tool_list
@@ -907,7 +1000,10 @@ class TestBuildToolListIntegration:
         tools = build_tool_list(include_supervisor_tools=True)
         names = {t["name"] for t in tools}
         for expected in [
-            "org_dashboard", "ping_subordinate", "read_subordinate_state",
-            "delegate_task", "task_tracker",
+            "org_dashboard",
+            "ping_subordinate",
+            "read_subordinate_state",
+            "delegate_task",
+            "task_tracker",
         ]:
             assert expected in names, f"Missing tool: {expected}"

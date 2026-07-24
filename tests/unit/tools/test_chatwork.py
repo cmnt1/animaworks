@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -15,13 +15,11 @@ from core.tools._base import ToolConfigError
 from core.tools.chatwork import (
     ChatworkClient,
     MessageCache,
+    _format_timestamp,
+    _sync_rooms,
     clean_chatwork_tags,
     get_tool_schemas,
-    _format_timestamp,
-    _resolve_write_token,
-    _sync_rooms,
 )
-
 
 # ── clean_chatwork_tags ───────────────────────────────────────────
 
@@ -58,7 +56,7 @@ class TestCleanChatworkTags:
 class TestFormatTimestamp:
     def test_formats_unix_timestamp(self):
         # 2026-01-15 00:00:00 UTC ~= 2026-01-15 09:00:00 JST
-        ts = int(datetime(2026, 1, 15, 0, 0, 0, tzinfo=timezone.utc).timestamp())
+        ts = int(datetime(2026, 1, 15, 0, 0, 0, tzinfo=UTC).timestamp())
         result = _format_timestamp(ts)
         assert "2026-01-15" in result
 
@@ -70,7 +68,6 @@ class TestChatworkClient:
     @pytest.fixture(autouse=True)
     def _mock_requests(self, monkeypatch: pytest.MonkeyPatch):
         """Pre-mock the requests library and set token."""
-        monkeypatch.setenv("CHATWORK_API_TOKEN", "test-cw-token")
         mock_requests = MagicMock()
         mock_session = MagicMock()
         mock_requests.Session.return_value = mock_session
@@ -94,22 +91,15 @@ class TestChatworkClient:
         client = ChatworkClient(api_token="my-token")
         assert client.api_token == "my-token"
 
-    def test_init_from_env(self):
-        with patch("core.tools._chatwork_client.get_credential", return_value="test-cw-token"):
-            client = ChatworkClient()
-        assert client.api_token == "test-cw-token"
-
-    def test_init_missing_token(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.delenv("CHATWORK_API_TOKEN", raising=False)
-        with patch("core.tools._chatwork_client.get_credential", side_effect=ToolConfigError("no token")):
-            with pytest.raises(ToolConfigError):
-                ChatworkClient()
+    def test_init_requires_token(self):
+        with pytest.raises(TypeError):
+            ChatworkClient()  # type: ignore[call-arg]
 
     def test_me(self):
         self._mock_session.request.return_value = self._make_response(
             json_data={"account_id": 123, "name": "Bot"}
         )
-        client = ChatworkClient()
+        client = ChatworkClient(api_token="test-cw-token")
         result = client.me()
         assert result["account_id"] == 123
 
@@ -117,7 +107,7 @@ class TestChatworkClient:
         self._mock_session.request.return_value = self._make_response(
             json_data=[{"room_id": 1, "name": "Room1"}]
         )
-        client = ChatworkClient()
+        client = ChatworkClient(api_token="test-cw-token")
         result = client.rooms()
         assert len(result) == 1
 
@@ -128,7 +118,7 @@ class TestChatworkClient:
                 {"room_id": 2, "name": "beta"},
             ]
         )
-        client = ChatworkClient()
+        client = ChatworkClient(api_token="test-cw-token")
         result = client.get_room_by_name("alpha")
         assert result["room_id"] == 1
 
@@ -139,7 +129,7 @@ class TestChatworkClient:
                 {"room_id": 2, "name": "beta-team"},
             ]
         )
-        client = ChatworkClient()
+        client = ChatworkClient(api_token="test-cw-token")
         result = client.get_room_by_name("beta")
         assert result["room_id"] == 2
 
@@ -147,26 +137,26 @@ class TestChatworkClient:
         self._mock_session.request.return_value = self._make_response(
             json_data=[{"room_id": 1, "name": "only-room"}]
         )
-        client = ChatworkClient()
+        client = ChatworkClient(api_token="test-cw-token")
         result = client.get_room_by_name("nonexistent")
         assert result is None
 
     def test_resolve_room_id_numeric(self):
-        client = ChatworkClient()
+        client = ChatworkClient(api_token="test-cw-token")
         assert client.resolve_room_id("12345") == "12345"
 
     def test_resolve_room_id_by_name(self):
         self._mock_session.request.return_value = self._make_response(
             json_data=[{"room_id": 999, "name": "target"}]
         )
-        client = ChatworkClient()
+        client = ChatworkClient(api_token="test-cw-token")
         assert client.resolve_room_id("target") == "999"
 
     def test_resolve_room_id_not_found(self):
         self._mock_session.request.return_value = self._make_response(
             json_data=[{"room_id": 1, "name": "other"}]
         )
-        client = ChatworkClient()
+        client = ChatworkClient(api_token="test-cw-token")
         with pytest.raises(ToolConfigError):
             client.resolve_room_id("missing")
 
@@ -177,7 +167,7 @@ class TestChatworkClient:
         ok_resp = self._make_response(status_code=200, json_data={"ok": True})
         self._mock_session.request.side_effect = [rate_resp, ok_resp]
 
-        client = ChatworkClient()
+        client = ChatworkClient(api_token="test-cw-token")
         with patch("core.tools._retry.time.sleep"):
             result = client.get("/me")
         assert result == {"ok": True}
@@ -185,7 +175,7 @@ class TestChatworkClient:
     def test_204_returns_none(self):
         resp = self._make_response(status_code=204)
         self._mock_session.request.return_value = resp
-        client = ChatworkClient()
+        client = ChatworkClient(api_token="test-cw-token")
         result = client.get("/rooms/123/messages")
         assert result is None
 
@@ -193,7 +183,7 @@ class TestChatworkClient:
         self._mock_session.request.return_value = self._make_response(
             json_data=[{"task_id": 1, "body": "Do something"}]
         )
-        client = ChatworkClient()
+        client = ChatworkClient(api_token="test-cw-token")
         tasks = client.my_tasks()
         assert len(tasks) == 1
 
@@ -512,10 +502,8 @@ class TestFindMentionsWithDMRooms:
 
 
 class TestDispatch:
-    def test_dispatch_chatwork_sync(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_dispatch_chatwork_sync(self, tmp_path: Path):
         """dispatch('chatwork_sync') calls _sync_rooms."""
-        monkeypatch.setenv("CHATWORK_API_TOKEN", "test-token")
-
         mock_requests = MagicMock()
         mock_session = MagicMock()
         mock_requests.Session.return_value = mock_session
@@ -531,19 +519,21 @@ class TestDispatch:
 
         from core.tools.chatwork import dispatch
 
-        with patch.dict("core.tools._chatwork_client.__dict__", {"requests": mock_requests}):
-            with patch("core.tools.chatwork.MessageCache") as MockCache:
-                mock_cache = MagicMock()
-                MockCache.return_value = mock_cache
-                with patch("core.tools._chatwork_cli.time.sleep"):
-                    result = dispatch("chatwork_sync", {"limit": 5})
+        with (
+            patch.dict("core.tools._chatwork_client.__dict__", {"requests": mock_requests}),
+            patch("core.tools.chatwork.resolve_identity", return_value=MagicMock(token="test-token")),
+            patch("core.tools.chatwork.resolve_cache_db_path", return_value=tmp_path / "1" / "messages.db"),
+            patch("core.tools.chatwork.MessageCache") as MockCache,
+        ):
+            mock_cache = MagicMock()
+            MockCache.return_value = mock_cache
+            with patch("core.tools._chatwork_cli.time.sleep"):
+                result = dispatch("chatwork_sync", {"limit": 5})
 
-                assert result["rooms"] == 1
+            assert result["rooms"] == 1
 
-    def test_dispatch_chatwork_mentions(self, monkeypatch: pytest.MonkeyPatch):
+    def test_dispatch_chatwork_mentions(self, tmp_path: Path):
         """dispatch('chatwork_mentions') calls find_mentions."""
-        monkeypatch.setenv("CHATWORK_API_TOKEN", "test-token")
-
         mock_requests = MagicMock()
         mock_session = MagicMock()
         mock_requests.Session.return_value = mock_session
@@ -558,16 +548,56 @@ class TestDispatch:
 
         from core.tools.chatwork import dispatch
 
-        with patch.dict("core.tools._chatwork_client.__dict__", {"requests": mock_requests}):
-            with patch("core.tools.chatwork.MessageCache") as MockCache:
-                mock_cache = MagicMock()
-                mock_cache.find_mentions.return_value = [{"message_id": "m1"}]
-                MockCache.return_value = mock_cache
+        with (
+            patch.dict("core.tools._chatwork_client.__dict__", {"requests": mock_requests}),
+            patch("core.tools.chatwork.resolve_identity", return_value=MagicMock(token="test-token")),
+            patch("core.tools.chatwork.resolve_cache_db_path", return_value=tmp_path / "123" / "messages.db"),
+            patch("core.tools.chatwork._load_chatwork_tool_config", return_value={}),
+            patch("core.tools.chatwork.MessageCache") as MockCache,
+        ):
+            mock_cache = MagicMock()
+            mock_cache.find_mentions.return_value = [{"message_id": "m1"}]
+            MockCache.return_value = mock_cache
 
-                result = dispatch("chatwork_mentions", {"include_toall": False, "limit": 50})
+            result = dispatch("chatwork_mentions", {"include_toall": False, "limit": 50})
 
-                assert len(result) == 1
-                mock_cache.find_mentions.assert_called_once()
+            assert len(result) == 1
+            mock_cache.find_mentions.assert_called_once_with(
+                "123",
+                exclude_toall=True,
+                limit=50,
+                config={},
+            )
+
+    def test_dispatch_chatwork_unreplied_uses_resolved_identity(self, tmp_path: Path):
+        """unreplied uses the delegated account's token and account ID."""
+        from core.tools.chatwork import dispatch
+
+        client = MagicMock()
+        client.me.return_value = {"account_id": 987, "name": "Delegated"}
+        identity = MagicMock(token="delegated-token")
+        with (
+            patch("core.tools.chatwork.resolve_identity", return_value=identity) as resolver,
+            patch("core.tools.chatwork.ChatworkClient", return_value=client) as client_class,
+            patch("core.tools.chatwork.resolve_cache_db_path", return_value=tmp_path / "987" / "messages.db"),
+            patch("core.tools.chatwork._load_chatwork_tool_config", return_value={}),
+            patch("core.tools.chatwork.MessageCache") as cache_class,
+        ):
+            cache = cache_class.return_value
+            cache.find_unreplied.return_value = [{"message_id": "m2"}]
+            result = dispatch(
+                "chatwork_unreplied",
+                {"as": "owner", "anima_dir": "/srv/animas/mei"},
+            )
+
+        assert result == [{"message_id": "m2"}]
+        resolver.assert_called_once_with("owner", anima_dir="/srv/animas/mei")
+        client_class.assert_called_once_with(api_token="delegated-token")
+        cache.find_unreplied.assert_called_once_with(
+            "987",
+            exclude_toall=True,
+            config={},
+        )
 
 
 # ── EXECUTION_PROFILE ─────────────────────────────────────────────
@@ -601,66 +631,3 @@ class TestExecutionProfile:
         )
         for key in non_eligible:
             assert EXECUTION_PROFILE[key]["background_eligible"] is False, key
-
-
-# ── _resolve_write_token (per-Anima credential) ──────────────────
-
-
-class TestResolveWriteToken:
-    """Per-Anima Chatwork write token resolution."""
-
-    def test_per_anima_token_used_when_available(self):
-        """When CHATWORK_API_TOKEN_WRITE__<name> exists, it takes priority."""
-        with patch(
-            "core.tools._base._lookup_shared_credentials",
-            return_value="per-anima-token-mei",
-        ) as mock_lookup:
-            token = _resolve_write_token({"anima_dir": "/data/animas/mei"})
-
-        assert token == "per-anima-token-mei"
-        mock_lookup.assert_called_once_with("CHATWORK_API_TOKEN_WRITE__mei")
-
-    def test_fallback_to_default_when_no_per_anima_token(self):
-        """When per-Anima token is not set, fall back to default."""
-        with patch(
-            "core.tools._base._lookup_shared_credentials",
-            return_value=None,
-        ):
-            with patch(
-                "core.tools.chatwork.get_credential",
-                return_value="default-write-token",
-            ) as mock_cred:
-                token = _resolve_write_token({"anima_dir": "/data/animas/kotoha"})
-
-        assert token == "default-write-token"
-        mock_cred.assert_called_once_with(
-            "chatwork_write", "chatwork", env_var="CHATWORK_API_TOKEN_WRITE",
-        )
-
-    def test_fallback_when_no_anima_dir_in_args(self):
-        """When anima_dir is not in args, fall back to default."""
-        with patch(
-            "core.tools.chatwork.get_credential",
-            return_value="default-write-token",
-        ):
-            token = _resolve_write_token({"room": "123", "message": "hi"})
-
-        assert token == "default-write-token"
-
-    def test_anima_name_extracted_from_path(self):
-        """The Anima name is correctly extracted from the directory path."""
-        calls = []
-
-        def mock_lookup(key: str) -> str | None:
-            calls.append(key)
-            return "found-token"
-
-        with patch(
-            "core.tools._base._lookup_shared_credentials",
-            side_effect=mock_lookup,
-        ):
-            _resolve_write_token(
-                {"anima_dir": "/home/main/.animaworks/animas/sakura"}
-            )
-
-        assert calls == ["CHATWORK_API_TOKEN_WRITE__sakura"]

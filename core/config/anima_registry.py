@@ -98,30 +98,45 @@ def read_anima_supervisor(anima_dir: Path) -> str | None:
     return None
 
 
+def read_anima_company_checked(anima_dir: Path) -> tuple[bool, str | None]:
+    """Read company membership while preserving whether disk was readable.
+
+    The boolean is ``True`` only when the anima directory and ``status.json``
+    were both present and the latter contained a JSON object.  The second
+    value is the normalized company name, or ``None`` for a confirmed
+    unassigned membership.  Filesystem denial, missing paths, and invalid JSON
+    return ``(False, None)`` so sandbox callers can distinguish them from an
+    explicitly unassigned anima.
+    """
+    try:
+        if not anima_dir.is_dir():
+            return False, None
+        status_path = anima_dir / "status.json"
+        if not status_path.is_file():
+            return False, None
+        data = json.loads(status_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("Failed to read %s: %s", anima_dir / "status.json", exc)
+        return False, None
+
+    if not isinstance(data, dict):
+        return False, None
+    raw = data.get("company")
+    if not isinstance(raw, str):
+        return True, None
+    company = raw.strip()
+    return True, company or None
+
+
 def read_anima_company(anima_dir: Path) -> str | None:
     """Read an anima's company membership from ``status.json``.
 
-    Unlike supervisor resolution, company membership has no legacy
-    ``identity.md`` representation.  Missing, blank, non-string, and invalid
-    values are therefore treated as unassigned.
+    This compatibility wrapper intentionally retains the historical behavior
+    of treating unreadable membership as unassigned.  Callers that must tell
+    those states apart should use :func:`read_anima_company_checked`.
     """
-    status_path = anima_dir / "status.json"
-    if not status_path.is_file():
-        return None
-
-    try:
-        data = json.loads(status_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
-        logger.warning("Failed to read %s: %s", status_path, exc)
-        return None
-
-    if not isinstance(data, dict):
-        return None
-    raw = data.get("company")
-    if not isinstance(raw, str):
-        return None
-    company = raw.strip()
-    return company or None
+    _, company = read_anima_company_checked(anima_dir)
+    return company
 
 
 def register_anima_in_config(
@@ -155,6 +170,12 @@ def register_anima_in_config(
             anima_name,
             supervisor,
         )
+        try:
+            from core.anima_roster import refresh_anima_roster
+
+            refresh_anima_roster()
+        except Exception:
+            logger.debug("Failed to refresh anima roster after register", exc_info=True)
 
     # Ensure .env has Slack token slots for this Anima
     try:
@@ -195,6 +216,12 @@ def unregister_anima_from_config(
     del config.animas[anima_name]
     save_config(config, config_path)
     logger.debug("Unregistered anima '%s' from config", anima_name)
+    try:
+        from core.anima_roster import refresh_anima_roster
+
+        refresh_anima_roster()
+    except Exception:
+        logger.debug("Failed to refresh anima roster after unregister", exc_info=True)
     return True
 
 

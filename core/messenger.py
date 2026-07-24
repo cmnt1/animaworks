@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any
 
 from core.exceptions import (
+    ChannelAccessDeniedError,
+    ChannelNotFoundError,
     DeliveryError,
     RecipientNotFoundError,
 )  # noqa: F401
@@ -61,15 +63,18 @@ def _validate_name(name: str, kind: str = "name") -> None:
 class ChannelMeta:
     """Channel metadata including ACL membership list.
 
-    If ``members`` is empty, the channel is open (all Animas can access).
+    If ``members`` is empty, the channel is open unless ``closed`` is true.
+    When ``company`` is set, open channels are scoped to that company.
     """
 
     members: list[str]
     created_by: str = ""
     created_at: str = ""
     description: str = ""
+    closed: bool = False
     slack_sync_disabled: bool = False
     slack_deleted_at: str = ""
+    company: str = ""
 
 
 def load_channel_meta(shared_dir: Path, channel: str) -> ChannelMeta | None:
@@ -87,8 +92,10 @@ def load_channel_meta(shared_dir: Path, channel: str) -> ChannelMeta | None:
             created_by=data.get("created_by", ""),
             created_at=data.get("created_at", ""),
             description=data.get("description", ""),
+            closed=bool(data.get("closed", False)),
             slack_sync_disabled=bool(data.get("slack_sync_disabled", False)),
             slack_deleted_at=data.get("slack_deleted_at", ""),
+            company=data.get("company", "") or "",
         )
     except (json.JSONDecodeError, OSError) as exc:
         logger.warning("Failed to load channel meta for %s: %s", channel, exc)
@@ -105,8 +112,10 @@ def save_channel_meta(shared_dir: Path, channel: str, meta: ChannelMeta) -> None
         "created_by": meta.created_by,
         "created_at": meta.created_at,
         "description": meta.description,
+        "closed": meta.closed,
         "slack_sync_disabled": meta.slack_sync_disabled,
         "slack_deleted_at": meta.slack_deleted_at,
+        "company": meta.company,
     }
     meta_path.write_text(
         json.dumps(data, ensure_ascii=False, indent=2),
@@ -128,10 +137,9 @@ def is_channel_member(
     - ``dm-{name}`` channels are exclusive: only the named Anima may post.
     - If no ``.meta.json`` exists the channel is open — everyone has access
       (legacy/auto-created channels default to permissive).
-    - If ``.meta.json`` exists and ``members`` is empty, the channel is
-      explicitly closed — nobody may post. This is the semantics used when
-      an administrator clears the membership list via the UI to lock the
-      channel down (e.g. ``#ops``).
+    - If ``.meta.json`` exists and ``members`` is empty, the channel is open.
+      Company-scoped access is enforced by the tooling boundary.
+    - If ``closed`` is true, no Anima may post.
     - Otherwise the anima must appear in the ``members`` list.
     """
     if source in ("human", "discord", "system_agent"):
@@ -143,8 +151,10 @@ def is_channel_member(
     meta = load_channel_meta(shared_dir, channel)
     if meta is None:
         return True
-    if not meta.members:
+    if meta.closed:
         return False
+    if not meta.members:
+        return True
     return anima_name in meta.members
 
 
@@ -350,12 +360,41 @@ class Messenger:
     ) -> bool:
         """Post a message to a shared channel (append-only JSONL).
 
-        Returns True when the message was written, False when ACL or I/O
-        prevented the post.
+        Raises:
+            ChannelNotFoundError: Neither jsonl nor open meta exists for *channel*.
+            ChannelAccessDeniedError: ACL denied (closed tombstone or non-member).
+            RecipientNotFoundError: Invalid channel name.
+
+        Returns True when the message was written and False on an I/O failure
+        or invalid Anima-authored identity.
         """
         _validate_name(channel, "channel name")
 
         poster = from_name or self.anima_name
+        channels_dir = self.shared_dir / "channels"
+        filepath = channels_dir / f"{channel}.jsonl"
+        meta = load_channel_meta(self.shared_dir, channel)
+        jsonl_exists = filepath.exists()
+
+        # ── Existence check (no silent auto-create of new channels) ──
+        if not jsonl_exists:
+            if meta is None:
+                logger.warning(
+                    "Channel not found: #%s (no jsonl/meta); refusing implicit create",
+                    channel,
+                )
+                raise ChannelNotFoundError(
+                    f"Channel '{channel}' not found. Create it with manage_channel action=create first."
+                )
+            if meta.closed:
+                # Tombstone: refuse without resurrecting jsonl
+                logger.warning(
+                    "ACL denied (closed tombstone): %s cannot post to #%s",
+                    self.anima_name,
+                    channel,
+                )
+                raise ChannelAccessDeniedError(f"Channel '{channel}' is closed")
+            # meta-only, closed=false: allow post and create jsonl
 
         # ── ACL check ──
         if not is_channel_member(self.shared_dir, channel, self.anima_name, source=source):
@@ -364,7 +403,7 @@ class Messenger:
                 self.anima_name,
                 channel,
             )
-            return False
+            raise ChannelAccessDeniedError(f"Access denied to channel '{channel}'")
 
         # Validate Anima-authored posts: from_name must be a known anima or "human".
         if source == "anima" and poster != "human":
@@ -381,9 +420,7 @@ class Messenger:
                     return False
             except Exception:
                 pass
-        channels_dir = self.shared_dir / "channels"
         channels_dir.mkdir(parents=True, exist_ok=True)
-        filepath = channels_dir / f"{channel}.jsonl"
         entry = json.dumps(
             {
                 "ts": now_iso(),
@@ -1009,10 +1046,16 @@ class Messenger:
             source,
             msg.id,
         )
-        # Mirror to general channel if human uses @all
+        # Mirror to general channel if human uses @all (only if channel already exists)
         if source == "human" and "@all" in content:
             human_name = external_user_id or "human"
-            self.post_channel("general", content, source="human", from_name=human_name)
+            try:
+                self.post_channel("general", content, source="human", from_name=human_name)
+            except (ChannelNotFoundError, ChannelAccessDeniedError) as exc:
+                logger.warning(
+                    "Skipping @all mirror to #general: %s",
+                    exc,
+                )
         return msg
 
     async def send_async(

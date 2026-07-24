@@ -3,8 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.memory.task_queue import TaskQueueManager
-from core.taskboard.models import AttentionVisibility, BoardColumn
-from core.taskboard.projector import QUEUE_STATUS_TO_COLUMN, compute_needs_human, project_all, project_anima
+from core.schemas import TaskEntry
+from core.taskboard.models import AttentionVisibility, BoardColumn, TaskBoardMetadata
+from core.taskboard.projector import (
+    QUEUE_STATUS_TO_COLUMN,
+    _project_queue_task,
+    compute_needs_human,
+    project_all,
+    project_anima,
+)
 from core.taskboard.store import TaskBoardStore
 
 
@@ -131,6 +138,7 @@ def test_terminal_status_overrides_stale_active_metadata(tmp_path: Path) -> None
         actor="test",
         visibility="active",
         column="todo",
+        updated_at="2000-01-01T00:00:00+00:00",
     )
 
     assert project_anima(manager.anima_dir, store) == []
@@ -1312,3 +1320,145 @@ def test_same_task_id_is_scoped_per_anima(tmp_path: Path) -> None:
         ("sakura", "same", BoardColumn.TODO),
         ("hinata", "same", BoardColumn.RUNNING),
     }
+
+
+def _queue_entry(
+    *,
+    status: str,
+    updated_at: str,
+    task_id: str = "task-1",
+) -> TaskEntry:
+    return TaskEntry(
+        task_id=task_id,
+        ts="2026-01-01T00:00:00+09:00",
+        source="human",
+        original_instruction="test",
+        assignee="sakura",
+        status=status,
+        summary="test",
+        updated_at=updated_at,
+    )
+
+
+def test_stale_active_metadata_ignored_when_queue_is_done() -> None:
+    """Queue done/cancelled with older active metadata → default archived/done."""
+    task = _queue_entry(status="done", updated_at="2026-06-01T12:00:00+09:00")
+    metadata = TaskBoardMetadata(
+        anima_name="sakura",
+        task_id=task.task_id,
+        visibility=AttentionVisibility.ACTIVE,
+        column=BoardColumn.WAITING,
+        updated_at="2026-05-01T12:00:00+09:00",
+        updated_by="delegator",
+    )
+
+    projected = _project_queue_task(task=task, anima_name="sakura", metadata=metadata)
+
+    assert projected.visibility == AttentionVisibility.ARCHIVED
+    assert projected.column == BoardColumn.DONE
+    assert projected.queue_status == "done"
+    # Other metadata fields still surface.
+    assert projected.board_updated_at == metadata.updated_at
+    assert projected.board_updated_by == "delegator"
+
+
+def test_newer_metadata_respected_when_queue_is_done() -> None:
+    """Post-completion UI override (newer metadata) still wins over queue defaults."""
+    task = _queue_entry(status="done", updated_at="2026-06-01T12:00:00+09:00")
+    metadata = TaskBoardMetadata(
+        anima_name="sakura",
+        task_id=task.task_id,
+        visibility=AttentionVisibility.ACTIVE,
+        column=BoardColumn.REVIEW,
+        updated_at="2026-06-01T13:00:00+09:00",
+        updated_by="human",
+    )
+
+    projected = _project_queue_task(task=task, anima_name="sakura", metadata=metadata)
+
+    assert projected.visibility == AttentionVisibility.ACTIVE
+    assert projected.column == BoardColumn.REVIEW
+
+
+def test_stale_suppressed_metadata_respected_when_queue_is_done() -> None:
+    """A terminal queue update must preserve the explicit suppression reason."""
+    task = _queue_entry(status="cancelled", updated_at="2026-06-01T12:00:00+09:00")
+    metadata = TaskBoardMetadata(
+        anima_name="sakura",
+        task_id=task.task_id,
+        visibility=AttentionVisibility.EXPIRED,
+        column=BoardColumn.SUPPRESSED,
+        updated_at="2026-05-01T12:00:00+09:00",
+        updated_by="planner",
+    )
+
+    projected = _project_queue_task(task=task, anima_name="sakura", metadata=metadata)
+
+    assert projected.visibility == AttentionVisibility.EXPIRED
+    assert projected.column == BoardColumn.SUPPRESSED
+
+
+def test_pending_queue_keeps_metadata_precedence() -> None:
+    """Non-archived queue statuses keep traditional metadata-first visibility/column."""
+    task = _queue_entry(status="pending", updated_at="2026-06-01T12:00:00+09:00")
+    metadata = TaskBoardMetadata(
+        anima_name="sakura",
+        task_id=task.task_id,
+        visibility=AttentionVisibility.SNOOZED,
+        column=BoardColumn.WAITING,
+        updated_at="2026-05-01T12:00:00+09:00",
+        updated_by="planner",
+    )
+
+    projected = _project_queue_task(task=task, anima_name="sakura", metadata=metadata)
+
+    assert projected.visibility == AttentionVisibility.SNOOZED
+    assert projected.column == BoardColumn.WAITING
+
+
+def test_unparseable_timestamps_keep_metadata_precedence() -> None:
+    """Parse failures / missing timestamps must not drop metadata overrides."""
+    task = _queue_entry(status="done", updated_at="not-a-timestamp")
+    metadata = TaskBoardMetadata(
+        anima_name="sakura",
+        task_id=task.task_id,
+        visibility=AttentionVisibility.ACTIVE,
+        column=BoardColumn.WAITING,
+        updated_at="also-bad",
+        updated_by="delegator",
+    )
+
+    projected = _project_queue_task(task=task, anima_name="sakura", metadata=metadata)
+
+    assert projected.visibility == AttentionVisibility.ACTIVE
+    assert projected.column == BoardColumn.WAITING
+
+
+def test_integration_stale_metadata_hidden_from_default_board_view(tmp_path: Path) -> None:
+    """End-to-end-ish: done queue + old active metadata is not shown by default."""
+    manager = _queue(tmp_path, "sakura")
+    task = manager.add_task(
+        source="human",
+        original_instruction="finish",
+        assignee="sakura",
+        summary="finish",
+        task_id="task-stale",
+    )
+    # Mark done without pre-existing metadata, then inject a stale active row.
+    manager.update_status(task.task_id, "done")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+    store.upsert_metadata(
+        anima_name="sakura",
+        task_id=task.task_id,
+        actor="ghost",
+        visibility="active",
+        column="waiting",
+        updated_at="2000-01-01T00:00:00+09:00",
+    )
+
+    assert project_anima(manager.anima_dir, store) == []
+
+    projected = project_anima(manager.anima_dir, store, include_archived=True)
+    assert len(projected) == 1
+    assert projected[0].visibility == AttentionVisibility.ARCHIVED
+    assert projected[0].column == BoardColumn.DONE

@@ -183,7 +183,7 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
     raise ValueError(f"Unknown tool: {name}")
 ```
 
-**Per-Anima 認証**（Chatwork 等）: `args.get("anima_dir")` から Anima 名を取り、**まず** `_lookup_shared_credentials("CHATWORK_API_TOKEN_WRITE__{anima_name}")` のように **Anima 専用キー**を試し、無ければ `get_credential(...)` にフォールバックするパターンがある（`core/tools/chatwork.py` の `_resolve_write_token` 等）。同様のキー命名をカスタムツールでも使える。
+**Per-Anima 認証**（Chatwork 等）: `args.get("anima_dir")` から Anima 名を取り、`CHATWORK_API_TOKEN__{anima_name}` のような **Anima 専用キー**を `resolve_env_style_credential(...)` で解決するパターンがある（`core/tools/_chatwork_identity.py` の `resolve_identity` 等。未登録ならフォールバックせずエラーにする）。同様のキー命名をカスタムツールでも使える。
 
 #### `cli_main`（animaworks-tool 用）
 

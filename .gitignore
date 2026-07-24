@@ -157,3 +157,6 @@ swe/results/
 .claude/worktrees/
 .claude/settings.local.json
 vendor/
+
+# FE vendoredライブラリは追跡する（~/vendor/クローン用ignoreの例外）
+!server/static/vendor/

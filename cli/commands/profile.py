@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from core.i18n import t
+from core.platform.process import is_process_alive
 
 logger = logging.getLogger(__name__)
 
@@ -73,18 +74,8 @@ def _read_pid_for(data_dir: Path) -> int | None:
 
 
 def _is_process_alive(pid: int) -> bool:
-    """Check if process exists (os.kill(pid, 0))."""
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        # Windows raises OSError (WinError 87 / invalid parameter) for
-        # non-existent or out-of-range PIDs instead of ProcessLookupError.
-        return False
+    """Check whether a process exists using the platform adapter."""
+    return is_process_alive(pid)
 
 
 def _profile_status(profile: dict) -> str:

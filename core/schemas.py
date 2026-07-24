@@ -76,6 +76,7 @@ class ModelConfig(BaseModel):
 
     model: str = DEFAULT_ANIMA_MODEL
     fallback_model: str | None = None
+    fallback_models: list[str] = Field(default_factory=list)
     max_tokens: int = 8192
     max_turns: int = 10000
     credential: str | None = None  # resolved credential name from config.json
@@ -97,6 +98,8 @@ class ModelConfig(BaseModel):
     background_model: str | None = None  # heartbeat/cron override model
     background_credential: str | None = None  # credential for background_model
     background_thinking_effort: str | None = None  # heartbeat/cron thinking effort override
+    heartbeat_enabled: bool = True  # periodic heartbeat switch; message-triggered heartbeat and cron are unaffected
+    token_budget_monthly: int | None = None  # None = monthly token usage is unlimited
     extra_keys: dict[str, str] = {}  # provider-specific credential keys (e.g. api_version, vertex_project)
     mode_s_auth: str | None = None  # Mode S auth: "max"|"api"|"bedrock"|"vertex"|None(=max)
     frequency_penalty: float | None = None

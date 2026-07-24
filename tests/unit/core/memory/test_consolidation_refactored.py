@@ -3,9 +3,9 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-from core.time_utils import now_jst
 
 from core.memory.consolidation import ConsolidationEngine
+from core.time_utils import now_jst
 
 
 @pytest.fixture

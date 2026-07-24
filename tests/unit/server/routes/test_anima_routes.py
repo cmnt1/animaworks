@@ -125,6 +125,7 @@ class TestListAnimas:
                 "bg_activity_level": 120,
                 "department": "Finance",
                 "title": "アソシエイト",
+                "company": "",
             }
         ]
 
