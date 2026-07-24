@@ -169,42 +169,54 @@ def resolve_effective_model_config(model_config: ModelConfig) -> ModelConfig:
         mode, model = parsed
         resolved_mode = mode.upper()
 
-        credential_name = _fallback_credential_name(model)
-        credential = config.credentials.get(credential_name) if credential_name else None
-        if credential is None:
-            logger.warning(
-                "Skipping fallback %s:%s: no credential configured for model family",
-                mode,
-                model,
+        if resolved_mode in {"C", "D", "G", "X"}:
+            # CLI-auth engines (Codex/Cursor/Gemini/Grok) authenticate via their
+            # own CLI credential stores, not config.credentials — keep the
+            # primary's credential fields untouched.
+            candidate = model_config.model_copy(
+                update={
+                    "model": model,
+                    "execution_mode": resolved_mode,
+                    "resolved_mode": resolved_mode,
+                },
             )
-            continue
+        else:
+            credential_name = _fallback_credential_name(model)
+            credential = config.credentials.get(credential_name) if credential_name else None
+            if credential is None:
+                logger.warning(
+                    "Skipping fallback %s:%s: no credential configured for model family",
+                    mode,
+                    model,
+                )
+                continue
 
-        credential_type = getattr(credential, "type", None)
-        if not isinstance(credential_type, str):
-            credential_type = None
-        mode_s_auth = (
-            infer_mode_s_auth(
-                mode=resolved_mode,
-                credential_name=credential_name,
-                config=config,
+            credential_type = getattr(credential, "type", None)
+            if not isinstance(credential_type, str):
+                credential_type = None
+            mode_s_auth = (
+                infer_mode_s_auth(
+                    mode=resolved_mode,
+                    credential_name=credential_name,
+                    config=config,
+                )
+                if resolved_mode == "S"
+                else None
             )
-            if resolved_mode == "S"
-            else None
-        )
-        candidate = model_config.model_copy(
-            update={
-                "model": model,
-                "execution_mode": resolved_mode,
-                "resolved_mode": resolved_mode,
-                "credential": credential_name,
-                "credential_type": credential_type,
-                "api_key": credential.api_key or None,
-                "api_key_env": f"{credential_name.upper()}_API_KEY",
-                "api_base_url": credential.base_url,
-                "extra_keys": dict(credential.keys or {}),
-                "mode_s_auth": mode_s_auth,
-            },
-        )
+            candidate = model_config.model_copy(
+                update={
+                    "model": model,
+                    "execution_mode": resolved_mode,
+                    "resolved_mode": resolved_mode,
+                    "credential": credential_name,
+                    "credential_type": credential_type,
+                    "api_key": credential.api_key or None,
+                    "api_key_env": f"{credential_name.upper()}_API_KEY",
+                    "api_base_url": credential.base_url,
+                    "extra_keys": dict(credential.keys or {}),
+                    "mode_s_auth": mode_s_auth,
+                },
+            )
         candidate_key = _guard_key_for_model_config(candidate, config)
         if guard.blocked_remaining(candidate_key) > 0:
             continue

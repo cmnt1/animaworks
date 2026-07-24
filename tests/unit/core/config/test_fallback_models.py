@@ -229,9 +229,10 @@ class TestResolveEffectiveModelConfig:
 
         assert result.model == "grok/grok-4.5"
         assert result.resolved_mode == "X"
-        assert result.credential == "grok"
-        assert result.api_key == "sk-grok"
-        assert result.extra_keys == {"account": "test"}
+        # CLI-auth engines (X/C/D/G) authenticate via their own CLI stores and
+        # keep the primary's credential fields untouched.
+        assert result.credential == "openai"
+        assert result.api_key is None
         assert guard.blocked_remaining.call_args_list[-1].args == ("grok:grok",)
 
     def test_all_candidates_blocked_keeps_primary(
