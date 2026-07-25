@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from datetime import timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -39,8 +39,12 @@ def client(status_dir):
         "weekly": {"last_status": "never", "running": False, "missed": False},
         "monthly": {"last_status": "never", "running": False, "missed": False},
     })
-    supervisor.run_system_consolidation_now = AsyncMock(return_value={"started": True})
-    supervisor.run_missed_system_consolidations = AsyncMock(return_value={"ran": ["daily"]})
+    supervisor.start_system_consolidation = MagicMock(
+        return_value={"started": True, "job_type": "daily"},
+    )
+    supervisor.start_missed_system_consolidations = MagicMock(
+        return_value={"started": True},
+    )
 
     app.state.supervisor = supervisor
 
@@ -64,15 +68,17 @@ class TestRunEndpoint:
         data = resp.json()
         assert data["started"] is True
         assert data["job_type"] == "daily"
+        client.app.state.supervisor.start_system_consolidation.assert_called_once_with("daily")
 
     def test_invalid_job_type(self, client):
         resp = client.post("/api/system/consolidation/invalid/run")
         assert resp.status_code == 400
 
-    def test_409_when_running(self, client, status_dir):
-        from core.lifecycle.system_status import mark_started
-
-        mark_started("daily")
+    def test_409_when_running(self, client):
+        client.app.state.supervisor.start_system_consolidation.return_value = {
+            "error": "already_running",
+            "job_type": "daily",
+        }
 
         resp = client.post("/api/system/consolidation/daily/run")
         assert resp.status_code == 409
@@ -84,11 +90,23 @@ class TestCatchupEndpoint:
         resp = client.post("/api/system/consolidation/catchup")
         assert resp.status_code == 200
         assert resp.json()["started"] is True
+        client.app.state.supervisor.start_missed_system_consolidations.assert_called_once_with()
 
-    def test_409_when_job_running(self, client, status_dir):
-        from core.lifecycle.system_status import mark_started
-
-        mark_started("weekly")
+    def test_409_when_job_running(self, client):
+        client.app.state.supervisor.start_missed_system_consolidations.return_value = {
+            "error": "already_running",
+            "job_type": "weekly",
+        }
 
         resp = client.post("/api/system/consolidation/catchup")
         assert resp.status_code == 409
+
+
+class TestShortcutEndpoint:
+    def test_redirects_to_scheduler(self, client):
+        resp = client.get(
+            "/api/system/consolidation/daily/run",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/#/scheduler"

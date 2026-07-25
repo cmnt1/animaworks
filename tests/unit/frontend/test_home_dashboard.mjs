@@ -166,7 +166,7 @@ describe("systemStatusBarModel", () => {
 });
 
 describe("home.js render template structure", () => {
-  it("places org hero first, includes attention summary, drops quick links", () => {
+  it("restores the operational layout with provider usage before Usage Governor", () => {
     const source = readFileSync(HOME_PATH, "utf8");
     // Extract render template body
     const m = source.match(
@@ -175,33 +175,31 @@ describe("home.js render template structure", () => {
     assert.ok(m, "render() template literal found");
     const html = m[1];
 
-    // Org tree must appear before usage panel and activity
+    // Provider usage leads, followed by Governor and the prior layout.
+    const governorIdx = html.indexOf('id="usageGovernorBar"');
     const orgIdx = html.indexOf('id="homeOrgTree"');
     const usageIdx = html.indexOf('id="homeUsagePanel"');
+    const statsIdx = html.indexOf('id="homeStatAnimas"');
     const activityIdx = html.indexOf('id="homeActivityTimeline"');
     const attentionIdx = html.indexOf('id="homeAttentionChips"');
     const extIdx = html.indexOf('id="homeExternalTasksCard"');
 
+    assert.ok(governorIdx >= 0, "usageGovernorBar present");
     assert.ok(orgIdx >= 0, "homeOrgTree present");
     assert.ok(attentionIdx >= 0, "homeAttentionChips present");
     assert.ok(usageIdx >= 0, "homeUsagePanel present");
     assert.ok(activityIdx >= 0, "homeActivityTimeline present");
     assert.ok(extIdx >= 0, "homeExternalTasksCard present");
 
+    assert.ok(usageIdx < governorIdx, "usage before governor");
+    assert.ok(governorIdx < statsIdx, "governor before status cards");
+    assert.ok(statsIdx < orgIdx, "status cards before org chart");
     assert.ok(orgIdx < attentionIdx, "org chart before attention");
-    assert.ok(attentionIdx < usageIdx, "attention before usage");
-    assert.ok(usageIdx < activityIdx, "usage before activity");
+    assert.ok(attentionIdx < activityIdx, "attention before activity");
     assert.ok(activityIdx < extIdx, "activity before external tasks");
 
-    // First card-like block should be org hero
-    const firstCard = html.search(/class="card[^"]*"/);
-    assert.ok(firstCard >= 0);
-    const firstCardSlice = html.slice(firstCard, firstCard + 80);
-    assert.match(firstCardSlice, /home-org-hero/);
-
-    // Quick links removed
-    assert.doesNotMatch(html, /home\.quick_links/);
-    assert.doesNotMatch(html, /home\.link_workspace/);
+    assert.match(html, /home\.quick_links/);
+    assert.match(html, /home\.link_workspace/);
   });
 
   it("exports pure helpers used by the redesign", async () => {

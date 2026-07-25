@@ -168,6 +168,18 @@ class _TimeoutHandle:
         return IPCResponse(id="fake", result={})
 
 
+class _SuccessHandle:
+    state = ProcessState.RUNNING
+
+    async def send_request(
+        self,
+        method: str,
+        params: dict,
+        timeout: float = 60.0,
+    ) -> IPCResponse:
+        return IPCResponse(id="fake", result={"duration_ms": 1})
+
+
 class _RecentEpisodesEngine:
     """Minimal consolidation engine stub with work to do."""
 
@@ -307,6 +319,66 @@ async def test_weekly_consolidation_timeout_logs_once_and_continues(
     assert "consolidation_timeout anima=mio phase=phase_b type=weekly" in caplog.text
     assert "Weekly integration failed for mio" not in caplog.text
     postprocess.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_weekly_consolidation_reports_target_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sup = _make_supervisor(tmp_path)
+    for name in ("mio", "sora"):
+        _create_anima_dir(sup.animas_dir, name)
+        sup.processes[name] = _SuccessHandle()
+
+    progress: list[dict] = []
+    monkeypatch.setattr(
+        "core.lifecycle.system_status.mark_progress",
+        lambda job_type, **kwargs: progress.append({"job_type": job_type, **kwargs}),
+    )
+    monkeypatch.setattr("core.lifecycle.system_status.build_status_payload", lambda: {})
+    monkeypatch.setattr(
+        "core.lifecycle.system_consolidation.run_weekly_integration_post_processing",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        "core.lifecycle.system_consolidation.should_skip_inactive_consolidation",
+        lambda *_args: False,
+    )
+    sup._broadcast_event = AsyncMock()
+
+    await sup._run_weekly_integration_inner()
+
+    assert progress == [
+        {
+            "job_type": "weekly",
+            "current": 1,
+            "total": 2,
+            "target": "mio",
+            "phase": "consolidation",
+        },
+        {
+            "job_type": "weekly",
+            "current": 1,
+            "total": 2,
+            "target": "mio",
+            "phase": "post_processing",
+        },
+        {
+            "job_type": "weekly",
+            "current": 2,
+            "total": 2,
+            "target": "sora",
+            "phase": "consolidation",
+        },
+        {
+            "job_type": "weekly",
+            "current": 2,
+            "total": 2,
+            "target": "sora",
+            "phase": "post_processing",
+        },
+    ]
 
 
 @pytest.mark.asyncio

@@ -1285,48 +1285,34 @@ def create_system_router() -> APIRouter:
     @router.post("/system/consolidation/{job_type}/run")
     async def run_consolidation(request: Request, job_type: str):
         """Manually trigger a consolidation job (fire-and-forget)."""
-        import asyncio
-
         if job_type not in ("daily", "weekly", "monthly"):
             return JSONResponse(
                 {"error": f"Invalid job type: {job_type}"},
                 status_code=400,
             )
         supervisor = request.app.state.supervisor
-
-        from core.lifecycle.system_status import is_running
-
-        if is_running(job_type):
+        result = supervisor.start_system_consolidation(job_type)
+        if result.get("error"):
             return JSONResponse(
-                {"error": "already_running", "job_type": job_type},
+                result,
                 status_code=409,
             )
-        asyncio.create_task(supervisor.run_system_consolidation_now(job_type))
-        return {"started": True, "job_type": job_type}
+        return result
 
     @router.post("/system/consolidation/catchup")
     async def run_consolidation_catchup(request: Request):
         """Run all missed consolidation jobs."""
-        import asyncio
-
         supervisor = request.app.state.supervisor
-
-        from core.lifecycle.system_status import is_running
-
-        for jt in ("daily", "weekly", "monthly"):
-            if is_running(jt):
-                return JSONResponse(
-                    {"error": f"{jt} is already running"},
-                    status_code=409,
-                )
-        asyncio.create_task(supervisor.run_missed_system_consolidations())
-        return {"started": True}
+        result = supervisor.start_missed_system_consolidations()
+        if result.get("error"):
+            return JSONResponse(result, status_code=409)
+        return result
 
     # ── Consolidation Shortcut (GET → fire + redirect to UI) ──
 
     @router.get("/system/consolidation/{job_type}/run")
     async def run_consolidation_get(request: Request, job_type: str):
-        """GET shortcut: trigger a consolidation job and redirect to the server page.
+        """GET shortcut: trigger a consolidation job and redirect to the scheduler page.
 
         Allows bookmark / address-bar one-click execution.
         URLs:
@@ -1334,8 +1320,6 @@ def create_system_router() -> APIRouter:
           /api/system/consolidation/weekly/run
           /api/system/consolidation/monthly/run
         """
-        import asyncio
-
         from starlette.responses import RedirectResponse
 
         if job_type not in ("daily", "weekly", "monthly"):
@@ -1344,30 +1328,17 @@ def create_system_router() -> APIRouter:
                 status_code=400,
             )
         supervisor = request.app.state.supervisor
-
-        from core.lifecycle.system_status import is_running
-
-        if not is_running(job_type):
-            asyncio.create_task(supervisor.run_system_consolidation_now(job_type))
-
-        return RedirectResponse(url="/#/server", status_code=303)
+        supervisor.start_system_consolidation(job_type)
+        return RedirectResponse(url="/#/scheduler", status_code=303)
 
     @router.get("/system/consolidation/catchup")
     async def run_consolidation_catchup_get(request: Request):
         """GET shortcut: run all missed consolidation jobs and redirect."""
-        import asyncio
-
         from starlette.responses import RedirectResponse
 
         supervisor = request.app.state.supervisor
-
-        from core.lifecycle.system_status import is_running
-
-        any_running = any(is_running(jt) for jt in ("daily", "weekly", "monthly"))
-        if not any_running:
-            asyncio.create_task(supervisor.run_missed_system_consolidations())
-
-        return RedirectResponse(url="/#/server", status_code=303)
+        supervisor.start_missed_system_consolidations()
+        return RedirectResponse(url="/#/scheduler", status_code=303)
 
     @router.post("/system/anima-merge/rewrite-runtime-refs")
     async def rewrite_anima_merge_runtime_refs(request: Request):

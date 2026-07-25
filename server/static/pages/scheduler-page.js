@@ -1,9 +1,12 @@
 // ── Scheduler Page ─────────────────────────
 import { api } from "../modules/api.js";
 import { escapeHtml, timeStr } from "../modules/state.js";
+import { onEvent } from "../modules/websocket.js";
 import { t } from "/shared/i18n.js";
 
 let _refreshInterval = null;
+let _unsubConsolidation = null;
+const _WEEKDAYS_JA = ["日", "月", "火", "水", "木", "金", "土"];
 const SCHEDULER_SORT_STORAGE_KEY = "animaworks-scheduler-sort";
 const DEFAULT_SCHEDULER_SORT = "org";
 const DEPARTMENT_ORDER = ["全社", "Administration", "Property", "Finance", "Affiliate"];
@@ -11,6 +14,32 @@ const TITLE_ORDER = ["COO", "グループリーダー", "アソシエイト"];
 let _listSortKey = _loadListSortKey();
 let _listFilterField = "";
 let _listFilterValue = "";
+
+function _consolidationTimeStr(isoOrTs) {
+  if (!isoOrTs) return "--";
+  const d = new Date(isoOrTs);
+  if (isNaN(d.getTime())) return "--";
+  const time = d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  if (sameDay) return time;
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const dow = _WEEKDAYS_JA[d.getDay()];
+  if (d.getFullYear() === now.getFullYear()) return `${mm}/${dd}(${dow}) ${time}`;
+  return `${d.getFullYear()}/${mm}/${dd}(${dow}) ${time}`;
+}
+
+export function consolidationProgressText(job) {
+  if (!job?.running) return "";
+  const current = Number(job.progress_current) || 0;
+  const total = Number(job.progress_total) || 0;
+  if (current < 1 || total < 1) return "";
+  return `${Math.min(current, total)}/${total}`;
+}
 
 function _loadListSortKey() {
   try {
@@ -315,21 +344,161 @@ export function render(container) {
       <h2>${t("nav.scheduler")}</h2>
     </div>
 
+    <div class="card" style="margin-bottom: 1.5rem;">
+      <div class="card-header">${t("server.memory_maintenance")}</div>
+      <div class="card-body" id="serverConsolidationContent">
+        <div class="loading-placeholder">${t("common.loading")}</div>
+      </div>
+    </div>
+
     <div class="card">
-      <div class="card-header">${t("server.scheduler_status")}</div>
+      <div class="card-header">${t("server.scheduler")}</div>
       <div class="card-body" id="schedulerPageContent">
         <div class="loading-placeholder">${t("common.loading")}</div>
       </div>
     </div>
   `;
 
+  _loadConsolidation();
   _loadScheduler();
-  _refreshInterval = setInterval(_loadScheduler, 30000);
+  _refreshInterval = setInterval(() => {
+    _loadConsolidation();
+    _loadScheduler();
+  }, 30000);
+  _unsubConsolidation = onEvent("system.consolidation_status", _renderConsolidationData);
 }
 
 export function destroy() {
   if (_refreshInterval) clearInterval(_refreshInterval);
   _refreshInterval = null;
+  if (_unsubConsolidation) {
+    _unsubConsolidation();
+    _unsubConsolidation = null;
+  }
+}
+
+const _CONSOLIDATION_JOBS = [
+  { key: "daily", labelKey: "server.consolidation_daily" },
+  { key: "weekly", labelKey: "server.consolidation_weekly" },
+  { key: "monthly", labelKey: "server.consolidation_monthly" },
+];
+
+async function _loadConsolidation() {
+  const content = document.getElementById("serverConsolidationContent");
+  if (!content) return;
+  try {
+    _renderConsolidationData(await api("/api/system/consolidation/status"));
+  } catch {
+    content.innerHTML = `<div class="loading-placeholder">${t("server.api_unimplemented")}</div>`;
+  }
+}
+
+function _renderConsolidationData(data) {
+  const content = document.getElementById("serverConsolidationContent");
+  if (!content) return;
+
+  const rows = _CONSOLIDATION_JOBS.map(({ key, labelKey }) => {
+    const job = data?.[key] || {};
+    const status = job.running ? "running" : (job.missed ? "missed" : (job.last_status || "never"));
+    const errorText = job.last_error ? escapeHtml(job.last_error) : "";
+    const progressText = consolidationProgressText(job);
+    const phaseKey = job.progress_phase
+      ? `server.consolidation_phase_${job.progress_phase}`
+      : "";
+    const phaseText = phaseKey && t(phaseKey) !== phaseKey ? t(phaseKey) : "";
+    const progressDetail = [job.progress_target, phaseText].filter(Boolean).join(" · ");
+    return `
+      <tr>
+        <td style="font-weight:500;">${t(labelKey)}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:0.4rem;">
+            ${_consolidationStatusBadge(status)}
+            ${progressText ? `<strong>${escapeHtml(progressText)}</strong>` : ""}
+          </div>
+          ${progressDetail ? `<div style="margin-top:0.2rem;font-size:0.78rem;color:var(--text-secondary,#666);">${escapeHtml(progressDetail)}</div>` : ""}
+        </td>
+        <td>${escapeHtml(_consolidationTimeStr(job.last_success_at))}</td>
+        <td style="color:var(--aw-color-danger,#e53e3e);font-size:0.85em;">${errorText}</td>
+        <td>
+          <button class="btn btn-sm btn-outline" data-consolidation-run="${key}" ${job.running ? "disabled" : ""}>
+            ${t("server.consolidation_run")}
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+  const anyRunning = _CONSOLIDATION_JOBS.some(({ key }) => data?.[key]?.running);
+
+  content.innerHTML = `
+    <div class="data-table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>${t("server.job_name")}</th>
+            <th>${t("server.consolidation_status")}</th>
+            <th>${t("server.consolidation_last_success")}</th>
+            <th>${t("server.consolidation_error")}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div style="margin-top: 0.75rem; text-align: right;">
+      <button class="btn btn-sm btn-outline" id="consolidationCatchupBtn" ${anyRunning ? "disabled" : ""}>
+        ${t("server.consolidation_catchup")}
+      </button>
+    </div>
+  `;
+
+  content.querySelectorAll("[data-consolidation-run]").forEach(btn => {
+    btn.addEventListener("click", () => _runConsolidation(btn.dataset.consolidationRun));
+  });
+  document.getElementById("consolidationCatchupBtn")?.addEventListener("click", _runConsolidationCatchup);
+}
+
+function _consolidationStatusBadge(status) {
+  const labels = {
+    success: t("server.consolidation_status_success"),
+    failed: t("server.consolidation_status_failed"),
+    running: t("server.consolidation_status_running"),
+    missed: t("server.consolidation_status_missed"),
+    never: t("server.consolidation_status_never"),
+  };
+  const colors = {
+    success: "var(--aw-color-success, #38a169)",
+    failed: "var(--aw-color-danger, #e53e3e)",
+    running: "var(--aw-color-warning, #d69e2e)",
+    missed: "var(--aw-color-warning, #d69e2e)",
+    never: "var(--aw-color-text-secondary, #888)",
+  };
+  const label = labels[status] || status;
+  const color = colors[status] || colors.never;
+  return `<span style="color:${color};font-weight:500;">${escapeHtml(label)}</span>`;
+}
+
+async function _runConsolidation(jobType) {
+  const btn = document.querySelector(`[data-consolidation-run="${jobType}"]`);
+  if (btn) btn.disabled = true;
+  try {
+    await api(`/api/system/consolidation/${jobType}/run`, { method: "POST" });
+    setTimeout(_loadConsolidation, 100);
+  } catch (err) {
+    if (btn) btn.disabled = false;
+    console.error("Consolidation run failed:", err);
+  }
+}
+
+async function _runConsolidationCatchup() {
+  const btn = document.getElementById("consolidationCatchupBtn");
+  if (btn) btn.disabled = true;
+  try {
+    await api("/api/system/consolidation/catchup", { method: "POST" });
+    setTimeout(_loadConsolidation, 100);
+  } catch (err) {
+    if (btn) btn.disabled = false;
+    console.error("Consolidation catch-up failed:", err);
+  }
 }
 
 async function _loadScheduler() {

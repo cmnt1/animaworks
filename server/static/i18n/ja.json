@@ -598,6 +598,8 @@
   "server.consolidation_status_success": "成功",
   "server.consolidation_status_failed": "失敗",
   "server.consolidation_status_running": "実行中...",
+  "server.consolidation_phase_consolidation": "統合",
+  "server.consolidation_phase_post_processing": "後処理",
   "server.consolidation_status_missed": "未実行",
   "server.consolidation_status_never": "未実行",
   "server.consolidation_already_running": "実行中のため開始できません",

@@ -599,6 +599,8 @@
   "server.consolidation_status_success": "Success",
   "server.consolidation_status_failed": "Failed",
   "server.consolidation_status_running": "Running...",
+  "server.consolidation_phase_consolidation": "Consolidation",
+  "server.consolidation_phase_post_processing": "Post-processing",
   "server.consolidation_status_missed": "Missed",
   "server.consolidation_status_never": "Never run",
   "server.consolidation_already_running": "Cannot start: already running",

@@ -597,6 +597,13 @@ describe("animas.js page structure (source contract)", () => {
     assert.doesNotMatch(pageSource, /anima-detail-btn/);
   });
 
+  it("shows the foreground and background model columns", () => {
+    assert.match(pageSource, /animas\.table_fr_model/);
+    assert.match(pageSource, /animas\.table_bg_model/);
+    assert.match(pageSource, /_shortModel\(p\.model\)/);
+    assert.match(pageSource, /_shortModel\(p\.background_model\)/);
+  });
+
   it("navigates with #/animas/<name>/<tab> hash", () => {
     assert.match(pageSource, /#\/animas\//);
     assert.match(pageSource, /_navigateAnimas/);

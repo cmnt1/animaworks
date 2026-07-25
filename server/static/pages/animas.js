@@ -667,6 +667,8 @@ async function _loadListContent() {
         <thead>
           <tr>
             <th>${t("animas.table_name")}</th>
+            <th>${t("animas.table_fr_model")}</th>
+            <th>${t("animas.table_bg_model")}</th>
             <th>${t("animas.table_status")}</th>
             <th>${t("animas.table_actions")}</th>
           </tr>
@@ -705,6 +707,8 @@ async function _loadListContent() {
       tr.dataset.anima = p.name;
       tr.innerHTML = `
         <td>${buildAnimaListIdentityHtml(p)}</td>
+        <td style="font-size:0.85rem;">${escapeHtml(_shortModel(p.model))}</td>
+        <td style="font-size:0.85rem;">${escapeHtml(_shortModel(p.background_model))}</td>
         <td>${buildAnimaListStatusHtml(p)}</td>
         <td>${buildAnimaListActionsHtml(p)}</td>
       `;

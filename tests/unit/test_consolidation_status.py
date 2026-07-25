@@ -66,26 +66,58 @@ class TestLoadStatus:
 
 class TestStateTransitions:
     def test_mark_started(self, status_dir):
-        from core.lifecycle.system_status import load_status, mark_started
+        from core.lifecycle.system_status import load_status, mark_failed, mark_started
 
+        mark_failed("daily", "previous failure")
         entry = mark_started("daily")
         assert entry["running"] is True
         assert entry["last_status"] == "running"
         assert entry["last_started_at"] is not None
+        assert entry["last_finished_at"] is None
+        assert entry["last_error"] is None
 
         # Verify persisted
         status = load_status()
         assert status["daily"]["running"] is True
 
     def test_mark_succeeded(self, status_dir):
-        from core.lifecycle.system_status import mark_started, mark_succeeded
+        from core.lifecycle.system_status import mark_progress, mark_started, mark_succeeded
 
         mark_started("weekly")
+        mark_progress(
+            "weekly",
+            current=5,
+            total=15,
+            target="mira",
+            phase="post_processing",
+        )
         entry = mark_succeeded("weekly")
         assert entry["running"] is False
         assert entry["last_status"] == "success"
         assert entry["last_success_at"] is not None
         assert entry["last_error"] is None
+        assert entry["progress_current"] == 0
+        assert entry["progress_total"] == 0
+        assert entry["progress_target"] is None
+        assert entry["progress_phase"] is None
+
+    def test_mark_progress(self, status_dir):
+        from core.lifecycle.system_status import load_status, mark_progress, mark_started
+
+        mark_started("weekly")
+        entry = mark_progress(
+            "weekly",
+            current=5,
+            total=15,
+            target="mira",
+            phase="post_processing",
+        )
+
+        assert entry["progress_current"] == 5
+        assert entry["progress_total"] == 15
+        assert entry["progress_target"] == "mira"
+        assert entry["progress_phase"] == "post_processing"
+        assert load_status()["weekly"]["progress_current"] == 5
 
     def test_mark_failed(self, status_dir):
         from core.lifecycle.system_status import mark_failed, mark_started
@@ -438,16 +470,15 @@ class TestLockPreventsDoubleExecution:
 
 # ── Manual run returns already_running ────────────────────
 
-class TestManualRunAlreadyRunning:
+class TestManualRunState:
     @pytest.mark.asyncio
-    async def test_returns_already_running(self, status_dir):
+    async def test_stale_persisted_running_state_does_not_block(self, status_dir):
         from core.lifecycle.system_status import mark_started
+        from core.supervisor._mgr_scheduler import SchedulerMixin
 
         mark_started("daily")
 
-        from core.lifecycle import LifecycleManager
-
-        mgr = LifecycleManager.__new__(LifecycleManager)
+        mgr = SchedulerMixin.__new__(SchedulerMixin)
         mgr._system_job_locks = {
             "daily": asyncio.Lock(),
             "weekly": asyncio.Lock(),
@@ -455,6 +486,63 @@ class TestManualRunAlreadyRunning:
         }
         mgr.animas = {}
         mgr._ws_broadcast = None
+        calls = 0
+
+        async def fake_handler():
+            nonlocal calls
+            calls += 1
+
+        mgr._run_daily_consolidation = fake_handler
+        result = await mgr.run_system_consolidation_now("daily")
+        assert "error" not in result
+        assert calls == 1
+
+    @pytest.mark.asyncio
+    async def test_returns_already_running_when_lock_is_held(self, status_dir):
+        from core.supervisor._mgr_scheduler import SchedulerMixin
+
+        mgr = SchedulerMixin.__new__(SchedulerMixin)
+        mgr._system_job_locks = {
+            "daily": asyncio.Lock(),
+            "weekly": asyncio.Lock(),
+            "monthly": asyncio.Lock(),
+        }
+        await mgr._system_job_locks["daily"].acquire()
 
         result = await mgr.run_system_consolidation_now("daily")
         assert result.get("error") == "already_running"
+
+    @pytest.mark.asyncio
+    async def test_start_retains_task_and_rejects_duplicate(self, status_dir):
+        from core.supervisor._mgr_scheduler import SchedulerMixin
+
+        mgr = SchedulerMixin.__new__(SchedulerMixin)
+        mgr._system_job_locks = {
+            "daily": asyncio.Lock(),
+            "weekly": asyncio.Lock(),
+            "monthly": asyncio.Lock(),
+        }
+        mgr._system_consolidation_tasks = {}
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def fake_run(job_type):
+            started.set()
+            await release.wait()
+            return {"job_type": job_type}
+
+        mgr.run_system_consolidation_now = fake_run
+
+        result = mgr.start_system_consolidation("daily")
+        assert result == {"started": True, "job_type": "daily"}
+        assert "daily" in mgr._system_consolidation_tasks
+        await started.wait()
+
+        duplicate = mgr.start_system_consolidation("daily")
+        assert duplicate == {"error": "already_running", "job_type": "daily"}
+
+        task = mgr._system_consolidation_tasks["daily"]
+        release.set()
+        await task
+        await asyncio.sleep(0)
+        assert "daily" not in mgr._system_consolidation_tasks

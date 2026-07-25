@@ -528,6 +528,8 @@
   "server.consolidation_status_success": "성공",
   "server.consolidation_status_failed": "실패",
   "server.consolidation_status_running": "실행 중...",
+  "server.consolidation_phase_consolidation": "통합",
+  "server.consolidation_phase_post_processing": "후처리",
   "server.consolidation_status_missed": "미실행",
   "server.consolidation_status_never": "미실행",
   "server.consolidation_already_running": "이미 실행 중이므로 시작할 수 없습니다",

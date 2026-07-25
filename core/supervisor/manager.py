@@ -177,6 +177,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             "weekly": asyncio.Lock(),
             "monthly": asyncio.Lock(),
         }
+        self._system_consolidation_tasks: dict[str, asyncio.Task[dict]] = {}
 
         # Callbacks for anima lifecycle events (set by server/app.py)
         self.on_anima_added: Callable[[str], None] | None = None

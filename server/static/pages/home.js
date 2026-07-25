@@ -15,26 +15,8 @@ let _usageInterval = null;
 
 export function render(container) {
   container.innerHTML = `
-    <div class="page-header page-header--compact">
+    <div class="page-header">
       <h2>${t("home.dashboard")}</h2>
-    </div>
-
-    <div class="card home-org-hero" id="homeOrgHeroCard">
-      <div class="card-header">${t("home.anima_list")}</div>
-      <div class="card-body">
-        <div class="org-tree" id="homeOrgTree">
-          <div class="loading-placeholder">${t("common.loading")}</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card home-attention-card" id="homeAttentionCard">
-      <div class="card-header">${t("home.attention_title")}</div>
-      <div class="card-body">
-        <div class="home-chip-row" id="homeAttentionChips">
-          <div class="loading-placeholder">${t("common.loading")}</div>
-        </div>
-      </div>
     </div>
 
     <div class="usage-panel-header">
@@ -43,7 +25,7 @@ export function render(container) {
         <span class="usage-last-updated" id="usageLastUpdated">${t("home.ext_last_updated")}: --:--:--</span>
       </div>
     </div>
-    <div class="usage-panel usage-panel--compact" id="homeUsagePanel">
+    <div class="usage-panel" id="homeUsagePanel">
       <div class="usage-card" id="usageCardClaude">
         <div class="usage-card-header">
           <span class="usage-provider-name">Claude</span>
@@ -84,21 +66,38 @@ export function render(container) {
     <div id="usageAuthAlerts" style="display:none;"></div>
     <div id="usageGovernorBar" style="display:none;"></div>
 
-    <div class="home-status-bar" id="homeStatusBar" role="status">
-      <span class="home-status-dot" aria-hidden="true"></span>
-      <span class="home-status-label" id="homeStatusLabel">--</span>
-      <span class="home-status-sep" aria-hidden="true">&#x00B7;</span>
-      <span class="home-status-item" id="homeAnimaCount">--</span>
-      <span class="home-status-sep" aria-hidden="true">&#x00B7;</span>
-      <span class="home-status-item" id="homeProcessCount">--</span>
-      <span class="home-status-sep" aria-hidden="true">&#x00B7;</span>
-      <span class="home-status-item" id="homeJobCount">--</span>
-      <span class="home-status-sep" aria-hidden="true">&#x00B7;</span>
-      <span class="home-status-item" id="homeWsCount">--</span>
+    <div class="card-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 1.5rem;">
+      <div class="stat-card" id="homeStatAnimas">
+        <div class="stat-label">${t("home.anima_count")}</div>
+        <div class="stat-value" id="homeAnimaCount">--</div>
+      </div>
+      <div class="stat-card" id="homeStatScheduler">
+        <div class="stat-label">${t("home.scheduler")}</div>
+        <div class="stat-value" id="homeSchedulerStatus">--</div>
+      </div>
+      <div class="stat-card" id="homeStatProcesses">
+        <div class="stat-label">${t("home.process_count")}</div>
+        <div class="stat-value" id="homeProcessCount">--</div>
+      </div>
     </div>
-    <!-- Legacy IDs kept for compatibility with pure helpers / tests -->
-    <div id="homeServerStatusBody" hidden></div>
-    <div id="homeSchedulerStatus" hidden></div>
+
+    <div class="card" style="margin-bottom: 1.5rem;">
+      <div class="card-header">${t("home.anima_list")}</div>
+      <div class="card-body">
+        <div class="org-tree" id="homeOrgTree">
+          <div class="loading-placeholder">${t("common.loading")}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card home-attention-card" id="homeAttentionCard">
+      <div class="card-header">${t("home.attention_title")}</div>
+      <div class="card-body">
+        <div class="home-chip-row" id="homeAttentionChips">
+          <div class="loading-placeholder">${t("common.loading")}</div>
+        </div>
+      </div>
+    </div>
 
     <div class="card" style="margin-bottom: 1.5rem;">
       <div class="card-header">${t("home.recent_activity")}</div>
@@ -122,6 +121,16 @@ export function render(container) {
         <div id="extTasksList">
           <div class="loading-placeholder">${t("common.loading")}</div>
         </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">${t("home.quick_links")}</div>
+      <div class="card-body" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+        <a href="/workspace/" class="btn-primary" style="text-decoration:none;">${t("home.link_workspace")}</a>
+        <a href="#/chat" class="btn-secondary" style="text-decoration:none;">${t("home.link_chat")}</a>
+        <a href="#/animas" class="btn-secondary" style="text-decoration:none;">${t("home.link_animas")}</a>
+        <a href="#/memory" class="btn-secondary" style="text-decoration:none;">${t("home.link_memory")}</a>
       </div>
     </div>
   `;
@@ -153,7 +162,6 @@ export function destroy() {
 
 async function _loadAll() {
   _loadSystemStatus();
-  _loadServerStatus();
   _loadTaskboardSummary();
   _loadOrgChart();
   _loadActivity();

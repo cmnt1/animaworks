@@ -14,7 +14,7 @@ let containerEl = null;
 // compatibility with existing structure tests) and is also listed here.
 export const REDIRECTS = {
   "/processes": "#/animas",
-  "/server": "#/",
+  "/server": "#/scheduler",
   "/setup": "#/settings",
   "/memory": "#/animas",
   "/assets": "#/animas",
@@ -131,7 +131,7 @@ function registerRoutes() {
   // /users removed — redirected to #/settings/users (see REDIRECTS)
   routes["/animas"] = () => import("../pages/animas.js" + _v);
   // /processes removed — redirected to #/animas (see REDIRECTS)
-  // /server removed — redirected to #/ (see REDIRECTS)
+  // /server removed — redirected to #/scheduler (see REDIRECTS)
   // /memory removed — redirected to #/animas (see REDIRECTS)
   // /assets removed — redirected to #/animas (see REDIRECTS)
   // /logs removed — redirected to #/activity/logs (see REDIRECTS)

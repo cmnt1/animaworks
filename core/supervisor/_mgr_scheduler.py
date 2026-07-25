@@ -564,6 +564,8 @@ class SchedulerMixin:
 
     async def _run_weekly_integration_inner(self) -> None:
         """Inner implementation of weekly integration."""
+        from core.lifecycle.system_status import build_status_payload, mark_progress
+
         logger.info("Starting system-wide weekly integration")
 
         try:
@@ -588,6 +590,7 @@ class SchedulerMixin:
             max_turns = getattr(consolidation_cfg, "max_turns", max_turns)
             model = getattr(consolidation_cfg, "llm_model", model)
 
+        eligible_targets = []
         for anima_name, anima_dir in self._iter_consolidation_targets():
             if should_skip_inactive_consolidation(anima_dir, anima_name, consolidation_cfg):
                 continue
@@ -598,6 +601,22 @@ class SchedulerMixin:
                     anima_name,
                 )
                 continue
+            eligible_targets.append((anima_name, anima_dir, handle))
+
+        total_targets = len(eligible_targets)
+        for current, (anima_name, anima_dir, handle) in enumerate(eligible_targets, start=1):
+            mark_progress(
+                "weekly",
+                current=current,
+                total=total_targets,
+                target=anima_name,
+                phase="consolidation",
+            )
+            try:
+                await self._broadcast_event("system.consolidation_status", build_status_payload())
+            except Exception:
+                logger.debug("Failed to broadcast weekly consolidation progress", exc_info=True)
+
             timeout_s = self._resolve_consolidation_ipc_timeout(
                 consolidation_cfg,
                 consolidation_type="weekly",
@@ -648,6 +667,18 @@ class SchedulerMixin:
             except Exception:
                 logger.exception("Weekly integration failed for %s", anima_name)
             finally:
+                mark_progress(
+                    "weekly",
+                    current=current,
+                    total=total_targets,
+                    target=anima_name,
+                    phase="post_processing",
+                )
+                try:
+                    await self._broadcast_event("system.consolidation_status", build_status_payload())
+                except Exception:
+                    logger.debug("Failed to broadcast weekly post-processing progress", exc_info=True)
+
                 await run_weekly_integration_post_processing(
                     anima_name,
                     anima_dir,
@@ -1237,17 +1268,82 @@ class SchedulerMixin:
         "monthly": "_run_monthly_forgetting",
     }
 
+    def _consolidation_task_map(self) -> dict[str, asyncio.Task[dict]]:
+        tasks = getattr(self, "_system_consolidation_tasks", None)
+        if tasks is None:
+            tasks = {}
+            self._system_consolidation_tasks = tasks
+        return tasks
+
+    def _consolidation_task_done(
+        self,
+        key: str,
+        task: asyncio.Task[dict],
+    ) -> None:
+        tasks = self._consolidation_task_map()
+        if tasks.get(key) is task:
+            tasks.pop(key, None)
+        if task.cancelled():
+            logger.info("System consolidation task cancelled: %s", key)
+            return
+        try:
+            task.result()
+        except Exception:
+            logger.exception("System consolidation background task failed: %s", key)
+
+    def _is_system_consolidation_busy(self, job_type: str) -> bool:
+        lock = self._system_job_locks.get(job_type)
+        if lock is not None and lock.locked():
+            return True
+        tasks = self._consolidation_task_map()
+        task = tasks.get(job_type)
+        catchup = tasks.get("catchup")
+        return bool(
+            (task is not None and not task.done())
+            or (catchup is not None and not catchup.done())
+        )
+
+    def start_system_consolidation(self, job_type: str) -> dict:
+        """Start one consolidation job and retain its background task."""
+        if job_type not in self._CONSOLIDATION_HANDLERS:
+            return {"error": f"unknown job type: {job_type}"}
+        if self._is_system_consolidation_busy(job_type):
+            return {"error": "already_running", "job_type": job_type}
+
+        task = asyncio.create_task(
+            self.run_system_consolidation_now(job_type),
+            name=f"system-consolidation-{job_type}",
+        )
+        self._consolidation_task_map()[job_type] = task
+        task.add_done_callback(functools.partial(self._consolidation_task_done, job_type))
+        return {"started": True, "job_type": job_type}
+
+    def start_missed_system_consolidations(self) -> dict:
+        """Start catch-up consolidation and retain its background task."""
+        for job_type in self._CONSOLIDATION_HANDLERS:
+            if self._is_system_consolidation_busy(job_type):
+                return {"error": "already_running", "job_type": job_type}
+
+        task = asyncio.create_task(
+            self.run_missed_system_consolidations(),
+            name="system-consolidation-catchup",
+        )
+        self._consolidation_task_map()["catchup"] = task
+        task.add_done_callback(functools.partial(self._consolidation_task_done, "catchup"))
+        return {"started": True}
+
     async def run_system_consolidation_now(self, job_type: str) -> dict:
         """Manually trigger a consolidation job.
 
         Returns a status payload dict.  If the job is already running,
         returns ``{"error": "already_running", "job_type": ...}``.
         """
-        from core.lifecycle.system_status import build_status_payload, is_running
+        from core.lifecycle.system_status import build_status_payload
 
         if job_type not in self._CONSOLIDATION_HANDLERS:
             return {"error": f"unknown job type: {job_type}"}
-        if is_running(job_type):
+        lock = self._system_job_locks.get(job_type)
+        if lock is not None and lock.locked():
             return {"error": "already_running", "job_type": job_type}
 
         handler = getattr(self, self._CONSOLIDATION_HANDLERS[job_type])

@@ -44,6 +44,10 @@ def _default_job() -> dict:
         "last_status": "never",
         "last_error": None,
         "running": False,
+        "progress_current": 0,
+        "progress_total": 0,
+        "progress_target": None,
+        "progress_phase": None,
     }
 
 
@@ -98,9 +102,38 @@ def mark_started(job_type: str) -> dict:
     entry = status[job_type]
     entry["running"] = True
     entry["last_started_at"] = now_iso()
+    entry["last_finished_at"] = None
     entry["last_status"] = "running"
+    entry["last_error"] = None
+    _clear_progress(entry)
     _save_status(status)
     return entry
+
+
+def mark_progress(
+    job_type: str,
+    *,
+    current: int,
+    total: int,
+    target: str | None = None,
+    phase: str | None = None,
+) -> dict:
+    """Update progress for a running consolidation job."""
+    status = load_status()
+    entry = status[job_type]
+    entry["progress_current"] = max(0, int(current))
+    entry["progress_total"] = max(0, int(total))
+    entry["progress_target"] = target or None
+    entry["progress_phase"] = phase or None
+    _save_status(status)
+    return entry
+
+
+def _clear_progress(entry: dict) -> None:
+    entry["progress_current"] = 0
+    entry["progress_total"] = 0
+    entry["progress_target"] = None
+    entry["progress_phase"] = None
 
 
 def mark_succeeded(job_type: str) -> dict:
@@ -113,6 +146,7 @@ def mark_succeeded(job_type: str) -> dict:
     entry["last_success_at"] = ts
     entry["last_status"] = "success"
     entry["last_error"] = None
+    _clear_progress(entry)
     _save_status(status)
     return entry
 
@@ -125,6 +159,7 @@ def mark_failed(job_type: str, error: str) -> dict:
     entry["last_finished_at"] = now_iso()
     entry["last_status"] = "failed"
     entry["last_error"] = error[:500] if error else None
+    _clear_progress(entry)
     _save_status(status)
     return entry
 
@@ -269,6 +304,7 @@ def clear_stale_running() -> None:
             status[jt]["last_status"] = "failed"
             status[jt]["last_error"] = "interrupted by server restart"
             status[jt]["last_finished_at"] = now_iso()
+            _clear_progress(status[jt])
             changed = True
             logger.info("Cleared stale running state for %s consolidation", jt)
     if changed:
