@@ -1298,10 +1298,7 @@ class SchedulerMixin:
         tasks = self._consolidation_task_map()
         task = tasks.get(job_type)
         catchup = tasks.get("catchup")
-        return bool(
-            (task is not None and not task.done())
-            or (catchup is not None and not catchup.done())
-        )
+        return bool((task is not None and not task.done()) or (catchup is not None and not catchup.done()))
 
     def start_system_consolidation(self, job_type: str) -> dict:
         """Start one consolidation job and retain its background task."""
