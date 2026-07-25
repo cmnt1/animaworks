@@ -98,6 +98,7 @@ DEFAULT_MODEL_MODES = DEFAULT_MODEL_MODE_PATTERNS
 KNOWN_MODELS: list[dict[str, str]] = [
     # ── Claude / Anthropic (Mode S) ──────────────────────────────────────────
     {"name": "claude-fable-5", "mode": "S", "note": "最高性能・長時間タスク（usage credits）"},
+    {"name": "claude-opus-5", "mode": "S", "note": "Opus最高性能・最新"},
     {"name": "claude-opus-4-8", "mode": "S", "note": "Opus最高性能・推奨"},
     {"name": "claude-opus-4-7", "mode": "S", "note": "最高性能"},
     {"name": "claude-opus-4-6", "mode": "S", "note": "最高性能・推奨"},

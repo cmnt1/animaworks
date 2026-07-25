@@ -662,7 +662,11 @@ def _available_models_payload(config) -> list[dict[str, str]]:
         if not cred.api_key and cred.type not in ("claude_code_login", "codex_login"):
             continue
         if provider == "anthropic":
-            for model_id in _models_for_provider("claude_code", _known_claude_code_models()):
+            known_models = _known_claude_code_models()
+            cached_models = _models_for_provider("claude_code", known_models)
+            # Keep explicitly supported Claude models visible even when a
+            # previously refreshed provider cache predates a new model.
+            for model_id in _unique_model_ids([*known_models, *cached_models]):
                 add(model_id, route="S", provider_label="Anthropic", credential="anthropic")
                 if cred.api_key:
                     add(

@@ -345,6 +345,33 @@ class TestOpenAIAuthSettings:
         assert "codex/gpt-5.3-codex" in ids
         assert "openai-codex/gpt-5.3-codex" not in ids
 
+    async def test_available_models_include_known_anthropic_models_with_stale_cache(self):
+        config = AnimaWorksConfig(
+            credentials={
+                "anthropic": CredentialConfig(type="claude_code_login"),
+            }
+        )
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+
+        with (
+            patch("server.routes.config_routes.load_config", return_value=config),
+            patch(
+                "server.routes.config_routes._models_for_provider",
+                return_value=["claude-opus-4-8"],
+            ),
+            patch("server.routes.config_routes._list_ollama_models", return_value=[]),
+            patch("server.routes.config_routes.is_codex_login_available", return_value=False),
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/api/system/available-models")
+
+        assert resp.status_code == 200
+        models = resp.json()["models"]
+        opus_5 = next(item for item in models if item["id"] == "claude-opus-5")
+        assert opus_5["label"] == "S: Anthropic/claude-opus-5"
+        assert opus_5["credential"] == "anthropic"
+
     async def test_refresh_available_models_uses_codex_subscription_catalog(self, tmp_path):
         config = AnimaWorksConfig(
             credentials={
