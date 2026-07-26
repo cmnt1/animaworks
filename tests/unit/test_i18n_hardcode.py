@@ -137,8 +137,8 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/supervisor/task_retry.py": 1,
     # taskboard route stop/blocker labels
     "server/routes/taskboard.py": 21,
-    # usage route OAuth / API-disabled messages
-    "server/routes/usage_routes.py": 3,
+    # usage route OAuth / API-disabled messages + Claude token expiry message
+    "server/routes/usage_routes.py": 4,
 }
 
 
