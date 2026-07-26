@@ -1266,27 +1266,26 @@ class UsageGovernor:
             "nanogpt": _fetch_nanogpt_usage(),
         }
 
-        # Auto-recovery: if Claude fetch failed with a genuine auth error, try a
-        # silent token refresh then retry (rate-limited to avoid excessive OAuth
-        # requests).  ``rate_limited`` is deliberately excluded — it is a usage
-        # endpoint 429, not an auth failure, and ``_fetch_claude_usage`` already
-        # attempts a single refresh+retry for the stale-token-429 case.
+        # Auto-recovery on a genuine auth error: do a READ-ONLY status check (the
+        # governor never refreshes the shared token — Claude Code owns it).  If
+        # the token is actually fresh, the failure was transient, so retry once;
+        # if it is expired we can only tell the user to re-auth via the button.
+        # ``rate_limited`` is excluded — a usage-endpoint 429 is not an auth error.
         claude_error = usage_data.get("claude", {}).get("error", "")
         if claude_error in _AUTH_USAGE_ERRORS:
             if self._state.can_relogin("claude"):
-                logger.info("Governor: Claude usage fetch failed (%s), attempting silent token refresh", claude_error)
-                # Automatic path: never spawn an interactive CMD /login window.
-                # Only a silent token refresh is attempted; if that fails the
-                # user must re-authenticate manually via the "再認証" button.
-                relogin_result, _status = _relogin_claude(launch_terminal=False)
-                success = bool(relogin_result.get("success"))
-                self._state.record_relogin("claude", success=success)
-                if success:
-                    logger.info("Governor: token refresh succeeded, retrying usage fetch")
+                logger.info("Governor: Claude usage fetch failed (%s), checking auth status", claude_error)
+                # Automatic path: read-only.  No refresh, no CMD /login window —
+                # the user re-authenticates manually via the "再認証" button.
+                relogin_result, _status = _relogin_claude(interactive=False)
+                token_fresh = bool(relogin_result.get("success"))
+                self._state.record_relogin("claude", success=token_fresh)
+                if token_fresh:
+                    logger.info("Governor: token is fresh, retrying usage fetch")
                     usage_data["claude"] = _fetch_claude_usage(skip_cache=True)
                 else:
                     logger.warning(
-                        "Governor: token refresh failed, manual re-auth required — %s",
+                        "Governor: token expired, manual re-auth required — %s",
                         relogin_result.get("message", "unknown"),
                     )
             else:

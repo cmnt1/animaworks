@@ -1003,12 +1003,6 @@ function _renderGovernor(gov) {
       }
     }
   }
-  // Only genuine auth problems warrant a re-auth button.  A ``rate_limited``
-  // reason means the *usage endpoint* returned 429 — the OAuth token is fine,
-  // so refreshing it can never clear the condition (it would just loop the
-  // "token already fresh" dialog).  Keep it out of the relogin trigger.
-  const _reloginPat = /unauthorized|no_credentials/;
-
   // ── Number formatters ──────────────────────────────
   const fmt = (v, digits = 1) =>
     v === null || v === undefined || Number.isNaN(v)
@@ -1028,7 +1022,6 @@ function _renderGovernor(gov) {
 
   // ── Build per-provider rows ────────────────────────
   let bodyRows = "";
-  let needsRelogin = false;
   const reasonFooters = [];
 
   for (const [prov, label] of PROVIDERS) {
@@ -1050,10 +1043,6 @@ function _renderGovernor(gov) {
     const hasAnything =
       inActivity || inCalibration || inSuspended || reasons.length > 0;
     if (!hasAnything) continue;
-
-    if (prov === "claude" && _reloginPat.test(reasons.join(" "))) {
-      needsRelogin = true;
-    }
 
     const suspendedCell = suspended.length > 0
       ? `<span class="governor-suspended" title="${escapeHtml(suspended.join(", "))}">停止 ${suspended.length}</span>`
@@ -1119,16 +1108,13 @@ function _renderGovernor(gov) {
       <span><b>N</b>: 校正サンプル数</span>
     </div>`;
 
-  const reloginBtn = needsRelogin
-    ? `<button class="btn-secondary governor-relogin-btn" id="govReloginBtn" style="font-size:0.78rem;padding:2px 8px;margin-left:0.5rem;">再認証</button>`
-    : "";
-
   // Footer reason text: show verbatim (single-escape only), no per-row
   // activity reformat — the table already exposes the activity number.
-  const footerHtml = reasonFooters.length > 0 || reloginBtn
+  // Re-auth lives on the Claude usage card, not here.
+  const footerHtml = reasonFooters.length > 0
     ? `<div class="governor-reason-footer">${reasonFooters
         .map((r) => `<div>${escapeHtml(r)}</div>`)
-        .join("")}${reloginBtn}</div>`
+        .join("")}</div>`
     : "";
 
   const controlHtml = `
@@ -1152,17 +1138,6 @@ function _renderGovernor(gov) {
       ${footerHtml}
     </div>
   `;
-
-  {
-    const btn = document.getElementById("govReloginBtn");
-    btn?.addEventListener("click", async () => {
-      btn.disabled = true;
-      btn.textContent = "...";
-      await _runUsageRelogin("claude");
-      btn.disabled = false;
-      btn.textContent = "再認証";
-    });
-  }
 
   // Initialize and wire the recent-burn-window control
   _initGovernorRecentBurnControl();

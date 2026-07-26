@@ -198,10 +198,11 @@ def test_relogin_claude_does_not_launch_terminal_when_token_is_fresh(monkeypatch
     assert "claude" not in usage_routes._CACHE
 
 
-def test_relogin_claude_no_terminal_when_launch_disabled_and_refresh_fails(monkeypatch):
-    """Automatic callers (launch_terminal=False) must never spawn a CMD window,
-    even when the token is expired and the silent refresh fails."""
+def test_relogin_claude_read_only_when_launch_disabled(monkeypatch):
+    """Automatic callers (interactive=False) are read-only: for an expired
+    token they neither refresh the shared credentials file nor spawn a window."""
     launched: list[str] = []
+    refreshed: list[str] = []
     expired_at = int(time.time() * 1000) - 10 * 60 * 1000
 
     monkeypatch.setattr(usage_routes, "_CACHE", {"claude": ({"stale": True}, time.time())})
@@ -211,23 +212,41 @@ def test_relogin_claude_no_terminal_when_launch_disabled_and_refresh_fails(monke
         "_select_best_claude_credential",
         lambda: (Path("credentials.json"), "access-token", "refresh-token", expired_at),
     )
-    # Silent refresh fails → would normally fall through to launching a terminal.
-    monkeypatch.setattr(usage_routes, "_refresh_claude_token", lambda path, refresh: None)
+    monkeypatch.setattr(usage_routes, "_refresh_claude_token", lambda path, refresh: refreshed.append(refresh) or None)
     monkeypatch.setattr(
         usage_routes,
         "_launch_claude_login_terminal",
         lambda executable: launched.append(executable) or True,
     )
 
-    payload, _status = usage_routes._relogin_claude(launch_terminal=False)
+    payload, _status = usage_routes._relogin_claude(interactive=False)
 
     assert payload["success"] is False
     assert payload["terminal_launched"] is False
     assert launched == []  # no CMD window spawned
+    assert refreshed == []  # and the shared token is never rewritten
+
+
+def test_read_claude_token_is_read_only_on_expired(monkeypatch):
+    """_read_claude_token returns the stored token as-is and never refreshes —
+    the credentials file's owner (Claude Code) keeps it fresh, not us."""
+    expired_at = int(time.time() * 1000) - 10 * 60 * 1000
+    monkeypatch.setattr(
+        usage_routes,
+        "_select_best_claude_credential",
+        lambda: (Path("credentials.json"), "expired-token", "refresh-token", expired_at),
+    )
+    refreshed: list[str] = []
+    monkeypatch.setattr(usage_routes, "_refresh_claude_token", lambda path, refresh: refreshed.append(refresh) or "new")
+
+    token = usage_routes._read_claude_token()
+
+    assert token == "expired-token"
+    assert refreshed == []
 
 
 def test_relogin_claude_launches_terminal_when_interactive_and_refresh_fails(monkeypatch):
-    """Explicit user action (launch_terminal=True) still opens the CMD window
+    """Explicit user action (interactive=True) still opens the CMD window
     when the token is expired and the refresh fails."""
     launched: list[str] = []
     expired_at = int(time.time() * 1000) - 10 * 60 * 1000
@@ -246,7 +265,7 @@ def test_relogin_claude_launches_terminal_when_interactive_and_refresh_fails(mon
         lambda executable: launched.append(executable) or True,
     )
 
-    payload, _status = usage_routes._relogin_claude(launch_terminal=True)
+    payload, _status = usage_routes._relogin_claude(interactive=True)
 
     assert payload["terminal_launched"] is True
     assert launched == ["C:\\Tools\\claude.exe"]

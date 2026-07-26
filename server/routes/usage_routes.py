@@ -365,31 +365,28 @@ def _select_best_claude_credential() -> tuple[Path | None, str | None, str | Non
 
 
 def _read_claude_token() -> str | None:
-    """Find the best OAuth token; auto-refresh if expired."""
-    best_path, best_token, best_refresh, best_expires = _select_best_claude_credential()
-    if not best_token:
-        return None
+    """Return the stored OAuth token as-is — read-only, never refreshes it.
 
-    now_ms = int(time.time() * 1000)
-    if best_expires < now_ms and best_refresh and best_path:
-        # Token expired — try refresh
-        logger.info("Claude OAuth token expired, attempting refresh...")
-        refreshed = _refresh_claude_token(best_path, best_refresh)
-        if refreshed:
-            return refreshed
-        logger.warning("Token refresh failed; returning expired token for error reporting")
-
+    The credentials file is owned and kept fresh by Claude Code itself (each
+    anima turn and every interactive ``claude`` run refreshes it).  A background
+    refresh from here would be a second writer racing that owner and could
+    clobber a freshly-minted token, so we only read.  An expired token is
+    returned unchanged; the fetch then surfaces the auth error and the user
+    re-authenticates from the dashboard's 再認証 button.
+    """
+    _best_path, best_token, _best_refresh, _best_expires = _select_best_claude_credential()
     return best_token
 
 
-def _relogin_claude(launch_terminal: bool = True) -> tuple[dict[str, Any], int]:
-    """Try token refresh first; fall back to Claude Code CLI login guidance.
+def _relogin_claude(interactive: bool = True) -> tuple[dict[str, Any], int]:
+    """Report Claude auth status and, only for the user, perform re-auth.
 
-    When *launch_terminal* is False (automatic callers such as the usage
-    governor or the dashboard auto-refresh), a silent token refresh is still
-    attempted, but no interactive CMD ``/login`` window is ever spawned — the
-    caller only gets guidance to re-authenticate manually. Only an explicit
-    user action (pressing the "再認証" button) should pass True.
+    Automatic callers (the usage governor) pass *interactive* False and get a
+    strictly read-only status check: an expired token is reported but never
+    refreshed and no CMD window is spawned, because the credentials file is
+    owned and kept fresh by Claude Code — a background refresh here would race
+    that owner.  Only an explicit user action (the "再認証" button, *interactive*
+    True) may refresh the token or open the ``/login`` window.
     """
     _clear_usage_cache("claude")
     executable = get_claude_executable()
@@ -406,7 +403,7 @@ def _relogin_claude(launch_terminal: bool = True) -> tuple[dict[str, Any], int]:
 
     best_path, best_token, best_refresh, best_expires = _select_best_claude_credential()
     if not best_path or not best_token:
-        launched = _launch_claude_login_terminal(executable) if launch_terminal else False
+        launched = _launch_claude_login_terminal(executable) if interactive else False
         return (
             {
                 "success": launched,
@@ -435,8 +432,25 @@ def _relogin_claude(launch_terminal: bool = True) -> tuple[dict[str, Any], int]:
             200,
         )
 
+    # Automatic callers (the governor's auth-error recovery) are read-only: they
+    # must not refresh or rewrite the shared credentials file — that races Claude
+    # Code, the owner, and can clobber a fresh token.  Only the explicit user
+    # 再認証 button (interactive=True) may refresh or open the login terminal.
+    if not interactive:
+        return (
+            {
+                "success": False,
+                "message": f"Claude token expired — press 再認証 or run '{login_cmd}'.",
+                "manual_command": login_cmd,
+                "file": str(best_path),
+                "terminal_launched": False,
+            },
+            200,
+        )
+
     if not best_refresh:
-        launched = _launch_claude_login_terminal(executable) if launch_terminal else False
+        # Only interactive callers reach here (automatic ones returned above).
+        launched = _launch_claude_login_terminal(executable)
         return (
             {
                 "success": launched,
@@ -464,7 +478,7 @@ def _relogin_claude(launch_terminal: bool = True) -> tuple[dict[str, Any], int]:
             200,
         )
 
-    launched = _launch_claude_login_terminal(executable) if launch_terminal else False
+    launched = _launch_claude_login_terminal(executable)
     return (
         {
             "success": launched,
@@ -1234,16 +1248,16 @@ def create_usage_router() -> APIRouter:
     @router.post("/usage/claude/relogin")
     async def relogin_claude(request: Request) -> JSONResponse:
         # Only an explicit user action (pressing the "再認証" button, which sends
-        # {"interactive": true}) may spawn the interactive CMD /login window.
-        # Automatic callers (e.g. dashboard auto-refresh on rate_limited) omit
-        # the flag and get a silent token refresh only.
+        # {"interactive": true}) may refresh the token or spawn the CMD /login
+        # window.  Automatic callers omit the flag and get a read-only status
+        # check — they never write the shared credentials file.
         interactive = False
         try:
             body = await request.json()
             interactive = bool((body or {}).get("interactive"))
         except Exception:
             pass
-        payload, status_code = _relogin_claude(launch_terminal=interactive)
+        payload, status_code = _relogin_claude(interactive=interactive)
         if payload.get("success"):
             try:
                 from core.auth_alert import clear_alert
