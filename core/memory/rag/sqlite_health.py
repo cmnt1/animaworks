@@ -98,8 +98,11 @@ def configure_chroma_sqlite_pragmas(
 
     try:
         with _connect(db_path, timeout_seconds) as conn:
+            current_journal_mode = str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower()
             conn.execute(f"PRAGMA busy_timeout = {int(timeout_seconds * 1000)}")
-            journal_mode = str(conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]).lower()
+            journal_mode = current_journal_mode
+            if current_journal_mode != "wal":
+                journal_mode = str(conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]).lower()
             conn.execute("PRAGMA synchronous=NORMAL")
             synchronous = str(conn.execute("PRAGMA synchronous").fetchone()[0])
             conn.commit()
@@ -123,6 +126,8 @@ def configure_chroma_sqlite_pragmas(
             status="pragma_failed",
             details=(f"journal_mode={journal_mode}", f"synchronous={synchronous}"),
         )
+    if current_journal_mode != "wal":
+        logger.info("Enabled WAL journal mode for Chroma SQLite database: %s", db_path)
     return SQLiteHealthResult(
         db_path=db_path,
         ok=True,

@@ -79,6 +79,33 @@ def test_chroma_vector_store_configures_sqlite_pragmas(
     fake_chromadb.PersistentClient.assert_called_once_with(path=str(tmp_path))  # type: ignore[attr-defined]
 
 
+def test_chroma_vector_store_tolerates_post_init_pragma_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.memory.rag.sqlite_health import SQLiteHealthResult
+    from core.memory.rag.store import ChromaVectorStore
+
+    fake_chromadb = types.ModuleType("chromadb")
+    fake_chromadb.PersistentClient = MagicMock(return_value=MagicMock())  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "chromadb", fake_chromadb)
+    monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
+    monkeypatch.setattr("core.memory.rag.sqlite_health.prepare_chroma_sqlite_for_startup", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        "core.memory.rag.sqlite_health.configure_chroma_sqlite_pragmas",
+        lambda persist_dir: SQLiteHealthResult(
+            db_path=persist_dir / "chroma.sqlite3",
+            ok=False,
+            status="busy",
+            error="database is locked",
+        ),
+    )
+
+    store = ChromaVectorStore(persist_dir=tmp_path, anima_name="sora")
+
+    assert store.client is not None
+
+
 def test_reset_vector_store_closes_cached_chroma_store() -> None:
     from core.memory.rag import singleton
 

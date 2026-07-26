@@ -362,17 +362,31 @@ def _try_recover_latched_store(anima_name: str | None) -> Any | None:
 
 
 def _call_vector_store(anima_name: str | None, action: Callable[[Any], Any]) -> Any | None:
-    from core.memory.rag.singleton import get_vector_store, reset_vector_store, reset_vector_store_after_error
+    from core.memory.rag.singleton import (
+        get_vector_store,
+        reset_vector_store,
+        reset_vector_store_after_error,
+        vector_store_operation,
+    )
 
     try:
-        store = get_vector_store(anima_name)
-        if store is None:
-            store = _try_recover_latched_store(anima_name)
+        # Fetch and use the cached handle under one shared lifecycle gate. A
+        # concurrent reset/close therefore cannot invalidate Chroma's global
+        # client cache between get_vector_store() and the native operation.
+        with vector_store_operation(anima_name):
+            store = get_vector_store(anima_name)
             if store is None:
-                return None
-        result = action(store)
-        consume_failure = getattr(type(store), "consume_lightweight_self_heal_failure", None)
-        if not callable(consume_failure) or not consume_failure(store) or not _record_self_heal_failure(anima_name):
+                store = _try_recover_latched_store(anima_name)
+                if store is None:
+                    return None
+            result = action(store)
+            consume_failure = getattr(type(store), "consume_lightweight_self_heal_failure", None)
+            needs_full_reset = (
+                callable(consume_failure)
+                and consume_failure(store)
+                and _record_self_heal_failure(anima_name)
+            )
+        if not needs_full_reset:
             return result
 
         owner = anima_name or "shared"
@@ -386,10 +400,11 @@ def _call_vector_store(anima_name: str | None, action: Callable[[Any], Any]) -> 
         )
         reset_vector_store(anima_name)
         _clear_owner_write_circuit_breakers(anima_name)
-        fresh_store = get_vector_store(anima_name)
-        if fresh_store is None:
-            return result
-        return action(fresh_store)
+        with vector_store_operation(anima_name):
+            fresh_store = get_vector_store(anima_name)
+            if fresh_store is None:
+                return result
+            return action(fresh_store)
     except Exception:
         logger.warning("Vector worker native store action failed for owner=%s", anima_name or "shared", exc_info=True)
         try:

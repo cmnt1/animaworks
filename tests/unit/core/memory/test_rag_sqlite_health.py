@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
 from pathlib import Path
 from unittest.mock import patch
@@ -36,16 +37,30 @@ def test_quick_check_valid_chroma_sqlite_db(tmp_path: Path) -> None:
     assert result.details == ("ok",)
 
 
-def test_configure_chroma_sqlite_pragmas_sets_wal(tmp_path: Path) -> None:
+def test_configure_chroma_sqlite_pragmas_sets_wal_idempotently(
+    tmp_path: Path,
+    caplog,
+) -> None:
     db_path = chroma_sqlite_path(tmp_path)
     with sqlite3.connect(db_path) as conn:
         conn.execute("CREATE TABLE t(id INTEGER PRIMARY KEY)")
 
-    result = configure_chroma_sqlite_pragmas(tmp_path)
+    with caplog.at_level(logging.INFO, logger="animaworks.rag.sqlite_health"):
+        first = configure_chroma_sqlite_pragmas(tmp_path)
+        second = configure_chroma_sqlite_pragmas(tmp_path)
 
-    assert result.ok is True
+    assert first.ok is True
+    assert "synchronous=1" in first.details
+    assert second.ok is True
+    assert "synchronous=1" in second.details
     with sqlite3.connect(db_path) as conn:
         assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+    wal_logs = [
+        record
+        for record in caplog.records
+        if record.message.startswith("Enabled WAL journal mode for Chroma SQLite database:")
+    ]
+    assert len(wal_logs) == 1
 
 
 def test_configure_chroma_sqlite_pragmas_missing_db_is_healthy(tmp_path: Path) -> None:

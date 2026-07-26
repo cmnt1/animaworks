@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -70,6 +71,30 @@ def test_chroma_store_self_heals_corruption_and_retries_once(tmp_path: Path) -> 
     assert good_client.get_or_create_collection.call_count == 1
     bad_client.close.assert_called_once()
     good_client.close.assert_called_once()
+
+
+def test_concurrent_self_heal_reset_lock_fails_fast(tmp_path: Path) -> None:
+    """A second self-heal must release its operation gate instead of deadlocking."""
+    client = MagicMock()
+    _FakeChromaVectorStore.clients = [client]
+    store = _FakeChromaVectorStore(persist_dir=tmp_path, anima_name="sora")
+    reset_lock = type(store)._self_heal_reset_lock
+
+    reset_lock.acquire()
+    try:
+        started = time.monotonic()
+        fresh_store = store._reset_for_self_heal(
+            "upsert",
+            "sora_knowledge",
+            "chroma_corruption",
+            RuntimeError("database disk image is malformed"),
+        )
+    finally:
+        reset_lock.release()
+
+    assert fresh_store is None
+    assert time.monotonic() - started < 0.5
+    client.close.assert_not_called()
 
 
 def test_chroma_store_retries_transient_error_without_reset(tmp_path: Path) -> None:
