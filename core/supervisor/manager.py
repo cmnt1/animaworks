@@ -140,6 +140,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         # while still catching truly stuck streams.
         self._max_streaming_duration_sec: int = 1800
         self._anima_startup_ready_timeout: float = 120.0
+        self._anima_stop_timeout: float = 60.0
         self._spawn_timeout_sec: float = 300.0
         try:
             from core.config import load_config
@@ -153,6 +154,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             self._anima_startup_ready_timeout = float(
                 getattr(srv, "anima_startup_ready_timeout", 120),
             )
+            self._anima_stop_timeout = float(getattr(srv, "anima_stop_timeout", 60.0))
             self._spawn_timeout_sec = float(getattr(srv, "spawn_timeout", 300))
             if restart_policy is None:
                 retry_count = int(getattr(srv, "supervisor_respawn_max_retries", 3))
@@ -666,7 +668,10 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 return
 
             await handle.stop(
-                timeout=10.0,
+                # Full-server shutdown deliberately retains the short budget
+                # so systemd is not held up; ordinary stops/restarts get the
+                # configured grace period for in-flight persistence.
+                timeout=10.0 if self._shutdown else self._anima_stop_timeout,
                 drain_streams=drain_streams,
                 drain_timeout=drain_timeout,
             )

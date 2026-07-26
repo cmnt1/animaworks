@@ -8,18 +8,20 @@ Unit tests for ProcessSupervisor.
 
 from __future__ import annotations
 
-import pytest
-from core.time_utils import now_jst
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import AsyncMock, MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from core.supervisor.manager import (
+    HealthConfig,
     ProcessSupervisor,
     RestartPolicy,
-    HealthConfig
 )
 from core.supervisor.process_handle import ProcessHandle, ProcessState
+from core.time_utils import now_jst
 
 
 @pytest.fixture
@@ -164,6 +166,64 @@ async def test_supervisor_shutdown(supervisor):
     handle.stop.assert_called_once()
     assert len(supervisor.processes) == 0
     assert supervisor._shutdown is True
+
+
+@pytest.mark.asyncio
+async def test_configured_stop_timeout_is_used_for_normal_stop(temp_dirs):
+    """Normal stops use the server-configured graceful-stop budget."""
+    config = SimpleNamespace(server=SimpleNamespace(anima_stop_timeout=45.5))
+    with patch("core.config.load_config", return_value=config):
+        supervisor = ProcessSupervisor(
+            animas_dir=temp_dirs["animas_dir"],
+            shared_dir=temp_dirs["shared_dir"],
+            run_dir=temp_dirs["run_dir"],
+            restart_policy=RestartPolicy(),
+            health_config=HealthConfig(),
+        )
+
+    handle = AsyncMock(spec=ProcessHandle)
+    supervisor.processes["test_anima"] = handle
+
+    await supervisor.stop_anima("test_anima")
+
+    handle.stop.assert_awaited_once_with(
+        timeout=45.5,
+        drain_streams=True,
+        drain_timeout=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_restart_uses_configured_stop_timeout(supervisor):
+    """Restart delegates its normal stop to the configured stop budget."""
+    supervisor._anima_stop_timeout = 45.5
+    handle = AsyncMock(spec=ProcessHandle)
+    supervisor.processes["test_anima"] = handle
+    supervisor.start_anima = AsyncMock()
+
+    await supervisor.restart_anima("test_anima")
+
+    handle.stop.assert_awaited_once_with(
+        timeout=45.5,
+        drain_streams=True,
+        drain_timeout=None,
+    )
+    supervisor.start_anima.assert_awaited_once_with("test_anima")
+
+
+@pytest.mark.asyncio
+async def test_shutdown_retains_short_stop_timeout(supervisor):
+    """Full-server shutdown remains bounded to the legacy 10-second stop."""
+    handle = AsyncMock(spec=ProcessHandle)
+    supervisor.processes["test_anima"] = handle
+
+    await supervisor.shutdown_all()
+
+    handle.stop.assert_awaited_once_with(
+        timeout=10.0,
+        drain_streams=False,
+        drain_timeout=None,
+    )
 
 
 # Note: Full integration tests with actual process spawning

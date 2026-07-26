@@ -325,7 +325,16 @@ class ChromaVectorStore(VectorStore):
         if reason not in _SQLITE_REFUTABLE_SELF_HEAL_REASONS:
             return False
 
-        with type(self)._self_heal_reset_lock:
+        reset_lock = type(self)._self_heal_reset_lock
+        if not reset_lock.acquire(blocking=False):
+            logger.debug(
+                "Skipping concurrent Chroma SQLite quick_check during %s: owner=%s db_path=%s",
+                operation,
+                self._owner_label(),
+                self.persist_dir,
+            )
+            return False
+        try:
             try:
                 from core.memory.rag.sqlite_health import quick_check_chroma_sqlite
 
@@ -353,6 +362,8 @@ class ChromaVectorStore(VectorStore):
                 )
                 return True
             return False
+        finally:
+            reset_lock.release()
 
     def _retry_without_reset(
         self,
@@ -392,7 +403,16 @@ class ChromaVectorStore(VectorStore):
         reason: str,
         error: Exception,
     ) -> ChromaVectorStore | None:
-        with type(self)._self_heal_reset_lock:
+        reset_lock = type(self)._self_heal_reset_lock
+        if not reset_lock.acquire(blocking=False):
+            logger.info(
+                "ChromaDB self-heal reset already in progress during %s: owner=%s db_path=%s",
+                operation,
+                self._owner_label(),
+                self.persist_dir,
+            )
+            return None
+        try:
             try:
                 from core.memory.rag.singleton import reset_vector_store_after_error
 
@@ -442,6 +462,8 @@ class ChromaVectorStore(VectorStore):
                     recreate_error,
                 )
                 return None
+        finally:
+            reset_lock.release()
 
     def _create_collection_once(self, name: str) -> bool:
         self.client.create_collection(
