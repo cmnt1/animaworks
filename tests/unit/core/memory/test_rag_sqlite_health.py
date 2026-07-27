@@ -5,6 +5,8 @@ import sqlite3
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from core.memory.rag.sqlite_health import (
     SQLiteHealthResult,
     check_anima_vectordb_health_via_worker_or_direct,
@@ -14,6 +16,14 @@ from core.memory.rag.sqlite_health import (
     quick_check_chroma_sqlite,
     request_repair_for_sqlite_health,
 )
+
+
+@pytest.fixture(autouse=True)
+def _skip_quick_check_retry_delay(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "core.memory.rag.sqlite_health.QUICK_CHECK_CORRUPT_RETRY_DELAY_SECONDS",
+        0,
+    )
 
 
 def test_quick_check_missing_chroma_db_is_healthy(tmp_path: Path) -> None:
@@ -82,6 +92,41 @@ def test_quick_check_reports_corrupt_result_from_runner(tmp_path: Path) -> None:
     assert result.corrupt is True
     assert result.status == "corrupt"
     assert "page 3 missing" in result.details
+
+
+def test_quick_check_retries_possible_corruption_until_ok(tmp_path: Path) -> None:
+    db_path = chroma_sqlite_path(tmp_path)
+    db_path.write_bytes(b"not sqlite")
+    results = iter([("*** in database main ***",), ("ok",)])
+    calls = 0
+
+    def runner(_path: Path, _timeout: float) -> tuple[str, ...]:
+        nonlocal calls
+        calls += 1
+        return next(results)
+
+    result = quick_check_chroma_sqlite(tmp_path, runner=runner)
+
+    assert result.ok is True
+    assert result.status == "ok"
+    assert calls == 2
+
+
+def test_quick_check_confirms_corruption_after_all_retries(tmp_path: Path) -> None:
+    db_path = chroma_sqlite_path(tmp_path)
+    db_path.write_bytes(b"not sqlite")
+    calls = 0
+
+    def runner(_path: Path, _timeout: float) -> tuple[str, ...]:
+        nonlocal calls
+        calls += 1
+        return ("page 3 missing",)
+
+    result = quick_check_chroma_sqlite(tmp_path, runner=runner)
+
+    assert result.corrupt is True
+    assert result.status == "corrupt"
+    assert calls == 3
 
 
 def test_quick_check_reports_database_error_from_runner(tmp_path: Path) -> None:
@@ -153,7 +198,7 @@ def test_quick_check_reports_timeout_from_runner(tmp_path: Path) -> None:
 
     result = quick_check_chroma_sqlite(tmp_path, runner=timeout_runner)
 
-    assert result.corrupt is True
+    assert result.corrupt is False
     assert result.status == "timeout"
     assert result.error == "quick_check exceeded 10s"
 
@@ -196,6 +241,39 @@ def test_prepare_startup_records_repair_and_raises_on_corruption(tmp_path: Path)
         result=health,
         source="startup_quick_check",
     )
+
+
+def test_prepare_startup_continues_when_corruption_clears_on_recheck(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    corrupt = SQLiteHealthResult(
+        db_path=tmp_path / "chroma.sqlite3",
+        ok=False,
+        status="corrupt",
+        error="database disk image is malformed",
+    )
+    healthy = SQLiteHealthResult(
+        db_path=tmp_path / "chroma.sqlite3",
+        ok=True,
+        status="ok",
+        details=("ok",),
+    )
+
+    with (
+        patch(
+            "core.memory.rag.sqlite_health.quick_check_chroma_sqlite",
+            side_effect=[corrupt, healthy],
+        ),
+        patch("core.memory.rag.sqlite_health.request_repair_for_sqlite_health", return_value=True) as repair,
+        patch("core.memory.rag.sqlite_health.configure_chroma_sqlite_pragmas", return_value=healthy) as configure,
+        caplog.at_level(logging.WARNING, logger="animaworks.rag.sqlite_health"),
+    ):
+        prepare_chroma_sqlite_for_startup(tmp_path, anima_name="sora")
+
+    repair.assert_called_once()
+    configure.assert_called_once_with(tmp_path)
+    assert "transient corruption signal cleared on re-check" in caplog.text
 
 
 def test_request_repair_for_sqlite_health_ignores_ok_result(tmp_path: Path) -> None:
@@ -304,7 +382,7 @@ def test_check_anima_vectordb_health_uses_vector_worker(monkeypatch) -> None:
         record_repair=False,
     )
 
-    assert result.corrupt is True
+    assert result.corrupt is False
     assert result.status == "timeout"
     assert requests == [
         {

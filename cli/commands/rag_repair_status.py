@@ -51,6 +51,8 @@ def collect_rag_repair_status(
                     "last_success_at": None,
                     "consecutive_failures": 0,
                     "recent_signals_24h": 0,
+                    "last_signal_reason": None,
+                    "store_init_failed_24h": False,
                     "stale_repairing": False,
                 }
             )
@@ -58,13 +60,23 @@ def collect_rag_repair_status(
 
         state = read_state(anima_dir.name, animas_dir=animas_dir)
         signals = state.get("recent_signals")
-        recent_signal_count = sum(
-            1
+        recent_signals = [
+            signal
             for signal in signals
             if isinstance(signal, dict)
             and (at := parse_dt(signal.get("at"))) is not None
             and signal_cutoff <= at <= current_time
-        ) if isinstance(signals, list) else 0
+        ] if isinstance(signals, list) else []
+        recent_signal_count = len(recent_signals)
+        last_signal = max(
+            recent_signals,
+            key=lambda signal: parse_dt(signal.get("at")),
+            default=None,
+        )
+        last_signal_reason = str(last_signal.get("reason")) if last_signal and last_signal.get("reason") else None
+        store_init_failed_24h = any(
+            signal.get("reason") == "store_init_failed" for signal in recent_signals
+        )
         status = str(state.get("status") or "unknown")
         heartbeat_at = parse_dt(state.get("heartbeat_at"))
         stale_repairing = status == "repairing" and (heartbeat_at is None or heartbeat_at <= heartbeat_cutoff)
@@ -79,6 +91,8 @@ def collect_rag_repair_status(
                 "last_success_at": state.get("last_success_at"),
                 "consecutive_failures": consecutive_failures,
                 "recent_signals_24h": recent_signal_count,
+                "last_signal_reason": last_signal_reason,
+                "store_init_failed_24h": store_init_failed_24h,
                 "stale_repairing": stale_repairing,
             }
         )
@@ -95,12 +109,18 @@ def rag_repair_status_command(args: argparse.Namespace) -> None:
     else:
         _print_status_table(rows)
 
-    if any(row["stale_repairing"] or row["recent_signals_24h"] >= 2 for row in rows):
+    if any(
+        row["status"] in {"requested", "failed"}
+        or row["stale_repairing"]
+        or row["recent_signals_24h"] >= 2
+        or row["store_init_failed_24h"]
+        for row in rows
+    ):
         raise SystemExit(1)
 
 
 def _print_status_table(rows: list[dict[str, Any]]) -> None:
-    headers = ("ANIMA", "STATUS", "LAST SUCCESS", "FAILURES", "SIGNALS (24H)")
+    headers = ("ANIMA", "STATUS", "LAST SUCCESS", "FAILURES", "SIGNALS (24H)", "LAST SIGNAL")
     values = [
         (
             str(row["name"]),
@@ -108,6 +128,7 @@ def _print_status_table(rows: list[dict[str, Any]]) -> None:
             str(row["last_success_at"] or "-"),
             str(row["consecutive_failures"]),
             str(row["recent_signals_24h"]),
+            str(row["last_signal_reason"] or "-"),
         )
         for row in rows
     ]

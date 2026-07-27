@@ -98,6 +98,22 @@ def test_vector_worker_shutdown_closes_cached_stores(monkeypatch) -> None:
     close_all.assert_called_once()
 
 
+def test_vector_worker_status_exposes_init_failure_latches(monkeypatch) -> None:
+    monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
+
+    from core.memory.rag.vector_worker import create_app
+
+    with (
+        patch("core.memory.rag.singleton.list_vector_store_init_failed_animas", return_value=["rin", "sora"]),
+        patch("core.memory.rag.singleton.is_global_vector_store_init_failed", return_value=True),
+        TestClient(create_app()) as client,
+    ):
+        status = client.get("/status").json()
+
+    assert status["init_failed_animas"] == ["rin", "sora"]
+    assert status["global_init_failed"] is True
+
+
 def test_vector_worker_quick_check_endpoint(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
 

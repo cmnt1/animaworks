@@ -279,6 +279,22 @@ def get_vector_store(anima_name: str | None = None) -> VectorStore | None:
                         anima_name or "shared",
                         exc,
                     )
+                    if anima_name is not None:
+                        try:
+                            from core.memory.rag.repair import record_chroma_error
+
+                            record_chroma_error(
+                                anima_name=anima_name,
+                                collection=f"{anima_name}_knowledge",
+                                error=f"store_init_failed: {exc}",
+                                source="vector_store_init",
+                            )
+                        except Exception:
+                            logger.debug(
+                                "Failed to persist vector-store init failure signal for %s",
+                                anima_name,
+                                exc_info=True,
+                            )
                     return None
     return _vector_stores.get(anima_name)
 
@@ -293,6 +309,12 @@ def is_vector_store_init_failed(anima_name: str | None) -> bool:
     """Return whether native vector-store initialization failed for one owner."""
     with _lock:
         return anima_name in _vector_store_init_failed
+
+
+def list_vector_store_init_failed_animas() -> list[str]:
+    """Return sorted per-anima vector-store initialization failure latches."""
+    with _lock:
+        return sorted(name for name in _vector_store_init_failed if name is not None)
 
 
 def clear_vector_store_init_failed(anima_name: str) -> bool:

@@ -48,6 +48,7 @@ def test_classifies_native_and_sqlite_corruption():
     assert classify_corruption_error("hnsw index panic: corrupt graph") == "hnsw_corruption"
     assert classify_corruption_error("Failed to get segments for collection") == "chroma_transient"
     assert classify_corruption_error("no such table: embeddings_queue") == "chroma_corruption"
+    assert classify_corruption_error("store_init_failed: no such table: tenants") == "store_init_failed"
 
 
 def test_does_not_classify_operational_noise():
@@ -133,6 +134,64 @@ def test_single_shot_corruption_triggers_immediate_repair(data_dir: Path):
     )
 
     service.request_repair.assert_called_once()
+
+
+def test_store_init_failed_is_single_shot_and_not_refuted_by_quick_check(data_dir: Path):
+    service = RAGRepairService(enabled=True, threshold=99, window_minutes=5, cooldown_minutes=60)
+    service.request_repair = MagicMock(return_value=True)  # type: ignore[method-assign]
+    service._sqlite_quick_check_ok = MagicMock(return_value=True)  # type: ignore[method-assign]
+
+    assert "store_init_failed" in SINGLE_SHOT_REASONS
+    assert (
+        service.record_chroma_error(
+            anima_name="sora",
+            collection="sora_knowledge",
+            error="store_init_failed: no such table: tenants",
+            source="vector_store_init",
+        )
+        is True
+    )
+
+    service.request_repair.assert_called_once_with(
+        "sora",
+        reason="store_init_failed",
+        collection="sora_knowledge",
+        source="vector_store_init",
+        include_shared=True,
+        background=True,
+    )
+    service._sqlite_quick_check_ok.assert_not_called()
+    state = json.loads(
+        (data_dir / "animas" / "sora" / "state" / "rag_repair.json").read_text(encoding="utf-8")
+    )
+    assert state["recent_signals"][-1]["reason"] == "store_init_failed"
+
+
+def test_store_init_failed_signal_is_throttled_for_ten_minutes(data_dir: Path):
+    service = RAGRepairService(enabled=True, threshold=1, window_minutes=5, cooldown_minutes=60)
+    service.request_repair = MagicMock(return_value=True)  # type: ignore[method-assign]
+    service._has_active_repair_state = MagicMock(return_value=False)  # type: ignore[method-assign]
+
+    first = service.record_chroma_error(
+        anima_name="sora",
+        collection="sora_knowledge",
+        error="store_init_failed: schema missing",
+        source="vector_store_init",
+    )
+    second = service.record_chroma_error(
+        anima_name="sora",
+        collection="sora_knowledge",
+        error="store_init_failed: schema still missing",
+        source="vector_store_init",
+    )
+
+    assert first is True
+    assert second is False
+    assert service.request_repair.call_count == 1
+    state = json.loads(
+        (data_dir / "animas" / "sora" / "state" / "rag_repair.json").read_text(encoding="utf-8")
+    )
+    assert [signal["reason"] for signal in state["recent_signals"]] == ["store_init_failed"]
 
 
 def test_chroma_corruption_suppressed_when_sqlite_quick_check_ok(data_dir: Path):
@@ -906,6 +965,57 @@ def test_repair_skips_rebuild_when_sqlite_healthy_after_stop(data_dir: Path, mon
     assert state["consecutive_failures"] == 0
 
 
+def test_store_init_failed_skips_rebuild_only_when_chroma_store_opens(
+    data_dir: Path,
+    monkeypatch,
+):
+    anima_dir = data_dir / "animas" / "sora"
+    (anima_dir / "state").mkdir(parents=True)
+    (anima_dir / "vectordb").mkdir()
+
+    rebuild = MagicMock()
+    monkeypatch.setattr("core.memory.rag.repair_service.atomic_rebuild_vectordb", rebuild)
+    worker_reset = MagicMock(return_value=True)
+    monkeypatch.setattr("core.memory.rag.repair_rebuild.reset_worker_vector_store", worker_reset)
+    reset = MagicMock()
+    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", reset)
+
+    service = RAGRepairService(enabled=True)
+    service._sqlite_quick_check_ok = MagicMock(return_value=True)  # type: ignore[method-assign]
+    service._chroma_store_opens = MagicMock(return_value=True)  # type: ignore[method-assign]
+
+    result = service.repair_anima("sora", reason="store_init_failed", source="test")
+
+    assert result.ok
+    assert result.stage == "skipped_healthy"
+    rebuild.assert_not_called()
+    service._chroma_store_opens.assert_called_once_with("sora")
+    worker_reset.assert_called_once_with("sora")
+    reset.assert_called_once_with("sora")
+
+
+def test_store_init_failed_rebuilds_when_chroma_store_cannot_open(
+    data_dir: Path,
+    monkeypatch,
+):
+    anima_dir = data_dir / "animas" / "sora"
+    (anima_dir / "state").mkdir(parents=True)
+    (anima_dir / "vectordb").mkdir()
+
+    rebuild = MagicMock(return_value=(3, None))
+    monkeypatch.setattr("core.memory.rag.repair_service.atomic_rebuild_vectordb", rebuild)
+    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda anima_name=None: None)
+
+    service = RAGRepairService(enabled=True)
+    service._sqlite_quick_check_ok = MagicMock(return_value=True)  # type: ignore[method-assign]
+    service._chroma_store_opens = MagicMock(return_value=False)  # type: ignore[method-assign]
+
+    result = service.repair_anima("sora", reason="store_init_failed", source="test")
+
+    assert result.ok
+    rebuild.assert_called_once_with("sora", include_shared=False)
+
+
 def test_repair_rebuilds_when_sqlite_check_fails_before_rebuild(data_dir: Path, monkeypatch):
     """A failing/ambiguous re-check must not suppress a real repair."""
     anima_dir = data_dir / "animas" / "sora"
@@ -1052,6 +1162,33 @@ def test_record_chroma_error_suppressed_during_active_repair(data_dir: Path):
     service.request_repair.assert_not_called()
     state = json.loads((anima_dir / "state" / "rag_repair.json").read_text(encoding="utf-8"))
     assert not state.get("recent_signals")
+
+
+def test_store_init_failed_is_persisted_during_active_repair(data_dir: Path):
+    anima_dir = data_dir / "animas" / "sora"
+    (anima_dir / "state").mkdir(parents=True)
+    (anima_dir / "state" / "rag_repair.json").write_text(
+        json.dumps({"status": "repairing"}),
+        encoding="utf-8",
+    )
+
+    service = RAGRepairService(enabled=True, threshold=2, window_minutes=5, cooldown_minutes=60)
+    service.request_repair = MagicMock(return_value=True)  # type: ignore[method-assign]
+
+    assert (
+        service.record_chroma_error(
+            anima_name="sora",
+            collection="sora_knowledge",
+            error="store_init_failed: no such table: tenants",
+            source="vector_store_init",
+        )
+        is False
+    )
+
+    service.request_repair.assert_not_called()
+    state = json.loads((anima_dir / "state" / "rag_repair.json").read_text(encoding="utf-8"))
+    assert state["status"] == "repairing"
+    assert state["recent_signals"][-1]["reason"] == "store_init_failed"
 
 
 def test_repair_missing_anima_fails(data_dir: Path):
