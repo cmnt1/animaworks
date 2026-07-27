@@ -60,6 +60,8 @@ def test_collect_rag_repair_status_reports_all_animas_and_no_signal(tmp_path: Pa
             "last_success_at": iso(now - timedelta(minutes=5)),
             "consecutive_failures": 0,
             "recent_signals_24h": 1,
+            "last_signal_reason": None,
+            "store_init_failed_24h": False,
             "stale_repairing": False,
         },
         {
@@ -68,6 +70,8 @@ def test_collect_rag_repair_status_reports_all_animas_and_no_signal(tmp_path: Pa
             "last_success_at": None,
             "consecutive_failures": 0,
             "recent_signals_24h": 0,
+            "last_signal_reason": None,
+            "store_init_failed_24h": False,
             "stale_repairing": False,
         },
     ]
@@ -97,6 +101,7 @@ def test_rag_repair_status_healthy_table_returns_success(
     output = capsys.readouterr().out
     assert "healthy" in output
     assert "SIGNALS (24H)" in output
+    assert "LAST SIGNAL" in output
 
 
 def test_rag_repair_status_json_exits_one_for_stale_repair(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -156,3 +161,57 @@ def test_rag_repair_status_table_exits_one_for_multiple_recent_signals(
     assert "SIGNALS (24H)" in output
     assert "noisy" in output
     assert "2" in output
+
+
+@pytest.mark.parametrize("status", ["requested", "failed"])
+def test_rag_repair_status_exits_one_for_unhealthy_status(
+    status: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    animas_dir = tmp_path / "animas"
+    _write_state(
+        animas_dir,
+        "sora",
+        {
+            "status": status,
+            "recent_signals": [],
+        },
+    )
+    monkeypatch.setattr("core.paths.get_animas_dir", lambda: animas_dir)
+
+    with pytest.raises(SystemExit) as exc:
+        rag_repair_status_command(argparse.Namespace(json_output=True))
+
+    assert exc.value.code == 1
+
+
+def test_rag_repair_status_exits_one_for_recent_store_init_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    now = utc_now()
+    animas_dir = tmp_path / "animas"
+    _write_state(
+        animas_dir,
+        "sora",
+        {
+            "status": "healthy",
+            "recent_signals": [
+                {
+                    "at": iso(now - timedelta(hours=1)),
+                    "reason": "store_init_failed",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr("core.paths.get_animas_dir", lambda: animas_dir)
+
+    with pytest.raises(SystemExit) as exc:
+        rag_repair_status_command(argparse.Namespace(json_output=False))
+
+    assert exc.value.code == 1
+    output = capsys.readouterr().out
+    assert "LAST SIGNAL" in output
+    assert "store_init_failed" in output

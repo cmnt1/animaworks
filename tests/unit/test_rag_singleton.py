@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import threading
 import time
@@ -88,6 +89,30 @@ class TestGetVectorStore:
             get_vector_store()
 
         mock_cls.assert_called_once()
+
+    def test_per_anima_init_failure_persists_repair_signal(self, data_dir):
+        """A per-anima latch must remain observable outside the worker process."""
+        anima_state = data_dir / "animas" / "sora" / "state"
+        anima_state.mkdir(parents=True)
+
+        from core.memory.rag.repair import _reset_for_testing as reset_repair
+        from core.memory.rag.singleton import (
+            get_vector_store,
+            list_vector_store_init_failed_animas,
+        )
+
+        reset_repair()
+        with patch(
+            "core.memory.rag.store.create_chroma_vector_store",
+            side_effect=RuntimeError("no such table: tenants"),
+        ):
+            assert get_vector_store("sora") is None
+
+        state = json.loads((anima_state / "rag_repair.json").read_text(encoding="utf-8"))
+        assert state["status"] == "requested"
+        assert state["reason"] == "store_init_failed"
+        assert state["recent_signals"][-1]["reason"] == "store_init_failed"
+        assert list_vector_store_init_failed_animas() == ["sora"]
 
 
 # ── get_embedding_model ──────────────────────────────────────────
