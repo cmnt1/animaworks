@@ -1199,6 +1199,13 @@ class CodexSDKExecutor(BaseExecutor):
                 if root == Path("/") or root.is_relative_to(data_dir) or data_dir.is_relative_to(root):
                     continue
                 shell_filesystem_rules[str(root)] = "write"
+                # Codex remounts a writable root's ``.git`` read-only as a
+                # built-in safeguard, which breaks worktree/commit operations
+                # for repository workspaces.  An explicit more-specific rule
+                # overrides that protection.
+                git_dir = root / ".git"
+                if git_dir.is_dir():
+                    shell_filesystem_rules[str(git_dir)] = "write"
 
             # The MCP server needs the legacy writable roots for constrained
             # memory and messaging tools.  It uses a separate profile and
@@ -1212,6 +1219,9 @@ class CodexSDKExecutor(BaseExecutor):
                 mcp_filesystem_rules[str(self._anima_dir.resolve())] = "write"
                 for root in explicit_write_roots:
                     mcp_filesystem_rules[str(root)] = "write"
+                    git_dir = root / ".git"
+                    if git_dir.is_dir():
+                        mcp_filesystem_rules[str(git_dir)] = "write"
 
             for root in denied_roots:
                 resolved_root = str(Path(root).resolve())
