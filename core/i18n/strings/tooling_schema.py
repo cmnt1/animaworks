@@ -242,8 +242,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "One-line task summary",
     },
     "schema.delegate_task.workspace": {
-        "ja": "ワークスペースエイリアスまたはalias#hash。部下がこのディレクトリで作業する",
-        "en": "Workspace alias or alias#hash. The subordinate will work in this directory",
+        "ja": "登録aliasを使う（例: aischreiber）。ディレクトリ名表記(AI-Schreiber)も正規化で受理される。ワークスペースエイリアスまたはalias#hash。部下がこのディレクトリで作業する",
+        "en": "Use a registered alias (e.g. aischreiber). Directory-style names (AI-Schreiber) are also accepted via normalization. Workspace alias or alias#hash. The subordinate will work in this directory",
     },
     "schema.disable_subordinate.desc": {
         "ja": "配下のAnimaを休止させる（プロセス停止 + 自動復帰防止）。自分の配下であれば操作可能。",

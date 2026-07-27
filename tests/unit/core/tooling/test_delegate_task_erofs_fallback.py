@@ -273,3 +273,104 @@ class TestDelegateTaskErofsFallback:
         assert own_task["status"] == "delegated"
         pending = list((tmp_path / "animas" / "natsume" / "state" / "pending").glob("*.json"))
         assert len(pending) == 1
+
+    def test_read_timeout_retries_then_succeeds(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """httpx ReadTimeout on first attempt is retried once and can succeed."""
+        handler = _make_handler(tmp_path)
+        _setup_target(tmp_path)
+        monkeypatch.setenv("ANIMAWORKS_SERVER_URL", "http://server.test:18500")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"ok": True}
+
+        with (
+            patch.object(handler, "_check_subordinate", return_value=None),
+            patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
+            patch(
+                "core.memory.task_queue.TaskQueueManager.add_task",
+                side_effect=OSError(30, "Read-only file system"),
+            ),
+            patch(
+                "httpx.post",
+                side_effect=[httpx.ReadTimeout("timed out"), mock_resp],
+            ) as mock_post,
+            patch("time.sleep") as mock_sleep,
+        ):
+            result = handler.handle("delegate_task", _delegate_args())
+
+        assert not result.strip().startswith("{")
+        assert "natsume" in result
+        assert mock_post.call_count == 2
+        mock_sleep.assert_called_once_with(2.0)
+        timeout_arg = mock_post.call_args_list[0][1]["timeout"]
+        assert isinstance(timeout_arg, httpx.Timeout)
+        assert timeout_arg.connect == 5.0
+        assert timeout_arg.read == 60.0
+
+    def test_memory_write_error_triggers_fallback(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """MemoryWriteError from pending atomic write must trigger server fallback."""
+        from core.exceptions import MemoryWriteError
+
+        handler = _make_handler(tmp_path)
+        _setup_target(tmp_path)
+        monkeypatch.setenv("ANIMAWORKS_SERVER_URL", "http://server.test:18500")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"ok": True}
+
+        sub_entry = MagicMock()
+        sub_entry.task_id = "subid0000001"
+
+        with (
+            patch.object(handler, "_check_subordinate", return_value=None),
+            patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
+            patch(
+                "core.memory.task_queue.TaskQueueManager.add_task",
+                return_value=sub_entry,
+            ),
+            patch(
+                "core.memory.task_queue.TaskQueueManager.add_delegated_task",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "core.tooling.handler_delegation.atomic_write_text",
+                side_effect=MemoryWriteError("Atomic write failed: Read-only file system"),
+            ),
+            patch("httpx.post", return_value=mock_resp) as mock_post,
+            patch(
+                "core.tooling.handler_delegation._record_taskboard_delegation"
+            ) as mock_tb,
+        ):
+            result = handler.handle("delegate_task", _delegate_args())
+
+        assert not result.strip().startswith("{")
+        assert "natsume" in result
+        mock_post.assert_called_once()
+        payload = mock_post.call_args[1]["json"]
+        assert payload["persist_sub"] is False
+        assert payload["persist_tracking"] is False
+        assert payload["persist_pending"] is True
+        mock_tb.assert_not_called()
+
+    def test_mcp_env_includes_server_url(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Codex MCP env must inject ANIMAWORKS_SERVER_URL (contract for EROFS fallback)."""
+        from core.execution.codex_sdk import CodexSDKExecutor
+        from core.schemas import ModelConfig
+
+        anima_dir = tmp_path / "animas" / "rin"
+        anima_dir.mkdir(parents=True)
+        model = ModelConfig(model="codex/gpt-5.6-sol", api_key="sk-test")
+        executor = CodexSDKExecutor(model_config=model, anima_dir=anima_dir)
+        monkeypatch.delenv("ANIMAWORKS_SERVER_URL", raising=False)
+        env = executor._build_mcp_env()
+        assert "ANIMAWORKS_SERVER_URL" in env
+        assert env["ANIMAWORKS_SERVER_URL"].startswith("http")
+        assert "18500" in env["ANIMAWORKS_SERVER_URL"]

@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from core.exceptions import TaskPersistenceError
+from core.exceptions import MemoryWriteError, TaskPersistenceError
 from core.i18n import t
 from core.memory._io import atomic_write_text
 from core.tooling.handler_base import _error_result, build_outgoing_origin_chain
@@ -111,26 +111,41 @@ class DelegationMixin(OrgHelpersMixin):
             "persist_tracking": persist_tracking,
             "persist_pending": persist_pending,
         }
-        try:
-            resp = httpx.post(
-                f"{_server_base_url()}/api/internal/delegate-task",
-                json=payload,
-                timeout=30.0,
-            )
-        except Exception as exc:
-            return f"server unreachable: {exc}"
+        timeout = httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0)
+        url = f"{_server_base_url()}/api/internal/delegate-task"
+        last_err: str | None = None
+        for attempt in range(2):
+            try:
+                resp = httpx.post(url, json=payload, timeout=timeout)
+            except Exception as exc:
+                last_err = f"server unreachable: {exc}"
+            else:
+                if resp.status_code >= 400:
+                    detail = _extract_detail(resp)
+                    last_err = f"HTTP {resp.status_code}: {detail}"
+                else:
+                    try:
+                        data = resp.json()
+                    except Exception:
+                        data = {}
+                    if isinstance(data, dict) and data.get("ok"):
+                        if attempt > 0:
+                            logger.info(
+                                "delegate_task server fallback succeeded on retry "
+                                "(attempt=%s) delegator=%s target=%s",
+                                attempt + 1,
+                                self._anima_name,
+                                target_name,
+                            )
+                        return None
+                    last_err = f"unexpected response: {data!r}"
 
-        if resp.status_code >= 400:
-            detail = _extract_detail(resp)
-            return f"HTTP {resp.status_code}: {detail}"
+            if attempt == 0:
+                import time
 
-        try:
-            data = resp.json()
-        except Exception:
-            data = {}
-        if not isinstance(data, dict) or not data.get("ok"):
-            return f"unexpected response: {data!r}"
-        return None
+                time.sleep(2.0)
+
+        return last_err
 
     def _handle_delegate_task(self, args: dict[str, Any]) -> str:
         """Delegate a task to a direct subordinate."""
@@ -149,7 +164,11 @@ class DelegationMixin(OrgHelpersMixin):
 
                 resolved_wd = str(resolve_workspace(workspace_raw))
             except ValueError as e:
-                return _error_result("InvalidArguments", f"Workspace resolution failed: {e}")
+                return _error_result(
+                    "InvalidArguments",
+                    f"Workspace resolution failed: {e}",
+                    suggestion=str(e),
+                )
 
         if not target_name:
             return _error_result("InvalidArguments", "name is required")
@@ -241,10 +260,11 @@ class DelegationMixin(OrgHelpersMixin):
             persisted_pending = True
         except ValueError as e:
             return _error_result("InvalidArguments", str(e))
-        except (OSError, TaskPersistenceError) as e:
+        except (OSError, TaskPersistenceError, MemoryWriteError) as e:
             # sandbox EROFS/EACCES: fall back to server internal API.
             # TaskQueueManager wraps OSError in TaskPersistenceError (not an
-            # OSError subclass), so both must be caught here.
+            # OSError subclass); atomic_write_text wraps OSError in
+            # MemoryWriteError — both must be caught here.
             fb_err = self._persist_delegation_via_server(
                 target_name=target_name,
                 instruction=instruction,

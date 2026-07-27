@@ -185,8 +185,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Workspace '{alias}' not found. Check the alias, hash, or absolute path.",
     },
     "workspace.not_found_with_suggestions": {
-        "ja": "ワークスペース '{alias}' が見つかりません。もしかして: {suggestions}",
-        "en": "Workspace '{alias}' not found. Did you mean: {suggestions}",
+        "ja": "ワークスペース '{alias}' が見つかりません。もしかして: {suggestions}。登録済みワークスペース: {available}",
+        "en": "Workspace '{alias}' not found. Did you mean: {suggestions}. Available workspaces: {available}",
     },
     "workspace.not_found_with_list": {
         "ja": "ワークスペース '{alias}' が見つかりません。登録済みワークスペース: {available}",

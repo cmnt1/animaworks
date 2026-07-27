@@ -1235,6 +1235,9 @@ class AnimaWorksConfig(BaseModel):
     machine: MachineConfig = MachineConfig()
     local_llm: LocalLLMConfig = LocalLLMConfig()
     workspaces: dict[str, str] = {}  # alias → absolute path
+    # company slug → GitHub account name (e.g. {"fs": "animaworks-dev-team"})
+    # Used by executors to inject GH_TOKEN and pin push identity.
+    github_identities: dict[str, str] = Field(default_factory=dict)
     # channel name → company name for open-channel company attribution migration
     channel_company_defaults: dict[str, str] = Field(default_factory=dict)
     activity_level: int = Field(
