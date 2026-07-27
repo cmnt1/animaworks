@@ -41,9 +41,10 @@ ESCALATION_TARGET = os.environ.get("PR_DISPATCH_ESCALATION", "sakura")
 ALERT_EVERY = 5
 
 # Stale unaddressed-review warning thresholds (hours).
-STALE_WARN_HOURS = float(os.environ.get("PR_STALE_WARN_HOURS", "2"))
-STALE_REWARN_HOURS = float(os.environ.get("PR_STALE_REWARN_HOURS", "4"))
-STALE_ESCALATE_HOURS = float(os.environ.get("PR_STALE_ESCALATE_HOURS", "8"))
+# 2026-07-27 taka指示: 15分警告 → 以後15分毎に再警告(30/45分) → 60分でsakuraエスカレーション
+STALE_WARN_HOURS = float(os.environ.get("PR_STALE_WARN_HOURS", "0.25"))
+STALE_REWARN_HOURS = float(os.environ.get("PR_STALE_REWARN_HOURS", "0.25"))
+STALE_ESCALATE_HOURS = float(os.environ.get("PR_STALE_ESCALATE_HOURS", "1"))
 
 # When set (1/true/yes), send() logs instead of delivering DMs.
 DRY_RUN = os.environ.get("PR_DISPATCH_DRY_RUN", "").strip().lower() in ("1", "true", "yes")
@@ -211,9 +212,9 @@ def determine_warning_stage(
     now: datetime,
     last_warned: datetime | None,
     escalated_at: datetime | None,
-    warn_hours: float = 2.0,
-    rewarn_hours: float = 4.0,
-    escalate_hours: float = 8.0,
+    warn_hours: float = 0.25,
+    rewarn_hours: float = 0.25,
+    escalate_hours: float = 1.0,
 ) -> str:
     """Return warning stage: none | warn | rewarn | escalate.
 
@@ -239,8 +240,9 @@ def determine_warning_stage(
     return dispatcher_stage
 
 
-def _hours_elapsed(created_at: datetime, now: datetime) -> int:
-    return max(0, int((now - created_at).total_seconds() // 3600))
+def _elapsed_label(created_at: datetime, now: datetime) -> str:
+    minutes = max(0, int((now - created_at).total_seconds() // 60))
+    return f"{minutes // 60}h{minutes % 60:02d}m" if minutes >= 60 else f"{minutes}m"
 
 
 def _format_stale_line(
@@ -256,21 +258,21 @@ def _format_stale_line(
     sha: str = "",
     failed_checks: list[str] | None = None,
 ) -> str:
-    hours = _hours_elapsed(created_at, now)
+    elapsed = _elapsed_label(created_at, now)
     if kind == "review":
         return (
             f"- PR #{number} が CHANGES_REQUESTED のまま未解除です"
-            f"（@{author}/経過{hours}h）\n  {url}"
+            f"（@{author}/経過{elapsed}）\n  {url}"
         )
     if kind == "ci":
         checks = ", ".join((failed_checks or [])[:6]) or "?"
         sha8 = (sha or "")[:8] or "?"
         return (
             f"- PR #{number} のCI失敗が未修正のまま放置されています"
-            f"（{sha8}・{checks}・経過{hours}h）\n  {url}"
+            f"（{sha8}・{checks}・経過{elapsed}）\n  {url}"
         )
     snippet = (body or "").replace("\n", " ").strip()[:140]
-    return f"- {repo}#{number} (経過{hours}h) @{author}: {snippet}\n  {url}"
+    return f"- {repo}#{number} (経過{elapsed}) @{author}: {snippet}\n  {url}"
 
 
 def _stale_message(lines: list[str], *, kind: str = "comment") -> str:

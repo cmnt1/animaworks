@@ -284,6 +284,7 @@ def test_ci_suppressed_when_check_ci_already_notified(mod):
             escalated_at=None,
             warn_hours=0.0,
             rewarn_hours=4.0,
+            escalate_hours=8.0,
         )
         == "none"
     )
@@ -355,6 +356,9 @@ def test_stage_none_just_before_warn(mod):
             now=now,
             last_warned=None,
             escalated_at=None,
+            warn_hours=2.0,
+            rewarn_hours=4.0,
+            escalate_hours=8.0,
         )
         == "none"
     )
@@ -368,6 +372,9 @@ def test_stage_warn_just_after_warn_threshold(mod):
             now=now,
             last_warned=None,
             escalated_at=None,
+            warn_hours=2.0,
+            rewarn_hours=4.0,
+            escalate_hours=8.0,
         )
         == "warn"
     )
@@ -382,6 +389,9 @@ def test_stage_rewarn_suppressed_within_interval(mod):
             now=now,
             last_warned=last,
             escalated_at=None,
+            warn_hours=2.0,
+            rewarn_hours=4.0,
+            escalate_hours=8.0,
         )
         == "none"
     )
@@ -396,6 +406,9 @@ def test_stage_rewarn_after_interval(mod):
             now=now,
             last_warned=last,
             escalated_at=None,
+            warn_hours=2.0,
+            rewarn_hours=4.0,
+            escalate_hours=8.0,
         )
         == "rewarn"
     )
@@ -410,6 +423,9 @@ def test_stage_escalate_first_time(mod):
             now=now,
             last_warned=last,
             escalated_at=None,
+            warn_hours=2.0,
+            rewarn_hours=4.0,
+            escalate_hours=8.0,
         )
         == "escalate"
     )
@@ -426,6 +442,9 @@ def test_stage_escalate_once_suppressed(mod):
             now=now,
             last_warned=last_warned,
             escalated_at=escalated_at,
+            warn_hours=2.0,
+            rewarn_hours=4.0,
+            escalate_hours=8.0,
         )
         == "none"
     )
@@ -441,6 +460,9 @@ def test_stage_escalate_again_after_interval(mod):
             now=now,
             last_warned=last_warned,
             escalated_at=escalated_at,
+            warn_hours=2.0,
+            rewarn_hours=4.0,
+            escalate_hours=8.0,
         )
         == "escalate"
     )
@@ -574,3 +596,42 @@ def test_check_unaddressed_dry_run_with_mocks(mod, monkeypatch, tmp_path):
     log_text = mod.LOG_FILE.read_text(encoding="utf-8")
     # review is old enough for warn; CI suppressed by last_warned seed
     assert "DRY_RUN send" in log_text or "stale warn" in log_text or state["stale_watch"]
+
+
+# ---------------------------------------------------------------------------
+# determine_warning_stage — new default ladder (15m warn / 15m rewarn / 60m escalate)
+# ---------------------------------------------------------------------------
+
+
+def test_default_ladder_15_30_45_60(mod):
+    """taka指示(2026-07-27): 15分警告→30/45分再警告→60分エスカレーション。"""
+    kw = dict(item_created_at=T0, escalated_at=None)
+    assert mod.determine_warning_stage(now=T0 + timedelta(minutes=14), last_warned=None, **kw) == "none"
+    assert mod.determine_warning_stage(now=T0 + timedelta(minutes=15), last_warned=None, **kw) == "warn"
+    assert (
+        mod.determine_warning_stage(
+            now=T0 + timedelta(minutes=30), last_warned=T0 + timedelta(minutes=15), **kw
+        )
+        == "rewarn"
+    )
+    assert (
+        mod.determine_warning_stage(
+            now=T0 + timedelta(minutes=45), last_warned=T0 + timedelta(minutes=30), **kw
+        )
+        == "rewarn"
+    )
+    assert (
+        mod.determine_warning_stage(
+            item_created_at=T0,
+            now=T0 + timedelta(minutes=60),
+            last_warned=T0 + timedelta(minutes=45),
+            escalated_at=None,
+        )
+        == "escalate"
+    )
+
+
+def test_default_env_ladder_constants(mod):
+    assert mod.STALE_WARN_HOURS == 0.25
+    assert mod.STALE_REWARN_HOURS == 0.25
+    assert mod.STALE_ESCALATE_HOURS == 1.0
