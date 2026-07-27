@@ -36,6 +36,11 @@ logger = logging.getLogger(__name__)
 
 TTL_DAYS = 7  # mirrored on :class:`InteractionRouter`
 
+
+def _is_approval_category(category: str) -> bool:
+    """Return True if *category* is approval-related (blocker-close instruction applies)."""
+    return "approval" in (category or "").lower()
+
 # ── Data models ───────────────────────────────────────────
 
 
@@ -312,6 +317,9 @@ class InteractionRouter:
         ]
         if comment:
             lines.append(f"comment: {comment}")
+        if _is_approval_category(req.category):
+            lines.append("")
+            lines.append(t("interactive.blocker_close_instruction"))
         content = "\n".join(lines)
 
         from core.messenger import Messenger
@@ -325,6 +333,72 @@ class InteractionRouter:
             intent="question",
         )
         return result
+
+    async def list_resolved_for_anima(
+        self,
+        anima_name: str,
+        *,
+        within_hours: int = 48,
+    ) -> list[tuple[InteractionRequest, InteractionResult]]:
+        """Return resolved interactions for *anima_name* within the time window.
+
+        Scans the interaction map for ``resolved=True`` entries matching the
+        anima, with ``resolved_at`` not older than *within_hours*.  The map is
+        already bounded by :meth:`prune` (default 7 days), so a full scan is fine.
+
+        Args:
+            anima_name: Target Anima name.
+            within_hours: Lookback window in hours (inclusive of the boundary).
+
+        Returns:
+            List of ``(request, result)`` pairs, newest ``resolved_at`` first.
+        """
+        async with self._lock:
+            data = self._read_all_entries()
+            entries: dict[str, Any] = data.get("entries", {})
+            now = datetime.now(UTC)
+            window_s = max(float(within_hours), 0.0) * 3600.0
+            out: list[tuple[InteractionRequest, InteractionResult]] = []
+
+            for _cid, entry in entries.items():
+                if not isinstance(entry, dict) or not entry.get("resolved"):
+                    continue
+                req_blob = entry.get("request")
+                result_blob = entry.get("result")
+                if not isinstance(req_blob, dict) or not isinstance(result_blob, dict):
+                    continue
+                try:
+                    req = self._parse_request(req_blob)
+                    result = InteractionResult.model_validate(result_blob)
+                except Exception:
+                    logger.debug(
+                        "Skipping unparseable resolved interaction entry",
+                        exc_info=True,
+                    )
+                    continue
+                if req.anima_name != anima_name:
+                    continue
+                ra = result.resolved_at
+                if ra.tzinfo is None:
+                    ra_utc = ra.replace(tzinfo=UTC)
+                else:
+                    ra_utc = ra.astimezone(UTC)
+                age_s = (now - ra_utc).total_seconds()
+                if age_s < 0:
+                    age_s = 0.0
+                if age_s > window_s:
+                    continue
+                out.append((req, result))
+
+            out.sort(
+                key=lambda pair: (
+                    pair[1].resolved_at.replace(tzinfo=UTC)
+                    if pair[1].resolved_at.tzinfo is None
+                    else pair[1].resolved_at.astimezone(UTC)
+                ),
+                reverse=True,
+            )
+            return out
 
     async def update_message_ts(self, callback_id: str, platform: str, ts: str) -> None:
         """Attach a platform message id (e.g. Slack ``ts``) for button invalidation."""
@@ -525,6 +599,32 @@ def update_interaction_message_ts_resilient(callback_id: str, platform: str, ts:
         )
 
 
+def list_resolved_for_anima_resilient(
+    anima_name: str,
+    *,
+    within_hours: int = 48,
+) -> list[tuple[InteractionRequest, InteractionResult]]:
+    """List recently resolved interactions for *anima_name* (sync, never raises).
+
+    Intended for prompt generation: any failure returns an empty list so the
+    system prompt build is never aborted by interaction-map I/O errors.
+    """
+    try:
+        return _run_coro_sync(
+            get_interaction_router().list_resolved_for_anima(
+                anima_name,
+                within_hours=within_hours,
+            )
+        )
+    except Exception:
+        logger.warning(
+            "list_resolved_for_anima_resilient failed for anima=%s; returning empty",
+            anima_name,
+            exc_info=True,
+        )
+        return []
+
+
 def build_text_fallback(interaction: InteractionRequest, *, web_base_url: str = "") -> str:
     """Build text-based fallback for channels without native button support."""
     lines = ["\n▶ " + t("interactive.fallback_header")]
@@ -549,5 +649,6 @@ __all__ = [
     "build_text_fallback",
     "create_interaction_resilient",
     "get_interaction_router",
+    "list_resolved_for_anima_resilient",
     "update_interaction_message_ts_resilient",
 ]

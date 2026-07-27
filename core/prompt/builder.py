@@ -247,6 +247,85 @@ def _build_group2(
     return out
 
 
+def _format_resolved_at_local(resolved_at: Any) -> str:
+    """Format a resolved_at datetime in the app timezone (e.g. ``2026-07-27 16:59 JST``)."""
+    from datetime import datetime as _dt
+
+    from core.time_utils import get_app_timezone
+
+    if not isinstance(resolved_at, _dt):
+        try:
+            resolved_at = _dt.fromisoformat(str(resolved_at))
+        except (TypeError, ValueError):
+            return str(resolved_at)
+    tz = get_app_timezone()
+    if resolved_at.tzinfo is None:
+        local_dt = resolved_at.replace(tzinfo=tz)
+    else:
+        local_dt = resolved_at.astimezone(tz)
+    tz_label = local_dt.tzname() or tz.key
+    return f"{local_dt.strftime('%Y-%m-%d %H:%M')} {tz_label}"
+
+
+def _build_resolved_approvals_section(anima_name: str, _ss: dict[str, str]) -> str:
+    """Build the resolved-approvals reminder block, or empty string if none / disabled."""
+    from core.config import load_config
+    from core.notification.interactive import (
+        _is_approval_category,
+        list_resolved_for_anima_resilient,
+    )
+
+    try:
+        hours = int(load_config().heartbeat.resolved_interaction_reminder_hours)
+    except Exception:
+        logger.debug("Failed to read resolved_interaction_reminder_hours; using 48", exc_info=True)
+        hours = 48
+    if hours <= 0:
+        return ""
+
+    pairs = list_resolved_for_anima_resilient(anima_name, within_hours=hours)
+    approval_pairs = [(req, res) for req, res in pairs if _is_approval_category(req.category)]
+    if not approval_pairs:
+        return ""
+
+    header_tmpl = _ss.get(
+        "resolved_approvals_header",
+        "## Resolved Approvals (last {hours}h)",
+    )
+    intro = _ss.get(
+        "resolved_approvals_intro",
+        "The following approval requests have already been answered by a human. "
+        "If current_state.md still has pending-approval blockers for these, close them. "
+        "Do not re-notify (call_human) about already-answered matters.",
+    )
+    item_tmpl = _ss.get(
+        "resolved_approvals_item",
+        '- callback_id: {callback_id} — "{decision}" by {actor} ({source}, {resolved_at})',
+    )
+    try:
+        header = header_tmpl.format(hours=hours)
+    except (KeyError, ValueError):
+        header = header_tmpl
+
+    lines = [header, "", intro, ""]
+    for req, res in approval_pairs:
+        try:
+            item = item_tmpl.format(
+                callback_id=res.callback_id,
+                decision=res.decision,
+                actor=res.actor,
+                source=res.source,
+                resolved_at=_format_resolved_at_local(res.resolved_at),
+            )
+        except (KeyError, ValueError):
+            item = (
+                f"- callback_id: {res.callback_id} — \"{res.decision}\" "
+                f"by {res.actor} ({res.source}, {_format_resolved_at_local(res.resolved_at)})"
+            )
+        lines.append(item)
+    return "\n".join(lines)
+
+
 def _build_group3(
     pd: Path,
     memory: MemoryManager,
@@ -296,6 +375,14 @@ def _build_group3(
         state_content = f"{_ss.get('current_state_header', '## Current State')}\n\n{state}"
     if state_content:
         _add(state_content, "current_state", 2, "elastic")
+
+    # Deterministic safety net: remind anima to close resolved approval blockers
+    try:
+        resolved_block = _build_resolved_approvals_section(pd.name, _ss)
+        if resolved_block:
+            _add(resolved_block, "resolved_approvals", 2, "elastic")
+    except Exception:
+        logger.debug("Failed to inject resolved approvals section", exc_info=True)
 
     try:
         resolutions = memory.read_resolutions(days=7)

@@ -901,6 +901,14 @@ class HeartbeatConfig(BaseModel):
         le=120.0,
         description="Minutes after last stream end to trigger idle auto-compaction",
     )
+    resolved_interaction_reminder_hours: int = Field(
+        default=48,
+        ge=0,
+        description=(
+            "Hours to inject resolved-approval reminders into the system prompt; "
+            "0 disables the reminder section"
+        ),
+    )
 
 
 class CronGuardConfig(BaseModel):

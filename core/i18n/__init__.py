@@ -70,6 +70,20 @@ _STRINGS.update(
             "ja": "または: {url}",
             "en": "Or: {url}",
         },
+        "interactive.blocker_close_instruction": {
+            "ja": (
+                "この承認依頼は回答済みです。"
+                "state/current_state.md に本件の承認待ち・human blockerエントリが残っている場合は、"
+                "この決定を反映してエントリを閉じるか更新してください。"
+                "本件について人間への再通知(call_human)を行わないでください。"
+            ),
+            "en": (
+                "This approval request has been answered. "
+                "If state/current_state.md still has a pending-approval or human blocker "
+                "entry for this matter, update or close it to reflect this decision. "
+                "Do not re-notify humans (call_human) about this resolved matter."
+            ),
+        },
     }
 )
 
