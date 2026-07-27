@@ -257,7 +257,7 @@ def _escape_toml_string(value: str) -> str:
     return "".join(result)
 
 
-def _git_metadata_write_paths(root: Path) -> list[Path]:
+def _git_metadata_write_paths(root: Path, *, forbidden_ancestors: list[Path] | None = None) -> list[Path]:
     """Return git metadata directories that must be writable for *root*.
 
     Codex remounts a writable root's ``.git`` read-only as a built-in
@@ -270,8 +270,18 @@ def _git_metadata_write_paths(root: Path) -> list[Path]:
       - ``root/.git`` is a file (linked worktree) → resolve the ``gitdir:``
         pointer and its ``commondir`` so the primary repository's metadata
         is writable too.
+
+    ``forbidden_ancestors`` guards the resolved-pointer path: ``root/.git``
+    file contents are writable by the sandboxed model itself, so a
+    hand-crafted ``gitdir:`` must never widen access into runtime or
+    explicitly denied trees.
     """
     git_path = root / ".git"
+    forbidden = [p.resolve() for p in (forbidden_ancestors or [])]
+
+    def _allowed(path: Path) -> bool:
+        return not any(path == anc or path.is_relative_to(anc) for anc in forbidden)
+
     results: list[Path] = []
     try:
         if git_path.is_dir():
@@ -283,7 +293,7 @@ def _git_metadata_write_paths(root: Path) -> list[Path]:
                 if not gitdir.is_absolute():
                     gitdir = root / gitdir
                 gitdir = gitdir.resolve()
-                if gitdir.is_dir():
+                if gitdir.is_dir() and _allowed(gitdir):
                     results.append(gitdir)
                     commondir_file = gitdir / "commondir"
                     if commondir_file.is_file():
@@ -291,7 +301,7 @@ def _git_metadata_write_paths(root: Path) -> list[Path]:
                         if not common.is_absolute():
                             common = gitdir / common
                         common = common.resolve()
-                        if common.is_dir():
+                        if common.is_dir() and _allowed(common):
                             results.append(common)
     except OSError:
         return []
@@ -1241,11 +1251,12 @@ class CodexSDKExecutor(BaseExecutor):
                 ":tmpdir": "write",
                 ":slash_tmp": "write",
             }
+            git_forbidden = [data_dir, *(Path(r) for r in denied_roots)]
             for root in explicit_write_roots:
                 if root == Path("/") or root.is_relative_to(data_dir) or data_dir.is_relative_to(root):
                     continue
                 shell_filesystem_rules[str(root)] = "write"
-                for git_path in _git_metadata_write_paths(root):
+                for git_path in _git_metadata_write_paths(root, forbidden_ancestors=git_forbidden):
                     shell_filesystem_rules[str(git_path)] = "write"
 
             # The MCP server needs the legacy writable roots for constrained
@@ -1260,7 +1271,7 @@ class CodexSDKExecutor(BaseExecutor):
                 mcp_filesystem_rules[str(self._anima_dir.resolve())] = "write"
                 for root in explicit_write_roots:
                     mcp_filesystem_rules[str(root)] = "write"
-                    for git_path in _git_metadata_write_paths(root):
+                    for git_path in _git_metadata_write_paths(root, forbidden_ancestors=git_forbidden):
                         mcp_filesystem_rules[str(git_path)] = "write"
 
             for root in denied_roots:
@@ -1327,8 +1338,11 @@ class CodexSDKExecutor(BaseExecutor):
                     writable_roots.append(cwd_str)
             # Standalone entries for git metadata escape Codex's built-in
             # read-only remount of each writable root's ``.git``.
+            data_dir = self._anima_dir.resolve().parent.parent
             for root_str in list(writable_roots):
-                for git_path in _git_metadata_write_paths(Path(root_str)):
+                for git_path in _git_metadata_write_paths(
+                    Path(root_str), forbidden_ancestors=[data_dir]
+                ):
                     if str(git_path) not in writable_roots:
                         writable_roots.append(str(git_path))
             roots_list = ", ".join(f'"{esc(r)}"' for r in writable_roots)
