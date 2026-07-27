@@ -233,6 +233,9 @@ class GeminiCLIExecutor(BaseExecutor):
         api_key = self._resolve_api_key()
         if api_key:
             env["GEMINI_API_KEY"] = api_key
+        from core.execution.github_identity import resolve_github_token_env
+
+        env.update(resolve_github_token_env(self._anima_dir))
         return env
 
     def _resolve_api_key(self) -> str | None:

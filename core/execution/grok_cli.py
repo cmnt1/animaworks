@@ -593,6 +593,9 @@ class GrokCLIExecutor(BaseExecutor):
         cmd = self._build_command()
         sandbox_enabled = self._write_sandbox_config()
         env = os.environ.copy()
+        from core.execution.github_identity import resolve_github_token_env
+
+        env.update(resolve_github_token_env(self._anima_dir))
         if sandbox_enabled:
             env["GROK_SANDBOX"] = "animaworks"
         else:

@@ -262,6 +262,37 @@ def _default_home_dir() -> str:
     return default_home_dir()
 
 
+def _resolve_animaworks_server_url() -> str:
+    """Resolve ANIMAWORKS_SERVER_URL for MCP subprocess env.
+
+    Preference order:
+      1. Existing process env
+      2. system.worker.gateway_url / system.gateway host+port from config
+      3. http://localhost:18500
+    """
+    existing = os.environ.get("ANIMAWORKS_SERVER_URL", "").strip()
+    if existing:
+        return existing.rstrip("/")
+    try:
+        from core.config.models import load_config
+
+        cfg = load_config()
+        gw_url = (cfg.system.worker.gateway_url or "").strip()
+        if gw_url:
+            return gw_url.rstrip("/")
+        host = (cfg.system.gateway.host or "localhost").strip()
+        if host in ("0.0.0.0", "::", "[::]"):
+            host = "localhost"
+        port = cfg.system.gateway.port or 18500
+        return f"http://{host}:{port}"
+    except Exception:
+        logger.debug(
+            "Failed to resolve server URL from config; using default",
+            exc_info=True,
+        )
+        return "http://localhost:18500"
+
+
 def _default_path_env() -> str:
     """Return a non-empty PATH fallback for Codex child processes."""
     path_parts: list[str] = []
@@ -1016,6 +1047,9 @@ class CodexSDKExecutor(BaseExecutor):
                 env["AZURE_OPENAI_API_KEY"] = api_key
             elif os.environ.get("AZURE_OPENAI_API_KEY"):
                 env["AZURE_OPENAI_API_KEY"] = os.environ["AZURE_OPENAI_API_KEY"]
+            from core.execution.github_identity import resolve_github_token_env
+
+            env.update(resolve_github_token_env(self._anima_dir))
             return env
 
         if api_key and _is_openai_api_key(api_key):
@@ -1032,6 +1066,9 @@ class CodexSDKExecutor(BaseExecutor):
         base = self._model_config.api_base_url
         if base and ":11434" not in base:
             env["OPENAI_BASE_URL"] = base
+        from core.execution.github_identity import resolve_github_token_env
+
+        env.update(resolve_github_token_env(self._anima_dir))
         return env
 
     def _build_mcp_env(self) -> dict[str, str]:
@@ -1044,6 +1081,7 @@ class CodexSDKExecutor(BaseExecutor):
             "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
             "PYTHONPATH": str(PROJECT_DIR),
             "PATH": _default_path_env(),
+            "ANIMAWORKS_SERVER_URL": _resolve_animaworks_server_url(),
         }
         ctx = current_runtime_session()
         if ctx is not None:
