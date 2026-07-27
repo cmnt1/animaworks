@@ -257,6 +257,52 @@ def _escape_toml_string(value: str) -> str:
     return "".join(result)
 
 
+def _git_metadata_write_paths(root: Path) -> list[Path]:
+    """Return git metadata directories that must be writable for *root*.
+
+    Codex remounts a writable root's ``.git`` read-only as a built-in
+    safeguard, which breaks ``git worktree``/``commit`` operations for
+    repository workspaces.  Explicit more-specific rules (or standalone
+    writable roots) override that protection.
+
+    Handles both layouts:
+      - ``root/.git`` is a directory → the repository's own metadata.
+      - ``root/.git`` is a file (linked worktree) → resolve the ``gitdir:``
+        pointer and its ``commondir`` so the primary repository's metadata
+        is writable too.
+    """
+    git_path = root / ".git"
+    results: list[Path] = []
+    try:
+        if git_path.is_dir():
+            results.append(git_path.resolve())
+        elif git_path.is_file():
+            content = git_path.read_text(encoding="utf-8", errors="replace").strip()
+            if content.startswith("gitdir:"):
+                gitdir = Path(content[len("gitdir:") :].strip())
+                if not gitdir.is_absolute():
+                    gitdir = root / gitdir
+                gitdir = gitdir.resolve()
+                if gitdir.is_dir():
+                    results.append(gitdir)
+                    commondir_file = gitdir / "commondir"
+                    if commondir_file.is_file():
+                        common = Path(commondir_file.read_text(encoding="utf-8").strip())
+                        if not common.is_absolute():
+                            common = gitdir / common
+                        common = common.resolve()
+                        if common.is_dir():
+                            results.append(common)
+    except OSError:
+        return []
+    # Drop paths already inside a returned ancestor to keep rules minimal.
+    deduped: list[Path] = []
+    for path in results:
+        if not any(path == kept or path.is_relative_to(kept) for kept in deduped):
+            deduped.append(path)
+    return deduped
+
+
 def _default_home_dir() -> str:
     """Return a stable HOME value for Codex child processes across platforms."""
     return default_home_dir()
@@ -1199,13 +1245,8 @@ class CodexSDKExecutor(BaseExecutor):
                 if root == Path("/") or root.is_relative_to(data_dir) or data_dir.is_relative_to(root):
                     continue
                 shell_filesystem_rules[str(root)] = "write"
-                # Codex remounts a writable root's ``.git`` read-only as a
-                # built-in safeguard, which breaks worktree/commit operations
-                # for repository workspaces.  An explicit more-specific rule
-                # overrides that protection.
-                git_dir = root / ".git"
-                if git_dir.is_dir():
-                    shell_filesystem_rules[str(git_dir)] = "write"
+                for git_path in _git_metadata_write_paths(root):
+                    shell_filesystem_rules[str(git_path)] = "write"
 
             # The MCP server needs the legacy writable roots for constrained
             # memory and messaging tools.  It uses a separate profile and
@@ -1219,9 +1260,8 @@ class CodexSDKExecutor(BaseExecutor):
                 mcp_filesystem_rules[str(self._anima_dir.resolve())] = "write"
                 for root in explicit_write_roots:
                     mcp_filesystem_rules[str(root)] = "write"
-                    git_dir = root / ".git"
-                    if git_dir.is_dir():
-                        mcp_filesystem_rules[str(git_dir)] = "write"
+                    for git_path in _git_metadata_write_paths(root):
+                        mcp_filesystem_rules[str(git_path)] = "write"
 
             for root in denied_roots:
                 resolved_root = str(Path(root).resolve())
@@ -1285,6 +1325,12 @@ class CodexSDKExecutor(BaseExecutor):
                 cwd_str = str(self._task_cwd)
                 if cwd_str not in writable_roots:
                     writable_roots.append(cwd_str)
+            # Standalone entries for git metadata escape Codex's built-in
+            # read-only remount of each writable root's ``.git``.
+            for root_str in list(writable_roots):
+                for git_path in _git_metadata_write_paths(Path(root_str)):
+                    if str(git_path) not in writable_roots:
+                        writable_roots.append(str(git_path))
             roots_list = ", ".join(f'"{esc(r)}"' for r in writable_roots)
             sandbox_lines = (
                 'sandbox_mode = "workspace-write"\n'
