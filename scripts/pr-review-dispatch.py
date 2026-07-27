@@ -197,12 +197,17 @@ def ci_stale_item_id(repo: str, number: int, sha: str) -> str:
     return f"ci:{repo}#{number}:{sha}"
 
 
+# 2026-07-27 taka指示: CANCELLED(60分timeout等)/TIMED_OUTも「CI NG」として扱う。
+# #3854のFeature Tests CANCELLEDがFAILURE限定判定のため警告ゼロで放置された。
+FAILING_CI_CONCLUSIONS = frozenset({"FAILURE", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE"})
+
+
 def failed_check_names(status_check_rollup: list[dict[str, Any]] | None) -> list[str]:
-    """Return names of checks whose conclusion is FAILURE."""
+    """Return names of checks whose conclusion counts as failing (see FAILING_CI_CONCLUSIONS)."""
     return [
         str(check.get("name") or "?")
         for check in (status_check_rollup or [])
-        if str(check.get("conclusion") or "").upper() == "FAILURE"
+        if str(check.get("conclusion") or "").upper() in FAILING_CI_CONCLUSIONS
     ]
 
 
@@ -817,11 +822,7 @@ def check_ci(state: dict) -> None:
             )
         )
         for pr in prs:
-            failed = [
-                check.get("name", "?")
-                for check in pr.get("statusCheckRollup") or []
-                if str(check.get("conclusion", "")).upper() == "FAILURE"
-            ]
+            failed = failed_check_names(pr.get("statusCheckRollup"))
             if not failed:
                 continue
             key = f"{repo}#{pr['number']}_{pr['headRefOid'][:8]}"

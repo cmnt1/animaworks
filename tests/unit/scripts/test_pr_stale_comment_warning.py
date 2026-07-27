@@ -240,6 +240,19 @@ def test_failed_check_names_filters_failure_only(mod):
     assert mod.failed_check_names(None) == []
 
 
+def test_failed_check_names_includes_cancelled_and_timed_out(mod):
+    """CANCELLED (e.g. 60-min job timeout) and TIMED_OUT count as failing CI (2026-07-27)."""
+    rollup = [
+        {"name": "unit", "conclusion": "SUCCESS"},
+        {"name": "feature", "conclusion": "CANCELLED"},
+        {"name": "e2e", "conclusion": "TIMED_OUT"},
+        {"name": "setup", "conclusion": "STARTUP_FAILURE"},
+        {"name": "skipped", "conclusion": "SKIPPED"},
+    ]
+    assert mod.failed_check_names(rollup) == ["feature", "e2e", "setup"]
+    assert {"FAILURE", "CANCELLED", "TIMED_OUT"} <= mod.FAILING_CI_CONCLUSIONS
+
+
 def test_ci_rewarn_stage_after_interval(mod):
     """Same SHA failing continuously: rewarn after REWARN hours from last_warned."""
     first_seen = T0
