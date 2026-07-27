@@ -505,7 +505,7 @@ def _build_group4(
             "For supervisor management, vault, channel management, "
             "background tasks, and external tools (Slack, Chatwork, Gmail, GitHub, etc.):\n"
             "```\nBash: animaworks-tool <tool> <subcommand> [args]\n```\n"
-            'Use read_memory_file(path="common_skills/machine-tool/SKILL.md") to see available commands.',
+            "Run `animaworks-tool --help` to see available commands.",
             "tool_guides",
             1,
         )

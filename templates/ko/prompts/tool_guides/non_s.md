@@ -48,4 +48,4 @@
 ```
 Bash: animaworks-tool <tool> <subcommand> [args]
 ```
-사용 가능한 CLI 명령어는 `read_memory_file(path="common_skills/machine-tool/SKILL.md")`로 확인.
+사용 가능한 CLI 명령어는 `animaworks-tool --help`로 확인.

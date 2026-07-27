@@ -48,4 +48,4 @@ For supervisor management, vault, channel management, background tasks, and all 
 ```
 Bash: animaworks-tool <tool> <subcommand> [args]
 ```
-Use `read_memory_file(path="common_skills/machine-tool/SKILL.md")` to see available CLI commands.
+Run `animaworks-tool --help` to see available CLI commands.

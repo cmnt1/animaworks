@@ -27,14 +27,14 @@ Targets: `call_human`, `send_message`, `post_channel`, `write_memory_file`, `gma
 ### Skills
 - **create_skill**: Create a new skill directory structure
 - Before creating a new skill, read `read_memory_file(path="common_skills/skill-creator/SKILL.md")`
-- For existing skill docs and CLI manuals, use **read_memory_file** with the path from the catalog (e.g. `read_memory_file(path="common_skills/machine-tool/SKILL.md")`)
+- For existing skill docs and CLI manuals, use **read_memory_file** with the path from the catalog (e.g. `animaworks-tool --help`)
 
 ### Other Tools via CLI
 For supervisor management, vault, channel management, background tasks, and external tools (Slack, Chatwork, Gmail, GitHub, etc.), use:
 ```
 Bash: animaworks-tool <tool> <subcommand> [args]
 ```
-Use `read_memory_file(path="common_skills/machine-tool/SKILL.md")` or `Bash: animaworks-tool --help` to see available CLI commands.
+Run `animaworks-tool --help` to see available CLI commands.
 
 ### Background Command Output
 Long-running commands like machine_run write output to `state/cmd_output/`.
