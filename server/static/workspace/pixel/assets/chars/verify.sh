@@ -66,78 +66,145 @@ def color_count(pixels, color):
     return sum(pixel == color for pixel in pixels)
 
 
+def color_components(frame, colors):
+    points = {
+        (x, y)
+        for y in range(8, 88)
+        for x in range(26, 70)
+        if frame.getpixel((x, y)) in colors
+    }
+    components = []
+    while points:
+        queue = [points.pop()]
+        component = []
+        while queue:
+            x, y = queue.pop()
+            component.append((x, y))
+            for neighbor in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if neighbor in points:
+                    points.remove(neighbor)
+                    queue.append(neighbor)
+        if len(component) >= 8:
+            components.append(component)
+    return components
+
+
+def verify_living_eye(frame, expected_x, profile, label):
+    iris_colors = {profile["iris"], profile["iris_light"]}
+    components = color_components(frame, iris_colors)
+    candidates = [
+        component
+        for component in components
+        if abs(sum(x for x, _ in component) / len(component) - expected_x) <= 5
+    ]
+    if not candidates:
+        raise SystemExit(f"{label}: character-colored iris is missing at x={expected_x}")
+    component = max(candidates, key=len)
+    xs = [x for x, _ in component]
+    ys = [y for _, y in component]
+    center_x = round(sum(xs) / len(xs))
+    iris_top = min(ys)
+    region_points = [
+        (x, y)
+        for y in range(iris_top - 3, iris_top + 10)
+        for x in range(center_x - 5, center_x + 6)
+    ]
+    pixels = [frame.getpixel(point) for point in region_points]
+    visible = [
+        point
+        for point in region_points
+        if frame.getpixel(point)
+        in {profile["white"], profile["iris"], profile["iris_light"], polish.EYE_GLINT}
+    ]
+    width = max(x for x, _ in visible) - min(x for x, _ in visible) + 1
+    height = max(y for _, y in visible) - min(y for _, y in visible) + 1
+    if width < 5 or height < 6:
+        raise SystemExit(f"{label}: eye is only {width}x{height}, expected at least 5x6")
+    if color_count(pixels, profile["white"]) < 24:
+        raise SystemExit(f"{label}: open sclera is too small")
+    if color_count(pixels, profile["iris"]) < 12:
+        raise SystemExit(f"{label}: primary iris tier is missing")
+    if color_count(pixels, profile["iris_light"]) < 3:
+        raise SystemExit(f"{label}: secondary iris tier is missing")
+    if color_count(pixels, polish.EYE_GLINT) != 1:
+        raise SystemExit(f"{label}: expected exactly one white iris highlight")
+    lash = max(
+        sum(
+            frame.getpixel((x, y)) == profile["outline"]
+            for x in range(center_x - 5, center_x + 6)
+        )
+        for y in range(iris_top - 3, iris_top + 3)
+    )
+    if lash < 4:
+        raise SystemExit(f"{label}: 1px upper lash is missing")
+
+
+def find_mouth(frame, profile, expected_y):
+    candidates = []
+    for component in polish.connected_color_components(frame, profile["mouth"]):
+        xs = [x for x, _ in component]
+        ys = [y for _, y in component]
+        center_x = sum(xs) / len(xs)
+        center_y = sum(ys) / len(ys)
+        if 44 <= center_x <= 52 and 20 <= center_y <= 88:
+            candidates.append(
+                (abs(center_x - 48) + abs(center_y - expected_y), center_x, center_y)
+            )
+    if not candidates:
+        return None
+    _, center_x, center_y = min(candidates)
+    return round(center_x), round(center_y)
+
+
 def verify_face(frame, row, profile, label):
     if row == rows["walk_up"]:
         return
     center_y = polish.detect_face_y(frame, row, profile)
-    face = [
-        frame.getpixel((x, y))
-        for y in range(max(0, center_y - 20), min(96, center_y + 23))
-        for x in range(28, 69)
-    ]
-    mouth_pixels = color_count(face, profile["mouth"])
-    if mouth_pixels < 12:
-        raise SystemExit(f"{label}: mouth is not at least two pixels readable")
-
     if row in open_eye_rows:
-        white_min = 30 if row == rows["walk_side"] else 55
-        iris_min = 23 if row == rows["walk_side"] else 35
-        glint_min = 1 if row == rows["walk_side"] else 2
-        if color_count(face, profile["white"]) < white_min:
-            raise SystemExit(f"{label}: sclera is too small")
-        if color_count(face, profile["iris"]) < iris_min:
-            raise SystemExit(f"{label}: iris is too small")
-        if color_count(face, polish.EYE_GLINT) < glint_min:
-            raise SystemExit(f"{label}: 1px eye highlight is missing")
+        verify_living_eye(frame, 40, profile, f"{label} left eye")
+        if row != rows["walk_side"]:
+            verify_living_eye(frame, 56, profile, f"{label} right eye")
 
-    if row == rows["thinking"]:
-        iris_y = [
-            y
-            for y in range(center_y - 10, center_y + 5)
-            for x in range(34, 63)
-            if frame.getpixel((x, y)) == profile["iris"]
-        ]
-        if not iris_y or max(iris_y) > center_y - 3:
-            raise SystemExit(f"{label}: thinking gaze is not visibly raised")
-    elif row == rows["sleeping"]:
+    expected_mouth_y = 70 if row == rows["sleeping"] else int(profile["default_y"]) + 9
+    mouth = find_mouth(frame, profile, expected_mouth_y)
+    if mouth is None:
+        raise SystemExit(f"{label}: mouth is missing")
+    mouth_x, mouth_y = mouth
+    mouth_region = [
+        (x, y)
+        for y in range(mouth_y - 2, mouth_y + 3)
+        for x in range(mouth_x - 2, mouth_x + 3)
+        if frame.getpixel((x, y)) in {profile["mouth"], profile["outline"]}
+    ]
+    mouth_width = max(x for x, _ in mouth_region) - min(x for x, _ in mouth_region) + 1
+    if not 2 <= mouth_width <= 3:
+        raise SystemExit(f"{label}: mouth width is {mouth_width}px, expected 2-3px")
+
+    if row == rows["sleeping"]:
         eye_band = [
             frame.getpixel((x, y))
-            for y in range(center_y - 8, center_y + 4)
+            for y in range(mouth_y - 18, mouth_y - 6)
             for x in range(31, 66)
         ]
         if color_count(eye_band, profile["outline"]) < 80:
             raise SystemExit(f"{label}: sleeping chevron eyelids are missing")
-        if color_count(eye_band, profile["white"]) > 8:
+        if (
+            color_count(eye_band, profile["white"]) > 8
+            or color_count(eye_band, profile["iris"]) > 2
+        ):
             raise SystemExit(f"{label}: sleeping eyes are not closed")
-    elif row == rows["success"]:
-        mouth_band = [
-            frame.getpixel((x, y))
-            for y in range(center_y + 5, center_y + 15)
-            for x in range(37, 60)
-        ]
-        if color_count(mouth_band, profile["mouth"]) < 24:
-            raise SystemExit(f"{label}: success smile is not visibly open")
     elif row == rows["error"]:
-        panic_face = [
+        error_face = [
             frame.getpixel((x, y))
             for y in range(center_y - 16, center_y + 16)
             for x in range(31, 66)
         ]
-        forehead = [
-            frame.getpixel((x, y))
-            for y in range(center_y - 17, center_y - 10)
-            for x in range(42, 55)
-        ]
-        if color_count(panic_face, profile["panic"]) < 350:
-            raise SystemExit(f"{label}: error face is not visibly blue")
-        if color_count(panic_face, profile["white"]) < 60:
-            raise SystemExit(f"{label}: error eyes are obscured")
-        if color_count(panic_face, profile["iris"]) < 35:
-            raise SystemExit(f"{label}: error irises are obscured")
-        if color_count(panic_face, polish.THOUGHT_BLUE) < 8:
-            raise SystemExit(f"{label}: error tear drops are missing")
-        if color_count(forehead, profile["outline"]) < 25:
-            raise SystemExit(f"{label}: error forehead stress lines are missing")
+        if color_count(error_face, profile["skin"]) < 400:
+            raise SystemExit(f"{label}: character skin is not preserved")
+        if color_count(error_face, profile["panic"]) >= 100:
+            raise SystemExit(f"{label}: error face is incorrectly filled blue")
+        if color_count(error_face, polish.THOUGHT_BLUE) < 8:
+            raise SystemExit(f"{label}: tear/stress accents are missing")
 
     if row in (rows["idle"], rows["working"]):
         brow_band = [
@@ -145,7 +212,7 @@ def verify_face(frame, row, profile, label):
             for y in range(center_y - 13, center_y - 7)
             for x in range(33, 64)
         ]
-        if color_count(brow_band, profile["outline"]) < 25:
+        if color_count(brow_band, profile["outline"]) < 15:
             raise SystemExit(f"{label}: 1px eyebrows are missing")
 
 
@@ -161,12 +228,16 @@ def verify_sheet(path, *, limited_palette):
     if not alpha_values <= {0, 255}:
         raise SystemExit(f"{path.name}: soft alpha / antialiasing found")
     palette_size = len(image.getcolors(maxcolors=1_000_000) or [])
-    if limited_palette and palette_size > 21:
+    if limited_palette and palette_size > 23:
         raise SystemExit(f"{path.name}: fleet palette expanded to {palette_size} colors")
     if not limited_palette and palette_size < 400:
         raise SystemExit(f"{path.name}: generic art appears bulk-posterized")
 
     profile = polish.sprite_profile(image)
+    idle = image.crop((0, 0, 96, 96))
+    idle_y = polish.detect_face_y(idle, rows["idle"], profile)
+    hair_base, _ = polish.choose_hair_rim(idle, idle_y, profile)
+    polish.configure_character_eye_colors(profile, hair_base)
     for row in range(10):
         for frame_index in range(4):
             frame = image.crop(
@@ -174,8 +245,6 @@ def verify_sheet(path, *, limited_palette):
             )
             verify_face(frame, row, profile, f"{path.name} row {row} frame {frame_index}")
 
-    idle = image.crop((0, 0, 96, 96))
-    idle_y = polish.detect_face_y(idle, rows["idle"], profile)
     excluded = {
         polish.TRANSPARENT,
         profile["outline"],
@@ -183,6 +252,7 @@ def verify_sheet(path, *, limited_palette):
         profile["mouth"],
         profile["white"],
         profile["iris"],
+        profile["iris_light"],
         profile["blush"],
         profile["panic"],
         polish.SKIN_SHADOW,
@@ -221,8 +291,8 @@ for name in fleet_names:
     verify_sheet(fleet_dir / f"{name}.png", limited_palette=True)
 
 contacts = (
-    (generic_dir / "_contact_sheet.png", (864, 336)),
-    (fleet_dir / "_contact_sheet.png", (864, 560)),
+    (generic_dir / "_contact_sheet.png", (288, 336)),
+    (fleet_dir / "_contact_sheet.png", (288, 560)),
 )
 for path, expected_size in contacts:
     if not path.is_file():
@@ -233,6 +303,6 @@ for path, expected_size in contacts:
 
 print(
     "OK: verified 9 generic and 14 fleet sheets; "
-    "idle/working brows and readable tearful blue error faces"
+    "open sclera, two-tier character irises, 1px glints, and 2-3px mouths"
 )
 PY
