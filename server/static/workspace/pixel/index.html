@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="aw-base-path" content="__AW_BASE__">
+  <title>AnimaWorks Pixel Workspace</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23251d2d'/%3E%3Crect x='3' y='3' width='10' height='10' fill='%23ef7f8f'/%3E%3Crect x='5' y='6' width='2' height='2' fill='%23fff8e8'/%3E%3Crect x='9' y='6' width='2' height='2' fill='%23fff8e8'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: ui-monospace, "SFMono-Regular", "Noto Sans JP", monospace;
+      background: #17131d;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: auto; }
+    body {
+      display: grid;
+      place-items: center;
+      min-width: 1280px;
+      min-height: 832px;
+      background: #17131d;
+    }
+    #stage {
+      position: relative;
+      width: 1280px;
+      height: 832px;
+      flex: none;
+      overflow: hidden;
+      box-shadow:
+        inset 0 0 0 4px #392318,
+        inset 0 0 0 7px #b47b47,
+        0 0 0 4px #160d09,
+        0 0 0 8px #6b4328,
+        0 0 0 11px #1b100b,
+        0 16px 64px #000b;
+    }
+    #workspace {
+      display: block;
+      width: 1280px;
+      height: 832px;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      background: #d7b98b;
+    }
+    header {
+      position: absolute;
+      z-index: 10;
+      top: 6px;
+      left: auto;
+      right: 12px;
+      width: 52px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 2px 3px;
+      color: #fff0c8;
+      background: #20191d;
+      border: 1px solid #0f0b0d;
+      outline: 0;
+      box-shadow: 2px 2px 0 #0b0809aa;
+      pointer-events: none;
+    }
+    .title {
+      display: none;
+      font-weight: 900;
+      letter-spacing: .1em;
+      text-shadow: 2px 2px #25140d;
+      image-rendering: pixelated;
+    }
+    .status { display: flex; align-items: center; gap: 3px; font-size: 10px; }
+    #dayNight {
+      display: inline-flex;
+      align-items: center;
+      gap: 0;
+      width: 26px;
+      height: 16px;
+      justify-content: center;
+      border: 0;
+      padding: 0;
+      color: inherit;
+      background: #2b2227;
+      box-shadow: none;
+      font: inherit;
+      cursor: pointer;
+      pointer-events: auto;
+    }
+    #dayNightIcon {
+      width: 14px;
+      height: 14px;
+      image-rendering: pixelated;
+    }
+    #dayNightLabel { display: none; }
+    #dateBoard {
+      display: none;
+      position: relative;
+      min-width: 92px;
+      padding: 5px 11px 6px;
+      color: #4a2e1e;
+      background:
+        linear-gradient(90deg, #d4a567 0 3px, #f1d9a8 3px calc(100% - 3px), #c79358 calc(100% - 3px));
+      border: 2px solid #422719;
+      box-shadow: inset 0 0 0 1px #b98049, 2px 2px 0 #24140e;
+      text-align: center;
+      line-height: 1;
+    }
+    #dateText {
+      font-weight: 900;
+      letter-spacing: .04em;
+      text-shadow: 1px 1px #fff5ce;
+    }
+    #demoMark {
+      position: absolute;
+      right: 2px;
+      bottom: 1px;
+      height: 5px;
+      color: #765039;
+      font: 700 4px/4px monospace;
+      letter-spacing: 0;
+    }
+    #connectionDot {
+      width: 7px;
+      height: 7px;
+      border-radius: 0;
+      background: #d86262;
+      border: 1px solid #2b1a12;
+      box-shadow: none;
+    }
+    #connectionDot.online { background: #78d391; }
+    #connectionDot.mock { background: #e8bd65; }
+    #loading {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: #fff8e8;
+      background: #17131d;
+      font-size: 18px;
+      z-index: 20;
+    }
+    #loading.hidden { display: none; }
+  </style>
+  <script>
+    window.__pixelErrors = [];
+    window.addEventListener("error", (event) => {
+      window.__pixelErrors.push(String(event.error?.stack || event.message || event.type));
+    });
+    window.addEventListener("unhandledrejection", (event) => {
+      window.__pixelErrors.push(String(event.reason?.stack || event.reason || "Unhandled rejection"));
+    });
+  </script>
+</head>
+<body>
+  <main id="stage">
+    <canvas id="workspace" width="1280" height="832" aria-label="AnimaWorks pixel office"></canvas>
+    <header>
+      <span class="title">ANIMAWORKS // PIXEL OFFICE</span>
+      <span class="status">
+        <button id="dayNight" type="button" aria-label="昼夜を切り替える">
+          <img id="dayNightIcon" src="assets/fx/sun.png" alt="">
+          <span id="dayNightLabel">昼</span>
+        </button>
+        <span id="dateBoard">
+          <span id="dateText">--/--(-)</span>
+          <small id="demoMark"></small>
+        </span>
+        <span id="connectionDot" aria-hidden="true"></span>
+      </span>
+    </header>
+    <div id="loading">PIXEL OFFICE を準備中…</div>
+  </main>
+  <script type="module" src="modules/app.js"></script>
+</body>
+</html>

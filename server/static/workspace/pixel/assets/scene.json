@@ -1,0 +1,59 @@
+{
+  "_comment": "Generic layout template. The browser generates the full scene from /api/animas.",
+  "canvas": {
+    "w": 1280,
+    "h": 832,
+    "tile": 32
+  },
+  "layout": {
+    "company_area": {
+      "top": 4,
+      "bottom": 22,
+      "left": 1,
+      "right": 39,
+      "desk_columns": 4,
+      "desk_column_step": 4,
+      "desk_row_step": 6
+    },
+    "human_gate": {
+      "zone": [17, 8, 21, 14],
+      "desk": [19, 11],
+      "label": "HUMAN"
+    },
+    "path": {
+      "zone": [18, 14, 21, 22],
+      "cross_company_via": [19, 13]
+    },
+    "entrance": {
+      "zone": [16, 22, 23, 25],
+      "door": [19, 24]
+    },
+    "prop_types": [
+      "meeting_table",
+      "rug",
+      "sofa",
+      "side_table",
+      "plant",
+      "whiteboard",
+      "bookshelf",
+      "coffee",
+      "door",
+      "welcome_mat",
+      "parcel_stack",
+      "trolley",
+      "sign_stand",
+      "cat",
+      "cat_bed"
+    ]
+  },
+  "lighting": {
+    "day": {
+      "tint": "#fff6e8",
+      "window": "city_day"
+    },
+    "night": {
+      "tint": "#2a2a4a",
+      "window": "city_night"
+    }
+  }
+}
