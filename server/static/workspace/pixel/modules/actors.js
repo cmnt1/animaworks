@@ -16,6 +16,8 @@ const STATE_MAP = Object.freeze({
 const COMPACT_STATUS_COLORS = Object.freeze({
   idle: "#c98d9c",
   working: "#72b98e",
+  success: "#e7bd5f",
+  walking: "#6fa4bc",
 });
 
 const NAME_TEXT_OPTIONS = Object.freeze({
@@ -73,10 +75,11 @@ function buildBackgroundBlocked(scene) {
     scene.background_mode?.slots?.human,
   ].filter(Boolean);
   for (const slot of slots) {
-    const left = Math.floor((slot.x - 56) / scene.canvas.tile);
-    const right = Math.floor((slot.x + 56) / scene.canvas.tile);
-    const top = Math.floor((slot.y + 8) / scene.canvas.tile);
-    const bottom = Math.floor((slot.y + 70) / scene.canvas.tile);
+    const deskRect = slot.desk_rect || [slot.x - 56, slot.y + 8, 112, 72];
+    const left = Math.floor(deskRect[0] / scene.canvas.tile);
+    const right = Math.floor((deskRect[0] + deskRect[2] - 1) / scene.canvas.tile);
+    const top = Math.floor(deskRect[1] / scene.canvas.tile);
+    const bottom = Math.floor((deskRect[1] + deskRect[3] - 1) / scene.canvas.tile);
     for (let x = left; x <= right; x += 1) {
       for (let y = top; y <= bottom; y += 1) blocked.add(tileKey(x, y));
     }
@@ -108,6 +111,7 @@ function waypointCandidates(scene) {
 function findPath(start, goal, blocked, scene) {
   const width = scene.canvas.w / scene.canvas.tile;
   const height = scene.canvas.h / scene.canvas.tile;
+  const minimumY = scene.background_mode?.enabled ? 6 : 4;
   const startKey = tileKey(...start);
   const goalKey = tileKey(...goal);
   const open = [{ point: start, f: 0 }];
@@ -138,7 +142,7 @@ function findPath(start, goal, blocked, scene) {
     ];
     for (const next of neighbors) {
       const [x, y] = next;
-      if (x < 1 || x >= width - 1 || y < 4 || y >= height - 1) continue;
+      if (x < 1 || x >= width - 1 || y < minimumY || y >= height - 1) continue;
       const key = tileKey(x, y);
       if (key !== goalKey && blocked.has(key)) continue;
       const score = (gScore.get(currentKey) ?? Infinity) + 1;
@@ -164,10 +168,19 @@ export class Actor {
     this.sprite = new SpriteSheet(definition);
     this.assets = assets;
     this.backgroundSlot = metadata.backgroundSlot || null;
+    // The 96px seated rows retain 12px of lower-body composition below the
+    // logical feet anchor. Keep the logical baseline at the desk's back edge,
+    // then compensate only while rendering the seated pose.
+    this.seatedRenderOffsetY = metadata.seatedRenderOffsetY || 0;
     const deskRect = this.backgroundSlot?.desk_rect;
+    const frontRect = this.backgroundSlot?.occlusion_rect;
     this.backgroundNamePosition = this.backgroundSlot ? {
       x: deskRect ? deskRect[0] + deskRect[2] / 2 : this.backgroundSlot.x,
-      y: deskRect ? deskRect[1] + deskRect[3] - 11 : this.backgroundSlot.y + 80,
+      y: deskRect && deskRect[1] < 300 && frontRect
+        ? frontRect[1] + 4
+        : deskRect
+          ? deskRect[1] + deskRect[3] - 15
+          : this.backgroundSlot.y + 65,
     } : null;
     this.state = "idle";
     this.bubble = "";
@@ -198,13 +211,17 @@ export class Actor {
   }
 
   walkToSeat(speed = 120) {
-    return this.walkPixels([{ ...this.seatPosition }], speed);
+    return this.walkPixels([{
+      x: this.seatPosition.x,
+      y: this.seatPosition.y + this.seatedRenderOffsetY,
+    }], speed);
   }
 
   walkPixels(points, speed = 120) {
     if (this.motion?.resolve) this.motion.resolve(false);
     if (!points.length) return Promise.resolve(true);
     return new Promise((resolve) => {
+      if (this.isSeated) this.y = this.visualY();
       this.isSeated = false;
       const first = points[0];
       const dx = first.x - this.x;
@@ -275,8 +292,16 @@ export class Actor {
     this.bubbleOverrideRemaining = 0;
   }
 
+  visualY() {
+    return this.y + (this.isSeated ? this.seatedRenderOffsetY : 0);
+  }
+
+  spriteY() {
+    return this.visualY() - (this.isSeated && this.state === "sleeping" ? 14 : 0);
+  }
+
   draw(ctx) {
-    const spriteY = this.y - (this.isSeated && this.state === "sleeping" ? 14 : 0);
+    const spriteY = this.spriteY();
     ctx.save();
     ctx.globalAlpha = 0.18;
     ctx.fillStyle = "#1b1218";
@@ -296,12 +321,13 @@ export class Actor {
   }
 
   drawStatusOverlay(ctx, options = {}) {
-    const spriteY = this.y - (this.isSeated && this.state === "sleeping" ? 14 : 0);
+    const spriteY = this.spriteY();
     if (this.hasFullBubble()) {
       this.drawBubble(ctx, this.currentBubble(), spriteY, {
         offsetY: options.bubbleOffsetY || 0,
         offsetX: options.bubbleOffsetX || 0,
       });
+      return;
     }
     this.drawStateAccent(ctx, spriteY);
   }
@@ -312,7 +338,7 @@ export class Actor {
       offsetY: options.nameOffsetY || 0,
     };
     this.drawName(ctx, position);
-    if (this.isCompactStatus()) this.drawStatusDot(ctx, position);
+    this.drawStatusDot(ctx, position);
   }
 
   drawOverlay(ctx, options = {}) {
@@ -340,20 +366,22 @@ export class Actor {
     return {
       x: x - width / 2 - 1,
       y,
-      width: width + (this.isCompactStatus() ? 12 : 2),
+      width: width + 12,
       height: 11,
     };
   }
 
-  bubbleBounds(name = this.currentBubble(), spriteY = this.y, offsetY = 0, offsetX = 0) {
+  bubbleBounds(name = this.currentBubble(), spriteY = this.spriteY(), offsetY = 0, offsetX = 0) {
     const definition = this.assets.fxDefinition(name, name);
     const width = definition.frameW;
     const height = definition.frameH;
     const x = Math.round(this.x - width / 2 + offsetX);
     const headTop = this.headTop(spriteY);
     const tailBottom = definition.frameH - 3;
+    const headGap = this.backgroundSlot ? 0 : 8;
+    const bob = this.backgroundSlot ? 0 : Math.sin(this.fxTime * 3) * 2;
     const y = Math.round(
-      headTop - 8 - tailBottom + Math.sin(this.fxTime * 3) * 2 + offsetY,
+      headTop - headGap - tailBottom + bob + offsetY,
     );
     return { x, y, width, height };
   }
@@ -383,7 +411,9 @@ export class Actor {
     ctx.save();
     ctx.fillStyle = "#573722";
     ctx.fillRect(x, y, 8, 8);
-    ctx.fillStyle = COMPACT_STATUS_COLORS[this.state];
+    ctx.fillStyle = this.hasFullBubble()
+      ? "#3a2f33"
+      : (COMPACT_STATUS_COLORS[this.state] || "#8b7a70");
     ctx.fillRect(x + 1, y + 1, 6, 6);
     ctx.restore();
   }
@@ -474,8 +504,12 @@ export class ActorManager {
     this.actors = new Map();
     this.destinationReservations = new Map();
     this.actorReservations = new Map();
+    const standingWaypoints = scene.background_mode?.slots?.standing_waypoints;
     this.waypoints = scene.background_mode?.enabled
-      ? [[8, 15], [26, 15], [17, 16], [5, 16], [29, 16]]
+      ? [
+        ...(standingWaypoints?.meeting || [[14, 8], [16, 8], [18, 8], [20, 8]]),
+        ...(standingWaypoints?.lounge || [[8, 15], [10, 15], [24, 15], [26, 15]]),
+      ]
       : waypointCandidates(scene);
   }
 
@@ -512,7 +546,8 @@ export class ActorManager {
       let home;
       let seatPosition;
       if (backgroundSlot) {
-        seatPosition = { x: backgroundSlot.x, y: backgroundSlot.y + 72 };
+        const deskTop = backgroundSlot.desk_rect?.[1] ?? backgroundSlot.y + 8;
+        seatPosition = { x: backgroundSlot.x, y: deskTop + 6 };
         home = [
           Math.round(backgroundSlot.x / this.tile - 0.5),
           Math.round((backgroundSlot.y + 100) / this.tile - 1),
@@ -538,6 +573,8 @@ export class ActorManager {
           company: desk.company || known.get(id)?.company || "default",
           isHuman,
           backgroundSlot,
+          seatedRenderOffsetY: backgroundSlot?.seated_render_offset_y ??
+            backgroundSlots?.seated_render_offset_y ?? 12,
         },
       );
       actor.setState(known.get(id)?.status || "idle");
@@ -613,6 +650,8 @@ export class ActorManager {
     this.releaseDestination(actorId);
     const seen = new Set();
     const candidates = [targetTile, ...alternatives, ...this.waypoints].filter((point) => {
+      if (!Array.isArray(point) || point.length < 2) return false;
+      if (this.scene.background_mode?.enabled && point[1] < 6) return false;
       const key = tileKey(...point);
       if (seen.has(key)) return false;
       seen.add(key);

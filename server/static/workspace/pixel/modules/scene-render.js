@@ -49,7 +49,7 @@ function collisionFreeOffset(bounds, placed, candidates, canvasHeight) {
   return candidates.at(-1) || 0;
 }
 
-function collisionFreePlacement(bounds, placed, candidates, canvasWidth, canvasHeight) {
+function findCollisionFreePlacement(bounds, placed, candidates, canvasWidth, canvasHeight) {
   for (const candidate of candidates) {
     const shifted = {
       ...bounds,
@@ -60,6 +60,18 @@ function collisionFreePlacement(bounds, placed, candidates, canvasWidth, canvasH
         shifted.y < 2 || shifted.y + shifted.height > canvasHeight - 2) continue;
     if (!placed.some((other) => rectanglesOverlap(shifted, other))) return candidate;
   }
+  return null;
+}
+
+function collisionFreePlacement(bounds, placed, candidates, canvasWidth, canvasHeight) {
+  const placement = findCollisionFreePlacement(
+    bounds,
+    placed,
+    candidates,
+    canvasWidth,
+    canvasHeight,
+  );
+  if (placement) return placement;
   return candidates.at(-1) || { x: 0, y: 0 };
 }
 
@@ -206,7 +218,7 @@ export class SceneRenderer {
       });
     }
     const actorBubbleObstacles = overlayActors.map((actor) => {
-      const spriteY = actor.y - (actor.isSeated && actor.state === "sleeping" ? 14 : 0);
+      const spriteY = actor.spriteY();
       return {
         actor,
         x: actor.x - actor.sprite.frameW / 2,
@@ -273,8 +285,36 @@ export class SceneRenderer {
     const walking = allActors
       .filter((actor) => !actor.isSeated)
       .sort((left, right) => (left.y - right.y) || (left.x - right.x));
-    seated.forEach((actor) => actor.draw(ctx));
-    seated.forEach((actor) => this.drawDeskOcclusion(actor));
+    const seatedLayers = seated.flatMap((actor) => {
+      const rect = this.deskOcclusionRect(actor);
+      const depth = rect ? rect[1] + rect[3] : actor.y;
+      return [
+        {
+          depth,
+          priority: 0,
+          x: actor.x,
+          draw: () => this.drawDeskOcclusion(actor),
+        },
+        {
+          depth,
+          priority: 1,
+          x: actor.x,
+          draw: () => this.drawSeatedBackgroundActor(actor),
+        },
+        {
+          depth: depth + 2,
+          priority: 0,
+          x: actor.x,
+          draw: () => actor.drawName(this.ctx, actor.backgroundNamePosition || {}),
+        },
+      ];
+    });
+    seatedLayers
+      .sort((left, right) =>
+        (left.depth - right.depth) ||
+        (left.priority - right.priority) ||
+        (left.x - right.x))
+      .forEach((layer) => layer.draw());
     walking.forEach((actor) => actor.draw(ctx));
     director?.draw(ctx);
     this.drawBackgroundOverlays(allActors);
@@ -283,17 +323,18 @@ export class SceneRenderer {
     this.applyUnifiedTone();
   }
 
+  deskOcclusionRect(actor) {
+    return actor.backgroundSlot?.desk_rect || null;
+  }
+
   drawDeskOcclusion(actor) {
-    const slot = actor.backgroundSlot;
-    const fallbackWidth = actor.isHuman ? 174 : 112;
-    const rect = slot?.occlusion_rect || (slot ? [
-      slot.x - fallbackWidth / 2,
-      slot.y + 55,
-      fallbackWidth,
-      actor.isHuman ? 66 : (slot.y < 300 ? 37 : 41),
-    ] : null);
+    const rect = this.deskOcclusionRect(actor);
     if (!rect) return;
     const [x, y, width, height] = rect;
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(x, y, width, height);
+    this.ctx.clip();
     this.ctx.drawImage(
       this.backgroundFrameCanvas,
       x,
@@ -305,6 +346,22 @@ export class SceneRenderer {
       width,
       height,
     );
+    this.ctx.restore();
+  }
+
+  drawSeatedBackgroundActor(actor) {
+    const slot = actor.backgroundSlot;
+    if (!slot) {
+      actor.draw(this.ctx);
+      return;
+    }
+    const occlusionTop = slot.desk_rect?.[1] ?? slot.y + 8;
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(0, 0, this.canvas.width, occlusionTop);
+    this.ctx.clip();
+    actor.draw(this.ctx);
+    this.ctx.restore();
   }
 
   drawBackgroundNight() {
@@ -323,11 +380,22 @@ export class SceneRenderer {
     const overlayActors = [...allActors].sort((left, right) =>
       (left.y - right.y) || (left.x - right.x));
     for (const actor of overlayActors) {
-      const namePosition = actor.isSeated && actor.backgroundNamePosition
+      let namePosition = actor.isSeated && actor.backgroundNamePosition
         ? actor.backgroundNamePosition
         : {};
+      const door = this.scene.background_mode?.slots?.door;
+      const nearDoor = !actor.isSeated && door &&
+        Math.abs(actor.x - door.x) <= 112 &&
+        actor.y >= door.y - 150;
+      if (nearDoor) {
+        const headTop = actor.headTop(actor.y);
+        namePosition = {
+          x: actor.x,
+          y: actor.hasFullBubble() ? actor.bubbleBounds().y - 19 : headTop - 14,
+        };
+      }
       const nameBounds = actor.nameBounds(namePosition);
-      const nameOffsetY = collisionFreeOffset(
+      const nameOffsetY = actor.isSeated ? 0 : collisionFreeOffset(
         nameBounds,
         placedNames,
         [0, 13, -13, 26, -26, 39, -39],
@@ -338,25 +406,36 @@ export class SceneRenderer {
     }
 
     const nameObstaclePadding = BUBBLE_NAME_GAP - COLLISION_PADDING;
-    const placedBubbles = placedNames.map((bounds) => ({
+    const nameObstacles = placedNames.map((bounds) => ({
       x: bounds.x - nameObstaclePadding,
       y: bounds.y - nameObstaclePadding,
       width: bounds.width + nameObstaclePadding * 2,
       height: bounds.height + nameObstaclePadding * 2,
     }));
+    const placedBubbles = [];
     const actorObstacles = overlayActors.map((actor) => {
-      const spriteY = actor.y - (actor.isSeated && actor.state === "sleeping" ? 14 : 0);
+      const spriteY = actor.spriteY();
+      const top = spriteY - actor.sprite.frameH;
+      const visibleBottom = actor.isSeated && actor.backgroundSlot?.desk_rect
+        ? actor.backgroundSlot.desk_rect[1]
+        : spriteY;
       return {
         actor,
         x: actor.x - actor.sprite.frameW / 2,
-        y: spriteY - actor.sprite.frameH,
+        y: top,
         width: actor.sprite.frameW,
-        height: actor.sprite.frameH,
+        height: Math.max(0, visibleBottom - top),
       };
     });
-    const candidates = [];
-    for (const rise of [0, -36, -72, -108, -144]) {
-      for (const shift of [0, -100, 100, -200, 200, -300, 300]) {
+    // Keep the tail on its owner unless the bubble would cover a character in
+    // the row behind it; in that case, retreat vertically above the head.
+    const candidates = [{ x: 0, y: 0 }];
+    for (const rise of [-20, -27, -36, -52, -72, -88, -108]) {
+      for (const shift of [
+        -16, 16, -32, 32, -48, 48, -64, 64, -80, 80,
+        -96, 96, -128, 128, -160, 160, -200, 200,
+        -240, 240, -300, 300, -360, 360, -400, 400,
+      ]) {
         candidates.push({ x: shift, y: rise });
       }
     }
@@ -364,16 +443,25 @@ export class SceneRenderer {
       const { actor } = layout;
       if (!actor.hasFullBubble()) continue;
       const bounds = actor.bubbleBounds();
-      const placement = collisionFreePlacement(
+      const behindActorObstacles = actorObstacles.filter((obstacle) =>
+        obstacle.actor !== actor && obstacle.actor.y < actor.y);
+      const placement = findCollisionFreePlacement(
         bounds,
         [
+          ...nameObstacles,
           ...placedBubbles,
-          ...actorObstacles.filter((obstacle) => obstacle.actor !== actor),
+          ...behindActorObstacles,
         ],
         candidates,
         this.canvas.width,
         this.canvas.height,
-      );
+      ) || findCollisionFreePlacement(
+        bounds,
+        [...nameObstacles, ...placedBubbles],
+        candidates,
+        this.canvas.width,
+        this.canvas.height,
+      ) || { x: 0, y: 0 };
       placedBubbles.push({
         ...bounds,
         x: bounds.x + placement.x,
@@ -383,7 +471,18 @@ export class SceneRenderer {
       layout.bubbleOffsetY = placement.y;
     }
     layouts.forEach((layout) => layout.actor.drawStatusOverlay(this.ctx, layout));
-    layouts.forEach((layout) => layout.actor.drawNameOverlay(this.ctx, layout));
+    layouts.forEach((layout) => {
+      if (!layout.actor.isSeated) {
+        layout.actor.drawName(this.ctx, {
+          ...layout.namePosition,
+          offsetY: layout.nameOffsetY || 0,
+        });
+      }
+      layout.actor.drawStatusDot(this.ctx, {
+        ...layout.namePosition,
+        offsetY: layout.nameOffsetY || 0,
+      });
+    });
   }
 
   drawFloor() {

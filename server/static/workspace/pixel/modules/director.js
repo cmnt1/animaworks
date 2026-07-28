@@ -179,20 +179,30 @@ export class Director {
     if (!participants.length) return;
     const company = this.actors.companyOf(participants[0]);
     if (this.scene.background_mode?.enabled) {
-      const slots = [[15, 14], [19, 14], [15, 15], [19, 15]];
+      const standing = this.scene.background_mode.slots?.standing_waypoints;
+      const central = standing?.meeting || [[14, 8], [16, 8], [18, 8], [20, 8]];
+      const lounges = standing?.lounge || [[8, 15], [10, 15], [24, 15], [26, 15]];
+      const side = this.actors.get(participants[0])?.backgroundSlot?.company;
+      const venueIndex = participants.join("").split("")
+        .reduce((total, character) => total + character.charCodeAt(0), 0) % 2;
+      const sideOffset = side === "right" ? 2 : 0;
+      const slots = venueIndex === 0
+        ? central.slice(sideOffset, sideOffset + 2)
+        : lounges.slice(sideOffset, sideOffset + 2);
+      const safeAlternatives = [...central, ...lounges];
       const previous = new Map(participants.map((id) => [id, this.actors.get(id).state]));
       const arrivals = await Promise.all(participants.map((id, index) => this.actors.walkTo(
         id,
         slots[index],
-        { speed: 165, alternatives: slots },
+        { speed: 165, alternatives: safeAlternatives },
       )));
       const arrived = participants.filter((id, index) => arrivals[index]);
       if (!arrived.length) return;
       arrived.forEach((id) => this.actors.setState(id, "talking"));
       await this.addEffect({
         type: "talk",
-        x: 17.5 * this.scene.canvas.tile,
-        y: 14 * this.scene.canvas.tile,
+        x: (slots[0][0] + slots[1][0] + 1) * this.scene.canvas.tile / 2,
+        y: Math.min(slots[0][1], slots[1][1]) * this.scene.canvas.tile,
         label: "打合せ中",
         duration: 3,
       });
