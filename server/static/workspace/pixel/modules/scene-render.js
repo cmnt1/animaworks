@@ -90,6 +90,9 @@ export class SceneRenderer {
     } : null;
     canvas.width = scene.canvas.w;
     canvas.height = scene.canvas.h;
+    this.toneCanvas = document.createElement("canvas");
+    this.toneCanvas.width = scene.canvas.w;
+    this.toneCanvas.height = scene.canvas.h;
   }
 
   setLighting(mode) {
@@ -237,6 +240,7 @@ export class SceneRenderer {
     this.drawLighting();
     this.drawPaletteUnifier();
     this.drawVignette();
+    this.applyUnifiedTone();
   }
 
   drawFloor() {
@@ -333,7 +337,31 @@ export class SceneRenderer {
       }
     }
 
+    this.drawCorridorPaving();
     this.drawFloorAmbient();
+  }
+
+  drawCorridorPaving() {
+    const path = this.scene.zones.path;
+    const entrance = this.scene.zones.entrance;
+    if (!path) return;
+    const [x1, y1, x2, pathBottom] = path.rect;
+    const y2 = Math.min(pathBottom, (entrance?.rect?.[1] ?? pathBottom + 1) + 1);
+    const ctx = this.ctx;
+    ctx.save();
+    for (let tileY = y1; tileY <= y2; tileY += 1) {
+      for (let tileX = x1; tileX <= x2; tileX += 1) {
+        ctx.globalAlpha = 0.09;
+        ctx.fillStyle = (tileX + tileY) % 2 ? "#f1ddba" : "#8f7965";
+        ctx.fillRect(
+          tileX * this.tile + 1,
+          tileY * this.tile + 1,
+          this.tile - 2,
+          this.tile - 2,
+        );
+      }
+    }
+    ctx.restore();
   }
 
   drawFloorAmbient() {
@@ -818,6 +846,29 @@ export class SceneRenderer {
       ctx.fillRect(centerX - 8, footY - 60, 16, 8);
       ctx.fillStyle = Math.floor(timeSeconds * 2) % 2 ? "#ffe5a5" : "#f6ce7e";
       ctx.fillRect(centerX - 5, footY - 57, 10, 5);
+    } else if (type === "guide_lamp") {
+      const centerX = Math.round(x + width / 2);
+      drawGroundShadow(ctx, centerX, footY - 2, 8, 3);
+      ctx.fillStyle = "#3a2f33";
+      ctx.fillRect(centerX - 5, footY - 5, 10, 4);
+      ctx.fillRect(centerX - 1, footY - 22, 3, 18);
+      ctx.fillStyle = "#b97b4b";
+      ctx.fillRect(centerX - 6, footY - 27, 12, 6);
+      ctx.fillStyle = "#ffe1a0";
+      ctx.fillRect(centerX - 3, footY - 25, 6, 3);
+    } else if (type === "guide_sign") {
+      const centerX = Math.round(x + width / 2);
+      drawGroundShadow(ctx, centerX, footY - 2, 9, 3);
+      ctx.fillStyle = "#3a2f33";
+      ctx.fillRect(centerX - 2, footY - 19, 4, 17);
+      ctx.fillStyle = "#5b3928";
+      ctx.fillRect(centerX - 13, footY - 28, 26, 11);
+      ctx.fillStyle = "#d6aa6e";
+      ctx.fillRect(centerX - 11, footY - 26, 22, 7);
+      ctx.fillStyle = "#624331";
+      const direction = Math.round(x / this.tile) % 2 ? -1 : 1;
+      ctx.fillRect(centerX - 5, footY - 24, 10, 2);
+      ctx.fillRect(centerX + direction * 4, footY - 26, 2, 6);
     }
     ctx.restore();
   }
@@ -1051,6 +1102,20 @@ export class SceneRenderer {
     ctx.globalAlpha = 0.05;
     ctx.fillStyle = "#ffedd6";
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.restore();
+  }
+
+  applyUnifiedTone() {
+    const ctx = this.ctx;
+    if (!("filter" in ctx)) return;
+    const toneCtx = this.toneCanvas.getContext("2d");
+    toneCtx.imageSmoothingEnabled = false;
+    toneCtx.clearRect(0, 0, this.toneCanvas.width, this.toneCanvas.height);
+    toneCtx.drawImage(this.canvas, 0, 0);
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.filter = "saturate(1.03) contrast(1.03)";
+    ctx.drawImage(this.toneCanvas, 0, 0);
     ctx.restore();
   }
 

@@ -59,7 +59,7 @@ rows = {
     "success": 8,
     "error": 9,
 }
-open_eye_rows = (0, 1, 2, 3, 4, 6, 8)
+open_eye_rows = (0, 1, 2, 3, 4, 6, 8, 9)
 
 
 def color_count(pixels, color):
@@ -81,7 +81,7 @@ def verify_face(frame, row, profile, label):
 
     if row in open_eye_rows:
         white_min = 30 if row == rows["walk_side"] else 55
-        iris_min = 23 if row == rows["walk_side"] else 40
+        iris_min = 23 if row == rows["walk_side"] else 35
         glint_min = 1 if row == rows["walk_side"] else 2
         if color_count(face, profile["white"]) < white_min:
             raise SystemExit(f"{label}: sclera is too small")
@@ -123,15 +123,30 @@ def verify_face(frame, row, profile, label):
             for y in range(center_y - 16, center_y + 16)
             for x in range(31, 66)
         ]
-        error_eyes = [
+        forehead = [
             frame.getpixel((x, y))
-            for y in range(center_y - 10, center_y + 7)
-            for x in range(31, 66)
+            for y in range(center_y - 17, center_y - 10)
+            for x in range(42, 55)
         ]
-        if color_count(panic_face, profile["panic"]) < 450:
+        if color_count(panic_face, profile["panic"]) < 350:
             raise SystemExit(f"{label}: error face is not visibly blue")
-        if color_count(error_eyes, profile["outline"]) < 110:
-            raise SystemExit(f"{label}: error >< eyes are missing")
+        if color_count(panic_face, profile["white"]) < 60:
+            raise SystemExit(f"{label}: error eyes are obscured")
+        if color_count(panic_face, profile["iris"]) < 35:
+            raise SystemExit(f"{label}: error irises are obscured")
+        if color_count(panic_face, polish.THOUGHT_BLUE) < 8:
+            raise SystemExit(f"{label}: error tear drops are missing")
+        if color_count(forehead, profile["outline"]) < 25:
+            raise SystemExit(f"{label}: error forehead stress lines are missing")
+
+    if row in (rows["idle"], rows["working"]):
+        brow_band = [
+            frame.getpixel((x, y))
+            for y in range(center_y - 13, center_y - 7)
+            for x in range(33, 64)
+        ]
+        if color_count(brow_band, profile["outline"]) < 25:
+            raise SystemExit(f"{label}: 1px eyebrows are missing")
 
 
 def verify_sheet(path, *, limited_palette):
@@ -206,8 +221,8 @@ for name in fleet_names:
     verify_sheet(fleet_dir / f"{name}.png", limited_palette=True)
 
 contacts = (
-    (generic_dir / "_contact_sheet.png", (1152, 336)),
-    (fleet_dir / "_contact_sheet.png", (1152, 560)),
+    (generic_dir / "_contact_sheet.png", (864, 336)),
+    (fleet_dir / "_contact_sheet.png", (864, 560)),
 )
 for path, expected_size in contacts:
     if not path.is_file():
@@ -218,6 +233,6 @@ for path, expected_size in contacts:
 
 print(
     "OK: verified 9 generic and 14 fleet sheets; "
-    "large sclera/iris/glint faces, hair rims, and state expressions"
+    "idle/working brows and readable tearful blue error faces"
 )
 PY
