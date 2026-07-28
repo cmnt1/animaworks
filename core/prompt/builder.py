@@ -308,7 +308,7 @@ def _build_resolved_approvals_section(anima_name: str, _ss: dict[str, str]) -> s
         header = header_tmpl
 
     lines = [header, "", intro, ""]
-    for req, res in approval_pairs:
+    for _req, res in approval_pairs:
         try:
             item = item_tmpl.format(
                 callback_id=res.callback_id,
@@ -319,7 +319,7 @@ def _build_resolved_approvals_section(anima_name: str, _ss: dict[str, str]) -> s
             )
         except (KeyError, ValueError):
             item = (
-                f"- callback_id: {res.callback_id} — \"{res.decision}\" "
+                f'- callback_id: {res.callback_id} — "{res.decision}" '
                 f"by {res.actor} ({res.source}, {_format_resolved_at_local(res.resolved_at)})"
             )
         lines.append(item)

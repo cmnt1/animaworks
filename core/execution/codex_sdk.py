@@ -132,9 +132,7 @@ def _codex_error_metadata(message: str, model: str) -> dict[str, Any]:
             guard = get_rate_guard()
             cfg = guard.config
             block_seconds = (
-                cfg.quota_block_seconds
-                if reason is FailoverReason.QUOTA_EXHAUSTED
-                else cfg.default_block_seconds
+                cfg.quota_block_seconds if reason is FailoverReason.QUOTA_EXHAUSTED else cfg.default_block_seconds
             )
             guard.report_block(
                 guard_key(provider_family_of(model), "codex"),
@@ -1340,9 +1338,7 @@ class CodexSDKExecutor(BaseExecutor):
             # read-only remount of each writable root's ``.git``.
             data_dir = self._anima_dir.resolve().parent.parent
             for root_str in list(writable_roots):
-                for git_path in _git_metadata_write_paths(
-                    Path(root_str), forbidden_ancestors=[data_dir]
-                ):
+                for git_path in _git_metadata_write_paths(Path(root_str), forbidden_ancestors=[data_dir]):
                     if str(git_path) not in writable_roots:
                         writable_roots.append(str(git_path))
             roots_list = ", ".join(f'"{esc(r)}"' for r in writable_roots)

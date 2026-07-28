@@ -78,9 +78,7 @@ class RecoveryHint:
 _HINTS: dict[FailoverReason, RecoveryHint] = {
     FailoverReason.AUTH: RecoveryHint(retryable=False, fallback_ok=True, backoff_s=None, is_terminal=False),
     FailoverReason.BILLING: RecoveryHint(retryable=False, fallback_ok=True, backoff_s=None, is_terminal=False),
-    FailoverReason.QUOTA_EXHAUSTED: RecoveryHint(
-        retryable=False, fallback_ok=True, backoff_s=1800.0, is_terminal=True
-    ),
+    FailoverReason.QUOTA_EXHAUSTED: RecoveryHint(retryable=False, fallback_ok=True, backoff_s=1800.0, is_terminal=True),
     FailoverReason.RATE_LIMIT: RecoveryHint(retryable=True, fallback_ok=True, backoff_s=None, is_terminal=False),
     FailoverReason.OVERLOADED: RecoveryHint(retryable=True, fallback_ok=True, backoff_s=None, is_terminal=False),
     FailoverReason.CONTEXT_OVERFLOW: RecoveryHint(retryable=False, fallback_ok=True, backoff_s=None, is_terminal=False),

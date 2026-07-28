@@ -65,8 +65,7 @@ def quick_check_chroma_sqlite(
         return result
 
     logger.debug(
-        "Chroma SQLite quick_check reported possible corruption; retrying: "
-        "db=%s status=%s detail=%s",
+        "Chroma SQLite quick_check reported possible corruption; retrying: db=%s status=%s detail=%s",
         db_path,
         result.status,
         result.error or result.details,
@@ -178,8 +177,7 @@ def prepare_chroma_sqlite_for_startup(persist_dir: Path, *, anima_name: str | No
         rechecked = quick_check_chroma_sqlite(persist_dir)
         if rechecked.ok:
             logger.warning(
-                "Chroma SQLite transient corruption signal cleared on re-check: "
-                "anima=%s db=%s initial_detail=%s",
+                "Chroma SQLite transient corruption signal cleared on re-check: anima=%s db=%s initial_detail=%s",
                 anima_name,
                 health.db_path,
                 health.error or health.details,

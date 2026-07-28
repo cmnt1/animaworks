@@ -622,9 +622,7 @@ def step_channel_company_defaults(data_dir: Path, dry_run: bool, verbose: bool) 
                 if members or closed:
                     skipped += 1
                     continue
-                existing_company = (
-                    (meta.get("company") or "").strip() if isinstance(meta.get("company"), str) else ""
-                )
+                existing_company = (meta.get("company") or "").strip() if isinstance(meta.get("company"), str) else ""
                 if existing_company:
                     skipped += 1
                     continue
@@ -637,14 +635,9 @@ def step_channel_company_defaults(data_dir: Path, dry_run: bool, verbose: bool) 
                     continue
                 changed += 1
                 if desired_company:
-                    details.append(
-                        f"{'Would set' if dry_run else 'Set'} #{channel} company={desired_company!r}"
-                    )
+                    details.append(f"{'Would set' if dry_run else 'Set'} #{channel} company={desired_company!r}")
                 else:
-                    details.append(
-                        f"{'Would update' if dry_run else 'Updated'} #{channel} meta "
-                        "(company unset)"
-                    )
+                    details.append(f"{'Would update' if dry_run else 'Updated'} #{channel} meta (company unset)")
                 if not dry_run:
                     meta_path.write_text(
                         json.dumps(new_meta, ensure_ascii=False, indent=2),
@@ -663,14 +656,10 @@ def step_channel_company_defaults(data_dir: Path, dry_run: bool, verbose: bool) 
                 changed += 1
                 if desired_company:
                     details.append(
-                        f"{'Would create' if dry_run else 'Created'} #{channel} meta "
-                        f"with company={desired_company!r}"
+                        f"{'Would create' if dry_run else 'Created'} #{channel} meta with company={desired_company!r}"
                     )
                 else:
-                    details.append(
-                        f"{'Would create' if dry_run else 'Created'} #{channel} meta "
-                        "(company unset)"
-                    )
+                    details.append(f"{'Would create' if dry_run else 'Created'} #{channel} meta (company unset)")
                 if not dry_run:
                     meta_path.write_text(
                         json.dumps(new_meta, ensure_ascii=False, indent=2),

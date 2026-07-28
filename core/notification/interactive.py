@@ -41,6 +41,7 @@ def _is_approval_category(category: str) -> bool:
     """Return True if *category* is approval-related (blocker-close instruction applies)."""
     return "approval" in (category or "").lower()
 
+
 # ── Data models ───────────────────────────────────────────
 
 

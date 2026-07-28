@@ -91,9 +91,7 @@ def resolve_workspace(alias_or_path: str) -> Path:
     needle = _norm_alias(alias_or_path)
     if needle:
         norm_matches = [
-            (reg_alias, reg_path)
-            for reg_alias, reg_path in registry.items()
-            if _norm_alias(reg_alias) == needle
+            (reg_alias, reg_path) for reg_alias, reg_path in registry.items() if _norm_alias(reg_alias) == needle
         ]
         if len(norm_matches) == 1:
             _reg_alias, reg_path = norm_matches[0]

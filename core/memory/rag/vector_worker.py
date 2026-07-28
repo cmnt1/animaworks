@@ -382,9 +382,7 @@ def _call_vector_store(anima_name: str | None, action: Callable[[Any], Any]) -> 
             result = action(store)
             consume_failure = getattr(type(store), "consume_lightweight_self_heal_failure", None)
             needs_full_reset = (
-                callable(consume_failure)
-                and consume_failure(store)
-                and _record_self_heal_failure(anima_name)
+                callable(consume_failure) and consume_failure(store) and _record_self_heal_failure(anima_name)
             )
         if not needs_full_reset:
             return result

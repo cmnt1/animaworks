@@ -131,8 +131,7 @@ class DelegationMixin(OrgHelpersMixin):
                     if isinstance(data, dict) and data.get("ok"):
                         if attempt > 0:
                             logger.info(
-                                "delegate_task server fallback succeeded on retry "
-                                "(attempt=%s) delegator=%s target=%s",
+                                "delegate_task server fallback succeeded on retry (attempt=%s) delegator=%s target=%s",
                                 attempt + 1,
                                 self._anima_name,
                                 target_name,

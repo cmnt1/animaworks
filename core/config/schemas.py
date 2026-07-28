@@ -905,8 +905,7 @@ class HeartbeatConfig(BaseModel):
         default=48,
         ge=0,
         description=(
-            "Hours to inject resolved-approval reminders into the system prompt; "
-            "0 disables the reminder section"
+            "Hours to inject resolved-approval reminders into the system prompt; 0 disables the reminder section"
         ),
     )
 

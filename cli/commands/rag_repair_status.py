@@ -60,13 +60,17 @@ def collect_rag_repair_status(
 
         state = read_state(anima_dir.name, animas_dir=animas_dir)
         signals = state.get("recent_signals")
-        recent_signals = [
-            signal
-            for signal in signals
-            if isinstance(signal, dict)
-            and (at := parse_dt(signal.get("at"))) is not None
-            and signal_cutoff <= at <= current_time
-        ] if isinstance(signals, list) else []
+        recent_signals = (
+            [
+                signal
+                for signal in signals
+                if isinstance(signal, dict)
+                and (at := parse_dt(signal.get("at"))) is not None
+                and signal_cutoff <= at <= current_time
+            ]
+            if isinstance(signals, list)
+            else []
+        )
         recent_signal_count = len(recent_signals)
         last_signal = max(
             recent_signals,
@@ -74,9 +78,7 @@ def collect_rag_repair_status(
             default=None,
         )
         last_signal_reason = str(last_signal.get("reason")) if last_signal and last_signal.get("reason") else None
-        store_init_failed_24h = any(
-            signal.get("reason") == "store_init_failed" for signal in recent_signals
-        )
+        store_init_failed_24h = any(signal.get("reason") == "store_init_failed" for signal in recent_signals)
         status = str(state.get("status") or "unknown")
         heartbeat_at = parse_dt(state.get("heartbeat_at"))
         stale_repairing = status == "repairing" and (heartbeat_at is None or heartbeat_at <= heartbeat_cutoff)

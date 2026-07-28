@@ -255,10 +255,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "Error: Channel #{channel} has no company attribution set. "
             "Set company attribution via manage_channel or use a company-scoped channel."
         ),
-        "zh": (
-            "错误：频道 #{channel} 尚未设置公司归属。"
-            "请通过 manage_channel 设置公司归属，或使用本公司频道。"
-        ),
+        "zh": ("错误：频道 #{channel} 尚未设置公司归属。请通过 manage_channel 设置公司归属，或使用本公司频道。"),
         "ko": (
             "오류: 채널 #{channel} 에 회사 귀속이 설정되어 있지 않습니다. "
             "manage_channel로 회사 귀속을 설정하거나 자사 채널을 이용하세요."
