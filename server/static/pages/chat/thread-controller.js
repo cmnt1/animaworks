@@ -179,11 +179,20 @@ export function createThreadController(ctx) {
     const active = list.find(th => th.id === state.selectedThreadId);
     if (label) label.textContent = active?.label || t("thread.default_label");
 
-    const visible = list.filter(th => !th.archived);
+    const defaultThread = list.filter(th => th.id === "default" && !th.archived);
+    const nonDefault = list
+      .filter(th => th.id !== "default" && !th.archived)
+      .sort((a, b) => threadTimeValue(b.lastTs || "") - threadTimeValue(a.lastTs || ""));
+    const visible = [...defaultThread, ...nonDefault];
     const archived = list.filter(th => th.archived);
     const streamCtx = state.manager.getStreamingContext(state.selectedAnima);
 
-    let html = visible.map(th => {
+    // New-thread action first: with many threads the menu grows long and a
+    // bottom placement makes starting a conversation hard to reach.
+    let html = `<div class="chat-thread-dd-new" data-chat-id="chatThreadDdNew">${t("thread.new_button")}</div>`
+      + `<div class="chat-thread-dd-sep"></div>`;
+
+    html += visible.map(th => {
       const isCurrent = th.id === state.selectedThreadId;
       const streaming = streamCtx?.thread === th.id;
       let cls = "chat-thread-dd-item";
@@ -207,8 +216,6 @@ export function createThreadController(ctx) {
       });
     }
 
-    html += `<div class="chat-thread-dd-sep"></div>`;
-    html += `<div class="chat-thread-dd-new" data-chat-id="chatThreadDdNew">${t("thread.new_button")}</div>`;
     menu.innerHTML = html;
 
     menu.querySelectorAll(".chat-thread-dd-item:not(.archived)").forEach(el => {

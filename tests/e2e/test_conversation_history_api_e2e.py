@@ -520,3 +520,103 @@ async def test_api_endpoint_conversation_full_removed(tmp_path: Path) -> None:
         resp = await client.get("/api/animas/removed-test-anima/conversation/full")
         # Should be 404 (route removed) or 405
         assert resp.status_code in (404, 405, 422)
+
+
+# ── Test: Thread Conversation File Fallback ──────────────────
+
+
+def _write_thread_conv_file(anima_dir: Path, thread_id: str, turns: list[dict]) -> None:
+    conv_dir = anima_dir / "state" / "conversations"
+    conv_dir.mkdir(parents=True, exist_ok=True)
+    (conv_dir / f"{thread_id}.json").write_text(
+        json.dumps({"anima_name": "test-anima", "turns": turns}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def test_thread_file_fallback_returns_turns(anima_dir: Path) -> None:
+    """A thread absent from the activity log falls back to its conversation file."""
+    from server.routes.sessions import _thread_file_conversation_view
+
+    _write_thread_conv_file(
+        anima_dir,
+        "abc12345",
+        [
+            {"role": "human", "content": "こんにちは", "timestamp": _ts(20)},
+            {
+                "role": "assistant",
+                "content": "はい！",
+                "timestamp": _ts(19),
+                "tool_records": [
+                    {
+                        "tool_name": "web_search",
+                        "tool_id": "t1",
+                        "input_summary": "query",
+                        "result_summary": "result",
+                        "is_error": False,
+                    }
+                ],
+            },
+        ],
+    )
+
+    view = _thread_file_conversation_view(anima_dir, "abc12345")
+    assert view is not None
+    assert view["has_more"] is False
+    msgs = [m for s in view["sessions"] for m in s["messages"]]
+    assert [m["role"] for m in msgs] == ["human", "assistant"]
+    assert msgs[0]["content"] == "こんにちは"
+    assert msgs[1]["tool_calls"][0]["tool_name"] == "web_search"
+
+
+def test_thread_file_fallback_missing_file(anima_dir: Path) -> None:
+    from server.routes.sessions import _thread_file_conversation_view
+
+    assert _thread_file_conversation_view(anima_dir, "nope1234") is None
+
+
+@pytest.mark.asyncio
+async def test_api_thread_history_uses_file_fallback(tmp_path: Path) -> None:
+    """History API serves a named thread from its conversation file when the
+    activity log holds fewer messages (e.g. lost/never-tagged entries)."""
+    from httpx import ASGITransport, AsyncClient
+
+    app, animas_dir, _ = _create_test_app(tmp_path, anima_names=["fb-anima"])
+    anima_dir = animas_dir / "fb-anima"
+
+    # Activity log: only the human message was tagged with the thread
+    al = ActivityLogger(anima_dir)
+    al.log(
+        "message_received",
+        content="スレッドの質問",
+        from_person="tester",
+        channel="chat",
+        meta={"thread_id": "th123456"},
+    )
+
+    # Conversation file: holds both turns (the durable source)
+    _write_thread_conv_file(
+        anima_dir,
+        "th123456",
+        [
+            {"role": "human", "content": "スレッドの質問", "timestamp": _ts(10)},
+            {"role": "assistant", "content": "スレッドの回答", "timestamp": _ts(9)},
+        ],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(
+            "/api/animas/fb-anima/conversation/history?limit=50&thread_id=th123456&strict_thread=1"
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        msgs = [m for s in data["sessions"] for m in s["messages"]]
+        assert [m["role"] for m in msgs] == ["human", "assistant"]
+        assert msgs[1]["content"] == "スレッドの回答"
+
+        # Invalid thread_id is rejected
+        resp = await client.get(
+            "/api/animas/fb-anima/conversation/history?thread_id=../evil&strict_thread=1"
+        )
+        assert resp.status_code == 400

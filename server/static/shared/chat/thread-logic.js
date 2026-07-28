@@ -33,8 +33,12 @@ export function defaultThreadLabel(threadId, lastTs, timeStr) {
  */
 export function createThread(threadList, _animaName) {
   const threadId = crypto.randomUUID().slice(0, 8);
-  const newEntry = { id: threadId, label: t("thread.new"), unread: false };
-  const updatedList = [...threadList, newEntry];
+  // Stamp creation time so the new thread sorts to the top of
+  // recency-ordered lists (tabs / dropdown) instead of the bottom.
+  const newEntry = { id: threadId, label: t("thread.new"), unread: false, lastTs: new Date().toISOString() };
+  const defaultIdx = threadList.findIndex(th => th.id === "default");
+  const updatedList = [...threadList];
+  updatedList.splice(defaultIdx + 1, 0, newEntry);
   return { updatedList, newThreadId: threadId, newEntry };
 }
 
@@ -56,7 +60,39 @@ export function archiveThread(threadList, threadId) {
  * @returns {Array} Updated list with thread un-archived
  */
 export function restoreThread(threadList, threadId) {
-  return threadList.map(th => th.id === threadId ? { ...th, archived: false } : th);
+  // Touch lastTs so a restored stale thread is not immediately
+  // re-archived by autoArchiveStaleThreads and sorts to the top.
+  return threadList.map(th => th.id === threadId
+    ? { ...th, archived: false, lastTs: new Date().toISOString() }
+    : th);
+}
+
+/** Threads idle longer than this are auto-archived (1 week). */
+export const THREAD_AUTO_ARCHIVE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Auto-archive threads whose last activity is older than *maxAgeMs*.
+ * The default thread and the currently active thread are never archived.
+ * Threads without a lastTs are left untouched (cannot judge staleness).
+ * @param {Array} threadList
+ * @param {object} [opts]
+ * @param {string} [opts.activeThreadId]
+ * @param {number} [opts.maxAgeMs=THREAD_AUTO_ARCHIVE_MS]
+ * @returns {{ list: Array, changed: boolean }}
+ */
+export function autoArchiveStaleThreads(threadList, opts = {}) {
+  const maxAgeMs = opts.maxAgeMs ?? THREAD_AUTO_ARCHIVE_MS;
+  const activeThreadId = opts.activeThreadId || null;
+  const cutoff = Date.now() - maxAgeMs;
+  let changed = false;
+  const list = threadList.map(th => {
+    if (th.id === "default" || th.archived || th.id === activeThreadId) return th;
+    const ts = threadTimeValue(th.lastTs || "");
+    if (!ts || ts >= cutoff) return th;
+    changed = true;
+    return { ...th, archived: true };
+  });
+  return { list: changed ? list : threadList, changed };
 }
 
 /**

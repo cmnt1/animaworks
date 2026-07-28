@@ -12,8 +12,73 @@ from core.memory.activity import ActivityLogger
 from core.memory.conversation import ConversationMemory
 from core.memory.manager import MemoryManager
 from core.memory.shortterm import ShortTermMemory
+from core.skills.activation import validate_thread_id
 
 logger = logging.getLogger("animaworks.routes.sessions")
+
+
+def _thread_file_conversation_view(anima_dir, thread_id: str) -> dict | None:
+    """Build a conversation view from the thread's conversation file.
+
+    Threads persist their turns in ``state/conversations/{thread_id}.json``
+    while the activity log only holds entries within its retention window
+    (and older threads predate thread_id tagging entirely). When the
+    activity-based view is missing turns, this file is the durable source.
+    Returns None when the file is absent or unreadable.
+    """
+    conv_file = anima_dir / "state" / "conversations" / f"{thread_id}.json"
+    if not conv_file.is_file():
+        return None
+    try:
+        data = json.loads(conv_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, TypeError):
+        return None
+
+    turns = data.get("turns", [])
+    if not isinstance(turns, list):
+        return None
+
+    messages = []
+    for turn in turns:
+        if not isinstance(turn, dict):
+            continue
+        role = turn.get("role", "")
+        if role not in ("human", "assistant"):
+            continue
+        tool_calls = []
+        for rec in turn.get("tool_records", []) or []:
+            if not isinstance(rec, dict):
+                continue
+            tool_calls.append(
+                {
+                    "tool_use_id": rec.get("tool_id", ""),
+                    "tool_name": rec.get("tool_name", ""),
+                    "input": rec.get("input_summary", ""),
+                    "result": rec.get("result_summary", ""),
+                    "is_error": bool(rec.get("is_error", False)),
+                }
+            )
+        messages.append(
+            {
+                "ts": turn.get("timestamp", ""),
+                "role": role,
+                "content": turn.get("content", ""),
+                "from_person": "",
+                "to_person": "",
+                "source_key": "chat",
+                "tool_calls": tool_calls,
+            }
+        )
+
+    if not messages:
+        return None
+
+    sessions = ActivityLogger._group_into_sessions(messages, 10)
+    return {"sessions": sessions, "has_more": False, "next_before": None}
+
+
+def _count_view_messages(view: dict) -> int:
+    return sum(len(s.get("messages", [])) for s in view.get("sessions", []))
 
 
 def create_sessions_router() -> APIRouter:
@@ -145,12 +210,26 @@ def create_sessions_router() -> APIRouter:
 
         limit = max(1, min(limit, 200))
         activity = ActivityLogger(anima_dir)
-        return activity.get_conversation_view(
+        view = activity.get_conversation_view(
             before=before,
             limit=limit,
             thread_id=thread_id,
             strict_thread=strict_thread,
         )
+
+        # Named threads: the activity log may miss turns (retention window,
+        # pre-thread_id-tagging history, or a response whose activity entry
+        # was lost). Fall back to the thread's own conversation file when it
+        # holds more messages than the activity-based view.
+        if thread_id not in ("default", "inbox") and before is None:
+            try:
+                safe_thread_id = validate_thread_id(thread_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid thread_id: {thread_id}") from None
+            file_view = _thread_file_conversation_view(anima_dir, safe_thread_id)
+            if file_view and _count_view_messages(file_view) > _count_view_messages(view):
+                return file_view
+        return view
 
     @router.get("/animas/{name}/sessions/{session_id}")
     async def get_session_detail(
