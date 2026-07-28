@@ -166,7 +166,7 @@ export class Director {
   async meeting(payload) {
     const participants = unique(
       payload.participants || [payload.from, payload.from_person, payload.to, payload.to_person, payload.name],
-    ).filter((id) => this.actors.get(id));
+    ).filter((id) => this.actors.get(id)).slice(0, 2);
     if (!participants.length) return;
     const company = this.actors.companyOf(participants[0]);
     const table = Object.values(this.scene.props).find(
@@ -180,12 +180,14 @@ export class Director {
       [tableX - 1, tableY + 1],
     ];
     const previous = new Map(participants.map((id) => [id, this.actors.get(id).state]));
-    await Promise.all(participants.map((id, index) => this.actors.walkTo(
+    const arrivals = await Promise.all(participants.map((id, index) => this.actors.walkTo(
       id,
       slots[index % slots.length],
-      { targetCompany: company, speed: 165 },
+      { targetCompany: company, speed: 165, alternatives: slots },
     )));
-    participants.forEach((id) => this.actors.setState(id, "talking"));
+    const arrived = participants.filter((id, index) => arrivals[index]);
+    if (!arrived.length) return;
+    arrived.forEach((id) => this.actors.setState(id, "talking"));
     await this.addEffect({
       type: "talk",
       x: (table.tile[0] + table.w / 2) * this.scene.canvas.tile,
@@ -193,7 +195,7 @@ export class Director {
       label: "打合せ中",
       duration: 3,
     });
-    await Promise.all(participants.map((id) => this.actors.returnHome(id)));
+    await Promise.all(arrived.map((id) => this.actors.returnHome(id)));
     participants.forEach((id) => this.actors.setState(id, previous.get(id)));
   }
 
@@ -208,15 +210,33 @@ export class Director {
     this.actors.setState(id, "reporting");
     actor.setTransientBubble("bubble_delivery", 30);
     const route = pathTiles(this.scene);
-    const handoff = route.bottom;
-    await this.actors.walkTo(id, handoff, {
+    const entrance = this.scene.zones.entrance?.rect;
+    const door = this.scene.props.door_frame || {
+      tile: [
+        entrance ? Math.floor((entrance[0] + entrance[2] - 5) / 2) : 17,
+        Math.floor(this.scene.canvas.h / this.scene.canvas.tile) - 3,
+      ],
+      w: 6,
+      h: 4,
+      bottom_inset: 64,
+    };
+    const handoff = door.service_tile || [door.tile[0] + door.w - 1, door.tile[1] - 1];
+    const arrived = await this.actors.walkTo(id, handoff, {
       speed: 165,
-      via: [route.top, route.middle],
+      via: [route.top, route.middle, route.bottom],
+      alternatives: [
+        [handoff[0] - 2, handoff[1]],
+        [handoff[0], handoff[1] - 2],
+      ],
     });
-    const door = this.scene.props.door;
+    if (!arrived) {
+      actor.clearTransientBubble();
+      this.actors.setState(id, previous);
+      return;
+    }
     const customerX = (door.tile[0] + door.w / 2) * this.scene.canvas.tile;
-    const customerY = (door.tile[1] + door.h) * this.scene.canvas.tile;
-    const handoffPosition = positionForTile(this.scene, handoff);
+    const customerY = this.scene.canvas.h - (door.bottom_inset ?? 64);
+    const handoffPosition = positionForTile(this.scene, this.actors.reservedTile(id) || handoff);
     await Promise.all([
       this.addEffect({
         type: "customer",
@@ -380,7 +400,25 @@ export class Director {
     const definition = this.assets.character("customer");
     const animation = definition.anims[progress < 0.5 ? "walk_up" : "walk_down"];
     const frame = Math.floor(effect.elapsed * animation.fps) % animation.frames;
+    const door = this.scene.props.door_frame;
+    const doorImage = this.assets.prop("door_frame", 192, 112);
+    const doorWidth = doorImage.naturalWidth || doorImage.width || 192;
+    const doorHeight = doorImage.naturalHeight || doorImage.height || 112;
+    const doorBottom = this.scene.canvas.h - (door?.bottom_inset ?? 64);
+    const doorTop = doorBottom - doorHeight;
+    const doorX = (door?.tile?.[0] ?? 17) * this.scene.canvas.tile;
+    const crossingThreshold = doorBottom - 32;
     ctx.save();
+    if (y > crossingThreshold) {
+      ctx.beginPath();
+      ctx.rect(
+        doorX + Math.round(doorWidth * 0.24),
+        doorTop + Math.round(doorHeight * 0.25),
+        Math.round(doorWidth * 0.48),
+        Math.round(doorHeight * 0.75),
+      );
+      ctx.clip();
+    }
     ctx.globalAlpha = visible * 0.18;
     ctx.fillStyle = "#1a1116";
     ctx.beginPath();
@@ -398,6 +436,9 @@ export class Director {
       definition.frameW,
       definition.frameH,
     );
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = visible;
     drawPixelText(ctx, "guest", x, y + 2, {
       fontSize: 5,
       scale: 2,

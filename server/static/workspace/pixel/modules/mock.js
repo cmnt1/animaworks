@@ -5,7 +5,7 @@ const STATES = Object.freeze([
 
 function performanceEvents(actorIds) {
   const first = (index = 0) => actorIds[index % actorIds.length];
-  const group = (offset) => actorIds.slice(offset, offset + 3);
+  const group = (offset) => actorIds.slice(offset, offset + 2);
   return [
     {
       label: "envelope",
@@ -64,6 +64,7 @@ export class MockDemo {
       cycles: 0,
       states: [...STATES],
       actors: [...this.actorIds],
+      maxMovingActors: 2,
     };
   }
 
@@ -95,7 +96,12 @@ export class MockDemo {
 
   runPerformanceTick() {
     if (!this.running) return;
-    const event = this.performanceEvents[this.performanceTick % this.performanceEvents.length];
+    let event = this.performanceEvents[this.performanceTick % this.performanceEvents.length];
+    const moving = this.actors.movingCount();
+    if ((event.label === "meeting" && moving > 0) ||
+        (event.label === "delivery" && moving >= 2)) {
+      event = this.performanceEvents.find((candidate) => candidate.label === "instruction");
+    }
     event.run({
       actors: this.actors,
       director: this.director,

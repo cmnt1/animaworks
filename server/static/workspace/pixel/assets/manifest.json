@@ -557,13 +557,19 @@
         "w": 1280,
         "h": 96,
         "anchor": "top-left"
+      },
+      "wall_bottom": {
+        "file": "scene/wall_bottom.png",
+        "w": 1280,
+        "h": 64,
+        "anchor": "top-left"
       }
     },
     "props": {
       "desk": {
         "file": "scene/desk.png",
-        "w": 96,
-        "h": 64,
+        "w": 112,
+        "h": 72,
         "anchor": "bottom"
       },
       "whiteboard": {
@@ -612,6 +618,12 @@
         "file": "scene/door.png",
         "w": 64,
         "h": 64,
+        "anchor": "bottom"
+      },
+      "door_frame": {
+        "file": "scene/door_frame.png",
+        "w": 192,
+        "h": 112,
         "anchor": "bottom"
       },
       "bookshelf": {
@@ -716,10 +728,10 @@
         "h": 48,
         "anchor": "bottom"
       },
-      "desk_human": {
-        "file": "scene/desk_human.png",
-        "w": 128,
-        "h": 72,
+      "desk_taka": {
+        "file": "scene/desk_taka.png",
+        "w": 136,
+        "h": 80,
         "anchor": "bottom"
       }
     },

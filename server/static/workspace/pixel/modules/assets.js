@@ -37,6 +37,38 @@ function loadImage(url) {
   });
 }
 
+function runtimeAssetUrl(file) {
+  const encodedPath = String(file).split("/").map(encodeURIComponent).join("/");
+  return `${resolveBasePath()}/api/workspace/pixel/assets/${encodedPath}`;
+}
+
+async function fetchRuntimeAsset(file) {
+  try {
+    const response = await fetch(runtimeAssetUrl(file), { cache: "no-store" });
+    return response.ok ? response : null;
+  } catch {
+    return null;
+  }
+}
+
+async function imageFromResponse(response) {
+  const objectUrl = URL.createObjectURL(await response.blob());
+  try {
+    return await loadImage(objectUrl);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function loadDeclaredImage(file, bundledUrl) {
+  const runtimeResponse = await fetchRuntimeAsset(file);
+  if (runtimeResponse) {
+    const runtimeImage = await imageFromResponse(runtimeResponse);
+    if (runtimeImage) return runtimeImage;
+  }
+  return loadImage(bundledUrl);
+}
+
 function shade(hex, amount) {
   const value = Number.parseInt(hex.slice(1), 16);
   const channel = (shift) => Math.max(0, Math.min(255, ((value >> shift) & 255) + amount));
@@ -53,7 +85,9 @@ function stableHash(value) {
 }
 
 function sampleKey(id) {
-  return `sample_${String((stableHash(id) % 6) + 1).padStart(2, "0")}`;
+  const trailing = /(\d+)\s*$/.exec(String(id));
+  const index = trailing ? (parseInt(trailing[1], 10) - 1) % 6 : stableHash(id) % 6;
+  return `sample_${String(index + 1).padStart(2, "0")}`;
 }
 
 function placeholderCharacter(id, frameW = 64, frameH = 64) {
@@ -198,11 +232,21 @@ export class AssetStore {
 
   static async load(animas = [], options = {}) {
     let manifest = {};
-    try {
-      const response = await fetch(new URL("manifest.json", ASSET_ROOT), { cache: "no-store" });
-      if (response.ok) manifest = await response.json();
-    } catch {
-      manifest = {};
+    const runtimeManifest = await fetchRuntimeAsset("manifest.json");
+    if (runtimeManifest) {
+      try {
+        manifest = await runtimeManifest.json();
+      } catch {
+        manifest = {};
+      }
+    }
+    if (!Object.keys(manifest).length) {
+      try {
+        const response = await fetch(new URL("manifest.json", ASSET_ROOT), { cache: "no-store" });
+        if (response.ok) manifest = await response.json();
+      } catch {
+        manifest = {};
+      }
     }
     const store = new AssetStore(manifest);
     await store.loadDeclaredImages();
@@ -247,7 +291,7 @@ export class AssetStore {
       if (freshAssets.has(key)) {
         url.searchParams.set("fresh", String(Date.now()));
       }
-      const image = await loadImage(url);
+      const image = await loadDeclaredImage(file, url);
       if (image) this.images.set(key, image);
     }));
   }
@@ -281,6 +325,10 @@ export class AssetStore {
 
   wall(mode) {
     return this.images.get(`scene.walls.${mode}`) || null;
+  }
+
+  wallBottom() {
+    return this.images.get("scene.walls.wall_bottom") || null;
   }
 
   prop(name, width = 96, height = 64) {

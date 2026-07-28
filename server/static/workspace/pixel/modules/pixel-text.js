@@ -50,18 +50,20 @@ const GLYPHS = Object.freeze({
   ")": ["01000", "00100", "00010", "00010", "00010", "00100", "01000"],
 });
 
-function rasterizeBitmap(value, color) {
+function rasterizeBitmap(value, color, letterSpacing = 1) {
   const glyphs = [...value].map((character) => GLYPHS[character] || GLYPHS[character.toLowerCase()]);
   if (glyphs.some((glyph) => !glyph)) return null;
+  const spacing = Math.max(0, Math.round(letterSpacing));
+  const advance = 5 + spacing;
   const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, glyphs.length * 6 - 1);
+  canvas.width = Math.max(1, glyphs.length * advance - spacing);
   canvas.height = 7;
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = color;
   glyphs.forEach((glyph, glyphIndex) => {
     glyph.forEach((row, y) => {
       [...row].forEach((pixel, x) => {
-        if (pixel === "1") ctx.fillRect(glyphIndex * 6 + x, y, 1, 1);
+        if (pixel === "1") ctx.fillRect(glyphIndex * advance + x, y, 1, 1);
       });
     });
   });
@@ -73,10 +75,11 @@ function rasterize(text, options = {}) {
   const fontSize = options.fontSize || 6;
   const color = options.color || "#ffffff";
   const weight = options.bold === false ? "400" : "700";
-  const key = `${value}|${fontSize}|${color}|${weight}|${options.bitmap !== false}`;
+  const letterSpacing = options.letterSpacing ?? 1;
+  const key = `${value}|${fontSize}|${color}|${weight}|${options.bitmap !== false}|${letterSpacing}`;
   if (cache.has(key)) return cache.get(key);
 
-  const bitmap = options.bitmap === false ? null : rasterizeBitmap(value, color);
+  const bitmap = options.bitmap === false ? null : rasterizeBitmap(value, color, letterSpacing);
   if (bitmap) {
     cache.set(key, bitmap);
     return bitmap;
