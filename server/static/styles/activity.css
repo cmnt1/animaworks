@@ -341,6 +341,14 @@
   cursor: not-allowed;
 }
 
+.activity-load-progress {
+  padding: 0.6rem;
+  margin-top: 0.5rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--aw-color-text-muted);
+}
+
 .activity-page .activity-empty {
   text-align: center;
   padding: 3rem 1rem;
