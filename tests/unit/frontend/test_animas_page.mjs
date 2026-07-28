@@ -62,9 +62,6 @@ class MockEl {
   set innerHTML(html) {
     this._innerHTML = String(html ?? "");
     this.children = [];
-    // Extract elements with data-name / class for action buttons
-    const re = /<([a-z0-9]+)([^>]*)>([\s\S]*?)<\/\1>|<([a-z0-9]+)([^>]*)\/>/gi;
-    // Simpler: collect buttons by class via regex on raw HTML
   }
 
   get innerHTML() {
@@ -294,177 +291,9 @@ describe("fetchAnimasWithProcessStatus merge", () => {
   });
 });
 
-describe("list row HTML integration", () => {
-  it("builds a list row with health + process actions (helpers)", () => {
-    const p = {
-      name: "sakura",
-      status: "running",
-      pid: 42,
-      uptime_sec: 120,
-      missed_pings: 0,
-    };
-    const health = helpers.healthIndicatorHtml(p.status, p.missed_pings || 0);
-    const actions = helpers.processActionButtonsHtml(p.name, p.status);
-    const row = `
-      <td>${health}</td>
-      <td>${p.name}</td>
-      <td>${actions}</td>
-    `;
-    assert.match(row, /#22c55e/);
-    assert.match(row, /process-trigger-btn/);
-    assert.match(row, /process-stop-btn/);
-    assert.match(row, /sakura/);
-  });
-});
-
-// ── Rich list pure helpers from pages/animas.js ──
-
-function loadListHelpers() {
-  const path = resolve(STATIC, "pages/animas.js");
-  let source = readFileSync(path, "utf8");
-  source = source.replace(/^import\s+.+;?\s*$/gm, "");
-
-  // Pull exported pure helpers + their dependencies by evaluating the module body
-  // with stubs for runtime-only deps.
-  const preamble = `
-    const escapeHtml = (s) => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-    const t = (k, vars) => {
-      if (!vars) return k;
-      return k + ":" + JSON.stringify(vars);
-    };
-    const animaHashColor = (name) => "hsl(120, 45%, 45%)";
-    const companyColor = (company) => (company ? "#2563eb" : "");
-    const shortModel = (model) => {
-      if (!model) return "";
-      return String(model)
-        .replace(/^(openai|google|vertex_ai|azure|ollama|bedrock)\\//, "")
-        .replace(/^jp\\.anthropic\\./, "")
-        .replace(/^anthropic\\./, "");
-    };
-    const healthIndicatorHtml = ${helpers.healthIndicatorHtml.toString()};
-    const formatUptime = ${helpers.formatUptime.toString()};
-    const processActionButtonsHtml = ${helpers.processActionButtonsHtml.toString()};
-    const bustupCandidates = () => [];
-    const resolveCachedAvatar = async () => null;
-    const api = async () => { throw new Error("api not mocked"); };
-    const renderMarkdown = (s) => s;
-    const createPageTabs = () => ({ destroy() {} });
-    const parseAnimaSubPath = () => ({ name: null, tab: null });
-    const basePath = "";
-    const fetchAnimasList = async () => [];
-    const fetchAnimasWithProcessStatus = async () => [];
-    const bindProcessActionButtons = () => {};
-  `;
-
-  // Keep only the pure exported helpers we need (avoid side-effectful page body).
-  const names = [
-    "buildAnimaListSubtext",
-    "buildAnimaListStatusHtml",
-    "splitProcessActionButtons",
-    "buildAnimaListIdentityHtml",
-    "buildAnimaListActionsHtml",
-  ];
-  const bodies = [];
-  for (const name of names) {
-    const re = new RegExp(
-      `export function ${name}\\([\\s\\S]*?\\n\\}`,
-    );
-    const m = source.match(re);
-    assert.ok(m, `${name} not found in pages/animas.js`);
-    bodies.push(m[0].replace(/^export /, ""));
-  }
-  const body =
-    preamble +
-    "\n" +
-    bodies.join("\n") +
-    "\nexport {\n  " +
-    names.join(",\n  ") +
-    ",\n};\n";
-  const url =
-    "data:text/javascript;base64," +
-    Buffer.from(body, "utf8").toString("base64");
-  return import(url + "#list-" + Math.random());
-}
-
-const listHelpers = await loadListHelpers();
-
-describe("rich list layout helpers (pages/animas.js)", () => {
-  it("renders avatar element with initial fallback", () => {
-    const html = listHelpers.buildAnimaListIdentityHtml({
-      name: "sakura",
-      company: "Acme",
-      speciality: "PM",
-      model: "anthropic.claude-opus-4-8",
-    });
-    assert.match(html, /anima-list-avatar/);
-    assert.match(html, /data-anima-avatar="sakura"/);
-    assert.match(html, />S</); // initial
-    assert.doesNotMatch(html, /<img\b/);
-  });
-
-  it("shows company and speciality in subtext", () => {
-    const sub = listHelpers.buildAnimaListSubtext({
-      company: "Acme",
-      speciality: "PM",
-      role: "lead",
-      model: "openai/gpt-4o",
-    });
-    assert.equal(sub, "Acme · PM · gpt-4o");
-
-    const html = listHelpers.buildAnimaListIdentityHtml({
-      name: "yuki",
-      company: "Acme",
-      speciality: "Engineer",
-      model: "openai/gpt-4o",
-    });
-    assert.match(html, /anima-list-sub/);
-    assert.match(html, /Acme/);
-    assert.match(html, /Engineer/);
-    assert.match(html, /gpt-4o/);
-  });
-
-  it("falls back to role when speciality is absent", () => {
-    const sub = listHelpers.buildAnimaListSubtext({
-      company: "Co",
-      role: "Ops",
-    });
-    assert.equal(sub, "Co · Ops");
-  });
-
-  it("keeps Heartbeat exposed and puts destructive ops in kebab menu", () => {
-    const html = listHelpers.buildAnimaListActionsHtml({
-      name: "sakura",
-      status: "running",
-    });
-    assert.match(html, /process-trigger-btn/);
-    assert.match(html, /anima-list-kebab-btn/);
-    assert.match(html, /anima-list-kebab-menu/);
-    assert.match(html, /process-interrupt-btn/);
-    assert.match(html, /process-restart-btn/);
-    assert.match(html, /process-stop-btn/);
-    // Trigger should be outside the kebab menu
-    const menuIdx = html.indexOf("anima-list-kebab-menu");
-    const triggerIdx = html.indexOf("process-trigger-btn");
-    assert.ok(triggerIdx >= 0 && menuIdx >= 0);
-    assert.ok(triggerIdx < menuIdx, "Heartbeat should appear before kebab menu");
-    // Destructive buttons only inside menu
-    const menuHtml = html.slice(menuIdx);
-    assert.match(menuHtml, /process-stop-btn/);
-    assert.doesNotMatch(menuHtml, /process-trigger-btn/);
-  });
-
-  it("puts Start button in kebab menu when stopped", () => {
-    const html = listHelpers.buildAnimaListActionsHtml({
-      name: "sakura",
-      status: "stopped",
-    });
-    assert.match(html, /anima-list-kebab-menu/);
-    assert.match(html, /process-start-btn/);
-    assert.doesNotMatch(html, /process-trigger-btn/);
-  });
-
+describe("status + org kebab helpers (modules/animas.js)", () => {
   it("integrates health + status + uptime; PID only in title", () => {
-    const html = listHelpers.buildAnimaListStatusHtml({
+    const html = helpers.buildAnimaListStatusHtml({
       status: "running",
       missed_pings: 0,
       uptime_sec: 120,
@@ -478,7 +307,7 @@ describe("rich list layout helpers (pages/animas.js)", () => {
   });
 
   it("uses warning tone when missed_pings > 0", () => {
-    const html = listHelpers.buildAnimaListStatusHtml({
+    const html = helpers.buildAnimaListStatusHtml({
       status: "running",
       missed_pings: 2,
       uptime_sec: 60,
@@ -487,29 +316,65 @@ describe("rich list layout helpers (pages/animas.js)", () => {
     assert.match(html, /anima-list-status--warning/);
     assert.match(html, /#f59e0b/);
   });
+
+  it("splitProcessActionButtons isolates Heartbeat from menu ops", () => {
+    const { triggerHtml, menuHtml, hasMenu } = helpers.splitProcessActionButtons(
+      "sakura",
+      "running",
+    );
+    assert.match(triggerHtml, /process-trigger-btn/);
+    assert.doesNotMatch(triggerHtml, /process-stop-btn/);
+    assert.match(menuHtml, /process-stop-btn/);
+    assert.doesNotMatch(menuHtml, /process-trigger-btn/);
+    assert.equal(hasMenu, true);
+  });
+
+  it("buildOrgCardKebabHtml includes open-detail + process actions", () => {
+    const html = helpers.buildOrgCardKebabHtml("sakura", "running");
+    assert.match(html, /anima-list-kebab-btn/);
+    assert.match(html, /org-card-open-detail/);
+    assert.match(html, /animas\.open_detail/);
+    assert.match(html, /process-trigger-btn/);
+    assert.match(html, /process-stop-btn/);
+    assert.match(html, /data-href="#\/animas\/sakura"/);
+  });
+
+  it("buildOrgCardKebabHtml shows Start when stopped", () => {
+    const html = helpers.buildOrgCardKebabHtml("sakura", "stopped");
+    assert.match(html, /process-start-btn/);
+    assert.doesNotMatch(html, /process-trigger-btn/);
+  });
+
+  it("mergeNodeWithProcess overlays process fields", () => {
+    const merged = helpers.mergeNodeWithProcess(
+      { name: "sakura", status: "offline", speciality: "PM" },
+      { sakura: { status: "running", pid: 7, uptime_sec: 10 } },
+    );
+    assert.equal(merged.name, "sakura");
+    assert.equal(merged.status, "running");
+    assert.equal(merged.pid, 7);
+    assert.equal(merged.speciality, "PM");
+  });
+
+  it("collectOrgChartNames walks the tree", () => {
+    const names = helpers.collectOrgChartNames([
+      { name: "ceo", children: [{ name: "a" }, { name: "b", children: [{ name: "c" }] }] },
+    ]);
+    assert.deepEqual([...names].sort(), ["a", "b", "c", "ceo"]);
+  });
+
+  it("findUnlistedAnimas returns process names missing from chart", () => {
+    const chart = new Set(["sakura"]);
+    const unlisted = helpers.findUnlistedAnimas(
+      { sakura: { status: "running" }, ghost: { status: "stopped" }, solo: {} },
+      chart,
+    );
+    assert.deepEqual(unlisted, ["ghost", "solo"]);
+  });
 });
 
 describe("process tab module", () => {
   it("renders process detail card for a single anima", async () => {
-    // Stub absolute imports used by process tab by rewriting the module graph
-    const processPath = resolve(STATIC, "pages/anima-tabs/process.js");
-    let source = readFileSync(processPath, "utf8");
-
-    // Replace imports with local stubs + re-export helpers we already loaded
-    source = source.replace(/^import\s+.+;?\s*$/gm, "");
-
-    const apiCalls = [];
-    const preamble = `
-      const escapeHtml = (s) => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-      const timeStr = (v) => v ? "12:00" : "--:--";
-      const t = (k) => k;
-      const healthIndicatorHtml = ${helpers.healthIndicatorHtml.toString()};
-      const statusBadgeHtml = ${helpers.statusBadgeHtml.toString()};
-      // rebind t/escapeHtml closures — redefine with captured helpers behavior via string templates instead
-    `;
-
-    // Simpler approach: implement a minimal inline process tab test without importing process.js
-    // Validate the expected DOM structure from helpers, matching process tab responsibilities.
     const animaName = "sakura";
     const proc = {
       name: animaName,
@@ -545,7 +410,6 @@ describe("process tab module", () => {
     assert.match(content.innerHTML, /process-trigger-btn/);
     assert.match(content.innerHTML, /status-badge success/);
 
-    // bindProcessActionButtons attaches handlers
     helpers.bindProcessActionButtons(content, { onReload: () => {} });
     const triggers = content.querySelectorAll(".process-trigger-btn");
     assert.equal(triggers.length, 1);
@@ -579,22 +443,11 @@ describe("animas.js page structure (source contract)", () => {
     assert.match(pageSource, /memory/);
   });
 
-  it("integrates process columns and 10s list polling", () => {
-    assert.match(pageSource, /fetchAnimasWithProcessStatus/);
-    assert.match(pageSource, /healthIndicatorHtml/);
-    assert.match(pageSource, /processActionButtonsHtml/);
-    assert.match(pageSource, /setInterval\(_loadListContent,\s*10000\)/);
-    assert.match(pageSource, /clearInterval/);
-  });
-
-  it("uses rich list layout: avatar, subtext, kebab, no detail button", () => {
-    assert.match(pageSource, /anima-list-avatar|buildAnimaListIdentityHtml/);
-    assert.match(pageSource, /buildAnimaListSubtext|anima-list-sub/);
-    assert.match(pageSource, /anima-list-kebab|buildAnimaListActionsHtml/);
-    assert.match(pageSource, /resolveCachedAvatar/);
-    assert.match(pageSource, /bustupCandidates/);
-    // Detail button removed from list (row click navigates)
-    assert.doesNotMatch(pageSource, /anima-detail-btn/);
+  it("list view is removed; bare render redirects to home", () => {
+    assert.doesNotMatch(pageSource, /_renderList/);
+    assert.doesNotMatch(pageSource, /_loadListContent/);
+    assert.doesNotMatch(pageSource, /_loadListAvatars/);
+    assert.match(pageSource, /location\.hash\s*=\s*["']#\/["']/);
   });
 
   it("navigates with #/animas/<name>/<tab> hash", () => {
@@ -607,6 +460,11 @@ describe("animas.js page structure (source contract)", () => {
     assert.match(pageSource, /animasSwitcher/);
     assert.match(pageSource, /_populateAnimaSwitcher/);
     assert.match(pageSource, /fetchAnimasList/);
+  });
+
+  it("back button returns to home", () => {
+    assert.match(pageSource, /animasBackBtn/);
+    assert.match(pageSource, /#\//);
   });
 });
 
@@ -629,11 +487,11 @@ describe("buildAnimaDetailHash", () => {
     return import(url + "#hash-" + Math.random());
   }
 
-  it("returns list hash when name is empty", async () => {
+  it("returns home hash when name is empty", async () => {
     const { buildAnimaDetailHash } = await loadBuildHash();
-    assert.equal(buildAnimaDetailHash(null), "#/animas");
-    assert.equal(buildAnimaDetailHash(""), "#/animas");
-    assert.equal(buildAnimaDetailHash(undefined), "#/animas");
+    assert.equal(buildAnimaDetailHash(null), "#/");
+    assert.equal(buildAnimaDetailHash(""), "#/");
+    assert.equal(buildAnimaDetailHash(undefined), "#/");
   });
 
   it("omits overview tab segment", async () => {
@@ -660,10 +518,10 @@ describe("buildAnimaDetailHash", () => {
 });
 
 describe("router no longer registers /processes", () => {
-  it("does not import processes.js", () => {
+  it("does not import processes.js and redirects list aliases to home", () => {
     const source = readFileSync(resolve(STATIC, "modules/router.js"), "utf8");
     assert.doesNotMatch(source, /pages\/processes\.js/);
     assert.match(source, /REDIRECTS/);
-    assert.match(source, /"\/processes"\s*:\s*"#\/animas"/);
+    assert.match(source, /"\/processes"\s*:\s*"#\/"/);
   });
 });
