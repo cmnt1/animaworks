@@ -634,7 +634,8 @@
     transition: filter 0.18s, opacity 0.18s;
   }
 
-  .chat-anima-tabs-header .anima-tab:not(.active):hover .anima-tab-avatar {
+  .chat-anima-tabs-header .anima-tab:not(.active):hover .anima-tab-avatar,
+  .chat-anima-tabs-header .anima-tab:not(.active):active .anima-tab-avatar {
     filter: none;
     opacity: 1;
   }
