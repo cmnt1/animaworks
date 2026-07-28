@@ -557,7 +557,8 @@
     flex-wrap: nowrap;
     align-items: center;
     gap: 0.35rem;
-    padding: 0;
+    /* 縦paddingは選択リング(box-shadow)が先頭/末尾でクリップされない余白 */
+    padding: 4px 0;
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
@@ -621,6 +622,33 @@
   .chat-anima-tabs-header .anima-tab.is-streaming:not(.active)::after {
     width: 7px;
     height: 7px;
+  }
+
+  /* --- Rail selection emphasis: dim unselected, highlight selected --- */
+  /* 未選択は減光＋彩度落とし（streaming/未読は視認性維持のため除外） */
+  .chat-anima-tabs-header
+    .anima-tab:not(.active):not(.is-streaming):not(.has-unread-complete)
+    .anima-tab-avatar {
+    filter: grayscale(45%) saturate(75%);
+    opacity: 0.55;
+    transition: filter 0.18s, opacity 0.18s;
+  }
+
+  .chat-anima-tabs-header .anima-tab:not(.active):hover .anima-tab-avatar {
+    filter: none;
+    opacity: 1;
+  }
+
+  /* 選択中: アクセントリング＋濃い背景（アイコン全体を強調） */
+  .chat-anima-tabs-header .anima-tab.active {
+    background: color-mix(in srgb, var(--aw-color-accent) 16%, var(--aw-color-bg-secondary) 84%);
+    border-color: var(--aw-color-accent);
+    box-shadow: 0 0 0 2.5px var(--aw-color-accent);
+  }
+
+  .chat-anima-tabs-header .anima-tab.active .anima-tab-avatar {
+    filter: none;
+    opacity: 1;
   }
 
   .chat-split-pane-btn,
