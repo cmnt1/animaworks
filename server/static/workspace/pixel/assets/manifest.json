@@ -1,0 +1,941 @@
+{
+  "chars": {
+    "sample_01": {
+      "file": "chars/sample_01.png",
+      "frameW": 96,
+      "frameH": 96,
+      "anims": {
+        "idle": {
+          "row": 0,
+          "frames": 4,
+          "fps": 4
+        },
+        "working": {
+          "row": 1,
+          "frames": 4,
+          "fps": 8
+        },
+        "thinking": {
+          "row": 2,
+          "frames": 4,
+          "fps": 4
+        },
+        "talking": {
+          "row": 3,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_down": {
+          "row": 4,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_up": {
+          "row": 5,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_side": {
+          "row": 6,
+          "frames": 4,
+          "fps": 8
+        },
+        "sleeping": {
+          "row": 7,
+          "frames": 4,
+          "fps": 2
+        },
+        "success": {
+          "row": 8,
+          "frames": 4,
+          "fps": 8
+        },
+        "error": {
+          "row": 9,
+          "frames": 4,
+          "fps": 8
+        }
+      }
+    },
+    "sample_02": {
+      "file": "chars/sample_02.png",
+      "frameW": 96,
+      "frameH": 96,
+      "anims": {
+        "idle": {
+          "row": 0,
+          "frames": 4,
+          "fps": 4
+        },
+        "working": {
+          "row": 1,
+          "frames": 4,
+          "fps": 8
+        },
+        "thinking": {
+          "row": 2,
+          "frames": 4,
+          "fps": 4
+        },
+        "talking": {
+          "row": 3,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_down": {
+          "row": 4,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_up": {
+          "row": 5,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_side": {
+          "row": 6,
+          "frames": 4,
+          "fps": 8
+        },
+        "sleeping": {
+          "row": 7,
+          "frames": 4,
+          "fps": 2
+        },
+        "success": {
+          "row": 8,
+          "frames": 4,
+          "fps": 8
+        },
+        "error": {
+          "row": 9,
+          "frames": 4,
+          "fps": 8
+        }
+      }
+    },
+    "sample_03": {
+      "file": "chars/sample_03.png",
+      "frameW": 96,
+      "frameH": 96,
+      "anims": {
+        "idle": {
+          "row": 0,
+          "frames": 4,
+          "fps": 4
+        },
+        "working": {
+          "row": 1,
+          "frames": 4,
+          "fps": 8
+        },
+        "thinking": {
+          "row": 2,
+          "frames": 4,
+          "fps": 4
+        },
+        "talking": {
+          "row": 3,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_down": {
+          "row": 4,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_up": {
+          "row": 5,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_side": {
+          "row": 6,
+          "frames": 4,
+          "fps": 8
+        },
+        "sleeping": {
+          "row": 7,
+          "frames": 4,
+          "fps": 2
+        },
+        "success": {
+          "row": 8,
+          "frames": 4,
+          "fps": 8
+        },
+        "error": {
+          "row": 9,
+          "frames": 4,
+          "fps": 8
+        }
+      }
+    },
+    "sample_04": {
+      "file": "chars/sample_04.png",
+      "frameW": 96,
+      "frameH": 96,
+      "anims": {
+        "idle": {
+          "row": 0,
+          "frames": 4,
+          "fps": 4
+        },
+        "working": {
+          "row": 1,
+          "frames": 4,
+          "fps": 8
+        },
+        "thinking": {
+          "row": 2,
+          "frames": 4,
+          "fps": 4
+        },
+        "talking": {
+          "row": 3,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_down": {
+          "row": 4,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_up": {
+          "row": 5,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_side": {
+          "row": 6,
+          "frames": 4,
+          "fps": 8
+        },
+        "sleeping": {
+          "row": 7,
+          "frames": 4,
+          "fps": 2
+        },
+        "success": {
+          "row": 8,
+          "frames": 4,
+          "fps": 8
+        },
+        "error": {
+          "row": 9,
+          "frames": 4,
+          "fps": 8
+        }
+      }
+    },
+    "sample_05": {
+      "file": "chars/sample_05.png",
+      "frameW": 96,
+      "frameH": 96,
+      "anims": {
+        "idle": {
+          "row": 0,
+          "frames": 4,
+          "fps": 4
+        },
+        "working": {
+          "row": 1,
+          "frames": 4,
+          "fps": 8
+        },
+        "thinking": {
+          "row": 2,
+          "frames": 4,
+          "fps": 4
+        },
+        "talking": {
+          "row": 3,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_down": {
+          "row": 4,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_up": {
+          "row": 5,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_side": {
+          "row": 6,
+          "frames": 4,
+          "fps": 8
+        },
+        "sleeping": {
+          "row": 7,
+          "frames": 4,
+          "fps": 2
+        },
+        "success": {
+          "row": 8,
+          "frames": 4,
+          "fps": 8
+        },
+        "error": {
+          "row": 9,
+          "frames": 4,
+          "fps": 8
+        }
+      }
+    },
+    "sample_06": {
+      "file": "chars/sample_06.png",
+      "frameW": 96,
+      "frameH": 96,
+      "anims": {
+        "idle": {
+          "row": 0,
+          "frames": 4,
+          "fps": 4
+        },
+        "working": {
+          "row": 1,
+          "frames": 4,
+          "fps": 8
+        },
+        "thinking": {
+          "row": 2,
+          "frames": 4,
+          "fps": 4
+        },
+        "talking": {
+          "row": 3,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_down": {
+          "row": 4,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_up": {
+          "row": 5,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_side": {
+          "row": 6,
+          "frames": 4,
+          "fps": 8
+        },
+        "sleeping": {
+          "row": 7,
+          "frames": 4,
+          "fps": 2
+        },
+        "success": {
+          "row": 8,
+          "frames": 4,
+          "fps": 8
+        },
+        "error": {
+          "row": 9,
+          "frames": 4,
+          "fps": 8
+        }
+      }
+    },
+    "human": {
+      "file": "chars/human.png",
+      "frameW": 96,
+      "frameH": 96,
+      "anims": {
+        "idle": {
+          "row": 0,
+          "frames": 4,
+          "fps": 4
+        },
+        "working": {
+          "row": 1,
+          "frames": 4,
+          "fps": 8
+        },
+        "thinking": {
+          "row": 2,
+          "frames": 4,
+          "fps": 4
+        },
+        "talking": {
+          "row": 3,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_down": {
+          "row": 4,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_up": {
+          "row": 5,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_side": {
+          "row": 6,
+          "frames": 4,
+          "fps": 8
+        },
+        "sleeping": {
+          "row": 7,
+          "frames": 4,
+          "fps": 2
+        },
+        "success": {
+          "row": 8,
+          "frames": 4,
+          "fps": 8
+        },
+        "error": {
+          "row": 9,
+          "frames": 4,
+          "fps": 8
+        }
+      }
+    },
+    "customer_a": {
+      "file": "chars/customer_a.png",
+      "frameW": 96,
+      "frameH": 96,
+      "anims": {
+        "idle": {
+          "row": 0,
+          "frames": 4,
+          "fps": 4
+        },
+        "working": {
+          "row": 1,
+          "frames": 4,
+          "fps": 8
+        },
+        "thinking": {
+          "row": 2,
+          "frames": 4,
+          "fps": 4
+        },
+        "talking": {
+          "row": 3,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_down": {
+          "row": 4,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_up": {
+          "row": 5,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_side": {
+          "row": 6,
+          "frames": 4,
+          "fps": 8
+        },
+        "sleeping": {
+          "row": 7,
+          "frames": 4,
+          "fps": 2
+        },
+        "success": {
+          "row": 8,
+          "frames": 4,
+          "fps": 8
+        },
+        "error": {
+          "row": 9,
+          "frames": 4,
+          "fps": 8
+        }
+      }
+    },
+    "customer_b": {
+      "file": "chars/customer_b.png",
+      "frameW": 96,
+      "frameH": 96,
+      "anims": {
+        "idle": {
+          "row": 0,
+          "frames": 4,
+          "fps": 4
+        },
+        "working": {
+          "row": 1,
+          "frames": 4,
+          "fps": 8
+        },
+        "thinking": {
+          "row": 2,
+          "frames": 4,
+          "fps": 4
+        },
+        "talking": {
+          "row": 3,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_down": {
+          "row": 4,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_up": {
+          "row": 5,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_side": {
+          "row": 6,
+          "frames": 4,
+          "fps": 8
+        },
+        "sleeping": {
+          "row": 7,
+          "frames": 4,
+          "fps": 2
+        },
+        "success": {
+          "row": 8,
+          "frames": 4,
+          "fps": 8
+        },
+        "error": {
+          "row": 9,
+          "frames": 4,
+          "fps": 8
+        }
+      }
+    }
+  },
+  "scene": {
+    "tiles": {
+      "wood_warm": {
+        "file": "scene/tile_wood_warm.png",
+        "w": 32,
+        "h": 32,
+        "px": 32,
+        "anchor": "top-left"
+      },
+      "wood_cool": {
+        "file": "scene/tile_wood_cool.png",
+        "w": 32,
+        "h": 32,
+        "px": 32,
+        "anchor": "top-left"
+      },
+      "carpet_blue": {
+        "file": "scene/tile_carpet_blue.png",
+        "w": 32,
+        "h": 32,
+        "px": 32,
+        "anchor": "top-left"
+      },
+      "mat": {
+        "file": "scene/tile_mat.png",
+        "w": 32,
+        "h": 32,
+        "px": 32,
+        "anchor": "top-left"
+      }
+    },
+    "walls": {
+      "day": {
+        "file": "scene/wall_strip.png",
+        "w": 1280,
+        "h": 96,
+        "anchor": "top-left"
+      },
+      "night": {
+        "file": "scene/wall_night.png",
+        "w": 1280,
+        "h": 96,
+        "anchor": "top-left"
+      }
+    },
+    "props": {
+      "desk": {
+        "file": "scene/desk.png",
+        "w": 96,
+        "h": 64,
+        "anchor": "bottom"
+      },
+      "whiteboard": {
+        "file": "scene/whiteboard.png",
+        "w": 192,
+        "h": 64,
+        "anchor": "bottom"
+      },
+      "coffee": {
+        "file": "scene/coffee.png",
+        "w": 96,
+        "h": 64,
+        "anchor": "bottom"
+      },
+      "sofa": {
+        "file": "scene/sofa.png",
+        "w": 96,
+        "h": 64,
+        "anchor": "bottom"
+      },
+      "vending": {
+        "file": "scene/vending.png",
+        "w": 64,
+        "h": 96,
+        "anchor": "bottom"
+      },
+      "server_rack": {
+        "file": "scene/server_rack.png",
+        "w": 64,
+        "h": 64,
+        "anchor": "bottom"
+      },
+      "meeting_table": {
+        "file": "scene/meeting_table.png",
+        "w": 96,
+        "h": 64,
+        "anchor": "bottom"
+      },
+      "welcome_mat": {
+        "file": "scene/welcome_mat.png",
+        "w": 128,
+        "h": 64,
+        "anchor": "bottom"
+      },
+      "door": {
+        "file": "scene/door.png",
+        "w": 64,
+        "h": 64,
+        "anchor": "bottom"
+      },
+      "bookshelf": {
+        "file": "scene/bookshelf.png",
+        "w": 128,
+        "h": 64,
+        "anchor": "bottom"
+      },
+      "plant": {
+        "file": "scene/plant.png",
+        "w": 32,
+        "h": 48,
+        "anchor": "bottom"
+      },
+      "cat": {
+        "file": "scene/cat.png",
+        "w": 32,
+        "h": 32,
+        "anchor": "bottom"
+      },
+      "chair": {
+        "file": "scene/chair.png",
+        "w": 32,
+        "h": 40,
+        "anchor": "bottom"
+      },
+      "rug": {
+        "file": "scene/rug.png",
+        "w": 160,
+        "h": 128,
+        "anchor": "bottom"
+      },
+      "trash_bin": {
+        "file": "scene/trash_bin.png",
+        "w": 32,
+        "h": 32,
+        "anchor": "bottom"
+      },
+      "side_table": {
+        "file": "scene/side_table.png",
+        "w": 64,
+        "h": 64,
+        "anchor": "bottom"
+      },
+      "clutter_a": {
+        "file": "scene/clutter_a.png",
+        "w": 32,
+        "h": 16,
+        "anchor": "bottom"
+      },
+      "clutter_b": {
+        "file": "scene/clutter_b.png",
+        "w": 32,
+        "h": 16,
+        "anchor": "bottom"
+      },
+      "clutter_c": {
+        "file": "scene/clutter_c.png",
+        "w": 32,
+        "h": 16,
+        "anchor": "bottom"
+      },
+      "clutter_d": {
+        "file": "scene/clutter_d.png",
+        "w": 32,
+        "h": 16,
+        "anchor": "bottom"
+      },
+      "trolley": {
+        "file": "scene/trolley.png",
+        "w": 64,
+        "h": 64,
+        "anchor": "bottom"
+      },
+      "cat_bed": {
+        "file": "scene/cat_bed.png",
+        "w": 32,
+        "h": 32,
+        "anchor": "bottom"
+      },
+      "sign_stand": {
+        "file": "scene/sign_stand.png",
+        "w": 32,
+        "h": 48,
+        "anchor": "bottom"
+      },
+      "bookshelf_b": {
+        "file": "scene/bookshelf_b.png",
+        "w": 128,
+        "h": 64,
+        "anchor": "bottom"
+      },
+      "poster_a": {
+        "file": "scene/poster_a.png",
+        "w": 32,
+        "h": 48,
+        "anchor": "bottom"
+      },
+      "poster_b": {
+        "file": "scene/poster_b.png",
+        "w": 32,
+        "h": 48,
+        "anchor": "bottom"
+      },
+      "desk_human": {
+        "file": "scene/desk_human.png",
+        "w": 128,
+        "h": 72,
+        "anchor": "bottom"
+      }
+    },
+    "items": {
+      "item_01": {
+        "file": "scene/item_01.png",
+        "w": 32,
+        "h": 32,
+        "anchor": "bottom"
+      },
+      "item_02": {
+        "file": "scene/item_02.png",
+        "w": 32,
+        "h": 32,
+        "anchor": "bottom"
+      },
+      "item_03": {
+        "file": "scene/item_03.png",
+        "w": 32,
+        "h": 32,
+        "anchor": "bottom"
+      },
+      "item_04": {
+        "file": "scene/item_04.png",
+        "w": 32,
+        "h": 32,
+        "anchor": "bottom"
+      },
+      "item_05": {
+        "file": "scene/item_05.png",
+        "w": 32,
+        "h": 32,
+        "anchor": "bottom"
+      },
+      "item_06": {
+        "file": "scene/item_06.png",
+        "w": 32,
+        "h": 32,
+        "anchor": "bottom"
+      },
+      "item_07": {
+        "file": "scene/item_07.png",
+        "w": 32,
+        "h": 32,
+        "anchor": "bottom"
+      },
+      "item_08": {
+        "file": "scene/item_08.png",
+        "w": 32,
+        "h": 32,
+        "anchor": "bottom"
+      },
+      "item_09": {
+        "file": "scene/item_09.png",
+        "w": 32,
+        "h": 32,
+        "anchor": "bottom"
+      },
+      "item_10": {
+        "file": "scene/item_10.png",
+        "w": 32,
+        "h": 32,
+        "anchor": "bottom"
+      },
+      "item_11": {
+        "file": "scene/item_11.png",
+        "w": 32,
+        "h": 32,
+        "anchor": "bottom"
+      },
+      "item_12": {
+        "file": "scene/item_12.png",
+        "w": 32,
+        "h": 32,
+        "anchor": "bottom"
+      },
+      "item_13": {
+        "file": "scene/item_13.png",
+        "w": 32,
+        "h": 32,
+        "anchor": "bottom"
+      },
+      "item_14": {
+        "file": "scene/item_14.png",
+        "w": 32,
+        "h": 32,
+        "anchor": "bottom"
+      }
+    }
+  },
+  "fx": {
+    "bubble_working": {
+      "file": "fx/bubbles.png",
+      "row": 0,
+      "frames": 2,
+      "fps": 2
+    },
+    "bubble_thinking": {
+      "file": "fx/bubbles.png",
+      "row": 1,
+      "frames": 2,
+      "fps": 2
+    },
+    "bubble_meeting": {
+      "file": "fx/bubbles.png",
+      "row": 2,
+      "frames": 2,
+      "fps": 2
+    },
+    "bubble_sleeping": {
+      "file": "fx/bubbles.png",
+      "row": 3,
+      "frames": 2,
+      "fps": 2
+    },
+    "bubble_reporting": {
+      "file": "fx/bubbles.png",
+      "row": 4,
+      "frames": 2,
+      "fps": 2
+    },
+    "bubble_error": {
+      "file": "fx/bubbles.png",
+      "row": 5,
+      "frames": 2,
+      "fps": 2
+    },
+    "bubble_break": {
+      "file": "fx/bubbles.png",
+      "row": 6,
+      "frames": 2,
+      "fps": 2
+    },
+    "bubble_instruction": {
+      "file": "fx/bubbles.png",
+      "row": 7,
+      "frames": 2,
+      "fps": 2
+    },
+    "bubble_delivery": {
+      "file": "fx/bubbles.png",
+      "row": 8,
+      "frames": 2,
+      "fps": 2
+    },
+    "bubble_small_question": {
+      "file": "fx/bubble_small.png",
+      "row": 0,
+      "frames": 2,
+      "fps": 2
+    },
+    "bubble_small_exclamation": {
+      "file": "fx/bubble_small.png",
+      "row": 1,
+      "frames": 2,
+      "fps": 2
+    },
+    "bubble_small_music": {
+      "file": "fx/bubble_small.png",
+      "row": 2,
+      "frames": 2,
+      "fps": 2
+    },
+    "bubble_small_sleep": {
+      "file": "fx/bubble_small.png",
+      "row": 3,
+      "frames": 2,
+      "fps": 2
+    },
+    "envelope": {
+      "file": "fx/envelope.png",
+      "row": 0,
+      "frames": 4,
+      "fps": 8
+    },
+    "parcel": {
+      "file": "fx/parcel.png",
+      "row": 0,
+      "frames": 2,
+      "fps": 3
+    },
+    "heart": {
+      "file": "fx/heart.png",
+      "row": 0,
+      "frames": 4,
+      "fps": 8
+    },
+    "sparkle": {
+      "file": "fx/sparkle.png",
+      "row": 0,
+      "frames": 4,
+      "fps": 8
+    },
+    "smoke": {
+      "file": "fx/smoke.png",
+      "row": 0,
+      "frames": 4,
+      "fps": 6
+    },
+    "flash": {
+      "file": "fx/flash.png",
+      "row": 0,
+      "frames": 4,
+      "fps": 8
+    },
+    "moon": {
+      "file": "fx/moon.png",
+      "row": 0,
+      "frames": 1,
+      "fps": 1
+    },
+    "sun": {
+      "file": "fx/sun.png",
+      "row": 0,
+      "frames": 1,
+      "fps": 1
+    }
+  }
+}
