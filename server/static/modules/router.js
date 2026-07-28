@@ -13,11 +13,12 @@ let containerEl = null;
 // Note: /setup is handled by an explicit block in handleRoute (kept for
 // compatibility with existing structure tests) and is also listed here.
 export const REDIRECTS = {
-  "/processes": "#/animas",
+  // List views folded into home org chart
+  "/processes": "#/",
   "/server": "#/",
   "/setup": "#/settings",
-  "/memory": "#/animas",
-  "/assets": "#/animas",
+  "/memory": "#/",
+  "/assets": "#/",
   "/activity-report": "#/activity",
   "/logs": "#/activity/logs",
   "/users": "#/settings/users",
@@ -127,10 +128,8 @@ function registerRoutes() {
   routes["/task-board"] = () => import("../pages/task-board.js" + _v);
   // /users removed — redirected to #/settings/users (see REDIRECTS)
   routes["/animas"] = () => import("../pages/animas.js" + _v);
-  // /processes removed — redirected to #/animas (see REDIRECTS)
+  // /processes, /memory, /assets removed — redirected to #/ (home org chart; see REDIRECTS)
   // /server removed — redirected to #/ (see REDIRECTS)
-  // /memory removed — redirected to #/animas (see REDIRECTS)
-  // /assets removed — redirected to #/animas (see REDIRECTS)
   // /logs removed — redirected to #/activity/logs (see REDIRECTS)
   // /activity-report removed — redirected to #/activity (see REDIRECTS)
   routes["/settings"] = () => import("../pages/settings.js" + _v);
@@ -148,10 +147,17 @@ async function handleRoute() {
     return;
   }
 
-  // Permanent redirects (e.g. #/processes → #/animas)
+  // Permanent redirects (e.g. #/processes → #/)
   const redirect = resolveRedirect(path);
   if (redirect) {
     window.location.hash = redirect;
+    return;
+  }
+
+  // Bare #/animas (list) is gone — send bookmarks to home org chart.
+  // Detail routes #/animas/<name>[/<tab>] still resolve via prefix match.
+  if (path === "/animas") {
+    window.location.hash = "#/";
     return;
   }
 
@@ -165,6 +171,11 @@ async function handleRoute() {
     // Fallback to chat
     window.location.hash = "#/chat";
     return;
+  }
+
+  // Anima detail lives under /animas but nav item was removed — highlight Home
+  if (matched && matched.route === "/animas") {
+    navPath = "/";
   }
 
   // Destroy previous page

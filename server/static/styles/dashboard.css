@@ -534,10 +534,11 @@
 /* ── Card ────────────────────────────────────── */
 
 .org-tree-card {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 7px 14px 7px 8px;
+  padding: 7px 36px 7px 8px;
   background: var(--aw-color-bg-primary);
   border: 1px solid var(--aw-color-border);
   border-radius: 10px;
@@ -605,17 +606,50 @@
   white-space: nowrap;
 }
 
-.org-tree-status {
-  flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+/* Integrated process status (health + label + uptime) inside org cards */
+.org-tree-proc-status {
+  margin-top: 2px;
+  line-height: 1.2;
 }
 
-.org-tree-status.status-thinking {
-  width: 10px;
-  height: 10px;
-  box-shadow: 0 0 6px 2px var(--aw-color-warning);
+.org-tree-proc-status .anima-list-status {
+  font-size: 0.72rem;
+  gap: 6px;
+}
+
+.org-tree-proc-status .anima-list-status-text {
+  white-space: nowrap;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.org-tree-card-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+}
+
+.org-tree-card-actions .anima-list-kebab-btn {
+  width: 1.6rem;
+  height: 1.6rem;
+  font-size: 1rem;
+}
+
+.org-tree-unlisted {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--aw-color-border, #e5e7eb);
+}
+
+.org-tree-unlisted-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--aw-color-text-secondary, #6b7280);
+  margin-bottom: 0.5rem;
 }
 
 .org-tree-meta {

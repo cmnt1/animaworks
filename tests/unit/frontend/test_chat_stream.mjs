@@ -9,6 +9,12 @@
 
 import { describe, it, beforeEach, mock } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const STATIC = resolve(__dirname, "../../../server/static");
 
 // ── Mock Browser Globals ──────────────────────────────
 
@@ -71,13 +77,38 @@ function createMockFetch(chunks, status = 200) {
 
 // ── Import Module Under Test ──────────────────────────
 
-// We need to import after setting up globals, but before each test
-// we'll re-mock fetch since streamChat uses the global fetch.
+// chat-stream.js (and its deps) use absolute "/shared/..." browser paths.
+// Load as separate data: modules with stubs so Node can resolve them.
 let streamChat;
 
-// Dynamic import to ensure globals are set up first
-const mod = await import("../../../server/static/shared/chat-stream.js");
-streamChat = mod.streamChat;
+{
+  const toDataUrl = (body, tag) =>
+    "data:text/javascript;base64," +
+    Buffer.from(body, "utf8").toString("base64") +
+    "#" +
+    tag;
+
+  const stripImports = (src) =>
+    src.replace(/(?:^|\n)\s*import\b[\s\S]*?;/g, "\n");
+
+  const sseBody =
+    `
+    const t = (k) => k;
+    const createLogger = () => ({ info() {}, warn() {}, error() {}, debug() {} });
+  ` + stripImports(readFileSync(resolve(STATIC, "shared/sse-parser.js"), "utf8"));
+  const sseUrl = toDataUrl(sseBody, "sse-parser");
+
+  // chat-stream imports parseConvSSE/getErrorMessage from sse and basePath/logger
+  const chatBody =
+    `
+    import { parseConvSSE, getErrorMessage } from "${sseUrl}";
+    const createLogger = () => ({ info() {}, warn() {}, error() {}, debug() {} });
+    const basePath = "";
+  ` + stripImports(readFileSync(resolve(STATIC, "shared/chat-stream.js"), "utf8"));
+
+  const mod = await import(toDataUrl(chatBody, "chat-stream"));
+  streamChat = mod.streamChat;
+}
 
 // ── Tests ──────────────────────────────
 
@@ -144,7 +175,9 @@ describe("streamChat", () => {
       onDone: (data) => { doneData = data; },
     });
 
-    assert.deepStrictEqual(doneData, { summary: "Summary text", emotion: "happy", images: [] });
+    assert.strictEqual(doneData.summary, "Summary text");
+    assert.strictEqual(doneData.emotion, "happy");
+    assert.deepStrictEqual(doneData.images, []);
   });
 
   it("should default emotion to 'neutral' when not provided", async () => {
@@ -195,7 +228,8 @@ describe("streamChat", () => {
       onError: (data) => { errorData = data; },
     });
 
-    assert.strictEqual(errorData.message, "応答がタイムアウトしました");
+    // Under Node tests, i18n is stubbed to return the key itself
+    assert.strictEqual(errorData.message, "sse.ipc_timeout");
   });
 
   it("should call onBootstrap for bootstrap events", async () => {

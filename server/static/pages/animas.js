@@ -1,29 +1,19 @@
-// ── Anima Management ───────────────────────
+// ── Anima Management (detail only; list merged into home org chart) ──
 import { api } from "../modules/api.js";
 import { escapeHtml, renderMarkdown } from "../modules/state.js";
 import {
   fetchAnimasList,
-  fetchAnimasWithProcessStatus,
-  healthIndicatorHtml,
-  formatUptime,
-  processActionButtonsHtml,
-  bindProcessActionButtons,
-  animaHashColor,
 } from "../modules/animas.js";
-import { companyColor, shortModel } from "../shared/avatar-utils.js";
-import { bustupCandidates, resolveCachedAvatar } from "../modules/avatar-resolver.js";
 import { createPageTabs } from "../shared/page-tabs.js";
 import { parseAnimaSubPath } from "../modules/router.js";
 import { t } from "/shared/i18n.js";
 import { basePath } from "/shared/base-path.js";
 
-let _viewMode = "list"; // "list" | "detail"
 let _selectedName = null;
 let _activeTab = "overview";
 let _container = null;
 let _modelsCache = null;
 let _toolsCache = null;
-let _listRefreshInterval = null;
 let _pageTabs = null;
 let _activeTabModule = null;
 
@@ -38,13 +28,14 @@ const _DETAIL_TABS = [
 
 /**
  * Build detail-view hash for an anima (+ optional tab).
+ * Empty name returns home (list view was merged into org chart).
  * Pure helper — exported for unit tests.
  * @param {string|null|undefined} name
  * @param {string} [tab="overview"]
  * @returns {string}
  */
 export function buildAnimaDetailHash(name, tab = "overview") {
-  if (!name) return "#/animas";
+  if (!name) return "#/";
   const base = `#/animas/${encodeURIComponent(name)}`;
   return tab && tab !== "overview" ? `${base}/${encodeURIComponent(tab)}` : base;
 }
@@ -56,13 +47,6 @@ function _extractStatsCount(value) {
     if (typeof count === "number" && Number.isFinite(count)) return count;
   }
   return 0;
-}
-
-function _clearListPolling() {
-  if (_listRefreshInterval) {
-    clearInterval(_listRefreshInterval);
-    _listRefreshInterval = null;
-  }
 }
 
 function _destroyActiveTab() {
@@ -95,290 +79,25 @@ function _navigateAnimas(name, tab) {
 
 export function render(container, { subPath } = {}) {
   _container = container;
-  _clearListPolling();
   _destroyActiveTab();
 
   const { name, tab } = parseAnimaSubPath(subPath);
-  if (name) {
-    _viewMode = "detail";
-    _selectedName = name;
-    _activeTab = tab || "overview";
-    _showDetail(name, _activeTab);
-  } else {
-    _viewMode = "list";
-    _selectedName = null;
-    _activeTab = "overview";
-    _renderList();
+  if (!name) {
+    // List view removed — redirect bookmarks of #/animas to home org chart
+    window.location.hash = "#/";
+    return;
   }
+
+  _selectedName = name;
+  _activeTab = tab || "overview";
+  _showDetail(name, _activeTab);
 }
 
 export function destroy() {
-  _clearListPolling();
   _destroyActiveTab();
-  document.removeEventListener("click", _onDocumentClickCloseKebab);
   _container = null;
-  _viewMode = "list";
   _selectedName = null;
   _activeTab = "overview";
-}
-
-// ── List View ──────────────────────────────
-
-/**
- * Build subtext for an anima list row: company · speciality|role · short model.
- * Pure helper — exported for unit tests.
- * @param {object} p
- * @returns {string}
- */
-export function buildAnimaListSubtext(p) {
-  const specialty = p.speciality || p.role || "";
-  const model = shortModel(p.model);
-  return [p.company, specialty, model].filter(Boolean).join(" · ");
-}
-
-/**
- * Integrated status HTML: health dot + status + uptime; PID in title tooltip.
- * Pure helper — exported for unit tests.
- * @param {object} p
- * @returns {string}
- */
-export function buildAnimaListStatusHtml(p) {
-  const status = p.status || "offline";
-  const missedPings = p.missed_pings || 0;
-  const health = healthIndicatorHtml(status, missedPings);
-  const uptime = p.uptime_sec ? formatUptime(p.uptime_sec) : "";
-  const parts = [status];
-  if (uptime && uptime !== "--") parts.push(uptime);
-
-  let tone = "neutral";
-  if (status === "error" || status === "down") tone = "error";
-  else if (missedPings > 0) tone = "warning";
-  else if (status === "running" || status === "idle") tone = "success";
-  else if (status === "stopped" || status === "not_found" || status === "offline") tone = "neutral";
-  else tone = "warning";
-
-  const pidTitle = p.pid != null && p.pid !== "" ? `PID: ${p.pid}` : "";
-  return `<span class="anima-list-status anima-list-status--${tone}" title="${escapeHtml(pidTitle)}">${health}<span class="anima-list-status-text">${escapeHtml(parts.join(" · "))}</span></span>`;
-}
-
-/**
- * Split processActionButtonsHtml into exposed Heartbeat vs kebab menu content.
- * Pure helper — exported for unit tests.
- * @param {string} name
- * @param {string} status
- * @returns {{ triggerHtml: string, menuHtml: string, hasMenu: boolean }}
- */
-export function splitProcessActionButtons(name, status) {
-  const full = processActionButtonsHtml(name, status);
-  const triggerRe = /<button\b[^>]*\bprocess-trigger-btn\b[^>]*>[\s\S]*?<\/button>/i;
-  const triggerMatch = full.match(triggerRe);
-  const triggerHtml = triggerMatch ? triggerMatch[0].trim() : "";
-  const menuHtml = full.replace(triggerRe, "").trim();
-  // Menu is useful when it contains buttons (destructive ops / start)
-  const hasMenu = /<button\b/i.test(menuHtml);
-  return { triggerHtml, menuHtml, hasMenu };
-}
-
-/**
- * Anima cell HTML: 40px circular avatar (initial fallback) + name + subtext.
- * Pure helper — exported for unit tests.
- * @param {object} p
- * @returns {string}
- */
-export function buildAnimaListIdentityHtml(p) {
-  const name = p.name || "";
-  const initial = escapeHtml(name.charAt(0).toUpperCase());
-  const color = animaHashColor(name);
-  const ring = companyColor(p.company);
-  const ringStyle = ring ? `box-shadow:0 0 0 2px ${ring};` : "";
-  const sub = buildAnimaListSubtext(p);
-  const subHtml = sub
-    ? `<div class="anima-list-sub">${escapeHtml(sub)}</div>`
-    : "";
-  return `
-    <div class="anima-list-identity">
-      <div class="anima-list-avatar" id="listAvatar_${escapeHtml(name)}" style="background:${color};${ringStyle}" data-anima-avatar="${escapeHtml(name)}">${initial}</div>
-      <div class="anima-list-meta">
-        <div class="anima-list-name">${escapeHtml(name)}</div>
-        ${subHtml}
-      </div>
-    </div>
-  `;
-}
-
-/**
- * Actions cell: exposed Heartbeat + kebab menu for destructive ops.
- * Pure helper — exported for unit tests.
- * @param {object} p
- * @returns {string}
- */
-export function buildAnimaListActionsHtml(p) {
-  const status = p.status || "offline";
-  const { triggerHtml, menuHtml, hasMenu } = splitProcessActionButtons(p.name, status);
-
-  if (!triggerHtml && !hasMenu) {
-    // starting / restarting / unknown — keep processActionButtonsHtml output as-is
-    return `<div class="anima-list-actions process-actions">${processActionButtonsHtml(p.name, status)}</div>`;
-  }
-
-  const kebab = hasMenu
-    ? `
-      <div class="anima-list-kebab-wrap">
-        <button type="button" class="anima-list-kebab-btn" aria-label="${escapeHtml(t("animas.actions_menu"))}" aria-haspopup="true" aria-expanded="false" data-name="${escapeHtml(p.name)}">⋮</button>
-        <div class="anima-list-kebab-menu process-actions" hidden>
-          ${menuHtml}
-        </div>
-      </div>
-    `
-    : "";
-
-  return `
-    <div class="anima-list-actions">
-      ${triggerHtml ? `<div class="process-actions anima-list-primary-actions">${triggerHtml}</div>` : ""}
-      ${kebab}
-    </div>
-  `;
-}
-
-function _bindKebabMenus(root) {
-  if (!root) return;
-
-  root.querySelectorAll(".anima-list-kebab-btn").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const wrap = btn.closest(".anima-list-kebab-wrap");
-      if (!wrap) return;
-      const wasOpen = wrap.classList.contains("open");
-      // Close others first
-      root.querySelectorAll(".anima-list-kebab-wrap.open").forEach((w) => {
-        w.classList.remove("open");
-        const menu = w.querySelector(".anima-list-kebab-menu");
-        if (menu) menu.hidden = true;
-        const b = w.querySelector(".anima-list-kebab-btn");
-        if (b) b.setAttribute("aria-expanded", "false");
-      });
-      if (!wasOpen) {
-        wrap.classList.add("open");
-        const menu = wrap.querySelector(".anima-list-kebab-menu");
-        if (menu) menu.hidden = false;
-        btn.setAttribute("aria-expanded", "true");
-      }
-    });
-  });
-
-  // Prevent row navigation when interacting with menu contents
-  root.querySelectorAll(".anima-list-kebab-menu").forEach((menu) => {
-    menu.addEventListener("click", (e) => e.stopPropagation());
-  });
-}
-
-function _onDocumentClickCloseKebab(e) {
-  if (e.target.closest && e.target.closest(".anima-list-kebab-wrap")) return;
-  document.querySelectorAll(".anima-list-kebab-wrap.open").forEach((w) => {
-    w.classList.remove("open");
-    const menu = w.querySelector(".anima-list-kebab-menu");
-    if (menu) menu.hidden = true;
-    const b = w.querySelector(".anima-list-kebab-btn");
-    if (b) b.setAttribute("aria-expanded", "false");
-  });
-}
-
-async function _loadListAvatars(root) {
-  if (!root) return;
-  const avatarEls = root.querySelectorAll("[id^='listAvatar_']");
-  const candidates = bustupCandidates();
-  for (const el of avatarEls) {
-    const name = el.id.replace("listAvatar_", "");
-    const url = await resolveCachedAvatar(name, candidates, "S");
-    if (url) {
-      el.innerHTML = `<img src="${escapeHtml(url)}" alt="${escapeHtml(name)}">`;
-    }
-  }
-}
-
-async function _renderList() {
-  if (!_container) return;
-  _clearListPolling();
-
-  _container.innerHTML = `
-    <div class="page-header">
-      <h2>${t("nav.animas")}</h2>
-    </div>
-    <div id="animasListContent">
-      <div class="loading-placeholder">${t("common.loading")}</div>
-    </div>
-  `;
-
-  await _loadListContent();
-  _listRefreshInterval = setInterval(_loadListContent, 10000);
-}
-
-async function _loadListContent() {
-  const content = document.getElementById("animasListContent");
-  if (!content) return;
-
-  try {
-    const animas = await fetchAnimasWithProcessStatus();
-
-    if (animas.length === 0) {
-      content.innerHTML = `<div class="loading-placeholder">${t("animas.not_registered")}</div>`;
-      return;
-    }
-
-    content.innerHTML = `
-      <table class="data-table anima-list-table">
-        <thead>
-          <tr>
-            <th>${t("animas.table_name")}</th>
-            <th>${t("animas.table_status")}</th>
-            <th>${t("animas.table_actions")}</th>
-          </tr>
-        </thead>
-        <tbody id="animasTableBody"></tbody>
-      </table>
-    `;
-
-    const tbody = document.getElementById("animasTableBody");
-    for (const p of animas) {
-      let stateClass = "anima-item anima-list-row";
-      if (p.status === "bootstrapping" || p.bootstrapping) {
-        stateClass = "anima-item anima-item--loading anima-list-row";
-      } else if (p.status === "not_found" || p.status === "stopped") {
-        stateClass = "anima-item anima-item--sleeping anima-list-row";
-      }
-
-      const tr = document.createElement("tr");
-      tr.className = stateClass;
-      tr.dataset.anima = p.name;
-      tr.innerHTML = `
-        <td>${buildAnimaListIdentityHtml(p)}</td>
-        <td>${buildAnimaListStatusHtml(p)}</td>
-        <td>${buildAnimaListActionsHtml(p)}</td>
-      `;
-
-      tr.addEventListener("click", (e) => {
-        if (
-          e.target.closest("button") ||
-          e.target.closest(".process-actions") ||
-          e.target.closest(".anima-list-kebab-wrap")
-        ) {
-          return;
-        }
-        _navigateAnimas(p.name);
-      });
-
-      tbody.appendChild(tr);
-    }
-
-    _bindKebabMenus(content);
-    document.removeEventListener("click", _onDocumentClickCloseKebab);
-    document.addEventListener("click", _onDocumentClickCloseKebab);
-
-    bindProcessActionButtons(content, { onReload: _loadListContent });
-    _loadListAvatars(content);
-  } catch (err) {
-    content.innerHTML = `<div class="loading-placeholder">${t("common.load_failed")}: ${escapeHtml(err.message)}</div>`;
-  }
 }
 
 // ── Detail View ────────────────────────────
@@ -975,10 +694,8 @@ function _bindPermissionsCard(name, perm, availableTools) {
 
 async function _showDetail(name, tabId = "overview") {
   if (!_container) return;
-  _clearListPolling();
   _destroyActiveTab();
 
-  _viewMode = "detail";
   _selectedName = name;
   _activeTab = _DETAIL_TABS.some((t) => t.id === tabId) ? tabId : "overview";
 
@@ -998,7 +715,7 @@ async function _showDetail(name, tabId = "overview") {
   `;
 
   document.getElementById("animasBackBtn")?.addEventListener("click", () => {
-    _navigateAnimas(null);
+    window.location.hash = "#/";
   });
 
   _populateAnimaSwitcher(name, _activeTab);

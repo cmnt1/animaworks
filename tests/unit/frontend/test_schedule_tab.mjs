@@ -81,7 +81,8 @@ function loadScheduleModule({ apiImpl } = {}) {
 function loadHomeHelpers() {
   const path = resolve(STATIC, "pages/home.js");
   let source = readFileSync(path, "utf8");
-  source = source.replace(/^import\s+.+;?\s*$/gm, "");
+  // Strip single-line and multi-line import declarations
+  source = source.replace(/(?:^|\n)\s*import\b[\s\S]*?;/g, "\n");
 
   // Keep only exported pure helpers (+ their dependencies inside the file).
   // Drop render/destroy side effects by not calling them.
@@ -97,13 +98,21 @@ function loadHomeHelpers() {
         .replace(/"/g, "&quot;");
     const escapeAttr = escapeHtml;
     const timeStr = (v) => (v ? "12:00" : "--:--");
-    const statusClass = () => "";
     const animaHashColor = () => "#000";
     const companyColor = () => "#000";
     const getIcon = () => "";
     const getDisplaySummary = () => "";
     const bustupCandidates = () => [];
     const resolveCachedAvatar = async () => null;
+    const fetchProcessMap = async () => ({});
+    const buildAnimaListStatusHtml = () => "";
+    const buildOrgCardKebabHtml = () => "";
+    const bindKebabMenus = () => {};
+    const onDocumentClickCloseKebab = () => {};
+    const bindProcessActionButtons = () => {};
+    const mergeNodeWithProcess = (node) => node;
+    const collectOrgChartNames = () => new Set();
+    const findUnlistedAnimas = () => [];
   `;
 
   const url =

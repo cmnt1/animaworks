@@ -148,6 +148,164 @@ export function processActionButtonsHtml(name, status) {
 }
 
 /**
+ * Integrated status HTML: health dot + status + uptime; PID in title tooltip.
+ * Pure helper — used by org-chart cards (and tests).
+ * @param {object} p
+ * @returns {string}
+ */
+export function buildAnimaListStatusHtml(p) {
+  const status = p.status || "offline";
+  const missedPings = p.missed_pings || 0;
+  const health = healthIndicatorHtml(status, missedPings);
+  const uptime = p.uptime_sec ? formatUptime(p.uptime_sec) : "";
+  const parts = [status];
+  if (uptime && uptime !== "--") parts.push(uptime);
+
+  let tone = "neutral";
+  if (status === "error" || status === "down") tone = "error";
+  else if (missedPings > 0) tone = "warning";
+  else if (status === "running" || status === "idle") tone = "success";
+  else if (status === "stopped" || status === "not_found" || status === "offline") tone = "neutral";
+  else tone = "warning";
+
+  const pidTitle = p.pid != null && p.pid !== "" ? `PID: ${p.pid}` : "";
+  return `<span class="anima-list-status anima-list-status--${tone}" title="${escapeHtml(pidTitle)}">${health}<span class="anima-list-status-text">${escapeHtml(parts.join(" · "))}</span></span>`;
+}
+
+/**
+ * Split processActionButtonsHtml into exposed Heartbeat vs kebab menu content.
+ * Pure helper — exported for unit tests / org-chart menus.
+ * @param {string} name
+ * @param {string} status
+ * @returns {{ triggerHtml: string, menuHtml: string, hasMenu: boolean }}
+ */
+export function splitProcessActionButtons(name, status) {
+  const full = processActionButtonsHtml(name, status);
+  const triggerRe = /<button\b[^>]*\bprocess-trigger-btn\b[^>]*>[\s\S]*?<\/button>/i;
+  const triggerMatch = full.match(triggerRe);
+  const triggerHtml = triggerMatch ? triggerMatch[0].trim() : "";
+  const menuHtml = full.replace(triggerRe, "").trim();
+  // Menu is useful when it contains buttons (destructive ops / start)
+  const hasMenu = /<button\b/i.test(menuHtml);
+  return { triggerHtml, menuHtml, hasMenu };
+}
+
+/**
+ * Kebab menu HTML for org-chart / action menus: open-detail + all process actions.
+ * Pure helper — exported for unit tests.
+ * @param {string} name
+ * @param {string} status
+ * @returns {string}
+ */
+export function buildOrgCardKebabHtml(name, status) {
+  const eName = escapeHtml(name);
+  const detailHash = `#/animas/${encodeURIComponent(name)}`;
+  const processHtml = processActionButtonsHtml(name, status);
+  return `
+    <div class="anima-list-kebab-wrap org-tree-kebab">
+      <button type="button" class="anima-list-kebab-btn" aria-label="${escapeHtml(t("animas.actions_menu"))}" aria-haspopup="true" aria-expanded="false" data-name="${eName}">⋮</button>
+      <div class="anima-list-kebab-menu process-actions" hidden>
+        <button type="button" class="btn-secondary org-card-open-detail" data-name="${eName}" data-href="${escapeHtml(detailHash)}">${escapeHtml(t("animas.open_detail"))}</button>
+        ${processHtml}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Merge a process-status map entry onto an org-chart node (pure).
+ * Process fields override node fields when present; name is preserved.
+ * @param {object} node
+ * @param {Record<string, object>} processMap
+ * @returns {object}
+ */
+export function mergeNodeWithProcess(node, processMap) {
+  if (!node || !node.name) return node;
+  const proc = processMap && processMap[node.name];
+  if (!proc) return { ...node, status: node.status || "offline" };
+  return { ...node, ...proc, name: node.name };
+}
+
+/**
+ * Collect all anima names from an org chart tree (pure).
+ * @param {Array<object>} tree
+ * @returns {Set<string>}
+ */
+export function collectOrgChartNames(tree) {
+  const names = new Set();
+  function walk(nodes) {
+    for (const n of nodes || []) {
+      if (n && n.name) names.add(n.name);
+      if (n && n.children) walk(n.children);
+    }
+  }
+  walk(tree);
+  return names;
+}
+
+/**
+ * Process names present in processMap but missing from the org chart (pure).
+ * @param {Record<string, object>} processMap
+ * @param {Set<string>} chartNames
+ * @returns {string[]}
+ */
+export function findUnlistedAnimas(processMap, chartNames) {
+  const listed = chartNames || new Set();
+  return Object.keys(processMap || {}).filter((n) => n && !listed.has(n)).sort();
+}
+
+/**
+ * Bind kebab menu open/close handlers inside a container.
+ * @param {HTMLElement} root
+ */
+export function bindKebabMenus(root) {
+  if (!root) return;
+
+  root.querySelectorAll(".anima-list-kebab-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const wrap = btn.closest(".anima-list-kebab-wrap");
+      if (!wrap) return;
+      const wasOpen = wrap.classList.contains("open");
+      // Close others first
+      root.querySelectorAll(".anima-list-kebab-wrap.open").forEach((w) => {
+        w.classList.remove("open");
+        const menu = w.querySelector(".anima-list-kebab-menu");
+        if (menu) menu.hidden = true;
+        const b = w.querySelector(".anima-list-kebab-btn");
+        if (b) b.setAttribute("aria-expanded", "false");
+      });
+      if (!wasOpen) {
+        wrap.classList.add("open");
+        const menu = wrap.querySelector(".anima-list-kebab-menu");
+        if (menu) menu.hidden = false;
+        btn.setAttribute("aria-expanded", "true");
+      }
+    });
+  });
+
+  // Prevent card/row navigation when interacting with menu contents
+  root.querySelectorAll(".anima-list-kebab-menu").forEach((menu) => {
+    menu.addEventListener("click", (e) => e.stopPropagation());
+  });
+}
+
+/**
+ * Document click handler: close any open kebab menus.
+ * @param {Event} e
+ */
+export function onDocumentClickCloseKebab(e) {
+  if (e.target.closest && e.target.closest(".anima-list-kebab-wrap")) return;
+  document.querySelectorAll(".anima-list-kebab-wrap.open").forEach((w) => {
+    w.classList.remove("open");
+    const menu = w.querySelector(".anima-list-kebab-menu");
+    if (menu) menu.hidden = true;
+    const b = w.querySelector(".anima-list-kebab-btn");
+    if (b) b.setAttribute("aria-expanded", "false");
+  });
+}
+
+/**
  * Bind process action button handlers inside a container.
  * @param {HTMLElement} container
  * @param {{ onReload?: () => void }} [opts]
