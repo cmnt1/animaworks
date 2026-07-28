@@ -70,6 +70,16 @@ async function start() {
     loadScene(initialAnimas),
     AssetStore.load(initialAnimas, { runtime: !forceMock }),
   ]);
+  const officeBackground = assets.officeBackground();
+  if (officeBackground && assets.officeBackgroundSlots) {
+    const config = assets.manifest.scene.office_bg;
+    scene.background_mode = {
+      enabled: true,
+      slots: assets.officeBackgroundSlots,
+    };
+    scene.canvas.w = config.w || officeBackground.naturalWidth || scene.canvas.w;
+    scene.canvas.h = config.h || officeBackground.naturalHeight || scene.canvas.h;
+  }
   logicalWidth = scene.canvas.w;
   logicalHeight = scene.canvas.h;
   resizeCanvas();

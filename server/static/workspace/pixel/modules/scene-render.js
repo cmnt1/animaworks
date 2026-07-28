@@ -70,6 +70,11 @@ export class SceneRenderer {
     this.ctx.imageSmoothingEnabled = false;
     this.scene = scene;
     this.assets = assets;
+    this.backgroundMode = Boolean(
+      scene.background_mode?.enabled &&
+      assets.officeBackground() &&
+      scene.background_mode?.slots,
+    );
     this.tile = scene.canvas.tile;
     this.mode = "day";
     this.instructions = [];
@@ -79,7 +84,7 @@ export class SceneRenderer {
       day: "2-digit",
       weekday: "short",
     }).format(new Date());
-    const catProp = scene.props.cat;
+    const catProp = this.backgroundMode ? null : scene.props.cat;
     this.cat = catProp ? {
       x: (catProp.tile[0] + 0.5) * this.tile,
       y: (catProp.tile[1] + 1) * this.tile,
@@ -93,6 +98,9 @@ export class SceneRenderer {
     this.toneCanvas = document.createElement("canvas");
     this.toneCanvas.width = scene.canvas.w;
     this.toneCanvas.height = scene.canvas.h;
+    this.backgroundFrameCanvas = document.createElement("canvas");
+    this.backgroundFrameCanvas.width = scene.canvas.w;
+    this.backgroundFrameCanvas.height = scene.canvas.h;
   }
 
   setLighting(mode) {
@@ -115,6 +123,10 @@ export class SceneRenderer {
   draw(actors, director, timeSeconds = 0) {
     const { ctx } = this;
     ctx.imageSmoothingEnabled = false;
+    if (this.backgroundMode) {
+      this.drawBackgroundMode(actors, director);
+      return;
+    }
     this.drawFloor();
     this.drawHumanPlatform();
     this.drawPathChevrons();
@@ -241,6 +253,137 @@ export class SceneRenderer {
     this.drawPaletteUnifier();
     this.drawVignette();
     this.applyUnifiedTone();
+  }
+
+  drawBackgroundMode(actors, director) {
+    const { ctx } = this;
+    const background = this.assets.officeBackground();
+    ctx.drawImage(background, 0, 0, this.canvas.width, this.canvas.height);
+    if (this.mode === "night") this.drawBackgroundNight();
+    this.drawWhiteboardText();
+    const backgroundFrameCtx = this.backgroundFrameCanvas.getContext("2d");
+    backgroundFrameCtx.imageSmoothingEnabled = false;
+    backgroundFrameCtx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    backgroundFrameCtx.drawImage(this.canvas, 0, 0);
+
+    const allActors = [...actors.values()];
+    const seated = allActors
+      .filter((actor) => actor.isSeated)
+      .sort((left, right) => (left.y - right.y) || (left.x - right.x));
+    const walking = allActors
+      .filter((actor) => !actor.isSeated)
+      .sort((left, right) => (left.y - right.y) || (left.x - right.x));
+    seated.forEach((actor) => actor.draw(ctx));
+    seated.forEach((actor) => this.drawDeskOcclusion(actor));
+    walking.forEach((actor) => actor.draw(ctx));
+    director?.draw(ctx);
+    this.drawBackgroundOverlays(allActors);
+    this.drawPaletteUnifier();
+    this.drawVignette();
+    this.applyUnifiedTone();
+  }
+
+  drawDeskOcclusion(actor) {
+    const slot = actor.backgroundSlot;
+    const fallbackWidth = actor.isHuman ? 174 : 112;
+    const rect = slot?.occlusion_rect || (slot ? [
+      slot.x - fallbackWidth / 2,
+      slot.y + 55,
+      fallbackWidth,
+      actor.isHuman ? 66 : (slot.y < 300 ? 37 : 41),
+    ] : null);
+    if (!rect) return;
+    const [x, y, width, height] = rect;
+    this.ctx.drawImage(
+      this.backgroundFrameCanvas,
+      x,
+      y,
+      width,
+      height,
+      x,
+      y,
+      width,
+      height,
+    );
+  }
+
+  drawBackgroundNight() {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.globalCompositeOperation = "multiply";
+    ctx.globalAlpha = 0.46;
+    ctx.fillStyle = this.scene.lighting?.night?.tint || "#2a2a4a";
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.restore();
+  }
+
+  drawBackgroundOverlays(allActors) {
+    const layouts = [];
+    const placedNames = [];
+    const overlayActors = [...allActors].sort((left, right) =>
+      (left.y - right.y) || (left.x - right.x));
+    for (const actor of overlayActors) {
+      const namePosition = actor.isSeated && actor.backgroundNamePosition
+        ? actor.backgroundNamePosition
+        : {};
+      const nameBounds = actor.nameBounds(namePosition);
+      const nameOffsetY = collisionFreeOffset(
+        nameBounds,
+        placedNames,
+        [0, 13, -13, 26, -26, 39, -39],
+        this.canvas.height,
+      );
+      placedNames.push({ ...nameBounds, y: nameBounds.y + nameOffsetY });
+      layouts.push({ actor, namePosition, nameOffsetY });
+    }
+
+    const nameObstaclePadding = BUBBLE_NAME_GAP - COLLISION_PADDING;
+    const placedBubbles = placedNames.map((bounds) => ({
+      x: bounds.x - nameObstaclePadding,
+      y: bounds.y - nameObstaclePadding,
+      width: bounds.width + nameObstaclePadding * 2,
+      height: bounds.height + nameObstaclePadding * 2,
+    }));
+    const actorObstacles = overlayActors.map((actor) => {
+      const spriteY = actor.y - (actor.isSeated && actor.state === "sleeping" ? 14 : 0);
+      return {
+        actor,
+        x: actor.x - actor.sprite.frameW / 2,
+        y: spriteY - actor.sprite.frameH,
+        width: actor.sprite.frameW,
+        height: actor.sprite.frameH,
+      };
+    });
+    const candidates = [];
+    for (const rise of [0, -36, -72, -108, -144]) {
+      for (const shift of [0, -100, 100, -200, 200, -300, 300]) {
+        candidates.push({ x: shift, y: rise });
+      }
+    }
+    for (const layout of layouts) {
+      const { actor } = layout;
+      if (!actor.hasFullBubble()) continue;
+      const bounds = actor.bubbleBounds();
+      const placement = collisionFreePlacement(
+        bounds,
+        [
+          ...placedBubbles,
+          ...actorObstacles.filter((obstacle) => obstacle.actor !== actor),
+        ],
+        candidates,
+        this.canvas.width,
+        this.canvas.height,
+      );
+      placedBubbles.push({
+        ...bounds,
+        x: bounds.x + placement.x,
+        y: bounds.y + placement.y,
+      });
+      layout.bubbleOffsetX = placement.x;
+      layout.bubbleOffsetY = placement.y;
+    }
+    layouts.forEach((layout) => layout.actor.drawStatusOverlay(this.ctx, layout));
+    layouts.forEach((layout) => layout.actor.drawNameOverlay(this.ctx, layout));
   }
 
   drawFloor() {
@@ -996,11 +1139,12 @@ export class SceneRenderer {
   }
 
   drawWhiteboardText() {
-    const board = this.scene.props.whiteboard;
+    const backgroundBoard = this.scene.background_mode?.slots?.whiteboard;
+    const board = backgroundBoard || this.scene.props.whiteboard;
     if (!board) return;
-    const x = board.tile[0] * this.tile;
-    const y = board.tile[1] * this.tile;
-    const width = board.w * this.tile;
+    const x = backgroundBoard ? board.x : board.tile[0] * this.tile;
+    const y = backgroundBoard ? board.y : board.tile[1] * this.tile;
+    const width = backgroundBoard ? board.w : board.w * this.tile;
     const ctx = this.ctx;
     ctx.save();
     const options = { fontSize: 9, scale: 1, bold: true, color: "#343039" };
@@ -1073,6 +1217,7 @@ export class SceneRenderer {
   }
 
   drawLighting() {
+    if (this.backgroundMode) return;
     if (this.mode !== "night") return;
     const ctx = this.ctx;
     ctx.save();

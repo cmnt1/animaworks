@@ -69,6 +69,23 @@ async function loadDeclaredImage(file, bundledUrl) {
   return loadImage(bundledUrl);
 }
 
+async function loadDeclaredJson(file) {
+  const runtimeResponse = await fetchRuntimeAsset(file);
+  if (runtimeResponse) {
+    try {
+      return await runtimeResponse.json();
+    } catch {
+      // Fall through to the bundled definition.
+    }
+  }
+  try {
+    const response = await fetch(new URL(file, ASSET_ROOT), { cache: "no-store" });
+    return response.ok ? await response.json() : null;
+  } catch {
+    return null;
+  }
+}
+
 function shade(hex, amount) {
   const value = Number.parseInt(hex.slice(1), 16);
   const channel = (shift) => Math.max(0, Math.min(255, ((value >> shift) & 255) + amount));
@@ -228,6 +245,7 @@ export class AssetStore {
     this.images = new Map();
     this.placeholders = new Map();
     this.runtimeCharacters = new Map();
+    this.officeBackgroundSlots = null;
   }
 
   static async load(animas = [], options = {}) {
@@ -249,7 +267,10 @@ export class AssetStore {
       }
     }
     const store = new AssetStore(manifest);
-    await store.loadDeclaredImages();
+    await Promise.all([
+      store.loadDeclaredImages(),
+      store.loadOfficeBackgroundSlots(),
+    ]);
     if (options.runtime !== false) await store.loadRuntimeCharacters(animas);
     return store;
   }
@@ -266,6 +287,11 @@ export class AssetStore {
     }));
   }
 
+  async loadOfficeBackgroundSlots() {
+    if (!this.manifest.scene?.office_bg) return;
+    this.officeBackgroundSlots = await loadDeclaredJson("scene/office_bg_slots.json");
+  }
+
   async loadDeclaredImages() {
     const entries = [];
     const visit = (node, prefix = "") => {
@@ -277,6 +303,7 @@ export class AssetStore {
     };
     visit(this.manifest);
     const freshAssets = new Set([
+      "scene.office_bg",
       "scene.tiles.carpet_blue",
       "scene.tiles.mat",
       "scene.props.sofa",
@@ -329,6 +356,10 @@ export class AssetStore {
 
   wallBottom() {
     return this.images.get("scene.walls.wall_bottom") || null;
+  }
+
+  officeBackground() {
+    return this.images.get("scene.office_bg") || null;
   }
 
   prop(name, width = 96, height = 64) {

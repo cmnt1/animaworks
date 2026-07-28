@@ -66,6 +66,24 @@ function buildBlocked(scene) {
   return blocked;
 }
 
+function buildBackgroundBlocked(scene) {
+  const blocked = new Set();
+  const slots = [
+    ...(scene.background_mode?.slots?.slots || []),
+    scene.background_mode?.slots?.human,
+  ].filter(Boolean);
+  for (const slot of slots) {
+    const left = Math.floor((slot.x - 56) / scene.canvas.tile);
+    const right = Math.floor((slot.x + 56) / scene.canvas.tile);
+    const top = Math.floor((slot.y + 8) / scene.canvas.tile);
+    const bottom = Math.floor((slot.y + 70) / scene.canvas.tile);
+    for (let x = left; x <= right; x += 1) {
+      for (let y = top; y <= bottom; y += 1) blocked.add(tileKey(x, y));
+    }
+  }
+  return blocked;
+}
+
 function waypointCandidates(scene) {
   const points = [];
   for (const prop of Object.values(scene.props || {})) {
@@ -145,6 +163,12 @@ export class Actor {
     this.y = seatPosition.y;
     this.sprite = new SpriteSheet(definition);
     this.assets = assets;
+    this.backgroundSlot = metadata.backgroundSlot || null;
+    const deskRect = this.backgroundSlot?.desk_rect;
+    this.backgroundNamePosition = this.backgroundSlot ? {
+      x: deskRect ? deskRect[0] + deskRect[2] / 2 : this.backgroundSlot.x,
+      y: deskRect ? deskRect[1] + deskRect[3] - 11 : this.backgroundSlot.y + 80,
+    } : null;
     this.state = "idle";
     this.bubble = "";
     this.bubbleOverride = "";
@@ -444,11 +468,15 @@ export class ActorManager {
     this.scene = scene;
     this.assets = assets;
     this.tile = scene.canvas.tile;
-    this.blocked = buildBlocked(scene);
+    this.blocked = scene.background_mode?.enabled
+      ? buildBackgroundBlocked(scene)
+      : buildBlocked(scene);
     this.actors = new Map();
     this.destinationReservations = new Map();
     this.actorReservations = new Map();
-    this.waypoints = waypointCandidates(scene);
+    this.waypoints = scene.background_mode?.enabled
+      ? [[8, 15], [26, 15], [17, 16], [5, 16], [29, 16]]
+      : waypointCandidates(scene);
   }
 
   initialize(animas = []) {
@@ -456,16 +484,49 @@ export class ActorManager {
       String(anima.name || anima.id).toLowerCase(),
       anima,
     ]));
-    for (const [id, desk] of Object.entries(this.scene.desks || {})) {
-      const home = [desk.tile[0], desk.tile[1] + 2];
-      const deskFootY = (desk.tile[1] + 2) * this.tile;
+    const backgroundSlots = this.scene.background_mode?.slots;
+    const availableSlots = backgroundSlots?.slots || [];
+    let slotIndex = 0;
+    const deskEntries = Object.entries(this.scene.desks || {});
+    const orderedEntries = backgroundSlots
+      ? deskEntries.sort(([leftId, leftDesk], [rightId, rightDesk]) => {
+        const leftHuman = leftDesk.is_human || leftId === (this.scene.human_id || "human");
+        const rightHuman = rightDesk.is_human || rightId === (this.scene.human_id || "human");
+        if (leftHuman !== rightHuman) return leftHuman ? 1 : -1;
+        const companyOrder = String(leftDesk.company || known.get(leftId)?.company || "")
+          .localeCompare(String(rightDesk.company || known.get(rightId)?.company || ""), "en", {
+            sensitivity: "base",
+            numeric: true,
+          });
+        return companyOrder || leftId.localeCompare(rightId, "en", {
+          sensitivity: "base",
+          numeric: true,
+        });
+      })
+      : deskEntries;
+    for (const [id, desk] of orderedEntries) {
       const isHuman = desk.is_human || id === (this.scene.human_id || "human");
-      const deskAsset = this.assets.prop(isHuman ? "desk_taka" : "desk");
-      const deskHeight = deskAsset.naturalHeight || deskAsset.height || (isHuman ? 80 : 72);
-      const seatPosition = {
-        x: desk.tile[0] * this.tile + this.tile / 2 + (desk.seat_offset_x ?? 12),
-        y: deskFootY - (desk.seat_sink ?? 30),
-      };
+      const backgroundSlot = backgroundSlots
+        ? (isHuman ? backgroundSlots.human : availableSlots[slotIndex++])
+        : null;
+      let home;
+      let seatPosition;
+      if (backgroundSlot) {
+        seatPosition = { x: backgroundSlot.x, y: backgroundSlot.y + 72 };
+        home = [
+          Math.round(backgroundSlot.x / this.tile - 0.5),
+          Math.round((backgroundSlot.y + 100) / this.tile - 1),
+        ];
+      } else {
+        home = [desk.tile[0], desk.tile[1] + 2];
+        const deskFootY = (desk.tile[1] + 2) * this.tile;
+        const deskAsset = this.assets.prop(isHuman ? "desk_taka" : "desk");
+        const deskHeight = deskAsset.naturalHeight || deskAsset.height || (isHuman ? 80 : 72);
+        seatPosition = {
+          x: desk.tile[0] * this.tile + this.tile / 2 + (desk.seat_offset_x ?? 12),
+          y: deskFootY - (desk.seat_sink ?? Math.round(deskHeight * 0.4)),
+        };
+      }
       const actor = new Actor(
         id,
         this.assets.character(isHuman ? "human" : id),
@@ -476,6 +537,7 @@ export class ActorManager {
         {
           company: desk.company || known.get(id)?.company || "default",
           isHuman,
+          backgroundSlot,
         },
       );
       actor.setState(known.get(id)?.status || "idle");
@@ -576,7 +638,8 @@ export class ActorManager {
       Math.round(actor.y / this.tile - 1),
     ];
     const targetCompany = options.targetCompany || null;
-    const mustCross = targetCompany && targetCompany !== actor.company &&
+    const mustCross = !this.scene.background_mode?.enabled &&
+      targetCompany && targetCompany !== actor.company &&
       actor.company !== "human" && targetCompany !== "human";
     const pathRect = this.scene.zones.path?.rect;
     const pathEntry = pathRect
