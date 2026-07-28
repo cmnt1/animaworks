@@ -14,7 +14,6 @@ import {
   groupHasError,
   barHeightForType,
   barOpacityForType,
-  assignOverlapRows,
   buildLanes,
   computeBarGeometry,
   createTimeScale,
@@ -29,6 +28,7 @@ export {
   barHeightForType,
   barOpacityForType,
   assignOverlapRows,
+  countLaneRows,
   buildLanes,
   computeBarGeometry,
   createTimeScale,
@@ -246,36 +246,52 @@ export function renderSwimlane(svgEl, groups, options = {}) {
       y2: lane.y + lane.height,
     }));
 
-    svgEl.appendChild(_el("text", {
+    const label = _el("text", {
       class: `swimlane-lane-label${lane.isEmpty ? " swimlane-lane-label--empty" : ""}`,
       x: 6,
       y: lane.y + lane.height / 2,
       "dominant-baseline": "middle",
-    }, lane.anima || "—"));
+    }, lane.anima || "—");
+    svgEl.appendChild(label);
 
     if (lane.isEmpty) continue;
 
-    const overlap = assignOverlapRows(lane.groups);
-    const dualRow = [...overlap.values()].some((v) => v.row === 1);
+    const rowCount = lane.rowCount || 1;
+    const rowH = lane.height / rowCount;
+
+    if (rowCount > 1) {
+      // Parallel badge under the lane name + faint separators between rows
+      label.setAttribute("y", String(lane.y + lane.height / 2 - 6));
+      svgEl.appendChild(_el("text", {
+        class: "swimlane-lane-parallel",
+        x: 6,
+        y: lane.y + lane.height / 2 + 7,
+        "dominant-baseline": "middle",
+      }, t("activity.parallel_count", { count: rowCount })));
+
+      for (let r = 1; r < rowCount; r++) {
+        svgEl.appendChild(_el("line", {
+          class: "swimlane-row-sep",
+          x1: chartLeft,
+          y1: lane.y + r * rowH,
+          x2: chartRight,
+          y2: lane.y + r * rowH,
+        }));
+      }
+    }
 
     for (const grp of lane.groups) {
       const geom = computeBarGeometry(grp, sx, windowStartMs, windowEndMs, nowMs);
       if (geom.width <= 0) continue;
 
-      const rowInfo = overlap.get(grp.id) || { row: 0, overflowCount: 0 };
+      const rowInfo = lane.rows?.get(grp.id) || { row: 0, concurrency: 1 };
       const barH = barHeightForType(grp.type);
       const opacity = barOpacityForType(grp.type);
       const hasError = groupHasError(grp);
       const inProgress = isGroupInProgress(grp, nowMs);
       const color = GROUP_TYPE_COLORS[grp.type] || GROUP_TYPE_COLORS.single;
 
-      let barY;
-      if (dualRow) {
-        const half = lane.height / 2;
-        barY = lane.y + rowInfo.row * half + (half - barH) / 2;
-      } else {
-        barY = lane.y + (lane.height - barH) / 2;
-      }
+      const barY = lane.y + rowInfo.row * rowH + (rowH - barH) / 2;
 
       const g = _el("g", {
         class: "swimlane-bar-group"
@@ -325,22 +341,15 @@ export function renderSwimlane(svgEl, groups, options = {}) {
         }, text));
       }
 
-      if (rowInfo.overflowCount > 0) {
-        g.appendChild(_el("text", {
-          class: "swimlane-bar-overflow",
-          x: geom.x + geom.width - 2,
-          y: barY + 2,
-          "text-anchor": "end",
-          "dominant-baseline": "hanging",
-        }, `+${rowInfo.overflowCount + 2}`));
-      }
-
       const count = grp.event_count || grp.events?.length || 0;
       const tip = [
         _emojiForType(grp.type),
         _groupLabel(grp),
         _formatRange(grp.start_ts, grp.end_ts),
         t("activity.swimlane_tooltip_events", { count }),
+        rowInfo.concurrency > 1
+          ? t("activity.parallel_count", { count: rowInfo.concurrency })
+          : "",
       ].filter(Boolean).join(" · ");
       g.appendChild(_el("title", {}, tip));
 
