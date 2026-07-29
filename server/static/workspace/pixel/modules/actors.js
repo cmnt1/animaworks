@@ -13,6 +13,20 @@ const STATE_MAP = Object.freeze({
   walking: { animation: "walk_down", bubble: "" },
 });
 
+const COMPACT_STATUS_COLORS = Object.freeze({
+  idle: "#c98d9c",
+  working: "#72b98e",
+  success: "#e7bd5f",
+  walking: "#6fa4bc",
+});
+
+const NAME_TEXT_OPTIONS = Object.freeze({
+  fontSize: 4,
+  scale: 1,
+  bold: true,
+  letterSpacing: 3,
+});
+
 function normalizeState(value) {
   const raw = typeof value === "object" ? value?.state || value?.status : value;
   const state = String(raw || "idle").toLowerCase();
@@ -54,9 +68,50 @@ function buildBlocked(scene) {
   return blocked;
 }
 
+function buildBackgroundBlocked(scene) {
+  const blocked = new Set();
+  const slots = [
+    ...(scene.background_mode?.slots?.slots || []),
+    scene.background_mode?.slots?.human,
+  ].filter(Boolean);
+  for (const slot of slots) {
+    const deskRect = slot.desk_rect || [slot.x - 56, slot.y + 8, 112, 72];
+    const left = Math.floor(deskRect[0] / scene.canvas.tile);
+    const right = Math.floor((deskRect[0] + deskRect[2] - 1) / scene.canvas.tile);
+    const top = Math.floor(deskRect[1] / scene.canvas.tile);
+    const bottom = Math.floor((deskRect[1] + deskRect[3] - 1) / scene.canvas.tile);
+    for (let x = left; x <= right; x += 1) {
+      for (let y = top; y <= bottom; y += 1) blocked.add(tileKey(x, y));
+    }
+  }
+  return blocked;
+}
+
+function waypointCandidates(scene) {
+  const points = [];
+  for (const prop of Object.values(scene.props || {})) {
+    const sprite = prop.sprite || "";
+    if (prop.kind === "meeting") {
+      points.push(
+        [prop.tile[0] - 1, prop.tile[1]],
+        [prop.tile[0] + prop.w, prop.tile[1]],
+        [prop.tile[0], prop.tile[1] + prop.h],
+        [prop.tile[0] + prop.w - 1, prop.tile[1] + prop.h],
+      );
+    } else if (sprite === "sofa" || sprite === "coffee") {
+      const frontY = prop.tile[1] + prop.h + (sprite === "coffee" ? 1 : 0);
+      points.push([prop.tile[0] + Math.floor(prop.w / 2), frontY]);
+    }
+  }
+  const width = scene.canvas.w / scene.canvas.tile;
+  const height = scene.canvas.h / scene.canvas.tile;
+  return points.filter(([x, y]) => x >= 1 && x < width - 1 && y >= 4 && y < height - 1);
+}
+
 function findPath(start, goal, blocked, scene) {
   const width = scene.canvas.w / scene.canvas.tile;
   const height = scene.canvas.h / scene.canvas.tile;
+  const minimumY = scene.background_mode?.enabled ? 6 : 4;
   const startKey = tileKey(...start);
   const goalKey = tileKey(...goal);
   const open = [{ point: start, f: 0 }];
@@ -87,7 +142,7 @@ function findPath(start, goal, blocked, scene) {
     ];
     for (const next of neighbors) {
       const [x, y] = next;
-      if (x < 1 || x >= width - 1 || y < 4 || y >= height - 1) continue;
+      if (x < 1 || x >= width - 1 || y < minimumY || y >= height - 1) continue;
       const key = tileKey(x, y);
       if (key !== goalKey && blocked.has(key)) continue;
       const score = (gScore.get(currentKey) ?? Infinity) + 1;
@@ -112,6 +167,21 @@ export class Actor {
     this.y = seatPosition.y;
     this.sprite = new SpriteSheet(definition);
     this.assets = assets;
+    this.backgroundSlot = metadata.backgroundSlot || null;
+    // The 96px seated rows retain 12px of lower-body composition below the
+    // logical feet anchor. Keep the logical baseline at the desk's back edge,
+    // then compensate only while rendering the seated pose.
+    this.seatedRenderOffsetY = metadata.seatedRenderOffsetY || 0;
+    const deskRect = this.backgroundSlot?.desk_rect;
+    const frontRect = this.backgroundSlot?.occlusion_rect;
+    this.backgroundNamePosition = this.backgroundSlot ? {
+      x: deskRect ? deskRect[0] + deskRect[2] / 2 : this.backgroundSlot.x,
+      y: deskRect && deskRect[1] < 300 && frontRect
+        ? frontRect[1] + 4
+        : deskRect
+          ? deskRect[1] + deskRect[3] - 15
+          : this.backgroundSlot.y + 65,
+    } : null;
     this.state = "idle";
     this.bubble = "";
     this.bubbleOverride = "";
@@ -125,18 +195,41 @@ export class Actor {
     this.state = normalizeState(value);
     const mapping = STATE_MAP[this.state];
     this.bubble = mapping.bubble;
-    if (!this.motion) this.sprite.setAnimation(mapping.animation);
+    if (!this.motion) {
+      this.sprite.setAnimation(this.isSeated ? mapping.animation : "walk_down");
+    }
   }
 
   walk(path, speed = 120) {
-    if (this.motion?.resolve) this.motion.resolve(false);
-    const points = path.slice(1).map(([x, y]) => ({
+    const includeHomeStep = this.isSeated;
+    const route = includeHomeStep ? path : path.slice(1);
+    const points = route.map(([x, y]) => ({
       x: (x + 0.5) * this.tileSize,
       y: (y + 1) * this.tileSize,
     }));
+    return this.walkPixels(points, speed);
+  }
+
+  walkToSeat(speed = 120) {
+    return this.walkPixels([{
+      x: this.seatPosition.x,
+      y: this.seatPosition.y + this.seatedRenderOffsetY,
+    }], speed);
+  }
+
+  walkPixels(points, speed = 120) {
+    if (this.motion?.resolve) this.motion.resolve(false);
     if (!points.length) return Promise.resolve(true);
     return new Promise((resolve) => {
+      if (this.isSeated) this.y = this.visualY();
       this.isSeated = false;
+      const first = points[0];
+      const dx = first.x - this.x;
+      const dy = first.y - this.y;
+      this.sprite.setAnimation(
+        Math.abs(dx) > Math.abs(dy) ? "walk_side" : (dy < 0 ? "walk_up" : "walk_down"),
+        Math.abs(dx) > Math.abs(dy) && dx > 0,
+      );
       this.motion = { points, speed, resolve };
       this.bubble = "";
     });
@@ -165,7 +258,7 @@ export class Actor {
           const resolve = this.motion.resolve;
           this.motion = null;
           const mapping = STATE_MAP[this.state];
-          this.sprite.setAnimation(mapping.animation);
+          this.sprite.setAnimation(this.isSeated ? mapping.animation : "walk_down");
           this.bubble = mapping.bubble;
           resolve(true);
         }
@@ -199,8 +292,16 @@ export class Actor {
     this.bubbleOverrideRemaining = 0;
   }
 
+  visualY() {
+    return this.y + (this.isSeated ? this.seatedRenderOffsetY : 0);
+  }
+
+  spriteY() {
+    return this.visualY() - (this.isSeated && this.state === "sleeping" ? 14 : 0);
+  }
+
   draw(ctx) {
-    const spriteY = this.y + (this.isSeated && this.state === "sleeping" ? 8 : 0);
+    const spriteY = this.spriteY();
     ctx.save();
     ctx.globalAlpha = 0.18;
     ctx.fillStyle = "#1b1218";
@@ -208,7 +309,7 @@ export class Actor {
     ctx.ellipse(
       Math.round(this.x),
       Math.round(spriteY - 2),
-      Math.max(18, Math.round(this.sprite.frameW * 0.27)),
+      Math.max(18, Math.round(this.sprite.frameW * (this.isSeated ? 0.22 : 0.27))),
       Math.max(5, Math.round(this.sprite.frameH * 0.065)),
       0,
       0,
@@ -217,29 +318,103 @@ export class Actor {
     ctx.fill();
     ctx.restore();
     this.sprite.draw(ctx, this.x, spriteY, 1);
-    if (!this.isSeated) this.drawName(ctx);
-    const bubble = this.bubbleOverride || this.bubble || STATE_MAP[this.state]?.bubble || "bubble_break";
-    const quiet = !this.bubbleOverride && bubble === "bubble_break";
-    this.drawBubble(ctx, bubble, spriteY, { quiet });
+  }
+
+  drawStatusOverlay(ctx, options = {}) {
+    const spriteY = this.spriteY();
+    if (this.hasFullBubble()) {
+      this.drawBubble(ctx, this.currentBubble(), spriteY, {
+        offsetY: options.bubbleOffsetY || 0,
+        offsetX: options.bubbleOffsetX || 0,
+      });
+      return;
+    }
     this.drawStateAccent(ctx, spriteY);
+  }
+
+  drawNameOverlay(ctx, options = {}) {
+    const position = {
+      ...(options.namePosition || {}),
+      offsetY: options.nameOffsetY || 0,
+    };
+    this.drawName(ctx, position);
+    this.drawStatusDot(ctx, position);
+  }
+
+  drawOverlay(ctx, options = {}) {
+    this.drawStatusOverlay(ctx, options);
+    this.drawNameOverlay(ctx, options);
+  }
+
+  currentBubble() {
+    if (this.bubbleOverride) return this.bubbleOverride;
+    return STATE_MAP[this.state]?.bubble ?? "bubble_break";
+  }
+
+  isCompactStatus() {
+    return !this.bubbleOverride && Object.hasOwn(COMPACT_STATUS_COLORS, this.state);
+  }
+
+  hasFullBubble() {
+    return !this.isCompactStatus() && Boolean(this.currentBubble());
+  }
+
+  nameBounds(position = {}) {
+    const width = Math.max(28, measurePixelText(this.id, NAME_TEXT_OPTIONS) + 6);
+    const x = Math.round(position.x ?? this.x);
+    const y = Math.round((position.y ?? this.y + 3) + (position.offsetY || 0));
+    return {
+      x: x - width / 2 - 1,
+      y,
+      width: width + 12,
+      height: 11,
+    };
+  }
+
+  bubbleBounds(name = this.currentBubble(), spriteY = this.spriteY(), offsetY = 0, offsetX = 0) {
+    const definition = this.assets.fxDefinition(name, name);
+    const width = definition.frameW;
+    const height = definition.frameH;
+    const x = Math.round(this.x - width / 2 + offsetX);
+    const headTop = this.headTop(spriteY);
+    const tailBottom = definition.frameH - 3;
+    const headGap = this.backgroundSlot ? 0 : 8;
+    const bob = this.backgroundSlot ? 0 : Math.sin(this.fxTime * 3) * 2;
+    const y = Math.round(
+      headTop - headGap - tailBottom + bob + offsetY,
+    );
+    return { x, y, width, height };
   }
 
   drawName(ctx, position = {}) {
     ctx.save();
-    const textOptions = { fontSize: 4, scale: 2, bold: true };
-    const width = Math.max(36, measurePixelText(this.id, textOptions) + 8);
+    const width = Math.max(28, measurePixelText(this.id, NAME_TEXT_OPTIONS) + 6);
     const x = Math.round(position.x ?? this.x);
-    const y = Math.round(position.y ?? this.y + 3);
+    const y = Math.round((position.y ?? this.y + 3) + (position.offsetY || 0));
     ctx.fillStyle = "#573722";
-    ctx.fillRect(x - width / 2 - 1, y, width + 2, 16);
+    ctx.fillRect(x - width / 2 - 1, y, width + 2, 11);
     ctx.fillStyle = "#f3dfb5";
-    ctx.fillRect(x - width / 2, y + 1, width, 14);
-    drawPixelText(ctx, this.id, x, y + 8, {
-      ...textOptions,
+    ctx.fillRect(x - width / 2, y + 1, width, 9);
+    drawPixelText(ctx, this.id, x, y + 5, {
+      ...NAME_TEXT_OPTIONS,
       align: "center",
       baseline: "middle",
       color: "#493020",
     });
+    ctx.restore();
+  }
+
+  drawStatusDot(ctx, position = {}) {
+    const width = Math.max(28, measurePixelText(this.id, NAME_TEXT_OPTIONS) + 6);
+    const x = Math.round(position.x ?? this.x) + Math.ceil(width / 2) + 3;
+    const y = Math.round((position.y ?? this.y + 3) + (position.offsetY || 0)) + 1;
+    ctx.save();
+    ctx.fillStyle = "#573722";
+    ctx.fillRect(x, y, 8, 8);
+    ctx.fillStyle = this.hasFullBubble()
+      ? "#3a2f33"
+      : (COMPACT_STATUS_COLORS[this.state] || "#8b7a70");
+    ctx.fillRect(x + 1, y + 1, 6, 6);
     ctx.restore();
   }
 
@@ -249,10 +424,14 @@ export class Actor {
     const scale = 1;
     const width = Math.round(definition.frameW * scale);
     const height = Math.round(definition.frameH * scale);
-    const x = Math.round(this.x - width / 2);
-    const headTop = this.headTop(spriteY);
-    const tailBottom = Math.round((definition.frameH - 3) * scale);
-    const y = Math.round(headTop - 8 - tailBottom + Math.sin(this.fxTime * 3) * 2);
+    const bounds = this.bubbleBounds(
+      name,
+      spriteY,
+      options.offsetY || 0,
+      options.offsetX || 0,
+    );
+    const x = bounds.x;
+    const y = bounds.y;
     ctx.save();
     if (options.quiet) ctx.globalAlpha = 0.55;
     ctx.drawImage(
@@ -319,8 +498,19 @@ export class ActorManager {
     this.scene = scene;
     this.assets = assets;
     this.tile = scene.canvas.tile;
-    this.blocked = buildBlocked(scene);
+    this.blocked = scene.background_mode?.enabled
+      ? buildBackgroundBlocked(scene)
+      : buildBlocked(scene);
     this.actors = new Map();
+    this.destinationReservations = new Map();
+    this.actorReservations = new Map();
+    const standingWaypoints = scene.background_mode?.slots?.standing_waypoints;
+    this.waypoints = scene.background_mode?.enabled
+      ? [
+        ...(standingWaypoints?.meeting || [[14, 8], [16, 8], [18, 8], [20, 8]]),
+        ...(standingWaypoints?.lounge || [[8, 15], [10, 15], [24, 15], [26, 15]]),
+      ]
+      : waypointCandidates(scene);
   }
 
   initialize(animas = []) {
@@ -328,23 +518,63 @@ export class ActorManager {
       String(anima.name || anima.id).toLowerCase(),
       anima,
     ]));
-    for (const [id, desk] of Object.entries(this.scene.desks || {})) {
-      const home = [desk.tile[0], desk.tile[1] + 2];
-      const deskFootY = (desk.tile[1] + 2) * this.tile;
-      const seatPosition = {
-        x: desk.tile[0] * this.tile + this.tile / 2,
-        y: deskFootY - 26,
-      };
+    const backgroundSlots = this.scene.background_mode?.slots;
+    const availableSlots = backgroundSlots?.slots || [];
+    let slotIndex = 0;
+    const deskEntries = Object.entries(this.scene.desks || {});
+    const orderedEntries = backgroundSlots
+      ? deskEntries.sort(([leftId, leftDesk], [rightId, rightDesk]) => {
+        const leftHuman = leftDesk.is_human || leftId === (this.scene.human_id || "human");
+        const rightHuman = rightDesk.is_human || rightId === (this.scene.human_id || "human");
+        if (leftHuman !== rightHuman) return leftHuman ? 1 : -1;
+        const companyOrder = String(leftDesk.company || known.get(leftId)?.company || "")
+          .localeCompare(String(rightDesk.company || known.get(rightId)?.company || ""), "en", {
+            sensitivity: "base",
+            numeric: true,
+          });
+        return companyOrder || leftId.localeCompare(rightId, "en", {
+          sensitivity: "base",
+          numeric: true,
+        });
+      })
+      : deskEntries;
+    for (const [id, desk] of orderedEntries) {
+      const isHuman = desk.is_human || id === (this.scene.human_id || "human");
+      const backgroundSlot = backgroundSlots
+        ? (isHuman ? backgroundSlots.human : availableSlots[slotIndex++])
+        : null;
+      let home;
+      let seatPosition;
+      if (backgroundSlot) {
+        const deskTop = backgroundSlot.desk_rect?.[1] ?? backgroundSlot.y + 8;
+        seatPosition = { x: backgroundSlot.x, y: deskTop + 6 };
+        home = [
+          Math.round(backgroundSlot.x / this.tile - 0.5),
+          Math.round((backgroundSlot.y + 100) / this.tile - 1),
+        ];
+      } else {
+        home = [desk.tile[0], desk.tile[1] + 2];
+        const deskFootY = (desk.tile[1] + 2) * this.tile;
+        const deskAsset = this.assets.prop(isHuman ? "desk_taka" : "desk");
+        const deskHeight = deskAsset.naturalHeight || deskAsset.height || (isHuman ? 80 : 72);
+        seatPosition = {
+          x: desk.tile[0] * this.tile + this.tile / 2 + (desk.seat_offset_x ?? 12),
+          y: deskFootY - (desk.seat_sink ?? Math.round(deskHeight * 0.4)),
+        };
+      }
       const actor = new Actor(
         id,
-        this.assets.character(id),
+        this.assets.character(isHuman ? "human" : id),
         home,
         this.tile,
         seatPosition,
         this.assets,
         {
           company: desk.company || known.get(id)?.company || "default",
-          isHuman: desk.is_human || id === (this.scene.human_id || "human"),
+          isHuman,
+          backgroundSlot,
+          seatedRenderOffsetY: backgroundSlot?.seated_render_offset_y ??
+            backgroundSlots?.seated_render_offset_y ?? 12,
         },
       );
       actor.setState(known.get(id)?.status || "idle");
@@ -382,15 +612,73 @@ export class ActorManager {
     this.actors.forEach((actor) => actor.update(deltaSeconds));
   }
 
+  movingCount() {
+    return [...this.actors.values()].filter((actor) => !actor.isSeated).length;
+  }
+
+  reservedTile(id) {
+    const key = this.actorReservations.get(String(id || "").toLowerCase());
+    return key ? key.split(",").map(Number) : null;
+  }
+
+  releaseDestination(id) {
+    const actorId = String(id || "").toLowerCase();
+    const key = this.actorReservations.get(actorId);
+    if (key && this.destinationReservations.get(key) === actorId) {
+      this.destinationReservations.delete(key);
+    }
+    this.actorReservations.delete(actorId);
+  }
+
+  destinationIsFree(point, actorId) {
+    for (const [key, owner] of this.destinationReservations) {
+      if (owner === actorId) continue;
+      const [x, y] = key.split(",").map(Number);
+      if (Math.max(Math.abs(point[0] - x), Math.abs(point[1] - y)) < 2) return false;
+    }
+    for (const actor of this.actors.values()) {
+      if (actor.id === actorId || actor.isSeated) continue;
+      const x = Math.round(actor.x / this.tile - 0.5);
+      const y = Math.round(actor.y / this.tile - 1);
+      if (Math.max(Math.abs(point[0] - x), Math.abs(point[1] - y)) < 2) return false;
+    }
+    return true;
+  }
+
+  reserveDestination(id, targetTile, alternatives = []) {
+    const actorId = String(id || "").toLowerCase();
+    this.releaseDestination(actorId);
+    const seen = new Set();
+    const candidates = [targetTile, ...alternatives, ...this.waypoints].filter((point) => {
+      if (!Array.isArray(point) || point.length < 2) return false;
+      if (this.scene.background_mode?.enabled && point[1] < 6) return false;
+      const key = tileKey(...point);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const selected = candidates.find((point) => this.destinationIsFree(point, actorId));
+    if (!selected) return null;
+    const key = tileKey(...selected);
+    this.destinationReservations.set(key, actorId);
+    this.actorReservations.set(actorId, key);
+    return [...selected];
+  }
+
   async walkTo(id, targetTile, options = {}) {
     const actor = this.get(id);
     if (!actor) return false;
+    const finalTarget = options.reserveDestination === false
+      ? targetTile
+      : this.reserveDestination(id, targetTile, options.alternatives || []);
+    if (!finalTarget) return false;
     const start = actor.isSeated ? [...actor.homeTile] : [
       Math.round(actor.x / this.tile - 0.5),
       Math.round(actor.y / this.tile - 1),
     ];
     const targetCompany = options.targetCompany || null;
-    const mustCross = targetCompany && targetCompany !== actor.company &&
+    const mustCross = !this.scene.background_mode?.enabled &&
+      targetCompany && targetCompany !== actor.company &&
       actor.company !== "human" && targetCompany !== "human";
     const pathRect = this.scene.zones.path?.rect;
     const pathEntry = pathRect
@@ -401,13 +689,16 @@ export class ActorManager {
         ? [this.scene.walk.cross_company_via, ...(pathEntry ? [pathEntry] : [])]
         : []),
       ...(options.via || []),
-      targetTile,
+      finalTarget,
     ];
     let cursor = start;
     for (const destination of destinations) {
       const path = findPath(cursor, destination, this.blocked, this.scene);
       const completed = await actor.walk(path, options.speed || 150);
-      if (!completed) return false;
+      if (!completed) {
+        this.releaseDestination(id);
+        return false;
+      }
       cursor = destination;
     }
     return true;
@@ -416,9 +707,16 @@ export class ActorManager {
   async returnHome(id, options = {}) {
     const actor = this.get(id);
     if (!actor) return false;
-    const completed = await this.walkTo(id, actor.homeTile, { speed: 155, ...options });
-    if (completed) actor.sit();
-    return completed;
+    this.releaseDestination(id);
+    const completed = await this.walkTo(id, actor.homeTile, {
+      speed: 155,
+      ...options,
+      reserveDestination: false,
+    });
+    if (!completed) return false;
+    const seated = await actor.walkToSeat(options.speed || 155);
+    if (seated) actor.sit();
+    return seated;
   }
 }
 

@@ -44,6 +44,13 @@ The endpoint reads `workspace_pixel/scene.json` beside the configured anima
 directory. A 200 response replaces generated layout; a 404 response keeps the
 generated layout.
 
+Deployments can also override any bundled asset by placing a file with the same
+relative name under `workspace_pixel/assets/`. For example,
+`workspace_pixel/assets/scene/desk.png` replaces the bundled
+`assets/scene/desk.png`, and `workspace_pixel/assets/manifest.json` replaces the
+bundled manifest. The renderer requests runtime files first and falls back to
+the bundled copy when no override exists.
+
 Full scene objects contain:
 
 - `canvas`: logical width, height, and tile size

@@ -1261,6 +1261,16 @@ def create_app(
             raise HTTPException(status_code=500, detail="Invalid workspace scene")
         return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
+    @app.get("/api/workspace/pixel/assets/{path:path}", include_in_schema=False)
+    async def _pixel_workspace_asset(path: str):
+        assets_root = (app.state.animas_dir.parent / "workspace_pixel" / "assets").resolve()
+        candidate = (assets_root / path).resolve()
+        if not candidate.is_relative_to(assets_root):
+            raise HTTPException(status_code=400, detail="Invalid asset path")
+        if not candidate.is_file():
+            raise HTTPException(status_code=404)
+        return FileResponse(candidate, headers={"Cache-Control": "no-store"})
+
     # ── Version stamp (changes on every server start) ────
     _app_version = str(int(time.time()))
     static_dir = Path(__file__).parent / "static"

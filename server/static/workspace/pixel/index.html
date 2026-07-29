@@ -10,23 +10,26 @@
     :root {
       color-scheme: dark;
       font-family: ui-monospace, "SFMono-Regular", "Noto Sans JP", monospace;
-      background: #17131d;
+      --pixel-scale: 1;
+      --letterbox-color: #17131d;
+      background: var(--letterbox-color);
     }
     * { box-sizing: border-box; }
     html, body { width: 100%; height: 100%; margin: 0; overflow: auto; }
     body {
       display: grid;
       place-items: center;
-      min-width: 1280px;
-      min-height: 832px;
-      background: #17131d;
+      min-width: 1120px;
+      min-height: 736px;
+      background: var(--letterbox-color);
     }
     #stage {
       position: relative;
-      width: 1280px;
-      height: 832px;
+      width: 1120px;
+      height: 736px;
       flex: none;
       overflow: hidden;
+      image-rendering: pixelated;
       box-shadow:
         inset 0 0 0 4px #392318,
         inset 0 0 0 7px #b47b47,
@@ -37,10 +40,10 @@
     }
     #workspace {
       display: block;
-      width: 1280px;
-      height: 832px;
-      image-rendering: pixelated;
+      width: 1120px;
+      height: 736px;
       image-rendering: crisp-edges;
+      image-rendering: pixelated;
       background: #d7b98b;
     }
     header {
@@ -153,7 +156,7 @@
 </head>
 <body>
   <main id="stage">
-    <canvas id="workspace" width="1280" height="832" aria-label="AnimaWorks pixel office"></canvas>
+    <canvas id="workspace" width="1120" height="736" aria-label="AnimaWorks pixel office"></canvas>
     <header>
       <span class="title">ANIMAWORKS // PIXEL OFFICE</span>
       <span class="status">

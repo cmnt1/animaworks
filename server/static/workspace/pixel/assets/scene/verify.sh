@@ -19,8 +19,25 @@ scene = manifest["scene"]
 expected_items = {f"item_{index:02d}" for index in range(1, 15)}
 if set(scene["items"]) != expected_items:
     raise SystemExit("scene item keys must be item_01 through item_14")
-if "desk_human" not in scene["props"]:
-    raise SystemExit("scene props must declare desk_human")
+if "desk_taka" not in scene["props"]:
+    raise SystemExit("scene props must declare desk_taka")
+if "wall_bottom" not in scene["walls"]:
+    raise SystemExit("scene walls must declare wall_bottom")
+if "door_frame" not in scene["props"]:
+    raise SystemExit("scene props must declare door_frame")
+
+expected_prop_sizes = {
+    "desk": (112, 72),
+    "desk_taka": (136, 80),
+    "door_frame": (192, 112),
+}
+for prop_name, expected_size in expected_prop_sizes.items():
+    prop = scene["props"][prop_name]
+    if (prop["w"], prop["h"]) != expected_size:
+        raise SystemExit(
+            f"{prop_name}: manifest size must be {expected_size}, "
+            f"got {(prop['w'], prop['h'])}"
+        )
 
 entries = [
     *scene["tiles"].values(),
@@ -28,6 +45,8 @@ entries = [
     *scene["props"].values(),
     *scene["items"].values(),
 ]
+if len(entries) != 49:
+    raise SystemExit(f"expected 49 scene assets, got {len(entries)}")
 for entry in entries:
     for field in ("file", "w", "h", "anchor"):
         if field not in entry:
@@ -42,6 +61,40 @@ for entry in entries:
             raise SystemExit(
                 f"{entry['file']}: expected {(entry['w'], entry['h'])}, got {image.size}"
             )
+
+for prop_name in ("door_frame", "desk", "desk_taka"):
+    prop_path = manifest_path.parent / scene["props"][prop_name]["file"]
+    with Image.open(prop_path) as image:
+        alpha_values = set(
+            image.convert("RGBA").getchannel("A").get_flattened_data()
+        )
+        if not alpha_values <= {0, 255} or 0 not in alpha_values:
+            raise SystemExit(
+                f"{prop_path.name} must use clean binary transparency"
+            )
+
+for tile_name in ("wood_warm", "wood_cool"):
+    tile_path = manifest_path.parent / scene["tiles"][tile_name]["file"]
+    with Image.open(tile_path) as image:
+        rgb = image.convert("RGB")
+        top = [rgb.getpixel((x, 0)) for x in range(32)]
+        left = [rgb.getpixel((0, y)) for y in range(32)]
+        if len(set(top + left)) != 1:
+            raise SystemExit(f"{tile_path.name}: grout must be a solid 1px top/left edge")
+        grout = top[0]
+        if all(rgb.getpixel((x, 1)) == grout for x in range(1, 32)):
+            raise SystemExit(f"{tile_path.name}: top grout is thicker than 1px")
+        if all(rgb.getpixel((1, y)) == grout for y in range(1, 32)):
+            raise SystemExit(f"{tile_path.name}: left grout is thicker than 1px")
+        interior = [
+            rgb.getpixel((x, y))
+            for y in range(1, 32)
+            for x in range(1, 32)
+        ]
+        grout_luma = sum(grout) / 3
+        interior_luma = sum(sum(pixel) / 3 for pixel in interior) / len(interior)
+        if grout_luma >= interior_luma:
+            raise SystemExit(f"{tile_path.name}: grout must be darker than the floor")
 
 disk_items = {path.stem for path in scene_dir.glob("item_*.png")}
 if disk_items != expected_items:

@@ -15,6 +15,8 @@ const dayNightButton = document.querySelector("#dayNight");
 const params = new URLSearchParams(location.search);
 const forceMock = params.get("mock") === "1";
 const fastMock = params.get("fast") === "1";
+let logicalWidth = Number(canvas.getAttribute("width")) || 1120;
+let logicalHeight = Number(canvas.getAttribute("height")) || 736;
 
 function setConnection(mode) {
   connectionDot.className = "";
@@ -38,19 +40,22 @@ function updateDateBoard() {
 updateDateBoard();
 
 function resizeCanvas() {
-  const logicalWidth = 1280;
-  const logicalHeight = 832;
-  const scale = Math.max(1, Math.floor(Math.min(
-    window.innerWidth / logicalWidth,
-    window.innerHeight / logicalHeight,
-  )));
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const scale = Math.max(
+    1,
+    Math.floor(Math.min(viewportWidth / logicalWidth, viewportHeight / logicalHeight)),
+  );
   const width = logicalWidth * scale;
   const height = logicalHeight * scale;
   const stage = document.querySelector("#stage");
+  document.documentElement.style.setProperty("--pixel-scale", String(scale));
+  stage.dataset.pixelScale = String(scale);
   stage.style.width = `${width}px`;
   stage.style.height = `${height}px`;
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
+  window.__pixelDisplayScale = scale;
 }
 
 async function start() {
@@ -65,6 +70,19 @@ async function start() {
     loadScene(initialAnimas),
     AssetStore.load(initialAnimas, { runtime: !forceMock }),
   ]);
+  const officeBackground = assets.officeBackground();
+  if (officeBackground && assets.officeBackgroundSlots) {
+    const config = assets.manifest.scene.office_bg;
+    scene.background_mode = {
+      enabled: true,
+      slots: assets.officeBackgroundSlots,
+    };
+    scene.canvas.w = config.w || officeBackground.naturalWidth || scene.canvas.w;
+    scene.canvas.h = config.h || officeBackground.naturalHeight || scene.canvas.h;
+  }
+  logicalWidth = scene.canvas.w;
+  logicalHeight = scene.canvas.h;
+  resizeCanvas();
   const renderer = new SceneRenderer(canvas, scene, assets);
   const actors = new ActorManager(scene, assets);
   let mock = null;

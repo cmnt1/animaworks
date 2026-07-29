@@ -41,13 +41,32 @@ function overlapsRect(x, y, rect) {
 function gridForZone(rect, count, options = {}) {
   const [x1, y1, x2, y2] = rect;
   const stepX = options.stepX || 4;
-  const columns = Math.max(1, Math.min(options.columns || 4, Math.floor((x2 - x1 + 1) / stepX)));
+  const columns = Math.max(
+    1,
+    Math.min(count || 1, options.columns || 4, Math.floor((x2 - x1 + 1) / stepX)),
+  );
+  const rows = Math.max(1, Math.ceil(count / columns));
+  const top = y1 + (options.topOffset ?? 3);
+  const rowStep = options.rowStep || 4;
+  const bottom = Math.max(top, y2 - 7);
   const candidates = [];
-  for (let row = 0; row < Math.max(1, Math.ceil(count / columns) + 2); row += 1) {
-    const y = Math.min(y2 - 2, y1 + 3 + row * (options.stepY || 6));
+  const columnLeft = x1 + 2;
+  const columnRight = Math.max(columnLeft, x2 - 2);
+  for (let row = 0; row < rows; row += 1) {
+    const y = Math.min(bottom, top + row * rowStep);
     for (let column = 0; column < columns; column += 1) {
-      const x = Math.min(x2 - 1, x1 + 3 + column * stepX);
+      const x = columns === 1
+        ? Math.round((columnLeft + columnRight) / 2)
+        : Math.round(columnLeft + (columnRight - columnLeft) * column / (columns - 1));
       if (!options.avoidRect || !overlapsRect(x, y, options.avoidRect)) candidates.push([x, y]);
+    }
+  }
+  for (let y = top; candidates.length < count && y <= y2 - 3; y += 3) {
+    for (let x = columnLeft; candidates.length < count && x <= columnRight; x += stepX) {
+      if ((!options.avoidRect || !overlapsRect(x, y, options.avoidRect)) &&
+          !candidates.some(([candidateX, candidateY]) => candidateX === x && candidateY === y)) {
+        candidates.push([x, y]);
+      }
     }
   }
   return candidates.slice(0, count);
@@ -58,40 +77,45 @@ function companyRects(groups, rule) {
   const bottom = rule.bottom ?? 22;
   const left = rule.left ?? 1;
   const right = rule.right ?? 39;
-  if (groups.length <= 1) return [[left, top, right, bottom]];
+  const fit = (group, slotLeft, slotRight) => {
+    const slotWidth = slotRight - slotLeft + 1;
+    const columns = Math.max(1, Math.min(rule.desk_columns || 4, group.members.length));
+    const rows = Math.max(1, Math.ceil(group.members.length / columns));
+    const width = Math.min(slotWidth, Math.max(10, columns * 4 + 3));
+    const height = Math.min(
+      bottom - top + 1,
+      rule.height || Math.max(15, 11 + rows * 2),
+    );
+    const x1 = Math.round((slotLeft + slotRight + 1 - width) / 2);
+    return [x1, top, x1 + width - 1, top + height - 1];
+  };
+  if (groups.length <= 1) return [fit(groups[0], left + 2, right - 2)];
   if (groups.length === 2) {
+    if (rule.centerRect) {
+      return [
+        fit(groups[0], left, rule.centerRect[0] - 2),
+        fit(groups[1], rule.centerRect[2] + 2, right - 1),
+      ];
+    }
     const middle = Math.floor((left + right) / 2);
-    return [[left, top, middle - 2, bottom], [middle + 2, top, right, bottom]];
+    return [
+      fit(groups[0], left + 1, middle - 5),
+      fit(groups[1], middle + 4, right - 2),
+    ];
   }
   const totalWidth = right - left + 1;
-  return groups.map((_, index) => {
-    const x1 = left + Math.floor((totalWidth * index) / groups.length);
-    const x2 = left + Math.floor((totalWidth * (index + 1)) / groups.length) - 1;
-    return [x1, top, x2, bottom];
+  return groups.map((group, index) => {
+    const slotLeft = left + Math.floor((totalWidth * index) / groups.length);
+    const slotRight = left + Math.floor((totalWidth * (index + 1)) / groups.length) - 1;
+    return fit(group, slotLeft, slotRight);
   });
 }
 
 function addCompanyProps(props, plants, group, rect) {
   const [x1, y1, x2, y2] = rect;
   const width = x2 - x1 + 1;
-  const meetingX = Math.max(x1 + 1, x2 - 4);
-  const meetingY = Math.max(y1 + 7, y2 - 4);
-  props[`meeting_${group.index + 1}`] = {
-    tile: [meetingX, meetingY],
-    w: 3,
-    h: 2,
-    sprite: "meeting_table",
-    kind: "meeting",
-    company: group.company,
-  };
-  props[`meeting_rug_${group.index + 1}`] = {
-    tile: [Math.max(x1, meetingX - 1), Math.max(y1, meetingY - 1)],
-    w: 5,
-    h: 4,
-    sprite: "rug",
-    under: true,
-  };
-  if (width >= 14) {
+  if (width >= 10) {
+    const loungeWidth = Math.min(7, width - 2);
     props[`lounge_${group.index + 1}`] = {
       tile: [x1 + 1, y2 - 3],
       w: 3,
@@ -99,8 +123,8 @@ function addCompanyProps(props, plants, group, rect) {
       sprite: "sofa",
     };
     props[`lounge_rug_${group.index + 1}`] = {
-      tile: [x1, y2 - 4],
-      w: 5,
+      tile: [x1 + 1, y2 - 4],
+      w: loungeWidth,
       h: 4,
       sprite: "rug",
       under: true,
@@ -110,21 +134,76 @@ function addCompanyProps(props, plants, group, rect) {
       w: 2,
       h: 2,
       sprite: "side_table",
+      kind: "meeting",
+      company: group.company,
     };
+    props[`bookshelf_${group.index + 1}`] = {
+      tile: [Math.max(x1 + 1, x2 - 3), y2 - 3],
+      w: 4,
+      h: 2,
+      sprite: group.index % 2 ? "bookshelf_b" : "bookshelf",
+    };
+    props[`trash_${group.index + 1}`] = {
+      tile: [x2 - 1, y2 - 1],
+      w: 1,
+      h: 1,
+      sprite: "trash_bin",
+    };
+    for (let index = 0; index < 2; index += 1) {
+      props[`floor_clutter_${group.index + 1}_${index + 1}`] = {
+        tile: [Math.min(x2 - 1, x1 + 6 + index * 2), y2 - 1],
+        w: 1,
+        h: 1,
+        sprite: `clutter_${String.fromCharCode(97 + ((group.index + index) % 4))}`,
+      };
+    }
   }
   props[`poster_${group.index + 1}`] = {
     tile: [Math.min(x2 - 1, x1 + Math.floor(width / 2)), 2],
     w: 1,
     h: 2,
     sprite: group.index % 2 ? "poster_b" : "poster_a",
+    wall: true,
   };
-  plants.push([x1, y1], [x2 - 1, y1], [x1, y2 - 1], [x2 - 1, y2 - 1]);
+  props[`poster_extra_${group.index + 1}`] = {
+    tile: [group.index % 2 ? x1 + 2 : x2 - 3, 2],
+    w: 1,
+    h: 2,
+    sprite: group.index % 2 ? "poster_b" : "poster_a",
+    wall: true,
+  };
+  props[`wall_clock_${group.index + 1}`] = {
+    tile: [group.index % 2 ? x2 - 1 : x1 + 1, 3],
+    w: 1,
+    h: 1,
+    decor: "wall_clock",
+    wall: true,
+  };
+  props[`wall_shelf_${group.index + 1}`] = {
+    tile: [group.index % 2 ? x1 : x2 - 2, 3],
+    w: 2,
+    h: 1,
+    decor: "wall_shelf",
+    wall: true,
+  };
+  props[`stand_lamp_${group.index + 1}`] = {
+    tile: [group.index % 2 ? x2 : x1, y1 + 5],
+    w: 1,
+    h: 2,
+    decor: "stand_lamp",
+  };
+  plants.push(
+    [x1, y1 + 1],
+    [x2 - 1, y1 + 1],
+    [x1, y2 - 1],
+    [x2 - 1, y2 - 4],
+  );
 }
 
 export function sampleAnimas() {
-  return Array.from({ length: 6 }, (_, index) => ({
+  return Array.from({ length: 12 }, (_, index) => ({
     name: `anima-${index + 1}`,
-    company: index < 3 ? "alpha" : "beta",
+    company: index < 6 ? "alpha" : "beta",
     status: "idle",
   }));
 }
@@ -137,31 +216,113 @@ export function generateScene(animas, template) {
   const companyRule = layout.company_area || {};
   const humanRule = layout.human_gate || {};
   const pathRule = layout.path || {};
+  const plazaRule = layout.plaza || {};
   const entranceRule = layout.entrance || {};
   const humanRect = humanRule.zone || [17, 8, 21, 14];
-  const rects = companyRects(groups, companyRule);
   const tile = template.canvas?.tile || 32;
+  const canvasWidth = template.canvas?.w || 1120;
+  const canvasHeight = template.canvas?.h || 736;
+  const canvasColumns = Math.floor(canvasWidth / tile);
+  const roomBottom = Math.floor(canvasHeight / tile) - 3;
+  const rects = companyRects(groups, {
+    ...companyRule,
+    bottom: Math.min(companyRule.bottom ?? roomBottom, roomBottom),
+    centerRect: humanRect,
+  });
+  const plazaTop = Math.min(
+    plazaRule.top ?? roomBottom,
+    Math.max(...rects.map((rect) => rect[3])) + 1,
+  );
+  const plazaBottom = Math.min(roomBottom, plazaRule.bottom ?? roomBottom);
   const zones = {};
   const desks = {};
-  const entranceZone = entranceRule.zone || [16, 22, 23, 25];
-  const doorTile = entranceRule.door || [19, 24];
+  const pathTemplate = pathRule.zone || [18, 14, 21, 22];
+  const pathZone = [pathTemplate[0], pathTemplate[1], pathTemplate[2], roomBottom];
+  const entranceTemplate = entranceRule.zone || [16, 21, 23, 25];
+  const entranceWidth = entranceTemplate[2] - entranceTemplate[0] + 1;
+  const entranceAxisX = (pathZone[0] + pathZone[2] + 1) / 2;
+  const entranceLeft = Math.round(entranceAxisX - entranceWidth / 2);
+  const entranceZone = [
+    entranceLeft,
+    entranceTemplate[1],
+    entranceLeft + entranceWidth - 1,
+    roomBottom,
+  ];
+  const doorTile = [
+    entranceAxisX - 3,
+    (entranceRule.door || [18, 23])[1],
+  ];
   const props = {
-    whiteboard: { tile: [17, 1], w: 6, h: 2, sprite: "whiteboard" },
-    bookshelf: { tile: [10, 1], w: 4, h: 2, sprite: "bookshelf" },
-    refreshment: { tile: [35, 1], w: 3, h: 2, sprite: "coffee" },
+    whiteboard: { tile: [canvasColumns / 2 - 3, 1], w: 6, h: 2, sprite: "whiteboard" },
+    bookshelf: { tile: [8, 1], w: 4, h: 2, sprite: "bookshelf" },
+    refreshment: { tile: [canvasColumns - 4, 1], w: 3, h: 2, sprite: "coffee" },
     welcome_mat: {
-      tile: [entranceZone[0] + 2, entranceZone[1] + 1],
+      tile: [doorTile[0] + 1, doorTile[1] - 3],
       w: 4,
       h: 2,
       sprite: "welcome_mat",
       under: true,
     },
-    door: { tile: doorTile, w: 2, h: 2, sprite: "door" },
-    parcel_door: { tile: [doorTile[0] + 2, doorTile[1] - 1], w: 1, h: 1, sprite: "parcel_stack" },
-    trolley: { tile: [19, 18], w: 2, h: 2, sprite: "trolley" },
-    sign_stand: { tile: [17, 22], w: 1, h: 2, sprite: "sign_stand" },
-    cat: { tile: [25, 14], w: 1, h: 1, sprite: "cat" },
-    cat_bed: { tile: [26, 15], w: 1, h: 1, sprite: "cat_bed" },
+    door_frame: {
+      tile: doorTile,
+      w: 6,
+      h: 4,
+      sprite: "door_frame",
+      architectural: true,
+      bottom_inset: 64,
+      service_tile: [Math.round(doorTile[0] + 4.5), doorTile[1] - 2],
+    },
+    trolley: {
+      tile: [pathZone[0] - 3, Math.min(roomBottom - 1, plazaTop + 1)],
+      w: 2,
+      h: 2,
+      sprite: "trolley",
+    },
+    path_trash: {
+      tile: [pathZone[2] + 2, Math.min(roomBottom, plazaTop + 2)],
+      w: 1,
+      h: 1,
+      sprite: "trash_bin",
+    },
+    corridor_lamp_left: {
+      tile: [pathZone[0] - 0.5, pathZone[1]],
+      w: 1,
+      h: 1,
+      decor: "guide_lamp",
+    },
+    corridor_sign_left: {
+      tile: [pathZone[0] - 0.5, pathZone[1] + 1],
+      w: 1,
+      h: 1,
+      decor: "guide_sign",
+    },
+    corridor_plant_left: {
+      tile: [pathZone[0] - 0.5, pathZone[1] + 2],
+      w: 1,
+      h: 1,
+      sprite: "plant",
+    },
+    corridor_plant_right: {
+      tile: [pathZone[2] + 0.5, pathZone[1]],
+      w: 1,
+      h: 1,
+      sprite: "plant",
+    },
+    corridor_sign_right: {
+      tile: [pathZone[2] + 0.5, pathZone[1] + 1],
+      w: 1,
+      h: 1,
+      decor: "guide_sign",
+      flip: true,
+    },
+    corridor_lamp_right: {
+      tile: [pathZone[2] + 0.5, pathZone[1] + 2],
+      w: 1,
+      h: 1,
+      decor: "guide_lamp",
+    },
+    cat: { tile: [rects.at(-1)[0] + 2, 14], w: 1, h: 1, sprite: "cat" },
+    cat_bed: { tile: [rects.at(-1)[0] + 3, 15], w: 1, h: 1, sprite: "cat_bed" },
   };
   const plants = [];
   let deskIndex = 0;
@@ -178,7 +339,8 @@ export function generateScene(animas, template) {
     const positions = gridForZone(rect, group.members.length, {
       columns: groups.length >= 3 ? 3 : companyRule.desk_columns || 4,
       stepX: companyRule.desk_column_step || 4,
-      stepY: companyRule.desk_row_step || 6,
+      rowStep: companyRule.desk_row_step || 4,
+      topOffset: companyRule.desk_top_offset ?? 3,
       avoidRect: humanRect,
     });
     group.members.forEach((anima, memberIndex) => {
@@ -203,16 +365,30 @@ export function generateScene(animas, template) {
   };
   zones.path = {
     label: "",
-    rect: pathRule.zone || [18, 14, 21, 22],
-    floor: "carpet_blue",
+    rect: pathZone,
+    floor: pathRule.floor || "stone_warm",
     kind: "path",
   };
   zones.entrance = {
     label: "ENTRANCE",
     rect: entranceZone,
-    floor: "mat",
+    floor: null,
     kind: "entrance",
   };
+  zones.plaza = {
+    label: "",
+    rect: [
+      plazaRule.left ?? 1,
+      plazaTop,
+      plazaRule.right ?? canvasColumns - 2,
+      plazaBottom,
+    ],
+    floor: "plaza",
+    kind: "plaza",
+  };
+  for (const x of [2, 7, 11, canvasColumns - 9, canvasColumns - 3]) {
+    plants.push([x, plazaTop]);
+  }
   desks[HUMAN_ID] = {
     tile: humanRule.desk || [19, 11],
     facing: "down",
@@ -224,8 +400,8 @@ export function generateScene(animas, template) {
 
   return {
     canvas: {
-      w: template.canvas?.w || 1280,
-      h: template.canvas?.h || 832,
+      w: template.canvas?.w || 1120,
+      h: template.canvas?.h || 736,
       tile,
     },
     human_id: HUMAN_ID,

@@ -27,6 +27,15 @@ function positionFor(scene, actors, id) {
 }
 
 function pathTiles(scene) {
+  const backgroundDoor = scene.background_mode?.slots?.door;
+  if (backgroundDoor) {
+    const x = Math.round(backgroundDoor.x / scene.canvas.tile - 0.5);
+    return {
+      top: [x, 13],
+      middle: [x, 16],
+      bottom: [x, 18],
+    };
+  }
   const path = scene.zones.path?.rect || [18, 14, 21, 22];
   const x = Math.floor((path[0] + path[2]) / 2);
   return {
@@ -166,9 +175,41 @@ export class Director {
   async meeting(payload) {
     const participants = unique(
       payload.participants || [payload.from, payload.from_person, payload.to, payload.to_person, payload.name],
-    ).filter((id) => this.actors.get(id));
+    ).filter((id) => this.actors.get(id)).slice(0, 2);
     if (!participants.length) return;
     const company = this.actors.companyOf(participants[0]);
+    if (this.scene.background_mode?.enabled) {
+      const standing = this.scene.background_mode.slots?.standing_waypoints;
+      const central = standing?.meeting || [[14, 8], [16, 8], [18, 8], [20, 8]];
+      const lounges = standing?.lounge || [[8, 15], [10, 15], [24, 15], [26, 15]];
+      const side = this.actors.get(participants[0])?.backgroundSlot?.company;
+      const venueIndex = participants.join("").split("")
+        .reduce((total, character) => total + character.charCodeAt(0), 0) % 2;
+      const sideOffset = side === "right" ? 2 : 0;
+      const slots = venueIndex === 0
+        ? central.slice(sideOffset, sideOffset + 2)
+        : lounges.slice(sideOffset, sideOffset + 2);
+      const safeAlternatives = [...central, ...lounges];
+      const previous = new Map(participants.map((id) => [id, this.actors.get(id).state]));
+      const arrivals = await Promise.all(participants.map((id, index) => this.actors.walkTo(
+        id,
+        slots[index],
+        { speed: 165, alternatives: safeAlternatives },
+      )));
+      const arrived = participants.filter((id, index) => arrivals[index]);
+      if (!arrived.length) return;
+      arrived.forEach((id) => this.actors.setState(id, "talking"));
+      await this.addEffect({
+        type: "talk",
+        x: (slots[0][0] + slots[1][0] + 1) * this.scene.canvas.tile / 2,
+        y: Math.min(slots[0][1], slots[1][1]) * this.scene.canvas.tile,
+        label: "打合せ中",
+        duration: 3,
+      });
+      await Promise.all(arrived.map((id) => this.actors.returnHome(id)));
+      participants.forEach((id) => this.actors.setState(id, previous.get(id)));
+      return;
+    }
     const table = Object.values(this.scene.props).find(
       (prop) => prop.kind === "meeting" && prop.company === company,
     ) || Object.values(this.scene.props).find((prop) => prop.kind === "meeting");
@@ -180,12 +221,14 @@ export class Director {
       [tableX - 1, tableY + 1],
     ];
     const previous = new Map(participants.map((id) => [id, this.actors.get(id).state]));
-    await Promise.all(participants.map((id, index) => this.actors.walkTo(
+    const arrivals = await Promise.all(participants.map((id, index) => this.actors.walkTo(
       id,
       slots[index % slots.length],
-      { targetCompany: company, speed: 165 },
+      { targetCompany: company, speed: 165, alternatives: slots },
     )));
-    participants.forEach((id) => this.actors.setState(id, "talking"));
+    const arrived = participants.filter((id, index) => arrivals[index]);
+    if (!arrived.length) return;
+    arrived.forEach((id) => this.actors.setState(id, "talking"));
     await this.addEffect({
       type: "talk",
       x: (table.tile[0] + table.w / 2) * this.scene.canvas.tile,
@@ -193,7 +236,7 @@ export class Director {
       label: "打合せ中",
       duration: 3,
     });
-    await Promise.all(participants.map((id) => this.actors.returnHome(id)));
+    await Promise.all(arrived.map((id) => this.actors.returnHome(id)));
     participants.forEach((id) => this.actors.setState(id, previous.get(id)));
   }
 
@@ -208,15 +251,41 @@ export class Director {
     this.actors.setState(id, "reporting");
     actor.setTransientBubble("bubble_delivery", 30);
     const route = pathTiles(this.scene);
-    const handoff = route.bottom;
-    await this.actors.walkTo(id, handoff, {
+    const backgroundDoor = this.scene.background_mode?.slots?.door;
+    const entrance = this.scene.zones.entrance?.rect;
+    const door = this.scene.props.door_frame || {
+      tile: [
+        entrance ? Math.floor((entrance[0] + entrance[2] - 5) / 2) : 17,
+        Math.floor(this.scene.canvas.h / this.scene.canvas.tile) - 3,
+      ],
+      w: 6,
+      h: 4,
+      bottom_inset: 64,
+    };
+    const handoff = backgroundDoor
+      ? [
+        Math.round(backgroundDoor.x / this.scene.canvas.tile - 0.5),
+        Math.round((backgroundDoor.y - 20) / this.scene.canvas.tile - 1),
+      ]
+      : door.service_tile || [door.tile[0] + door.w - 1, door.tile[1] - 1];
+    const arrived = await this.actors.walkTo(id, handoff, {
       speed: 165,
-      via: [route.top, route.middle],
+      via: [route.top, route.middle, route.bottom],
+      alternatives: [
+        [handoff[0] - 2, handoff[1]],
+        [handoff[0], handoff[1] - 2],
+      ],
     });
-    const door = this.scene.props.door;
-    const customerX = (door.tile[0] + door.w / 2) * this.scene.canvas.tile;
-    const customerY = (door.tile[1] + door.h) * this.scene.canvas.tile;
-    const handoffPosition = positionForTile(this.scene, handoff);
+    if (!arrived) {
+      actor.clearTransientBubble();
+      this.actors.setState(id, previous);
+      return;
+    }
+    const customerX = backgroundDoor?.x ??
+      (door.tile[0] + door.w / 2) * this.scene.canvas.tile;
+    const customerY = backgroundDoor?.y ??
+      this.scene.canvas.h - (door.bottom_inset ?? 64);
+    const handoffPosition = positionForTile(this.scene, this.actors.reservedTile(id) || handoff);
     await Promise.all([
       this.addEffect({
         type: "customer",
@@ -380,7 +449,29 @@ export class Director {
     const definition = this.assets.character("customer");
     const animation = definition.anims[progress < 0.5 ? "walk_up" : "walk_down"];
     const frame = Math.floor(effect.elapsed * animation.fps) % animation.frames;
+    const backgroundDoor = this.scene.background_mode?.slots?.door;
+    const door = this.scene.props.door_frame;
+    const doorImage = backgroundDoor ? null : this.assets.prop("door_frame", 192, 112);
+    const doorWidth = backgroundDoor ? 150 : doorImage.naturalWidth || doorImage.width || 192;
+    const doorHeight = backgroundDoor ? 130 : doorImage.naturalHeight || doorImage.height || 112;
+    const doorBottom = backgroundDoor?.y ??
+      this.scene.canvas.h - (door?.bottom_inset ?? 64);
+    const doorTop = doorBottom - doorHeight;
+    const doorX = backgroundDoor
+      ? backgroundDoor.x - doorWidth / 2
+      : (door?.tile?.[0] ?? 17) * this.scene.canvas.tile;
+    const crossingThreshold = doorBottom - 32;
     ctx.save();
+    if (y > crossingThreshold) {
+      ctx.beginPath();
+      ctx.rect(
+        doorX + Math.round(doorWidth * 0.24),
+        doorTop + Math.round(doorHeight * 0.25),
+        Math.round(doorWidth * 0.48),
+        Math.round(doorHeight * 0.75),
+      );
+      ctx.clip();
+    }
     ctx.globalAlpha = visible * 0.18;
     ctx.fillStyle = "#1a1116";
     ctx.beginPath();
@@ -398,6 +489,9 @@ export class Director {
       definition.frameW,
       definition.frameH,
     );
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = visible;
     drawPixelText(ctx, "guest", x, y + 2, {
       fontSize: 5,
       scale: 2,

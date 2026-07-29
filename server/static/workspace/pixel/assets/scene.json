@@ -1,32 +1,64 @@
 {
   "_comment": "Generic layout template. The browser generates the full scene from /api/animas.",
   "canvas": {
-    "w": 1280,
-    "h": 832,
+    "w": 1120,
+    "h": 736,
     "tile": 32
   },
   "layout": {
     "company_area": {
       "top": 4,
-      "bottom": 22,
+      "bottom": 18,
       "left": 1,
-      "right": 39,
-      "desk_columns": 4,
+      "right": 34,
+      "desk_columns": 3,
       "desk_column_step": 4,
-      "desk_row_step": 6
+      "desk_row_step": 4,
+      "desk_top_offset": 3,
+      "height": 15
     },
     "human_gate": {
-      "zone": [17, 8, 21, 14],
-      "desk": [19, 11],
-      "label": "HUMAN"
+      "zone": [
+        15,
+        7,
+        19,
+        13
+      ],
+      "desk": [
+        17,
+        10
+      ]
     },
     "path": {
-      "zone": [18, 14, 21, 22],
-      "cross_company_via": [19, 13]
+      "zone": [
+        14,
+        14,
+        20,
+        20
+      ],
+      "cross_company_via": [
+        17,
+        13
+      ],
+      "floor": "stone_warm"
+    },
+    "plaza": {
+      "left": 1,
+      "right": 33,
+      "top": 19,
+      "bottom": 20
     },
     "entrance": {
-      "zone": [16, 22, 23, 25],
-      "door": [19, 24]
+      "zone": [
+        14,
+        17,
+        20,
+        20
+      ],
+      "door": [
+        15,
+        19
+      ]
     },
     "prop_types": [
       "meeting_table",
@@ -34,10 +66,16 @@
       "sofa",
       "side_table",
       "plant",
+      "trash_bin",
+      "clutter_a",
+      "clutter_b",
+      "clutter_c",
+      "clutter_d",
       "whiteboard",
       "bookshelf",
+      "bookshelf_b",
       "coffee",
-      "door",
+      "door_frame",
       "welcome_mat",
       "parcel_stack",
       "trolley",
