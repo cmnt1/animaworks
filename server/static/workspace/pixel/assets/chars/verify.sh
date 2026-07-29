@@ -31,22 +31,7 @@ generic_names = [
     "customer_a",
     "customer_b",
 ]
-fleet_names = [
-    "aoi",
-    "ayame",
-    "kotoha",
-    "mei",
-    "mio",
-    "nagi",
-    "natsume",
-    "rin",
-    "ritsu",
-    "sakura",
-    "sora",
-    "sumire",
-    "taka",
-    "yoru",
-]
+fleet_names = []  # fleet sheets are runtime data; not bundled
 rows = {
     "idle": 0,
     "working": 1,
