@@ -665,6 +665,8 @@ class TestConfigWriting:
         assert "sandbox_mode" in config_toml
         assert "danger-full-access" in config_toml  # default file_roots=["/"]
         assert 'approval_policy = "never"' in config_toml
+        assert "never round-trip non-ASCII text" in config_toml
+        assert "-Encoding utf8" in config_toml
         assert "[mcp_servers.aw]" in config_toml
         parsed = tomllib.loads(config_toml)
         assert parsed["approval_policy"] == "never"

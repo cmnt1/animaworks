@@ -705,7 +705,7 @@ def _extract_tool_records(items: list[Any]) -> list[ToolCallRecord]:
 def _synthesise_fallback(tool_records: list[ToolCallRecord]) -> str:
     """Build a short fallback text when the model produced no text output."""
     names = [r.tool_name for r in tool_records[:5]]
-    suffix = ", 窶ｦ" if len(tool_records) > 5 else ""
+    suffix = ", …" if len(tool_records) > 5 else ""
     fallback = f"(completed {len(tool_records)} tool call(s): {', '.join(names)}{suffix})"
     logger.warning(
         "Codex SDK produced no text output; synthesised fallback (tools=%d)",
@@ -1167,13 +1167,13 @@ class CodexSDKExecutor(BaseExecutor):
             env["OPENAI_API_KEY"] = api_key
         elif api_key:
             logger.debug(
-                "Skipping non-OpenAI API key for Codex env (prefix=%s窶ｦ); relying on cached ChatGPT auth",
+                "Skipping non-OpenAI API key for Codex env (prefix=%s…); relying on cached ChatGPT auth",
                 api_key[:8],
             )
         # Only forward api_base_url when it is a genuine OpenAI-compatible
         # endpoint.  The default credential may point to Ollama
         # (127.0.0.1:11434) which must NOT be injected as OPENAI_BASE_URL
-        # 窶・the Codex CLI uses model_provider in config.toml for routing.
+        # — the Codex CLI uses model_provider in config.toml for routing.
         base = self._model_config.api_base_url
         if base and ":11434" not in base:
             env["OPENAI_BASE_URL"] = base
@@ -1255,7 +1255,7 @@ class CodexSDKExecutor(BaseExecutor):
             )
             return
 
-        # No auth.json anywhere 窶・Codex 竕･0.115 uses OS keychain.
+        # No auth.json anywhere — Codex >=0.115 uses OS keychain.
         # Tell _build_env() to omit CODEX_HOME so keychain auth works.
         # Per-anima config will be passed via -c flags in the CLI command.
         if not self._uses_codex_login_auth():
@@ -1286,7 +1286,11 @@ class CodexSDKExecutor(BaseExecutor):
         "strings with `rtk` when RTK supports the command, and use "
         "`rtk proxy <command>` when you need raw unfiltered output or RTK "
         "does not have a compact route. Prefer direct non-shell tools for "
-        "file reads and edits. "
+        "file reads and edits. On Windows, never round-trip non-ASCII text "
+        "through PowerShell Get-Content and Set-Content without explicit "
+        "`-Encoding utf8`; otherwise UTF-8 files can be rewritten as mojibake. "
+        "Before replacing a whole non-ASCII file, create a backup and verify "
+        "the encoding with a read-after-write check. "
         "For reports to supervisors or other Animas, the required channel is "
         "the AnimaWorks DM tool send_message with intent=report. Codex Apps "
         "Gmail send tools are not allowed for these reports: "
@@ -1834,7 +1838,7 @@ class CodexSDKExecutor(BaseExecutor):
                         timeout=idle_timeout,
                     )
                 except TimeoutError as e:
-                    # No output for `idle_timeout` seconds 窶・assume the
+                    # No output for `idle_timeout` seconds — assume the
                     # subprocess is hung.  Without this the inbox/heartbeat
                     # cycle waits forever and `_heartbeat_running` leaks.
                     if proc.returncode is None:
@@ -1937,12 +1941,12 @@ class CodexSDKExecutor(BaseExecutor):
             stderr_text = b"".join(stderr_chunks).decode("utf-8", errors="replace").strip()
             if stderr_text and _stderr_contains_auth_expired(stderr_text):
                 logger.error(
-                    "Codex auth expired for %s 窶・run `codex auth login` to re-authenticate",
+                    "Codex auth expired for %s — run `codex auth login` to re-authenticate",
                     self._anima_dir.name,
                 )
                 _notify_auth_expired(self._anima_dir.name)
                 raise RuntimeError(
-                    f"Codex auth expired 窶・run `codex auth login` to re-authenticate. stderr: {stderr_text[:300]}"
+                    f"Codex auth expired — run `codex auth login` to re-authenticate. stderr: {stderr_text[:300]}"
                 )
             if returncode != 0:
                 detail = turn_failed_message or stderr_text
@@ -1951,12 +1955,12 @@ class CodexSDKExecutor(BaseExecutor):
             # exits cleanly despite auth errors in stderr).
             if not response_parts and stderr_text and _stderr_contains_auth_expired(stderr_text):
                 logger.error(
-                    "Codex auth expired for %s (exit 0 but no output) 窶・run `codex auth login`",
+                    "Codex auth expired for %s (exit 0 but no output) — run `codex auth login`",
                     self._anima_dir.name,
                 )
                 _notify_auth_expired(self._anima_dir.name)
                 raise RuntimeError(
-                    f"Codex auth expired 窶・run `codex auth login` to re-authenticate. stderr: {stderr_text[:300]}"
+                    f"Codex auth expired — run `codex auth login` to re-authenticate. stderr: {stderr_text[:300]}"
                 )
             if stderr_text:
                 logger.debug("Codex CLI exec stderr: %s", stderr_text[:500])
