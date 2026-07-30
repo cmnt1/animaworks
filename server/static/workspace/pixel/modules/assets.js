@@ -10,7 +10,7 @@ const SAMPLE_COLORS = Object.freeze([
 
 const DEFAULT_ANIMS = Object.freeze({
   idle: { row: 0, frames: 4, fps: 4 },
-  working: { row: 1, frames: 4, fps: 8 },
+  working: { row: 1, frames: 4, fps: 3 },
   thinking: { row: 2, frames: 4, fps: 4 },
   talking: { row: 3, frames: 4, fps: 8 },
   walk_down: { row: 4, frames: 4, fps: 8 },

@@ -69,3 +69,35 @@ the same manifest key. Missing scene or effect assets may use renderer
 placeholders, but missing character sheets should normally use a bundled sample.
 
 All pixel assets are rendered with nearest-neighbor sampling.
+
+## Illustration background mode
+
+A deployment can replace the tiled scene with a single illustrated office by
+supplying `workspace_pixel/assets/scene/office_bg.png` together with
+`office_bg_slots.json`. When both load, the renderer draws the illustration and
+seats characters at the declared slots instead of generating a tile layout.
+
+`office_bg_slots.json` holds:
+
+- `slots`: seats in assignment order. Each has `id`, `x`, `y`, an optional
+  `company`, and `desk_rect`
+- `human`: the seat used for the human role, same shape as a slot
+- `whiteboard`, `door`, `standing_waypoints`: coordinates used by effects and
+  walking routes
+
+`desk_rect` is `[x, y, width, height]` covering the desk itself. Seated
+characters are drawn first and the renderer then repaints that rectangle from
+the background, so the desk occludes the lower body.
+
+A slot may also declare `front_rects`, an array of rectangles in the same form.
+Use it for objects that rise above the desk surface — a tall monitor, a desk
+lamp — which would otherwise be covered by the character. Each rectangle is
+repainted from the background after the character is drawn.
+
+Do not enlarge `desk_rect` upward to cover such objects: the rectangle repaints
+the empty floor above the desk as well, which slices the character with a
+straight edge and leaves it floating.
+
+Sheets are cropped by the topmost occluding edge, so only the frame area above
+it is ever visible. Poses that rely on hands resting at desk height will not
+read on screen; express desk work with the upper body instead.

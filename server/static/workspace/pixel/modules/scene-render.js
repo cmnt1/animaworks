@@ -293,13 +293,13 @@ export class SceneRenderer {
           depth,
           priority: 0,
           x: actor.x,
-          draw: () => this.drawDeskOcclusion(actor),
+          draw: () => this.drawSeatedBackgroundActor(actor),
         },
         {
           depth,
           priority: 1,
           x: actor.x,
-          draw: () => this.drawSeatedBackgroundActor(actor),
+          draw: () => this.drawDeskOcclusion(actor),
         },
         {
           depth: depth + 2,
@@ -330,38 +330,34 @@ export class SceneRenderer {
   drawDeskOcclusion(actor) {
     const rect = this.deskOcclusionRect(actor);
     if (!rect) return;
-    const [x, y, width, height] = rect;
-    this.ctx.save();
-    this.ctx.beginPath();
-    this.ctx.rect(x, y, width, height);
-    this.ctx.clip();
-    this.ctx.drawImage(
-      this.backgroundFrameCanvas,
-      x,
-      y,
-      width,
-      height,
-      x,
-      y,
-      width,
-      height,
-    );
-    this.ctx.restore();
+    // desk_rect は机そのもの。front_rects は机より上に飛び出す前景物
+    // (モニタ・卓上ライト等) を個別に指定するためのもので、指定した矩形だけを
+    // 背景から描き戻すためキャラの周囲に不要な切り取り線ができない。
+    const rects = [rect, ...(actor.backgroundSlot?.front_rects || [])];
+    for (const [x, y, width, height] of rects) {
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.rect(x, y, width, height);
+      this.ctx.clip();
+      this.ctx.drawImage(
+        this.backgroundFrameCanvas,
+        x,
+        y,
+        width,
+        height,
+        x,
+        y,
+        width,
+        height,
+      );
+      this.ctx.restore();
+    }
   }
 
   drawSeatedBackgroundActor(actor) {
-    const slot = actor.backgroundSlot;
-    if (!slot) {
-      actor.draw(this.ctx);
-      return;
-    }
-    const occlusionTop = slot.desk_rect?.[1] ?? slot.y + 8;
-    this.ctx.save();
-    this.ctx.beginPath();
-    this.ctx.rect(0, 0, this.canvas.width, occlusionTop);
-    this.ctx.clip();
+    // 着席キャラは机・PCより先に描き、そのあとで机の領域を背景から描き戻す
+    // (drawDeskOcclusion)。机とPCが手前・キャラが奥、という重なりになる。
     actor.draw(this.ctx);
-    this.ctx.restore();
   }
 
   drawBackgroundNight() {
