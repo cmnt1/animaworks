@@ -122,7 +122,6 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/memory/extraction/prompts/ja.py": 7,
     # auth-failure / token-expiry messages surfaced to the dashboard
     "core/execution/agent_sdk.py": 2,
-    "core/execution/codex_sdk.py": 2,
     # delegated-task report template + status labels
     "core/memory/task_queue.py": 4,
     # Governor notification suppression messages
