@@ -105,11 +105,10 @@ class TestStopIPCShutdownOrder:
         """
         states_during_send: list[ProcessState] = []
 
-        original_send_request = handle.send_request
-
         async def capture_state_send_request(method, params, timeout=60.0):
             """Capture the state at the time send_request is called."""
-            states_during_send.append(handle.state)
+            if method == "shutdown":
+                states_during_send.append(handle.state)
             # Return a successful shutdown response
             return IPCResponse(id="shutdown", result={"status": "ok"})
 

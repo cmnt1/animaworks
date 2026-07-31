@@ -865,6 +865,14 @@ class PendingTaskExecutor:
                 )
             except OSError:
                 logger.exception("Failed to move cancelled task to failed: %s", processing_path.name)
+            self._sync_task_queue(
+                task_id,
+                "failed",
+                summary=(
+                    "INTERRUPTED: task was cancelled by a shutdown/restart and may have "
+                    "PARTIALLY EXECUTED. Verify actual completion state before re-delegating."
+                ),
+            )
             raise
         except Exception:
             logger.exception("Error processing LLM pending task file: %s", processing_path.name)
@@ -876,6 +884,11 @@ class PendingTaskExecutor:
                 )
             except OSError:
                 logger.exception("Failed to move task to failed: %s", processing_path.name)
+            self._sync_task_queue(
+                task_id,
+                "failed",
+                summary="FAILED: task execution raised an exception.",
+            )
         finally:
             touch_task.cancel()
             await asyncio.gather(touch_task, return_exceptions=True)
@@ -1145,11 +1158,30 @@ class PendingTaskExecutor:
                 )
                 await asyncio.sleep(_PENDING_WATCHER_POLL_INTERVAL)
 
-        if self._active_dispatch_tasks:
-            for task in self._active_dispatch_tasks:
+        active_dispatch_tasks = set(self._active_dispatch_tasks)
+        if active_dispatch_tasks:
+            try:
+                from core.config.models import load_config
+
+                drain_timeout = load_config().background_task.shutdown_drain_seconds
+            except Exception:
+                drain_timeout = 600.0
+
+            _, pending = await asyncio.wait(
+                active_dispatch_tasks,
+                timeout=drain_timeout,
+            )
+            if pending:
+                logger.warning(
+                    "Background task drain timed out for %s after %.0fs; cancelling %d task(s)",
+                    self._anima_name,
+                    drain_timeout,
+                    len(pending),
+                )
+            for task in pending:
                 task.cancel()
-            await asyncio.gather(*self._active_dispatch_tasks, return_exceptions=True)
-            self._active_dispatch_tasks.clear()
+            await asyncio.gather(*active_dispatch_tasks, return_exceptions=True)
+            self._active_dispatch_tasks.difference_update(active_dispatch_tasks)
         for tasks in self._batch_tasks.values():
             self._active_task_ids.difference_update(str(task.get("task_id") or "").strip() for task in tasks)
         self._batch_tasks.clear()

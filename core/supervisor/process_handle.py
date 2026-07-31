@@ -486,18 +486,48 @@ class ProcessHandle:
             return
         logger.info("In-flight stream drained for %s; proceeding with stop", self.anima_name)
 
+    async def _drain_busy_lanes(self, timeout: float) -> None:
+        """Wait for background TaskExec lanes to become idle before stopping."""
+        if timeout <= 0 or not self.process or self.process.poll() is not None:
+            return
+
+        logger.info(
+            "Draining busy background lanes before stop: anima=%s timeout=%.0fs",
+            self.anima_name,
+            timeout,
+        )
+        try:
+            async with asyncio.timeout(timeout):
+                while self.process and self.process.poll() is None:
+                    details = await self.ping(return_details=True)
+                    if not details.get("success") or not details.get("is_busy"):
+                        logger.info(
+                            "Background lanes drained for %s; proceeding with stop",
+                            self.anima_name,
+                        )
+                        return
+                    await asyncio.sleep(1.0)
+        except TimeoutError:
+            logger.warning(
+                "Background lane drain timed out for %s after %.0fs; proceeding with stop",
+                self.anima_name,
+                timeout,
+            )
+
     async def stop(
         self,
         timeout: float = 10.0,
         *,
         drain_streams: bool = True,
+        drain_background: bool = True,
         drain_timeout: float | None = None,
     ) -> None:
         """
         Stop the child process gracefully.
 
         Shutdown flow:
-        0. Drain any in-flight interactive stream (bounded by ``drain_timeout``)
+        0. Drain any in-flight interactive stream and busy background lanes
+           (each bounded by ``drain_timeout``)
         1. Send IPC shutdown command (wait 5s)
         2. If not exited, send SIGTERM (wait timeout/2)
         3. If still not exited, send SIGKILL
@@ -509,7 +539,10 @@ class ProcessHandle:
                 restart / RAG repair / reconcile does not cut a response off
                 mid-generation. Hang recovery uses ``kill()`` directly and
                 never reaches this path.
-            drain_timeout: Upper bound for the stream drain (defaults to
+            drain_background: When True (default), wait for TaskExec background
+                lanes to become idle. Full-server shutdown passes False to
+                retain its short stop budget.
+            drain_timeout: Upper bound for each drain (defaults to
                 :data:`DEFAULT_STREAM_DRAIN_TIMEOUT_SEC`).
         """
         if self.state in (ProcessState.STOPPED, ProcessState.FAILED):
@@ -527,10 +560,11 @@ class ProcessHandle:
 
         logger.info("Stopping process: %s", self.anima_name)
 
+        resolved_drain_timeout = drain_timeout if drain_timeout is not None else DEFAULT_STREAM_DRAIN_TIMEOUT_SEC
         if drain_streams:
-            await self._drain_active_stream(
-                drain_timeout if drain_timeout is not None else DEFAULT_STREAM_DRAIN_TIMEOUT_SEC
-            )
+            await self._drain_active_stream(resolved_drain_timeout)
+        if drain_background:
+            await self._drain_busy_lanes(resolved_drain_timeout)
 
         if not self.process:
             self.state = ProcessState.STOPPED
