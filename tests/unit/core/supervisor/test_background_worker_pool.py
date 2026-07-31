@@ -4,7 +4,8 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -309,6 +310,96 @@ async def test_active_task_id_removed_after_claimed_dispatch_ends(tmp_path: Path
     else:
         assert not processing_path.exists()
         assert (tmp_path / "failed" / processing_path.name).exists()
+
+
+async def test_cancelled_claim_syncs_layer2_task_queue_to_failed(tmp_path: Path) -> None:
+    executor = _executor(tmp_path)
+    task_id = "cancelled-layer2"
+    queue = TaskQueueManager(executor._anima_dir)
+    queue.add_task(
+        source="anima",
+        original_instruction="long running task",
+        assignee="pool-test",
+        summary="running",
+        status="in_progress",
+        task_id=task_id,
+    )
+    processing_path = tmp_path / "processing" / f"{task_id}.json"
+    processing_path.parent.mkdir()
+    processing_path.write_text(json.dumps({"task_id": task_id}), encoding="utf-8")
+    failed_dir = tmp_path / "failed"
+    failed_dir.mkdir()
+
+    async def cancel_execute(task_desc, *, worker_slot=None):
+        raise asyncio.CancelledError
+
+    executor.execute_pending_task = cancel_execute  # type: ignore[method-assign]
+
+    with pytest.raises(asyncio.CancelledError):
+        await executor._execute_claimed_llm_task(
+            {"task_id": task_id},
+            processing_path,
+            failed_dir,
+            None,
+        )
+
+    entry = queue.get_task_by_id(task_id)
+    assert entry.status == "failed"
+    assert entry.summary == (
+        "INTERRUPTED: task was cancelled by a shutdown/restart and may have "
+        "PARTIALLY EXECUTED. Verify actual completion state before re-delegating."
+    )
+
+
+async def test_watcher_shutdown_waits_for_active_dispatch_to_finish(tmp_path: Path) -> None:
+    executor = _executor(tmp_path)
+    release = asyncio.Event()
+    finished = asyncio.Event()
+
+    async def active_dispatch() -> None:
+        await release.wait()
+        finished.set()
+
+    dispatch = asyncio.create_task(active_dispatch())
+    executor._track_dispatch_task(dispatch)
+    executor._shutdown_event.set()
+    release.set()
+    config = SimpleNamespace(
+        background_task=SimpleNamespace(shutdown_drain_seconds=1.0),
+    )
+
+    with patch("core.config.models.load_config", return_value=config):
+        await executor.watcher_loop()
+
+    assert finished.is_set()
+    assert not dispatch.cancelled()
+    assert not executor._active_dispatch_tasks
+
+
+async def test_watcher_shutdown_cancels_dispatch_after_drain_timeout(tmp_path: Path) -> None:
+    executor = _executor(tmp_path)
+    cancelled = asyncio.Event()
+
+    async def active_dispatch() -> None:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    dispatch = asyncio.create_task(active_dispatch())
+    executor._track_dispatch_task(dispatch)
+    executor._shutdown_event.set()
+    config = SimpleNamespace(
+        background_task=SimpleNamespace(shutdown_drain_seconds=0.0),
+    )
+
+    with patch("core.config.models.load_config", return_value=config):
+        await executor.watcher_loop()
+
+    assert cancelled.is_set()
+    assert dispatch.cancelled()
+    assert not executor._active_dispatch_tasks
 
 
 async def test_command_claim_stays_active_until_background_task_finishes(tmp_path: Path) -> None:
