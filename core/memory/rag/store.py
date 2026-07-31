@@ -301,7 +301,13 @@ class ChromaVectorStore(VectorStore):
                 )
                 raise
             finally:
-                fresh_store.close()
+                from core.memory.rag.singleton import _close_vector_store_with_gate
+
+                _close_vector_store_with_gate(
+                    fresh_store,
+                    fresh_store._anima_name(),
+                    operation=f"self-heal retry close ({operation})",
+                )
 
     def _should_retry_without_reset(
         self,
@@ -447,7 +453,13 @@ class ChromaVectorStore(VectorStore):
                 reason,
                 error,
             )
-            self.close()
+            from core.memory.rag.singleton import _close_vector_store_with_gate
+
+            _close_vector_store_with_gate(
+                self,
+                self._anima_name(),
+                operation=f"self-heal reset close ({operation})",
+            )
             try:
                 return type(self)(persist_dir=self.persist_dir, anima_name=self._anima_name())
             except Exception as recreate_error:

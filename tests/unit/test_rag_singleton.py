@@ -490,8 +490,8 @@ def test_in_flight_self_heal_can_upgrade_to_reset_without_deadlock(monkeypatch):
     store.close.assert_called_once()
 
 
-def test_forced_close_blocks_new_operations_until_close_finishes(monkeypatch):
-    """Timeout fallback may close active readers, but must not admit new ones."""
+def test_timed_out_close_waits_for_reader_drain_and_blocks_new_operations(monkeypatch):
+    """A timed-out reset condemns the old handle without closing active readers."""
     from core.memory.rag import singleton, vector_worker
 
     monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
@@ -526,7 +526,9 @@ def test_forced_close_blocks_new_operations_until_close_finishes(monkeypatch):
 
     reset = threading.Thread(target=lambda: singleton.reset_vector_store("sora"))
     reset.start()
-    assert close_started.wait(timeout=2)
+    time.sleep(0.1)
+    assert reset.is_alive()
+    assert not close_started.is_set()
 
     reopened_store = MagicMock()
     with patch("core.memory.rag.store.ChromaVectorStore", return_value=reopened_store):
@@ -538,12 +540,15 @@ def test_forced_close_blocks_new_operations_until_close_finishes(monkeypatch):
         )
         late.start()
         assert not late_operation_started.wait(timeout=0.1)
+
+        release_operation.set()
+        assert close_started.wait(timeout=2)
+        assert not late_operation_started.is_set()
         release_close.set()
-        reset.join(timeout=2)
         assert late_operation_started.wait(timeout=2)
+        reset.join(timeout=2)
         late.join(timeout=2)
 
-    release_operation.set()
     active.join(timeout=2)
 
     assert not reset.is_alive()

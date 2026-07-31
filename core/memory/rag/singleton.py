@@ -19,7 +19,7 @@ import logging
 import os
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Literal
 
@@ -76,18 +76,30 @@ class _VectorStoreLifecycleGate:
         self._upgraded_readers: dict[int, int] = {}
         self._writer_active = False
         self._writers_waiting = 0
-        self._forced_closers = 0
+        self._condemned_requests = 0
+        self._deferred_closes: list[Callable[[], None]] = []
 
     def acquire_shared(self) -> None:
         thread_id = threading.get_ident()
         with self._condition:
-            while self._writer_active or self._writers_waiting or self._forced_closers:
+            while (
+                self._writer_active
+                or self._writers_waiting
+                or self._condemned_requests
+                or self._deferred_closes
+            ):
                 self._condition.wait()
             self._readers += 1
             self._reader_depths[thread_id] = self._reader_depths.get(thread_id, 0) + 1
 
+    def current_thread_holds_shared(self) -> bool:
+        """Return whether waiting for reader drain would deadlock this thread."""
+        with self._condition:
+            return self._reader_depths.get(threading.get_ident(), 0) > 0
+
     def release_shared(self) -> None:
         thread_id = threading.get_ident()
+        drain_deferred = False
         with self._condition:
             depth = self._reader_depths.get(thread_id, 0)
             if depth <= 1:
@@ -96,7 +108,12 @@ class _VectorStoreLifecycleGate:
                 self._reader_depths[thread_id] = depth - 1
             self._readers -= 1
             if self._readers == 0:
+                if self._deferred_closes and not self._writer_active:
+                    self._writer_active = True
+                    drain_deferred = True
                 self._condition.notify_all()
+        if drain_deferred:
+            self._drain_deferred_closes()
 
     def acquire_exclusive(self, timeout: float) -> bool:
         thread_id = threading.get_ident()
@@ -109,14 +126,18 @@ class _VectorStoreLifecycleGate:
             self._readers -= upgraded_readers
             self._writers_waiting += 1
             try:
-                while self._writer_active or self._readers:
+                while (
+                    self._writer_active
+                    or self._readers
+                    or self._condemned_requests
+                ):
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         self._readers += upgraded_readers
-                        # The close will be forced with existing readers still
-                        # active, but do not admit any new operation until that
-                        # forced lifecycle change has completed.
-                        self._forced_closers += 1
+                        # Reserve a condemned slot before returning so no new
+                        # operation can reach the old handles while the caller
+                        # registers its delayed close.
+                        self._condemned_requests += 1
                         return False
                     self._condition.wait(timeout=remaining)
                 self._writer_active = True
@@ -127,15 +148,56 @@ class _VectorStoreLifecycleGate:
                 self._writers_waiting -= 1
                 self._condition.notify_all()
 
-    def release_exclusive(self, *, acquired: bool) -> None:
+    def defer_close(self, close_action: Callable[[], None]) -> None:
+        """Queue one timed-out lifecycle action until all readers drain."""
+        drain_deferred = False
+        with self._condition:
+            self._deferred_closes.append(close_action)
+            self._condemned_requests -= 1
+            if self._readers == 0 and not self._writer_active:
+                self._writer_active = True
+                drain_deferred = True
+            self._condition.notify_all()
+        if drain_deferred:
+            self._drain_deferred_closes()
+
+    def release_exclusive(self, *, acquired: bool, condemned_handled: bool) -> None:
         thread_id = threading.get_ident()
+        drain_deferred = False
+        upgraded_readers = 0
         with self._condition:
             if acquired:
-                self._readers += self._upgraded_readers.pop(thread_id, 0)
-                self._writer_active = False
-            else:
-                self._forced_closers -= 1
+                upgraded_readers = self._upgraded_readers.pop(thread_id, 0)
+                if self._deferred_closes:
+                    drain_deferred = True
+                else:
+                    self._readers += upgraded_readers
+                    self._writer_active = False
+            elif not condemned_handled:
+                self._condemned_requests -= 1
             self._condition.notify_all()
+        if drain_deferred:
+            self._drain_deferred_closes(restored_readers=upgraded_readers)
+
+    def _drain_deferred_closes(self, *, restored_readers: int = 0) -> None:
+        """Run queued closes while holding the gate's writer slot."""
+        while True:
+            with self._condition:
+                while not self._deferred_closes and self._condemned_requests:
+                    self._condition.wait()
+                if not self._deferred_closes:
+                    self._readers += restored_readers
+                    self._writer_active = False
+                    self._condition.notify_all()
+                    return
+                close_actions = self._deferred_closes
+                self._deferred_closes = []
+
+            for close_action in close_actions:
+                try:
+                    close_action()
+                except Exception:
+                    logger.debug("Failed to run deferred vector-store close", exc_info=True)
 
 
 _vector_store_lifecycle_gate = _VectorStoreLifecycleGate()
@@ -158,19 +220,32 @@ def vector_store_operation(anima_name: str | None = None) -> Iterator[None]:
 
 
 @contextmanager
-def _vector_store_close_gate(operation: str) -> Iterator[None]:
-    """Exclude operations during lifecycle changes, with a bounded wait."""
+def _vector_store_close_gate(operation: str) -> Iterator[Callable[[Callable[[], None]], None]]:
+    """Run a lifecycle action exclusively, or defer it until readers drain."""
     acquired = _vector_store_lifecycle_gate.acquire_exclusive(_VECTOR_STORE_CLOSE_TIMEOUT_SECONDS)
     if not acquired:
         logger.warning(
-            "Timed out after %.0fs waiting for in-flight vector-store operations during %s; forcing close",
+            "Timed out after %.0fs waiting for in-flight vector-store operations during %s; deferring close",
             _VECTOR_STORE_CLOSE_TIMEOUT_SECONDS,
             operation,
         )
+    condemned_handled = False
+
+    def close_or_defer(close_action: Callable[[], None]) -> None:
+        nonlocal condemned_handled
+        if acquired:
+            close_action()
+        else:
+            _vector_store_lifecycle_gate.defer_close(close_action)
+            condemned_handled = True
+
     try:
-        yield
+        yield close_or_defer
     finally:
-        _vector_store_lifecycle_gate.release_exclusive(acquired=acquired)
+        _vector_store_lifecycle_gate.release_exclusive(
+            acquired=acquired,
+            condemned_handled=condemned_handled,
+        )
 
 
 def _get_http_store(base_url: str, anima_name: str | None) -> HttpVectorStore:
@@ -618,24 +693,40 @@ def reset_vector_store(anima_name: str | None = None) -> None:
     """
     global _init_failed
 
-    with _vector_store_close_gate("reset"), _lock:
-        _vector_store_init_failed.discard(anima_name)
-        target = _vector_stores.pop(anima_name, None)
-        closed_native = target is not None
-        _close_store(target, anima_name)
+    close_finished = threading.Event()
+    with _vector_store_close_gate("reset") as close_or_defer:
+        with _lock:
+            _vector_store_init_failed.discard(anima_name)
+            target = _vector_stores.pop(anima_name, None)
+            native_stores = [(anima_name, target)] if target is not None else []
 
-        if closed_native:
-            siblings = list(_vector_stores.items())
-            _vector_stores.clear()
-            for sibling_name, sibling_store in siblings:
-                _close_store(sibling_store, sibling_name)
-            _clear_chroma_system_cache()
+            if native_stores:
+                native_stores.extend(_vector_stores.items())
+                _vector_stores.clear()
 
-        http_keys = [key for key in _http_stores if key[1] == anima_name]
-        for key in http_keys:
-            store = _http_stores.pop(key, None)
-            _close_store(store, anima_name)
-        _init_failed = False
+            http_keys = [key for key in _http_stores if key[1] == anima_name]
+            http_stores = [(key[1], _http_stores.pop(key, None)) for key in http_keys]
+            _init_failed = False
+
+        def close_removed_stores() -> None:
+            try:
+                for owner, store in native_stores:
+                    _close_store(store, owner)
+                if native_stores:
+                    _clear_chroma_system_cache()
+                for owner, store in http_stores:
+                    _close_store(store, owner)
+            finally:
+                close_finished.set()
+
+        close_or_defer(close_removed_stores)
+
+    # Repair callers move or delete the DB immediately after reset. They must
+    # not proceed until a timed-out close has drained. A self-heal running under
+    # this thread's shared slot cannot wait for itself, so it leaves the close
+    # condemned for release_shared() to finish.
+    if not _vector_store_lifecycle_gate.current_thread_holds_shared():
+        close_finished.wait()
 
 
 def _error_reset_cooldown_seconds() -> float:
@@ -685,7 +776,8 @@ def close_all_vector_stores() -> None:
     """Close all cached vector-store clients before process shutdown."""
     global _init_failed
 
-    with _vector_store_close_gate("close-all"):
+    close_finished = threading.Event()
+    with _vector_store_close_gate("close-all") as close_or_defer:
         with _lock:
             stores = list(_vector_stores.items())
             http_stores = list(_http_stores.items())
@@ -694,12 +786,38 @@ def close_all_vector_stores() -> None:
             _vector_store_init_failed.clear()
             _init_failed = False
 
-        for anima_name, store in stores:
+        def close_removed_stores() -> None:
+            try:
+                for anima_name, store in stores:
+                    _close_store(store, anima_name)
+                if stores:
+                    _clear_chroma_system_cache()
+                for (_base_url, anima_name), store in http_stores:
+                    _close_store(store, anima_name)
+            finally:
+                close_finished.set()
+
+        close_or_defer(close_removed_stores)
+
+    if not _vector_store_lifecycle_gate.current_thread_holds_shared():
+        close_finished.wait()
+
+
+def _close_vector_store_with_gate(store, anima_name: str | None, *, operation: str) -> None:
+    """Close one non-cached store without racing native operations."""
+    close_finished = threading.Event()
+
+    def close_store() -> None:
+        try:
             _close_store(store, anima_name)
-        if stores:
-            _clear_chroma_system_cache()
-        for (_base_url, anima_name), store in http_stores:
-            _close_store(store, anima_name)
+        finally:
+            close_finished.set()
+
+    with _vector_store_close_gate(operation) as close_or_defer:
+        close_or_defer(close_store)
+
+    if not _vector_store_lifecycle_gate.current_thread_holds_shared():
+        close_finished.wait()
 
 
 def _close_store(store, anima_name: str | None) -> None:
