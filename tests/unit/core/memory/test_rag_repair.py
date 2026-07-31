@@ -11,6 +11,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from core.memory.rag.indexer import IndexDirectoryResult
 from core.memory.rag.repair import (
     RAGRepairService,
@@ -887,6 +889,7 @@ def test_repair_rebuilds_swaps_and_archives(data_dir: Path, monkeypatch):
 
 def test_atomic_rebuild_includes_facts_and_conversation_summary(data_dir: Path, monkeypatch):
     """The shared rebuild path indexes every canonical vector category."""
+    from core.memory.rag import repair_state
     from core.memory.rag.repair_rebuild import atomic_rebuild_vectordb
 
     anima_dir = data_dir / "animas" / "sora"
@@ -908,6 +911,7 @@ def test_atomic_rebuild_includes_facts_and_conversation_summary(data_dir: Path, 
     calls: list[tuple[str | None, str]] = []
     _patch_atomic_build(monkeypatch, chunks_per_dir=2, indexer_calls=calls)
     monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda anima_name=None: None)
+    repair_state.update_repair_state("sora", status="repairing", stage="repair")
 
     chunks, _archive = atomic_rebuild_vectordb(
         "sora",
@@ -923,6 +927,33 @@ def test_atomic_rebuild_includes_facts_and_conversation_summary(data_dir: Path, 
         "skills",
         "facts",
     ]
+
+
+def test_atomic_rebuild_refuses_swap_without_active_fence(data_dir: Path, monkeypatch):
+    from core.memory.rag.repair_rebuild import RebuildVerificationError, atomic_rebuild_vectordb
+
+    anima_dir = data_dir / "animas" / "sora"
+    knowledge_dir = anima_dir / "knowledge"
+    knowledge_dir.mkdir(parents=True)
+    (knowledge_dir / "note.md").write_text("content", encoding="utf-8")
+    live = anima_dir / "vectordb"
+    live.mkdir()
+    (live / "live.bin").write_text("live", encoding="utf-8")
+
+    _patch_atomic_build(monkeypatch, chunks_per_dir=2)
+    local_reset = MagicMock()
+    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", local_reset)
+
+    with pytest.raises(RebuildVerificationError, match="access fence missing"):
+        atomic_rebuild_vectordb(
+            "sora",
+            include_shared=False,
+            anima_dir=anima_dir,
+        )
+
+    assert (live / "live.bin").read_text(encoding="utf-8") == "live"
+    assert not list(anima_dir.glob("vectordb.staging-*"))
+    local_reset.assert_not_called()
 
 
 def test_repair_skips_rebuild_when_sqlite_healthy_after_stop(data_dir: Path, monkeypatch):

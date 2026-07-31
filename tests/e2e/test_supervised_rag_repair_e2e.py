@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -38,29 +39,21 @@ async def test_chroma_signal_to_supervised_repair_lifecycle(data_dir: Path) -> N
     calls: list[str] = []
     sup.processes["sora"] = object()
 
-    async def stop_anima(name: str, **_: object) -> None:
-        calls.append(f"stop:{name}")
-        sup.processes.pop(name, None)
-
-    async def start_anima(name: str) -> None:
-        calls.append(f"start:{name}")
-
     async def repair_cli(name: str, *, reason: str, include_shared: bool) -> dict[str, object]:
         calls.append(f"repair:{name}:{reason}:{include_shared}")
         return {"ok": True, "status": "success"}
 
-    sup.stop_anima = stop_anima
-    sup.start_anima = start_anima
+    sup.stop_anima = AsyncMock()
+    sup.start_anima = AsyncMock()
     sup._run_rag_repair_cli_process = repair_cli
 
     await sup._run_supervised_rag_repair("sora", requested)
 
-    assert calls == [
-        "stop:sora",
-        "repair:sora:sqlite_malformed:True",
-        "start:sora",
-    ]
+    assert calls == ["repair:sora:sqlite_malformed:True"]
+    sup.stop_anima.assert_not_awaited()
+    sup.start_anima.assert_not_awaited()
+    assert "sora" in sup.processes
     final_state = json.loads(state_path.read_text(encoding="utf-8"))
     assert final_state["status"] == "healthy"
-    assert final_state["stage"] == "complete"
+    assert final_state["stage"] == "unfence"
     assert final_state["last_error"] is None

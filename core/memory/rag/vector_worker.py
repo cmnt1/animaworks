@@ -37,8 +37,7 @@ _write_circuit_breakers: dict[str, dict[str, Any]] = {}
 _VECTOR_ACTION_ERROR = object()
 _LATCH_RECOVERY_BACKOFF_SECONDS = float(os.environ.get("ANIMAWORKS_VECTOR_LATCH_RECOVERY_BACKOFF_SECONDS", "5"))
 _LATCH_RECOVERY_RETRY_STATUSES = {"ok", "missing"}
-_ACTIVE_REPAIR_STATUSES = {"requested", "stopping", "repairing"}
-_ACTIVE_REPAIR_WRITE_RETRY_AFTER_SECONDS = int(os.environ.get("ANIMAWORKS_VECTOR_REPAIR_RETRY_AFTER_SECONDS", "30"))
+_ACTIVE_REPAIR_RETRY_AFTER_SECONDS = int(os.environ.get("ANIMAWORKS_VECTOR_REPAIR_RETRY_AFTER_SECONDS", "30"))
 _latched_store_recovery_lock = threading.Lock()
 _latched_store_recovery_backoff_until: dict[str, float] = {}
 _latched_store_recovery_in_progress: set[str] = set()
@@ -262,7 +261,7 @@ def _has_active_repair_state(anima_name: str) -> bool:
     try:
         from core.memory.rag import repair_state
 
-        return repair_state.read_state(anima_name).get("status") in _ACTIVE_REPAIR_STATUSES
+        return repair_state.read_state(anima_name).get("status") in repair_state.ACTIVE_REPAIR_STATUSES
     except Exception:
         logger.debug("Failed to read RAG repair state for owner=%s", anima_name, exc_info=True)
         return True
@@ -370,10 +369,14 @@ def _call_vector_store(anima_name: str | None, action: Callable[[Any], Any]) -> 
     )
 
     try:
+        if anima_name and _has_active_repair_state(anima_name):
+            return None
         # Fetch and use the cached handle under one shared lifecycle gate. A
         # concurrent reset/close therefore cannot invalidate Chroma's global
         # client cache between get_vector_store() and the native operation.
         with vector_store_operation(anima_name):
+            if anima_name and _has_active_repair_state(anima_name):
+                return None
             store = get_vector_store(anima_name)
             if store is None:
                 store = _try_recover_latched_store(anima_name)
@@ -399,6 +402,8 @@ def _call_vector_store(anima_name: str | None, action: Callable[[Any], Any]) -> 
         reset_vector_store(anima_name)
         _clear_owner_write_circuit_breakers(anima_name)
         with vector_store_operation(anima_name):
+            if anima_name and _has_active_repair_state(anima_name):
+                return result
             fresh_store = get_vector_store(anima_name)
             if fresh_store is None:
                 return result
@@ -466,23 +471,35 @@ def _clear_owner_write_circuit_breakers(anima_name: str | None) -> None:
             _write_circuit_breakers.pop(key, None)
 
 
-def _before_vector_write(anima_name: str | None, collection: str) -> JSONResponse | None:
+def _before_vector_access(
+    anima_name: str | None,
+    collection: str | None = None,
+) -> JSONResponse | None:
     if anima_name and _has_active_repair_state(anima_name):
         logger.warning(
-            "Vector write deferred during active RAG repair: owner=%s collection=%s",
+            "Vector access deferred during active RAG repair: owner=%s collection=%s",
             anima_name,
-            collection,
+            collection or "*",
         )
+        content: dict[str, Any] = {
+            "detail": "RAG repair in progress",
+            "owner": anima_name,
+            "retry_after_seconds": _ACTIVE_REPAIR_RETRY_AFTER_SECONDS,
+        }
+        if collection is not None:
+            content["collection"] = collection
         return JSONResponse(
             status_code=503,
-            content={
-                "detail": "RAG repair in progress",
-                "collection": collection,
-                "owner": anima_name,
-                "retry_after_seconds": _ACTIVE_REPAIR_WRITE_RETRY_AFTER_SECONDS,
-            },
-            headers={"Retry-After": str(_ACTIVE_REPAIR_WRITE_RETRY_AFTER_SECONDS)},
+            content=content,
+            headers={"Retry-After": str(_ACTIVE_REPAIR_RETRY_AFTER_SECONDS)},
         )
+    return None
+
+
+def _before_vector_write(anima_name: str | None, collection: str) -> JSONResponse | None:
+    repair_fence = _before_vector_access(anima_name, collection)
+    if repair_fence is not None:
+        return repair_fence
 
     key = _breaker_key(anima_name, collection)
     state = _write_circuit_breakers.get(key)
@@ -700,6 +717,9 @@ def create_app() -> FastAPI:
 
     @app.post("/query")
     async def vector_query(body: VectorQueryRequest):
+        repair_fence = _before_vector_access(body.anima_name, body.collection)
+        if repair_fence is not None:
+            return repair_fence
         results = await run_native(
             _call_vector_store,
             body.anima_name,
@@ -781,6 +801,9 @@ def create_app() -> FastAPI:
 
     @app.post("/get-by-metadata")
     async def vector_get_by_metadata(body: VectorGetByMetadataRequest):
+        repair_fence = _before_vector_access(body.anima_name, body.collection)
+        if repair_fence is not None:
+            return repair_fence
         results = await run_native(
             _call_vector_store,
             body.anima_name,
@@ -798,6 +821,9 @@ def create_app() -> FastAPI:
 
     @app.post("/get-by-ids")
     async def vector_get_by_ids(body: VectorGetByIdsRequest):
+        repair_fence = _before_vector_access(body.anima_name, body.collection)
+        if repair_fence is not None:
+            return repair_fence
         docs = await run_native(
             _call_vector_store,
             body.anima_name,
@@ -843,6 +869,9 @@ def create_app() -> FastAPI:
 
     @app.post("/list-collections")
     async def vector_list_collections(body: VectorListCollectionsRequest):
+        repair_fence = _before_vector_access(body.anima_name)
+        if repair_fence is not None:
+            return repair_fence
         collections = await run_native(
             _call_vector_store,
             body.anima_name,
