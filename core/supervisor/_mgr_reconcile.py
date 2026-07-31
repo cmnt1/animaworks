@@ -63,6 +63,8 @@ class ReconcileMixin:
 
         # permanently failed + enabled → recover after 1-minute cooldown
         for name in list(self._permanently_failed):
+            if self._shutdown:
+                break
             handle = self.processes.get(name)
             if handle is None:
                 self._permanently_failed.discard(name)
@@ -152,6 +154,8 @@ class ReconcileMixin:
 
         # enabled + not running → start
         for name, enabled in on_disk.items():
+            if self._shutdown:
+                break
             if enabled and name not in running:
                 if name in self._restarting:
                     logger.debug("Reconciliation: skipping %s (restart in progress)", name)

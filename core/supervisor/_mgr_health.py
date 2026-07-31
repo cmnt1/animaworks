@@ -618,7 +618,8 @@ class HealthMixin:
 
         except Exception as e:
             logger.error("Failed to restart %s: %s", anima_name, e)
-            handle.state = ProcessState.FAILED
+            if not self._shutdown:
+                handle.state = ProcessState.FAILED
             await self._mark_process_error(anima_name, f"{type(e).__name__}: {e}", handle)
         finally:
             self._restarting.discard(anima_name)
