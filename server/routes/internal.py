@@ -132,6 +132,7 @@ class DelegateTaskPersistRequest(BaseModel):
     sub_task_id: str  # client-assigned 12hex id
     tracking_task_id: str  # client-assigned 12hex id
     workspace: str = ""  # resolve_workspace absolute path string
+    exclusive_key: str = ""  # optional task exclusion group
     persist_sub: bool = True  # write to subordinate queue
     persist_tracking: bool = True  # write delegated entry on delegator queue
     persist_pending: bool = True  # create state/pending/<id>.json
@@ -561,6 +562,7 @@ def create_internal_router() -> APIRouter:
                     "reply_to": body.delegator,
                     "source": "delegation",
                     "working_directory": body.workspace,
+                    "exclusive_key": body.exclusive_key,
                 }
                 pending_dir = target_dir / "state" / "pending"
                 pending_dir.mkdir(parents=True, exist_ok=True)

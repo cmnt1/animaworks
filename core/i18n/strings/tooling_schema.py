@@ -245,6 +245,17 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "登録aliasを使う（例: aischreiber）。ディレクトリ名表記(AI-Schreiber)も正規化で受理される。ワークスペースエイリアスまたはalias#hash。部下がこのディレクトリで作業する",
         "en": "Use a registered alias (e.g. aischreiber). Directory-style names (AI-Schreiber) are also accepted via normalization. Workspace alias or alias#hash. The subordinate will work in this directory",
     },
+    "schema.delegate_task.exclusive_key": {
+        "ja": "同時実行を避けたいタスク群で共有する排他キー（例: pr-3999）。同一キーのタスクは直列実行される。省略時は排他なし",
+        "en": (
+            "An exclusion key shared by tasks that must not run concurrently (e.g. pr-3999). "
+            "Tasks with the same key run serially. Omit for no exclusion"
+        ),
+        "ko": (
+            "동시 실행을 피해야 하는 태스크 그룹이 공유하는 배타 키(예: pr-3999). "
+            "동일한 키의 태스크는 직렬 실행된다. 생략 시 배타 없음"
+        ),
+    },
     "schema.disable_subordinate.desc": {
         "ja": "配下のAnimaを休止させる（プロセス停止 + 自動復帰防止）。自分の配下であれば操作可能。",
         "en": ("Disable a descendant Anima (stop process + prevent auto-restart). Any descendant can be targeted."),

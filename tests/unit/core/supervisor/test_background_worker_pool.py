@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -343,7 +344,7 @@ async def test_command_claim_stays_active_until_background_task_finishes(tmp_pat
     assert not processing_lease_path(processing_path).exists()
 
 
-async def _measure_workspace_concurrency(
+async def _measure_exclusive_key_concurrency(
     executor: PendingTaskExecutor,
     task_descriptions: list[dict[str, str]],
 ) -> int:
@@ -363,55 +364,112 @@ async def _measure_workspace_concurrency(
     return maximum_active
 
 
-async def test_same_resolved_workspace_is_exclusive(tmp_path: Path) -> None:
+async def test_same_working_directory_without_exclusive_key_can_overlap(tmp_path: Path) -> None:
     executor = _executor(tmp_path)
     workspace = tmp_path / "workspace"
     workspace.mkdir()
 
-    maximum_active = await _measure_workspace_concurrency(
+    maximum_active = await _measure_exclusive_key_concurrency(
         executor,
         [
             {"task_id": "same-one", "working_directory": str(workspace)},
-            {"task_id": "same-two", "working_directory": str(workspace / ".")},
+            {
+                "task_id": "same-two",
+                "working_directory": str(workspace),
+                "exclusive_key": "",
+            },
+        ],
+    )
+
+    assert maximum_active == 2
+    assert len(executor._exclusion_locks) == 0
+
+
+async def test_same_exclusive_key_is_serialized(tmp_path: Path) -> None:
+    executor = _executor(tmp_path)
+
+    maximum_active = await _measure_exclusive_key_concurrency(
+        executor,
+        [
+            {"task_id": "same-key-one", "exclusive_key": "pr-3999"},
+            {"task_id": "same-key-two", "exclusive_key": "pr-3999"},
         ],
     )
 
     assert maximum_active == 1
-    assert len(executor._workspace_locks) == 1
+    assert len(executor._exclusion_locks) == 1
 
 
-async def test_tasks_without_working_directory_are_not_serialized(tmp_path: Path) -> None:
+async def test_distinct_exclusive_keys_can_overlap(tmp_path: Path) -> None:
     executor = _executor(tmp_path)
 
-    maximum_active = await _measure_workspace_concurrency(
+    maximum_active = await _measure_exclusive_key_concurrency(
         executor,
         [
-            {"task_id": "free-one"},
-            {"task_id": "free-two", "working_directory": ""},
+            {"task_id": "distinct-one", "exclusive_key": "pr-3999"},
+            {"task_id": "distinct-two", "exclusive_key": "pr-4000"},
         ],
     )
 
     assert maximum_active == 2
-    assert len(executor._workspace_locks) == 0
+    assert len(executor._exclusion_locks) == 2
 
 
-async def test_distinct_workspaces_can_overlap(tmp_path: Path) -> None:
+async def test_exclusive_key_wait_is_logged_without_regressing_queue_status(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     executor = _executor(tmp_path)
-    first_workspace = tmp_path / "workspace-one"
-    second_workspace = tmp_path / "workspace-two"
-    first_workspace.mkdir()
-    second_workspace.mkdir()
+    queue = TaskQueueManager(executor._anima_dir)
+    queue.add_task(
+        source="anima",
+        original_instruction="pending waiter",
+        assignee="pool-test",
+        summary="pending waiter",
+        task_id="pending-wait",
+    )
+    queue.add_task(
+        source="anima",
+        original_instruction="active waiter",
+        assignee="pool-test",
+        summary="active waiter",
+        task_id="active-wait",
+        status="in_progress",
+    )
+    holder_started = asyncio.Event()
+    release_holder = asyncio.Event()
 
-    maximum_active = await _measure_workspace_concurrency(
-        executor,
-        [
-            {"task_id": "distinct-one", "working_directory": str(first_workspace)},
-            {"task_id": "distinct-two", "working_directory": str(second_workspace)},
-        ],
+    async def fake_run_llm_task(task_desc, *args, **kwargs) -> str:
+        if task_desc["task_id"] == "lock-holder":
+            holder_started.set()
+            await release_holder.wait()
+        return "ok"
+
+    executor._run_llm_task = fake_run_llm_task  # type: ignore[method-assign]
+    caplog.set_level(logging.INFO, logger="core.supervisor.pending_executor")
+    holder = asyncio.create_task(executor._run_task_in_worker({"task_id": "lock-holder", "exclusive_key": "pr-3999"}))
+    await holder_started.wait()
+    pending_waiter = asyncio.create_task(
+        executor._run_task_in_worker({"task_id": "pending-wait", "exclusive_key": "pr-3999"})
+    )
+    active_waiter = asyncio.create_task(
+        executor._run_task_in_worker({"task_id": "active-wait", "exclusive_key": "pr-3999"})
     )
 
-    assert maximum_active == 2
-    assert len(executor._workspace_locks) == 2
+    await _wait_until(
+        lambda: len([message for message in caplog.messages if "waiting on exclusive key: pr-3999" in message]) == 2
+    )
+    pending_entry = queue.get_task_by_id("pending-wait")
+    assert pending_entry.status == "pending"
+    assert pending_entry.summary == "pending waiter"
+    active_entry = queue.get_task_by_id("active-wait")
+    assert active_entry.status == "in_progress"
+    assert active_entry.summary == "active waiter"
+    assert caplog.messages.count("[pool-test] Task pending-wait waiting on exclusive key: pr-3999") == 1
+    assert caplog.messages.count("[pool-test] Task active-wait waiting on exclusive key: pr-3999") == 1
+
+    release_holder.set()
+    await asyncio.gather(holder, pending_waiter, active_waiter)
 
 
 def test_active_worker_is_busy_and_drives_primary_status() -> None:

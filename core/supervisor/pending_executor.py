@@ -252,32 +252,27 @@ class PendingTaskExecutor:
         self._active_dispatch_tasks: set[asyncio.Task[None]] = set()
         self._active_task_ids: set[str] = set()
         self._batch_dispatch_lock = asyncio.Lock()
-        self._workspace_locks: dict[Path, asyncio.Lock] = {}
+        self._exclusion_locks: dict[str, asyncio.Lock] = {}
 
     def _worker_pool_size(self) -> int:
         """Return a validated pool size while tolerating legacy test doubles."""
         value = getattr(self._anima, "_background_worker_pool_size", 1)
         return value if isinstance(value, int) and 1 <= value <= 10 else 1
 
-    def _workspace_key(self, task_desc: dict[str, Any]) -> Path:
-        """Resolve the workspace used for write-task mutual exclusion."""
-        workspace = task_desc.get("working_directory", "") or _resolve_default_workspace(self._anima_dir)
-        return Path(workspace or self._anima_dir).expanduser().resolve()
+    def _exclusive_key(self, task_desc: dict[str, Any]) -> str | None:
+        """Return the task's explicit exclusion key, if any."""
+        key = task_desc.get("exclusive_key")
+        return str(key) if key else None
 
-    def _workspace_lock(self, task_desc: dict[str, Any]) -> asyncio.Lock | None:
-        """Return the exclusion lock for the task's explicit workspace.
-
-        Tasks without an explicit ``working_directory`` pick their own working
-        area at runtime (e.g. per-task worktrees), so they are not serialized
-        against each other.
-        """
-        if not task_desc.get("working_directory"):
+    def _exclusion_lock(self, task_desc: dict[str, Any]) -> asyncio.Lock | None:
+        """Return the lock for the task's explicit exclusion key."""
+        key = self._exclusive_key(task_desc)
+        if key is None:
             return None
-        key = self._workspace_key(task_desc)
-        lock = self._workspace_locks.get(key)
+        lock = self._exclusion_locks.get(key)
         if lock is None:
             lock = asyncio.Lock()
-            self._workspace_locks[key] = lock
+            self._exclusion_locks[key] = lock
         return lock
 
     async def _acquire_worker(self, task_id: str) -> BackgroundWorkerSlot | None:
@@ -1454,10 +1449,18 @@ class PendingTaskExecutor:
         *,
         worker_slot: BackgroundWorkerSlot | None = None,
     ) -> str:
-        """Run one LLM task with workspace exclusion and a worker lease."""
+        """Run one LLM task with explicit exclusion and a worker lease."""
         task_id = task_desc.get("task_id", "unknown")
-        workspace_lock = self._workspace_lock(task_desc)
-        async with workspace_lock if workspace_lock is not None else contextlib.nullcontext():
+        exclusive_key = self._exclusive_key(task_desc)
+        exclusion_lock = self._exclusion_lock(task_desc)
+        if exclusion_lock is not None and exclusion_lock.locked():
+            logger.info(
+                "[%s] Task %s waiting on exclusive key: %s",
+                self._anima_name,
+                task_id,
+                exclusive_key,
+            )
+        async with exclusion_lock if exclusion_lock is not None else contextlib.nullcontext():
             leased_here = worker_slot is None
             slot = worker_slot or await self._acquire_worker(task_id)
             try:
