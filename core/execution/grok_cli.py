@@ -230,7 +230,11 @@ class GrokCLIExecutor(BaseExecutor):
             return False
 
         from core.config.models import load_permissions
-        from core.file_access_policy import company_shared_write_root, resolve_effective_denied_roots
+        from core.file_access_policy import (
+            company_shared_write_root,
+            resolve_effective_denied_roots,
+            shared_tool_cache_write_root,
+        )
 
         permissions_config = load_permissions(self._anima_dir)
         denied_roots = list(
@@ -246,6 +250,12 @@ class GrokCLIExecutor(BaseExecutor):
             return False
 
         read_write = [str(self._anima_dir.resolve())]
+        # External-tool caches (Chatwork/Slack message DBs and the identity
+        # map) sit outside the Anima directory; without write access even a
+        # plain inbox read fails with EROFS.
+        tool_cache_root = shared_tool_cache_write_root(self._anima_dir)
+        if tool_cache_root is not None:
+            read_write.append(str(tool_cache_root))
         for root in permissions_config.file_roots:
             resolved = str(Path(root).resolve())
             if resolved != "/" and resolved not in read_write:

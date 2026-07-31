@@ -278,7 +278,11 @@ class TestSandboxConfiguration:
         profile = parsed["profiles"]["animaworks"]
         assert profile == {
             "extends": "workspace",
-            "read_write": [str(anima_dir.resolve()), str(allowed.resolve())],
+            "read_write": [
+                str(anima_dir.resolve()),
+                str((tmp_path / "cache").resolve()),
+                str(allowed.resolve()),
+            ],
             "deny": [str(denied.resolve())],
         }
         assert "read_only" not in profile
@@ -324,7 +328,11 @@ class TestSandboxConfiguration:
         profile = tomllib.loads((executor._workspace / ".grok" / "sandbox.toml").read_text(encoding="utf-8"))[
             "profiles"
         ]["animaworks"]
-        assert profile["read_write"] == [str(anima_dir.resolve()), str(allowed.resolve())]
+        assert profile["read_write"] == [
+            str(anima_dir.resolve()),
+            str((tmp_path / "cache").resolve()),
+            str(allowed.resolve()),
+        ]
         assert profile["deny"] == []
 
     def test_company_shared_is_created_and_added_independent_of_file_roots(
@@ -351,7 +359,11 @@ class TestSandboxConfiguration:
         profile = tomllib.loads((executor._workspace / ".grok" / "sandbox.toml").read_text(encoding="utf-8"))[
             "profiles"
         ]["animaworks"]
-        assert profile["read_write"] == [str(anima_dir.resolve()), str(own_shared.resolve())]
+        assert profile["read_write"] == [
+            str(anima_dir.resolve()),
+            str((tmp_path / "cache").resolve()),
+            str(own_shared.resolve()),
+        ]
         assert profile["deny"] == [str(foreign_company.resolve())]
         for name in ("knowledge", "skills", "vision.md", "company.json", "credentials"):
             assert str((own_company / name).resolve()) not in profile["read_write"]
