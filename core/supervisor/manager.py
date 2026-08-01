@@ -710,7 +710,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         """
         logger.info("Restarting process: %s", anima_name)
 
-        if _reset_counters:
+        if _reset_counters and not self._shutdown:
             self._restart_counts.pop(anima_name, None)
             self._permanently_failed.discard(anima_name)
             self._failed_log_times.pop(anima_name, None)
@@ -782,6 +782,8 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 self._failed_log_times.pop(anima_name, None)
                 return new_handle
             except Exception as exc:
+                if self._shutdown:
+                    continue
                 last_error = f"{type(exc).__name__}: {exc}"
                 self._start_fail_counts[anima_name] = attempt
                 self._start_failed_times[anima_name] = time.monotonic()
@@ -1039,8 +1041,9 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 elapsed = time.monotonic() - starting_since
                 if elapsed > self._spawn_timeout_sec:
                     reason = f"spawn exceeded timeout ({self._spawn_timeout_sec:.0f}s)"
-                    self._failure_reasons[anima_name] = reason
-                    self._permanently_failed.add(anima_name)
+                    if not self._shutdown:
+                        self._failure_reasons[anima_name] = reason
+                        self._permanently_failed.add(anima_name)
                     return {
                         "status": "error",
                         "error": reason,
@@ -1086,8 +1089,9 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         if handle.state in (ProcessState.STARTING, ProcessState.RESTARTING) and uptime > self._spawn_timeout_sec:
             status_value = "error"
             reason = f"spawn exceeded timeout ({self._spawn_timeout_sec:.0f}s)"
-            self._failure_reasons[anima_name] = reason
-            self._permanently_failed.add(anima_name)
+            if not self._shutdown:
+                self._failure_reasons[anima_name] = reason
+                self._permanently_failed.add(anima_name)
 
         bootstrap_status: dict[str, Any] = {}
         try:
