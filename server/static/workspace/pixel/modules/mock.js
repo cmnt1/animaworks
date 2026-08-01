@@ -36,6 +36,19 @@ function performanceEvents(actorIds) {
         director.dispatch("instruction", { summary: summaries[performanceTick % summaries.length] });
       },
     },
+    {
+      // Cycle workKind visuals: colored bubbles, accents, lane badge for workers.
+      label: "workkind",
+      run: ({ actors, performanceTick }) => {
+        const kinds = ["cron", "task", "workers", "inbox", "goal", "consolidation"];
+        actorIds.forEach((id, index) => {
+          const kind = kinds[(performanceTick + index) % kinds.length];
+          actors.noteActivity(id, `${kind}:demo`, index % 2 ? "bash" : "", {
+            laneCount: kind === "workers" ? 3 : 1,
+          });
+        });
+      },
+    },
   ];
 }
 

@@ -1,4 +1,5 @@
 import { AssetStore } from "./assets.js";
+import { preloadPixelFonts } from "./pixel-text.js";
 import { loadScene, sampleAnimas } from "./scene-layout.js";
 import { SceneRenderer } from "./scene-render.js";
 import { ActorManager } from "./actors.js";
@@ -69,6 +70,7 @@ async function start() {
   const [scene, assets] = await Promise.all([
     loadScene(initialAnimas),
     AssetStore.load(initialAnimas, { runtime: !forceMock }),
+    preloadPixelFonts(),
   ]);
   const officeBackground = assets.officeBackground();
   if (officeBackground && assets.officeBackgroundSlots) {

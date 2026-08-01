@@ -140,7 +140,9 @@ class TimelineMixin:
             evt_dict = _TM._entry_to_event_dict(entry)
             is_trigger = etype in _TM._TRIGGER_TYPES
             cur_key, cur = _TM._lookup_open_group(
-                current_by_key, anima, ctx,
+                current_by_key,
+                anima,
+                ctx,
             )
 
             if is_trigger:
@@ -157,7 +159,10 @@ class TimelineMixin:
 
             if etype == "heartbeat_end":
                 hb_key, hb_cur = _TM._lookup_open_group(
-                    current_by_key, anima, ctx, gtype="heartbeat",
+                    current_by_key,
+                    anima,
+                    ctx,
+                    gtype="heartbeat",
                 )
                 # Heartbeat start/end sometimes disagree on ctx (empty vs
                 # "heartbeat"); still close the open heartbeat for this anima.
@@ -207,7 +212,9 @@ class TimelineMixin:
                 continue
 
             retrogrp = _TM._find_recent_group(
-                groups, anima, preferred_ctx=ctx,
+                groups,
+                anima,
+                preferred_ctx=ctx,
             )
             if retrogrp is not None:
                 retrogrp["events"].append(evt_dict)

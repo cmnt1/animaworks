@@ -1097,12 +1097,8 @@ class GrokCLIExecutor(BaseExecutor):
                 tracker.update_from_message_start(
                     {
                         "input_tokens": state.last_response_usage.get("input_tokens", 0),
-                        "cache_read_input_tokens": state.last_response_usage.get(
-                            "cache_read_input_tokens", 0
-                        ),
-                        "cache_creation_input_tokens": state.last_response_usage.get(
-                            "cache_creation_input_tokens", 0
-                        ),
+                        "cache_read_input_tokens": state.last_response_usage.get("cache_read_input_tokens", 0),
+                        "cache_creation_input_tokens": state.last_response_usage.get("cache_creation_input_tokens", 0),
                     }
                 )
             else:

@@ -960,6 +960,12 @@
       "row": 0,
       "frames": 1,
       "fps": 1
+    },
+    "clock": {
+      "file": "fx/clock.png",
+      "row": 0,
+      "frames": 4,
+      "fps": 4
     }
   }
 }
