@@ -82,12 +82,7 @@ class _VectorStoreLifecycleGate:
     def acquire_shared(self) -> None:
         thread_id = threading.get_ident()
         with self._condition:
-            while (
-                self._writer_active
-                or self._writers_waiting
-                or self._condemned_requests
-                or self._deferred_closes
-            ):
+            while self._writer_active or self._writers_waiting or self._condemned_requests or self._deferred_closes:
                 self._condition.wait()
             self._readers += 1
             self._reader_depths[thread_id] = self._reader_depths.get(thread_id, 0) + 1
@@ -126,11 +121,7 @@ class _VectorStoreLifecycleGate:
             self._readers -= upgraded_readers
             self._writers_waiting += 1
             try:
-                while (
-                    self._writer_active
-                    or self._readers
-                    or self._condemned_requests
-                ):
+                while self._writer_active or self._readers or self._condemned_requests:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         self._readers += upgraded_readers
