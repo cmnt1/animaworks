@@ -145,7 +145,11 @@ export class LiveClient {
       if (data.name && !this.actors.isHuman(data.name)) {
         // ctx is often unset in practice; the entry type (cron_executed,
         // heartbeat_start, tool_use, ...) still identifies the work.
-        this.actors.noteActivity(data.name, data.ctx || data.meta?.ctx || data.type || "");
+        this.actors.noteActivity(
+          data.name,
+          data.ctx || data.meta?.ctx || data.type || "",
+          data.tool || data.tool_name || "",
+        );
       }
       this.handleToolActivity(data);
       return;

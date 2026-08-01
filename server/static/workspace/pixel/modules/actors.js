@@ -33,6 +33,36 @@ const STATE_DECAY_SECONDS = Object.freeze({
   success: 90,
 });
 
+// Short "何をしているか" labels derived from the tool an anima just used.
+const TOOL_ACTIVITY_LABELS = [
+  [/^(bash|read|glob|grep|edit|write|apply_patch|machine)$/, "コーディング中"],
+  [/send_message|broadcast|post_channel/, "メッセージ対応中"],
+  [/call_human/, "報告準備中"],
+  [/delegate_task/, "委任手配中"],
+  [/search_memory|read_memory/, "調べ物中"],
+  [/write_memory|archive_memory/, "記録整理中"],
+  [/report_knowledge|report_procedure|completion_gate/, "知識整理中"],
+  [/list_tasks|update_task|^goal$/, "タスク管理中"],
+  [/skill/, "スキル整備中"],
+  [/web_search|web_fetch|browser|fetch_url/, "調査中"],
+];
+
+function labelForTool(tool) {
+  const name = String(tool || "").toLowerCase();
+  if (!name) return "";
+  for (const [pattern, label] of TOOL_ACTIVITY_LABELS) {
+    if (pattern.test(name)) return label;
+  }
+  return "";
+}
+
+const DYNAMIC_BUBBLE_TEXT = Object.freeze({
+  fontSize: 9,
+  scale: 1,
+  bold: true,
+  bitmap: false,
+});
+
 const NAME_TEXT_OPTIONS = Object.freeze({
   fontSize: 4,
   scale: 1,
@@ -224,11 +254,14 @@ export class Actor {
     this.motion = null;
     this.isSeated = true;
     this.idleSeconds = 0;
+    this.activityLabel = "";
+    this.activityLabelRemaining = 0;
   }
 
   setState(value) {
     this.state = normalizeState(value);
     this.idleSeconds = 0;
+    if (this.state === "sleeping") this.setActivityLabel("");
     const mapping = STATE_MAP[this.state];
     this.bubble = mapping.bubble;
     if (!this.motion) {
@@ -238,6 +271,17 @@ export class Actor {
 
   noteActivity() {
     this.idleSeconds = 0;
+  }
+
+  setActivityLabel(label, duration = 30) {
+    this.activityLabel = label || "";
+    this.activityLabelRemaining = this.activityLabel ? duration : 0;
+  }
+
+  dynamicLabel() {
+    if (!this.activityLabel) return "";
+    if (this.state !== "working_scheduled" && this.state !== "working") return "";
+    return this.activityLabel;
   }
 
   renderScale() {
@@ -290,6 +334,10 @@ export class Actor {
     if (this.bubbleOverrideRemaining > 0) {
       this.bubbleOverrideRemaining = Math.max(0, this.bubbleOverrideRemaining - deltaSeconds);
       if (this.bubbleOverrideRemaining === 0) this.bubbleOverride = "";
+    }
+    if (this.activityLabelRemaining > 0) {
+      this.activityLabelRemaining = Math.max(0, this.activityLabelRemaining - deltaSeconds);
+      if (this.activityLabelRemaining === 0) this.activityLabel = "";
     }
     this.sprite.update(deltaSeconds * (this.state === "working" ? 1.5 : 1));
     if (!this.motion) return;
@@ -403,6 +451,7 @@ export class Actor {
   }
 
   isCompactStatus() {
+    if (this.dynamicLabel()) return false;
     return !this.bubbleOverride && Object.hasOwn(COMPACT_STATUS_COLORS, this.state);
   }
 
@@ -422,7 +471,21 @@ export class Actor {
     };
   }
 
+  dynamicBubbleSize() {
+    const label = this.dynamicLabel();
+    const textWidth = measurePixelText(label, DYNAMIC_BUBBLE_TEXT);
+    return { width: textWidth + 22, height: 30 };
+  }
+
   bubbleBounds(name = this.currentBubble(), spriteY = this.spriteY(), offsetY = 0, offsetX = 0) {
+    if (this.dynamicLabel()) {
+      const size = this.dynamicBubbleSize();
+      const x = Math.round(this.x - size.width / 2 + offsetX);
+      const headTop = this.headTop(spriteY);
+      const headGap = this.backgroundSlot ? 0 : 8;
+      const y = Math.round(headTop - headGap - (size.height - 3) + offsetY);
+      return { x, y, width: size.width, height: size.height };
+    }
     const definition = this.assets.fxDefinition(name, name);
     const width = definition.frameW;
     const height = definition.frameH;
@@ -470,6 +533,11 @@ export class Actor {
   }
 
   drawBubble(ctx, name, spriteY, options = {}) {
+    const label = this.dynamicLabel();
+    if (label) {
+      this.drawDynamicBubble(ctx, label, spriteY, options);
+      return;
+    }
     const definition = this.assets.fxDefinition(name, name);
     const frame = Math.floor(this.fxTime * definition.fps) % definition.frames;
     const scale = 1;
@@ -496,6 +564,38 @@ export class Actor {
       width,
       height,
     );
+    ctx.restore();
+  }
+
+  // Hand-drawn speech bubble for dynamic activity labels ("コーディング中"
+  // etc.), styled to match the baked fx/bubbles.png rows.
+  drawDynamicBubble(ctx, label, spriteY, options = {}) {
+    const bounds = this.bubbleBounds("", spriteY, options.offsetY || 0, options.offsetX || 0);
+    const { x, y, width } = bounds;
+    const bodyHeight = bounds.height - 6;
+    const border = "#3f7a38";
+    const fill = "#fbf0e4";
+    ctx.save();
+    if (options.quiet) ctx.globalAlpha = 0.55;
+    ctx.fillStyle = border;
+    ctx.fillRect(x + 2, y, width - 4, bodyHeight);
+    ctx.fillRect(x, y + 2, width, bodyHeight - 4);
+    ctx.fillStyle = fill;
+    ctx.fillRect(x + 3, y + 2, width - 6, bodyHeight - 4);
+    ctx.fillRect(x + 2, y + 3, width - 4, bodyHeight - 6);
+    // tail
+    const tailX = Math.round(x + width / 2);
+    ctx.fillStyle = border;
+    ctx.fillRect(tailX - 4, y + bodyHeight, 8, 2);
+    ctx.fillRect(tailX - 2, y + bodyHeight + 2, 4, 2);
+    ctx.fillStyle = fill;
+    ctx.fillRect(tailX - 3, y + bodyHeight - 1, 6, 2);
+    drawPixelText(ctx, label, tailX, y + Math.round(bodyHeight / 2), {
+      ...DYNAMIC_BUBBLE_TEXT,
+      align: "center",
+      baseline: "middle",
+      color: "#356b2e",
+    });
     ctx.restore();
   }
 
@@ -662,7 +762,7 @@ export class ActorManager {
 
   // Runtime events (tool activity, heartbeats, cron work) keep the displayed
   // state alive; without them the actor decays to sleeping.
-  noteActivity(id, ctx = "") {
+  noteActivity(id, ctx = "", tool = "") {
     const actor = this.get(id);
     if (!actor) return;
     actor.noteActivity();
@@ -679,6 +779,8 @@ export class ActorManager {
       // Unknown context but the runtime is clearly doing something.
       actor.setState("working_scheduled");
     }
+    const label = labelForTool(tool);
+    if (label) actor.setActivityLabel(label);
   }
 
   update(deltaSeconds) {
