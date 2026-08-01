@@ -1011,6 +1011,7 @@ class ActivityScheduleEntry(BaseModel):
 class GlobalDenyPattern(BaseModel):
     """A single deny pattern with regex and human-readable reason."""
 
+    name: str = ""
     pattern: str
     reason: str
 
@@ -1019,6 +1020,12 @@ class GlobalCommandsDeny(BaseModel):
     """Global command deny configuration."""
 
     deny: list[GlobalDenyPattern] = Field(default_factory=list)
+
+
+class SdkBashInjectionConfig(BaseModel):
+    """Mode S Bash injection rollout configuration."""
+
+    mode: Literal["off", "log", "enforce"] = "log"
 
 
 class GlobalPermissionsConfig(BaseModel):
@@ -1030,6 +1037,7 @@ class GlobalPermissionsConfig(BaseModel):
 
     version: int = 1
     injection_patterns: list[GlobalDenyPattern] = Field(default_factory=list)
+    sdk_bash_injection: SdkBashInjectionConfig = Field(default_factory=SdkBashInjectionConfig)
     commands: GlobalCommandsDeny = Field(default_factory=GlobalCommandsDeny)
 
 

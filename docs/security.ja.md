@@ -112,7 +112,7 @@ PrimingがRAG経由で関連知識を取得する際、各チャンクの `origi
 
 **ToolHandler 経路（Mode A/B 等）**: `permissions.global.json` の `injection_patterns` を結合した正規表現（`GlobalPermissionsCache.injection_re`）で、コマンド連鎖やメタ文字をブロックする。既定テンプレートでは例としてセミコロン・改行などが含まれる。
 
-**Mode S（Agent SDK / Claude Code ネイティブ Bash）との差異**: Mode S の Bash 検査（`_check_a1_bash_command`）では **`injection_patterns` は照合しない**。Claude Code の Bash では `$VAR`、`$(...)`、パイプ、`;` 等が正当に必要なためである。インジェクション相当の抑止は、後述の **グローバル `commands.deny` 正規表現**（コマンド文字列全体へのマッチ）および **Per-Anima の `commands.deny` / 許可リスト**に依存する。詳細は **§10 Mode S** を参照。
+**Mode S（Agent SDK / Claude Code ネイティブ Bash）**: Mode S でも `injection_patterns` を照合し、`permissions.global.json` の `sdk_bash_injection.mode`（`off` / 既定の `log` / `enforce`）で段階導入を制御する。`log` は構造化された検知イベントだけを記録し、`enforce` は `PreToolUse` フックで拒否する。既定パターンをセミコロンと埋め込み改行に限定するため、正規利用の `$VAR`、`$(...)`、バッククォート、パイプ、`&&`、`||` は利用できる。詳細は **§10 Mode S** を参照。
 
 #### レイヤー2: グローバル正規表現ブロックリスト（`permissions.global.json`）
 
@@ -338,11 +338,12 @@ Claude Agent SDK（Mode S）では `PreToolUse` フック（`core/execution/_sdk
 
 #### 10.3 Bash（`Bash` ツール）
 
-1. **グローバル拒否**: `GlobalPermissionsCache.loaded` が **true**（当該プロセスで `load()` 済み）のときのみ、`permissions.global.json` の **`commands.deny` 由来の `blocked_patterns`** を、**パース前のコマンド文字列全体**に対して順に検索（`injection_patterns` / `injection_re` はここでは使わない）。**未ロード**の場合はこのグローバル拒否ループはスキップされ、Per-Anima の `load_permissions(anima_dir)` に基づく検査と書き込み系コマンドのヒューリスティックのみが効く。通常の `animaworks start` では `server/app.py` の lifespan でグローバル権限が読み込まれる。
-2. **Per-Anima `commands.deny`**: コマンドを `re.split(r"\|(?!\|)|\&\&|\|\|", ...)` でセグメント化（`|` は `||` に含まれるものは区切りとしない）。各セグメントで `shlex.split` に成功したら先頭トークン、またはセグメント全文に対する部分一致で `commands.deny` を照合。`shlex` が失敗したセグメントは **スキップ**（deny 照合から除外）。
-3. **Per-Anima 許可モデル**: `allow_all` が false のとき、各セグメントの先頭トークンが `commands.allow` に含まれること。許可リストが空なら「Command execution not enabled in permissions」として拒否。セグメントの `shlex.split` が `ValueError` のときは **`Invalid command syntax in '<segment>'` で即拒否**。
-4. **ファイル書き込み系コマンドの宛先**: ベース名が `cp`, `mv`, `tee`, `dd`, `install`, `rsync` のとき、**`-` で始まる引数（オプション）を除く**各引数を `Path.resolve()` し、**他Animaディレクトリ**（`anima_dir` 配下以外だが `animas` ルート配下）を宛先とする書き込みを拒否（ヒューリスティック。完全なサンドボックスではない）。
-5. **ToolHandler との差（レイヤー5）**: Mode S の Bash 検査には、ToolHandler 系の **コマンド引数に対する `../` パストラバーサル専用スキャンは含まれない**。抑止は上記の拒否リストと宛先ヒューリスティックに依存する。
+1. **インジェクション段階導入**: グローバルキャッシュ読込済みの場合、`sdk_bash_injection.mode` が `off` でなければ生コマンドを `injection_re` で検索する。既定の `log` は拒否せず、タイムスタンプ・一致パターン・コマンド先頭500文字・Anima名・トリガー・モードを JSON として `logs/sdk_bash_injection.jsonl` に追記する。`enforce` は同じイベントを記録したうえで違反を返し、`PreToolUse` が `permissionDecision="deny"` に変換する。Mode S では正規の複合シェルコマンドを多用するため、約1週間の dry-run データを確認後、設定変更だけで `enforce` に切り替える二段階方式である。
+2. **グローバル拒否**: `GlobalPermissionsCache.loaded` が **true**（当該プロセスで `load()` 済み）のときのみ、`permissions.global.json` の **`commands.deny` 由来の `blocked_patterns`** を、**パース前のコマンド文字列全体**に対して順に検索する。これらは injection mode が `log` / `off` でも常に拒否する。**未ロード**の場合はグローバル injection / deny 検査をスキップする。通常の `animaworks start` では `server/app.py` の lifespan でグローバル権限が読み込まれる。
+3. **Per-Anima `commands.deny`**: コマンドを `re.split(r"\|(?!\|)|\&\&|\|\|", ...)` でセグメント化（`|` は `||` に含まれるものは区切りとしない）。各セグメントで `shlex.split` に成功したら先頭トークン、またはセグメント全文に対する部分一致で `commands.deny` を照合。`shlex` が失敗したセグメントは **スキップ**（deny 照合から除外）。
+4. **Per-Anima 許可モデル**: `allow_all` が false のとき、各セグメントの先頭トークンが `commands.allow` に含まれること。許可リストが空なら「Command execution not enabled in permissions」として拒否。セグメントの `shlex.split` が `ValueError` のときは **`Invalid command syntax in '<segment>'` で即拒否**。
+5. **パストラバーサル**: パースできた全コマンドセグメントの `../` 引数を検査し、`anima_dir` 外へ解決される引数は injection mode にかかわらず拒否する。ToolHandler のレイヤー5と同じ挙動である。
+6. **ファイル書き込み系コマンドの宛先**: ベース名が `cp`, `mv`, `tee`, `dd`, `install`, `rsync` のとき、**`-` で始まる引数（オプション）を除く**各引数を `Path.resolve()` し、**他Animaディレクトリ**（`anima_dir` 配下以外だが `animas` ルート配下）を宛先とする書き込みを拒否（ヒューリスティック。完全なサンドボックスではない）。
 
 #### 10.4 ツール出力ガード（`PreToolUse` の `updatedInput`）
 

