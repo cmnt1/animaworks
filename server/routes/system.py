@@ -1282,6 +1282,32 @@ def create_system_router() -> APIRouter:
         supervisor = request.app.state.supervisor
         return supervisor.get_system_consolidation_status()
 
+    @router.put("/system/consolidation/model")
+    async def update_consolidation_model(request: Request):
+        """Persist the model and credential used by memory consolidation."""
+        from core.config.models import load_config, save_config
+
+        data = await request.json()
+        model = str(data.get("model", "")).strip()
+        credential = str(data.get("credential", "")).strip()
+        if not model:
+            return JSONResponse({"error": "model is required"}, status_code=400)
+        if len(model) > 256 or any(char.isspace() for char in model):
+            return JSONResponse({"error": "invalid model"}, status_code=400)
+        if len(credential) > 128 or any(char.isspace() for char in credential):
+            return JSONResponse({"error": "invalid credential"}, status_code=400)
+
+        config = load_config()
+        config.consolidation.llm_model = model
+        config.consolidation.llm_credential = credential
+        save_config(config)
+        logger.info(
+            "Updated memory consolidation model: model=%s credential=%s",
+            model,
+            credential or "(provider default)",
+        )
+        return {"status": "ok", "model": model, "credential": credential}
+
     @router.post("/system/consolidation/{job_type}/run")
     async def run_consolidation(request: Request, job_type: str):
         """Manually trigger a consolidation job (fire-and-forget)."""

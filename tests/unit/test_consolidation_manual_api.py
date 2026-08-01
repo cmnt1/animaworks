@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from datetime import timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -59,6 +60,39 @@ class TestConsolidationStatusEndpoint:
         assert "daily" in data
         assert "weekly" in data
         assert "monthly" in data
+
+
+class TestConsolidationModelEndpoint:
+    def test_updates_configured_model(self, client):
+        config = SimpleNamespace(
+            consolidation=SimpleNamespace(llm_model="old/model", llm_credential="")
+        )
+        with (
+            patch("core.config.models.load_config", return_value=config),
+            patch("core.config.models.save_config") as save_config,
+        ):
+            resp = client.put(
+                "/api/system/consolidation/model",
+                json={"model": "google/gemini-2.5-flash", "credential": "google"},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "status": "ok",
+            "model": "google/gemini-2.5-flash",
+            "credential": "google",
+        }
+        assert config.consolidation.llm_model == "google/gemini-2.5-flash"
+        assert config.consolidation.llm_credential == "google"
+        save_config.assert_called_once_with(config)
+
+    def test_rejects_empty_model(self, client):
+        resp = client.put(
+            "/api/system/consolidation/model",
+            json={"model": "   ", "credential": "codex"},
+        )
+
+        assert resp.status_code == 400
 
 
 class TestRunEndpoint:

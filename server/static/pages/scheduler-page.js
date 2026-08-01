@@ -6,6 +6,7 @@ import { t } from "/shared/i18n.js";
 
 let _refreshInterval = null;
 let _unsubConsolidation = null;
+let _consolidationModels = [];
 const _WEEKDAYS_JA = ["日", "月", "火", "水", "木", "金", "土"];
 const SCHEDULER_SORT_STORAGE_KEY = "animaworks-scheduler-sort";
 const DEFAULT_SCHEDULER_SORT = "org";
@@ -346,8 +347,13 @@ export function render(container) {
 
     <div class="card" style="margin-bottom: 1.5rem;">
       <div class="card-header">${t("server.memory_maintenance")}</div>
-      <div class="card-body" id="serverConsolidationContent">
-        <div class="loading-placeholder">${t("common.loading")}</div>
+      <div class="card-body">
+        <div id="serverConsolidationModel">
+          <div class="loading-placeholder">${t("common.loading")}</div>
+        </div>
+        <div id="serverConsolidationContent">
+          <div class="loading-placeholder">${t("common.loading")}</div>
+        </div>
       </div>
     </div>
 
@@ -359,6 +365,7 @@ export function render(container) {
     </div>
   `;
 
+  _loadConsolidationModel();
   _loadConsolidation();
   _loadScheduler();
   _refreshInterval = setInterval(() => {
@@ -382,6 +389,206 @@ const _CONSOLIDATION_JOBS = [
   { key: "weekly", labelKey: "server.consolidation_weekly" },
   { key: "monthly", labelKey: "server.consolidation_monthly" },
 ];
+
+function _modelMetaFromId(modelId, option = {}) {
+  const id = String(modelId || option.id || "");
+  const explicitRoute = String(option.route || option.execution_mode || "").toUpperCase();
+  const explicitProvider = option.provider || "";
+  const explicitModelName = option.model_name || "";
+
+  if (explicitRoute && explicitProvider && explicitModelName) {
+    return { route: explicitRoute, provider: explicitProvider, modelName: explicitModelName };
+  }
+  if (id.startsWith("claude-")) {
+    return { route: explicitRoute || "S", provider: explicitProvider || "Anthropic", modelName: explicitModelName || id };
+  }
+  if (id.startsWith("anthropic/claude-")) {
+    return { route: explicitRoute || "A", provider: explicitProvider || "Anthropic", modelName: explicitModelName || id.replace(/^anthropic\//, "") };
+  }
+  if (id.startsWith("codex/") || id.startsWith("openai-codex/")) {
+    return { route: explicitRoute || "C", provider: explicitProvider || "OpenAI", modelName: explicitModelName || id.replace(/^openai-codex\//, "") };
+  }
+  if (id.startsWith("grok/")) {
+    return { route: explicitRoute || "C", provider: explicitProvider || "Grok", modelName: explicitModelName || id.replace(/^grok\//, "") };
+  }
+  if (id.startsWith("openai/")) {
+    return { route: explicitRoute || "A", provider: explicitProvider || "OpenAI", modelName: explicitModelName || id.replace(/^openai\//, "") };
+  }
+  if (/^(gpt-|o3|o4-)/.test(id)) {
+    return { route: explicitRoute || "A", provider: explicitProvider || "OpenAI", modelName: explicitModelName || id };
+  }
+  if (id.startsWith("google/")) {
+    return { route: explicitRoute || "A", provider: explicitProvider || "Google", modelName: explicitModelName || id.replace(/^google\//, "") };
+  }
+  if (id.startsWith("nanogpt/")) {
+    return { route: explicitRoute || "A", provider: explicitProvider || "nanoGPT", modelName: explicitModelName || id.replace(/^nanogpt\//, "") };
+  }
+  if (id.startsWith("ollama/")) {
+    return { route: explicitRoute || "B", provider: explicitProvider || "Ollama", modelName: explicitModelName || id.replace(/^ollama\//, "") };
+  }
+  return { route: explicitRoute || "A", provider: explicitProvider || "Custom", modelName: explicitModelName || id };
+}
+
+function _normaliseConsolidationModels(models, currentModel, currentCredential) {
+  const list = (models || []).map(option => {
+    const meta = _modelMetaFromId(option.id, option);
+    return {
+      ...option,
+      route: meta.route,
+      provider: meta.provider,
+      model_name: meta.modelName,
+      credential: option.id === currentModel && currentCredential
+        ? currentCredential
+        : (option.credential || ""),
+    };
+  });
+  if (currentModel && !list.some(option => option.id === currentModel)) {
+    const meta = _modelMetaFromId(currentModel);
+    list.push({
+      id: currentModel,
+      route: meta.route,
+      provider: meta.provider,
+      model_name: meta.modelName,
+      credential: currentCredential || "",
+    });
+  }
+  return list;
+}
+
+function _uniqueSorted(values) {
+  return [...new Set(values.filter(Boolean))].sort((a, b) =>
+    String(a).localeCompare(String(b), "ja", { numeric: true, sensitivity: "base" }),
+  );
+}
+
+function _uniqueRoutes(values) {
+  const order = ["S", "C", "A", "B"];
+  return [...new Set(values.filter(Boolean))].sort((a, b) => {
+    const ai = order.includes(a) ? order.indexOf(a) : order.length;
+    const bi = order.includes(b) ? order.indexOf(b) : order.length;
+    return ai - bi || String(a).localeCompare(String(b));
+  });
+}
+
+function _selectOptionsHtml(values, selectedValue, placeholder) {
+  return `
+    <option value=""${selectedValue ? "" : " selected"}>${escapeHtml(placeholder)}</option>
+    ${values.map(value => {
+      const selected = value === selectedValue ? " selected" : "";
+      return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(value)}</option>`;
+    }).join("")}
+  `;
+}
+
+function _consolidationModelPickerHtml(models, currentModel, currentCredential) {
+  const list = _normaliseConsolidationModels(models, currentModel, currentCredential);
+  const selected = list.find(option => option.id === currentModel) || list[0] || null;
+  const selectedRoute = selected?.route || "";
+  const selectedProvider = selected?.provider || "";
+  const routes = _uniqueRoutes(list.map(option => option.route));
+  const providers = _uniqueSorted(list.filter(option => option.route === selectedRoute).map(option => option.provider));
+  const modelOptions = list.filter(option => option.route === selectedRoute && option.provider === selectedProvider);
+
+  return `
+    <div class="model-picker" style="flex:1; min-width:0; display:grid; grid-template-columns:minmax(110px,0.7fr) minmax(135px,0.8fr) minmax(220px,1.5fr); gap:0.5rem;">
+      <select id="consolidationRouteSelect" style="min-width:0; padding:0.4rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#fff); color:var(--text-primary,#333);">
+        ${_selectOptionsHtml(routes, selectedRoute, t("animas.model_route"))}
+      </select>
+      <select id="consolidationProviderSelect" style="min-width:0; padding:0.4rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#fff); color:var(--text-primary,#333);">
+        ${_selectOptionsHtml(providers, selectedProvider, t("animas.model_provider"))}
+      </select>
+      <select id="consolidationModelSelect" style="min-width:0; padding:0.4rem 0.5rem; border:1px solid var(--border,#ddd); border-radius:4px; font-size:0.85rem; background:var(--bg-secondary,#fff); color:var(--text-primary,#333);">
+        ${modelOptions.map(option => {
+          const selectedAttr = option.id === selected?.id ? " selected" : "";
+          return `<option value="${escapeHtml(option.id)}" data-credential="${escapeHtml(option.credential || "")}"${selectedAttr}>${escapeHtml(option.model_name)}</option>`;
+        }).join("")}
+      </select>
+    </div>
+  `;
+}
+
+function _bindConsolidationModelPicker(models, currentModel, currentCredential) {
+  const routeSelect = document.getElementById("consolidationRouteSelect");
+  const providerSelect = document.getElementById("consolidationProviderSelect");
+  const modelSelect = document.getElementById("consolidationModelSelect");
+  if (!routeSelect || !providerSelect || !modelSelect) return;
+
+  const list = _normaliseConsolidationModels(models, currentModel, currentCredential);
+  const setModels = (route, provider, selectedModel = "") => {
+    const options = list.filter(option => option.route === route && option.provider === provider);
+    modelSelect.innerHTML = options.map(option => {
+      const selected = option.id === selectedModel ? " selected" : "";
+      return `<option value="${escapeHtml(option.id)}" data-credential="${escapeHtml(option.credential || "")}"${selected}>${escapeHtml(option.model_name)}</option>`;
+    }).join("");
+    modelSelect.disabled = options.length === 0;
+  };
+  const setProviders = (selectedProvider = "", selectedModel = "") => {
+    const providers = _uniqueSorted(list.filter(option => option.route === routeSelect.value).map(option => option.provider));
+    const provider = providers.includes(selectedProvider) ? selectedProvider : (providers[0] || "");
+    providerSelect.innerHTML = _selectOptionsHtml(providers, provider, t("animas.model_provider"));
+    providerSelect.disabled = providers.length === 0;
+    setModels(routeSelect.value, provider, selectedModel);
+  };
+
+  routeSelect.addEventListener("change", () => setProviders());
+  providerSelect.addEventListener("change", () => setModels(routeSelect.value, providerSelect.value));
+}
+
+async function _loadConsolidationModel() {
+  const content = document.getElementById("serverConsolidationModel");
+  if (!content) return;
+  try {
+    const [config, modelsData] = await Promise.all([
+      api("/api/system/config"),
+      api("/api/system/available-models"),
+    ]);
+    _consolidationModels = modelsData.models || [];
+    const consolidation = config.consolidation || {};
+    content.innerHTML = `
+      <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap; padding-bottom:1rem; margin-bottom:1rem; border-bottom:1px solid var(--border,#ddd);">
+        <label style="font-weight:600; font-size:0.9rem; min-width:160px; flex-shrink:0;">${t("server.consolidation_model")}:</label>
+        ${_consolidationModelPickerHtml(_consolidationModels, consolidation.llm_model, consolidation.llm_credential)}
+        <button class="btn-primary" id="consolidationModelSaveBtn" style="font-size:0.85rem; padding:0.4rem 0.75rem;">${t("server.consolidation_model_save")}</button>
+        <span id="consolidationModelStatus" style="font-size:0.75rem; color:var(--text-secondary,#888);"></span>
+        <div style="flex-basis:100%; margin-left:172px; font-size:0.75rem; color:var(--text-secondary,#888);">${t("server.consolidation_model_hint")}</div>
+      </div>
+    `;
+    _bindConsolidationModelPicker(_consolidationModels, consolidation.llm_model, consolidation.llm_credential);
+    document.getElementById("consolidationModelSaveBtn")?.addEventListener("click", _saveConsolidationModel);
+  } catch (err) {
+    content.innerHTML = `<div class="loading-placeholder">${escapeHtml(t("server.consolidation_model_load_failed"))}</div>`;
+    console.error("Consolidation model load failed:", err);
+  }
+}
+
+async function _saveConsolidationModel() {
+  const btn = document.getElementById("consolidationModelSaveBtn");
+  const status = document.getElementById("consolidationModelStatus");
+  const modelSelect = document.getElementById("consolidationModelSelect");
+  if (!btn || !status || !modelSelect?.value) return;
+  const option = modelSelect.options[modelSelect.selectedIndex];
+  const model = modelSelect.value;
+  const credential = option?.dataset?.credential || "";
+
+  btn.disabled = true;
+  status.textContent = t("server.consolidation_model_saving");
+  status.style.color = "var(--text-secondary,#888)";
+  try {
+    await api("/api/system/consolidation/model", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model, credential }),
+    });
+    status.textContent = t("server.consolidation_model_saved");
+    status.style.color = "var(--aw-color-success,#38a169)";
+  } catch (err) {
+    status.textContent = t("server.consolidation_model_save_failed");
+    status.style.color = "var(--aw-color-danger,#e53e3e)";
+    console.error("Consolidation model save failed:", err);
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 async function _loadConsolidation() {
   const content = document.getElementById("serverConsolidationContent");

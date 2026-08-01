@@ -17,12 +17,20 @@ const consolidationProgressText = new Function(
 )();
 
 test("scheduler restores the memory consolidation management panel", () => {
+  const modelIdx = source.indexOf('id="serverConsolidationModel"');
   const panelIdx = source.indexOf('id="serverConsolidationContent"');
   const schedulerIdx = source.indexOf('id="schedulerPageContent"');
 
+  assert.ok(modelIdx >= 0);
   assert.ok(panelIdx >= 0);
   assert.ok(schedulerIdx >= 0);
+  assert.ok(modelIdx < panelIdx);
   assert.ok(panelIdx < schedulerIdx);
+  assert.match(source, /\/api\/system\/config/);
+  assert.match(source, /\/api\/system\/consolidation\/model/);
+  assert.match(source, /consolidationRouteSelect/);
+  assert.match(source, /consolidationProviderSelect/);
+  assert.match(source, /consolidationModelSelect/);
   assert.match(source, /\/api\/system\/consolidation\/status/);
   assert.match(source, /data-consolidation-run/);
   assert.match(source, /\/api\/system\/consolidation\/catchup/);
