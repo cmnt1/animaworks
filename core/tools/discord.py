@@ -37,9 +37,10 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
     "guilds": {"expected_seconds": 10, "background_eligible": False},
     "channels": {"expected_seconds": 10, "background_eligible": False},
     "messages": {"expected_seconds": 30, "background_eligible": False},
-    "send": {"expected_seconds": 10, "background_eligible": False},
+    # gated: requires explicit "discord_send" in permissions allow list.
+    "send": {"expected_seconds": 10, "background_eligible": False, "gated": True},
     "search": {"expected_seconds": 30, "background_eligible": False},
-    # gated: requires explicit "discord_channel_post: yes" in permissions.md.
+    # gated: requires explicit "discord_channel_post" in permissions allow list.
     "channel_post": {"expected_seconds": 10, "background_eligible": False, "gated": True},
     "unreplied": {"expected_seconds": 10, "background_eligible": False},
 }

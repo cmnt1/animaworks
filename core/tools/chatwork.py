@@ -36,7 +36,8 @@ from core.tools._chatwork_markdown import clean_chatwork_tags, md_to_chatwork  #
 EXECUTION_PROFILE: dict[str, dict[str, object]] = {
     "rooms": {"expected_seconds": 10, "background_eligible": False},
     "messages": {"expected_seconds": 30, "background_eligible": False},
-    "send": {"expected_seconds": 10, "background_eligible": False},
+    # gated: requires explicit "chatwork_send" in permissions allow list.
+    "send": {"expected_seconds": 10, "background_eligible": False, "gated": True},
     "search": {"expected_seconds": 30, "background_eligible": False},
     "unreplied": {"expected_seconds": 60, "background_eligible": False},
     "sync": {"expected_seconds": 60, "background_eligible": True},
