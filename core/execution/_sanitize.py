@@ -10,13 +10,18 @@ from __future__ import annotations
 
 """Prompt injection defense boundary labeling.
 
-Provides trust-level tagging for tool results and priming content
-to help the model distinguish framework-controlled data from
-externally-sourced or user-controllable data.
+Provides trust-level tagging for tool results, priming content, and
+inbox external messages to help the model distinguish framework-controlled
+data from externally-sourced or user-controllable data.
 
 Also defines origin categories and ``resolve_trust()`` for
 provenance-aware trust resolution (Phase 1 foundation).
 """
+
+import logging
+import re
+
+logger = logging.getLogger("animaworks.execution.sanitize")
 
 # ── Origin categories ─────────────────────────────────────────
 
@@ -42,6 +47,14 @@ MAX_ORIGIN_CHAIN_LENGTH: int = 10
 
 _TRUST_RANK: dict[str, int] = {"trusted": 2, "medium": 1, "untrusted": 0}
 _RANK_TRUST: dict[int, str] = {v: k for k, v in _TRUST_RANK.items()}
+
+# Boundary tag names used by wrap_* helpers. Only these tag-like strings
+# are neutralized in content (leading "<" → fullwidth "＜").
+_BOUNDARY_TAG_NAMES = ("external_message", "tool_result", "priming")
+_BOUNDARY_TAG_RE = re.compile(
+    r"</?(?:" + "|".join(_BOUNDARY_TAG_NAMES) + r")\b",
+    re.IGNORECASE,
+)
 
 
 def resolve_trust(
@@ -69,6 +82,64 @@ def resolve_trust(
     trusts = [ORIGIN_TRUST_MAP.get(o, "untrusted") for o in all_origins]
     min_rank = min(_TRUST_RANK.get(t, 0) for t in trusts)
     return _RANK_TRUST[min_rank]
+
+
+def escape_boundary_tags(content: str) -> str:
+    """Neutralize trust-boundary tag names inside untrusted content.
+
+    Only strings that look like our boundary tags
+    (``<tool_result``, ``</tool_result>``, ``<priming``, ``</priming>``,
+    ``<external_message``, ``</external_message>``) have their leading
+    ``<`` replaced with the fullwidth ``＜`` (U+FF1C). Ordinary HTML/XML
+    tags and code fragments are left untouched so multi-language
+    readability is preserved.
+    """
+    if not content:
+        return content
+    return _BOUNDARY_TAG_RE.sub(lambda m: "＜" + m.group(0)[1:], content)
+
+
+def is_registered_human_sender(source: str, sender_id: str | None) -> bool:
+    """Return True when *sender_id* matches a registered human platform ID.
+
+    Uses existing config registries only (no new ID ledger):
+
+    - ``external_messaging.user_aliases`` platform IDs
+      (``slack_user_id`` / ``discord_user_id``)
+    - ``interaction.default_approver_ids`` (Slack user IDs)
+
+    Matching is **exact platform user ID** equality (not display name /
+    alias key). Unconfigured or unloadable config → False (safe default).
+    """
+    if not sender_id:
+        return False
+    try:
+        from core.config.models import load_config
+
+        cfg = load_config()
+    except Exception:
+        logger.debug("is_registered_human_sender: config load failed", exc_info=True)
+        return False
+
+    sid = str(sender_id).strip()
+    if not sid:
+        return False
+
+    # Slack approver IDs are known human operators.
+    if source == "slack":
+        for approver in cfg.interaction.default_approver_ids or []:
+            if str(approver).strip() == sid:
+                return True
+
+    aliases = cfg.external_messaging.user_aliases or {}
+    for alias_cfg in aliases.values():
+        if source == "slack" and (alias_cfg.slack_user_id or "").strip() == sid:
+            return True
+        if source == "discord" and (alias_cfg.discord_user_id or "").strip() == sid:
+            return True
+        # chatwork: UserAliasConfig has room_id only (not account ID) — no
+        # user-ID elevation path. zoom: no alias field yet.
+    return False
 
 
 # ── Tool trust levels ─────────────────────────────────────────
@@ -154,6 +225,8 @@ def wrap_tool_result(
     Returns:
         Result unchanged if empty/falsy; otherwise wrapped in
         ``<tool_result tool="..." trust="..." ...>...</tool_result>``.
+        Content has boundary tag names escaped so embedded
+        ``</tool_result>`` cannot break out of the wrapper.
     """
     if not result:
         return result
@@ -169,7 +242,8 @@ def wrap_tool_result(
     if origin_chain:
         attrs += f' origin_chain="{",".join(origin_chain[:MAX_ORIGIN_CHAIN_LENGTH])}"'
 
-    return f"<tool_result {attrs}>\n{result}\n</tool_result>"
+    escaped = escape_boundary_tags(result)
+    return f"<tool_result {attrs}>\n{escaped}\n</tool_result>"
 
 
 def wrap_priming(
@@ -196,6 +270,8 @@ def wrap_priming(
     Returns:
         Content unchanged if empty/falsy; otherwise wrapped in
         ``<priming source="..." trust="..." ...>...</priming>``.
+        Content has boundary tag names escaped so embedded
+        ``</priming>`` cannot break out of the wrapper.
     """
     if not content:
         return content
@@ -212,4 +288,44 @@ def wrap_priming(
     if render_mode:
         attrs += f' render_mode="{render_mode}"'
 
-    return f"<priming {attrs}>\n{content}\n</priming>"
+    escaped = escape_boundary_tags(content)
+    return f"<priming {attrs}>\n{escaped}\n</priming>"
+
+
+def wrap_inbox_message(
+    content: str,
+    source: str,
+    origin: str,
+    sender: str | None = None,
+) -> str:
+    """Wrap an inbox message body with external-message boundary tags.
+
+    Args:
+        content: Message body (already truncated if needed).
+        source: Message ``source`` field (slack/chatwork/discord/zoom/...).
+        origin: Origin category from ``_SOURCE_TO_ORIGIN`` (or equivalent).
+            Elevated to ``ORIGIN_HUMAN`` when *sender* matches a registered
+            human platform user ID.
+        sender: Platform user ID (``external_user_id``). Not a display name.
+
+    Returns:
+        Content unchanged if empty/falsy; otherwise wrapped in
+        ``<external_message source="..." trust="..." sender="...">...</external_message>``.
+        Boundary tag names inside the body are escaped.
+    """
+    if not content:
+        return content
+
+    effective_origin = origin
+    if is_registered_human_sender(source, sender):
+        effective_origin = ORIGIN_HUMAN
+
+    trust = resolve_trust(effective_origin)
+    safe_sender = (sender or "").replace('"', "")
+    attrs = f'source="{source}" trust="{trust}"'
+    if safe_sender:
+        attrs += f' sender="{safe_sender}"'
+    attrs += f' origin="{effective_origin}"'
+
+    escaped = escape_boundary_tags(content)
+    return f"<external_message {attrs}>\n{escaped}\n</external_message>"

@@ -25,6 +25,7 @@ from core.execution._sanitize import (
     ORIGIN_HUMAN,
     ORIGIN_UNKNOWN,
     resolve_trust,
+    wrap_inbox_message,
 )
 from core.i18n import t
 from core.memory.streaming_journal import StreamingJournal
@@ -38,6 +39,9 @@ logger = logging.getLogger("animaworks.anima")
 _SOURCE_TO_ORIGIN: dict[str, str] = {
     "slack": ORIGIN_EXTERNAL_PLATFORM,
     "chatwork": ORIGIN_EXTERNAL_PLATFORM,
+    "googlechat": ORIGIN_EXTERNAL_PLATFORM,
+    "discord": ORIGIN_EXTERNAL_PLATFORM,
+    "zoom": ORIGIN_EXTERNAL_PLATFORM,
     "human": ORIGIN_HUMAN,
     "anima": ORIGIN_ANIMA,
 }
@@ -1041,7 +1045,8 @@ class InboxMixin:
                 unread_count=unread_count,
             )
 
-        # Format messages with retry annotations
+        # Format messages with retry annotations.
+        # External body is trust-boundary wrapped; reply_instruction stays outside.
         prompt_parts: list[str] = []
         lines: list[str] = []
         for item in inbox_items:
@@ -1051,8 +1056,15 @@ class InboxMixin:
                 prefix = t("anima.unread_prefix", from_person=m.from_person, count=count)
             else:
                 prefix = f"- {m.from_person}: "
-            line = f"{prefix}{_truncate_with_thread_ctx(m.content)}"
-            if m.source in ("slack", "chatwork") and m.external_channel_id:
+            _origin = _SOURCE_TO_ORIGIN.get(m.source, ORIGIN_UNKNOWN)
+            _body = wrap_inbox_message(
+                _truncate_with_thread_ctx(m.content),
+                source=m.source,
+                origin=_origin,
+                sender=m.external_user_id or None,
+            )
+            line = f"{prefix}{_body}"
+            if m.source in ("slack", "chatwork", "discord") and m.external_channel_id:
                 reply_instr = _build_reply_instruction(m)
                 if reply_instr:
                     line += f"\n{reply_instr}"
@@ -1060,8 +1072,15 @@ class InboxMixin:
         # Deferred messages (no InboxItem) are appended without counter
         for m in messages:
             if not any(item.msg is m for item in inbox_items):
-                line = f"- {m.from_person}: {_truncate_with_thread_ctx(m.content)}"
-                if m.source in ("slack", "chatwork") and m.external_channel_id:
+                _origin = _SOURCE_TO_ORIGIN.get(m.source, ORIGIN_UNKNOWN)
+                _body = wrap_inbox_message(
+                    _truncate_with_thread_ctx(m.content),
+                    source=m.source,
+                    origin=_origin,
+                    sender=m.external_user_id or None,
+                )
+                line = f"- {m.from_person}: {_body}"
+                if m.source in ("slack", "chatwork", "discord") and m.external_channel_id:
                     reply_instr = _build_reply_instruction(m)
                     if reply_instr:
                         line += f"\n{reply_instr}"
