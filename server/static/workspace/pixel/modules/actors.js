@@ -285,7 +285,7 @@ export class Actor {
   }
 
   renderScale() {
-    return this.isSeated ? 1 : 2;
+    return this.isSeated ? 1 : 1.5;
   }
 
   walk(path, speed = 120) {

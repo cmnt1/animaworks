@@ -452,8 +452,8 @@ export class Director {
     const definition = this.assets.character(effect.variant || "customer_a");
     const animation = definition.anims[progress < 0.5 ? "walk_up" : "walk_down"];
     const frame = Math.floor(effect.elapsed * animation.fps) % animation.frames;
-    // Walking characters render at 2x, so the visiting customer matches.
-    const scale = 2;
+    // Walking characters render at 1.5x, so the visiting customer matches.
+    const scale = 1.5;
     const backgroundDoor = this.scene.background_mode?.slots?.door;
     const door = this.scene.props.door_frame;
     const doorImage = backgroundDoor ? null : this.assets.prop("door_frame", 192, 112);
