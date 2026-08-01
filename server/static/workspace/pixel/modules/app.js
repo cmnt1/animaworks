@@ -113,6 +113,7 @@ async function start() {
     };
     live.onUnavailable = startMock;
     live.connect();
+    live.startBusyPolling();
   }
 
   let lastTime = performance.now();

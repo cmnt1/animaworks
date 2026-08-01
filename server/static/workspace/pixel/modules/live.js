@@ -26,6 +26,7 @@ export class LiveClient {
     this.onUnavailable = callbacks.onUnavailable || (() => {});
     this.socket = null;
     this.reconnectTimer = null;
+    this.busyPollTimer = null;
     this.reconnectAttempt = 0;
     this.everConnected = false;
     this.unavailableTimer = null;
@@ -43,6 +44,26 @@ export class LiveClient {
     } catch {
       return [];
     }
+  }
+
+  // Long-running silent work (e.g. a cron delegated to an external coding
+  // engine) emits no tool events for minutes. The busy sidecar in /api/animas
+  // still reports it, so poll periodically and keep those actors awake.
+  startBusyPolling(intervalSeconds = 60) {
+    if (this.busyPollTimer) return;
+    const poll = async () => {
+      if (this.stopped) return;
+      const animas = await this.fetchInitial();
+      for (const anima of animas) {
+        const busy = anima?.busy;
+        if (!busy?.is_busy || !anima.name || this.actors.isHuman(anima.name)) continue;
+        const progressAt = Date.parse(busy.last_progress_at || busy.busy_since || "");
+        if (!Number.isFinite(progressAt) || Date.now() - progressAt > 15 * 60 * 1000) continue;
+        const lanes = (busy.lanes || []).join(",");
+        this.actors.noteActivity(anima.name, lanes.includes("chat") ? "chat" : "cron:busy");
+      }
+    };
+    this.busyPollTimer = setInterval(poll, intervalSeconds * 1000);
   }
 
   connect() {
@@ -110,6 +131,8 @@ export class LiveClient {
   stop() {
     this.stopped = true;
     clearTimeout(this.reconnectTimer);
+    clearInterval(this.busyPollTimer);
+    this.busyPollTimer = null;
     clearTimeout(this.unavailableTimer);
     this.socket?.close();
     this.socket = null;
@@ -130,6 +153,16 @@ export class LiveClient {
         this.director.dispatch("instruction", data);
       } else {
         this.director.dispatch("message_sent", data);
+      }
+      return;
+    }
+    if (type === "anima.cron") {
+      // Fires when a cron task finishes. Command-type crons emit no tool
+      // activity while running, so this is the visible signal that the anima
+      // is doing scheduled work; the state decays back to sleeping later.
+      const name = data.name;
+      if (name && !this.actors.isHuman(name)) {
+        this.actors.noteActivity(name, "cron:done");
       }
       return;
     }

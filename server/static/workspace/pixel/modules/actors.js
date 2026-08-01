@@ -772,7 +772,7 @@ export class ActorManager {
     if (context.startsWith("cron") || context.startsWith("task") ||
         context.startsWith("heartbeat")) {
       if (!chatty) actor.setState("working_scheduled");
-    } else if (context === "chat" || context === "inbox" ||
+    } else if (context === "chat" || context.startsWith("inbox") ||
         context.startsWith("message")) {
       if (resting) actor.setState("thinking");
     } else if (resting) {
