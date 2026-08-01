@@ -668,10 +668,16 @@ export class ActorManager {
     actor.noteActivity();
     const context = String(ctx || "").toLowerCase();
     const chatty = ["thinking", "talking", "reporting", "error"].includes(actor.state);
-    if (context.startsWith("cron") || context.startsWith("task") || context === "heartbeat") {
+    const resting = actor.state === "sleeping" || actor.state === "idle";
+    if (context.startsWith("cron") || context.startsWith("task") ||
+        context.startsWith("heartbeat")) {
       if (!chatty) actor.setState("working_scheduled");
-    } else if (context === "chat" || context === "inbox") {
-      if (actor.state === "sleeping" || actor.state === "idle") actor.setState("thinking");
+    } else if (context === "chat" || context === "inbox" ||
+        context.startsWith("message")) {
+      if (resting) actor.setState("thinking");
+    } else if (resting) {
+      // Unknown context but the runtime is clearly doing something.
+      actor.setState("working_scheduled");
     }
   }
 

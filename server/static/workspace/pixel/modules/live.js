@@ -143,7 +143,9 @@ export class LiveClient {
     }
     if (type === "anima.tool_activity") {
       if (data.name && !this.actors.isHuman(data.name)) {
-        this.actors.noteActivity(data.name, data.ctx || data.meta?.ctx || "");
+        // ctx is often unset in practice; the entry type (cron_executed,
+        // heartbeat_start, tool_use, ...) still identifies the work.
+        this.actors.noteActivity(data.name, data.ctx || data.meta?.ctx || data.type || "");
       }
       this.handleToolActivity(data);
       return;
