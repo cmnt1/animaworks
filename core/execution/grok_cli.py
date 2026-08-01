@@ -476,6 +476,33 @@ class GrokCLIExecutor(BaseExecutor):
         }
 
     @staticmethod
+    def _response_usage_from_meta(meta: dict[str, Any]) -> dict[str, int] | None:
+        """Extract last-call context size from prompt result ``_meta`` top-level fields.
+
+        Grok CLI 0.2.x (observed on 0.2.118) does not emit ``usage_update``.
+        Instead, ``result._meta.inputTokens`` is the final model call's full
+        prompt size (cache-inclusive = current context occupancy), while
+        nested ``_meta.usage.inputTokens`` is cumulative spend across all
+        internal calls.  Because top-level input is already full, cache
+        fields must be stored as 0 to avoid double-counting in
+        :meth:`ContextTracker.update_from_message_start`.
+        """
+        raw = meta.get("inputTokens")
+        if raw is None:
+            raw = meta.get("input_tokens")
+        if raw is None:
+            return None
+        try:
+            input_tokens = int(raw or 0)
+        except (TypeError, ValueError):
+            return None
+        return {
+            "input_tokens": input_tokens,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+        }
+
+    @staticmethod
     async def _write_json(proc: asyncio.subprocess.Process, message: dict[str, Any]) -> None:
         if proc.stdin is None:
             raise RuntimeError("Grok ACP stdin is unavailable")
@@ -799,11 +826,21 @@ class GrokCLIExecutor(BaseExecutor):
                         if "error" in message:
                             raise _ACPError("session/prompt", message["error"])
                         result = message.get("result", {})
+                        # Cumulative PromptUsage for cost logs (nested _meta.usage).
                         state.usage = self._usage_from_result(result)
                         if isinstance(result, dict):
                             meta = result.get("_meta")
-                            if isinstance(meta, dict) and meta.get("sessionId"):
-                                state.session_id = str(meta["sessionId"])
+                            if isinstance(meta, dict):
+                                if meta.get("sessionId"):
+                                    state.session_id = str(meta["sessionId"])
+                                # Priority for context ring:
+                                # (1) usage_update during stream (if CLI emits it)
+                                # (2) _meta top-level inputTokens = last-call full prompt
+                                # (3) cumulative usage (handled later when still None)
+                                if state.last_response_usage is None:
+                                    from_meta = self._response_usage_from_meta(meta)
+                                    if from_meta is not None:
+                                        state.last_response_usage = from_meta
                         state.completed = True
                         break
 
@@ -1052,9 +1089,10 @@ class GrokCLIExecutor(BaseExecutor):
                 yield {"type": "text_delta", "text": state.error_text}
 
         if state.completed and tracker is not None:
-            # Prefer per-response usage_update (current context size) over the
-            # cumulative PromptUsage in prompt result `_meta.usage`, which sums
-            # every internal model call and would inflate the context ring.
+            # Context size priority:
+            # (1) usage_update notification (future CLI; cache fields may apply)
+            # (2) _meta top-level inputTokens (current CLI 0.2.x; already full)
+            # (3) cumulative _meta.usage (legacy fallback; inflates the ring)
             if state.last_response_usage is not None:
                 tracker.update_from_message_start(
                     {
