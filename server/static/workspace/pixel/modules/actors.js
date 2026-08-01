@@ -35,13 +35,17 @@ const STATE_DECAY_SECONDS = Object.freeze({
 
 // Short "何をしているか" labels derived from the tool an anima just used.
 const TOOL_ACTIVITY_LABELS = [
-  [/^(bash|read|glob|grep|edit|write|apply_patch|machine)$/, "コーディング中"],
-  [/send_message|broadcast|post_channel/, "メッセージ対応中"],
+  [/^bash$/, "コマンド実行中"],
+  [/^(read|glob|grep)$/, "コード読解中"],
+  [/^(edit|write|apply_patch|machine)$/, "コーディング中"],
+  [/post_channel|broadcast/, "掲示板に投稿中"],
+  [/send_message/, "メッセージ対応中"],
   [/call_human/, "報告準備中"],
   [/delegate_task/, "委任手配中"],
   [/search_memory|read_memory/, "調べ物中"],
   [/write_memory|archive_memory/, "記録整理中"],
-  [/report_knowledge|report_procedure|completion_gate/, "知識整理中"],
+  [/completion_gate/, "仕上げ確認中"],
+  [/report_knowledge|report_procedure/, "知識整理中"],
   [/list_tasks|update_task|^goal$/, "タスク管理中"],
   [/skill/, "スキル整備中"],
   [/web_search|web_fetch|browser|fetch_url/, "調査中"],
@@ -52,6 +56,27 @@ function labelForTool(tool) {
   if (!name) return "";
   for (const [pattern, label] of TOOL_ACTIVITY_LABELS) {
     if (pattern.test(name)) return label;
+  }
+  return "";
+}
+
+// Coarser labels from the kind of work (cron, task lane, inbox, ...). Shown
+// while no recent tool event provides a more specific label.
+const CONTEXT_ACTIVITY_LABELS = [
+  [/^cron/, "定時作業中"],
+  [/^task/, "タスク遂行中"],
+  [/^workers/, "フル稼働中"],
+  [/^inbox/, "連絡対応中"],
+  [/^heartbeat/, "見回り中"],
+  [/^consolidation/, "記憶整理中"],
+  [/^goal/, "目標に没頭中"],
+];
+
+function labelForContext(ctx) {
+  const context = String(ctx || "").toLowerCase();
+  if (!context) return "";
+  for (const [pattern, label] of CONTEXT_ACTIVITY_LABELS) {
+    if (pattern.test(context)) return label;
   }
   return "";
 }
@@ -256,12 +281,17 @@ export class Actor {
     this.idleSeconds = 0;
     this.activityLabel = "";
     this.activityLabelRemaining = 0;
+    this.contextLabel = "";
+    this.contextLabelRemaining = 0;
   }
 
   setState(value) {
     this.state = normalizeState(value);
     this.idleSeconds = 0;
-    if (this.state === "sleeping") this.setActivityLabel("");
+    if (this.state === "sleeping") {
+      this.setActivityLabel("");
+      this.setContextLabel("");
+    }
     const mapping = STATE_MAP[this.state];
     this.bubble = mapping.bubble;
     if (!this.motion) {
@@ -278,10 +308,16 @@ export class Actor {
     this.activityLabelRemaining = this.activityLabel ? duration : 0;
   }
 
+  // Kind-of-work label (cron / task / inbox ...). Outlives individual tool
+  // labels so silent stretches still show what the anima is broadly doing.
+  setContextLabel(label, duration = 120) {
+    this.contextLabel = label || "";
+    this.contextLabelRemaining = this.contextLabel ? duration : 0;
+  }
+
   dynamicLabel() {
-    if (!this.activityLabel) return "";
     if (this.state !== "working_scheduled" && this.state !== "working") return "";
-    return this.activityLabel;
+    return this.activityLabel || this.contextLabel;
   }
 
   renderScale() {
@@ -338,6 +374,10 @@ export class Actor {
     if (this.activityLabelRemaining > 0) {
       this.activityLabelRemaining = Math.max(0, this.activityLabelRemaining - deltaSeconds);
       if (this.activityLabelRemaining === 0) this.activityLabel = "";
+    }
+    if (this.contextLabelRemaining > 0) {
+      this.contextLabelRemaining = Math.max(0, this.contextLabelRemaining - deltaSeconds);
+      if (this.contextLabelRemaining === 0) this.contextLabel = "";
     }
     this.sprite.update(deltaSeconds * (this.state === "working" ? 1.5 : 1));
     if (!this.motion) return;
@@ -770,15 +810,18 @@ export class ActorManager {
     const chatty = ["thinking", "talking", "reporting", "error"].includes(actor.state);
     const resting = actor.state === "sleeping" || actor.state === "idle";
     if (context.startsWith("cron") || context.startsWith("task") ||
-        context.startsWith("heartbeat")) {
+        context.startsWith("heartbeat") || context.startsWith("workers") ||
+        context.startsWith("inbox") || context.startsWith("consolidation") ||
+        context.startsWith("goal")) {
       if (!chatty) actor.setState("working_scheduled");
-    } else if (context === "chat" || context.startsWith("inbox") ||
-        context.startsWith("message")) {
+    } else if (context === "chat" || context.startsWith("message")) {
       if (resting) actor.setState("thinking");
     } else if (resting) {
       // Unknown context but the runtime is clearly doing something.
       actor.setState("working_scheduled");
     }
+    const contextLabel = labelForContext(context);
+    if (contextLabel) actor.setContextLabel(contextLabel);
     const label = labelForTool(tool);
     if (label) actor.setActivityLabel(label);
   }

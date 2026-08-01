@@ -60,9 +60,17 @@ export class LiveClient {
         const progressAt = Date.parse(busy.last_progress_at || busy.busy_since || "");
         if (!Number.isFinite(progressAt) || Date.now() - progressAt > 15 * 60 * 1000) continue;
         const lanes = (busy.lanes || []).join(",");
-        this.actors.noteActivity(anima.name, lanes.includes("chat") ? "chat" : "cron:busy");
+        // Map the busy lanes to a kind-of-work context so each activity gets
+        // its own label. Cron runs also use the background lane; live WS
+        // events with a cron ctx overwrite the label when they arrive.
+        let ctx = "task:busy";
+        if (lanes.includes("chat")) ctx = "chat";
+        else if (lanes.includes("background-worker")) ctx = "workers";
+        else if (lanes.includes("inbox")) ctx = "inbox:busy";
+        this.actors.noteActivity(anima.name, ctx);
       }
     };
+    poll();
     this.busyPollTimer = setInterval(poll, intervalSeconds * 1000);
   }
 
