@@ -132,6 +132,7 @@ def _success_events(
     session_id: str = "session-new",
     updates: list[dict] | None = None,
     usage: dict | None = None,
+    meta_top_level: dict | None = None,
     load: bool = False,
 ) -> list[dict]:
     events: list[dict] = [
@@ -139,16 +140,25 @@ def _success_events(
         {"jsonrpc": "2.0", "id": 2, "result": {"sessionId": session_id} if not load else {}},
     ]
     events.extend(updates or [])
+    meta: dict = {
+        "sessionId": session_id,
+        "usage": usage or {"inputTokens": 12, "outputTokens": 4, "cachedReadTokens": 3},
+    }
+    if meta_top_level:
+        # Top-level fields (e.g. inputTokens for last-call context size) sit
+        # alongside nested usage; merge without clobbering sessionId/usage.
+        meta = {**meta_top_level, **meta}
+        if "usage" in meta_top_level:
+            meta["usage"] = meta_top_level["usage"]
+        if "sessionId" in meta_top_level:
+            meta["sessionId"] = meta_top_level["sessionId"]
     events.append(
         {
             "jsonrpc": "2.0",
             "id": 3,
             "result": {
                 "stopReason": "end_turn",
-                "_meta": {
-                    "sessionId": session_id,
-                    "usage": usage or {"inputTokens": 12, "outputTokens": 4, "cachedReadTokens": 3},
-                },
+                "_meta": meta,
             },
         }
     )
@@ -752,10 +762,47 @@ class TestEventConversion:
         assert tracker.usage_ratio == pytest.approx(expected_tokens / tracker.context_window)
 
     @pytest.mark.asyncio
+    async def test_meta_top_level_input_tokens_sets_context_without_cache_add(
+        self, executor: GrokCLIExecutor
+    ):
+        """Grok CLI 0.2.x: _meta top-level inputTokens = last-call full context.
+
+        Real wire shape (2 model calls): top-level inputTokens is cache-inclusive
+        current context; nested usage.inputTokens is cumulative spend.  No
+        usage_update is emitted.  Tracker must use top-level only (not add
+        cachedReadTokens again).
+        """
+        tracker = ContextTracker(model="grok/grok-4.5")
+        proc = _FakeProc(
+            _success_events(
+                usage={
+                    "inputTokens": 40202,
+                    "outputTokens": 87,
+                    "totalTokens": 40289,
+                    "cachedReadTokens": 25472,
+                },
+                meta_top_level={
+                    "totalTokens": 20195,
+                    "modelId": "grok-4.5",
+                    "inputTokens": 20153,
+                    "outputTokens": 42,
+                    "cachedReadTokens": 19968,
+                    "reasoningTokens": 23,
+                },
+            )
+        )
+        events = await _stream(executor, proc, tracker=tracker)
+
+        # Cost log remains cumulative nested usage.
+        assert events[-1]["usage"]["input_tokens"] == 40202
+        # Context ring = top-level inputTokens only (already cache-inclusive).
+        assert tracker.usage_ratio == pytest.approx(20153 / tracker.context_window)
+
+    @pytest.mark.asyncio
     async def test_no_usage_update_falls_back_to_cumulative_usage(
         self, executor: GrokCLIExecutor
     ):
-        """Without usage_update, tracker still uses cumulative PromptUsage."""
+        """Without usage_update or _meta top-level inputTokens, use cumulative."""
         tracker = MagicMock()
         proc = _FakeProc(
             _success_events(
