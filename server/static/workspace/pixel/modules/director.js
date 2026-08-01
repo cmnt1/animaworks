@@ -292,8 +292,10 @@ export class Director {
         variant: Math.random() < 0.5 ? "customer_a" : "customer_b",
         fromX: customerX,
         fromY: customerY,
+        // Stop short of the anima so the two 2x sprites face each other
+        // instead of overlapping on the same tile.
         x: handoffPosition.x,
-        y: handoffPosition.y,
+        y: handoffPosition.y + 58,
         duration: 2.4,
       }),
       this.addEffect({

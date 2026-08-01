@@ -64,6 +64,22 @@ function tileKey(x, y) {
   return `${x},${y}`;
 }
 
+// Initial state for an actor at page load. The busy sidecar from /api/animas
+// reports in-progress work, so active animas start awake instead of waiting
+// for the next live event.
+function initialActorState(anima) {
+  const busy = anima?.busy;
+  if (busy?.is_busy) {
+    const progressAt = Date.parse(busy.last_progress_at || busy.busy_since || "");
+    const fresh = Number.isFinite(progressAt) && Date.now() - progressAt < 15 * 60 * 1000;
+    if (fresh) {
+      const lanes = (busy.lanes || []).join(",");
+      return lanes.includes("chat") ? "thinking" : "working_scheduled";
+    }
+  }
+  return anima?.status || "idle";
+}
+
 function buildBlocked(scene) {
   const blocked = new Set();
   for (const desk of Object.values(scene.desks)) {
@@ -613,7 +629,7 @@ export class ActorManager {
             backgroundSlots?.seated_render_offset_y ?? 12,
         },
       );
-      actor.setState(known.get(id)?.status || "idle");
+      actor.setState(isHuman ? "idle" : initialActorState(known.get(id)));
       this.actors.set(id, actor);
     }
   }

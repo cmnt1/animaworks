@@ -34,6 +34,29 @@ def _read_appearance(anima_dir: Path) -> dict | None:
         return None
 
 
+def _read_busy_sidecar(name: str) -> dict | None:
+    """Read the IPC-independent busy marker written by the child process.
+
+    Lets clients (e.g. the pixel workspace) show in-progress work immediately
+    on page load instead of waiting for the next live event.
+    """
+    from core.paths import get_data_dir
+
+    path = get_data_dir() / "run" / "animas" / f"{name}.busy.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict) or not data.get("is_busy"):
+        return None
+    return {
+        "is_busy": True,
+        "busy_since": data.get("busy_since"),
+        "last_progress_at": data.get("last_progress_at"),
+        "lanes": data.get("lanes") or [],
+    }
+
+
 def create_animas_router() -> APIRouter:
     router = APIRouter()
 
@@ -95,6 +118,7 @@ def create_animas_router() -> APIRouter:
                 "pid": proc_status.get("pid"),
                 "uptime_sec": proc_status.get("uptime_sec"),
                 "last_busy_since": proc_status.get("last_busy_since"),
+                "busy": _read_busy_sidecar(name),
                 "appearance": appearance,
                 "supervisor": anima_supervisor,
                 "speciality": anima_speciality,
