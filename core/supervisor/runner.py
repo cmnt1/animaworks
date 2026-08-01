@@ -1129,6 +1129,20 @@ async def main() -> None:
 
     _install_signal_diagnostics(args.anima_name)
 
+    # Load global permissions into this child process. Injection/blocked-pattern
+    # checks (Mode A/B handler and Mode S _check_a1_bash_command) read the
+    # GlobalPermissionsCache singleton, which is per-process; without this load
+    # they silently no-op in anima runners (only server/app.py loaded it before).
+    try:
+        from core.config.global_permissions import GlobalPermissionsCache
+        from core.paths import get_global_permissions_path
+
+        GlobalPermissionsCache.get().load(get_global_permissions_path(), interactive=False)
+    except FileNotFoundError:
+        logger.warning("permissions.global.json not found; global command checks disabled")
+    except Exception:
+        logger.warning("Failed to load global permissions in anima runner", exc_info=True)
+
     runner = AnimaRunner(
         anima_name=args.anima_name, socket_path=args.socket_path, animas_dir=args.animas_dir, shared_dir=args.shared_dir
     )
