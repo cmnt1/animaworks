@@ -97,6 +97,7 @@ class TestBackgroundTaskConfig:
         assert btc.result_memory_retention_minutes == 60
         assert btc.max_completed_tasks_in_memory == 200
         assert btc.worker_pool_size == 1
+        assert btc.shutdown_drain_seconds == 600
         assert isinstance(btc.eligible_tools, dict)
 
     @pytest.mark.parametrize(
@@ -104,6 +105,7 @@ class TestBackgroundTaskConfig:
         [
             ("result_memory_retention_minutes", -1),
             ("max_completed_tasks_in_memory", -1),
+            ("shutdown_drain_seconds", -1),
         ],
     )
     def test_background_task_config_rejects_negative_memory_limits(self, field, value):

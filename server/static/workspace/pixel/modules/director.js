@@ -289,10 +289,13 @@ export class Director {
     await Promise.all([
       this.addEffect({
         type: "customer",
+        variant: Math.random() < 0.5 ? "customer_a" : "customer_b",
         fromX: customerX,
         fromY: customerY,
+        // Stop short of the anima so the two 2x sprites face each other
+        // instead of overlapping on the same tile.
         x: handoffPosition.x,
-        y: handoffPosition.y,
+        y: handoffPosition.y + 58,
         duration: 2.4,
       }),
       this.addEffect({
@@ -446,9 +449,11 @@ export class Director {
     const trip = progress < 0.5 ? progress * 2 : (1 - progress) * 2;
     const x = effect.fromX + (effect.x - effect.fromX) * trip;
     const y = effect.fromY + (effect.y - effect.fromY) * trip;
-    const definition = this.assets.character("customer");
+    const definition = this.assets.character(effect.variant || "customer_a");
     const animation = definition.anims[progress < 0.5 ? "walk_up" : "walk_down"];
     const frame = Math.floor(effect.elapsed * animation.fps) % animation.frames;
+    // Walking characters render at 1.5x, so the visiting customer matches.
+    const scale = 1.5;
     const backgroundDoor = this.scene.background_mode?.slots?.door;
     const door = this.scene.props.door_frame;
     const doorImage = backgroundDoor ? null : this.assets.prop("door_frame", 192, 112);
@@ -475,7 +480,7 @@ export class Director {
     ctx.globalAlpha = visible * 0.18;
     ctx.fillStyle = "#1a1116";
     ctx.beginPath();
-    ctx.ellipse(x, y - 3, 26, 6, 0, 0, Math.PI * 2);
+    ctx.ellipse(x, y - 3, 26 * scale, 6 * scale, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = visible;
     ctx.drawImage(
@@ -484,10 +489,10 @@ export class Director {
       animation.row * definition.frameH,
       definition.frameW,
       definition.frameH,
-      Math.round(x - definition.frameW / 2),
-      Math.round(y - definition.frameH),
-      definition.frameW,
-      definition.frameH,
+      Math.round(x - (definition.frameW * scale) / 2),
+      Math.round(y - definition.frameH * scale),
+      definition.frameW * scale,
+      definition.frameH * scale,
     );
     ctx.restore();
     ctx.save();

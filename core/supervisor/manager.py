@@ -374,7 +374,11 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                     # this check and registration, so the window is closed.
                     if self._shutdown:
                         logger.info("Shutdown during start; stopping %s", anima_name)
-                        await handle.stop(timeout=10.0, drain_streams=False)
+                        await handle.stop(
+                            timeout=10.0,
+                            drain_streams=False,
+                            drain_background=False,
+                        )
                         return
                     self.processes[anima_name] = handle
                     self._start_fail_counts.pop(anima_name, None)
@@ -644,6 +648,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         anima_name: str,
         *,
         drain_streams: bool = True,
+        drain_background: bool = True,
         drain_timeout: float | None = None,
     ) -> None:
         """Stop a single Anima process.
@@ -653,7 +658,9 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 stream to finish before stopping (protects user responses from
                 rolling restarts / RAG repair). Full shutdown passes False for
                 a prompt exit.
-            drain_timeout: Upper bound for the in-flight stream drain. None
+            drain_background: When True (default), wait for TaskExec lanes to
+                become idle. Full shutdown passes False for a prompt exit.
+            drain_timeout: Upper bound for each drain. None
                 uses the process-handle default. Non-urgent stops (RAG repair)
                 pass a longer bound so a response is not cut off mid-turn.
         """
@@ -673,6 +680,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 # configured grace period for in-flight persistence.
                 timeout=10.0 if self._shutdown else self._anima_stop_timeout,
                 drain_streams=drain_streams,
+                drain_background=drain_background,
                 drain_timeout=drain_timeout,
             )
             # Only pop if the same handle is still registered — a concurrent
@@ -839,10 +847,16 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             except asyncio.CancelledError:
                 pass
 
-        # Stop all processes. Full shutdown should exit promptly, so skip the
-        # in-flight stream drain here (it protects rolling restarts, not the
-        # whole-server stop).
-        tasks = [self.stop_anima(name, drain_streams=False) for name in list(self.processes.keys())]
+        # Stop all processes. Full shutdown should exit promptly, so skip
+        # interactive-stream and background-lane drains here.
+        tasks = [
+            self.stop_anima(
+                name,
+                drain_streams=False,
+                drain_background=False,
+            )
+            for name in list(self.processes.keys())
+        ]
         await asyncio.gather(*tasks, return_exceptions=True)
 
         # Barrier: an in-flight start_anima cleans up its own handle under the

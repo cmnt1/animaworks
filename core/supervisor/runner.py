@@ -1016,7 +1016,9 @@ class AnimaRunner:
 
         # Stop pending task watcher
         if self.pending_task_watcher_task:
-            self.pending_task_watcher_task.cancel()
+            self.shutdown_event.set()
+            if self._pending_executor:
+                self._pending_executor.wake()
             try:
                 await self.pending_task_watcher_task
             except asyncio.CancelledError:

@@ -132,6 +132,7 @@ def _success_events(
     session_id: str = "session-new",
     updates: list[dict] | None = None,
     usage: dict | None = None,
+    meta_top_level: dict | None = None,
     load: bool = False,
 ) -> list[dict]:
     events: list[dict] = [
@@ -139,16 +140,25 @@ def _success_events(
         {"jsonrpc": "2.0", "id": 2, "result": {"sessionId": session_id} if not load else {}},
     ]
     events.extend(updates or [])
+    meta: dict = {
+        "sessionId": session_id,
+        "usage": usage or {"inputTokens": 12, "outputTokens": 4, "cachedReadTokens": 3},
+    }
+    if meta_top_level:
+        # Top-level fields (e.g. inputTokens for last-call context size) sit
+        # alongside nested usage; merge without clobbering sessionId/usage.
+        meta = {**meta_top_level, **meta}
+        if "usage" in meta_top_level:
+            meta["usage"] = meta_top_level["usage"]
+        if "sessionId" in meta_top_level:
+            meta["sessionId"] = meta_top_level["sessionId"]
     events.append(
         {
             "jsonrpc": "2.0",
             "id": 3,
             "result": {
                 "stopReason": "end_turn",
-                "_meta": {
-                    "sessionId": session_id,
-                    "usage": usage or {"inputTokens": 12, "outputTokens": 4, "cachedReadTokens": 3},
-                },
+                "_meta": meta,
             },
         }
     )
@@ -278,7 +288,11 @@ class TestSandboxConfiguration:
         profile = parsed["profiles"]["animaworks"]
         assert profile == {
             "extends": "workspace",
-            "read_write": [str(anima_dir.resolve()), str(allowed.resolve())],
+            "read_write": [
+                str(anima_dir.resolve()),
+                str((tmp_path / "cache").resolve()),
+                str(allowed.resolve()),
+            ],
             "deny": [str(denied.resolve())],
         }
         assert "read_only" not in profile
@@ -324,7 +338,11 @@ class TestSandboxConfiguration:
         profile = tomllib.loads((executor._workspace / ".grok" / "sandbox.toml").read_text(encoding="utf-8"))[
             "profiles"
         ]["animaworks"]
-        assert profile["read_write"] == [str(anima_dir.resolve()), str(allowed.resolve())]
+        assert profile["read_write"] == [
+            str(anima_dir.resolve()),
+            str((tmp_path / "cache").resolve()),
+            str(allowed.resolve()),
+        ]
         assert profile["deny"] == []
 
     def test_company_shared_is_created_and_added_independent_of_file_roots(
@@ -351,7 +369,11 @@ class TestSandboxConfiguration:
         profile = tomllib.loads((executor._workspace / ".grok" / "sandbox.toml").read_text(encoding="utf-8"))[
             "profiles"
         ]["animaworks"]
-        assert profile["read_write"] == [str(anima_dir.resolve()), str(own_shared.resolve())]
+        assert profile["read_write"] == [
+            str(anima_dir.resolve()),
+            str((tmp_path / "cache").resolve()),
+            str(own_shared.resolve()),
+        ]
         assert profile["deny"] == [str(foreign_company.resolve())]
         for name in ("knowledge", "skills", "vision.md", "company.json", "credentials"):
             assert str((own_company / name).resolve()) not in profile["read_write"]
@@ -653,6 +675,144 @@ class TestEventConversion:
             "cache_write_tokens": 0,
         }
         tracker.update_from_usage.assert_called_once_with(done["usage"])
+
+    @pytest.mark.asyncio
+    async def test_usage_update_camel_case_sets_tracker_from_last_response(
+        self, executor: GrokCLIExecutor
+    ):
+        """Last usage_update (camelCase) drives context ratio, not cumulative usage."""
+        updates = [
+            {
+                "method": "session/update",
+                "params": {
+                    "update": {
+                        "sessionUpdate": "usage_update",
+                        "usage": {
+                            "inputTokens": 14588,
+                            "outputTokens": 100,
+                            "cachedReadTokens": 5376,
+                            "cachedWriteTokens": 0,
+                        },
+                    }
+                },
+            },
+            {
+                "method": "session/update",
+                "params": {
+                    "update": {
+                        "sessionUpdate": "agent_message_chunk",
+                        "content": {"type": "text", "text": "hi"},
+                    }
+                },
+            },
+            {
+                "method": "session/update",
+                "params": {
+                    "update": {
+                        "sessionUpdate": "usage_update",
+                        "usage": {
+                            "inputTokens": 272,
+                            "outputTokens": 50,
+                            "thoughtTokens": 10,
+                            "cachedReadTokens": 19840,
+                            "cachedWriteTokens": 10,
+                            "totalTokens": 20172,
+                        },
+                    }
+                },
+            },
+        ]
+        tracker = ContextTracker(model="grok/grok-4.5")
+        # Cumulative PromptUsage is intentionally much larger than last response.
+        proc = _FakeProc(
+            _success_events(
+                updates=updates,
+                usage={"inputTokens": 40211, "outputTokens": 211, "cachedReadTokens": 0},
+            )
+        )
+        events = await _stream(executor, proc, tracker=tracker)
+
+        # Cost log usage remains cumulative.
+        assert events[-1]["usage"]["input_tokens"] == 40211
+        # Context ring uses last usage_update: input + cachedRead + cachedWrite.
+        expected_tokens = 272 + 19840 + 10
+        assert tracker.usage_ratio == pytest.approx(expected_tokens / tracker.context_window)
+
+    @pytest.mark.asyncio
+    async def test_usage_update_snake_case_fields(self, executor: GrokCLIExecutor):
+        """usage_update accepts snake_case field names (nested or flat)."""
+        updates = [
+            {
+                "method": "session/update",
+                "params": {
+                    "update": {
+                        "sessionUpdate": "usage_update",
+                        "input_tokens": 100,
+                        "output_tokens": 5,
+                        "cache_read_input_tokens": 200,
+                        "cache_creation_input_tokens": 50,
+                    }
+                },
+            },
+        ]
+        tracker = ContextTracker(model="grok/grok-4.5")
+        proc = _FakeProc(_success_events(updates=updates))
+        await _stream(executor, proc, tracker=tracker)
+        expected_tokens = 100 + 200 + 50
+        assert tracker.usage_ratio == pytest.approx(expected_tokens / tracker.context_window)
+
+    @pytest.mark.asyncio
+    async def test_meta_top_level_input_tokens_sets_context_without_cache_add(
+        self, executor: GrokCLIExecutor
+    ):
+        """Grok CLI 0.2.x: _meta top-level inputTokens = last-call full context.
+
+        Real wire shape (2 model calls): top-level inputTokens is cache-inclusive
+        current context; nested usage.inputTokens is cumulative spend.  No
+        usage_update is emitted.  Tracker must use top-level only (not add
+        cachedReadTokens again).
+        """
+        tracker = ContextTracker(model="grok/grok-4.5")
+        proc = _FakeProc(
+            _success_events(
+                usage={
+                    "inputTokens": 40202,
+                    "outputTokens": 87,
+                    "totalTokens": 40289,
+                    "cachedReadTokens": 25472,
+                },
+                meta_top_level={
+                    "totalTokens": 20195,
+                    "modelId": "grok-4.5",
+                    "inputTokens": 20153,
+                    "outputTokens": 42,
+                    "cachedReadTokens": 19968,
+                    "reasoningTokens": 23,
+                },
+            )
+        )
+        events = await _stream(executor, proc, tracker=tracker)
+
+        # Cost log remains cumulative nested usage.
+        assert events[-1]["usage"]["input_tokens"] == 40202
+        # Context ring = top-level inputTokens only (already cache-inclusive).
+        assert tracker.usage_ratio == pytest.approx(20153 / tracker.context_window)
+
+    @pytest.mark.asyncio
+    async def test_no_usage_update_falls_back_to_cumulative_usage(
+        self, executor: GrokCLIExecutor
+    ):
+        """Without usage_update or _meta top-level inputTokens, use cumulative."""
+        tracker = MagicMock()
+        proc = _FakeProc(
+            _success_events(
+                usage={"inputTokens": 101, "outputTokens": 9, "cachedReadTokens": 80},
+            )
+        )
+        events = await _stream(executor, proc, tracker=tracker)
+        done = events[-1]
+        tracker.update_from_usage.assert_called_once_with(done["usage"])
+        tracker.update_from_message_start.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_failed_tool_update(self, executor: GrokCLIExecutor):

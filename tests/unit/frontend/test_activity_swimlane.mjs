@@ -150,6 +150,26 @@ describe("assignOverlapRows", () => {
     assert.equal(map.get("c").row, 0);
     assert.equal(countLaneRows(map), 2);
   });
+
+  it("grows rowCount for 9 overlapping parallel task groups", () => {
+    // Mirrors natsume 00:07-style fan-out: many task_exec bars overlapping.
+    const groups = [];
+    for (let i = 0; i < 9; i++) {
+      const startMin = String(i).padStart(2, "0");
+      const endMin = String(i + 20).padStart(2, "0");
+      groups.push({
+        id: `task-${i}`,
+        ctx: `task:id${i}`,
+        start_ts: `2026-08-01T00:${startMin}:00Z`,
+        end_ts: `2026-08-01T00:${endMin}:00Z`,
+      });
+    }
+    const map = assignOverlapRows(groups);
+    const rows = new Set([...map.values()].map((info) => info.row));
+    assert.equal(rows.size, 9);
+    assert.equal(countLaneRows(map), 9);
+    assert.equal(map.get("task-8").concurrency, 9);
+  });
 });
 
 describe("buildLanes", () => {

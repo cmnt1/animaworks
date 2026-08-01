@@ -191,6 +191,7 @@ async def test_configured_stop_timeout_is_used_for_normal_stop(temp_dirs):
     handle.stop.assert_awaited_once_with(
         timeout=45.5,
         drain_streams=True,
+        drain_background=True,
         drain_timeout=None,
     )
 
@@ -208,6 +209,7 @@ async def test_restart_uses_configured_stop_timeout(supervisor):
     handle.stop.assert_awaited_once_with(
         timeout=45.5,
         drain_streams=True,
+        drain_background=True,
         drain_timeout=None,
     )
     supervisor.start_anima.assert_awaited_once_with("test_anima")
@@ -224,6 +226,7 @@ async def test_shutdown_retains_short_stop_timeout(supervisor):
     handle.stop.assert_awaited_once_with(
         timeout=10.0,
         drain_streams=False,
+        drain_background=False,
         drain_timeout=None,
     )
 

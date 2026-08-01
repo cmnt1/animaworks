@@ -26,6 +26,7 @@ export class LiveClient {
     this.onUnavailable = callbacks.onUnavailable || (() => {});
     this.socket = null;
     this.reconnectTimer = null;
+    this.busyPollTimer = null;
     this.reconnectAttempt = 0;
     this.everConnected = false;
     this.unavailableTimer = null;
@@ -43,6 +44,34 @@ export class LiveClient {
     } catch {
       return [];
     }
+  }
+
+  // Long-running silent work (e.g. a cron delegated to an external coding
+  // engine) emits no tool events for minutes. The busy sidecar in /api/animas
+  // still reports it, so poll periodically and keep those actors awake.
+  startBusyPolling(intervalSeconds = 30) {
+    if (this.busyPollTimer) return;
+    const poll = async () => {
+      if (this.stopped) return;
+      const animas = await this.fetchInitial();
+      for (const anima of animas) {
+        const busy = anima?.busy;
+        if (!busy?.is_busy || !anima.name || this.actors.isHuman(anima.name)) continue;
+        const progressAt = Date.parse(busy.last_progress_at || busy.busy_since || "");
+        if (!Number.isFinite(progressAt) || Date.now() - progressAt > 15 * 60 * 1000) continue;
+        const lanes = (busy.lanes || []).join(",");
+        // Map the busy lanes to a kind-of-work context so each activity gets
+        // its own label. Cron runs also use the background lane; live WS
+        // events with a cron ctx overwrite the label when they arrive.
+        let ctx = "task:busy";
+        if (lanes.includes("chat")) ctx = "chat";
+        else if (lanes.includes("background-worker")) ctx = "workers";
+        else if (lanes.includes("inbox")) ctx = "inbox:busy";
+        this.actors.noteActivity(anima.name, ctx);
+      }
+    };
+    poll();
+    this.busyPollTimer = setInterval(poll, intervalSeconds * 1000);
   }
 
   connect() {
@@ -110,6 +139,8 @@ export class LiveClient {
   stop() {
     this.stopped = true;
     clearTimeout(this.reconnectTimer);
+    clearInterval(this.busyPollTimer);
+    this.busyPollTimer = null;
     clearTimeout(this.unavailableTimer);
     this.socket?.close();
     this.socket = null;
@@ -133,11 +164,34 @@ export class LiveClient {
       }
       return;
     }
+    if (type === "anima.cron") {
+      // Fires when a cron task finishes. Command-type crons emit no tool
+      // activity while running, so this is the visible signal that the anima
+      // is doing scheduled work; the state decays back to sleeping later.
+      const name = data.name;
+      if (name && !this.actors.isHuman(name)) {
+        this.actors.noteActivity(name, "cron:done");
+      }
+      return;
+    }
     if (type === "anima.heartbeat") {
+      // Completion event: the scheduled run just finished, drop back to idle
+      // (which then decays to sleeping without further activity).
+      const name = data.name || data.actor || data.target;
+      if (name && !this.actors.isHuman(name)) this.actors.setState(name, "idle");
       this.director.dispatch("heartbeat", data);
       return;
     }
     if (type === "anima.tool_activity") {
+      if (data.name && !this.actors.isHuman(data.name)) {
+        // ctx is often unset in practice; the entry type (cron_executed,
+        // heartbeat_start, tool_use, ...) still identifies the work.
+        this.actors.noteActivity(
+          data.name,
+          data.ctx || data.meta?.ctx || data.type || "",
+          data.tool || data.tool_name || "",
+        );
+      }
       this.handleToolActivity(data);
       return;
     }

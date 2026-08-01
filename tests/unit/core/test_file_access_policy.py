@@ -16,6 +16,7 @@ from core.file_access_policy import (
     find_denied_root,
     find_internal_cache_root,
     load_denied_roots,
+    shared_tool_cache_write_root,
     shell_internal_deny_paths,
 )
 from core.tooling.handler import ToolHandler
@@ -217,3 +218,19 @@ def test_company_shared_write_root_rejects_symlink_redirects(tmp_path: Path) -> 
     own_company.rmdir()
     own_company.symlink_to(foreign_company, target_is_directory=True)
     assert company_shared_write_root(anima_dir) is None
+
+
+def test_shared_tool_cache_write_root_creates_and_rejects_symlink(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = data_dir / "animas" / "agent"
+    anima_dir.mkdir(parents=True)
+
+    cache_root = shared_tool_cache_write_root(anima_dir)
+    assert cache_root == (data_dir / "cache").resolve()
+    assert cache_root.is_dir()
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    cache_root.rmdir()
+    (data_dir / "cache").symlink_to(outside, target_is_directory=True)
+    assert shared_tool_cache_write_root(anima_dir) is None

@@ -660,6 +660,8 @@ class TestConfigWriting:
         parsed = tomllib.loads(config_toml)
         assert parsed["approval_policy"] == "never"
         assert parsed["sandbox_workspace_write"]["network_access"] is True
+        tool_cache = anima_dir.parent.parent / "cache"
+        assert str(tool_cache.resolve()) in parsed["sandbox_workspace_write"]["writable_roots"]
 
     def test_write_codex_config_permission_profile_for_denied_roots(self, model_config, anima_dir, tmp_path):
         external_root = tmp_path.parent / f"{tmp_path.name}-external"
@@ -699,6 +701,7 @@ class TestConfigWriting:
         assert filesystem[str(writable_root.resolve())] == "write"
         assert filesystem[str(task_cwd.resolve())] == "write"
         assert str(unassigned_company_shared.resolve()) not in filesystem
+        assert filesystem[str((tmp_path / "cache").resolve())] == "write"
         assert filesystem[str(denied_root.resolve())] == "deny"
         assert filesystem[str((anima_dir / ".codex_home").resolve())] == "deny"
         assert filesystem[str((anima_dir / "state").resolve())] == "deny"
@@ -713,6 +716,7 @@ class TestConfigWriting:
         mcp_profile = parsed["permissions"]["animaworks_mcp"]
         mcp_filesystem = mcp_profile["filesystem"]
         assert mcp_filesystem[str(anima_dir.resolve())] == "write"
+        assert mcp_filesystem[str((tmp_path / "cache").resolve())] == "write"
         assert mcp_filesystem[str(writable_root.resolve())] == "write"
         assert mcp_filesystem[str(task_cwd.resolve())] == "write"
         assert str(unassigned_company_shared.resolve()) not in mcp_filesystem

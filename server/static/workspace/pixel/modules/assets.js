@@ -3,11 +3,6 @@ import { resolveBasePath } from "./scene-layout.js";
 
 const ASSET_ROOT = new URL("../assets/", import.meta.url);
 
-const SAMPLE_COLORS = Object.freeze([
-  "#ef7f8f", "#34466f", "#684077", "#e6d5b8",
-  "#eaa5bb", "#72bce4", "#68a66b", "#9b71b3",
-]);
-
 const DEFAULT_ANIMS = Object.freeze({
   idle: { row: 0, frames: 4, fps: 4 },
   working: { row: 1, frames: 4, fps: 3 },
@@ -107,65 +102,11 @@ function sampleKey(id) {
   return `sample_${String(index + 1).padStart(2, "0")}`;
 }
 
-function placeholderCharacter(id, frameW = 64, frameH = 64) {
-  const sheet = canvas(frameW * 4, frameH * 10);
-  const ctx = sheet.getContext("2d");
-  const color = SAMPLE_COLORS[stableHash(id) % SAMPLE_COLORS.length];
-
-  for (let row = 0; row < 10; row += 1) {
-    for (let frame = 0; frame < 4; frame += 1) {
-      const x = frame * frameW;
-      const y = row * frameH;
-      const bob = frame % 2;
-      ctx.fillStyle = "#2a202b99";
-      ctx.fillRect(x + 18, y + 58, 28, 3);
-      ctx.fillStyle = shade(color, -35);
-      ctx.fillRect(x + 20, y + 35 + bob, 24, 24 - bob);
-      ctx.fillStyle = color;
-      ctx.fillRect(x + 16, y + 17 + bob, 32, 25);
-      ctx.fillStyle = "#f2d0b5";
-      ctx.fillRect(x + 21, y + 22 + bob, 22, 17);
-      ctx.fillStyle = "#2e2530";
-      ctx.fillRect(x + 25, y + 29 + bob, 3, 3);
-      ctx.fillRect(x + 36, y + 29 + bob, 3, 3);
-      if (row === 1) {
-        ctx.fillStyle = "#f2d0b5";
-        ctx.fillRect(x + 11 + frame * 2, y + 45, 8, 5);
-      } else if (row === 2) {
-        ctx.fillStyle = "#f2d0b5";
-        ctx.fillRect(x + 42, y + 36 - frame, 7, 7);
-      } else if (row === 3) {
-        ctx.fillStyle = "#58353a";
-        ctx.fillRect(x + 30, y + 35, 5, frame % 2 ? 2 : 4);
-      } else if (row >= 4 && row <= 6) {
-        ctx.fillStyle = shade(color, -60);
-        ctx.fillRect(x + 20 + (frame % 2) * 3, y + 56, 8, 6);
-        ctx.fillRect(x + 36 - (frame % 2) * 3, y + 56, 8, 6);
-      } else if (row === 7) {
-        ctx.fillStyle = "#dce8ff";
-        drawPixelText(ctx, "z", x + 45 + frame, y + 18 - frame * 2, {
-          fontSize: 5,
-          scale: 2,
-          color: "#fff6de",
-        });
-      } else if (row === 8) {
-        ctx.fillStyle = "#ffe580";
-        ctx.fillRect(x + 10, y + 12 + frame, 5, 5);
-        ctx.fillRect(x + 50, y + 18 - frame, 4, 4);
-      } else if (row === 9) {
-        ctx.fillStyle = "#ef6b64";
-        ctx.fillRect(x + 28, y + 8, 8, 8);
-      }
-      ctx.fillStyle = "#fff";
-      drawPixelText(ctx, id.toLowerCase(), x + frameW / 2, y + 48, {
-        fontSize: 4,
-        scale: 2,
-        align: "center",
-        color: "#fff6de",
-      });
-    }
-  }
-  return sheet;
+// Characters are always flip-book sprite sheets (codex-generated pixel art).
+// Program-drawn faces are abolished; when no sheet loads at all we render a
+// transparent sheet rather than synthesizing a face.
+function blankCharacterSheet(frameW = 96, frameH = 96) {
+  return canvas(frameW * 4, frameH * 10);
 }
 
 function placeholderProp(label, width, height, color = "#87694f") {
@@ -330,12 +271,14 @@ export class AssetStore {
       : sampleKey(normalized);
     const config = this.manifest.chars?.[declared] || {};
     const runtimeImage = this.runtimeCharacters.get(normalized);
-    const image = runtimeImage || this.images.get(`chars.${declared}`);
+    const image = runtimeImage ||
+      this.images.get(`chars.${declared}`) ||
+      this.images.get(`chars.${sampleKey(normalized)}`);
     const frameW = config.frameW || 96;
     const frameH = config.frameH || 96;
-    const key = `char:${id}:${frameW}:${frameH}`;
+    const key = `char:blank:${frameW}:${frameH}`;
     if (!image && !this.placeholders.has(key)) {
-      this.placeholders.set(key, placeholderCharacter(normalized, frameW, frameH));
+      this.placeholders.set(key, blankCharacterSheet(frameW, frameH));
     }
     return {
       image: image || this.placeholders.get(key),

@@ -424,23 +424,34 @@ export class SceneRenderer {
       };
     });
     // Keep the tail on its owner unless the bubble would cover a character in
-    // the row behind it; in that case, retreat vertically above the head.
+    // the row behind it. Candidates are ordered by total displacement (with
+    // horizontal moves penalized) so a bubble prefers rising slightly above
+    // its owner over flying sideways to another character's desk.
     const candidates = [{ x: 0, y: 0 }];
-    for (const rise of [-20, -27, -36, -52, -72, -88, -108]) {
+    for (const rise of [0, -20, -27, -36, -52, -72, -88, -108]) {
       for (const shift of [
-        -16, 16, -32, 32, -48, 48, -64, 64, -80, 80,
+        0, -16, 16, -32, 32, -48, 48, -64, 64, -80, 80,
         -96, 96, -128, 128, -160, 160, -200, 200,
         -240, 240, -300, 300, -360, 360, -400, 400,
       ]) {
+        if (rise === 0 && shift === 0) continue;
         candidates.push({ x: shift, y: rise });
       }
     }
+    candidates.sort((left, right) =>
+      (Math.abs(left.x) * 1.6 + Math.abs(left.y)) -
+      (Math.abs(right.x) * 1.6 + Math.abs(right.y)));
+    const nearbyCandidates = candidates.filter((candidate) =>
+      Math.abs(candidate.x) * 1.6 + Math.abs(candidate.y) <= 130);
     for (const layout of layouts) {
       const { actor } = layout;
       if (!actor.hasFullBubble()) continue;
       const bounds = actor.bubbleBounds();
       const behindActorObstacles = actorObstacles.filter((obstacle) =>
         obstacle.actor !== actor && obstacle.actor.y < actor.y);
+      // Stay near the owner: first try nearby spots that cover nobody, then
+      // nearby spots that may cover a back-row character, and only then move
+      // far away as a last resort.
       const placement = findCollisionFreePlacement(
         bounds,
         [
@@ -448,7 +459,13 @@ export class SceneRenderer {
           ...placedBubbles,
           ...behindActorObstacles,
         ],
-        candidates,
+        nearbyCandidates,
+        this.canvas.width,
+        this.canvas.height,
+      ) || findCollisionFreePlacement(
+        bounds,
+        [...nameObstacles, ...placedBubbles],
+        nearbyCandidates,
         this.canvas.width,
         this.canvas.height,
       ) || findCollisionFreePlacement(

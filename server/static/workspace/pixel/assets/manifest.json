@@ -877,6 +877,12 @@
       "frames": 2,
       "fps": 2
     },
+    "bubble_cron": {
+      "file": "fx/bubbles.png",
+      "row": 9,
+      "frames": 2,
+      "fps": 2
+    },
     "bubble_delivery": {
       "file": "fx/bubbles.png",
       "row": 8,

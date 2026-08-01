@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,8 @@ from pathlib import Path
 from core.exceptions import ToolConfigError
 from core.tools._cache import BaseMessageCache
 from core.tools._chatwork_client import JST, ChatworkClient
+
+logger = logging.getLogger("animaworks.tools.chatwork.cache")
 
 # ── Constants ──────────────────────────────────────────────
 
@@ -63,7 +66,12 @@ def _format_timestamp(unix_ts: int) -> str:
 
 def resolve_cache_db_path(client: ChatworkClient) -> Path:
     """Return the account-specific cache DB path for *client*."""
-    DEFAULT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        DEFAULT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        # A read-only sandbox must not turn a cache miss into a hard failure
+        # here; the caller still fails loudly if the DB itself is unusable.
+        logger.warning("Chatwork cache directory is not writable (%s): %s", DEFAULT_CACHE_DIR, exc)
     map_path = DEFAULT_CACHE_DIR / "identity_map.json"
     token_fingerprint = hashlib.sha256(client.api_token.encode("utf-8")).hexdigest()[:16]
 
@@ -83,11 +91,16 @@ def resolve_cache_db_path(client: ChatworkClient) -> Path:
         account_id = str(me["account_id"])
         identity_map[token_fingerprint] = account_id
         temp_path = map_path.with_suffix(".json.tmp")
-        temp_path.write_text(
-            json.dumps(identity_map, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        temp_path.replace(map_path)
+        try:
+            temp_path.write_text(
+                json.dumps(identity_map, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            temp_path.replace(map_path)
+        except OSError as exc:
+            # The account id was just resolved from the API, so the lookup can
+            # proceed uncached instead of blocking every Chatwork read.
+            logger.warning("Chatwork identity cache could not be updated (%s): %s", map_path, exc)
 
     return DEFAULT_CACHE_DIR / account_id / "messages.db"
 

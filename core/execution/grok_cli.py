@@ -174,6 +174,9 @@ class _RunState:
     resume_failed: bool = False
     interrupted: bool = False
     completed: bool = False
+    # Last per-response usage from ACP ``usage_update`` (current context size).
+    # Distinct from ``usage`` which is the cumulative PromptUsage for cost logs.
+    last_response_usage: dict[str, int] | None = None
 
 
 class _ACPError(RuntimeError):
@@ -230,7 +233,11 @@ class GrokCLIExecutor(BaseExecutor):
             return False
 
         from core.config.models import load_permissions
-        from core.file_access_policy import company_shared_write_root, resolve_effective_denied_roots
+        from core.file_access_policy import (
+            company_shared_write_root,
+            resolve_effective_denied_roots,
+            shared_tool_cache_write_root,
+        )
 
         permissions_config = load_permissions(self._anima_dir)
         denied_roots = list(
@@ -246,6 +253,12 @@ class GrokCLIExecutor(BaseExecutor):
             return False
 
         read_write = [str(self._anima_dir.resolve())]
+        # External-tool caches (Chatwork/Slack message DBs and the identity
+        # map) sit outside the Anima directory; without write access even a
+        # plain inbox read fails with EROFS.
+        tool_cache_root = shared_tool_cache_write_root(self._anima_dir)
+        if tool_cache_root is not None:
+            read_write.append(str(tool_cache_root))
         for root in permissions_config.file_roots:
             resolved = str(Path(root).resolve())
             if resolved != "/" and resolved not in read_write:
@@ -423,6 +436,71 @@ class GrokCLIExecutor(BaseExecutor):
             cache_read_tokens=int(usage.get("cachedReadTokens", 0) or 0),
             cache_write_tokens=0,
         )
+
+    @staticmethod
+    def _response_usage_from_update(update: dict[str, Any]) -> dict[str, int]:
+        """Extract per-response usage from an ACP ``usage_update`` notification.
+
+        Grok's wire format uses camelCase; some paths may emit snake_case.
+        Accept both.  Prefer ``update["usage"]``; fall back to ``update`` itself.
+        """
+        payload = update.get("usage")
+        if not isinstance(payload, dict):
+            payload = update
+
+        def _pick(*keys: str) -> int:
+            for key in keys:
+                if key not in payload or payload[key] is None:
+                    continue
+                try:
+                    return int(payload[key] or 0)
+                except (TypeError, ValueError):
+                    continue
+            return 0
+
+        return {
+            "input_tokens": _pick("inputTokens", "input_tokens"),
+            "output_tokens": _pick("outputTokens", "output_tokens"),
+            "thought_tokens": _pick("thoughtTokens", "thought_tokens"),
+            "cache_read_input_tokens": _pick(
+                "cachedReadTokens",
+                "cache_read_input_tokens",
+                "cache_read_tokens",
+            ),
+            "cache_creation_input_tokens": _pick(
+                "cachedWriteTokens",
+                "cache_creation_input_tokens",
+                "cache_write_tokens",
+            ),
+            "total_tokens": _pick("totalTokens", "total_tokens"),
+        }
+
+    @staticmethod
+    def _response_usage_from_meta(meta: dict[str, Any]) -> dict[str, int] | None:
+        """Extract last-call context size from prompt result ``_meta`` top-level fields.
+
+        Grok CLI 0.2.x (observed on 0.2.118) does not emit ``usage_update``.
+        Instead, ``result._meta.inputTokens`` is the final model call's full
+        prompt size (cache-inclusive = current context occupancy), while
+        nested ``_meta.usage.inputTokens`` is cumulative spend across all
+        internal calls.  Because top-level input is already full, cache
+        fields must be stored as 0 to avoid double-counting in
+        :meth:`ContextTracker.update_from_message_start`.
+        """
+        raw = meta.get("inputTokens")
+        if raw is None:
+            raw = meta.get("input_tokens")
+        if raw is None:
+            return None
+        try:
+            input_tokens = int(raw or 0)
+        except (TypeError, ValueError):
+            return None
+        return {
+            "input_tokens": input_tokens,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+        }
 
     @staticmethod
     async def _write_json(proc: asyncio.subprocess.Process, message: dict[str, Any]) -> None:
@@ -748,11 +826,21 @@ class GrokCLIExecutor(BaseExecutor):
                         if "error" in message:
                             raise _ACPError("session/prompt", message["error"])
                         result = message.get("result", {})
+                        # Cumulative PromptUsage for cost logs (nested _meta.usage).
                         state.usage = self._usage_from_result(result)
                         if isinstance(result, dict):
                             meta = result.get("_meta")
-                            if isinstance(meta, dict) and meta.get("sessionId"):
-                                state.session_id = str(meta["sessionId"])
+                            if isinstance(meta, dict):
+                                if meta.get("sessionId"):
+                                    state.session_id = str(meta["sessionId"])
+                                # Priority for context ring:
+                                # (1) usage_update during stream (if CLI emits it)
+                                # (2) _meta top-level inputTokens = last-call full prompt
+                                # (3) cumulative usage (handled later when still None)
+                                if state.last_response_usage is None:
+                                    from_meta = self._response_usage_from_meta(meta)
+                                    if from_meta is not None:
+                                        state.last_response_usage = from_meta
                         state.completed = True
                         break
 
@@ -776,6 +864,13 @@ class GrokCLIExecutor(BaseExecutor):
                             text = str(text)
                             state.full_text += text
                             yield {"type": "text_delta", "text": text}
+                    elif kind == "usage_update":
+                        # Per-response context size (xAI extension).  Last wins.
+                        # Log the raw payload once so field names can be verified
+                        # against real wire traffic without spamming info logs.
+                        if state.last_response_usage is None:
+                            logger.debug("Grok ACP usage_update payload: %s", update)
+                        state.last_response_usage = self._response_usage_from_update(update)
                     elif kind == "tool_call":
                         tool_id = str(update.get("toolCallId") or "")
                         pending_tools[tool_id] = update
@@ -994,7 +1089,24 @@ class GrokCLIExecutor(BaseExecutor):
                 yield {"type": "text_delta", "text": state.error_text}
 
         if state.completed and tracker is not None:
-            tracker.update_from_usage(state.usage.to_dict())
+            # Context size priority:
+            # (1) usage_update notification (future CLI; cache fields may apply)
+            # (2) _meta top-level inputTokens (current CLI 0.2.x; already full)
+            # (3) cumulative _meta.usage (legacy fallback; inflates the ring)
+            if state.last_response_usage is not None:
+                tracker.update_from_message_start(
+                    {
+                        "input_tokens": state.last_response_usage.get("input_tokens", 0),
+                        "cache_read_input_tokens": state.last_response_usage.get(
+                            "cache_read_input_tokens", 0
+                        ),
+                        "cache_creation_input_tokens": state.last_response_usage.get(
+                            "cache_creation_input_tokens", 0
+                        ),
+                    }
+                )
+            else:
+                tracker.update_from_usage(state.usage.to_dict())
 
         new_turn = 0
         if state.completed and state.session_id and is_resumable:

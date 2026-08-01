@@ -1217,9 +1217,14 @@ class CodexSDKExecutor(BaseExecutor):
         esc = _escape_toml_string
 
         from core.config.models import load_permissions
-        from core.file_access_policy import company_shared_write_root, resolve_effective_denied_roots
+        from core.file_access_policy import (
+            company_shared_write_root,
+            resolve_effective_denied_roots,
+            shared_tool_cache_write_root,
+        )
 
         permissions_config = load_permissions(self._anima_dir)
+        tool_cache_root = shared_tool_cache_write_root(self._anima_dir)
 
         denied_roots = list(
             resolve_effective_denied_roots(
@@ -1287,6 +1292,14 @@ class CodexSDKExecutor(BaseExecutor):
                 shell_filesystem_rules[shared_root] = "write"
                 mcp_filesystem_rules[shared_root] = "write"
 
+            # External-tool caches (Chatwork/Slack message DBs and the
+            # identity map) live outside the Anima directory.  Without write
+            # access even a plain inbox read fails with EROFS.
+            if tool_cache_root is not None:
+                cache_root_str = str(tool_cache_root)
+                shell_filesystem_rules[cache_root_str] = "write"
+                mcp_filesystem_rules[cache_root_str] = "write"
+
             # Authentication and all runtime state/cache copies must never be
             # directly readable from the model shell.  The MCP profile keeps
             # cache access for trusted, source-filtered search services.
@@ -1326,6 +1339,8 @@ class CodexSDKExecutor(BaseExecutor):
             sandbox_lines = 'sandbox_mode = "danger-full-access"\napproval_policy = "never"\n'
         else:
             writable_roots = [str(self._anima_dir)]
+            if tool_cache_root is not None:
+                writable_roots.append(str(tool_cache_root))
             for root in permissions_config.file_roots:
                 resolved = str(Path(root).resolve())
                 if resolved not in writable_roots:

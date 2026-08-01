@@ -63,6 +63,28 @@ def company_shared_write_root(anima_dir: Path) -> Path | None:
     return shared_root
 
 
+def shared_tool_cache_write_root(anima_dir: Path) -> Path | None:
+    """Return the shared external-tool cache root that must stay writable.
+
+    Chatwork/Slack style tools keep their identity map and SQLite message
+    caches under ``<data>/cache``.  A sandbox that grants writes only inside
+    the Anima directory turns even a read of the Anima's own inbox into
+    ``EROFS``, because those tools write the cache before serving the read.
+    """
+    data_dir = Path(anima_dir).resolve().parent.parent
+    cache_root = data_dir / "cache"
+    if cache_root.is_symlink():
+        return None
+    try:
+        cache_root.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    resolved = cache_root.resolve()
+    if resolved.parent != data_dir:
+        return None
+    return resolved
+
+
 def company_denied_roots(anima_dir: Path) -> tuple[Path, ...]:
     """Return canonical roots for every company other than the Anima's own.
 

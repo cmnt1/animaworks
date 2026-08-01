@@ -1,5 +1,5 @@
 const STATES = Object.freeze([
-  "idle", "working", "thinking", "talking", "sleeping",
+  "idle", "working", "working_scheduled", "thinking", "talking", "sleeping",
   "success", "error", "walking", "reporting",
 ]);
 

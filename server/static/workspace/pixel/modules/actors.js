@@ -4,6 +4,7 @@ import { drawPixelText, measurePixelText } from "./pixel-text.js";
 const STATE_MAP = Object.freeze({
   idle: { animation: "idle", bubble: "bubble_break" },
   working: { animation: "working", bubble: "bubble_working" },
+  working_scheduled: { animation: "working", bubble: "bubble_cron" },
   thinking: { animation: "thinking", bubble: "bubble_thinking" },
   talking: { animation: "talking", bubble: "bubble_meeting" },
   reporting: { animation: "talking", bubble: "bubble_reporting" },
@@ -18,6 +19,73 @@ const COMPACT_STATUS_COLORS = Object.freeze({
   working: "#72b98e",
   success: "#e7bd5f",
   walking: "#6fa4bc",
+  sleeping: "#8f8ab8",
+});
+
+// Seconds without any runtime event before the displayed state decays toward
+// sleeping. Scheduled work keeps a longer grace because LLM turns can be
+// silent between tool calls.
+const STATE_DECAY_SECONDS = Object.freeze({
+  working_scheduled: 300,
+  working: 300,
+  thinking: 600,
+  idle: 180,
+  success: 90,
+});
+
+// Short "何をしているか" labels derived from the tool an anima just used.
+const TOOL_ACTIVITY_LABELS = [
+  [/^bash$/, "コマンド実行中"],
+  [/^(read|glob|grep)$/, "コード読解中"],
+  [/^(edit|write|apply_patch|machine)$/, "コーディング中"],
+  [/post_channel|broadcast/, "掲示板に投稿中"],
+  [/send_message/, "メッセージ対応中"],
+  [/call_human/, "報告準備中"],
+  [/delegate_task/, "委任手配中"],
+  [/search_memory|read_memory/, "調べ物中"],
+  [/write_memory|archive_memory/, "記録整理中"],
+  [/completion_gate/, "仕上げ確認中"],
+  [/report_knowledge|report_procedure/, "知識整理中"],
+  [/list_tasks|update_task|^goal$/, "タスク管理中"],
+  [/skill/, "スキル整備中"],
+  [/web_search|web_fetch|browser|fetch_url/, "調査中"],
+];
+
+function labelForTool(tool) {
+  const name = String(tool || "").toLowerCase();
+  if (!name) return "";
+  for (const [pattern, label] of TOOL_ACTIVITY_LABELS) {
+    if (pattern.test(name)) return label;
+  }
+  return "";
+}
+
+// Coarser labels from the kind of work (cron, task lane, inbox, ...). Shown
+// while no recent tool event provides a more specific label.
+const CONTEXT_ACTIVITY_LABELS = [
+  [/^cron/, "定時作業中"],
+  [/^task/, "タスク遂行中"],
+  [/^workers/, "フル稼働中"],
+  [/^inbox/, "連絡対応中"],
+  [/^heartbeat/, "見回り中"],
+  [/^consolidation/, "記憶整理中"],
+  [/^goal/, "目標に没頭中"],
+];
+
+function labelForContext(ctx) {
+  const context = String(ctx || "").toLowerCase();
+  if (!context) return "";
+  for (const [pattern, label] of CONTEXT_ACTIVITY_LABELS) {
+    if (pattern.test(context)) return label;
+  }
+  return "";
+}
+
+const DYNAMIC_BUBBLE_TEXT = Object.freeze({
+  fontSize: 9,
+  scale: 1,
+  bold: true,
+  bitmap: false,
 });
 
 const NAME_TEXT_OPTIONS = Object.freeze({
@@ -32,8 +100,13 @@ function normalizeState(value) {
   const state = String(raw || "idle").toLowerCase();
   if (STATE_MAP[state]) return state;
   if (state === "not_found" || state === "stopped") return "sleeping";
+  // A running process with no observed activity is just waiting for work.
+  if (state === "running" || state === "starting") return "sleeping";
+  if (state.startsWith("cron") || state.startsWith("heartbeat") || state.startsWith("task")) {
+    return "working_scheduled";
+  }
   if (state.includes("bootstrap") || state.includes("think") || state.includes("process")) return "thinking";
-  if (state.includes("work") || state.includes("busy") || state.includes("running")) return "working";
+  if (state.includes("work") || state.includes("busy")) return "working";
   if (state.includes("error") || state.includes("fail")) return "error";
   if (state.includes("sleep") || state.includes("stop") || state.includes("inactive")) return "sleeping";
   if (state.includes("talk") || state.includes("chat")) return "talking";
@@ -44,6 +117,22 @@ function normalizeState(value) {
 
 function tileKey(x, y) {
   return `${x},${y}`;
+}
+
+// Initial state for an actor at page load. The busy sidecar from /api/animas
+// reports in-progress work, so active animas start awake instead of waiting
+// for the next live event.
+function initialActorState(anima) {
+  const busy = anima?.busy;
+  if (busy?.is_busy) {
+    const progressAt = Date.parse(busy.last_progress_at || busy.busy_since || "");
+    const fresh = Number.isFinite(progressAt) && Date.now() - progressAt < 15 * 60 * 1000;
+    if (fresh) {
+      const lanes = (busy.lanes || []).join(",");
+      return lanes.includes("chat") ? "thinking" : "working_scheduled";
+    }
+  }
+  return anima?.status || "idle";
 }
 
 function buildBlocked(scene) {
@@ -189,15 +278,50 @@ export class Actor {
     this.fxTime = 0;
     this.motion = null;
     this.isSeated = true;
+    this.idleSeconds = 0;
+    this.activityLabel = "";
+    this.activityLabelRemaining = 0;
+    this.contextLabel = "";
+    this.contextLabelRemaining = 0;
   }
 
   setState(value) {
     this.state = normalizeState(value);
+    this.idleSeconds = 0;
+    if (this.state === "sleeping") {
+      this.setActivityLabel("");
+      this.setContextLabel("");
+    }
     const mapping = STATE_MAP[this.state];
     this.bubble = mapping.bubble;
     if (!this.motion) {
       this.sprite.setAnimation(this.isSeated ? mapping.animation : "walk_down");
     }
+  }
+
+  noteActivity() {
+    this.idleSeconds = 0;
+  }
+
+  setActivityLabel(label, duration = 30) {
+    this.activityLabel = label || "";
+    this.activityLabelRemaining = this.activityLabel ? duration : 0;
+  }
+
+  // Kind-of-work label (cron / task / inbox ...). Outlives individual tool
+  // labels so silent stretches still show what the anima is broadly doing.
+  setContextLabel(label, duration = 120) {
+    this.contextLabel = label || "";
+    this.contextLabelRemaining = this.contextLabel ? duration : 0;
+  }
+
+  dynamicLabel() {
+    if (this.state !== "working_scheduled" && this.state !== "working") return "";
+    return this.activityLabel || this.contextLabel;
+  }
+
+  renderScale() {
+    return this.isSeated ? 1 : 1.5;
   }
 
   walk(path, speed = 120) {
@@ -237,9 +361,23 @@ export class Actor {
 
   update(deltaSeconds) {
     this.fxTime += deltaSeconds;
+    this.idleSeconds += deltaSeconds;
+    const decayLimit = STATE_DECAY_SECONDS[this.state];
+    if (decayLimit && !this.isHuman && this.isSeated && !this.motion &&
+        this.idleSeconds > decayLimit) {
+      this.setState("sleeping");
+    }
     if (this.bubbleOverrideRemaining > 0) {
       this.bubbleOverrideRemaining = Math.max(0, this.bubbleOverrideRemaining - deltaSeconds);
       if (this.bubbleOverrideRemaining === 0) this.bubbleOverride = "";
+    }
+    if (this.activityLabelRemaining > 0) {
+      this.activityLabelRemaining = Math.max(0, this.activityLabelRemaining - deltaSeconds);
+      if (this.activityLabelRemaining === 0) this.activityLabel = "";
+    }
+    if (this.contextLabelRemaining > 0) {
+      this.contextLabelRemaining = Math.max(0, this.contextLabelRemaining - deltaSeconds);
+      if (this.contextLabelRemaining === 0) this.contextLabel = "";
     }
     this.sprite.update(deltaSeconds * (this.state === "working" ? 1.5 : 1));
     if (!this.motion) return;
@@ -302,6 +440,7 @@ export class Actor {
 
   draw(ctx) {
     const spriteY = this.spriteY();
+    const scale = this.renderScale();
     ctx.save();
     ctx.globalAlpha = 0.18;
     ctx.fillStyle = "#1b1218";
@@ -309,15 +448,15 @@ export class Actor {
     ctx.ellipse(
       Math.round(this.x),
       Math.round(spriteY - 2),
-      Math.max(18, Math.round(this.sprite.frameW * (this.isSeated ? 0.22 : 0.27))),
-      Math.max(5, Math.round(this.sprite.frameH * 0.065)),
+      Math.max(18, Math.round(this.sprite.frameW * scale * (this.isSeated ? 0.22 : 0.27))),
+      Math.max(5, Math.round(this.sprite.frameH * scale * 0.065)),
       0,
       0,
       Math.PI * 2,
     );
     ctx.fill();
     ctx.restore();
-    this.sprite.draw(ctx, this.x, spriteY, 1);
+    this.sprite.draw(ctx, this.x, spriteY, scale);
   }
 
   drawStatusOverlay(ctx, options = {}) {
@@ -352,6 +491,7 @@ export class Actor {
   }
 
   isCompactStatus() {
+    if (this.dynamicLabel()) return false;
     return !this.bubbleOverride && Object.hasOwn(COMPACT_STATUS_COLORS, this.state);
   }
 
@@ -371,7 +511,21 @@ export class Actor {
     };
   }
 
+  dynamicBubbleSize() {
+    const label = this.dynamicLabel();
+    const textWidth = measurePixelText(label, DYNAMIC_BUBBLE_TEXT);
+    return { width: textWidth + 22, height: 30 };
+  }
+
   bubbleBounds(name = this.currentBubble(), spriteY = this.spriteY(), offsetY = 0, offsetX = 0) {
+    if (this.dynamicLabel()) {
+      const size = this.dynamicBubbleSize();
+      const x = Math.round(this.x - size.width / 2 + offsetX);
+      const headTop = this.headTop(spriteY);
+      const headGap = this.backgroundSlot ? 0 : 8;
+      const y = Math.round(headTop - headGap - (size.height - 3) + offsetY);
+      return { x, y, width: size.width, height: size.height };
+    }
     const definition = this.assets.fxDefinition(name, name);
     const width = definition.frameW;
     const height = definition.frameH;
@@ -419,6 +573,11 @@ export class Actor {
   }
 
   drawBubble(ctx, name, spriteY, options = {}) {
+    const label = this.dynamicLabel();
+    if (label) {
+      this.drawDynamicBubble(ctx, label, spriteY, options);
+      return;
+    }
     const definition = this.assets.fxDefinition(name, name);
     const frame = Math.floor(this.fxTime * definition.fps) % definition.frames;
     const scale = 1;
@@ -448,6 +607,38 @@ export class Actor {
     ctx.restore();
   }
 
+  // Hand-drawn speech bubble for dynamic activity labels ("コーディング中"
+  // etc.), styled to match the baked fx/bubbles.png rows.
+  drawDynamicBubble(ctx, label, spriteY, options = {}) {
+    const bounds = this.bubbleBounds("", spriteY, options.offsetY || 0, options.offsetX || 0);
+    const { x, y, width } = bounds;
+    const bodyHeight = bounds.height - 6;
+    const border = "#3f7a38";
+    const fill = "#fbf0e4";
+    ctx.save();
+    if (options.quiet) ctx.globalAlpha = 0.55;
+    ctx.fillStyle = border;
+    ctx.fillRect(x + 2, y, width - 4, bodyHeight);
+    ctx.fillRect(x, y + 2, width, bodyHeight - 4);
+    ctx.fillStyle = fill;
+    ctx.fillRect(x + 3, y + 2, width - 6, bodyHeight - 4);
+    ctx.fillRect(x + 2, y + 3, width - 4, bodyHeight - 6);
+    // tail
+    const tailX = Math.round(x + width / 2);
+    ctx.fillStyle = border;
+    ctx.fillRect(tailX - 4, y + bodyHeight, 8, 2);
+    ctx.fillRect(tailX - 2, y + bodyHeight + 2, 4, 2);
+    ctx.fillStyle = fill;
+    ctx.fillRect(tailX - 3, y + bodyHeight - 1, 6, 2);
+    drawPixelText(ctx, label, tailX, y + Math.round(bodyHeight / 2), {
+      ...DYNAMIC_BUBBLE_TEXT,
+      align: "center",
+      baseline: "middle",
+      color: "#356b2e",
+    });
+    ctx.restore();
+  }
+
   headTop(spriteY) {
     const headInset = {
       thinking: 5,
@@ -456,7 +647,8 @@ export class Actor {
       sleeping: 28,
       error: 6,
     }[this.state] || 10;
-    return spriteY - this.sprite.frameH + headInset;
+    const scale = this.renderScale();
+    return spriteY - (this.sprite.frameH - headInset) * scale;
   }
 
   drawStateAccent(ctx, spriteY) {
@@ -577,7 +769,7 @@ export class ActorManager {
             backgroundSlots?.seated_render_offset_y ?? 12,
         },
       );
-      actor.setState(known.get(id)?.status || "idle");
+      actor.setState(isHuman ? "idle" : initialActorState(known.get(id)));
       this.actors.set(id, actor);
     }
   }
@@ -606,6 +798,32 @@ export class ActorManager {
 
   setState(id, state) {
     this.get(id)?.setState(state);
+  }
+
+  // Runtime events (tool activity, heartbeats, cron work) keep the displayed
+  // state alive; without them the actor decays to sleeping.
+  noteActivity(id, ctx = "", tool = "") {
+    const actor = this.get(id);
+    if (!actor) return;
+    actor.noteActivity();
+    const context = String(ctx || "").toLowerCase();
+    const chatty = ["thinking", "talking", "reporting", "error"].includes(actor.state);
+    const resting = actor.state === "sleeping" || actor.state === "idle";
+    if (context.startsWith("cron") || context.startsWith("task") ||
+        context.startsWith("heartbeat") || context.startsWith("workers") ||
+        context.startsWith("inbox") || context.startsWith("consolidation") ||
+        context.startsWith("goal")) {
+      if (!chatty) actor.setState("working_scheduled");
+    } else if (context === "chat" || context.startsWith("message")) {
+      if (resting) actor.setState("thinking");
+    } else if (resting) {
+      // Unknown context but the runtime is clearly doing something.
+      actor.setState("working_scheduled");
+    }
+    const contextLabel = labelForContext(context);
+    if (contextLabel) actor.setContextLabel(contextLabel);
+    const label = labelForTool(tool);
+    if (label) actor.setActivityLabel(label);
   }
 
   update(deltaSeconds) {

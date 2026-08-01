@@ -303,6 +303,73 @@ def test_vector_worker_write_defers_during_active_repair(monkeypatch, data_dir) 
     get_store.assert_not_called()
 
 
+def test_vector_worker_read_fence_is_owner_scoped_and_recovers(monkeypatch, data_dir) -> None:
+    monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
+    state_path = data_dir / "animas" / "sora" / "state" / "rag_repair.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps({"status": "repairing"}), encoding="utf-8")
+
+    from core.memory.rag.vector_worker import create_app
+
+    doc = _doc()
+    result = SimpleNamespace(document=doc, score=0.75)
+    store = MagicMock()
+    store.query.return_value = [result]
+    store.get_by_metadata.return_value = [result]
+    store.get_by_ids.return_value = [doc]
+    store.list_collections.return_value = ["knowledge"]
+
+    with (
+        patch("core.memory.rag.singleton.get_vector_store", return_value=store) as get_store,
+        TestClient(create_app()) as client,
+    ):
+        blocked = [
+            client.post(
+                "/query",
+                json={"anima_name": "sora", "collection": "knowledge", "embedding": [0.1], "top_k": 1},
+            ),
+            client.post(
+                "/get-by-metadata",
+                json={"anima_name": "sora", "collection": "knowledge", "where": {}, "limit": 1},
+            ),
+            client.post(
+                "/get-by-ids",
+                json={"anima_name": "sora", "collection": "knowledge", "ids": ["doc1"]},
+            ),
+            client.post("/list-collections", json={"anima_name": "sora"}),
+        ]
+        get_store.assert_not_called()
+
+        other_owner = client.post(
+            "/query",
+            json={"anima_name": "rin", "collection": "knowledge", "embedding": [0.1], "top_k": 1},
+        )
+
+        state_path.write_text(json.dumps({"status": "healthy", "stage": "unfence"}), encoding="utf-8")
+        recovered = client.post(
+            "/query",
+            json={"anima_name": "sora", "collection": "knowledge", "embedding": [0.1], "top_k": 1},
+        )
+
+    assert all(response.status_code == 503 for response in blocked)
+    assert all(response.headers["Retry-After"] == "30" for response in blocked)
+    assert other_owner.status_code == 200
+    assert other_owner.json()["results"][0]["id"] == "doc1"
+    assert recovered.status_code == 200
+    assert recovered.json()["results"][0]["id"] == "doc1"
+
+
+def test_vector_worker_active_repair_prevents_native_store_reopen(monkeypatch) -> None:
+    from core.memory.rag import vector_worker
+
+    get_store = MagicMock()
+    monkeypatch.setattr(vector_worker, "_has_active_repair_state", lambda _anima_name: True)
+    monkeypatch.setattr("core.memory.rag.singleton.get_vector_store", get_store)
+
+    assert vector_worker._call_vector_store("sora", lambda store: store) is None
+    get_store.assert_not_called()
+
+
 def test_vector_worker_status_includes_gpu_section(monkeypatch) -> None:
     monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
 

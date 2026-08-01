@@ -85,6 +85,7 @@ class DelegationMixin(OrgHelpersMixin):
         sub_task_id: str,
         tracking_task_id: str,
         workspace: str,
+        exclusive_key: str,
         persist_sub: bool,
         persist_tracking: bool,
         persist_pending: bool,
@@ -107,6 +108,7 @@ class DelegationMixin(OrgHelpersMixin):
             "sub_task_id": sub_task_id,
             "tracking_task_id": tracking_task_id,
             "workspace": workspace,
+            "exclusive_key": exclusive_key,
             "persist_sub": persist_sub,
             "persist_tracking": persist_tracking,
             "persist_pending": persist_pending,
@@ -154,6 +156,7 @@ class DelegationMixin(OrgHelpersMixin):
         instruction = args.get("instruction", "")
         summary = args.get("summary", "") or instruction[:100]
         deadline = args.get("deadline", "")
+        exclusive_key = args.get("exclusive_key", "")
 
         workspace_raw = args.get("workspace", "")
         resolved_wd = ""
@@ -249,6 +252,7 @@ class DelegationMixin(OrgHelpersMixin):
                 "reply_to": self._anima_name,
                 "source": "delegation",
                 "working_directory": resolved_wd,
+                "exclusive_key": exclusive_key,
             }
             pending_dir = target_dir / "state" / "pending"
             pending_dir.mkdir(parents=True, exist_ok=True)
@@ -272,6 +276,7 @@ class DelegationMixin(OrgHelpersMixin):
                 sub_task_id=sub_task_id,
                 tracking_task_id=tracking_task_id,
                 workspace=resolved_wd,
+                exclusive_key=exclusive_key,
                 persist_sub=not persisted_sub,
                 persist_tracking=not persisted_tracking,
                 persist_pending=not persisted_pending,

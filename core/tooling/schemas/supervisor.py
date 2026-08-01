@@ -175,6 +175,10 @@ def _supervisor_tools() -> list[dict[str, Any]]:
                         "type": "string",
                         "description": _t("schema.delegate_task.workspace"),
                     },
+                    "exclusive_key": {
+                        "type": "string",
+                        "description": _t("schema.delegate_task.exclusive_key"),
+                    },
                 },
                 "required": ["name", "instruction", "deadline"],
             },
