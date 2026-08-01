@@ -82,7 +82,7 @@ function labelForContext(ctx) {
 }
 
 const DYNAMIC_BUBBLE_TEXT = Object.freeze({
-  fontSize: 9,
+  fontSize: 12,
   scale: 1,
   bold: true,
   bitmap: false,

@@ -1,5 +1,39 @@
 const cache = new Map();
 
+// Japanese pixel fonts (PixelMplus, M+ FONT LICENSE — see ../fonts/).
+// Native design sizes: 10px / 12px. Render only at these sizes (or integer
+// multiples via `scale`) to keep glyphs on the pixel grid.
+const FONT_FILES = Object.freeze([
+  ["PixelMplus10", "400", "PixelMplus10-Regular.ttf"],
+  ["PixelMplus10", "700", "PixelMplus10-Bold.ttf"],
+  ["PixelMplus12", "400", "PixelMplus12-Regular.ttf"],
+  ["PixelMplus12", "700", "PixelMplus12-Bold.ttf"],
+]);
+
+let fontsReady = false;
+let fontsPromise = null;
+
+export function preloadPixelFonts() {
+  if (fontsPromise) return fontsPromise;
+  fontsPromise = Promise.all(
+    FONT_FILES.map(([family, weight, file]) => {
+      const face = new FontFace(
+        family,
+        `url(${new URL(`../fonts/${file}`, import.meta.url)})`,
+        { weight },
+      );
+      document.fonts.add(face);
+      return face.load();
+    }),
+  ).then(() => {
+    fontsReady = true;
+  }).catch(() => {
+    // Missing fonts degrade to monospace fallback; keep rendering.
+    fontsReady = true;
+  });
+  return fontsPromise;
+}
+
 const GLYPHS = Object.freeze({
   " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"],
   a: ["00000", "01110", "00001", "01111", "10001", "01111", "00000"],
@@ -85,19 +119,22 @@ function rasterize(text, options = {}) {
     return bitmap;
   }
 
+  // Snap to the nearest native PixelMplus size so glyphs stay on the grid.
+  const size = fontSize <= 10 ? 10 : 12;
+  const font = `${weight} ${size}px PixelMplus${size}, monospace`;
   const probe = document.createElement("canvas").getContext("2d");
-  probe.font = `${weight} ${fontSize}px monospace`;
+  probe.font = font;
   const width = Math.max(1, Math.ceil(probe.measureText(value).width) + 2);
-  const height = fontSize + 3;
+  const height = size + 2;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
-  ctx.font = `${weight} ${fontSize}px monospace`;
+  ctx.font = font;
   ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
+  ctx.textBaseline = "top";
   ctx.fillStyle = color;
-  ctx.fillText(value, 1, fontSize + 1);
+  ctx.fillText(value, 1, 1);
 
   const pixels = ctx.getImageData(0, 0, width, height);
   for (let index = 3; index < pixels.data.length; index += 4) {
@@ -106,7 +143,7 @@ function rasterize(text, options = {}) {
   ctx.putImageData(pixels, 0, 0);
 
   const result = { canvas, width, height };
-  cache.set(key, result);
+  if (fontsReady) cache.set(key, result);
   return result;
 }
 

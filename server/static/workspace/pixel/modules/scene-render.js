@@ -1259,7 +1259,7 @@ export class SceneRenderer {
     const width = backgroundBoard ? board.w : board.w * this.tile;
     const ctx = this.ctx;
     ctx.save();
-    const options = { fontSize: 9, scale: 1, bold: true, color: "#343039" };
+    const options = { fontSize: 9, scale: 1, bold: false, color: "#343039" };
     drawPixelText(ctx, "今日の指示", x + 13, y + 8, options);
     this.instructions.forEach((line, index) => {
       let safe = String(line).replaceAll(/\s+/g, " ").slice(0, 22);
