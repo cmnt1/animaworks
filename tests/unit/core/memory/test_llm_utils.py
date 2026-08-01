@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -425,6 +426,72 @@ class TestOneShotCompletion:
         assert result == "Codex direct text"
         mock_try_litellm.assert_not_called()
         mock_try_codex_sdk.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_codex_cache_schema_error_aborts_before_stdout_timeout(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class _FakeStdin:
+            def write(self, _data: bytes) -> None:
+                return None
+
+            async def drain(self) -> None:
+                return None
+
+            def close(self) -> None:
+                return None
+
+        class _BlockedStdout:
+            async def readline(self) -> bytes:
+                await asyncio.Event().wait()
+                return b""
+
+        class _CacheErrorStderr:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def read(self, _size: int) -> bytes:
+                self.calls += 1
+                if self.calls == 1:
+                    return b"failed to load models cache: unknown variant `max`"
+                return b""
+
+        class _FakeProcess:
+            def __init__(self) -> None:
+                self.stdin = _FakeStdin()
+                self.stdout = _BlockedStdout()
+                self.stderr = _CacheErrorStderr()
+                self.returncode = None
+                self.killed = False
+
+            def kill(self) -> None:
+                self.killed = True
+                self.returncode = -9
+
+            async def wait(self) -> int:
+                return self.returncode or 0
+
+        proc = _FakeProcess()
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", AsyncMock(return_value=proc))
+        monkeypatch.setattr("core.platform.codex.get_codex_executable", lambda: "codex")
+        monkeypatch.setattr("core.platform.codex.default_home_dir", lambda: "/tmp")
+        monkeypatch.setattr("core.execution.codex_sdk._default_path_env", lambda: "")
+        monkeypatch.setattr("core.execution.codex_sdk._resolve_codex_model", lambda model: model)
+
+        result = await asyncio.wait_for(
+            llm_utils._try_codex_sdk(
+                "prompt",
+                system_prompt="system",
+                model="codex/test",
+                max_tokens=128,
+                llm_kwargs={},
+            ),
+            timeout=0.5,
+        )
+
+        assert result is None
+        assert proc.killed is True
 
 
 class TestIsAnthropicModel:

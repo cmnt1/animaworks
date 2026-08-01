@@ -16,6 +16,7 @@ Issue: docs/issues/20260217_consolidation-run-for-all-animas.md
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -177,6 +178,26 @@ class _SuccessHandle:
         params: dict,
         timeout: float = 60.0,
     ) -> IPCResponse:
+        return IPCResponse(id="fake", result={"duration_ms": 1})
+
+
+class _TrackedHandle:
+    state = ProcessState.RUNNING
+
+    def __init__(self, tracker: dict[str, int]) -> None:
+        self.tracker = tracker
+
+    async def send_request(
+        self,
+        method: str,
+        params: dict,
+        timeout: float = 60.0,
+    ) -> IPCResponse:
+        assert method == "run_consolidation"
+        self.tracker["active"] += 1
+        self.tracker["maximum"] = max(self.tracker["maximum"], self.tracker["active"])
+        await asyncio.sleep(0.02)
+        self.tracker["active"] -= 1
         return IPCResponse(id="fake", result={"duration_ms": 1})
 
 
@@ -379,6 +400,101 @@ async def test_weekly_consolidation_reports_target_progress(
             "phase": "post_processing",
         },
     ]
+
+
+@pytest.mark.asyncio
+async def test_daily_consolidation_uses_bounded_parallelism_and_monotonic_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sup = _make_supervisor(tmp_path)
+    tracker = {"active": 0, "maximum": 0}
+    for name in ("a", "b", "c", "d", "e"):
+        _create_anima_dir(sup.animas_dir, name)
+        sup.processes[name] = _TrackedHandle(tracker)
+
+    config = SimpleNamespace(
+        consolidation=SimpleNamespace(
+            daily_max_concurrency=2,
+            max_turns=30,
+            min_episodes_threshold=1,
+            llm_model="codex/test",
+        )
+    )
+    gate = SimpleNamespace(
+        should_run=True,
+        activity_count=1,
+        episode_count=0,
+        carryover_count=0,
+        threshold=1,
+    )
+    progress: list[dict] = []
+    monkeypatch.setattr("core.config.load_config", lambda: config)
+    monkeypatch.setattr("core.lifecycle.system_consolidation.evaluate_daily_consolidation_gate", lambda *_a, **_k: gate)
+    monkeypatch.setattr(
+        "core.lifecycle.system_consolidation.run_daily_consolidation_post_processing",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        "core.lifecycle.system_consolidation.should_skip_inactive_consolidation",
+        lambda *_args: False,
+    )
+    monkeypatch.setattr(
+        "core.lifecycle.system_status.mark_progress",
+        lambda job_type, **kwargs: progress.append({"job_type": job_type, **kwargs}),
+    )
+    monkeypatch.setattr("core.lifecycle.system_status.build_status_payload", lambda: {})
+    sup._broadcast_event = AsyncMock()
+
+    summary = await sup._run_daily_consolidation_inner()
+
+    assert summary["attempted"] == 5
+    assert tracker["maximum"] == 2
+    currents = [entry["current"] for entry in progress]
+    assert currents == sorted(currents)
+    assert currents[-1] == 5
+    assert all(entry["total"] == 5 for entry in progress)
+
+
+@pytest.mark.asyncio
+async def test_daily_and_weekly_memory_maintenance_do_not_overlap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sup = _make_supervisor(tmp_path)
+    daily_entered = asyncio.Event()
+    release_daily = asyncio.Event()
+    order: list[str] = []
+
+    async def run_daily_inner() -> dict[str, bool]:
+        order.append("daily_start")
+        daily_entered.set()
+        await release_daily.wait()
+        order.append("daily_end")
+        return {"marker_written": True}
+
+    async def run_weekly_inner() -> None:
+        order.append("weekly_start")
+
+    sup._run_daily_consolidation_inner = run_daily_inner
+    sup._run_weekly_integration_inner = run_weekly_inner
+    sup._broadcast_event = AsyncMock()
+    monkeypatch.setattr("core.lifecycle.system_status.already_ran_within_interval", lambda *_args: False)
+    monkeypatch.setattr("core.lifecycle.system_status.build_status_payload", lambda: {})
+    monkeypatch.setattr("core.lifecycle.system_status.mark_started", lambda *_args: {})
+    monkeypatch.setattr("core.lifecycle.system_status.mark_succeeded", lambda *_args: {})
+    monkeypatch.setattr("core.lifecycle.system_status.mark_failed", lambda *_args: {})
+
+    daily_task = asyncio.create_task(sup._run_daily_consolidation())
+    await daily_entered.wait()
+    weekly_task = asyncio.create_task(sup._run_weekly_integration())
+    await asyncio.sleep(0.02)
+
+    assert order == ["daily_start"]
+
+    release_daily.set()
+    await asyncio.gather(daily_task, weekly_task)
+    assert order == ["daily_start", "daily_end", "weekly_start"]
 
 
 @pytest.mark.asyncio

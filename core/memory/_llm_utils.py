@@ -537,6 +537,7 @@ async def _try_codex_sdk(
 
     proc = None
     stderr_task: asyncio.Future[None] | None = None
+    fatal_startup_error = asyncio.Event()
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -565,22 +566,51 @@ async def _try_codex_sdk(
                     return
                 if len(stderr_chunks) < 64:
                     stderr_chunks.append(chunk)
+                stderr_tail = b"".join(stderr_chunks)[-4000:].decode("utf-8", errors="replace").lower()
+                if "failed to load models cache" in stderr_tail and (
+                    "unknown variant" in stderr_tail or "missing field" in stderr_tail
+                ):
+                    fatal_startup_error.set()
 
         stderr_task = asyncio.ensure_future(_drain_stderr())
 
         parts: list[str] = []
+        saw_stdout = False
         while True:
-            try:
-                line = await asyncio.wait_for(proc.stdout.readline(), timeout=120.0)
-            except TimeoutError:
+            read_task = asyncio.create_task(proc.stdout.readline())
+            fatal_task = asyncio.create_task(fatal_startup_error.wait()) if not saw_stdout else None
+            waiters = {read_task}
+            if fatal_task is not None:
+                waiters.add(fatal_task)
+            done, pending = await asyncio.wait(
+                waiters,
+                timeout=120.0,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for pending_task in pending:
+                pending_task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
+            if not done:
                 stderr_tail = b"".join(stderr_chunks)[-2000:].decode("utf-8", errors="replace").strip()
                 logger.warning(
                     "Codex one-shot timed out waiting for output; stderr tail: %s",
                     stderr_tail or "<empty>",
                 )
                 return None
+            if read_task not in done:
+                stderr_tail = b"".join(stderr_chunks)[-2000:].decode("utf-8", errors="replace").strip()
+                logger.warning(
+                    "Codex one-shot aborted after incompatible models cache error: %s",
+                    stderr_tail or "<empty>",
+                )
+                return None
+
+            line = read_task.result()
             if not line:
                 break
+            saw_stdout = True
             raw = line.decode("utf-8", errors="replace").rstrip("\n")
             try:
                 payload = json.loads(raw)

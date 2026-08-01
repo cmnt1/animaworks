@@ -177,6 +177,9 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             "weekly": asyncio.Lock(),
             "monthly": asyncio.Lock(),
         }
+        # Memory-maintenance jobs share model and per-Anima background lanes.
+        # Keep the job types mutually exclusive while preserving per-job locks.
+        self._system_memory_maintenance_lock = asyncio.Lock()
         self._system_consolidation_tasks: dict[str, asyncio.Task[dict]] = {}
 
         # Callbacks for anima lifecycle events (set by server/app.py)

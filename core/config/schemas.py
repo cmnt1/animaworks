@@ -426,6 +426,7 @@ class ConsolidationConfig(BaseModel):
     llm_model: str = DEFAULT_CONSOLIDATION_MODEL
     llm_credential: str = ""
     max_turns: int = 30  # Tool-call loop limit for consolidation tasks
+    daily_max_concurrency: int = Field(default=3, ge=1, le=8)
     ipc_timeout_base_seconds: int = Field(default=1800, ge=60)
     ipc_timeout_per_activity_entry_seconds: float = Field(default=4.0, ge=0.0)
     ipc_timeout_per_episode_seconds: float = Field(default=120.0, ge=0.0)

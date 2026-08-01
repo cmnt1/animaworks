@@ -345,28 +345,32 @@ class SchedulerMixin:
             logger.info("Daily consolidation skipped: already running")
             return
         async with lock:
-            mark_started("daily")
-            try:
-                await self._broadcast_event("system.consolidation_status", build_status_payload())
-            except Exception:
-                logger.debug("Failed to broadcast consolidation_status", exc_info=True)
-            try:
-                summary = await self._run_daily_consolidation_inner()
-                if summary.get("marker_written"):
-                    mark_succeeded("daily")
-                else:
-                    reason = str(
-                        summary.get("failure_reason") or "daily consolidation did not process any running Anima"
-                    )
-                    mark_failed("daily", reason)
-            except Exception as exc:
-                mark_failed("daily", str(exc))
-                raise
-            finally:
+            maintenance_lock = self._system_memory_maintenance_lock
+            if maintenance_lock.locked():
+                logger.info("Daily consolidation waiting for another memory maintenance job")
+            async with maintenance_lock:
+                mark_started("daily")
                 try:
                     await self._broadcast_event("system.consolidation_status", build_status_payload())
                 except Exception:
                     logger.debug("Failed to broadcast consolidation_status", exc_info=True)
+                try:
+                    summary = await self._run_daily_consolidation_inner()
+                    if summary.get("marker_written"):
+                        mark_succeeded("daily")
+                    else:
+                        reason = str(
+                            summary.get("failure_reason") or "daily consolidation did not process any running Anima"
+                        )
+                        mark_failed("daily", reason)
+                except Exception as exc:
+                    mark_failed("daily", str(exc))
+                    raise
+                finally:
+                    try:
+                        await self._broadcast_event("system.consolidation_status", build_status_payload())
+                    except Exception:
+                        logger.debug("Failed to broadcast consolidation_status", exc_info=True)
 
     async def _run_daily_consolidation_inner(self) -> dict[str, int | bool | str]:
         """Inner implementation of daily consolidation."""
@@ -395,15 +399,115 @@ class SchedulerMixin:
             run_daily_consolidation_post_processing,
             should_skip_inactive_consolidation,
         )
+        from core.lifecycle.system_status import build_status_payload, mark_progress
 
         defaults = ConsolidationConfig()
         max_turns = ConsolidationConfig().max_turns
         min_entries = defaults.min_episodes_threshold
         model = defaults.llm_model
+        max_concurrency = defaults.daily_max_concurrency
         if consolidation_cfg:
             max_turns = getattr(consolidation_cfg, "max_turns", max_turns)
             min_entries = getattr(consolidation_cfg, "min_episodes_threshold", min_entries)
             model = getattr(consolidation_cfg, "llm_model", model)
+            max_concurrency = getattr(consolidation_cfg, "daily_max_concurrency", max_concurrency)
+        try:
+            max_concurrency = max(1, min(8, int(max_concurrency)))
+        except (TypeError, ValueError):
+            max_concurrency = defaults.daily_max_concurrency
+
+        semaphore = asyncio.Semaphore(max_concurrency)
+        progress_lock = asyncio.Lock()
+        target_tasks: list[asyncio.Task[None]] = []
+        started_count = 0
+        last_reported_progress = 0
+
+        async def _publish_progress(current: int, anima_name: str, phase: str) -> None:
+            nonlocal last_reported_progress
+            last_reported_progress = max(last_reported_progress, current)
+            mark_progress(
+                "daily",
+                current=last_reported_progress,
+                total=int(summary["attempted"]),
+                target=anima_name,
+                phase=phase,
+            )
+            try:
+                await self._broadcast_event("system.consolidation_status", build_status_payload())
+            except Exception:
+                logger.debug("Failed to broadcast daily consolidation progress", exc_info=True)
+
+        async def _run_target(anima_name, anima_dir, handle, timeout_s: float) -> None:
+            nonlocal started_count
+            async with semaphore:
+                async with progress_lock:
+                    started_count += 1
+                    current = started_count
+                    await _publish_progress(current, anima_name, "consolidation")
+
+                result: dict = {}
+                try:
+                    consolidating: set[str] = getattr(self, "_consolidating", set())
+                    consolidating.add(anima_name)
+                    timed_out = False
+                    try:
+                        response = await handle.send_request(
+                            "run_consolidation",
+                            {"consolidation_type": "daily", "max_turns": max_turns},
+                            timeout=timeout_s,
+                        )
+                    except TimeoutError:
+                        timed_out = True
+                        logger.warning(
+                            "consolidation_timeout anima=%s phase=phase_b type=daily timeout_s=%.0f",
+                            anima_name,
+                            timeout_s,
+                        )
+                        try:
+                            await handle.send_request("interrupt", {}, timeout=10.0)
+                        except Exception:
+                            logger.debug("Interrupt request after daily consolidation timeout failed", exc_info=True)
+                    finally:
+                        if timed_out:
+                            asyncio.get_running_loop().call_later(120, self._consolidating.discard, anima_name)
+                        else:
+                            consolidating.discard(anima_name)
+
+                    if not timed_out and response.error:
+                        logger.error(
+                            "Daily consolidation IPC error for %s: %s",
+                            anima_name,
+                            response.error,
+                        )
+                    elif not timed_out:
+                        result = response.result or {}
+                        logger.info(
+                            "Daily consolidation for %s: duration_ms=%d",
+                            anima_name,
+                            result.get("duration_ms", 0),
+                        )
+                except Exception:
+                    logger.exception("Daily consolidation failed for %s", anima_name)
+                finally:
+                    async with progress_lock:
+                        await _publish_progress(current, anima_name, "post_processing")
+
+                    await run_daily_consolidation_post_processing(
+                        anima_name,
+                        anima_dir,
+                        consolidation_cfg=consolidation_cfg,
+                        model=model,
+                    )
+
+                    await self._broadcast_event(
+                        "system.consolidation",
+                        {
+                            "anima": anima_name,
+                            "type": "daily",
+                            "summary": result.get("summary", ""),
+                            "duration_ms": result.get("duration_ms", 0),
+                        },
+                    )
 
         for anima_name, anima_dir in self._iter_consolidation_targets():
             summary["targets"] = int(summary["targets"]) + 1
@@ -442,69 +546,20 @@ class SchedulerMixin:
                 consolidation_type="daily",
                 gate=gate,
             )
+            target_tasks.append(asyncio.create_task(_run_target(anima_name, anima_dir, handle, timeout_s)))
 
-            result: dict = {}
-            try:
-                _consolidating: set[str] = getattr(self, "_consolidating", set())
-                _consolidating.add(anima_name)
-                _timed_out = False
-                try:
-                    response = await handle.send_request(
-                        "run_consolidation",
-                        {"consolidation_type": "daily", "max_turns": max_turns},
-                        timeout=timeout_s,
-                    )
-                except TimeoutError:
-                    _timed_out = True
-                    logger.warning(
-                        "consolidation_timeout anima=%s phase=phase_b type=daily timeout_s=%.0f",
-                        anima_name,
-                        timeout_s,
-                    )
-                    try:
-                        await handle.send_request("interrupt", {}, timeout=10.0)
-                    except Exception:
-                        logger.debug("Interrupt request after daily consolidation timeout failed", exc_info=True)
-                finally:
-                    if _timed_out:
-                        # Grace period: keep protection for 120s after timeout
-                        _name_capture = anima_name
-                        asyncio.get_running_loop().call_later(120, self._consolidating.discard, _name_capture)
-                    else:
-                        _consolidating.discard(anima_name)
-
-                if not _timed_out and response.error:
-                    logger.error(
-                        "Daily consolidation IPC error for %s: %s",
-                        anima_name,
-                        response.error,
-                    )
-                elif not _timed_out:
-                    result = response.result or {}
-                    logger.info(
-                        "Daily consolidation for %s: duration_ms=%d",
-                        anima_name,
-                        result.get("duration_ms", 0),
-                    )
-            except Exception:
-                logger.exception("Daily consolidation failed for %s", anima_name)
-            finally:
-                await run_daily_consolidation_post_processing(
-                    anima_name,
-                    anima_dir,
-                    consolidation_cfg=consolidation_cfg,
-                    model=model,
-                )
-
-                await self._broadcast_event(
-                    "system.consolidation",
-                    {
-                        "anima": anima_name,
-                        "type": "daily",
-                        "summary": result.get("summary", ""),
-                        "duration_ms": result.get("duration_ms", 0),
-                    },
-                )
+        if target_tasks:
+            logger.info(
+                "Daily consolidation dispatching %d target(s) with max_concurrency=%d",
+                len(target_tasks),
+                max_concurrency,
+            )
+            outcomes = await asyncio.gather(*target_tasks, return_exceptions=True)
+            failures = [outcome for outcome in outcomes if isinstance(outcome, BaseException)]
+            if failures:
+                raise RuntimeError(
+                    f"daily consolidation worker failures: {len(failures)}"
+                ) from failures[0]
 
         if int(summary["targets"]) > 0 and int(summary["running"]) == 0:
             summary["failure_reason"] = (
@@ -545,22 +600,26 @@ class SchedulerMixin:
             logger.info("Weekly integration skipped: already running")
             return
         async with lock:
-            mark_started("weekly")
-            try:
-                await self._broadcast_event("system.consolidation_status", build_status_payload())
-            except Exception:
-                logger.debug("Failed to broadcast consolidation_status", exc_info=True)
-            try:
-                await self._run_weekly_integration_inner()
-                mark_succeeded("weekly")
-            except Exception as exc:
-                mark_failed("weekly", str(exc))
-                raise
-            finally:
+            maintenance_lock = self._system_memory_maintenance_lock
+            if maintenance_lock.locked():
+                logger.info("Weekly integration waiting for another memory maintenance job")
+            async with maintenance_lock:
+                mark_started("weekly")
                 try:
                     await self._broadcast_event("system.consolidation_status", build_status_payload())
                 except Exception:
                     logger.debug("Failed to broadcast consolidation_status", exc_info=True)
+                try:
+                    await self._run_weekly_integration_inner()
+                    mark_succeeded("weekly")
+                except Exception as exc:
+                    mark_failed("weekly", str(exc))
+                    raise
+                finally:
+                    try:
+                        await self._broadcast_event("system.consolidation_status", build_status_payload())
+                    except Exception:
+                        logger.debug("Failed to broadcast consolidation_status", exc_info=True)
 
     async def _run_weekly_integration_inner(self) -> None:
         """Inner implementation of weekly integration."""
@@ -721,22 +780,26 @@ class SchedulerMixin:
             logger.info("Monthly forgetting skipped: already running")
             return
         async with lock:
-            mark_started("monthly")
-            try:
-                await self._broadcast_event("system.consolidation_status", build_status_payload())
-            except Exception:
-                logger.debug("Failed to broadcast consolidation_status", exc_info=True)
-            try:
-                await self._run_monthly_forgetting_inner()
-                mark_succeeded("monthly")
-            except Exception as exc:
-                mark_failed("monthly", str(exc))
-                raise
-            finally:
+            maintenance_lock = self._system_memory_maintenance_lock
+            if maintenance_lock.locked():
+                logger.info("Monthly forgetting waiting for another memory maintenance job")
+            async with maintenance_lock:
+                mark_started("monthly")
                 try:
                     await self._broadcast_event("system.consolidation_status", build_status_payload())
                 except Exception:
                     logger.debug("Failed to broadcast consolidation_status", exc_info=True)
+                try:
+                    await self._run_monthly_forgetting_inner()
+                    mark_succeeded("monthly")
+                except Exception as exc:
+                    mark_failed("monthly", str(exc))
+                    raise
+                finally:
+                    try:
+                        await self._broadcast_event("system.consolidation_status", build_status_payload())
+                    except Exception:
+                        logger.debug("Failed to broadcast consolidation_status", exc_info=True)
 
     async def _run_monthly_forgetting_inner(self) -> None:
         """Inner implementation of monthly forgetting."""

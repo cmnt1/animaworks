@@ -10,6 +10,7 @@ def test_memory_hygiene_config_defaults() -> None:
     consolidation = ConsolidationConfig()
     housekeeping = HousekeepingConfig()
 
+    assert consolidation.daily_max_concurrency == 3
     assert consolidation.episode_retention_batch_limit == 200
     assert housekeeping.shortterm_archive_retention_days == 30
     assert housekeeping.shortterm_thread_gc_days == 30
@@ -35,3 +36,11 @@ def test_episode_retention_batch_limit_allows_zero_but_not_negative() -> None:
     assert ConsolidationConfig(episode_retention_batch_limit=0).episode_retention_batch_limit == 0
     with pytest.raises(ValidationError):
         ConsolidationConfig(episode_retention_batch_limit=-1)
+
+
+def test_daily_consolidation_concurrency_is_bounded() -> None:
+    assert ConsolidationConfig(daily_max_concurrency=8).daily_max_concurrency == 8
+    with pytest.raises(ValidationError):
+        ConsolidationConfig(daily_max_concurrency=0)
+    with pytest.raises(ValidationError):
+        ConsolidationConfig(daily_max_concurrency=9)
