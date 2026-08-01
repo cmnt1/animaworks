@@ -60,25 +60,96 @@ function labelForTool(tool) {
   return "";
 }
 
-// Coarser labels from the kind of work (cron, task lane, inbox, ...). Shown
-// while no recent tool event provides a more specific label.
-const CONTEXT_ACTIVITY_LABELS = [
-  [/^cron/, "定時作業中"],
-  [/^task/, "タスク遂行中"],
-  [/^workers/, "フル稼働中"],
-  [/^inbox/, "連絡対応中"],
-  [/^heartbeat/, "見回り中"],
-  [/^consolidation/, "記憶整理中"],
-  [/^goal/, "目標に没頭中"],
-];
+// Single source of truth for work-kind visuals (motion, bubble color, FX, speed).
+// workKind layers on top of working / working_scheduled without replacing STATE_MAP.
+const WORK_KINDS = Object.freeze({
+  cron: {
+    label: "定時作業中",
+    legend: "定時",
+    border: "#3f6fa8",
+    text: "#2f5e93",
+    accent: "clock",
+    speed: 1.0,
+  },
+  task: {
+    label: "タスク遂行中",
+    legend: "タスク",
+    border: "#3f7a38",
+    text: "#356b2e",
+    accent: "",
+    speed: 1.5,
+  },
+  workers: {
+    label: "フル稼働中",
+    legend: "フル稼働",
+    border: "#c05f2a",
+    text: "#a84e1f",
+    accent: "flash",
+    speed: 2.0,
+    shake: true,
+    badge: true,
+    microExpression: "error",
+  },
+  inbox: {
+    label: "連絡対応中",
+    legend: "連絡",
+    border: "#7a5aa8",
+    text: "#674a92",
+    accent: "envelope",
+    speed: 1.0,
+    animation: "talking",
+  },
+  goal: {
+    label: "目標に没頭中",
+    legend: "没頭",
+    border: "#b8862f",
+    text: "#9c711f",
+    accent: "sparkle",
+    speed: 1.5,
+    microExpression: "thinking",
+  },
+  consolidation: {
+    label: "記憶整理中",
+    legend: "記憶整理",
+    border: "#4a4f8f",
+    text: "#3a3f7a",
+    accent: "moon",
+    speed: 0.7,
+    animation: "thinking",
+  },
+  chat: {
+    label: "考え中",
+    border: "#4a86a8",
+    text: "#3a7292",
+    accent: "",
+    speed: 1.0,
+  },
+});
 
-function labelForContext(ctx) {
+const DYNAMIC_BUBBLE_FILL = "#fbf0e4";
+const DEFAULT_WORK_BORDER = "#3f7a38";
+const DEFAULT_WORK_TEXT = "#356b2e";
+
+function workKindFromContext(ctx) {
   const context = String(ctx || "").toLowerCase();
   if (!context) return "";
-  for (const [pattern, label] of CONTEXT_ACTIVITY_LABELS) {
-    if (pattern.test(context)) return label;
-  }
+  if (context.startsWith("cron") || context.startsWith("heartbeat")) return "cron";
+  if (context.startsWith("task")) return "task";
+  if (context.startsWith("workers")) return "workers";
+  if (context.startsWith("inbox")) return "inbox";
+  if (context.startsWith("goal")) return "goal";
+  if (context.startsWith("consolidation")) return "consolidation";
+  if (context === "chat" || context.startsWith("message")) return "chat";
   return "";
+}
+
+function labelForContext(ctx) {
+  const kind = workKindFromContext(ctx);
+  return kind && WORK_KINDS[kind] ? WORK_KINDS[kind].label : "";
+}
+
+function workKindConfig(kind) {
+  return (kind && WORK_KINDS[kind]) || null;
 }
 
 const DYNAMIC_BUBBLE_TEXT = Object.freeze({
@@ -283,19 +354,33 @@ export class Actor {
     this.activityLabelRemaining = 0;
     this.contextLabel = "";
     this.contextLabelRemaining = 0;
+    this.workKind = "";
+    this.workKindRemaining = 0;
+    this.laneCount = 0;
+    this.burstRemaining = 0;
+    this.burstAnimation = "";
+    this.microExpressionRemaining = 0;
+    this.microExpressionNextIn = 20 + Math.random() * 20;
   }
 
   setState(value) {
-    this.state = normalizeState(value);
+    const next = normalizeState(value);
+    const changed = next !== this.state;
+    this.state = next;
     this.idleSeconds = 0;
+    // noteActivity often re-asserts working_scheduled; only cancel micro-expressions
+    // when the state actually changes (walk / sleep / error / ...).
+    if (changed) this.cancelMicroExpression();
     if (this.state === "sleeping") {
       this.setActivityLabel("");
       this.setContextLabel("");
+      this.setWorkKind("");
     }
     const mapping = STATE_MAP[this.state];
     this.bubble = mapping.bubble;
     if (!this.motion) {
-      this.sprite.setAnimation(this.isSeated ? mapping.animation : "walk_down");
+      // resolveSeatedAnimation keeps an in-flight micro-expression row.
+      this.sprite.setAnimation(this.isSeated ? this.resolveSeatedAnimation() : "walk_down");
     }
   }
 
@@ -315,9 +400,81 @@ export class Actor {
     this.contextLabelRemaining = this.contextLabel ? duration : 0;
   }
 
+  setWorkKind(kind, duration = 120) {
+    const next = WORK_KINDS[kind] ? kind : "";
+    this.workKind = next;
+    this.workKindRemaining = next ? duration : 0;
+    if (!next) this.laneCount = 0;
+    if (this.isSeated && !this.motion && this.burstRemaining <= 0) {
+      this.sprite.setAnimation(this.resolveSeatedAnimation());
+    }
+  }
+
+  // Seated pose animation: burst > micro-expression > workKind override > STATE_MAP.
+  resolveSeatedAnimation() {
+    if (this.burstRemaining > 0) return this.burstAnimation || "success";
+    if (this.microExpressionRemaining > 0) {
+      const micro = workKindConfig(this.workKind)?.microExpression;
+      if (micro) return micro;
+    }
+    if (this.state === "working" || this.state === "working_scheduled") {
+      const override = workKindConfig(this.workKind)?.animation;
+      if (override) return override;
+    }
+    return STATE_MAP[this.state]?.animation || "idle";
+  }
+
+  // Temporary success (or other) row + sparkle without changing state.
+  playBurst(animation = "success", duration = 3) {
+    if (this.motion) return;
+    if (this.state === "talking" || this.state === "reporting") return;
+    this.cancelMicroExpression();
+    this.burstAnimation = animation || "success";
+    this.burstRemaining = duration;
+    if (this.isSeated) this.sprite.setAnimation(this.burstAnimation);
+  }
+
+  cancelMicroExpression() {
+    const wasActive = this.microExpressionRemaining > 0;
+    this.microExpressionRemaining = 0;
+    this.microExpressionNextIn = 20 + Math.random() * 20;
+    if (wasActive && this.isSeated && !this.motion && this.burstRemaining <= 0) {
+      this.sprite.setAnimation(this.resolveSeatedAnimation());
+    }
+  }
+
   dynamicLabel() {
     if (this.state !== "working_scheduled" && this.state !== "working") return "";
-    return this.activityLabel || this.contextLabel;
+    let label = this.activityLabel || this.contextLabel;
+    if (!label) return "";
+    if (this.workKind === "workers" && this.laneCount >= 2) {
+      label = `${label} ×${this.laneCount}`;
+    }
+    return label;
+  }
+
+  workBubbleColors() {
+    const config = workKindConfig(this.workKind);
+    return {
+      border: config?.border || DEFAULT_WORK_BORDER,
+      text: config?.text || DEFAULT_WORK_TEXT,
+      fill: DYNAMIC_BUBBLE_FILL,
+    };
+  }
+
+  animationSpeed() {
+    if (this.state !== "working" && this.state !== "working_scheduled") return 1;
+    const config = workKindConfig(this.workKind);
+    if (config) return config.speed;
+    return this.state === "working" ? 1.5 : 1;
+  }
+
+  shakeOffsetX() {
+    const config = workKindConfig(this.workKind);
+    if (!config?.shake || this.motion) return 0;
+    if (this.state !== "working" && this.state !== "working_scheduled") return 0;
+    // ~8Hz rectangularized sine, ±1px draw-only offset.
+    return Math.sin(this.fxTime * Math.PI * 2 * 8) >= 0 ? 1 : -1;
   }
 
   renderScale() {
@@ -347,6 +504,7 @@ export class Actor {
     return new Promise((resolve) => {
       if (this.isSeated) this.y = this.visualY();
       this.isSeated = false;
+      this.cancelMicroExpression();
       const first = points[0];
       const dx = first.x - this.x;
       const dy = first.y - this.y;
@@ -379,7 +537,27 @@ export class Actor {
       this.contextLabelRemaining = Math.max(0, this.contextLabelRemaining - deltaSeconds);
       if (this.contextLabelRemaining === 0) this.contextLabel = "";
     }
-    this.sprite.update(deltaSeconds * (this.state === "working" ? 1.5 : 1));
+    if (this.workKindRemaining > 0) {
+      this.workKindRemaining = Math.max(0, this.workKindRemaining - deltaSeconds);
+      if (this.workKindRemaining === 0) {
+        this.workKind = "";
+        this.laneCount = 0;
+        if (this.isSeated && !this.motion && this.burstRemaining <= 0) {
+          this.sprite.setAnimation(this.resolveSeatedAnimation());
+        }
+      }
+    }
+    if (this.burstRemaining > 0) {
+      this.burstRemaining = Math.max(0, this.burstRemaining - deltaSeconds);
+      if (this.burstRemaining === 0) {
+        this.burstAnimation = "";
+        if (this.isSeated && !this.motion) {
+          this.sprite.setAnimation(this.resolveSeatedAnimation());
+        }
+      }
+    }
+    this.updateMicroExpression(deltaSeconds);
+    this.sprite.update(deltaSeconds * this.animationSpeed());
     if (!this.motion) return;
     let remaining = this.motion.speed * deltaSeconds;
     while (remaining > 0 && this.motion) {
@@ -396,7 +574,7 @@ export class Actor {
           const resolve = this.motion.resolve;
           this.motion = null;
           const mapping = STATE_MAP[this.state];
-          this.sprite.setAnimation(this.isSeated ? mapping.animation : "walk_down");
+          this.sprite.setAnimation(this.isSeated ? this.resolveSeatedAnimation() : "walk_down");
           this.bubble = mapping.bubble;
           resolve(true);
         }
@@ -411,12 +589,36 @@ export class Actor {
     }
   }
 
+  updateMicroExpression(deltaSeconds) {
+    const config = workKindConfig(this.workKind);
+    const eligible = this.isSeated && !this.motion && this.burstRemaining <= 0 &&
+      (this.state === "working" || this.state === "working_scheduled") &&
+      Boolean(config?.microExpression);
+    if (!eligible) {
+      if (this.microExpressionRemaining > 0) this.cancelMicroExpression();
+      return;
+    }
+    if (this.microExpressionRemaining > 0) {
+      this.microExpressionRemaining = Math.max(0, this.microExpressionRemaining - deltaSeconds);
+      if (this.microExpressionRemaining === 0) {
+        this.microExpressionNextIn = 20 + Math.random() * 20;
+        this.sprite.setAnimation(this.resolveSeatedAnimation());
+      }
+      return;
+    }
+    this.microExpressionNextIn -= deltaSeconds;
+    if (this.microExpressionNextIn <= 0) {
+      this.microExpressionRemaining = 1.5 + Math.random() * 0.5;
+      this.sprite.setAnimation(config.microExpression);
+    }
+  }
+
   sit() {
     this.x = this.seatPosition.x;
     this.y = this.seatPosition.y;
     this.isSeated = true;
     const mapping = STATE_MAP[this.state];
-    this.sprite.setAnimation(mapping.animation);
+    this.sprite.setAnimation(this.resolveSeatedAnimation());
     this.bubble = mapping.bubble;
   }
 
@@ -441,12 +643,13 @@ export class Actor {
   draw(ctx) {
     const spriteY = this.spriteY();
     const scale = this.renderScale();
+    const drawX = this.x + this.shakeOffsetX();
     ctx.save();
     ctx.globalAlpha = 0.18;
     ctx.fillStyle = "#1b1218";
     ctx.beginPath();
     ctx.ellipse(
-      Math.round(this.x),
+      Math.round(drawX),
       Math.round(spriteY - 2),
       Math.max(18, Math.round(this.sprite.frameW * scale * (this.isSeated ? 0.22 : 0.27))),
       Math.max(5, Math.round(this.sprite.frameH * scale * 0.065)),
@@ -456,7 +659,7 @@ export class Actor {
     );
     ctx.fill();
     ctx.restore();
-    this.sprite.draw(ctx, this.x, spriteY, scale);
+    this.sprite.draw(ctx, drawX, spriteY, scale);
   }
 
   drawStatusOverlay(ctx, options = {}) {
@@ -466,6 +669,11 @@ export class Actor {
         offsetY: options.bubbleOffsetY || 0,
         offsetX: options.bubbleOffsetX || 0,
       });
+      // workKind accents / burst sparkles still sit beside the dynamic bubble.
+      if (this.burstRemaining > 0 ||
+          this.state === "working" || this.state === "working_scheduled") {
+        this.drawStateAccent(ctx, spriteY);
+      }
       return;
     }
     this.drawStateAccent(ctx, spriteY);
@@ -608,13 +816,12 @@ export class Actor {
   }
 
   // Hand-drawn speech bubble for dynamic activity labels ("コーディング中"
-  // etc.), styled to match the baked fx/bubbles.png rows.
+  // etc.), styled to match the baked fx/bubbles.png rows. Colors come from workKind.
   drawDynamicBubble(ctx, label, spriteY, options = {}) {
     const bounds = this.bubbleBounds("", spriteY, options.offsetY || 0, options.offsetX || 0);
     const { x, y, width } = bounds;
     const bodyHeight = bounds.height - 6;
-    const border = "#3f7a38";
-    const fill = "#fbf0e4";
+    const { border, text, fill } = this.workBubbleColors();
     ctx.save();
     if (options.quiet) ctx.globalAlpha = 0.55;
     ctx.fillStyle = border;
@@ -634,7 +841,7 @@ export class Actor {
       ...DYNAMIC_BUBBLE_TEXT,
       align: "center",
       baseline: "middle",
-      color: "#356b2e",
+      color: text,
     });
     ctx.restore();
   }
@@ -653,6 +860,11 @@ export class Actor {
 
   drawStateAccent(ctx, spriteY) {
     const headTop = this.headTop(spriteY);
+    if (this.burstRemaining > 0) {
+      this.drawFx(ctx, "sparkle", this.x - 34, headTop + 22, this.fxTime);
+      this.drawFx(ctx, "sparkle", this.x + 33, headTop + 5, this.fxTime + 0.22);
+      return;
+    }
     if (this.state === "error") {
       this.drawFx(ctx, "smoke", this.x - 31, headTop + 24, this.fxTime);
       this.drawFx(ctx, "bubble_small_exclamation", this.x + 37, headTop + 7, this.fxTime);
@@ -665,7 +877,52 @@ export class Actor {
       this.drawFx(ctx, "sparkle", this.x + 33, headTop + 5, this.fxTime + 0.22);
     } else if (this.state === "talking") {
       this.drawFx(ctx, "bubble_small_music", this.x + 38, headTop + 9, this.fxTime);
+    } else if (this.state === "working" || this.state === "working_scheduled") {
+      this.drawWorkKindAccent(ctx, headTop);
     }
+  }
+
+  drawWorkKindAccent(ctx, headTop) {
+    const config = workKindConfig(this.workKind);
+    if (!config) return;
+    const accent = config.accent || "";
+    if (accent === "clock") {
+      this.drawFx(ctx, "clock", this.x + 37, headTop + 7, this.fxTime);
+    } else if (accent === "flash") {
+      this.drawFx(ctx, "flash", this.x - 34, headTop + 10, this.fxTime);
+      if (config.badge && this.laneCount >= 2) {
+        this.drawLaneBadge(ctx, this.x + 33, headTop + 4, this.laneCount);
+      }
+    } else if (accent === "sparkle") {
+      this.drawFx(ctx, "sparkle", this.x - 34, headTop + 22, this.fxTime);
+      this.drawFx(ctx, "sparkle", this.x + 33, headTop + 5, this.fxTime + 0.22);
+    } else if (accent === "envelope") {
+      const bob = Math.sin(this.fxTime * 4) * 2.5;
+      this.drawFx(ctx, "envelope", this.x + 2, headTop - 2 + bob, this.fxTime);
+    } else if (accent === "moon") {
+      this.drawFx(ctx, "moon", this.x + 37, headTop + 7, this.fxTime);
+    }
+  }
+
+  drawLaneBadge(ctx, x, y, count) {
+    const text = `×${count}`;
+    const options = { fontSize: 8, scale: 1, bold: true, bitmap: false };
+    const width = measurePixelText(text, options) + 6;
+    const height = 12;
+    const left = Math.round(x - width / 2);
+    const top = Math.round(y - height / 2);
+    ctx.save();
+    ctx.fillStyle = "rgba(40, 24, 18, 0.72)";
+    ctx.fillRect(left, top, width, height);
+    ctx.fillStyle = "#fbf0e4";
+    ctx.fillRect(left + 1, top + 1, width - 2, height - 2);
+    drawPixelText(ctx, text, Math.round(x), Math.round(y), {
+      ...options,
+      align: "center",
+      baseline: "middle",
+      color: "#a84e1f",
+    });
+    ctx.restore();
   }
 
   drawFx(ctx, name, x, y, time) {
@@ -802,7 +1059,8 @@ export class ActorManager {
 
   // Runtime events (tool activity, heartbeats, cron work) keep the displayed
   // state alive; without them the actor decays to sleeping.
-  noteActivity(id, ctx = "", tool = "") {
+  // extra.laneCount (from busy polling) feeds the workers ×N badge.
+  noteActivity(id, ctx = "", tool = "", extra = {}) {
     const actor = this.get(id);
     if (!actor) return;
     actor.noteActivity();
@@ -820,10 +1078,15 @@ export class ActorManager {
       // Unknown context but the runtime is clearly doing something.
       actor.setState("working_scheduled");
     }
+    const kind = workKindFromContext(context);
+    if (kind) actor.setWorkKind(kind);
     const contextLabel = labelForContext(context);
     if (contextLabel) actor.setContextLabel(contextLabel);
     const label = labelForTool(tool);
     if (label) actor.setActivityLabel(label);
+    if (Number.isFinite(extra.laneCount)) {
+      actor.laneCount = Math.max(0, Math.floor(extra.laneCount));
+    }
   }
 
   update(deltaSeconds) {
@@ -938,4 +1201,4 @@ export class ActorManager {
   }
 }
 
-export { normalizeState, findPath };
+export { normalizeState, findPath, WORK_KINDS };

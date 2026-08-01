@@ -67,7 +67,9 @@ export class LiveClient {
         if (lanes.includes("chat")) ctx = "chat";
         else if (lanes.includes("background-worker")) ctx = "workers";
         else if (lanes.includes("inbox")) ctx = "inbox:busy";
-        this.actors.noteActivity(anima.name, ctx);
+        this.actors.noteActivity(anima.name, ctx, "", {
+          laneCount: (busy.lanes || []).length,
+        });
       }
     };
     poll();
@@ -168,8 +170,10 @@ export class LiveClient {
       // Fires when a cron task finishes. Command-type crons emit no tool
       // activity while running, so this is the visible signal that the anima
       // is doing scheduled work; the state decays back to sleeping later.
+      // Brief success burst first, then fall into the cron workKind display.
       const name = data.name;
       if (name && !this.actors.isHuman(name)) {
+        this.actors.get(name)?.playBurst();
         this.actors.noteActivity(name, "cron:done");
       }
       return;

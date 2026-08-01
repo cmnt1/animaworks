@@ -1,4 +1,5 @@
 import { drawPixelText, measurePixelText } from "./pixel-text.js";
+import { WORK_KINDS } from "./actors.js";
 
 const COLLISION_PADDING = 2;
 const BUBBLE_NAME_GAP = 8;
@@ -265,6 +266,7 @@ export class SceneRenderer {
     this.drawPaletteUnifier();
     this.drawVignette();
     this.applyUnifiedTone();
+    this.drawWorkKindLegend();
   }
 
   drawBackgroundMode(actors, director) {
@@ -321,6 +323,7 @@ export class SceneRenderer {
     this.drawPaletteUnifier();
     this.drawVignette();
     this.applyUnifiedTone();
+    this.drawWorkKindLegend();
   }
 
   deskOcclusionRect(actor) {
@@ -1324,6 +1327,50 @@ export class SceneRenderer {
       shadow: "#2d1b14",
       shadowX: 1,
       shadowY: 1,
+    });
+    ctx.restore();
+  }
+
+  // Color chips + short labels for work kinds (colors from WORK_KINDS only).
+  drawWorkKindLegend() {
+    const entries = Object.entries(WORK_KINDS)
+      .filter(([, config]) => config.legend)
+      .map(([key, config]) => ({ key, label: config.legend, color: config.border }));
+    if (!entries.length) return;
+    const textOptions = { fontSize: 8, scale: 1, bold: true, bitmap: false };
+    const chip = 6;
+    const gap = 4;
+    const rowH = 12;
+    const padX = 6;
+    const padY = 5;
+    let maxLabelW = 0;
+    for (const entry of entries) {
+      maxLabelW = Math.max(maxLabelW, measurePixelText(entry.label, textOptions));
+    }
+    const innerW = chip + 4 + maxLabelW;
+    const width = padX * 2 + innerW;
+    const height = padY * 2 + entries.length * rowH - 2;
+    const x = 8;
+    const y = this.canvas.height - height - 8;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.fillStyle = "rgba(30, 20, 16, 0.55)";
+    ctx.fillRect(x, y, width, height);
+    ctx.fillStyle = "rgba(251, 240, 228, 0.18)";
+    ctx.fillRect(x + 1, y + 1, width - 2, height - 2);
+    entries.forEach((entry, index) => {
+      const rowY = y + padY + index * rowH;
+      const chipX = x + padX;
+      const chipY = rowY + 1;
+      ctx.fillStyle = "#2a1a14";
+      ctx.fillRect(chipX - 1, chipY - 1, chip + 2, chip + 2);
+      ctx.fillStyle = entry.color;
+      ctx.fillRect(chipX, chipY, chip, chip);
+      drawPixelText(ctx, entry.label, chipX + chip + 4, rowY + 5, {
+        ...textOptions,
+        color: "#f5e6d0",
+        baseline: "middle",
+      });
     });
     ctx.restore();
   }
