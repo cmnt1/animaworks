@@ -667,6 +667,107 @@ class TestEventConversion:
         tracker.update_from_usage.assert_called_once_with(done["usage"])
 
     @pytest.mark.asyncio
+    async def test_usage_update_camel_case_sets_tracker_from_last_response(
+        self, executor: GrokCLIExecutor
+    ):
+        """Last usage_update (camelCase) drives context ratio, not cumulative usage."""
+        updates = [
+            {
+                "method": "session/update",
+                "params": {
+                    "update": {
+                        "sessionUpdate": "usage_update",
+                        "usage": {
+                            "inputTokens": 14588,
+                            "outputTokens": 100,
+                            "cachedReadTokens": 5376,
+                            "cachedWriteTokens": 0,
+                        },
+                    }
+                },
+            },
+            {
+                "method": "session/update",
+                "params": {
+                    "update": {
+                        "sessionUpdate": "agent_message_chunk",
+                        "content": {"type": "text", "text": "hi"},
+                    }
+                },
+            },
+            {
+                "method": "session/update",
+                "params": {
+                    "update": {
+                        "sessionUpdate": "usage_update",
+                        "usage": {
+                            "inputTokens": 272,
+                            "outputTokens": 50,
+                            "thoughtTokens": 10,
+                            "cachedReadTokens": 19840,
+                            "cachedWriteTokens": 10,
+                            "totalTokens": 20172,
+                        },
+                    }
+                },
+            },
+        ]
+        tracker = ContextTracker(model="grok/grok-4.5")
+        # Cumulative PromptUsage is intentionally much larger than last response.
+        proc = _FakeProc(
+            _success_events(
+                updates=updates,
+                usage={"inputTokens": 40211, "outputTokens": 211, "cachedReadTokens": 0},
+            )
+        )
+        events = await _stream(executor, proc, tracker=tracker)
+
+        # Cost log usage remains cumulative.
+        assert events[-1]["usage"]["input_tokens"] == 40211
+        # Context ring uses last usage_update: input + cachedRead + cachedWrite.
+        expected_tokens = 272 + 19840 + 10
+        assert tracker.usage_ratio == pytest.approx(expected_tokens / tracker.context_window)
+
+    @pytest.mark.asyncio
+    async def test_usage_update_snake_case_fields(self, executor: GrokCLIExecutor):
+        """usage_update accepts snake_case field names (nested or flat)."""
+        updates = [
+            {
+                "method": "session/update",
+                "params": {
+                    "update": {
+                        "sessionUpdate": "usage_update",
+                        "input_tokens": 100,
+                        "output_tokens": 5,
+                        "cache_read_input_tokens": 200,
+                        "cache_creation_input_tokens": 50,
+                    }
+                },
+            },
+        ]
+        tracker = ContextTracker(model="grok/grok-4.5")
+        proc = _FakeProc(_success_events(updates=updates))
+        await _stream(executor, proc, tracker=tracker)
+        expected_tokens = 100 + 200 + 50
+        assert tracker.usage_ratio == pytest.approx(expected_tokens / tracker.context_window)
+
+    @pytest.mark.asyncio
+    async def test_no_usage_update_falls_back_to_cumulative_usage(
+        self, executor: GrokCLIExecutor
+    ):
+        """Without usage_update, tracker still uses cumulative PromptUsage."""
+        tracker = MagicMock()
+        proc = _FakeProc(
+            _success_events(
+                usage={"inputTokens": 101, "outputTokens": 9, "cachedReadTokens": 80},
+            )
+        )
+        events = await _stream(executor, proc, tracker=tracker)
+        done = events[-1]
+        tracker.update_from_usage.assert_called_once_with(done["usage"])
+        tracker.update_from_message_start.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_failed_tool_update(self, executor: GrokCLIExecutor):
         updates = [
             {
