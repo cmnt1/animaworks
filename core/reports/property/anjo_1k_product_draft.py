@@ -272,8 +272,7 @@ def validate_minimini_snapshot(data: dict) -> dict:
             detail_stale = enriched.get("stale", 0)
             detail_counts = (detail_fetched, detail_cached, detail_failed, detail_stale)
             detail_counts_valid = all(
-                isinstance(value, int) and not isinstance(value, bool) and value >= 0
-                for value in detail_counts
+                isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in detail_counts
             )
             if not detail_counts_valid:
                 reasons.append("detail_enrichment_counts_invalid")
@@ -284,9 +283,7 @@ def validate_minimini_snapshot(data: dict) -> dict:
                     reasons.append(f"detail_cache_stale={detail_stale}")
                 if isinstance(listing_count, int) and not isinstance(listing_count, bool):
                     if detail_fetched + detail_cached != listing_count:
-                        reasons.append(
-                            f"detail_coverage_mismatch={detail_fetched}+{detail_cached}/{listing_count}"
-                        )
+                        reasons.append(f"detail_coverage_mismatch={detail_fetched}+{detail_cached}/{listing_count}")
 
     return {
         "ok": not reasons,
