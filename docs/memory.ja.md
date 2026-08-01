@@ -230,6 +230,8 @@ Cowan (2005) の知見に従い、ワーキングメモリを「活性化され�
 
 この gate は「モデルに注意書きを渡す」だけではなく、実行直前のチェックとして働く。外部連携や記憶書き込みの安全性は、priming gate の `require_search_before_action` と action memory gate の二段構えで担保する。
 
+失敗時の扱い（ルール未ヒット・検索失敗・閾値未満）は `config.action_gate.fail_mode`（`open` / `middle` / `close`）で段階制御する。既定は `open`（従来の fail-open）。移行手順は `docs/specs/pi-fix3-action-gate-fail-mode.md` を参照。
+
 ---
 
 ## 拡散活性化による記憶検索
