@@ -190,11 +190,16 @@ export function renderGroupDetail(container, group, opts = {}) {
       openBadge +
       `<span class="activity-group-count">${t("activity.count_items", { count })}</span>`;
 
-    const contexts = new Set((group.events || []).map((evt) => evt.ctx).filter(Boolean));
-    if (contexts.size === 1) {
-      const ctx = contexts.values().next().value;
-      decorateContextElement(header, ctx);
-      const contextBadge = createContextBadge(ctx);
+    // Prefer group-level ctx (set by ctx-aware grouping); fall back to
+    // a unanimous event ctx so legacy groups without group.ctx still badge.
+    let headerCtx = typeof group.ctx === "string" && group.ctx.trim() ? group.ctx : "";
+    if (!headerCtx) {
+      const contexts = new Set((group.events || []).map((evt) => evt.ctx).filter(Boolean));
+      if (contexts.size === 1) headerCtx = contexts.values().next().value;
+    }
+    if (headerCtx) {
+      decorateContextElement(header, headerCtx);
+      const contextBadge = createContextBadge(headerCtx);
       if (contextBadge) header.querySelector(".activity-group-label")?.after(contextBadge);
     }
   }
