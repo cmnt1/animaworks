@@ -10,6 +10,7 @@ import py_compile
 import re
 import runpy
 import shutil
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -34,6 +35,8 @@ TASK_CODE = "PTY-ANJO-1K-DAILY"
 TASK_NAME = "安城市1K賃貸 市場動向 日次レポート"
 SLUG_PREFIX = "anjo-1k"
 DISCORD_THREAD_ID = "1491411026263146658"
+DISCORD_PARENT_CHANNEL_ID = "1489903551030493296"
+ANIMAWORKS_TOOL = Path(r"E:\OneDriveBiz\Tools\General\animaworks\.venv\Scripts\animaworks-tool.exe")
 SCRAPE_STATUS_TABLE = "dbo.T_Suumo_Scrape_Status"
 TARGET_CITY_ID = 1
 SQM_UNIT_PRICE_CUTOFF = "2026-06-26"
@@ -223,6 +226,168 @@ def get_prev_minimini_count(prev_date: str) -> int | None:
     return None
 
 
+def validate_minimini_snapshot(data: dict) -> dict:
+    """Return the completion gate for the current minimini listing snapshot."""
+    snapshot = data.get("minimini_url_snapshot")
+    reasons: list[str] = []
+    if not isinstance(snapshot, dict):
+        snapshot = {}
+        reasons.append("minimini_url_snapshot_missing")
+
+    fetch_status = snapshot.get("fetch_status")
+    if fetch_status != "success":
+        reasons.append(f"fetch_status={fetch_status or 'missing'}")
+
+    listing_count = snapshot.get("listing_count")
+    if isinstance(listing_count, bool) or not isinstance(listing_count, int) or listing_count < 0:
+        reasons.append("listing_count_missing_or_invalid")
+
+    listings = snapshot.get("listings")
+    room_count = None
+    rooms_count = None
+    detail_fetched = None
+    detail_cached = None
+    detail_failed = None
+    detail_stale = None
+    if not isinstance(listings, dict):
+        reasons.append("listings_missing")
+    else:
+        room_count = listings.get("room_count")
+        rooms = listings.get("rooms")
+        rooms_count = len(rooms) if isinstance(rooms, list) else None
+        if rooms_count is None:
+            reasons.append("listings_rooms_missing")
+        if isinstance(listing_count, int) and not isinstance(listing_count, bool):
+            if room_count != listing_count:
+                reasons.append(f"room_count_mismatch={room_count}/{listing_count}")
+            if rooms_count != listing_count:
+                reasons.append(f"rooms_length_mismatch={rooms_count}/{listing_count}")
+        enriched = listings.get("parking_enriched")
+        if not isinstance(enriched, dict):
+            reasons.append("detail_enrichment_missing")
+        else:
+            detail_fetched = enriched.get("fetched", 0)
+            detail_cached = enriched.get("cached", 0)
+            detail_failed = enriched.get("failed", 0)
+            detail_stale = enriched.get("stale", 0)
+            detail_counts = (detail_fetched, detail_cached, detail_failed, detail_stale)
+            detail_counts_valid = all(
+                isinstance(value, int) and not isinstance(value, bool) and value >= 0
+                for value in detail_counts
+            )
+            if not detail_counts_valid:
+                reasons.append("detail_enrichment_counts_invalid")
+            else:
+                if detail_failed != 0:
+                    reasons.append(f"detail_fetch_failed={detail_failed}")
+                if detail_stale != 0:
+                    reasons.append(f"detail_cache_stale={detail_stale}")
+                if isinstance(listing_count, int) and not isinstance(listing_count, bool):
+                    if detail_fetched + detail_cached != listing_count:
+                        reasons.append(
+                            f"detail_coverage_mismatch={detail_fetched}+{detail_cached}/{listing_count}"
+                        )
+
+    return {
+        "ok": not reasons,
+        "fetch_status": fetch_status,
+        "listing_count": listing_count,
+        "room_count": room_count,
+        "rooms_count": rooms_count,
+        "detail_fetched": detail_fetched,
+        "detail_cached": detail_cached,
+        "detail_failed": detail_failed,
+        "detail_stale": detail_stale,
+        "fetched_at": snapshot.get("fetched_at"),
+        "url": snapshot.get("url"),
+        "error": snapshot.get("error") or snapshot.get("listings_error"),
+        "reasons": reasons,
+    }
+
+
+def send_minimini_unavailable_notification(
+    *,
+    code: str,
+    report_date: str,
+    report_path: Path,
+    source_json: Path,
+    gate: dict,
+    task_results_dir: Path,
+) -> dict:
+    """Post one deterministic Discord warning per report date when the gate blocks."""
+    marker = task_results_dir / f"anjo-1k-minimini-unavailable-{report_date.replace('-', '')}.json"
+    if marker.exists():
+        try:
+            previous = json.loads(marker.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError):
+            previous = {}
+        if previous.get("status") in {"ok", "verified_existing"}:
+            return {
+                "status": "verified_existing",
+                "marker_path": str(marker),
+                "message_id": previous.get("message_id"),
+            }
+
+    message = (
+        f"【取得未完了 / 完了保留】{code} 安城市1K賃貸 市場動向 日次レポート（{report_date}）は、"
+        "minimini掲載一覧を取得できていないため、Products DBを完了に更新しません。\n\n"
+        f"- fetch_status: {gate.get('fetch_status')}\n"
+        f"- listing_count: {gate.get('listing_count')}\n"
+        f"- error: {gate.get('error') or '-'}\n"
+        f"- report: {report_path}\n"
+        f"- source JSON: {source_json}\n"
+        "一覧取得・付随データ反映・検証が完了した後に、あらためて完了報告します。"
+    )
+    if not ANIMAWORKS_TOOL.exists():
+        result = {
+            "status": "blocked",
+            "reason": f"animaworks-tool not found: {ANIMAWORKS_TOOL}",
+            "message": message,
+        }
+    else:
+        env = os.environ.copy()
+        proc = subprocess.run(
+            [
+                str(ANIMAWORKS_TOOL),
+                "discord",
+                "send",
+                DISCORD_PARENT_CHANNEL_ID,
+                message,
+                "--thread-id",
+                DISCORD_THREAD_ID,
+            ],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            env=env,
+            timeout=30,
+        )
+        result = {
+            "status": "ok" if proc.returncode == 0 else "blocked",
+            "returncode": proc.returncode,
+            "stdout": proc.stdout.strip(),
+            "stderr": proc.stderr.strip(),
+            "channel_id": DISCORD_PARENT_CHANNEL_ID,
+            "thread_id": DISCORD_THREAD_ID,
+        }
+        match = re.search(r"id:\s*(\d+)", proc.stdout)
+        if match:
+            result["message_id"] = match.group(1)
+
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker_payload = {
+        **result,
+        "reported_at": datetime.now(JST).replace(microsecond=0).isoformat(),
+        "code": code,
+        "report_date": report_date,
+        "gate": gate,
+        "marker_path": str(marker),
+    }
+    marker.write_text(json.dumps(marker_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return marker_payload
+
+
 def build_comments(data: dict) -> list[str]:
     lc = data["listing_count"]
     rent = data["rent"]
@@ -409,6 +574,7 @@ def render_markdown(
     minimini_count = minimini.get("listing_count")
     minimini_summary_line = ""
     minimini_section = ""
+    minimini_gate = validate_minimini_snapshot(data)
     if minimini_count is not None:
         if prev_minimini_count is not None:
             diff = int(minimini_count) - int(prev_minimini_count)
@@ -427,9 +593,32 @@ def render_markdown(
 | 取得URL | {minimini.get("url", "-")} |
 | HTTPステータス | {minimini.get("http_status", "-")} |
 {build_minimini_listing_section(minimini)}"""
+    else:
+        minimini_summary_line = "\n- minimini掲載一覧: **取得未完了（完了保留）**"
+        minimini_section = f"""
+## minimini掲載状況
+
+> [!warning] 取得未完了
+> minimini掲載一覧を取得できていないため、このレポートは完了に更新できません。
+
+| 項目 | 値 |
+|---|---|
+| 取得状態 | {minimini.get("fetch_status", "-")} |
+| 取得日時 | {minimini.get("fetched_at", "-")} |
+| 取得URL | {minimini.get("url", "-")} |
+| HTTPステータス | {minimini.get("http_status", "-")} |
+| エラー | {minimini.get("error") or minimini.get("listings_error") or "-"} |
+"""
 
     # ROOF TREE (own-property) section
     roof_summary_line, roof_section = build_roof_tree_section(data)
+
+    review_request = (
+        f"Sakuraはこの下書きを確認し、問題がなければ frontmatter の `status` を `完了`、"
+        f"`submitted` を `{d}` に更新したうえで、Discordスレッド `{DISCORD_THREAD_ID}` に完成報告してください。"
+        if minimini_gate["ok"]
+        else "minimini掲載一覧が取得未完了のため、frontmatterのstatusを完了に更新しないでください。"
+    )
 
     markdown = f"""---
 type: product
@@ -501,7 +690,7 @@ formal_evidence_path: {evidence_path}
 - データ期間: {meta.get("data_range", {}).get("min_date")} - {meta.get("data_range", {}).get("max_date")}
 
 ## レビュー依頼
-Sakuraはこの下書きを確認し、問題がなければ frontmatter の `status` を `完了`、`submitted` を `{d}` に更新したうえで、Discordスレッド `{DISCORD_THREAD_ID}` に完成報告してください。
+{review_request}
 """
 
     if use_sqm_unit_price:
@@ -528,6 +717,11 @@ def write_evidence(
     script_provenance = script_provenance or script_preflight()
     fm = read_frontmatter(out_md)
     copied_digest = sha256_file(copy_json) if copy_json.exists() else ""
+    try:
+        source_data = json.loads(source_json.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        source_data = {}
+    minimini_gate = validate_minimini_snapshot(source_data)
     checks = {
         "report_exists": out_md.exists(),
         "data_copy_exists": copy_json.exists(),
@@ -543,6 +737,7 @@ def write_evidence(
         "assignee_hikaru": fm.get("assignee") == "hikaru",
         "reviewer_sakura": fm.get("reviewer") == "sakura",
         "script_preflight_ok": bool(script_provenance.get("ok")),
+        "minimini_available": bool(minimini_gate.get("ok")),
     }
     from core.task_closure import build_task_closure
 
@@ -588,6 +783,7 @@ def write_evidence(
             )
         },
         "read_after_write_checks": checks,
+        "minimini_completion_gate": minimini_gate,
         "discord_thread_id": DISCORD_THREAD_ID,
         "script_path": script_provenance.get("script_path"),
         "script_sha256": script_provenance.get("script_sha256"),
@@ -743,6 +939,20 @@ def main(argv: list[str] | None = None) -> int:
         task_results_dir=task_results_dir,
         script_provenance=script_provenance,
     )
+    if not evidence["minimini_completion_gate"]["ok"]:
+        notification = send_minimini_unavailable_notification(
+            code=code,
+            report_date=report_date,
+            report_path=out_md,
+            source_json=source_json,
+            gate=evidence["minimini_completion_gate"],
+            task_results_dir=task_results_dir,
+        )
+        evidence["minimini_notification"] = notification
+        Path(evidence["evidence_path"]).write_text(
+            json.dumps(evidence, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
     print(json.dumps(evidence, ensure_ascii=False))
     return 0 if evidence["status"] == "done" else 1
 

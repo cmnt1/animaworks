@@ -1,4 +1,6 @@
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from core.reports.property import anjo_1k_product_draft as report
 
@@ -24,7 +26,24 @@ def test_write_evidence_requires_product_and_data_copy(tmp_path: Path) -> None:
     data_json = tmp_path / "data" / "P-00001_anjo-1k-20260612_data.json"
     source_json = tmp_path / "suumo" / "anjo_1k_market_metrics_20260612.json"
 
-    write_text(data_json, '{"latest_date": "2026-06-12"}\n')
+    write_text(
+        data_json,
+        json.dumps(
+            {
+                "latest_date": "2026-06-12",
+                "minimini_url_snapshot": {
+                    "fetch_status": "success",
+                    "listing_count": 1,
+                    "listings": {
+                        "room_count": 1,
+                        "rooms": [{"detail_url": "https://example.com/1"}],
+                        "parking_enriched": {"fetched": 1, "failed": 0, "cached": 0, "stale": 0},
+                    },
+                },
+            }
+        )
+        + "\n",
+    )
     write_text(source_json, data_json.read_text(encoding="utf-8"))
     digest = report.sha256_file(source_json)
     write_text(
@@ -62,8 +81,62 @@ reviewer: sakura
     assert evidence["script_sha256"] == provenance["script_sha256"]
     assert evidence["script_py_compile_ok"] is True
     assert evidence["read_after_write_checks"]["script_preflight_ok"] is True
+    assert evidence["read_after_write_checks"]["minimini_available"] is True
     assert evidence["task_closure"]["can_submit"] is True
     assert evidence["task_closure"]["acceptance_checks"]
+
+
+def test_minimini_gate_blocks_failed_or_incomplete_snapshot() -> None:
+    gate = report.validate_minimini_snapshot(
+        {
+            "minimini_url_snapshot": {
+                "fetch_status": "failed",
+                "listing_count": None,
+                "error": "No listing-count pattern matched",
+                "listings": {"room_count": 0, "rooms": []},
+            }
+        }
+    )
+
+    assert gate["ok"] is False
+    assert "fetch_status=failed" in gate["reasons"]
+    assert "listing_count_missing_or_invalid" in gate["reasons"]
+
+
+def test_minimini_unavailable_notification_is_sent_once(tmp_path: Path, monkeypatch) -> None:
+    fake_tool = tmp_path / "animaworks-tool.exe"
+    fake_tool.write_text("", encoding="utf-8")
+    monkeypatch.setattr(report, "ANIMAWORKS_TOOL", fake_tool)
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout="Sent (id: 123456789)", stderr="")
+
+    monkeypatch.setattr(report.subprocess, "run", fake_run)
+    kwargs = {
+        "code": "P-00001",
+        "report_date": "2026-06-12",
+        "report_path": tmp_path / "report.md",
+        "source_json": tmp_path / "source.json",
+        "gate": {
+            "ok": False,
+            "fetch_status": "failed",
+            "listing_count": None,
+            "error": "recaptcha challenge",
+            "reasons": ["fetch_status=failed"],
+        },
+        "task_results_dir": tmp_path / "task_results",
+    }
+
+    first = report.send_minimini_unavailable_notification(**kwargs)
+    second = report.send_minimini_unavailable_notification(**kwargs)
+
+    assert first["status"] == "ok"
+    assert first["message_id"] == "123456789"
+    assert second["status"] == "verified_existing"
+    assert len(calls) == 1
+    assert any("取得未完了" in part for part in calls[0])
 
 
 def test_get_prev_minimini_count_ignores_untrusted_patterns(tmp_path: Path, monkeypatch) -> None:
