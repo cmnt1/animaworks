@@ -8,20 +8,23 @@ from __future__ import annotations
 # See LICENSE for the full license text.
 
 
-"""Mode S security checks and output size guards.
+"""Mode S security checks, injection audit logging, and output size guards.
 
-Pure functions with no framework state — leaf module in the dependency graph.
+Helpers have no executor state; this remains a leaf module in the dependency graph.
 """
 
+import json
 import logging
 import re
 import shlex
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from core.paths import get_data_dir
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
+injection_logger = logging.getLogger("animaworks.security.sdk_bash_injection")
 
 
 # ── Mode S security ──────────────────────────────────────────
@@ -152,6 +155,7 @@ def _check_a1_bash_command(
     anima_dir: Path,
     *,
     superuser: bool = False,
+    trigger: str = "unknown",
 ) -> str | None:
     """Check bash commands against blocklist patterns and file operation violations.
 
@@ -169,9 +173,27 @@ def _check_a1_bash_command(
 
     cache = GlobalPermissionsCache.get()
 
-    # NOTE: injection_re is NOT checked here.  Mode S uses Claude Code's
-    # native Bash tool which legitimately requires $VAR, $(...), `;`, etc.
-    # Injection patterns are only enforced on the ToolHandler path (Mode A/B).
+    # Mode S legitimately uses shell composition, so injection detection is
+    # introduced in two phases.  The default ``log`` mode collects one week of
+    # false-positive evidence; ``enforce`` can then be enabled by config only.
+    # The deliberately narrow default pattern detects semicolons/newlines but
+    # leaves pipes, &&, $VAR, $(), and backticks available to the SDK.
+    injection_mode = "log"
+    if cache.loaded and cache.config is not None:
+        injection_mode = cache.config.sdk_bash_injection.mode
+    inj_re = cache.injection_re if cache.loaded else None
+    injection_match = inj_re.search(command) if inj_re and injection_mode != "off" else None
+    if injection_match is not None:
+        pattern_name = _matching_injection_pattern(command, cache.config)
+        _log_sdk_bash_injection_hit(
+            command,
+            anima_dir,
+            pattern_name=pattern_name,
+            trigger=trigger,
+            mode=injection_mode,
+        )
+        if injection_mode == "enforce":
+            return f"Command contains injection pattern: {pattern_name}"
 
     if cache.loaded:
         for pattern, reason in cache.blocked_patterns:
@@ -215,6 +237,24 @@ def _check_a1_bash_command(
             if seg_cmd_base not in allowed:
                 return f"Command '{seg_cmd_base}' not in allowed list"
 
+    # Path traversal has low false-positive risk and is enforced even during
+    # the injection dry-run phase, matching ToolHandler's Layer 5 behavior.
+    segments = [s.strip() for s in re.split(r"\|(?!\|)|\&\&|\|\|", command) if s.strip()] or [command]
+    for segment in segments:
+        try:
+            seg_argv = shlex.split(segment)
+        except ValueError:
+            continue
+        for arg in seg_argv[1:]:
+            if ".." not in arg:
+                continue
+            try:
+                resolved = (anima_dir / arg).resolve()
+                if not resolved.is_relative_to(anima_dir.resolve()):
+                    return "Command argument resolves outside anima directory"
+            except (ValueError, OSError):
+                pass
+
     try:
         argv = shlex.split(command)
     except ValueError:
@@ -241,6 +281,46 @@ def _check_a1_bash_command(
                 pass
 
     return None
+
+
+def _matching_injection_pattern(command: str, config: Any) -> str:
+    """Return the first configured injection pattern matching *command*."""
+    if config is not None:
+        for item in config.injection_patterns:
+            try:
+                if re.search(item.pattern, command):
+                    return item.name or item.pattern
+            except re.error:
+                continue
+    return "unknown"
+
+
+def _log_sdk_bash_injection_hit(
+    command: str,
+    anima_dir: Path,
+    *,
+    pattern_name: str,
+    trigger: str,
+    mode: str,
+) -> None:
+    """Append a structured Mode S injection hit to its dedicated JSONL log."""
+    event = {
+        "timestamp": datetime.now(UTC).isoformat(),
+        "pattern_name": pattern_name,
+        "command": command[:500],
+        "anima": anima_dir.name,
+        "trigger": trigger,
+        "mode": mode,
+    }
+    line = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
+    injection_logger.warning("sdk_bash_injection_hit %s", line)
+    try:
+        log_path = get_data_dir() / "logs" / "sdk_bash_injection.jsonl"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except OSError:
+        logger.warning("Failed to write Mode S Bash injection audit log", exc_info=True)
 
 
 # ── Output guard functions ───────────────────────────────────

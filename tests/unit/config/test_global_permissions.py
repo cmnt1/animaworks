@@ -25,6 +25,7 @@ from core.config.schemas import GlobalDenyPattern
 MINIMAL_CONFIG = {
     "version": 1,
     "injection_patterns": [{"pattern": "[;\\n]", "reason": "injection"}],
+    "sdk_bash_injection": {"mode": "log"},
     "commands": {
         "deny": [
             {"pattern": "(?i)\\brm\\s+(-\\S+\\s+)*/(?!\\w)", "reason": "rm root blocked"},
@@ -121,6 +122,8 @@ class TestGlobalPermissionsCache:
         assert cache.loaded
         assert cache.injection_re is not None
         assert cache.injection_re.search(";")
+        assert cache.config is not None
+        assert cache.config.sdk_bash_injection.mode == "log"
         assert len(cache.blocked_patterns) == 2
         assert cache.blocked_patterns[0][0].search("rm -rf /")
         assert not cache.blocked_patterns[0][0].search("rm -rf /home")
@@ -162,6 +165,24 @@ class TestGlobalPermissionsCache:
         assert cache.loaded
         assert cache.injection_re is None
         assert cache.blocked_patterns == []
+
+    def test_missing_sdk_bash_injection_defaults_to_log(self, tmp_path: Path):
+        config = dict(MINIMAL_CONFIG)
+        config.pop("sdk_bash_injection")
+        fp = _write_config(tmp_path, config)
+        cache = GlobalPermissionsCache.get()
+        cache.load(fp, interactive=False)
+
+        assert cache.config is not None
+        assert cache.config.sdk_bash_injection.mode == "log"
+
+    def test_invalid_sdk_bash_injection_mode_rejected(self, tmp_path: Path):
+        config = {**MINIMAL_CONFIG, "sdk_bash_injection": {"mode": "invalid"}}
+        fp = _write_config(tmp_path, config)
+        cache = GlobalPermissionsCache.get()
+
+        with pytest.raises(ValueError):
+            cache.load(fp, interactive=False)
 
 
 # ── Integrity Check ──────────────────────────────────────────
