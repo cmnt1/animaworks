@@ -134,10 +134,17 @@ export class LiveClient {
       return;
     }
     if (type === "anima.heartbeat") {
+      // Completion event: the scheduled run just finished, drop back to idle
+      // (which then decays to sleeping without further activity).
+      const name = data.name || data.actor || data.target;
+      if (name && !this.actors.isHuman(name)) this.actors.setState(name, "idle");
       this.director.dispatch("heartbeat", data);
       return;
     }
     if (type === "anima.tool_activity") {
+      if (data.name && !this.actors.isHuman(data.name)) {
+        this.actors.noteActivity(data.name, data.ctx || data.meta?.ctx || "");
+      }
       this.handleToolActivity(data);
       return;
     }

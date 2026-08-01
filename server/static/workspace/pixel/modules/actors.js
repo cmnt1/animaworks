@@ -4,6 +4,7 @@ import { drawPixelText, measurePixelText } from "./pixel-text.js";
 const STATE_MAP = Object.freeze({
   idle: { animation: "idle", bubble: "bubble_break" },
   working: { animation: "working", bubble: "bubble_working" },
+  working_scheduled: { animation: "working", bubble: "bubble_cron" },
   thinking: { animation: "thinking", bubble: "bubble_thinking" },
   talking: { animation: "talking", bubble: "bubble_meeting" },
   reporting: { animation: "talking", bubble: "bubble_reporting" },
@@ -18,6 +19,18 @@ const COMPACT_STATUS_COLORS = Object.freeze({
   working: "#72b98e",
   success: "#e7bd5f",
   walking: "#6fa4bc",
+  sleeping: "#8f8ab8",
+});
+
+// Seconds without any runtime event before the displayed state decays toward
+// sleeping. Scheduled work keeps a longer grace because LLM turns can be
+// silent between tool calls.
+const STATE_DECAY_SECONDS = Object.freeze({
+  working_scheduled: 300,
+  working: 300,
+  thinking: 600,
+  idle: 180,
+  success: 90,
 });
 
 const NAME_TEXT_OPTIONS = Object.freeze({
@@ -32,8 +45,13 @@ function normalizeState(value) {
   const state = String(raw || "idle").toLowerCase();
   if (STATE_MAP[state]) return state;
   if (state === "not_found" || state === "stopped") return "sleeping";
+  // A running process with no observed activity is just waiting for work.
+  if (state === "running" || state === "starting") return "sleeping";
+  if (state.startsWith("cron") || state.startsWith("heartbeat") || state.startsWith("task")) {
+    return "working_scheduled";
+  }
   if (state.includes("bootstrap") || state.includes("think") || state.includes("process")) return "thinking";
-  if (state.includes("work") || state.includes("busy") || state.includes("running")) return "working";
+  if (state.includes("work") || state.includes("busy")) return "working";
   if (state.includes("error") || state.includes("fail")) return "error";
   if (state.includes("sleep") || state.includes("stop") || state.includes("inactive")) return "sleeping";
   if (state.includes("talk") || state.includes("chat")) return "talking";
@@ -189,15 +207,25 @@ export class Actor {
     this.fxTime = 0;
     this.motion = null;
     this.isSeated = true;
+    this.idleSeconds = 0;
   }
 
   setState(value) {
     this.state = normalizeState(value);
+    this.idleSeconds = 0;
     const mapping = STATE_MAP[this.state];
     this.bubble = mapping.bubble;
     if (!this.motion) {
       this.sprite.setAnimation(this.isSeated ? mapping.animation : "walk_down");
     }
+  }
+
+  noteActivity() {
+    this.idleSeconds = 0;
+  }
+
+  renderScale() {
+    return this.isSeated ? 1 : 2;
   }
 
   walk(path, speed = 120) {
@@ -237,6 +265,12 @@ export class Actor {
 
   update(deltaSeconds) {
     this.fxTime += deltaSeconds;
+    this.idleSeconds += deltaSeconds;
+    const decayLimit = STATE_DECAY_SECONDS[this.state];
+    if (decayLimit && !this.isHuman && this.isSeated && !this.motion &&
+        this.idleSeconds > decayLimit) {
+      this.setState("sleeping");
+    }
     if (this.bubbleOverrideRemaining > 0) {
       this.bubbleOverrideRemaining = Math.max(0, this.bubbleOverrideRemaining - deltaSeconds);
       if (this.bubbleOverrideRemaining === 0) this.bubbleOverride = "";
@@ -302,6 +336,7 @@ export class Actor {
 
   draw(ctx) {
     const spriteY = this.spriteY();
+    const scale = this.renderScale();
     ctx.save();
     ctx.globalAlpha = 0.18;
     ctx.fillStyle = "#1b1218";
@@ -309,15 +344,15 @@ export class Actor {
     ctx.ellipse(
       Math.round(this.x),
       Math.round(spriteY - 2),
-      Math.max(18, Math.round(this.sprite.frameW * (this.isSeated ? 0.22 : 0.27))),
-      Math.max(5, Math.round(this.sprite.frameH * 0.065)),
+      Math.max(18, Math.round(this.sprite.frameW * scale * (this.isSeated ? 0.22 : 0.27))),
+      Math.max(5, Math.round(this.sprite.frameH * scale * 0.065)),
       0,
       0,
       Math.PI * 2,
     );
     ctx.fill();
     ctx.restore();
-    this.sprite.draw(ctx, this.x, spriteY, 1);
+    this.sprite.draw(ctx, this.x, spriteY, scale);
   }
 
   drawStatusOverlay(ctx, options = {}) {
@@ -456,7 +491,8 @@ export class Actor {
       sleeping: 28,
       error: 6,
     }[this.state] || 10;
-    return spriteY - this.sprite.frameH + headInset;
+    const scale = this.renderScale();
+    return spriteY - (this.sprite.frameH - headInset) * scale;
   }
 
   drawStateAccent(ctx, spriteY) {
@@ -606,6 +642,21 @@ export class ActorManager {
 
   setState(id, state) {
     this.get(id)?.setState(state);
+  }
+
+  // Runtime events (tool activity, heartbeats, cron work) keep the displayed
+  // state alive; without them the actor decays to sleeping.
+  noteActivity(id, ctx = "") {
+    const actor = this.get(id);
+    if (!actor) return;
+    actor.noteActivity();
+    const context = String(ctx || "").toLowerCase();
+    const chatty = ["thinking", "talking", "reporting", "error"].includes(actor.state);
+    if (context.startsWith("cron") || context.startsWith("task") || context === "heartbeat") {
+      if (!chatty) actor.setState("working_scheduled");
+    } else if (context === "chat" || context === "inbox") {
+      if (actor.state === "sleeping" || actor.state === "idle") actor.setState("thinking");
+    }
   }
 
   update(deltaSeconds) {
