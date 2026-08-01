@@ -49,7 +49,7 @@ export class LiveClient {
   // Long-running silent work (e.g. a cron delegated to an external coding
   // engine) emits no tool events for minutes. The busy sidecar in /api/animas
   // still reports it, so poll periodically and keep those actors awake.
-  startBusyPolling(intervalSeconds = 60) {
+  startBusyPolling(intervalSeconds = 30) {
     if (this.busyPollTimer) return;
     const poll = async () => {
       if (this.stopped) return;
