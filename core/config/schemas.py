@@ -395,6 +395,21 @@ class MemoryConfig(BaseModel):
     neo4j_edge_types: list[Neo4jEdgeTypeConfig] = Field(default_factory=list)
 
 
+class ActionGateConfig(BaseModel):
+    """Action Memory Gate failure mode (pi-fix3).
+
+    Default is ``open`` because this fleet has frequent vector-search
+    outages (FD exhaustion, repair loops, CUDA failures). Immediate
+    fail-close would halt all external sends during infrastructure
+    incidents. Observe structured logs, then migrate open → middle → close.
+    """
+
+    fail_mode: Literal["open", "middle", "close"] = "open"
+    # Cooldown for no_matching_rule human notifications (seconds).
+    # Prevents spam while allowing re-alert so holds cannot freeze silently forever.
+    no_rule_notify_cooldown_seconds: int = Field(default=21600, ge=0)  # 6h
+
+
 class PromptConfig(BaseModel):
     """Configuration for system prompt building."""
 
@@ -1220,6 +1235,7 @@ class AnimaWorksConfig(BaseModel):
     rag: RAGConfig = RAGConfig()
     gpu: GPUConfig = GPUConfig()
     memory: MemoryConfig = MemoryConfig()
+    action_gate: ActionGateConfig = ActionGateConfig()
     skills: SkillsConfig = SkillsConfig()
     chatwork_tool: ChatworkToolConfig = ChatworkToolConfig()
     prompt: PromptConfig = PromptConfig()
@@ -1264,6 +1280,7 @@ class AnimaWorksConfig(BaseModel):
 
 
 __all__ = [
+    "ActionGateConfig",
     "ActivityLogConfig",
     "ActivityScheduleEntry",
     "AnimaDefaults",
