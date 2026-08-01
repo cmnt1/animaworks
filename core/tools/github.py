@@ -26,9 +26,11 @@ from core.tools._base import logger
 EXECUTION_PROFILE: dict[str, dict[str, object]] = {
     "issues": {"expected_seconds": 15, "background_eligible": False},
     "issue": {"expected_seconds": 10, "background_eligible": False},
-    "create-issue": {"expected_seconds": 15, "background_eligible": False},
+    # gated: requires explicit "github_create-issue" in permissions allow list.
+    "create-issue": {"expected_seconds": 15, "background_eligible": False, "gated": True},
     "prs": {"expected_seconds": 15, "background_eligible": False},
-    "create-pr": {"expected_seconds": 15, "background_eligible": False},
+    # gated: requires explicit "github_create-pr" in permissions allow list.
+    "create-pr": {"expected_seconds": 15, "background_eligible": False, "gated": True},
 }
 
 

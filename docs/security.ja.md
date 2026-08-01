@@ -151,6 +151,21 @@ ToolHandler でも Mode S でも、`permissions.global.json` の `commands.deny`
 
 **主要ファイル**: `core/tooling/handler_base.py`（`_get_injection_re`, `_get_blocked_patterns`, `_PROTECTED_FILES`）, `core/tooling/handler_perms.py`（`_check_command_permission`）, `core/config/global_permissions.py`（`permissions.global.json`）, `core/execution/_sdk_security.py`（Mode S Bash）
 
+#### 外部ツールのアクションゲート（`external_tools.allow`）
+
+各ツールの `EXECUTION_PROFILE` で `gated: True` の副作用アクションは、`permissions.json` の `external_tools.allow` にアクションキーを明示する必要がある。`allow_all: true` だけではゲートは自動解除されない。
+
+| ツール | gated アクション（allow キー） |
+|--------|-------------------------------|
+| gmail | `gmail_send` |
+| slack | `slack_send`, `slack_channel_post`, `slack_channel_update` |
+| chatwork | `chatwork_send` |
+| discord | `discord_send`, `discord_channel_post` |
+| github | `github_create-issue`, `github_create-pr` |
+| machine | `machine_run` |
+
+判定: `core/tooling/permissions.is_action_gated` と dispatch 時チェック。稼働中 Anima 向け移行は `docs/specs/pi-fix2-gated-tools-migration.md` と `scripts/migrate_pi_fix2_gated_allows.py`（既定 dry-run）を参照。
+
 ---
 
 ### 4. ファイルアクセス制御 — デフォルトでサンドボックス

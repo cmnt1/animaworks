@@ -151,6 +151,21 @@ Command arguments are checked for path traversal patterns (`../`).
 
 **Key files**: `core/tooling/handler_base.py` (`_get_injection_re`, `_get_blocked_patterns`, `_PROTECTED_FILES`), `core/tooling/handler_perms.py` (`_check_command_permission`), `core/config/global_permissions.py` (`permissions.global.json`), `core/execution/_sdk_security.py` (Mode S Bash)
 
+#### External tool action gates (`external_tools.allow`)
+
+Side-effect actions marked `gated: True` in each tool's `EXECUTION_PROFILE` require an explicit action key in `permissions.json` → `external_tools.allow`. `allow_all: true` does **not** auto-permit gated actions.
+
+| Tool | Gated actions (allow keys) |
+|------|----------------------------|
+| gmail | `gmail_send` |
+| slack | `slack_send`, `slack_channel_post`, `slack_channel_update` |
+| chatwork | `chatwork_send` |
+| discord | `discord_send`, `discord_channel_post` |
+| github | `github_create-issue`, `github_create-pr` |
+| machine | `machine_run` |
+
+Enforcement: `core/tooling/permissions.is_action_gated` + dispatch-time check. Migration for live Animas: see `docs/specs/pi-fix2-gated-tools-migration.md` and `scripts/migrate_pi_fix2_gated_allows.py` (dry-run by default).
+
 ---
 
 ### 4. File Access Control — Sandboxed by Default

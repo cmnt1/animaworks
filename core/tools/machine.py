@@ -67,7 +67,8 @@ logger = logging.getLogger("animaworks.tools.machine")
 # ── Execution Profile ─────────────────────────────────────
 
 EXECUTION_PROFILE: dict[str, dict[str, object]] = {
-    "run": {"expected_seconds": 600, "background_eligible": True},
+    # gated: requires explicit "machine_run" in permissions allow list.
+    "run": {"expected_seconds": 600, "background_eligible": True, "gated": True},
 }
 
 # ── Constants ──────────────────────────────────────────────
