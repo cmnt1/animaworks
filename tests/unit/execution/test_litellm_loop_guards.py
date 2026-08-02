@@ -174,13 +174,9 @@ class TestInLoopRetry:
             await executor.execute("test", system_prompt="sys")
         assert mock.call_args_list[0].kwargs.get("num_retries") == 0
 
-    async def test_interrupt_during_retry_backoff(
-        self, model_config, anima_dir, tool_handler, memory
-    ):
+    async def test_interrupt_during_retry_backoff(self, model_config, anima_dir, tool_handler, memory):
         interrupt_event = asyncio.Event()
-        executor = _make_executor(
-            model_config, anima_dir, tool_handler, memory, interrupt_event=interrupt_event
-        )
+        executor = _make_executor(model_config, anima_dir, tool_handler, memory, interrupt_event=interrupt_event)
 
         async def _fail_and_interrupt(**kwargs):
             interrupt_event.set()
@@ -203,7 +199,7 @@ class TestEmptyResponseRecovery:
         with patch("litellm.acompletion", mock):
             result = await executor.execute("test", system_prompt="sys")
         assert mock.call_count == 3
-        assert result.text == "(empty response)"
+        assert result.text == "Unable to generate a final response. Please try again."
         assert result.truncated is True
 
     async def test_recovers_after_reprompt(self, executor):
@@ -217,15 +213,10 @@ class TestEmptyResponseRecovery:
         assert result.truncated is False
         # The reprompt reminder was injected into the 2nd call's history
         reprompt = msg_empty_response()
-        assert any(
-            m.get("role") == "user" and reprompt in str(m.get("content"))
-            for m in _messages_of_call(mock, 1)
-        )
+        assert any(m.get("role") == "user" and reprompt in str(m.get("content")) for m in _messages_of_call(mock, 1))
 
     async def test_thinking_only_response_counts_as_empty(self, executor):
-        thinking_only = make_litellm_response(
-            content="<think>pondering...</think>", tool_calls=None
-        )
+        thinking_only = make_litellm_response(content="<think>pondering...</think>", tool_calls=None)
         final = make_litellm_response(content="Answer", tool_calls=None)
         mock = AsyncMock(side_effect=[thinking_only, final])
         with patch("litellm.acompletion", mock):
@@ -247,34 +238,24 @@ class TestRunawayGuard:
         responses.append(make_litellm_response(content="Done", tool_calls=None))
         mock = AsyncMock(side_effect=responses)
         with patch("litellm.acompletion", mock):
-            result = await executor.execute(
-                "test", system_prompt="sys", max_turns_override=8
-            )
+            result = await executor.execute("test", system_prompt="sys", max_turns_override=8)
         assert "Done" in result.text
         warning = msg_tool_loop_warning(tool_names="search_memory", count=3)
-        assert any(
-            warning in str(m.get("content"))
-            for m in _messages_of_call(mock, 3)
-        )
+        assert any(warning in str(m.get("content")) for m in _messages_of_call(mock, 3))
 
     async def test_halt_at_five_consecutive_forces_finalization(self, executor):
         responses = [self._identical_tool_resp() for _ in range(5)]
         responses.append(make_litellm_response(content="Summary of work", tool_calls=None))
         mock = AsyncMock(side_effect=responses)
         with patch("litellm.acompletion", mock):
-            result = await executor.execute(
-                "test", system_prompt="sys", max_turns_override=10
-            )
+            result = await executor.execute("test", system_prompt="sys", max_turns_override=10)
         assert mock.call_count == 6
         assert "Summary of work" in result.text
         # Final call: tools stripped, halt reminder present
         last_kwargs = mock.call_args_list[5].kwargs
         assert "tools" not in last_kwargs
         halt_msg = msg_tool_loop_halt(count=5)
-        assert any(
-            halt_msg in str(m.get("content"))
-            for m in last_kwargs["messages"]
-        )
+        assert any(halt_msg in str(m.get("content")) for m in last_kwargs["messages"])
         # Only 4 tool executions happened (the 5th batch was blocked)
         assert len(result.tool_call_records) == 4
 
@@ -284,9 +265,7 @@ class TestRunawayGuard:
         responses = [self._identical_tool_resp() for _ in range(7)]
         mock = AsyncMock(side_effect=responses)
         with patch("litellm.acompletion", mock):
-            result = await executor.execute(
-                "test", system_prompt="sys", max_turns_override=10
-            )
+            result = await executor.execute("test", system_prompt="sys", max_turns_override=10)
         # 5 identical (halt at 5th, blocked) + 1 post-halt tool call → finalize
         assert mock.call_count == 6
         assert result.truncated is True
@@ -300,16 +279,33 @@ class TestRunawayGuard:
         responses.append(make_litellm_response(content="Done", tool_calls=None))
         mock = AsyncMock(side_effect=responses)
         with patch("litellm.acompletion", mock):
-            result = await executor.execute(
-                "test", system_prompt="sys", max_turns_override=8
-            )
+            result = await executor.execute("test", system_prompt="sys", max_turns_override=8)
         assert "Done" in result.text
         warning_fragment = msg_tool_loop_warning(tool_names="search_memory", count=3)
         for i in range(5):
-            assert not any(
-                warning_fragment in str(m.get("content"))
-                for m in _messages_of_call(mock, i)
+            assert not any(warning_fragment in str(m.get("content")) for m in _messages_of_call(mock, i))
+
+    async def test_single_turn_override_is_tool_free_and_skips_other_loops(self, executor):
+        final = make_litellm_response(content="One-shot final", tool_calls=None)
+        mock = AsyncMock(side_effect=[final])
+        chaining = AsyncMock(return_value=("new system", 1))
+        with (
+            patch("litellm.acompletion", mock),
+            patch("core.execution.litellm_loop.handle_session_chaining", chaining),
+            patch("core.execution.litellm_loop.completion_gate_applies_to_trigger", return_value=True),
+            patch("core.execution.litellm_loop.gate_marker_exists", return_value=False),
+        ):
+            result = await executor.execute(
+                "test",
+                system_prompt="sys",
+                max_turns_override=1,
+                trigger="message:test",
             )
+        assert result.text == "One-shot final"
+        assert result.truncated is True
+        assert mock.call_count == 1
+        assert "tools" not in mock.call_args.kwargs
+        chaining.assert_not_awaited()
 
 
 # ── Streaming: retry only before first yield ─────────────────

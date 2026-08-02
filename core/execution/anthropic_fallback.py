@@ -40,6 +40,10 @@ from core.execution.base import (
     tool_input_save_budget,
     tool_result_save_budget,
 )
+from core.execution.loop_guards import (
+    FINAL_RESPONSE_ERROR_TEXT,
+    record_finalization_failure,
+)
 from core.execution.reminder import (
     SystemReminderQueue,
     msg_context_threshold,
@@ -277,12 +281,14 @@ class AnthropicFallbackExecutor(BaseExecutor):
         )
 
         for iteration in range(max_iterations):
+            if (iteration + 1) % 10 == 0:
+                logger.info("Anthropic tool loop progress: %d iterations", iteration + 1)
             if self._check_interrupted():
                 logger.info("Anthropic execute interrupted at iteration=%d", iteration)
                 await _close_client_quietly(client)
                 return ExecutionResult(text="[Session interrupted by user]")
 
-            is_final_iteration = max_iterations > 1 and iteration == max_iterations - 1
+            is_final_iteration = iteration == max_iterations - 1
 
             if is_final_iteration:
                 messages.append(
@@ -363,27 +369,29 @@ class AnthropicFallbackExecutor(BaseExecutor):
                     self.reminder_queue.push_sync(msg_context_threshold(ratio=ratio))
 
                 current_text = "\n".join(b.text for b in response.content if b.type == "text")
-                new_sys, chain_count = await handle_session_chaining(
-                    tracker=tracker,
-                    shortterm=shortterm,
-                    memory=self._memory,
-                    current_text=current_text,
-                    system_prompt_builder=partial(
-                        build_system_prompt,
-                        self._memory,
-                        tool_registry=self._tool_registry,
-                        personal_tools=self._personal_tools,
-                        message=prompt,
-                    ),
-                    max_chains=self._model_config.max_chains,
-                    chain_count=chain_count,
-                    session_id="anthropic-fallback",
-                    trigger="anthropic_sdk",
-                    original_prompt=prompt,
-                    accumulated_response="\n".join(all_response_text),
-                    turn_count=iteration,
-                    tool_uses=_extract_tool_uses_from_messages(messages),
-                )
+                new_sys = None
+                if not is_final_iteration:
+                    new_sys, chain_count = await handle_session_chaining(
+                        tracker=tracker,
+                        shortterm=shortterm,
+                        memory=self._memory,
+                        current_text=current_text,
+                        system_prompt_builder=partial(
+                            build_system_prompt,
+                            self._memory,
+                            tool_registry=self._tool_registry,
+                            personal_tools=self._personal_tools,
+                            message=prompt,
+                        ),
+                        max_chains=self._model_config.max_chains,
+                        chain_count=chain_count,
+                        session_id="anthropic-fallback",
+                        trigger="anthropic_sdk",
+                        original_prompt=prompt,
+                        accumulated_response="\n".join(all_response_text),
+                        turn_count=iteration,
+                        tool_uses=_extract_tool_uses_from_messages(messages),
+                    )
                 if new_sys is not None:
                     all_response_text.append(current_text)
                     system_prompt = new_sys
@@ -399,6 +407,14 @@ class AnthropicFallbackExecutor(BaseExecutor):
             if not tool_uses:
                 logger.debug("Final response received at iteration=%d", iteration)
                 final_text = "\n".join(b.text for b in response.content if b.type == "text")
+                if not final_text.strip():
+                    record_finalization_failure(
+                        self._anima_dir,
+                        mode="Anthropic fallback",
+                        reason="empty_grace_response" if is_final_iteration else "empty_final_response",
+                    )
+                    logger.error("Anthropic returned no answer at iteration=%d", iteration)
+                    final_text = FINAL_RESPONSE_ERROR_TEXT
                 all_response_text.append(final_text)
                 # ── Final drain: deliver any undelivered reminders ──
                 final_reminder = self.reminder_queue.drain_formatted()
@@ -409,6 +425,21 @@ class AnthropicFallbackExecutor(BaseExecutor):
                     text="\n".join(all_response_text),
                     tool_call_records=all_tool_records,
                     usage=usage_acc,
+                    truncated=is_final_iteration,
+                )
+            if is_final_iteration:
+                record_finalization_failure(
+                    self._anima_dir,
+                    mode="Anthropic fallback",
+                    reason="tool_call_during_grace_turn",
+                )
+                logger.error("Anthropic grace turn returned tool calls at iteration=%d", iteration)
+                await _close_client_quietly(client)
+                return ExecutionResult(
+                    text=FINAL_RESPONSE_ERROR_TEXT,
+                    tool_call_records=all_tool_records,
+                    usage=usage_acc,
+                    truncated=True,
                 )
 
             # ── Process tool calls ────────────────────────────
@@ -465,9 +496,14 @@ class AnthropicFallbackExecutor(BaseExecutor):
                     messages[-1]["content"] += "\n\n" + formatted
 
         logger.warning("Max iterations (%d) reached, returning fallback response", max_iterations)
+        record_finalization_failure(
+            self._anima_dir,
+            mode="Anthropic fallback",
+            reason="grace_turn_exhausted",
+        )
         await _close_client_quietly(client)
         return ExecutionResult(
-            text="\n".join(all_response_text) or "(max iterations reached)",
+            text=FINAL_RESPONSE_ERROR_TEXT,
             tool_call_records=all_tool_records,
             usage=usage_acc,
             truncated=True,
@@ -552,13 +588,15 @@ class AnthropicFallbackExecutor(BaseExecutor):
             executor_name="AnthropicFallback",
         ):
             for iteration in range(_MAX_ITERATIONS):
+                if (iteration + 1) % 10 == 0:
+                    logger.info("Anthropic streaming progress: %d iterations", iteration + 1)
                 if self._check_interrupted():
                     logger.info("Anthropic streaming interrupted at iteration=%d", iteration)
                     yield {"type": "text_delta", "text": "[Session interrupted by user]"}
                     yield {"type": "done", "full_text": "[Session interrupted by user]", "result_message": None}
                     return
 
-                is_final_iteration = _MAX_ITERATIONS > 1 and iteration == _MAX_ITERATIONS - 1
+                is_final_iteration = iteration == _MAX_ITERATIONS - 1
 
                 if is_final_iteration:
                     messages.append(
@@ -677,6 +715,23 @@ class AnthropicFallbackExecutor(BaseExecutor):
                         iteration,
                     )
                     break
+                if is_final_iteration:
+                    record_finalization_failure(
+                        self._anima_dir,
+                        mode="Anthropic fallback streaming",
+                        reason="tool_call_during_grace_turn",
+                    )
+                    logger.error("Anthropic streaming grace turn returned tool calls at iteration=%d", iteration)
+                    yield {"type": "text_delta", "text": FINAL_RESPONSE_ERROR_TEXT}
+                    yield {
+                        "type": "done",
+                        "full_text": FINAL_RESPONSE_ERROR_TEXT,
+                        "result_message": None,
+                        "tool_call_records": [asdict(r) for r in all_tool_records],
+                        "usage": _usage_acc_s.to_dict(),
+                        "truncated": True,
+                    }
+                    return
 
                 # ── Execute tool calls ────────────────────────
                 iteration_text = "".join(iteration_text_parts)
@@ -769,19 +824,28 @@ class AnthropicFallbackExecutor(BaseExecutor):
                     elif isinstance(last_content, str):
                         messages[-1]["content"] += "\n\n" + formatted
             else:
-                # for-else: max iterations reached without break
+                # for-else: the configured loop budget was exhausted
                 max_iterations_reached = True
                 logger.warning(
                     "Streaming max iterations (%d) reached",
                     _MAX_ITERATIONS,
                 )
 
-        full_text = "\n".join(all_response_text) or "(no response)"
+        full_text = "\n".join(all_response_text)
+        if not full_text.strip():
+            record_finalization_failure(
+                self._anima_dir,
+                mode="Anthropic fallback streaming",
+                reason="empty_grace_response",
+            )
+            logger.error("Anthropic streaming grace turn returned no answer")
+            full_text = FINAL_RESPONSE_ERROR_TEXT
+            yield {"type": "text_delta", "text": full_text}
         yield {
             "type": "done",
             "full_text": full_text,
             "result_message": None,
             "tool_call_records": [asdict(r) for r in all_tool_records],
             "usage": _usage_acc_s.to_dict(),
-            "truncated": max_iterations_reached,
+            "truncated": max_iterations_reached or is_final_iteration or full_text == FINAL_RESPONSE_ERROR_TEXT,
         }

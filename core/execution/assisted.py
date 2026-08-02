@@ -63,15 +63,19 @@ from core.execution.error_classifier import (
     provider_family_of,
 )
 from core.execution.loop_guards import (
+    FINAL_RESPONSE_ERROR_TEXT,
     LlmCallInterrupted,
     RunawayGuard,
     call_llm_with_retry,
+    record_finalization_failure,
+    record_runaway_event,
     tool_call_signature,
 )
 from core.execution.rate_guard import get_rate_guard
 from core.execution.reminder import (
     SystemReminderQueue,
     msg_empty_response,
+    msg_final_iteration,
     msg_output_truncated,
     msg_tool_loop_halt,
     msg_tool_loop_warning,
@@ -522,6 +526,8 @@ class AssistedExecutor(BaseExecutor):
 
         # ── 2. Tool-call loop ────────────────────────────────
         for iteration in range(max_iterations):
+            if (iteration + 1) % 10 == 0:
+                logger.info("Mode B progress: %d iterations", iteration + 1)
             logger.debug(
                 "Mode B iteration=%d messages=%d",
                 iteration,
@@ -655,32 +661,51 @@ class AssistedExecutor(BaseExecutor):
             # ── Runaway guard: consecutive identical tool calls ──
             _guard_decision = _runaway_guard.observe((tool_call_signature(tool_name, tool_args),))
             if _guard_decision == RunawayGuard.HALT:
-                logger.warning(
-                    "Mode B runaway tool loop halted at iteration=%d (streak=%d): %s",
+                _count = _runaway_guard.repetition_count
+                logger.error(
+                    "Mode B runaway tool loop halted at iteration=%d (count=%d): %s",
                     iteration,
-                    _runaway_guard.streak,
+                    _count,
                     tool_name,
                 )
+                record_runaway_event(
+                    self._anima_dir,
+                    decision=_guard_decision,
+                    mode="Mode B",
+                    iteration=iteration,
+                    count=_count,
+                    tool_names=[tool_name],
+                )
                 _tools_halted = True
+                _halted_final = True
                 messages.append({"role": "assistant", "content": content})
                 messages.append(
                     {
                         "role": "user",
                         "content": SystemReminderQueue.format_reminder(
-                            msg_tool_loop_halt(count=_runaway_guard.streak),
+                            msg_tool_loop_halt(count=_count),
                         ),
                     }
                 )
-                continue
+                break
             if _guard_decision == RunawayGuard.WARN:
+                _count = _runaway_guard.repetition_count
                 self.reminder_queue.push_sync(
-                    msg_tool_loop_warning(tool_names=tool_name, count=_runaway_guard.streak),
+                    msg_tool_loop_warning(tool_names=tool_name, count=_count),
                 )
                 logger.warning(
-                    "Mode B runaway tool loop warning at iteration=%d (streak=%d): %s",
+                    "Mode B runaway tool loop warning at iteration=%d (count=%d): %s",
                     iteration,
-                    _runaway_guard.streak,
+                    _count,
                     tool_name,
+                )
+                record_runaway_event(
+                    self._anima_dir,
+                    decision=_guard_decision,
+                    mode="Mode B",
+                    iteration=iteration,
+                    count=_count,
+                    tool_names=[tool_name],
                 )
 
             # ── 5. Execute tool ───────────────────────────────
@@ -744,6 +769,43 @@ class AssistedExecutor(BaseExecutor):
                 max_iterations,
             )
 
+        if max_iterations_reached or _tools_halted or _empty_exhausted:
+            grace_messages = [dict(message) for message in messages]
+            grace_messages[0] = {"role": "system", "content": system_prompt}
+            grace_messages.append(
+                {
+                    "role": "user",
+                    "content": SystemReminderQueue.format_reminder(msg_final_iteration()),
+                }
+            )
+            preflight = self._preflight_check(grace_messages)
+            grace_text = ""
+            grace_reason = "empty_grace_response"
+            if preflight is not None:
+                try:
+                    response = await self._call_llm_guarded(
+                        grace_messages,
+                        max_tokens_override=preflight.get("max_tokens"),
+                    )
+                    choice = response.choices[0]
+                    grace_content = choice.message.content or ""
+                    if hasattr(response, "usage") and response.usage:
+                        usage_acc.input_tokens += response.usage.prompt_tokens or 0
+                        usage_acc.output_tokens += response.usage.completion_tokens or 0
+                    if extract_tool_call(grace_content) is None:
+                        _, grace_text = strip_thinking_tags(grace_content)
+                    else:
+                        grace_reason = "tool_call_during_grace_turn"
+                except LlmCallInterrupted:
+                    return ExecutionResult(text="[Session interrupted by user]")
+            else:
+                grace_reason = "grace_preflight_failed"
+            if not grace_text.strip():
+                record_finalization_failure(self._anima_dir, mode="Mode B", reason=grace_reason)
+                logger.error("Mode B grace turn returned no answer: %s", grace_reason)
+                grace_text = FINAL_RESPONSE_ERROR_TEXT
+            all_response_text.append(grace_text)
+
         # ── Final drain: deliver any undelivered reminders ──
         final_reminder = self.reminder_queue.drain_formatted()
         if final_reminder:
@@ -752,7 +814,7 @@ class AssistedExecutor(BaseExecutor):
         _, final_text = strip_thinking_tags(final_text)
         logger.info("Mode B text-loop END total_len=%d", len(final_text))
         return ExecutionResult(
-            text=final_text or ("(empty response)" if _empty_exhausted else "(max iterations reached)"),
+            text=final_text or FINAL_RESPONSE_ERROR_TEXT,
             tool_call_records=all_tool_records,
             usage=usage_acc,
             truncated=max_iterations_reached or _halted_final or _empty_exhausted,
@@ -818,6 +880,8 @@ class AssistedExecutor(BaseExecutor):
             executor_name="Mode B",
         ):
             for iteration in range(max_iterations):
+                if (iteration + 1) % 10 == 0:
+                    logger.info("Mode B streaming progress: %d iterations", iteration + 1)
                 logger.debug(
                     "Mode B streaming iteration=%d messages=%d",
                     iteration,
@@ -978,32 +1042,51 @@ class AssistedExecutor(BaseExecutor):
                 # ── Runaway guard: consecutive identical tool calls ──
                 _guard_decision = _runaway_guard.observe((tool_call_signature(tool_name, tool_args),))
                 if _guard_decision == RunawayGuard.HALT:
-                    logger.warning(
-                        "Mode B streaming runaway tool loop halted at iteration=%d (streak=%d): %s",
+                    _count = _runaway_guard.repetition_count
+                    logger.error(
+                        "Mode B streaming runaway tool loop halted at iteration=%d (count=%d): %s",
                         iteration,
-                        _runaway_guard.streak,
+                        _count,
                         tool_name,
                     )
+                    record_runaway_event(
+                        self._anima_dir,
+                        decision=_guard_decision,
+                        mode="Mode B streaming",
+                        iteration=iteration,
+                        count=_count,
+                        tool_names=[tool_name],
+                    )
                     _tools_halted = True
+                    _halted_final = True
                     messages.append({"role": "assistant", "content": content})
                     messages.append(
                         {
                             "role": "user",
                             "content": SystemReminderQueue.format_reminder(
-                                msg_tool_loop_halt(count=_runaway_guard.streak),
+                                msg_tool_loop_halt(count=_count),
                             ),
                         }
                     )
-                    continue
+                    break
                 if _guard_decision == RunawayGuard.WARN:
+                    _count = _runaway_guard.repetition_count
                     self.reminder_queue.push_sync(
-                        msg_tool_loop_warning(tool_names=tool_name, count=_runaway_guard.streak),
+                        msg_tool_loop_warning(tool_names=tool_name, count=_count),
                     )
                     logger.warning(
-                        "Mode B streaming runaway tool loop warning at iteration=%d (streak=%d): %s",
+                        "Mode B streaming runaway tool loop warning at iteration=%d (count=%d): %s",
                         iteration,
-                        _runaway_guard.streak,
+                        _count,
                         tool_name,
+                    )
+                    record_runaway_event(
+                        self._anima_dir,
+                        decision=_guard_decision,
+                        mode="Mode B streaming",
+                        iteration=iteration,
+                        count=_count,
+                        tool_names=[tool_name],
                     )
 
                 # ── 5. Yield narrative text (tool JSON stripped) ──
@@ -1093,11 +1176,51 @@ class AssistedExecutor(BaseExecutor):
                     max_iterations,
                 )
 
+        if max_iterations_reached or _tools_halted or _empty_exhausted:
+            grace_messages = [dict(message) for message in messages]
+            grace_messages[0] = {"role": "system", "content": system_prompt}
+            grace_messages.append(
+                {
+                    "role": "user",
+                    "content": SystemReminderQueue.format_reminder(msg_final_iteration()),
+                }
+            )
+            preflight = self._preflight_check(grace_messages)
+            grace_text = ""
+            grace_reason = "empty_grace_response"
+            if preflight is not None:
+                response = await self._call_llm(
+                    grace_messages,
+                    max_tokens_override=preflight.get("max_tokens"),
+                )
+                choice = response.choices[0]
+                grace_content = choice.message.content or ""
+                if hasattr(response, "usage") and response.usage:
+                    _usage_acc_bs.input_tokens += response.usage.prompt_tokens or 0
+                    _usage_acc_bs.output_tokens += response.usage.completion_tokens or 0
+                if extract_tool_call(grace_content) is None:
+                    _, grace_text = strip_thinking_tags(grace_content)
+                    _, grace_text = strip_untagged_thinking(grace_text)
+                else:
+                    grace_reason = "tool_call_during_grace_turn"
+            else:
+                grace_reason = "grace_preflight_failed"
+            if not grace_text.strip():
+                record_finalization_failure(
+                    self._anima_dir,
+                    mode="Mode B streaming",
+                    reason=grace_reason,
+                )
+                logger.error("Mode B streaming grace turn returned no answer: %s", grace_reason)
+                grace_text = FINAL_RESPONSE_ERROR_TEXT
+            all_response_text.append(grace_text)
+            yield {"type": "text_delta", "text": grace_text}
+
         final_text = "\n".join(filter(None, all_response_text))
         logger.info("Mode B streaming END total_len=%d", len(final_text))
         yield {
             "type": "done",
-            "full_text": final_text or ("(empty response)" if _empty_exhausted else "(max iterations reached)"),
+            "full_text": final_text or FINAL_RESPONSE_ERROR_TEXT,
             "result_message": None,
             "tool_call_records": [asdict(r) for r in all_tool_records],
             "usage": _usage_acc_bs.to_dict(),

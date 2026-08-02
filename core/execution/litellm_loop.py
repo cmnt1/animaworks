@@ -67,10 +67,14 @@ from core.execution.error_classifier import (
     provider_family_of,
 )
 from core.execution.loop_guards import (
+    FINAL_RESPONSE_ERROR_TEXT,
     EmptyResponseTracker,
     LlmCallInterrupted,
     RunawayGuard,
     call_llm_with_retry,
+    record_finalization_failure,
+    record_runaway_event,
+    strip_tool_protocol_messages,
     tool_call_signature,
 )
 from core.execution.rate_guard import get_rate_guard
@@ -216,11 +220,13 @@ class LiteLLMExecutor(
                 )
 
         for iteration in range(max_iterations):
+            if (iteration + 1) % 10 == 0:
+                logger.info("A tool loop progress: %d iterations", iteration + 1)
             if self._check_interrupted():
                 logger.info("LiteLLM execute interrupted at iteration=%d", iteration)
                 return ExecutionResult(text="[Session interrupted by user]")
 
-            is_final_iteration = _force_final or (max_iterations > 1 and iteration == max_iterations - 1)
+            is_final_iteration = _force_final or iteration == max_iterations - 1
             iter_tools = [] if is_final_iteration else tools
 
             if is_final_iteration and not _final_reminder_sent:
@@ -244,10 +250,12 @@ class LiteLLMExecutor(
                 len(messages),
             )
 
+            iteration_messages = strip_tool_protocol_messages(messages) if is_final_iteration else messages
+
             # ── Pre-flight: clamp max_tokens to fit context window ──
             iter_kwargs = await self._preflight_clamp_with_compaction(
                 llm_kwargs,
-                messages,
+                iteration_messages,
                 iter_tools,
                 litellm,
             )
@@ -258,19 +266,10 @@ class LiteLLMExecutor(
                 )
 
             call_kwargs: dict[str, Any] = {
-                "messages": messages,
+                "messages": iteration_messages,
                 **iter_kwargs,
             }
-            # Bedrock requires toolConfig in every request that has toolUse/toolResult
-            # in the conversation history — omitting tools causes ValidationException.
-            _has_tool_history = any(
-                msg.get("role") == "tool" or (msg.get("role") == "assistant" and msg.get("tool_calls"))
-                for msg in messages
-            )
-            _bedrock_needs_tools = (
-                is_final_iteration and _has_tool_history and self._model_config.model.startswith("bedrock/")
-            )
-            if not is_final_iteration or _bedrock_needs_tools:
+            if not is_final_iteration:
                 call_kwargs["tools"] = tools
 
             try:
@@ -325,28 +324,30 @@ class LiteLLMExecutor(
 
                 current_text = message.content or ""
                 _, current_text = strip_thinking_tags(current_text)
-                new_sys, chain_count = await handle_session_chaining(
-                    tracker=tracker,
-                    shortterm=shortterm,
-                    memory=self._memory,
-                    current_text=current_text,
-                    system_prompt_builder=partial(
-                        build_system_prompt,
-                        self._memory,
-                        tool_registry=self._tool_registry,
-                        personal_tools=self._personal_tools,
-                        execution_mode="a",
-                        message=prompt,
-                    ),
-                    max_chains=self._model_config.max_chains,
-                    chain_count=chain_count,
-                    session_id="litellm-a",
-                    trigger="a_tool_loop",
-                    original_prompt=prompt,
-                    accumulated_response="\n".join(all_response_text),
-                    turn_count=iteration,
-                    tool_uses=_extract_tool_uses_from_messages(messages),
-                )
+                new_sys = None
+                if not is_final_iteration:
+                    new_sys, chain_count = await handle_session_chaining(
+                        tracker=tracker,
+                        shortterm=shortterm,
+                        memory=self._memory,
+                        current_text=current_text,
+                        system_prompt_builder=partial(
+                            build_system_prompt,
+                            self._memory,
+                            tool_registry=self._tool_registry,
+                            personal_tools=self._personal_tools,
+                            execution_mode="a",
+                            message=prompt,
+                        ),
+                        max_chains=self._model_config.max_chains,
+                        chain_count=chain_count,
+                        session_id="litellm-a",
+                        trigger="a_tool_loop",
+                        original_prompt=prompt,
+                        accumulated_response="\n".join(all_response_text),
+                        turn_count=iteration,
+                        tool_uses=_extract_tool_uses_from_messages(messages),
+                    )
                 if new_sys is not None:
                     if current_text:
                         all_response_text.append(current_text)
@@ -382,7 +383,8 @@ class LiteLLMExecutor(
             if not tool_calls:
                 # ── completion_gate enforcement ──
                 if (
-                    not _gate_attempted
+                    not is_final_iteration
+                    and not _gate_attempted
                     and completion_gate_applies_to_trigger(trigger)
                     and not gate_marker_exists(self._anima_dir)
                 ):
@@ -406,6 +408,20 @@ class LiteLLMExecutor(
 
                 # ── Empty-response recovery ──
                 if EmptyResponseTracker.is_empty(final_text, has_tool_calls=False):
+                    if is_final_iteration:
+                        record_finalization_failure(
+                            self._anima_dir,
+                            mode="A",
+                            reason="empty_grace_response",
+                        )
+                        logger.error("A grace turn returned no answer at iteration=%d", iteration)
+                        cleanup_gate_marker(self._anima_dir)
+                        return ExecutionResult(
+                            text=FINAL_RESPONSE_ERROR_TEXT,
+                            tool_call_records=all_tool_records,
+                            usage=usage_acc,
+                            truncated=True,
+                        )
                     if _empty_tracker.should_reprompt():
                         messages.append({"role": "assistant", "content": message.content or ""})
                         messages.append(
@@ -426,9 +442,14 @@ class LiteLLMExecutor(
                         "A empty response persisted after reprompts at iteration=%d",
                         iteration,
                     )
+                    record_finalization_failure(
+                        self._anima_dir,
+                        mode="A",
+                        reason="empty_response_after_reprompts",
+                    )
                     cleanup_gate_marker(self._anima_dir)
                     return ExecutionResult(
-                        text="\n".join(all_response_text) or "(empty response)",
+                        text=FINAL_RESPONSE_ERROR_TEXT,
                         tool_call_records=all_tool_records,
                         usage=usage_acc,
                         truncated=True,
@@ -444,6 +465,7 @@ class LiteLLMExecutor(
                     text="\n".join(all_response_text),
                     tool_call_records=all_tool_records,
                     usage=usage_acc,
+                    truncated=is_final_iteration,
                 )
 
             # ── Process tool calls ────────────────────────────
@@ -481,18 +503,19 @@ class LiteLLMExecutor(
             # after finalization was forced (Bedrock keeps toolConfig for API
             # compliance) — finalize with what has been gathered instead of
             # burning the remaining iterations.
-            if _force_final:
-                logger.warning(
-                    "A tool call after forced finalization at iteration=%d — finalizing",
+            if is_final_iteration:
+                logger.error(
+                    "A tool call during finalization at iteration=%d — returning an explicit error",
                     iteration,
                 )
-                if _content:
-                    _, _content = strip_thinking_tags(_content)
-                    if _content:
-                        all_response_text.append(_content)
+                record_finalization_failure(
+                    self._anima_dir,
+                    mode="A",
+                    reason="tool_call_during_grace_turn",
+                )
                 cleanup_gate_marker(self._anima_dir)
                 return ExecutionResult(
-                    text="\n".join(all_response_text) or "(tool loop halted)",
+                    text=FINAL_RESPONSE_ERROR_TEXT,
                     tool_call_records=all_tool_records,
                     usage=usage_acc,
                     truncated=True,
@@ -502,11 +525,20 @@ class LiteLLMExecutor(
             _turn_sig = tuple(tool_call_signature(tc["name"], tc["arguments"]) for tc in parsed_calls)
             _guard_decision = _runaway_guard.observe(_turn_sig)
             if _guard_decision == RunawayGuard.HALT:
-                logger.warning(
-                    "A runaway tool loop halted at iteration=%d (streak=%d): %s",
+                _count = _runaway_guard.repetition_count
+                logger.error(
+                    "A runaway tool loop halted at iteration=%d (count=%d): %s",
                     iteration,
-                    _runaway_guard.streak,
+                    _count,
                     ", ".join(tc["name"] for tc in parsed_calls),
+                )
+                record_runaway_event(
+                    self._anima_dir,
+                    decision=_guard_decision,
+                    mode="A",
+                    iteration=iteration,
+                    count=_count,
+                    tool_names=sorted({tc["name"] for tc in parsed_calls}),
                 )
                 _force_final = True
                 _final_reminder_sent = True
@@ -514,22 +546,31 @@ class LiteLLMExecutor(
                     {
                         "role": "user",
                         "content": SystemReminderQueue.format_reminder(
-                            msg_tool_loop_halt(count=_runaway_guard.streak),
+                            msg_tool_loop_halt(count=_count),
                         ),
                     }
                 )
                 continue
             if _guard_decision == RunawayGuard.WARN:
+                _count = _runaway_guard.repetition_count
                 self.reminder_queue.push_sync(
                     msg_tool_loop_warning(
                         tool_names=", ".join(sorted({tc["name"] for tc in parsed_calls})),
-                        count=_runaway_guard.streak,
+                        count=_count,
                     )
                 )
                 logger.warning(
-                    "A runaway tool loop warning at iteration=%d (streak=%d)",
+                    "A runaway tool loop warning at iteration=%d (count=%d)",
                     iteration,
-                    _runaway_guard.streak,
+                    _count,
+                )
+                record_runaway_event(
+                    self._anima_dir,
+                    decision=_guard_decision,
+                    mode="A",
+                    iteration=iteration,
+                    count=_count,
+                    tool_names=sorted({tc["name"] for tc in parsed_calls}),
                 )
 
             # Reconstruct assistant message with repaired arguments.
@@ -582,8 +623,13 @@ class LiteLLMExecutor(
                 )
 
         logger.warning("A max iterations (%d) reached", max_iterations)
+        record_finalization_failure(
+            self._anima_dir,
+            mode="A",
+            reason="grace_turn_exhausted",
+        )
         return ExecutionResult(
-            text="\n".join(all_response_text) or "(max iterations reached)",
+            text=FINAL_RESPONSE_ERROR_TEXT,
             tool_call_records=all_tool_records,
             usage=usage_acc,
             truncated=True,

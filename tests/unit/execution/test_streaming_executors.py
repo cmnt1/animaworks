@@ -24,6 +24,7 @@ from core.execution.base import (
     ExecutionResult,
     StreamDisconnectedError,
 )
+from core.execution.reminder import msg_tool_loop_warning
 from core.memory.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ModelConfig
@@ -798,6 +799,247 @@ class TestA2TokenLevelWithToolCall:
         done = [e for e in events if e["type"] == "done"]
         assert len(done) == 1
         assert "Found it!" in done[0]["full_text"]
+
+
+class TestA2StreamingRunawayGuard:
+    @staticmethod
+    def _tool_chunks(query: str, call_id: str) -> list[FakeStreamChunk]:
+        return [
+            FakeStreamChunk(
+                tool_calls=[
+                    FakeDelta(
+                        index=0,
+                        id=call_id,
+                        name="search_memory",
+                        arguments=json.dumps({"query": query}),
+                    )
+                ]
+            ),
+            FakeStreamChunk(finish_reason="tool_calls"),
+        ]
+
+    async def test_consecutive_calls_halt_then_return_answer(self, litellm_executor) -> None:
+        tracker = MagicMock(spec=ContextTracker)
+        streams = [self._tool_chunks("same", f"call_{i}") for i in range(5)]
+        streams.append([FakeStreamChunk(text="Final answer"), FakeStreamChunk(finish_reason="stop")])
+        process_count = 0
+        calls: list[dict[str, Any]] = []
+
+        async def mock_acompletion(**kwargs):
+            calls.append(kwargs)
+            return _fake_async_stream(streams[len(calls) - 1])
+
+        async def mock_process(parsed_calls, messages, tools, active_categories, **kwargs):
+            nonlocal process_count
+            process_count += 1
+            if False:
+                yield {}
+
+        with (
+            patch("litellm.acompletion", side_effect=mock_acompletion),
+            patch.object(litellm_executor, "_preflight_clamp", return_value={}),
+            patch.object(litellm_executor, "_process_streaming_tool_calls", mock_process),
+            patch("core.execution._completion_gate.completion_gate_applies_to_trigger", return_value=False),
+        ):
+            events = await _collect_events(
+                litellm_executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="search",
+                    tracker=tracker,
+                    max_turns_override=10,
+                )
+            )
+
+        done = next(event for event in events if event["type"] == "done")
+        assert done["full_text"] == "Final answer"
+        assert done["truncated"] is True
+        assert len(calls) == 6
+        assert process_count == 4
+        assert "tools" not in calls[-1]
+        activity_entries = [
+            json.loads(line)
+            for path in (litellm_executor._anima_dir / "activity_log").glob("*.jsonl")
+            for line in path.read_text(encoding="utf-8").splitlines()
+        ]
+        assert any(entry["type"] == "warning" and entry["meta"]["level"] == "WARNING" for entry in activity_entries)
+        assert any(entry["type"] == "error" and entry["meta"]["level"] == "ERROR" for entry in activity_entries)
+
+    async def test_warn_continues_execution(self, litellm_executor) -> None:
+        tracker = MagicMock(spec=ContextTracker)
+        streams = [self._tool_chunks("same", f"call_{i}") for i in range(3)]
+        streams.append([FakeStreamChunk(text="Done"), FakeStreamChunk(finish_reason="stop")])
+        calls: list[dict[str, Any]] = []
+        process_count = 0
+
+        async def mock_acompletion(**kwargs):
+            calls.append(kwargs)
+            return _fake_async_stream(streams[len(calls) - 1])
+
+        async def mock_process(parsed_calls, messages, tools, active_categories, **kwargs):
+            nonlocal process_count
+            process_count += 1
+            if False:
+                yield {}
+
+        with (
+            patch("litellm.acompletion", side_effect=mock_acompletion),
+            patch.object(litellm_executor, "_preflight_clamp", return_value={}),
+            patch.object(litellm_executor, "_process_streaming_tool_calls", mock_process),
+            patch("core.execution._completion_gate.completion_gate_applies_to_trigger", return_value=False),
+        ):
+            events = await _collect_events(
+                litellm_executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="search",
+                    tracker=tracker,
+                    max_turns_override=8,
+                )
+            )
+
+        done = next(event for event in events if event["type"] == "done")
+        assert done["full_text"] == "Done"
+        assert process_count == 3
+        warning = msg_tool_loop_warning(tool_names="search_memory", count=3)
+        assert any(warning in str(message.get("content", "")) for message in calls[-1]["messages"])
+
+    async def test_interleaved_cycle_halts_via_window(self, ollama_executor) -> None:
+        from core.execution.loop_guards import RunawayGuard
+
+        class SmallWindowGuard(RunawayGuard):
+            def __init__(self) -> None:
+                super().__init__(
+                    warn_threshold=100,
+                    halt_threshold=100,
+                    window_size=8,
+                    window_warn_threshold=2,
+                    window_halt_threshold=3,
+                )
+
+        tracker = MagicMock(spec=ContextTracker)
+        tool_responses = [
+            _make_litellm_a2_response(
+                content="",
+                tool_calls=[_make_mock_tool_call("search_memory", {"query": "a" if i % 2 == 0 else "b"}, f"c{i}")],
+            )
+            for i in range(5)
+        ]
+        final = _make_litellm_a2_response(content="Cycle summary", tool_calls=None)
+        mock_acompletion = AsyncMock(side_effect=[*tool_responses, final])
+        process_count = 0
+
+        async def mock_process(parsed_calls, messages, tools, active_categories, **kwargs):
+            nonlocal process_count
+            process_count += 1
+            if False:
+                yield {}
+
+        with (
+            patch("litellm.acompletion", mock_acompletion),
+            patch.object(ollama_executor, "_preflight_clamp", return_value={}),
+            patch.object(ollama_executor, "_process_streaming_tool_calls", mock_process),
+            patch("core.execution._litellm_streaming.RunawayGuard", SmallWindowGuard),
+            patch("core.execution._completion_gate.completion_gate_applies_to_trigger", return_value=False),
+        ):
+            events = await _collect_events(
+                ollama_executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="search",
+                    tracker=tracker,
+                    max_turns_override=10,
+                )
+            )
+
+        done = next(event for event in events if event["type"] == "done")
+        assert done["full_text"] == "Cycle summary"
+        assert mock_acompletion.call_count == 6
+        assert process_count == 4
+        assert "tools" not in mock_acompletion.call_args_list[-1].kwargs
+
+    async def test_more_than_one_hundred_unique_calls_are_not_halted(self, ollama_executor) -> None:
+        tracker = MagicMock(spec=ContextTracker)
+        tool_responses = [
+            _make_litellm_a2_response(
+                content="",
+                tool_calls=[_make_mock_tool_call("search_memory", {"query": f"q{i}"}, f"c{i}")],
+            )
+            for i in range(101)
+        ]
+        final = _make_litellm_a2_response(content="Long session complete", tool_calls=None)
+        mock_acompletion = AsyncMock(side_effect=[*tool_responses, final])
+        process_count = 0
+
+        async def mock_process(parsed_calls, messages, tools, active_categories, **kwargs):
+            nonlocal process_count
+            process_count += 1
+            if False:
+                yield {}
+
+        with (
+            patch("litellm.acompletion", mock_acompletion),
+            patch.object(ollama_executor, "_preflight_clamp", return_value={}),
+            patch.object(ollama_executor, "_process_streaming_tool_calls", mock_process),
+            patch("core.execution._completion_gate.completion_gate_applies_to_trigger", return_value=False),
+        ):
+            events = await _collect_events(
+                ollama_executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="search",
+                    tracker=tracker,
+                    max_turns_override=103,
+                )
+            )
+
+        done = next(event for event in events if event["type"] == "done")
+        assert done["full_text"] == "Long session complete"
+        assert done["truncated"] is False
+        assert mock_acompletion.call_count == 102
+        assert process_count == 101
+
+    async def test_grace_answer_bypasses_completion_gate(self, ollama_executor) -> None:
+        tracker = MagicMock(spec=ContextTracker)
+        response = _make_litellm_a2_response(content="Grace answer", tool_calls=None)
+        mock_acompletion = AsyncMock(return_value=response)
+        with (
+            patch("litellm.acompletion", mock_acompletion),
+            patch.object(ollama_executor, "_preflight_clamp", return_value={}),
+            patch("core.execution._completion_gate.completion_gate_applies_to_trigger", return_value=True),
+            patch("core.execution._completion_gate.gate_marker_exists", return_value=False),
+        ):
+            events = await _collect_events(
+                ollama_executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="answer",
+                    tracker=tracker,
+                    max_turns_override=1,
+                    trigger="message:test",
+                )
+            )
+        done = next(event for event in events if event["type"] == "done")
+        assert done["full_text"] == "Grace answer"
+        assert done["truncated"] is True
+        assert mock_acompletion.call_count == 1
+        assert "tools" not in mock_acompletion.call_args.kwargs
+
+    async def test_empty_final_response_returns_explicit_error(self, ollama_executor) -> None:
+        tracker = MagicMock(spec=ContextTracker)
+        response = _make_litellm_a2_response(content="", tool_calls=None)
+        mock_acompletion = AsyncMock(return_value=response)
+        with (
+            patch("litellm.acompletion", mock_acompletion),
+            patch.object(ollama_executor, "_preflight_clamp", return_value={}),
+            patch("core.execution._completion_gate.completion_gate_applies_to_trigger", return_value=False),
+        ):
+            events = await _collect_events(
+                ollama_executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="answer",
+                    tracker=tracker,
+                    max_turns_override=5,
+                )
+            )
+        done = next(event for event in events if event["type"] == "done")
+        assert done["full_text"] == "Unable to generate a final response. Please try again."
+        assert done["truncated"] is True
 
 
 class TestA2TokenLevelErrorRaisesStreamDisconnected:

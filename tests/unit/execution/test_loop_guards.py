@@ -15,6 +15,7 @@ from core.execution.loop_guards import (
     LlmCallInterrupted,
     RunawayGuard,
     call_llm_with_retry,
+    strip_tool_protocol_messages,
     tool_call_signature,
 )
 
@@ -213,6 +214,41 @@ class TestToolCallSignature:
         assert sig.startswith("Bash:")
 
 
+def test_strip_tool_protocol_messages_flattens_history():
+    messages = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "search_memory", "arguments": "{}"},
+                },
+                {
+                    "id": "call_2",
+                    "type": "function",
+                    "function": {"name": "read_file", "arguments": "{}"},
+                },
+            ],
+            "thinking_blocks": [{"type": "thinking", "thinking": "secret"}],
+        },
+        {"role": "tool", "tool_call_id": "call_1", "name": "search_memory", "content": "result"},
+        {"role": "tool", "tool_call_id": "call_2", "name": "read_file", "content": "file data"},
+        {"role": "user", "content": "Provide the final answer."},
+    ]
+    flattened = strip_tool_protocol_messages(messages)
+    assert flattened == [
+        {"role": "assistant", "content": "[Tools used: search_memory, read_file]"},
+        {
+            "role": "user",
+            "content": (
+                "[Result from search_memory]\nresult\n\n[Result from read_file]\nfile data\n\nProvide the final answer."
+            ),
+        },
+    ]
+
+
 # ── RunawayGuard ─────────────────────────────────────────────
 
 
@@ -220,10 +256,10 @@ class TestRunawayGuard:
     def test_streak_progression_warn_then_halt(self):
         guard = RunawayGuard()
         sig = ("Read:abc",)
-        assert guard.observe(sig) == RunawayGuard.OK    # streak 1
-        assert guard.observe(sig) == RunawayGuard.OK    # streak 2
+        assert guard.observe(sig) == RunawayGuard.OK  # streak 1
+        assert guard.observe(sig) == RunawayGuard.OK  # streak 2
         assert guard.observe(sig) == RunawayGuard.WARN  # streak 3
-        assert guard.observe(sig) == RunawayGuard.OK    # streak 4 (warn fires once)
+        assert guard.observe(sig) == RunawayGuard.OK  # streak 4 (warn fires once)
         assert guard.observe(sig) == RunawayGuard.HALT  # streak 5
 
     def test_different_turn_resets_streak(self):
@@ -235,6 +271,13 @@ class TestRunawayGuard:
         assert guard.streak == 1
         assert guard.observe(sig) == RunawayGuard.OK
         assert guard.streak == 1
+
+    def test_new_consecutive_streak_warns_again_within_window(self):
+        guard = RunawayGuard()
+        sig = ("Read:abc",)
+        assert [guard.observe(sig) for _ in range(3)][-1] == RunawayGuard.WARN
+        assert guard.observe(("Write:def",)) == RunawayGuard.OK
+        assert [guard.observe(sig) for _ in range(3)][-1] == RunawayGuard.WARN
 
     def test_empty_signature_is_ok(self):
         guard = RunawayGuard()
@@ -249,3 +292,58 @@ class TestRunawayGuard:
         # Different order = different turn
         assert guard.observe(("Grep:def", "Read:abc")) == RunawayGuard.OK
         assert guard.streak == 1
+
+    def test_window_detects_interleaved_cycle(self):
+        guard = RunawayGuard(
+            warn_threshold=100,
+            halt_threshold=100,
+            window_size=8,
+            window_warn_threshold=3,
+            window_halt_threshold=4,
+        )
+        a = ("Read:a",)
+        b = ("Read:b",)
+        decisions = [guard.observe(a if i % 2 == 0 else b) for i in range(7)]
+        assert RunawayGuard.WARN in decisions
+        assert decisions[-1] == RunawayGuard.HALT
+        assert guard.streak == 1
+        assert guard.repetition_count == 4
+
+    def test_window_warns_once_per_signature(self):
+        guard = RunawayGuard(
+            warn_threshold=100,
+            halt_threshold=100,
+            window_size=10,
+            window_warn_threshold=2,
+            window_halt_threshold=10,
+        )
+        sig = ("Read:a",)
+        decisions = [
+            guard.observe(sig),
+            guard.observe(("Read:b",)),
+            guard.observe(sig),
+            guard.observe(("Read:c",)),
+            guard.observe(sig),
+        ]
+        assert decisions.count(RunawayGuard.WARN) == 1
+
+    def test_window_evicts_old_signatures(self):
+        guard = RunawayGuard(
+            warn_threshold=100,
+            halt_threshold=100,
+            window_size=3,
+            window_warn_threshold=2,
+            window_halt_threshold=3,
+        )
+        a = ("Read:a",)
+        assert guard.observe(a) == RunawayGuard.OK
+        for name in ("b", "c", "d"):
+            assert guard.observe((f"Read:{name}",)) == RunawayGuard.OK
+        assert guard.observe(a) == RunawayGuard.OK
+        assert guard.repetition_count == 1
+        assert guard.observe(a) == RunawayGuard.WARN
+
+    def test_more_than_one_hundred_unique_calls_are_not_halted(self):
+        guard = RunawayGuard()
+        decisions = [guard.observe((f"Read:{i}",)) for i in range(101)]
+        assert decisions == [RunawayGuard.OK] * 101

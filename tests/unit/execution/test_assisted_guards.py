@@ -131,12 +131,31 @@ class TestModeBRetry:
 class TestModeBEmptyResponse:
     async def test_reprompts_then_gives_up(self, executor):
         empty = make_litellm_response(content="", tool_calls=None)
+        final = make_litellm_response(content="Grace answer", tool_calls=None)
         with patch_litellm() as mock:
-            mock.side_effect = [empty, empty, empty]
+            mock.side_effect = [empty, empty, empty, final]
             result = await executor.execute("test", system_prompt="sys")
-        assert mock.call_count == 3
-        assert result.text == "(empty response)"
+        assert mock.call_count == 4
+        assert result.text == "Grace answer"
         assert result.truncated is True
+        assert mock.call_args_list[-1].kwargs["messages"][0]["content"] == "sys"
+
+    async def test_empty_grace_response_records_correct_reason(self, executor):
+        empty = make_litellm_response(content="", tool_calls=None)
+        with (
+            patch_litellm() as mock,
+            patch("core.execution.assisted.record_finalization_failure") as record_failure,
+        ):
+            mock.side_effect = [empty, empty, empty, empty]
+            result = await executor.execute("test", system_prompt="sys")
+
+        assert result.text == "Unable to generate a final response. Please try again."
+        assert result.truncated is True
+        record_failure.assert_called_once_with(
+            executor._anima_dir,
+            mode="Mode B",
+            reason="empty_grace_response",
+        )
 
     async def test_recovers_after_reprompt(self, executor):
         empty = make_litellm_response(content="", tool_calls=None)
@@ -147,19 +166,18 @@ class TestModeBEmptyResponse:
         assert mock.call_count == 2
         assert "Recovered" in result.text
         reprompt = msg_empty_response()
-        assert any(
-            m.get("role") == "user" and reprompt in str(m.get("content"))
-            for m in _messages_of_call(mock, 1)
-        )
+        assert any(m.get("role") == "user" and reprompt in str(m.get("content")) for m in _messages_of_call(mock, 1))
 
     async def test_empty_and_intent_share_budget(self, executor):
         """One empty + one intent reprompt exhaust the shared budget of 2."""
         empty = make_litellm_response(content="", tool_calls=None)
         intent = make_litellm_response(content="では、記憶を調べてみます。", tool_calls=None)
+        final = make_litellm_response(content="Grace answer", tool_calls=None)
         with patch_litellm() as mock:
-            mock.side_effect = [empty, intent, empty]
+            mock.side_effect = [empty, intent, empty, final]
             result = await executor.execute("test", system_prompt="sys")
-        assert mock.call_count == 3
+        assert mock.call_count == 4
+        assert result.text == "Grace answer"
         assert result.truncated is True
 
     async def test_intent_only_behavior_unchanged(self, executor):
@@ -185,10 +203,7 @@ class TestModeBRunawayGuard:
             result = await executor.execute("test", system_prompt="sys")
         assert "Done" in result.text
         warning = msg_tool_loop_warning(tool_names="search_memory", count=3)
-        assert any(
-            warning in str(m.get("content"))
-            for m in _messages_of_call(mock, 3)
-        )
+        assert any(warning in str(m.get("content")) for m in _messages_of_call(mock, 3))
 
     async def test_halt_at_five_consecutive(self, executor):
         final = make_litellm_response(content="Summary of work", tool_calls=None)
@@ -198,10 +213,7 @@ class TestModeBRunawayGuard:
         assert mock.call_count == 6
         assert "Summary of work" in result.text
         halt_msg = msg_tool_loop_halt(count=5)
-        assert any(
-            halt_msg in str(m.get("content"))
-            for m in _messages_of_call(mock, 5)
-        )
+        assert any(halt_msg in str(m.get("content")) for m in _messages_of_call(mock, 5))
         # 5th identical call was blocked — only 4 executions
         assert executor._tool_handler.handle.call_count == 4
 
