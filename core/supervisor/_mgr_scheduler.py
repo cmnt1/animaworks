@@ -557,9 +557,7 @@ class SchedulerMixin:
             outcomes = await asyncio.gather(*target_tasks, return_exceptions=True)
             failures = [outcome for outcome in outcomes if isinstance(outcome, BaseException)]
             if failures:
-                raise RuntimeError(
-                    f"daily consolidation worker failures: {len(failures)}"
-                ) from failures[0]
+                raise RuntimeError(f"daily consolidation worker failures: {len(failures)}") from failures[0]
 
         if int(summary["targets"]) > 0 and int(summary["running"]) == 0:
             summary["failure_reason"] = (
