@@ -262,6 +262,10 @@ def cli_main() -> None:
 
     setup_repair_rag_command(sub)
 
+    from cli.commands.rag_repair_status import setup_rag_repair_status_command
+
+    setup_rag_repair_status_command(sub)
+
     # ── Skills ────────────────────────────────────────────
     from cli.commands.skills import register_skills_command
 

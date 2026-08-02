@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 # Deployment-specific values come from the environment so no site-specific
 # repos, accounts, or paths are baked into the public source tree.
@@ -34,7 +36,23 @@ BOT_LOGIN = os.environ.get("PR_DISPATCH_BOT_LOGIN", "")
 REVIEWER = os.environ.get("PR_DISPATCH_REVIEWER", "sumire")
 DISPATCHER = os.environ.get("PR_DISPATCH_DISPATCHER", "rin")
 FIXER = os.environ.get("PR_DISPATCH_FIXER", "natsume")
+ESCALATION_TARGET = os.environ.get("PR_DISPATCH_ESCALATION", "sakura")
 ALERT_EVERY = 5
+
+# Stale unaddressed-review warning thresholds (hours).
+# 2026-07-27 taka指示: 15分警告 → 以後15分毎に再警告(30/45分) → 60分でsakuraエスカレーション
+STALE_WARN_HOURS = float(os.environ.get("PR_STALE_WARN_HOURS", "0.25"))
+STALE_REWARN_HOURS = float(os.environ.get("PR_STALE_REWARN_HOURS", "0.25"))
+STALE_ESCALATE_HOURS = float(os.environ.get("PR_STALE_ESCALATE_HOURS", "1"))
+
+# When set (1/true/yes), send() logs instead of delivering DMs.
+DRY_RUN = os.environ.get("PR_DISPATCH_DRY_RUN", "").strip().lower() in ("1", "true", "yes")
+
+# Non-bot issue/review comments matching this are treated as fix requests.
+FIX_REQUEST_PATTERN = re.compile(
+    r"修正|直して|対応して|お願いします|fix|please|change|address|required",
+    re.IGNORECASE,
+)
 
 sys.path.insert(
     0,
@@ -70,6 +88,9 @@ def gh(args: list[str]) -> str:
 
 
 def send(to: str, content: str) -> None:
+    if DRY_RUN:
+        log(f"DRY_RUN send -> {to}: {content[:300]}")
+        return
     from core.messenger import Messenger
 
     Messenger(SHARED_DIR, "pr-review-dispatch").send(
@@ -89,6 +110,7 @@ def default_state() -> dict:
         "seen_comments": {},
         "ci_notified": {},
         "conflict_notified": {},
+        "stale_watch": {},
         "consecutive_failures": 0,
     }
 
@@ -102,10 +124,540 @@ def load_state() -> dict:
                 state.setdefault("seen_comments", {})
                 state.setdefault("ci_notified", {})
                 state.setdefault("conflict_notified", {})
+                state.setdefault("stale_watch", {})
                 return state
         except (json.JSONDecodeError, OSError):
             log("state file unreadable; starting fresh")
     return default_state()
+
+
+def parse_gh_time(value: str | None) -> datetime | None:
+    """Parse GitHub ISO timestamps into timezone-aware UTC datetimes."""
+    if not value:
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
+def is_addressed(
+    *,
+    pr_closed: bool,
+    thread_resolved: bool = False,
+    item_created_at: datetime | None = None,
+    bot_commit_at: datetime | None = None,
+    bot_comment_at: datetime | None = None,
+    kind: str = "comment",
+    review_dismissed: bool = False,
+    review_decision: str | None = None,
+    ci_still_failing: bool = True,
+    head_sha_changed: bool = False,
+) -> bool:
+    """Return True when the fix request no longer needs tracking.
+
+    kind:
+      - review: CHANGES_REQUESTED stays open until PR close, dismiss, or
+        reviewDecision leaves CHANGES_REQUESTED. Bot commits/comments do NOT clear it.
+      - thread / comment: resolve, subsequent bot commit, or bot reply clears it.
+      - ci: cleared when PR closes, CI no longer failing on the item SHA, or
+        head SHA moved on (new failing SHA becomes a fresh item).
+    """
+    if pr_closed:
+        return True
+    if kind == "review":
+        if review_dismissed:
+            return True
+        decision = (review_decision or "").upper()
+        return bool(decision and decision != "CHANGES_REQUESTED")
+    if kind == "ci":
+        # Old SHA items are retired when head moves; a failing new SHA is a new item_id.
+        if head_sha_changed:
+            return True
+        return not ci_still_failing
+    # thread / comment (default)
+    if thread_resolved:
+        return True
+    if item_created_at is None:
+        return False
+    if bot_commit_at is not None and bot_commit_at > item_created_at:
+        return True
+    return bot_comment_at is not None and bot_comment_at > item_created_at
+
+
+def ci_stale_item_id(repo: str, number: int, sha: str) -> str:
+    """Stable stale-watch key for a CI failure on a specific PR head SHA."""
+    return f"ci:{repo}#{number}:{sha}"
+
+
+# 2026-07-27 taka指示: CANCELLED(60分timeout等)/TIMED_OUTも「CI NG」として扱う。
+# #3854のFeature Tests CANCELLEDがFAILURE限定判定のため警告ゼロで放置された。
+FAILING_CI_CONCLUSIONS = frozenset({"FAILURE", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE"})
+
+
+def failed_check_names(status_check_rollup: list[dict[str, Any]] | None) -> list[str]:
+    """Return names of checks whose conclusion counts as failing (see FAILING_CI_CONCLUSIONS)."""
+    return [
+        str(check.get("name") or "?")
+        for check in (status_check_rollup or [])
+        if str(check.get("conclusion") or "").upper() in FAILING_CI_CONCLUSIONS
+    ]
+
+
+def determine_warning_stage(
+    *,
+    item_created_at: datetime,
+    now: datetime,
+    last_warned: datetime | None,
+    escalated_at: datetime | None,
+    warn_hours: float = 0.25,
+    rewarn_hours: float = 0.25,
+    escalate_hours: float = 1.0,
+) -> str:
+    """Return warning stage: none | warn | rewarn | escalate.
+
+    When both dispatcher rewarn and escalate are due, returns escalate
+    (caller still notifies the dispatcher when its interval has elapsed).
+    """
+    age = now - item_created_at
+    if age < timedelta(hours=warn_hours):
+        return "none"
+
+    escalate_due = age >= timedelta(hours=escalate_hours) and (
+        escalated_at is None or (now - escalated_at) >= timedelta(hours=escalate_hours)
+    )
+    if last_warned is None:
+        dispatcher_stage = "warn"
+    elif (now - last_warned) >= timedelta(hours=rewarn_hours):
+        dispatcher_stage = "rewarn"
+    else:
+        dispatcher_stage = "none"
+
+    if escalate_due:
+        return "escalate"
+    return dispatcher_stage
+
+
+def _elapsed_label(created_at: datetime, now: datetime) -> str:
+    minutes = max(0, int((now - created_at).total_seconds() // 60))
+    return f"{minutes // 60}h{minutes % 60:02d}m" if minutes >= 60 else f"{minutes}m"
+
+
+def _format_stale_line(
+    *,
+    repo: str,
+    number: int,
+    author: str,
+    body: str,
+    url: str,
+    created_at: datetime,
+    now: datetime,
+    kind: str = "comment",
+    sha: str = "",
+    failed_checks: list[str] | None = None,
+) -> str:
+    elapsed = _elapsed_label(created_at, now)
+    if kind == "review":
+        return (
+            f"- PR #{number} が CHANGES_REQUESTED のまま未解除です"
+            f"（@{author}/経過{elapsed}）\n  {url}"
+        )
+    if kind == "ci":
+        checks = ", ".join((failed_checks or [])[:6]) or "?"
+        sha8 = (sha or "")[:8] or "?"
+        return (
+            f"- PR #{number} のCI失敗が未修正のまま放置されています"
+            f"（{sha8}・{checks}・経過{elapsed}）\n  {url}"
+        )
+    snippet = (body or "").replace("\n", " ").strip()[:140]
+    return f"- {repo}#{number} (経過{elapsed}) @{author}: {snippet}\n  {url}"
+
+
+def _stale_message(lines: list[str], *, kind: str = "comment") -> str:
+    detail = "\n".join(lines[:20])
+    more = f"\n…他{len(lines) - 20}件" if len(lines) > 20 else ""
+    if kind == "review":
+        return (
+            "【警告】PR が CHANGES_REQUESTED のまま未解除です\n\n"
+            f"{detail}{more}\n\n"
+            "修正を積んだ場合は reviewer に再レビューを依頼するか、"
+            "対応方針をPRコメントで明示してください"
+        )
+    if kind == "ci":
+        return (
+            "【警告】PR のCI失敗が未修正のまま放置されています\n\n"
+            f"{detail}{more}\n\n"
+            "修正commitをpushするか、対応不能ならその理由をPRコメントに残してください"
+        )
+    return (
+        "【警告】PR修正依頼が未対応です\n\n"
+        f"{detail}{more}\n\n"
+        "修正commit・返信・resolveのいずれかで対応するか、"
+        "対応しない理由をスレッドへ返信してください"
+    )
+
+
+def _latest_bot_activity(
+    *,
+    commits: list[dict[str, Any]],
+    comments: list[dict[str, Any]],
+) -> tuple[datetime | None, datetime | None]:
+    """Return (latest bot commit time, latest bot comment time) on a PR."""
+    bot_commit_at: datetime | None = None
+    bot_comment_at: datetime | None = None
+    if BOT_LOGIN:
+        for commit in commits:
+            author = (commit.get("author") or {}).get("login") or ""
+            committer = (commit.get("committer") or {}).get("login") or ""
+            if author != BOT_LOGIN and committer != BOT_LOGIN:
+                continue
+            committed = parse_gh_time(
+                ((commit.get("commit") or {}).get("committer") or {}).get("date")
+            ) or parse_gh_time(((commit.get("commit") or {}).get("author") or {}).get("date"))
+            if committed is not None and (bot_commit_at is None or committed > bot_commit_at):
+                bot_commit_at = committed
+    for comment in comments:
+        author = (comment.get("user") or {}).get("login") or (comment.get("author") or {}).get(
+            "login", ""
+        )
+        if BOT_LOGIN and author != BOT_LOGIN:
+            continue
+        if not BOT_LOGIN:
+            continue
+        created = parse_gh_time(comment.get("created_at") or comment.get("createdAt") or comment.get("submitted_at"))
+        if created is not None and (bot_comment_at is None or created > bot_comment_at):
+            bot_comment_at = created
+    return bot_commit_at, bot_comment_at
+
+
+def _collect_pr_stale_items(
+    repo: str,
+    number: int,
+    *,
+    pr_meta: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Collect unaddressed fix-request / CI-failure candidates for one open PR.
+
+    pr_meta may include headRefOid, statusCheckRollup, reviewDecision, url from
+    a single `gh pr list --json` call to avoid extra API round-trips.
+    """
+    owner, _, name = repo.partition("/")
+    items: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    meta = pr_meta or {}
+    review_decision = str(meta.get("reviewDecision") or "")
+    head_sha = str(meta.get("headRefOid") or "")
+    pr_url = str(meta.get("url") or f"https://github.com/{repo}/pull/{number}")
+
+    reviews = json.loads(gh(["api", f"repos/{repo}/pulls/{number}/reviews", "--paginate"]))
+    issue_comments = json.loads(gh(["api", f"repos/{repo}/issues/{number}/comments?per_page=100"]))
+    review_comments = json.loads(gh(["api", f"repos/{repo}/pulls/{number}/comments?per_page=100"]))
+    commits = json.loads(gh(["api", f"repos/{repo}/pulls/{number}/commits", "--paginate"]))
+
+    thread_query = (
+        "query($owner:String!,$name:String!,$number:Int!){"
+        "repository(owner:$owner,name:$name){"
+        "pullRequest(number:$number){"
+        "reviewThreads(first:100){nodes{id isResolved "
+        "comments(last:1){nodes{author{login} body createdAt url}}}}}}}"
+    )
+    graphql = json.loads(
+        gh(
+            [
+                "api",
+                "graphql",
+                "-f",
+                f"query={thread_query}",
+                "-F",
+                f"owner={owner}",
+                "-F",
+                f"name={name}",
+                "-F",
+                f"number={number}",
+            ]
+        )
+    )
+    threads = (
+        (((graphql.get("data") or {}).get("repository") or {}).get("pullRequest") or {})
+        .get("reviewThreads")
+        or {}
+    ).get("nodes") or []
+
+    all_comment_like: list[dict[str, Any]] = list(issue_comments) + list(review_comments)
+    for review in reviews:
+        if review.get("body"):
+            all_comment_like.append(
+                {
+                    "user": review.get("user"),
+                    "created_at": review.get("submitted_at"),
+                    "body": review.get("body"),
+                }
+            )
+    bot_commit_at, bot_comment_at = _latest_bot_activity(commits=commits, comments=all_comment_like)
+
+    for review in reviews:
+        state_upper = str(review.get("state", "")).upper()
+        if state_upper == "DISMISSED":
+            continue
+        if state_upper != "CHANGES_REQUESTED":
+            continue
+        author = (review.get("user") or {}).get("login", "")
+        if BOT_LOGIN and author == BOT_LOGIN:
+            continue
+        created = parse_gh_time(review.get("submitted_at"))
+        if created is None:
+            continue
+        item_id = f"review:{review.get('id')}"
+        if item_id in seen_ids:
+            continue
+        seen_ids.add(item_id)
+        items.append(
+            {
+                "item_id": item_id,
+                "kind": "review",
+                "repo": repo,
+                "number": number,
+                "author": author,
+                "body": review.get("body") or "(CHANGES_REQUESTED)",
+                "url": review.get("html_url") or pr_url,
+                "created_at": created,
+                "thread_resolved": False,
+                "bot_commit_at": bot_commit_at,
+                "bot_comment_at": bot_comment_at,
+                "review_dismissed": False,
+                "review_decision": review_decision,
+            }
+        )
+
+    for thread in threads:
+        if thread.get("isResolved"):
+            continue
+        last_comments = ((thread.get("comments") or {}).get("nodes")) or []
+        if not last_comments:
+            continue
+        last = last_comments[-1]
+        author = (last.get("author") or {}).get("login", "")
+        if BOT_LOGIN and author == BOT_LOGIN:
+            continue
+        created = parse_gh_time(last.get("createdAt"))
+        if created is None:
+            continue
+        item_id = f"thread:{thread.get('id')}"
+        if item_id in seen_ids:
+            continue
+        seen_ids.add(item_id)
+        items.append(
+            {
+                "item_id": item_id,
+                "kind": "thread",
+                "repo": repo,
+                "number": number,
+                "author": author,
+                "body": last.get("body") or "",
+                "url": last.get("url") or pr_url,
+                "created_at": created,
+                "thread_resolved": False,
+                "bot_commit_at": bot_commit_at,
+                "bot_comment_at": bot_comment_at,
+            }
+        )
+
+    for comment in list(issue_comments) + list(review_comments):
+        author = (comment.get("user") or {}).get("login", "")
+        if BOT_LOGIN and author == BOT_LOGIN:
+            continue
+        body = comment.get("body") or ""
+        if not FIX_REQUEST_PATTERN.search(body):
+            continue
+        created = parse_gh_time(comment.get("created_at"))
+        if created is None:
+            continue
+        item_id = f"comment:{comment.get('id')}"
+        if item_id in seen_ids:
+            continue
+        seen_ids.add(item_id)
+        items.append(
+            {
+                "item_id": item_id,
+                "kind": "comment",
+                "repo": repo,
+                "number": number,
+                "author": author,
+                "body": body,
+                "url": comment.get("html_url") or pr_url,
+                "created_at": created,
+                "thread_resolved": False,
+                "bot_commit_at": bot_commit_at,
+                "bot_comment_at": bot_comment_at,
+            }
+        )
+
+    # CI failure on current head SHA (persistent rewarn path; check_ci handles first-shot).
+    failed = failed_check_names(meta.get("statusCheckRollup"))
+    if head_sha and failed:
+        item_id = ci_stale_item_id(repo, number, head_sha)
+        if item_id not in seen_ids:
+            seen_ids.add(item_id)
+            items.append(
+                {
+                    "item_id": item_id,
+                    "kind": "ci",
+                    "repo": repo,
+                    "number": number,
+                    "author": "ci",
+                    "body": ", ".join(failed[:6]),
+                    "url": pr_url,
+                    "created_at": None,  # age uses watch first_seen
+                    "sha": head_sha,
+                    "failed_checks": failed,
+                    "ci_still_failing": True,
+                    "head_sha_changed": False,
+                    "thread_resolved": False,
+                    "bot_commit_at": None,
+                    "bot_comment_at": None,
+                }
+            )
+
+    return items
+
+
+def check_unaddressed(state: dict) -> None:
+    """Warn on unaddressed external fix requests / CI failures; escalate long-running ones."""
+    watch = state.setdefault("stale_watch", {})
+    ci_notified = state.setdefault("ci_notified", {})
+    now = now_utc()
+    active_ids: set[str] = set()
+    # kind -> lines for dispatcher / escalate (separate message templates)
+    dispatcher_by_kind: dict[str, list[str]] = {"review": [], "ci": [], "comment": []}
+    escalate_by_kind: dict[str, list[str]] = {"review": [], "ci": [], "comment": []}
+    open_pr_count = 0
+
+    for repo in REPOS:
+        prs = json.loads(
+            gh(
+                [
+                    "pr",
+                    "list",
+                    "--repo",
+                    repo,
+                    "--state",
+                    "open",
+                    "--json",
+                    "number,headRefOid,statusCheckRollup,reviewDecision,url",
+                    "--limit",
+                    "100",
+                ]
+            )
+        )
+        open_pr_count += len(prs)
+        for pr in prs:
+            number = pr["number"]
+            for item in _collect_pr_stale_items(repo, number, pr_meta=pr):
+                kind = str(item.get("kind") or "comment")
+                if is_addressed(
+                    pr_closed=False,
+                    thread_resolved=bool(item.get("thread_resolved")),
+                    item_created_at=item.get("created_at"),
+                    bot_commit_at=item.get("bot_commit_at"),
+                    bot_comment_at=item.get("bot_comment_at"),
+                    kind=kind,
+                    review_dismissed=bool(item.get("review_dismissed")),
+                    review_decision=item.get("review_decision"),
+                    ci_still_failing=bool(item.get("ci_still_failing", True)),
+                    head_sha_changed=bool(item.get("head_sha_changed")),
+                ):
+                    continue
+                item_id = item["item_id"]
+                active_ids.add(item_id)
+                entry = watch.get(item_id)
+                if entry is None:
+                    # CI: if check_ci already notified this SHA, treat that as first warn
+                    # so stale side starts rewarn after REWARN interval (no duplicate immediate alert).
+                    already_ci_notified = False
+                    if kind == "ci":
+                        sha = str(item.get("sha") or "")
+                        ci_key = f"{repo}#{number}_{sha[:8]}"
+                        already_ci_notified = ci_key in ci_notified
+                    entry = {
+                        "first_seen": iso(now),
+                        "last_warned": iso(now) if already_ci_notified else None,
+                        "escalated_at": None,
+                        "kind": kind,
+                    }
+                    watch[item_id] = entry
+                last_warned = parse_gh_time(entry.get("last_warned"))
+                escalated_at = parse_gh_time(entry.get("escalated_at"))
+                # CI age is measured from first_seen (no event timestamp on the check rollup).
+                if kind == "ci":
+                    item_created_at = parse_gh_time(entry.get("first_seen")) or now
+                    warn_hours = 0.0  # first warn immediate (unless already_ci_notified set last_warned)
+                else:
+                    item_created_at = item["created_at"]
+                    warn_hours = STALE_WARN_HOURS
+                stage = determine_warning_stage(
+                    item_created_at=item_created_at,
+                    now=now,
+                    last_warned=last_warned,
+                    escalated_at=escalated_at,
+                    warn_hours=warn_hours,
+                    rewarn_hours=STALE_REWARN_HOURS,
+                    escalate_hours=STALE_ESCALATE_HOURS,
+                )
+                if stage == "none":
+                    continue
+                line = _format_stale_line(
+                    repo=item["repo"],
+                    number=item["number"],
+                    author=item.get("author") or "",
+                    body=item.get("body") or "",
+                    url=item.get("url") or "",
+                    created_at=item_created_at,
+                    now=now,
+                    kind=kind,
+                    sha=str(item.get("sha") or ""),
+                    failed_checks=item.get("failed_checks"),
+                )
+                dispatcher_due = stage in ("warn", "rewarn") or (
+                    stage == "escalate"
+                    and (
+                        last_warned is None
+                        or (now - last_warned) >= timedelta(hours=STALE_REWARN_HOURS)
+                    )
+                )
+                # thread/comment share the generic message template
+                msg_kind = kind if kind in ("review", "ci") else "comment"
+                if dispatcher_due:
+                    dispatcher_by_kind[msg_kind].append(line)
+                    entry["last_warned"] = iso(now)
+                if stage == "escalate":
+                    escalate_by_kind[msg_kind].append(line)
+                    entry["escalated_at"] = iso(now)
+
+    if open_pr_count == 0 and not watch:
+        return
+
+    # Drop resolved / closed-PR items and 14-day leftovers only after a full scan.
+    cutoff = iso(now - timedelta(days=14))
+    state["stale_watch"] = {
+        key: value
+        for key, value in watch.items()
+        if key in active_ids and (value.get("first_seen") or iso(now)) >= cutoff
+    }
+
+    for msg_kind, lines in dispatcher_by_kind.items():
+        if lines:
+            send(DISPATCHER, _stale_message(lines, kind=msg_kind))
+            log(f"stale warn ({msg_kind}) -> {DISPATCHER}: {len(lines)} item(s)")
+    for msg_kind, lines in escalate_by_kind.items():
+        if lines:
+            send(ESCALATION_TARGET, _stale_message(lines, kind=msg_kind))
+            log(f"stale escalate ({msg_kind}) -> {ESCALATION_TARGET}: {len(lines)} item(s)")
 
 
 def save_state(state: dict) -> None:
@@ -271,11 +823,7 @@ def check_ci(state: dict) -> None:
             )
         )
         for pr in prs:
-            failed = [
-                check.get("name", "?")
-                for check in pr.get("statusCheckRollup") or []
-                if str(check.get("conclusion", "")).upper() == "FAILURE"
-            ]
+            failed = failed_check_names(pr.get("statusCheckRollup"))
             if not failed:
                 continue
             key = f"{repo}#{pr['number']}_{pr['headRefOid'][:8]}"
@@ -366,6 +914,7 @@ def main() -> int:
             check_comments(state)
             check_ci(state)
             check_conflicts(state)
+            check_unaddressed(state)
         except Exception as exc:
             state["consecutive_failures"] = state.get("consecutive_failures", 0) + 1
             count = state["consecutive_failures"]

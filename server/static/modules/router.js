@@ -16,8 +16,8 @@ export const REDIRECTS = {
   "/processes": "#/animas",
   "/server": "#/scheduler",
   "/setup": "#/settings",
-  "/memory": "#/animas",
-  "/assets": "#/animas",
+  "/memory": "#/",
+  "/assets": "#/",
   "/activity-report": "#/activity",
   "/logs": "#/activity/logs",
   "/users": "#/settings/users",
@@ -151,10 +151,17 @@ async function handleRoute() {
     return;
   }
 
-  // Permanent redirects (e.g. #/processes → #/animas)
+  // Permanent redirects (e.g. #/processes → #/)
   const redirect = resolveRedirect(path);
   if (redirect) {
     window.location.hash = redirect;
+    return;
+  }
+
+  // Bare #/animas (list) is gone — send bookmarks to home org chart.
+  // Detail routes #/animas/<name>[/<tab>] still resolve via prefix match.
+  if (path === "/animas") {
+    window.location.hash = "#/";
     return;
   }
 
@@ -168,6 +175,11 @@ async function handleRoute() {
     // Fallback to chat
     window.location.hash = "#/chat";
     return;
+  }
+
+  // Anima detail lives under /animas but nav item was removed — highlight Home
+  if (matched && matched.route === "/animas") {
+    navPath = "/";
   }
 
   // Destroy previous page

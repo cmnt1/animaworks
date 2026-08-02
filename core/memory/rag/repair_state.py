@@ -14,6 +14,11 @@ from typing import Any
 from core.memory.rag.repair_types import RepairResult
 from core.memory.rag.repair_utils import iso, parse_dt, utc_now
 
+ACTIVE_REPAIR_STATUSES = frozenset({"requested", "stopping", "repairing"})
+STAGE_FENCE_ACCESS = "fence_access"
+STAGE_REPAIR = "repair"
+STAGE_UNFENCE = "unfence"
+
 
 def now_iso() -> str:
     return iso()

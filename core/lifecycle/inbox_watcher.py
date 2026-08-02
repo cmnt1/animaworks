@@ -41,9 +41,8 @@ class InboxWatcherMixin:
                 if anima._inbox_lock.locked():
                     self._schedule_deferred_trigger(name)
                     continue
-                if anima._background_lock.locked():
-                    self._schedule_deferred_trigger(name)
-                    continue
+                # NOTE: _background_lock は見ない — inboxレーンはTaskExec/cronと
+                # 並行動作可（cron排他は process_inbox_message 内で担保）。
                 self._pending_triggers.add(name)
                 asyncio.create_task(self._message_triggered_heartbeat(name))
 
@@ -105,9 +104,6 @@ class InboxWatcherMixin:
             self._schedule_deferred_trigger(name)
             return
         if anima._inbox_lock.locked():
-            self._schedule_deferred_trigger(name)
-            return
-        if anima._background_lock.locked():
             self._schedule_deferred_trigger(name)
             return
         self._pending_triggers.add(name)

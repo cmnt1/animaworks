@@ -851,7 +851,11 @@ class SkillsToolsMixin:
 
                     resolved_wd = str(resolve_workspace(workspace_raw))
                 except ValueError as e:
-                    return _error_result("InvalidArguments", f"Workspace resolution failed: {e}")
+                    return _error_result(
+                        "InvalidArguments",
+                        f"Workspace resolution failed: {e}",
+                        suggestion=str(e),
+                    )
 
             task_desc = {
                 "task_type": "llm",

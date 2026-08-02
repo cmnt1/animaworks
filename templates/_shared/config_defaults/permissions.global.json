@@ -2,10 +2,14 @@
   "version": 1,
   "injection_patterns": [
     {
+      "name": "command_chaining_or_newline",
       "pattern": "[;\\n]",
       "reason": "Command chaining (;) and embedded newlines are blocked — use && or || instead"
     }
   ],
+  "sdk_bash_injection": {
+    "mode": "log"
+  },
   "commands": {
     "deny": [
       {

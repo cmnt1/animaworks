@@ -29,14 +29,16 @@ let _selectedGroupId = null;
 /** @type {string[]} */
 let _animaNames = [];
 let _d3LoadPromise = null;
+/** Generation token: bumped on reset/filter change to cancel stale loads. */
+let _loadGen = 0;
+/** True while auto-chained page loads are in flight. */
+let _autoLoading = false;
 
 const RANGE_OPTIONS = [1, 3, 6, 24, 48];
-
-function _groupLimitForHours(hours) {
-  // Prefer denser pages for shorter windows so the chart is not sparse
-  if (hours <= 24) return 200;
-  return 200;
-}
+// Backend caps group_limit at 200 per request; page repeatedly up to this
+// total so short windows are fully populated without manual clicks.
+const PAGE_GROUP_LIMIT = 200;
+const MAX_AUTO_GROUPS = 1500;
 
 // ── d3 (scaleTime only) ────────────────────
 
@@ -81,6 +83,8 @@ export function render(container) {
   _rangeHours = 1;
   _selectedGroupId = null;
   _animaNames = [];
+  _loadGen += 1;
+  _autoLoading = false;
 
   container.innerHTML = `
     <div class="activity-page activity-page--swimlane">
@@ -128,7 +132,7 @@ export function render(container) {
     _loadEvents(true);
   });
   _refreshInterval = setInterval(() => {
-    _loadEvents(true);
+    _refreshLatest();
     _nowBoard?.refresh();
   }, 30000);
 }
@@ -146,6 +150,8 @@ export function destroy() {
   _nowBoard = null;
   _groups = [];
   _selectedGroupId = null;
+  _loadGen += 1;
+  _autoLoading = false;
 }
 
 // ── Filter UI ──────────────────────────────
@@ -274,11 +280,12 @@ function _observeResize() {
 async function _loadEvents(reset) {
   if (reset) {
     _groupOffset = 0;
+    _loadGen += 1;
     // Keep previously selected group id for restore after redraw
   }
+  const gen = _loadGen;
 
-  const limit = _groupLimitForHours(_rangeHours);
-  let url = `/api/activity/recent?hours=${_rangeHours}&grouped=true&group_limit=${limit}&group_offset=${_groupOffset}`;
+  let url = `/api/activity/recent?hours=${_rangeHours}&grouped=true&group_limit=${PAGE_GROUP_LIMIT}&group_offset=${_groupOffset}`;
   if (_selectedAnima) {
     url += `&anima=${encodeURIComponent(_selectedAnima)}`;
   }
@@ -290,11 +297,13 @@ async function _loadEvents(reset) {
 
   try {
     const data = await api(url);
+    if (gen !== _loadGen) return; // stale response (filter/range changed meanwhile)
     const newGroups = data.groups || [];
     _totalGroups = data.total_groups ?? 0;
     _totalEvents = data.total_events ?? 0;
     _hasMore = data.has_more ?? false;
 
+    const prevLen = reset ? 0 : _groups.length;
     if (reset) {
       _groups = newGroups;
     } else {
@@ -306,11 +315,24 @@ async function _loadEvents(reset) {
     }
 
     _groupOffset = _groups.length;
+
+    // Auto-chain next page until the window is filled or MAX_AUTO_GROUPS.
+    // Stop when a page adds no new unique groups (tail churn / all dupes)
+    // to avoid refetching the same offset forever.
+    _autoLoading = _hasMore && _groups.length < MAX_AUTO_GROUPS
+      && _groups.length > prevLen;
+    if (_autoLoading) {
+      setTimeout(() => {
+        if (gen === _loadGen) _loadEvents(false);
+      }, 100);
+    }
+
     _paintSwimlane();
     _updateCount();
     _renderLoadMore();
     _restoreDetail();
   } catch (err) {
+    _autoLoading = false;
     if (wrap) {
       const empty = document.getElementById("activitySwimlaneEmpty");
       if (empty) {
@@ -318,6 +340,45 @@ async function _loadEvents(reset) {
         empty.textContent = `${t("activity.load_failed")}: ${escapeHtml(err.message)}`;
       }
     }
+  }
+}
+
+/**
+ * Periodic soft refresh: fetch only the newest page and merge it into the
+ * already-loaded set (updated groups replaced in place, new ones appended).
+ * Avoids re-chaining up to MAX_AUTO_GROUPS pages every 30 seconds.
+ */
+async function _refreshLatest() {
+  if (_autoLoading) return; // initial chain still running
+  const gen = _loadGen;
+
+  let url = `/api/activity/recent?hours=${_rangeHours}&grouped=true&group_limit=${PAGE_GROUP_LIMIT}&group_offset=0`;
+  if (_selectedAnima) {
+    url += `&anima=${encodeURIComponent(_selectedAnima)}`;
+  }
+  if (_selectedGroupTypes.length > 0) {
+    url += `&group_type=${encodeURIComponent(_selectedGroupTypes.join(","))}`;
+  }
+
+  try {
+    const data = await api(url);
+    if (gen !== _loadGen) return;
+    _totalGroups = data.total_groups ?? _totalGroups;
+    _totalEvents = data.total_events ?? _totalEvents;
+
+    const indexById = new Map(_groups.map((g, i) => [g.id, i]));
+    for (const g of data.groups || []) {
+      const idx = indexById.get(g.id);
+      if (idx != null) _groups[idx] = g;
+      else _groups.push(g);
+    }
+    _groupOffset = _groups.length;
+
+    _paintSwimlane();
+    _updateCount();
+    _restoreDetail();
+  } catch {
+    // Transient refresh failure: keep current view, retry on next tick
   }
 }
 
@@ -400,6 +461,12 @@ function _restoreDetail() {
 function _renderLoadMore() {
   const wrap = document.getElementById("activityLoadMoreWrap");
   if (!wrap) return;
+
+  if (_autoLoading) {
+    const target = Math.min(_totalGroups || MAX_AUTO_GROUPS, MAX_AUTO_GROUPS);
+    wrap.innerHTML = `<div class="activity-load-progress">${t("common.loading")} (${_groups.length}/${target})</div>`;
+    return;
+  }
 
   if (_hasMore) {
     wrap.innerHTML = `<button type="button" class="activity-load-more" id="activityLoadMoreBtn">${t("activity.swimlane_load_earlier", { current: _groups.length, total: _totalGroups })}</button>`;

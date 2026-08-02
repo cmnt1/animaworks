@@ -18,7 +18,8 @@ const I18N_DIR = resolve(STATIC, "i18n");
 function loadHomeHelpers() {
   const path = HOME_PATH;
   let source = readFileSync(path, "utf8");
-  source = source.replace(/^import\s+.+;?\s*$/gm, "");
+  // Strip single-line and multi-line import declarations
+  source = source.replace(/(?:^|\n)\s*import\b[\s\S]*?;/g, "\n");
 
   const preamble = `
     const t = (k, params = {}) => {
@@ -50,13 +51,44 @@ function loadHomeHelpers() {
         .replace(/"/g, "&quot;");
     const escapeAttr = escapeHtml;
     const timeStr = (v) => (v ? "12:00" : "--:--");
-    const statusClass = () => "";
     const animaHashColor = () => "#000";
     const companyColor = () => "#000";
     const getIcon = () => "";
     const getDisplaySummary = () => "";
     const bustupCandidates = () => [];
     const resolveCachedAvatar = async () => null;
+    const fetchProcessMap = async () => ({});
+    const buildAnimaListStatusHtml = (p) =>
+      '<span class="anima-list-status anima-list-status--success">' +
+      (p?.status || "offline") +
+      "</span>";
+    const buildOrgCardKebabHtml = (name, status) =>
+      '<div class="anima-list-kebab-wrap"><button class="anima-list-kebab-btn" data-name="' +
+      name +
+      '">⋮</button><div class="anima-list-kebab-menu" hidden>' +
+      status +
+      "</div></div>";
+    const bindKebabMenus = () => {};
+    const onDocumentClickCloseKebab = () => {};
+    const bindProcessActionButtons = () => {};
+    const mergeNodeWithProcess = (node, processMap) => {
+      const proc = processMap && processMap[node?.name];
+      if (!proc) return { ...node, status: node?.status || "offline" };
+      return { ...node, ...proc, name: node.name };
+    };
+    const collectOrgChartNames = (tree) => {
+      const names = new Set();
+      function walk(nodes) {
+        for (const n of nodes || []) {
+          if (n?.name) names.add(n.name);
+          walk(n?.children);
+        }
+      }
+      walk(tree);
+      return names;
+    };
+    const findUnlistedAnimas = (processMap, chartNames) =>
+      Object.keys(processMap || {}).filter((n) => n && !chartNames.has(n)).sort();
   `;
 
   const url =
@@ -210,6 +242,34 @@ describe("home.js render template structure", () => {
     assert.equal(typeof home.summarizeServerStatus, "function");
     assert.equal(typeof home.serverStatusTableHtml, "function");
     assert.equal(typeof home.extractSchedulerJobs, "function");
+    assert.equal(typeof home.buildOrgCardProcessParts, "function");
+  });
+
+  it("org chart cards use integrated status + kebab (source contract)", () => {
+    const source = readFileSync(HOME_PATH, "utf8");
+    assert.match(source, /buildAnimaListStatusHtml|buildOrgCardProcessParts/);
+    assert.match(source, /buildOrgCardKebabHtml|anima-list-kebab/);
+    assert.match(source, /fetchProcessMap/);
+    assert.match(source, /setInterval\(_refreshOrgStatuses,\s*10000\)/);
+    assert.match(source, /_orgStatusInterval/);
+    assert.match(source, /data-org-status/);
+    assert.match(source, /org-card-open-detail/);
+    // Old status-only dot removed from card markup path
+    assert.doesNotMatch(source, /org-tree-status \$\{dotClass\}/);
+  });
+
+  it("buildOrgCardProcessParts returns status and kebab html", async () => {
+    const home = await loadHomeHelpers();
+    const parts = home.buildOrgCardProcessParts({
+      name: "sakura",
+      status: "running",
+      uptime_sec: 60,
+      pid: 1,
+    });
+    assert.match(parts.statusHtml, /anima-list-status/);
+    assert.match(parts.statusHtml, /running/);
+    assert.match(parts.kebabHtml, /anima-list-kebab/);
+    assert.match(parts.kebabHtml, /sakura/);
   });
 });
 
@@ -220,10 +280,13 @@ describe("i18n keys for dashboard redesign", () => {
     "home.attention_in_progress",
     "home.attention_pending",
     "home.attention_title",
+    "home.org_unlisted",
     "home.status_bar_animas",
     "home.status_bar_connections",
     "home.status_bar_jobs",
     "home.status_bar_processes",
+    "animas.open_detail",
+    "animas.actions_menu",
   ];
 
   it("ja/en/ko are valid JSON and include new attention/status keys", () => {
@@ -236,7 +299,7 @@ describe("i18n keys for dashboard redesign", () => {
       assert.ok(typeof ko[k] === "string" && ko[k].length > 0, `ko missing ${k}`);
     }
     // New home.* keys must be present in all three locales with identical names
-    const homeKeys = (obj) => Object.keys(obj).filter((k) => k.startsWith("home.attention_") || k.startsWith("home.status_bar_")).sort();
+    const homeKeys = (obj) => Object.keys(obj).filter((k) => k.startsWith("home.attention_") || k.startsWith("home.status_bar_") || k === "home.org_unlisted").sort();
     assert.deepEqual(homeKeys(en), homeKeys(ja));
     assert.deepEqual(homeKeys(ko), homeKeys(ja));
   });

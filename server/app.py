@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import html
 import inspect
+import json
 import logging
 import os
 import re
@@ -1244,6 +1245,30 @@ def create_app(
     app.include_router(create_router())
     app.include_router(create_setup_router())
 
+    @app.get("/api/workspace/pixel/scene", include_in_schema=False)
+    async def _pixel_workspace_scene():
+        scene_path = app.state.animas_dir.parent / "workspace_pixel" / "scene.json"
+        if not scene_path.is_file():
+            raise HTTPException(status_code=404)
+        try:
+            payload = json.loads(await asyncio.to_thread(scene_path.read_text, encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            logger.warning("Invalid pixel workspace scene override: %s", exc)
+            raise HTTPException(status_code=500, detail="Invalid workspace scene") from exc
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=500, detail="Invalid workspace scene")
+        return JSONResponse(payload, headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/workspace/pixel/assets/{path:path}", include_in_schema=False)
+    async def _pixel_workspace_asset(path: str):
+        assets_root = (app.state.animas_dir.parent / "workspace_pixel" / "assets").resolve()
+        candidate = (assets_root / path).resolve()
+        if not candidate.is_relative_to(assets_root):
+            raise HTTPException(status_code=400, detail="Invalid asset path")
+        if not candidate.is_file():
+            raise HTTPException(status_code=404)
+        return FileResponse(candidate, headers={"Cache-Control": "no-store"})
+
     # ── Version stamp (changes on every server start) ────
     _app_version = str(int(time.time()))
     static_dir = Path(__file__).parent / "static"
@@ -1307,6 +1332,11 @@ def create_app(
     if (workspace_static_dir / "index.html").exists():
         _workspace_html_raw = (workspace_static_dir / "index.html").read_text(encoding="utf-8")
 
+    _pixel_workspace_html_raw = ""
+    pixel_workspace_index = workspace_static_dir / "pixel" / "index.html"
+    if pixel_workspace_index.exists():
+        _pixel_workspace_html_raw = pixel_workspace_index.read_text(encoding="utf-8")
+
     if _setup_html_raw:
 
         @app.get("/setup", include_in_schema=False)
@@ -1320,6 +1350,16 @@ def create_app(
         @app.get("/workspace/", include_in_schema=False)
         async def _serve_workspace_index():
             return HTMLResponse(_inject_html(_workspace_html_raw), headers={"Cache-Control": "no-store"})
+
+    if _pixel_workspace_html_raw:
+
+        @app.get("/workspace/pixel", include_in_schema=False)
+        async def _redirect_pixel_workspace():
+            return RedirectResponse(_base_prefixed("/workspace/pixel/"))
+
+        @app.get("/workspace/pixel/", include_in_schema=False)
+        async def _serve_pixel_workspace_index():
+            return HTMLResponse(_inject_html(_pixel_workspace_html_raw), headers={"Cache-Control": "no-store"})
 
     if setup_static_dir.exists():
         app.mount(

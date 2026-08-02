@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -230,6 +230,28 @@ class TestPreToolHookTaskBranch:
 
         output = result.get("hookSpecificOutput", {})
         assert output.get("permissionDecision") != "deny"
+
+    async def test_bash_violation_denied_with_trigger(self, hook) -> None:
+        input_data = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "echo safe; echo injected"},
+        }
+
+        with patch("core.execution._sdk_hooks._log_tool_use") as log_tool, \
+             patch("core.execution._sdk_hooks._check_a1_bash_command", return_value="injection") as check, \
+             patch("core.execution._sdk_hooks._build_output_guard", return_value=None):
+            result = await hook(input_data, "tool-id-injection", {})
+
+        output = result.get("hookSpecificOutput", {})
+        assert output.get("permissionDecision") == "deny"
+        assert output.get("permissionDecisionReason") == "injection"
+        check.assert_called_once_with(
+            "echo safe; echo injected",
+            ANY,
+            superuser=False,
+            trigger="unknown",
+        )
+        assert log_tool.call_args.kwargs["blocked"] is True
 
     async def test_task_output_also_blocked(self, hook) -> None:
         """TaskOutput is also hard-blocked since Agent/Task are disabled."""

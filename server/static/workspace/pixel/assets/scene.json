@@ -1,0 +1,97 @@
+{
+  "_comment": "Generic layout template. The browser generates the full scene from /api/animas.",
+  "canvas": {
+    "w": 1120,
+    "h": 736,
+    "tile": 32
+  },
+  "layout": {
+    "company_area": {
+      "top": 4,
+      "bottom": 18,
+      "left": 1,
+      "right": 34,
+      "desk_columns": 3,
+      "desk_column_step": 4,
+      "desk_row_step": 4,
+      "desk_top_offset": 3,
+      "height": 15
+    },
+    "human_gate": {
+      "zone": [
+        15,
+        7,
+        19,
+        13
+      ],
+      "desk": [
+        17,
+        10
+      ]
+    },
+    "path": {
+      "zone": [
+        14,
+        14,
+        20,
+        20
+      ],
+      "cross_company_via": [
+        17,
+        13
+      ],
+      "floor": "stone_warm"
+    },
+    "plaza": {
+      "left": 1,
+      "right": 33,
+      "top": 19,
+      "bottom": 20
+    },
+    "entrance": {
+      "zone": [
+        14,
+        17,
+        20,
+        20
+      ],
+      "door": [
+        15,
+        19
+      ]
+    },
+    "prop_types": [
+      "meeting_table",
+      "rug",
+      "sofa",
+      "side_table",
+      "plant",
+      "trash_bin",
+      "clutter_a",
+      "clutter_b",
+      "clutter_c",
+      "clutter_d",
+      "whiteboard",
+      "bookshelf",
+      "bookshelf_b",
+      "coffee",
+      "door_frame",
+      "welcome_mat",
+      "parcel_stack",
+      "trolley",
+      "sign_stand",
+      "cat",
+      "cat_bed"
+    ]
+  },
+  "lighting": {
+    "day": {
+      "tint": "#fff6e8",
+      "window": "city_day"
+    },
+    "night": {
+      "tint": "#2a2a4a",
+      "window": "city_night"
+    }
+  }
+}

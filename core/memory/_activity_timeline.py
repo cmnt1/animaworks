@@ -114,10 +114,12 @@ class TimelineMixin:
         Trigger events (heartbeat_start, message_received, cron_executed,
         task_created, inbox_processing_start, task_exec_start) open a new
         group.  Subsequent events are absorbed into the open group until a
-        closing event or the next trigger *for the same Anima*.
+        closing event or the next trigger for the same ``(anima, ctx)`` key.
 
-        Each Anima's open group is tracked independently so that
-        cross-Anima interleaving does not break grouping.
+        Open groups are tracked by ``(anima, ctx)`` so parallel task
+        execution (distinct non-empty ``ctx`` values) can overlap in time
+        without forcing earlier groups closed.  Empty ``ctx`` keeps the
+        historical anima-level serial behaviour via the key ``(anima, "")``.
 
         tool_use / tool_result pairs are merged into a single entry
         with ``tool_result`` field attached.
@@ -127,38 +129,63 @@ class TimelineMixin:
         _TM = TimelineMixin
         paired = _TM._pair_tool_results(entries)
         groups: list[dict[str, Any]] = []
-        current_by_anima: dict[str, dict[str, Any]] = {}
+        # Keyed by (anima, ctx). Empty ctx preserves pre-ctx serial grouping.
+        current_by_key: dict[tuple[str, str], dict[str, Any]] = {}
 
         for entry in paired:
             etype = entry.type
             anima = entry._anima_name
+            ctx = entry.ctx or ""
+            key = (anima, ctx)
             evt_dict = _TM._entry_to_event_dict(entry)
             is_trigger = etype in _TM._TRIGGER_TYPES
-            cur = current_by_anima.get(anima)
+            cur_key, cur = _TM._lookup_open_group(
+                current_by_key,
+                anima,
+                ctx,
+            )
 
             if is_trigger:
-                if cur is not None:
-                    cur["is_open"] = False
-                    _TM._finalize_group(cur)
-                    groups.append(cur)
-                current_by_anima[anima] = _TM._open_group(entry, evt_dict)
+                # Only close the open group for this exact key so parallel
+                # contexts (other task: ids) stay open.
+                same = current_by_key.get(key)
+                if same is not None:
+                    same["is_open"] = False
+                    _TM._finalize_group(same)
+                    groups.append(same)
+                    del current_by_key[key]
+                current_by_key[key] = _TM._open_group(entry, evt_dict)
                 continue
 
             if etype == "heartbeat_end":
-                if cur and cur["type"] == "heartbeat":
-                    cur["events"].append(evt_dict)
-                    cur["end_ts"] = entry.ts
-                    cur["is_open"] = False
+                hb_key, hb_cur = _TM._lookup_open_group(
+                    current_by_key,
+                    anima,
+                    ctx,
+                    gtype="heartbeat",
+                )
+                # Heartbeat start/end sometimes disagree on ctx (empty vs
+                # "heartbeat"); still close the open heartbeat for this anima.
+                if hb_cur is None:
+                    for k, g in current_by_key.items():
+                        if k[0] == anima and g["type"] == "heartbeat":
+                            hb_key, hb_cur = k, g
+                            break
+                if hb_cur is not None and hb_key is not None:
+                    hb_cur["events"].append(evt_dict)
+                    hb_cur["end_ts"] = entry.ts
+                    hb_cur["is_open"] = False
                     if entry.summary:
-                        cur["summary"] = entry.summary
-                    _TM._finalize_group(cur)
-                    groups.append(cur)
-                    del current_by_anima[anima]
+                        hb_cur["summary"] = entry.summary
+                    _TM._finalize_group(hb_cur)
+                    groups.append(hb_cur)
+                    del current_by_key[hb_key]
                     continue
                 retrogrp = _TM._find_recent_group(
                     groups,
                     anima,
                     "heartbeat",
+                    preferred_ctx=ctx,
                 )
                 if retrogrp is not None:
                     retrogrp["events"].append(evt_dict)
@@ -168,12 +195,12 @@ class TimelineMixin:
                         retrogrp["summary"] = entry.summary
                     retrogrp["event_count"] = len(retrogrp["events"])
                     continue
-                if cur is not None:
+                if cur is not None and cur_key is not None:
                     cur["events"].append(evt_dict)
                     cur["end_ts"] = entry.ts
                     continue
 
-            if cur is not None:
+            if cur is not None and cur_key is not None:
                 close_types = _TM._CLOSE_MAP.get(cur["type"], frozenset())
                 cur["events"].append(evt_dict)
                 cur["end_ts"] = entry.ts
@@ -181,10 +208,14 @@ class TimelineMixin:
                     cur["is_open"] = False
                     _TM._finalize_group(cur)
                     groups.append(cur)
-                    del current_by_anima[anima]
+                    del current_by_key[cur_key]
                 continue
 
-            retrogrp = _TM._find_recent_group(groups, anima)
+            retrogrp = _TM._find_recent_group(
+                groups,
+                anima,
+                preferred_ctx=ctx,
+            )
             if retrogrp is not None:
                 retrogrp["events"].append(evt_dict)
                 retrogrp["end_ts"] = entry.ts
@@ -193,11 +224,32 @@ class TimelineMixin:
 
             groups.append(_TM._make_single_group(entry, evt_dict))
 
-        for cur in current_by_anima.values():
+        for cur in current_by_key.values():
             _TM._finalize_group(cur)
             groups.append(cur)
 
         return groups
+
+    @staticmethod
+    def _lookup_open_group(
+        current_by_key: dict[tuple[str, str], dict[str, Any]],
+        anima: str,
+        ctx: str,
+        gtype: str | None = None,
+    ) -> tuple[tuple[str, str] | None, dict[str, Any] | None]:
+        """Resolve the open group for an event.
+
+        Matches only the exact ``(anima, ctx)`` slot (empty ``ctx`` uses
+        ``(anima, "")``).  Non-empty parallel slots are never mixed with
+        empty-ctx events on lookup — those fall through to retro-match or
+        single-group handling so legacy streams stay serial while modern
+        task contexts stay isolated.
+        """
+        key = (anima, ctx)
+        cur = current_by_key.get(key)
+        if cur is not None and (gtype is None or cur["type"] == gtype):
+            return key, cur
+        return None, None
 
     @staticmethod
     def _pair_tool_results(
@@ -270,10 +322,12 @@ class TimelineMixin:
         if gtype == "dm":
             summary = entry.from_person or entry.to_person or summary
 
+        ctx = entry.ctx or ""
         return {
             "id": f"grp-{anima}:{entry.ts}:{gtype}",
             "type": gtype,
             "anima": anima,
+            "ctx": ctx,
             "start_ts": entry.ts,
             "end_ts": entry.ts,
             "summary": summary,
@@ -289,6 +343,7 @@ class TimelineMixin:
             "id": f"grp-{anima}:{entry.ts}:single",
             "type": "single",
             "anima": anima,
+            "ctx": entry.ctx or "",
             "start_ts": entry.ts,
             "end_ts": entry.ts,
             "summary": entry.summary,
@@ -302,19 +357,30 @@ class TimelineMixin:
         groups: list[dict[str, Any]],
         anima: str,
         gtype: str | None = None,
+        preferred_ctx: str | None = None,
     ) -> dict[str, Any] | None:
         """Find the most recently finalized group for *anima*.
 
         Searches *groups* in reverse.  If *gtype* is given, only groups of
-        that type are considered.
+        that type are considered.  When *preferred_ctx* is non-empty, a
+        matching ``ctx`` is preferred; otherwise (or when no match exists)
+        the most recent same-anima group is returned so empty-ctx legacy
+        events still attach to nearby activity.
         """
+        fallback: dict[str, Any] | None = None
+        prefer = preferred_ctx or ""
         for grp in reversed(groups):
             if grp["anima"] != anima:
                 continue
             if gtype is not None and grp["type"] != gtype:
                 continue
-            return grp
-        return None
+            if prefer and (grp.get("ctx") or "") == prefer:
+                return grp
+            if fallback is None:
+                fallback = grp
+            if not prefer:
+                return grp
+        return fallback
 
     @staticmethod
     def _finalize_group(group: dict[str, Any]) -> None:

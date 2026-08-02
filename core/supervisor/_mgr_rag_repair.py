@@ -163,7 +163,7 @@ class RAGRepairMixin:
                 asyncio.create_task(self._run_supervised_rag_repair(anima_name, state))
 
     async def _run_supervised_rag_repair(self, anima_name: str, state: dict[str, object]) -> None:
-        """Stop one anima, repair its RAG DB in a CLI subprocess, then restart it.
+        """Repair one anima's RAG DB in a supervised CLI subprocess.
 
         The caller (``_poll_requested_rag_repairs``) has already reserved this
         anima in ``_rag_repairs_in_progress`` for concurrency accounting; this
@@ -176,17 +176,97 @@ class RAGRepairMixin:
         reason = str(state.get("reason") or "requested_rag_repair")
         include_shared = bool(state.get("include_shared", True))
         try:
-            if not await self._stop_anima_for_rag_repair(anima_name, reason, include_shared):
+            if self._rag_repair_stop_anima():
+                if not await self._stop_anima_for_rag_repair(anima_name, reason, include_shared):
+                    return
+
+                result = await self._run_rag_repair_step(anima_name, reason, include_shared)
+                if not result["ok"]:
+                    await self._handle_failed_rag_repair(
+                        anima_name,
+                        reason,
+                        include_shared,
+                        result,
+                        anima_was_stopped=True,
+                    )
+                    return
+
+                await self._restart_after_rag_repair(anima_name, reason, include_shared)
                 return
 
-            result = await self._run_rag_repair_step(anima_name, reason, include_shared)
-            if not result["ok"]:
-                await self._handle_failed_rag_repair(anima_name, reason, include_shared, result)
-                return
-
-            await self._restart_after_rag_repair(anima_name, reason, include_shared)
+            await self._run_uninterrupted_rag_repair(anima_name, reason, include_shared)
         finally:
             in_progress.discard(anima_name)
+
+    async def _run_uninterrupted_rag_repair(
+        self,
+        anima_name: str,
+        reason: str,
+        include_shared: bool,
+    ) -> None:
+        """Fence RAG access while repairing without stopping the anima process."""
+        repair_succeeded = False
+        self._write_rag_repair_state(
+            anima_name,
+            {
+                "status": "repairing",
+                "stage": repair_state.STAGE_FENCE_ACCESS,
+                "pid": None,
+                "reason": reason,
+                "include_shared": include_shared,
+                "last_error": None,
+            },
+        )
+        try:
+            result = await self._run_rag_repair_step(
+                anima_name,
+                reason,
+                include_shared,
+                stage=repair_state.STAGE_REPAIR,
+            )
+            if not result["ok"]:
+                await self._handle_failed_rag_repair(
+                    anima_name,
+                    reason,
+                    include_shared,
+                    result,
+                    anima_was_stopped=False,
+                )
+                return
+            repair_succeeded = True
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception("Uninterrupted RAG repair failed: %s", anima_name)
+            await self._handle_failed_rag_repair(
+                anima_name,
+                reason,
+                include_shared,
+                {
+                    "ok": False,
+                    "status": "failed",
+                    "error": str(exc),
+                },
+                anima_was_stopped=False,
+            )
+        finally:
+            current = self._read_rag_repair_state(anima_name)
+            status = "healthy" if repair_succeeded else str(current.get("status") or "failed")
+            if status in repair_state.ACTIVE_REPAIR_STATUSES:
+                status = "failed"
+            self._write_rag_repair_state(
+                anima_name,
+                {
+                    "status": status,
+                    "stage": repair_state.STAGE_UNFENCE,
+                    "pid": None,
+                    "reason": reason,
+                    "include_shared": include_shared,
+                    "last_error": None if repair_succeeded else current.get("last_error"),
+                },
+            )
+            if repair_succeeded:
+                await self._broadcast_rag_repair_event(anima_name, "healthy", reason, None)
 
     async def _stop_anima_for_rag_repair(self, anima_name: str, reason: str, include_shared: bool) -> bool:
         try:
@@ -225,12 +305,19 @@ class RAGRepairMixin:
             await self._broadcast_rag_repair_event(anima_name, "failed", reason, str(exc))
             return False
 
-    async def _run_rag_repair_step(self, anima_name: str, reason: str, include_shared: bool) -> dict[str, object]:
+    async def _run_rag_repair_step(
+        self,
+        anima_name: str,
+        reason: str,
+        include_shared: bool,
+        *,
+        stage: str = "repair_process",
+    ) -> dict[str, object]:
         self._write_rag_repair_state(
             anima_name,
             {
                 "status": "repairing",
-                "stage": "repair_process",
+                "stage": stage,
                 "pid": None,
                 "reason": reason,
                 "include_shared": include_shared,
@@ -249,6 +336,8 @@ class RAGRepairMixin:
         reason: str,
         include_shared: bool,
         result: dict[str, object],
+        *,
+        anima_was_stopped: bool,
     ) -> None:
         error = str(result["error"])
         self._write_rag_repair_state(
@@ -263,7 +352,7 @@ class RAGRepairMixin:
             },
         )
         await self._broadcast_rag_repair_event(anima_name, "failed", reason, error)
-        if (self.animas_dir / anima_name / "vectordb").exists():
+        if anima_was_stopped and (self.animas_dir / anima_name / "vectordb").exists():
             try:
                 await self.start_anima(anima_name)
             except Exception:
@@ -344,11 +433,14 @@ class RAGRepairMixin:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        current_stage = self._read_rag_repair_state(anima_name).get("stage")
+        if not current_stage or current_stage == "complete":
+            current_stage = "repair_process"
         self._write_rag_repair_state(
             anima_name,
             {
                 "status": "repairing",
-                "stage": "repair_process",
+                "stage": current_stage,
                 "pid": proc.pid,
                 "started_at": repair_state.now_iso(),
                 "reason": reason,
@@ -405,6 +497,14 @@ class RAGRepairMixin:
             return int(getattr(load_config().rag, "repair_timeout_seconds", 1800))
         except Exception:
             return 1800
+
+    def _rag_repair_stop_anima(self) -> bool:
+        try:
+            from core.config import load_config
+
+            return bool(getattr(load_config().rag, "repair_stop_anima", False))
+        except Exception:
+            return False
 
     def _rag_repair_poll_interval_seconds(self) -> float:
         try:

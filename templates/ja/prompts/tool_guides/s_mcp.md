@@ -27,14 +27,14 @@
 ### Skills
 - **create_skill**: 新しいスキルディレクトリを作成する
 - 新規スキル作成前に `read_memory_file(path="common_skills/skill-creator/SKILL.md")` を読む
-- 既存のスキル文書・CLIマニュアルは **read_memory_file** でカタログに示されたパスを指定して読む（例: `read_memory_file(path="common_skills/machine-tool/SKILL.md")`）
+- 既存のスキル文書・CLIマニュアルは **read_memory_file** でカタログに示されたパスを指定して読む（例: `read_memory_file(path="common_skills/skill-creator/SKILL.md")`）
 
 ### Other Tools via CLI
 スーパーバイザー管理、vault、チャネル管理、バックグラウンドタスク、外部ツール（Slack, Chatwork, Gmail, GitHub等）は:
 ```
 Bash: animaworks-tool <tool> <subcommand> [args]
 ```
-利用可能なCLIコマンドは `read_memory_file(path="common_skills/machine-tool/SKILL.md")` または `Bash: animaworks-tool --help` で確認。
+利用可能なCLIコマンドは `Bash: animaworks-tool --help` で確認。
 
 ### Background Command Output
 machine_run等の長時間コマンドの出力は `state/cmd_output/` に保存されます。

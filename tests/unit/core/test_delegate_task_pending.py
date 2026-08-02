@@ -22,7 +22,6 @@ import pytest
 
 from core.memory.task_queue import TaskQueueManager
 
-
 # ── Fixtures ─────────────────────────────────────────────────
 
 
@@ -105,6 +104,7 @@ class TestDelegateTaskWritesPending:
                     "instruction": "Implement the login form",
                     "summary": "Login form implementation",
                     "deadline": "1d",
+                    "exclusive_key": "pr-3999",
                 },
             )
 
@@ -119,6 +119,7 @@ class TestDelegateTaskWritesPending:
         assert task_data["submitted_by"] == "boss"
         assert task_data["reply_to"] == "boss"
         assert task_data["source"] == "delegation"
+        assert task_data["exclusive_key"] == "pr-3999"
         assert "task_id" in task_data
         assert "submitted_at" in task_data
 

@@ -1,23 +1,14 @@
-// ── Anima Management ───────────────────────
+// ── Anima Management (detail only; list merged into home org chart) ──
 import { api } from "../modules/api.js";
 import { escapeHtml, renderMarkdown } from "../modules/state.js";
 import {
   fetchAnimasList,
-  fetchAnimasWithProcessStatus,
-  healthIndicatorHtml,
-  formatUptime,
-  processActionButtonsHtml,
-  bindProcessActionButtons,
-  animaHashColor,
 } from "../modules/animas.js";
-import { companyColor, shortModel } from "../shared/avatar-utils.js";
-import { bustupCandidates, resolveCachedAvatar } from "../modules/avatar-resolver.js";
 import { createPageTabs } from "../shared/page-tabs.js";
 import { parseAnimaSubPath } from "../modules/router.js";
 import { t } from "/shared/i18n.js";
 import { basePath } from "/shared/base-path.js";
 
-let _viewMode = "list"; // "list" | "detail"
 let _selectedName = null;
 let _activeTab = "overview";
 let _container = null;
@@ -193,13 +184,14 @@ const _DETAIL_TABS = [
 
 /**
  * Build detail-view hash for an anima (+ optional tab).
+ * Empty name returns home (list view was merged into org chart).
  * Pure helper — exported for unit tests.
  * @param {string|null|undefined} name
  * @param {string} [tab="overview"]
  * @returns {string}
  */
 export function buildAnimaDetailHash(name, tab = "overview") {
-  if (!name) return "#/animas";
+  if (!name) return "#/";
   const base = `#/animas/${encodeURIComponent(name)}`;
   return tab && tab !== "overview" ? `${base}/${encodeURIComponent(tab)}` : base;
 }
@@ -385,29 +377,23 @@ function _navigateAnimas(name, tab) {
 
 export function render(container, { subPath } = {}) {
   _container = container;
-  _clearListPolling();
   _destroyActiveTab();
 
   const { name, tab } = parseAnimaSubPath(subPath);
-  if (name) {
-    _viewMode = "detail";
-    _selectedName = name;
-    _activeTab = tab || "overview";
-    _showDetail(name, _activeTab);
-  } else {
-    _viewMode = "list";
-    _selectedName = null;
-    _activeTab = "overview";
-    _renderList();
+  if (!name) {
+    // List view removed — redirect bookmarks of #/animas to home org chart
+    window.location.hash = "#/";
+    return;
   }
+
+  _selectedName = name;
+  _activeTab = tab || "overview";
+  _showDetail(name, _activeTab);
 }
 
 export function destroy() {
-  _clearListPolling();
   _destroyActiveTab();
-  document.removeEventListener("click", _onDocumentClickCloseKebab);
   _container = null;
-  _viewMode = "list";
   _selectedName = null;
   _activeTab = "overview";
 }
@@ -1499,10 +1485,8 @@ function _bindPermissionsCard(name, perm, availableTools) {
 
 async function _showDetail(name, tabId = "overview") {
   if (!_container) return;
-  _clearListPolling();
   _destroyActiveTab();
 
-  _viewMode = "detail";
   _selectedName = name;
   _activeTab = _DETAIL_TABS.some((t) => t.id === tabId) ? tabId : "overview";
 
@@ -1522,7 +1506,7 @@ async function _showDetail(name, tabId = "overview") {
   `;
 
   document.getElementById("animasBackBtn")?.addEventListener("click", () => {
-    _navigateAnimas(null);
+    window.location.hash = "#/";
   });
 
   _populateAnimaSwitcher(name, _activeTab);

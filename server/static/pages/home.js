@@ -2,14 +2,28 @@
 import { t } from "/shared/i18n.js";
 import { basePath } from "/shared/base-path.js";
 import { api } from "../modules/api.js";
-import { escapeHtml, escapeAttr, timeStr, statusClass } from "../modules/state.js";
-import { animaHashColor } from "../modules/animas.js";
+import { escapeHtml, escapeAttr, timeStr } from "../modules/state.js";
+import {
+  animaHashColor,
+  fetchProcessMap,
+  buildAnimaListStatusHtml,
+  buildOrgCardKebabHtml,
+  bindKebabMenus,
+  onDocumentClickCloseKebab,
+  bindProcessActionButtons,
+  mergeNodeWithProcess,
+  collectOrgChartNames,
+  findUnlistedAnimas,
+} from "../modules/animas.js";
 import { companyColor } from "../shared/avatar-utils.js";
 import { getIcon, getDisplaySummary } from "../shared/activity-types.js";
 import { bustupCandidates, resolveCachedAvatar } from "../modules/avatar-resolver.js";
 
 let _refreshInterval = null;
 let _usageInterval = null;
+let _orgStatusInterval = null;
+let _orgChartBuilt = false;
+let _orgProcessMap = {};
 
 // ── Render ─────────────────────────────────
 
@@ -156,6 +170,13 @@ export function destroy() {
     clearInterval(_usageInterval);
     _usageInterval = null;
   }
+  if (_orgStatusInterval) {
+    clearInterval(_orgStatusInterval);
+    _orgStatusInterval = null;
+  }
+  document.removeEventListener("click", onDocumentClickCloseKebab);
+  _orgChartBuilt = false;
+  _orgProcessMap = {};
 }
 
 // ── Data Loading ───────────────────────────
@@ -1265,12 +1286,37 @@ async function _loadSystemStatus() {
   }
 }
 
+/**
+ * Build integrated status + kebab markup for an org card (pure, for tests).
+ * @param {object} node - org node already merged with process status
+ * @returns {{ statusHtml: string, kebabHtml: string }}
+ */
+export function buildOrgCardProcessParts(node) {
+  const status = node?.status || "offline";
+  const name = node?.name || "";
+  return {
+    statusHtml: buildAnimaListStatusHtml(node || { status: "offline" }),
+    kebabHtml: buildOrgCardKebabHtml(name, status),
+  };
+}
+
 async function _loadOrgChart() {
   const container = document.getElementById("homeOrgTree");
   if (!container) return;
 
+  // After initial structure is built, only refresh status (avoid avatar flicker)
+  if (_orgChartBuilt) {
+    await _refreshOrgStatuses();
+    return;
+  }
+
   try {
-    const data = await api("/api/org/chart?include_disabled=true");
+    const [data, processMap] = await Promise.all([
+      api("/api/org/chart?include_disabled=true"),
+      fetchProcessMap(),
+    ]);
+    _orgProcessMap = processMap || {};
+
     const tree = data.tree || [];
     if (tree.length === 0) {
       container.innerHTML = `<div class="loading-placeholder">${t("animas.not_registered")}</div>`;
@@ -1305,7 +1351,7 @@ async function _loadOrgChart() {
       const groupRow = document.createElement("div");
       groupRow.className = "org-tree-top-row";
       for (const node of nodes) {
-        groupRow.appendChild(_renderColumn(node));
+        groupRow.appendChild(_renderColumn(node, _orgProcessMap));
       }
       group.appendChild(groupRow);
       topRow.appendChild(group);
@@ -1313,10 +1359,92 @@ async function _loadOrgChart() {
     container.innerHTML = "";
     container.appendChild(topRow);
 
+    // Animases present in process map but missing from org chart
+    const chartNames = collectOrgChartNames(tree);
+    const unlisted = findUnlistedAnimas(_orgProcessMap, chartNames);
+    if (unlisted.length > 0) {
+      const extra = document.createElement("div");
+      extra.className = "org-tree-unlisted";
+      extra.id = "homeOrgUnlisted";
+      const extraLabel = document.createElement("div");
+      extraLabel.className = "org-tree-unlisted-label";
+      extraLabel.textContent = t("home.org_unlisted");
+      extra.appendChild(extraLabel);
+      const extraRow = document.createElement("div");
+      extraRow.className = "org-tree-top-row";
+      for (const name of unlisted) {
+        const node = mergeNodeWithProcess(
+          { name, status: "offline" },
+          _orgProcessMap,
+        );
+        extraRow.appendChild(_buildCard(node, false));
+      }
+      extra.appendChild(extraRow);
+      container.appendChild(extra);
+    }
+
+    _bindOrgCardInteractions(container);
+    _orgChartBuilt = true;
+    _ensureOrgStatusPolling();
     _loadOrgAvatars(container);
   } catch (err) {
     container.innerHTML = `<div class="loading-placeholder">${t("common.load_failed")}: ${escapeHtml(err.message)}</div>`;
   }
+}
+
+function _ensureOrgStatusPolling() {
+  if (_orgStatusInterval) return;
+  _orgStatusInterval = setInterval(_refreshOrgStatuses, 10000);
+  document.removeEventListener("click", onDocumentClickCloseKebab);
+  document.addEventListener("click", onDocumentClickCloseKebab);
+}
+
+/**
+ * Update only status + kebab markup on existing cards (no avatar rebuild).
+ */
+async function _refreshOrgStatuses() {
+  const container = document.getElementById("homeOrgTree");
+  if (!container || !_orgChartBuilt) return;
+
+  try {
+    _orgProcessMap = await fetchProcessMap();
+  } catch {
+    return;
+  }
+
+  container.querySelectorAll(".org-tree-card[data-anima]").forEach((card) => {
+    const name = card.dataset.anima;
+    if (!name) return;
+    const merged = mergeNodeWithProcess(
+      { name, status: card.dataset.orgStatus || "offline" },
+      _orgProcessMap,
+    );
+    // Preserve disabled visual from original org status if process says offline
+    const disabled = card.classList.contains("org-tree-card--disabled");
+    if (disabled && !merged.status) merged.status = "disabled";
+
+    const statusHost = card.querySelector("[data-org-status]");
+    const actionsHost = card.querySelector("[data-org-actions]");
+    const parts = buildOrgCardProcessParts(merged);
+    if (statusHost) statusHost.innerHTML = parts.statusHtml;
+    if (actionsHost) actionsHost.innerHTML = parts.kebabHtml;
+  });
+
+  _bindOrgCardInteractions(container);
+}
+
+function _bindOrgCardInteractions(root) {
+  if (!root) return;
+  bindKebabMenus(root);
+  bindProcessActionButtons(root, { onReload: _refreshOrgStatuses });
+
+  root.querySelectorAll(".org-card-open-detail").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const href = btn.dataset.href || `#/animas/${encodeURIComponent(btn.dataset.name || "")}`;
+      location.hash = href;
+    });
+  });
 }
 
 function _shortModel(model) {
@@ -1327,11 +1455,11 @@ function _shortModel(model) {
     .replace(/^anthropic\./, "");
 }
 
-function _renderColumn(node) {
+function _renderColumn(node, processMap) {
   const col = document.createElement("div");
   col.className = "org-tree-column";
 
-  col.appendChild(_buildCard(node, true));
+  col.appendChild(_buildCard(mergeNodeWithProcess(node, processMap), true));
 
   const children = node.children || [];
   if (children.length > 0) {
@@ -1342,7 +1470,7 @@ function _renderColumn(node) {
     const ul = document.createElement("ul");
     ul.className = "org-tree-list";
     for (const child of children) {
-      ul.appendChild(_renderSubNode(child));
+      ul.appendChild(_renderSubNode(child, processMap));
     }
     col.appendChild(ul);
   }
@@ -1350,18 +1478,18 @@ function _renderColumn(node) {
   return col;
 }
 
-function _renderSubNode(node) {
+function _renderSubNode(node, processMap) {
   const li = document.createElement("li");
   li.className = "org-tree-node";
 
-  li.appendChild(_buildCard(node, false));
+  li.appendChild(_buildCard(mergeNodeWithProcess(node, processMap), false));
 
   const children = node.children || [];
   if (children.length > 0) {
     const childUl = document.createElement("ul");
     childUl.className = "org-tree-list";
     for (const child of children) {
-      childUl.appendChild(_renderSubNode(child));
+      childUl.appendChild(_renderSubNode(child, processMap));
     }
     li.appendChild(childUl);
   }
@@ -1372,7 +1500,6 @@ function _renderSubNode(node) {
 function _buildCard(node, isRoot = false) {
   const initial = escapeHtml(node.name.charAt(0).toUpperCase());
   const color = animaHashColor(node.name);
-  const dotClass = statusClass(node.status);
   const role = node.speciality || "";
   const model = _shortModel(node.model);
   const disabled = node.status === "disabled";
@@ -1382,6 +1509,9 @@ function _buildCard(node, isRoot = false) {
   if (isRoot) cls += " org-tree-card--root";
   if (disabled) cls += " org-tree-card--disabled";
   card.className = cls;
+  card.dataset.anima = node.name;
+  card.dataset.orgStatus = node.status || "offline";
+
   const department = node.department || "";
   const title = node.title || "";
   const metaParts = [];
@@ -1392,6 +1522,8 @@ function _buildCard(node, isRoot = false) {
 
   const ring = companyColor(node.company);
   const ringStyle = ring ? `box-shadow:0 0 0 2px ${ring};` : "";
+  const parts = buildOrgCardProcessParts(node);
+
   card.innerHTML = `
     <div class="org-tree-avatar" id="orgAvatar_${escapeHtml(node.name)}" style="background:${color};${ringStyle}">
       ${initial}
@@ -1399,12 +1531,22 @@ function _buildCard(node, isRoot = false) {
     <div class="org-tree-info">
       <div class="org-tree-name">
         ${escapeHtml(node.name)}
-        <span class="org-tree-status ${dotClass}"></span>
       </div>
+      <div class="org-tree-proc-status" data-org-status>${parts.statusHtml}</div>
       ${metaParts.length ? `<div class="org-tree-meta">${metaParts.join("")}</div>` : ""}
     </div>
+    <div class="org-tree-card-actions" data-org-actions>${parts.kebabHtml}</div>
   `;
-  card.addEventListener("click", () => { location.hash = `#/animas/${encodeURIComponent(node.name)}`; });
+  card.addEventListener("click", (e) => {
+    if (
+      e.target.closest("button") ||
+      e.target.closest(".process-actions") ||
+      e.target.closest(".anima-list-kebab-wrap")
+    ) {
+      return;
+    }
+    location.hash = `#/animas/${encodeURIComponent(node.name)}`;
+  });
   return card;
 }
 

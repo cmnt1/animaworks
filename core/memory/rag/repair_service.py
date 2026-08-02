@@ -55,6 +55,7 @@ _KNOWN_CORRUPTION_REASONS = {
     "native_segfault",
     "startup_chroma_crash_preflight",
     "vector_worker_crash",
+    "store_init_failed",
 }
 
 # Corruption reasons whose claim is about the SQLite store itself and can
@@ -64,6 +65,9 @@ _KNOWN_CORRUPTION_REASONS = {
 # Segment/process-level reasons (hnsw_corruption, native_segfault) are NOT in
 # this set because a SQLite check cannot vouch for hnsw segment files.
 _SQLITE_REFUTABLE_REASONS = {"chroma_corruption", "sqlite_malformed"}
+_STORE_INIT_FAILED_REASON = "store_init_failed"
+_STORE_INIT_FAILED_THROTTLE = timedelta(minutes=10)
+_PERSISTED_SIGNAL_WINDOW = timedelta(hours=24)
 
 
 class RAGRepairService:
@@ -143,7 +147,8 @@ class RAGRepairService:
         # During a rebuild the DB is transiently empty, so reads/writes surface
         # "no such table" errors; recording them would re-trigger another repair
         # the instant the current one releases its lock — the destructive loop.
-        if is_repair_locked(owner) or self._has_active_repair_state(owner):
+        repair_in_flight = is_repair_locked(owner) or self._has_active_repair_state(owner)
+        if repair_in_flight and reason != _STORE_INIT_FAILED_REASON:
             logger.debug(
                 "Ignoring RAG corruption signal during active repair: owner=%s collection=%s reason=%s",
                 owner,
@@ -173,6 +178,14 @@ class RAGRepairService:
             )
             return False
 
+        if reason == _STORE_INIT_FAILED_REASON and self._store_init_signal_throttled(owner):
+            logger.debug(
+                "Ignoring throttled vector-store init failure signal: owner=%s collection=%s",
+                owner,
+                collection,
+            )
+            return False
+
         signal = {
             "at": iso(),
             "collection": collection,
@@ -181,6 +194,13 @@ class RAGRepairService:
             "shared": is_shared,
         }
         self._record_signal(owner, signal)
+
+        if repair_in_flight:
+            logger.debug(
+                "Recorded vector-store init failure during active repair without requesting another: owner=%s",
+                owner,
+            )
+            return False
 
         threshold_met = self._threshold_met(owner, collection, reason)
         if reason in SINGLE_SHOT_REASONS:
@@ -215,13 +235,61 @@ class RAGRepairService:
             return False
         return result.status == "ok"
 
+    @staticmethod
+    def _chroma_store_opens(owner: str) -> bool:
+        """Verify that Chroma itself can open a SQLite-healthy store."""
+        from core.memory.rag.store import create_chroma_vector_store
+        from core.paths import get_anima_vectordb_dir
+
+        previous_direct_access = os.environ.get("ANIMAWORKS_ALLOW_DIRECT_CHROMA")
+        os.environ["ANIMAWORKS_ALLOW_DIRECT_CHROMA"] = "1"
+        store = None
+        try:
+            store = create_chroma_vector_store(
+                persist_dir=get_anima_vectordb_dir(owner),
+                anima_name=owner,
+            )
+        except Exception:
+            logger.warning(
+                "Chroma PersistentClient open verification failed after stop: owner=%s",
+                owner,
+                exc_info=True,
+            )
+            return False
+        finally:
+            if store is not None:
+                store.close()
+            if previous_direct_access is None:
+                os.environ.pop("ANIMAWORKS_ALLOW_DIRECT_CHROMA", None)
+            else:
+                os.environ["ANIMAWORKS_ALLOW_DIRECT_CHROMA"] = previous_direct_access
+        return True
+
     def _record_signal(self, anima_name: str, signal: dict[str, Any]) -> None:
         cutoff = utc_now() - self.window
         with self._lock:
             signals = self._signals.setdefault(anima_name, [])
             signals.append(signal)
             self._signals[anima_name] = [s for s in signals[-50:] if (parse_dt(s.get("at")) or utc_now()) >= cutoff]
-        repair_state.append_state_signal(anima_name, signal, self.window)
+        repair_state.append_state_signal(
+            anima_name,
+            signal,
+            max(self.window, _PERSISTED_SIGNAL_WINDOW),
+        )
+
+    def _store_init_signal_throttled(self, anima_name: str) -> bool:
+        cutoff = utc_now() - _STORE_INIT_FAILED_THROTTLE
+        with self._lock:
+            in_memory = list(self._signals.get(anima_name, []))
+        persisted = repair_state.read_state(anima_name).get("recent_signals", [])
+        persisted_signals = persisted if isinstance(persisted, list) else []
+        for signal in [*in_memory, *persisted_signals]:
+            if not isinstance(signal, dict) or signal.get("reason") != _STORE_INIT_FAILED_REASON:
+                continue
+            at = parse_dt(signal.get("at"))
+            if at is not None and at >= cutoff:
+                return True
+        return False
 
     def _threshold_met(self, anima_name: str, collection: str, reason: str) -> bool:
         cutoff = utc_now() - self.window
@@ -708,7 +776,13 @@ class RAGRepairService:
                 # definitively refutes the corruption claim: skip the
                 # destructive quarantine/rebuild and only drop the cached
                 # worker store that held the poisoned handle.
-                if reason in _SQLITE_REFUTABLE_REASONS and self._sqlite_quick_check_ok(anima_name):
+                sqlite_refutes_signal = reason in _SQLITE_REFUTABLE_REASONS and self._sqlite_quick_check_ok(anima_name)
+                init_failure_cleared = (
+                    reason == _STORE_INIT_FAILED_REASON
+                    and self._sqlite_quick_check_ok(anima_name)
+                    and self._chroma_store_opens(anima_name)
+                )
+                if sqlite_refutes_signal or init_failure_cleared:
                     from core.memory.rag.repair_rebuild import reset_worker_vector_store
                     from core.memory.rag.singleton import reset_vector_store
 

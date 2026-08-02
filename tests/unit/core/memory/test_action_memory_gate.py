@@ -192,7 +192,7 @@ def test_corrupt_state_is_treated_as_empty(tmp_path: Path) -> None:
 
     state = action_gate._load_state(anima_dir, "s-corrupt")
 
-    assert state == {"read_paths": [], "shown_rules": []}
+    assert state == {"read_paths": [], "shown_rules": [], "no_rule_allows": []}
 
 
 def test_session_key_uses_env_when_runtime_context_missing(monkeypatch) -> None:

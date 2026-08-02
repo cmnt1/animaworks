@@ -92,6 +92,54 @@ class TestInteractionRouter:
             mock_instance.receive_external.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_resolve_inbox_includes_blocker_close_instruction(self, _patch_dirs):
+        """Approval resolve must instruct the anima to close blocker entries."""
+        from core.i18n import t
+        from core.notification.interactive import get_interaction_router
+
+        router = get_interaction_router()
+        req = await router.create("test_anima", "approval", ["approve", "reject"])
+
+        with patch("core.messenger.Messenger") as mock_messenger:
+            mock_instance = MagicMock()
+            mock_messenger.return_value = mock_instance
+
+            await router.resolve(
+                req.callback_id,
+                "B source-onlyで停止",
+                "xuiltul",
+                "slack",
+            )
+            mock_instance.receive_external.assert_called_once()
+            content = mock_instance.receive_external.call_args.kwargs.get("content")
+            if content is None:
+                content = mock_instance.receive_external.call_args.args[0]
+            instruction = t("interactive.blocker_close_instruction")
+            assert instruction in content
+            assert "current_state.md" in content
+            assert "call_human" in content
+            assert mock_instance.receive_external.call_args.kwargs.get("intent") == "question"
+
+    @pytest.mark.asyncio
+    async def test_resolve_non_approval_skips_blocker_instruction(self, _patch_dirs):
+        """Non-approval categories should not get the blocker-close instruction."""
+        from core.i18n import t
+        from core.notification.interactive import get_interaction_router
+
+        router = get_interaction_router()
+        req = await router.create("test_anima", "design_gate", ["go", "stop"])
+
+        with patch("core.messenger.Messenger") as mock_messenger:
+            mock_instance = MagicMock()
+            mock_messenger.return_value = mock_instance
+
+            await router.resolve(req.callback_id, "go", "tester", "web")
+            content = mock_instance.receive_external.call_args.kwargs.get("content")
+            if content is None:
+                content = mock_instance.receive_external.call_args.args[0]
+            assert t("interactive.blocker_close_instruction") not in content
+
+    @pytest.mark.asyncio
     async def test_resolve_returns_none_for_already_resolved(self, _patch_dirs):
         from core.notification.interactive import get_interaction_router
 
@@ -138,6 +186,72 @@ class TestInteractionRouter:
 
         found = await router.lookup(req.callback_id)
         assert found is None
+
+
+class TestListResolvedForAnima:
+    """Tests for list_resolved_for_anima and resilient wrapper."""
+
+    @pytest.mark.asyncio
+    async def test_list_resolved_filters_by_anima_window_and_status(self, _patch_dirs):
+        from datetime import timedelta
+
+        from core.notification.interactive import get_interaction_router
+
+        router = get_interaction_router()
+        req_a = await router.create("natsume", "approval", ["approve", "reject"])
+        req_b = await router.create("other", "approval", ["approve", "reject"])
+        req_pending = await router.create("natsume", "approval", ["approve"])
+
+        with patch("core.messenger.Messenger"):
+            await router.resolve(req_a.callback_id, "approve", "xuiltul", "slack")
+            await router.resolve(req_b.callback_id, "reject", "bob", "web")
+
+        # Pending must not appear
+        listed = await router.list_resolved_for_anima("natsume", within_hours=48)
+        ids = {r.callback_id for r, _ in listed}
+        assert req_a.callback_id in ids
+        assert req_b.callback_id not in ids
+        assert req_pending.callback_id not in ids
+        assert len(listed) == 1
+        assert listed[0][1].decision == "approve"
+        assert listed[0][1].actor == "xuiltul"
+
+        # Outside window: rewrite resolved_at to the past
+        data = router._read_all_entries()
+        entry = data["entries"][req_a.callback_id]
+        old = (datetime.now(UTC) - timedelta(hours=72)).isoformat()
+        entry["result"]["resolved_at"] = old
+        router._write_all_entries(data)
+
+        listed_old = await router.list_resolved_for_anima("natsume", within_hours=48)
+        assert listed_old == []
+
+        listed_wide = await router.list_resolved_for_anima("natsume", within_hours=100)
+        assert len(listed_wide) == 1
+
+    def test_list_resolved_resilient_returns_empty_on_error(self, _patch_dirs):
+        from core.notification import interactive as mod
+
+        with patch.object(mod, "get_interaction_router", side_effect=RuntimeError("boom")):
+            result = mod.list_resolved_for_anima_resilient("natsume", within_hours=48)
+        assert result == []
+
+    def test_list_resolved_resilient_happy_path(self, _patch_dirs):
+        from core.notification import interactive as mod
+
+        async def _setup():
+            router = mod.get_interaction_router()
+            req = await router.create("natsume", "approval", ["approve"])
+            with patch("core.messenger.Messenger"):
+                await router.resolve(req.callback_id, "approve", "a", "slack")
+            return req.callback_id
+
+        import asyncio
+
+        cid = asyncio.run(_setup())
+        result = mod.list_resolved_for_anima_resilient("natsume", within_hours=48)
+        assert len(result) == 1
+        assert result[0][0].callback_id == cid
 
 
 class TestBuildTextFallback:

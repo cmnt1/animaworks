@@ -13,6 +13,7 @@ import {
   barHeightForType,
   barOpacityForType,
   assignOverlapRows,
+  countLaneRows,
   buildLanes,
   computeBarGeometry,
   createTimeScale,
@@ -110,7 +111,8 @@ describe("assignOverlapRows", () => {
     const map = assignOverlapRows(groups);
     assert.equal(map.get("a").row, 0);
     assert.equal(map.get("b").row, 0);
-    assert.equal(map.get("a").overflowCount, 0);
+    assert.equal(map.get("a").concurrency, 1);
+    assert.equal(countLaneRows(map), 1);
   });
 
   it("splits two overlapping groups onto rows 0 and 1", () => {
@@ -121,18 +123,52 @@ describe("assignOverlapRows", () => {
     const map = assignOverlapRows(groups);
     assert.equal(map.get("a").row, 0);
     assert.equal(map.get("b").row, 1);
+    assert.equal(countLaneRows(map), 2);
   });
 
-  it("marks overflow when more than 2 concurrent groups", () => {
+  it("stacks 3 concurrent groups onto 3 distinct rows", () => {
     const groups = [
       { id: "a", start_ts: "2026-07-21T10:00:00Z", end_ts: "2026-07-21T10:30:00Z" },
       { id: "b", start_ts: "2026-07-21T10:05:00Z", end_ts: "2026-07-21T10:25:00Z" },
       { id: "c", start_ts: "2026-07-21T10:10:00Z", end_ts: "2026-07-21T10:20:00Z" },
     ];
     const map = assignOverlapRows(groups);
-    // c overlaps both a and b → concurrent size 2 → overflowCount = 1
-    assert.ok(map.get("c").overflowCount >= 1);
-    assert.ok([0, 1].includes(map.get("c").row));
+    const rows = new Set([map.get("a").row, map.get("b").row, map.get("c").row]);
+    assert.equal(rows.size, 3);
+    assert.equal(countLaneRows(map), 3);
+    assert.equal(map.get("c").concurrency, 3);
+  });
+
+  it("reuses freed rows after a group ends", () => {
+    const groups = [
+      { id: "a", start_ts: "2026-07-21T10:00:00Z", end_ts: "2026-07-21T10:10:00Z" },
+      { id: "b", start_ts: "2026-07-21T10:05:00Z", end_ts: "2026-07-21T10:15:00Z" },
+      { id: "c", start_ts: "2026-07-21T10:12:00Z", end_ts: "2026-07-21T10:20:00Z" },
+    ];
+    const map = assignOverlapRows(groups);
+    // c starts after a ended → reuses row 0; lane needs only 2 rows
+    assert.equal(map.get("c").row, 0);
+    assert.equal(countLaneRows(map), 2);
+  });
+
+  it("grows rowCount for 9 overlapping parallel task groups", () => {
+    // Mirrors natsume 00:07-style fan-out: many task_exec bars overlapping.
+    const groups = [];
+    for (let i = 0; i < 9; i++) {
+      const startMin = String(i).padStart(2, "0");
+      const endMin = String(i + 20).padStart(2, "0");
+      groups.push({
+        id: `task-${i}`,
+        ctx: `task:id${i}`,
+        start_ts: `2026-08-01T00:${startMin}:00Z`,
+        end_ts: `2026-08-01T00:${endMin}:00Z`,
+      });
+    }
+    const map = assignOverlapRows(groups);
+    const rows = new Set([...map.values()].map((info) => info.row));
+    assert.equal(rows.size, 9);
+    assert.equal(countLaneRows(map), 9);
+    assert.equal(map.get("task-8").concurrency, 9);
   });
 });
 
@@ -176,9 +212,40 @@ describe("buildLanes", () => {
     const lanes = buildLanes(groups, { nowMs: now, animaOrder: ["active", "idle"] });
     assert.equal(lanes[0].anima, "active");
     assert.equal(lanes[0].height, 28);
+    assert.equal(lanes[0].rowCount, 1);
     assert.equal(lanes[1].anima, "idle");
     assert.equal(lanes[1].isEmpty, true);
     assert.equal(lanes[1].height, 14);
+  });
+
+  it("grows lane height with parallel row count", () => {
+    const groups = [
+      {
+        id: "1",
+        anima: "multi",
+        start_ts: "2026-07-21T11:00:00Z",
+        end_ts: "2026-07-21T11:30:00Z",
+        event_count: 1,
+      },
+      {
+        id: "2",
+        anima: "multi",
+        start_ts: "2026-07-21T11:05:00Z",
+        end_ts: "2026-07-21T11:25:00Z",
+        event_count: 1,
+      },
+      {
+        id: "3",
+        anima: "multi",
+        start_ts: "2026-07-21T11:10:00Z",
+        end_ts: "2026-07-21T11:20:00Z",
+        event_count: 1,
+      },
+    ];
+    const lanes = buildLanes(groups, { nowMs: now });
+    assert.equal(lanes[0].rowCount, 3);
+    assert.equal(lanes[0].height, 66); // 3 rows × ROW_HEIGHT(22)
+    assert.equal(lanes[0].rows.get("3").row >= 0, true);
   });
 });
 

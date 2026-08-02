@@ -69,6 +69,25 @@ def test_query_empty_on_error():
     assert results == []
 
 
+def test_http_vector_store_read_503_from_vector_worker_fails_soft():
+    response = MagicMock(status_code=503)
+    response.headers = {"Retry-After": "30"}
+    response.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "repair fence",
+        request=MagicMock(),
+        response=response,
+    )
+    client = MagicMock()
+    client.post.return_value = response
+    store = _make_store()
+    store._client = client
+
+    assert store.query("rin_knowledge", [0.1, 0.2]) == []
+    assert store.get_by_metadata("rin_knowledge", {"type": "knowledge"}) == []
+    assert store.get_by_ids("rin_knowledge", ["doc1"]) == []
+    assert store.list_collections() == []
+
+
 # ── test_upsert_sends_documents ───────────────────────────────────
 
 

@@ -18,6 +18,8 @@ logger = logging.getLogger("animaworks.rag.sqlite_health")
 
 CHROMA_SQLITE_NAME = "chroma.sqlite3"
 DEFAULT_QUICK_CHECK_TIMEOUT_SECONDS = 10.0
+QUICK_CHECK_CORRUPT_RETRY_COUNT = 2
+QUICK_CHECK_CORRUPT_RETRY_DELAY_SECONDS = 0.5
 
 
 @dataclass(frozen=True)
@@ -32,7 +34,7 @@ class SQLiteHealthResult:
 
     @property
     def corrupt(self) -> bool:
-        return not self.ok and self.status in {"corrupt", "timeout"}
+        return not self.ok and self.status == "corrupt"
 
 
 def chroma_sqlite_path(persist_dir: Path) -> Path:
@@ -49,16 +51,41 @@ def quick_check_chroma_sqlite(
     """Run ``PRAGMA quick_check`` against an existing Chroma SQLite DB.
 
     Missing databases are healthy for preflight purposes because Chroma will
-    create them on first use.  A non-``ok`` result or SQLite ``DatabaseError``
-    is treated as corruption so repair can quarantine and rebuild before a
-    user-facing search request discovers the failure.
+    create them on first use. Possible corruption is retried briefly before it
+    is confirmed; timeout and operational availability failures remain
+    non-corruption statuses.
     """
     db_path = chroma_sqlite_path(persist_dir)
     if not db_path.exists():
         return SQLiteHealthResult(db_path=db_path, ok=True, status="missing")
 
+    check_runner = runner or _run_quick_check
+    result = _quick_check_once(db_path, timeout_seconds, check_runner)
+    if not result.corrupt:
+        return result
+
+    logger.debug(
+        "Chroma SQLite quick_check reported possible corruption; retrying: db=%s status=%s detail=%s",
+        db_path,
+        result.status,
+        result.error or result.details,
+    )
+    for _attempt in range(QUICK_CHECK_CORRUPT_RETRY_COUNT):
+        time.sleep(QUICK_CHECK_CORRUPT_RETRY_DELAY_SECONDS)
+        result = _quick_check_once(db_path, timeout_seconds, check_runner)
+        if not result.corrupt:
+            return result
+    return result
+
+
+def _quick_check_once(
+    db_path: Path,
+    timeout_seconds: float,
+    runner: Callable[[Path, float], tuple[str, ...]],
+) -> SQLiteHealthResult:
+    """Run one SQLite quick_check attempt and classify its result."""
     try:
-        details = (runner or _run_quick_check)(db_path, timeout_seconds)
+        details = runner(db_path, timeout_seconds)
     except TimeoutError as exc:
         return SQLiteHealthResult(db_path=db_path, ok=False, status="timeout", error=str(exc))
     except sqlite3.OperationalError as exc:
@@ -138,8 +165,11 @@ def configure_chroma_sqlite_pragmas(
 
     try:
         with _connect(db_path, timeout_seconds) as conn:
+            current_journal_mode = str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower()
             conn.execute(f"PRAGMA busy_timeout = {int(timeout_seconds * 1000)}")
-            journal_mode = str(conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]).lower()
+            journal_mode = current_journal_mode
+            if current_journal_mode != "wal":
+                journal_mode = str(conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]).lower()
             conn.execute("PRAGMA synchronous=NORMAL")
             synchronous = str(conn.execute("PRAGMA synchronous").fetchone()[0])
             conn.commit()
@@ -163,6 +193,8 @@ def configure_chroma_sqlite_pragmas(
             status="pragma_failed",
             details=(f"journal_mode={journal_mode}", f"synchronous={synchronous}"),
         )
+    if current_journal_mode != "wal":
+        logger.info("Enabled WAL journal mode for Chroma SQLite database: %s", db_path)
     return SQLiteHealthResult(
         db_path=db_path,
         ok=True,
@@ -182,10 +214,19 @@ def prepare_chroma_sqlite_for_startup(persist_dir: Path, *, anima_name: str | No
             result=health,
             source="startup_quick_check",
         )
-        raise RuntimeError(
-            f"Chroma SQLite database corrupt before startup: {health.db_path} "
-            f"status={health.status} detail={health.error or health.details}"
-        )
+        rechecked = quick_check_chroma_sqlite(persist_dir)
+        if rechecked.ok:
+            logger.warning(
+                "Chroma SQLite transient corruption signal cleared on re-check: anima=%s db=%s initial_detail=%s",
+                anima_name,
+                health.db_path,
+                health.error or health.details,
+            )
+        elif rechecked.corrupt:
+            raise RuntimeError(
+                f"Chroma SQLite database corrupt before startup: {rechecked.db_path} "
+                f"status={rechecked.status} detail={rechecked.error or rechecked.details}"
+            )
     pragma = configure_chroma_sqlite_pragmas(persist_dir)
     if not pragma.ok and pragma.status != "missing":
         logger.warning(
@@ -204,7 +245,7 @@ def request_repair_for_sqlite_health(
     source: str,
 ) -> bool:
     """Record a health-check corruption result with the supervised repair service."""
-    if result.ok:
+    if not result.corrupt:
         return False
     reason_text = result.error or "; ".join(result.details) or result.status
     classified_text = f"Chroma SQLite database corrupt: {reason_text}"

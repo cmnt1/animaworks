@@ -222,6 +222,8 @@ Typical cases:
 
 For side-effecting actions such as external sends, channel posts, human notifications, and memory writes, the action memory gate may check whether related `[ACTION-RULE]` items and required memories have been read. If required context has not been loaded, execution stops before the action and directs the Anima to read the relevant memory first.
 
+Soft-fail handling (`no_matching_rule` / `search_failed` / `below_threshold`) is controlled by `config.action_gate.fail_mode` (`open` / `middle` / `close`). Default is `open` (legacy fail-open). Migration steps: `docs/specs/pi-fix3-action-gate-fail-mode.md`.
+
 ---
 
 ## Memory search via spreading activation

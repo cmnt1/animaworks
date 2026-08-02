@@ -43,14 +43,60 @@ def _read_state(anima_dir: Path) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_supervised_rag_repair_stops_repairs_and_restarts(tmp_path: Path) -> None:
+async def test_supervised_rag_repair_repairs_without_stopping_by_default(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    anima_dir = _create_anima(sup)
+    calls: list[tuple[str, str]] = []
+    stages: list[str] = []
+    sup.processes["sora"] = object()
+    write_state = sup._write_rag_repair_state
+
+    def track_state(name: str, updates: dict[str, object]) -> None:
+        if stage := updates.get("stage"):
+            stages.append(str(stage))
+        write_state(name, updates)
+
+    async def repair_cli(name: str, *, reason: str, include_shared: bool) -> dict[str, object]:
+        calls.append(("repair", f"{name}:{reason}:{include_shared}"))
+        return {"ok": True, "status": "success"}
+
+    sup._write_rag_repair_state = track_state
+    sup.stop_anima = AsyncMock()
+    sup.start_anima = AsyncMock()
+    sup._run_rag_repair_cli_process = repair_cli
+
+    await sup._run_supervised_rag_repair(
+        "sora",
+        {"status": "requested", "reason": "sqlite_malformed", "include_shared": True},
+    )
+
+    assert calls == [("repair", "sora:sqlite_malformed:True")]
+    sup.stop_anima.assert_not_awaited()
+    sup.start_anima.assert_not_awaited()
+    assert "sora" in sup.processes
+    assert stages == ["fence_access", "repair", "unfence"]
+    state = _read_state(anima_dir)
+    assert state["status"] == "healthy"
+    assert state["stage"] == "unfence"
+    assert state["pid"] is None
+
+
+def test_rag_repair_stop_anima_config_defaults_to_uninterrupted() -> None:
+    from core.config.schemas import RAGConfig
+
+    assert RAGConfig().repair_stop_anima is False
+    assert RAGConfig(repair_stop_anima=True).repair_stop_anima is True
+
+
+@pytest.mark.asyncio
+async def test_supervised_rag_repair_legacy_mode_stops_repairs_and_restarts(tmp_path: Path) -> None:
     sup = _make_supervisor(tmp_path)
     anima_dir = _create_anima(sup)
     calls: list[tuple[str, str]] = []
     sup.processes["sora"] = object()
+    sup._rag_repair_stop_anima = lambda: True
 
     async def stop_anima(name: str, *, drain_timeout: float | None = None) -> None:
-        # RAG repair stop must extend the drain to the full streaming budget
         assert drain_timeout == float(sup._max_streaming_duration_sec)
         calls.append(("stop", name))
         sup.processes.pop(name, None)
@@ -79,7 +125,6 @@ async def test_supervised_rag_repair_stops_repairs_and_restarts(tmp_path: Path) 
     state = _read_state(anima_dir)
     assert state["status"] == "healthy"
     assert state["stage"] == "complete"
-    assert state["pid"] is None
 
 
 @pytest.mark.asyncio
@@ -87,6 +132,7 @@ async def test_supervised_rag_repair_stop_failure_does_not_run_repair(tmp_path: 
     sup = _make_supervisor(tmp_path)
     anima_dir = _create_anima(sup)
     sup.processes["sora"] = object()
+    sup._rag_repair_stop_anima = lambda: True
     repair_called = False
 
     async def stop_anima(name: str, *, drain_timeout: float | None = None) -> None:
@@ -110,7 +156,7 @@ async def test_supervised_rag_repair_stop_failure_does_not_run_repair(tmp_path: 
 
 
 @pytest.mark.asyncio
-async def test_supervised_rag_repair_failure_restarts_when_active_db_exists(tmp_path: Path) -> None:
+async def test_supervised_rag_repair_failure_unfences_without_restart(tmp_path: Path) -> None:
     sup = _make_supervisor(tmp_path)
     anima_dir = _create_anima(sup)
     started: list[str] = []
@@ -126,10 +172,10 @@ async def test_supervised_rag_repair_failure_restarts_when_active_db_exists(tmp_
 
     await sup._run_supervised_rag_repair("sora", {"status": "requested", "reason": "sqlite_malformed"})
 
-    assert started == ["sora"]
+    assert started == []
     state = _read_state(anima_dir)
     assert state["status"] == "failed"
-    assert state["stage"] == "failed"
+    assert state["stage"] == "unfence"
     assert state["last_error"] == "timed out"
 
 
@@ -137,6 +183,7 @@ async def test_supervised_rag_repair_failure_restarts_when_active_db_exists(tmp_
 async def test_supervised_rag_repair_restart_failure_records_state(tmp_path: Path) -> None:
     sup = _make_supervisor(tmp_path)
     anima_dir = _create_anima(sup)
+    sup._rag_repair_stop_anima = lambda: True
 
     async def repair_cli(name: str, *, reason: str, include_shared: bool) -> dict[str, object]:
         return {"ok": True, "status": "success"}

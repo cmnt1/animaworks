@@ -301,6 +301,9 @@ class CursorAgentExecutor(BaseExecutor):
             userprofile = os.environ.get("USERPROFILE")
             if userprofile:
                 env["HOME"] = userprofile
+        from core.execution.github_identity import resolve_github_token_env
+
+        env.update(resolve_github_token_env(self._anima_dir))
         return env
 
     def _parse_ndjson_event(self, stdout_line: str) -> dict[str, Any] | None:

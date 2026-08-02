@@ -214,9 +214,10 @@ class InboxRateLimiter:
         if self._anima._inbox_lock.locked():
             self.schedule_deferred_trigger()
             return
-        if self._anima._background_lock.locked():
-            self.schedule_deferred_trigger()
-            return
+        # NOTE: _background_lock (TaskExec/cron gate) は意図的に見ない。
+        # inboxレーンは専用agentで動き、cron排他は process_inbox_message()
+        # 内の _cron_idle 待機で担保される。ここで待つと長時間タスク中に
+        # dispatch通知が滞留・overflowする（2026-07-31の直列化障害）。
         self._pending_trigger = True
         asyncio.create_task(self.message_triggered_inbox())
 
@@ -325,10 +326,7 @@ class InboxRateLimiter:
                     self.schedule_deferred_trigger()
                     await asyncio.sleep(2.0)
                     continue
-                if self._anima._background_lock.locked():
-                    self.schedule_deferred_trigger()
-                    await asyncio.sleep(2.0)
-                    continue
+                # NOTE: _background_lock は見ない（try_deferred_trigger 側の注記参照）。
 
                 # Unread exists: only then read status.json (avoid per-poll I/O).
                 # Disabled → leave inbox files intact; do not trigger processing.

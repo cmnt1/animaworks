@@ -48,7 +48,6 @@ class TestMainIndexHTML:
             "kanban",
             "layout-dashboard",
             "activity",
-            "bot",
             "building-2",
             "sliders-horizontal",
             "users-round",

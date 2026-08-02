@@ -26,6 +26,7 @@ SINGLE_SHOT_REASONS = {
     "chroma_corruption",
     "hnsw_corruption",
     "native_segfault",
+    "store_init_failed",
 }
 
 RESOURCE_EXHAUSTION_SIGNATURES = (
@@ -72,6 +73,8 @@ def classify_corruption_error(error: BaseException | str | int | None) -> str | 
     text = str(error)
     lower = text.lower()
 
+    if "store_init_failed" in lower:
+        return "store_init_failed"
     if any(signature in lower for signature in RESOURCE_EXHAUSTION_SIGNATURES):
         return None
     if "connection refused" in lower or "connecterror" in lower:

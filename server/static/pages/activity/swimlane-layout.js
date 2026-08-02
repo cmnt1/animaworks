@@ -2,6 +2,7 @@
 
 export const MIN_BAR_PX = 4;
 export const LANE_HEIGHT = 28;
+export const ROW_HEIGHT = 22;
 export const EMPTY_LANE_HEIGHT = 14;
 export const AMBIENT_BAR_H = 8;
 export const SIGNAL_BAR_H = 18;
@@ -55,10 +56,13 @@ export function barOpacityForType(type) {
 }
 
 /**
- * Detect pairwise time-range overlaps within a list of groups
- * (same Anima lane). Assigns each group a row index 0 or 1.
+ * Detect time-range overlaps within a list of groups (same Anima lane)
+ * and assign each group a stacking row via greedy interval coloring.
+ * Concurrent groups always land on distinct rows, so every parallel
+ * task is visible (no hidden "+N" overflow).
  *
- * @returns {Map<string, {row: number, overflowCount: number}>}
+ * @returns {Map<string, {row: number, concurrency: number}>}
+ *   concurrency = 1 + number of groups whose time range overlaps this one.
  */
 export function assignOverlapRows(groups) {
   const result = new Map();
@@ -77,7 +81,6 @@ export function assignOverlapRows(groups) {
 
   items.sort((a, b) => a.start - b.start || a.end - b.end);
 
-  const rowEnds = [0, 0];
   const concurrent = new Map();
   for (const it of items) concurrent.set(it.id, new Set());
 
@@ -91,20 +94,37 @@ export function assignOverlapRows(groups) {
     }
   }
 
+  const rowEnds = [];
   for (const it of items) {
-    let row = 0;
-    if (it.start < rowEnds[0]) row = 1;
+    let row = rowEnds.findIndex((end) => it.start >= end);
+    if (row === -1) {
+      row = rowEnds.length;
+      rowEnds.push(0);
+    }
     rowEnds[row] = Math.max(rowEnds[row], it.end);
-    const overflowCount = Math.max(0, concurrent.get(it.id).size + 1 - 2);
-    result.set(it.id, { row, overflowCount });
+    result.set(it.id, { row, concurrency: concurrent.get(it.id).size + 1 });
   }
 
   return result;
 }
 
 /**
+ * Number of stacking rows required to show all groups without overlap.
+ * @returns {number} at least 1
+ */
+export function countLaneRows(rows) {
+  let count = 1;
+  for (const info of rows.values()) {
+    count = Math.max(count, info.row + 1);
+  }
+  return count;
+}
+
+/**
  * Build ordered lane descriptors from groups.
  * Sort: recent-hour event count desc; zero-count animas at bottom with half height.
+ * Lanes with concurrent groups grow vertically: one stacking row per
+ * parallel track (rowCount), so multitasking is directly visible.
  */
 export function buildLanes(groups, opts = {}) {
   const nowMs = opts.nowMs ?? Date.now();
@@ -133,12 +153,19 @@ export function buildLanes(groups, opts = {}) {
       }
     }
     const isEmpty = gs.length === 0;
+    const rows = assignOverlapRows(gs);
+    const rowCount = isEmpty ? 1 : countLaneRows(rows);
+    const height = isEmpty
+      ? EMPTY_LANE_HEIGHT
+      : Math.max(LANE_HEIGHT, rowCount * ROW_HEIGHT);
     lanes.push({
       anima,
-      height: isEmpty ? EMPTY_LANE_HEIGHT : LANE_HEIGHT,
+      height,
       isEmpty,
       recentCount,
       groups: gs,
+      rows,
+      rowCount,
     });
   }
 

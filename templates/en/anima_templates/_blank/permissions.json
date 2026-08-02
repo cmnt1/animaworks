@@ -16,6 +16,7 @@
     "allow_all": true,
     "allow": [
       "discord_channel_post",
+      "discord_send",
       "discord_channel_history",
       "discord_unreplied",
       "notebooklm"

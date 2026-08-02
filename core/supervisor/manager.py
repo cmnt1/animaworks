@@ -142,6 +142,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         self._max_streaming_duration_sec: int = 1800
         self._anima_startup_ready_timeout: float = 120.0
         self._anima_socket_create_timeout: float = 30.0
+        self._anima_stop_timeout: float = 60.0
         self._spawn_timeout_sec: float = 300.0
         try:
             from core.config import load_config
@@ -158,6 +159,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             self._anima_socket_create_timeout = float(
                 getattr(srv, "anima_socket_create_timeout", 30),
             )
+            self._anima_stop_timeout = float(getattr(srv, "anima_stop_timeout", 60.0))
             self._spawn_timeout_sec = float(getattr(srv, "spawn_timeout", 300))
             if restart_policy is None:
                 retry_count = int(getattr(srv, "supervisor_respawn_max_retries", 3))
@@ -429,7 +431,11 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                     # this check and registration, so the window is closed.
                     if self._shutdown:
                         logger.info("Shutdown during start; stopping %s", anima_name)
-                        await handle.stop(timeout=10.0, drain_streams=False)
+                        await handle.stop(
+                            timeout=10.0,
+                            drain_streams=False,
+                            drain_background=False,
+                        )
                         return
                     self.processes[anima_name] = handle
                     self._start_fail_counts.pop(anima_name, None)
@@ -699,6 +705,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         anima_name: str,
         *,
         drain_streams: bool = True,
+        drain_background: bool = True,
         drain_timeout: float | None = None,
     ) -> None:
         """Stop a single Anima process.
@@ -708,7 +715,9 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 stream to finish before stopping (protects user responses from
                 rolling restarts / RAG repair). Full shutdown passes False for
                 a prompt exit.
-            drain_timeout: Upper bound for the in-flight stream drain. None
+            drain_background: When True (default), wait for TaskExec lanes to
+                become idle. Full shutdown passes False for a prompt exit.
+            drain_timeout: Upper bound for each drain. None
                 uses the process-handle default. Non-urgent stops (RAG repair)
                 pass a longer bound so a response is not cut off mid-turn.
         """
@@ -723,8 +732,12 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 return
 
             await handle.stop(
-                timeout=10.0,
+                # Full-server shutdown deliberately retains the short budget
+                # so systemd is not held up; ordinary stops/restarts get the
+                # configured grace period for in-flight persistence.
+                timeout=10.0 if self._shutdown else self._anima_stop_timeout,
                 drain_streams=drain_streams,
+                drain_background=drain_background,
                 drain_timeout=drain_timeout,
             )
             # Only pop if the same handle is still registered — a concurrent
@@ -754,7 +767,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         """
         logger.info("Restarting process: %s", anima_name)
 
-        if _reset_counters:
+        if _reset_counters and not self._shutdown:
             self._restart_counts.pop(anima_name, None)
             self._permanently_failed.discard(anima_name)
             self._failed_log_times.pop(anima_name, None)
@@ -826,6 +839,8 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 self._failed_log_times.pop(anima_name, None)
                 return new_handle
             except Exception as exc:
+                if self._shutdown:
+                    continue
                 last_error = f"{type(exc).__name__}: {exc}"
                 self._start_fail_counts[anima_name] = attempt
                 self._start_failed_times[anima_name] = time.monotonic()
@@ -892,10 +907,16 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             except asyncio.CancelledError:
                 pass
 
-        # Stop all processes. Full shutdown should exit promptly, so skip the
-        # in-flight stream drain here (it protects rolling restarts, not the
-        # whole-server stop).
-        tasks = [self.stop_anima(name, drain_streams=False) for name in list(self.processes.keys())]
+        # Stop all processes. Full shutdown should exit promptly, so skip
+        # interactive-stream and background-lane drains here.
+        tasks = [
+            self.stop_anima(
+                name,
+                drain_streams=False,
+                drain_background=False,
+            )
+            for name in list(self.processes.keys())
+        ]
         await asyncio.gather(*tasks, return_exceptions=True)
 
         # Barrier: an in-flight start_anima cleans up its own handle under the
@@ -1082,8 +1103,9 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                 elapsed = time.monotonic() - starting_since
                 if elapsed > self._spawn_timeout_sec:
                     reason = f"spawn exceeded timeout ({self._spawn_timeout_sec:.0f}s)"
-                    self._failure_reasons[anima_name] = reason
-                    self._permanently_failed.add(anima_name)
+                    if not self._shutdown:
+                        self._failure_reasons[anima_name] = reason
+                        self._permanently_failed.add(anima_name)
                     return {
                         "status": "error",
                         "error": reason,
@@ -1129,8 +1151,9 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         if handle.state in (ProcessState.STARTING, ProcessState.RESTARTING) and uptime > self._spawn_timeout_sec:
             status_value = "error"
             reason = f"spawn exceeded timeout ({self._spawn_timeout_sec:.0f}s)"
-            self._failure_reasons[anima_name] = reason
-            self._permanently_failed.add(anima_name)
+            if not self._shutdown:
+                self._failure_reasons[anima_name] = reason
+                self._permanently_failed.add(anima_name)
 
         bootstrap_status: dict[str, Any] = {}
         try:

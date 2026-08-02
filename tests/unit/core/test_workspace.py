@@ -138,16 +138,58 @@ class TestResolveWorkspace:
             resolve_workspace("nonexistent")
         assert "nonexistent" in str(excinfo.value)
 
-    def test_resolve_workspace_suggests_similar(
+    def test_resolve_workspace_normalized_hyphen_accepted(
         self, tmp_path: Path
     ) -> None:
-        """Fuzzy match suggests similar aliases when resolution fails."""
+        """Hyphenated form is accepted via alnum normalization (my-project → myproject)."""
         cfg = AnimaWorksConfig()
         cfg.workspaces = {"myproject": str(tmp_path)}
-        with patch("core.config.models.load_config", return_value=cfg), pytest.raises(ValueError) as excinfo:
-            resolve_workspace("my-project")
+        with patch("core.config.models.load_config", return_value=cfg):
+            result = resolve_workspace("my-project")
+        assert result == tmp_path.resolve()
+
+    def test_resolve_workspace_normalized_variants(
+        self, tmp_path: Path
+    ) -> None:
+        """AI-Schreiber / ai_schreiber / AISCHREIBER resolve to aischreiber."""
+        cfg = AnimaWorksConfig()
+        cfg.workspaces = {"aischreiber": str(tmp_path)}
+        with patch("core.config.models.load_config", return_value=cfg):
+            for variant in ("AI-Schreiber", "ai_schreiber", "AISCHREIBER"):
+                assert resolve_workspace(variant) == tmp_path.resolve()
+
+    def test_resolve_workspace_normalized_collision_errors(
+        self, tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
+    ) -> None:
+        """Multiple registry aliases that normalize identically → error with list."""
+        other = tmp_path_factory.mktemp("ws2")
+        cfg = AnimaWorksConfig()
+        cfg.workspaces = {
+            "my-project": str(tmp_path),
+            "myproject": str(other),
+        }
+        with (
+            patch("core.config.models.load_config", return_value=cfg),
+            pytest.raises(ValueError) as excinfo,
+        ):
+            resolve_workspace("my_project")
         msg = str(excinfo.value)
-        assert "もしかして" in msg or "Did you mean" in msg
+        assert "my-project" in msg or "myproject" in msg
+        assert "登録済み" in msg or "Available" in msg or "available" in msg.lower()
+
+    def test_resolve_workspace_not_found_includes_registered_list(
+        self, tmp_path: Path
+    ) -> None:
+        """Not-found errors always include the registered alias list."""
+        cfg = AnimaWorksConfig()
+        cfg.workspaces = {"myproject": str(tmp_path)}
+        with (
+            patch("core.config.models.load_config", return_value=cfg),
+            pytest.raises(ValueError) as excinfo,
+        ):
+            resolve_workspace("totally-unrelated-xyz")
+        msg = str(excinfo.value)
+        assert "myproject" in msg
 
     def test_resolve_workspace_lists_all_when_no_match(
         self, tmp_path: Path

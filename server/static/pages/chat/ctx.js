@@ -13,6 +13,7 @@ import {
 import {
   threadTimeValue, defaultThreadLabel as _defaultThreadLabel,
   mergeThreadsFromSessions as _mergeThreads,
+  autoArchiveStaleThreads,
 } from "../../shared/chat/thread-logic.js";
 import { ChatSessionManager } from "../../shared/chat/session-manager.js";
 
@@ -153,7 +154,13 @@ export function isBusinessTheme() {
 export function mergeThreadsFromSessions(ctx, animaName, sessionsData) {
   if (!animaName || !sessionsData) return;
   const existing = ctx.state.threads[animaName] || [{ id: "default", label: ctx.deps.t("thread.default_label"), unread: false }];
-  ctx.state.threads[animaName] = _mergeThreads(existing, sessionsData, { timeStr });
+  const merged = _mergeThreads(existing, sessionsData, { timeStr });
+  const activeThreadId = ctx.state.selectedAnima === animaName
+    ? ctx.state.selectedThreadId
+    : (ctx.state.activeThreadByAnima[animaName] || "default");
+  const { list, changed } = autoArchiveStaleThreads(merged, { activeThreadId });
+  ctx.state.threads[animaName] = list;
+  if (changed) scheduleSaveChatUiState(ctx);
 }
 
 // ── Chat UI State Persistence ──

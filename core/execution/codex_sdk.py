@@ -315,9 +315,96 @@ def _format_toml_override_value(value: Any) -> str:
     return str(value)
 
 
+def _git_metadata_write_paths(root: Path, *, forbidden_ancestors: list[Path] | None = None) -> list[Path]:
+    """Return git metadata directories that must be writable for *root*.
+
+    Codex remounts a writable root's ``.git`` read-only as a built-in
+    safeguard, which breaks ``git worktree``/``commit`` operations for
+    repository workspaces.  Explicit more-specific rules (or standalone
+    writable roots) override that protection.
+
+    Handles both layouts:
+      - ``root/.git`` is a directory → the repository's own metadata.
+      - ``root/.git`` is a file (linked worktree) → resolve the ``gitdir:``
+        pointer and its ``commondir`` so the primary repository's metadata
+        is writable too.
+
+    ``forbidden_ancestors`` guards the resolved-pointer path: ``root/.git``
+    file contents are writable by the sandboxed model itself, so a
+    hand-crafted ``gitdir:`` must never widen access into runtime or
+    explicitly denied trees.
+    """
+    git_path = root / ".git"
+    forbidden = [p.resolve() for p in (forbidden_ancestors or [])]
+
+    def _allowed(path: Path) -> bool:
+        return not any(path == anc or path.is_relative_to(anc) for anc in forbidden)
+
+    results: list[Path] = []
+    try:
+        if git_path.is_dir():
+            results.append(git_path.resolve())
+        elif git_path.is_file():
+            content = git_path.read_text(encoding="utf-8", errors="replace").strip()
+            if content.startswith("gitdir:"):
+                gitdir = Path(content[len("gitdir:") :].strip())
+                if not gitdir.is_absolute():
+                    gitdir = root / gitdir
+                gitdir = gitdir.resolve()
+                if gitdir.is_dir() and _allowed(gitdir):
+                    results.append(gitdir)
+                    commondir_file = gitdir / "commondir"
+                    if commondir_file.is_file():
+                        common = Path(commondir_file.read_text(encoding="utf-8").strip())
+                        if not common.is_absolute():
+                            common = gitdir / common
+                        common = common.resolve()
+                        if common.is_dir() and _allowed(common):
+                            results.append(common)
+    except OSError:
+        return []
+    # Drop paths already inside a returned ancestor to keep rules minimal.
+    deduped: list[Path] = []
+    for path in results:
+        if not any(path == kept or path.is_relative_to(kept) for kept in deduped):
+            deduped.append(path)
+    return deduped
+
+
 def _default_home_dir() -> str:
     """Return a stable HOME value for Codex child processes across platforms."""
     return default_home_dir()
+
+
+def _resolve_animaworks_server_url() -> str:
+    """Resolve ANIMAWORKS_SERVER_URL for MCP subprocess env.
+
+    Preference order:
+      1. Existing process env
+      2. system.worker.gateway_url / system.gateway host+port from config
+      3. http://localhost:18500
+    """
+    existing = os.environ.get("ANIMAWORKS_SERVER_URL", "").strip()
+    if existing:
+        return existing.rstrip("/")
+    try:
+        from core.config.models import load_config
+
+        cfg = load_config()
+        gw_url = (cfg.system.worker.gateway_url or "").strip()
+        if gw_url:
+            return gw_url.rstrip("/")
+        host = (cfg.system.gateway.host or "localhost").strip()
+        if host in ("0.0.0.0", "::", "[::]"):
+            host = "localhost"
+        port = cfg.system.gateway.port or 18500
+        return f"http://{host}:{port}"
+    except Exception:
+        logger.debug(
+            "Failed to resolve server URL from config; using default",
+            exc_info=True,
+        )
+        return "http://localhost:18500"
 
 
 def _default_path_env() -> str:
@@ -1159,6 +1246,9 @@ class CodexSDKExecutor(BaseExecutor):
                 env["AZURE_OPENAI_API_KEY"] = api_key
             elif os.environ.get("AZURE_OPENAI_API_KEY"):
                 env["AZURE_OPENAI_API_KEY"] = os.environ["AZURE_OPENAI_API_KEY"]
+            from core.execution.github_identity import resolve_github_token_env
+
+            env.update(resolve_github_token_env(self._anima_dir))
             return env
 
         if self._uses_codex_login_auth():
@@ -1177,6 +1267,9 @@ class CodexSDKExecutor(BaseExecutor):
         base = self._model_config.api_base_url
         if base and ":11434" not in base:
             env["OPENAI_BASE_URL"] = base
+        from core.execution.github_identity import resolve_github_token_env
+
+        env.update(resolve_github_token_env(self._anima_dir))
         return env
 
     def _uses_codex_login_auth(self) -> bool:
@@ -1198,6 +1291,7 @@ class CodexSDKExecutor(BaseExecutor):
             "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
             "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
             "PYTHONPATH": str(PROJECT_DIR),
+            "ANIMAWORKS_SERVER_URL": _resolve_animaworks_server_url(),
         }
         _set_process_path_env(env, _default_path_env())
         ctx = current_runtime_session()
@@ -1374,9 +1468,14 @@ class CodexSDKExecutor(BaseExecutor):
         esc = _escape_toml_string
 
         from core.config.models import load_permissions
-        from core.file_access_policy import company_shared_write_root, resolve_effective_denied_roots
+        from core.file_access_policy import (
+            company_shared_write_root,
+            resolve_effective_denied_roots,
+            shared_tool_cache_write_root,
+        )
 
         permissions_config = load_permissions(self._anima_dir)
+        tool_cache_root = shared_tool_cache_write_root(self._anima_dir)
 
         denied_roots = list(
             resolve_effective_denied_roots(
@@ -1406,10 +1505,13 @@ class CodexSDKExecutor(BaseExecutor):
                 ":tmpdir": "write",
                 ":slash_tmp": "write",
             }
+            git_forbidden = [data_dir, *(Path(r) for r in denied_roots)]
             for root in explicit_write_roots:
                 if root == Path("/") or root.is_relative_to(data_dir) or data_dir.is_relative_to(root):
                     continue
                 shell_filesystem_rules[str(root)] = "write"
+                for git_path in _git_metadata_write_paths(root, forbidden_ancestors=git_forbidden):
+                    shell_filesystem_rules[str(git_path)] = "write"
 
             # The MCP server needs the legacy writable roots for constrained
             # memory and messaging tools.  It uses a separate profile and
@@ -1423,6 +1525,8 @@ class CodexSDKExecutor(BaseExecutor):
                 mcp_filesystem_rules[str(self._anima_dir.resolve())] = "write"
                 for root in explicit_write_roots:
                     mcp_filesystem_rules[str(root)] = "write"
+                    for git_path in _git_metadata_write_paths(root, forbidden_ancestors=git_forbidden):
+                        mcp_filesystem_rules[str(git_path)] = "write"
 
             for root in denied_roots:
                 resolved_root = str(Path(root).resolve())
@@ -1438,6 +1542,14 @@ class CodexSDKExecutor(BaseExecutor):
                 shared_root = str(company_shared.resolve())
                 shell_filesystem_rules[shared_root] = "write"
                 mcp_filesystem_rules[shared_root] = "write"
+
+            # External-tool caches (Chatwork/Slack message DBs and the
+            # identity map) live outside the Anima directory.  Without write
+            # access even a plain inbox read fails with EROFS.
+            if tool_cache_root is not None:
+                cache_root_str = str(tool_cache_root)
+                shell_filesystem_rules[cache_root_str] = "write"
+                mcp_filesystem_rules[cache_root_str] = "write"
 
             # Authentication and all runtime state/cache copies must never be
             # directly readable from the model shell.  The MCP profile keeps
@@ -1478,6 +1590,8 @@ class CodexSDKExecutor(BaseExecutor):
             sandbox_lines = 'sandbox_mode = "danger-full-access"\napproval_policy = "never"\n'
         else:
             writable_roots = [str(self._anima_dir)]
+            if tool_cache_root is not None:
+                writable_roots.append(str(tool_cache_root))
             for root in permissions_config.file_roots:
                 resolved = str(Path(root).resolve())
                 if resolved not in writable_roots:
@@ -1486,6 +1600,13 @@ class CodexSDKExecutor(BaseExecutor):
                 cwd_str = str(self._task_cwd)
                 if cwd_str not in writable_roots:
                     writable_roots.append(cwd_str)
+            # Standalone entries for git metadata escape Codex's built-in
+            # read-only remount of each writable root's ``.git``.
+            data_dir = self._anima_dir.resolve().parent.parent
+            for root_str in list(writable_roots):
+                for git_path in _git_metadata_write_paths(Path(root_str), forbidden_ancestors=[data_dir]):
+                    if str(git_path) not in writable_roots:
+                        writable_roots.append(str(git_path))
             roots_list = ", ".join(f'"{esc(r)}"' for r in writable_roots)
             root_comments = "".join(f"# writable_root = {r}\n" for r in writable_roots)
             sandbox_lines = (

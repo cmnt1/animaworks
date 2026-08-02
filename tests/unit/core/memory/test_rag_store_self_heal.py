@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -49,6 +50,8 @@ def _sqlite_health(tmp_path: Path, *, status: str, ok: bool) -> SQLiteHealthResu
 
 
 def test_chroma_store_self_heals_corruption_and_retries_once(tmp_path: Path) -> None:
+    from core.memory.rag import singleton
+
     bad_client = _failing_upsert_client("database disk image is malformed")
     good_client = _successful_upsert_client()
     _FakeChromaVectorStore.clients = [bad_client, good_client]
@@ -57,12 +60,17 @@ def test_chroma_store_self_heals_corruption_and_retries_once(tmp_path: Path) -> 
     with (
         patch("core.memory.rag.singleton.reset_vector_store", reset),
         patch("core.memory.rag.repair.record_chroma_error"),
+        patch(
+            "core.memory.rag.singleton._vector_store_close_gate",
+            wraps=singleton._vector_store_close_gate,
+        ) as close_gate,
     ):
         store = _FakeChromaVectorStore(persist_dir=tmp_path, anima_name="sora")
-        ok = store.upsert(
-            "sora_knowledge",
-            [Document(id="doc1", content="hello", embedding=[0.1], metadata={})],
-        )
+        with singleton.vector_store_operation("sora"):
+            ok = store.upsert(
+                "sora_knowledge",
+                [Document(id="doc1", content="hello", embedding=[0.1], metadata={})],
+            )
 
     assert ok is True
     reset.assert_called_once_with("sora")
@@ -70,6 +78,34 @@ def test_chroma_store_self_heals_corruption_and_retries_once(tmp_path: Path) -> 
     assert good_client.get_or_create_collection.call_count == 1
     bad_client.close.assert_called_once()
     good_client.close.assert_called_once()
+    assert [call.args[0] for call in close_gate.call_args_list] == [
+        "self-heal reset close (upsert)",
+        "self-heal retry close (upsert)",
+    ]
+
+
+def test_concurrent_self_heal_reset_lock_fails_fast(tmp_path: Path) -> None:
+    """A second self-heal must release its operation gate instead of deadlocking."""
+    client = MagicMock()
+    _FakeChromaVectorStore.clients = [client]
+    store = _FakeChromaVectorStore(persist_dir=tmp_path, anima_name="sora")
+    reset_lock = type(store)._self_heal_reset_lock
+
+    reset_lock.acquire()
+    try:
+        started = time.monotonic()
+        fresh_store = store._reset_for_self_heal(
+            "upsert",
+            "sora_knowledge",
+            "chroma_corruption",
+            RuntimeError("database disk image is malformed"),
+        )
+    finally:
+        reset_lock.release()
+
+    assert fresh_store is None
+    assert time.monotonic() - started < 0.5
+    client.close.assert_not_called()
 
 
 def test_chroma_store_retries_transient_error_without_reset(tmp_path: Path) -> None:

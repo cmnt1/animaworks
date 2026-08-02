@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import threading
+import time
 import types
 from unittest.mock import MagicMock, patch
 
@@ -87,6 +89,30 @@ class TestGetVectorStore:
             get_vector_store()
 
         mock_cls.assert_called_once()
+
+    def test_per_anima_init_failure_persists_repair_signal(self, data_dir):
+        """A per-anima latch must remain observable outside the worker process."""
+        anima_state = data_dir / "animas" / "sora" / "state"
+        anima_state.mkdir(parents=True)
+
+        from core.memory.rag.repair import _reset_for_testing as reset_repair
+        from core.memory.rag.singleton import (
+            get_vector_store,
+            list_vector_store_init_failed_animas,
+        )
+
+        reset_repair()
+        with patch(
+            "core.memory.rag.store.create_chroma_vector_store",
+            side_effect=RuntimeError("no such table: tenants"),
+        ):
+            assert get_vector_store("sora") is None
+
+        state = json.loads((anima_state / "rag_repair.json").read_text(encoding="utf-8"))
+        assert state["status"] == "requested"
+        assert state["reason"] == "store_init_failed"
+        assert state["recent_signals"][-1]["reason"] == "store_init_failed"
+        assert list_vector_store_init_failed_animas() == ["sora"]
 
 
 # ── get_embedding_model ──────────────────────────────────────────
@@ -367,6 +393,150 @@ class TestResetForTesting:
 
         _reset_for_testing()
         assert singleton_mod._embedding_model_name is None
+
+
+# ── Vector-store lifecycle ───────────────────────────────────────
+
+
+def test_reset_waits_for_in_flight_operation_and_reopens_store(monkeypatch):
+    """A reset must not close a handle until its active worker operation ends."""
+    from core.memory.rag import singleton, vector_worker
+
+    monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
+    singleton._reset_for_testing()
+
+    operation_started = threading.Event()
+    release_operation = threading.Event()
+    store_closed = threading.Event()
+    call_order: list[str] = []
+
+    class BlockingStore:
+        def close(self) -> None:
+            call_order.append("close")
+            store_closed.set()
+
+    old_store = BlockingStore()
+    singleton._vector_stores["sora"] = old_store
+
+    def action(store):
+        assert store is old_store
+        operation_started.set()
+        assert release_operation.wait(timeout=2)
+        call_order.append("operation-finished")
+        return "first-result"
+
+    result: list[object] = []
+    operation_thread = threading.Thread(
+        target=lambda: result.append(vector_worker._call_vector_store("sora", action)),
+    )
+    operation_thread.start()
+    assert operation_started.wait(timeout=2)
+
+    reset_thread = threading.Thread(target=lambda: singleton.reset_vector_store("sora"))
+    reset_thread.start()
+    assert not store_closed.wait(timeout=0.1)
+
+    release_operation.set()
+    operation_thread.join(timeout=2)
+    reset_thread.join(timeout=2)
+
+    assert not operation_thread.is_alive()
+    assert not reset_thread.is_alive()
+    assert result == ["first-result"]
+    assert store_closed.is_set()
+    assert call_order == ["operation-finished", "close"]
+
+    reopened_store = MagicMock()
+    with patch("core.memory.rag.store.ChromaVectorStore", return_value=reopened_store):
+        assert vector_worker._call_vector_store("sora", lambda store: store) is reopened_store
+
+
+def test_in_flight_self_heal_can_upgrade_to_reset_without_deadlock(monkeypatch):
+    """An operation-triggered reset upgrades its own shared gate immediately."""
+    from core.memory.rag import singleton, vector_worker
+
+    monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
+    singleton._reset_for_testing()
+    store = MagicMock()
+    singleton._vector_stores["sora"] = store
+
+    def reset_during_action(active_store):
+        assert active_store is store
+        singleton.reset_vector_store("sora")
+        return "recovered"
+
+    started = time.monotonic()
+    result = vector_worker._call_vector_store("sora", reset_during_action)
+
+    assert result == "recovered"
+    assert time.monotonic() - started < 1.0
+    store.close.assert_called_once()
+
+
+def test_timed_out_close_waits_for_reader_drain_and_blocks_new_operations(monkeypatch):
+    """A timed-out reset condemns the old handle without closing active readers."""
+    from core.memory.rag import singleton, vector_worker
+
+    monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
+    monkeypatch.setattr(singleton, "_VECTOR_STORE_CLOSE_TIMEOUT_SECONDS", 0.05)
+    singleton._reset_for_testing()
+
+    operation_started = threading.Event()
+    release_operation = threading.Event()
+    close_started = threading.Event()
+    release_close = threading.Event()
+    late_operation_started = threading.Event()
+
+    class BlockingCloseStore:
+        def close(self) -> None:
+            close_started.set()
+            assert release_close.wait(timeout=2)
+
+    old_store = BlockingCloseStore()
+    singleton._vector_stores["sora"] = old_store
+
+    active = threading.Thread(
+        target=lambda: vector_worker._call_vector_store(
+            "sora",
+            lambda _store: (
+                operation_started.set(),
+                release_operation.wait(timeout=2),
+            ),
+        ),
+    )
+    active.start()
+    assert operation_started.wait(timeout=2)
+
+    reset = threading.Thread(target=lambda: singleton.reset_vector_store("sora"))
+    reset.start()
+    time.sleep(0.1)
+    assert reset.is_alive()
+    assert not close_started.is_set()
+
+    reopened_store = MagicMock()
+    with patch("core.memory.rag.store.ChromaVectorStore", return_value=reopened_store):
+        late = threading.Thread(
+            target=lambda: vector_worker._call_vector_store(
+                "sora",
+                lambda _store: late_operation_started.set(),
+            ),
+        )
+        late.start()
+        assert not late_operation_started.wait(timeout=0.1)
+
+        release_operation.set()
+        assert close_started.wait(timeout=2)
+        assert not late_operation_started.is_set()
+        release_close.set()
+        assert late_operation_started.wait(timeout=2)
+        reset.join(timeout=2)
+        late.join(timeout=2)
+
+    active.join(timeout=2)
+
+    assert not reset.is_alive()
+    assert not late.is_alive()
+    assert not active.is_alive()
 
 
 # ── Thread safety ────────────────────────────────────────────────

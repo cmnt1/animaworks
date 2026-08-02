@@ -30,6 +30,11 @@ logger = logging.getLogger("animaworks.workspace")
 # ── Hash helpers ──────────────────────────────────────────────
 
 
+def _norm_alias(s: str) -> str:
+    """Normalize an alias for fuzzy-tolerant matching (alnum + lower only)."""
+    return "".join(c for c in s.lower() if c.isalnum())
+
+
 def workspace_hash(path: str) -> str:
     """Generate 8-char hex hash from an absolute path string."""
     return hashlib.sha256(path.encode()).hexdigest()[:8]
@@ -82,6 +87,28 @@ def resolve_workspace(alias_or_path: str) -> Path:
             raise ValueError(t("workspace.dir_not_found", path=registry[alias_or_path]))
         return p
 
+    # 2b. normalized alias match (unique only; multi-match → error with list)
+    needle = _norm_alias(alias_or_path)
+    if needle:
+        norm_matches = [
+            (reg_alias, reg_path) for reg_alias, reg_path in registry.items() if _norm_alias(reg_alias) == needle
+        ]
+        if len(norm_matches) == 1:
+            _reg_alias, reg_path = norm_matches[0]
+            p = Path(reg_path)
+            if not p.is_dir():
+                raise ValueError(t("workspace.dir_not_found", path=reg_path))
+            return p
+        if len(norm_matches) > 1:
+            all_ws = ", ".join(qualified_alias(a, p) for a, p in registry.items())
+            raise ValueError(
+                t(
+                    "workspace.not_found_with_list",
+                    alias=alias_or_path,
+                    available=all_ws or "(none)",
+                )
+            )
+
     # 3. hash-only search
     for _reg_alias, reg_path in registry.items():
         if workspace_hash(reg_path) == alias_or_path:
@@ -95,6 +122,7 @@ def resolve_workspace(alias_or_path: str) -> Path:
     if p.is_absolute() and p.is_dir():
         return p
 
+    # Failure: always include the registered alias list; prepend fuzzy hints when useful.
     candidates: list[tuple[float, str]] = []
     for reg_alias, reg_path in registry.items():
         ratio = SequenceMatcher(None, alias_or_path.lower(), reg_alias.lower()).ratio()
@@ -102,12 +130,19 @@ def resolve_workspace(alias_or_path: str) -> Path:
             candidates.append((ratio, qualified_alias(reg_alias, reg_path)))
     candidates.sort(reverse=True)
 
+    all_ws = ", ".join(qualified_alias(a, p) for a, p in registry.items()) or "(none)"
     if candidates:
         suggestions = ", ".join(qa for _, qa in candidates[:3])
-        raise ValueError(t("workspace.not_found_with_suggestions", alias=alias_or_path, suggestions=suggestions))
+        raise ValueError(
+            t(
+                "workspace.not_found_with_suggestions",
+                alias=alias_or_path,
+                suggestions=suggestions,
+                available=all_ws,
+            )
+        )
 
-    all_ws = ", ".join(qualified_alias(a, p) for a, p in registry.items())
-    raise ValueError(t("workspace.not_found_with_list", alias=alias_or_path, available=all_ws or "(none)"))
+    raise ValueError(t("workspace.not_found_with_list", alias=alias_or_path, available=all_ws))
 
 
 def resolve_default_workspace(anima_dir: Path) -> tuple[Path | None, str]:

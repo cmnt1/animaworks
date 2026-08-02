@@ -7,6 +7,48 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-28
+
+### Added
+
+#### Model fallback & execution
+- Quota-exhaustion fallback: QUOTA_EXHAUSTED detection with automatic model switching via `fallback_models` (`"mode:model"` entries, default off), wired into chat, heartbeat, cron, and inbox paths, with `quota_block_seconds` cooldown and `model_fallback` activity-log records.
+- Company-pinned GitHub push identity: `github_identities` (company → account) resolves a process-local token and injects `GH_TOKEN` into all executor environments, isolating pushes from shared `hosts.yml` active-account drift. Token values never appear in logs or exceptions.
+
+#### PR & CI stall alerts
+- Automatic alerts for unattended PR change requests: external CHANGES_REQUESTED reviews, unresolved threads, and fix-request comments are tracked; stalls warn the assignee and escalate, on a 15/30/45/60-minute ladder (tunable via `PR_STALE_*_HOURS`).
+- Persistent re-alerts for CHANGES_REQUESTED and failing CI: warnings repeat until the review is dismissed/resolved or CI turns green — a follow-up commit alone no longer silences them.
+- Blocker-entry close reminders for resolved approval callbacks: resolve() injects a close instruction and recent resolved approvals are re-surfaced in prompts (`heartbeat.resolved_interaction_reminder_hours`, default 48).
+
+#### UI: org chart, activity timeline & chat
+- Anima management merged into the home org chart: unified status (health dot, status, uptime), per-card menu with process controls and detail view, 10-second status polling; animas outside the chart appear in a dedicated section.
+- Activity swimlanes: unlimited parallel stacking via greedy interval coloring (replacing the 2-row "+N" overflow), plus automatic page chaining with generation tokens to discard stale responses.
+- Chat icon rail: the selected anima is emphasized with an accent ring and background tint; unselected avatars are dimmed (streaming/unread exempt).
+
+#### Workspace & tooling
+- Workspace alias normalization: names with case/format variations resolve by unique casefold+alphanumeric match; failures always return the registered alias list as structured suggestions in `delegate_task`/`submit_tasks` errors.
+
+### Removed
+- machine tool exposure removed from system prompts and tool-guide templates (fleet-wide usage was zero while imposing per-session overhead); the module ships as-is but execution is blocked by permissions deny.
+
+### Fixed
+
+#### Memory & RAG reliability
+- vectordb corruption hardening: idempotent WAL mode for Chroma SQLite, store close/reset serialized behind a writer-priority RW gate (closing the close-during-write race behind repeated page-leaf corruption), new `anima_stop_timeout` (default 60s) to reduce SIGKILL on normal stop, and a `rag-repair-status` CLI that exits non-zero on repair stalls.
+- False-corrupt latch: `quick_check` failures are re-verified before latching (timeout is no longer treated as corruption), startup re-checks after a repair signal instead of permanently latching on transient errors, `store_init_failed` is persisted as a supervised-repair signal, and latches are visible via worker `/status` and the repair-status CLI.
+
+#### Sandbox & git write access
+- codex sandbox: explicit write rules for `.git` under write roots override codex's built-in read-only remount, fixing EROFS failures on `git worktree`/commit operations; generalized to linked worktrees (gitdir/commondir resolution) across all three permission paths, with a forbidden-ancestor guard rejecting gitdir pointers that resolve into runtime data or denied roots.
+
+#### Communications & task tooling
+- Open channels gained a company scope, fixing the total posting/reading failure on #general-style channels after the company split; boundary checks now run members → company → explicit error, with idempotent migration via `channel_company_defaults`.
+- `list_tasks` is now exposed in all modes (unified tool list and MCP server) and OVERDUE aggregate rows carry a task_id, unblocking animas from acting on overdue tasks.
+- `delegate_task` internal-API fallback hardened: connect/read timeouts split with one retry, atomic-write failures included in fallback triggers, and the server URL injected explicitly into MCP environments.
+
+#### Chat & UI
+- Thread UX: conversations no longer render empty for pre-tagging threads (fallback restore from `state/conversations/`), new threads sort to the top of the selector, and threads idle for a week auto-archive (restorable).
+- Org-chart card menus no longer hide behind neighboring cards; anima tab touch styles completed.
+
 ## [0.10.0] - 2026-07-23
 
 ### Added
@@ -1738,7 +1780,9 @@ memory, and decision-making criteria.
 - Moved model mode patterns from config.json to models.json
 - Tool permissions changed from whitelist to default-allow (blacklist) model
 
-[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/xuiltul/animaworks/compare/v0.10.0...v0.11.0
+[0.10.0]: https://github.com/xuiltul/animaworks/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/xuiltul/animaworks/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/xuiltul/animaworks/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/xuiltul/animaworks/compare/v0.8.0...v0.9.0

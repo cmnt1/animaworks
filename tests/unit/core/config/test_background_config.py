@@ -27,6 +27,7 @@ class TestServerConfig:
         assert sc.ipc_stream_timeout == 60
         assert sc.keepalive_interval == 30
         assert sc.anima_startup_ready_timeout == 120
+        assert sc.anima_stop_timeout == 60.0
         assert sc.health_check_warmup_seconds == 300
         assert sc.runner_warmup_seconds == 180
         assert sc.spawn_timeout == 300
@@ -52,6 +53,10 @@ class TestServerConfig:
     def test_server_config_custom_anima_startup_ready_timeout(self):
         sc = ServerConfig(anima_startup_ready_timeout=300)
         assert sc.anima_startup_ready_timeout == 300
+
+    def test_server_config_custom_anima_stop_timeout(self):
+        sc = ServerConfig(anima_stop_timeout=45.5)
+        assert sc.anima_stop_timeout == 45.5
 
     def test_server_config_custom_warmup_and_respawn_settings(self):
         sc = ServerConfig(
@@ -92,6 +97,7 @@ class TestBackgroundTaskConfig:
         assert btc.result_memory_retention_minutes == 60
         assert btc.max_completed_tasks_in_memory == 200
         assert btc.worker_pool_size == 1
+        assert btc.shutdown_drain_seconds == 600
         assert isinstance(btc.eligible_tools, dict)
 
     @pytest.mark.parametrize(
@@ -99,6 +105,7 @@ class TestBackgroundTaskConfig:
         [
             ("result_memory_retention_minutes", -1),
             ("max_completed_tasks_in_memory", -1),
+            ("shutdown_drain_seconds", -1),
         ],
     )
     def test_background_task_config_rejects_negative_memory_limits(self, field, value):

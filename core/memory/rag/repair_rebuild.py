@@ -15,6 +15,14 @@ from pathlib import Path
 logger = logging.getLogger("animaworks.rag.repair")
 
 
+def _has_active_repair_fence(anima_name: str, *, anima_dir: Path | None = None) -> bool:
+    from core.memory.rag import repair_state
+
+    animas_dir = anima_dir.parent if anima_dir is not None else None
+    state = repair_state.read_state(anima_name, animas_dir=animas_dir)
+    return state.get("status") in repair_state.ACTIVE_REPAIR_STATUSES
+
+
 def reset_worker_vector_store(anima_name: str) -> bool:
     """Reset the vector worker's cached store for an anima when configured."""
     if not os.environ.get("ANIMAWORKS_VECTOR_URL"):
@@ -324,6 +332,11 @@ def atomic_rebuild_vectordb(
     # Atomic swap. Reset the worker so it releases the live handle, archive the
     # old DB, move staging into place, then reset again so the worker reopens the
     # new DB. The sibling-drop reset fix keeps these resets from poisoning others.
+    if not _has_active_repair_fence(anima_name, anima_dir=resolved_anima_dir):
+        shutil.rmtree(staging, ignore_errors=True)
+        raise RebuildVerificationError(
+            f"active RAG repair access fence missing for {anima_name}; refusing vector DB swap"
+        )
     archive: Path | None = None
     reset_worker_vector_store(anima_name)
     reset_vector_store(anima_name)

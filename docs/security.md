@@ -112,7 +112,7 @@ Agents can execute shell commands. Five independent layers prevent abuse:
 
 **ToolHandler path (Mode A/B, etc.)**: A regex built from `injection_patterns` in `permissions.global.json` (`GlobalPermissionsCache.injection_re`) blocks command chaining and metacharacters. The default template includes examples such as semicolons and newlines.
 
-**Difference from Mode S (Agent SDK / native Claude Code Bash)**: Mode S Bash inspection (`_check_a1_bash_command`) does **not** match `injection_patterns`. In Claude Code Bash, `$VAR`, `$(...)`, pipes, `;`, etc. are legitimately required. Injection-like behavior is mitigated by the **global `commands.deny` regexes** (matched against the full command string) and **per-anima `commands.deny` / allowlists** described below. See **§10 Mode S** for details.
+**Mode S (Agent SDK / native Claude Code Bash)**: Mode S also matches `injection_patterns`, with a staged rollout controlled by `sdk_bash_injection.mode` in `permissions.global.json`: `off`, `log` (default), or `enforce`. `log` records structured detection events without denying the command; `enforce` denies matches in the `PreToolUse` hook. The default pattern is intentionally limited to semicolons and embedded newlines so legitimate `$VAR`, `$(...)`, backticks, pipes, `&&`, and `||` continue to work. See **§10 Mode S** for details.
 
 #### Layer 2: Global Regex Blocklist (`permissions.global.json`)
 
@@ -150,6 +150,21 @@ Command arguments are checked for path traversal patterns (`../`).
 **Per-pipeline-segment checks**: Each segment of a piped command is checked independently.
 
 **Key files**: `core/tooling/handler_base.py` (`_get_injection_re`, `_get_blocked_patterns`, `_PROTECTED_FILES`), `core/tooling/handler_perms.py` (`_check_command_permission`), `core/config/global_permissions.py` (`permissions.global.json`), `core/execution/_sdk_security.py` (Mode S Bash)
+
+#### External tool action gates (`external_tools.allow`)
+
+Side-effect actions marked `gated: True` in each tool's `EXECUTION_PROFILE` require an explicit action key in `permissions.json` → `external_tools.allow`. `allow_all: true` does **not** auto-permit gated actions.
+
+| Tool | Gated actions (allow keys) |
+|------|----------------------------|
+| gmail | `gmail_send` |
+| slack | `slack_send`, `slack_channel_post`, `slack_channel_update` |
+| chatwork | `chatwork_send` |
+| discord | `discord_send`, `discord_channel_post` |
+| github | `github_create-issue`, `github_create-pr` |
+| machine | `machine_run` |
+
+Enforcement: `core/tooling/permissions.is_action_gated` + dispatch-time check. Migration for live Animas: see `docs/specs/pi-fix2-gated-tools-migration.md` and `scripts/migrate_pi_fix2_gated_allows.py` (dry-run by default).
 
 ---
 
@@ -323,11 +338,12 @@ When `debug_superuser` in `status.json` is true, `_check_a1_file_access` and `_c
 
 #### 10.3 Bash (`Bash` Tool)
 
-1. **Global deny**: Only when `GlobalPermissionsCache.loaded` is **true** (`load()` has run in that process), **`blocked_patterns`** derived from **`commands.deny`** in `permissions.global.json` are searched in order against the **full pre-parse command string** (`injection_patterns` / `injection_re` are **not** used here). **If not loaded**, this global deny loop is **skipped**, and only per-anima checks from `load_permissions(anima_dir)` plus write-command heuristics apply. Under normal `animaworks start`, global permissions load in the `server/app.py` lifespan.
-2. **Per-anima `commands.deny`**: Split the command with `re.split(r"\|(?!\|)|\&\&|\|\|", ...)` (do not treat `|` inside `||` as a delimiter). For each segment: if `shlex.split` succeeds, match `commands.deny` against the leading token or partial match on the full segment. Segments where `shlex` **fails** are **skipped** (excluded from deny matching).
-3. **Per-anima allow model**: When `allow_all` is false, each segment's leading token must appear in `commands.allow`. Empty allowlist → reject as **"Command execution not enabled in permissions"**. If `shlex.split` raises `ValueError` for a segment → reject immediately as **`Invalid command syntax in '<segment>'`**.
-4. **File-writing command destinations**: For basenames `cp`, `mv`, `tee`, `dd`, `install`, `rsync`, each argument that does not start with `-` (options) is `resolve()`d, and writes targeting **another anima's directory** (under the `animas` root but outside `anima_dir`) are denied (heuristic; not a full sandbox).
-5. **Difference from ToolHandler (Layer 5)**: Mode S Bash inspection does **not** include ToolHandler's **path-traversal-only scan** (`../`) on command arguments. Mitigation relies on the deny lists and destination heuristics above.
+1. **Injection rollout**: When the global cache is loaded, `injection_re` is searched against the raw command unless `sdk_bash_injection.mode` is `off`. The default `log` mode does not deny; it appends a JSON object to `logs/sdk_bash_injection.jsonl` containing timestamp, matched pattern, the first 500 command characters, Anima name, trigger, and mode. `enforce` records the same event and returns a violation which `PreToolUse` converts to `permissionDecision="deny"`. This two-stage default exists because Mode S relies heavily on legitimate compound shell commands; operators switch to `enforce` after reviewing approximately one week of dry-run data.
+2. **Global deny**: Only when `GlobalPermissionsCache.loaded` is **true** (`load()` has run in that process), **`blocked_patterns`** derived from **`commands.deny`** in `permissions.global.json` are searched in order against the **full pre-parse command string**. These patterns always deny, including while injection mode is `log` or `off`. **If not loaded**, global injection and deny checks are skipped. Under normal `animaworks start`, global permissions load in the `server/app.py` lifespan.
+3. **Per-anima `commands.deny`**: Split the command with `re.split(r"\|(?!\|)|\&\&|\|\|", ...)` (do not treat `|` inside `||` as a delimiter). For each segment: if `shlex.split` succeeds, match `commands.deny` against the leading token or partial match on the full segment. Segments where `shlex` **fails** are **skipped** (excluded from deny matching).
+4. **Per-anima allow model**: When `allow_all` is false, each segment's leading token must appear in `commands.allow`. Empty allowlist → reject as **"Command execution not enabled in permissions"**. If `shlex.split` raises `ValueError` for a segment → reject immediately as **`Invalid command syntax in '<segment>'`**.
+5. **Path traversal**: Every parsed command segment is checked for `../` arguments. An argument that resolves outside `anima_dir` is denied in every injection mode, matching ToolHandler's Layer 5 behavior.
+6. **File-writing command destinations**: For basenames `cp`, `mv`, `tee`, `dd`, `install`, `rsync`, each argument that does not start with `-` (options) is `resolve()`d, and writes targeting **another anima's directory** (under the `animas` root but outside `anima_dir`) are denied (heuristic; not a full sandbox).
 
 #### 10.4 Tool Output Guard (`updatedInput` in `PreToolUse`)
 

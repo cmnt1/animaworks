@@ -11,6 +11,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 同一リポジトリからのPRは、整形漏れをfailさせずCI側で自動修正してpushする (#232)。
+  # 修正コミットはPATでpushされるため新しいCI runがトリガーされ、必須チェックも新SHAで再評価される。
+  # 差分ゼロなら何もしない（＝自動修正コミットのrunで再修正は起きず、ループしない）。
+  autofix:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.AUTOFIX_TOKEN }}
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install "ruff>=0.9"
+
+      - name: Auto-fix lint & format
+        run: |
+          ruff check --fix core/ cli/ server/ || true
+          ruff format core/ cli/ server/
+
+      - name: Push fixes if needed
+        run: |
+          if git diff --quiet; then
+            echo "No fixes needed."
+            exit 0
+          fi
+          git config user.name "animaworks-dev-team"
+          git config user.email "animaworks-dev-team@users.noreply.github.com"
+          git commit -am "style: ruff auto-fix by CI"
+          git push
+
   unit-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 30

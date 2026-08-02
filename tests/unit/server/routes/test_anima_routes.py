@@ -115,6 +115,7 @@ class TestListAnimas:
                 "pid": 12345,
                 "uptime_sec": 60,
                 "last_busy_since": None,
+                "busy": None,
                 "appearance": None,
                 "supervisor": None,
                 "speciality": None,

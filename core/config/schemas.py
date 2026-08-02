@@ -273,6 +273,7 @@ class RAGConfig(BaseModel):
     repair_max_consecutive_failures: int = 2
     repair_timeout_seconds: int = 1800
     repair_poll_interval_seconds: int = 5
+    repair_stop_anima: bool = False
     # Max RAG repairs allowed to run at once. The vector worker is single-threaded;
     # running many rebuilds concurrently saturates it, makes reindex upserts fail,
     # and leaves schema-less stub DBs that re-trigger repair — a destructive loop.
@@ -393,6 +394,21 @@ class MemoryConfig(BaseModel):
     neo4j: Neo4jConfig = Neo4jConfig()
     neo4j_realtime_ingest: bool = False
     neo4j_edge_types: list[Neo4jEdgeTypeConfig] = Field(default_factory=list)
+
+
+class ActionGateConfig(BaseModel):
+    """Action Memory Gate failure mode (pi-fix3).
+
+    Default is ``open`` because this fleet has frequent vector-search
+    outages (FD exhaustion, repair loops, CUDA failures). Immediate
+    fail-close would halt all external sends during infrastructure
+    incidents. Observe structured logs, then migrate open → middle → close.
+    """
+
+    fail_mode: Literal["open", "middle", "close"] = "open"
+    # Cooldown for no_matching_rule human notifications (seconds).
+    # Prevents spam while allowing re-alert so holds cannot freeze silently forever.
+    no_rule_notify_cooldown_seconds: int = Field(default=21600, ge=0)  # 6h
 
 
 class PromptConfig(BaseModel):
@@ -667,6 +683,7 @@ class ServerConfig(BaseModel):
     # generous default rather than the old hard-coded 15s that caused spurious
     # "Socket file not created" startup failures.
     anima_socket_create_timeout: int = Field(default=30, ge=1)
+    anima_stop_timeout: float = Field(default=60.0, gt=0)
     health_check_warmup_seconds: int = Field(default=300, ge=0)
     runner_warmup_seconds: int = Field(default=180, ge=0)
     spawn_timeout: int = Field(default=300, ge=1)
@@ -712,6 +729,7 @@ class BackgroundTaskConfig(BaseModel):
     """Configuration for background tool execution."""
 
     enabled: bool = True
+    shutdown_drain_seconds: float = Field(default=600.0, ge=0)
     eligible_tools: dict[str, BackgroundToolConfig] = {
         "generate_character_assets": BackgroundToolConfig(threshold_s=30),
         "generate_fullbody": BackgroundToolConfig(threshold_s=30),
@@ -919,6 +937,13 @@ class HeartbeatConfig(BaseModel):
         le=120.0,
         description="Minutes after last stream end to trigger idle auto-compaction",
     )
+    resolved_interaction_reminder_hours: int = Field(
+        default=48,
+        ge=0,
+        description=(
+            "Hours to inject resolved-approval reminders into the system prompt; 0 disables the reminder section"
+        ),
+    )
 
 
 class CronGuardConfig(BaseModel):
@@ -1005,6 +1030,7 @@ class ActivityScheduleEntry(BaseModel):
 class GlobalDenyPattern(BaseModel):
     """A single deny pattern with regex and human-readable reason."""
 
+    name: str = ""
     pattern: str
     reason: str
 
@@ -1013,6 +1039,12 @@ class GlobalCommandsDeny(BaseModel):
     """Global command deny configuration."""
 
     deny: list[GlobalDenyPattern] = Field(default_factory=list)
+
+
+class SdkBashInjectionConfig(BaseModel):
+    """Mode S Bash injection rollout configuration."""
+
+    mode: Literal["off", "log", "enforce"] = "log"
 
 
 class GlobalPermissionsConfig(BaseModel):
@@ -1024,6 +1056,7 @@ class GlobalPermissionsConfig(BaseModel):
 
     version: int = 1
     injection_patterns: list[GlobalDenyPattern] = Field(default_factory=list)
+    sdk_bash_injection: SdkBashInjectionConfig = Field(default_factory=SdkBashInjectionConfig)
     commands: GlobalCommandsDeny = Field(default_factory=GlobalCommandsDeny)
 
 
@@ -1229,6 +1262,7 @@ class AnimaWorksConfig(BaseModel):
     rag: RAGConfig = RAGConfig()
     gpu: GPUConfig = GPUConfig()
     memory: MemoryConfig = MemoryConfig()
+    action_gate: ActionGateConfig = ActionGateConfig()
     skills: SkillsConfig = SkillsConfig()
     chatwork_tool: ChatworkToolConfig = ChatworkToolConfig()
     prompt: PromptConfig = PromptConfig()
@@ -1253,6 +1287,9 @@ class AnimaWorksConfig(BaseModel):
     machine: MachineConfig = MachineConfig()
     local_llm: LocalLLMConfig = LocalLLMConfig()
     workspaces: dict[str, str] = {}  # alias → absolute path
+    # company slug → GitHub account name (e.g. {"fs": "animaworks-dev-team"})
+    # Used by executors to inject GH_TOKEN and pin push identity.
+    github_identities: dict[str, str] = Field(default_factory=dict)
     # channel name → company name for open-channel company attribution migration
     channel_company_defaults: dict[str, str] = Field(default_factory=dict)
     activity_level: int = Field(
@@ -1279,6 +1316,7 @@ class AnimaWorksConfig(BaseModel):
 
 
 __all__ = [
+    "ActionGateConfig",
     "ActivityLogConfig",
     "ActivityScheduleEntry",
     "AnimaDefaults",
