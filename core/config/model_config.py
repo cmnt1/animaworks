@@ -65,7 +65,6 @@ def load_model_config(anima_dir: Path) -> ModelConfig:
         background_model=resolved.background_model,
         background_credential=resolved.background_credential,
         max_tokens=resolved.max_tokens,
-        max_turns=resolved.max_turns,
         credential=cred_name,
         credential_type=cred_type,
         api_key=credential.api_key or None,

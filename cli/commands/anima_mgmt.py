@@ -269,7 +269,6 @@ def cmd_anima_info(args: argparse.Namespace) -> None:
         print(f"Credential:       {data['credential']}")
     if data.get("fallback_model"):
         print(f"Fallback Model:   {data['fallback_model']}")
-    print(f"Max Turns:        {data.get('max_turns', '-')}")
     print(f"Max Chains:       {data.get('max_chains', '-')}")
     if data.get("context_threshold"):
         print(f"Context Threshold: {data['context_threshold']}")
@@ -664,7 +663,7 @@ def cmd_anima_set_role(args: argparse.Namespace) -> None:
         if defaults_path.is_file():
             try:
                 role_defaults = json.loads(defaults_path.read_text(encoding="utf-8"))
-                for key in ("model", "context_threshold", "max_turns", "max_chains", "conversation_history_threshold"):
+                for key in ("model", "context_threshold", "max_chains", "conversation_history_threshold"):
                     if key in role_defaults:
                         status_data[key] = role_defaults[key]
             except Exception:

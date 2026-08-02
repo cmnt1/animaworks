@@ -113,7 +113,6 @@ class StreamingMixin:
         tracker: ContextTracker,
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         trigger: str = "",
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Token-level streaming via ``litellm.acompletion(stream=True)``.
@@ -136,7 +135,6 @@ class StreamingMixin:
         all_response_text: list[str] = []
         all_tool_records: list[ToolCallRecord] = []
         llm_kwargs = self._build_llm_kwargs()
-        max_iterations = max_turns_override or self._model_config.max_turns
         _usage_acc = TokenUsage()
         _repetition_detector = RepetitionDetector()
         _repetition_detected = False
@@ -181,16 +179,23 @@ class StreamingMixin:
             all_response_text,
             executor_name="A-stream",
         ):
-            for iteration in range(max_iterations):
+            iteration = -1
+            while True:
+                iteration += 1
                 if (iteration + 1) % 10 == 0:
                     logger.info("A stream progress: %d iterations", iteration + 1)
                 if self._check_interrupted():
                     logger.info("LiteLLM streaming interrupted at iteration=%d", iteration)
                     yield {"type": "text_delta", "text": "[Session interrupted by user]"}
-                    yield {"type": "done", "full_text": "[Session interrupted by user]", "result_message": None}
+                    yield {
+                        "type": "done",
+                        "full_text": "[Session interrupted by user]",
+                        "result_message": None,
+                        "truncated": True,
+                    }
                     return
 
-                is_final_iteration = _force_final or iteration == max_iterations - 1
+                is_final_iteration = _force_final
 
                 if is_final_iteration and not _final_reminder_sent:
                     _final_reminder_sent = True
@@ -285,6 +290,7 @@ class StreamingMixin:
                             "type": "done",
                             "full_text": "[Session interrupted by user]",
                             "result_message": None,
+                            "truncated": True,
                         }
                         return
                 else:
@@ -847,7 +853,7 @@ class StreamingMixin:
                 reason="grace_turn_exhausted",
             )
         full_text = FINAL_RESPONSE_ERROR_TEXT
-        logger.error("A stream max iterations (%d) reached without a final answer", max_iterations)
+        logger.error("A stream grace turn ended without a final answer")
         yield {"type": "text_delta", "text": full_text}
         yield {
             "type": "done",
@@ -867,7 +873,6 @@ class StreamingMixin:
         tracker: ContextTracker,
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         trigger: str = "",
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Iteration-level streaming for Ollama models.
@@ -888,7 +893,6 @@ class StreamingMixin:
         all_response_text: list[str] = []
         all_tool_records: list[ToolCallRecord] = []
         llm_kwargs = self._build_llm_kwargs()
-        max_iterations = max_turns_override or self._model_config.max_turns
         _usage_acc_ol = TokenUsage()
         _repetition_detector = RepetitionDetector()
         _runaway_guard_ol = RunawayGuard()
@@ -913,7 +917,9 @@ class StreamingMixin:
             all_response_text,
             executor_name="A-ollama-stream",
         ):
-            for iteration in range(max_iterations):
+            iteration = -1
+            while True:
+                iteration += 1
                 if (iteration + 1) % 10 == 0:
                     logger.info("A ollama stream progress: %d iterations", iteration + 1)
                 if self._check_interrupted():
@@ -924,10 +930,11 @@ class StreamingMixin:
                         "full_text": "[Session interrupted by user]",
                         "result_message": None,
                         "usage": _usage_acc_ol.to_dict(),
+                        "truncated": True,
                     }
                     return
 
-                is_final_iteration = _force_final_ol or iteration == max_iterations - 1
+                is_final_iteration = _force_final_ol
 
                 if is_final_iteration and not _final_reminder_sent_ol:
                     _final_reminder_sent_ol = True
@@ -1036,6 +1043,7 @@ class StreamingMixin:
                             "full_text": "[Session interrupted by user]",
                             "result_message": None,
                             "usage": _usage_acc_ol.to_dict(),
+                            "truncated": True,
                         }
                         return
                 else:
@@ -1324,7 +1332,7 @@ class StreamingMixin:
                 reason="grace_turn_exhausted",
             )
         full_text = FINAL_RESPONSE_ERROR_TEXT
-        logger.error("A ollama stream max iterations (%d) reached without a final answer", max_iterations)
+        logger.error("A ollama stream grace turn ended without a final answer")
         yield {"type": "text_delta", "text": full_text}
         yield {
             "type": "done",

@@ -34,12 +34,12 @@ class TestScheduleConsolidationRetry:
         mock_now.return_value = datetime(2026, 3, 12, 2, 0, 0, tzinfo=UTC)
         mgr = _make_lifecycle(tmp_path)
 
-        mgr._schedule_consolidation_retry("kotoha", max_turns=30)
+        mgr._schedule_consolidation_retry("kotoha")
 
         mgr.scheduler.add_job.assert_called_once()
         call_kwargs = mgr.scheduler.add_job.call_args
         assert call_kwargs.kwargs["kwargs"]["anima_name"] == "kotoha"
-        assert call_kwargs.kwargs["kwargs"]["max_turns"] == 30
+        assert call_kwargs.kwargs["kwargs"] == {"anima_name": "kotoha"}
         assert call_kwargs.kwargs["id"] == "consolidation_retry_kotoha"
         assert call_kwargs.kwargs["replace_existing"] is True
 
@@ -50,8 +50,8 @@ class TestScheduleConsolidationRetry:
         mock_now.return_value = datetime(2026, 3, 12, 2, 0, 0, tzinfo=UTC)
         mgr = _make_lifecycle(tmp_path)
 
-        mgr._schedule_consolidation_retry("kotoha", max_turns=30)
-        mgr._schedule_consolidation_retry("kotoha", max_turns=30)
+        mgr._schedule_consolidation_retry("kotoha")
+        mgr._schedule_consolidation_retry("kotoha")
 
         assert mgr.scheduler.add_job.call_count == 2
         for call in mgr.scheduler.add_job.call_args_list:
@@ -75,17 +75,14 @@ class TestRunConsolidationRetry:
         with patch("core.memory.consolidation.ConsolidationEngine") as mock_engine_cls:
             mock_engine = MagicMock()
             mock_engine_cls.return_value = mock_engine
-            await mgr._run_consolidation_retry("kotoha", max_turns=30)
+            await mgr._run_consolidation_retry("kotoha")
 
-        mock_anima.run_consolidation.assert_awaited_once_with(
-            consolidation_type="daily",
-            max_turns=30,
-        )
+        mock_anima.run_consolidation.assert_awaited_once_with(consolidation_type="daily")
 
     @pytest.mark.asyncio
     async def test_retry_skips_missing_anima(self, tmp_path):
         mgr = _make_lifecycle(tmp_path)
-        await mgr._run_consolidation_retry("nonexistent", max_turns=30)
+        await mgr._run_consolidation_retry("nonexistent")
 
     @pytest.mark.asyncio
     async def test_retry_failure_does_not_raise(self, tmp_path):
@@ -95,7 +92,7 @@ class TestRunConsolidationRetry:
         mock_anima.run_consolidation = AsyncMock(side_effect=RuntimeError("still limited"))
         mgr.animas["kotoha"] = mock_anima
 
-        await mgr._run_consolidation_retry("kotoha", max_turns=30)
+        await mgr._run_consolidation_retry("kotoha")
 
 
 class TestDailyConsolidationRetryTrigger:
@@ -136,7 +133,7 @@ class TestDailyConsolidationRetryTrigger:
             mock_cfg.return_value = MagicMock(consolidation=None)
             await mgr._handle_daily_consolidation()
 
-        mgr._schedule_consolidation_retry.assert_called_once_with("kotoha", 30)
+        mgr._schedule_consolidation_retry.assert_called_once_with("kotoha")
 
     @pytest.mark.asyncio
     async def test_normal_duration_no_retry(self, tmp_path):
@@ -187,4 +184,4 @@ class TestDailyConsolidationRetryTrigger:
             mock_cfg.return_value = MagicMock(consolidation=None)
             await mgr._handle_daily_consolidation()
 
-        mgr._schedule_consolidation_retry.assert_called_once_with("kotoha", 30)
+        mgr._schedule_consolidation_retry.assert_called_once_with("kotoha")

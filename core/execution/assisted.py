@@ -20,7 +20,7 @@ Loop:
   2. Extract tool-call JSON from response text
   3. If tool call found → execute via ToolHandler → inject result → goto 1
   4. If no tool call → return final response
-  5. If max_turns reached → return accumulated text
+  5. If runaway behavior is detected → finalize without tools
 """
 
 import ast
@@ -215,7 +215,7 @@ class AssistedExecutor(BaseExecutor):
       1. Build tool specification text from canonical schemas
       2. Inject tool spec into system prompt (provided by AgentCore)
       3. Loop: call LLM → parse tool call → execute → inject result
-      4. Return accumulated response when no more tool calls or max_turns
+      4. Return accumulated response when no more tool calls
     """
 
     def __init__(
@@ -486,7 +486,6 @@ class AssistedExecutor(BaseExecutor):
         trigger: str = "",
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         thread_id: str = "default",
     ) -> ExecutionResult:
         """Run the text-based tool-call loop.
@@ -515,17 +514,20 @@ class AssistedExecutor(BaseExecutor):
         ]
         all_response_text: list[str] = []
         all_tool_records: list[ToolCallRecord] = []
-        max_iterations = max_turns_override or self._model_config.max_turns
         intent_reprompt_count = 0
         usage_acc = TokenUsage()
-        max_iterations_reached = False
         _runaway_guard = RunawayGuard()
         _tools_halted = False
         _halted_final = False
         _empty_exhausted = False
 
         # ── 2. Tool-call loop ────────────────────────────────
-        for iteration in range(max_iterations):
+        iteration = -1
+        while True:
+            iteration += 1
+            if self._check_interrupted():
+                logger.info("Mode B interrupted at iteration=%d", iteration)
+                return ExecutionResult(text="[Session interrupted by user]", truncated=True)
             if (iteration + 1) % 10 == 0:
                 logger.info("Mode B progress: %d iterations", iteration + 1)
             logger.debug(
@@ -547,7 +549,7 @@ class AssistedExecutor(BaseExecutor):
                 )
             except LlmCallInterrupted:
                 logger.info("Mode B interrupted during retry backoff at iteration=%d", iteration)
-                return ExecutionResult(text="[Session interrupted by user]")
+                return ExecutionResult(text="[Session interrupted by user]", truncated=True)
             except LLMAPIError:
                 raise
             except AnimaWorksError:
@@ -761,15 +763,7 @@ class AssistedExecutor(BaseExecutor):
             reminder = self.reminder_queue.drain_sync()
             if reminder:
                 messages[-1]["content"] += "\n\n" + SystemReminderQueue.format_reminder(reminder)
-        else:
-            # max_turns reached
-            max_iterations_reached = True
-            logger.warning(
-                "Mode B max iterations (%d) reached",
-                max_iterations,
-            )
-
-        if max_iterations_reached or _tools_halted or _empty_exhausted:
+        if _tools_halted or _empty_exhausted:
             grace_messages = [dict(message) for message in messages]
             grace_messages[0] = {"role": "system", "content": system_prompt}
             grace_messages.append(
@@ -797,7 +791,7 @@ class AssistedExecutor(BaseExecutor):
                     else:
                         grace_reason = "tool_call_during_grace_turn"
                 except LlmCallInterrupted:
-                    return ExecutionResult(text="[Session interrupted by user]")
+                    return ExecutionResult(text="[Session interrupted by user]", truncated=True)
             else:
                 grace_reason = "grace_preflight_failed"
             if not grace_text.strip():
@@ -817,7 +811,7 @@ class AssistedExecutor(BaseExecutor):
             text=final_text or FINAL_RESPONSE_ERROR_TEXT,
             tool_call_records=all_tool_records,
             usage=usage_acc,
-            truncated=max_iterations_reached or _halted_final or _empty_exhausted,
+            truncated=_halted_final or _empty_exhausted,
         )
 
     async def execute_streaming(
@@ -827,7 +821,6 @@ class AssistedExecutor(BaseExecutor):
         tracker: ContextTracker,
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         trigger: str = "",
         thread_id: str = "default",
     ) -> AsyncGenerator[dict[str, Any], None]:
@@ -865,21 +858,28 @@ class AssistedExecutor(BaseExecutor):
         ]
         all_response_text: list[str] = []
         all_tool_records: list[ToolCallRecord] = []
-        max_iterations = max_turns_override or self._model_config.max_turns
         intent_reprompt_count = 0
         _usage_acc_bs = TokenUsage()
-        max_iterations_reached = False
         _runaway_guard = RunawayGuard()
         _tools_halted = False
         _halted_final = False
         _empty_exhausted = False
+        _interrupted = False
 
         # ── 2. Tool-call loop ────────────────────────────────
         async with stream_error_boundary(
             all_response_text,
             executor_name="Mode B",
         ):
-            for iteration in range(max_iterations):
+            iteration = -1
+            while True:
+                iteration += 1
+                if self._check_interrupted():
+                    logger.info("Mode B streaming interrupted at iteration=%d", iteration)
+                    _interrupted = True
+                    all_response_text.append("[Session interrupted by user]")
+                    yield {"type": "text_delta", "text": "[Session interrupted by user]"}
+                    break
                 if (iteration + 1) % 10 == 0:
                     logger.info("Mode B streaming progress: %d iterations", iteration + 1)
                 logger.debug(
@@ -906,6 +906,7 @@ class AssistedExecutor(BaseExecutor):
                         )
                     except LlmCallInterrupted:
                         logger.info("Mode B streaming interrupted during retry backoff at iteration=0")
+                        _interrupted = True
                         all_response_text.append("[Session interrupted by user]")
                         yield {"type": "text_delta", "text": "[Session interrupted by user]"}
                         break
@@ -1168,15 +1169,7 @@ class AssistedExecutor(BaseExecutor):
                 reminder = self.reminder_queue.drain_sync()
                 if reminder:
                     messages[-1]["content"] += "\n\n" + SystemReminderQueue.format_reminder(reminder)
-            else:
-                # max_turns reached
-                max_iterations_reached = True
-                logger.warning(
-                    "Mode B streaming max iterations (%d) reached",
-                    max_iterations,
-                )
-
-        if max_iterations_reached or _tools_halted or _empty_exhausted:
+        if _tools_halted or _empty_exhausted:
             grace_messages = [dict(message) for message in messages]
             grace_messages[0] = {"role": "system", "content": system_prompt}
             grace_messages.append(
@@ -1224,5 +1217,5 @@ class AssistedExecutor(BaseExecutor):
             "result_message": None,
             "tool_call_records": [asdict(r) for r in all_tool_records],
             "usage": _usage_acc_bs.to_dict(),
-            "truncated": max_iterations_reached or _halted_final or _empty_exhausted,
+            "truncated": _interrupted or _halted_final or _empty_exhausted,
         }

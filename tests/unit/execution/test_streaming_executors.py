@@ -44,7 +44,6 @@ class ConcreteExecutor(BaseExecutor):
         trigger: str = "",
         images: list[dict[str, Any]] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         thread_id: str = "default",
     ) -> ExecutionResult:
         return ExecutionResult(text=f"response: {prompt}")
@@ -171,7 +170,7 @@ def assisted_executor(tmp_path: Path):
     """Build an AssistedExecutor with mocked dependencies."""
     from core.execution.assisted import AssistedExecutor
 
-    config = ModelConfig(model="ollama/test-model", max_turns=5)
+    config = ModelConfig(model="ollama/test-model")
     tool_handler = MagicMock()
     tool_handler._human_notifier = None
     memory = MagicMock()
@@ -476,7 +475,6 @@ def litellm_executor(tmp_path: Path):
         model="openai/gpt-4o",
         api_key="sk-test",
         max_tokens=1024,
-        max_turns=5,
     )
     tool_handler = MagicMock()
     tool_handler._human_notifier = None
@@ -507,7 +505,6 @@ def ollama_executor(tmp_path: Path):
     config = ModelConfig(
         model="ollama/llama3.2",
         max_tokens=2048,
-        max_turns=5,
     )
     tool_handler = MagicMock()
     tool_handler._human_notifier = None
@@ -846,7 +843,6 @@ class TestA2StreamingRunawayGuard:
                     system_prompt="sys",
                     prompt="search",
                     tracker=tracker,
-                    max_turns_override=10,
                 )
             )
 
@@ -892,7 +888,6 @@ class TestA2StreamingRunawayGuard:
                     system_prompt="sys",
                     prompt="search",
                     tracker=tracker,
-                    max_turns_override=8,
                 )
             )
 
@@ -945,7 +940,6 @@ class TestA2StreamingRunawayGuard:
                     system_prompt="sys",
                     prompt="search",
                     tracker=tracker,
-                    max_turns_override=10,
                 )
             )
 
@@ -955,14 +949,14 @@ class TestA2StreamingRunawayGuard:
         assert process_count == 4
         assert "tools" not in mock_acompletion.call_args_list[-1].kwargs
 
-    async def test_more_than_one_hundred_unique_calls_are_not_halted(self, ollama_executor) -> None:
+    async def test_more_than_two_hundred_unique_calls_are_not_halted(self, ollama_executor) -> None:
         tracker = MagicMock(spec=ContextTracker)
         tool_responses = [
             _make_litellm_a2_response(
                 content="",
                 tool_calls=[_make_mock_tool_call("search_memory", {"query": f"q{i}"}, f"c{i}")],
             )
-            for i in range(101)
+            for i in range(201)
         ]
         final = _make_litellm_a2_response(content="Long session complete", tool_calls=None)
         mock_acompletion = AsyncMock(side_effect=[*tool_responses, final])
@@ -985,20 +979,23 @@ class TestA2StreamingRunawayGuard:
                     system_prompt="sys",
                     prompt="search",
                     tracker=tracker,
-                    max_turns_override=103,
                 )
             )
 
         done = next(event for event in events if event["type"] == "done")
         assert done["full_text"] == "Long session complete"
         assert done["truncated"] is False
-        assert mock_acompletion.call_count == 102
-        assert process_count == 101
+        assert mock_acompletion.call_count == 202
+        assert process_count == 201
 
-    async def test_grace_answer_bypasses_completion_gate(self, ollama_executor) -> None:
+    async def test_runaway_grace_answer_bypasses_completion_gate(self, ollama_executor) -> None:
         tracker = MagicMock(spec=ContextTracker)
-        response = _make_litellm_a2_response(content="Grace answer", tool_calls=None)
-        mock_acompletion = AsyncMock(return_value=response)
+        repeated = _make_litellm_a2_response(
+            content="",
+            tool_calls=[_make_mock_tool_call("search_memory", {"query": "same"}, "c")],
+        )
+        final = _make_litellm_a2_response(content="Grace answer", tool_calls=None)
+        mock_acompletion = AsyncMock(side_effect=[repeated] * 5 + [final])
         with (
             patch("litellm.acompletion", mock_acompletion),
             patch.object(ollama_executor, "_preflight_clamp", return_value={}),
@@ -1010,15 +1007,14 @@ class TestA2StreamingRunawayGuard:
                     system_prompt="sys",
                     prompt="answer",
                     tracker=tracker,
-                    max_turns_override=1,
                     trigger="message:test",
                 )
             )
         done = next(event for event in events if event["type"] == "done")
         assert done["full_text"] == "Grace answer"
         assert done["truncated"] is True
-        assert mock_acompletion.call_count == 1
-        assert "tools" not in mock_acompletion.call_args.kwargs
+        assert mock_acompletion.call_count == 6
+        assert "tools" not in mock_acompletion.call_args_list[-1].kwargs
 
     async def test_empty_final_response_returns_explicit_error(self, ollama_executor) -> None:
         tracker = MagicMock(spec=ContextTracker)
@@ -1034,7 +1030,6 @@ class TestA2StreamingRunawayGuard:
                     system_prompt="sys",
                     prompt="answer",
                     tracker=tracker,
-                    max_turns_override=5,
                 )
             )
         done = next(event for event in events if event["type"] == "done")
@@ -1396,7 +1391,6 @@ def anthropic_fallback_executor(tmp_path: Path):
         model="claude-sonnet-4-6",
         api_key="sk-test-anthropic",
         max_tokens=4096,
-        max_turns=5,
     )
     tool_handler = MagicMock()
     tool_handler._human_notifier = None

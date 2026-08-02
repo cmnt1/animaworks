@@ -21,10 +21,9 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.conversation import ConversationMemory, ToolRecord
 from core.memory.consolidation import ConsolidationEngine
+from core.memory.conversation import ConversationMemory, ToolRecord
 from core.time_utils import now_local as now_jst
-
 
 # =====================================================================
 # Fix 1: S mode append_turn
@@ -42,7 +41,6 @@ class TestSModeAppendTurn:
         model_config = ModelConfig(
             model="claude-sonnet-4-6",
             max_tokens=1024,
-            max_turns=5,
             credential="anthropic",
         )
         conv = ConversationMemory(anima_dir, model_config)
@@ -113,7 +111,9 @@ class TestSModeAppendTurn:
         )
 
     def test_s_mode_process_message_saves_turns(
-        self, data_dir: Path, make_anima,
+        self,
+        data_dir: Path,
+        make_anima,
     ) -> None:
         """Verify process_message code path saves turns for S-mode.
 
@@ -125,12 +125,8 @@ class TestSModeAppendTurn:
         source = inspect.getsource(anima_module.DigitalAnima.process_message)
 
         # Must contain append_turn calls (both pre-save and post-save)
-        assert "append_turn" in source, (
-            "process_message should call append_turn"
-        )
-        assert "conv_memory.save()" in source, (
-            "process_message should call conv_memory.save()"
-        )
+        assert "append_turn" in source, "process_message should call append_turn"
+        assert "conv_memory.save()" in source, "process_message should call conv_memory.save()"
 
     def test_s_mode_streaming_saves_turns(self) -> None:
         """Verify process_message_stream code path saves turns for S-mode."""
@@ -139,9 +135,7 @@ class TestSModeAppendTurn:
         source = inspect.getsource(anima_module.DigitalAnima.process_message_stream)
 
         # Must contain append_turn calls
-        assert "append_turn" in source, (
-            "process_message_stream should call append_turn"
-        )
+        assert "append_turn" in source, "process_message_stream should call append_turn"
 
 
 # =====================================================================
@@ -154,13 +148,13 @@ class TestConversationSummaryChunking:
 
     def test_chunk_markdown_text_with_sections(self) -> None:
         """Chunking splits compressed_summary by ``### `` headings."""
-        chromadb = pytest.importorskip("chromadb")
+        pytest.importorskip("chromadb")
         pytest.importorskip("sentence_transformers")
+
+        import tempfile
 
         from core.memory.rag.indexer import MemoryIndexer
         from core.memory.rag.store import ChromaVectorStore
-
-        import tempfile
 
         tmpdir = Path(tempfile.mkdtemp())
         anima_dir = tmpdir / "test-chunk"
@@ -202,17 +196,18 @@ class TestConversationSummaryChunking:
 
         # Clean up
         import shutil
+
         shutil.rmtree(tmpdir)
 
     def test_conversation_summary_empty_skip(self) -> None:
         """index_conversation_summary returns 0 for empty compressed_summary."""
-        chromadb = pytest.importorskip("chromadb")
+        pytest.importorskip("chromadb")
         pytest.importorskip("sentence_transformers")
+
+        import tempfile
 
         from core.memory.rag.indexer import MemoryIndexer
         from core.memory.rag.store import ChromaVectorStore
-
-        import tempfile
 
         tmpdir = Path(tempfile.mkdtemp())
         anima_dir = tmpdir / "test-empty"
@@ -229,7 +224,8 @@ class TestConversationSummaryChunking:
             "compressed_turn_count": 0,
         }
         (state_dir / "conversation.json").write_text(
-            json.dumps(conv_data, ensure_ascii=False), encoding="utf-8",
+            json.dumps(conv_data, ensure_ascii=False),
+            encoding="utf-8",
         )
 
         vectordb_dir = tmpdir / "vectordb"
@@ -242,17 +238,18 @@ class TestConversationSummaryChunking:
 
         # Clean up
         import shutil
+
         shutil.rmtree(tmpdir)
 
     def test_conversation_summary_short_skip(self) -> None:
         """index_conversation_summary skips summaries shorter than 50 chars."""
-        chromadb = pytest.importorskip("chromadb")
+        pytest.importorskip("chromadb")
         pytest.importorskip("sentence_transformers")
+
+        import tempfile
 
         from core.memory.rag.indexer import MemoryIndexer
         from core.memory.rag.store import ChromaVectorStore
-
-        import tempfile
 
         tmpdir = Path(tempfile.mkdtemp())
         anima_dir = tmpdir / "test-short"
@@ -268,7 +265,8 @@ class TestConversationSummaryChunking:
             "compressed_turn_count": 0,
         }
         (state_dir / "conversation.json").write_text(
-            json.dumps(conv_data, ensure_ascii=False), encoding="utf-8",
+            json.dumps(conv_data, ensure_ascii=False),
+            encoding="utf-8",
         )
 
         vectordb_dir = tmpdir / "vectordb"
@@ -281,17 +279,18 @@ class TestConversationSummaryChunking:
 
         # Clean up
         import shutil
+
         shutil.rmtree(tmpdir)
 
     def test_chunk_markdown_text_no_headings_fallback(self) -> None:
         """Chunking falls back to single chunk when no ### headings exist."""
-        chromadb = pytest.importorskip("chromadb")
+        pytest.importorskip("chromadb")
         pytest.importorskip("sentence_transformers")
+
+        import tempfile
 
         from core.memory.rag.indexer import MemoryIndexer
         from core.memory.rag.store import ChromaVectorStore
-
-        import tempfile
 
         tmpdir = Path(tempfile.mkdtemp())
         anima_dir = tmpdir / "test-fallback"
@@ -315,6 +314,7 @@ class TestConversationSummaryChunking:
 
         # Clean up
         import shutil
+
         shutil.rmtree(tmpdir)
 
 
@@ -322,7 +322,9 @@ class TestConversationSummaryKeywordSearch:
     """Verify keyword search covers compressed_summary."""
 
     def test_keyword_search_finds_conversation_summary(
-        self, data_dir: Path, make_anima,
+        self,
+        data_dir: Path,
+        make_anima,
     ) -> None:
         """search_memory_text returns matches from compressed_summary."""
         anima_dir = make_anima(name="test-kw")
@@ -342,7 +344,8 @@ class TestConversationSummaryKeywordSearch:
             "compressed_turn_count": 10,
         }
         (state_dir / "conversation.json").write_text(
-            json.dumps(conv_data, ensure_ascii=False), encoding="utf-8",
+            json.dumps(conv_data, ensure_ascii=False),
+            encoding="utf-8",
         )
 
         from core.memory.rag_search import RAGMemorySearch
@@ -368,7 +371,9 @@ class TestConversationSummaryKeywordSearch:
         assert any("consolidation" in r["content"].lower() for r in summary_results)
 
     def test_keyword_search_conversation_summary_scope(
-        self, data_dir: Path, make_anima,
+        self,
+        data_dir: Path,
+        make_anima,
     ) -> None:
         """search_memory_text with scope='conversation_summary' searches only summary."""
         anima_dir = make_anima(name="test-scope")
@@ -378,14 +383,12 @@ class TestConversationSummaryKeywordSearch:
         conv_data = {
             "anima_name": "test-scope",
             "turns": [],
-            "compressed_summary": (
-                "### Important Note\n\n"
-                "User specified that replies to Hasegawa are not needed."
-            ),
+            "compressed_summary": ("### Important Note\n\nUser specified that replies to Hasegawa are not needed."),
             "compressed_turn_count": 5,
         }
         (state_dir / "conversation.json").write_text(
-            json.dumps(conv_data, ensure_ascii=False), encoding="utf-8",
+            json.dumps(conv_data, ensure_ascii=False),
+            encoding="utf-8",
         )
 
         from core.memory.rag_search import RAGMemorySearch
@@ -409,7 +412,9 @@ class TestConversationSummaryKeywordSearch:
         assert any("Hasegawa" in r["content"] for r in results)
 
     def test_keyword_search_no_conversation_file(
-        self, data_dir: Path, make_anima,
+        self,
+        data_dir: Path,
+        make_anima,
     ) -> None:
         """search_memory_text gracefully handles missing conversation.json."""
         anima_dir = make_anima(name="test-noconv")
@@ -450,7 +455,9 @@ class TestActivityLogConsolidation:
     """Verify activity_log collection for consolidation."""
 
     def test_collect_activity_entries(
-        self, data_dir: Path, make_anima,
+        self,
+        data_dir: Path,
+        make_anima,
     ) -> None:
         """_collect_activity_entries returns formatted activity entries."""
         anima_dir = make_anima(name="test-act")
@@ -499,7 +506,9 @@ class TestActivityLogConsolidation:
         assert "tool_use" not in result
 
     def test_collect_activity_entries_type_filter(
-        self, data_dir: Path, make_anima,
+        self,
+        data_dir: Path,
+        make_anima,
     ) -> None:
         """Communication types are prioritized; tool_use is excluded, channel_post included."""
         anima_dir = make_anima(name="test-filter")
@@ -567,7 +576,9 @@ class TestActivityLogConsolidation:
         assert "tool_use" not in result
 
     def test_collect_activity_entries_budget_limit(
-        self, data_dir: Path, make_anima,
+        self,
+        data_dir: Path,
+        make_anima,
     ) -> None:
         """Activity entries are truncated to the 12000-char budget."""
         anima_dir = make_anima(name="test-budget")
@@ -582,12 +593,14 @@ class TestActivityLogConsolidation:
         # Write many entries that would exceed the budget
         entries = []
         for i in range(500):
-            entries.append({
-                "ts": (now - timedelta(seconds=500 - i)).isoformat(),
-                "type": "response_sent",
-                "summary": f"Response #{i}: " + ("A" * 200),
-                "to": "human",
-            })
+            entries.append(
+                {
+                    "ts": (now - timedelta(seconds=500 - i)).isoformat(),
+                    "type": "response_sent",
+                    "summary": f"Response #{i}: " + ("A" * 200),
+                    "to": "human",
+                }
+            )
 
         with log_file.open("w", encoding="utf-8") as f:
             for entry in entries:
@@ -598,12 +611,12 @@ class TestActivityLogConsolidation:
 
         # Result should be non-empty but within budget
         assert result
-        assert len(result) <= 12_000, (
-            f"Activity log result should be within 12000 chars, got {len(result)}"
-        )
+        assert len(result) <= 12_000, f"Activity log result should be within 12000 chars, got {len(result)}"
 
     def test_collect_activity_entries_empty(
-        self, data_dir: Path, make_anima,
+        self,
+        data_dir: Path,
+        make_anima,
     ) -> None:
         """Returns empty string when no activity log exists."""
         anima_dir = make_anima(name="test-empty-act")
@@ -640,10 +653,8 @@ class TestActivityLogConsolidation:
         )
 
         assert "collect_activity_chunks" in source, (
-            "_run_daily_consolidation should use collect_activity_chunks "
-            "for Phase A episode extraction"
+            "_run_daily_consolidation should use collect_activity_chunks for Phase A episode extraction"
         )
         assert "one_shot_completion" in source, (
-            "_run_daily_consolidation should use one_shot_completion "
-            "for Phase A (no tool loop)"
+            "_run_daily_consolidation should use one_shot_completion for Phase A (no tool loop)"
         )

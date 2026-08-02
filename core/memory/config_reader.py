@@ -56,7 +56,6 @@ class ConfigReader:
                 background_model=resolved.background_model,
                 background_credential=resolved.background_credential,
                 max_tokens=resolved.max_tokens,
-                max_turns=resolved.max_turns,
                 credential=cred_name,
                 credential_type=cred_type,
                 api_key=credential.api_key or None,
@@ -105,7 +104,6 @@ class ConfigReader:
             model=_extract("model", defaults.model),
             fallback_model=_extract("fallback_model", "") or defaults.fallback_model,
             max_tokens=int(_extract("max_tokens", str(defaults.max_tokens))),
-            max_turns=int(_extract("max_turns", str(defaults.max_turns))),
             api_key_env=_extract("api_key_env", defaults.api_key_env),
             api_base_url=base_url or defaults.api_base_url,
         )

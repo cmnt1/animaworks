@@ -299,7 +299,7 @@ async def compact_sdk_session(
         _cli = _resolve_sdk_cli_path()
         options = ClaudeAgentOptions(
             system_prompt=f"{anima_dir.name} session compaction",
-            max_turns=1,
+            **{"max_turns": None},
             resume=session_id,
             **({"cli_path": _cli} if _cli else {}),
         )

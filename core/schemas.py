@@ -77,7 +77,6 @@ class ModelConfig(BaseModel):
     fallback_model: str | None = None
     fallback_models: list[str] = Field(default_factory=list)
     max_tokens: int = 8192
-    max_turns: int = 10000
     credential: str | None = None  # resolved credential name from config.json
     credential_type: str | None = None  # resolved credential type (api_key, codex_login, codex_azure, ...)
     api_key: str | None = None  # direct API key (resolved from config.json)

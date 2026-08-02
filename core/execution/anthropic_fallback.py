@@ -42,13 +42,18 @@ from core.execution.base import (
 )
 from core.execution.loop_guards import (
     FINAL_RESPONSE_ERROR_TEXT,
+    RunawayGuard,
     record_finalization_failure,
+    record_runaway_event,
+    tool_call_signature,
 )
 from core.execution.reminder import (
     SystemReminderQueue,
     msg_context_threshold,
     msg_final_iteration,
     msg_output_truncated,
+    msg_tool_loop_halt,
+    msg_tool_loop_warning,
 )
 from core.i18n import t
 from core.memory import MemoryManager
@@ -254,7 +259,6 @@ class AnthropicFallbackExecutor(BaseExecutor):
         trigger: str = "",
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         thread_id: str = "default",
     ) -> ExecutionResult:
         """Run Anthropic SDK with tool_use loop."""
@@ -268,8 +272,9 @@ class AnthropicFallbackExecutor(BaseExecutor):
         all_response_text: list[str] = []
         all_tool_records: list[ToolCallRecord] = []
         chain_count = 0
-        max_iterations = max_turns_override or self._model_config.max_turns
         usage_acc = TokenUsage()
+        _runaway_guard = RunawayGuard()
+        _force_final = False
 
         from core.config.models import resolve_max_tokens
         from core.execution.base import is_adaptive_model, is_anthropic_claude, resolve_thinking_effort
@@ -280,15 +285,17 @@ class AnthropicFallbackExecutor(BaseExecutor):
             self._model_config.thinking,
         )
 
-        for iteration in range(max_iterations):
+        iteration = -1
+        while True:
+            iteration += 1
             if (iteration + 1) % 10 == 0:
                 logger.info("Anthropic tool loop progress: %d iterations", iteration + 1)
             if self._check_interrupted():
                 logger.info("Anthropic execute interrupted at iteration=%d", iteration)
                 await _close_client_quietly(client)
-                return ExecutionResult(text="[Session interrupted by user]")
+                return ExecutionResult(text="[Session interrupted by user]", truncated=True)
 
-            is_final_iteration = iteration == max_iterations - 1
+            is_final_iteration = _force_final
 
             if is_final_iteration:
                 messages.append(
@@ -442,6 +449,45 @@ class AnthropicFallbackExecutor(BaseExecutor):
                     truncated=True,
                 )
 
+            _turn_sig = tuple(tool_call_signature(tu.name, tu.input) for tu in tool_uses)
+            _guard_decision = _runaway_guard.observe(_turn_sig)
+            _tool_names = sorted({tu.name for tu in tool_uses})
+            if _guard_decision == RunawayGuard.HALT:
+                _count = _runaway_guard.repetition_count
+                logger.error(
+                    "Anthropic runaway tool loop halted at iteration=%d (count=%d): %s",
+                    iteration,
+                    _count,
+                    ", ".join(_tool_names),
+                )
+                record_runaway_event(
+                    self._anima_dir,
+                    decision=_guard_decision,
+                    mode="Anthropic fallback",
+                    iteration=iteration,
+                    count=_count,
+                    tool_names=_tool_names,
+                )
+                _force_final = True
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": SystemReminderQueue.format_reminder(msg_tool_loop_halt(count=_count)),
+                    }
+                )
+                continue
+            if _guard_decision == RunawayGuard.WARN:
+                _count = _runaway_guard.repetition_count
+                self.reminder_queue.push_sync(msg_tool_loop_warning(tool_names=", ".join(_tool_names), count=_count))
+                record_runaway_event(
+                    self._anima_dir,
+                    decision=_guard_decision,
+                    mode="Anthropic fallback",
+                    iteration=iteration,
+                    count=_count,
+                    tool_names=_tool_names,
+                )
+
             # ── Process tool calls ────────────────────────────
             logger.info(
                 "Tool calls at iteration=%d: %s",
@@ -495,20 +541,6 @@ class AnthropicFallbackExecutor(BaseExecutor):
                 elif isinstance(last_content, str):
                     messages[-1]["content"] += "\n\n" + formatted
 
-        logger.warning("Max iterations (%d) reached, returning fallback response", max_iterations)
-        record_finalization_failure(
-            self._anima_dir,
-            mode="Anthropic fallback",
-            reason="grace_turn_exhausted",
-        )
-        await _close_client_quietly(client)
-        return ExecutionResult(
-            text=FINAL_RESPONSE_ERROR_TEXT,
-            tool_call_records=all_tool_records,
-            usage=usage_acc,
-            truncated=True,
-        )
-
     # ── Streaming execution ───────────────────────────────────
 
     async def execute_streaming(
@@ -518,7 +550,6 @@ class AnthropicFallbackExecutor(BaseExecutor):
         tracker: ContextTracker,
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         trigger: str = "",
         thread_id: str = "default",
     ) -> AsyncGenerator[dict[str, Any], None]:
@@ -542,7 +573,6 @@ class AnthropicFallbackExecutor(BaseExecutor):
                 tracker,
                 images,
                 prior_messages,
-                max_turns_override,
                 trigger,
             ):
                 yield event
@@ -557,7 +587,6 @@ class AnthropicFallbackExecutor(BaseExecutor):
         tracker: ContextTracker,
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         trigger: str = "",
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Inner streaming logic — client lifecycle managed by caller."""
@@ -570,9 +599,9 @@ class AnthropicFallbackExecutor(BaseExecutor):
 
         all_response_text: list[str] = []
         all_tool_records: list[ToolCallRecord] = []
-        _MAX_ITERATIONS = max_turns_override or self._model_config.max_turns
         _usage_acc_s = TokenUsage()
-        max_iterations_reached = False
+        _runaway_guard_s = RunawayGuard()
+        _force_final_s = False
 
         from core.config.models import resolve_max_tokens
         from core.execution.base import is_adaptive_model, is_anthropic_claude, resolve_thinking_effort
@@ -587,16 +616,23 @@ class AnthropicFallbackExecutor(BaseExecutor):
             all_response_text,
             executor_name="AnthropicFallback",
         ):
-            for iteration in range(_MAX_ITERATIONS):
+            iteration = -1
+            while True:
+                iteration += 1
                 if (iteration + 1) % 10 == 0:
                     logger.info("Anthropic streaming progress: %d iterations", iteration + 1)
                 if self._check_interrupted():
                     logger.info("Anthropic streaming interrupted at iteration=%d", iteration)
                     yield {"type": "text_delta", "text": "[Session interrupted by user]"}
-                    yield {"type": "done", "full_text": "[Session interrupted by user]", "result_message": None}
+                    yield {
+                        "type": "done",
+                        "full_text": "[Session interrupted by user]",
+                        "result_message": None,
+                        "truncated": True,
+                    }
                     return
 
-                is_final_iteration = iteration == _MAX_ITERATIONS - 1
+                is_final_iteration = _force_final_s
 
                 if is_final_iteration:
                     messages.append(
@@ -733,6 +769,47 @@ class AnthropicFallbackExecutor(BaseExecutor):
                     }
                     return
 
+                _turn_sig_s = tuple(tool_call_signature(tu.name, tu.input) for tu in tool_uses)
+                _guard_decision_s = _runaway_guard_s.observe(_turn_sig_s)
+                _tool_names_s = sorted({tu.name for tu in tool_uses})
+                if _guard_decision_s == RunawayGuard.HALT:
+                    _count_s = _runaway_guard_s.repetition_count
+                    logger.error(
+                        "Anthropic streaming runaway tool loop halted at iteration=%d (count=%d): %s",
+                        iteration,
+                        _count_s,
+                        ", ".join(_tool_names_s),
+                    )
+                    record_runaway_event(
+                        self._anima_dir,
+                        decision=_guard_decision_s,
+                        mode="Anthropic fallback streaming",
+                        iteration=iteration,
+                        count=_count_s,
+                        tool_names=_tool_names_s,
+                    )
+                    _force_final_s = True
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": SystemReminderQueue.format_reminder(msg_tool_loop_halt(count=_count_s)),
+                        }
+                    )
+                    continue
+                if _guard_decision_s == RunawayGuard.WARN:
+                    _count_s = _runaway_guard_s.repetition_count
+                    self.reminder_queue.push_sync(
+                        msg_tool_loop_warning(tool_names=", ".join(_tool_names_s), count=_count_s)
+                    )
+                    record_runaway_event(
+                        self._anima_dir,
+                        decision=_guard_decision_s,
+                        mode="Anthropic fallback streaming",
+                        iteration=iteration,
+                        count=_count_s,
+                        tool_names=_tool_names_s,
+                    )
+
                 # ── Execute tool calls ────────────────────────
                 iteration_text = "".join(iteration_text_parts)
                 if iteration_text:
@@ -823,14 +900,6 @@ class AnthropicFallbackExecutor(BaseExecutor):
                         )
                     elif isinstance(last_content, str):
                         messages[-1]["content"] += "\n\n" + formatted
-            else:
-                # for-else: the configured loop budget was exhausted
-                max_iterations_reached = True
-                logger.warning(
-                    "Streaming max iterations (%d) reached",
-                    _MAX_ITERATIONS,
-                )
-
         full_text = "\n".join(all_response_text)
         if not full_text.strip():
             record_finalization_failure(
@@ -847,5 +916,5 @@ class AnthropicFallbackExecutor(BaseExecutor):
             "result_message": None,
             "tool_call_records": [asdict(r) for r in all_tool_records],
             "usage": _usage_acc_s.to_dict(),
-            "truncated": max_iterations_reached or is_final_iteration or full_text == FINAL_RESPONSE_ERROR_TEXT,
+            "truncated": _force_final_s or full_text == FINAL_RESPONSE_ERROR_TEXT,
         }

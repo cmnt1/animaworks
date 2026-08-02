@@ -519,8 +519,9 @@ class ExecutionResult:
             when PreCompact blocks SDK auto-compact and the subsequent
             PreToolUse returns ``continue_=False``.
         usage: Token usage for this session.  Populated by each executor.
-        truncated: True when execution stopped because its turn/iteration
-            budget was exhausted before normal completion.
+        truncated: True when execution ended through runaway-guard
+            finalization, external interruption, or another abnormal path
+            rather than a normal final response.
     """
 
     text: str
@@ -733,7 +734,6 @@ class BaseExecutor(ABC):
         trigger: str = "",
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         thread_id: str = "default",
     ) -> ExecutionResult:
         """Run the execution engine and return the response.
@@ -751,8 +751,6 @@ class BaseExecutor(ABC):
                 ignore this parameter.
             images: Optional list of image dicts with ``data`` (base64) and
                 ``media_type`` keys. Supported by S Fallback and A modes.
-            max_turns_override: If provided, overrides ``max_turns`` from
-                ModelConfig for this single execution.
 
         Returns:
             ExecutionResult with the response text and optional metadata.
@@ -766,7 +764,6 @@ class BaseExecutor(ABC):
         tracker: ContextTracker,
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         trigger: str = "",
         thread_id: str = "default",
     ) -> AsyncGenerator[dict[str, Any], None]:
@@ -785,8 +782,6 @@ class BaseExecutor(ABC):
             tracker: Context usage tracker.
             images: Optional list of image dicts for multimodal input.
             prior_messages: Optional structured conversation history.
-            max_turns_override: If provided, overrides ``max_turns`` from
-                ModelConfig for this single execution.
 
         Yields:
             Dicts with at least a type key. Common types:
@@ -801,7 +796,6 @@ class BaseExecutor(ABC):
             tracker=tracker,
             images=images,
             prior_messages=prior_messages,
-            max_turns_override=max_turns_override,
             thread_id=thread_id,
         )
         yield {"type": "text_delta", "text": result.text}

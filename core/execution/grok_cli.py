@@ -958,7 +958,6 @@ class GrokCLIExecutor(BaseExecutor):
         trigger: str = "",
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         thread_id: str = "default",
     ) -> ExecutionResult:
         """Run a Grok ACP turn and collect its streaming events."""
@@ -969,7 +968,6 @@ class GrokCLIExecutor(BaseExecutor):
             tracker or ContextTracker(model=self._model_config.model),
             images=images,
             prior_messages=prior_messages,
-            max_turns_override=max_turns_override,
             trigger=trigger,
             thread_id=thread_id,
         ):
@@ -1023,7 +1021,6 @@ class GrokCLIExecutor(BaseExecutor):
         tracker: ContextTracker,
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         trigger: str = "",
         thread_id: str = "default",
     ) -> AsyncGenerator[dict[str, Any], None]:

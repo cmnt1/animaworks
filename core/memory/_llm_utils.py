@@ -417,7 +417,7 @@ async def _try_agent_sdk(
         "model": sdk_model,
         "system_prompt": system_prompt or "",
         "allowed_tools": [],
-        "max_turns": 1,
+        "max_turns": None,
         "env": env,
     }
     if _cli:

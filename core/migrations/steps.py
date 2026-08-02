@@ -106,7 +106,7 @@ def step_model_config_to_status(data_dir: Path, dry_run: bool, verbose: bool) ->
         animas_section = raw.get("animas", {})
         if not animas_section:
             return StepResult(changed=0, skipped=1, details=["No animas in config.json"])
-        _model_keys = {"model", "fallback_model", "max_tokens", "max_turns", "credential"}
+        _model_keys = {"model", "fallback_model", "max_tokens", "credential"}
         has_model_fields = any(
             isinstance(cfg, dict) and bool(_model_keys & set(cfg.keys())) for cfg in animas_section.values()
         )
@@ -275,6 +275,67 @@ def step_enable_skill_catalog_router(data_dir: Path, dry_run: bool, verbose: boo
     except Exception as exc:
         logger.exception("step_enable_skill_catalog_router failed")
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
+
+
+def step_remove_turn_limit(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Remove the retired tool-loop limit from persisted runtime configuration."""
+    del verbose
+    legacy_key = "max_turns"
+    candidates: list[tuple[Path, dict[str, Any]]] = []
+    details: list[str] = []
+
+    try:
+        config_path = data_dir / "config.json"
+        if config_path.is_file():
+            config_data = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+            defaults = config_data.get("anima_defaults")
+            if isinstance(defaults, dict) and legacy_key in defaults:
+                candidates.append((config_path, config_data))
+
+        animas_dir = data_dir / "animas"
+        if animas_dir.is_dir():
+            for anima_dir in sorted(path for path in animas_dir.iterdir() if path.is_dir()):
+                status_path = anima_dir / "status.json"
+                if not status_path.is_file():
+                    continue
+                status_data = json.loads(status_path.read_text(encoding="utf-8") or "{}")
+                if isinstance(status_data, dict) and legacy_key in status_data:
+                    candidates.append((status_path, status_data))
+
+        if not candidates:
+            return StepResult(changed=0, skipped=1, details=["Retired turn limit already absent"])
+
+        if dry_run:
+            return StepResult(
+                changed=len(candidates),
+                skipped=0,
+                details=[f"Would back up and update {path.relative_to(data_dir)}" for path, _ in candidates],
+            )
+
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        for path, data in candidates:
+            backup_path = path.with_name(f"{path.name}.bak-{timestamp}")
+            shutil.copy2(path, backup_path)
+            if path == config_path:
+                defaults = data.get("anima_defaults")
+                if isinstance(defaults, dict):
+                    defaults.pop(legacy_key, None)
+            else:
+                data.pop(legacy_key, None)
+            path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            details.append(f"Backed up and updated {path.relative_to(data_dir)} ({backup_path.name})")
+
+        try:
+            from core.config import invalidate_cache
+
+            invalidate_cache()
+        except Exception:
+            logger.debug("Failed to invalidate config cache after turn-limit migration", exc_info=True)
+
+        return StepResult(changed=len(candidates), skipped=0, details=details)
+    except Exception as exc:
+        logger.exception("step_remove_turn_limit failed")
+        return StepResult(changed=0, skipped=0, details=details, error=str(exc))
 
 
 # ── Category 2: Per-anima file migrations ───────────────────────
@@ -1456,6 +1517,12 @@ def register_all_steps(runner: Any) -> None:
             "Enable skill catalog router in config",
             "structural",
             step_enable_skill_catalog_router,
+        ),
+        MigrationStep(
+            "remove_turn_limit_20260802",
+            "Remove retired tool-loop limit from runtime config",
+            "structural",
+            step_remove_turn_limit,
         ),
         MigrationStep("current_task_rename", "current_task → current_state", "per_anima", step_current_task_rename),
         MigrationStep("pending_merge", "Merge pending.md into current_state", "per_anima", step_pending_merge),

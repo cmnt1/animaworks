@@ -18,7 +18,7 @@ reference: ``~/vendor/hermes-agent/agent/conversation_loop.py`` /
     final response.
   - :class:`RunawayGuard` — consecutive and sliding-window tool-call
     repetition detection that warns, then forces finalization, before
-    ``max_turns`` is burned.
+    additional tools are called.
 
 This module is stdlib-only by design: the error classifier, backoff function,
 and rate-guard callbacks from Issue 02 are injected by callers rather than
@@ -40,7 +40,7 @@ logger = logging.getLogger("animaworks.execution.loop_guards")
 
 # Retry / reprompt / runaway bounds.  Module constants, not config: these are
 # conservative Hermes-equivalent defaults and every path is additionally
-# bounded by the loop's own ``max_turns``.
+# bounded so detection remains cheap during long-running sessions.
 MAX_LLM_RETRIES = 3
 EMPTY_RESPONSE_REPROMPT_LIMIT = 2
 RUNAWAY_WARN_THRESHOLD = 3

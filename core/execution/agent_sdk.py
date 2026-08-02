@@ -426,7 +426,6 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         trigger: str = "",
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         thread_id: str = "default",
     ) -> ExecutionResult:
         """Run a session via Claude Agent SDK with context monitoring hook."""
@@ -434,7 +433,6 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
 
         self._rate_guard_preflight()
         _cw = self._resolve_cw()
-        _max_turns = max_turns_override or self._model_config.max_turns
         session_stats = self._init_session_stats(system_prompt, prompt, trigger)
         _cleanup_gate_marker(self._anima_dir)
         session_type = _resolve_session_type(trigger)
@@ -446,7 +444,6 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
 
         options, _temp_files = self._build_sdk_options(
             system_prompt,
-            _max_turns,
             _cw,
             session_stats,
             resume=session_id_to_resume,
@@ -496,7 +493,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
             if session_id_to_resume:
                 logger.warning("SDK session resume failed (session_id=%s): %s", session_id_to_resume, e)
                 _sdk_session._clear_session_id(self._anima_dir, session_type, thread_id=thread_id)
-                options, tfs = self._build_sdk_options(system_prompt, _max_turns, _cw, session_stats, resume=None)
+                options, tfs = self._build_sdk_options(system_prompt, _cw, session_stats, resume=None)
                 _prompt_files.extend(tfs)
                 try:
                     result_message = await _run_blocking_client(options, log_label="blocking mode fresh session retry")
@@ -535,7 +532,6 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                 _sdk_session._clear_session_id(self._anima_dir, session_type, thread_id=thread_id)
             retry_options, retry_files = self._build_sdk_options(
                 system_prompt,
-                _max_turns,
                 _cw,
                 session_stats,
                 resume=None,
@@ -576,7 +572,6 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         tracker: ContextTracker,
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         trigger: str = "",
         thread_id: str = "default",
     ) -> AsyncGenerator[dict[str, Any], None]:
@@ -585,7 +580,6 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
 
         self._rate_guard_preflight()
         _cw = self._resolve_cw()
-        _max_turns = max_turns_override or self._model_config.max_turns
         session_stats = self._init_session_stats(system_prompt, prompt, trigger)
         _cleanup_gate_marker(self._anima_dir)
         session_type = _resolve_session_type(trigger)
@@ -597,7 +591,6 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
 
         options, _temp_files = self._build_sdk_options(
             system_prompt,
-            _max_turns,
             _cw,
             session_stats,
             resume=session_id_to_resume,
@@ -626,7 +619,6 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
             nonlocal sdk_pid, sdk_pid_create_time
             fresh_opts, tfs = self._build_sdk_options(
                 system_prompt,
-                _max_turns,
                 _cw,
                 session_stats,
                 resume=None,

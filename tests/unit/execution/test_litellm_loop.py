@@ -69,7 +69,6 @@ def model_config() -> ModelConfig:
         model="openai/gpt-4o",
         api_key="sk-test",
         max_tokens=1024,
-        max_turns=5,
         context_threshold=0.50,
         max_chains=2,
     )
@@ -242,17 +241,24 @@ class TestExecuteWithTools:
             result = await executor.execute("test", system_prompt="sys")
         assert "Done" in result.text
 
-    async def test_max_iterations_reached(self, executor):
-        tc = make_tool_call("search_memory", {"query": "test"})
-        resp_with_tool = make_litellm_response(content="", tool_calls=[tc])
-        resp_final = make_litellm_response(content="Final answer after limit", tool_calls=None)
+    async def test_config_without_turn_limit_runs_over_two_hundred_tool_round_trips(self, executor):
+        responses = [
+            make_litellm_response(
+                content="",
+                tool_calls=[make_tool_call("search_memory", {"query": f"query-{index}"})],
+            )
+            for index in range(201)
+        ]
+        responses.append(make_litellm_response(content="Long session complete", tool_calls=None))
 
-        mock = AsyncMock(side_effect=[resp_with_tool] * (executor._model_config.max_turns - 1) + [resp_final])
+        mock = AsyncMock(side_effect=responses)
         with patch("litellm.acompletion", mock):
             result = await executor.execute("test", system_prompt="sys")
-        assert result.text == "Final answer after limit"
-        assert result.truncated is True
-        assert "tools" not in mock.call_args_list[-1].kwargs
+        assert result.text == "Long session complete"
+        assert result.truncated is False
+        assert mock.call_count == 202
+        assert len(result.tool_call_records) == 201
+        assert "tools" in mock.call_args_list[-1].kwargs
 
     async def test_processes_text_tool_call_with_preamble(self, executor):
         resp_with_text_tool = make_litellm_response(
@@ -592,7 +598,6 @@ class TestBuildLlmKwargsTimeoutAndNumCtx:
             model="ollama/gemma3:27b",
             api_key="sk-test",
             max_tokens=1024,
-            max_turns=5,
             context_threshold=0.50,
             max_chains=2,
         )

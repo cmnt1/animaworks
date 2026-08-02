@@ -82,7 +82,6 @@ def model_config() -> ModelConfig:
         model="openai/gpt-4o",
         api_key="sk-test",
         max_tokens=1024,
-        max_turns=5,
         context_threshold=0.50,
         max_chains=2,
     )
@@ -238,7 +237,7 @@ class TestRunawayGuard:
         responses.append(make_litellm_response(content="Done", tool_calls=None))
         mock = AsyncMock(side_effect=responses)
         with patch("litellm.acompletion", mock):
-            result = await executor.execute("test", system_prompt="sys", max_turns_override=8)
+            result = await executor.execute("test", system_prompt="sys")
         assert "Done" in result.text
         warning = msg_tool_loop_warning(tool_names="search_memory", count=3)
         assert any(warning in str(m.get("content")) for m in _messages_of_call(mock, 3))
@@ -248,7 +247,7 @@ class TestRunawayGuard:
         responses.append(make_litellm_response(content="Summary of work", tool_calls=None))
         mock = AsyncMock(side_effect=responses)
         with patch("litellm.acompletion", mock):
-            result = await executor.execute("test", system_prompt="sys", max_turns_override=10)
+            result = await executor.execute("test", system_prompt="sys")
         assert mock.call_count == 6
         assert "Summary of work" in result.text
         # Final call: tools stripped, halt reminder present
@@ -265,7 +264,7 @@ class TestRunawayGuard:
         responses = [self._identical_tool_resp() for _ in range(7)]
         mock = AsyncMock(side_effect=responses)
         with patch("litellm.acompletion", mock):
-            result = await executor.execute("test", system_prompt="sys", max_turns_override=10)
+            result = await executor.execute("test", system_prompt="sys")
         # 5 identical (halt at 5th, blocked) + 1 post-halt tool call → finalize
         assert mock.call_count == 6
         assert result.truncated is True
@@ -279,33 +278,25 @@ class TestRunawayGuard:
         responses.append(make_litellm_response(content="Done", tool_calls=None))
         mock = AsyncMock(side_effect=responses)
         with patch("litellm.acompletion", mock):
-            result = await executor.execute("test", system_prompt="sys", max_turns_override=8)
+            result = await executor.execute("test", system_prompt="sys")
         assert "Done" in result.text
         warning_fragment = msg_tool_loop_warning(tool_names="search_memory", count=3)
         for i in range(5):
             assert not any(warning_fragment in str(m.get("content")) for m in _messages_of_call(mock, i))
 
-    async def test_single_turn_override_is_tool_free_and_skips_other_loops(self, executor):
-        final = make_litellm_response(content="One-shot final", tool_calls=None)
-        mock = AsyncMock(side_effect=[final])
-        chaining = AsyncMock(return_value=("new system", 1))
-        with (
-            patch("litellm.acompletion", mock),
-            patch("core.execution.litellm_loop.handle_session_chaining", chaining),
-            patch("core.execution.litellm_loop.completion_gate_applies_to_trigger", return_value=True),
-            patch("core.execution.litellm_loop.gate_marker_exists", return_value=False),
-        ):
+    async def test_runaway_grace_turn_is_tool_free(self, executor):
+        responses = [self._identical_tool_resp() for _ in range(5)]
+        responses.append(make_litellm_response(content="Runaway summary", tool_calls=None))
+        mock = AsyncMock(side_effect=responses)
+        with patch("litellm.acompletion", mock):
             result = await executor.execute(
                 "test",
                 system_prompt="sys",
-                max_turns_override=1,
-                trigger="message:test",
             )
-        assert result.text == "One-shot final"
+        assert result.text == "Runaway summary"
         assert result.truncated is True
-        assert mock.call_count == 1
-        assert "tools" not in mock.call_args.kwargs
-        chaining.assert_not_awaited()
+        assert mock.call_count == 6
+        assert "tools" not in mock.call_args_list[-1].kwargs
 
 
 # ── Streaming: retry only before first yield ─────────────────
@@ -317,7 +308,6 @@ class TestStreamingRetry:
         config = ModelConfig(
             model="ollama/qwen3:8b",
             max_tokens=1024,
-            max_turns=5,
             context_threshold=0.50,
             max_chains=2,
         )

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 Runs any tool_use-capable model (GPT-4o, Gemini Pro, etc.) in a loop where
 the LLM autonomously calls tools until it produces a final text response
-or hits the iteration limit.  Session chaining is handled inline when the
+or the runaway guard halts pathological repetition. Session chaining is handled inline when the
 context threshold is crossed mid-conversation.
 
 Implementation is split across Mixin modules:
@@ -108,7 +108,7 @@ class LiteLLMExecutor(
     """Execute via LiteLLM with a tool_use loop (Mode A).
 
     The LLM calls tools autonomously (memory, files, commands, delegation)
-    until it produces a final text response or hits ``max_turns``.
+    until it produces a final text response or the runaway guard halts it.
 
     Composed from three Mixins:
       - ``ToolProcessingMixin``  — tool discovery, execution, partitioning
@@ -149,7 +149,6 @@ class LiteLLMExecutor(
         trigger: str = "",
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         thread_id: str = "default",
     ) -> ExecutionResult:
         """Run the LiteLLM tool-use loop.
@@ -177,8 +176,6 @@ class LiteLLMExecutor(
         # this path — LiteLLM's internal retries would multiply the effective
         # attempt count (worst case ~16) past the specified maximum of 3.
         llm_kwargs["num_retries"] = 0
-        max_iterations = max_turns_override or self._model_config.max_turns
-
         # Pre-flight rate-guard query.  This is observability-only: the session
         # continues even when the realm is guarded and relies on LiteLLM's own
         # retries — the guard's job is fleet-wide suppression at the one-shot
@@ -219,14 +216,16 @@ class LiteLLMExecutor(
                     exc,
                 )
 
-        for iteration in range(max_iterations):
+        iteration = -1
+        while True:
+            iteration += 1
             if (iteration + 1) % 10 == 0:
                 logger.info("A tool loop progress: %d iterations", iteration + 1)
             if self._check_interrupted():
                 logger.info("LiteLLM execute interrupted at iteration=%d", iteration)
-                return ExecutionResult(text="[Session interrupted by user]")
+                return ExecutionResult(text="[Session interrupted by user]", truncated=True)
 
-            is_final_iteration = _force_final or iteration == max_iterations - 1
+            is_final_iteration = _force_final
             iter_tools = [] if is_final_iteration else tools
 
             if is_final_iteration and not _final_reminder_sent:
@@ -285,7 +284,7 @@ class LiteLLMExecutor(
                     "LiteLLM execute interrupted during retry backoff at iteration=%d",
                     iteration,
                 )
-                return ExecutionResult(text="[Session interrupted by user]")
+                return ExecutionResult(text="[Session interrupted by user]", truncated=True)
             except LLMAPIError:
                 raise
             except Exception as e:
@@ -622,19 +621,6 @@ class LiteLLMExecutor(
                     }
                 )
 
-        logger.warning("A max iterations (%d) reached", max_iterations)
-        record_finalization_failure(
-            self._anima_dir,
-            mode="A",
-            reason="grace_turn_exhausted",
-        )
-        return ExecutionResult(
-            text=FINAL_RESPONSE_ERROR_TEXT,
-            tool_call_records=all_tool_records,
-            usage=usage_acc,
-            truncated=True,
-        )
-
     # ── Streaming execution ──────────────────────────────────
 
     async def execute_streaming(
@@ -644,7 +630,6 @@ class LiteLLMExecutor(
         tracker: ContextTracker,
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         trigger: str = "",
         thread_id: str = "default",
     ) -> AsyncGenerator[dict[str, Any], None]:
@@ -666,7 +651,6 @@ class LiteLLMExecutor(
                 tracker,
                 images,
                 prior_messages=prior_messages,
-                max_turns_override=max_turns_override,
                 trigger=trigger,
             ):
                 yield event
@@ -677,7 +661,6 @@ class LiteLLMExecutor(
                 tracker,
                 images,
                 prior_messages=prior_messages,
-                max_turns_override=max_turns_override,
                 trigger=trigger,
             ):
                 yield event
