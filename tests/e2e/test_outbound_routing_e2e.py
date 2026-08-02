@@ -67,7 +67,7 @@ def config_with_aliases(data_dir: Path) -> AnimaWorksConfig:
         external_messaging=ExternalMessagingConfig(
             preferred_channel="slack",
             user_aliases={
-                "user": UserAliasConfig(slack_user_id="U0TEST000001"),
+                "user": UserAliasConfig(slack_user_id="U0TEST000001", outbound_dm=True),
             },
         ),
     )

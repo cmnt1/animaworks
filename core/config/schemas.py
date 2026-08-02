@@ -547,6 +547,10 @@ class UserAliasConfig(BaseModel):
     slack_user_id: str = ""
     chatwork_room_id: str = ""
     discord_user_id: str = ""
+    # Allow explicit sends (send_message etc.) to resolve this alias to an
+    # external DM. Off by default: aliases also serve inbound trust elevation,
+    # which must not silently reroute internal replies to external platforms.
+    outbound_dm: bool = False
 
 
 class ExternalMessagingChannelConfig(BaseModel):

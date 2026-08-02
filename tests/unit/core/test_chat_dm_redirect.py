@@ -17,11 +17,12 @@ class _StubAnima(MessagingMixin):
         self.name = "yoru"
 
 
-def _config_with_alias(chat_dm_redirect: bool) -> Config:
+def _config_with_alias(chat_dm_redirect: bool, outbound_dm: bool = True) -> Config:
     config = Config()
     config.external_messaging.chat_dm_redirect = chat_dm_redirect
     config.external_messaging.user_aliases["taka"] = UserAliasConfig(
         slack_user_id="U06MJKLV0TG",
+        outbound_dm=outbound_dm,
     )
     return config
 
@@ -55,6 +56,12 @@ def test_redirect_on_resolves_external_recipient(tmp_path):
     assert resolved.is_internal is False
     assert resolved.channel == "slack"
     assert resolved.slack_user_id == "U06MJKLV0TG"
+
+
+def test_redirect_on_but_outbound_dm_off_returns_none(tmp_path):
+    """chat_dm_redirect alone is not enough: the alias must opt in to outbound DM."""
+    config = _config_with_alias(chat_dm_redirect=True, outbound_dm=False)
+    assert _resolve(_StubAnima(), config, tmp_path) is None
 
 
 def test_external_platform_source_never_redirects(tmp_path):

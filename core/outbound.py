@@ -53,7 +53,8 @@ def resolve_recipient(
 
     Resolution priority:
       1. Exact match against known Anima names (case-sensitive) → internal
-      2. Case-insensitive match against user_aliases → external via preferred_channel
+      2. Case-insensitive match against user_aliases with ``outbound_dm``
+         enabled → external via preferred_channel
       3. ``slack:USERID`` prefix → Slack direct
       4. ``chatwork:ROOMID`` prefix → Chatwork direct
       5. Bare Slack user ID pattern (U + alphanumeric) → Slack direct
@@ -68,11 +69,16 @@ def resolve_recipient(
     if raw in known_animas:
         return ResolvedRecipient(is_internal=True, name=raw)
 
-    # 2. User alias match (case-insensitive)
+    # 2. User alias match (case-insensitive). Aliases without outbound_dm are
+    # inbound-trust-only and must not resolve to an external DM target.
     lower = raw.lower()
+    outbound_disabled_alias = ""
     for alias, alias_cfg in config.user_aliases.items():
         if alias.lower() == lower:
-            return _resolve_from_alias(alias, alias_cfg, config.preferred_channel)
+            if alias_cfg.outbound_dm:
+                return _resolve_from_alias(alias, alias_cfg, config.preferred_channel)
+            outbound_disabled_alias = alias
+            break
 
     # 3. slack: prefix
     if lower.startswith("slack:"):
@@ -120,6 +126,14 @@ def resolve_recipient(
     for anima in known_animas:
         if anima.lower() == lower:
             return ResolvedRecipient(is_internal=True, name=anima)
+
+    if outbound_disabled_alias:
+        raise RecipientNotFoundError(
+            f"Recipient '{raw}' matches user alias '{outbound_disabled_alias}', "
+            f"but outbound DM is disabled for it (inbound-trust-only alias). "
+            f"Set external_messaging.user_aliases.{outbound_disabled_alias}.outbound_dm "
+            f"to true to allow external DM delivery, or use call_human."
+        )
 
     alias_names = list(config.user_aliases.keys())
     raise RecipientNotFoundError(
