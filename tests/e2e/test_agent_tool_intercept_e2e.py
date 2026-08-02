@@ -212,7 +212,6 @@ class TestBypassPermissionsConfig:
 
                 options, temp_files = executor._build_sdk_options(
                     "test prompt",
-                    5,
                     200000,
                     session_stats,
                 )
