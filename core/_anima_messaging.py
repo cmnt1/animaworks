@@ -430,6 +430,8 @@ class MessagingMixin:
             from core.paths import get_animas_dir
 
             config = load_config()
+            if not config.external_messaging.chat_dm_redirect:
+                return None
             animas_dir = get_animas_dir()
             known_animas = {d.name for d in animas_dir.iterdir() if d.is_dir()} if animas_dir.exists() else set()
             resolved = resolve_recipient(from_person, known_animas, config.external_messaging)

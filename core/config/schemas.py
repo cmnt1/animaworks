@@ -604,6 +604,10 @@ class ExternalMessagingConfig(BaseModel):
 
     preferred_channel: str = "slack"  # "slack" | "chatwork" | "discord"
     user_aliases: dict[str, UserAliasConfig] = {}  # alias → contact info
+    # Redirect chat-UI replies to the sender's external DM (Slack etc.) when
+    # the sender matches a user_alias. Off by default: aliases also serve
+    # inbound trust elevation, which must not force outbound redirection.
+    chat_dm_redirect: bool = False
     slack: ExternalMessagingChannelConfig = ExternalMessagingChannelConfig()
     chatwork: ExternalMessagingChannelConfig = ExternalMessagingChannelConfig()
     discord: ExternalMessagingChannelConfig = ExternalMessagingChannelConfig()
