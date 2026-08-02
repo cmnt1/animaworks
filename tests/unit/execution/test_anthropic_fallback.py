@@ -29,7 +29,6 @@ def model_config() -> ModelConfig:
         model="claude-sonnet-4-6",
         api_key="sk-test",
         max_tokens=1024,
-        max_turns=5,
         context_threshold=0.50,
         max_chains=2,
     )
@@ -146,7 +145,6 @@ class TestBuildTools:
         assert "create_anima" in [t["name"] for t in tools]
 
 
-
 # ── execute() — simple response ──────────────────────────────
 
 
@@ -181,8 +179,11 @@ class TestExecuteSimple:
             assert call_kwargs.get("api_key") == "sk-test"
 
     async def test_passes_base_url(
-        self, model_config: ModelConfig, anima_dir: Path,
-        tool_handler: ToolHandler, memory: MagicMock,
+        self,
+        model_config: ModelConfig,
+        anima_dir: Path,
+        tool_handler: ToolHandler,
+        memory: MagicMock,
     ):
         model_config.api_base_url = "https://custom.api"
         executor = AnthropicFallbackExecutor(
@@ -227,20 +228,44 @@ class TestExecuteWithTools:
 
         assert "Final answer" in result.text
 
-    async def test_max_iterations_reached(self, executor: AnthropicFallbackExecutor):
-        tool_block = _make_tool_use_block("search_memory", {"query": "test"})
-        resp_with_tool = _make_response([tool_block])
+    async def test_more_than_two_hundred_unique_tool_round_trips_complete(self, executor: AnthropicFallbackExecutor):
+        responses = [
+            _make_response([_make_tool_use_block("search_memory", {"query": f"query-{index}"}, tool_id=f"tu_{index}")])
+            for index in range(201)
+        ]
+        responses.append(_make_response([_make_text_block("Long session complete")]))
 
         with patch("anthropic.AsyncAnthropic") as mock_cls:
             mock_client = MagicMock()
             mock_client.messages = MagicMock()
-            # Always returns tool calls, never reaches final
-            mock_client.messages.create = AsyncMock(return_value=resp_with_tool)
+            mock_client.messages.create = AsyncMock(side_effect=responses)
             mock_cls.return_value = mock_client
 
             result = await executor.execute("test", system_prompt="sys")
 
-        assert "max iterations" in result.text
+        assert result.text == "Long session complete"
+        assert result.truncated is False
+        assert mock_client.messages.create.call_count == 202
+        assert len(result.tool_call_records) == 201
+        assert "tools" in mock_client.messages.create.call_args_list[-1].kwargs
+
+    async def test_runaway_tool_loop_halts_and_uses_tool_free_grace_turn(self, executor: AnthropicFallbackExecutor):
+        repeated = _make_response([_make_tool_use_block("search_memory", {"query": "same"})])
+        final = _make_response([_make_text_block("Runaway summary")])
+
+        with patch("anthropic.AsyncAnthropic") as mock_cls:
+            mock_client = MagicMock()
+            mock_client.messages = MagicMock()
+            mock_client.messages.create = AsyncMock(side_effect=[repeated] * 5 + [final])
+            mock_cls.return_value = mock_client
+
+            result = await executor.execute("test", system_prompt="sys")
+
+        assert result.text == "Runaway summary"
+        assert result.truncated is True
+        assert mock_client.messages.create.call_count == 6
+        assert len(result.tool_call_records) == 4
+        assert "tools" not in mock_client.messages.create.call_args_list[-1].kwargs
 
     async def test_multiple_tool_calls_in_response(self, executor: AnthropicFallbackExecutor):
         tool1 = _make_tool_use_block("search_memory", {"query": "a"}, tool_id="tu_001")
@@ -284,7 +309,9 @@ class TestExecuteContextTracking:
         assert tracker.usage_ratio > 0
 
     async def test_session_chaining(
-        self, executor: AnthropicFallbackExecutor, anima_dir: Path,
+        self,
+        executor: AnthropicFallbackExecutor,
+        anima_dir: Path,
     ):
         tracker = ContextTracker(model="claude-sonnet-4-6", threshold=0.50)
         shortterm = ShortTermMemory(anima_dir)
@@ -302,9 +329,11 @@ class TestExecuteContextTracking:
             output_tokens=100,
         )
 
-        with patch("anthropic.AsyncAnthropic") as mock_cls, \
-             patch("core.execution.anthropic_fallback.build_system_prompt", return_value="sys"), \
-             patch("core.execution._session.load_prompt", return_value="continue"):
+        with (
+            patch("anthropic.AsyncAnthropic") as mock_cls,
+            patch("core.execution.anthropic_fallback.build_system_prompt", return_value="sys"),
+            patch("core.execution._session.load_prompt", return_value="continue"),
+        ):
             mock_client = MagicMock()
             mock_client.messages = MagicMock()
             mock_client.messages.create = AsyncMock(
@@ -313,13 +342,18 @@ class TestExecuteContextTracking:
             mock_cls.return_value = mock_client
 
             result = await executor.execute(
-                "test", system_prompt="sys", tracker=tracker, shortterm=shortterm,
+                "test",
+                system_prompt="sys",
+                tracker=tracker,
+                shortterm=shortterm,
             )
 
         assert "Continued" in result.text or "Partial" in result.text
 
     async def test_chaining_limited_by_max_chains(
-        self, executor: AnthropicFallbackExecutor, anima_dir: Path,
+        self,
+        executor: AnthropicFallbackExecutor,
+        anima_dir: Path,
     ):
         executor._model_config.max_chains = 0  # No chaining allowed
         tracker = ContextTracker(model="claude-sonnet-4-6", threshold=0.50)
@@ -339,7 +373,10 @@ class TestExecuteContextTracking:
             mock_cls.return_value = mock_client
 
             result = await executor.execute(
-                "test", system_prompt="sys", tracker=tracker, shortterm=shortterm,
+                "test",
+                system_prompt="sys",
+                tracker=tracker,
+                shortterm=shortterm,
             )
 
         assert "No chain" in result.text
@@ -381,6 +418,7 @@ class TestAnthropicFallbackTimeout:
             timeout_val = create_call_kwargs["timeout"]
             # Should be an httpx.Timeout instance
             import httpx
+
             assert isinstance(timeout_val, httpx.Timeout)
 
     async def test_streaming_passes_timeout(self, executor: AnthropicFallbackExecutor):
@@ -397,9 +435,11 @@ class TestAnthropicFallbackTimeout:
         mock_stream = AsyncMock()
         mock_stream.get_final_message = AsyncMock(return_value=mock_final_message)
         # Make async iteration yield nothing (no events)
-        mock_stream.__aiter__ = MagicMock(return_value=AsyncMock(
-            __anext__=AsyncMock(side_effect=StopAsyncIteration),
-        ))
+        mock_stream.__aiter__ = MagicMock(
+            return_value=AsyncMock(
+                __anext__=AsyncMock(side_effect=StopAsyncIteration),
+            )
+        )
 
         mock_stream_cm = MagicMock()
         mock_stream_cm.__aenter__ = AsyncMock(return_value=mock_stream)
@@ -422,4 +462,5 @@ class TestAnthropicFallbackTimeout:
             stream_call_kwargs = mock_client.messages.stream.call_args[1]
             assert "timeout" in stream_call_kwargs
             import httpx
+
             assert isinstance(stream_call_kwargs["timeout"], httpx.Timeout)

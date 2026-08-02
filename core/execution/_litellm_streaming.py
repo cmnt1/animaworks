@@ -46,13 +46,24 @@ from core.execution.error_classifier import (
     litellm_realm_of,
     provider_family_of,
 )
-from core.execution.loop_guards import LlmCallInterrupted, call_llm_with_retry
+from core.execution.loop_guards import (
+    FINAL_RESPONSE_ERROR_TEXT,
+    LlmCallInterrupted,
+    RunawayGuard,
+    call_llm_with_retry,
+    record_finalization_failure,
+    record_runaway_event,
+    strip_tool_protocol_messages,
+    tool_call_signature,
+)
 from core.execution.rate_guard import get_rate_guard
 from core.execution.reminder import (
     SystemReminderQueue,
     msg_context_threshold,
     msg_final_iteration,
     msg_output_truncated,
+    msg_tool_loop_halt,
+    msg_tool_loop_warning,
 )
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData
@@ -102,7 +113,6 @@ class StreamingMixin:
         tracker: ContextTracker,
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         trigger: str = "",
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Token-level streaming via ``litellm.acompletion(stream=True)``.
@@ -125,10 +135,13 @@ class StreamingMixin:
         all_response_text: list[str] = []
         all_tool_records: list[ToolCallRecord] = []
         llm_kwargs = self._build_llm_kwargs()
-        max_iterations = max_turns_override or self._model_config.max_turns
         _usage_acc = TokenUsage()
         _repetition_detector = RepetitionDetector()
         _repetition_detected = False
+        _runaway_guard = RunawayGuard()
+        _force_final = False
+        _final_reminder_sent = False
+        _finalization_failed = False
 
         from core.execution._completion_gate import (
             cleanup_gate_marker,
@@ -166,16 +179,26 @@ class StreamingMixin:
             all_response_text,
             executor_name="A-stream",
         ):
-            for iteration in range(max_iterations):
+            iteration = -1
+            while True:
+                iteration += 1
+                if (iteration + 1) % 10 == 0:
+                    logger.info("A stream progress: %d iterations", iteration + 1)
                 if self._check_interrupted():
                     logger.info("LiteLLM streaming interrupted at iteration=%d", iteration)
                     yield {"type": "text_delta", "text": "[Session interrupted by user]"}
-                    yield {"type": "done", "full_text": "[Session interrupted by user]", "result_message": None}
+                    yield {
+                        "type": "done",
+                        "full_text": "[Session interrupted by user]",
+                        "result_message": None,
+                        "truncated": True,
+                    }
                     return
 
-                is_final_iteration = max_iterations > 1 and iteration == max_iterations - 1
+                is_final_iteration = _force_final
 
-                if is_final_iteration:
+                if is_final_iteration and not _final_reminder_sent:
+                    _final_reminder_sent = True
                     messages.append(
                         {
                             "role": "user",
@@ -196,11 +219,12 @@ class StreamingMixin:
                 )
 
                 iter_tools = [] if is_final_iteration else tools
+                iteration_messages = strip_tool_protocol_messages(messages) if is_final_iteration else messages
 
                 # ── Pre-flight: clamp max_tokens to fit context window ──
                 iter_kwargs = await self._preflight_clamp_with_compaction(
                     llm_kwargs,
-                    messages,
+                    iteration_messages,
                     iter_tools,
                     litellm,
                 )
@@ -215,16 +239,7 @@ class StreamingMixin:
                     return
 
                 # Stream the LLM response
-                # Bedrock requires toolConfig in every request that has toolUse/toolResult
-                # in the conversation history — omitting tools causes ValidationException.
-                _has_tool_history_s = any(
-                    msg.get("role") == "tool" or (msg.get("role") == "assistant" and msg.get("tool_calls"))
-                    for msg in messages
-                )
-                _bedrock_needs_tools_s = (
-                    is_final_iteration and _has_tool_history_s and self._model_config.model.startswith("bedrock/")
-                )
-                _has_tools = (not is_final_iteration or _bedrock_needs_tools_s) and bool(tools)
+                _has_tools = not is_final_iteration and bool(tools)
                 _use_stream = True
                 if _has_tools and not supports_streaming_tool_use(self._model_config.model):
                     _use_stream = False
@@ -235,7 +250,7 @@ class StreamingMixin:
                     )
 
                 call_kwargs: dict[str, Any] = {
-                    "messages": messages,
+                    "messages": iteration_messages,
                     "stream": _use_stream,
                     **iter_kwargs,
                 }
@@ -275,6 +290,7 @@ class StreamingMixin:
                             "type": "done",
                             "full_text": "[Session interrupted by user]",
                             "result_message": None,
+                            "truncated": True,
                         }
                         return
                 else:
@@ -601,7 +617,8 @@ class StreamingMixin:
                 if not tool_calls_acc or _repetition_detected:
                     # ── completion_gate enforcement ──
                     if (
-                        not _gate_attempted
+                        not is_final_iteration
+                        and not _gate_attempted
                         and not _repetition_detected
                         and completion_gate_applies_to_trigger(trigger)
                         and not gate_marker_exists(self._anima_dir)
@@ -665,6 +682,16 @@ class StreamingMixin:
                             yield {"type": "thinking_start"}
                             yield {"type": "thinking_delta", "text": _rc_text}
                             yield {"type": "thinking_end"}
+                    _empty_final_response = not full_text.strip()
+                    if _empty_final_response:
+                        record_finalization_failure(
+                            self._anima_dir,
+                            mode="A stream",
+                            reason="empty_grace_response" if is_final_iteration else "empty_final_response",
+                        )
+                        logger.error("A stream returned no answer at iteration=%d", iteration)
+                        full_text = FINAL_RESPONSE_ERROR_TEXT
+                        yield {"type": "text_delta", "text": full_text}
                     logger.debug(
                         "A stream final response at iteration=%d",
                         iteration,
@@ -675,6 +702,7 @@ class StreamingMixin:
                         "result_message": None,
                         "tool_call_records": [asdict(r) for r in all_tool_records],
                         "usage": _usage_acc.to_dict(),
+                        "truncated": is_final_iteration or _empty_final_response,
                     }
                     return
 
@@ -698,6 +726,63 @@ class StreamingMixin:
                         iteration,
                     )
                     continue
+
+                if is_final_iteration:
+                    _finalization_failed = True
+                    record_finalization_failure(
+                        self._anima_dir,
+                        mode="A stream",
+                        reason="tool_call_during_grace_turn",
+                    )
+                    logger.error("A stream grace turn returned tool calls at iteration=%d", iteration)
+                    break
+
+                _turn_sig = tuple(tool_call_signature(tc["name"], tc["arguments"]) for tc in parsed_calls)
+                _guard_decision = _runaway_guard.observe(_turn_sig)
+                _tool_names = sorted({tc["name"] for tc in parsed_calls})
+                if _guard_decision == RunawayGuard.HALT:
+                    _count = _runaway_guard.repetition_count
+                    logger.error(
+                        "A stream runaway tool loop halted at iteration=%d (count=%d): %s",
+                        iteration,
+                        _count,
+                        ", ".join(_tool_names),
+                    )
+                    record_runaway_event(
+                        self._anima_dir,
+                        decision=_guard_decision,
+                        mode="A stream",
+                        iteration=iteration,
+                        count=_count,
+                        tool_names=_tool_names,
+                    )
+                    _force_final = True
+                    _final_reminder_sent = True
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": SystemReminderQueue.format_reminder(msg_tool_loop_halt(count=_count)),
+                        }
+                    )
+                    continue
+                if _guard_decision == RunawayGuard.WARN:
+                    _count = _runaway_guard.repetition_count
+                    self.reminder_queue.push_sync(
+                        msg_tool_loop_warning(tool_names=", ".join(_tool_names), count=_count)
+                    )
+                    logger.warning(
+                        "A stream runaway tool loop warning at iteration=%d (count=%d)",
+                        iteration,
+                        _count,
+                    )
+                    record_runaway_event(
+                        self._anima_dir,
+                        decision=_guard_decision,
+                        mode="A stream",
+                        iteration=iteration,
+                        count=_count,
+                        tool_names=_tool_names,
+                    )
 
                 logger.info(
                     "A stream tool calls at iteration=%d: %s",
@@ -760,25 +845,16 @@ class StreamingMixin:
                         }
                     )
 
-        # If we exit the loop without returning, max iterations reached
-        full_text = "\n".join(all_response_text) or "(max iterations reached)"
-        # Safety net: strip any residual <think> tags (same as final-response path)
-        _leaked, _clean = resolve_streamed_leaked_thinking(full_text)
-        full_text = _clean
-        if _leaked:
-            logger.info(
-                "A stream max-iter: post-stream strip_thinking_tags caught leaked thinking (%d chars)",
-                len(_leaked),
+        # The reserved grace turn failed to produce a usable answer.
+        if not _finalization_failed:
+            record_finalization_failure(
+                self._anima_dir,
+                mode="A stream",
+                reason="grace_turn_exhausted",
             )
-        elif not _reasoning_seen:
-            _ut, _clean2 = strip_untagged_thinking(full_text)
-            if _ut:
-                logger.info(
-                    "A stream max-iter: strip_untagged_thinking detected thinking (%d chars)",
-                    len(_ut),
-                )
-                full_text = _clean2
-        logger.warning("A stream max iterations (%d) reached", max_iterations)
+        full_text = FINAL_RESPONSE_ERROR_TEXT
+        logger.error("A stream grace turn ended without a final answer")
+        yield {"type": "text_delta", "text": full_text}
         yield {
             "type": "done",
             "full_text": full_text,
@@ -797,7 +873,6 @@ class StreamingMixin:
         tracker: ContextTracker,
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         trigger: str = "",
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Iteration-level streaming for Ollama models.
@@ -818,9 +893,12 @@ class StreamingMixin:
         all_response_text: list[str] = []
         all_tool_records: list[ToolCallRecord] = []
         llm_kwargs = self._build_llm_kwargs()
-        max_iterations = max_turns_override or self._model_config.max_turns
         _usage_acc_ol = TokenUsage()
         _repetition_detector = RepetitionDetector()
+        _runaway_guard_ol = RunawayGuard()
+        _force_final_ol = False
+        _final_reminder_sent_ol = False
+        _finalization_failed_ol = False
 
         from core.execution._completion_gate import (
             cleanup_gate_marker as _cg_cleanup,
@@ -839,7 +917,11 @@ class StreamingMixin:
             all_response_text,
             executor_name="A-ollama-stream",
         ):
-            for iteration in range(max_iterations):
+            iteration = -1
+            while True:
+                iteration += 1
+                if (iteration + 1) % 10 == 0:
+                    logger.info("A ollama stream progress: %d iterations", iteration + 1)
                 if self._check_interrupted():
                     logger.info("LiteLLM streaming interrupted at iteration=%d", iteration)
                     yield {"type": "text_delta", "text": "[Session interrupted by user]"}
@@ -848,12 +930,14 @@ class StreamingMixin:
                         "full_text": "[Session interrupted by user]",
                         "result_message": None,
                         "usage": _usage_acc_ol.to_dict(),
+                        "truncated": True,
                     }
                     return
 
-                is_final_iteration = max_iterations > 1 and iteration == max_iterations - 1
+                is_final_iteration = _force_final_ol
 
-                if is_final_iteration:
+                if is_final_iteration and not _final_reminder_sent_ol:
+                    _final_reminder_sent_ol = True
                     messages.append(
                         {
                             "role": "user",
@@ -874,11 +958,12 @@ class StreamingMixin:
                 )
 
                 iter_tools = [] if is_final_iteration else tools
+                iteration_messages_ol = strip_tool_protocol_messages(messages) if is_final_iteration else messages
 
                 # ── Pre-flight: clamp max_tokens to fit context window ──
                 iter_kwargs = await self._preflight_clamp_with_compaction(
                     llm_kwargs,
-                    messages,
+                    iteration_messages_ol,
                     iter_tools,
                     litellm,
                 )
@@ -893,19 +978,10 @@ class StreamingMixin:
                     return
 
                 call_kwargs: dict[str, Any] = {
-                    "messages": messages,
+                    "messages": iteration_messages_ol,
                     **iter_kwargs,
                 }
-                # Bedrock requires toolConfig in every request that has toolUse/toolResult
-                # in the conversation history — omitting tools causes ValidationException.
-                _has_tool_history_ol = any(
-                    msg.get("role") == "tool" or (msg.get("role") == "assistant" and msg.get("tool_calls"))
-                    for msg in messages
-                )
-                _bedrock_needs_tools_ol = (
-                    is_final_iteration and _has_tool_history_ol and self._model_config.model.startswith("bedrock/")
-                )
-                if not is_final_iteration or _bedrock_needs_tools_ol:
+                if not is_final_iteration:
                     call_kwargs["tools"] = tools
 
                 # Optional hard total-request timeout for frozen Ollama
@@ -967,6 +1043,7 @@ class StreamingMixin:
                             "full_text": "[Session interrupted by user]",
                             "result_message": None,
                             "usage": _usage_acc_ol.to_dict(),
+                            "truncated": True,
                         }
                         return
                 else:
@@ -1041,6 +1118,7 @@ class StreamingMixin:
                 # Detect and convert so the execution loop runs the tool.
                 tool_calls = message.tool_calls
                 _ol_text_tc: tuple[str, str] | None = None
+                _ol_history_msg: dict[str, Any] | None = None
                 if not tool_calls and iter_text and iter_tools:
                     _ol_text_tc = try_parse_text_tool_call(iter_text, iter_tools)
 
@@ -1057,7 +1135,6 @@ class StreamingMixin:
                         _ol_tc_name,
                         _ol_tc_args_json,
                     )
-                    yield {"type": "tool_start", "tool_name": _ol_tc_name, "tool_id": _ol_tc_id}
                     # Build a synthetic tool_calls list so the existing
                     # processing path below handles execution normally.
                     from types import SimpleNamespace
@@ -1075,12 +1152,17 @@ class StreamingMixin:
                             "function": {"name": _ol_tc_name, "arguments": _ol_tc_args_json},
                         }
                     ]
-                    messages.append(_msg_dict)
+                    _ol_history_msg = _msg_dict
 
                 # ── Check for tool calls ──
                 if not tool_calls:
                     # ── completion_gate enforcement ──
-                    if not _gate_attempted_ol and _cg_applies(trigger) and not _cg_exists(self._anima_dir):
+                    if (
+                        not is_final_iteration
+                        and not _gate_attempted_ol
+                        and _cg_applies(trigger)
+                        and not _cg_exists(self._anima_dir)
+                    ):
                         _gate_attempted_ol = True
                         from core.i18n import t
 
@@ -1102,6 +1184,16 @@ class StreamingMixin:
                     if iter_text and not _ol_text_tc:
                         all_response_text.append(iter_text)
                     full_text = "\n".join(all_response_text)
+                    _empty_final_response_ol = not full_text.strip()
+                    if _empty_final_response_ol:
+                        record_finalization_failure(
+                            self._anima_dir,
+                            mode="A ollama stream",
+                            reason="empty_grace_response" if is_final_iteration else "empty_final_response",
+                        )
+                        logger.error("A ollama stream returned no answer at iteration=%d", iteration)
+                        full_text = FINAL_RESPONSE_ERROR_TEXT
+                        yield {"type": "text_delta", "text": full_text}
                     logger.debug(
                         "A ollama stream final response at iteration=%d",
                         iteration,
@@ -1112,36 +1204,15 @@ class StreamingMixin:
                         "result_message": None,
                         "tool_call_records": [asdict(r) for r in all_tool_records],
                         "usage": _usage_acc_ol.to_dict(),
+                        "truncated": is_final_iteration or _empty_final_response_ol,
                     }
                     return
 
-                # ── Patch Ollama tool_call IDs BEFORE model_dump ──
-                # Skip for synthetic text-format tool calls (already appended above).
+                # ── Patch Ollama tool_call IDs before conversion ──
                 if not _ol_text_tc:
                     for i, tc in enumerate(tool_calls):
                         if not tc.id:
                             tc.id = f"ollama_{iteration}_{i}"
-
-                    logger.info(
-                        "A ollama stream tool calls at iteration=%d: %s",
-                        iteration,
-                        ", ".join(tc.function.name or "unknown" for tc in tool_calls),
-                    )
-                    messages.append(message.model_dump())
-
-                    # Yield tool_start events
-                    for tc in tool_calls:
-                        yield {
-                            "type": "tool_start",
-                            "tool_name": tc.function.name,
-                            "tool_id": tc.id,
-                        }
-                else:
-                    logger.info(
-                        "A ollama stream tool calls at iteration=%d (text-format): %s",
-                        iteration,
-                        ", ".join(tc.function.name or "unknown" for tc in tool_calls),
-                    )
 
                 try:
                     parsed_calls = _convert_litellm_tool_calls(tool_calls)
@@ -1161,6 +1232,77 @@ class StreamingMixin:
                         iteration,
                     )
                     continue
+
+                if is_final_iteration:
+                    _finalization_failed_ol = True
+                    record_finalization_failure(
+                        self._anima_dir,
+                        mode="A ollama stream",
+                        reason="tool_call_during_grace_turn",
+                    )
+                    logger.error("A ollama stream grace turn returned tool calls at iteration=%d", iteration)
+                    break
+
+                _turn_sig_ol = tuple(tool_call_signature(tc["name"], tc["arguments"]) for tc in parsed_calls)
+                _guard_decision_ol = _runaway_guard_ol.observe(_turn_sig_ol)
+                _tool_names_ol = sorted({tc["name"] for tc in parsed_calls})
+                if _guard_decision_ol == RunawayGuard.HALT:
+                    _count_ol = _runaway_guard_ol.repetition_count
+                    logger.error(
+                        "A ollama stream runaway tool loop halted at iteration=%d (count=%d): %s",
+                        iteration,
+                        _count_ol,
+                        ", ".join(_tool_names_ol),
+                    )
+                    record_runaway_event(
+                        self._anima_dir,
+                        decision=_guard_decision_ol,
+                        mode="A ollama stream",
+                        iteration=iteration,
+                        count=_count_ol,
+                        tool_names=_tool_names_ol,
+                    )
+                    _force_final_ol = True
+                    _final_reminder_sent_ol = True
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": SystemReminderQueue.format_reminder(msg_tool_loop_halt(count=_count_ol)),
+                        }
+                    )
+                    continue
+                if _guard_decision_ol == RunawayGuard.WARN:
+                    _count_ol = _runaway_guard_ol.repetition_count
+                    self.reminder_queue.push_sync(
+                        msg_tool_loop_warning(tool_names=", ".join(_tool_names_ol), count=_count_ol)
+                    )
+                    logger.warning(
+                        "A ollama stream runaway tool loop warning at iteration=%d (count=%d)",
+                        iteration,
+                        _count_ol,
+                    )
+                    record_runaway_event(
+                        self._anima_dir,
+                        decision=_guard_decision_ol,
+                        mode="A ollama stream",
+                        iteration=iteration,
+                        count=_count_ol,
+                        tool_names=_tool_names_ol,
+                    )
+
+                logger.info(
+                    "A ollama stream tool calls at iteration=%d%s: %s",
+                    iteration,
+                    " (text-format)" if _ol_text_tc else "",
+                    ", ".join(tc.function.name or "unknown" for tc in tool_calls),
+                )
+                messages.append(_ol_history_msg if _ol_history_msg is not None else message.model_dump())
+                for tc in tool_calls:
+                    yield {
+                        "type": "tool_start",
+                        "tool_name": tc.function.name,
+                        "tool_id": tc.id,
+                    }
 
                 async for event in self._process_streaming_tool_calls(
                     parsed_calls,
@@ -1183,20 +1325,15 @@ class StreamingMixin:
                         }
                     )
 
-        # Max iterations reached
-        full_text = "\n".join(all_response_text) or "(max iterations reached)"
-        # Safety net: strip any residual <think> tags
-        _leaked_ol, _clean_ol = resolve_streamed_leaked_thinking(full_text)
-        full_text = _clean_ol
-        if _leaked_ol:
-            logger.info(
-                "A ollama max-iter: strip_thinking_tags caught leaked thinking (%d chars)",
-                len(_leaked_ol),
+        if not _finalization_failed_ol:
+            record_finalization_failure(
+                self._anima_dir,
+                mode="A ollama stream",
+                reason="grace_turn_exhausted",
             )
-        logger.warning(
-            "A ollama stream max iterations (%d) reached",
-            max_iterations,
-        )
+        full_text = FINAL_RESPONSE_ERROR_TEXT
+        logger.error("A ollama stream grace turn ended without a final answer")
+        yield {"type": "text_delta", "text": full_text}
         yield {
             "type": "done",
             "full_text": full_text,

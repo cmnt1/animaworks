@@ -47,7 +47,6 @@ def data_dir(tmp_path, monkeypatch):
         "anima_defaults": {
             "model": "claude-sonnet-4-6",
             "max_tokens": 1024,
-            "max_turns": 5,
             "credential": "anthropic",
             "context_threshold": 0.50,
             "max_chains": 2,

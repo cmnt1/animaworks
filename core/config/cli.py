@@ -157,7 +157,6 @@ def cmd_config_set(args: argparse.Namespace) -> None:
         "model",
         "fallback_model",
         "max_tokens",
-        "max_turns",
         "credential",
         "context_threshold",
         "max_chains",

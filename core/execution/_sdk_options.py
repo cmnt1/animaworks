@@ -302,7 +302,6 @@ class SDKOptionsMixin:
     def _build_sdk_options(
         self,
         system_prompt: str,
-        max_turns: int,
         context_window: int,
         session_stats: dict[str, Any],
         *,
@@ -421,7 +420,7 @@ class SDKOptionsMixin:
             permission_mode="bypassPermissions",
             can_use_tool=_auto_approve_tool,
             cwd=str(self._task_cwd or self._anima_dir),
-            max_turns=max_turns,
+            **{"max_turns": None},
             model=self._resolve_agent_sdk_model(),
             env=self._build_env(),
             max_buffer_size=_SDK_MAX_BUFFER_SIZE,

@@ -1,7 +1,6 @@
 """Unit tests for the Global Activity Level feature.
 
 Tests cover:
-  - _calc_effective_max_turns() scaling logic
   - AnimaWorksConfig.activity_level field validation
   - HeartbeatConfig.interval_minutes extended range
   - Per-anima heartbeat_interval_minutes reading from status.json
@@ -13,7 +12,6 @@ Tests cover:
 from __future__ import annotations
 
 import json
-import math
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -21,52 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
-from core._anima_heartbeat import _calc_effective_max_turns
 from core.config.models import AnimaWorksConfig, HeartbeatConfig
-
-# ── _calc_effective_max_turns ─────────────────────────────────
-
-
-class TestCalcEffectiveMaxTurns:
-    """Tests for _calc_effective_max_turns function."""
-
-    def test_at_100_returns_none(self):
-        assert _calc_effective_max_turns(20, 100) is None
-
-    def test_above_100_returns_none(self):
-        assert _calc_effective_max_turns(20, 200) is None
-        assert _calc_effective_max_turns(20, 400) is None
-
-    def test_at_50_halves_turns(self):
-        result = _calc_effective_max_turns(20, 50)
-        assert result == 10
-
-    def test_at_10_min_floor(self):
-        result = _calc_effective_max_turns(20, 10)
-        assert result == max(3, math.ceil(20 * 10 / 100))
-        assert result >= 3
-
-    def test_very_low_activity_clamps_to_3(self):
-        result = _calc_effective_max_turns(5, 10)
-        assert result == 3
-
-    def test_at_30_percent(self):
-        result = _calc_effective_max_turns(20, 30)
-        assert result == math.ceil(20 * 30 / 100)  # 6
-
-    def test_at_99_percent(self):
-        result = _calc_effective_max_turns(20, 99)
-        expected = max(3, math.ceil(20 * 99 / 100))
-        assert result == expected
-
-    def test_base_turns_3_at_50(self):
-        result = _calc_effective_max_turns(3, 50)
-        assert result == 3  # ceil(1.5)=2 but clamp to 3
-
-    def test_large_base_turns(self):
-        result = _calc_effective_max_turns(200, 50)
-        assert result == 100
-
 
 # ── Config model validation ───────────────────────────────────
 

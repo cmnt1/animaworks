@@ -394,7 +394,6 @@ class CursorAgentExecutor(BaseExecutor):
         trigger: str = "",
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         thread_id: str = "default",
     ) -> ExecutionResult:
         """Run cursor-agent subprocess and parse NDJSON output.

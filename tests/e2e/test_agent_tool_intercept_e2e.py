@@ -7,6 +7,7 @@ Verifies the full pipeline:
   4. Channel E reads task_results for Heartbeat visibility
   5. AgentOutput / TaskOutput are also blocked
 """
+
 from __future__ import annotations
 
 import json
@@ -22,8 +23,12 @@ def anima_dir():
     with tempfile.TemporaryDirectory() as tmpdir:
         d = Path(tmpdir) / "animas" / "ayame"
         for sub in [
-            "episodes", "knowledge", "skills",
-            "state", "state/pending", "state/task_results",
+            "episodes",
+            "knowledge",
+            "skills",
+            "state",
+            "state/pending",
+            "state/task_results",
         ]:
             (d / sub).mkdir(parents=True)
         yield d
@@ -70,7 +75,8 @@ class TestAgentToolHardBlockE2E:
             "3. ISO/IEC 42001"
         )
         (anima_dir / "state" / "task_results" / f"{task_id}.md").write_text(
-            result_content, encoding="utf-8",
+            result_content,
+            encoding="utf-8",
         )
 
         from core.memory.priming import PrimingEngine
@@ -87,14 +93,18 @@ class TestAgentToolHardBlockE2E:
         from core.execution._tool_summary import make_tool_detail_chunk
 
         agent_chunk = make_tool_detail_chunk(
-            "Agent", "tool_1", {"description": "Research task"},
+            "Agent",
+            "tool_1",
+            {"description": "Research task"},
         )
         assert agent_chunk is not None
         assert agent_chunk["detail"] == "Research task"
         assert agent_chunk["tool_name"] == "Agent"
 
         task_chunk = make_tool_detail_chunk(
-            "Task", "tool_2", {"description": "Build task"},
+            "Task",
+            "tool_2",
+            {"description": "Build task"},
         )
         assert task_chunk is not None
         assert task_chunk["detail"] == "Build task"
@@ -181,7 +191,6 @@ class TestBypassPermissionsConfig:
             config = ModelConfig(
                 model="claude-sonnet-4-6",
                 api_key="sk-test",
-                max_turns=5,
             )
 
             with tempfile.TemporaryDirectory() as tmpdir:
@@ -202,7 +211,10 @@ class TestBypassPermissionsConfig:
                 }
 
                 options, temp_files = executor._build_sdk_options(
-                    "test prompt", 5, 200000, session_stats,
+                    "test prompt",
+                    5,
+                    200000,
+                    session_stats,
                 )
 
                 assert options.permission_mode == "bypassPermissions"

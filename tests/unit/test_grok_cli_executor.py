@@ -49,7 +49,6 @@ def model_config() -> ModelConfig:
     return ModelConfig(
         model="grok/grok-4.5",
         max_tokens=4096,
-        max_turns=30,
         credential="grok",
         context_threshold=0.5,
         max_chains=2,
@@ -677,9 +676,7 @@ class TestEventConversion:
         tracker.update_from_usage.assert_called_once_with(done["usage"])
 
     @pytest.mark.asyncio
-    async def test_usage_update_camel_case_sets_tracker_from_last_response(
-        self, executor: GrokCLIExecutor
-    ):
+    async def test_usage_update_camel_case_sets_tracker_from_last_response(self, executor: GrokCLIExecutor):
         """Last usage_update (camelCase) drives context ratio, not cumulative usage."""
         updates = [
             {
@@ -762,9 +759,7 @@ class TestEventConversion:
         assert tracker.usage_ratio == pytest.approx(expected_tokens / tracker.context_window)
 
     @pytest.mark.asyncio
-    async def test_meta_top_level_input_tokens_sets_context_without_cache_add(
-        self, executor: GrokCLIExecutor
-    ):
+    async def test_meta_top_level_input_tokens_sets_context_without_cache_add(self, executor: GrokCLIExecutor):
         """Grok CLI 0.2.x: _meta top-level inputTokens = last-call full context.
 
         Real wire shape (2 model calls): top-level inputTokens is cache-inclusive
@@ -799,9 +794,7 @@ class TestEventConversion:
         assert tracker.usage_ratio == pytest.approx(20153 / tracker.context_window)
 
     @pytest.mark.asyncio
-    async def test_no_usage_update_falls_back_to_cumulative_usage(
-        self, executor: GrokCLIExecutor
-    ):
+    async def test_no_usage_update_falls_back_to_cumulative_usage(self, executor: GrokCLIExecutor):
         """Without usage_update or _meta top-level inputTokens, use cumulative."""
         tracker = MagicMock()
         proc = _FakeProc(

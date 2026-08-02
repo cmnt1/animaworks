@@ -7,6 +7,7 @@ Validates the full flow: system prompt construction -> LLM mock ->
 tool call extraction -> tool execution -> result injection -> final response.
 No real API calls are made.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -40,7 +41,6 @@ class TestModeBTextLoop:
             "test-b",
             model="ollama/gemma3:27b",
             execution_mode="assisted",
-            max_turns=5,
         )
         memory = MemoryManager(anima_dir)
         model_config = memory.read_model_config()
@@ -73,9 +73,7 @@ class TestModeBTextLoop:
         tool_call_response = _make_llm_response(
             '検索してみます。\n\n```json\n{"tool": "search_memory", "arguments": {"query": "テスト"}}\n```'
         )
-        final_response = _make_llm_response(
-            "検索結果によると、テストデータがありませんでした。"
-        )
+        final_response = _make_llm_response("検索結果によると、テストデータがありませんでした。")
 
         call_count = 0
 
@@ -97,12 +95,8 @@ class TestModeBTextLoop:
 
     async def test_unknown_tool_gets_error_message(self, assisted_executor):
         """LLM calls unknown tool -> error injected -> LLM responds."""
-        unknown_tool_response = _make_llm_response(
-            '```json\n{"tool": "nonexistent_tool", "arguments": {}}\n```'
-        )
-        final_response = _make_llm_response(
-            "すみません、そのツールは利用できません。"
-        )
+        unknown_tool_response = _make_llm_response('```json\n{"tool": "nonexistent_tool", "arguments": {}}\n```')
+        final_response = _make_llm_response("すみません、そのツールは利用できません。")
 
         call_count = 0
 
@@ -123,21 +117,26 @@ class TestModeBTextLoop:
         # Should have received error about unknown tool
         assert "利用できません" in result.text
 
-    async def test_max_turns_limit(self, assisted_executor):
-        """Tool calls exhaust max_turns -> returns accumulated text."""
-        # Every response is a tool call -> should eventually hit max_turns
+    async def test_runaway_tool_loop_is_halted_and_finalized(self, assisted_executor):
+        """Repeated identical tool calls are halted by the runaway guard."""
         tool_call = _make_llm_response(
             '考え中...\n```json\n{"tool": "search_memory", "arguments": {"query": "loop"}}\n```'
         )
+        final_response = _make_llm_response("収集済み情報の要約")
 
-        with patch("litellm.acompletion", new_callable=AsyncMock, return_value=tool_call):
+        with patch(
+            "litellm.acompletion",
+            new_callable=AsyncMock,
+            side_effect=[tool_call] * 5 + [final_response],
+        ) as mock_completion:
             result = await assisted_executor.execute(
                 prompt="ループテスト",
                 system_prompt="テスト",
             )
 
-        # Should have accumulated the "考え中..." narrative text
-        assert result.text  # Not empty
+        assert "収集済み情報の要約" in result.text
+        assert result.truncated is True
+        assert mock_completion.call_count == 6
 
     async def test_system_prompt_includes_tool_spec(self, assisted_executor):
         """System prompt should include tool specification text."""
@@ -198,15 +197,15 @@ class TestModeBTextLoop:
         """LiteLLM error -> raises ExecutionError."""
         from core.exceptions import ExecutionError
 
-        with pytest.raises(ExecutionError, match="API timeout"):
-            with (
-                patch("core.execution.assisted.decorrelated_jitter", return_value=0.0),
-                patch("litellm.acompletion", new_callable=AsyncMock, side_effect=Exception("API timeout")),
-            ):
-                await assisted_executor.execute(
-                    prompt="テスト",
-                    system_prompt="テスト",
-                )
+        with (
+            pytest.raises(ExecutionError, match="API timeout"),
+            patch("core.execution.assisted.decorrelated_jitter", return_value=0.0),
+            patch("litellm.acompletion", new_callable=AsyncMock, side_effect=Exception("API timeout")),
+        ):
+            await assisted_executor.execute(
+                prompt="テスト",
+                system_prompt="テスト",
+            )
 
 
 class TestModeBModeRouting:

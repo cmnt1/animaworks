@@ -73,7 +73,6 @@ def _make_executor(anima_dir: Path):
         model="anthropic/claude-sonnet-4-6",
         api_key="sk-test",
         max_tokens=1024,
-        max_turns=3,
         context_threshold=0.50,
         max_chains=2,
     )
@@ -153,10 +152,7 @@ def test_cross_process_writes_stay_valid(shared_data_dir: Path) -> None:
         """
     )
 
-    procs = [
-        subprocess.Popen([sys.executable, "-c", script, fam])
-        for fam in ("anthropic", "openai")
-    ]
+    procs = [subprocess.Popen([sys.executable, "-c", script, fam]) for fam in ("anthropic", "openai")]
     for p in procs:
         assert p.wait(timeout=60) == 0
 

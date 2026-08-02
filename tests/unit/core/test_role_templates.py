@@ -33,7 +33,6 @@ from core.config.models import (
 )
 from core.execution.agent_sdk import _PROTECTED_FILES
 
-
 # ── Fixtures ─────────────────────────────────────────────────────
 
 
@@ -282,7 +281,6 @@ class TestCreateStatusJsonWithRole:
             {
                 "model": "claude-opus-4-6",
                 "context_threshold": 0.80,
-                "max_turns": 200,
                 "max_chains": 10,
                 "conversation_history_threshold": 0.40,
             },
@@ -299,7 +297,6 @@ class TestCreateStatusJsonWithRole:
         status = _read_status_json(anima_dir)
         assert status["model"] == "claude-opus-4-6"
         assert status["context_threshold"] == 0.80
-        assert status["max_turns"] == 200
         assert status["max_chains"] == 10
         assert status["conversation_history_threshold"] == 0.40
         assert status["role"] == "engineer"
@@ -314,7 +311,6 @@ class TestCreateStatusJsonWithRole:
             "engineer",
             {
                 "model": "claude-opus-4-6",
-                "max_turns": 200,
             },
         )
         anima_dir = tmp_path / "anima"
@@ -330,8 +326,6 @@ class TestCreateStatusJsonWithRole:
         status = _read_status_json(anima_dir)
         # Character sheet overrides role default
         assert status["model"] == "openai/gpt-4o"
-        # Role default still applies for non-overridden fields
-        assert status["max_turns"] == 200
 
     def test_character_sheet_credential_overrides_role_defaults(
         self,
@@ -383,7 +377,6 @@ class TestCreateStatusJsonWithRole:
             {
                 "model": "claude-opus-4-6",
                 "context_threshold": 0.80,
-                "max_turns": 200,
                 "max_chains": 10,
                 "conversation_history_threshold": 0.40,
             },
@@ -401,7 +394,6 @@ class TestCreateStatusJsonWithRole:
         assert status["role"] == "engineer"
         assert status["model"] == "claude-opus-4-6"
         assert status["context_threshold"] == 0.80
-        assert status["max_turns"] == 200
         assert status["max_chains"] == 10
         assert status["conversation_history_threshold"] == 0.40
         assert status["enabled"] is True
@@ -491,7 +483,6 @@ class TestLoadStatusJson:
             {
                 "model": "claude-opus-4-6",
                 "context_threshold": 0.80,
-                "max_turns": 200,
                 "max_chains": 10,
                 "conversation_history_threshold": 0.40,
                 "credential": "anthropic",
@@ -503,7 +494,7 @@ class TestLoadStatusJson:
         result = _load_status_json(anima_dir)
         assert result["model"] == "claude-opus-4-6"
         assert result["context_threshold"] == 0.80
-        assert result["max_turns"] == 200
+        assert "max_turns" not in result
         assert result["max_chains"] == 10
         assert result["conversation_history_threshold"] == 0.40
         assert result["credential"] == "anthropic"
@@ -602,7 +593,7 @@ class TestLoadStatusJson:
         )
 
         result = _load_status_json(anima_dir)
-        assert result == {"model": "openai/gpt-4o", "max_turns": 10000}
+        assert result == {"model": "openai/gpt-4o"}
 
 
 # ── 4. resolve_anima_config 2-layer merge (status.json SSoT) ──────
@@ -639,17 +630,16 @@ class TestResolveAnimaConfig2Layer:
             anima_dir,
             {
                 "model": "from-status-json",
-                "max_turns": 100,
             },
         )
 
         config = self._make_config(
-            defaults_overrides={"model": "from-defaults", "max_turns": 10000},
+            defaults_overrides={"model": "from-defaults"},
         )
 
         resolved, _ = resolve_anima_config(config, "testbot", anima_dir=anima_dir)
         assert resolved.model == "from-status-json"
-        assert resolved.max_turns == 100
+        assert not hasattr(resolved, "max_turns")
 
     def test_status_json_beats_defaults(self, tmp_path: Path) -> None:
         """status.json values override anima_defaults."""
@@ -659,17 +649,15 @@ class TestResolveAnimaConfig2Layer:
             anima_dir,
             {
                 "model": "from-status-json",
-                "max_turns": 100,
             },
         )
 
         config = self._make_config(
-            defaults_overrides={"model": "from-defaults", "max_turns": 10000},
+            defaults_overrides={"model": "from-defaults"},
         )
 
         resolved, _ = resolve_anima_config(config, "testbot", anima_dir=anima_dir)
         assert resolved.model == "from-status-json"
-        assert resolved.max_turns == 100
 
     def test_defaults_used_when_no_status(
         self,
@@ -681,12 +669,11 @@ class TestResolveAnimaConfig2Layer:
         _write_status_json(anima_dir, {"enabled": True})
 
         config = self._make_config(
-            defaults_overrides={"model": "from-defaults", "max_turns": 42},
+            defaults_overrides={"model": "from-defaults"},
         )
 
         resolved, _ = resolve_anima_config(config, "testbot", anima_dir=anima_dir)
         assert resolved.model == "from-defaults"
-        assert resolved.max_turns == 42
 
     def test_two_layer_priority_partial_status(self, tmp_path: Path) -> None:
         """status.json fields override defaults; missing fields fall through."""
@@ -696,7 +683,6 @@ class TestResolveAnimaConfig2Layer:
             anima_dir,
             {
                 "model": "status-model",
-                "max_turns": 150,
                 "max_chains": 8,
             },
         )
@@ -704,7 +690,6 @@ class TestResolveAnimaConfig2Layer:
         config = self._make_config(
             defaults_overrides={
                 "model": "default-model",
-                "max_turns": 10000,
                 "max_chains": 2,
                 "context_threshold": 0.50,
             },
@@ -713,7 +698,6 @@ class TestResolveAnimaConfig2Layer:
         resolved, _ = resolve_anima_config(config, "testbot", anima_dir=anima_dir)
         # status.json wins
         assert resolved.model == "status-model"
-        assert resolved.max_turns == 150
         assert resolved.max_chains == 8
         # defaults used (not in status.json)
         assert resolved.context_threshold == 0.50
@@ -721,12 +705,11 @@ class TestResolveAnimaConfig2Layer:
     def test_without_anima_dir_uses_defaults(self) -> None:
         """When anima_dir is None, only anima_defaults are used."""
         config = self._make_config(
-            defaults_overrides={"model": "default-model", "max_turns": 10000},
+            defaults_overrides={"model": "default-model"},
         )
 
         resolved, _ = resolve_anima_config(config, "testbot", anima_dir=None)
         assert resolved.model == "default-model"
-        assert resolved.max_turns == 10000
 
     def test_backward_compatible_defaults_only(self) -> None:
         """Pure defaults used when no anima override and anima_dir=None."""
@@ -892,7 +875,6 @@ class TestRoleTemplateIntegration:
             json.dumps(
                 {
                     "model": "claude-opus-4-6",
-                    "max_turns": 200,
                     "context_threshold": 0.80,
                     "max_chains": 10,
                     "conversation_history_threshold": 0.40,
@@ -923,7 +905,6 @@ class TestRoleTemplateIntegration:
         status = _read_status_json(anima_dir)
         assert status["role"] == "engineer"
         assert status["model"] == "claude-opus-4-6"
-        assert status["max_turns"] == 200
 
     def test_status_json_feeds_into_resolve_anima_config(
         self,
@@ -937,7 +918,6 @@ class TestRoleTemplateIntegration:
             json.dumps(
                 {
                     "model": "claude-opus-4-6",
-                    "max_turns": 200,
                     "context_threshold": 0.80,
                 }
             ),
@@ -959,5 +939,4 @@ class TestRoleTemplateIntegration:
         resolved, _ = resolve_anima_config(config, "testbot", anima_dir=anima_dir)
         # status.json values should be picked up
         assert resolved.model == "claude-opus-4-6"
-        assert resolved.max_turns == 200
         assert resolved.context_threshold == 0.80

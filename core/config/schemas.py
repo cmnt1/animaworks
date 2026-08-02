@@ -86,7 +86,6 @@ class AnimaDefaults(BaseModel):
     background_credential: str | None = None
     background_thinking_effort: str | None = None  # heartbeat/cron thinking effort override
     max_tokens: int = 8192
-    max_turns: int = 10000
     credential: str = "anthropic"
     context_threshold: float = 0.50
     max_chains: int = 2
@@ -440,7 +439,6 @@ class ConsolidationConfig(BaseModel):
     min_episodes_threshold: int = 1
     llm_model: str = DEFAULT_CONSOLIDATION_MODEL
     llm_credential: str = ""
-    max_turns: int = 30  # Tool-call loop limit for consolidation tasks
     ipc_timeout_base_seconds: int = Field(default=1800, ge=60)
     ipc_timeout_per_activity_entry_seconds: float = Field(default=4.0, ge=0.0)
     ipc_timeout_per_episode_seconds: float = Field(default=120.0, ge=0.0)
@@ -891,12 +889,6 @@ class HeartbeatConfig(BaseModel):
         le=7200,
         description="Seconds before forcefully terminating the HB session",
     )
-    max_turns: int | None = Field(
-        default=None,
-        ge=3,
-        le=10000,
-        description="HB-specific max_turns override (None = use per-anima model_config.max_turns)",
-    )
 
     @model_validator(mode="after")
     def _validate_soft_lt_hard(self) -> HeartbeatConfig:
@@ -1285,7 +1277,7 @@ class AnimaWorksConfig(BaseModel):
         default=100,
         ge=10,
         le=400,
-        description="Global activity level (10-400%). Scales heartbeat interval and max_turns.",
+        description="Global activity level (10-400%). Scales heartbeat interval.",
     )
     activity_schedule: list[ActivityScheduleEntry] = Field(
         default_factory=list,

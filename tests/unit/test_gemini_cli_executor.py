@@ -45,7 +45,6 @@ def model_config():
     return ModelConfig(
         model="gemini/2.5-pro",
         max_tokens=4096,
-        max_turns=30,
         credential="gemini",
         context_threshold=0.50,
         max_chains=2,

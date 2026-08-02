@@ -79,8 +79,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Failed to resume cursor-agent session (chatId={chat_id}). Retrying with a fresh session.",
     },
     "cursor_agent.session_rotated": {
-        "ja": "cursor-agentセッションをローテーションしました（ターン{turn_count}、最大{max_turns}）。新規セッションを開始します。",
-        "en": "Rotated cursor-agent session (turn {turn_count}, max {max_turns}). Starting fresh session.",
+        "ja": "cursor-agentセッションをローテーションしました（ターン{turn_count}）。新規セッションを開始します。",
+        "en": "Rotated cursor-agent session (turn {turn_count}). Starting fresh session.",
     },
     "cursor_agent.timeout": {
         "ja": "[cursor-agent タイムアウト: {timeout}秒以内に完了しませんでした]",

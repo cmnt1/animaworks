@@ -6,6 +6,7 @@ Tests the full lifecycle:
 - anima_factory role defaults merge
 - HeartbeatConfig global default propagation
 """
+
 from __future__ import annotations
 
 import json
@@ -22,7 +23,6 @@ from core.config.models import (
 )
 from core.schemas import ModelConfig
 
-
 # ── Full lifecycle: set → resolve → build ModelConfig ─────────
 
 
@@ -33,17 +33,21 @@ class TestBackgroundModelLifecycle:
         anima_dir = tmp_path / "animas" / "test"
         anima_dir.mkdir(parents=True)
         (anima_dir / "status.json").write_text(
-            json.dumps(status, indent=2), encoding="utf-8",
+            json.dumps(status, indent=2),
+            encoding="utf-8",
         )
         return anima_dir
 
     def test_full_lifecycle_with_background_model(self, tmp_path: Path):
         """Set background_model in status.json, resolve, and verify ModelConfig."""
-        anima_dir = self._make_anima_dir(tmp_path, {
-            "model": "claude-opus-4-6",
-            "background_model": "claude-sonnet-4-6",
-            "enabled": True,
-        })
+        anima_dir = self._make_anima_dir(
+            tmp_path,
+            {
+                "model": "claude-opus-4-6",
+                "background_model": "claude-sonnet-4-6",
+                "enabled": True,
+            },
+        )
 
         config = AnimaWorksConfig()
         resolved, _cred = resolve_anima_config(config, "test", anima_dir)
@@ -53,10 +57,13 @@ class TestBackgroundModelLifecycle:
 
     def test_update_then_resolve_cycle(self, tmp_path: Path):
         """update_status_model → _load_status_json → resolve_anima_config round-trip."""
-        anima_dir = self._make_anima_dir(tmp_path, {
-            "model": "claude-opus-4-6",
-            "enabled": True,
-        })
+        anima_dir = self._make_anima_dir(
+            tmp_path,
+            {
+                "model": "claude-opus-4-6",
+                "enabled": True,
+            },
+        )
 
         update_status_model(anima_dir, background_model="openai/gpt-4.1-mini")
 
@@ -69,11 +76,14 @@ class TestBackgroundModelLifecycle:
 
     def test_clear_then_resolve_cycle(self, tmp_path: Path):
         """Set then clear background_model, verify it's gone."""
-        anima_dir = self._make_anima_dir(tmp_path, {
-            "model": "claude-opus-4-6",
-            "background_model": "claude-sonnet-4-6",
-            "enabled": True,
-        })
+        anima_dir = self._make_anima_dir(
+            tmp_path,
+            {
+                "model": "claude-opus-4-6",
+                "background_model": "claude-sonnet-4-6",
+                "enabled": True,
+            },
+        )
 
         update_status_model(anima_dir, background_model="")
 
@@ -144,8 +154,7 @@ class TestRoleDefaultsMerge:
 
     def test_engineer_defaults_include_background_model(self):
         defaults_path = (
-            Path(__file__).resolve().parents[3]
-            / "templates" / "_shared" / "roles" / "engineer" / "defaults.json"
+            Path(__file__).resolve().parents[3] / "templates" / "_shared" / "roles" / "engineer" / "defaults.json"
         )
         if not defaults_path.exists():
             pytest.skip("Template not found in test environment")
@@ -156,8 +165,7 @@ class TestRoleDefaultsMerge:
 
     def test_manager_defaults_include_background_model(self):
         defaults_path = (
-            Path(__file__).resolve().parents[3]
-            / "templates" / "_shared" / "roles" / "manager" / "defaults.json"
+            Path(__file__).resolve().parents[3] / "templates" / "_shared" / "roles" / "manager" / "defaults.json"
         )
         if not defaults_path.exists():
             pytest.skip("Template not found in test environment")
@@ -168,8 +176,7 @@ class TestRoleDefaultsMerge:
 
     def test_general_defaults_no_background_model(self):
         defaults_path = (
-            Path(__file__).resolve().parents[3]
-            / "templates" / "_shared" / "roles" / "general" / "defaults.json"
+            Path(__file__).resolve().parents[3] / "templates" / "_shared" / "roles" / "general" / "defaults.json"
         )
         if not defaults_path.exists():
             pytest.skip("Template not found in test environment")
@@ -275,7 +282,6 @@ class TestInboxBackgroundModelResolution:
 
         assert result is not None
         assert result.model == "claude-sonnet-4-6"
-        assert result.max_turns == mc.max_turns
 
     def test_inbox_credential_resolution_e2e(self, tmp_path: Path):
         """Full E2E: status.json with background_model + credential → inbox resolution."""
@@ -285,12 +291,17 @@ class TestInboxBackgroundModelResolution:
 
         anima_dir = tmp_path / "animas" / "test_inbox"
         anima_dir.mkdir(parents=True)
-        (anima_dir / "status.json").write_text(json.dumps({
-            "model": "claude-opus-4-6",
-            "background_model": "azure/gpt-4.1-mini",
-            "background_credential": "azure",
-            "enabled": True,
-        }), encoding="utf-8")
+        (anima_dir / "status.json").write_text(
+            json.dumps(
+                {
+                    "model": "claude-opus-4-6",
+                    "background_model": "azure/gpt-4.1-mini",
+                    "background_credential": "azure",
+                    "enabled": True,
+                }
+            ),
+            encoding="utf-8",
+        )
 
         config = AnimaWorksConfig()
         resolved, _cred = resolve_anima_config(config, "test_inbox", anima_dir)

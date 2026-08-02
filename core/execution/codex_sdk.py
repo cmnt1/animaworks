@@ -1780,7 +1780,6 @@ class CodexSDKExecutor(BaseExecutor):
         trigger: str = "",
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         thread_id: str = "default",
     ) -> ExecutionResult:
         """Run a session via Codex SDK (blocking mode)."""
@@ -1900,7 +1899,6 @@ class CodexSDKExecutor(BaseExecutor):
         tracker: ContextTracker,
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
-        max_turns_override: int | None = None,
         trigger: str = "",
         thread_id: str = "default",
     ) -> AsyncGenerator[dict[str, Any], None]:

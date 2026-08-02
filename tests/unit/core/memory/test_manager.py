@@ -390,10 +390,7 @@ class TestSearchMemoryText:
         (anima_dir / "knowledge" / "test.md").write_text("keyword here", encoding="utf-8")
         (anima_dir / "episodes" / "2026-01-01.md").write_text("keyword in episode", encoding="utf-8")
         results = mm.search_memory_text("keyword", scope="knowledge")
-        assert all(
-            "knowledge" in r["source_file"] or r["source_file"].endswith("test.md")
-            for r in results
-        )
+        assert all("knowledge" in r["source_file"] or r["source_file"].endswith("test.md") for r in results)
 
     def test_case_insensitive(self, mm, anima_dir):
         mm._rag._indexer = None
@@ -549,7 +546,7 @@ class TestReadModelConfigFromMd:
         mc = mm._read_model_config_from_md()
         assert mc.model == "gpt-4o"
         assert mc.max_tokens == 8192
-        assert mc.max_turns == 10
+        assert not hasattr(mc, "max_turns")
         assert mc.api_base_url == "http://localhost:8000"
 
     def test_ignores_biko_section(self, anima_dir, data_dir):
