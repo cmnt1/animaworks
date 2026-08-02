@@ -158,13 +158,6 @@ async function handleRoute() {
     return;
   }
 
-  // Bare #/animas (list) is gone — send bookmarks to home org chart.
-  // Detail routes #/animas/<name>[/<tab>] still resolve via prefix match.
-  if (path === "/animas") {
-    window.location.hash = "#/";
-    return;
-  }
-
   // Try exact match first, then longest prefix match for parameterized routes
   const matched = resolveRouteMatch(path);
   let loader = matched ? routes[matched.route] : null;
@@ -175,11 +168,6 @@ async function handleRoute() {
     // Fallback to chat
     window.location.hash = "#/chat";
     return;
-  }
-
-  // Anima detail lives under /animas but nav item was removed — highlight Home
-  if (matched && matched.route === "/animas") {
-    navPath = "/";
   }
 
   // Destroy previous page

@@ -36,8 +36,8 @@ const {
 } = await import(moduleUrl);
 
 describe("REDIRECTS table", () => {
-  it("maps /processes to #/ (home org chart)", () => {
-    assert.equal(REDIRECTS["/processes"], "#/");
+  it("maps /processes to #/animas", () => {
+    assert.equal(REDIRECTS["/processes"], "#/animas");
   });
 
   it("maps /server to #/scheduler", () => {
@@ -70,12 +70,12 @@ describe("REDIRECTS table", () => {
 });
 
 describe("resolveRedirect", () => {
-  it("redirects #/processes path to #/", () => {
-    assert.equal(resolveRedirect("/processes"), "#/");
+  it("redirects #/processes path to #/animas", () => {
+    assert.equal(resolveRedirect("/processes"), "#/animas");
   });
 
-  it("redirects nested /processes/* paths to #/", () => {
-    assert.equal(resolveRedirect("/processes/anything"), "#/");
+  it("redirects nested /processes/* paths to #/animas", () => {
+    assert.equal(resolveRedirect("/processes/anything"), "#/animas");
   });
 
   it("redirects /server and nested paths to #/scheduler", () => {
@@ -112,9 +112,9 @@ describe("resolveRedirect", () => {
     assert.equal(resolveRedirect("/users/anything"), "#/settings/users");
   });
 
-  it("returns null for non-redirect paths (bare /animas handled in handleRoute)", () => {
-    // /animas is not in REDIRECTS (prefix would break detail routes);
-    // exact #/animas → #/ is handled in handleRoute.
+  it("returns null for registered non-redirect paths", () => {
+    // /animas is a real list route; keeping it out of REDIRECTS also preserves
+    // detail routes such as /animas/sakura/process.
     assert.equal(resolveRedirect("/animas"), null);
     assert.equal(resolveRedirect("/chat"), null);
     assert.equal(resolveRedirect("/activity"), null);
@@ -188,16 +188,15 @@ describe("parseAnimaSubPath", () => {
   });
 });
 
-describe("bare /animas redirect and detail nav highlight (source contract)", () => {
+describe("Anima management route source contract", () => {
   const routerSource = readFileSync(ROUTER_PATH, "utf8");
 
-  it("redirects exact /animas path to home in handleRoute", () => {
-    assert.match(routerSource, /path\s*===\s*["']\/animas["']/);
-    assert.match(routerSource, /location\.hash\s*=\s*["']#\/["']/);
+  it("does not redirect the exact /animas list route", () => {
+    assert.doesNotMatch(routerSource, /path\s*===\s*["']\/animas["']/);
   });
 
-  it("highlights Home nav for anima detail routes", () => {
-    assert.match(routerSource, /matched\.route\s*===\s*["']\/animas["']/);
-    assert.match(routerSource, /navPath\s*=\s*["']\/["']/);
+  it("keeps /animas registered so list and detail routes share the nav item", () => {
+    assert.match(routerSource, /routes\[["']\/animas["']\]/);
+    assert.doesNotMatch(routerSource, /matched\.route\s*===\s*["']\/animas["'][\s\S]*?navPath\s*=\s*["']\/["']/);
   });
 });

@@ -443,11 +443,12 @@ describe("animas.js page structure (source contract)", () => {
     assert.match(pageSource, /memory/);
   });
 
-  it("list view is removed; bare render redirects to home", () => {
-    assert.doesNotMatch(pageSource, /_renderList/);
-    assert.doesNotMatch(pageSource, /_loadListContent/);
-    assert.doesNotMatch(pageSource, /_loadListAvatars/);
-    assert.match(pageSource, /location\.hash\s*=\s*["']#\/["']/);
+  it("restores the dedicated list while retaining detail routes", () => {
+    assert.match(pageSource, /_renderList/);
+    assert.match(pageSource, /_loadListContent/);
+    assert.match(pageSource, /_loadListAvatars/);
+    assert.match(pageSource, /fetchAnimasWithProcessStatus/);
+    assert.match(pageSource, /setInterval\(_loadListContent,\s*10000\)/);
   });
 
   it("shows the foreground and background model columns", () => {
@@ -469,9 +470,9 @@ describe("animas.js page structure (source contract)", () => {
     assert.match(pageSource, /fetchAnimasList/);
   });
 
-  it("back button returns to home", () => {
+  it("back button returns to the Anima management list", () => {
     assert.match(pageSource, /animasBackBtn/);
-    assert.match(pageSource, /#\//);
+    assert.match(pageSource, /_navigateAnimas\(null\)/);
   });
 });
 
@@ -494,11 +495,11 @@ describe("buildAnimaDetailHash", () => {
     return import(url + "#hash-" + Math.random());
   }
 
-  it("returns home hash when name is empty", async () => {
+  it("returns list hash when name is empty", async () => {
     const { buildAnimaDetailHash } = await loadBuildHash();
-    assert.equal(buildAnimaDetailHash(null), "#/");
-    assert.equal(buildAnimaDetailHash(""), "#/");
-    assert.equal(buildAnimaDetailHash(undefined), "#/");
+    assert.equal(buildAnimaDetailHash(null), "#/animas");
+    assert.equal(buildAnimaDetailHash(""), "#/animas");
+    assert.equal(buildAnimaDetailHash(undefined), "#/animas");
   });
 
   it("omits overview tab segment", async () => {
@@ -525,10 +526,10 @@ describe("buildAnimaDetailHash", () => {
 });
 
 describe("router no longer registers /processes", () => {
-  it("does not import processes.js and redirects list aliases to home", () => {
+  it("does not import processes.js and redirects the legacy list to Anima management", () => {
     const source = readFileSync(resolve(STATIC, "modules/router.js"), "utf8");
     assert.doesNotMatch(source, /pages\/processes\.js/);
     assert.match(source, /REDIRECTS/);
-    assert.match(source, /"\/processes"\s*:\s*"#\/"/);
+    assert.match(source, /"\/processes"\s*:\s*"#\/animas"/);
   });
 });

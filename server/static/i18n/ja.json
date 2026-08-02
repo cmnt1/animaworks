@@ -97,7 +97,7 @@
   "animas.aliases_add_placeholder": "別名を入力（例：さくら）",
   "animas.aliases_empty": "別名なし",
   "animas.aliases_hint": "日本語名やニックネームなど、ツール呼び出しで使える名前を登録できます",
-  "animas.back": "ホームに戻る",
+  "animas.back": "一覧に戻る",
   "animas.bootstrapping": "制作中...",
   "animas.detail": "詳細",
   "animas.open_detail": "詳細を開く",

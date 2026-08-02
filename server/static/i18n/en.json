@@ -97,7 +97,7 @@
   "animas.aliases_add_placeholder": "Enter alias (e.g. Sakura)",
   "animas.aliases_empty": "No aliases",
   "animas.aliases_hint": "Register alternative names (Japanese, nicknames) usable in tool calls",
-  "animas.back": "Back to Home",
+  "animas.back": "Back to list",
   "animas.bootstrapping": "Creating...",
   "animas.detail": "Details",
   "animas.open_detail": "Open details",

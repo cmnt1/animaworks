@@ -1,9 +1,17 @@
-// ── Anima Management (detail only; list merged into home org chart) ──
+// ── Anima Management ───────────────────────
 import { api } from "../modules/api.js";
 import { escapeHtml, renderMarkdown } from "../modules/state.js";
 import {
   fetchAnimasList,
+  fetchAnimasWithProcessStatus,
+  healthIndicatorHtml,
+  formatUptime,
+  processActionButtonsHtml,
+  bindProcessActionButtons,
+  animaHashColor,
 } from "../modules/animas.js";
+import { companyColor } from "../shared/avatar-utils.js";
+import { bustupCandidates, resolveCachedAvatar } from "../modules/avatar-resolver.js";
 import { createPageTabs } from "../shared/page-tabs.js";
 import { parseAnimaSubPath } from "../modules/router.js";
 import { t } from "/shared/i18n.js";
@@ -184,14 +192,14 @@ const _DETAIL_TABS = [
 
 /**
  * Build detail-view hash for an anima (+ optional tab).
- * Empty name returns home (list view was merged into org chart).
+ * Empty name returns the Anima management list.
  * Pure helper — exported for unit tests.
  * @param {string|null|undefined} name
  * @param {string} [tab="overview"]
  * @returns {string}
  */
 export function buildAnimaDetailHash(name, tab = "overview") {
-  if (!name) return "#/";
+  if (!name) return "#/animas";
   const base = `#/animas/${encodeURIComponent(name)}`;
   return tab && tab !== "overview" ? `${base}/${encodeURIComponent(tab)}` : base;
 }
@@ -377,22 +385,25 @@ function _navigateAnimas(name, tab) {
 
 export function render(container, { subPath } = {}) {
   _container = container;
+  _clearListPolling();
   _destroyActiveTab();
 
   const { name, tab } = parseAnimaSubPath(subPath);
-  if (!name) {
-    // List view removed — redirect bookmarks of #/animas to home org chart
-    window.location.hash = "#/";
-    return;
+  if (name) {
+    _selectedName = name;
+    _activeTab = tab || "overview";
+    _showDetail(name, _activeTab);
+  } else {
+    _selectedName = null;
+    _activeTab = "overview";
+    _renderList();
   }
-
-  _selectedName = name;
-  _activeTab = tab || "overview";
-  _showDetail(name, _activeTab);
 }
 
 export function destroy() {
+  _clearListPolling();
   _destroyActiveTab();
+  document.removeEventListener("click", _onDocumentClickCloseKebab);
   _container = null;
   _selectedName = null;
   _activeTab = "overview";
@@ -408,7 +419,7 @@ export function destroy() {
  */
 export function buildAnimaListSubtext(p) {
   const specialty = p.speciality || p.role || "";
-  const model = shortModel(p.model);
+  const model = _shortModel(p.model);
   return [p.company, specialty, model].filter(Boolean).join(" · ");
 }
 
@@ -589,6 +600,10 @@ async function _renderList() {
     </div>
   `;
 
+  _bindModelRefreshButton({
+    buttonId: "animasModelRefreshBtn",
+    statusId: "animasModelRefreshStatus",
+  });
   await _loadListContent();
   _listRefreshInterval = setInterval(_loadListContent, 10000);
 }
@@ -596,10 +611,6 @@ async function _renderList() {
 async function _loadListContent() {
   const content = document.getElementById("animasListContent");
   if (!content) return;
-  _bindModelRefreshButton({
-    buttonId: "animasModelRefreshBtn",
-    statusId: "animasModelRefreshStatus",
-  });
 
   try {
     const animas = await fetchAnimasWithProcessStatus();
@@ -1506,7 +1517,7 @@ async function _showDetail(name, tabId = "overview") {
   `;
 
   document.getElementById("animasBackBtn")?.addEventListener("click", () => {
-    window.location.hash = "#/";
+    _navigateAnimas(null);
   });
 
   _populateAnimaSwitcher(name, _activeTab);
