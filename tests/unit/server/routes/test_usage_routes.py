@@ -171,17 +171,21 @@ def test_openai_subscription_codex_home_uses_usage_governor_auth_path(tmp_path: 
     assert usage_routes.get_openai_subscription_codex_home() == auth_path.parent
 
 
-def test_relogin_claude_does_not_launch_terminal_when_token_is_fresh(monkeypatch):
-    launched: list[str] = []
-    expires_at = int(time.time() * 1000) + 10 * 60 * 1000
-
-    monkeypatch.setattr(usage_routes, "_CACHE", {"claude": ({"stale": True}, time.time())})
-    monkeypatch.setattr(usage_routes, "get_claude_executable", lambda: "C:\\Tools\\claude.exe")
+def _stub_fresh_claude_credential(monkeypatch) -> None:
+    expires_at = int(time.time() * 1000) + 60 * 60 * 1000
     monkeypatch.setattr(
         usage_routes,
         "_select_best_claude_credential",
         lambda: (Path("credentials.json"), "access-token", "refresh-token", expires_at),
     )
+
+
+def test_relogin_claude_does_not_launch_terminal_when_token_is_fresh(monkeypatch):
+    launched: list[str] = []
+
+    monkeypatch.setattr(usage_routes, "_CACHE", {"claude": ({"stale": True}, time.time())})
+    monkeypatch.setattr(usage_routes, "get_claude_executable", lambda: "C:\\Tools\\claude.exe")
+    _stub_fresh_claude_credential(monkeypatch)
     monkeypatch.setattr(
         usage_routes,
         "_launch_claude_login_terminal",
@@ -227,22 +231,25 @@ def test_relogin_claude_read_only_when_launch_disabled(monkeypatch):
     assert refreshed == []  # and the shared token is never rewritten
 
 
-def test_read_claude_token_is_read_only_on_expired(monkeypatch):
-    """_read_claude_token returns the stored token as-is and never refreshes —
-    the credentials file's owner (Claude Code) keeps it fresh, not us."""
+def test_fetch_claude_usage_expired_token_short_circuits_network(monkeypatch):
     expired_at = int(time.time() * 1000) - 10 * 60 * 1000
+    monkeypatch.setattr(usage_routes, "_CACHE", {})
+    monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {})
     monkeypatch.setattr(
         usage_routes,
         "_select_best_claude_credential",
         lambda: (Path("credentials.json"), "expired-token", "refresh-token", expired_at),
     )
-    refreshed: list[str] = []
-    monkeypatch.setattr(usage_routes, "_refresh_claude_token", lambda path, refresh: refreshed.append(refresh) or "new")
 
-    token = usage_routes._read_claude_token()
+    def _no_network(*args, **kwargs):
+        raise AssertionError("must not hit network with expired token")
 
-    assert token == "expired-token"
-    assert refreshed == []
+    monkeypatch.setattr(usage_routes.urllib.request, "urlopen", _no_network)
+
+    result = usage_routes._fetch_claude_usage()
+
+    assert result == {"error": "unauthorized", "message": "Token expired, re-login to Claude Code"}
+    assert usage_routes._cached("claude") == result
 
 
 def test_relogin_claude_launches_terminal_when_interactive_and_refresh_fails(monkeypatch):
@@ -273,7 +280,7 @@ def test_relogin_claude_launches_terminal_when_interactive_and_refresh_fails(mon
 
 def _stub_claude_usage(monkeypatch, raw: dict[str, object]) -> None:
     monkeypatch.setattr(usage_routes, "_CACHE", {})
-    monkeypatch.setattr(usage_routes, "_read_claude_token", lambda: "access-token")
+    _stub_fresh_claude_credential(monkeypatch)
     monkeypatch.setattr(usage_routes.urllib.request, "urlopen", lambda req, timeout=0: _FakeResponse(raw))
 
 
@@ -360,7 +367,7 @@ def test_parse_retry_after_variants():
 def test_fetch_claude_usage_429_sets_backoff_without_refresh(monkeypatch):
     monkeypatch.setattr(usage_routes, "_CACHE", {})
     monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {})
-    monkeypatch.setattr(usage_routes, "_read_claude_token", lambda: "access-token")
+    _stub_fresh_claude_credential(monkeypatch)
 
     # A 429 must NOT trigger a token refresh — that would only add load.
     def _no_refresh(*a, **k):
@@ -387,7 +394,6 @@ def test_fetch_claude_usage_backoff_short_circuits_network(monkeypatch):
     def _no_network(*a, **k):
         raise AssertionError("must not hit the endpoint while backing off")
 
-    monkeypatch.setattr(usage_routes, "_read_claude_token", lambda: "access-token")
     monkeypatch.setattr(usage_routes.urllib.request, "urlopen", _no_network)
 
     # Even an explicit skip_cache refresh must honor the backoff window.
@@ -402,7 +408,7 @@ def test_fetch_claude_usage_backoff_short_circuits_network(monkeypatch):
 def test_fetch_claude_usage_403_scope_returns_scope_insufficient(monkeypatch):
     monkeypatch.setattr(usage_routes, "_CACHE", {})
     monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {})
-    monkeypatch.setattr(usage_routes, "_read_claude_token", lambda: "access-token")
+    _stub_fresh_claude_credential(monkeypatch)
     body = b'{"error":{"type":"permission_error","message":"OAuth token does not meet scope requirement any_of(user:profile)"}}'
     monkeypatch.setattr(
         usage_routes.urllib.request,
@@ -421,7 +427,7 @@ def test_fetch_claude_usage_403_non_scope_stays_http_error(monkeypatch):
     # failure must still read as a plain http_error rather than a re-login hint.
     monkeypatch.setattr(usage_routes, "_CACHE", {})
     monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {})
-    monkeypatch.setattr(usage_routes, "_read_claude_token", lambda: "access-token")
+    _stub_fresh_claude_credential(monkeypatch)
     body = b'{"error":{"type":"permission_error","message":"Organization policy forbids this resource"}}'
     monkeypatch.setattr(
         usage_routes.urllib.request,

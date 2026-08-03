@@ -353,7 +353,7 @@ def _select_best_claude_credential() -> tuple[Path | None, str | None, str | Non
             token = oauth.get("accessToken")
             refresh = oauth.get("refreshToken")
             expires = oauth.get("expiresAt", 0)
-            if token and expires > best_expires:
+            if token and (best_token is None or expires > best_expires):
                 best_path = path
                 best_token = token
                 best_refresh = refresh
@@ -362,20 +362,6 @@ def _select_best_claude_credential() -> tuple[Path | None, str | None, str | Non
             logger.debug("Failed to read Claude credentials from %s", path, exc_info=True)
 
     return best_path, best_token, best_refresh, best_expires
-
-
-def _read_claude_token() -> str | None:
-    """Return the stored OAuth token as-is — read-only, never refreshes it.
-
-    The credentials file is owned and kept fresh by Claude Code itself (each
-    anima turn and every interactive ``claude`` run refreshes it).  A background
-    refresh from here would be a second writer racing that owner and could
-    clobber a freshly-minted token, so we only read.  An expired token is
-    returned unchanged; the fetch then surfaces the auth error and the user
-    re-authenticates from the dashboard's 再認証 button.
-    """
-    _best_path, best_token, _best_refresh, _best_expires = _select_best_claude_credential()
-    return best_token
 
 
 def _relogin_claude(interactive: bool = True) -> tuple[dict[str, Any], int]:
@@ -540,9 +526,20 @@ def _fetch_claude_usage(skip_cache: bool = False) -> dict[str, Any]:
     if _in_rate_limit_backoff("claude"):
         return _rate_limited_result("claude")
 
-    token = _read_claude_token()
+    # Claude Code owns and keeps this file fresh. Usage polling is deliberately
+    # read-only: refreshing or rewriting here would race its credential owner.
+    _best_path, token, _best_refresh, best_expires = _select_best_claude_credential()
     if not token:
         result: dict[str, Any] = {"error": "no_credentials", "message": "Claude credentials not found"}
+        _set_cache("claude", result)
+        return result
+
+    now_ms = int(time.time() * 1000)
+    # expires == 0 means the file carries no expiry — unknown, let the server
+    # decide — while a known-past expiry would only buy a guaranteed 401 (and
+    # repeated 401s escalate to hour-long 429 bans), so skip the network.
+    if 0 < best_expires < now_ms:
+        result = {"error": "unauthorized", "message": "Token expired, re-login to Claude Code"}
         _set_cache("claude", result)
         return result
 
@@ -592,7 +589,7 @@ def _fetch_claude_usage(skip_cache: bool = False) -> dict[str, Any]:
 
     except urllib.error.HTTPError as e:
         if e.code == 401:
-            result = {"error": "unauthorized", "message": "Token expired — re-login to Claude Code"}
+            result = {"error": "unauthorized", "message": "Token expired, re-login to Claude Code"}
         elif e.code == 429:
             # A 429 is a usage-endpoint rate limit, not an expired token, so a
             # refresh/retry would only add load.  Record the server's Retry-After
