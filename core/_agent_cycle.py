@@ -978,7 +978,10 @@ class CycleMixin:
                                 cycle_result = chunk.get("cycle_result")
                                 if isinstance(cycle_result, dict):
                                     cycle_result["session_type"] = cycle_result.get("session_type") or ctx.session_type
-                                    cycle_result["thread_id"] = cycle_result.get("thread_id") or ctx.thread_id
+                                    # CycleResult.thread_id defaults to "default" (non-empty), so an
+                                    # `or` fallback never fires and non-default threads would be
+                                    # rejected by the chat session guard. Always trust ctx here.
+                                    cycle_result["thread_id"] = ctx.thread_id
                                     cycle_result["request_id"] = cycle_result.get("request_id") or ctx.request_id
                                     cycle_result["tool_session_id"] = (
                                         cycle_result.get("tool_session_id") or ctx.tool_session_id
@@ -1483,6 +1486,7 @@ class CycleMixin:
                 trigger=trigger,
                 action=final_action,
                 summary=final_summary,
+                thread_id=thread_id,
                 thinking_text=thinking_text[:10000],
                 duration_ms=duration_ms,
                 context_usage_ratio=tracker.usage_ratio,
