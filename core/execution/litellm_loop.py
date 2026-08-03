@@ -196,7 +196,21 @@ class LiteLLMExecutor(
         usage_acc = TokenUsage()
         cleanup_gate_marker(self._anima_dir)
         _gate_attempted = False
+        # Answer text produced on the turn that skipped completion_gate.  The
+        # gate retry discards that turn's text, so it is kept here and restored
+        # if the retry itself yields nothing.
+        _gate_pending_text = ""
         _empty_tracker = EmptyResponseTracker()
+
+        def _salvage_text() -> str:
+            """Prefer answer text already produced over the generic error."""
+            parts = [t for t in [*all_response_text, _gate_pending_text] if t.strip()]
+            if not parts:
+                return FINAL_RESPONSE_ERROR_TEXT
+            salvaged = "\n".join(parts)
+            logger.warning("A: no final answer; salvaging %d chars of prior text", len(salvaged))
+            return salvaged
+
         _runaway_guard = RunawayGuard()
         _force_final = False
         _final_reminder_sent = False
@@ -390,6 +404,7 @@ class LiteLLMExecutor(
                     _gate_attempted = True
                     from core.i18n import t
 
+                    _, _gate_pending_text = strip_thinking_tags(message.content or "")
                     messages.append({"role": "assistant", "content": message.content or ""})
                     messages.append(
                         {
@@ -416,7 +431,7 @@ class LiteLLMExecutor(
                         logger.error("A grace turn returned no answer at iteration=%d", iteration)
                         cleanup_gate_marker(self._anima_dir)
                         return ExecutionResult(
-                            text=FINAL_RESPONSE_ERROR_TEXT,
+                            text=_salvage_text(),
                             tool_call_records=all_tool_records,
                             usage=usage_acc,
                             truncated=True,
@@ -448,7 +463,7 @@ class LiteLLMExecutor(
                     )
                     cleanup_gate_marker(self._anima_dir)
                     return ExecutionResult(
-                        text=FINAL_RESPONSE_ERROR_TEXT,
+                        text=_salvage_text(),
                         tool_call_records=all_tool_records,
                         usage=usage_acc,
                         truncated=True,
@@ -514,7 +529,7 @@ class LiteLLMExecutor(
                 )
                 cleanup_gate_marker(self._anima_dir)
                 return ExecutionResult(
-                    text=FINAL_RESPONSE_ERROR_TEXT,
+                    text=_salvage_text(),
                     tool_call_records=all_tool_records,
                     usage=usage_acc,
                     truncated=True,
