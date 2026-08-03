@@ -29,7 +29,6 @@ def model_config() -> ModelConfig:
         model="claude-sonnet-4-6",
         api_key="sk-test",
         max_tokens=1024,
-        max_turns=5,
         context_threshold=0.50,
         max_chains=2,
     )
@@ -229,20 +228,44 @@ class TestExecuteWithTools:
 
         assert "Final answer" in result.text
 
-    async def test_max_iterations_reached(self, executor: AnthropicFallbackExecutor):
-        tool_block = _make_tool_use_block("search_memory", {"query": "test"})
-        resp_with_tool = _make_response([tool_block])
+    async def test_more_than_two_hundred_unique_tool_round_trips_complete(self, executor: AnthropicFallbackExecutor):
+        responses = [
+            _make_response([_make_tool_use_block("search_memory", {"query": f"query-{index}"}, tool_id=f"tu_{index}")])
+            for index in range(201)
+        ]
+        responses.append(_make_response([_make_text_block("Long session complete")]))
 
         with patch("anthropic.AsyncAnthropic") as mock_cls:
             mock_client = MagicMock()
             mock_client.messages = MagicMock()
-            # Always returns tool calls, never reaches final
-            mock_client.messages.create = AsyncMock(return_value=resp_with_tool)
+            mock_client.messages.create = AsyncMock(side_effect=responses)
             mock_cls.return_value = mock_client
 
             result = await executor.execute("test", system_prompt="sys")
 
-        assert "max iterations" in result.text
+        assert result.text == "Long session complete"
+        assert result.truncated is False
+        assert mock_client.messages.create.call_count == 202
+        assert len(result.tool_call_records) == 201
+        assert "tools" in mock_client.messages.create.call_args_list[-1].kwargs
+
+    async def test_runaway_tool_loop_halts_and_uses_tool_free_grace_turn(self, executor: AnthropicFallbackExecutor):
+        repeated = _make_response([_make_tool_use_block("search_memory", {"query": "same"})])
+        final = _make_response([_make_text_block("Runaway summary")])
+
+        with patch("anthropic.AsyncAnthropic") as mock_cls:
+            mock_client = MagicMock()
+            mock_client.messages = MagicMock()
+            mock_client.messages.create = AsyncMock(side_effect=[repeated] * 5 + [final])
+            mock_cls.return_value = mock_client
+
+            result = await executor.execute("test", system_prompt="sys")
+
+        assert result.text == "Runaway summary"
+        assert result.truncated is True
+        assert mock_client.messages.create.call_count == 6
+        assert len(result.tool_call_records) == 4
+        assert "tools" not in mock_client.messages.create.call_args_list[-1].kwargs
 
     async def test_multiple_tool_calls_in_response(self, executor: AnthropicFallbackExecutor):
         tool1 = _make_tool_use_block("search_memory", {"query": "a"}, tool_id="tu_001")

@@ -28,7 +28,6 @@ DEFAULT_TEST_CONFIG: dict[str, Any] = {
     "anima_defaults": {
         "model": DEFAULT_ANIMA_MODEL,
         "max_tokens": 1024,
-        "max_turns": 5,
         "credential": "anthropic",
         "context_threshold": 0.50,
         "max_chains": 2,
@@ -67,9 +66,7 @@ def create_test_data_dir(base: Path) -> Path:
     (data_dir / "shared" / "inbox").mkdir(parents=True)
     (data_dir / "shared" / "users").mkdir(parents=True)
     (data_dir / "company").mkdir()
-    (data_dir / "company" / "vision.md").write_text(
-        "# Company Vision\nTest company.", encoding="utf-8"
-    )
+    (data_dir / "company" / "vision.md").write_text("# Company Vision\nTest company.", encoding="utf-8")
     (data_dir / "common_skills").mkdir()
     (data_dir / "common_knowledge").mkdir()
     (data_dir / "tmp" / "attachments").mkdir(parents=True)
@@ -101,7 +98,6 @@ def create_anima_dir(
     api_base_url: str | None = None,
     context_threshold: float = 0.50,
     max_chains: int = 2,
-    max_turns: int = 5,
     conversation_history_threshold: float = 0.30,
 ) -> Path:
     """Create an anima directory with all required files and subdirectories.
@@ -124,9 +120,7 @@ def create_anima_dir(
         (anima_dir / sub).mkdir(parents=True, exist_ok=True)
 
     # Initialize state files
-    (anima_dir / "state" / "current_state.md").write_text(
-        "status: idle\n", encoding="utf-8"
-    )
+    (anima_dir / "state" / "current_state.md").write_text("status: idle\n", encoding="utf-8")
     (anima_dir / "state" / "pending.md").write_text("", encoding="utf-8")
 
     # Model config lives in status.json (SSoT). config.json animas: org structure only.
@@ -134,7 +128,6 @@ def create_anima_dir(
         "model": model,
         "context_threshold": context_threshold,
         "max_chains": max_chains,
-        "max_turns": max_turns,
         "conversation_history_threshold": conversation_history_threshold,
     }
     if execution_mode is not None:
@@ -165,8 +158,6 @@ def create_anima_dir(
     if api_base_url:
         config["credentials"][cred_name]["base_url"] = api_base_url
 
-    config_path.write_text(
-        json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
 
     return anima_dir

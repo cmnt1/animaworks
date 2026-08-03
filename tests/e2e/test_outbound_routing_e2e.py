@@ -67,7 +67,10 @@ def config_with_aliases(data_dir: Path) -> AnimaWorksConfig:
         external_messaging=ExternalMessagingConfig(
             preferred_channel="discord",
             user_aliases={
-                "user": UserAliasConfig(discord_user_id="123456789012345678"),
+                "user": UserAliasConfig(
+                    discord_user_id="123456789012345678",
+                    outbound_dm=True,
+                ),
             },
         ),
     )

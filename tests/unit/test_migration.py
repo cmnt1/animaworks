@@ -406,6 +406,51 @@ class TestMigrationSteps:
         result = step_update_version(data_dir, dry_run=False, verbose=True)
         assert result.changed == 1
 
+    def test_remove_turn_limit_backs_up_and_updates_persisted_config(self, tmp_path: Path) -> None:
+        from core.migrations.steps import step_remove_turn_limit
+
+        legacy_key = "max_turns"
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            json.dumps({"anima_defaults": {"model": "test-model", legacy_key: 10000}}),
+            encoding="utf-8",
+        )
+        status_path = tmp_path / "animas" / "alice" / "status.json"
+        status_path.parent.mkdir(parents=True)
+        status_path.write_text(
+            json.dumps({"model": "test-model", legacy_key: 30}),
+            encoding="utf-8",
+        )
+
+        result = step_remove_turn_limit(tmp_path, dry_run=False, verbose=True)
+
+        assert result.error is None
+        assert result.changed == 2
+        assert legacy_key not in json.loads(config_path.read_text(encoding="utf-8"))["anima_defaults"]
+        assert legacy_key not in json.loads(status_path.read_text(encoding="utf-8"))
+        assert list(tmp_path.glob("config.json.bak-*"))
+        assert list(status_path.parent.glob("status.json.bak-*"))
+
+        second = step_remove_turn_limit(tmp_path, dry_run=False, verbose=True)
+        assert second.error is None
+        assert second.changed == 0
+        assert second.skipped == 1
+
+    def test_remove_turn_limit_dry_run_does_not_modify_or_back_up(self, tmp_path: Path) -> None:
+        from core.migrations.steps import step_remove_turn_limit
+
+        legacy_key = "max_turns"
+        status_path = tmp_path / "animas" / "alice" / "status.json"
+        status_path.parent.mkdir(parents=True)
+        original = json.dumps({legacy_key: 30})
+        status_path.write_text(original, encoding="utf-8")
+
+        result = step_remove_turn_limit(tmp_path, dry_run=True, verbose=True)
+
+        assert result.changed == 1
+        assert status_path.read_text(encoding="utf-8") == original
+        assert not list(status_path.parent.glob("status.json.bak-*"))
+
     def test_v063_registered_after_v062(self, tmp_path: Path) -> None:
         from core.migrations.steps import register_all_steps
 
@@ -419,6 +464,15 @@ class TestMigrationSteps:
             "v062_skill_removal_and_activity_log"
         )
         assert ids.index("v063_behavior_rules_action_rules_skill_sync") < ids.index("update_version")
+
+    def test_remove_turn_limit_step_registered_before_version(self, tmp_path: Path) -> None:
+        from core.migrations.steps import register_all_steps
+
+        runner = MigrationRunner(tmp_path)
+        register_all_steps(runner)
+        ids = [item["id"] for item in runner.list_steps()]
+
+        assert ids.index("remove_turn_limit_20260802") < ids.index("update_version")
 
     def test_step_v063_resyncs_stale_runtime_prompts(self, data_dir: Path) -> None:
         from core.migrations.steps import step_v063_behavior_rules_action_rules_skill_sync

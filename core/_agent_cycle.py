@@ -290,7 +290,6 @@ class CycleMixin:
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
         message_intent: str = "",
-        max_turns_override: int | None = None,
         thread_id: str = "default",
         model_config_override: ModelConfig | None = None,
         prompt_tier_override: str | None = None,
@@ -329,7 +328,6 @@ class CycleMixin:
                     images=images,
                     prior_messages=prior_messages,
                     message_intent=message_intent,
-                    max_turns_override=max_turns_override,
                     thread_id=thread_id,
                     model_config_override=model_config_override,
                     prompt_tier_override=prompt_tier_override,
@@ -344,7 +342,6 @@ class CycleMixin:
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
         message_intent: str = "",
-        max_turns_override: int | None = None,
         thread_id: str = "default",
         model_config_override: ModelConfig | None = None,
         prompt_tier_override: str | None = None,
@@ -365,7 +362,6 @@ class CycleMixin:
                     images=images,
                     prior_messages=prior_messages,
                     message_intent=message_intent,
-                    max_turns_override=max_turns_override,
                     thread_id=thread_id,
                     model_config_override=model_config_override,
                     prompt_tier_override=prompt_tier_override,
@@ -390,7 +386,6 @@ class CycleMixin:
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
         message_intent: str = "",
-        max_turns_override: int | None = None,
         thread_id: str = "default",
         model_config_override: ModelConfig | None = None,
         prompt_tier_override: str | None = None,
@@ -537,7 +532,6 @@ class CycleMixin:
                 system_prompt=system_prompt,
                 trigger=trigger,
                 images=images,
-                max_turns_override=max_turns_override,
                 thread_id=thread_id,
             )
             _save_prompt_log_end(
@@ -587,7 +581,6 @@ class CycleMixin:
                 tracker=tracker,
                 trigger=trigger,
                 images=images,
-                max_turns_override=max_turns_override,
                 thread_id=thread_id,
             )
             if result.replied_to_from_transcript:
@@ -660,7 +653,6 @@ class CycleMixin:
                 tracker=tracker,
                 trigger=trigger,
                 images=images,
-                max_turns_override=max_turns_override,
                 thread_id=thread_id,
             )
             if result.replied_to_from_transcript:
@@ -726,7 +718,6 @@ class CycleMixin:
                 tracker=tracker,
                 trigger=trigger,
                 images=images,
-                max_turns_override=max_turns_override,
                 thread_id=thread_id,
             )
             if result.replied_to_from_transcript:
@@ -778,7 +769,6 @@ class CycleMixin:
                 tracker=tracker,
                 trigger=trigger,
                 images=images,
-                max_turns_override=max_turns_override,
                 thread_id=thread_id,
             )
             if result.replied_to_from_transcript:
@@ -828,7 +818,6 @@ class CycleMixin:
                 shortterm=shortterm if uses_chat_session else None,
                 images=images,
                 prior_messages=prior_messages,
-                max_turns_override=max_turns_override,
                 thread_id=thread_id,
                 trigger=trigger,
             )
@@ -900,7 +889,6 @@ class CycleMixin:
                 trigger=trigger,
                 images=images,
                 prior_messages=prior_messages,
-                max_turns_override=max_turns_override,
                 thread_id=thread_id,
             )
         else:
@@ -910,7 +898,6 @@ class CycleMixin:
                 tracker=tracker,
                 trigger=trigger,
                 images=images,
-                max_turns_override=max_turns_override,
                 thread_id=thread_id,
             )
         # Merge transcript-parsed replied_to for S mode
@@ -1023,7 +1010,6 @@ class CycleMixin:
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
         message_intent: str = "",
-        max_turns_override: int | None = None,
         thread_id: str = "default",
         model_config_override: ModelConfig | None = None,
         prompt_tier_override: str | None = None,
@@ -1069,7 +1055,6 @@ class CycleMixin:
                             images=images,
                             prior_messages=prior_messages,
                             message_intent=message_intent,
-                            max_turns_override=max_turns_override,
                             thread_id=thread_id,
                             model_config_override=model_config_override,
                             prompt_tier_override=prompt_tier_override,
@@ -1100,7 +1085,6 @@ class CycleMixin:
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
         message_intent: str = "",
-        max_turns_override: int | None = None,
         thread_id: str = "default",
         model_config_override: ModelConfig | None = None,
         prompt_tier_override: str | None = None,
@@ -1156,7 +1140,6 @@ class CycleMixin:
                 images=images,
                 prior_messages=prior_messages,
                 message_intent=message_intent,
-                max_turns_override=max_turns_override,
                 thread_id=thread_id,
                 model_config_override=model_config_override,
                 prompt_tier_override=prompt_tier_override,
@@ -1264,7 +1247,6 @@ class CycleMixin:
                 trigger,
                 message_intent=message_intent,
                 images=images,
-                max_turns_override=max_turns_override,
                 thread_id=thread_id,
                 model_config_override=model_config_override,
                 prompt_tier_override=prompt_tier_override,
@@ -1359,7 +1341,6 @@ class CycleMixin:
                     tracker,
                     images=images,
                     prior_messages=prior_messages,
-                    max_turns_override=max_turns_override,
                     trigger=trigger,
                     thread_id=thread_id,
                 ):
@@ -1629,7 +1610,6 @@ class CycleMixin:
                         tracker,
                         images=None,
                         prior_messages=None,
-                        max_turns_override=max_turns_override,
                         trigger=trigger,
                         thread_id=thread_id,
                     ):

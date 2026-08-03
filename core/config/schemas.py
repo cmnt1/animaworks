@@ -86,7 +86,6 @@ class AnimaDefaults(BaseModel):
     background_credential: str | None = None
     background_thinking_effort: str | None = None  # heartbeat/cron thinking effort override
     max_tokens: int = 8192
-    max_turns: int = 10000
     credential: str = "anthropic"
     context_threshold: float = 0.50
     max_chains: int = 2
@@ -441,7 +440,6 @@ class ConsolidationConfig(BaseModel):
     min_episodes_threshold: int = 1
     llm_model: str = DEFAULT_CONSOLIDATION_MODEL
     llm_credential: str = ""
-    max_turns: int = 30  # Tool-call loop limit for consolidation tasks
     daily_max_concurrency: int = Field(default=3, ge=1, le=8)
     ipc_timeout_base_seconds: int = Field(default=1800, ge=60)
     ipc_timeout_per_activity_entry_seconds: float = Field(default=4.0, ge=0.0)
@@ -549,6 +547,10 @@ class UserAliasConfig(BaseModel):
     slack_user_id: str = ""
     chatwork_room_id: str = ""
     discord_user_id: str = ""
+    # Allow explicit sends (send_message etc.) to resolve this alias to an
+    # external DM. Off by default: aliases also serve inbound trust elevation,
+    # which must not silently reroute internal replies to external platforms.
+    outbound_dm: bool = False
 
 
 class SystemAgentConfig(BaseModel):
@@ -616,6 +618,10 @@ class ExternalMessagingConfig(BaseModel):
 
     preferred_channel: str = "discord"  # "slack" | "chatwork" | "discord"
     user_aliases: dict[str, UserAliasConfig] = {}  # alias → contact info
+    # Redirect chat-UI replies to the sender's external DM (Slack etc.) when
+    # the sender matches a user_alias. Off by default: aliases also serve
+    # inbound trust elevation, which must not force outbound redirection.
+    chat_dm_redirect: bool = False
     slack: ExternalMessagingChannelConfig = ExternalMessagingChannelConfig()
     chatwork: ExternalMessagingChannelConfig = ExternalMessagingChannelConfig()
     discord: ExternalMessagingChannelConfig = ExternalMessagingChannelConfig()
@@ -901,12 +907,6 @@ class HeartbeatConfig(BaseModel):
         ge=60,
         le=7200,
         description="Seconds before forcefully terminating the HB session",
-    )
-    max_turns: int | None = Field(
-        default=None,
-        ge=3,
-        le=10000,
-        description="HB-specific max_turns override (None = use per-anima model_config.max_turns)",
     )
 
     @model_validator(mode="after")
@@ -1296,7 +1296,7 @@ class AnimaWorksConfig(BaseModel):
         default=100,
         ge=10,
         le=400,
-        description="Global activity level (10-400%). Scales heartbeat interval and max_turns.",
+        description="Global activity level (10-400%). Scales heartbeat interval.",
     )
     activity_level_by_provider: dict[str, int] = Field(
         default_factory=dict,

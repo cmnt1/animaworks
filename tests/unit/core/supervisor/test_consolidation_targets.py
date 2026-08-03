@@ -416,7 +416,6 @@ async def test_daily_consolidation_uses_bounded_parallelism_and_monotonic_progre
     config = SimpleNamespace(
         consolidation=SimpleNamespace(
             daily_max_concurrency=2,
-            max_turns=30,
             min_episodes_threshold=1,
             llm_model="codex/test",
         )

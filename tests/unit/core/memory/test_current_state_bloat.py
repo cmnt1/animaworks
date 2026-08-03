@@ -54,7 +54,6 @@ def model_config():
     return ModelConfig(
         model="claude-sonnet-4-6",
         fallback_model="claude-sonnet-4-6",
-        max_turns=5,
     )
 
 

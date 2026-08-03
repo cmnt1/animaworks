@@ -29,7 +29,6 @@ def _make_agent(anima_dir: Path, model: str = "claude-sonnet-4-6"):
     mc = ModelConfig(
         model=model,
         api_key="test-key",
-        max_turns=5,
         max_chains=2,
         context_threshold=0.50,
     )
@@ -524,6 +523,4 @@ class TestTerminalErrorChunk:
         mock_clear.assert_not_called()
         cycle_done = next(e for e in events if e.get("type") == "cycle_done")
         assert cycle_done["cycle_result"]["action"] == "error"
-        assert cycle_done["cycle_result"]["summary"] == (
-            "[Codex turn failed: usageLimitExceeded]"
-        )
+        assert cycle_done["cycle_result"]["summary"] == ("[Codex turn failed: usageLimitExceeded]")

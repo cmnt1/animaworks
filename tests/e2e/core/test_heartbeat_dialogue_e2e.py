@@ -10,10 +10,10 @@ Tests cross-context flows WITHOUT mocking file-system operations:
   B-1: current_state.md gets emphasized header when status != idle
   E:   receive_and_archive() sends read ACK with loop prevention
 """
+
 from __future__ import annotations
 
 import json
-from core.time_utils import now_jst, today_local
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -23,7 +23,7 @@ from core.memory.conversation import ConversationMemory
 from core.memory.manager import MemoryManager
 from core.messenger import Messenger
 from core.schemas import CycleResult, ModelConfig
-
+from core.time_utils import now_jst, today_local
 
 # ── Helpers ───────────────────────────────────────────────
 
@@ -33,17 +33,15 @@ def _make_model_config() -> ModelConfig:
     return ModelConfig(
         model="claude-sonnet-4-6",
         max_tokens=1024,
-        max_turns=5,
     )
 
 
 def _make_digital_anima(anima_dir: Path, shared_dir: Path):
     """Create a DigitalAnima with heavy deps (AgentCore, MemoryManager, Messenger) mocked."""
-    with patch("core.anima.AgentCore"), \
-         patch("core.anima.MemoryManager") as MockMM, \
-         patch("core.anima.Messenger"):
+    with patch("core.anima.AgentCore"), patch("core.anima.MemoryManager") as MockMM, patch("core.anima.Messenger"):
         MockMM.return_value.read_model_config.return_value = MagicMock()
         from core.anima import DigitalAnima
+
         return DigitalAnima(anima_dir, shared_dir)
 
 
@@ -70,7 +68,8 @@ def _write_conversation_json(anima_dir: Path, turns: list[dict]) -> None:
         "compressed_turn_count": 0,
     }
     (state_dir / "conversation.json").write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8",
+        json.dumps(data, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
 
 
@@ -79,8 +78,16 @@ def _setup_anima_dir(tmp_path: Path, name: str = "alice") -> Path:
     d = tmp_path / "animas" / name
     d.mkdir(parents=True)
     (d / "identity.md").write_text(f"# {name}", encoding="utf-8")
-    for sub in ("state", "episodes", "knowledge", "procedures", "skills",
-                "shortterm", "shortterm/archive", "transcripts"):
+    for sub in (
+        "state",
+        "episodes",
+        "knowledge",
+        "procedures",
+        "skills",
+        "shortterm",
+        "shortterm/archive",
+        "transcripts",
+    ):
         (d / sub).mkdir(parents=True, exist_ok=True)
     (d / "state" / "current_state.md").write_text("status: idle\n", encoding="utf-8")
     return d
@@ -143,13 +150,19 @@ class TestCrossContextFlow:
         activity_dir.mkdir(parents=True, exist_ok=True)
         entries = []
         for i in range(5):
-            entries.append(json.dumps({
-                "ts": f"2026-02-17T{10 + i:02d}:00:00",
-                "type": "heartbeat_end",
-                "summary": f"HB action {i}",
-            }, ensure_ascii=False))
+            entries.append(
+                json.dumps(
+                    {
+                        "ts": f"2026-02-17T{10 + i:02d}:00:00",
+                        "type": "heartbeat_end",
+                        "summary": f"HB action {i}",
+                    },
+                    ensure_ascii=False,
+                )
+            )
         (activity_dir / f"{now_jst().strftime('%Y-%m-%d')}.jsonl").write_text(
-            "\n".join(entries) + "\n", encoding="utf-8",
+            "\n".join(entries) + "\n",
+            encoding="utf-8",
         )
 
         text = dp._load_heartbeat_history()
@@ -172,16 +185,20 @@ class TestCrossContextFlow:
 
         entries = []
         for i in range(4):
-            entry = json.dumps({
-                "timestamp": f"2026-02-17T{10 + i:02d}:00:00",
-                "trigger": "heartbeat",
-                "action": "reported",
-                "summary": f"Action {i}: did something important" if i % 2 == 0 else "HEARTBEAT_OK",
-                "duration_ms": 100 + i,
-            }, ensure_ascii=False)
+            entry = json.dumps(
+                {
+                    "timestamp": f"2026-02-17T{10 + i:02d}:00:00",
+                    "trigger": "heartbeat",
+                    "action": "reported",
+                    "summary": f"Action {i}: did something important" if i % 2 == 0 else "HEARTBEAT_OK",
+                    "duration_ms": 100 + i,
+                },
+                ensure_ascii=False,
+            )
             entries.append(entry)
         (history_dir / f"{today_local().isoformat()}.jsonl").write_text(
-            "\n".join(entries) + "\n", encoding="utf-8",
+            "\n".join(entries) + "\n",
+            encoding="utf-8",
         )
 
         # Use a real MemoryManager (the only mock is implicit: no config.json)
@@ -218,17 +235,13 @@ class TestCrossContextFlow:
 
         # Simulate A-3: record heartbeat episode
         result = _make_cycle_result(
-            summary="Slack channel #general had 5 new messages. "
-                    "Responded to user query about deployment."
+            summary="Slack channel #general had 5 new messages. Responded to user query about deployment."
         )
 
         # Replicate the A-3 logic from run_heartbeat
         if result.summary and "HEARTBEAT_OK" not in result.summary:
             ts = now_jst().strftime("%H:%M")
-            episode_entry = (
-                f"## {ts} ハートビート活動\n\n"
-                f"{result.summary[:500]}"
-            )
+            episode_entry = f"## {ts} ハートビート活動\n\n{result.summary[:500]}"
             mm.append_episode(episode_entry)
 
         # Verify episode was written
@@ -308,24 +321,26 @@ class TestCrossContextFlow:
         assert "batch job" in conv_summary.lower()
 
         # Step 2: Record heartbeat via ActivityLogger + legacy heartbeat_history
-        result = _make_cycle_result(
-            summary="Checked batch job status for client X: 50% complete"
-        )
+        result = _make_cycle_result(summary="Checked batch job status for client X: 50% complete")
         activity = ActivityLogger(anima_dir)
         activity.log("heartbeat_end", summary=result.summary[:200])
 
         # Also write legacy heartbeat_history for load_recent_heartbeat_summary
         history_dir = anima_dir / "shortterm" / "heartbeat_history"
         history_dir.mkdir(parents=True, exist_ok=True)
-        entry = json.dumps({
-            "timestamp": now_jst().isoformat(),
-            "trigger": "heartbeat",
-            "action": "checked",
-            "summary": result.summary,
-            "duration_ms": result.duration_ms,
-        }, ensure_ascii=False)
+        entry = json.dumps(
+            {
+                "timestamp": now_jst().isoformat(),
+                "trigger": "heartbeat",
+                "action": "checked",
+                "summary": result.summary,
+                "duration_ms": result.duration_ms,
+            },
+            ensure_ascii=False,
+        )
         (history_dir / f"{today_local().isoformat()}.jsonl").write_text(
-            entry + "\n", encoding="utf-8",
+            entry + "\n",
+            encoding="utf-8",
         )
 
         # Step 3: Verify activity log is loadable
@@ -351,10 +366,7 @@ class TestCrossContextFlow:
 
         if result.summary and "HEARTBEAT_OK" not in result.summary:
             ts = now_jst().strftime("%H:%M")
-            episode_entry = (
-                f"## {ts} ハートビート活動\n\n"
-                f"{result.summary[:500]}"
-            )
+            episode_entry = f"## {ts} ハートビート活動\n\n{result.summary[:500]}"
             mm.append_episode(episode_entry)
 
         episode_file = anima_dir / "episodes" / f"{today_local().isoformat()}.md"
@@ -527,6 +539,7 @@ class TestCurrentStateEmphasis:
         # Invalidate caches
         from core.config import invalidate_cache
         from core.paths import _prompt_cache
+
         invalidate_cache()
         _prompt_cache.clear()
 
@@ -560,6 +573,7 @@ class TestCurrentStateEmphasis:
         mm._indexer_initialized = True
 
         from core.prompt.builder import build_system_prompt
+
         prompt = build_system_prompt(mm)
 
         # B-1: emphasized header must be present
@@ -579,6 +593,7 @@ class TestCurrentStateEmphasis:
 
         from core.config import invalidate_cache
         from core.paths import _prompt_cache
+
         invalidate_cache()
         _prompt_cache.clear()
 
@@ -591,7 +606,8 @@ class TestCurrentStateEmphasis:
         anima_dir = _setup_anima_dir(tmp_path, "tester")
 
         (anima_dir / "state" / "current_state.md").write_text(
-            "status: idle\n", encoding="utf-8",
+            "status: idle\n",
+            encoding="utf-8",
         )
 
         mm = MemoryManager.__new__(MemoryManager)
@@ -608,6 +624,7 @@ class TestCurrentStateEmphasis:
         mm._indexer_initialized = True
 
         from core.prompt.builder import build_system_prompt
+
         prompt = build_system_prompt(mm)
 
         # Normal header, not the emphasized one
@@ -631,6 +648,7 @@ class TestCurrentStateEmphasis:
 
         from core.config import invalidate_cache
         from core.paths import _prompt_cache
+
         invalidate_cache()
         _prompt_cache.clear()
 
@@ -644,6 +662,7 @@ class TestCurrentStateEmphasis:
 
         # Write unified activity log entries (replaces heartbeat_history)
         from core.memory.activity import ActivityLogger
+
         activity = ActivityLogger(anima_dir)
         activity.log(
             "heartbeat_end",
@@ -663,8 +682,8 @@ class TestCurrentStateEmphasis:
         mm._indexer = None
         mm._indexer_initialized = True
 
-        from core.prompt.builder import build_system_prompt
         from core.memory.priming import PrimingResult, format_priming_section
+        from core.prompt.builder import build_system_prompt
 
         # Generate the priming section with activity data
         recent_entries = activity.recent(days=1)

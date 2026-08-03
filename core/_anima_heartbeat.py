@@ -13,7 +13,6 @@ references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 import asyncio
 import json
 import logging
-import math
 import re
 import time
 import uuid
@@ -30,27 +29,6 @@ from core.skills.cron_context import SkillContextRejection, SkillContextWarning
 from core.time_utils import now_iso, now_local
 
 logger = logging.getLogger("animaworks.anima")
-
-
-def _calc_effective_max_turns(
-    base_max_turns: int,
-    activity_level: int,
-    hb_max_turns: int | None = None,
-) -> int | None:
-    """Calculate effective max_turns for heartbeat based on activity level.
-
-    When *hb_max_turns* is provided (from ``config.heartbeat.max_turns``),
-    it is used as the base instead of the per-anima chat ``max_turns``.
-
-    Below 100%: linear scale (floor 3). At/above 100%: return None (use base).
-    """
-    base = hb_max_turns if hb_max_turns is not None else base_max_turns
-    if activity_level >= 100:
-        if hb_max_turns is not None:
-            return hb_max_turns
-        return None
-    scaled = max(3, math.ceil(base * activity_level / 100))
-    return scaled
 
 
 # ── Reflection extraction ─────────────────────────────────────
@@ -678,25 +656,6 @@ class HeartbeatMixin:
 
             _cfg = _load_config_fresh()
             _hb_cfg = _cfg.heartbeat
-            # Resolve user-configured level (per-provider override if set)
-            from core.supervisor.scheduler_manager import (
-                _read_governor_background_activity_level,
-                resolve_user_activity_level,
-            )
-
-            _activity = resolve_user_activity_level(_cfg, self.anima_dir)
-            # Governor throttle: use the more restrictive level.
-            # Heartbeat is background/self-initiated work, so the background
-            # provider is consulted when configured.
-            _gov = _read_governor_background_activity_level(self.anima_dir)
-            if _gov is not None:
-                _activity = min(_activity, _gov)
-            effective_max_turns = _calc_effective_max_turns(
-                base_max_turns=agent.model_config.max_turns,
-                activity_level=_activity,
-                hb_max_turns=_hb_cfg.max_turns,
-            )
-
             _soft_timeout = _hb_cfg.soft_timeout_seconds
             _hard_timeout = _hb_cfg.hard_timeout_seconds
             _start = time.monotonic()
@@ -707,7 +666,6 @@ class HeartbeatMixin:
                 prompt,
                 trigger="heartbeat",
                 prior_messages=prior_messages,
-                max_turns_override=effective_max_turns,
             )
             try:
                 async for chunk in stream:

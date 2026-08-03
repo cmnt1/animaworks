@@ -141,7 +141,6 @@ async def _run_chat_cycle_with_fallback(
     thread_id: str,
     primary_config: Any,
     active_config: Any,
-    max_turns_override: int | None = None,
     prompt_tier_override: str | None = None,
 ) -> CycleResult:
     """Run a blocking chat cycle, retrying once on quota/rate fallback."""
@@ -155,7 +154,6 @@ async def _run_chat_cycle_with_fallback(
             prior_messages=prior_messages,
             thread_id=thread_id,
             model_config_override=config,
-            max_turns_override=max_turns_override,
             prompt_tier_override=prompt_tier_override,
         )
 
@@ -194,7 +192,6 @@ async def _run_chat_stream_with_fallback(
     thread_id: str,
     primary_config: Any,
     active_config: Any,
-    max_turns_override: int | None = None,
     prompt_tier_override: str | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Stream a chat cycle, restarting at most once on terminal quota/rate errors."""
@@ -213,7 +210,6 @@ async def _run_chat_stream_with_fallback(
                 prior_messages=prior_messages,
                 thread_id=thread_id,
                 model_config_override=current_config,
-                max_turns_override=max_turns_override,
                 prompt_tier_override=prompt_tier_override,
             ):
                 chunk_type = chunk.get("type")
@@ -355,20 +351,6 @@ def _collect_meeting_redirects() -> list[dict[str, str]]:
 class MessagingMixin:
     """Mixin: human chat processing, bootstrap, and greeting."""
 
-    def _front_max_turns_override(self) -> int | None:
-        """Return front-response max_turns override from Governor, if throttled."""
-        try:
-            from core.supervisor.scheduler_manager import (
-                _read_governor_front_activity_level,
-                scale_max_turns_for_activity,
-            )
-
-            level = _read_governor_front_activity_level(self.anima_dir)
-            return scale_max_turns_for_activity(self.agent.model_config.max_turns, level)
-        except Exception:
-            logger.debug("[%s] Failed to resolve front activity max_turns", self.name, exc_info=True)
-            return None
-
     def _sync_interactive_bootstrap_state(self) -> None:
         """Persist completed/repair state after chat-driven bootstrap changes."""
         try:
@@ -454,6 +436,8 @@ class MessagingMixin:
             from core.paths import get_animas_dir
 
             config = load_config()
+            if not config.external_messaging.chat_dm_redirect:
+                return None
             animas_dir = get_animas_dir()
             known_animas = {d.name for d in animas_dir.iterdir() if d.is_dir()} if animas_dir.exists() else set()
             resolved = resolve_recipient(from_person, known_animas, config.external_messaging)
@@ -742,7 +726,6 @@ class MessagingMixin:
                             message_intent=intent,
                             images=images,
                             prior_messages=prior_messages,
-                            max_turns_override=self._front_max_turns_override(),
                             prompt_tier_override="meeting" if is_meeting_source else None,
                             thread_id=thread_id,
                             primary_config=primary_model_config,
@@ -1087,7 +1070,6 @@ class MessagingMixin:
                         message_intent=intent,
                         images=images,
                         prior_messages=prior_messages,
-                        max_turns_override=self._front_max_turns_override(),
                         thread_id=thread_id,
                         prompt_tier_override="meeting" if source == "meeting" else None,
                         primary_config=primary_model_config,

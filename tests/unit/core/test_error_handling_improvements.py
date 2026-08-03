@@ -34,7 +34,6 @@ class TestAssistedExecutorErrorHandling:
             "test-b",
             model="ollama/gemma3:27b",
             execution_mode="assisted",
-            max_turns=5,
         )
         from core.memory import MemoryManager
 

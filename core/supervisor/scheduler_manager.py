@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import math
 import re
 import zlib
 from collections.abc import Callable
@@ -152,13 +151,6 @@ def _read_governor_front_activity_level(anima_dir: Path | None = None) -> int | 
 def _read_governor_activity_level(anima_dir: Path | None = None) -> int | None:
     """Backward-compatible alias for front activity."""
     return _read_governor_front_activity_level(anima_dir)
-
-
-def scale_max_turns_for_activity(base_max_turns: int, activity_level: int | None) -> int | None:
-    """Return a max_turns override for throttled activity, or None for normal."""
-    if activity_level is None or activity_level >= 100:
-        return None
-    return max(3, math.ceil(base_max_turns * activity_level / 100))
 
 
 def _read_governor_background_activity_level(anima_dir: Path | None = None) -> int | None:

@@ -3,7 +3,6 @@ from __future__ import annotations
 """Unit tests for Heartbeat 2-stage timeout (soft + hard).
 
 Covers:
-  - _calc_effective_max_turns with hb_max_turns override
   - Soft timeout: Mode A reminder_queue injection
   - Hard timeout: Mode A loop break + recovery_note
   - Mode S session_stats flags for PreToolUse hook
@@ -11,7 +10,6 @@ Covers:
 """
 
 import asyncio
-import math
 import time
 from types import SimpleNamespace
 from typing import Any
@@ -20,39 +18,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
-from core._anima_heartbeat import HeartbeatMixin, _calc_effective_max_turns
+from core._anima_heartbeat import HeartbeatMixin
 from core.config.models import HeartbeatConfig
-
-# ── _calc_effective_max_turns ──────────────────────────────────
-
-
-class TestCalcEffectiveMaxTurns:
-    """Test max_turns calculation with HB-specific override."""
-
-    def test_no_hb_override_activity_100(self):
-        result = _calc_effective_max_turns(20, 100, hb_max_turns=None)
-        assert result is None
-
-    def test_no_hb_override_low_activity(self):
-        result = _calc_effective_max_turns(20, 50, hb_max_turns=None)
-        assert result == max(3, math.ceil(20 * 50 / 100))
-
-    def test_hb_override_activity_100(self):
-        result = _calc_effective_max_turns(20, 100, hb_max_turns=15)
-        assert result == 15
-
-    def test_hb_override_low_activity(self):
-        result = _calc_effective_max_turns(20, 50, hb_max_turns=15)
-        assert result == max(3, math.ceil(15 * 50 / 100))
-
-    def test_hb_override_very_low_activity_floor(self):
-        result = _calc_effective_max_turns(20, 10, hb_max_turns=5)
-        assert result == 3
-
-    def test_default_no_override(self):
-        result = _calc_effective_max_turns(20, 100)
-        assert result is None
-
 
 # ── HeartbeatConfig validation ────────────────────────────────
 
@@ -64,17 +31,14 @@ class TestHeartbeatConfigValidation:
         cfg = HeartbeatConfig()
         assert cfg.soft_timeout_seconds == 300
         assert cfg.hard_timeout_seconds == 600
-        assert cfg.max_turns is None
 
     def test_custom_values(self):
         cfg = HeartbeatConfig(
             soft_timeout_seconds=120,
             hard_timeout_seconds=360,
-            max_turns=10,
         )
         assert cfg.soft_timeout_seconds == 120
         assert cfg.hard_timeout_seconds == 360
-        assert cfg.max_turns == 10
 
     def test_soft_timeout_min(self):
         with pytest.raises(ValidationError):
@@ -83,14 +47,6 @@ class TestHeartbeatConfigValidation:
     def test_hard_timeout_min(self):
         with pytest.raises(ValidationError):
             HeartbeatConfig(hard_timeout_seconds=30)
-
-    def test_max_turns_min(self):
-        with pytest.raises(ValidationError):
-            HeartbeatConfig(max_turns=1)
-
-    def test_max_turns_none_allowed(self):
-        cfg = HeartbeatConfig(max_turns=None)
-        assert cfg.max_turns is None
 
     def test_soft_must_be_less_than_hard(self):
         with pytest.raises(ValidationError):
@@ -292,7 +248,7 @@ class TestHardTimeoutRecoveryNote:
             finally:
                 stream_closed.set()
 
-        model_config = SimpleNamespace(max_turns=20)
+        model_config = SimpleNamespace()
         agent = SimpleNamespace(
             model_config=model_config,
             _executor=SimpleNamespace(reminder_queue=MagicMock()),
@@ -314,7 +270,6 @@ class TestHardTimeoutRecoveryNote:
         config = SimpleNamespace(
             activity_level=100,
             heartbeat=SimpleNamespace(
-                max_turns=None,
                 soft_timeout_seconds=30,
                 hard_timeout_seconds=60,
             ),

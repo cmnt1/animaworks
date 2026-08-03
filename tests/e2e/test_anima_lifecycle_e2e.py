@@ -6,6 +6,7 @@
 Tests the full delete/disable/enable/list workflow with real filesystem
 operations (temp directories) but mocked server API calls.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -33,7 +34,6 @@ def anima_env(tmp_path: Path):
         "anima_defaults": {
             "model": "claude-sonnet-4-6",
             "max_tokens": 4096,
-            "max_turns": 10000,
             "credential": "anthropic",
             "context_threshold": 0.5,
             "max_chains": 2,
@@ -43,13 +43,10 @@ def anima_env(tmp_path: Path):
             "anthropic": {"type": "api_key", "api_key": "test-key"},
         },
     }
-    (data_dir / "config.json").write_text(
-        json.dumps(config, indent=2), encoding="utf-8"
-    )
+    (data_dir / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
 
     # Helper to create animas
-    def create_anima(name: str, *, enabled: bool = True, role: str = "administration",
-                     supervisor: str | None = None):
+    def create_anima(name: str, *, enabled: bool = True, role: str = "administration", supervisor: str | None = None):
         anima_dir = animas_dir / name
         anima_dir.mkdir()
         (anima_dir / "identity.md").write_text(f"# {name.title()}\nPersonality text.", encoding="utf-8")
@@ -71,9 +68,7 @@ def anima_env(tmp_path: Path):
         cfg["animas"][name] = {}
         if supervisor:
             cfg["animas"][name]["supervisor"] = supervisor
-        (data_dir / "config.json").write_text(
-            json.dumps(cfg, indent=2), encoding="utf-8"
-        )
+        (data_dir / "config.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
         return anima_dir
 
     return {
@@ -96,9 +91,7 @@ class TestAnimaDeleteE2E:
         ):
             from cli.commands.anima_mgmt import cmd_anima_delete
 
-            args = argparse.Namespace(
-                anima="alice", force=True, no_archive=False, gateway_url=None
-            )
+            args = argparse.Namespace(anima="alice", force=True, no_archive=False, gateway_url=None)
             cmd_anima_delete(args)
 
         # Verify directory removed
@@ -129,9 +122,7 @@ class TestAnimaDeleteE2E:
         ):
             from cli.commands.anima_mgmt import cmd_anima_delete
 
-            args = argparse.Namespace(
-                anima="bob", force=True, no_archive=True, gateway_url=None
-            )
+            args = argparse.Namespace(anima="bob", force=True, no_archive=True, gateway_url=None)
             cmd_anima_delete(args)
 
         assert not (env["animas_dir"] / "bob").exists()
@@ -149,9 +140,7 @@ class TestAnimaDeleteE2E:
         ):
             from cli.commands.anima_mgmt import cmd_anima_delete
 
-            args = argparse.Namespace(
-                anima="sakura", force=True, no_archive=True, gateway_url=None
-            )
+            args = argparse.Namespace(anima="sakura", force=True, no_archive=True, gateway_url=None)
             cmd_anima_delete(args)
 
         out = capsys.readouterr().out
@@ -170,9 +159,7 @@ class TestAnimaDeleteE2E:
         ):
             from cli.commands.anima_mgmt import cmd_anima_delete
 
-            args = argparse.Namespace(
-                anima="alice", force=False, no_archive=True, gateway_url=None
-            )
+            args = argparse.Namespace(anima="alice", force=False, no_archive=True, gateway_url=None)
             cmd_anima_delete(args)
 
         # Should NOT be deleted
@@ -328,22 +315,16 @@ class TestFullLifecycleE2E:
 
             # Disable
             cmd_anima_disable(argparse.Namespace(anima="test_anima", gateway_url=None))
-            status = json.loads(
-                (env["animas_dir"] / "test_anima" / "status.json").read_text()
-            )
+            status = json.loads((env["animas_dir"] / "test_anima" / "status.json").read_text())
             assert status["enabled"] is False
 
             # Enable
             cmd_anima_enable(argparse.Namespace(anima="test_anima", gateway_url=None))
-            status = json.loads(
-                (env["animas_dir"] / "test_anima" / "status.json").read_text()
-            )
+            status = json.loads((env["animas_dir"] / "test_anima" / "status.json").read_text())
             assert status["enabled"] is True
 
             # Delete
-            cmd_anima_delete(argparse.Namespace(
-                anima="test_anima", force=True, no_archive=False, gateway_url=None
-            ))
+            cmd_anima_delete(argparse.Namespace(anima="test_anima", force=True, no_archive=False, gateway_url=None))
             assert not (env["animas_dir"] / "test_anima").exists()
 
             # Verify archive

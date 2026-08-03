@@ -41,7 +41,6 @@ class TestReadModelConfigFromMd:
         assert isinstance(mc, ModelConfig)
         assert mc.model == "claude-sonnet-4-6"
         assert mc.max_tokens == 8192
-        assert mc.max_turns == 10000
 
     def test_returns_defaults_on_empty_file(
         self,
@@ -61,7 +60,7 @@ class TestReadModelConfigFromMd:
         reader: ConfigReader,
         anima_dir: Path,
     ) -> None:
-        """Parses model, max_tokens, max_turns, api_key_env, api_base_url."""
+        """Parses supported fields and ignores the retired turn-limit field."""
         (anima_dir / "config.md").write_text(
             "# Config\n"
             "- model: gpt-4o\n"
@@ -76,7 +75,7 @@ class TestReadModelConfigFromMd:
 
         assert mc.model == "gpt-4o"
         assert mc.max_tokens == 8192
-        assert mc.max_turns == 10
+        assert not hasattr(mc, "max_turns")
         assert mc.api_key_env == "OPENAI_API_KEY"
         assert mc.api_base_url == "http://localhost:8000"
 
@@ -95,7 +94,6 @@ class TestReadModelConfigFromMd:
 
         assert mc.model == "custom-model"
         assert mc.max_tokens == 8192  # default
-        assert mc.max_turns == 10000  # default
 
     def test_ignores_biko_section(
         self,
@@ -239,7 +237,6 @@ class TestReadModelConfig:
         mock_resolved.fallback_model = None
         mock_resolved.fallback_models = []
         mock_resolved.max_tokens = 4096
-        mock_resolved.max_turns = 10000
         mock_resolved.credential = "openai"
         mock_resolved.context_threshold = 0.50
         mock_resolved.max_chains = 2
@@ -316,7 +313,6 @@ class TestReadModelConfig:
         mock_resolved.fallback_model = None
         mock_resolved.fallback_models = []
         mock_resolved.max_tokens = 4096
-        mock_resolved.max_turns = 10000
         mock_resolved.credential = "anthropic"
         mock_resolved.context_threshold = 0.50
         mock_resolved.max_chains = 2

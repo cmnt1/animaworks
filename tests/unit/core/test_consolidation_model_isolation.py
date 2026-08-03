@@ -153,7 +153,7 @@ async def test_daily_phase_b_uses_consolidation_model_without_mutating_agent_exe
             return_value="daily prompt",
         ),
     ):
-        result = await anima._run_daily_consolidation(_FakeEngine(), max_turns=7)
+        result = await anima._run_daily_consolidation(_FakeEngine())
 
     assert result.trigger == "consolidation:daily"
     assert anima.agent._executor is original_executor
@@ -161,7 +161,6 @@ async def test_daily_phase_b_uses_consolidation_model_without_mutating_agent_exe
     assert len(anima.agent.calls) == 1
     call = anima.agent.calls[0]
     assert call["trigger"] == "consolidation:daily"
-    assert call["max_turns_override"] == 7
     override = call["model_config_override"]
     assert override.model == "openai/deepseek-v4-flash"
     assert override.credential == "vllm-lb"
@@ -194,7 +193,7 @@ async def test_daily_phase_a_uses_previous_local_day_window_and_existing_episode
         patch("core._anima_lifecycle.load_prompt", side_effect=fake_load_prompt),
         patch("core.memory._llm_utils.one_shot_completion", side_effect=fake_one_shot),
     ):
-        await anima._run_daily_consolidation(engine, max_turns=7)
+        await anima._run_daily_consolidation(engine)
 
     collect_call = engine.collect_calls[0]
     assert collect_call["since"].isoformat() == "2026-06-09T00:00:00+09:00"
@@ -225,7 +224,7 @@ async def test_daily_phase_a_llm_failure_leaves_existing_episode_unchanged(tmp_p
         patch("core.memory._llm_utils.one_shot_completion", side_effect=RuntimeError("llm timeout")),
         pytest.raises(RuntimeError, match="llm timeout"),
     ):
-        await anima._run_daily_consolidation(engine, max_turns=7)
+        await anima._run_daily_consolidation(engine)
 
     assert episode_path.read_text(encoding="utf-8") == original
     assert not (anima_dir / "archive" / "episodes").exists()
@@ -254,14 +253,14 @@ async def test_daily_phase_b_timeout_keeps_carryover_source_bundle():
         patch("core._anima_lifecycle.load_prompt", return_value="daily prompt"),
         pytest.raises(TimeoutError, match="phase b timed out"),
     ):
-        await anima._run_daily_consolidation(engine, max_turns=7)
+        await anima._run_daily_consolidation(engine)
 
     assert engine.carryover_items
     assert engine.carryover_items[0]["date"] == "2026-06-09"
 
 
 @pytest.mark.asyncio
-async def test_daily_phase_b_max_iterations_returns_truncated_and_keeps_carryover():
+async def test_daily_phase_b_interruption_returns_truncated_and_keeps_carryover():
     status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
     anima = _make_lifecycle(status_config)
     anima.agent.run_cycle = AsyncMock(
@@ -289,7 +288,7 @@ async def test_daily_phase_b_max_iterations_returns_truncated_and_keeps_carryove
         patch("core._anima_lifecycle.now_local", return_value=fixed_now),
         patch("core._anima_lifecycle.load_prompt", return_value="daily prompt"),
     ):
-        result = await anima._run_daily_consolidation(engine, max_turns=7)
+        result = await anima._run_daily_consolidation(engine)
 
     assert result.action == "truncated"
     assert "[TRUNCATED]" in result.summary
@@ -300,14 +299,14 @@ async def test_daily_phase_b_max_iterations_returns_truncated_and_keeps_carryove
 
 
 @pytest.mark.asyncio
-async def test_daily_phase_b_summary_mentions_max_turns_without_truncation_clears_carryover():
+async def test_daily_phase_b_normal_summary_without_truncation_clears_carryover():
     status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
     anima = _make_lifecycle(status_config)
     anima.agent.run_cycle = AsyncMock(
         return_value=CycleResult(
             trigger="consolidation:daily",
             action="responded",
-            summary="Reviewed a note that mentioned max turns as a concept.",
+            summary="Reviewed a note about a previous session.",
             truncated=False,
         )
     )
@@ -328,7 +327,7 @@ async def test_daily_phase_b_summary_mentions_max_turns_without_truncation_clear
         patch("core._anima_lifecycle.now_local", return_value=fixed_now),
         patch("core._anima_lifecycle.load_prompt", return_value="daily prompt"),
     ):
-        result = await anima._run_daily_consolidation(engine, max_turns=7)
+        result = await anima._run_daily_consolidation(engine)
 
     assert result.action == "completed"
     assert "[TRUNCATED]" not in result.summary
@@ -347,7 +346,7 @@ async def test_weekly_consolidation_uses_consolidation_model_without_mutating_ag
         patch("core.config.resolve_execution_mode", return_value="D"),
         patch("core._anima_lifecycle.load_prompt", return_value="weekly prompt"),
     ):
-        result = await anima._run_weekly_consolidation(_FakeEngine(), max_turns=11)
+        result = await anima._run_weekly_consolidation(_FakeEngine())
 
     assert result.trigger == "consolidation:weekly"
     assert anima.agent._executor is original_executor
@@ -355,7 +354,6 @@ async def test_weekly_consolidation_uses_consolidation_model_without_mutating_ag
     assert len(anima.agent.calls) == 1
     call = anima.agent.calls[0]
     assert call["trigger"] == "consolidation:weekly"
-    assert call["max_turns_override"] == 11
     override = call["model_config_override"]
     assert override.model == "openai/deepseek-v4-flash"
     assert override.credential == "vllm-lb"
@@ -406,7 +404,7 @@ async def test_weekly_consolidation_injects_memory_hygiene_section(report, expec
         patch("core._anima_lifecycle.scan_memory_hygiene", return_value=report),
         patch("core._anima_lifecycle.load_prompt", side_effect=capture_prompt),
     ):
-        await anima._run_weekly_consolidation(_FakeEngine(), max_turns=11)
+        await anima._run_weekly_consolidation(_FakeEngine())
 
     if expected:
         assert expected in prompt_kwargs["hygiene_section"]

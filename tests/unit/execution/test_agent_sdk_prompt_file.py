@@ -22,7 +22,6 @@ from tests.helpers.mocks import (
     patch_agent_sdk_streaming,
 )
 
-
 # ── Fixtures ──────────────────────────────────────────────────
 
 
@@ -31,7 +30,6 @@ def model_config() -> ModelConfig:
     return ModelConfig(
         model="claude-sonnet-4-6",
         api_key="sk-test",
-        max_turns=5,
         context_threshold=0.50,
     )
 
@@ -46,6 +44,7 @@ def anima_dir(tmp_path: Path) -> Path:
 def _make_executor(model_config: ModelConfig, anima_dir: Path):
     with patch_agent_sdk():
         from core.execution.agent_sdk import AgentSDKExecutor
+
         return AgentSDKExecutor(
             model_config=model_config,
             anima_dir=anima_dir,
@@ -65,12 +64,14 @@ class TestPromptFileFallback:
         small_prompt = "You are a helpful assistant."
         with patch_agent_sdk():
             options, temp_files = executor._build_sdk_options(
-                small_prompt, 5, 200000, {},
+                small_prompt,
+                200000,
+                {},
             )
         prompt_files = [f for f in temp_files if f.suffix == ".txt"]
         assert not prompt_files
         # ClaudeAgentOptions was called with system_prompt=small_prompt
-        call_kwargs = options.call_args if hasattr(options, 'call_args') else None
+        call_kwargs = options.call_args if hasattr(options, "call_args") else None
         # MagicMock records the kwargs; verify system_prompt was passed
         if call_kwargs:
             assert call_kwargs.kwargs.get("system_prompt") == small_prompt
@@ -84,7 +85,9 @@ class TestPromptFileFallback:
         large_prompt = "A" * 120_000
         with patch_agent_sdk():
             options, temp_files = executor._build_sdk_options(
-                large_prompt, 5, 200000, {},
+                large_prompt,
+                200000,
+                {},
             )
         prompt_files = [f for f in temp_files if f.suffix == ".txt"]
         assert len(prompt_files) == 1
@@ -92,7 +95,7 @@ class TestPromptFileFallback:
         assert prompt_file.exists()
         assert prompt_file.read_text(encoding="utf-8") == large_prompt
         # Verify system_prompt is None (SDK will emit --system-prompt "")
-        if hasattr(options, 'call_args') and options.call_args:
+        if hasattr(options, "call_args") and options.call_args:
             assert options.call_args.kwargs.get("system_prompt") is None
             assert "system-prompt-file" in options.call_args.kwargs.get("extra_args", {})
         # Cleanup
@@ -106,7 +109,9 @@ class TestPromptFileFallback:
         large_prompt = "あ" * 40_000  # 40K chars × 3 bytes = 120KB
         with patch_agent_sdk():
             options, temp_files = executor._build_sdk_options(
-                large_prompt, 5, 200000, {},
+                large_prompt,
+                200000,
+                {},
             )
         prompt_files = [f for f in temp_files if f.suffix == ".txt"]
         assert len(prompt_files) == 1
@@ -121,11 +126,14 @@ class TestPromptFileFallback:
         """Prompt at exactly the threshold does not trigger file fallback."""
         executor = _make_executor(model_config, anima_dir)
         from core.execution.agent_sdk import _PROMPT_FILE_THRESHOLD
+
         # ASCII: 1 byte per char
         boundary_prompt = "X" * _PROMPT_FILE_THRESHOLD
         with patch_agent_sdk():
             options, temp_files = executor._build_sdk_options(
-                boundary_prompt, 5, 200000, {},
+                boundary_prompt,
+                200000,
+                {},
             )
         prompt_files = [f for f in temp_files if f.suffix == ".txt"]
         assert not prompt_files
@@ -136,10 +144,13 @@ class TestPromptFileFallback:
         """Prompt one byte over the threshold triggers file fallback."""
         executor = _make_executor(model_config, anima_dir)
         from core.execution.agent_sdk import _PROMPT_FILE_THRESHOLD
+
         over_prompt = "X" * (_PROMPT_FILE_THRESHOLD + 1)
         with patch_agent_sdk():
             options, temp_files = executor._build_sdk_options(
-                over_prompt, 5, 200000, {},
+                over_prompt,
+                200000,
+                {},
             )
         prompt_files = [f for f in temp_files if f.suffix == ".txt"]
         assert len(prompt_files) == 1
@@ -177,6 +188,7 @@ class TestPromptFileCleanup:
     def test_cleanup_prompt_files_empty_list(self):
         """_cleanup_prompt_files with empty list is a no-op."""
         from core.execution.agent_sdk import _cleanup_prompt_files
+
         _cleanup_prompt_files([])  # Should not raise
 
     async def test_execute_cleans_up_prompt_file(self, model_config, anima_dir):
@@ -194,7 +206,7 @@ class TestPromptFileCleanup:
 
         with patch_agent_sdk():
             executor._build_sdk_options = _tracking_build
-            result = await executor.execute(
+            await executor.execute(
                 prompt="hello",
                 system_prompt=large_prompt,
             )
@@ -205,7 +217,9 @@ class TestPromptFileCleanup:
             assert not f.exists(), f"Temp file was not cleaned up: {f}"
 
     async def test_execute_streaming_cleans_up_prompt_file(
-        self, model_config, anima_dir,
+        self,
+        model_config,
+        anima_dir,
     ):
         """execute_streaming() removes the temp prompt file after completion."""
         from core.prompt.context import ContextTracker

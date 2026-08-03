@@ -43,7 +43,6 @@ def _load_status_json(anima_dir: Path) -> dict[str, Any]:
         "background_model": "background_model",
         "background_credential": "background_credential",
         "context_threshold": "context_threshold",
-        "max_turns": "max_turns",
         "max_chains": "max_chains",
         "conversation_history_threshold": "conversation_history_threshold",
         "credential": "credential",

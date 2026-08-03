@@ -78,7 +78,6 @@ def model_config() -> ModelConfig:
     return ModelConfig(
         model="claude-sonnet-4-6",
         api_key="sk-test",
-        max_turns=5,
         context_threshold=0.50,
     )
 
@@ -97,6 +96,7 @@ class TestAgentSDKExecutor:
     def _make_executor(self, model_config, anima_dir, **kwargs):
         with patch_agent_sdk():
             from core.execution.agent_sdk import AgentSDKExecutor
+
             return AgentSDKExecutor(
                 model_config=model_config,
                 anima_dir=anima_dir,
@@ -107,12 +107,14 @@ class TestAgentSDKExecutor:
         model_config.model = "anthropic/claude-sonnet-4-6"
         with patch_agent_sdk():
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             assert executor._resolve_agent_sdk_model() == "claude-sonnet-4-6"
 
     def test_resolve_agent_sdk_model_no_prefix(self, model_config, anima_dir):
         with patch_agent_sdk():
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             assert executor._resolve_agent_sdk_model() == "claude-sonnet-4-6"
 
@@ -122,6 +124,7 @@ class TestAgentSDKExecutor:
         model_config.mode_s_auth = "api"
         with patch_agent_sdk():
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             env = executor._build_env()
             assert env["ANIMAWORKS_ANIMA_DIR"] == str(anima_dir)
@@ -133,6 +136,7 @@ class TestAgentSDKExecutor:
     def test_build_env_disables_skill_improvement(self, model_config, anima_dir):
         with patch_agent_sdk():
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             env = executor._build_env()
             assert env.get("CLAUDE_CODE_DISABLE_SKILL_IMPROVEMENT") == "true"
@@ -140,6 +144,7 @@ class TestAgentSDKExecutor:
     def test_build_env_enables_powershell_tool_on_windows(self, model_config, anima_dir):
         with patch_agent_sdk():
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             env = executor._build_env()
             if sys.platform == "win32":
@@ -151,6 +156,7 @@ class TestAgentSDKExecutor:
         config = ModelConfig(model="claude-sonnet-4-6", api_key="sk-test")
         with patch_agent_sdk():
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=config, anima_dir=anima_dir)
             env = executor._build_env()
             assert env["ANTHROPIC_API_KEY"] == ""
@@ -162,6 +168,7 @@ class TestAgentSDKExecutor:
         config = ModelConfig(model="claude-sonnet-4-6", api_key="sk-test", mode_s_auth="max")
         with patch_agent_sdk():
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=config, anima_dir=anima_dir)
             env = executor._build_env()
             assert env["ANTHROPIC_API_KEY"] == ""
@@ -180,6 +187,7 @@ class TestAgentSDKExecutor:
         )
         with patch_agent_sdk():
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=config, anima_dir=anima_dir)
             env = executor._build_env()
             assert env["ANTHROPIC_API_KEY"] == ""
@@ -202,6 +210,7 @@ class TestAgentSDKExecutor:
         )
         with patch_agent_sdk():
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=config, anima_dir=anima_dir)
             env = executor._build_env()
             assert env["ANTHROPIC_API_KEY"] == ""
@@ -220,6 +229,7 @@ class TestAgentSDKExecutor:
         )
         with patch_agent_sdk():
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=config, anima_dir=anima_dir)
             with patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("NONEXISTENT_XYZ", None)
@@ -229,6 +239,7 @@ class TestAgentSDKExecutor:
     async def test_execute_returns_text(self, model_config, anima_dir):
         with patch_agent_sdk(response_text="Hello from Agent SDK"):
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             result = await executor.execute("test prompt", system_prompt="sys")
             assert "Hello from Agent SDK" in result.text
@@ -239,6 +250,7 @@ class TestAgentSDKExecutor:
             usage={"input_tokens": 500, "output_tokens": 100},
         ):
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             result = await executor.execute("test")
             assert result.result_message is not None
@@ -247,6 +259,7 @@ class TestAgentSDKExecutor:
     async def test_execute_empty_response(self, model_config, anima_dir):
         with patch_agent_sdk(response_text=""):
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             result = await executor.execute("test")
             # Empty text blocks produce "(no response)"
@@ -254,9 +267,7 @@ class TestAgentSDKExecutor:
             assert result.text == "(no response)" or result.text == ""
 
     async def test_execute_retries_max_auth_failure_once(self, model_config, anima_dir):
-        auth_text = (
-            'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}'
-        )
+        auth_text = 'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}'
         first_messages = [
             MockAssistantMessage([MockTextBlock(auth_text)]),
             MockResultMessage(usage={"input_tokens": 10, "output_tokens": 5}),
@@ -275,9 +286,7 @@ class TestAgentSDKExecutor:
         assert result.text == "Recovered response"
 
     async def test_execute_does_not_retry_api_auth_failure(self, anima_dir):
-        auth_text = (
-            'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}'
-        )
+        auth_text = 'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}'
         config = ModelConfig(
             model="claude-sonnet-4-6",
             api_key="sk-test",
@@ -298,6 +307,7 @@ class TestAgentSDKExecutor:
 
     async def test_execute_with_tracker(self, model_config, anima_dir):
         from core.prompt.context import ContextTracker
+
         tracker = ContextTracker(model="claude-sonnet-4-6", threshold=0.50)
 
         with patch_agent_sdk(
@@ -305,6 +315,7 @@ class TestAgentSDKExecutor:
             usage={"input_tokens": 1000, "output_tokens": 200},
         ):
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             result = await executor.execute("test", tracker=tracker)
             assert "tracked response" in result.text
@@ -316,10 +327,12 @@ class TestAgentSDKExecutor:
 class TestAgentSDKExecutorStreaming:
     async def test_streaming_yields_text_deltas(self, model_config, anima_dir):
         from core.prompt.context import ContextTracker
+
         tracker = ContextTracker(model="claude-sonnet-4-6")
 
         with patch_agent_sdk_streaming(text_deltas=["Hello ", "World"]):
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
 
             events = []
@@ -339,6 +352,7 @@ class TestAgentSDKExecutorStreaming:
 
     async def test_streaming_done_has_result_message(self, model_config, anima_dir):
         from core.prompt.context import ContextTracker
+
         tracker = ContextTracker(model="claude-sonnet-4-6")
 
         with patch_agent_sdk_streaming(
@@ -346,6 +360,7 @@ class TestAgentSDKExecutorStreaming:
             usage={"input_tokens": 500, "output_tokens": 100},
         ):
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
 
             last_event = None
@@ -360,7 +375,9 @@ class TestAgentSDKExecutorStreaming:
             assert last_event["result_message"] is not None
 
     async def test_streaming_skips_historical_messages_before_stream_event(
-        self, model_config, anima_dir,
+        self,
+        model_config,
+        anima_dir,
     ):
         """セッション再開時の再送 AssistantMessage/UserMessage は
         最初の StreamEvent が届くまでスキップされることを確認する。"""
@@ -383,11 +400,13 @@ class TestAgentSDKExecutorStreaming:
             # 再送シーケンス: historical AssistantMessage → StreamEvent → AssistantMessage → ResultMessage
             historical_msg = MockAssistantMessage([MockTextBlock("historical old response")])
             historical_user = MockUserMessage([MockToolResultBlock("tu_old", "old result")])
-            stream_event = MockStreamEvent({
-                "type": "content_block_delta",
-                "delta": {"type": "text_delta", "text": "new response"},
-                "index": 0,
-            })
+            stream_event = MockStreamEvent(
+                {
+                    "type": "content_block_delta",
+                    "delta": {"type": "text_delta", "text": "new response"},
+                    "index": 0,
+                }
+            )
             current_msg = MockAssistantMessage([MockTextBlock("new response")])
             result_msg = MockResultMessage(usage={"input_tokens": 100, "output_tokens": 50})
 
@@ -426,10 +445,12 @@ class TestAgentSDKExecutorStreaming:
                         sys.modules[key] = saved
 
         from core.prompt.context import ContextTracker
+
         tracker = ContextTracker(model="claude-sonnet-4-6")
 
         with _patch_with_historical_messages():
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
 
             events = []
@@ -463,10 +484,12 @@ class TestAgentSDKExecutorStreaming:
             return original_build(self_inner, *args, **kwargs)
 
         from core.prompt.context import ContextTracker
+
         tracker = ContextTracker(model="claude-sonnet-4-6")
 
         with patch_agent_sdk_streaming(text_deltas=["hi"]):
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             original_build = AgentSDKExecutor._build_sdk_options
 
@@ -485,7 +508,9 @@ class TestAgentSDKExecutorStreaming:
             )
 
     async def test_streaming_falls_back_to_completed_messages_when_stream_events_missing(
-        self, model_config, anima_dir,
+        self,
+        model_config,
+        anima_dir,
     ):
         """StreamEvent が一度も来なくても completed AssistantMessage を採用する。"""
         import sys
@@ -558,13 +583,13 @@ class TestAgentSDKExecutorStreaming:
         assert done_events[0]["full_text"] == "reply from completed message"
 
     async def test_streaming_retries_max_auth_failure_without_text_deltas(
-        self, model_config, anima_dir,
+        self,
+        model_config,
+        anima_dir,
     ):
         from core.prompt.context import ContextTracker
 
-        auth_text = (
-            'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}'
-        )
+        auth_text = 'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}'
         first_messages = [
             MockAssistantMessage([MockTextBlock(auth_text)]),
             MockResultMessage(usage={"input_tokens": 10, "output_tokens": 5}),
@@ -609,6 +634,7 @@ class TestAgentSDKImageInput:
     def _make_executor(self, model_config, anima_dir, **kwargs):
         with patch_agent_sdk():
             from core.execution.agent_sdk import AgentSDKExecutor
+
             return AgentSDKExecutor(
                 model_config=model_config,
                 anima_dir=anima_dir,
@@ -619,6 +645,7 @@ class TestAgentSDKImageInput:
         """Text-only prompt returns a plain string."""
         with patch_agent_sdk():
             from core.execution.agent_sdk import _build_sdk_query_input
+
             result = _build_sdk_query_input("hello", None)
             assert isinstance(result, str)
             assert result == "hello"
@@ -627,6 +654,7 @@ class TestAgentSDKImageInput:
         """Images present → returns an async generator with content blocks."""
         with patch_agent_sdk():
             from core.execution.agent_sdk import _build_sdk_query_input
+
             images = [{"media_type": "image/jpeg", "data": "dGVzdA=="}]
             result = _build_sdk_query_input("describe this", images)
             assert not isinstance(result, str)
@@ -651,6 +679,7 @@ class TestAgentSDKImageInput:
         """Multiple images produce multiple image blocks before the text block."""
         with patch_agent_sdk():
             from core.execution.agent_sdk import _build_sdk_query_input
+
             images = [
                 {"media_type": "image/png", "data": "aW1nMQ=="},
                 {"media_type": "image/jpeg", "data": "aW1nMg=="},
@@ -670,6 +699,7 @@ class TestAgentSDKImageInput:
         """execute() with images should build multimodal prompt (no warning log)."""
         with patch_agent_sdk(response_text="I see a cat"):
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             images = [{"media_type": "image/jpeg", "data": "dGVzdA=="}]
             result = await executor.execute("What is this?", system_prompt="sys", images=images)
@@ -678,10 +708,12 @@ class TestAgentSDKImageInput:
     async def test_streaming_with_images_passes_to_query(self, model_config, anima_dir):
         """execute_streaming() with images should build multimodal prompt."""
         from core.prompt.context import ContextTracker
+
         tracker = ContextTracker(model="claude-sonnet-4-6")
 
         with patch_agent_sdk_streaming(text_deltas=["I see ", "a cat"]):
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             images = [{"media_type": "image/jpeg", "data": "dGVzdA=="}]
 
@@ -703,6 +735,7 @@ class TestAgentSDKImageInput:
         """Empty images list is treated as text-only."""
         with patch_agent_sdk():
             from core.execution.agent_sdk import _build_sdk_query_input
+
             result = _build_sdk_query_input("hello", [])
             assert isinstance(result, str)
 

@@ -44,9 +44,7 @@ class TestModeA2Mock:
         )
 
         # Write a knowledge file so search has results
-        (agent.anima_dir / "knowledge" / "facts.md").write_text(
-            "The answer to everything is 42.\n", encoding="utf-8"
-        )
+        (agent.anima_dir / "knowledge" / "facts.md").write_text("The answer to everything is 42.\n", encoding="utf-8")
 
         # First call: tool_call to search_memory
         tc = make_tool_call(
@@ -102,9 +100,7 @@ class TestModeA2Mock:
             call_id="call_read_forbidden",
         )
         resp1 = make_litellm_response(content="", tool_calls=[tc])
-        resp2 = make_litellm_response(
-            content="Access denied for the requested file."
-        )
+        resp2 = make_litellm_response(content="Access denied for the requested file.")
 
         with patch_litellm(resp1, resp2):
             result = await agent.run_cycle("Read /etc/passwd")
@@ -188,7 +184,7 @@ class TestModeA2Mock:
         resp3 = make_litellm_response(content="File updated.")
 
         with patch_litellm(resp1, resp2, resp3):
-            result = await agent.run_cycle("Write and edit a file")
+            await agent.run_cycle("Write and edit a file")
 
         assert target.exists()
         assert "modified content" in target.read_text(encoding="utf-8")
@@ -239,9 +235,7 @@ class TestModeA2Live:
         # Force A2 mode even with Claude model
         agent._sdk_available = False
 
-        result = await agent.run_cycle(
-            "Reply with exactly: ANIMAWORKS_A2_TEST_OK"
-        )
+        result = await agent.run_cycle("Reply with exactly: ANIMAWORKS_A2_TEST_OK")
 
         assert result.summary
         assert result.action == "responded"
@@ -270,9 +264,7 @@ class TestModeA2AzureLive:
         )
         agent._sdk_available = False
 
-        result = await agent.run_cycle(
-            "Reply with exactly: ANIMAWORKS_AZURE_TEST_OK"
-        )
+        result = await agent.run_cycle("Reply with exactly: ANIMAWORKS_AZURE_TEST_OK")
 
         assert result.summary
         assert result.action == "responded"
@@ -287,7 +279,6 @@ class TestModeA2AzureLive:
             model="azure/gpt-4.1",
             credential="azure",
             api_base_url=os.environ.get("AZURE_API_BASE", ""),
-            max_turns=10,
         )
         agent._sdk_available = False
 
@@ -298,9 +289,7 @@ class TestModeA2AzureLive:
         )
 
         result = await agent.run_cycle(
-            "What is the project codename? "
-            "Use search_memory with query='codename' and scope='knowledge' "
-            "to find it."
+            "What is the project codename? Use search_memory with query='codename' and scope='knowledge' to find it."
         )
 
         assert result.action == "responded"
@@ -316,7 +305,6 @@ class TestModeA2AzureLive:
             model="azure/gpt-4.1",
             credential="azure",
             api_base_url=os.environ.get("AZURE_API_BASE", ""),
-            max_turns=10,
         )
         agent._sdk_available = False
 
@@ -327,8 +315,7 @@ class TestModeA2AzureLive:
         )
 
         result = await agent.run_cycle(
-            f"Use read_file with path='{target}' to read the file. "
-            "Tell me the revenue figure you found."
+            f"Use read_file with path='{target}' to read the file. Tell me the revenue figure you found."
         )
 
         assert result.action == "responded"
@@ -344,7 +331,6 @@ class TestModeA2AzureLive:
             model="azure/gpt-4.1",
             credential="azure",
             api_base_url=os.environ.get("AZURE_API_BASE", ""),
-            max_turns=10,
         )
         agent._sdk_available = False
 
@@ -371,16 +357,17 @@ class TestModeA2AzureLive:
             model="azure/gpt-4.1",
             credential="azure",
             api_base_url=os.environ.get("AZURE_API_BASE", ""),
-            max_turns=10,
         )
         agent._sdk_available = False
 
         # Create files for search_code to find
         (agent.anima_dir / "knowledge" / "alpha.md").write_text(
-            "This file contains MARKER_ALPHA_999.\n", encoding="utf-8",
+            "This file contains MARKER_ALPHA_999.\n",
+            encoding="utf-8",
         )
         (agent.anima_dir / "knowledge" / "beta.md").write_text(
-            "No special markers here.\n", encoding="utf-8",
+            "No special markers here.\n",
+            encoding="utf-8",
         )
 
         result = await agent.run_cycle(
@@ -402,14 +389,14 @@ class TestModeA2AzureLive:
             model="azure/gpt-4.1",
             credential="azure",
             api_base_url=os.environ.get("AZURE_API_BASE", ""),
-            max_turns=10,
         )
         agent._sdk_available = False
 
         # Create recognizable files
         knowledge_dir = agent.anima_dir / "knowledge"
         (knowledge_dir / "unique_file_xyz.md").write_text(
-            "test", encoding="utf-8",
+            "test",
+            encoding="utf-8",
         )
 
         result = await agent.run_cycle(
@@ -430,7 +417,6 @@ class TestModeA2AzureLive:
             model="azure/gpt-4.1",
             credential="azure",
             api_base_url=os.environ.get("AZURE_API_BASE", ""),
-            max_turns=15,
         )
         agent._sdk_available = False
 

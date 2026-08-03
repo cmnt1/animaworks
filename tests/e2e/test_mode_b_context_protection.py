@@ -5,6 +5,7 @@
 
 Validates preflight check, tool output truncation, timeout, and num_ctx.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -39,7 +40,6 @@ class TestModeBPreflightProtection:
             "test-preflight",
             model="ollama/gemma3:27b",
             execution_mode="assisted",
-            max_turns=5,
         )
         memory = MemoryManager(anima_dir)
         model_config = memory.read_model_config()
@@ -127,7 +127,6 @@ class TestModeBToolOutputTruncation:
             "test-truncation",
             model="ollama/gemma3:27b",
             execution_mode="assisted",
-            max_turns=5,
         )
         memory = MemoryManager(anima_dir)
         model_config = memory.read_model_config()
@@ -255,7 +254,6 @@ class TestModeBTimeout:
             "test-timeout-ollama",
             model="ollama/gemma3:27b",
             execution_mode="assisted",
-            max_turns=5,
         )
         memory = MemoryManager(anima_dir)
         model_config = memory.read_model_config()
@@ -277,7 +275,6 @@ class TestModeBTimeout:
             "test-timeout-api",
             model="openai/gpt-4o",
             execution_mode="assisted",
-            max_turns=5,
         )
         memory = MemoryManager(anima_dir)
         model_config = memory.read_model_config()
@@ -410,7 +407,6 @@ class TestModeBStreamingProtection:
             "test-streaming-prot",
             model="ollama/gemma3:27b",
             execution_mode="assisted",
-            max_turns=5,
         )
         memory = MemoryManager(anima_dir)
         model_config = memory.read_model_config()

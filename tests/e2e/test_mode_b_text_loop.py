@@ -41,7 +41,6 @@ class TestModeBTextLoop:
             "test-b",
             model="ollama/gemma3:27b",
             execution_mode="assisted",
-            max_turns=5,
         )
         memory = MemoryManager(anima_dir)
         model_config = memory.read_model_config()
@@ -118,21 +117,26 @@ class TestModeBTextLoop:
         # Should have received error about unknown tool
         assert "利用できません" in result.text
 
-    async def test_max_turns_limit(self, assisted_executor):
-        """Tool calls exhaust max_turns -> returns accumulated text."""
-        # Every response is a tool call -> should eventually hit max_turns
+    async def test_runaway_tool_loop_is_halted_and_finalized(self, assisted_executor):
+        """Repeated identical tool calls are halted by the runaway guard."""
         tool_call = _make_llm_response(
             '考え中...\n```json\n{"tool": "search_memory", "arguments": {"query": "loop"}}\n```'
         )
+        final_response = _make_llm_response("収集済み情報の要約")
 
-        with patch("litellm.acompletion", new_callable=AsyncMock, return_value=tool_call):
+        with patch(
+            "litellm.acompletion",
+            new_callable=AsyncMock,
+            side_effect=[tool_call] * 5 + [final_response],
+        ) as mock_completion:
             result = await assisted_executor.execute(
                 prompt="ループテスト",
                 system_prompt="テスト",
             )
 
-        # Should have accumulated the "考え中..." narrative text
-        assert result.text  # Not empty
+        assert "収集済み情報の要約" in result.text
+        assert result.truncated is True
+        assert mock_completion.call_count == 6
 
     async def test_system_prompt_includes_tool_spec(self, assisted_executor):
         """System prompt should include tool specification text."""

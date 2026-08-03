@@ -131,8 +131,6 @@ def migrate_to_config_json(data_dir: Path) -> None:
             status_data["fallback_model"] = parsed["fallback_model"]
         if "max_tokens" in parsed:
             status_data["max_tokens"] = int(parsed["max_tokens"])
-        if "max_turns" in parsed:
-            status_data["max_turns"] = int(parsed["max_turns"])
         status_data["credential"] = cred_name
         if status_data:
             status_path = anima_dir / "status.json"
@@ -636,7 +634,6 @@ _MODEL_FIELDS_TO_MIGRATE = frozenset(
         "model",
         "fallback_model",
         "max_tokens",
-        "max_turns",
         "credential",
         "context_threshold",
         "max_chains",

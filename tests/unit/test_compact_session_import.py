@@ -24,7 +24,6 @@ def model_config() -> ModelConfig:
     return ModelConfig(
         model="claude-sonnet-4-6",
         api_key="sk-test",
-        max_turns=5,
         context_threshold=0.50,
     )
 

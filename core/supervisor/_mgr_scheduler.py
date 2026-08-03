@@ -402,12 +402,10 @@ class SchedulerMixin:
         from core.lifecycle.system_status import build_status_payload, mark_progress
 
         defaults = ConsolidationConfig()
-        max_turns = ConsolidationConfig().max_turns
         min_entries = defaults.min_episodes_threshold
         model = defaults.llm_model
         max_concurrency = defaults.daily_max_concurrency
         if consolidation_cfg:
-            max_turns = getattr(consolidation_cfg, "max_turns", max_turns)
             min_entries = getattr(consolidation_cfg, "min_episodes_threshold", min_entries)
             model = getattr(consolidation_cfg, "llm_model", model)
             max_concurrency = getattr(consolidation_cfg, "daily_max_concurrency", max_concurrency)
@@ -453,7 +451,7 @@ class SchedulerMixin:
                     try:
                         response = await handle.send_request(
                             "run_consolidation",
-                            {"consolidation_type": "daily", "max_turns": max_turns},
+                            {"consolidation_type": "daily"},
                             timeout=timeout_s,
                         )
                     except TimeoutError:
@@ -641,10 +639,8 @@ class SchedulerMixin:
         )
 
         defaults = _CC()
-        max_turns = defaults.max_turns
         model = defaults.llm_model
         if consolidation_cfg:
-            max_turns = getattr(consolidation_cfg, "max_turns", max_turns)
             model = getattr(consolidation_cfg, "llm_model", model)
 
         eligible_targets = []
@@ -687,7 +683,7 @@ class SchedulerMixin:
                 try:
                     response = await handle.send_request(
                         "run_consolidation",
-                        {"consolidation_type": "weekly", "max_turns": max_turns},
+                        {"consolidation_type": "weekly"},
                         timeout=timeout_s,
                     )
                 except TimeoutError:

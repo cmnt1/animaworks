@@ -51,7 +51,6 @@ def model_config():
     return ModelConfig(
         model="cursor/claude-4-sonnet",
         max_tokens=4096,
-        max_turns=30,
         credential="cursor",
         context_threshold=0.50,
         max_chains=2,
@@ -775,7 +774,7 @@ class TestTurnRotation:
     """Tests for A+C hybrid session rotation."""
 
     @pytest.mark.asyncio
-    async def test_rotation_at_max_turns(self, executor, anima_dir):
+    async def test_rotation_at_session_limit(self, executor, anima_dir):
         """When turn_count >= MAX → chatId cleared, fresh session."""
         _save_chat_id(anima_dir, "old-session", "chat", turn_count=_MAX_RESUME_TURNS)
         captured_cmds: list[list[str]] = []

@@ -91,7 +91,6 @@ async def test_grok_profile_enforces_deny_and_write_roots(
     model_config = ModelConfig(
         model="grok/grok-4.5",
         max_tokens=4096,
-        max_turns=30,
         credential="grok",
         context_threshold=0.5,
         max_chains=2,

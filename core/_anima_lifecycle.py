@@ -276,7 +276,7 @@ def _consolidation_model_config(base_model_config: Any, consolidation_model: str
     return base_model_config.model_copy(update=updates)
 
 
-def _phase_b_reached_max_iterations(result: CycleResult) -> bool:
+def _phase_b_was_interrupted(result: CycleResult) -> bool:
     return bool(result.truncated)
 
 
@@ -499,7 +499,6 @@ class LifecycleMixin:
     async def run_consolidation(
         self,
         consolidation_type: str = "daily",
-        max_turns: int = 30,
     ) -> CycleResult:
         """Run memory consolidation as a 2-phase Anima-driven task.
 
@@ -515,17 +514,15 @@ class LifecycleMixin:
         helper model for episode extraction. Phase B and weekly consolidation
         also use the configured consolidation helper model/credential for the
         LLM call, while preserving the Anima-specific prompt, memory, tools,
-        max-turns, and org metadata.
+        and org metadata.
 
         Args:
             consolidation_type: "daily" or "weekly"
-            max_turns: Maximum tool-call loop iterations for Phase B
         """
         logger.info(
-            "[%s] run_consolidation START type=%s max_turns=%d",
+            "[%s] run_consolidation START type=%s",
             self.name,
             consolidation_type,
-            max_turns,
         )
         from core.tooling.handler import active_session_type
 
@@ -555,15 +552,9 @@ class LifecycleMixin:
                     )
 
                     if consolidation_type == "daily":
-                        result = await self._run_daily_consolidation(
-                            engine,
-                            max_turns=max_turns,
-                        )
+                        result = await self._run_daily_consolidation(engine)
                     else:
-                        result = await self._run_weekly_consolidation(
-                            engine,
-                            max_turns=max_turns,
-                        )
+                        result = await self._run_weekly_consolidation(engine)
 
                     self._last_activity = now_local()
                     self._activity.log(
@@ -609,8 +600,6 @@ class LifecycleMixin:
     async def _run_daily_consolidation(
         self,
         engine: Any,
-        *,
-        max_turns: int = 30,
     ) -> CycleResult:
         """Execute 2-phase daily consolidation.
 
@@ -792,7 +781,6 @@ class LifecycleMixin:
                     prompt,
                     trigger="consolidation:daily",
                     message_intent="request",
-                    max_turns_override=max_turns,
                     model_config_override=consolidation_model_config,
                 )
             except TimeoutError:
@@ -805,13 +793,11 @@ class LifecycleMixin:
 
         autolearn = self._run_autonomous_skill_learning()
         summary = result.summary or ""
-        truncated = _phase_b_reached_max_iterations(result)
+        truncated = _phase_b_was_interrupted(result)
         if truncated:
             summary = (
-                summary
-                + "\n\n[TRUNCATED] Daily consolidation reached max_turns="
-                + str(max_turns)
-                + "; partial outputs were kept and Phase B carryover will resume on the next trigger."
+                summary + "\n\n[TRUNCATED] Daily consolidation was interrupted; partial outputs were kept "
+                "and Phase B carryover will resume on the next trigger."
             )
         else:
             engine.clear_phase_b_carryover()
@@ -829,8 +815,6 @@ class LifecycleMixin:
     async def _run_weekly_consolidation(
         self,
         engine: Any,
-        *,
-        max_turns: int = 30,
     ) -> CycleResult:
         """Execute weekly consolidation with the configured consolidation model."""
         import time as _time
@@ -892,7 +876,6 @@ class LifecycleMixin:
                 prompt,
                 trigger="consolidation:weekly",
                 message_intent="request",
-                max_turns_override=max_turns,
                 model_config_override=consolidation_model_config,
             )
 

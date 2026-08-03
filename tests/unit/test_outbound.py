@@ -36,10 +36,11 @@ def config_with_aliases() -> ExternalMessagingConfig:
     return ExternalMessagingConfig(
         preferred_channel="slack",
         user_aliases={
-            "user": UserAliasConfig(slack_user_id="U0TEST000001"),
+            "user": UserAliasConfig(slack_user_id="U0TEST000001", outbound_dm=True),
             "taka": UserAliasConfig(
                 slack_user_id="U0TEST000001",
                 chatwork_room_id="12345",
+                outbound_dm=True,
             ),
         },
     )
@@ -139,9 +140,33 @@ class TestResolveRecipient:
         """If 'sakura' is both a known anima and a user alias, anima wins."""
         animas = {"sakura"}
         config = ExternalMessagingConfig(
-            user_aliases={"sakura": UserAliasConfig(slack_user_id="U999")},
+            user_aliases={"sakura": UserAliasConfig(slack_user_id="U999", outbound_dm=True)},
         )
         result = resolve_recipient("sakura", animas, config)
+        assert result.is_internal is True
+        assert result.name == "sakura"
+
+    def test_alias_outbound_dm_default_false(self, known_animas):
+        """Aliases are inbound-trust-only by default: no external DM resolution."""
+        config = ExternalMessagingConfig(
+            user_aliases={"taka": UserAliasConfig(slack_user_id="U0TEST000001")},
+        )
+        with pytest.raises(RecipientNotFoundError, match="outbound_dm"):
+            resolve_recipient("taka", known_animas, config)
+
+    def test_alias_outbound_dm_disabled_case_insensitive(self, known_animas):
+        config = ExternalMessagingConfig(
+            user_aliases={"taka": UserAliasConfig(slack_user_id="U0TEST000001")},
+        )
+        with pytest.raises(RecipientNotFoundError, match="outbound_dm"):
+            resolve_recipient("TAKA", known_animas, config)
+
+    def test_disabled_alias_still_allows_anima_fallback(self):
+        """A disabled alias must not block case-insensitive anima resolution."""
+        config = ExternalMessagingConfig(
+            user_aliases={"sakura": UserAliasConfig(slack_user_id="U999")},
+        )
+        result = resolve_recipient("Sakura", {"sakura"}, config)
         assert result.is_internal is True
         assert result.name == "sakura"
 

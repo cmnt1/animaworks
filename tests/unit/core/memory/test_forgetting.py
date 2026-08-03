@@ -1016,7 +1016,6 @@ class TestConsolidationForgettingHooks:
         mock_consolidation_cfg = MagicMock()
         mock_consolidation_cfg.daily_enabled = True
         mock_consolidation_cfg.min_episodes_threshold = 1
-        mock_consolidation_cfg.max_turns = 30
         mock_config.consolidation = mock_consolidation_cfg
 
         mock_downscaling_result = {"scanned": 10, "marked_low": 2}
@@ -1078,7 +1077,6 @@ class TestConsolidationForgettingHooks:
         mock_consolidation_cfg = MagicMock()
         mock_consolidation_cfg.weekly_enabled = True
         mock_consolidation_cfg.llm_model = "anthropic/claude-sonnet-4-6"
-        mock_consolidation_cfg.max_turns = 30
         mock_config.consolidation = mock_consolidation_cfg
 
         mock_reorg_result = {"merged_count": 3, "merged_pairs": ["a+b", "c+d", "e+f"]}

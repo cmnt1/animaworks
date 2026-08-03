@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -16,7 +17,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.schemas import ModelConfig
-
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -80,12 +80,13 @@ class TestAnthropicBlockingThinkingKwargs:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_resp)
 
-        with patch.object(ex, "_build_client", return_value=mock_client), \
-             patch.object(ex, "_build_tools", return_value=[]):
+        with (
+            patch.object(ex, "_build_client", return_value=mock_client),
+            patch.object(ex, "_build_tools", return_value=[]),
+        ):
             await ex.execute(
                 prompt="test",
                 system_prompt="sys",
-                max_turns_override=1,
             )
 
         call_kwargs = mock_client.messages.create.call_args.kwargs
@@ -103,12 +104,13 @@ class TestAnthropicBlockingThinkingKwargs:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_resp)
 
-        with patch.object(ex, "_build_client", return_value=mock_client), \
-             patch.object(ex, "_build_tools", return_value=[]):
+        with (
+            patch.object(ex, "_build_client", return_value=mock_client),
+            patch.object(ex, "_build_tools", return_value=[]),
+        ):
             await ex.execute(
                 prompt="test",
                 system_prompt="sys",
-                max_turns_override=1,
             )
 
         call_kwargs = mock_client.messages.create.call_args.kwargs
@@ -126,12 +128,13 @@ class TestAnthropicBlockingThinkingKwargs:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_resp)
 
-        with patch.object(ex, "_build_client", return_value=mock_client), \
-             patch.object(ex, "_build_tools", return_value=[]):
+        with (
+            patch.object(ex, "_build_client", return_value=mock_client),
+            patch.object(ex, "_build_tools", return_value=[]),
+        ):
             await ex.execute(
                 prompt="test",
                 system_prompt="sys",
-                max_turns_override=1,
             )
 
         call_kwargs = mock_client.messages.create.call_args.kwargs
@@ -149,12 +152,13 @@ class TestAnthropicBlockingThinkingKwargs:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_resp)
 
-        with patch.object(ex, "_build_client", return_value=mock_client), \
-             patch.object(ex, "_build_tools", return_value=[]):
+        with (
+            patch.object(ex, "_build_client", return_value=mock_client),
+            patch.object(ex, "_build_tools", return_value=[]),
+        ):
             await ex.execute(
                 prompt="test",
                 system_prompt="sys",
-                max_turns_override=1,
             )
 
         call_kwargs = mock_client.messages.create.call_args.kwargs
@@ -169,12 +173,13 @@ class TestAnthropicBlockingThinkingKwargs:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_resp)
 
-        with patch.object(ex, "_build_client", return_value=mock_client), \
-             patch.object(ex, "_build_tools", return_value=[]):
+        with (
+            patch.object(ex, "_build_client", return_value=mock_client),
+            patch.object(ex, "_build_tools", return_value=[]),
+        ):
             await ex.execute(
                 prompt="test",
                 system_prompt="sys",
-                max_turns_override=1,
             )
 
         call_kwargs = mock_client.messages.create.call_args.kwargs
@@ -189,12 +194,13 @@ class TestAnthropicBlockingThinkingKwargs:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_resp)
 
-        with patch.object(ex, "_build_client", return_value=mock_client), \
-             patch.object(ex, "_build_tools", return_value=[]):
+        with (
+            patch.object(ex, "_build_client", return_value=mock_client),
+            patch.object(ex, "_build_tools", return_value=[]),
+        ):
             await ex.execute(
                 prompt="test",
                 system_prompt="sys",
-                max_turns_override=1,
             )
 
         call_kwargs = mock_client.messages.create.call_args.kwargs

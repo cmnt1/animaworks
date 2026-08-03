@@ -188,7 +188,6 @@ class TestResolveBackgroundConfig:
         mc = ModelConfig(
             model="claude-opus-4-6",
             background_model="claude-sonnet-4-6",
-            max_turns=200,
             max_tokens=8192,
             context_threshold=0.8,
         )
@@ -197,7 +196,6 @@ class TestResolveBackgroundConfig:
         result = mixin._resolve_background_config()
 
         assert result.model == "claude-sonnet-4-6"
-        assert result.max_turns == 200
         assert result.max_tokens == 8192
         assert result.context_threshold == 0.8
 

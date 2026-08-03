@@ -102,7 +102,6 @@ def test_generated_profile_denies_direct_and_symlink_reads(
     model_config = ModelConfig(
         model="codex/o4-mini",
         max_tokens=4096,
-        max_turns=30,
         credential="openai",
         api_key="test-key",
         context_threshold=0.5,

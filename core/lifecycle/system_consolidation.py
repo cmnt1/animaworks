@@ -478,13 +478,11 @@ class SystemConsolidationMixin:
         # Default config if not present
         enabled = True
         min_episodes = ConsolidationConfig().min_episodes_threshold
-        max_turns = ConsolidationConfig().max_turns
         model = ConsolidationConfig().llm_model
 
         if consolidation_cfg:
             enabled = getattr(consolidation_cfg, "daily_enabled", True)
             min_episodes = getattr(consolidation_cfg, "min_episodes_threshold", min_episodes)
-            max_turns = getattr(consolidation_cfg, "max_turns", max_turns)
             model = getattr(consolidation_cfg, "llm_model", model)
         cooldown_seconds = resolve_post_processing_cooldown_seconds(consolidation_cfg)
 
@@ -516,10 +514,7 @@ class SystemConsolidationMixin:
             result = None
             should_retry = False
             try:
-                result = await anima.run_consolidation(
-                    consolidation_type="daily",
-                    max_turns=max_turns,
-                )
+                result = await anima.run_consolidation(consolidation_type="daily")
 
                 if result.duration_ms < 10_000:
                     logger.warning(
@@ -552,7 +547,7 @@ class SystemConsolidationMixin:
                 )
 
             if should_retry:
-                self._schedule_consolidation_retry(anima_name, max_turns)
+                self._schedule_consolidation_retry(anima_name)
 
             if self._ws_broadcast:
                 await self._ws_broadcast(
@@ -631,12 +626,10 @@ class SystemConsolidationMixin:
         # Default config
         enabled = True
         model = ConsolidationConfig().llm_model
-        max_turns = ConsolidationConfig().max_turns
 
         if consolidation_cfg:
             enabled = getattr(consolidation_cfg, "weekly_enabled", True)
             model = getattr(consolidation_cfg, "llm_model", model)
-            max_turns = getattr(consolidation_cfg, "max_turns", max_turns)
 
         if not enabled:
             logger.info("Weekly integration is disabled in config")
@@ -647,10 +640,7 @@ class SystemConsolidationMixin:
                 continue
             result = None
             try:
-                result = await anima.run_consolidation(
-                    consolidation_type="weekly",
-                    max_turns=max_turns,
-                )
+                result = await anima.run_consolidation(consolidation_type="weekly")
 
                 logger.info(
                     "Weekly integration for %s: duration_ms=%d",

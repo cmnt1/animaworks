@@ -100,7 +100,6 @@ class TestAnimaDefaults:
         pd = AnimaDefaults()
         assert pd.model == "claude-sonnet-4-6"
         assert pd.max_tokens == 8192
-        assert pd.max_turns == 10000
         assert pd.credential == "anthropic"
         assert pd.context_threshold == 0.50
         assert pd.max_chains == 2
@@ -631,7 +630,16 @@ class TestResolveAnimaConfig:
         resolved, cred = resolve_anima_config(config, "alice", anima_dir=tmp_path)
         assert resolved.model == "gpt-4o"
         assert resolved.max_tokens == 8192
-        assert resolved.max_turns == 10000  # from anima_defaults
+
+    def test_legacy_turn_limit_in_status_json_is_ignored(self, tmp_path):
+        legacy_key = "max_turns"
+        status = {"model": "gpt-4o", legacy_key: 12, "credential": "anthropic"}
+        (tmp_path / "status.json").write_text(json.dumps(status), encoding="utf-8")
+
+        resolved, _ = resolve_anima_config(AnimaWorksConfig(), "alice", anima_dir=tmp_path)
+
+        assert resolved.model == "gpt-4o"
+        assert not hasattr(resolved, legacy_key)
 
     def test_mode_s_auth_loaded_from_status_json(self, tmp_path):
         """mode_s_auth in status.json is loaded into resolved config."""
@@ -937,7 +945,6 @@ class TestLoadModelConfig:
         mc = load_model_config(anima_dir)
         # Values come from DEFAULT_TEST_CONFIG, not AnimaDefaults class defaults
         assert mc.max_tokens == 1024
-        assert mc.max_turns == 5
         assert mc.context_threshold == 0.50
         assert mc.conversation_history_threshold == 0.30
 
@@ -966,7 +973,6 @@ class TestLoadModelConfig:
         mc = load_model_config(anima_dir)
         assert mc.model == "openai/gpt-4o"
         assert mc.max_tokens == 8192
-        assert mc.max_turns == 10000  # from anima_defaults
 
     def test_resolves_credential(self, data_dir):
         import json as _json

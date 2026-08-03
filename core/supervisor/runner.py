@@ -928,12 +928,7 @@ class AnimaRunner:
             raise AnimaNotRunningError("Anima not initialized")
 
         consolidation_type = params.get("consolidation_type", "daily")
-        max_turns = params.get("max_turns", 30)
-
-        result = await self.anima.run_consolidation(
-            consolidation_type=consolidation_type,
-            max_turns=max_turns,
-        )
+        result = await self.anima.run_consolidation(consolidation_type=consolidation_type)
 
         return {
             "status": "completed",

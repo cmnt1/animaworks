@@ -582,7 +582,6 @@ def _create_status_json(
         "model",
         "background_model",
         "context_threshold",
-        "max_turns",
         "max_chains",
         "conversation_history_threshold",
         "max_outbound_per_hour",

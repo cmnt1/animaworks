@@ -304,7 +304,7 @@ class TestBuildToolSchemas:
             skill_path.parent.mkdir(parents=True, exist_ok=True)
             skill_path.write_text("---\ndescription: hire\n---\n", encoding="utf-8")
 
-        model_config = ModelConfig(model="ollama/gemma3:27b", max_tokens=4096, max_turns=5)
+        model_config = ModelConfig(model="ollama/gemma3:27b", max_tokens=4096)
         memory = MemoryManager(anima_dir)
         tool_handler = ToolHandler(anima_dir=anima_dir, memory=memory)
         with (
@@ -388,7 +388,6 @@ class TestPreflightCheck:
         model_config = ModelConfig(
             model="ollama/gemma3:27b",
             max_tokens=4096,
-            max_turns=5,
         )
         memory = MemoryManager(anima_dir)
         tool_handler = ToolHandler(anima_dir=anima_dir, memory=memory)

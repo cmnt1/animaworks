@@ -203,7 +203,7 @@ class LifecycleManager(
 
         return build_status_payload()
 
-    def _schedule_consolidation_retry(self, anima_name: str, max_turns: int) -> None:
+    def _schedule_consolidation_retry(self, anima_name: str) -> None:
         """Schedule a one-shot compatibility consolidation retry."""
         retry_time = now_local() + timedelta(hours=3)
         job_id = f"consolidation_retry_{anima_name}"
@@ -213,21 +213,18 @@ class LifecycleManager(
             id=job_id,
             name=f"Consolidation retry: {anima_name}",
             replace_existing=True,
-            kwargs={"anima_name": anima_name, "max_turns": max_turns},
+            kwargs={"anima_name": anima_name},
         )
         logger.info("Scheduled consolidation retry for %s at %s", anima_name, retry_time)
 
-    async def _run_consolidation_retry(self, anima_name: str, max_turns: int) -> None:
+    async def _run_consolidation_retry(self, anima_name: str) -> None:
         """Execute a single compatibility consolidation retry."""
         anima = self.animas.get(anima_name)
         if anima is None:
             logger.warning("Consolidation retry skipped: anima %s not found", anima_name)
             return
         try:
-            await anima.run_consolidation(
-                consolidation_type="daily",
-                max_turns=max_turns,
-            )
+            await anima.run_consolidation(consolidation_type="daily")
             try:
                 from core.memory.forgetting import ForgettingEngine
 

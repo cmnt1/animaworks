@@ -113,7 +113,6 @@ def model_config():
     return ModelConfig(
         model="codex/o4-mini",
         max_tokens=4096,
-        max_turns=30,
         credential="openai",
         api_key="test-key-123",
         context_threshold=0.50,

@@ -565,7 +565,7 @@ class TestReadModelConfigFromMd:
         mc = mm._read_model_config_from_md()
         assert mc.model == "gpt-4o"
         assert mc.max_tokens == 8192
-        assert mc.max_turns == 10
+        assert not hasattr(mc, "max_turns")
         assert mc.api_base_url == "http://localhost:8000"
 
     def test_ignores_biko_section(self, anima_dir, data_dir):
