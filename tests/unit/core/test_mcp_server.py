@@ -411,6 +411,153 @@ class TestCallToolHandler:
         assert result
         mock_handler.handle.assert_called_once_with("send_message", {})
 
+    async def test_returns_tool_timeout_when_handler_exceeds_limit(self) -> None:
+        """When handler.handle() exceeds the resolved timeout, returns ToolTimeout."""
+        import time
+
+        import core.mcp.server as mcp_mod
+
+        mock_handler = MagicMock()
+        mock_handler.handle.side_effect = lambda *_a, **_k: time.sleep(1.0)
+
+        with (
+            patch.object(mcp_mod, "_get_tool_handler", return_value=mock_handler),
+            patch.object(mcp_mod, "_resolve_tool_timeout", return_value=0.1),
+        ):
+            result = await mcp_mod.call_tool("search_memory", {"query": "test"})
+
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        payload = json.loads(result[0].text)
+        assert payload["status"] == "error"
+        assert payload["error_type"] == "ToolTimeout"
+        assert "search_memory" in payload["message"]
+        assert "timed out" in payload["message"].lower()
+
+    async def test_success_unaffected_by_timeout_wrapper(self) -> None:
+        """Fast-returning handlers still return normal wrapped results."""
+        import core.mcp.server as mcp_mod
+
+        mock_handler = MagicMock()
+        mock_handler.handle.return_value = '{"status": "ok", "data": "fast"}'
+
+        with (
+            patch.object(mcp_mod, "_get_tool_handler", return_value=mock_handler),
+            patch.object(mcp_mod, "_resolve_tool_timeout", return_value=5.0),
+        ):
+            result = await mcp_mod.call_tool("send_message", {"to": "x", "content": "y"})
+
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        assert '<tool_result tool="send_message" trust="trusted">' in result[0].text
+        assert '{"status": "ok", "data": "fast"}' in result[0].text
+        assert "</tool_result>" in result[0].text
+
+    async def test_raw_timeout_error_when_timeout_disabled_is_unhandled(self) -> None:
+        """When timeout is disabled (None), a raw TimeoutError from the handler
+        must not become ToolTimeout (and must not TypeError on %.0f formatting).
+        """
+        import core.mcp.server as mcp_mod
+
+        mock_handler = MagicMock()
+        mock_handler.handle.side_effect = TimeoutError("socket timed out")
+
+        with (
+            patch.object(mcp_mod, "_get_tool_handler", return_value=mock_handler),
+            patch.object(mcp_mod, "_resolve_tool_timeout", return_value=None),
+        ):
+            result = await mcp_mod.call_tool("send_message", {"to": "x", "content": "y"})
+
+        assert len(result) == 1
+        assert isinstance(result[0], TextContent)
+        payload = json.loads(result[0].text)
+        assert payload["status"] == "error"
+        assert payload["error_type"] != "ToolTimeout"
+        assert payload["error_type"] == "UnhandledError"
+        assert "socket timed out" in payload["message"]
+
+
+# ── TestResolveToolTimeout ───────────────────────────────────────────
+
+
+class TestResolveToolTimeout:
+    """Tests for _resolve_tool_timeout() pure resolution logic."""
+
+    def test_default_timeout_is_600(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Unknown tools use the hard-coded 600s default."""
+        from core.mcp.server import _resolve_tool_timeout
+
+        monkeypatch.delenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", raising=False)
+        assert _resolve_tool_timeout("send_message") == 600.0
+
+    def test_search_memory_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """search_memory is capped at 120s."""
+        from core.mcp.server import _resolve_tool_timeout
+
+        monkeypatch.delenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", raising=False)
+        assert _resolve_tool_timeout("search_memory") == 120.0
+
+    def test_search_code_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """search_code is capped at 120s."""
+        from core.mcp.server import _resolve_tool_timeout
+
+        monkeypatch.delenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", raising=False)
+        assert _resolve_tool_timeout("search_code") == 120.0
+
+    def test_execute_command_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """execute_command gets a 1900s outer cap."""
+        from core.mcp.server import _resolve_tool_timeout
+
+        monkeypatch.delenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", raising=False)
+        assert _resolve_tool_timeout("execute_command") == 1900.0
+
+    def test_use_tool_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """use_tool gets a 1900s outer cap."""
+        from core.mcp.server import _resolve_tool_timeout
+
+        monkeypatch.delenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", raising=False)
+        assert _resolve_tool_timeout("use_tool") == 1900.0
+
+    def test_create_anima_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """create_anima is allowed 1800s."""
+        from core.mcp.server import _resolve_tool_timeout
+
+        monkeypatch.delenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", raising=False)
+        assert _resolve_tool_timeout("create_anima") == 1800.0
+
+    def test_curate_skills_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """curate_skills is allowed 1800s."""
+        from core.mcp.server import _resolve_tool_timeout
+
+        monkeypatch.delenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", raising=False)
+        assert _resolve_tool_timeout("curate_skills") == 1800.0
+
+    def test_env_overrides_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT overrides the hard-coded default."""
+        from core.mcp.server import _resolve_tool_timeout
+
+        monkeypatch.setenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", "30")
+        assert _resolve_tool_timeout("send_message") == 30.0
+        # Per-tool overrides still take precedence over the env default
+        assert _resolve_tool_timeout("search_memory") == 120.0
+
+    def test_env_parse_failure_uses_hardcoded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Invalid env value is ignored; hard-coded default is used."""
+        from core.mcp.server import _resolve_tool_timeout
+
+        monkeypatch.setenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", "not-a-number")
+        assert _resolve_tool_timeout("send_message") == 600.0
+
+    def test_zero_or_negative_disables_timeout(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Resolved value <= 0 returns None (timeout disabled)."""
+        from core.mcp.server import _resolve_tool_timeout
+
+        monkeypatch.setenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", "0")
+        assert _resolve_tool_timeout("send_message") is None
+
+        monkeypatch.setenv("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT", "-1")
+        assert _resolve_tool_timeout("send_message") is None
+
 
 # ── TestGetToolHandler ───────────────────────────────────────────────
 

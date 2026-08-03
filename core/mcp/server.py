@@ -582,6 +582,46 @@ def _wrap_result(tool_name: str, result: str) -> str:
         return result
 
 
+# ── Tool execution timeout ───────────────────────────────
+
+# Overall timeout for a single MCP tool call.  Prevents a hung handler
+# (e.g. search_memory blocked on a degraded vector worker) from stalling
+# the entire anima cycle indefinitely.
+_DEFAULT_TOOL_TIMEOUT_S = 600.0  # 10 minutes
+
+# Per-tool overrides.  Search tools are cut short (hangs observed in prod);
+# tools with internal command timeouts need a longer outer cap.
+_TOOL_TIMEOUT_OVERRIDES: dict[str, float] = {
+    "search_memory": 120.0,
+    "search_code": 120.0,
+    "execute_command": 1900.0,
+    "use_tool": 1900.0,
+    "create_anima": 1800.0,
+    "curate_skills": 1800.0,
+}
+
+
+def _resolve_tool_timeout(name: str) -> float | None:
+    """Resolve the overall timeout (seconds) for a tool call.
+
+    Returns ``None`` to disable the timeout (escape hatch when the
+    resolved value is ``<= 0``).  Environment variable
+    ``ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT`` overrides the hard-coded
+    default; parse failures fall back to the hard-coded value.
+    """
+    default = _DEFAULT_TOOL_TIMEOUT_S
+    env_val = os.environ.get("ANIMAWORKS_MCP_TOOL_TIMEOUT_DEFAULT")
+    if env_val is not None:
+        try:
+            default = float(env_val)
+        except (ValueError, TypeError):
+            pass
+    timeout = _TOOL_TIMEOUT_OVERRIDES.get(name, default)
+    if timeout <= 0:
+        return None
+    return timeout
+
+
 # ── MCP handlers ─────────────────────────────────────────
 
 
@@ -729,6 +769,7 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
         ]
 
     coerced_args = _coerce_integers(dict(arguments or {}), name)
+    timeout = _resolve_tool_timeout(name)
 
     try:
         ctx = RuntimeSessionContext.from_env()
@@ -737,13 +778,64 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
             token = handler.set_active_session_type(ctx.session_type)
             try:
                 with runtime_session_scope(ctx):
-                    result = await asyncio.to_thread(handler.handle, name, coerced_args)
+                    # wait_for cancels the awaitable but does not stop the
+                    # worker thread; it continues in the background until it finishes.
+                    coro = asyncio.to_thread(handler.handle, name, coerced_args)
+                    if timeout is not None:
+                        result = await asyncio.wait_for(coro, timeout=timeout)
+                    else:
+                        result = await coro
             finally:
                 active_session_type.reset(token)
         else:
-            result = await asyncio.to_thread(handler.handle, name, coerced_args)
+            # wait_for cancels the awaitable but does not stop the
+            # worker thread; it continues in the background until it finishes.
+            coro = asyncio.to_thread(handler.handle, name, coerced_args)
+            if timeout is not None:
+                result = await asyncio.wait_for(coro, timeout=timeout)
+            else:
+                result = await coro
         wrapped = _wrap_result(name, result)
         return [TextContent(type="text", text=wrapped)]
+    except TimeoutError as exc:
+        # asyncio.wait_for raises TimeoutError (alias of asyncio.TimeoutError
+        # on 3.11+).  The worker thread is NOT cancelled — it keeps running.
+        # When timeout is None (disabled), a raw TimeoutError/socket.timeout
+        # from the handler must not hit %.0f formatting — fall back to UnhandledError.
+        if timeout is None:
+            logger.exception("Unhandled error calling tool '%s'", name)
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {
+                            "status": "error",
+                            "error_type": "UnhandledError",
+                            "message": f"Tool execution failed: {name}: {exc}",
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+            ]
+        logger.warning("Tool call timed out: tool=%s timeout=%.0fs", name, timeout)
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "status": "error",
+                        "error_type": "ToolTimeout",
+                        "message": (
+                            f"Tool '{name}' timed out after {timeout:.0f}s. "
+                            "The underlying operation may still be running; "
+                            "do not retry immediately. Proceed with other work "
+                            "or use a narrower query."
+                        ),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        ]
     except Exception as exc:
         logger.exception("Unhandled error calling tool '%s'", name)
         return [
