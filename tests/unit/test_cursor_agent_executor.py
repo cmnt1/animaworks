@@ -255,7 +255,7 @@ class TestExecute:
         events = [
             {"type": "system", "subtype": "init", "model": "claude-4-sonnet"},
             {"type": "assistant", "message": {"content": [{"type": "text", "text": "Hello, "}]}},
-            {"type": "assistant", "message": {"content": [{"type": "text", "text": "Hello, world!"}]}},
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "world!"}]}},
             {"type": "result", "subtype": "success", "result": "Hello, world!", "duration_ms": 1234},
         ]
         stdout_data = _make_ndjson_lines(events)
@@ -282,6 +282,61 @@ class TestExecute:
 
         assert result.text == "Hello, world!"
         assert isinstance(result, ExecutionResult)
+
+    @pytest.mark.asyncio
+    async def test_tool_turn_text_is_kept_in_final_result(self, executor):
+        events = [
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": "Context before the tool call."}]},
+            },
+            {
+                "type": "tool_call",
+                "subtype": "started",
+                "tool_call": {"readToolCall": {"args": {"path": "README.md"}}},
+            },
+            {
+                "type": "tool_call",
+                "subtype": "completed",
+                "tool_call": {
+                    "readToolCall": {
+                        "args": {"path": "README.md"},
+                        "result": {"success": {"content": "contents"}},
+                    }
+                },
+            },
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": "Final answer after the tool call."}]},
+            },
+            {
+                "type": "result",
+                "subtype": "success",
+                "result": "Context before the tool call. Final answer after the tool call.",
+            },
+        ]
+        stdout_data = _make_ndjson_lines(events)
+
+        mock_proc = AsyncMock()
+        mock_proc.stdout = AsyncMock()
+        mock_proc.stderr = AsyncMock()
+        mock_proc.returncode = 0
+        mock_proc.wait = AsyncMock()
+        mock_proc.stderr.read = AsyncMock(return_value=b"")
+        lines = iter(stdout_data.split(b"\n"))
+        mock_proc.stdout.readline = AsyncMock(side_effect=lambda: next(lines, b""))
+
+        with (
+            patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
+            patch.object(executor, "_ensure_workspace"),
+            patch.object(executor, "_write_mcp_config"),
+            patch.object(executor, "_write_cursor_rules"),
+            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+        ):
+            result = await executor.execute(prompt="use a tool")
+
+        assert result.text == "Context before the tool call.\n\nFinal answer after the tool call."
+        assert len(result.tool_call_records) == 1
 
     @pytest.mark.asyncio
     async def test_system_prompt_injected_as_prefix(self, executor):
