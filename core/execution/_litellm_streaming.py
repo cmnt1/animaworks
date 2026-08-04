@@ -34,6 +34,7 @@ from core.execution.base import (
     StreamingThinkFilter,
     TokenUsage,
     ToolCallRecord,
+    join_answer_parts,
     resolve_streamed_leaked_thinking,
     strip_thinking_tags,
     strip_untagged_thinking,
@@ -627,6 +628,8 @@ class StreamingMixin:
                         from core.i18n import t
 
                         _assist_text = "".join(iter_text_parts)
+                        if _assist_text.strip():
+                            all_response_text.append(_assist_text)
                         messages.append({"role": "assistant", "content": _assist_text})
                         messages.append(
                             {
@@ -642,7 +645,7 @@ class StreamingMixin:
                     if iter_text:
                         all_response_text.append(iter_text)
                     cleanup_gate_marker(self._anima_dir)
-                    full_text = "\n".join(all_response_text)
+                    full_text = join_answer_parts(all_response_text)
                     # Safety net: strip any residual <think> tags that the
                     # streaming filter missed (e.g. vLLM returning thinking
                     # in content without proper <think> opening tag). An orphan
@@ -811,6 +814,14 @@ class StreamingMixin:
                             },
                         }
                     )
+                # Text written alongside the tool call is part of the reply the
+                # user already saw streamed — keep it in the final answer.
+                # ``iter_text_parts`` may have been cleared by the text-format
+                # tool call detection above, so re-read it here.
+                iter_text = "".join(iter_text_parts)
+                if iter_text.strip():
+                    all_response_text.append(iter_text)
+
                 assistant_msg: dict[str, Any] = {
                     "role": "assistant",
                     "content": iter_text or None,
@@ -852,9 +863,18 @@ class StreamingMixin:
                 mode="A stream",
                 reason="grace_turn_exhausted",
             )
-        full_text = FINAL_RESPONSE_ERROR_TEXT
-        logger.error("A stream grace turn ended without a final answer")
-        yield {"type": "text_delta", "text": full_text}
+        # Prefer any answer text already produced over the generic error.
+        _salvaged = join_answer_parts(all_response_text)
+        if _salvaged.strip():
+            full_text = _salvaged
+            logger.warning(
+                "A stream grace turn ended without a final answer; salvaging %d chars of prior text",
+                len(full_text),
+            )
+        else:
+            full_text = FINAL_RESPONSE_ERROR_TEXT
+            logger.error("A stream grace turn ended without a final answer")
+            yield {"type": "text_delta", "text": full_text}
         yield {
             "type": "done",
             "full_text": full_text,
@@ -1109,7 +1129,7 @@ class StreamingMixin:
                     iter_text += _truncation_msg
                     all_response_text.append(iter_text)
                     yield {"type": "text_delta", "text": iter_text}
-                    full_text = "\n".join(all_response_text)
+                    full_text = join_answer_parts(all_response_text)
                     yield {
                         "type": "done",
                         "full_text": full_text,
@@ -1172,6 +1192,8 @@ class StreamingMixin:
                         _gate_attempted_ol = True
                         from core.i18n import t
 
+                        if iter_text.strip():
+                            all_response_text.append(iter_text)
                         messages.append({"role": "assistant", "content": message.content or ""})
                         messages.append(
                             {
@@ -1189,7 +1211,7 @@ class StreamingMixin:
 
                     if iter_text and not _ol_text_tc:
                         all_response_text.append(iter_text)
-                    full_text = "\n".join(all_response_text)
+                    full_text = join_answer_parts(all_response_text)
                     _empty_final_response_ol = not full_text.strip()
                     if _empty_final_response_ol:
                         record_finalization_failure(
@@ -1337,9 +1359,17 @@ class StreamingMixin:
                 mode="A ollama stream",
                 reason="grace_turn_exhausted",
             )
-        full_text = FINAL_RESPONSE_ERROR_TEXT
-        logger.error("A ollama stream grace turn ended without a final answer")
-        yield {"type": "text_delta", "text": full_text}
+        _salvaged_ol = join_answer_parts(all_response_text)
+        if _salvaged_ol.strip():
+            full_text = _salvaged_ol
+            logger.warning(
+                "A ollama stream grace turn ended without a final answer; salvaging %d chars of prior text",
+                len(full_text),
+            )
+        else:
+            full_text = FINAL_RESPONSE_ERROR_TEXT
+            logger.error("A ollama stream grace turn ended without a final answer")
+            yield {"type": "text_delta", "text": full_text}
         yield {
             "type": "done",
             "full_text": full_text,

@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ── check_anima_assets ──────────────────────────────────────────
 
 
@@ -20,7 +19,7 @@ class TestCheckAnimaAssets:
 
     def test_no_assets_dir(self, tmp_path: Path) -> None:
         """Anima with no assets/ directory reports all missing."""
-        from core.asset_reconciler import check_anima_assets, REALISTIC_REQUIRED_ASSETS
+        from core.asset_reconciler import REALISTIC_REQUIRED_ASSETS, check_anima_assets
 
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
@@ -213,7 +212,8 @@ class TestExtractPrompt:
         assets_dir = anima_dir / "assets"
         assets_dir.mkdir()
         (assets_dir / "prompt.txt").write_text(
-            "1girl, cached prompt\n", encoding="utf-8",
+            "1girl, cached prompt\n",
+            encoding="utf-8",
         )
         result = await _extract_prompt(anima_dir)
         assert result == "1girl, cached prompt"
@@ -226,11 +226,7 @@ class TestExtractPrompt:
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir()
         (anima_dir / "identity.md").write_text(
-            "# Test\n\n"
-            "| 項目 | 設定 |\n"
-            "|------|------|\n"
-            "| 髪色 | 黒 |\n"
-            "| 瞳の色 | 赤 |\n",
+            "# Test\n\n| 項目 | 設定 |\n|------|------|\n| 髪色 | 黒 |\n| 瞳の色 | 赤 |\n",
             encoding="utf-8",
         )
 
@@ -245,8 +241,10 @@ class TestExtractPrompt:
         mock_model_config.api_key_env = "ANTHROPIC_API_KEY"
         mock_model_config.api_base_url = None
 
-        with patch("core.config.models.load_model_config", return_value=mock_model_config), \
-             patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_response):
+        with (
+            patch("core.config.models.load_model_config", return_value=mock_model_config),
+            patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_response),
+        ):
             result = await _extract_prompt(anima_dir)
 
         assert result == "1girl, black hair, red eyes, full body, standing, white background"
@@ -274,8 +272,10 @@ class TestExtractPrompt:
         mock_model_config.api_key_env = "ANTHROPIC_API_KEY"
         mock_model_config.api_base_url = None
 
-        with patch("core.config.models.load_model_config", return_value=mock_model_config), \
-             patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_response):
+        with (
+            patch("core.config.models.load_model_config", return_value=mock_model_config),
+            patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_response),
+        ):
             await _extract_prompt(anima_dir)
 
         cache_file = anima_dir / "assets" / "prompt.txt"
@@ -300,9 +300,15 @@ class TestExtractPrompt:
         mock_model_config.api_key_env = "ANTHROPIC_API_KEY"
         mock_model_config.api_base_url = None
 
-        with patch("core.config.models.load_model_config", return_value=mock_model_config), \
-             patch("litellm.acompletion", new_callable=AsyncMock, side_effect=RuntimeError("API error")), \
-             patch("core.memory._llm_utils._try_agent_sdk", new_callable=AsyncMock, side_effect=RuntimeError("Agent SDK error")):
+        with (
+            patch("core.config.models.load_model_config", return_value=mock_model_config),
+            patch("litellm.acompletion", new_callable=AsyncMock, side_effect=RuntimeError("API error")),
+            patch(
+                "core.memory._llm_utils._try_agent_sdk",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("Agent SDK error"),
+            ),
+        ):
             result = await _extract_prompt(anima_dir)
 
         assert result is None
@@ -331,14 +337,41 @@ class TestExtractPrompt:
         cfg = MagicMock()
         cfg.local_llm.default_model = "ollama/qwen2.5-coder:14b"
         cfg.local_llm.base_url = "http://127.0.0.1:11434"
+        cfg.local_llm.credential = ""
         model_cfg = MagicMock(model="codex/gpt-5.4-mini")
 
-        with patch("core.config.models.load_config", return_value=cfg), patch(
-            "core.config.models.load_model_config", return_value=model_cfg
+        with (
+            patch("core.config.models.load_config", return_value=cfg),
+            patch("core.config.models.load_model_config", return_value=model_cfg),
         ):
             result = _resolve_prompt_synthesis_model(anima_dir)
 
-        assert result == "ollama/qwen2.5-coder:14b"
+        assert result == ("ollama/qwen2.5-coder:14b", "")
+
+    def test_prompt_synthesis_model_uses_gateway_credential(self, tmp_path: Path) -> None:
+        """A LiteLLM/vLLM gateway model resolves only via its named credential.
+
+        Without one the ``openai/`` prefix would send local-GPU traffic to the
+        real OpenAI API (or fail for lack of a key).
+        """
+        from core.asset_reconciler import _resolve_prompt_synthesis_model
+
+        anima_dir = tmp_path / "anima"
+        anima_dir.mkdir()
+
+        cfg = MagicMock()
+        cfg.local_llm.default_model = "openai/qwen3.6-35b-a3b"
+        cfg.local_llm.base_url = ""
+        cfg.local_llm.credential = "vllm-lb"
+        model_cfg = MagicMock(model="codex/gpt-5.4-mini")
+
+        with (
+            patch("core.config.models.load_config", return_value=cfg),
+            patch("core.config.models.load_model_config", return_value=model_cfg),
+        ):
+            result = _resolve_prompt_synthesis_model(anima_dir)
+
+        assert result == ("openai/qwen3.6-35b-a3b", "vllm-lb")
 
     def test_prompt_synthesis_model_falls_back_to_anima_model(self, tmp_path: Path) -> None:
         from core.asset_reconciler import _resolve_prompt_synthesis_model
@@ -349,14 +382,16 @@ class TestExtractPrompt:
         cfg = MagicMock()
         cfg.local_llm.default_model = ""
         cfg.local_llm.base_url = ""
+        cfg.local_llm.credential = ""
         model_cfg = MagicMock(model="codex/gpt-5.4-mini")
 
-        with patch("core.config.models.load_config", return_value=cfg), patch(
-            "core.config.models.load_model_config", return_value=model_cfg
+        with (
+            patch("core.config.models.load_config", return_value=cfg),
+            patch("core.config.models.load_model_config", return_value=model_cfg),
         ):
             result = _resolve_prompt_synthesis_model(anima_dir)
 
-        assert result == "codex/gpt-5.4-mini"
+        assert result == ("codex/gpt-5.4-mini", "")
 
 
 # ── reconcile_anima_assets ──────────────────────────────────────
@@ -389,7 +424,8 @@ class TestReconcileAnimaAssets:
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir(parents=True)
         (anima_dir / "identity.md").write_text(
-            "# Test\nNo prompt here.", encoding="utf-8",
+            "# Test\nNo prompt here.",
+            encoding="utf-8",
         )
 
         with patch("core.asset_reconciler._synthesize_prompt_via_llm", new_callable=AsyncMock, return_value=None):
@@ -422,7 +458,8 @@ class TestReconcileAnimaAssets:
             mock_cls.return_value = mock_pipeline
 
             result = await reconcile_anima_assets(
-                anima_dir, prompt="1girl, test prompt",
+                anima_dir,
+                prompt="1girl, test prompt",
             )
 
         assert result["skipped"] is False
@@ -440,7 +477,8 @@ class TestReconcileAnimaAssets:
         anima_dir = tmp_path / "anima"
         anima_dir.mkdir(parents=True)
         (anima_dir / "identity.md").write_text(
-            "# Test\nimage_prompt: 1girl\n", encoding="utf-8",
+            "# Test\nimage_prompt: 1girl\n",
+            encoding="utf-8",
         )
 
         with patch(
@@ -461,7 +499,8 @@ class TestReconcileAnimaAssets:
         anima_dir = tmp_path / "concurrent-test"
         anima_dir.mkdir(parents=True)
         (anima_dir / "identity.md").write_text(
-            "# Test\nimage_prompt: 1girl\n", encoding="utf-8",
+            "# Test\nimage_prompt: 1girl\n",
+            encoding="utf-8",
         )
 
         lock = _get_lock("concurrent-test")
@@ -539,7 +578,8 @@ class TestReconcileAllAssets:
         anima_dir = animas_dir / "aoi"
         anima_dir.mkdir(parents=True)
         (anima_dir / "identity.md").write_text(
-            "# Aoi\nimage_prompt: 1girl\n", encoding="utf-8",
+            "# Aoi\nimage_prompt: 1girl\n",
+            encoding="utf-8",
         )
 
         mock_result = MagicMock()

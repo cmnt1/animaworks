@@ -1754,6 +1754,7 @@ class CycleMixin:
                 trigger=trigger,
                 action=final_action,
                 summary=final_summary,
+                thread_id=thread_id,
                 thinking_text=thinking_text[:10000],
                 duration_ms=duration_ms,
                 context_usage_ratio=tracker.usage_ratio,

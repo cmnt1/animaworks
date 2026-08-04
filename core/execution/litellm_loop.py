@@ -57,6 +57,7 @@ from core.execution.base import (
     ExecutionResult,
     TokenUsage,
     ToolCallRecord,
+    join_answer_parts,
     strip_thinking_tags,
 )
 from core.execution.error_classifier import (
@@ -243,6 +244,15 @@ class LiteLLMExecutor(
         cleanup_gate_marker(self._anima_dir)
         _gate_attempted = False
         _empty_tracker = EmptyResponseTracker()
+
+        def _salvage_text() -> str:
+            """Prefer answer text already produced over the generic error."""
+            salvaged = join_answer_parts(all_response_text)
+            if not salvaged:
+                return FINAL_RESPONSE_ERROR_TEXT
+            logger.warning("A: no final answer; salvaging %d chars of prior text", len(salvaged))
+            return salvaged
+
         _runaway_guard = RunawayGuard()
         _force_final = False
         _final_reminder_sent = False
@@ -442,6 +452,9 @@ class LiteLLMExecutor(
                     _gate_attempted = True
                     from core.i18n import t
 
+                    _, _gate_text = strip_thinking_tags(message.content or "")
+                    if _gate_text.strip():
+                        all_response_text.append(_gate_text)
                     messages.append({"role": "assistant", "content": message.content or ""})
                     messages.append(
                         {
@@ -468,7 +481,7 @@ class LiteLLMExecutor(
                         logger.error("A grace turn returned no answer at iteration=%d", iteration)
                         cleanup_gate_marker(self._anima_dir)
                         return ExecutionResult(
-                            text=FINAL_RESPONSE_ERROR_TEXT,
+                            text=_salvage_text(),
                             tool_call_records=all_tool_records,
                             usage=usage_acc,
                             truncated=True,
@@ -500,7 +513,7 @@ class LiteLLMExecutor(
                     )
                     cleanup_gate_marker(self._anima_dir)
                     return ExecutionResult(
-                        text=FINAL_RESPONSE_ERROR_TEXT,
+                        text=_salvage_text(),
                         tool_call_records=all_tool_records,
                         usage=usage_acc,
                         truncated=True,
@@ -513,7 +526,7 @@ class LiteLLMExecutor(
                 if final_reminder:
                     all_response_text.append(final_reminder)
                 return ExecutionResult(
-                    text="\n".join(all_response_text),
+                    text=join_answer_parts(all_response_text),
                     tool_call_records=all_tool_records,
                     usage=usage_acc,
                     truncated=is_final_iteration,
@@ -566,7 +579,7 @@ class LiteLLMExecutor(
                 )
                 cleanup_gate_marker(self._anima_dir)
                 return ExecutionResult(
-                    text=FINAL_RESPONSE_ERROR_TEXT,
+                    text=_salvage_text(),
                     tool_call_records=all_tool_records,
                     usage=usage_acc,
                     truncated=True,
@@ -646,6 +659,9 @@ class LiteLLMExecutor(
                 )
             if _content:
                 _, _content = strip_thinking_tags(_content)
+                # Text written alongside the tool call belongs to the reply.
+                if _content.strip():
+                    all_response_text.append(_content)
             messages.append(
                 {
                     "role": "assistant",

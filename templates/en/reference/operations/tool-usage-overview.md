@@ -65,6 +65,24 @@ In Mode A/B unified schemas, names are **PascalCase**. Inside `ToolHandler` they
 - Search: Prefer Grep (content) and Glob (paths). `grep` / `find` via Bash is discouraged.
 - Inside an Anima’s memory tree: **`read_memory_file` / `write_memory_file` / `archive_memory_file`** (relative paths). Use Read / Write when you need absolute paths across the whole project — that is the intended split.
 
+### Bounding your search (runaway prevention)
+
+`~/.animaworks` holds hundreds of thousands of entries, and `shared/` contains many symlinks into external directories. **Never walk the whole tree recursively.**
+
+Forbidden (none of these terminate):
+
+- `glob.glob('/home/main/.animaworks/**/...', recursive=True)` — Python's `**` descends through symlinks, so the search expands without bound
+- `os.walk('/home/main/.animaworks')` starting from the top
+- `find ~/.animaworks`, `du -sh ~/.animaworks`, or `rg` rooted at `~/.animaworks` with no path narrowing
+
+Instead:
+
+- **If you know the exact path, just open it.** `os.path.exists()` answers existence questions; no search is needed
+- When the location is uncertain, descend one level at a time with `ls`. To bound depth, use `find <dir> -maxdepth 2`
+- Use the Grep tool for content and the Glob tool for paths, and **always root them at a specific subdirectory** (e.g. `animas/<name>/state/`)
+
+> On 2026-08-04 this exact recursive glob left helper scripts spinning at 100% CPU for over 10 hours. If a single search does not return within seconds, your search root is wrong.
+
 ## AnimaWorks built-in tools (by category)
 
 The following summarizes tools handled directly by `ToolHandler` (some are conditional).

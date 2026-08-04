@@ -612,31 +612,73 @@ class GrokCLIExecutor(BaseExecutor):
         proc: asyncio.subprocess.Process,
         timeout: float = _GRACEFUL_KILL_WAIT,
     ) -> None:
-        """Terminate the child, then escalate to SIGKILL after *timeout*."""
+        """Terminate the child, then escalate to SIGKILL after *timeout*.
+
+        The child is spawned with ``os.setsid()``, so signalling the process
+        alone leaves its own descendants (the bash tool's shells and whatever
+        they spawned) running — they get reparented to ``systemd --user`` and
+        can burn CPU indefinitely. Signal the whole process group instead.
+        """
         if proc.returncode is not None:
             return
+        # Captured before the child dies: getpgid() fails once it is reaped.
+        pgid = self._process_group_of(proc)
         try:
-            sent = proc.send_signal(signal.SIGTERM)
-            if inspect.isawaitable(sent):  # accommodates asyncio test doubles
-                await sent
-        except ProcessLookupError:
-            return
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=timeout)
-            if proc.returncode is not None:
+            try:
+                sent = proc.send_signal(signal.SIGTERM)
+                if inspect.isawaitable(sent):  # accommodates asyncio test doubles
+                    await sent
+            except ProcessLookupError:
                 return
-        except TimeoutError:
-            pass
+            self._signal_process_group(pgid, signal.SIGTERM)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=timeout)
+                if proc.returncode is not None:
+                    return
+            except TimeoutError:
+                pass
+            try:
+                killed = proc.kill()
+                if inspect.isawaitable(killed):  # accommodates asyncio test doubles
+                    await killed
+            except ProcessLookupError:
+                return
+            try:
+                await proc.wait()
+            except Exception:  # noqa: BLE001
+                logger.debug("Failed waiting for killed Grok CLI", exc_info=True)
+        finally:
+            # Always sweep the group: the CLI exiting says nothing about the
+            # shells it spawned, and orphans here have burned hours of CPU.
+            sigkill = getattr(signal, "SIGKILL", None)
+            if sigkill is not None:
+                self._signal_process_group(pgid, sigkill)
+
+    @staticmethod
+    def _process_group_of(proc: asyncio.subprocess.Process) -> int | None:
+        """Return the child's process group id, or None when unavailable.
+
+        Never returns our own group — signalling that would kill the daemon.
+        """
+        if os.name != "posix":
+            return None
         try:
-            killed = proc.kill()
-            if inspect.isawaitable(killed):  # accommodates asyncio test doubles
-                await killed
-        except ProcessLookupError:
+            pgid = os.getpgid(proc.pid)
+        except (ProcessLookupError, PermissionError, TypeError, OSError):
+            return None
+        if pgid in (os.getpgrp(), 0, 1):
+            return None
+        return pgid
+
+    @staticmethod
+    def _signal_process_group(pgid: int | None, sig: signal.Signals) -> None:
+        """Best-effort signal to the child's whole process group."""
+        if pgid is None:
             return
         try:
-            await proc.wait()
-        except Exception:  # noqa: BLE001
-            logger.debug("Failed waiting for killed Grok CLI", exc_info=True)
+            os.killpg(pgid, sig)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
 
     @staticmethod
     async def _drain_stderr(proc: asyncio.subprocess.Process) -> str:

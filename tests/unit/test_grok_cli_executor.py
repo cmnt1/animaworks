@@ -1057,3 +1057,44 @@ class TestTerminalPaths:
         await executor._kill_process(proc, timeout=0)
         proc.send_signal.assert_called_once_with(signal.SIGTERM)
         proc.kill.assert_called_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
+    async def test_kill_sweeps_the_child_process_group(self, executor: GrokCLIExecutor):
+        """The CLI exiting must not leave its bash/python descendants running.
+
+        Regression: on 2026-08-04 a timed-out Grok CLI left `python3 -` shells
+        spinning at 100% CPU for 10+ hours, reparented to systemd --user.
+        """
+        proc = MagicMock()
+        proc.returncode = None
+        proc.pid = 4321
+        proc.wait = AsyncMock(return_value=0)
+        proc.send_signal = MagicMock()
+        proc.kill = MagicMock()
+        with (
+            patch("core.execution.grok_cli.os.getpgid", return_value=9999),
+            patch("core.execution.grok_cli.os.getpgrp", return_value=1111),
+            patch("core.execution.grok_cli.os.killpg") as killpg,
+        ):
+            await executor._kill_process(proc, timeout=0)
+        assert call(9999, signal.SIGKILL) in killpg.call_args_list
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
+    async def test_kill_never_signals_its_own_process_group(self, executor: GrokCLIExecutor):
+        """If setsid() failed, the child shares our group — killing it would
+        take down the AnimaWorks daemon itself."""
+        proc = MagicMock()
+        proc.returncode = None
+        proc.pid = 4321
+        proc.wait = AsyncMock(return_value=0)
+        proc.send_signal = MagicMock()
+        proc.kill = MagicMock()
+        with (
+            patch("core.execution.grok_cli.os.getpgid", return_value=1111),
+            patch("core.execution.grok_cli.os.getpgrp", return_value=1111),
+            patch("core.execution.grok_cli.os.killpg") as killpg,
+        ):
+            await executor._kill_process(proc, timeout=0)
+        killpg.assert_not_called()

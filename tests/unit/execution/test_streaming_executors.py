@@ -638,9 +638,9 @@ class TestA2TokenLevelTextOnly:
 
 
 class TestA2CompletionGateRetry:
-    """completion_gate retry attempts must not be committed to final full_text."""
+    """The gate retry must not drop the answer written before the reminder."""
 
-    async def test_token_level_retry_text_is_not_in_done_full_text(self, litellm_executor) -> None:
+    async def test_token_level_retry_keeps_pre_gate_answer(self, litellm_executor) -> None:
         tracker = MagicMock(spec=ContextTracker)
 
         call_count = 0
@@ -679,10 +679,9 @@ class TestA2CompletionGateRetry:
 
         done = [e for e in events if e["type"] == "done"]
         assert len(done) == 1
-        assert done[0]["full_text"] == "final answer"
-        assert "first answer" not in done[0]["full_text"]
+        assert done[0]["full_text"] == "first answer\n\nfinal answer"
 
-    async def test_ollama_retry_text_is_not_in_done_full_text(self, ollama_executor) -> None:
+    async def test_ollama_retry_keeps_pre_gate_answer(self, ollama_executor) -> None:
         tracker = MagicMock(spec=ContextTracker)
 
         mock_acompletion = AsyncMock(
@@ -709,8 +708,73 @@ class TestA2CompletionGateRetry:
 
         done = [e for e in events if e["type"] == "done"]
         assert len(done) == 1
-        assert done[0]["full_text"] == "final answer"
-        assert "first answer" not in done[0]["full_text"]
+        assert done[0]["full_text"] == "first answer\n\nfinal answer"
+
+    async def test_token_level_empty_retry_restores_pre_gate_answer(self, litellm_executor) -> None:
+        """An empty gate retry must not discard the answer written before it."""
+        tracker = MagicMock(spec=ContextTracker)
+
+        call_count = 0
+
+        async def mock_acompletion(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _fake_async_stream(
+                    [
+                        FakeStreamChunk(text="complete answer"),
+                        FakeStreamChunk(finish_reason="stop"),
+                    ]
+                )
+            return _fake_async_stream([FakeStreamChunk(finish_reason="length")])
+
+        with (
+            patch("litellm.acompletion", side_effect=mock_acompletion),
+            patch.object(litellm_executor, "_preflight_clamp", return_value={}),
+            patch("core.execution._completion_gate.completion_gate_applies_to_trigger", return_value=True),
+            patch("core.execution._completion_gate.gate_marker_exists", side_effect=[False, True]),
+        ):
+            events = await _collect_events(
+                litellm_executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="Hi",
+                    tracker=tracker,
+                    trigger="message:tester",
+                )
+            )
+
+        done = [e for e in events if e["type"] == "done"]
+        assert len(done) == 1
+        assert done[0]["full_text"] == "complete answer"
+
+    async def test_ollama_empty_retry_restores_pre_gate_answer(self, ollama_executor) -> None:
+        tracker = MagicMock(spec=ContextTracker)
+
+        mock_acompletion = AsyncMock(
+            side_effect=[
+                _make_litellm_a2_response(content="complete answer", tool_calls=None),
+                _make_litellm_a2_response(content="", tool_calls=None),
+            ],
+        )
+
+        with (
+            patch("litellm.acompletion", mock_acompletion),
+            patch.object(ollama_executor, "_preflight_clamp", return_value={}),
+            patch("core.execution._completion_gate.completion_gate_applies_to_trigger", return_value=True),
+            patch("core.execution._completion_gate.gate_marker_exists", side_effect=[False, True]),
+        ):
+            events = await _collect_events(
+                ollama_executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="Hi",
+                    tracker=tracker,
+                    trigger="message:tester",
+                )
+            )
+
+        done = [e for e in events if e["type"] == "done"]
+        assert len(done) == 1
+        assert done[0]["full_text"] == "complete answer"
 
 
 class TestA2TokenLevelWithToolCall:
@@ -1182,7 +1246,7 @@ class TestA2IterationLevelWithToolCall:
 
         # Verify done
         done = [e for e in events if e["type"] == "done"]
-        assert done[0]["full_text"] == "Searching...\nFound it!"
+        assert done[0]["full_text"] == "Searching...\n\nFound it!"
 
     async def test_parses_text_tool_call_with_preamble(self, ollama_executor) -> None:
         tracker = MagicMock(spec=ContextTracker)
