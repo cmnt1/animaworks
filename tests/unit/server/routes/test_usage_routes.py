@@ -235,6 +235,7 @@ def test_fetch_claude_usage_expired_token_short_circuits_network(monkeypatch):
     expired_at = int(time.time() * 1000) - 10 * 60 * 1000
     monkeypatch.setattr(usage_routes, "_CACHE", {})
     monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {})
+    monkeypatch.setattr(usage_routes, "_AUTO_REFRESH_LAST_ATTEMPT", time.time())
     monkeypatch.setattr(
         usage_routes,
         "_select_best_claude_credential",
@@ -250,6 +251,110 @@ def test_fetch_claude_usage_expired_token_short_circuits_network(monkeypatch):
 
     assert result == {"error": "unauthorized", "message": "Token expired, re-login to Claude Code"}
     assert usage_routes._cached("claude") == result
+
+
+def test_fetch_claude_usage_auto_refreshes_idle_expired_token(monkeypatch):
+    expired_at = int(time.time() * 1000) - usage_routes._AUTO_REFRESH_GRACE_MS - 60_000
+    refresh_calls: list[tuple[Path, str, str | None]] = []
+    authorization: list[str | None] = []
+    monkeypatch.setattr(usage_routes, "_CACHE", {})
+    monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {})
+    monkeypatch.setattr(usage_routes, "_AUTO_REFRESH_LAST_ATTEMPT", 0.0)
+    monkeypatch.setattr(
+        usage_routes,
+        "_select_best_claude_credential",
+        lambda: (Path("credentials.json"), "expired-token", "refresh-token", expired_at),
+    )
+
+    def fake_refresh(path, refresh, expected_access=None):
+        refresh_calls.append((path, refresh, expected_access))
+        return "refreshed-token"
+
+    def fake_urlopen(req, timeout=0):
+        authorization.append(req.get_header("Authorization"))
+        return _FakeResponse(
+            {
+                "five_hour": {
+                    "utilization": 12.0,
+                    "resets_at": "2026-08-04T10:00:00+00:00",
+                },
+                "seven_day": {
+                    "utilization": 34.0,
+                    "resets_at": "2026-08-09T10:00:00+00:00",
+                },
+            }
+        )
+
+    monkeypatch.setattr(usage_routes, "_refresh_claude_token", fake_refresh)
+    monkeypatch.setattr(usage_routes.urllib.request, "urlopen", fake_urlopen)
+
+    result = usage_routes._fetch_claude_usage()
+
+    assert refresh_calls == [(Path("credentials.json"), "refresh-token", "expired-token")]
+    assert authorization == ["Bearer refreshed-token"]
+    assert result["five_hour"]["remaining"] == 88.0
+    assert result["seven_day"]["remaining"] == 66.0
+
+
+def test_fetch_claude_usage_freshly_expired_token_stays_read_only(monkeypatch):
+    expired_at = int(time.time() * 1000) - usage_routes._AUTO_REFRESH_GRACE_MS + 60_000
+    monkeypatch.setattr(usage_routes, "_CACHE", {})
+    monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {})
+    monkeypatch.setattr(usage_routes, "_AUTO_REFRESH_LAST_ATTEMPT", 0.0)
+    monkeypatch.setattr(
+        usage_routes,
+        "_select_best_claude_credential",
+        lambda: (Path("credentials.json"), "expired-token", "refresh-token", expired_at),
+    )
+    monkeypatch.setattr(
+        usage_routes,
+        "_refresh_claude_token",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not refresh during the owner grace period")),
+    )
+
+    result = usage_routes._fetch_claude_usage()
+
+    assert result == {"error": "unauthorized", "message": "Token expired, re-login to Claude Code"}
+
+
+def test_fetch_claude_usage_auto_refresh_cooldown_blocks_attempt(monkeypatch):
+    expired_at = int(time.time() * 1000) - usage_routes._AUTO_REFRESH_GRACE_MS - 60_000
+    monkeypatch.setattr(usage_routes, "_CACHE", {})
+    monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {})
+    monkeypatch.setattr(usage_routes, "_AUTO_REFRESH_LAST_ATTEMPT", time.time())
+    monkeypatch.setattr(
+        usage_routes,
+        "_select_best_claude_credential",
+        lambda: (Path("credentials.json"), "expired-token", "refresh-token", expired_at),
+    )
+    monkeypatch.setattr(
+        usage_routes,
+        "_refresh_claude_token",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not refresh during cooldown")),
+    )
+
+    result = usage_routes._fetch_claude_usage()
+
+    assert result == {"error": "unauthorized", "message": "Token expired, re-login to Claude Code"}
+
+
+def test_fetch_claude_usage_failed_auto_refresh_records_attempt(monkeypatch):
+    expired_at = int(time.time() * 1000) - usage_routes._AUTO_REFRESH_GRACE_MS - 60_000
+    monkeypatch.setattr(usage_routes, "_CACHE", {})
+    monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {})
+    monkeypatch.setattr(usage_routes, "_AUTO_REFRESH_LAST_ATTEMPT", 0.0)
+    monkeypatch.setattr(
+        usage_routes,
+        "_select_best_claude_credential",
+        lambda: (Path("credentials.json"), "expired-token", "refresh-token", expired_at),
+    )
+    monkeypatch.setattr(usage_routes, "_refresh_claude_token", lambda *args, **kwargs: None)
+    before = time.time()
+
+    result = usage_routes._fetch_claude_usage()
+
+    assert result == {"error": "unauthorized", "message": "Token expired, re-login to Claude Code"}
+    assert before <= usage_routes._AUTO_REFRESH_LAST_ATTEMPT
 
 
 def test_relogin_claude_launches_terminal_when_interactive_and_refresh_fails(monkeypatch):
@@ -466,6 +571,86 @@ def test_refresh_claude_token_does_not_send_or_persist_scopes(tmp_path: Path, mo
     assert saved["accessToken"] == "new-tok"
     # A narrowed grant must not be written back over the stored scopes.
     assert saved["scopes"] == ["user:inference", "user:profile"]
+
+
+def test_refresh_claude_token_does_not_write_after_persist_read_failure(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(usage_routes, "_AUTO_REFRESH_LAST_ATTEMPT", 0.0)
+    cred = tmp_path / "creds.json"
+    cred.write_text(
+        json.dumps(
+            {
+                "unrelated": {"preserve": True},
+                "claudeAiOauth": {
+                    "accessToken": "old",
+                    "refreshToken": "r1",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_urlopen(req, timeout=0):
+        cred.unlink()
+        return _FakeResponse(
+            {
+                "access_token": "new-token",
+                "refresh_token": "r2",
+                "expires_in": 3600,
+            }
+        )
+
+    monkeypatch.setattr(usage_routes.urllib.request, "urlopen", fake_urlopen)
+
+    result = usage_routes._refresh_claude_token(cred, "r1", expected_access="old")
+
+    assert result is None
+    assert not cred.exists()
+
+
+def test_refresh_claude_token_yields_to_concurrent_owner_write(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(usage_routes, "_AUTO_REFRESH_LAST_ATTEMPT", 0.0)
+    cred = tmp_path / "creds.json"
+    cred.write_text(
+        json.dumps(
+            {
+                "unrelated": {"preserve": True},
+                "claudeAiOauth": {
+                    "accessToken": "old-token",
+                    "refreshToken": "old-refresh",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    owner_data = {
+        "unrelated": {"owner": "won"},
+        "claudeAiOauth": {
+            "accessToken": "owner-token",
+            "refreshToken": "owner-refresh",
+            "expiresAt": 9999999999999,
+        },
+    }
+
+    def fake_urlopen(req, timeout=0):
+        cred.write_text(json.dumps(owner_data), encoding="utf-8")
+        return _FakeResponse(
+            {
+                "access_token": "automatic-token",
+                "refresh_token": "automatic-refresh",
+                "expires_in": 3600,
+            }
+        )
+
+    monkeypatch.setattr(usage_routes.urllib.request, "urlopen", fake_urlopen)
+
+    result = usage_routes._refresh_claude_token(
+        cred,
+        "old-refresh",
+        expected_access="old-token",
+    )
+
+    assert result == "owner-token"
+    assert json.loads(cred.read_text("utf-8")) == owner_data
 
 
 def test_merge_usage_snapshot_restores_window_timing_after_error(tmp_path: Path, monkeypatch):

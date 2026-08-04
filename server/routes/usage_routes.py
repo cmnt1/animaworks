@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -57,6 +58,13 @@ def _set_cache(key: str, data: dict[str, Any]) -> None:
 _RATE_LIMIT_UNTIL: dict[str, float] = {}
 _RATE_LIMIT_BACKOFF_MAX = 3600  # clamp a single backoff window to 1h
 _RATE_LIMIT_BACKOFF_DEFAULT = 300  # used when no Retry-After header is present
+
+# Refresh and owner-write windows are deliberately disjoint: only a token at
+# least five minutes expired proves Claude Code is idle, and the cooldown keeps
+# AnimaWorks to a single gated writer during that idle window.
+_AUTO_REFRESH_GRACE_MS = 5 * 60 * 1000
+_AUTO_REFRESH_COOLDOWN_S = 600
+_AUTO_REFRESH_LAST_ATTEMPT: float = 0.0
 
 
 def _parse_retry_after(value: str | None) -> float:
@@ -264,7 +272,11 @@ _ANTHROPIC_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 _ANTHROPIC_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"  # Claude Code public client
 
 
-def _refresh_claude_token(cred_path: Path, refresh_token: str) -> str | None:
+def _refresh_claude_token(
+    cred_path: Path,
+    refresh_token: str,
+    expected_access: str | None = None,
+) -> str | None:
     """Use the refresh token to obtain a new access token and persist it.
 
     ``scope`` is deliberately omitted: per RFC 6749 §6 an omitted scope means
@@ -299,12 +311,20 @@ def _refresh_claude_token(cred_path: Path, refresh_token: str) -> str | None:
         if not new_access:
             return None
 
-        # Update the credentials file
+        # Re-read after the POST so a concurrent owner refresh wins.
         try:
             cred_data = json.loads(cred_path.read_text("utf-8"))
-        except Exception:
-            cred_data = {}
+        except Exception as e:
+            logger.warning("Claude token refresh could not re-read %s: %s", cred_path, e)
+            return None
         oauth = cred_data.setdefault("claudeAiOauth", {})
+        current_access = oauth.get("accessToken")
+        if expected_access is not None and current_access != expected_access:
+            logger.info(
+                "Claude Code refreshed %s concurrently; yielding to owner token",
+                cred_path,
+            )
+            return current_access if isinstance(current_access, str) else None
 
         granted = data.get("scope")
         if isinstance(granted, str) and granted:
@@ -318,7 +338,27 @@ def _refresh_claude_token(cred_path: Path, refresh_token: str) -> str | None:
         oauth["accessToken"] = new_access
         oauth["refreshToken"] = new_refresh
         oauth["expiresAt"] = int(time.time() * 1000) + expires_in * 1000
-        cred_path.write_text(json.dumps(cred_data, ensure_ascii=False), encoding="utf-8")
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=cred_path.parent,
+                prefix=f".{cred_path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temp_file:
+                json.dump(cred_data, temp_file, ensure_ascii=False)
+                temp_path = Path(temp_file.name)
+            os.replace(temp_path, cred_path)
+        except Exception as e:
+            logger.warning("Claude token refresh could not persist %s: %s", cred_path, e)
+            if temp_path is not None:
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            return None
         logger.info("Refreshed Claude OAuth token, persisted to %s", cred_path)
         return new_access
     except Exception as e:
@@ -526,9 +566,9 @@ def _fetch_claude_usage(skip_cache: bool = False) -> dict[str, Any]:
     if _in_rate_limit_backoff("claude"):
         return _rate_limited_result("claude")
 
-    # Claude Code owns and keeps this file fresh. Usage polling is deliberately
-    # read-only: refreshing or rewriting here would race its credential owner.
-    _best_path, token, _best_refresh, best_expires = _select_best_claude_credential()
+    # Claude Code owns and keeps this file fresh. Usage polling is read-only
+    # except for one narrowly gated refresh after expiry proves the owner idle.
+    best_path, token, best_refresh, best_expires = _select_best_claude_credential()
     if not token:
         result: dict[str, Any] = {"error": "no_credentials", "message": "Claude credentials not found"}
         _set_cache("claude", result)
@@ -536,12 +576,38 @@ def _fetch_claude_usage(skip_cache: bool = False) -> dict[str, Any]:
 
     now_ms = int(time.time() * 1000)
     # expires == 0 means the file carries no expiry — unknown, let the server
-    # decide — while a known-past expiry would only buy a guaranteed 401 (and
-    # repeated 401s escalate to hour-long 429 bans), so skip the network.
+    # decide. A known-past expiry is refreshed only after the owner-idle grace
+    # period and outside the anti-hammer cooldown.
     if 0 < best_expires < now_ms:
         result = {"error": "unauthorized", "message": "Token expired, re-login to Claude Code"}
-        _set_cache("claude", result)
-        return result
+        expired_ms = now_ms - best_expires
+        if expired_ms >= _AUTO_REFRESH_GRACE_MS and best_path and best_refresh:
+            global _AUTO_REFRESH_LAST_ATTEMPT
+            attempt_time = time.time()
+            if attempt_time - _AUTO_REFRESH_LAST_ATTEMPT >= _AUTO_REFRESH_COOLDOWN_S:
+                _AUTO_REFRESH_LAST_ATTEMPT = attempt_time
+                logger.info(
+                    "Claude token expired %dmin, owner idle - attempting gated auto-refresh",
+                    expired_ms // 60_000,
+                )
+                refreshed = _refresh_claude_token(
+                    best_path,
+                    best_refresh,
+                    expected_access=token,
+                )
+                if refreshed:
+                    logger.info("Claude usage polling recovered with gated auto-refresh")
+                    token = refreshed
+                else:
+                    _set_cache("claude", result)
+                    return result
+            else:
+                logger.debug("Claude gated auto-refresh cooldown is active")
+                _set_cache("claude", result)
+                return result
+        else:
+            _set_cache("claude", result)
+            return result
 
     try:
         req = urllib.request.Request(
