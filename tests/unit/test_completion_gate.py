@@ -12,6 +12,7 @@ from core.execution._completion_gate import (
     completion_gate_applies_to_trigger,
     completion_gate_marker_path,
     gate_marker_exists,
+    is_gate_only_turn,
 )
 from core.skills.usage import SkillUsageTracker
 from core.tooling.handler import ToolHandler
@@ -469,3 +470,19 @@ class TestNonSGuide:
 
         en = get_default_guide("non_s", locale="en")
         assert "completion_gate" in en
+
+
+class TestIsGateOnlyTurn:
+    """Text on a gate-only turn is meta-commentary, not part of the answer."""
+
+    def test_gate_alone_is_gate_only(self):
+        assert is_gate_only_turn(["completion_gate"]) is True
+
+    def test_gate_with_other_tool_is_not_gate_only(self):
+        assert is_gate_only_turn(["completion_gate", "WebSearch"]) is False
+
+    def test_other_tool_is_not_gate_only(self):
+        assert is_gate_only_turn(["WebSearch"]) is False
+
+    def test_no_tools_is_not_gate_only(self):
+        assert is_gate_only_turn([]) is False
