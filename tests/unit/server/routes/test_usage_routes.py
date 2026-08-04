@@ -61,7 +61,7 @@ def test_refresh_codex_token_updates_auth_file(tmp_path: Path, monkeypatch):
     }
     auth_path.write_text(json.dumps(auth_data), encoding="utf-8")
 
-    def fake_urlopen(req, timeout=0):
+    def fake_urlopen(req, timeout=0, context=None):
         assert req.full_url == "https://auth.openai.com/oauth/token"
         body = json.loads(req.data.decode("utf-8"))
         assert body["grant_type"] == "refresh_token"
@@ -118,7 +118,7 @@ def test_fetch_openai_usage_refreshes_after_401(monkeypatch):
             return new_token, "acct-123"
         return old_token, "acct-123"
 
-    def fake_urlopen(req, timeout=0):
+    def fake_urlopen(req, timeout=0, context=None):
         calls.append(req.headers.get("Authorization", ""))
         if len(calls) == 1:
             raise urllib.error.HTTPError(
@@ -270,7 +270,7 @@ def test_fetch_claude_usage_auto_refreshes_idle_expired_token(monkeypatch):
         refresh_calls.append((path, refresh, expected_access))
         return "refreshed-token"
 
-    def fake_urlopen(req, timeout=0):
+    def fake_urlopen(req, timeout=0, context=None):
         authorization.append(req.get_header("Authorization"))
         return _FakeResponse(
             {
@@ -557,7 +557,7 @@ def test_refresh_claude_token_does_not_send_or_persist_scopes(tmp_path: Path, mo
     )
     captured: dict[str, object] = {}
 
-    def fake_urlopen(req, timeout=0):
+    def fake_urlopen(req, timeout=0, context=None):
         captured["body"] = json.loads(req.data.decode("utf-8"))
         return _FakeResponse({"access_token": "new-tok", "refresh_token": "r2", "expires_in": 3600, "scope": "user:inference"})
 
@@ -589,7 +589,7 @@ def test_refresh_claude_token_does_not_write_after_persist_read_failure(tmp_path
         encoding="utf-8",
     )
 
-    def fake_urlopen(req, timeout=0):
+    def fake_urlopen(req, timeout=0, context=None):
         cred.unlink()
         return _FakeResponse(
             {
@@ -631,7 +631,7 @@ def test_refresh_claude_token_yields_to_concurrent_owner_write(tmp_path: Path, m
         },
     }
 
-    def fake_urlopen(req, timeout=0):
+    def fake_urlopen(req, timeout=0, context=None):
         cred.write_text(json.dumps(owner_data), encoding="utf-8")
         return _FakeResponse(
             {
@@ -679,7 +679,7 @@ def test_refresh_claude_token_warns_when_profile_scope_dropped(tmp_path: Path, m
     monkeypatch.setattr(
         usage_routes.urllib.request,
         "urlopen",
-        lambda req, timeout=0: _FakeResponse({"access_token": "new", "expires_in": 3600, "scope": "user:inference"}),
+        lambda req, timeout=0, context=None: _FakeResponse({"access_token": "new", "expires_in": 3600, "scope": "user:inference"}),
     )
 
     with caplog.at_level(logging.WARNING):

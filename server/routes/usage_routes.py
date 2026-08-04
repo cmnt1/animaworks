@@ -14,6 +14,7 @@ import base64
 import json
 import logging
 import os
+import ssl
 import subprocess
 import tempfile
 import time
@@ -271,6 +272,28 @@ _ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 _ANTHROPIC_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 _ANTHROPIC_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"  # Claude Code public client
 
+_TOKEN_TLS_CONTEXT: ssl.SSLContext | None = None
+
+
+def _token_tls_context() -> ssl.SSLContext | None:
+    """SSL context backed by certifi for the token endpoint.
+
+    OpenSSL's path building against the Windows cert store picks an expired
+    cross-sign for platform.claude.com's Let's Encrypt chain (YE1, issued
+    2026-06) and fails with "certificate has expired"; certifi's bundle
+    validates it.  None falls back to the interpreter default.
+    """
+    global _TOKEN_TLS_CONTEXT
+    if _TOKEN_TLS_CONTEXT is None:
+        try:
+            import certifi
+
+            _TOKEN_TLS_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            logger.warning("certifi unavailable; token refresh uses default TLS trust", exc_info=True)
+            return None
+    return _TOKEN_TLS_CONTEXT
+
 
 def _refresh_claude_token(
     cred_path: Path,
@@ -302,7 +325,7 @@ def _refresh_claude_token(
             },
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10, context=_token_tls_context()) as resp:
             data = json.loads(resp.read().decode("utf-8"))
 
         new_access = data.get("access_token")
