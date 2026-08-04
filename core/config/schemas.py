@@ -126,10 +126,18 @@ DEFAULT_LOCAL_LLM_ROLE_PRESETS: dict[str, str] = {
 
 
 class LocalLLMConfig(BaseModel):
-    """User-facing defaults for local Ollama-backed models."""
+    """User-facing defaults for locally hosted models.
+
+    Historically this only described an Ollama endpoint. Deployments that put a
+    LiteLLM/vLLM gateway in front of local GPUs serve OpenAI-protocol models
+    instead, and those need a named credential (base URL + key) rather than the
+    bare ``base_url`` an Ollama provider infers. Set ``credential`` to route
+    through such a gateway; leave it empty for a plain Ollama endpoint.
+    """
 
     base_url: str = DEFAULT_LOCAL_LLM_BASE_URL
     default_model: str = DEFAULT_LOCAL_LLM_MODEL
+    credential: str = ""
     auto_apply_presets: bool = False
     presets: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_LOCAL_LLM_PRESETS))
     role_presets: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_LOCAL_LLM_ROLE_PRESETS))

@@ -536,7 +536,7 @@ async def _synthesize_prompt_via_llm(
 
     system_content = load_prompt(system_prompt_name)
     user_content = t(user_prompt_key, character_text=character_text)
-    model = _resolve_prompt_synthesis_model(anima_dir)
+    model, credential = _resolve_prompt_synthesis_model(anima_dir)
 
     try:
         result = (
@@ -544,6 +544,7 @@ async def _synthesize_prompt_via_llm(
                 user_content,
                 system_prompt=system_content,
                 model=model or "",
+                credential=credential,
                 max_tokens=256,
             )
             or ""
@@ -577,29 +578,34 @@ async def _synthesize_prompt_via_llm(
     return result
 
 
-def _resolve_prompt_synthesis_model(anima_dir: Path) -> str | None:
+def _resolve_prompt_synthesis_model(anima_dir: Path) -> tuple[str | None, str]:
     """Choose a prompt-synthesis model that avoids Anthropic API-key hard dependency.
 
     Priority:
-      1. Configured local Ollama default model
+      1. Configured local model (Ollama, or a gateway named by ``local_llm.credential``)
       2. The anima's own configured model (e.g. ``codex/...``)
       3. ``None`` to let one_shot_completion fall back to consolidation model
+
+    Returns the model and the credential name to bill it to ("" when the
+    provider prefix alone is enough to resolve one).
     """
     try:
         from core.config.models import load_config, load_model_config
 
         cfg = load_config()
-        local_model = getattr(getattr(cfg, "local_llm", None), "default_model", "") or ""
-        local_base = getattr(getattr(cfg, "local_llm", None), "base_url", "") or ""
-        if local_model and (local_base or os.environ.get("OLLAMA_SERVERS")):
-            return local_model
+        local_llm = getattr(cfg, "local_llm", None)
+        local_model = getattr(local_llm, "default_model", "") or ""
+        local_base = getattr(local_llm, "base_url", "") or ""
+        local_cred = getattr(local_llm, "credential", "") or ""
+        if local_model and (local_base or local_cred or os.environ.get("OLLAMA_SERVERS")):
+            return local_model, local_cred
 
         model_config = load_model_config(anima_dir)
         if getattr(model_config, "model", ""):
-            return str(model_config.model)
+            return str(model_config.model), ""
     except Exception:
         logger.debug("Prompt synthesis model resolution failed for %s", anima_dir.name, exc_info=True)
-    return None
+    return None, ""
 
 
 def _summarise_result(result: Any) -> dict[str, list[str]]:
