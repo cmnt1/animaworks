@@ -471,9 +471,10 @@ class LiteLLMExecutor(
                 cleanup_gate_marker(self._anima_dir)
                 all_response_text.append(final_text)
                 logger.debug("A final response at iteration=%d", iteration)
+                # Drain undelivered reminders; do not append to user-facing text.
                 final_reminder = self.reminder_queue.drain_formatted()
                 if final_reminder:
-                    all_response_text.append(final_reminder)
+                    logger.debug("Undelivered reminders at loop end: %s", final_reminder[:200])
                 return ExecutionResult(
                     text=join_answer_parts(all_response_text),
                     tool_call_records=all_tool_records,
