@@ -15,7 +15,7 @@ import logging
 import os
 import re
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -243,6 +243,35 @@ def strip_untagged_thinking(text: str) -> tuple[str, str]:
             return (thinking, response)
 
     return ("", text)
+
+
+_PARAGRAPH_SPLIT_RE = re.compile(r"\n{2,}")
+# Paragraphs shorter than this are never deduplicated — repeated separators
+# ("---", "|---|") and one-word lines are legitimate content, not restatements.
+_DEDUP_MIN_PARAGRAPH_LEN = 8
+
+
+def join_answer_parts(parts: Iterable[str]) -> str:
+    """Join answer fragments produced across tool-calling iterations.
+
+    A single reply is often written across several assistant turns: text
+    emitted alongside a tool call, then the final turn's text.  When a forced
+    retry (e.g. the completion gate) makes the model restate its answer, the
+    same paragraphs arrive twice, so paragraphs already present are skipped.
+    """
+    seen: set[str] = set()
+    merged: list[str] = []
+    for part in parts:
+        for paragraph in _PARAGRAPH_SPLIT_RE.split(part or ""):
+            text = paragraph.strip()
+            if not text:
+                continue
+            if len(text) >= _DEDUP_MIN_PARAGRAPH_LEN:
+                if text in seen:
+                    continue
+                seen.add(text)
+            merged.append(text)
+    return "\n\n".join(merged)
 
 
 class StreamingThinkFilter:

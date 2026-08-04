@@ -34,6 +34,7 @@ from core.execution.base import (
     StreamingThinkFilter,
     TokenUsage,
     ToolCallRecord,
+    join_answer_parts,
     resolve_streamed_leaked_thinking,
     strip_thinking_tags,
     strip_untagged_thinking,
@@ -151,10 +152,6 @@ class StreamingMixin:
 
         cleanup_gate_marker(self._anima_dir)
         _gate_attempted = False
-        # Answer text produced on the turn that skipped completion_gate.  The
-        # gate retry discards that turn's text from all_response_text, so it is
-        # kept here and restored if the retry itself yields nothing.
-        _gate_pending_text = ""
 
         # Inject synthetic thinking_blocks into prior assistant messages
         # that have tool_calls but no thinking_blocks.  Without this,
@@ -631,7 +628,8 @@ class StreamingMixin:
                         from core.i18n import t
 
                         _assist_text = "".join(iter_text_parts)
-                        _gate_pending_text = _assist_text
+                        if _assist_text.strip():
+                            all_response_text.append(_assist_text)
                         messages.append({"role": "assistant", "content": _assist_text})
                         messages.append(
                             {
@@ -647,7 +645,7 @@ class StreamingMixin:
                     if iter_text:
                         all_response_text.append(iter_text)
                     cleanup_gate_marker(self._anima_dir)
-                    full_text = "\n".join(all_response_text)
+                    full_text = join_answer_parts(all_response_text)
                     # Safety net: strip any residual <think> tags that the
                     # streaming filter missed (e.g. vLLM returning thinking
                     # in content without proper <think> opening tag). An orphan
@@ -687,17 +685,6 @@ class StreamingMixin:
                             yield {"type": "thinking_start"}
                             yield {"type": "thinking_delta", "text": _rc_text}
                             yield {"type": "thinking_end"}
-                    if not full_text.strip() and _gate_pending_text.strip():
-                        # The gate retry produced nothing usable; fall back to
-                        # the answer written before the gate reminder.  Its
-                        # deltas already reached the client, so only the final
-                        # full_text needs restoring — no re-yield.
-                        full_text = _gate_pending_text
-                        logger.warning(
-                            "A stream: gate retry returned empty at iteration=%d; restoring pre-gate answer (%d chars)",
-                            iteration,
-                            len(full_text),
-                        )
                     _empty_final_response = not full_text.strip()
                     if _empty_final_response:
                         record_finalization_failure(
@@ -827,6 +814,14 @@ class StreamingMixin:
                             },
                         }
                     )
+                # Text written alongside the tool call is part of the reply the
+                # user already saw streamed — keep it in the final answer.
+                # ``iter_text_parts`` may have been cleared by the text-format
+                # tool call detection above, so re-read it here.
+                iter_text = "".join(iter_text_parts)
+                if iter_text.strip():
+                    all_response_text.append(iter_text)
+
                 assistant_msg: dict[str, Any] = {
                     "role": "assistant",
                     "content": iter_text or None,
@@ -869,7 +864,7 @@ class StreamingMixin:
                 reason="grace_turn_exhausted",
             )
         # Prefer any answer text already produced over the generic error.
-        _salvaged = "\n".join([t for t in [*all_response_text, _gate_pending_text] if t.strip()])
+        _salvaged = join_answer_parts(all_response_text)
         if _salvaged.strip():
             full_text = _salvaged
             logger.warning(
@@ -937,8 +932,6 @@ class StreamingMixin:
 
         _cg_cleanup(self._anima_dir)
         _gate_attempted_ol = False
-        # See _gate_pending_text in the token-level path.
-        _gate_pending_text_ol = ""
 
         async with stream_error_boundary(
             all_response_text,
@@ -1130,7 +1123,7 @@ class StreamingMixin:
                     iter_text += _truncation_msg
                     all_response_text.append(iter_text)
                     yield {"type": "text_delta", "text": iter_text}
-                    full_text = "\n".join(all_response_text)
+                    full_text = join_answer_parts(all_response_text)
                     yield {
                         "type": "done",
                         "full_text": full_text,
@@ -1193,7 +1186,8 @@ class StreamingMixin:
                         _gate_attempted_ol = True
                         from core.i18n import t
 
-                        _gate_pending_text_ol = iter_text
+                        if iter_text.strip():
+                            all_response_text.append(iter_text)
                         messages.append({"role": "assistant", "content": message.content or ""})
                         messages.append(
                             {
@@ -1211,15 +1205,7 @@ class StreamingMixin:
 
                     if iter_text and not _ol_text_tc:
                         all_response_text.append(iter_text)
-                    full_text = "\n".join(all_response_text)
-                    if not full_text.strip() and _gate_pending_text_ol.strip():
-                        full_text = _gate_pending_text_ol
-                        logger.warning(
-                            "A ollama stream: gate retry returned empty at iteration=%d; "
-                            "restoring pre-gate answer (%d chars)",
-                            iteration,
-                            len(full_text),
-                        )
+                    full_text = join_answer_parts(all_response_text)
                     _empty_final_response_ol = not full_text.strip()
                     if _empty_final_response_ol:
                         record_finalization_failure(
@@ -1367,7 +1353,7 @@ class StreamingMixin:
                 mode="A ollama stream",
                 reason="grace_turn_exhausted",
             )
-        _salvaged_ol = "\n".join([t for t in [*all_response_text, _gate_pending_text_ol] if t.strip()])
+        _salvaged_ol = join_answer_parts(all_response_text)
         if _salvaged_ol.strip():
             full_text = _salvaged_ol
             logger.warning(

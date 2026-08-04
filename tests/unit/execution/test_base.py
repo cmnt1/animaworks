@@ -11,11 +11,10 @@ from unittest.mock import patch
 
 import pytest
 
-from core.execution.base import BaseExecutor, ExecutionResult
+from core.execution.base import BaseExecutor, ExecutionResult, join_answer_parts
+from core.memory.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ModelConfig
-from core.memory.shortterm import ShortTermMemory
-
 
 # ── ExecutionResult ───────────────────────────────────────────
 
@@ -90,7 +89,9 @@ class TestBaseExecutor:
 
     def test_resolve_api_key_prefers_config_over_env(self, tmp_path: Path):
         config = ModelConfig(
-            model="test", api_key="config-key", api_key_env="MY_TEST_KEY",
+            model="test",
+            api_key="config-key",
+            api_key_env="MY_TEST_KEY",
         )
         executor = ConcreteExecutor(model_config=config, anima_dir=tmp_path)
         with patch.dict(os.environ, {"MY_TEST_KEY": "env-key"}):
@@ -104,7 +105,8 @@ class TestBaseExecutor:
     def test_cannot_instantiate_abstract(self, tmp_path: Path):
         with pytest.raises(TypeError):
             BaseExecutor(  # type: ignore[abstract]
-                model_config=ModelConfig(), anima_dir=tmp_path,
+                model_config=ModelConfig(),
+                anima_dir=tmp_path,
             )
 
 
@@ -190,3 +192,26 @@ class TestToolCallRecord:
         assert record.input_summary == ""
         assert record.result_summary == ""
         assert record.is_error is False
+
+
+# ── join_answer_parts ─────────────────────────────────────────
+
+
+class TestJoinAnswerParts:
+    def test_joins_parts_with_blank_line(self):
+        assert join_answer_parts(["調べてくるわね。", "結果はこう。"]) == "調べてくるわね。\n\n結果はこう。"
+
+    def test_skips_empty_parts(self):
+        assert join_answer_parts(["", "   ", "本文"]) == "本文"
+
+    def test_drops_restated_paragraphs(self):
+        """A forced retry that restates the answer must not duplicate it."""
+        body = "導入の一文です。\n\n本体の長い説明。\n\n締めの一文です。"
+        recap = "導入の一文です。\n\n締めの一文です。"
+        assert join_answer_parts([body, recap]) == body
+
+    def test_keeps_new_paragraphs_from_retry(self):
+        assert join_answer_parts(["前半の答え。", "追加で分かったこと。"]) == "前半の答え。\n\n追加で分かったこと。"
+
+    def test_short_paragraphs_are_never_deduplicated(self):
+        assert join_answer_parts(["---", "---"]) == "---\n\n---"

@@ -57,6 +57,7 @@ from core.execution.base import (
     ExecutionResult,
     TokenUsage,
     ToolCallRecord,
+    join_answer_parts,
     strip_thinking_tags,
 )
 from core.execution.error_classifier import (
@@ -196,18 +197,13 @@ class LiteLLMExecutor(
         usage_acc = TokenUsage()
         cleanup_gate_marker(self._anima_dir)
         _gate_attempted = False
-        # Answer text produced on the turn that skipped completion_gate.  The
-        # gate retry discards that turn's text, so it is kept here and restored
-        # if the retry itself yields nothing.
-        _gate_pending_text = ""
         _empty_tracker = EmptyResponseTracker()
 
         def _salvage_text() -> str:
             """Prefer answer text already produced over the generic error."""
-            parts = [t for t in [*all_response_text, _gate_pending_text] if t.strip()]
-            if not parts:
+            salvaged = join_answer_parts(all_response_text)
+            if not salvaged:
                 return FINAL_RESPONSE_ERROR_TEXT
-            salvaged = "\n".join(parts)
             logger.warning("A: no final answer; salvaging %d chars of prior text", len(salvaged))
             return salvaged
 
@@ -404,7 +400,9 @@ class LiteLLMExecutor(
                     _gate_attempted = True
                     from core.i18n import t
 
-                    _, _gate_pending_text = strip_thinking_tags(message.content or "")
+                    _, _gate_text = strip_thinking_tags(message.content or "")
+                    if _gate_text.strip():
+                        all_response_text.append(_gate_text)
                     messages.append({"role": "assistant", "content": message.content or ""})
                     messages.append(
                         {
@@ -476,7 +474,7 @@ class LiteLLMExecutor(
                 if final_reminder:
                     all_response_text.append(final_reminder)
                 return ExecutionResult(
-                    text="\n".join(all_response_text),
+                    text=join_answer_parts(all_response_text),
                     tool_call_records=all_tool_records,
                     usage=usage_acc,
                     truncated=is_final_iteration,
@@ -609,6 +607,9 @@ class LiteLLMExecutor(
                 )
             if _content:
                 _, _content = strip_thinking_tags(_content)
+                # Text written alongside the tool call belongs to the reply.
+                if _content.strip():
+                    all_response_text.append(_content)
             messages.append(
                 {
                     "role": "assistant",
