@@ -66,6 +66,24 @@ Mode A/B の統合スキーマでは **PascalCase 名**です。`ToolHandler` �
 - Anima の記憶ツリー内: **`read_memory_file` / `write_memory_file` / `archive_memory_file`**（相対パス）。プロジェクト全体の絶対パス操作が必要なときに Read / Write を使う、という住み分け。
 - 上司が配下 Anima の管理ファイル（`cron.md`, `heartbeat.md`, `injection.md`, `status.json`）を編集する場合も、Read / Write / Edit / apply_patch / `Path.write_text` ではなく **write memoryツール**を使う。パスは `../{anima_name}/cron.md` のように指定する。
 
+### 探索範囲の上限（暴走防止）
+
+`~/.animaworks` は数十万エントリ規模で、`shared/` 配下には外部ディレクトリへの symlink が多数あります。**ツリー全体を再帰走査してはいけません。**
+
+禁止（いずれも終わりません）:
+
+- `glob.glob('/home/main/.animaworks/**/...', recursive=True)` — Python の `**` は symlink 先へも降りるため、実質無限に広がる
+- `os.walk('/home/main/.animaworks')` を上位から回す
+- `find ~/.animaworks`、`du -sh ~/.animaworks`、`rg` をパス指定なしで `~/.animaworks` 直下から
+
+代わりに:
+
+- **正確なパスが分かっているなら直接開く。** 存在確認は `os.path.exists()` で十分で、探索は不要
+- 場所が不確かなときは `ls` で1階層ずつ降りる。深さを絞るなら `find <dir> -maxdepth 2`
+- 内容検索は Grep ツール、パス検索は Glob ツールを使い、**必ず具体的なサブディレクトリを起点にする**（`animas/<name>/state/` など）
+
+> 2026-08-04、この再帰 glob が原因で補助スクリプトが CPU 100% のまま10時間以上回り続けた実績があります。1回の探索が数秒で返らないなら、探索範囲の指定が間違っていると考えてください。
+
 ## AnimaWorks 内蔵ツール（カテゴリ別）
 
 以下は `ToolHandler` が直接処理するツールの要約です（条件付きのものあり）。

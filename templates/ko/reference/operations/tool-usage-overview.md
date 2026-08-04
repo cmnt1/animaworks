@@ -27,6 +27,24 @@ description: "도구 체계 개요 및 사용 가이드"
 - 검색: Grep(내용 검색), Glob(파일명 검색)을 우선 사용하세요. Bash를 통한 grep/find는 비권장
 - 메모리 디렉터리 내 파일: read_memory_file / write_memory_file을 사용하세요 (Read/Write가 아님)
 
+### 탐색 범위 제한 (폭주 방지)
+
+`~/.animaworks`는 수십만 개의 항목을 담고 있으며, `shared/` 아래에는 외부 디렉터리를 가리키는 심볼릭 링크가 많습니다. **트리 전체를 재귀적으로 순회하지 마세요.**
+
+금지 (어느 것도 끝나지 않습니다):
+
+- `glob.glob('/home/main/.animaworks/**/...', recursive=True)` — Python의 `**`는 심볼릭 링크까지 따라 내려가므로 사실상 무한히 확장됩니다
+- 최상위에서 시작하는 `os.walk('/home/main/.animaworks')`
+- 경로를 좁히지 않은 `find ~/.animaworks`, `du -sh ~/.animaworks`, `~/.animaworks` 기준의 `rg`
+
+대신:
+
+- **정확한 경로를 안다면 그냥 여세요.** 존재 확인은 `os.path.exists()`로 충분하며 탐색이 필요 없습니다
+- 위치가 불확실하면 `ls`로 한 단계씩 내려가세요. 깊이를 제한하려면 `find <dir> -maxdepth 2`를 사용합니다
+- 내용 검색은 Grep 도구, 경로 검색은 Glob 도구를 사용하되 **항상 구체적인 하위 디렉터리를 기점으로** 하세요 (예: `animas/<name>/state/`)
+
+> 2026-08-04에 바로 이 재귀 glob 때문에 보조 스크립트가 CPU 100%로 10시간 넘게 돌아간 사례가 있습니다. 한 번의 탐색이 몇 초 안에 끝나지 않는다면 탐색 기점이 잘못된 것입니다.
+
 ## AnimaWorks 필수 도구
 
 ### 메모리
