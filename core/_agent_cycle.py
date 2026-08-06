@@ -1181,6 +1181,7 @@ class CycleMixin:
             "cache_write_tokens": 0,
         }
         terminal_error_message = ""
+        terminal_error_reason = ""
         stream_truncated = False
         current_prompt = prompt
         current_system_prompt = system_prompt
@@ -1222,6 +1223,7 @@ class CycleMixin:
                         stream_succeeded = True
                     elif chunk["type"] == "error" and chunk.get("terminal") is True:
                         terminal_error_message = chunk.get("message", "[Terminal LLM error]")
+                        terminal_error_reason = str(chunk.get("reason") or "")
                         yield chunk
                     elif chunk["type"] == "tool_end" and checkpoint_enabled:
                         record = chunk.get("record")
@@ -1486,6 +1488,7 @@ class CycleMixin:
                 trigger=trigger,
                 action=final_action,
                 summary=final_summary,
+                reason=terminal_error_reason,
                 thread_id=thread_id,
                 thinking_text=thinking_text[:10000],
                 duration_ms=duration_ms,
