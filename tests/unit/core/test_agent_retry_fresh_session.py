@@ -379,3 +379,4 @@ class TestTerminalErrorChunk:
         cycle_done = next(e for e in events if e.get("type") == "cycle_done")
         assert cycle_done["cycle_result"]["action"] == "error"
         assert cycle_done["cycle_result"]["summary"] == ("[Codex turn failed: usageLimitExceeded]")
+        assert cycle_done["cycle_result"]["reason"] == "quota_exhausted"

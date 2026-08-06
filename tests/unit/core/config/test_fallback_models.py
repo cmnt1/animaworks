@@ -210,6 +210,30 @@ class TestResolveEffectiveModelConfig:
         assert result.mode_s_auth is None
         assert primary_config.model == "codex/gpt-5.4"
 
+    def test_blocked_grok_primary_selects_sonnet_fallback(
+        self,
+        fallback_config: AnimaWorksConfig,
+    ) -> None:
+        primary = ModelConfig(
+            model="grok/grok-4.5",
+            execution_mode="X",
+            resolved_mode="X",
+            credential="grok",
+            fallback_models=["s:claude-sonnet-4-6"],
+        )
+        guard = _guard_with_blocks({"grok:grok": 120.0})
+        with (
+            patch("core.config.io.load_config", return_value=fallback_config),
+            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+        ):
+            result = resolve_effective_model_config(primary)
+
+        assert result.model == "claude-sonnet-4-6"
+        assert result.execution_mode == "S"
+        assert result.resolved_mode == "S"
+        assert result.mode_s_auth == "max"
+        assert guard.blocked_remaining.call_args_list[0].args == ("grok:grok",)
+
     def test_blocked_first_candidate_selects_second(
         self,
         fallback_config: AnimaWorksConfig,

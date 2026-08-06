@@ -20,7 +20,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.config.schemas import LlmRateGuardConfig
+from core.config.schemas import (
+    AnimaWorksConfig,
+    CredentialConfig,
+    LlmRateGuardConfig,
+)
 from core.exceptions import LLMAPIError
 from core.execution.rate_guard import LlmRateGuard
 from core.schemas import ModelConfig
@@ -175,3 +179,34 @@ def test_quota_block_is_not_clamped_to_transient_max(
     guard.report_block("openai:codex", 1800, "quota_exhausted")
 
     assert guard.blocked_remaining("openai:codex") > 1700
+
+
+def test_grok_quota_block_selects_sonnet_fallback(
+    shared_data_dir: Path,
+) -> None:
+    from core.config.model_config import resolve_effective_model_config
+    from core.execution.grok_cli import _grok_error_metadata
+
+    primary = ModelConfig(
+        model="grok/grok-4.5",
+        execution_mode="X",
+        resolved_mode="X",
+        credential="grok",
+        fallback_models=["s:claude-sonnet-4-6"],
+    )
+    config = AnimaWorksConfig(
+        credentials={
+            "anthropic": CredentialConfig(type="claude_code_login"),
+        },
+    )
+    message = "API error (status 402 Payment Required): Grok Build usage balance exhausted"
+
+    with patch("core.config.io.load_config", return_value=config):
+        metadata = _grok_error_metadata(message, primary.model)
+        effective = resolve_effective_model_config(primary)
+
+    state = json.loads(_guard_file(shared_data_dir).read_text(encoding="utf-8"))
+    assert metadata == {"terminal": True, "reason": "quota_exhausted"}
+    assert state["grok:grok"]["reason"] == "quota_exhausted"
+    assert effective.model == "claude-sonnet-4-6"
+    assert effective.resolved_mode == "S"
