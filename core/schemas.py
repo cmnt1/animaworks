@@ -194,6 +194,7 @@ class CycleResult(BaseModel):
     trigger: str
     action: str
     summary: str = ""
+    reason: str = ""
     thinking_text: str = ""
     session_type: str = ""
     thread_id: str = "default"

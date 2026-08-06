@@ -45,7 +45,8 @@ async def test_blocking_terminal_error_retries_once_with_fallback() -> None:
             CycleResult(
                 trigger="message:human",
                 action="error",
-                summary="[Codex turn failed: usageLimitExceeded]",
+                summary="[Grok CLI Error: Internal error]",
+                reason="quota_exhausted",
             ),
             CycleResult(
                 trigger="message:human",
@@ -79,10 +80,7 @@ async def test_blocking_terminal_error_retries_once_with_fallback() -> None:
 
     assert result.summary == "fallback succeeded"
     assert owner.agent.run_cycle.await_count == 2
-    overrides = [
-        call.kwargs["model_config_override"]
-        for call in owner.agent.run_cycle.await_args_list
-    ]
+    overrides = [call.kwargs["model_config_override"] for call in owner.agent.run_cycle.await_args_list]
     assert overrides == [primary, fallback]
     owner._activity.log.assert_called_once()
     assert owner._activity.log.call_args.args == ("model_fallback",)
@@ -127,7 +125,13 @@ async def test_blocking_retry_failure_uses_normal_error_path_without_third_attem
 
 
 @pytest.mark.asyncio
-async def test_stream_terminal_chunk_is_suppressed_and_retried_once() -> None:
+@pytest.mark.parametrize(
+    "reason",
+    ["quota_exhausted", "rate_limit", "overloaded"],
+)
+async def test_stream_terminal_chunk_is_suppressed_and_retried_once(
+    reason: str,
+) -> None:
     primary, fallback = _configs()
     owner = MagicMock()
     seen_configs: list[ModelConfig] = []
@@ -138,9 +142,9 @@ async def test_stream_terminal_chunk_is_suppressed_and_retried_once() -> None:
         if len(seen_configs) == 1:
             yield {
                 "type": "error",
-                "message": "[Codex turn failed: usageLimitExceeded]",
+                "message": "[Grok CLI Error: Internal error]",
                 "terminal": True,
-                "reason": "quota_exhausted",
+                "reason": reason,
             }
             return
         yield {"type": "text_delta", "text": "ok"}

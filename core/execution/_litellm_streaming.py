@@ -148,6 +148,7 @@ class StreamingMixin:
             cleanup_gate_marker,
             completion_gate_applies_to_trigger,
             gate_marker_exists,
+            is_gate_only_turn,
         )
 
         cleanup_gate_marker(self._anima_dir)
@@ -819,7 +820,9 @@ class StreamingMixin:
                 # ``iter_text_parts`` may have been cleared by the text-format
                 # tool call detection above, so re-read it here.
                 iter_text = "".join(iter_text_parts)
-                if iter_text.strip():
+                if iter_text.strip() and not (
+                    all_response_text and is_gate_only_turn([tc["name"] for tc in parsed_calls])
+                ):
                     all_response_text.append(iter_text)
 
                 assistant_msg: dict[str, Any] = {
@@ -928,6 +931,9 @@ class StreamingMixin:
         )
         from core.execution._completion_gate import (
             gate_marker_exists as _cg_exists,
+        )
+        from core.execution._completion_gate import (
+            is_gate_only_turn as _cg_only_turn,
         )
 
         _cg_cleanup(self._anima_dir)
@@ -1149,7 +1155,9 @@ class StreamingMixin:
                     _ol_text_tc = try_parse_text_tool_call(iter_text, iter_tools)
 
                 if iter_text and not _ol_text_tc:
-                    if tool_calls:
+                    if tool_calls and not (
+                        all_response_text and _cg_only_turn([tc.function.name or "" for tc in tool_calls])
+                    ):
                         all_response_text.append(iter_text)
                     yield {"type": "text_delta", "text": iter_text}
 

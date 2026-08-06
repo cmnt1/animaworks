@@ -800,10 +800,10 @@ class AssistedExecutor(BaseExecutor):
                 grace_text = FINAL_RESPONSE_ERROR_TEXT
             all_response_text.append(grace_text)
 
-        # ── Final drain: deliver any undelivered reminders ──
+        # Drain undelivered reminders; do not append to user-facing text.
         final_reminder = self.reminder_queue.drain_formatted()
         if final_reminder:
-            all_response_text.append(final_reminder)
+            logger.debug("Undelivered reminders at loop end: %s", final_reminder[:200])
         final_text = "\n".join(filter(None, all_response_text))
         _, final_text = strip_thinking_tags(final_text)
         logger.info("Mode B text-loop END total_len=%d", len(final_text))

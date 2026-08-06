@@ -51,6 +51,7 @@ _CHAT_FALLBACK_REASONS = frozenset(
     {
         FailoverReason.QUOTA_EXHAUSTED,
         FailoverReason.RATE_LIMIT,
+        FailoverReason.OVERLOADED,
     }
 )
 

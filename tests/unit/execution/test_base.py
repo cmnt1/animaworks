@@ -213,5 +213,11 @@ class TestJoinAnswerParts:
     def test_keeps_new_paragraphs_from_retry(self):
         assert join_answer_parts(["前半の答え。", "追加で分かったこと。"]) == "前半の答え。\n\n追加で分かったこと。"
 
-    def test_short_paragraphs_are_never_deduplicated(self):
-        assert join_answer_parts(["---", "---"]) == "---\n\n---"
+    def test_adjacent_duplicate_short_paragraphs_are_collapsed(self):
+        assert join_answer_parts(["本文A\n\n---", "---\n\n本文B"]) == "本文A\n\n---\n\n本文B"
+
+    def test_short_paragraph_may_recur_after_other_content(self):
+        assert join_answer_parts(["前段\n\n---\n\n中段", "---\n\n後段"]) == "前段\n\n---\n\n中段\n\n---\n\n後段"
+
+    def test_trailing_section_rules_are_dropped(self):
+        assert join_answer_parts(["結論。\n\n---", "---", "---"]) == "結論。"

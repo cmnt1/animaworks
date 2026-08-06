@@ -28,6 +28,7 @@ from core.execution.base import (
     ExecutionResult,
     ToolCallRecord,
     _truncate_for_record,
+    join_answer_parts,
 )
 from core.i18n import t
 from core.memory.shortterm import ShortTermMemory
@@ -524,10 +525,19 @@ class CursorAgentExecutor(BaseExecutor):
         cmd = self._build_command(combined_prompt, resume_chat_id=resume_chat_id)
         env = self._build_env()
 
-        accumulated_text = ""
+        answer_parts: list[str] = []
+        current_turn_chunks: list[str] = []
         tool_records: list[ToolCallRecord] = []
         session_id: str | None = None
         failed = False
+
+        def _flush_current_turn() -> None:
+            if current_turn_chunks:
+                answer_parts.append("".join(current_turn_chunks))
+                current_turn_chunks.clear()
+
+        def _full_text() -> str:
+            return join_answer_parts([*answer_parts, "".join(current_turn_chunks)])
 
         proc: asyncio.subprocess.Process | None = None
         try:
@@ -549,7 +559,7 @@ class CursorAgentExecutor(BaseExecutor):
                             await self._kill_process(proc)
                             return (
                                 ExecutionResult(
-                                    text=accumulated_text or "[Session interrupted by user]",
+                                    text=_full_text() or "[Session interrupted by user]",
                                     tool_call_records=tool_records,
                                 ),
                                 session_id,
@@ -576,9 +586,10 @@ class CursorAgentExecutor(BaseExecutor):
                                 elif isinstance(item, str):
                                     parts.append(item)
                             if parts:
-                                accumulated_text = "".join(parts)
+                                current_turn_chunks.extend(parts)
 
                         elif etype == "tool_call":
+                            _flush_current_turn()
                             subtype = event.get("subtype", "")
                             tc = event.get("tool_call", {})
                             if subtype == "completed":
@@ -588,16 +599,17 @@ class CursorAgentExecutor(BaseExecutor):
 
                         elif etype == "result":
                             result_text = event.get("result", "")
-                            if result_text and not accumulated_text:
-                                accumulated_text = result_text
+                            if result_text and not _full_text():
+                                current_turn_chunks.append(result_text)
 
             except TimeoutError:
                 logger.warning("Cursor agent timed out after %ds", _DEFAULT_TIMEOUT_SECONDS)
                 await self._kill_process(proc)
                 timeout_msg = t("cursor_agent.timeout", timeout=_DEFAULT_TIMEOUT_SECONDS)
+                full_text = _full_text()
                 return (
                     ExecutionResult(
-                        text=accumulated_text + f"\n\n{timeout_msg}" if accumulated_text else timeout_msg,
+                        text=full_text + f"\n\n{timeout_msg}" if full_text else timeout_msg,
                         tool_call_records=tool_records,
                     ),
                     session_id,
@@ -621,8 +633,8 @@ class CursorAgentExecutor(BaseExecutor):
                     or "unauthorized" in stderr_text.lower()
                 ):
                     return (ExecutionResult(text=t("cursor_agent.not_authenticated")), session_id, False)
-                if not accumulated_text:
-                    accumulated_text = f"[Cursor Agent Error (exit {proc.returncode}): {stderr_text[:500]}]"
+                if not _full_text():
+                    current_turn_chunks.append(f"[Cursor Agent Error (exit {proc.returncode}): {stderr_text[:500]}]")
 
         except FileNotFoundError:
             return (ExecutionResult(text=t("cursor_agent.not_installed")), None, True)
@@ -646,7 +658,7 @@ class CursorAgentExecutor(BaseExecutor):
         replied_to = self._read_replied_to_file()
         return (
             ExecutionResult(
-                text=accumulated_text,
+                text=_full_text(),
                 replied_to_from_transcript=replied_to,
                 tool_call_records=tool_records,
             ),

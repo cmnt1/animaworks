@@ -1123,6 +1123,37 @@ class TestBlockingExecution:
         assert _load_thread_id(anima_dir, "chat") == "thread-001"
 
     @pytest.mark.asyncio
+    async def test_execute_keeps_text_from_tool_turn(self, executor):
+        before_tool = MagicMock(spec=["type", "text"])
+        before_tool.type = "agent_message"
+        before_tool.text = "Context before the tool call."
+        tool_item = MagicMock(spec=["type", "id", "command", "aggregated_output", "exit_code"])
+        tool_item.type = "command_execution"
+        tool_item.id = "cmd-1"
+        tool_item.command = "printf result"
+        tool_item.aggregated_output = "result"
+        tool_item.exit_code = 0
+        final_item = MagicMock(spec=["type", "text"])
+        final_item.type = "agent_message"
+        final_item.text = "Final answer after the tool call."
+
+        mock_turn = MagicMock()
+        mock_turn.final_response = final_item.text
+        mock_turn.items = [before_tool, tool_item, final_item]
+        mock_turn.usage = None
+
+        mock_thread = MagicMock()
+        mock_thread.run = AsyncMock(return_value=mock_turn)
+        mock_thread.id = "thread-tool-text"
+        mock_codex = _mock_codex(mock_thread)
+
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            result = await executor.execute(prompt="use a tool")
+
+        assert result.text == "Context before the tool call.\n\nFinal answer after the tool call."
+        assert len(result.tool_call_records) == 1
+
+    @pytest.mark.asyncio
     async def test_execute_saves_thread_id(self, executor, anima_dir):
         mock_turn = MagicMock()
         mock_turn.final_response = "OK"

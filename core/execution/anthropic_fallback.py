@@ -437,10 +437,10 @@ class AnthropicFallbackExecutor(BaseExecutor):
                     logger.error("Anthropic returned no answer at iteration=%d", iteration)
                     final_text = FINAL_RESPONSE_ERROR_TEXT
                 all_response_text.append(final_text)
-                # ── Final drain: deliver any undelivered reminders ──
+                # Drain undelivered reminders; do not append to user-facing text.
                 final_reminder = self.reminder_queue.drain_formatted()
                 if final_reminder:
-                    all_response_text.append(final_reminder)
+                    logger.debug("Undelivered reminders at loop end: %s", final_reminder[:200])
                 await _close_client_quietly(client)
                 return ExecutionResult(
                     text="\n".join(all_response_text),

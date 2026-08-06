@@ -15,6 +15,7 @@ import logging
 import os
 import signal
 import tomllib
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
@@ -25,8 +26,10 @@ from core.execution.grok_cli import (
     _MAX_RESUME_TURNS,
     GrokCLIExecutor,
     _find_grok_binary,
+    _grok_error_metadata,
     _load_session_id,
     _resolve_grok_model,
+    _resolve_real_error,
     _resolve_session_type,
     _save_session_id,
     _session_id_path,
@@ -34,6 +37,8 @@ from core.execution.grok_cli import (
 )
 from core.prompt.context import ContextTracker
 from core.schemas import ModelConfig
+
+_REAL_GROK_QUOTA_ERROR = "API error (status 402 Payment Required): Grok Build usage balance exhausted"
 
 
 @pytest.fixture
@@ -209,6 +214,113 @@ class TestDiscoveryAndHelpers:
     def test_model_prefix(self, model: str, expected: str):
         assert _resolve_grok_model(model) == expected
 
+
+class TestResolveRealError:
+    _SINCE = datetime(2026, 8, 6, 6, 0, tzinfo=UTC).timestamp()
+
+    @staticmethod
+    def _entry(
+        *,
+        ts: str,
+        pid: int = 1234,
+        sid: str = "session-new",
+        message: str = _REAL_GROK_QUOTA_ERROR,
+    ) -> dict:
+        return {
+            "ts": ts,
+            "lvl": "error",
+            "pid": pid,
+            "sid": sid,
+            "msg": "shell.turn.inference_failed",
+            "ctx": {"status_code": 402, "message": message},
+        }
+
+    @staticmethod
+    def _write(path: Path, *entries: dict | str) -> None:
+        lines = [entry if isinstance(entry, str) else json.dumps(entry) for entry in entries]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def test_pid_match_returns_newest_context(self, tmp_path: Path) -> None:
+        path = tmp_path / "unified.jsonl"
+        self._write(
+            path,
+            self._entry(ts="2026-08-06T06:00:01Z", message="older"),
+            self._entry(ts="2026-08-06T06:00:03Z", message="newest"),
+        )
+
+        assert _resolve_real_error(1234, "other-session", self._SINCE, path) == {
+            "status_code": 402,
+            "message": "newest",
+        }
+
+    def test_sid_match_accepts_different_pid(self, tmp_path: Path) -> None:
+        path = tmp_path / "unified.jsonl"
+        self._write(path, self._entry(ts="2026-08-06T06:00:01Z", pid=9999))
+
+        assert _resolve_real_error(1234, "session-new", self._SINCE, path) == {
+            "status_code": 402,
+            "message": _REAL_GROK_QUOTA_ERROR,
+        }
+
+    def test_entry_outside_time_window_is_ignored(self, tmp_path: Path) -> None:
+        path = tmp_path / "unified.jsonl"
+        self._write(path, self._entry(ts="2026-08-06T05:59:50Z"))
+
+        assert _resolve_real_error(1234, "session-new", self._SINCE, path) is None
+
+    def test_broken_line_is_skipped(self, tmp_path: Path) -> None:
+        path = tmp_path / "unified.jsonl"
+        self._write(
+            path,
+            "{broken json",
+            self._entry(ts="2026-08-06T06:00:01Z"),
+        )
+
+        assert _resolve_real_error(1234, "", self._SINCE, path) is not None
+
+    def test_missing_file_fails_open(self, tmp_path: Path) -> None:
+        assert (
+            _resolve_real_error(
+                1234,
+                "session-new",
+                self._SINCE,
+                tmp_path / "missing.jsonl",
+            )
+            is None
+        )
+
+    def test_only_tail_256kb_is_considered(self, tmp_path: Path) -> None:
+        path = tmp_path / "unified.jsonl"
+        early = json.dumps(self._entry(ts="2026-08-06T06:00:01Z")).encode()
+        path.write_bytes(early + b"\n" + b"x" * (300 * 1024) + b"\n")
+
+        assert _resolve_real_error(1234, "session-new", self._SINCE, path) is None
+
+
+class TestGrokFailureMetadata:
+    def test_quota_error_records_real_guard_block(self, tmp_path: Path) -> None:
+        from core.config.schemas import LlmRateGuardConfig
+        from core.execution.rate_guard import LlmRateGuard
+
+        guard_path = tmp_path / "llm_rate_guard.json"
+        guard = LlmRateGuard(
+            config=LlmRateGuardConfig(quota_block_seconds=1800),
+            path=guard_path,
+        )
+
+        with patch("core.execution.grok_cli.get_rate_guard", return_value=guard):
+            metadata = _grok_error_metadata(
+                _REAL_GROK_QUOTA_ERROR,
+                "grok/grok-4.5",
+            )
+
+        state = json.loads(guard_path.read_text(encoding="utf-8"))
+        assert metadata == {"terminal": True, "reason": "quota_exhausted"}
+        assert state["grok:grok"]["reason"] == "quota_exhausted"
+        assert guard.blocked_remaining("grok:grok") > 1700
+
+
+class TestDiscoveryAndHelperEnvironment:
     def test_mcp_env_passes_embed_and_vector_urls(self, executor: GrokCLIExecutor):
         """MCP server env must include embed/vector URLs so it delegates over
         HTTP instead of loading SentenceTransformer models in-process
@@ -951,6 +1063,47 @@ class TestSessions:
 
 
 class TestTerminalPaths:
+    @pytest.mark.asyncio
+    async def test_real_quota_error_precedes_legacy_text_and_done(
+        self,
+        executor: GrokCLIExecutor,
+    ) -> None:
+        proc = _FakeProc(
+            [
+                {"id": 1, "result": {}},
+                {"id": 2, "result": {"sessionId": "session-new"}},
+                {"id": 3, "error": {"code": -32603, "message": "Internal error"}},
+            ]
+        )
+        guard = MagicMock()
+        guard.config.default_block_seconds = 60
+        guard.config.quota_block_seconds = 1800
+        with (
+            patch(
+                "core.execution.grok_cli._resolve_real_error",
+                return_value={
+                    "status_code": 402,
+                    "message": _REAL_GROK_QUOTA_ERROR,
+                },
+            ),
+            patch("core.execution.grok_cli.get_rate_guard", return_value=guard),
+        ):
+            events = await _stream(executor, proc)
+
+        error_index = next(i for i, event in enumerate(events) if event["type"] == "error")
+        text_index = next(i for i, event in enumerate(events) if event["type"] == "text_delta")
+        error = events[error_index]
+        assert error_index < text_index
+        assert error["message"] == f"[Grok CLI Error: {_REAL_GROK_QUOTA_ERROR}]"
+        assert error["terminal"] is True
+        assert error["reason"] == "quota_exhausted"
+        assert events[-1]["type"] == "done"
+        guard.report_block.assert_called_once_with(
+            "grok:grok",
+            1800,
+            "quota_exhausted",
+        )
+
     @pytest.mark.asyncio
     async def test_not_installed_done_once(self, executor: GrokCLIExecutor):
         with patch("core.execution.grok_cli._find_grok_binary", return_value=None):

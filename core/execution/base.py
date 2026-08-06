@@ -246,9 +246,11 @@ def strip_untagged_thinking(text: str) -> tuple[str, str]:
 
 
 _PARAGRAPH_SPLIT_RE = re.compile(r"\n{2,}")
-# Paragraphs shorter than this are never deduplicated — repeated separators
-# ("---", "|---|") and one-word lines are legitimate content, not restatements.
+# Paragraphs shorter than this are deduplicated only against their immediate
+# neighbour — a short line ("はい。", "---") may legitimately recur later on.
 _DEDUP_MIN_PARAGRAPH_LEN = 8
+# Markdown horizontal rule: meaningful between sections, noise at the end.
+_RULE_ONLY_RE = re.compile(r"^(?:[-*_] ?){3,}$")
 
 
 def join_answer_parts(parts: Iterable[str]) -> str:
@@ -258,6 +260,8 @@ def join_answer_parts(parts: Iterable[str]) -> str:
     emitted alongside a tool call, then the final turn's text.  When a forced
     retry (e.g. the completion gate) makes the model restate its answer, the
     same paragraphs arrive twice, so paragraphs already present are skipped.
+    Turns that end with a section rule would otherwise pile those rules up at
+    the end of the merged answer, so trailing rules are dropped.
     """
     seen: set[str] = set()
     merged: list[str] = []
@@ -270,7 +274,11 @@ def join_answer_parts(parts: Iterable[str]) -> str:
                 if text in seen:
                     continue
                 seen.add(text)
+            elif merged and merged[-1] == text:
+                continue
             merged.append(text)
+    while merged and _RULE_ONLY_RE.match(merged[-1]):
+        merged.pop()
     return "\n\n".join(merged)
 
 

@@ -34,6 +34,7 @@ from core.execution._completion_gate import (
     cleanup_gate_marker,
     completion_gate_applies_to_trigger,
     gate_marker_exists,
+    is_gate_only_turn,
 )
 from core.execution._litellm_context import ContextMixin, _extract_tool_uses_from_messages
 from core.execution._litellm_streaming import StreamingMixin
@@ -522,9 +523,10 @@ class LiteLLMExecutor(
                 cleanup_gate_marker(self._anima_dir)
                 all_response_text.append(final_text)
                 logger.debug("A final response at iteration=%d", iteration)
+                # Drain undelivered reminders; do not append to user-facing text.
                 final_reminder = self.reminder_queue.drain_formatted()
                 if final_reminder:
-                    all_response_text.append(final_reminder)
+                    logger.debug("Undelivered reminders at loop end: %s", final_reminder[:200])
                 return ExecutionResult(
                     text=join_answer_parts(all_response_text),
                     tool_call_records=all_tool_records,
@@ -660,7 +662,9 @@ class LiteLLMExecutor(
             if _content:
                 _, _content = strip_thinking_tags(_content)
                 # Text written alongside the tool call belongs to the reply.
-                if _content.strip():
+                if _content.strip() and not (
+                    all_response_text and is_gate_only_turn([tc["name"] for tc in parsed_calls])
+                ):
                     all_response_text.append(_content)
             messages.append(
                 {

@@ -127,6 +127,7 @@ class TestClassificationMatrix:
             "usageLimitExceeded",
             "Usage Limit Exceeded",
             "Usage limit reached for this account",
+            "API error (status 402 Payment Required): Grok Build usage balance exhausted",
             "You have reached your weekly limit",
             "code=usage_limit_reached",
         ],
@@ -140,8 +141,15 @@ class TestClassificationMatrix:
         assert hint.backoff_s == 1800.0
 
     def test_quota_exhausted_exception(self) -> None:
+        reason, _ = classify_llm_error(_ApiError("usageLimitExceeded: quota exceeded", status_code=429))
+        assert reason is FailoverReason.QUOTA_EXHAUSTED
+
+    def test_grok_usage_balance_exhausted_precedes_402_billing(self) -> None:
         reason, _ = classify_llm_error(
-            _ApiError("usageLimitExceeded: quota exceeded", status_code=429)
+            _ApiError(
+                "API error (status 402 Payment Required): Grok Build usage balance exhausted",
+                status_code=402,
+            )
         )
         assert reason is FailoverReason.QUOTA_EXHAUSTED
 
@@ -223,9 +231,7 @@ class TestClassificationMatrix:
 
 class TestDisambiguation:
     def test_quota_precedes_overload_rate_and_billing(self) -> None:
-        reason, _ = classify_llm_error_message(
-            "usageLimitExceeded: overloaded, rate limit, insufficient credits"
-        )
+        reason, _ = classify_llm_error_message("usageLimitExceeded: overloaded, rate limit, insufficient credits")
         assert reason is FailoverReason.QUOTA_EXHAUSTED
 
     def test_429_rate_vs_overloaded(self) -> None:

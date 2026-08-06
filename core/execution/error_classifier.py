@@ -181,6 +181,7 @@ _QUOTA_EXHAUSTED_PATTERNS = (
     "usagelimitexceeded",
     "usage limit exceeded",
     "usage limit reached",
+    "usage balance exhausted",
     "weekly limit",
     "usage_limit_reached",
 )
