@@ -1,16 +1,25 @@
 from __future__ import annotations
 
 # AnimaWorks - Digital Anima Framework
-"""Cross-encoder reranker for hybrid search results."""
+"""Cross-encoder reranker for hybrid search results.
+
+When ``ANIMAWORKS_RERANK_URL`` is set (child processes), scoring delegates
+to the server's ``/api/internal/rerank`` endpoint instead of loading the
+CrossEncoder model locally.  HTTP failures skip rerank (original order is
+kept) rather than falling back to a local model load.
+"""
 
 import asyncio
 import logging
+import os
 import threading
 from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = "cross-encoder/ms-marco-MiniLM-L-12-v2"
+_BATCH_LIMIT = 1000
+_HTTP_TIMEOUT = 180.0
 
 
 class CrossEncoderReranker:
@@ -70,7 +79,7 @@ class CrossEncoderReranker:
             self._available = False
             return False
 
-    def _score_sync(self, query: str, texts: list[str]) -> list[float] | None:
+    def _score_local(self, query: str, texts: list[str]) -> list[float] | None:
         if not self._ensure_model():
             return None
         try:
@@ -98,6 +107,57 @@ class CrossEncoderReranker:
                     logger.warning("Cross-encoder CPU fallback scoring failed", exc_info=True)
             logger.warning("Cross-encoder scoring failed", exc_info=True)
             return None
+
+    def _score_http(self, query: str, texts: list[str], rerank_url: str) -> list[float] | None:
+        """Score via server's /api/internal/rerank. On failure return None (skip)."""
+        import httpx
+
+        all_scores: list[float] = []
+        try:
+            for i in range(0, len(texts), _BATCH_LIMIT):
+                batch = texts[i : i + _BATCH_LIMIT]
+                resp = httpx.post(
+                    rerank_url,
+                    json={"query": query, "documents": batch},
+                    timeout=_HTTP_TIMEOUT,
+                )
+                resp.raise_for_status()
+                scores = resp.json()["scores"]
+                if len(scores) != len(batch):
+                    logger.warning(
+                        "HTTP rerank returned %d scores for %d documents; skipping",
+                        len(scores),
+                        len(batch),
+                    )
+                    return None
+                all_scores.extend(float(s) for s in scores)
+        except Exception:
+            logger.warning(
+                "HTTP rerank failed (url=%s); skipping rerank, keeping original order",
+                rerank_url,
+                exc_info=True,
+            )
+            return None
+        return all_scores
+
+    def _score_sync(self, query: str, texts: list[str]) -> list[float] | None:
+        """Score documents; HTTP-delegate when ANIMAWORKS_RERANK_URL is set."""
+        if not texts:
+            return []
+        rerank_url = os.environ.get("ANIMAWORKS_RERANK_URL")
+        if rerank_url:
+            return self._score_http(query, texts, rerank_url)
+        return self._score_local(query, texts)
+
+    def score_sync(self, query: str, texts: list[str]) -> list[float] | None:
+        """Public scoring entry used by the central /api/internal/rerank endpoint.
+
+        Always uses the local model (server process). Child processes should
+        call the HTTP endpoint rather than this method.
+        """
+        if not texts:
+            return []
+        return self._score_local(query, texts)
 
     def rerank_sync(
         self,
@@ -180,3 +240,10 @@ def get_reranker(model_name: str = _DEFAULT_MODEL) -> CrossEncoderReranker:
         if _reranker is None or _reranker._model_name != model_name:
             _reranker = CrossEncoderReranker(model_name)
         return _reranker
+
+
+def _reset_for_testing() -> None:
+    """Reset singleton for test isolation."""
+    global _reranker  # noqa: PLW0603
+    with _reranker_lock:
+        _reranker = None

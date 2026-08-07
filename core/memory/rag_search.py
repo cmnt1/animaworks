@@ -10,8 +10,22 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
-from core.company_resources import company_resource_pointer, get_company_resources, infer_data_dir
+from core.company_resources import (
+    CompanyResources,
+    company_resource_pointer,
+    get_company_resources,
+    get_company_resources_for_company,
+    infer_data_dir,
+)
+from core.config.models import read_anima_company_checked
 from core.memory.fact_observability import warn_rate_limited
+from core.memory.rag.shared_check_registry import (
+    SharedCheckOutcome,
+    make_shared_check_key,
+    run_shared_check,
+)
+from core.memory.rag.shared_meta import read_shared_hash, reset_shared_for_company_change, write_shared_hash
+from core.memory.rag.store import CollectionExistence
 
 logger = logging.getLogger("animaworks.memory")
 
@@ -60,46 +74,9 @@ def _compute_dir_hash(dir_path: Path, glob_pattern: str = "*.md") -> str:
     return h
 
 
-def _read_shared_hash(meta_path: Path, key: str) -> str | None:
-    """Read a stored shared-index hash from *meta_path* (index_meta.json)."""
-    if not meta_path.is_file():
-        return None
-    try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        return meta.get(key)
-    except (json.JSONDecodeError, OSError):
-        return None
-
-
-def _write_shared_hash(meta_path: Path, key: str, value: str) -> None:
-    """Write a shared-index hash into *meta_path* (index_meta.json)."""
-    meta: dict = {}
-    if meta_path.is_file():
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            pass
-    meta[key] = value
-    meta_path.write_text(
-        json.dumps(meta, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-
-
-def _shared_collection_exists(vector_store, collection_name: str) -> bool:
-    """Return True if *collection_name* exists in *vector_store*.
-
-    Used to verify shared collections (``shared_common_knowledge`` /
-    ``shared_common_skills``) before short-circuiting on hash match.
-    Returns ``True`` on listing failure (be conservative — preserve
-    legacy behavior on transient errors rather than triggering full
-    re-indexing across all animas).
-    """
-    try:
-        return collection_name in vector_store.list_collections()
-    except Exception as exc:
-        logger.debug("Failed to list collections for existence check: %s", exc)
-        return True
+def _shared_collection_exists(vector_store, collection_name: str) -> CollectionExistence:
+    """Return the checked existence state for a shared collection."""
+    return vector_store.collection_exists(collection_name)
 
 
 # ── RAGMemorySearch ───────────────────────────────────────
@@ -212,43 +189,117 @@ class RAGMemorySearch:
         Called on every ``_get_indexer()`` access so that file changes are
         picked up even after the initial ``_init_indexer()`` run.  Uses a
         SHA-256 hash of (relative_path, mtime) tuples stored in the
-        per-anima ``index_meta.json`` to skip re-indexing when unchanged.
+        per-anima ``shared_index_meta.json`` to skip re-indexing when unchanged.
         """
         if self._indexer is None:
             return
         try:
             vector_store = self._indexer.vector_store
-            self._reset_shared_for_company_change(vector_store)
+            company_valid, company = self._reset_shared_for_company_change(vector_store)
+            if not company_valid:
+                return
+            company_resources = get_company_resources_for_company(
+                company,
+                data_dir=infer_data_dir(self._anima_dir),
+            )
             self._ensure_shared_knowledge_indexed(vector_store)
             self._ensure_shared_skills_indexed(vector_store)
-            self._ensure_company_knowledge_indexed(vector_store)
-            self._ensure_company_skills_indexed(vector_store)
+            self._ensure_company_knowledge_indexed(vector_store, company_resources)
+            self._ensure_company_skills_indexed(vector_store, company_resources)
         except ImportError:
             pass
         except Exception as e:
             logger.debug("Shared collection check failed: %s", e)
 
-    def _reset_shared_for_company_change(self, vector_store) -> None:
-        """Drop stale company content when this Anima's assignment changes."""
-        resources = get_company_resources(self._anima_dir)
-        current = resources.name if resources is not None else ""
-        meta_path = self._anima_dir / "index_meta.json"
-        stored = _read_shared_hash(meta_path, "shared_company_name")
-        if stored == current or (stored is None and not current):
-            return
-        for collection in ("shared_common_knowledge", "shared_common_skills"):
-            try:
-                vector_store.delete_collection(collection)
-            except Exception:
-                logger.warning("Failed to reset %s after company assignment change", collection, exc_info=True)
-        _write_shared_hash(meta_path, "shared_company_name", current)
-        for key in (
-            "shared_common_knowledge_hash",
-            "shared_common_skills_hash",
-            "shared_company_knowledge_hash",
-            "shared_company_skills_hash",
-        ):
-            _write_shared_hash(meta_path, key, "")
+    def _reset_shared_for_company_change(self, vector_store) -> tuple[bool, str | None]:
+        """Drop stale company content only after a checked membership read."""
+        valid, company = read_anima_company_checked(self._anima_dir)
+        if not valid:
+            logger.warning("Company membership unavailable for %s; skipping shared indexing", self._anima_dir.name)
+            return False, None
+        if not reset_shared_for_company_change(self._anima_dir, vector_store, company or ""):
+            return False, company
+        return True, company
+
+    @staticmethod
+    def _shared_check_timing() -> tuple[float, float, float]:
+        """Load shared-check timing with schema defaults as a fail-safe."""
+        try:
+            from core.config import load_config
+
+            rag = load_config().rag
+        except Exception:
+            from core.config.models import RAGConfig
+
+            rag = RAGConfig()
+        return (
+            rag.shared_check_ttl_seconds,
+            rag.shared_check_backoff_initial_seconds,
+            rag.shared_check_backoff_max_seconds,
+        )
+
+    def _ensure_shared_directory_indexed(
+        self,
+        vector_store,
+        directory: Path,
+        memory_type: str,
+        glob: str,
+        meta_key: str,
+        *,
+        shared_anima_dir: Path,
+        missing_log: str | None = None,
+        success_log: str | None = None,
+    ) -> None:
+        """Check and index one shared source through the process-wide registry."""
+        current_hash = _compute_dir_hash(directory, glob)
+        collection = f"shared_{memory_type}"
+        key = make_shared_check_key(
+            self._anima_dir.name,
+            vector_store,
+            collection,
+            f"{meta_key}:{current_hash}",
+        )
+
+        def check() -> SharedCheckOutcome:
+            stored_hash = read_shared_hash(self._anima_dir, meta_key)
+            force = False
+            if current_hash == stored_hash:
+                existence = _shared_collection_exists(vector_store, collection)
+                if existence is CollectionExistence.EXISTS:
+                    return SharedCheckOutcome.SUCCESS
+                if existence is CollectionExistence.UNAVAILABLE:
+                    return SharedCheckOutcome.TRANSIENT
+                if missing_log:
+                    logger.info(missing_log)
+                force = True
+
+            from core.memory.rag import MemoryIndexer
+
+            indexer = MemoryIndexer(
+                vector_store,
+                anima_name="shared",
+                anima_dir=shared_anima_dir,
+                collection_prefix="shared",
+                embedding_model=self._indexer.embedding_model if self._indexer else None,
+            )
+            result = indexer.index_directory(directory, memory_type, force=force)
+            if result.files_failed == 0:
+                write_shared_hash(self._anima_dir, meta_key, current_hash)
+                if success_log and result.chunks_indexed > 0:
+                    logger.info(success_log, result.chunks_indexed)
+                return SharedCheckOutcome.SUCCESS
+            if result.transient_failures > 0:
+                return SharedCheckOutcome.TRANSIENT
+            return SharedCheckOutcome.FAILED
+
+        ttl, backoff_initial, backoff_max = self._shared_check_timing()
+        run_shared_check(
+            key,
+            check,
+            ttl_seconds=ttl,
+            backoff_initial_seconds=backoff_initial,
+            backoff_max_seconds=backoff_max,
+        )
 
     def _ensure_shared_knowledge_indexed(self, vector_store) -> None:
         """Index common_knowledge/ into ``shared_common_knowledge`` collection.
@@ -263,40 +314,19 @@ class RAGMemorySearch:
             logger.debug("No common_knowledge files found, skipping shared indexing")
             return
 
-        meta_path = self._anima_dir / "index_meta.json"
-        current_hash = _compute_dir_hash(ck_dir, "*.md")
-        stored_hash = _read_shared_hash(meta_path, "shared_common_knowledge_hash")
-        force = False
-        if current_hash == stored_hash:
-            # Verify the shared collection still exists in this anima's
-            # vector store; if missing, fall through with force=True so
-            # the collection gets recreated.
-            if _shared_collection_exists(vector_store, "shared_common_knowledge"):
-                logger.debug("common_knowledge unchanged (hash match), skipping")
-                return
-            logger.info("shared_common_knowledge collection missing despite tracked hash, forcing re-index")
-            force = True
-
         try:
-            from core.memory.rag import MemoryIndexer
             from core.paths import get_data_dir
 
-            data_dir = get_data_dir()
-            shared_indexer = MemoryIndexer(
+            self._ensure_shared_directory_indexed(
                 vector_store,
-                anima_name="shared",
-                anima_dir=data_dir,
-                collection_prefix="shared",
-                embedding_model=self._indexer.embedding_model if self._indexer else None,
+                ck_dir,
+                "common_knowledge",
+                "*.md",
+                "shared_common_knowledge_hash",
+                shared_anima_dir=get_data_dir(),
+                missing_log="shared_common_knowledge collection missing despite tracked hash, forcing re-index",
+                success_log="Indexed %d chunks into shared_common_knowledge",
             )
-            indexed = shared_indexer.index_directory(ck_dir, "common_knowledge", force=force)
-            if indexed.files_failed == 0:
-                _write_shared_hash(meta_path, "shared_common_knowledge_hash", current_hash)
-            if indexed.chunks_indexed > 0:
-                logger.info(
-                    "Indexed %d chunks into shared_common_knowledge",
-                    indexed.chunks_indexed,
-                )
         except Exception as e:
             logger.warning("Failed to index shared common_knowledge: %s", e)
 
@@ -313,47 +343,27 @@ class RAGMemorySearch:
             logger.debug("No common_skills files found, skipping shared skills indexing")
             return
 
-        meta_path = self._anima_dir / "index_meta.json"
-        current_hash = _compute_dir_hash(cs_dir, "SKILL.md")
-        stored_hash = _read_shared_hash(meta_path, "shared_common_skills_hash")
-        force = False
-        if current_hash == stored_hash:
-            if _shared_collection_exists(vector_store, "shared_common_skills"):
-                logger.debug("common_skills unchanged (hash match), skipping")
-                return
-            logger.info("shared_common_skills collection missing despite tracked hash, forcing re-index")
-            force = True
-
         try:
-            from core.memory.rag import MemoryIndexer
             from core.paths import get_data_dir
 
-            data_dir = get_data_dir()
-            shared_indexer = MemoryIndexer(
+            self._ensure_shared_directory_indexed(
                 vector_store,
-                anima_name="shared",
-                anima_dir=data_dir,
-                collection_prefix="shared",
-                embedding_model=self._indexer.embedding_model if self._indexer else None,
+                cs_dir,
+                "common_skills",
+                "SKILL.md",
+                "shared_common_skills_hash",
+                shared_anima_dir=get_data_dir(),
+                missing_log="shared_common_skills collection missing despite tracked hash, forcing re-index",
+                success_log="Indexed %d chunks into shared_common_skills",
             )
-            # shared_common_skills is a global collection. Per-anima curator
-            # archive/block/delete state cannot be applied destructively here
-            # without hiding common skills from other Animas, so personal
-            # enforcement happens at retrieval time in MemoryRetriever.
-            # Trust/security metadata remains enforced by MemoryIndexer.
-            indexed = shared_indexer.index_directory(cs_dir, "common_skills", force=force)
-            if indexed.files_failed == 0:
-                _write_shared_hash(meta_path, "shared_common_skills_hash", current_hash)
-            if indexed.chunks_indexed > 0:
-                logger.info(
-                    "Indexed %d chunks into shared_common_skills",
-                    indexed.chunks_indexed,
-                )
         except Exception as e:
             logger.warning("Failed to index shared common_skills: %s", e)
 
-    def _ensure_company_knowledge_indexed(self, vector_store) -> None:
-        resources = get_company_resources(self._anima_dir)
+    def _ensure_company_knowledge_indexed(
+        self,
+        vector_store,
+        resources: CompanyResources | None,
+    ) -> None:
         if resources is None or not resources.knowledge_dir.is_dir() or not any(resources.knowledge_dir.rglob("*.md")):
             return
         self._index_company_directory(
@@ -364,8 +374,11 @@ class RAGMemorySearch:
             "shared_company_knowledge_hash",
         )
 
-    def _ensure_company_skills_indexed(self, vector_store) -> None:
-        resources = get_company_resources(self._anima_dir)
+    def _ensure_company_skills_indexed(
+        self,
+        vector_store,
+        resources: CompanyResources | None,
+    ) -> None:
         if resources is None or not resources.skills_dir.is_dir() or not any(resources.skills_dir.rglob("SKILL.md")):
             return
         self._index_company_directory(
@@ -384,26 +397,15 @@ class RAGMemorySearch:
         glob: str,
         meta_key: str,
     ) -> None:
-        meta_path = self._anima_dir / "index_meta.json"
-        current_hash = _compute_dir_hash(directory, glob)
-        stored_hash = _read_shared_hash(meta_path, meta_key)
-        collection = f"shared_{memory_type}"
-        force = current_hash == stored_hash and not _shared_collection_exists(vector_store, collection)
-        if current_hash == stored_hash and not force:
-            return
         try:
-            from core.memory.rag import MemoryIndexer
-
-            indexer = MemoryIndexer(
+            self._ensure_shared_directory_indexed(
                 vector_store,
-                anima_name="shared",
-                anima_dir=infer_data_dir(self._anima_dir),
-                collection_prefix="shared",
-                embedding_model=self._indexer.embedding_model if self._indexer else None,
+                directory,
+                memory_type,
+                glob,
+                meta_key,
+                shared_anima_dir=infer_data_dir(self._anima_dir),
             )
-            result = indexer.index_directory(directory, memory_type, force=force)
-            if result.files_failed == 0:
-                _write_shared_hash(meta_path, meta_key, current_hash)
         except Exception as exc:
             logger.warning("Failed to index company %s: %s", memory_type, exc)
 

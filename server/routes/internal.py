@@ -37,6 +37,12 @@ class EmbedRequest(BaseModel):
     priority: Literal["interactive", "bulk"] = "interactive"
 
 
+class RerankRequest(BaseModel):
+    query: str
+    documents: list[str]
+    top_k: int | None = None
+
+
 class VectorQueryRequest(BaseModel):
     anima_name: str | None = None
     collection: str
@@ -275,6 +281,55 @@ def create_internal_router() -> APIRouter:
             partial(thread_safe_encode, body.texts, purpose=body.purpose, priority=body.priority),
         )
         return {"embeddings": embeddings}
+
+    # ── Cross-encoder rerank endpoint ─────────────────────────────
+
+    @router.post("/internal/rerank")
+    async def internal_rerank(body: RerankRequest):
+        """Centralized cross-encoder reranking for child processes.
+
+        Child processes call this endpoint via HTTP instead of loading
+        the CrossEncoder model on their own, eliminating per-MCP-subprocess
+        model loads (~130 MB each).
+        """
+        if len(body.documents) > 1000:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Max 1000 documents per request"},
+            )
+        if not body.documents:
+            return {"scores": []}
+
+        from functools import partial
+
+        from core.memory.retrieval.reranker import get_reranker
+
+        reranker = get_reranker()
+        loop = asyncio.get_running_loop()
+        scores = await loop.run_in_executor(
+            _native_executor,
+            partial(reranker.score_sync, body.query, body.documents),
+        )
+        if scores is None:
+            # Explicit failure — never collapse to empty success (caller must
+            # treat as unavailable and keep original order).
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Reranker unavailable"},
+            )
+
+        if body.top_k is not None and body.top_k >= 0:
+            # Optional ranked view; primary contract remains full scores array.
+            indexed = sorted(
+                enumerate(scores),
+                key=lambda pair: pair[1],
+                reverse=True,
+            )[: body.top_k]
+            return {
+                "scores": scores,
+                "results": [{"index": i, "score": s} for i, s in indexed],
+            }
+        return {"scores": scores}
 
     # ── Vector store endpoints (ChromaDB process separation) ───────
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import secrets
 import sys
 
 
@@ -82,6 +83,10 @@ def repair_rag_command(args: argparse.Namespace) -> None:
 
         temp_worker = start_temporary_vector_worker()
 
+    previous_nonce = os.environ.get("ANIMAWORKS_RAG_REPAIR_NONCE")
+    if previous_nonce is None:
+        os.environ["ANIMAWORKS_RAG_REPAIR_NONCE"] = secrets.token_urlsafe(32)
+
     reason = str(getattr(args, "reason", "manual_repair_rag_cli"))
     try:
         if anima:
@@ -117,6 +122,8 @@ def repair_rag_command(args: argparse.Namespace) -> None:
         if failed:
             raise SystemExit(1)
     finally:
+        if previous_nonce is None:
+            os.environ.pop("ANIMAWORKS_RAG_REPAIR_NONCE", None)
         if temp_worker is not None:
             temp_worker.stop()
 

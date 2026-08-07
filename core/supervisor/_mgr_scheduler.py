@@ -17,6 +17,7 @@ from pathlib import Path
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from core.memory.rag.store import CollectionExistence
 from core.supervisor.process_handle import ProcessState
 from core.time_utils import get_app_timezone, now_local
 
@@ -643,7 +644,8 @@ class SchedulerMixin:
             except (json.JSONDecodeError, OSError):
                 pass
 
-        from core.memory.rag_search import _compute_dir_hash, _read_shared_hash, _write_shared_hash
+        from core.memory.rag.shared_meta import read_shared_hash, write_shared_hash
+        from core.memory.rag_search import _compute_dir_hash
 
         quick_check_timeout = 10.0
         try:
@@ -764,20 +766,16 @@ class SchedulerMixin:
                         exc_info=True,
                     )
 
-                meta_path = anima_dir / "index_meta.json"
                 for label, src_dir, glob, meta_key in shared_sources:
                     if not src_dir.is_dir():
                         continue
                     current_hash = _compute_dir_hash(src_dir, glob)
-                    stored_hash = _read_shared_hash(meta_path, meta_key)
+                    stored_hash = read_shared_hash(anima_dir, meta_key)
                     shared_collection = f"shared_{label}"
                     force = False
                     if current_hash == stored_hash:
-                        try:
-                            existing = vector_store.list_collections()
-                        except Exception:
-                            existing = None
-                        if existing is None or shared_collection in existing:
+                        existence = vector_store.collection_exists(shared_collection)
+                        if existence is not CollectionExistence.MISSING:
                             continue
                         logger.info(
                             "%s: collection '%s' missing despite tracked hash, forcing re-index",
@@ -800,7 +798,7 @@ class SchedulerMixin:
                     )
                     total_chunks += result.chunks_indexed
                     if result.files_failed == 0:
-                        _write_shared_hash(meta_path, meta_key, current_hash)
+                        write_shared_hash(anima_dir, meta_key, current_hash)
 
                 logger.info("Daily indexing for %s complete", anima_name)
 

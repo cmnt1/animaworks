@@ -10,6 +10,7 @@ Covers:
 - ChromaVectorStore mkdir guard
 - sync_org_structure config pruning
 """
+
 from __future__ import annotations
 
 import json
@@ -89,6 +90,23 @@ class TestDetectOrphanAnimas:
         )
         assert len(orphans) == 1
         assert orphans[0]["action"] == "auto_removed"
+        assert not orphan_dir.exists()
+
+    def test_trivial_orphan_auto_removed_shared_index_meta_only(self, data_dir, make_anima):
+        """Shared metadata and its flock sidecar remain trivial leftovers."""
+        make_anima("sakura")
+
+        orphan_dir = data_dir / "animas" / "rie"
+        orphan_dir.mkdir()
+        (orphan_dir / "shared_index_meta.json").write_text("{}\n", encoding="utf-8")
+        (orphan_dir / "shared_index_meta.json.lock").touch()
+
+        from core.org_sync import detect_orphan_animas
+
+        orphans = detect_orphan_animas(
+            data_dir / "animas", data_dir / "shared", age_threshold_s=0
+        )
+        assert orphans == [{"name": "rie", "action": "auto_removed"}]
         assert not orphan_dir.exists()
 
     def test_trivial_orphan_with_empty_identity(self, data_dir, make_anima):
@@ -253,7 +271,7 @@ class TestAutoCleanupOrphanConfig:
         """Auto-cleanup should unregister the orphan from config.json."""
         make_anima("sakura")
 
-        from core.config.models import load_config, save_config, AnimaModelConfig, invalidate_cache
+        from core.config.models import AnimaModelConfig, invalidate_cache, load_config, save_config
 
         config = load_config(data_dir / "config.json")
         config.animas["rie"] = AnimaModelConfig()
@@ -421,10 +439,9 @@ class TestChromaVectorStoreMkdirGuard:
         assert not persist_dir.parent.exists()
 
         mock_chromadb = MagicMock()
-        with patch.dict(sys.modules, {"chromadb": mock_chromadb}):
-            with caplog.at_level(logging.WARNING):
-                from core.memory.rag.store import ChromaVectorStore
-                ChromaVectorStore(persist_dir=persist_dir)
+        with patch.dict(sys.modules, {"chromadb": mock_chromadb}), caplog.at_level(logging.WARNING):
+            from core.memory.rag.store import ChromaVectorStore
+            ChromaVectorStore(persist_dir=persist_dir)
 
         assert persist_dir.exists()
         assert "Parent directory does not exist" in caplog.text

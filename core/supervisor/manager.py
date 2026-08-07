@@ -97,12 +97,14 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         health_config: HealthConfig | None = None,
         reconciliation_config: ReconciliationConfig | None = None,
         ws_manager: Any | None = None,
+        vector_worker_manager: Any | None = None,
     ):
         self.animas_dir = animas_dir
         self.shared_dir = shared_dir
         self.run_dir = run_dir
         self.log_dir = log_dir
         self.ws_manager = ws_manager
+        self.vector_worker_manager = vector_worker_manager
 
         self.restart_policy = restart_policy or RestartPolicy()
         self.health_config = health_config or HealthConfig()

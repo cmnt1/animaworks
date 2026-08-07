@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 
 from core.memory.rag.http_store import HttpVectorStore
-from core.memory.rag.store import Document, SearchResult
+from core.memory.rag.store import CollectionExistence, Document, SearchResult
 
 
 def _make_store(
@@ -86,6 +86,8 @@ def test_http_vector_store_read_503_from_vector_worker_fails_soft():
     assert store.get_by_metadata("rin_knowledge", {"type": "knowledge"}) == []
     assert store.get_by_ids("rin_knowledge", ["doc1"]) == []
     assert store.list_collections() == []
+    assert store.list_collections_checked() is None
+    assert store.collection_exists("rin_knowledge") is CollectionExistence.UNAVAILABLE
 
 
 # ── test_upsert_sends_documents ───────────────────────────────────
@@ -260,6 +262,33 @@ def test_list_collections():
     assert colls == ["col1", "col2"]
 
 
+def test_list_collections_checked_distinguishes_empty_and_existence():
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"collections": []}
+    mock_response.raise_for_status = MagicMock()
+    mock_client.post.return_value = mock_response
+
+    with patch("httpx.Client", return_value=mock_client):
+        store = _make_store()
+        assert store.list_collections_checked() == []
+        assert store.collection_exists("missing") is CollectionExistence.MISSING
+
+    mock_response.json.return_value = {"collections": ["present"]}
+    assert store.collection_exists("present") is CollectionExistence.EXISTS
+
+
+def test_list_collections_checked_transport_error_is_unavailable():
+    mock_client = MagicMock()
+    mock_client.post.side_effect = httpx.TransportError("connection refused")
+    store = _make_store()
+    store._client = mock_client
+
+    assert store.list_collections_checked() is None
+    assert store.collection_exists("missing") is CollectionExistence.UNAVAILABLE
+    assert store.list_collections() == []
+
+
 # ── test_create_collection_and_delete_collection ──────────────────
 
 
@@ -324,6 +353,23 @@ def test_reset_store_returns_false_on_old_or_unavailable_worker():
     with patch("httpx.Client", return_value=mock_client):
         store = _make_store()
         assert store.reset_store() is False
+
+
+def test_verify_repair_posts_nonce_and_expected_chunks():
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"status": "ok", "collections": 1, "query_results": 1}
+    mock_client.post.return_value = mock_response
+
+    with patch("httpx.Client", return_value=mock_client):
+        store = _make_store()
+        assert store.verify_repair("repair-secret", expected_chunks=3) is True
+
+    mock_client.post.assert_called_once_with(
+        "/verify-repair",
+        json={"anima_name": "rin", "repair_nonce": "repair-secret", "expected_chunks": 3},
+    )
 
 
 # ── test_close ─────────────────────────────────────────────────────
