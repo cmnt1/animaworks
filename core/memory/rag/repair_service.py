@@ -782,7 +782,8 @@ class RAGRepairService:
                     from core.memory.rag.repair_rebuild import reset_worker_vector_store
                     from core.memory.rag.singleton import reset_vector_store
 
-                    reset_worker_vector_store(anima_name)
+                    if not reset_worker_vector_store(anima_name):
+                        raise RuntimeError(f"vector worker reset failed for healthy repair skip: {anima_name}")
                     reset_vector_store(anima_name)
                     from core.memory.rag.shared_check_registry import invalidate_shared_checks
 
@@ -797,6 +798,7 @@ class RAGRepairService:
                         collection=collection,
                         source=source,
                         include_shared=include_shared,
+                        repair_nonce=None,
                         last_success_at=iso(),
                         last_error=None,
                         consecutive_failures=0,
@@ -826,6 +828,7 @@ class RAGRepairService:
                     collection=collection,
                     source=source,
                     include_shared=include_shared,
+                    repair_nonce=os.environ.get("ANIMAWORKS_RAG_REPAIR_NONCE"),
                     last_reason=reason,
                     last_collection=collection,
                     last_source=source,
@@ -846,6 +849,7 @@ class RAGRepairService:
                     pid=None,
                     last_success_at=iso(),
                     last_error=None,
+                    repair_nonce=None,
                     consecutive_failures=0,
                     last_quarantine_path=str(quarantine_path) if quarantine_path else None,
                     last_chunks_indexed=chunks,
@@ -881,6 +885,7 @@ class RAGRepairService:
                     pid=None,
                     last_failure_at=iso(),
                     last_error=str(exc),
+                    repair_nonce=None,
                     consecutive_failures=failures,
                     last_quarantine_path=str(quarantine_path) if quarantine_path else None,
                 )

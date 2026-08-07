@@ -574,6 +574,29 @@ class ChromaVectorStore(VectorStore):
             )
             raise
 
+    def verify_rebuilt_data(self, *, expected_chunks: int) -> dict[str, int]:
+        """Run a real similarity query against freshly reopened Chroma data."""
+        collections = self._list_collections_once()
+        if expected_chunks <= 0:
+            return {"collections": len(collections), "query_results": 0}
+        if not collections:
+            raise RuntimeError(f"no collections found despite indexing {expected_chunks} chunks")
+
+        for name in collections:
+            collection = self.client.get_collection(name=name)
+            sample = collection.get(limit=1, include=["embeddings"])
+            ids = sample.get("ids") or []
+            embeddings = sample.get("embeddings")
+            if not ids or embeddings is None or len(embeddings) == 0:
+                continue
+            embedding = list(embeddings[0])
+            queried = collection.query(query_embeddings=[embedding], n_results=1)
+            result_ids = queried.get("ids") or []
+            if result_ids and result_ids[0]:
+                return {"collections": len(collections), "query_results": len(result_ids[0])}
+
+        raise RuntimeError(f"no queryable documents found despite indexing {expected_chunks} chunks")
+
     def _upsert_once(self, collection: str, documents: list[Document]) -> bool:
         coll = self.client.get_or_create_collection(
             name=collection,

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -36,6 +37,23 @@ def reset_worker_vector_store(anima_name: str) -> bool:
             return store.reset_store()
     except Exception:
         logger.debug("Failed to reset vector worker store for %s", anima_name, exc_info=True)
+    return False
+
+
+def verify_worker_vector_store(anima_name: str, *, expected_chunks: int) -> bool:
+    """Verify the swapped DB through the fenced worker using the repair nonce."""
+    repair_nonce = os.environ.get("ANIMAWORKS_RAG_REPAIR_NONCE")
+    if not repair_nonce:
+        return False
+    try:
+        from core.memory.rag.http_store import HttpVectorStore
+        from core.memory.rag.singleton import get_vector_store
+
+        store = get_vector_store(anima_name)
+        if isinstance(store, HttpVectorStore):
+            return store.verify_repair(repair_nonce, expected_chunks=expected_chunks)
+    except Exception:
+        logger.debug("Failed to verify rebuilt vector store for %s", anima_name, exc_info=True)
     return False
 
 
@@ -123,7 +141,7 @@ def _reindex_into_store(
     *,
     include_shared: bool,
     anima_dir: Path | None = None,
-) -> int:
+) -> tuple[int, dict[str, str]]:
     """Index an anima's memory (and optionally shared collections) into a store."""
     from core.company_resources import get_company_resources
     from core.memory.bm25 import rebuild_longterm_bm25_index
@@ -132,11 +150,18 @@ def _reindex_into_store(
 
     anima_dir = Path(anima_dir) if anima_dir is not None else get_animas_dir() / anima_name
     total_chunks = 0
+    shared_hashes: dict[str, str] = {}
     indexer = MemoryIndexer(vector_store, anima_name, anima_dir)
     for memory_type in ("knowledge", "episodes", "procedures", "skills", "facts"):
         memory_dir = anima_dir / memory_type
         if memory_dir.is_dir():
-            total_chunks += indexer.index_directory(memory_dir, memory_type, force=True).chunks_indexed
+            result = indexer.index_directory(memory_dir, memory_type, force=True)
+            if result.files_failed or result.files_unprocessed:
+                raise RebuildVerificationError(
+                    f"failed to fully rebuild {memory_type} for {anima_name}: "
+                    f"failed={result.files_failed} unprocessed={result.files_unprocessed}"
+                )
+            total_chunks += result.chunks_indexed
 
     state_dir = anima_dir / "state"
     if (state_dir / "conversation.json").is_file():
@@ -178,21 +203,61 @@ def _reindex_into_store(
         for label, src_dir, glob, meta_key in shared_sources:
             if not src_dir.is_dir():
                 continue
-            total_chunks += shared_indexer.index_directory(src_dir, label, force=True).chunks_indexed
-            write_shared_hash(anima_dir, src_dir, glob, meta_key)
-    return total_chunks
+            result = shared_indexer.index_directory(src_dir, label, force=True)
+            if result.files_failed or result.files_unprocessed:
+                raise RebuildVerificationError(
+                    f"failed to fully rebuild {meta_key} for {anima_name}: "
+                    f"failed={result.files_failed} unprocessed={result.files_unprocessed}"
+                )
+            total_chunks += result.chunks_indexed
+            from core.memory.rag_search import _compute_dir_hash
+
+            shared_hashes[meta_key] = _compute_dir_hash(src_dir, glob)
+    return total_chunks, shared_hashes
 
 
 def full_reindex(anima_name: str, *, include_shared: bool) -> int:
     """Reindex an anima in place via the vector worker (legacy path)."""
     from core.memory.rag.singleton import get_vector_store
+    from core.paths import get_animas_dir
 
     if not os.environ.get("ANIMAWORKS_VECTOR_URL"):
         raise RuntimeError("RAG reindex requires ANIMAWORKS_VECTOR_URL; run it through the vector worker")
     vector_store = get_vector_store(anima_name)
     if vector_store is None:
         raise RuntimeError(f"Vector store unavailable for {anima_name}")
-    return _reindex_into_store(vector_store, anima_name, include_shared=include_shared)
+    chunks, shared_hashes = _reindex_into_store(vector_store, anima_name, include_shared=include_shared)
+    if shared_hashes:
+        from core.memory.rag.shared_meta import write_shared_hashes
+
+        write_shared_hashes(get_animas_dir() / anima_name, shared_hashes)
+    return chunks
+
+
+def _backup_bm25(anima_dir: Path) -> tuple[Path, set[str]]:
+    from core.memory.bm25 import longterm_bm25_dirty_path, longterm_bm25_index_path
+
+    state_dir = anima_dir / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    backup_dir = Path(tempfile.mkdtemp(prefix=".rag-repair-bm25-", dir=state_dir))
+    existing: set[str] = set()
+    for path in (longterm_bm25_index_path(anima_dir), longterm_bm25_dirty_path(anima_dir)):
+        if path.is_file():
+            existing.add(path.name)
+            shutil.copy2(path, backup_dir / path.name)
+    return backup_dir, existing
+
+
+def _restore_bm25(anima_dir: Path, backup_dir: Path, existing: set[str]) -> None:
+    from core.memory.bm25 import longterm_bm25_dirty_path, longterm_bm25_index_path
+
+    for path in (longterm_bm25_index_path(anima_dir), longterm_bm25_dirty_path(anima_dir)):
+        backup = backup_dir / path.name
+        if path.name in existing:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(backup, path)
+        elif path.exists():
+            path.unlink()
 
 
 def atomic_rebuild_vectordb(
@@ -224,78 +289,119 @@ def atomic_rebuild_vectordb(
     from core.memory.rag.store import create_chroma_vector_store
     from core.paths import get_anima_vectordb_dir
 
-    resolved_anima_dir = Path(anima_dir) if anima_dir is not None else None
-    live = resolved_anima_dir / "vectordb" if resolved_anima_dir is not None else get_anima_vectordb_dir(anima_name)
+    resolved_anima_dir = (
+        Path(anima_dir) if anima_dir is not None else get_anima_vectordb_dir(anima_name).parent
+    )
+    live = resolved_anima_dir / "vectordb"
     staging = live.parent / f"vectordb.staging-{os.getpid()}"
     if staging.exists():
         shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True, exist_ok=True)
+    bm25_backup, bm25_existing = _backup_bm25(resolved_anima_dir)
+    archive: Path | None = None
+    swap_started = False
+    succeeded = False
 
-    prev_allow = os.environ.get("ANIMAWORKS_ALLOW_DIRECT_CHROMA")
-    os.environ["ANIMAWORKS_ALLOW_DIRECT_CHROMA"] = "1"
     try:
-        store = create_chroma_vector_store(persist_dir=staging, anima_name=anima_name)
+        prev_allow = os.environ.get("ANIMAWORKS_ALLOW_DIRECT_CHROMA")
+        os.environ["ANIMAWORKS_ALLOW_DIRECT_CHROMA"] = "1"
         try:
-            chunks = _reindex_into_store(
-                store,
-                anima_name,
-                include_shared=include_shared,
-                anima_dir=resolved_anima_dir,
-            )
-            if chunks > 0:
-                collections = store.list_collections_checked()
-                if collections is None:
-                    raise RebuildVerificationError(
-                        f"staged vector DB for {anima_name} is unreadable despite indexing {chunks} chunks"
-                    )
-                if not collections:
-                    raise RebuildVerificationError(
-                        f"staged vector DB for {anima_name} has no collections despite indexing {chunks} chunks"
-                    )
+            store = create_chroma_vector_store(persist_dir=staging, anima_name=anima_name)
+            try:
+                chunks, shared_hashes = _reindex_into_store(
+                    store,
+                    anima_name,
+                    include_shared=include_shared,
+                    anima_dir=resolved_anima_dir,
+                )
+                if chunks > 0:
+                    collections = store.list_collections_checked()
+                    if collections is None:
+                        raise RebuildVerificationError(
+                            f"staged vector DB for {anima_name} is unreadable despite indexing {chunks} chunks"
+                        )
+                    if not collections:
+                        raise RebuildVerificationError(
+                            f"staged vector DB for {anima_name} has no collections despite indexing {chunks} chunks"
+                        )
+            finally:
+                store.close()
+                gc.collect()
         finally:
-            store.close()
-            gc.collect()
-    except BaseException:
-        shutil.rmtree(staging, ignore_errors=True)  # never leave a half-built staging dir
+            if prev_allow is None:
+                os.environ.pop("ANIMAWORKS_ALLOW_DIRECT_CHROMA", None)
+            else:
+                os.environ["ANIMAWORKS_ALLOW_DIRECT_CHROMA"] = prev_allow
+
+        if not _has_active_repair_fence(anima_name, anima_dir=resolved_anima_dir):
+            raise RebuildVerificationError(
+                f"active RAG repair access fence missing for {anima_name}; refusing vector DB swap"
+            )
+        if not reset_worker_vector_store(anima_name):
+            raise RebuildVerificationError(f"vector worker reset failed before swap for {anima_name}")
+        reset_vector_store(anima_name)
+
+        swap_started = True
+        if live.exists():
+            archive_dir = live.parent / "archive"
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+            archive = archive_dir / f"vectordb-corrupt-{stamp}"
+            suffix = 1
+            while archive.exists():
+                suffix += 1
+                archive = archive_dir / f"vectordb-corrupt-{stamp}-{suffix}"
+            shutil.move(str(live), str(archive))
+        shutil.move(str(staging), str(live))
+
+        if not reset_worker_vector_store(anima_name):
+            raise RebuildVerificationError(f"vector worker reset failed after swap for {anima_name}")
+        reset_vector_store(anima_name)
+        if not verify_worker_vector_store(anima_name, expected_chunks=chunks):
+            raise RebuildVerificationError(f"vector worker verification failed after swap for {anima_name}")
+
+        if shared_hashes:
+            from core.memory.rag.shared_meta import write_shared_hashes
+
+            write_shared_hashes(resolved_anima_dir, shared_hashes)
+        from core.memory.rag.shared_check_registry import invalidate_shared_checks
+
+        invalidate_shared_checks(anima_name)
+        succeeded = True
+        return chunks, archive
+    except BaseException as exc:
+        rollback_errors: list[str] = []
+        if swap_started:
+            try:
+                reset_worker_vector_store(anima_name)
+                reset_vector_store(anima_name)
+                if live.exists():
+                    failed_dir = live.parent / "archive"
+                    failed_dir.mkdir(parents=True, exist_ok=True)
+                    failed_stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+                    failed_live = failed_dir / f"vectordb-rebuild-failed-{failed_stamp}"
+                    suffix = 1
+                    while failed_live.exists():
+                        suffix += 1
+                        failed_live = failed_dir / f"vectordb-rebuild-failed-{failed_stamp}-{suffix}"
+                    shutil.move(str(live), str(failed_live))
+                if archive is not None and archive.exists():
+                    shutil.move(str(archive), str(live))
+                reset_vector_store(anima_name)
+                if not reset_worker_vector_store(anima_name):
+                    rollback_errors.append("worker reset failed after rollback")
+            except Exception as rollback_exc:
+                rollback_errors.append(str(rollback_exc))
+        try:
+            _restore_bm25(resolved_anima_dir, bm25_backup, bm25_existing)
+        except Exception as rollback_exc:
+            rollback_errors.append(f"BM25 rollback failed: {rollback_exc}")
+        if rollback_errors:
+            raise RebuildVerificationError(
+                f"{exc}; rollback incomplete: {'; '.join(rollback_errors)}"
+            ) from exc
         raise
     finally:
-        if prev_allow is None:
-            os.environ.pop("ANIMAWORKS_ALLOW_DIRECT_CHROMA", None)
-        else:
-            os.environ["ANIMAWORKS_ALLOW_DIRECT_CHROMA"] = prev_allow
-
-    # Atomic swap. Reset the worker so it releases the live handle, archive the
-    # old DB, move staging into place, then reset again so the worker reopens the
-    # new DB. The sibling-drop reset fix keeps these resets from poisoning others.
-    if not _has_active_repair_fence(anima_name, anima_dir=resolved_anima_dir):
-        shutil.rmtree(staging, ignore_errors=True)
-        raise RebuildVerificationError(
-            f"active RAG repair access fence missing for {anima_name}; refusing vector DB swap"
-        )
-    archive: Path | None = None
-    reset_worker_vector_store(anima_name)
-    reset_vector_store(anima_name)
-    if live.exists():
-        archive_dir = live.parent / "archive"
-        archive_dir.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-        archive = archive_dir / f"vectordb-corrupt-{stamp}"
-        suffix = 1
-        while archive.exists():
-            suffix += 1
-            archive = archive_dir / f"vectordb-corrupt-{stamp}-{suffix}"
-        shutil.move(str(live), str(archive))
-    shutil.move(str(staging), str(live))
-    reset_worker_vector_store(anima_name)
-    reset_vector_store(anima_name)
-    from core.memory.rag.shared_check_registry import invalidate_shared_checks
-
-    invalidate_shared_checks(anima_name)
-    return chunks, archive
-
-
-def write_shared_hash(anima_dir: Path, src_dir: Path, glob: str, meta_key: str) -> None:
-    from core.memory.rag.shared_meta import write_shared_hash as write_meta_hash
-    from core.memory.rag_search import _compute_dir_hash
-
-    write_meta_hash(anima_dir, meta_key, _compute_dir_hash(src_dir, glob))
+        if not succeeded:
+            shutil.rmtree(staging, ignore_errors=True)
+        shutil.rmtree(bm25_backup, ignore_errors=True)
