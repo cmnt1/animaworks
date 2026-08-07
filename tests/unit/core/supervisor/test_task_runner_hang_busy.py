@@ -165,6 +165,10 @@ async def test_progress_writes_root_owned_busy_sidecar(tmp_path: Path) -> None:
     job = _job(supervisor, None)
     supervisor.jobs[job.identity.job_id] = job
     supervisor._mark_busy_start()
+    # Age the baseline explicitly: monotonic() resolution is ~15.6ms on
+    # Windows, so job creation and _record_progress can land in the same
+    # tick and compare equal even though progress was recorded.
+    job.last_progress_at -= 1.0
     before = job.last_progress_at
     supervisor._record_progress(job, {"pid": job.pid, "lane": "task"})
 

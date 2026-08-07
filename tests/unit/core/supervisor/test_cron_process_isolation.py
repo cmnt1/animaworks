@@ -75,6 +75,7 @@ async def test_flag_true_uses_child_result_without_root_llm(tmp_path: Path) -> N
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="process groups / os.killpg are POSIX-only")
 async def test_sigkill_only_reaps_task_group_and_root_can_continue(tmp_path: Path) -> None:
     shared_dir = tmp_path / "shared"
     anima_dir = tmp_path / "animas" / "sakura"

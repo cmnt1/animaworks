@@ -346,6 +346,7 @@ async def test_background_pool_limit_caps_concurrent_children(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="process groups / os.killpg are POSIX-only")
 async def test_sigkill_only_reaps_task_group_and_root_survives(tmp_path: Path) -> None:
     shared = tmp_path / "shared"
     anima_dir = tmp_path / "animas" / "sakura"

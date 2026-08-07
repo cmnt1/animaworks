@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from core.platform.processing_lease import (
     classify_processing_lease,
     is_processing_lease_live,
@@ -127,6 +129,7 @@ def test_v2_pid_reuse_fence_marks_dead(tmp_path: Path) -> None:
         assert not is_processing_lease_live(descriptor, expected_anima="sakura")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="cmdline classification needs /proc; Windows stops at the PID check")
 def test_v2_wrong_cmdline_is_dead(tmp_path: Path) -> None:
     descriptor = tmp_path / "task.json"
     descriptor.write_text('{"task_id":"t5"}', encoding="utf-8")
@@ -178,6 +181,7 @@ def test_legacy_v1_still_readable_without_schema_version(tmp_path: Path) -> None
         assert is_processing_lease_live(descriptor, expected_anima="sakura")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="cmdline classification needs /proc; Windows stops at the PID check")
 def test_unreadable_proc_is_unknown_treated_as_live(tmp_path: Path) -> None:
     descriptor = tmp_path / "unknown.json"
     descriptor.write_text("{}", encoding="utf-8")

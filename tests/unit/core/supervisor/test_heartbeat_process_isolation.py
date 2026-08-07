@@ -138,6 +138,7 @@ async def test_heartbeat_skips_while_already_running_serializes_same_anima(tmp_p
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="process groups / os.killpg are POSIX-only")
 async def test_sigkill_only_reaps_task_group_and_root_can_continue(tmp_path: Path) -> None:
     shared_dir = tmp_path / "shared"
     anima_dir = tmp_path / "animas" / "sakura"
