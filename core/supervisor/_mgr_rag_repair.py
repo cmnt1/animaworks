@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import secrets
 import sys
 from pathlib import Path
 
@@ -262,6 +264,7 @@ class RAGRepairMixin:
                     "pid": None,
                     "reason": reason,
                     "include_shared": include_shared,
+                    "repair_nonce": None,
                     "last_error": None if repair_succeeded else current.get("last_error"),
                 },
             )
@@ -348,6 +351,7 @@ class RAGRepairMixin:
                 "pid": None,
                 "reason": reason,
                 "include_shared": include_shared,
+                "repair_nonce": None,
                 "last_error": error,
             },
         )
@@ -427,15 +431,40 @@ class RAGRepairMixin:
             cmd.append("--shared")
         timeout = self._rag_repair_timeout_seconds()
         repo_root = Path(__file__).resolve().parents[2]
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=repo_root,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        vector_url = getattr(getattr(self, "vector_worker_manager", None), "base_url", None)
+        if not isinstance(vector_url, str) or not vector_url:
+            return {
+                "ok": False,
+                "status": "failed",
+                "error": "current vector worker URL unavailable",
+            }
+        repair_nonce = secrets.token_urlsafe(32)
         current_stage = self._read_rag_repair_state(anima_name).get("stage")
         if not current_stage or current_stage == "complete":
             current_stage = "repair_process"
+        self._write_rag_repair_state(
+            anima_name,
+            {
+                "status": "repairing",
+                "stage": current_stage,
+                "pid": None,
+                "started_at": repair_state.now_iso(),
+                "reason": reason,
+                "include_shared": include_shared,
+                "repair_nonce": repair_nonce,
+                "last_error": None,
+            },
+        )
+        env = os.environ.copy()
+        env["ANIMAWORKS_VECTOR_URL"] = vector_url
+        env["ANIMAWORKS_RAG_REPAIR_NONCE"] = repair_nonce
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=repo_root,
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
         self._write_rag_repair_state(
             anima_name,
             {
@@ -445,6 +474,7 @@ class RAGRepairMixin:
                 "started_at": repair_state.now_iso(),
                 "reason": reason,
                 "include_shared": include_shared,
+                "repair_nonce": repair_nonce,
                 "last_error": None,
             },
         )

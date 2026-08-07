@@ -264,3 +264,29 @@ def test_reconciliation_runs_only_after_successful_directory_scan(tmp_path: Path
 
     assert "knowledge/deleted.md" in indexer.index_meta
     assert store.metadata_calls == []
+
+
+def test_reconciliation_is_skipped_after_transient_directory_failure(tmp_path: Path) -> None:
+    store = ReconciliationVectorStore()
+    indexer, knowledge_dir = _make_indexer(tmp_path, store)
+    for name in ("active.md", "unprocessed.md"):
+        (knowledge_dir / name).write_text("active", encoding="utf-8")
+    stale_source = "knowledge/deleted.md"
+    indexer.index_meta[stale_source] = {"hash": "old"}
+
+    def transient_failure(_path: Path, _memory_type: str, force: bool = False) -> int:
+        del force
+        indexer._last_index_file_outcome = _IndexFileOutcome("failed", transient=True)
+        return 0
+
+    indexer.index_file = MagicMock(side_effect=transient_failure)
+    indexer._save_index_meta = MagicMock()
+
+    result = indexer.index_directory(knowledge_dir, "knowledge")
+
+    assert result.files_failed == 1
+    assert result.files_unprocessed == 1
+    assert result.files_reconciled == 0
+    assert stale_source in indexer.index_meta
+    assert store.metadata_calls == []
+    indexer._save_index_meta.assert_not_called()
