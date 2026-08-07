@@ -187,6 +187,7 @@ class TestSupervisorSourcePassthrough:
         from core.supervisor.runner import AnimaRunner
 
         runner = AnimaRunner.__new__(AnimaRunner)
+        runner._scheduler_mgr = None
         mock_anima = MagicMock()
         mock_anima.process_message = AsyncMock(return_value={"summary": "ok", "images": []})
         runner.anima = mock_anima
@@ -207,6 +208,7 @@ class TestSupervisorSourcePassthrough:
         from core.supervisor.runner import AnimaRunner
 
         runner = AnimaRunner.__new__(AnimaRunner)
+        runner._scheduler_mgr = None
         mock_anima = MagicMock()
         mock_anima.process_message = AsyncMock(return_value={"summary": "ok", "images": []})
         runner.anima = mock_anima

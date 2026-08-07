@@ -233,7 +233,7 @@ class TestBackendActivityLogSummary:
         content = self._read_all()
         pattern = r'activity\.log\(\s*"message_received",\s*content=content,\s*summary=content\[:100\]'
         matches = re.findall(pattern, content)
-        assert len(matches) == 2, f"Expected 2 message_received calls with summary, found {len(matches)}"
+        assert len(matches) == 3, f"Expected 3 message_received calls with summary (chat, inbox, steer injection), found {len(matches)}"
 
     def test_message_received_from_anima_has_summary(self) -> None:
         content = self._read_all()
