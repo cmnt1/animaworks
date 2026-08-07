@@ -130,6 +130,32 @@ async def test_supervised_rag_repair_legacy_mode_stops_repairs_and_restarts(tmp_
 
 
 @pytest.mark.asyncio
+async def test_phase3_repair_is_sent_to_root_even_when_stop_config_is_enabled(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    anima_dir = _create_anima(sup)
+    (anima_dir / "status.json").write_text('{"process_model":"phase3"}', encoding="utf-8")
+    sup._rag_repair_stop_anima = lambda: True
+    sup.stop_anima = AsyncMock()
+    sup._run_rag_repair_cli_process = AsyncMock()
+    sup.send_request = AsyncMock(return_value={"ok": True, "status": "success", "chunks_indexed": 3})
+
+    await sup._run_supervised_rag_repair(
+        "sora",
+        {"status": "requested", "reason": "hnsw_corruption", "include_shared": True},
+    )
+
+    sup.stop_anima.assert_not_awaited()
+    sup._run_rag_repair_cli_process.assert_not_awaited()
+    sup.send_request.assert_awaited_once_with(
+        "sora",
+        "repair_memory",
+        {"reason": "hnsw_corruption", "include_shared": True},
+        timeout=1830.0,
+    )
+    assert _read_state(anima_dir)["status"] == "healthy"
+
+
+@pytest.mark.asyncio
 async def test_supervised_rag_repair_stop_failure_does_not_run_repair(tmp_path: Path) -> None:
     sup = _make_supervisor(tmp_path)
     anima_dir = _create_anima(sup)

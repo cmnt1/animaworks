@@ -856,6 +856,15 @@ class _FakeBuildStore:
     def list_collections_checked(self) -> list[str] | None:
         return self.list_collections()
 
+    def verify_rebuilt_data(self, *, expected_chunks: int) -> dict[str, int]:
+        if expected_chunks and not self._collections:
+            raise RuntimeError("no collections")
+        return {
+            "collections": len(self._collections),
+            "chunks": expected_chunks,
+            "query_results": int(bool(expected_chunks)),
+        }
+
     def close(self) -> None:
         self.closed = True
 
@@ -898,6 +907,21 @@ def _patch_atomic_build(
         "core.memory.rag.repair_rebuild.verify_worker_vector_store",
         lambda anima_name, expected_chunks: True,
     )
+
+
+def test_staging_rebuild_rejects_non_staging_direct_chroma_path(tmp_path: Path) -> None:
+    from core.memory.rag.repair_rebuild import build_staging_vectordb
+
+    anima_dir = tmp_path / "sora"
+    anima_dir.mkdir()
+
+    with pytest.raises(ValueError, match="staging directory"):
+        build_staging_vectordb(
+            "sora",
+            include_shared=False,
+            anima_dir=anima_dir,
+            staging=anima_dir / "vectordb",
+        )
 
 
 def test_repair_rebuilds_swaps_and_archives(data_dir: Path, monkeypatch):
@@ -1489,6 +1513,7 @@ def test_chroma_repair_verification_runs_real_query() -> None:
     from core.memory.rag.store import ChromaVectorStore
 
     collection = MagicMock()
+    collection.count.return_value = 1
     collection.get.return_value = {"ids": ["doc-1"], "embeddings": [[0.1, 0.2]]}
     collection.query.return_value = {"ids": [["doc-1"]]}
     store = ChromaVectorStore.__new__(ChromaVectorStore)
@@ -1499,5 +1524,20 @@ def test_chroma_repair_verification_runs_real_query() -> None:
 
     result = store.verify_rebuilt_data(expected_chunks=1)
 
-    assert result == {"collections": 1, "query_results": 1}
+    assert result == {"collections": 1, "chunks": 1, "query_results": 1}
     collection.query.assert_called_once_with(query_embeddings=[[0.1, 0.2]], n_results=1)
+
+
+def test_chroma_repair_verification_rejects_wrong_chunk_count() -> None:
+    from core.memory.rag.store import ChromaVectorStore
+
+    collection = MagicMock()
+    collection.count.return_value = 0
+    store = ChromaVectorStore.__new__(ChromaVectorStore)
+    store.client = MagicMock()
+    store.client.list_collections.return_value = [MagicMock(name="knowledge")]
+    store.client.list_collections.return_value[0].name = "knowledge"
+    store.client.get_collection.return_value = collection
+
+    with pytest.raises(RuntimeError, match="expected 1 chunks.*found 0"):
+        store.verify_rebuilt_data(expected_chunks=1)

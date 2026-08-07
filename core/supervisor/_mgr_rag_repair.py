@@ -184,7 +184,7 @@ class RAGRepairMixin:
         reason = str(state.get("reason") or "requested_rag_repair")
         include_shared = bool(state.get("include_shared", True))
         try:
-            if self._rag_repair_stop_anima():
+            if not self._phase3_repair_owned_by_root(anima_name) and self._rag_repair_stop_anima():
                 if not await self._stop_anima_for_rag_repair(anima_name, reason, include_shared):
                     return
 
@@ -333,6 +333,16 @@ class RAGRepairMixin:
                 "last_error": None,
             },
         )
+        if self._phase3_repair_owned_by_root(anima_name):
+            try:
+                return await self.send_request(
+                    anima_name,
+                    "repair_memory",
+                    {"reason": reason, "include_shared": include_shared},
+                    timeout=float(self._rag_repair_timeout_seconds() + 30),
+                )
+            except Exception as exc:
+                return {"ok": False, "status": "failed", "error": str(exc)}
         return await self._run_rag_repair_cli_process(
             anima_name,
             reason=reason,
@@ -533,6 +543,12 @@ class RAGRepairMixin:
             return int(getattr(load_config().rag, "repair_timeout_seconds", 1800))
         except Exception:
             return 1800
+
+    def _phase3_repair_owned_by_root(self, anima_name: str) -> bool:
+        from core.config.resolver import resolve_process_model_config
+
+        process_config = resolve_process_model_config(self.animas_dir / anima_name)
+        return bool(process_config.valid and process_config.process_model == "phase3")
 
     def _rag_repair_stop_anima(self) -> bool:
         try:

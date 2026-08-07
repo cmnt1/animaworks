@@ -6,6 +6,8 @@ from __future__ import annotations
 
 """Quarantine and reindex helpers for RAG auto-repair."""
 
+import argparse
+import json
 import logging
 import os
 import shutil
@@ -141,6 +143,7 @@ def _reindex_into_store(
     *,
     include_shared: bool,
     anima_dir: Path | None = None,
+    rebuild_bm25: bool = True,
 ) -> tuple[int, dict[str, str]]:
     """Index an anima's memory (and optionally shared collections) into a store."""
     from core.company_resources import get_company_resources
@@ -167,8 +170,9 @@ def _reindex_into_store(
     if (state_dir / "conversation.json").is_file():
         total_chunks += indexer.index_conversation_summary(state_dir, anima_name, force=True)
 
-    bm25_result = rebuild_longterm_bm25_index(anima_dir)
-    logger.info("Rebuilt long-term BM25 index for %s: documents=%d", anima_name, bm25_result.documents)
+    if rebuild_bm25:
+        bm25_result = rebuild_longterm_bm25_index(anima_dir)
+        logger.info("Rebuilt long-term BM25 index for %s: documents=%d", anima_name, bm25_result.documents)
 
     if include_shared:
         base_dir = get_data_dir()
@@ -214,6 +218,53 @@ def _reindex_into_store(
 
             shared_hashes[meta_key] = _compute_dir_hash(src_dir, glob)
     return total_chunks, shared_hashes
+
+
+def build_staging_vectordb(
+    anima_name: str,
+    *,
+    include_shared: bool,
+    anima_dir: Path,
+    staging: Path,
+    rebuild_bm25: bool = True,
+) -> tuple[int, dict[str, str]]:
+    """Build and query-verify a fresh staging DB without touching the live DB."""
+    import gc
+
+    from core.memory.rag.store import create_chroma_vector_store
+
+    anima_dir = anima_dir.resolve()
+    staging = staging.resolve()
+    if staging.parent != anima_dir or not staging.name.startswith("vectordb.staging-"):
+        raise ValueError(f"direct Chroma rebuild path must be an anima staging directory: {staging}")
+    if staging.exists():
+        shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True, exist_ok=True)
+    previous = os.environ.get("ANIMAWORKS_ALLOW_DIRECT_CHROMA")
+    os.environ["ANIMAWORKS_ALLOW_DIRECT_CHROMA"] = "1"
+    try:
+        store = create_chroma_vector_store(persist_dir=staging, anima_name=anima_name)
+        try:
+            chunks, shared_hashes = _reindex_into_store(
+                store,
+                anima_name,
+                include_shared=include_shared,
+                anima_dir=anima_dir,
+                rebuild_bm25=rebuild_bm25,
+            )
+            store.verify_rebuilt_data(expected_chunks=chunks)
+            return chunks, shared_hashes
+        finally:
+            store.close()
+            gc.collect()
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    finally:
+        if previous is None:
+            os.environ.pop("ANIMAWORKS_ALLOW_DIRECT_CHROMA", None)
+        else:
+            os.environ["ANIMAWORKS_ALLOW_DIRECT_CHROMA"] = previous
 
 
 def full_reindex(anima_name: str, *, include_shared: bool) -> int:
@@ -283,10 +334,7 @@ def atomic_rebuild_vectordb(
     only the vector writes go to the local staging store. Returns
     ``(chunks_indexed, archive_path)``.
     """
-    import gc
-
     from core.memory.rag.singleton import reset_vector_store
-    from core.memory.rag.store import create_chroma_vector_store
     from core.paths import get_anima_vectordb_dir
 
     resolved_anima_dir = Path(anima_dir) if anima_dir is not None else get_anima_vectordb_dir(anima_name).parent
@@ -301,35 +349,12 @@ def atomic_rebuild_vectordb(
     succeeded = False
 
     try:
-        prev_allow = os.environ.get("ANIMAWORKS_ALLOW_DIRECT_CHROMA")
-        os.environ["ANIMAWORKS_ALLOW_DIRECT_CHROMA"] = "1"
-        try:
-            store = create_chroma_vector_store(persist_dir=staging, anima_name=anima_name)
-            try:
-                chunks, shared_hashes = _reindex_into_store(
-                    store,
-                    anima_name,
-                    include_shared=include_shared,
-                    anima_dir=resolved_anima_dir,
-                )
-                if chunks > 0:
-                    collections = store.list_collections_checked()
-                    if collections is None:
-                        raise RebuildVerificationError(
-                            f"staged vector DB for {anima_name} is unreadable despite indexing {chunks} chunks"
-                        )
-                    if not collections:
-                        raise RebuildVerificationError(
-                            f"staged vector DB for {anima_name} has no collections despite indexing {chunks} chunks"
-                        )
-            finally:
-                store.close()
-                gc.collect()
-        finally:
-            if prev_allow is None:
-                os.environ.pop("ANIMAWORKS_ALLOW_DIRECT_CHROMA", None)
-            else:
-                os.environ["ANIMAWORKS_ALLOW_DIRECT_CHROMA"] = prev_allow
+        chunks, shared_hashes = build_staging_vectordb(
+            anima_name,
+            include_shared=include_shared,
+            anima_dir=resolved_anima_dir,
+            staging=staging,
+        )
 
         if not _has_active_repair_fence(anima_name, anima_dir=resolved_anima_dir):
             raise RebuildVerificationError(
@@ -401,3 +426,30 @@ def atomic_rebuild_vectordb(
         if not succeeded:
             shutil.rmtree(staging, ignore_errors=True)
         shutil.rmtree(bm25_backup, ignore_errors=True)
+
+
+def _main() -> int:
+    parser = argparse.ArgumentParser(description="Build a phase3 RAG repair staging database")
+    parser.add_argument("--build-staging", action="store_true", required=True)
+    parser.add_argument("--anima", required=True)
+    parser.add_argument("--anima-dir", type=Path, required=True)
+    parser.add_argument("--staging", type=Path, required=True)
+    parser.add_argument("--result", type=Path, required=True)
+    parser.add_argument("--shared", action="store_true")
+    args = parser.parse_args()
+    chunks, shared_hashes = build_staging_vectordb(
+        args.anima,
+        include_shared=args.shared,
+        anima_dir=args.anima_dir,
+        staging=args.staging,
+        rebuild_bm25=False,
+    )
+    args.result.write_text(
+        json.dumps({"chunks": chunks, "shared_hashes": shared_hashes}),
+        encoding="utf-8",
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())
