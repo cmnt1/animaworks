@@ -41,6 +41,7 @@ def _make_indexer(anima_dir: Path):
         )
     # Patch embedding generation to return deterministic vectors
     idx._generate_embeddings = MagicMock(return_value=[[0.1] * 4])
+    idx.vector_store.create_collection.return_value = True
     idx.vector_store.list_collections_checked.side_effect = lambda: _checked_collections(idx.vector_store)
     return idx
 
@@ -97,6 +98,32 @@ class TestIndexFileCollectionRecovery:
 
     # Markdown content with a ``## `` heading so chunker yields chunks.
     _SAMPLE_MD = "# Title\n\n## Section A\n\n" + ("body sentence with enough length to chunk. " * 5)
+
+    def test_directory_write_gate_stops_before_embedding(self, anima_dir: Path):
+        idx = _make_indexer(anima_dir)
+        files = [anima_dir / "knowledge" / f"{name}.md" for name in ("a", "b", "c")]
+        for file_path in files:
+            file_path.write_text(self._SAMPLE_MD, encoding="utf-8")
+        idx.vector_store.create_collection.return_value = False
+        idx._generate_embeddings.reset_mock()
+        idx._reconcile_stale_entries = MagicMock(return_value=0)
+        idx._save_index_meta = MagicMock()
+
+        result = idx.index_directory(anima_dir / "knowledge", "knowledge")
+
+        assert result.files_failed == 1
+        assert result.transient_failures == 1
+        assert result.files_unprocessed == 2
+        assert result.files_reconciled == 0
+        assert result.transient is True
+        assert result.failed_sources == ("a.md",)
+        idx.vector_store.create_collection.assert_called_once_with("test_anima_knowledge")
+        idx._generate_embeddings.assert_not_called()
+        idx.vector_store.get_by_metadata.assert_not_called()
+        idx.vector_store.upsert.assert_not_called()
+        idx._reconcile_stale_entries.assert_not_called()
+        idx._save_index_meta.assert_not_called()
+        assert all(str(file_path.relative_to(anima_dir)) not in idx.index_meta for file_path in files)
 
     def test_skips_when_hash_matches_and_collection_exists(self, anima_dir: Path):
         idx = _make_indexer(anima_dir)
@@ -192,3 +219,24 @@ class TestIndexConversationSummaryRecovery:
         chunks = idx.index_conversation_summary(state_dir, "test_anima")
         assert chunks > 0
         assert idx.vector_store.upsert.called
+
+    def test_create_failure_skips_embedding_and_metadata_update(self, anima_dir: Path):
+        idx = _make_indexer(anima_dir)
+        state_dir = anima_dir / "state"
+        state_dir.mkdir()
+        (state_dir / "conversation.json").write_text(
+            '{"compressed_summary": "### Section A\\n\\n' + ("hello world " * 10) + '"}',
+            encoding="utf-8",
+        )
+        idx.vector_store.create_collection.return_value = False
+        idx._generate_embeddings.reset_mock()
+        idx._save_index_meta = MagicMock()
+
+        chunks = idx.index_conversation_summary(state_dir, "test_anima")
+
+        assert chunks == 0
+        idx.vector_store.create_collection.assert_called_once_with("test_anima_conversation_summary")
+        idx._generate_embeddings.assert_not_called()
+        idx.vector_store.upsert.assert_not_called()
+        idx._save_index_meta.assert_not_called()
+        assert "conversation_summary" not in idx.index_meta
