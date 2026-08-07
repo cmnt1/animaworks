@@ -21,6 +21,7 @@ from cli.commands.index_cmd import (
     setup_index_command,
 )
 from core.memory.rag.indexer import IndexDirectoryResult
+from core.memory.rag.shared_meta import shared_index_meta_path
 
 # ── _is_anima_enabled ─────────────────────────────────────
 
@@ -135,6 +136,7 @@ class TestIndexSharedCollections:
             )
         for d in anima_dirs:
             assert not (d / "index_meta.json").exists()
+            assert not shared_index_meta_path(d).exists()
 
     def test_indexes_into_each_anima_db(
         self,
@@ -158,10 +160,11 @@ class TestIndexSharedCollections:
 
         assert total == 3 * len(anima_dirs)
         for d in anima_dirs:
-            meta_path = d / "index_meta.json"
+            meta_path = shared_index_meta_path(d)
             assert meta_path.exists()
             data = json.loads(meta_path.read_text(encoding="utf-8"))
             assert "shared_common_knowledge_hash" in data
+            assert not (d / "index_meta.json").exists()
 
     def test_does_not_write_hash_when_indexing_failed(
         self,
@@ -182,7 +185,7 @@ class TestIndexSharedCollections:
             )
 
         assert total == 0
-        assert all(not (directory / "index_meta.json").exists() for directory in anima_dirs)
+        assert all(not shared_index_meta_path(directory).exists() for directory in anima_dirs)
 
     def test_skips_repair_locked_anima(
         self,

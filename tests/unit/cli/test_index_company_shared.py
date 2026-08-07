@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from cli.commands.index_cmd import _index_shared_collections
 from core.memory.rag.indexer import IndexDirectoryResult
+from core.memory.rag.shared_meta import shared_index_meta_path
 
 
 def _anima(base: Path, name: str, company: str | None) -> Path:
@@ -71,4 +72,4 @@ def test_company_shared_index_dry_run_does_not_mutate(tmp_path: Path) -> None:
     store.delete_collection.assert_not_called()
     indexer.assert_not_called()
     assert not (alice / "index_meta.json").exists()
-
+    assert not shared_index_meta_path(alice).exists()

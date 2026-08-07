@@ -12,8 +12,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.memory.rag.indexer import IndexDirectoryResult
+from core.memory.rag.shared_meta import read_shared_hash, shared_index_meta_path, write_shared_hash
 from core.memory.rag.store import CollectionExistence
-from core.memory.rag_search import _compute_dir_hash, _write_shared_hash
+from core.memory.rag_search import _compute_dir_hash
 from core.supervisor._mgr_scheduler import _marker_dir
 
 
@@ -235,7 +236,7 @@ async def test_daily_indexing_does_not_write_shared_hash_after_failure(tmp_path:
         )
         await sup._run_daily_indexing()
 
-    meta_path = sup.animas_dir / "sakura" / "index_meta.json"
+    meta_path = shared_index_meta_path(sup.animas_dir / "sakura")
     if meta_path.exists():
         assert "shared_common_knowledge_hash" not in json.loads(meta_path.read_text(encoding="utf-8"))
 
@@ -248,9 +249,8 @@ async def test_daily_indexing_skips_shared_reindex_when_collection_unavailable(t
     common_knowledge = tmp_path / "common_knowledge"
     common_knowledge.mkdir()
     (common_knowledge / "guide.md").write_text("# Guide", encoding="utf-8")
-    meta_path = anima_dir / "index_meta.json"
-    _write_shared_hash(
-        meta_path,
+    write_shared_hash(
+        anima_dir,
         "shared_common_knowledge_hash",
         _compute_dir_hash(common_knowledge, "*.md"),
     )
@@ -268,6 +268,7 @@ async def test_daily_indexing_skips_shared_reindex_when_collection_unavailable(t
         await sup._run_daily_indexing()
 
     mock_store.collection_exists.assert_called_once_with("shared_common_knowledge")
+    assert read_shared_hash(anima_dir, "shared_common_knowledge_hash") is not None
     assert mock_indexer_cls.call_count == 1
     mock_indexer_cls.return_value.index_directory.assert_not_called()
 
