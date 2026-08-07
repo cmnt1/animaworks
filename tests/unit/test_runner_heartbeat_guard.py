@@ -19,6 +19,13 @@ from core.supervisor.scheduler_manager import SchedulerManager
 from core.supervisor.inbox_rate_limiter import InboxRateLimiter
 
 
+def _legacy_anima_dir(tmp_path):
+    d = tmp_path / "animas" / "guard-test"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
+    return d
+
+
 def _make_scheduler_mgr(tmp_path: Path) -> SchedulerManager:
     """Create a SchedulerManager with minimal dependencies."""
     mock_anima = MagicMock()
@@ -26,7 +33,7 @@ def _make_scheduler_mgr(tmp_path: Path) -> SchedulerManager:
     return SchedulerManager(
         anima=mock_anima,
         anima_name="guard-test",
-        anima_dir=tmp_path / "animas" / "guard-test",
+        anima_dir=_legacy_anima_dir(tmp_path),
         emit_event=MagicMock(),
     )
 
@@ -234,7 +241,7 @@ class TestRunnerHeartbeat24hDefault:
         mgr = SchedulerManager(
             anima=mock_anima,
             anima_name="guard-test",
-            anima_dir=tmp_path / "animas" / "guard-test",
+            anima_dir=_legacy_anima_dir(tmp_path),
             emit_event=MagicMock(),
         )
         mock_scheduler = MagicMock()
@@ -256,7 +263,7 @@ class TestRunnerHeartbeat24hDefault:
         mgr = SchedulerManager(
             anima=mock_anima,
             anima_name="guard-test",
-            anima_dir=tmp_path / "animas" / "guard-test",
+            anima_dir=_legacy_anima_dir(tmp_path),
             emit_event=MagicMock(),
         )
         mock_scheduler = MagicMock()

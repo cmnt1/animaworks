@@ -13,6 +13,7 @@ def _anima(base: Path, name: str, company: str | None) -> Path:
     directory = base / "animas" / name
     directory.mkdir(parents=True)
     payload = {"company": company} if company is not None else {}
+    payload["process_model"] = "legacy"
     (directory / "status.json").write_text(json.dumps(payload), encoding="utf-8")
     return directory
 

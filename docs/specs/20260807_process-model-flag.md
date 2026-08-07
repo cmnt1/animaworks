@@ -21,7 +21,7 @@ animaごとのprocess topologyの正本は `<anima_dir>/status.json` とする�
 
 | 値 | 意味 |
 |---|---|
-| field欠落 | 後方互換のため`legacy` |
+| field欠落 | `phase3`（2026-08-07改訂: 既定でプロセス分離+root DB所有を有効化） |
 | `legacy` | 現runner内で全laneを実行し、現global vector workerを使う |
 | `phase2` | DB所有はlegacyのまま。レーン別サブflagでtask runnerへ段階移行 |
 | `phase3` | chatを含む全LLM/CLI laneをtask runnerへ移し、anima rootが自DBを排他所有 |
@@ -47,7 +47,8 @@ Phase 3のlane割当はchat/greet/bootstrap→`chat`、inbox→`cron`、consolid
 
 | `process_model` | subflag | effective topology |
 |---|---|---|
-| 欠落/`legacy` | 任意（malformed含む） | 全legacy。subflagは無視し、fieldがあればwarning |
+| 欠落 | 任意 | `phase3`と同じ（全task runner + root DB owner） |
+| `legacy`明示 | 任意（malformed含む） | 全legacy。subflagは無視し、fieldがあればwarning |
 | `phase2` | key欠落 | そのlaneはlegacy |
 | `phase2` | key=`true` | そのlaneだけtask runner |
 | `phase2` | subflag object/value/keyが不正 | invalid。現在topologyを変えずstart/restart拒否 |
@@ -85,7 +86,7 @@ Phase 2ではDB ownerを変更しない。phase3→phase2/legacy rollbackも同�
 
 ## 4. rollout、統合、rollback
 
-1. 初期状態はfield欠落=`legacy`。
+1. 既定はfield欠落=`phase3`（2026-08-07改訂）。`legacy`/`phase2`は明示opt-out。
 2. `process_model=phase2` とし、低リスクanimaで `cron` から1 keyずつtrueにする。カナリア中は `worker_pool_size=1` 固定。
 3. `cron → heartbeat → task → background` を検証後、chat切出しとDB handoffの準備が整った時だけ `process_model=phase3` へ一括統合し、subflag objectを削除する。
 4. 全anima phase3化後もlegacy/phase2実装を **1週間** 保持する。この間のrollbackはflag変更+自動restartで行える。

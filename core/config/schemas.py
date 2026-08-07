@@ -85,11 +85,19 @@ class TaskProcessIsolationConfig(BaseModel):
     background: StrictBool = False
 
 
-class ResolvedProcessModelConfig(BaseModel):
-    """Validated process topology resolution result."""
+def _phase3_isolation() -> TaskProcessIsolationConfig:
+    return TaskProcessIsolationConfig(cron=True, heartbeat=True, task=True, background=True)
 
-    process_model: ProcessModel = "legacy"
-    task_process_isolation: TaskProcessIsolationConfig = Field(default_factory=TaskProcessIsolationConfig)
+
+class ResolvedProcessModelConfig(BaseModel):
+    """Validated process topology resolution result.
+
+    The default topology is ``phase3`` (task-runner isolation + root DB
+    ownership); ``legacy``/``phase2`` remain available as explicit opt-outs.
+    """
+
+    process_model: ProcessModel = "phase3"
+    task_process_isolation: TaskProcessIsolationConfig = Field(default_factory=_phase3_isolation)
     valid: bool = True
     error: str | None = None
     warnings: tuple[str, ...] = ()

@@ -30,13 +30,14 @@ def _create_anima(sup, name: str = "sora") -> Path:
     anima_dir = sup.animas_dir / name
     (anima_dir / "state").mkdir(parents=True, exist_ok=True)
     (anima_dir / "vectordb").mkdir(exist_ok=True)
+    (anima_dir / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
     return anima_dir
 
 
 def _create_enabled_anima(sup, name: str = "sora") -> Path:
     anima_dir = _create_anima(sup, name)
     (anima_dir / "identity.md").write_text(f"# {name}\n", encoding="utf-8")
-    (anima_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
+    (anima_dir / "status.json").write_text(json.dumps({"enabled": True, "process_model": "legacy"}), encoding="utf-8")
     return anima_dir
 
 

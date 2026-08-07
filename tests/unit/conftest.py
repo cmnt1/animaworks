@@ -76,3 +76,32 @@ def _global_permissions_for_unit_tests(tmp_path: Path) -> None:
     GlobalPermissionsCache.get().load(dst, interactive=False)
     yield
     GlobalPermissionsCache.reset()
+
+
+# ── Default-topology shim ─────────────────────────────────────────────
+# Production default topology is ``phase3`` (missing status.json resolves to
+# root DB ownership).  Legacy-path tests use ad-hoc anima dirs without a
+# status.json; resolve those to ``legacy`` so pre-existing fixtures keep
+# exercising the legacy worker/in-process paths.  Tests that write an explicit
+# status.json keep the real resolver behaviour.
+import pytest as _pytest_topology
+
+import core.config.resolver as _resolver_module
+from core.config.resolver import resolve_process_model_config as _real_resolve_pm
+from core.config.schemas import (
+    ResolvedProcessModelConfig as _RPMC,
+    TaskProcessIsolationConfig as _TPIC,
+)
+
+
+@_pytest_topology.fixture(autouse=True)
+def _legacy_topology_for_fixtureless_animas(monkeypatch):
+    from pathlib import Path as _Path
+
+    def _resolve(anima_dir):
+        if (_Path(anima_dir) / "status.json").is_file():
+            return _real_resolve_pm(anima_dir)
+        return _RPMC(process_model="legacy", task_process_isolation=_TPIC())
+
+    monkeypatch.setattr(_resolver_module, "resolve_process_model_config", _resolve)
+    yield

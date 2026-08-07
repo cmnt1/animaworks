@@ -120,7 +120,7 @@ class TestIndexSharedCollections:
         bob = animas / "bob"
         bob.mkdir(parents=True, exist_ok=True)
         for directory in (alice, bob):
-            (directory / "status.json").write_text("{}", encoding="utf-8")
+            (directory / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
         return [alice, bob]
 
     def test_dry_run_does_not_write_meta(

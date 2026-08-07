@@ -46,14 +46,18 @@ def resolve_process_model_config(anima_dir: Path) -> ResolvedProcessModelConfig:
     if not isinstance(data, dict):
         return ResolvedProcessModelConfig(valid=False, error="status.json must contain a JSON object")
 
-    process_model = data.get("process_model", "legacy")
+    process_model = data.get("process_model", "phase3")
     if not isinstance(process_model, str) or process_model not in {"legacy", "phase2", "phase3"}:
         return ResolvedProcessModelConfig(valid=False, error=f"invalid process_model: {process_model!r}")
 
     has_flags = "task_process_isolation" in data
     if process_model == "legacy":
         warnings = ("task_process_isolation is ignored for legacy process_model",) if has_flags else ()
-        return ResolvedProcessModelConfig(warnings=warnings)
+        return ResolvedProcessModelConfig(
+            process_model="legacy",
+            task_process_isolation=TaskProcessIsolationConfig(),
+            warnings=warnings,
+        )
     if process_model == "phase3":
         warnings = ("task_process_isolation is ignored for phase3 process_model",) if has_flags else ()
         return ResolvedProcessModelConfig(
@@ -73,6 +77,7 @@ def resolve_process_model_config(anima_dir: Path) -> ResolvedProcessModelConfig:
     except ValidationError as exc:
         return ResolvedProcessModelConfig(
             process_model="phase2",
+            task_process_isolation=TaskProcessIsolationConfig(),
             valid=False,
             error=f"invalid task_process_isolation: {exc.errors(include_url=False)}",
         )

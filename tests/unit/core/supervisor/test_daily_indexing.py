@@ -38,7 +38,7 @@ def _create_anima_dir(animas_dir: Path, name: str, *, with_knowledge: bool = Fal
     d = animas_dir / name
     d.mkdir(parents=True, exist_ok=True)
     (d / "identity.md").write_text(f"# {name}", encoding="utf-8")
-    (d / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
+    (d / "status.json").write_text(json.dumps({"enabled": True, "process_model": "legacy"}), encoding="utf-8")
     if with_knowledge:
         (d / "knowledge").mkdir(exist_ok=True)
         (d / "knowledge" / "test.md").write_text("# test", encoding="utf-8")

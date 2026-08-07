@@ -53,6 +53,8 @@ async def test_repair_before_restart_on_sigsegv(monkeypatch, tmp_path):
     service = _RepairServiceForTest(recent=False)
     monkeypatch.setattr("core.memory.rag.repair.get_repair_service", lambda: service)
 
+    (tmp_path / "sora").mkdir(exist_ok=True)
+    (tmp_path / "sora" / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
     supervisor = _SupervisorForTest(tmp_path)
     repair_calls: list[dict] = []
 
@@ -87,6 +89,8 @@ async def test_repair_before_restart_on_recent_rag_corruption(monkeypatch, tmp_p
     service = _RepairServiceForTest(recent=True)
     monkeypatch.setattr("core.memory.rag.repair.get_repair_service", lambda: service)
 
+    (tmp_path / "sora").mkdir(exist_ok=True)
+    (tmp_path / "sora" / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
     supervisor = _SupervisorForTest(tmp_path)
     repair_calls: list[dict] = []
 
@@ -159,6 +163,8 @@ async def test_native_segfault_not_gated_by_sqlite_check(monkeypatch, tmp_path):
     service = _RepairServiceForTest(recent=False)
     monkeypatch.setattr("core.memory.rag.repair.get_repair_service", lambda: service)
 
+    (tmp_path / "sora").mkdir(exist_ok=True)
+    (tmp_path / "sora" / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
     supervisor = _SupervisorForTest(tmp_path)
     repair_calls: list[dict] = []
 
