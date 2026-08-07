@@ -127,18 +127,14 @@ class IPCV2Envelope:
             default=str,
         ).encode("utf-8")
         if len(payload) > IPC_V2_MAX_FRAME_BYTES:
-            raise IPCV2PayloadTooLarge(
-                f"IPC v2 frame is {len(payload)} bytes; maximum is {IPC_V2_MAX_FRAME_BYTES}"
-            )
+            raise IPCV2PayloadTooLarge(f"IPC v2 frame is {len(payload)} bytes; maximum is {IPC_V2_MAX_FRAME_BYTES}")
         return payload + b"\n"
 
     @classmethod
     def from_bytes(cls, payload: bytes) -> IPCV2Envelope:
         raw = payload.rstrip(b"\r\n")
         if len(raw) > IPC_V2_MAX_FRAME_BYTES:
-            raise IPCV2PayloadTooLarge(
-                f"IPC v2 frame is {len(raw)} bytes; maximum is {IPC_V2_MAX_FRAME_BYTES}"
-            )
+            raise IPCV2PayloadTooLarge(f"IPC v2 frame is {len(raw)} bytes; maximum is {IPC_V2_MAX_FRAME_BYTES}")
         try:
             data = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -272,9 +268,7 @@ class IPCV2Connection:
                     except (TimeoutError, ConnectionError, OSError) as exc:
                         self._closed = True
                         if isinstance(exc, TimeoutError):
-                            raise IPCV2BackpressureTimeout(
-                                "writer.drain() did not advance for 5 seconds"
-                            ) from exc
+                            raise IPCV2BackpressureTimeout("writer.drain() did not advance for 5 seconds") from exc
                         raise IPCV2ConnectionError(f"write failed: {exc}") from exc
                     self.state.send_seq = next_seq
                     self.last_traffic_at = time.monotonic()

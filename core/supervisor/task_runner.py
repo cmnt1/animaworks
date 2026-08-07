@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from core.anima import DigitalAnima
+from core.i18n import t
 from core.paths import get_animas_dir, get_data_dir, get_shared_dir
 from core.schemas import CronTask
 from core.supervisor.ipc_v2 import (
@@ -107,7 +108,7 @@ async def execute_cron_contract(anima: DigitalAnima, task: CronTask) -> dict[str
     if should_follow_up:
         followup_result = await anima.run_cron_task(
             task.name,
-            task.description or f"cron.mdの「{task.name}」の指示に従って処理してください。",
+            task.description or t("scheduler.cron_fallback_description", task_name=task.name),
             command_output=stdout,
             **({"skills": task.skills} if task.skills else {}),
         )
