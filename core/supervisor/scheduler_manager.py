@@ -99,6 +99,7 @@ class SchedulerManager:
                 max_concurrent=pool_size,
                 busy_hang_threshold_sec=float(load_config().server.busy_hang_threshold),
                 busy_status_owner=anima,
+                memory_via_root=process_config.process_model == "phase3",
             )
 
         # Polling-based heartbeat state (used when effective_interval > 60)

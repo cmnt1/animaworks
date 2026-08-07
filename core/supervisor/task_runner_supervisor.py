@@ -26,6 +26,7 @@ from core.supervisor.ipc_v2 import (
     ipc_v2_error,
     read_ipc_v2_envelope,
 )
+from core.supervisor.memory_service import MemoryService, MemoryServiceUnavailable
 from core.supervisor.transport import cleanup_ipc_endpoint, start_ipc_server
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,7 @@ class TaskRunnerSupervisor:
         max_concurrent: int | None = None,
         busy_hang_threshold_sec: float = 900.0,
         busy_status_owner: Any | None = None,
+        memory_via_root: bool = False,
     ) -> None:
         self.anima_name = anima_name
         self.anima_dir = anima_dir
@@ -81,6 +83,7 @@ class TaskRunnerSupervisor:
         self.root_epoch = str(uuid.uuid4())
         self.socket_path = shared_dir.parent / "run" / "sockets" / f"{anima_name}.task-v2.sock"
         self._server: asyncio.Server | None = None
+        self._memory_service = MemoryService(anima_name, anima_dir) if memory_via_root else None
         self._start_lock = asyncio.Lock()
         self._jobs: dict[str, TaskRunnerJob] = {}
         self._accepting = True
@@ -113,6 +116,8 @@ class TaskRunnerSupervisor:
             return
         async with self._start_lock:
             if self._server is None:
+                if self._memory_service is not None:
+                    await self._memory_service.start()
                 self._server, endpoint = await start_ipc_server(
                     self.socket_path,
                     self._handle_connection,
@@ -296,6 +301,8 @@ class TaskRunnerSupervisor:
                 "ANIMAWORKS_TASK_ROOT_PID": str(os.getpid()),
             }
         )
+        if self._memory_service is not None:
+            env["ANIMAWORKS_MEMORY_VIA_ROOT"] = "1"
 
         hang_watch: asyncio.Task[None] | None = None
         try:
@@ -536,6 +543,9 @@ class TaskRunnerSupervisor:
 
             while True:
                 envelope = await asyncio.wait_for(connection.receive(), timeout=15.0)
+                if envelope.kind == "request":
+                    await self._handle_memory_request(connection, envelope)
+                    continue
                 if envelope.kind == "response":
                     if envelope.body["request_id"] != job.request_id:
                         raise IPCV2ProtocolError("response request_id does not match the run contract")
@@ -573,6 +583,42 @@ class TaskRunnerSupervisor:
             else:
                 writer.close()
                 await writer.wait_closed()
+
+    async def _handle_memory_request(self, connection: IPCV2Connection, envelope: Any) -> None:
+        request_id = envelope.body["request_id"]
+        method = envelope.body["method"]
+        params = envelope.body["params"]
+        if not method.startswith("memory."):
+            await connection.send_response(
+                request_id,
+                error=ipc_v2_error("PROTOCOL_ERROR", f"unsupported task request: {method}", retryable=False),
+            )
+            return
+        if self._memory_service is None:
+            await connection.send_response(
+                request_id,
+                error=ipc_v2_error("UNAVAILABLE", "root memory service is disabled", retryable=True),
+            )
+            return
+        try:
+            result = await self._memory_service.handle(method, params)
+        except MemoryServiceUnavailable as exc:
+            await connection.send_response(
+                request_id,
+                error=ipc_v2_error(
+                    "UNAVAILABLE",
+                    str(exc),
+                    retryable=True,
+                    retry_after_ms=250,
+                ),
+            )
+        except ValueError as exc:
+            await connection.send_response(
+                request_id,
+                error=ipc_v2_error("PROTOCOL_ERROR", str(exc), retryable=False),
+            )
+        else:
+            await connection.send_response(request_id, result=result)
 
     async def close(self) -> None:
         """Stop accepting jobs, grace active runners, then reap process groups."""
@@ -624,6 +670,8 @@ class TaskRunnerSupervisor:
             self._server.close()
             await self._server.wait_closed()
             self._server = None
+        if self._memory_service is not None:
+            await self._memory_service.close()
         cleanup_ipc_endpoint(self.socket_path)
         self._recover_task_journals()
 

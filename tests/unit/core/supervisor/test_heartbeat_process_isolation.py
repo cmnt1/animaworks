@@ -41,6 +41,26 @@ def _manager(tmp_path: Path, *, isolated: bool) -> tuple[SchedulerManager, Magic
 
 
 @pytest.mark.asyncio
+async def test_phase3_starts_root_memory_service_but_phase2_does_not(tmp_path: Path) -> None:
+    manager, _ = _manager(tmp_path, isolated=True)
+    assert manager._task_runner_supervisor is not None
+    assert manager._task_runner_supervisor._memory_service is None
+    await manager.shutdown_task_runners()
+
+    phase3_dir = tmp_path / "phase3" / "animas" / "sakura"
+    phase3_dir.mkdir(parents=True)
+    shared = tmp_path / "phase3" / "shared"
+    shared.mkdir()
+    (phase3_dir / "status.json").write_text('{"process_model":"phase3"}', encoding="utf-8")
+    anima = MagicMock(shared_dir=shared)
+    phase3 = SchedulerManager(anima, "sakura", phase3_dir, MagicMock())
+
+    assert phase3._task_runner_supervisor is not None
+    assert phase3._task_runner_supervisor._memory_service is not None
+    await phase3.shutdown_task_runners()
+
+
+@pytest.mark.asyncio
 async def test_flag_false_preserves_legacy_path_without_spawn(tmp_path: Path) -> None:
     manager, anima = _manager(tmp_path, isolated=False)
 
