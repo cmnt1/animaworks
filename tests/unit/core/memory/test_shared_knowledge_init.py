@@ -40,6 +40,7 @@ class TestSharedKnowledgeInit:
     def anima_dir(self, data_dir: Path) -> Path:
         d = data_dir / "animas" / "test_anima"
         d.mkdir(parents=True)
+        (d / "status.json").write_text("{}", encoding="utf-8")
         for sub in ("knowledge", "episodes", "procedures", "skills", "state"):
             (d / sub).mkdir()
         return d

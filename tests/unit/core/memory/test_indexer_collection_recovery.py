@@ -18,6 +18,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core.memory.rag.store import CollectionExistence
+
 
 @pytest.fixture
 def anima_dir(tmp_path: Path) -> Path:
@@ -39,7 +41,16 @@ def _make_indexer(anima_dir: Path):
         )
     # Patch embedding generation to return deterministic vectors
     idx._generate_embeddings = MagicMock(return_value=[[0.1] * 4])
+    idx.vector_store.create_collection.return_value = True
+    idx.vector_store.list_collections_checked.side_effect = lambda: _checked_collections(idx.vector_store)
     return idx
+
+
+def _checked_collections(vector_store):
+    try:
+        return vector_store.list_collections()
+    except Exception:
+        return None
 
 
 class TestCollectionExistenceCache:
@@ -48,16 +59,16 @@ class TestCollectionExistenceCache:
     def test_first_call_populates_cache(self, anima_dir: Path):
         idx = _make_indexer(anima_dir)
         idx.vector_store.list_collections.return_value = ["foo", "bar"]
-        assert idx._collection_exists("foo") is True
+        assert idx._collection_exists("foo") is CollectionExistence.EXISTS
         assert idx.vector_store.list_collections.call_count == 1
         # Second call uses cache
-        assert idx._collection_exists("bar") is True
+        assert idx._collection_exists("bar") is CollectionExistence.EXISTS
         assert idx.vector_store.list_collections.call_count == 1
 
     def test_missing_returns_false(self, anima_dir: Path):
         idx = _make_indexer(anima_dir)
         idx.vector_store.list_collections.return_value = ["foo"]
-        assert idx._collection_exists("missing") is False
+        assert idx._collection_exists("missing") is CollectionExistence.MISSING
 
     def test_listing_failure_is_conservative(self, anima_dir: Path):
         """When list_collections raises, we should NOT trigger spurious re-index."""
@@ -65,16 +76,16 @@ class TestCollectionExistenceCache:
         idx.vector_store.list_collections.side_effect = RuntimeError("transient")
         # Be conservative: assume the collection exists rather than
         # forcing a full re-index of everything on a transient error.
-        assert idx._collection_exists("any") is True
+        assert idx._collection_exists("any") is CollectionExistence.UNAVAILABLE
 
     def test_mark_known_adds_to_cache(self, anima_dir: Path):
         idx = _make_indexer(anima_dir)
         idx.vector_store.list_collections.return_value = []
         # Initially not present
-        assert idx._collection_exists("new") is False
+        assert idx._collection_exists("new") is CollectionExistence.MISSING
         # After marking known, present without re-listing
         idx._mark_collection_known("new")
-        assert idx._collection_exists("new") is True
+        assert idx._collection_exists("new") is CollectionExistence.EXISTS
 
 
 class TestIndexFileCollectionRecovery:
@@ -87,6 +98,32 @@ class TestIndexFileCollectionRecovery:
 
     # Markdown content with a ``## `` heading so chunker yields chunks.
     _SAMPLE_MD = "# Title\n\n## Section A\n\n" + ("body sentence with enough length to chunk. " * 5)
+
+    def test_directory_write_gate_stops_before_embedding(self, anima_dir: Path):
+        idx = _make_indexer(anima_dir)
+        files = [anima_dir / "knowledge" / f"{name}.md" for name in ("a", "b", "c")]
+        for file_path in files:
+            file_path.write_text(self._SAMPLE_MD, encoding="utf-8")
+        idx.vector_store.create_collection.return_value = False
+        idx._generate_embeddings.reset_mock()
+        idx._reconcile_stale_entries = MagicMock(return_value=0)
+        idx._save_index_meta = MagicMock()
+
+        result = idx.index_directory(anima_dir / "knowledge", "knowledge")
+
+        assert result.files_failed == 1
+        assert result.transient_failures == 1
+        assert result.files_unprocessed == 2
+        assert result.files_reconciled == 0
+        assert result.transient is True
+        assert result.failed_sources == ("a.md",)
+        idx.vector_store.create_collection.assert_called_once_with("test_anima_knowledge")
+        idx._generate_embeddings.assert_not_called()
+        idx.vector_store.get_by_metadata.assert_not_called()
+        idx.vector_store.upsert.assert_not_called()
+        idx._reconcile_stale_entries.assert_not_called()
+        idx._save_index_meta.assert_not_called()
+        assert all(str(file_path.relative_to(anima_dir)) not in idx.index_meta for file_path in files)
 
     def test_skips_when_hash_matches_and_collection_exists(self, anima_dir: Path):
         idx = _make_indexer(anima_dir)
@@ -136,6 +173,23 @@ class TestIndexFileCollectionRecovery:
         assert chunks > 0, "should have re-indexed despite hash match"
         assert idx.vector_store.upsert.called, "must recreate collection via upsert"
 
+    def test_unavailable_collection_check_does_not_reindex_or_embed(self, anima_dir: Path):
+        idx = _make_indexer(anima_dir)
+        idx.vector_store.upsert.return_value = True
+        f = anima_dir / "knowledge" / "topic.md"
+        f.write_text(self._SAMPLE_MD, encoding="utf-8")
+
+        assert idx.index_file(f, "knowledge") > 0
+        idx._known_collections = None
+        idx.vector_store.list_collections_checked.side_effect = None
+        idx.vector_store.list_collections_checked.return_value = None
+        idx.vector_store.upsert.reset_mock()
+        idx._generate_embeddings.reset_mock()
+
+        assert idx.index_file(f, "knowledge") == 0
+        idx._generate_embeddings.assert_not_called()
+        idx.vector_store.upsert.assert_not_called()
+
 
 class TestIndexConversationSummaryRecovery:
     """Same recovery semantics for ``index_conversation_summary``."""
@@ -165,3 +219,24 @@ class TestIndexConversationSummaryRecovery:
         chunks = idx.index_conversation_summary(state_dir, "test_anima")
         assert chunks > 0
         assert idx.vector_store.upsert.called
+
+    def test_create_failure_skips_embedding_and_metadata_update(self, anima_dir: Path):
+        idx = _make_indexer(anima_dir)
+        state_dir = anima_dir / "state"
+        state_dir.mkdir()
+        (state_dir / "conversation.json").write_text(
+            '{"compressed_summary": "### Section A\\n\\n' + ("hello world " * 10) + '"}',
+            encoding="utf-8",
+        )
+        idx.vector_store.create_collection.return_value = False
+        idx._generate_embeddings.reset_mock()
+        idx._save_index_meta = MagicMock()
+
+        chunks = idx.index_conversation_summary(state_dir, "test_anima")
+
+        assert chunks == 0
+        idx.vector_store.create_collection.assert_called_once_with("test_anima_conversation_summary")
+        idx._generate_embeddings.assert_not_called()
+        idx.vector_store.upsert.assert_not_called()
+        idx._save_index_meta.assert_not_called()
+        assert "conversation_summary" not in idx.index_meta

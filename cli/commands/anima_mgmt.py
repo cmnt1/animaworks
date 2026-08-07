@@ -1399,9 +1399,12 @@ def _cleanup_rag_collections(anima_dir: Path, old_name: str, *, vector_url: str 
     """Delete old RAG collections and reset index_meta for re-indexing."""
     import os
 
+    from core.memory.rag.shared_meta import clear_shared_meta
+
     index_meta = anima_dir / "index_meta.json"
     if index_meta.exists():
         index_meta.write_text("{}\n", encoding="utf-8")
+    clear_shared_meta(anima_dir)
 
     vectordb_dir = anima_dir / "vectordb"
     if not vectordb_dir.is_dir():

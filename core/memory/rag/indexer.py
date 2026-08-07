@@ -29,6 +29,7 @@ from core.memory.rag.contextual_header import apply_contextual_header
 from core.memory.rag.episode_time import apply_episode_heading_event_time
 from core.memory.rag.exclusion import is_archive_path, is_rag_excluded
 from core.memory.rag.facts_chunker import chunk_facts_jsonl
+from core.memory.rag.store import CollectionExistence
 from core.time_utils import ensure_aware, now_iso
 
 if TYPE_CHECKING:
@@ -74,6 +75,7 @@ class IndexDirectoryResult:
     transient_failures: int = 0
     failed_sources: tuple[str, ...] = ()
     files_reconciled: int = 0
+    files_unprocessed: int = 0
 
     @property
     def transient(self) -> bool:
@@ -163,26 +165,24 @@ class MemoryIndexer:
         # short-circuiting (recovery from a wiped/recreated vectordb).
         self._known_collections: set[str] | None = None
 
-    def _collection_exists(self, name: str) -> bool:
-        """Return True if *name* is present in the vector store.
+    def _collection_exists(self, name: str) -> CollectionExistence:
+        """Return the checked existence state for *name*.
 
         Lazily populates ``self._known_collections`` from
-        ``vector_store.list_collections()`` on first access.  Subsequent
+        ``vector_store.list_collections_checked()`` on first access.  Subsequent
         calls reuse the cache; callers add to the cache after successful
         ``create_collection()`` / ``upsert()`` to avoid repeated listing.
 
-        Returns ``True`` on listing failure to preserve legacy behavior
-        (skip when uncertain).
+        An unavailable result is not cached so a later check can recover.
         """
         if self._known_collections is None:
-            try:
-                self._known_collections = set(self.vector_store.list_collections())
-            except Exception as exc:
-                logger.debug("Failed to list collections for cache: %s", exc)
-                # Be conservative: assume it exists rather than triggering
-                # spurious re-indexing of every file on a transient error.
-                return True
-        return name in self._known_collections
+            collections = self.vector_store.list_collections_checked()
+            if collections is None:
+                return CollectionExistence.UNAVAILABLE
+            self._known_collections = set(collections)
+        if name in self._known_collections:
+            return CollectionExistence.EXISTS
+        return CollectionExistence.MISSING
 
     def _mark_collection_known(self, name: str) -> None:
         """Record that *name* is present in the vector store.
@@ -192,10 +192,10 @@ class MemoryIndexer:
         re-list collections.
         """
         if self._known_collections is None:
-            try:
-                self._known_collections = set(self.vector_store.list_collections())
-            except Exception:
-                self._known_collections = set()
+            collections = self.vector_store.list_collections_checked()
+            if collections is None:
+                return
+            self._known_collections = set(collections)
         self._known_collections.add(name)
 
     def _init_embedding_model(self) -> None:
@@ -463,8 +463,12 @@ class MemoryIndexer:
                 # recreated since the last index, the meta hash would
                 # otherwise cause us to silently skip and the collection
                 # would never be re-created.
-                if self._collection_exists(collection_name):
+                existence = self._collection_exists(collection_name)
+                if existence is CollectionExistence.EXISTS:
                     logger.debug("File unchanged, skipping: %s", file_path)
+                    return self._finish_index_file(0, "unchanged")
+                if existence is CollectionExistence.UNAVAILABLE:
+                    logger.debug("Collection availability unknown, skipping re-index of %s", file_path)
                     return self._finish_index_file(0, "unchanged")
                 logger.info(
                     "Collection '%s' missing despite tracked hash, forcing re-index of %s",
@@ -488,6 +492,17 @@ class MemoryIndexer:
             logger.debug("No chunks extracted from %s", file_path)
             self.delete_indexed_file(file_path, memory_type)
             return self._finish_index_file(0, "indexed")
+
+        # Probe write availability before spending GPU time on embeddings.
+        # create_collection() is idempotent and returns False for an open
+        # client circuit, repair fence, or unavailable worker.
+        if not self.vector_store.create_collection(collection_name):
+            logger.warning("Collection unavailable for write, skipping index of %s", file_path)
+            # Collection creation is a service-wide write-availability gate,
+            # never a source-file defect.  Treat every failed probe as
+            # transient so directory indexing stops without quarantining the
+            # source or spending more embedding work.
+            return self._finish_index_file(0, "failed", transient=True)
 
         source_mtime_ns = file_path.stat().st_mtime_ns
         for chunk in chunks:
@@ -565,6 +580,7 @@ class MemoryIndexer:
         files_failed = 0
         files_unchanged = 0
         files_skipped = 0
+        files_unprocessed = 0
         files_reconciled = 0
         transient_failures = 0
         failed_sources: list[str] = []
@@ -621,7 +637,11 @@ class MemoryIndexer:
                         done_count=index + 1,
                         total_count=len(md_files),
                     )
-            files_reconciled = self._reconcile_stale_entries(directory, memory_type)
+                if outcome.status == "failed" and outcome.transient:
+                    files_unprocessed = len(md_files) - index - 1
+                    break
+            if transient_failures == 0:
+                files_reconciled = self._reconcile_stale_entries(directory, memory_type)
         finally:
             self._index_directory_active = previous_active
             self._run_upsert_failures = previous_failures
@@ -631,6 +651,7 @@ class MemoryIndexer:
                 files_failed=files_failed,
                 files_unchanged=files_unchanged,
                 files_skipped=files_skipped,
+                files_unprocessed=files_unprocessed,
                 files_reconciled=files_reconciled,
                 transient_failures=transient_failures,
                 failed_sources=tuple(failed_sources),
@@ -699,7 +720,8 @@ class MemoryIndexer:
         examples = list(result.failed_sources[:3])
         logger.info(
             "Index directory summary: collection=%s successful=%d failed=%d "
-            "failed_sources=%s transient=%s unchanged=%d skipped=%d reconciled=%d chunks=%d",
+            "failed_sources=%s transient=%s unchanged=%d skipped=%d unprocessed=%d "
+            "reconciled=%d chunks=%d",
             collection_name,
             result.files_indexed,
             result.files_failed,
@@ -707,6 +729,7 @@ class MemoryIndexer:
             result.transient,
             result.files_unchanged,
             result.files_skipped,
+            result.files_unprocessed,
             result.files_reconciled,
             result.chunks_indexed,
         )
@@ -759,8 +782,12 @@ class MemoryIndexer:
             if self.index_meta[meta_key].get("hash") == content_hash:
                 # Verify the collection still exists; force re-index if
                 # the vectordb was wiped/recreated.
-                if self._collection_exists(collection_name):
+                existence = self._collection_exists(collection_name)
+                if existence is CollectionExistence.EXISTS:
                     logger.debug("compressed_summary unchanged, skipping")
+                    return 0
+                if existence is CollectionExistence.UNAVAILABLE:
+                    logger.debug("Conversation collection availability unknown, skipping re-index")
                     return 0
                 logger.info(
                     "Collection '%s' missing despite tracked hash, forcing re-index of conversation_summary",
@@ -777,13 +804,17 @@ class MemoryIndexer:
             logger.debug("No chunks extracted from compressed_summary")
             return 0
 
+        # Gate GPU work on write availability.  A failed create is the
+        # fail-soft signal used by HTTP circuit/fence/unavailable paths.
+        if not self.vector_store.create_collection(collection_name):
+            logger.warning("Conversation summary collection unavailable for write, skipping index")
+            return 0
+
         # Generate embeddings
         embeddings = self._generate_embeddings([c.content for c in chunks])
 
         # Build documents and upsert
         from core.memory.rag.store import Document
-
-        self.vector_store.create_collection(collection_name)
 
         documents = [
             Document(

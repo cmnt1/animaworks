@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from core.memory.rag.indexer import MemoryIndexer, _IndexFileOutcome
 
@@ -13,6 +14,7 @@ def test_index_directory_returns_structured_counts_and_summary(tmp_path: Path, c
 
     indexer = object.__new__(MemoryIndexer)
     indexer.collection_prefix = "sora"
+    indexer._reconcile_stale_entries = MagicMock(return_value=0)
     outcomes = {
         "indexed.md": _IndexFileOutcome("indexed"),
         "failed.md": _IndexFileOutcome("failed", transient=True),
@@ -30,20 +32,57 @@ def test_index_directory_returns_structured_counts_and_summary(tmp_path: Path, c
     with caplog.at_level(logging.INFO, logger="animaworks.rag.indexer"):
         result = indexer.index_directory(tmp_path, "knowledge")
 
+    assert result.chunks_indexed == 0
+    assert result.files_indexed == 0
+    assert result.files_failed == 1
+    assert result.files_unchanged == 0
+    assert result.files_skipped == 0
+    assert result.files_unprocessed == 3
+    assert result.transient_failures == 1
+    assert result.transient is True
+    assert result.failed_sources == ("failed.md",)
+    indexer._reconcile_stale_entries.assert_not_called()
+    assert any(
+        "collection=sora_knowledge" in record.getMessage()
+        and "failed_sources=['failed.md']" in record.getMessage()
+        and "transient=True" in record.getMessage()
+        and "unprocessed=3" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+def test_index_directory_nontransient_failure_continues_and_reconciles(tmp_path: Path) -> None:
+    for name in ("indexed.md", "failed.md", "unchanged.md", "skipped.md"):
+        (tmp_path / name).write_text(f"# {name}", encoding="utf-8")
+
+    indexer = object.__new__(MemoryIndexer)
+    indexer.collection_prefix = "sora"
+    indexer._reconcile_stale_entries = MagicMock(return_value=2)
+    outcomes = {
+        "indexed.md": _IndexFileOutcome("indexed"),
+        "failed.md": _IndexFileOutcome("failed", transient=False),
+        "unchanged.md": _IndexFileOutcome("unchanged"),
+        "skipped.md": _IndexFileOutcome("skipped"),
+    }
+
+    def index_file(file_path: Path, _memory_type: str, force: bool = False) -> int:
+        del force
+        indexer._last_index_file_outcome = outcomes[file_path.name]
+        return 4 if file_path.name == "indexed.md" else 0
+
+    indexer.index_file = index_file  # type: ignore[method-assign]
+
+    result = indexer.index_directory(tmp_path, "knowledge")
+
     assert result.chunks_indexed == 4
     assert result.files_indexed == 1
     assert result.files_failed == 1
     assert result.files_unchanged == 1
     assert result.files_skipped == 1
-    assert result.transient_failures == 1
-    assert result.transient is True
-    assert result.failed_sources == ("failed.md",)
-    assert any(
-        "collection=sora_knowledge" in record.getMessage()
-        and "failed_sources=['failed.md']" in record.getMessage()
-        and "transient=True" in record.getMessage()
-        for record in caplog.records
-    )
+    assert result.files_unprocessed == 0
+    assert result.transient_failures == 0
+    assert result.files_reconciled == 2
+    indexer._reconcile_stale_entries.assert_called_once_with(tmp_path, "knowledge")
 
 
 def test_transient_upsert_failure_is_debug_only(tmp_path: Path, caplog) -> None:
