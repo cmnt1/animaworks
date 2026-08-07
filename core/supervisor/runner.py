@@ -29,6 +29,7 @@ from typing import Any
 import psutil
 
 from core.anima import DigitalAnima
+from core.config.resolver import resolve_process_model_config
 from core.exceptions import AnimaNotRunningError, ExecutionError, MemoryWriteError, ProcessError  # noqa: F401
 from core.i18n import t
 from core.memory.streaming_journal import StreamingJournal
@@ -206,6 +207,10 @@ class AnimaRunner:
             await self.ipc_server.start()
 
             logger.info("Initializing Anima: %s", self.anima_name)
+
+            process_config = resolve_process_model_config(self._anima_dir)
+            if not process_config.valid:
+                raise ValueError(process_config.error or "invalid process model configuration")
 
             # Initialize DigitalAnima (heavy: RAG indexer, model loading)
             self.anima = DigitalAnima(anima_dir=self._anima_dir, shared_dir=self.shared_dir)
@@ -1029,6 +1034,7 @@ class AnimaRunner:
         # Stop scheduler
         if self._scheduler_mgr:
             self._scheduler_mgr.shutdown()
+            await self._scheduler_mgr.shutdown_task_runners()
 
         # Stop IPC server
         if self.ipc_server:
