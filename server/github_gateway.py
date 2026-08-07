@@ -445,9 +445,7 @@ class GitHubWebhookManager:
         author_cf = author.casefold()
         bot = self._config.bot_login
         reviewer = self._config.reviewer_login
-        return (bool(bot) and author_cf == bot.casefold()) or (
-            bool(reviewer) and author_cf == reviewer.casefold()
-        )
+        return (bool(bot) and author_cf == bot.casefold()) or (bool(reviewer) and author_cf == reviewer.casefold())
 
     def _send(self, to: str, content: str, kind: str, key: str) -> None:
         Messenger(self._require_shared_dir(), "pr-review-dispatch").send(
