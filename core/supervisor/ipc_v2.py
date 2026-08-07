@@ -358,6 +358,19 @@ class IPCV2Connection:
                 await asyncio.wait_for(self.writer.drain(), timeout=IPC_V2_BACKPRESSURE_TIMEOUT)
             self.last_traffic_at = time.monotonic()
 
+    async def wait_for_ack(self, seq: int) -> None:
+        """Wait until the peer acknowledges a sent frame."""
+        if self.state.last_acked_seq >= seq:
+            return
+        try:
+            async with self._window_changed:
+                await asyncio.wait_for(
+                    self._window_changed.wait_for(lambda: self.state.last_acked_seq >= seq),
+                    IPC_V2_BACKPRESSURE_TIMEOUT,
+                )
+        except TimeoutError as exc:
+            raise IPCV2BackpressureTimeout(f"frame {seq} was not acknowledged within 5 seconds") from exc
+
     def is_half_open(self, now: float | None = None) -> bool:
         return (now or time.monotonic()) - self.last_traffic_at >= IPC_V2_HALF_OPEN_TIMEOUT
 
