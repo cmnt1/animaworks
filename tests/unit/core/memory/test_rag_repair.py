@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -1541,3 +1542,53 @@ def test_chroma_repair_verification_rejects_wrong_chunk_count() -> None:
 
     with pytest.raises(RuntimeError, match="expected 1 chunks.*found 0"):
         store.verify_rebuilt_data(expected_chunks=1)
+
+
+def test_reset_worker_vector_store_logs_missing_vector_url(monkeypatch, caplog) -> None:
+    import logging
+
+    from core.memory.rag.repair_rebuild import reset_worker_vector_store
+
+    monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
+    with caplog.at_level(logging.WARNING, logger="animaworks.rag.repair"):
+        assert reset_worker_vector_store("rin") is False
+    assert any("ANIMAWORKS_VECTOR_URL is unset" in r.message for r in caplog.records)
+
+
+def test_reset_worker_vector_store_logs_store_type_mismatch(monkeypatch, caplog) -> None:
+    import logging
+
+    from core.memory.rag.repair_rebuild import reset_worker_vector_store
+
+    monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://worker")
+    monkeypatch.setattr("core.memory.rag.singleton.get_vector_store", lambda anima_name=None: object())
+    with caplog.at_level(logging.WARNING, logger="animaworks.rag.repair"):
+        assert reset_worker_vector_store("rin") is False
+    assert any("store type mismatch" in r.message for r in caplog.records)
+
+
+def test_verify_worker_vector_store_logs_missing_nonce(monkeypatch, caplog) -> None:
+    import logging
+
+    from core.memory.rag.repair_rebuild import verify_worker_vector_store
+
+    monkeypatch.delenv("ANIMAWORKS_RAG_REPAIR_NONCE", raising=False)
+    monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://worker")
+    with caplog.at_level(logging.WARNING, logger="animaworks.rag.repair"):
+        assert verify_worker_vector_store("rin", expected_chunks=10) is False
+    assert any("ANIMAWORKS_RAG_REPAIR_NONCE is unset" in r.message for r in caplog.records)
+
+
+def test_rag_repair_nonce_env_sets_and_restores(monkeypatch) -> None:
+    from core.memory.rag.repair_utils import rag_repair_nonce_env
+
+    monkeypatch.delenv("ANIMAWORKS_RAG_REPAIR_NONCE", raising=False)
+    with rag_repair_nonce_env() as nonce:
+        assert nonce
+        assert os.environ["ANIMAWORKS_RAG_REPAIR_NONCE"] == nonce
+    assert "ANIMAWORKS_RAG_REPAIR_NONCE" not in os.environ
+
+    monkeypatch.setenv("ANIMAWORKS_RAG_REPAIR_NONCE", "keep-me")
+    with rag_repair_nonce_env() as nonce:
+        assert nonce == "keep-me"
+    assert os.environ["ANIMAWORKS_RAG_REPAIR_NONCE"] == "keep-me"

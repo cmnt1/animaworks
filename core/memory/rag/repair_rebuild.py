@@ -29,34 +29,81 @@ def _has_active_repair_fence(anima_name: str, *, anima_dir: Path | None = None) 
 def reset_worker_vector_store(anima_name: str) -> bool:
     """Reset the vector worker's cached store for an anima when configured."""
     if not os.environ.get("ANIMAWORKS_VECTOR_URL"):
+        logger.warning(
+            "Vector worker reset skipped for %s: ANIMAWORKS_VECTOR_URL is unset",
+            anima_name,
+        )
         return False
     try:
         from core.memory.rag.http_store import HttpVectorStore
         from core.memory.rag.singleton import get_vector_store
 
         store = get_vector_store(anima_name)
-        if isinstance(store, HttpVectorStore):
-            return store.reset_store()
+        if not isinstance(store, HttpVectorStore):
+            logger.warning(
+                "Vector worker reset failed for %s: store type mismatch (got %s, need HttpVectorStore)",
+                anima_name,
+                type(store).__name__ if store is not None else "None",
+            )
+            return False
+        if not store.reset_store():
+            logger.warning(
+                "Vector worker reset failed for %s: HTTP /reset-store returned failure",
+                anima_name,
+            )
+            return False
+        return True
     except Exception:
-        logger.debug("Failed to reset vector worker store for %s", anima_name, exc_info=True)
-    return False
+        logger.warning(
+            "Vector worker reset failed for %s: exception during reset",
+            anima_name,
+            exc_info=True,
+        )
+        return False
 
 
 def verify_worker_vector_store(anima_name: str, *, expected_chunks: int) -> bool:
     """Verify the swapped DB through the fenced worker using the repair nonce."""
     repair_nonce = os.environ.get("ANIMAWORKS_RAG_REPAIR_NONCE")
     if not repair_nonce:
+        logger.warning(
+            "Vector worker verify skipped for %s: ANIMAWORKS_RAG_REPAIR_NONCE is unset",
+            anima_name,
+        )
+        return False
+    if not os.environ.get("ANIMAWORKS_VECTOR_URL"):
+        logger.warning(
+            "Vector worker verify skipped for %s: ANIMAWORKS_VECTOR_URL is unset",
+            anima_name,
+        )
         return False
     try:
         from core.memory.rag.http_store import HttpVectorStore
         from core.memory.rag.singleton import get_vector_store
 
         store = get_vector_store(anima_name)
-        if isinstance(store, HttpVectorStore):
-            return store.verify_repair(repair_nonce, expected_chunks=expected_chunks)
+        if not isinstance(store, HttpVectorStore):
+            logger.warning(
+                "Vector worker verify failed for %s: store type mismatch (got %s, need HttpVectorStore)",
+                anima_name,
+                type(store).__name__ if store is not None else "None",
+            )
+            return False
+        if not store.verify_repair(repair_nonce, expected_chunks=expected_chunks):
+            logger.warning(
+                "Vector worker verify failed for %s: HTTP /verify-repair returned failure (expected_chunks=%s)",
+                anima_name,
+                expected_chunks,
+            )
+            return False
+        return True
     except Exception:
-        logger.debug("Failed to verify rebuilt vector store for %s", anima_name, exc_info=True)
-    return False
+        logger.warning(
+            "Vector worker verify failed for %s: exception during verify",
+            anima_name,
+            exc_info=True,
+        )
+        return False
 
 
 def quarantine_vectordb(anima_name: str) -> Path | None:
