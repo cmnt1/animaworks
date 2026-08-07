@@ -85,8 +85,15 @@ class SchedulerManager:
         self._heartbeat_isolated = bool(process_config.task_process_isolation.heartbeat)
         self._task_isolated = bool(process_config.task_process_isolation.task)
         self._background_isolated = bool(process_config.task_process_isolation.background)
+        self._chat_isolated = process_config.process_model == "phase3"
         self._task_runner_supervisor: TaskRunnerSupervisor | None = None
-        if self._cron_isolated or self._heartbeat_isolated or self._task_isolated or self._background_isolated:
+        if (
+            self._chat_isolated
+            or self._cron_isolated
+            or self._heartbeat_isolated
+            or self._task_isolated
+            or self._background_isolated
+        ):
             pool_size: int | None = None
             try:
                 pool_size = int(getattr(anima, "_background_worker_pool_size", 1) or 1)

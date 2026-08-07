@@ -168,6 +168,7 @@ class TestAnimaRunnerPingReadiness:
         mock_scheduler.setup = MagicMock()
         mock_scheduler.shutdown = MagicMock()
         mock_scheduler.shutdown_task_runners = AsyncMock()
+        mock_scheduler._task_runner_supervisor = None
 
         async def long_running_loop():
             await asyncio.Event().wait()
@@ -251,6 +252,7 @@ class TestAnimaRunnerPingReadiness:
         mock_scheduler.setup = MagicMock()
         mock_scheduler.shutdown = MagicMock()
         mock_scheduler.shutdown_task_runners = AsyncMock()
+        mock_scheduler._task_runner_supervisor = None
 
         async def inbox_watcher_loop():
             await mock_anima.process_inbox_message()
