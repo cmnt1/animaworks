@@ -1866,9 +1866,7 @@ class CodexSDKExecutor(BaseExecutor):
 
             items = getattr(turn, "items", []) or []
             response_parts = [
-                text
-                for item in items
-                if _item_type(item) == "agent_message" and (text := _extract_item_text(item))
+                text for item in items if _item_type(item) == "agent_message" and (text := _extract_item_text(item))
             ]
             response_parts.append(getattr(turn, "final_response", "") or "")
             response_text = join_answer_parts(response_parts)
