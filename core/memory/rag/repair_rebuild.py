@@ -288,6 +288,9 @@ def atomic_rebuild_vectordb(
     shutil.move(str(staging), str(live))
     reset_worker_vector_store(anima_name)
     reset_vector_store(anima_name)
+    from core.memory.rag.shared_check_registry import invalidate_shared_checks
+
+    invalidate_shared_checks(anima_name)
     return chunks, archive
 
 
