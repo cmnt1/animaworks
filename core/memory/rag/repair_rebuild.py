@@ -289,9 +289,7 @@ def atomic_rebuild_vectordb(
     from core.memory.rag.store import create_chroma_vector_store
     from core.paths import get_anima_vectordb_dir
 
-    resolved_anima_dir = (
-        Path(anima_dir) if anima_dir is not None else get_anima_vectordb_dir(anima_name).parent
-    )
+    resolved_anima_dir = Path(anima_dir) if anima_dir is not None else get_anima_vectordb_dir(anima_name).parent
     live = resolved_anima_dir / "vectordb"
     staging = live.parent / f"vectordb.staging-{os.getpid()}"
     if staging.exists():
@@ -397,9 +395,7 @@ def atomic_rebuild_vectordb(
         except Exception as rollback_exc:
             rollback_errors.append(f"BM25 rollback failed: {rollback_exc}")
         if rollback_errors:
-            raise RebuildVerificationError(
-                f"{exc}; rollback incomplete: {'; '.join(rollback_errors)}"
-            ) from exc
+            raise RebuildVerificationError(f"{exc}; rollback incomplete: {'; '.join(rollback_errors)}") from exc
         raise
     finally:
         if not succeeded:
