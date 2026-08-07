@@ -12,6 +12,7 @@ from pathlib import Path
 
 from core.company_resources import company_resource_pointer, get_company_resources, infer_data_dir
 from core.memory.fact_observability import warn_rate_limited
+from core.memory.rag.shared_meta import read_shared_hash, write_shared_hash, write_shared_hashes
 from core.memory.rag.store import CollectionExistence
 
 logger = logging.getLogger("animaworks.memory")
@@ -59,32 +60,6 @@ def _compute_dir_hash(dir_path: Path, glob_pattern: str = "*.md") -> str:
     entries.sort()
     h = hashlib.sha256(repr(entries).encode()).hexdigest()
     return h
-
-
-def _read_shared_hash(meta_path: Path, key: str) -> str | None:
-    """Read a stored shared-index hash from *meta_path* (index_meta.json)."""
-    if not meta_path.is_file():
-        return None
-    try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        return meta.get(key)
-    except (json.JSONDecodeError, OSError):
-        return None
-
-
-def _write_shared_hash(meta_path: Path, key: str, value: str) -> None:
-    """Write a shared-index hash into *meta_path* (index_meta.json)."""
-    meta: dict = {}
-    if meta_path.is_file():
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            pass
-    meta[key] = value
-    meta_path.write_text(
-        json.dumps(meta, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
 
 
 def _shared_collection_exists(vector_store, collection_name: str) -> CollectionExistence:
@@ -202,7 +177,7 @@ class RAGMemorySearch:
         Called on every ``_get_indexer()`` access so that file changes are
         picked up even after the initial ``_init_indexer()`` run.  Uses a
         SHA-256 hash of (relative_path, mtime) tuples stored in the
-        per-anima ``index_meta.json`` to skip re-indexing when unchanged.
+        per-anima ``shared_index_meta.json`` to skip re-indexing when unchanged.
         """
         if self._indexer is None:
             return
@@ -222,8 +197,7 @@ class RAGMemorySearch:
         """Drop stale company content when this Anima's assignment changes."""
         resources = get_company_resources(self._anima_dir)
         current = resources.name if resources is not None else ""
-        meta_path = self._anima_dir / "index_meta.json"
-        stored = _read_shared_hash(meta_path, "shared_company_name")
+        stored = read_shared_hash(self._anima_dir, "shared_company_name")
         if stored == current or (stored is None and not current):
             return
         for collection in ("shared_common_knowledge", "shared_common_skills"):
@@ -231,14 +205,16 @@ class RAGMemorySearch:
                 vector_store.delete_collection(collection)
             except Exception:
                 logger.warning("Failed to reset %s after company assignment change", collection, exc_info=True)
-        _write_shared_hash(meta_path, "shared_company_name", current)
-        for key in (
-            "shared_common_knowledge_hash",
-            "shared_common_skills_hash",
-            "shared_company_knowledge_hash",
-            "shared_company_skills_hash",
-        ):
-            _write_shared_hash(meta_path, key, "")
+        write_shared_hashes(
+            self._anima_dir,
+            {
+                "shared_company_name": current,
+                "shared_common_knowledge_hash": "",
+                "shared_common_skills_hash": "",
+                "shared_company_knowledge_hash": "",
+                "shared_company_skills_hash": "",
+            },
+        )
 
     def _ensure_shared_knowledge_indexed(self, vector_store) -> None:
         """Index common_knowledge/ into ``shared_common_knowledge`` collection.
@@ -253,9 +229,8 @@ class RAGMemorySearch:
             logger.debug("No common_knowledge files found, skipping shared indexing")
             return
 
-        meta_path = self._anima_dir / "index_meta.json"
         current_hash = _compute_dir_hash(ck_dir, "*.md")
-        stored_hash = _read_shared_hash(meta_path, "shared_common_knowledge_hash")
+        stored_hash = read_shared_hash(self._anima_dir, "shared_common_knowledge_hash")
         force = False
         if current_hash == stored_hash:
             # Verify the shared collection still exists in this anima's
@@ -285,7 +260,7 @@ class RAGMemorySearch:
             )
             indexed = shared_indexer.index_directory(ck_dir, "common_knowledge", force=force)
             if indexed.files_failed == 0:
-                _write_shared_hash(meta_path, "shared_common_knowledge_hash", current_hash)
+                write_shared_hash(self._anima_dir, "shared_common_knowledge_hash", current_hash)
             if indexed.chunks_indexed > 0:
                 logger.info(
                     "Indexed %d chunks into shared_common_knowledge",
@@ -307,9 +282,8 @@ class RAGMemorySearch:
             logger.debug("No common_skills files found, skipping shared skills indexing")
             return
 
-        meta_path = self._anima_dir / "index_meta.json"
         current_hash = _compute_dir_hash(cs_dir, "SKILL.md")
-        stored_hash = _read_shared_hash(meta_path, "shared_common_skills_hash")
+        stored_hash = read_shared_hash(self._anima_dir, "shared_common_skills_hash")
         force = False
         if current_hash == stored_hash:
             existence = _shared_collection_exists(vector_store, "shared_common_skills")
@@ -341,7 +315,7 @@ class RAGMemorySearch:
             # Trust/security metadata remains enforced by MemoryIndexer.
             indexed = shared_indexer.index_directory(cs_dir, "common_skills", force=force)
             if indexed.files_failed == 0:
-                _write_shared_hash(meta_path, "shared_common_skills_hash", current_hash)
+                write_shared_hash(self._anima_dir, "shared_common_skills_hash", current_hash)
             if indexed.chunks_indexed > 0:
                 logger.info(
                     "Indexed %d chunks into shared_common_skills",
@@ -382,9 +356,8 @@ class RAGMemorySearch:
         glob: str,
         meta_key: str,
     ) -> None:
-        meta_path = self._anima_dir / "index_meta.json"
         current_hash = _compute_dir_hash(directory, glob)
-        stored_hash = _read_shared_hash(meta_path, meta_key)
+        stored_hash = read_shared_hash(self._anima_dir, meta_key)
         collection = f"shared_{memory_type}"
         force = False
         if current_hash == stored_hash:
@@ -404,7 +377,7 @@ class RAGMemorySearch:
             )
             result = indexer.index_directory(directory, memory_type, force=force)
             if result.files_failed == 0:
-                _write_shared_hash(meta_path, meta_key, current_hash)
+                write_shared_hash(self._anima_dir, meta_key, current_hash)
         except Exception as exc:
             logger.warning("Failed to index company %s: %s", memory_type, exc)
 

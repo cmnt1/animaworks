@@ -179,7 +179,7 @@ def _reindex_into_store(
             if not src_dir.is_dir():
                 continue
             total_chunks += shared_indexer.index_directory(src_dir, label, force=True).chunks_indexed
-            write_shared_hash(anima_dir / "index_meta.json", src_dir, glob, meta_key)
+            write_shared_hash(anima_dir, src_dir, glob, meta_key)
     return total_chunks
 
 
@@ -291,10 +291,8 @@ def atomic_rebuild_vectordb(
     return chunks, archive
 
 
-def write_shared_hash(meta_path: Path, src_dir: Path, glob: str, meta_key: str) -> None:
-    try:
-        from core.memory.rag_search import _compute_dir_hash, _write_shared_hash
+def write_shared_hash(anima_dir: Path, src_dir: Path, glob: str, meta_key: str) -> None:
+    from core.memory.rag.shared_meta import write_shared_hash as write_meta_hash
+    from core.memory.rag_search import _compute_dir_hash
 
-        _write_shared_hash(meta_path, meta_key, _compute_dir_hash(src_dir, glob))
-    except Exception:
-        logger.debug("Failed to update shared hash for %s", meta_key, exc_info=True)
+    write_meta_hash(anima_dir, meta_key, _compute_dir_hash(src_dir, glob))

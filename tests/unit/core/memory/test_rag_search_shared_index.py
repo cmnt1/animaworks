@@ -7,18 +7,25 @@ from __future__ import annotations
 
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.rag.indexer import IndexDirectoryResult
+from core.memory.rag.indexer import IndexDirectoryResult, MemoryIndexer
+from core.memory.rag.shared_meta import (
+    SharedIndexMetaError,
+    read_shared_hash,
+    shared_index_meta_path,
+    write_shared_hash,
+)
 from core.memory.rag.store import CollectionExistence
 from core.memory.rag_search import (
     RAGMemorySearch,
     _compute_dir_hash,
-    _read_shared_hash,
-    _write_shared_hash,
 )
 
 # ── _compute_dir_hash ─────────────────────────────────────
@@ -84,54 +91,109 @@ class TestComputeDirHash:
         assert h1 != h2
 
 
-# ── _read_shared_hash / _write_shared_hash ────────────────
+# ── shared_index_meta.json helpers ────────────────────────
 
 
 class TestReadWriteSharedHash:
     def test_read_missing_file(self, tmp_path: Path) -> None:
         """Returns None when file doesn't exist."""
-        assert _read_shared_hash(tmp_path / "nope.json", "key") is None
+        assert read_shared_hash(tmp_path, "shared_common_knowledge_hash") is None
 
     def test_read_corrupted_json(self, tmp_path: Path) -> None:
-        """Returns None on malformed JSON."""
-        p = tmp_path / "meta.json"
+        """Malformed metadata is not interpreted as an unset value."""
+        p = shared_index_meta_path(tmp_path)
         p.write_text("{invalid", encoding="utf-8")
-        assert _read_shared_hash(p, "key") is None
+        with pytest.raises(SharedIndexMetaError):
+            read_shared_hash(tmp_path, "shared_common_knowledge_hash")
 
     def test_read_missing_key(self, tmp_path: Path) -> None:
         """Returns None when key is absent."""
-        p = tmp_path / "meta.json"
-        p.write_text('{"other": "val"}', encoding="utf-8")
-        assert _read_shared_hash(p, "key") is None
+        p = shared_index_meta_path(tmp_path)
+        p.write_text('{"shared_company_name": "acme"}', encoding="utf-8")
+        assert read_shared_hash(tmp_path, "shared_common_knowledge_hash") is None
 
     def test_write_creates_file(self, tmp_path: Path) -> None:
-        """Creates index_meta.json when it doesn't exist."""
-        p = tmp_path / "meta.json"
-        _write_shared_hash(p, "my_key", "abc123")
+        """Creates shared_index_meta.json when it doesn't exist."""
+        p = shared_index_meta_path(tmp_path)
+        write_shared_hash(tmp_path, "shared_common_knowledge_hash", "abc123")
         data = json.loads(p.read_text(encoding="utf-8"))
-        assert data["my_key"] == "abc123"
+        assert data["shared_common_knowledge_hash"] == "abc123"
 
     def test_write_preserves_existing_keys(self, tmp_path: Path) -> None:
         """Writing a key preserves other keys."""
-        p = tmp_path / "meta.json"
-        p.write_text('{"existing": "keep"}', encoding="utf-8")
-        _write_shared_hash(p, "new_key", "val")
+        p = shared_index_meta_path(tmp_path)
+        p.write_text('{"shared_company_name": "keep"}', encoding="utf-8")
+        write_shared_hash(tmp_path, "shared_common_knowledge_hash", "val")
         data = json.loads(p.read_text(encoding="utf-8"))
-        assert data["existing"] == "keep"
-        assert data["new_key"] == "val"
+        assert data["shared_company_name"] == "keep"
+        assert data["shared_common_knowledge_hash"] == "val"
 
     def test_write_overwrites_existing_key(self, tmp_path: Path) -> None:
         """Overwriting a key updates its value."""
-        p = tmp_path / "meta.json"
-        _write_shared_hash(p, "k", "old")
-        _write_shared_hash(p, "k", "new")
-        assert _read_shared_hash(p, "k") == "new"
+        write_shared_hash(tmp_path, "shared_company_name", "old")
+        write_shared_hash(tmp_path, "shared_company_name", "new")
+        assert read_shared_hash(tmp_path, "shared_company_name") == "new"
 
     def test_roundtrip(self, tmp_path: Path) -> None:
         """Write then read returns same value."""
-        p = tmp_path / "meta.json"
-        _write_shared_hash(p, "shared_common_knowledge_hash", "deadbeef")
-        assert _read_shared_hash(p, "shared_common_knowledge_hash") == "deadbeef"
+        write_shared_hash(tmp_path, "shared_common_knowledge_hash", "deadbeef")
+        assert read_shared_hash(tmp_path, "shared_common_knowledge_hash") == "deadbeef"
+
+    def test_migrates_all_legacy_shared_keys_once(self, tmp_path: Path) -> None:
+        legacy = {
+            "knowledge/file.md": {"hash": "personal"},
+            "shared_company_name": "acme",
+            "shared_common_knowledge_hash": "common",
+            "shared_common_skills_hash": "skills",
+            "shared_company_knowledge_hash": "company-knowledge",
+            "shared_company_skills_hash": "company-skills",
+        }
+        (tmp_path / "index_meta.json").write_text(json.dumps(legacy), encoding="utf-8")
+
+        assert read_shared_hash(tmp_path, "shared_company_name") == "acme"
+        migrated = json.loads(shared_index_meta_path(tmp_path).read_text(encoding="utf-8"))
+        assert set(migrated) == set(legacy) - {"knowledge/file.md"}
+
+        legacy["shared_company_name"] = "changed-after-migration"
+        (tmp_path / "index_meta.json").write_text(json.dumps(legacy), encoding="utf-8")
+        assert read_shared_hash(tmp_path, "shared_company_name") == "acme"
+
+    def test_personal_and_shared_meta_writes_do_not_overwrite_each_other(self, tmp_path: Path) -> None:
+        indexer = MemoryIndexer.__new__(MemoryIndexer)
+        indexer.meta_path = tmp_path / "index_meta.json"
+        indexer.index_meta = {"knowledge/file.md": {"hash": "personal", "chunks": 1}}
+        barrier = Barrier(2)
+
+        def save_personal() -> None:
+            barrier.wait()
+            indexer._save_index_meta()
+
+        def save_shared() -> None:
+            barrier.wait()
+            write_shared_hash(tmp_path, "shared_common_knowledge_hash", "shared")
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            list(executor.map(lambda function: function(), (save_personal, save_shared)))
+
+        personal = json.loads(indexer.meta_path.read_text(encoding="utf-8"))
+        assert personal["knowledge/file.md"]["hash"] == "personal"
+        assert read_shared_hash(tmp_path, "shared_common_knowledge_hash") == "shared"
+
+    def test_migration_prevents_false_company_reset(self, rag: RAGMemorySearch) -> None:
+        (rag._anima_dir / "index_meta.json").write_text(
+            json.dumps({"shared_company_name": "acme"}),
+            encoding="utf-8",
+        )
+        vector_store = MagicMock()
+
+        with patch(
+            "core.memory.rag_search.get_company_resources",
+            return_value=SimpleNamespace(name="acme"),
+        ):
+            rag._reset_shared_for_company_change(vector_store)
+
+        vector_store.delete_collection.assert_not_called()
+        assert read_shared_hash(rag._anima_dir, "shared_company_name") == "acme"
 
 
 # ── _ensure_shared_knowledge_indexed (change detection) ───
@@ -175,7 +237,7 @@ class TestEnsureSharedKnowledgeChangeDetection:
         mock_vs = MagicMock()
         rag._indexer = MagicMock()
         rag._ensure_shared_knowledge_indexed(mock_vs)
-        meta = rag._anima_dir / "index_meta.json"
+        meta = shared_index_meta_path(rag._anima_dir)
         assert not meta.exists()
 
     def test_indexes_on_first_call(
@@ -195,9 +257,9 @@ class TestEnsureSharedKnowledgeChangeDetection:
 
             rag._ensure_shared_knowledge_indexed(mock_vs)
 
-        meta_path = rag._anima_dir / "index_meta.json"
+        meta_path = shared_index_meta_path(rag._anima_dir)
         assert meta_path.exists()
-        stored = _read_shared_hash(meta_path, "shared_common_knowledge_hash")
+        stored = read_shared_hash(rag._anima_dir, "shared_common_knowledge_hash")
         assert stored is not None
 
     def test_does_not_write_hash_when_any_file_failed(
@@ -216,8 +278,7 @@ class TestEnsureSharedKnowledgeChangeDetection:
             )
             rag._ensure_shared_knowledge_indexed(MagicMock())
 
-        meta_path = rag._anima_dir / "index_meta.json"
-        assert _read_shared_hash(meta_path, "shared_common_knowledge_hash") is None
+        assert read_shared_hash(rag._anima_dir, "shared_common_knowledge_hash") is None
 
     def test_skips_on_second_call_unchanged(
         self,
@@ -278,7 +339,7 @@ class TestEnsureSharedKnowledgeChangeDetection:
         """Hash unchanged but collection missing in vectordb → force re-index.
 
         Recovery scenario: vectordb was wiped/recreated since the last
-        index, leaving the per-anima index_meta.json hash stale.  The
+        index, leaving the per-anima shared_index_meta.json hash stale.  The
         framework must detect the missing collection and force re-index
         with ``force=True`` so it gets recreated.
         """
@@ -296,8 +357,7 @@ class TestEnsureSharedKnowledgeChangeDetection:
             rag._ensure_shared_knowledge_indexed(mock_vs)
             assert MockIdx.call_count == 1
             # Verify hash was stored
-            meta_path = rag._anima_dir / "index_meta.json"
-            stored = _read_shared_hash(meta_path, "shared_common_knowledge_hash")
+            stored = read_shared_hash(rag._anima_dir, "shared_common_knowledge_hash")
             assert stored is not None
 
             MockIdx.reset_mock()
@@ -346,7 +406,7 @@ class TestEnsureSharedSkillsChangeDetection:
         mock_vs = MagicMock()
         rag._indexer = MagicMock()
         rag._ensure_shared_skills_indexed(mock_vs)
-        meta = rag._anima_dir / "index_meta.json"
+        meta = shared_index_meta_path(rag._anima_dir)
         assert not meta.exists()
 
     def test_indexes_on_first_call(
@@ -368,8 +428,7 @@ class TestEnsureSharedSkillsChangeDetection:
 
             rag._ensure_shared_skills_indexed(mock_vs)
 
-        meta_path = rag._anima_dir / "index_meta.json"
-        stored = _read_shared_hash(meta_path, "shared_common_skills_hash")
+        stored = read_shared_hash(rag._anima_dir, "shared_common_skills_hash")
         assert stored is not None
 
     def test_skips_on_second_call_unchanged(

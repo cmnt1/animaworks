@@ -21,6 +21,7 @@ from core.memory.rag.repair import (
     collection_owner,
 )
 from core.memory.rag.repair_utils import SINGLE_SHOT_REASONS
+from core.memory.rag.shared_meta import read_shared_hash, shared_index_meta_path
 from core.memory.rag.sqlite_health import SQLiteHealthResult
 
 
@@ -1124,6 +1125,10 @@ def test_repair_reindexes_shared_collections_when_requested(data_dir: Path, monk
     assert result.ok
     assert ("shared", "common_knowledge") in calls
     assert ("shared", "common_skills") in calls
+    assert read_shared_hash(anima_dir, "shared_common_knowledge_hash") is not None
+    assert read_shared_hash(anima_dir, "shared_common_skills_hash") is not None
+    assert shared_index_meta_path(anima_dir).is_file()
+    assert not (anima_dir / "index_meta.json").exists()
 
 
 def test_repair_failure_preserves_live_db_and_records_state(data_dir: Path, monkeypatch):
