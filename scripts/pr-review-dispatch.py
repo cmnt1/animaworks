@@ -34,6 +34,8 @@ REPOS = [r.strip() for r in os.environ.get("PR_DISPATCH_REPOS", "").split(",") i
 QUIET_SECONDS = float(os.environ.get("PR_DISPATCH_QUIET_SECONDS", "180"))
 # Bot account whose own comments are ignored; empty disables the exclusion.
 BOT_LOGIN = os.environ.get("PR_DISPATCH_BOT_LOGIN", "")
+# Dedicated review-bot login (e.g. animaworks-reviewer); treated like BOT_LOGIN.
+REVIEWER_LOGIN = os.environ.get("PR_DISPATCH_REVIEWER_LOGIN", "")
 REVIEWER = os.environ.get("PR_DISPATCH_REVIEWER", "sumire")
 DISPATCHER = os.environ.get("PR_DISPATCH_DISPATCHER", "rin")
 FIXER = os.environ.get("PR_DISPATCH_FIXER", "natsume")
@@ -59,6 +61,15 @@ sys.path.insert(
     0,
     os.environ.get("ANIMAWORKS_REPO_ROOT", str(Path(__file__).resolve().parents[1])),
 )
+
+
+def is_our_bot(login: str) -> bool:
+    """True when *login* is BOT_LOGIN or REVIEWER_LOGIN (our bot accounts)."""
+    if not login:
+        return False
+    return (bool(BOT_LOGIN) and login == BOT_LOGIN) or (
+        bool(REVIEWER_LOGIN) and login == REVIEWER_LOGIN
+    )
 
 
 def now_utc() -> datetime:
@@ -312,11 +323,11 @@ def _latest_bot_activity(
     """Return (latest bot commit time, latest bot comment time) on a PR."""
     bot_commit_at: datetime | None = None
     bot_comment_at: datetime | None = None
-    if BOT_LOGIN:
+    if BOT_LOGIN or REVIEWER_LOGIN:
         for commit in commits:
             author = (commit.get("author") or {}).get("login") or ""
             committer = (commit.get("committer") or {}).get("login") or ""
-            if author != BOT_LOGIN and committer != BOT_LOGIN:
+            if not is_our_bot(author) and not is_our_bot(committer):
                 continue
             committed = parse_gh_time(
                 ((commit.get("commit") or {}).get("committer") or {}).get("date")
@@ -327,9 +338,7 @@ def _latest_bot_activity(
         author = (comment.get("user") or {}).get("login") or (comment.get("author") or {}).get(
             "login", ""
         )
-        if BOT_LOGIN and author != BOT_LOGIN:
-            continue
-        if not BOT_LOGIN:
+        if not is_our_bot(author):
             continue
         created = parse_gh_time(comment.get("created_at") or comment.get("createdAt") or comment.get("submitted_at"))
         if created is not None and (bot_comment_at is None or created > bot_comment_at):
@@ -409,7 +418,7 @@ def _collect_pr_stale_items(
         if state_upper != "CHANGES_REQUESTED":
             continue
         author = (review.get("user") or {}).get("login", "")
-        if BOT_LOGIN and author == BOT_LOGIN:
+        if is_our_bot(author):
             continue
         created = parse_gh_time(review.get("submitted_at"))
         if created is None:
@@ -444,7 +453,7 @@ def _collect_pr_stale_items(
             continue
         last = last_comments[-1]
         author = (last.get("author") or {}).get("login", "")
-        if BOT_LOGIN and author == BOT_LOGIN:
+        if is_our_bot(author):
             continue
         created = parse_gh_time(last.get("createdAt"))
         if created is None:
@@ -471,7 +480,7 @@ def _collect_pr_stale_items(
 
     for comment in list(issue_comments) + list(review_comments):
         author = (comment.get("user") or {}).get("login", "")
-        if BOT_LOGIN and author == BOT_LOGIN:
+        if is_our_bot(author):
             continue
         body = comment.get("body") or ""
         if not FIX_REQUEST_PATTERN.search(body):
@@ -775,7 +784,7 @@ def check_comments(state: dict) -> None:
             comments = json.loads(gh(["api", f"{endpoint}?since={since}&per_page=100"]))
             for comment in comments:
                 author = (comment.get("user") or {}).get("login", "")
-                if BOT_LOGIN and author == BOT_LOGIN:
+                if is_our_bot(author):
                     continue
                 dedupe_key = f"{kind}:{comment.get('id')}"
                 if dedupe_key in seen:
