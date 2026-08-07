@@ -81,8 +81,10 @@ class SchedulerManager:
         process_config = resolve_process_model_config(anima_dir)
         if not process_config.valid:
             raise ValueError(process_config.error or "invalid process model configuration")
+        self._cron_isolated = bool(process_config.task_process_isolation.cron)
+        self._heartbeat_isolated = bool(process_config.task_process_isolation.heartbeat)
         self._task_runner_supervisor: TaskRunnerSupervisor | None = None
-        if process_config.task_process_isolation.cron:
+        if self._cron_isolated or self._heartbeat_isolated:
             self._task_runner_supervisor = TaskRunnerSupervisor(
                 anima_name=anima_name,
                 anima_dir=anima_dir,
@@ -839,6 +841,19 @@ class SchedulerManager:
         self._heartbeat_running = True
         try:
             logger.info("Scheduled heartbeat: %s", self._anima_name)
+            if self._heartbeat_isolated and self._task_runner_supervisor is not None:
+                isolated = await self._task_runner_supervisor.run_heartbeat()
+                result = isolated.get("result")
+                if not isinstance(result, dict):
+                    raise ValueError("isolated heartbeat result must be an object")
+                self._emit_event(
+                    "anima.heartbeat",
+                    {
+                        "name": self._anima_name,
+                        "result": result,
+                    },
+                )
+                return
             result = await self._anima.run_heartbeat()
             # Notify parent for WebSocket broadcast
             self._emit_event(
@@ -895,7 +910,7 @@ class SchedulerManager:
         success = False
         usage: dict[str, int] | None = None
         try:
-            if self._task_runner_supervisor is not None:
+            if self._cron_isolated and self._task_runner_supervisor is not None:
                 isolated = await self._task_runner_supervisor.run_cron(task)
                 success = bool(isolated.get("success"))
                 isolated_usage = isolated.get("usage")

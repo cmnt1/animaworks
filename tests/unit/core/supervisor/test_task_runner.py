@@ -142,3 +142,68 @@ def test_missing_embed_url_fails_closed(monkeypatch: pytest.MonkeyPatch, args: a
 
     with pytest.raises(RuntimeError, match="ANIMAWORKS_EMBED_URL"):
         task_runner._required_environment(args)
+
+
+def _heartbeat_contract(identity: IPCV2Identity) -> IPCV2Envelope:
+    return IPCV2Envelope(
+        kind="request",
+        identity=identity,
+        seq=2,
+        body={
+            "request_id": "run-hb-1",
+            "method": "run",
+            "params": {
+                "environment": {"urls": {"ANIMAWORKS_EMBED_URL": "http://embed.test"}},
+                "cascade_suppressed_senders": None,
+            },
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_lane_execution_returns_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identity = IPCV2Identity(
+        job_id="job-hb",
+        root_epoch=str(uuid.uuid4()),
+        attempt=1,
+        lane="heartbeat",
+        display_lane="background",
+    )
+    args = argparse.Namespace(anima="sakura", lane="heartbeat", job="job-hb")
+    monkeypatch.setenv("ANIMAWORKS_EMBED_URL", "http://embed.test")
+    connection = FakeConnection()
+    monkeypatch.setattr(
+        task_runner,
+        "_connect",
+        AsyncMock(return_value=(connection, _heartbeat_contract(identity))),
+    )
+    monkeypatch.setattr(task_runner, "DigitalAnima", lambda **kwargs: object())
+    monkeypatch.setattr(
+        task_runner,
+        "execute_heartbeat_contract",
+        AsyncMock(
+            return_value={
+                "task_type": "heartbeat",
+                "result": {"action": "completed", "summary": "hb done"},
+                "success": True,
+            }
+        ),
+    )
+
+    exit_code = await task_runner.run_task(args, Path("/tmp/task.sock"), identity)
+
+    assert exit_code == 0
+    assert connection.responses == [
+        (
+            "run-hb-1",
+            {
+                "task_type": "heartbeat",
+                "result": {"action": "completed", "summary": "hb done"},
+                "success": True,
+            },
+            None,
+        )
+    ]
+
