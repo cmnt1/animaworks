@@ -6,11 +6,37 @@ from __future__ import annotations
 
 """Utility functions for RAG corruption detection and repair locking."""
 
+import os
+import secrets
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from core.platform.locks import acquire_file_lock, release_file_lock
+
+_RAG_REPAIR_NONCE_ENV = "ANIMAWORKS_RAG_REPAIR_NONCE"
+
+
+@contextmanager
+def rag_repair_nonce_env() -> Iterator[str]:
+    """Ensure ``ANIMAWORKS_RAG_REPAIR_NONCE`` is set for the duration of a repair.
+
+    Preserves a pre-existing value; generates a fresh token when unset and
+    restores the previous environment on exit.
+    """
+    previous = os.environ.get(_RAG_REPAIR_NONCE_ENV)
+    if previous is None:
+        os.environ[_RAG_REPAIR_NONCE_ENV] = secrets.token_urlsafe(32)
+    try:
+        yield os.environ[_RAG_REPAIR_NONCE_ENV]
+    finally:
+        if previous is None:
+            os.environ.pop(_RAG_REPAIR_NONCE_ENV, None)
+        else:
+            os.environ[_RAG_REPAIR_NONCE_ENV] = previous
+
 
 KNOWN_MEMORY_SUFFIXES = (
     "_knowledge",
