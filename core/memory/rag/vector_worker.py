@@ -878,9 +878,9 @@ def create_app() -> FastAPI:
             lambda store: store.list_collections(),
         )
         if collections is None:
-            return {"collections": []}
+            return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
         if _is_vector_action_error(collections):
-            return {"collections": []}
+            return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
         return {"collections": collections}
 
     @app.post("/quick-check")

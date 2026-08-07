@@ -105,12 +105,11 @@ def verify_rebuilt_vectordb(anima_name: str, *, expected_chunks: int) -> None:
         raise RebuildVerificationError(
             f"vector store unavailable for {anima_name} after rebuild (indexed {expected_chunks} chunks)"
         )
-    try:
-        collections = store.list_collections()
-    except Exception as exc:  # noqa: BLE001 — any failure here means the DB is unusable
+    collections = store.list_collections_checked()
+    if collections is None:
         raise RebuildVerificationError(
-            f"rebuilt vector DB for {anima_name} is unreadable (indexed {expected_chunks} chunks): {exc}"
-        ) from exc
+            f"rebuilt vector DB for {anima_name} is unreadable (indexed {expected_chunks} chunks)"
+        )
     if not collections:
         raise RebuildVerificationError(
             f"rebuilt vector DB for {anima_name} has no collections despite indexing {expected_chunks} chunks "
@@ -243,10 +242,16 @@ def atomic_rebuild_vectordb(
                 include_shared=include_shared,
                 anima_dir=resolved_anima_dir,
             )
-            if chunks > 0 and not store.list_collections():
-                raise RebuildVerificationError(
-                    f"staged vector DB for {anima_name} has no collections despite indexing {chunks} chunks"
-                )
+            if chunks > 0:
+                collections = store.list_collections_checked()
+                if collections is None:
+                    raise RebuildVerificationError(
+                        f"staged vector DB for {anima_name} is unreadable despite indexing {chunks} chunks"
+                    )
+                if not collections:
+                    raise RebuildVerificationError(
+                        f"staged vector DB for {anima_name} has no collections despite indexing {chunks} chunks"
+                    )
         finally:
             store.close()
             gc.collect()

@@ -17,6 +17,7 @@ import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
@@ -48,6 +49,14 @@ class SearchResult:
     score: float
 
 
+class CollectionExistence(StrEnum):
+    """Three-state result for a collection existence check."""
+
+    EXISTS = "exists"
+    MISSING = "missing"
+    UNAVAILABLE = "unavailable"
+
+
 # ── VectorStore abstract base class ────────────────────────────────
 
 
@@ -76,6 +85,26 @@ class VectorStore(ABC):
     @abstractmethod
     def list_collections(self) -> list[str]:
         """List all collection names."""
+
+    def list_collections_checked(self) -> list[str] | None:
+        """List collections without conflating failures with an empty store.
+
+        Returns ``None`` when the backend cannot determine the collection
+        list.  ``[]`` is reserved for a successful read of an empty store.
+        """
+        try:
+            return self.list_collections()
+        except Exception:
+            return None
+
+    def collection_exists(self, name: str) -> CollectionExistence:
+        """Return whether a collection exists, is missing, or is unavailable."""
+        collections = self.list_collections_checked()
+        if collections is None:
+            return CollectionExistence.UNAVAILABLE
+        if name in collections:
+            return CollectionExistence.EXISTS
+        return CollectionExistence.MISSING
 
     @abstractmethod
     def upsert(self, collection: str, documents: list[Document]) -> bool:

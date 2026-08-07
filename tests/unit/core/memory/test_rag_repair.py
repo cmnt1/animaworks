@@ -37,6 +37,9 @@ class _RebuiltStore:
     def list_collections(self) -> list[str]:
         return list(self._collections)
 
+    def list_collections_checked(self) -> list[str] | None:
+        return self.list_collections()
+
 
 def test_classifies_today_error_finding_id():
     err = "Error executing plan: Internal error: Error finding id"
@@ -89,6 +92,17 @@ def test_chroma_transient_is_not_single_shot_and_does_not_start_repair(data_dir:
 def test_collection_owner_uses_default_anima_for_shared_collection():
     assert collection_owner("shared_common_knowledge", default_anima="sora") == ("sora", True)
     assert collection_owner("mikoto_knowledge") == ("mikoto", False)
+
+
+def test_rebuild_verification_rejects_unavailable_collection_list(monkeypatch):
+    from core.memory.rag.repair_rebuild import RebuildVerificationError, verify_rebuilt_vectordb
+
+    store = MagicMock()
+    store.list_collections_checked.return_value = None
+    monkeypatch.setattr("core.memory.rag.singleton.get_vector_store", lambda anima_name=None: store)
+
+    with pytest.raises(RebuildVerificationError, match="unreadable"):
+        verify_rebuilt_vectordb("sora", expected_chunks=1)
 
 
 def test_record_chroma_error_triggers_after_threshold(data_dir: Path):
@@ -824,6 +838,9 @@ class _FakeBuildStore:
 
     def list_collections(self) -> list[str]:
         return list(self._collections)
+
+    def list_collections_checked(self) -> list[str] | None:
+        return self.list_collections()
 
     def close(self) -> None:
         self.closed = True

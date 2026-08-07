@@ -361,7 +361,14 @@ def index_command(args: argparse.Namespace) -> None:
                 "Full rebuild: deleting collections for %s (will recreate with cosine similarity)",
                 anima_name,
             )
-            for collection in vector_store.list_collections():
+            collections = vector_store.list_collections_checked()
+            if collections is None:
+                logger.warning(
+                    "Cannot list collections for %s; skipping full rebuild to avoid partial deletion",
+                    anima_name,
+                )
+                continue
+            for collection in collections:
                 vector_store.delete_collection(collection)
 
         indexer = MemoryIndexer(vector_store, anima_name, anima_dir)

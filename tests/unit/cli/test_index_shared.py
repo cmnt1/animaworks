@@ -336,7 +336,7 @@ def test_index_command_full_reindexes_facts(tmp_path: Path) -> None:
     (anima_dir / "facts" / "2026-07-15.jsonl").write_text('{"text":"fact"}\n', encoding="utf-8")
     args = argparse.Namespace(anima="alice", full=True, shared=False, dry_run=False)
     mock_store = MagicMock()
-    mock_store.list_collections.return_value = []
+    mock_store.list_collections_checked.return_value = []
 
     with (
         patch("cli.commands.index_cmd.get_data_dir", return_value=tmp_path),
@@ -359,3 +359,26 @@ def test_index_command_full_reindexes_facts(tmp_path: Path) -> None:
         "facts",
         force=True,
     )
+
+
+def test_index_command_full_skips_when_collection_list_unavailable(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    (anima_dir / "knowledge").mkdir(parents=True)
+    (anima_dir / "knowledge" / "note.md").write_text("# Note", encoding="utf-8")
+    args = argparse.Namespace(anima="alice", full=True, shared=False, dry_run=False)
+    mock_store = MagicMock()
+    mock_store.list_collections_checked.return_value = None
+
+    with (
+        patch("cli.commands.index_cmd.get_data_dir", return_value=tmp_path),
+        patch("cli.commands.index_cmd._setup_server_delegation", return_value=False),
+        patch("cli.commands.index_cmd._setup_offline_vector_worker_if_needed", return_value=None),
+        patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
+        patch("core.memory.rag.repair.is_repair_locked", return_value=False),
+        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
+    ):
+        index_command(args)
+
+    mock_store.delete_collection.assert_not_called()
+    mock_indexer_cls.assert_not_called()
