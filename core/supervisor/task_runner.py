@@ -287,7 +287,7 @@ async def execute_chat_contract(
     payload: dict[str, Any],
     send_stream_event: Any,
 ) -> dict[str, Any]:
-    """Execute the legacy chat contracts inside one disposable child."""
+    """Execute one legacy chat contract inside a disposable child."""
     try:
         if kind == "greet":
             return await anima.process_greet()
@@ -304,10 +304,7 @@ async def execute_chat_contract(
                 if response.error:
                     raise RuntimeError(response.error.get("message") or "chat stream failed")
                 if response.chunk is not None:
-                    await send_stream_event(
-                        "stream",
-                        {"stream": True, "chunk": response.chunk},
-                    )
+                    await send_stream_event("stream", {"stream": True, "chunk": response.chunk})
                 if response.done:
                     return response.result or {"response": "", "replied_to": []}
             return {"response": "", "replied_to": []}
@@ -579,6 +576,15 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
             send_stream_event=connection.send_event,
             control=execution_control,
         )
+        anima = execution_control.get("anima")
+        await connection.send_event(
+            "capabilities",
+            {
+                "steer": bool(
+                    identity.lane == "chat" and anima is not None and anima.agent._executor.supports_message_injection
+                )
+            },
+        )
     except ValueError as exc:
         await connection.send_response(
             request_id,
@@ -649,6 +655,29 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
                     data = control.body.get("data") or {}
                     if anima is not None:
                         await anima.interrupt(thread_id=data.get("thread_id") or None)
+                    receiver = asyncio.create_task(connection.receive())
+                    continue
+                if control.kind == "event" and control.body["event"] == "inject_message":
+                    data = control.body.get("data") or {}
+                    injection_id = str(data.get("injection_id") or "")
+                    accepted = False
+                    error = ""
+                    anima = execution_control.get("anima")
+                    try:
+                        if anima is not None and injection_id:
+                            accepted = await anima.inject_message(
+                                str(data.get("message") or ""),
+                                from_person=str(data.get("from_person") or "human"),
+                                thread_id=str(data.get("thread_id") or "default"),
+                                attachment_paths=data.get("attachment_paths") or None,
+                            )
+                    except Exception as exc:
+                        logger.warning("Chat message injection failed: %s", exc, exc_info=True)
+                        error = str(exc)
+                    await connection.send_event(
+                        "inject_result",
+                        {"injection_id": injection_id, "accepted": accepted, "error": error},
+                    )
                     receiver = asyncio.create_task(connection.receive())
                     continue
                 receiver = asyncio.create_task(connection.receive())
