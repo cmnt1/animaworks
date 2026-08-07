@@ -339,6 +339,17 @@ def create_internal_router() -> APIRouter:
         return body.dict()
 
     async def _require_vector_worker(request: Request, path: str, body: BaseModel) -> dict[str, Any] | JSONResponse:
+        anima_name = getattr(body, "anima_name", None)
+        if isinstance(anima_name, str) and anima_name:
+            from core.config.resolver import resolve_process_model_config
+            from core.paths import get_animas_dir
+
+            process_config = resolve_process_model_config(get_animas_dir() / anima_name)
+            if process_config.valid and process_config.process_model == "phase3":
+                return JSONResponse(
+                    status_code=409,
+                    content={"detail": f"Vector proxy disabled for phase3 anima: {anima_name}"},
+                )
         manager = getattr(request.app.state, "vector_worker", None)
         if manager is None or not getattr(manager, "enabled", False):
             logger.warning("Vector worker unavailable for %s: manager disabled or missing", path)

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -72,6 +72,48 @@ async def test_daily_indexing_uses_per_anima_vectordb(tmp_path: Path) -> None:
 
     assert len(get_vs_calls) >= 1
     assert get_vs_calls[0] == "sakura"
+
+
+@pytest.mark.asyncio
+async def test_daily_indexing_uses_phase3_root_memory_service(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    anima_dir = sup.animas_dir / "sakura"
+    _create_anima_dir(sup.animas_dir, "sakura", with_knowledge=True)
+    (anima_dir / "status.json").write_text(
+        json.dumps({"enabled": True, "process_model": "phase3"}),
+        encoding="utf-8",
+    )
+
+    async def send_request(_anima_name, _method, payload, timeout=60.0):
+        assert timeout == 120.0
+        assert payload == {
+            "method": "memory.create_collection",
+            "params": {"collection": "sakura_knowledge"},
+        }
+        return {"ok": True}
+
+    def make_indexer(store, *_args, **_kwargs):
+        indexer = MagicMock()
+
+        def index_directory(*_args, **_kwargs):
+            assert store.create_collection("sakura_knowledge")
+            return IndexDirectoryResult(chunks_indexed=1)
+
+        indexer.index_directory.side_effect = index_directory
+        return indexer
+
+    sup.send_request = AsyncMock(side_effect=send_request)
+    with (
+        patch("core.paths.get_data_dir", return_value=tmp_path),
+        patch("core.memory.rag.singleton.get_vector_store") as get_vector_store,
+        patch("core.memory.rag.MemoryIndexer", side_effect=make_indexer),
+        patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
+        patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
+    ):
+        await sup._run_daily_indexing()
+
+    get_vector_store.assert_not_called()
+    sup.send_request.assert_awaited()
 
 
 @pytest.mark.asyncio

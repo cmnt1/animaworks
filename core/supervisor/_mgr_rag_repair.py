@@ -30,6 +30,12 @@ class RAGRepairMixin:
     ) -> bool:
         """Run RAG repair before restart when failure correlates with RAG corruption."""
         try:
+            from core.config.resolver import resolve_process_model_config
+
+            process_config = resolve_process_model_config(self.animas_dir / anima_name)
+            if process_config.valid and process_config.process_model == "phase3":
+                return False
+
             from core.memory.rag.repair import classify_corruption_error, get_repair_service
 
             service = get_repair_service()

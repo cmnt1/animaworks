@@ -674,27 +674,46 @@ class SchedulerMixin:
                     logger.warning("Skipping daily RAG indexing for %s: RAG repair lock is held", anima_name)
                     continue
 
-                from core.memory.rag.sqlite_health import check_anima_vectordb_health_via_worker_or_direct
+                from core.config.resolver import resolve_process_model_config
 
-                health = await loop.run_in_executor(
-                    None,
-                    functools.partial(
-                        check_anima_vectordb_health_via_worker_or_direct,
-                        anima_name,
-                        timeout_seconds=quick_check_timeout,
-                        source="daily_indexing_quick_check",
-                    ),
-                )
-                if health.corrupt:
-                    logger.warning(
-                        "Skipping daily RAG indexing for %s: quick_check status=%s db=%s",
-                        anima_name,
-                        health.status,
-                        health.db_path,
+                process_config = resolve_process_model_config(anima_dir)
+                if process_config.valid and process_config.process_model == "phase3":
+                    from core.memory.rag.ipc_store import IpcVectorStore
+
+                    def request_root_memory(method: str, params: dict, _anima_name: str = anima_name) -> dict:
+                        future = asyncio.run_coroutine_threadsafe(
+                            self.send_request(
+                                _anima_name,
+                                "memory",
+                                {"method": method, "params": params},
+                                timeout=120.0,
+                            ),
+                            loop,
+                        )
+                        return future.result(timeout=125.0)
+
+                    vector_store = IpcVectorStore("", anima_name, request_root_memory)
+                else:
+                    from core.memory.rag.sqlite_health import check_anima_vectordb_health_via_worker_or_direct
+
+                    health = await loop.run_in_executor(
+                        None,
+                        functools.partial(
+                            check_anima_vectordb_health_via_worker_or_direct,
+                            anima_name,
+                            timeout_seconds=quick_check_timeout,
+                            source="daily_indexing_quick_check",
+                        ),
                     )
-                    continue
-
-                vector_store = get_vector_store(anima_name)
+                    if health.corrupt:
+                        logger.warning(
+                            "Skipping daily RAG indexing for %s: quick_check status=%s db=%s",
+                            anima_name,
+                            health.status,
+                            health.db_path,
+                        )
+                        continue
+                    vector_store = get_vector_store(anima_name)
                 if vector_store is None:
                     logger.warning("Vector store unavailable for %s, skipping indexing", anima_name)
                     continue
@@ -774,7 +793,11 @@ class SchedulerMixin:
                     shared_collection = f"shared_{label}"
                     force = False
                     if current_hash == stored_hash:
-                        existence = vector_store.collection_exists(shared_collection)
+                        existence = await loop.run_in_executor(
+                            None,
+                            vector_store.collection_exists,
+                            shared_collection,
+                        )
                         if existence is not CollectionExistence.MISSING:
                             continue
                         logger.info(

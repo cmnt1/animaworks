@@ -501,10 +501,27 @@ def _clear_owner_write_circuit_breakers(anima_name: str | None) -> None:
             _write_circuit_breakers.pop(key, None)
 
 
+def _phase3_owner_guard(anima_name: str | None) -> JSONResponse | None:
+    if anima_name:
+        from core.config.resolver import resolve_process_model_config
+        from core.paths import get_animas_dir
+
+        process_config = resolve_process_model_config(get_animas_dir() / anima_name)
+        if process_config.valid and process_config.process_model == "phase3":
+            return JSONResponse(
+                status_code=409,
+                content={"detail": f"Vector worker disabled for phase3 anima: {anima_name}"},
+            )
+    return None
+
+
 def _before_vector_access(
     anima_name: str | None,
     collection: str | None = None,
 ) -> JSONResponse | None:
+    owner_guard = _phase3_owner_guard(anima_name)
+    if owner_guard is not None:
+        return owner_guard
     if anima_name and _has_active_repair_state(anima_name):
         logger.warning(
             "Vector access deferred during active RAG repair: owner=%s collection=%s",
@@ -737,7 +754,10 @@ def create_app() -> FastAPI:
         }
 
     @app.post("/reset-store")
-    async def vector_reset_store(body: VectorListCollectionsRequest) -> dict[str, str]:
+    async def vector_reset_store(body: VectorListCollectionsRequest):
+        owner_guard = _phase3_owner_guard(body.anima_name)
+        if owner_guard is not None:
+            return owner_guard
         from core.memory.rag.singleton import reset_vector_store
 
         await run_native(reset_vector_store, body.anima_name)
@@ -747,6 +767,9 @@ def create_app() -> FastAPI:
 
     @app.post("/verify-repair")
     async def vector_verify_repair(body: VectorRepairVerifyRequest):
+        owner_guard = _phase3_owner_guard(body.anima_name)
+        if owner_guard is not None:
+            return owner_guard
         if not _repair_nonce_matches(body.anima_name, body.repair_nonce):
             return JSONResponse(status_code=403, content={"detail": "Invalid RAG repair nonce"})
         try:
@@ -926,6 +949,9 @@ def create_app() -> FastAPI:
 
     @app.post("/quick-check")
     async def vector_quick_check(body: VectorQuickCheckRequest):
+        owner_guard = _phase3_owner_guard(body.anima_name)
+        if owner_guard is not None:
+            return owner_guard
         from core.memory.rag.sqlite_health import check_anima_vectordb_health
 
         result = await run_native(

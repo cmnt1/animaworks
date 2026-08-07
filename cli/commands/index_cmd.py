@@ -189,6 +189,13 @@ def _is_anima_enabled(anima_dir: Path) -> bool:
         return True
 
 
+def _uses_root_vector_store(anima_dir: Path) -> bool:
+    from core.config.resolver import resolve_process_model_config
+
+    config = resolve_process_model_config(anima_dir)
+    return config.valid and config.process_model == "phase3"
+
+
 def _index_shared_collections(
     anima_dirs: list[Path],
     base_dir: Path,
@@ -220,6 +227,12 @@ def _index_shared_collections(
     total = 0
     for anima_dir in anima_dirs:
         anima_name = anima_dir.name
+        if _uses_root_vector_store(anima_dir):
+            logger.error(
+                "Cannot index phase3 anima %s from the CLI; use the running server's daily root indexing",
+                anima_name,
+            )
+            continue
         if is_repair_locked(anima_name):
             logger.warning("  %s: skipping shared indexing because RAG repair lock is held", anima_name)
             continue
@@ -311,25 +324,33 @@ def index_command(args: argparse.Namespace) -> None:
         logger.info("Run 'animaworks init' first to set up the environment")
         return
 
-    server_mode = _setup_server_delegation()
-    temp_worker = _setup_offline_vector_worker_if_needed(server_mode)
-
-    current_model = _check_model_change(base_dir, args.full)
-    logger.info("Embedding model: %s", current_model)
-
     if args.anima:
         anima_dirs = [animas_dir / args.anima]
         if not anima_dirs[0].is_dir():
             logger.error("Anima not found: %s", args.anima)
-            _stop_offline_vector_worker(temp_worker)
             return
     else:
         anima_dirs = [p for p in sorted(animas_dir.iterdir()) if p.is_dir()]
 
     if not anima_dirs:
         logger.warning("No animas found to index")
-        _stop_offline_vector_worker(temp_worker)
         return
+
+    phase3_dirs = [anima_dir for anima_dir in anima_dirs if _uses_root_vector_store(anima_dir)]
+    for anima_dir in phase3_dirs:
+        logger.error(
+            "Cannot index phase3 anima %s from the CLI; use the running server's daily root indexing",
+            anima_dir.name,
+        )
+    anima_dirs = [anima_dir for anima_dir in anima_dirs if anima_dir not in phase3_dirs]
+    if not anima_dirs:
+        return
+
+    server_mode = _setup_server_delegation()
+    temp_worker = _setup_offline_vector_worker_if_needed(server_mode)
+
+    current_model = _check_model_change(base_dir, args.full)
+    logger.info("Embedding model: %s", current_model)
 
     include_shared = args.shared or (not args.anima)
 

@@ -43,7 +43,7 @@ _ACTIVE_JOURNALS: list[Any] = []
 
 
 class _MemoryRpcClient:
-    """Bridge synchronous VectorStore reads to the task runner's async IPC."""
+    """Bridge synchronous VectorStore operations to the task runner's async IPC."""
 
     def __init__(self, connection: IPCV2Connection) -> None:
         self.connection = connection

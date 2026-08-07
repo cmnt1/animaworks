@@ -146,9 +146,7 @@ class TestIndexSharedCollections:
         base_dir: Path,
         tmp_path: Path,
     ) -> None:
-        with patch(_PATCH_STORE), patch(_PATCH_INDEXER) as MockIdx, patch(
-            _PATCH_VDBDIR, return_value=tmp_path / "vdb"
-        ):
+        with patch(_PATCH_STORE), patch(_PATCH_INDEXER) as MockIdx, patch(_PATCH_VDBDIR, return_value=tmp_path / "vdb"):
             mock_indexer = MagicMock()
             mock_indexer.index_directory.return_value = IndexDirectoryResult(chunks_indexed=3, files_indexed=1)
             MockIdx.return_value = mock_indexer
@@ -353,6 +351,24 @@ def test_index_command_skips_repair_locked_anima(tmp_path: Path, data_dir: Path)
 
     mock_get_vs.assert_not_called()
     mock_indexer.assert_not_called()
+
+
+def test_index_command_rejects_phase3_anima(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    anima_dir.mkdir(parents=True)
+    (anima_dir / "status.json").write_text('{"process_model":"phase3"}', encoding="utf-8")
+    args = argparse.Namespace(anima="alice", full=False, shared=False, dry_run=False)
+
+    with (
+        patch("cli.commands.index_cmd.get_data_dir", return_value=tmp_path),
+        patch("cli.commands.index_cmd._setup_server_delegation", return_value=True),
+        patch("cli.commands.index_cmd._check_model_change", return_value="test-model"),
+        patch("core.memory.rag.singleton.get_vector_store") as get_vector_store,
+    ):
+        index_command(args)
+
+    get_vector_store.assert_not_called()
+    assert "Cannot index phase3 anima alice" in caplog.text
 
 
 def test_index_command_rebuilds_longterm_bm25(tmp_path: Path) -> None:

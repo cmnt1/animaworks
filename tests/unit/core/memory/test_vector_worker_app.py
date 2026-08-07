@@ -653,6 +653,29 @@ def test_vector_worker_resolves_store_inside_native_executor(monkeypatch) -> Non
     assert all(thread.startswith("vector-worker-native") for _name, thread in call_threads)
 
 
+def test_vector_worker_does_not_open_phase3_anima_store(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
+    anima_dir = tmp_path / "animas" / "sora"
+    anima_dir.mkdir(parents=True)
+    (anima_dir / "status.json").write_text('{"process_model":"phase3"}', encoding="utf-8")
+
+    from core.memory.rag.vector_worker import create_app
+
+    with (
+        patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
+        patch("core.memory.rag.singleton.get_vector_store") as get_store,
+        TestClient(create_app()) as client,
+    ):
+        response = client.post(
+            "/query",
+            json={"anima_name": "sora", "collection": "knowledge", "embedding": [0.1]},
+        )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Vector worker disabled for phase3 anima: sora"}
+    get_store.assert_not_called()
+
+
 def test_vector_worker_keeps_native_store_after_successful_action(monkeypatch) -> None:
     monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
 

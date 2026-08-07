@@ -326,18 +326,28 @@ class RAGRepairService:
         )
 
     def list_repairable_animas(self, *, animas_dir: Path | None = None) -> list[str]:
-        """Return enabled anima names that can safely be considered for repair."""
+        """Return enabled anima names still owned by the global vector worker."""
         if animas_dir is None:
             from core.paths import get_animas_dir
 
             animas_dir = get_animas_dir()
         if not animas_dir.is_dir():
             return []
-        return [
-            anima_dir.name
-            for anima_dir in sorted(animas_dir.iterdir())
-            if anima_dir.is_dir() and (anima_dir / "identity.md").is_file() and self._anima_enabled(anima_dir)
-        ]
+        from core.config.resolver import resolve_process_model_config
+
+        repairable: list[str] = []
+        for anima_dir in sorted(animas_dir.iterdir()):
+            if (
+                not anima_dir.is_dir()
+                or not (anima_dir / "identity.md").is_file()
+                or not self._anima_enabled(anima_dir)
+            ):
+                continue
+            process_config = resolve_process_model_config(anima_dir)
+            if process_config.valid and process_config.process_model == "phase3":
+                continue
+            repairable.append(anima_dir.name)
+        return repairable
 
     def discover_suspect_animas(
         self,

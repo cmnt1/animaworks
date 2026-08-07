@@ -764,6 +764,7 @@ class AnimaRunner:
             "process_inbox": self._handle_process_inbox,
             "run_cron_task": self._handle_run_cron_task,
             "run_consolidation": self._handle_run_consolidation,
+            "memory": self._handle_memory,
             "get_status": self._handle_get_status,
             "ping": self._handle_ping,
             "startup_ack": self._handle_startup_ack,
@@ -774,6 +775,15 @@ class AnimaRunner:
             "interrupt": self._handle_interrupt,
         }
         return handlers.get(method)
+
+    async def _handle_memory(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Expose the phase3 root MemoryService to server-side schedulers."""
+        supervisor = self._scheduler_mgr._task_runner_supervisor if self._scheduler_mgr is not None else None
+        method = params.get("method")
+        request_params = params.get("params")
+        if supervisor is None or not isinstance(method, str) or not isinstance(request_params, dict):
+            raise ValueError("root memory service is unavailable")
+        return await supervisor.handle_memory(method, request_params)
 
     async def _handle_process_message(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle non-streaming process_message request."""
