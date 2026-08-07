@@ -75,6 +75,7 @@ class IndexDirectoryResult:
     transient_failures: int = 0
     failed_sources: tuple[str, ...] = ()
     files_reconciled: int = 0
+    files_unprocessed: int = 0
 
     @property
     def transient(self) -> bool:
@@ -492,6 +493,17 @@ class MemoryIndexer:
             self.delete_indexed_file(file_path, memory_type)
             return self._finish_index_file(0, "indexed")
 
+        # Probe write availability before spending GPU time on embeddings.
+        # create_collection() is idempotent and returns False for an open
+        # client circuit, repair fence, or unavailable worker.
+        if not self.vector_store.create_collection(collection_name):
+            logger.warning("Collection unavailable for write, skipping index of %s", file_path)
+            # Collection creation is a service-wide write-availability gate,
+            # never a source-file defect.  Treat every failed probe as
+            # transient so directory indexing stops without quarantining the
+            # source or spending more embedding work.
+            return self._finish_index_file(0, "failed", transient=True)
+
         source_mtime_ns = file_path.stat().st_mtime_ns
         for chunk in chunks:
             chunk.metadata["source_hash"] = file_hash
@@ -568,6 +580,7 @@ class MemoryIndexer:
         files_failed = 0
         files_unchanged = 0
         files_skipped = 0
+        files_unprocessed = 0
         files_reconciled = 0
         transient_failures = 0
         failed_sources: list[str] = []
@@ -624,7 +637,11 @@ class MemoryIndexer:
                         done_count=index + 1,
                         total_count=len(md_files),
                     )
-            files_reconciled = self._reconcile_stale_entries(directory, memory_type)
+                if outcome.status == "failed" and outcome.transient:
+                    files_unprocessed = len(md_files) - index - 1
+                    break
+            if transient_failures == 0:
+                files_reconciled = self._reconcile_stale_entries(directory, memory_type)
         finally:
             self._index_directory_active = previous_active
             self._run_upsert_failures = previous_failures
@@ -634,6 +651,7 @@ class MemoryIndexer:
                 files_failed=files_failed,
                 files_unchanged=files_unchanged,
                 files_skipped=files_skipped,
+                files_unprocessed=files_unprocessed,
                 files_reconciled=files_reconciled,
                 transient_failures=transient_failures,
                 failed_sources=tuple(failed_sources),
@@ -702,7 +720,8 @@ class MemoryIndexer:
         examples = list(result.failed_sources[:3])
         logger.info(
             "Index directory summary: collection=%s successful=%d failed=%d "
-            "failed_sources=%s transient=%s unchanged=%d skipped=%d reconciled=%d chunks=%d",
+            "failed_sources=%s transient=%s unchanged=%d skipped=%d unprocessed=%d "
+            "reconciled=%d chunks=%d",
             collection_name,
             result.files_indexed,
             result.files_failed,
@@ -710,6 +729,7 @@ class MemoryIndexer:
             result.transient,
             result.files_unchanged,
             result.files_skipped,
+            result.files_unprocessed,
             result.files_reconciled,
             result.chunks_indexed,
         )
@@ -784,13 +804,17 @@ class MemoryIndexer:
             logger.debug("No chunks extracted from compressed_summary")
             return 0
 
+        # Gate GPU work on write availability.  A failed create is the
+        # fail-soft signal used by HTTP circuit/fence/unavailable paths.
+        if not self.vector_store.create_collection(collection_name):
+            logger.warning("Conversation summary collection unavailable for write, skipping index")
+            return 0
+
         # Generate embeddings
         embeddings = self._generate_embeddings([c.content for c in chunks])
 
         # Build documents and upsert
         from core.memory.rag.store import Document
-
-        self.vector_store.create_collection(collection_name)
 
         documents = [
             Document(

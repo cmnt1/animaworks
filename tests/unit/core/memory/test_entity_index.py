@@ -5,6 +5,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -186,6 +187,30 @@ def test_sync_entity_collection_is_best_effort_with_injected_store(tmp_path: Pat
     collection, documents = calls["upsert"]
     assert collection == "alice_entities"
     assert documents[0].metadata["canonical"] == "Caroline"
+
+
+@pytest.mark.unit
+def test_sync_entity_collection_create_failure_skips_embedding(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "alice"
+    registry = upsert_entities_from_facts(
+        anima_dir,
+        [_fact("Caroline suggested a book.", fact_id="fact-1", entities=["Caroline"])],
+    )
+    store = MagicMock()
+    store.create_collection.return_value = False
+    embedding_fn = MagicMock(return_value=[[0.1, 0.2]])
+
+    ok = sync_entity_collection(
+        anima_dir,
+        registry=registry,
+        vector_store=store,
+        embedding_fn=embedding_fn,
+    )
+
+    assert ok is False
+    store.create_collection.assert_called_once_with("alice_entities")
+    embedding_fn.assert_not_called()
+    store.upsert.assert_not_called()
 
 
 @pytest.mark.unit
