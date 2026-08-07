@@ -1,6 +1,6 @@
 """Disposable task runner entry point.
 
-Usage: ``python -m core.supervisor.task_runner --anima X --lane cron|heartbeat --job ID``
+Usage: ``python -m core.supervisor.task_runner --anima X --lane cron|heartbeat|task|background --job ID``
 """
 
 from __future__ import annotations
@@ -34,7 +34,10 @@ logger = logging.getLogger(__name__)
 
 _CONNECT_DEADLINE_SECONDS = 10.0
 _PROGRESS_INTERVAL_SECONDS = 5.0
-_SUPPORTED_LANES = frozenset({"cron", "heartbeat"})
+_SUPPORTED_LANES = frozenset({"cron", "heartbeat", "task", "background"})
+
+# Module-level registry of open StreamingJournal instances for grace flush.
+_ACTIVE_JOURNALS: list[Any] = []
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -141,6 +144,94 @@ async def execute_heartbeat_contract(
     }
 
 
+async def execute_task_contract(anima: DigitalAnima, task_desc: dict[str, Any]) -> dict[str, Any]:
+    """Execute a TaskExec LLM task inside the child process.
+
+    Claim / lease / queue sync stay on the anima root; this contract only
+    produces the result string (and related metadata) for the root to apply.
+    """
+    from core.supervisor.pending_executor import (
+        _SENTINEL_CANCELLED,
+        _SENTINEL_DEFERRED,
+        _SENTINEL_EXPIRED,
+        PendingTaskExecutor,
+    )
+
+    shutdown = asyncio.Event()
+    executor = PendingTaskExecutor(
+        anima=anima,
+        anima_name=anima.name,
+        anima_dir=anima.anima_dir,
+        shutdown_event=shutdown,
+    )
+    completed_results = task_desc.get("_completed_results")
+    if not isinstance(completed_results, dict):
+        completed_results = None
+    result = await executor._run_llm_task(task_desc, completed_results)
+    return {
+        "task_type": "llm",
+        "result": result,
+        "success": result not in {_SENTINEL_CANCELLED, _SENTINEL_EXPIRED, _SENTINEL_DEFERRED},
+    }
+
+
+async def execute_background_contract(
+    anima: DigitalAnima,
+    *,
+    kind: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Execute a background-lane contract (consolidation or command tool)."""
+    if kind == "consolidation":
+        consolidation_type = str(payload.get("consolidation_type") or "daily")
+        result = await anima.run_consolidation(consolidation_type=consolidation_type)
+        result_dict = result.model_dump(mode="json") if result is not None else {}
+        return {
+            "task_type": "consolidation",
+            "result": result_dict,
+            "success": bool(result is not None and getattr(result, "action", "completed") not in {"error", "failed"}),
+            "summary": (result.summary[:500] if result and result.summary else ""),
+            "duration_ms": result.duration_ms if result else 0,
+        }
+    if kind == "command":
+        # Run a single pending command tool synchronously in the child.
+        import subprocess
+
+        from core.exceptions import ToolExecutionError
+
+        tool_name = str(payload.get("tool_name") or "")
+        subcommand = str(payload.get("subcommand") or "")
+        raw_args = list(payload.get("raw_args") or [])
+        anima_dir = str(payload.get("anima_dir") or anima.anima_dir)
+        module_name = tool_name.split(":")[0] if ":" in tool_name else tool_name
+        cmd = ["animaworks-tool", module_name]
+        if subcommand:
+            cmd.append(subcommand)
+        cmd.extend(raw_args)
+        if subcommand and raw_args and raw_args[0] == subcommand:
+            cmd = ["animaworks-tool", module_name, *raw_args]
+        cmd.append("-j")
+        env = {**os.environ, "ANIMAWORKS_ANIMA_DIR": anima_dir}
+        completed = await asyncio.to_thread(
+            subprocess.run,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=1800,
+            env=env,
+            check=False,
+        )
+        if completed.returncode != 0:
+            error_msg = completed.stderr.strip() or f"Exit code {completed.returncode}"
+            raise ToolExecutionError(f"Tool {tool_name} failed: {error_msg}")
+        return {
+            "task_type": "command",
+            "result": completed.stdout.strip(),
+            "success": True,
+        }
+    raise ValueError(f"unknown background kind: {kind!r}")
+
+
 async def _connect(
     socket_path: Path,
     state: IPCV2ConnectionState,
@@ -194,6 +285,35 @@ async def _parent_monitor(expected_parent_pid: int) -> None:
     """Return when the spawning anima root is no longer our parent."""
     while os.getppid() == expected_parent_pid:
         await asyncio.sleep(1.0)
+
+
+def _flush_active_journals() -> dict[str, Any]:
+    """Flush every tracked StreamingJournal buffer (grace contract A-07)."""
+    flushed = 0
+    last_seq = 0
+    for journal in list(_ACTIVE_JOURNALS):
+        try:
+            if hasattr(journal, "close"):
+                journal.close()
+                flushed += 1
+        except Exception:
+            logger.debug("Failed to flush journal during grace", exc_info=True)
+    return {"flushed_journals": flushed, "last_journal_seq": last_seq}
+
+
+async def _send_grace_ack(connection: IPCV2Connection, *, grace_seq: int = 0) -> None:
+    flush_info = _flush_active_journals()
+    try:
+        await connection.send_event(
+            "grace_ack",
+            {
+                "grace_seq": grace_seq,
+                "flush": flush_info,
+                "last_journal_seq": flush_info.get("last_journal_seq", 0),
+            },
+        )
+    except Exception:
+        logger.debug("Failed to send grace_ack", exc_info=True)
 
 
 async def _send_terminal(
@@ -254,6 +374,21 @@ async def _prepare_execution(
             raise ValueError("cascade_suppressed_senders must be a list of strings or null")
         return asyncio.create_task(execute_heartbeat_contract(anima, cascade_suppressed_senders=senders))
 
+    if identity.lane == "task":
+        task_desc = params.get("task_desc")
+        if not isinstance(task_desc, dict):
+            raise ValueError("run contract requires task_desc")
+        return asyncio.create_task(execute_task_contract(anima, task_desc))
+
+    if identity.lane == "background":
+        kind = params.get("kind")
+        payload = params.get("payload")
+        if not isinstance(kind, str) or not kind:
+            raise ValueError("run contract requires background kind")
+        if not isinstance(payload, dict):
+            raise ValueError("run contract requires background payload object")
+        return asyncio.create_task(execute_background_contract(anima, kind=kind, payload=payload))
+
     task_data = params.get("task")
     if not isinstance(task_data, dict):
         raise ValueError("run contract requires task")
@@ -304,6 +439,7 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
         asyncio.wait_for(connection.receive(), timeout=15.0)
     )
     cancelled = False
+    graced = False
     root_lost = False
     try:
         while not execution.done():
@@ -324,7 +460,22 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
                     receiver = None
                     progress.cancel()
                     continue
-                if control.kind == "event" and control.body["event"] in {"cancel", "grace"}:
+                if control.kind == "event" and control.body["event"] == "grace":
+                    # A-07: stop work (finally flushes journals) → grace_ack → exit.
+                    grace_seq = 0
+                    data = control.body.get("data") or {}
+                    if isinstance(data, dict) and isinstance(data.get("deadline_seconds"), (int, float)):
+                        grace_seq = int(data.get("deadline_seconds") or 0)
+                    execution.cancel()
+                    try:
+                        await execution
+                    except asyncio.CancelledError:
+                        pass
+                    await _send_grace_ack(connection, grace_seq=grace_seq)
+                    graced = True
+                    cancelled = True
+                    break
+                if control.kind == "event" and control.body["event"] == "cancel":
                     execution.cancel()
                     cancelled = True
                     break
@@ -335,13 +486,21 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
                 await execution
             except asyncio.CancelledError:
                 pass
-            if not root_lost:
+            if not root_lost and not graced:
                 connection = await _send_terminal(
                     connection,
                     socket_path,
                     state,
                     request_id,
                     error=ipc_v2_error("CANCELLED", "task runner was cancelled", retryable=True),
+                )
+            elif graced and not root_lost:
+                connection = await _send_terminal(
+                    connection,
+                    socket_path,
+                    state,
+                    request_id,
+                    error=ipc_v2_error("CANCELLED", "task runner shut down under grace", retryable=True),
                 )
             return 1
 

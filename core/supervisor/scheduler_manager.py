@@ -83,12 +83,25 @@ class SchedulerManager:
             raise ValueError(process_config.error or "invalid process model configuration")
         self._cron_isolated = bool(process_config.task_process_isolation.cron)
         self._heartbeat_isolated = bool(process_config.task_process_isolation.heartbeat)
+        self._task_isolated = bool(process_config.task_process_isolation.task)
+        self._background_isolated = bool(process_config.task_process_isolation.background)
         self._task_runner_supervisor: TaskRunnerSupervisor | None = None
-        if self._cron_isolated or self._heartbeat_isolated:
+        if (
+            self._cron_isolated
+            or self._heartbeat_isolated
+            or self._task_isolated
+            or self._background_isolated
+        ):
+            pool_size: int | None = None
+            try:
+                pool_size = int(getattr(anima, "_background_worker_pool_size", 1) or 1)
+            except (TypeError, ValueError):
+                pool_size = 1
             self._task_runner_supervisor = TaskRunnerSupervisor(
                 anima_name=anima_name,
                 anima_dir=anima_dir,
                 shared_dir=Path(anima.shared_dir),
+                max_concurrent=pool_size,
             )
 
         # Polling-based heartbeat state (used when effective_interval > 60)
