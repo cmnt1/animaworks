@@ -4,7 +4,7 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Direct ChromaDB access guard for worker-only production routing."""
+"""Direct ChromaDB access guard for approved production owners."""
 
 import os
 
@@ -21,8 +21,8 @@ def require_direct_chroma_allowed() -> None:
     if direct_chroma_allowed():
         return
     raise RuntimeError(
-        "Direct ChromaDB access is disabled outside the vector worker. "
-        f"Set {DIRECT_CHROMA_ENV}=1 only for vector-worker or explicit test processes."
+        "Direct ChromaDB access is disabled outside an approved owner. "
+        f"Set {DIRECT_CHROMA_ENV}=1 only for vector-worker, anima root, or explicit test processes."
     )
 
 

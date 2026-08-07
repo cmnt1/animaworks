@@ -384,9 +384,18 @@ async def read_ipc_v2_envelope(reader: asyncio.StreamReader) -> IPCV2Envelope:
     return IPCV2Envelope.from_bytes(payload)
 
 
-def ipc_v2_error(code: str, message: str, *, retryable: bool) -> dict[str, Any]:
+def ipc_v2_error(
+    code: str,
+    message: str,
+    *,
+    retryable: bool,
+    retry_after_ms: int | None = None,
+) -> dict[str, Any]:
     """Build the required compact error object."""
-    return {"code": code, "message": message, "retryable": retryable}
+    error: dict[str, Any] = {"code": code, "message": message, "retryable": retryable}
+    if retry_after_ms is not None:
+        error["retry_after_ms"] = retry_after_ms
+    return error
 
 
 __all__ = [
