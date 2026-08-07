@@ -168,6 +168,9 @@ def reset_shared_for_company_change(anima_dir: Path, vector_store, current_compa
             "shared_company_skills_hash": "",
         },
     )
+    from core.memory.rag.shared_check_registry import invalidate_shared_checks
+
+    invalidate_shared_checks(anima_dir.name)
     return True
 
 

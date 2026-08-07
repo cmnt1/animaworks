@@ -19,6 +19,11 @@ from core.company_resources import (
 )
 from core.config.models import read_anima_company_checked
 from core.memory.fact_observability import warn_rate_limited
+from core.memory.rag.shared_check_registry import (
+    SharedCheckOutcome,
+    make_shared_check_key,
+    run_shared_check,
+)
 from core.memory.rag.shared_meta import read_shared_hash, reset_shared_for_company_change, write_shared_hash
 from core.memory.rag.store import CollectionExistence
 
@@ -216,6 +221,86 @@ class RAGMemorySearch:
             return False, company
         return True, company
 
+    @staticmethod
+    def _shared_check_timing() -> tuple[float, float, float]:
+        """Load shared-check timing with schema defaults as a fail-safe."""
+        try:
+            from core.config import load_config
+
+            rag = load_config().rag
+        except Exception:
+            from core.config.models import RAGConfig
+
+            rag = RAGConfig()
+        return (
+            rag.shared_check_ttl_seconds,
+            rag.shared_check_backoff_initial_seconds,
+            rag.shared_check_backoff_max_seconds,
+        )
+
+    def _ensure_shared_directory_indexed(
+        self,
+        vector_store,
+        directory: Path,
+        memory_type: str,
+        glob: str,
+        meta_key: str,
+        *,
+        shared_anima_dir: Path,
+        missing_log: str | None = None,
+        success_log: str | None = None,
+    ) -> None:
+        """Check and index one shared source through the process-wide registry."""
+        current_hash = _compute_dir_hash(directory, glob)
+        collection = f"shared_{memory_type}"
+        key = make_shared_check_key(
+            self._anima_dir.name,
+            vector_store,
+            collection,
+            f"{meta_key}:{current_hash}",
+        )
+
+        def check() -> SharedCheckOutcome:
+            stored_hash = read_shared_hash(self._anima_dir, meta_key)
+            force = False
+            if current_hash == stored_hash:
+                existence = _shared_collection_exists(vector_store, collection)
+                if existence is CollectionExistence.EXISTS:
+                    return SharedCheckOutcome.SUCCESS
+                if existence is CollectionExistence.UNAVAILABLE:
+                    return SharedCheckOutcome.TRANSIENT
+                if missing_log:
+                    logger.info(missing_log)
+                force = True
+
+            from core.memory.rag import MemoryIndexer
+
+            indexer = MemoryIndexer(
+                vector_store,
+                anima_name="shared",
+                anima_dir=shared_anima_dir,
+                collection_prefix="shared",
+                embedding_model=self._indexer.embedding_model if self._indexer else None,
+            )
+            result = indexer.index_directory(directory, memory_type, force=force)
+            if result.files_failed == 0:
+                write_shared_hash(self._anima_dir, meta_key, current_hash)
+                if success_log and result.chunks_indexed > 0:
+                    logger.info(success_log, result.chunks_indexed)
+                return SharedCheckOutcome.SUCCESS
+            if result.transient_failures > 0:
+                return SharedCheckOutcome.TRANSIENT
+            return SharedCheckOutcome.FAILED
+
+        ttl, backoff_initial, backoff_max = self._shared_check_timing()
+        run_shared_check(
+            key,
+            check,
+            ttl_seconds=ttl,
+            backoff_initial_seconds=backoff_initial,
+            backoff_max_seconds=backoff_max,
+        )
+
     def _ensure_shared_knowledge_indexed(self, vector_store) -> None:
         """Index common_knowledge/ into ``shared_common_knowledge`` collection.
 
@@ -229,43 +314,19 @@ class RAGMemorySearch:
             logger.debug("No common_knowledge files found, skipping shared indexing")
             return
 
-        current_hash = _compute_dir_hash(ck_dir, "*.md")
-        stored_hash = read_shared_hash(self._anima_dir, "shared_common_knowledge_hash")
-        force = False
-        if current_hash == stored_hash:
-            # Verify the shared collection still exists in this anima's
-            # vector store; if missing, fall through with force=True so
-            # the collection gets recreated.
-            existence = _shared_collection_exists(vector_store, "shared_common_knowledge")
-            if existence is CollectionExistence.EXISTS:
-                logger.debug("common_knowledge unchanged (hash match), skipping")
-                return
-            if existence is CollectionExistence.UNAVAILABLE:
-                logger.debug("common_knowledge collection availability unknown; skipping re-index")
-                return
-            logger.info("shared_common_knowledge collection missing despite tracked hash, forcing re-index")
-            force = True
-
         try:
-            from core.memory.rag import MemoryIndexer
             from core.paths import get_data_dir
 
-            data_dir = get_data_dir()
-            shared_indexer = MemoryIndexer(
+            self._ensure_shared_directory_indexed(
                 vector_store,
-                anima_name="shared",
-                anima_dir=data_dir,
-                collection_prefix="shared",
-                embedding_model=self._indexer.embedding_model if self._indexer else None,
+                ck_dir,
+                "common_knowledge",
+                "*.md",
+                "shared_common_knowledge_hash",
+                shared_anima_dir=get_data_dir(),
+                missing_log="shared_common_knowledge collection missing despite tracked hash, forcing re-index",
+                success_log="Indexed %d chunks into shared_common_knowledge",
             )
-            indexed = shared_indexer.index_directory(ck_dir, "common_knowledge", force=force)
-            if indexed.files_failed == 0:
-                write_shared_hash(self._anima_dir, "shared_common_knowledge_hash", current_hash)
-            if indexed.chunks_indexed > 0:
-                logger.info(
-                    "Indexed %d chunks into shared_common_knowledge",
-                    indexed.chunks_indexed,
-                )
         except Exception as e:
             logger.warning("Failed to index shared common_knowledge: %s", e)
 
@@ -282,45 +343,19 @@ class RAGMemorySearch:
             logger.debug("No common_skills files found, skipping shared skills indexing")
             return
 
-        current_hash = _compute_dir_hash(cs_dir, "SKILL.md")
-        stored_hash = read_shared_hash(self._anima_dir, "shared_common_skills_hash")
-        force = False
-        if current_hash == stored_hash:
-            existence = _shared_collection_exists(vector_store, "shared_common_skills")
-            if existence is CollectionExistence.EXISTS:
-                logger.debug("common_skills unchanged (hash match), skipping")
-                return
-            if existence is CollectionExistence.UNAVAILABLE:
-                logger.debug("common_skills collection availability unknown; skipping re-index")
-                return
-            logger.info("shared_common_skills collection missing despite tracked hash, forcing re-index")
-            force = True
-
         try:
-            from core.memory.rag import MemoryIndexer
             from core.paths import get_data_dir
 
-            data_dir = get_data_dir()
-            shared_indexer = MemoryIndexer(
+            self._ensure_shared_directory_indexed(
                 vector_store,
-                anima_name="shared",
-                anima_dir=data_dir,
-                collection_prefix="shared",
-                embedding_model=self._indexer.embedding_model if self._indexer else None,
+                cs_dir,
+                "common_skills",
+                "SKILL.md",
+                "shared_common_skills_hash",
+                shared_anima_dir=get_data_dir(),
+                missing_log="shared_common_skills collection missing despite tracked hash, forcing re-index",
+                success_log="Indexed %d chunks into shared_common_skills",
             )
-            # shared_common_skills is a global collection. Per-anima curator
-            # archive/block/delete state cannot be applied destructively here
-            # without hiding common skills from other Animas, so personal
-            # enforcement happens at retrieval time in MemoryRetriever.
-            # Trust/security metadata remains enforced by MemoryIndexer.
-            indexed = shared_indexer.index_directory(cs_dir, "common_skills", force=force)
-            if indexed.files_failed == 0:
-                write_shared_hash(self._anima_dir, "shared_common_skills_hash", current_hash)
-            if indexed.chunks_indexed > 0:
-                logger.info(
-                    "Indexed %d chunks into shared_common_skills",
-                    indexed.chunks_indexed,
-                )
         except Exception as e:
             logger.warning("Failed to index shared common_skills: %s", e)
 
@@ -362,28 +397,15 @@ class RAGMemorySearch:
         glob: str,
         meta_key: str,
     ) -> None:
-        current_hash = _compute_dir_hash(directory, glob)
-        stored_hash = read_shared_hash(self._anima_dir, meta_key)
-        collection = f"shared_{memory_type}"
-        force = False
-        if current_hash == stored_hash:
-            existence = _shared_collection_exists(vector_store, collection)
-            if existence is not CollectionExistence.MISSING:
-                return
-            force = True
         try:
-            from core.memory.rag import MemoryIndexer
-
-            indexer = MemoryIndexer(
+            self._ensure_shared_directory_indexed(
                 vector_store,
-                anima_name="shared",
-                anima_dir=infer_data_dir(self._anima_dir),
-                collection_prefix="shared",
-                embedding_model=self._indexer.embedding_model if self._indexer else None,
+                directory,
+                memory_type,
+                glob,
+                meta_key,
+                shared_anima_dir=infer_data_dir(self._anima_dir),
             )
-            result = indexer.index_directory(directory, memory_type, force=force)
-            if result.files_failed == 0:
-                write_shared_hash(self._anima_dir, meta_key, current_hash)
         except Exception as exc:
             logger.warning("Failed to index company %s: %s", memory_type, exc)
 

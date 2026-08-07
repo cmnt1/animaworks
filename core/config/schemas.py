@@ -286,6 +286,9 @@ class RAGConfig(BaseModel):
     # Serialize repairs (1) by default so each rebuild runs in isolation.
     repair_max_concurrent: int = 1
     upsert_quarantine_failure_threshold: int = Field(default=3, ge=1)
+    shared_check_ttl_seconds: float = Field(default=30.0, ge=0)
+    shared_check_backoff_initial_seconds: float = Field(default=5.0, ge=0)
+    shared_check_backoff_max_seconds: float = Field(default=300.0, ge=0)
     startup_repair_preflight_enabled: bool = True
     startup_repair_window_minutes: int = 1440
     quick_check_timeout_seconds: float = 10.0
