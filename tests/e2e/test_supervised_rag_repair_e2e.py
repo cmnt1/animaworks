@@ -17,6 +17,7 @@ async def test_chroma_signal_to_supervised_repair_lifecycle(data_dir: Path) -> N
     anima_dir = data_dir / "animas" / "sora"
     (anima_dir / "state").mkdir(parents=True)
     (anima_dir / "vectordb").mkdir()
+    (anima_dir / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
 
     service = RAGRepairService(enabled=True, threshold=1, window_minutes=5, cooldown_minutes=60)
     assert service.record_chroma_error(
