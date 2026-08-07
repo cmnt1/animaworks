@@ -322,6 +322,12 @@ class TestRAGConfig:
         assert rag.facts_reconcile_similarity_threshold == 0.82
         assert rag.facts_reconcile_top_k == 5
 
+    def test_shared_check_timing_defaults(self) -> None:
+        rag = RAGConfig()
+        assert rag.shared_check_ttl_seconds == 30.0
+        assert rag.shared_check_backoff_initial_seconds == 5.0
+        assert rag.shared_check_backoff_max_seconds == 300.0
+
 
 # ── Cache management ──────────────────────────────────────
 

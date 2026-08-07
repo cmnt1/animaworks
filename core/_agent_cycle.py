@@ -1336,78 +1336,79 @@ class CycleMixin:
             stream_succeeded = False
 
             try:
-                async for chunk in active_executor.execute_streaming(
-                    current_system_prompt,
-                    current_prompt,
-                    tracker,
-                    images=images,
-                    prior_messages=prior_messages,
-                    trigger=trigger,
-                    thread_id=thread_id,
-                ):
-                    if self._progress_callback:
-                        self._progress_callback()
-                    if chunk["type"] == "done":
-                        full_text_parts.append(chunk["full_text"])
-                        text_parts_this_attempt.append(chunk["full_text"])
-                        if _is_meeting_turn and MEETING_DONE_SENTINEL in chunk["full_text"]:
-                            _sentinel_seen = True
-                        result_message = chunk["result_message"]
-                        # Accumulate tool call records from executor
-                        all_tool_call_records.extend(chunk.get("tool_call_records", []))
-                        _merge_stream_usage(_stream_usage, chunk.get("usage"))
-                        # Merge transcript replied_to
-                        transcript_replied = chunk.get("replied_to_from_transcript", set())
-                        if transcript_replied:
-                            self._tool_handler.merge_replied_to(transcript_replied)
-                        # Capture force_chain from S mode auto-compact
-                        if chunk.get("force_chain", False):
-                            _stream_force_chain = True
-                        if chunk.get("truncated", False):
-                            stream_truncated = True
-                        stream_succeeded = True
-                    elif chunk["type"] == "error" and chunk.get("terminal") is True:
-                        terminal_error_message = chunk.get("message", "[Terminal LLM error]")
-                        terminal_error_reason = str(chunk.get("reason") or "")
-                        yield chunk
-                    elif chunk["type"] == "tool_end" and checkpoint_enabled:
-                        record = chunk.get("record")
-                        summary = (getattr(record, "result_summary", "") if record else "") or chunk.get(
-                            "tool_name", "unknown"
-                        )
-                        completed_tools.append(
-                            {
-                                "tool_name": chunk.get("tool_name", ""),
-                                "tool_id": chunk.get("tool_id", ""),
-                                "summary": summary,
-                            }
-                        )
-                        # Save checkpoint after each tool completion
-                        from core.memory.shortterm import StreamCheckpoint
-
-                        shortterm.save_checkpoint(
-                            StreamCheckpoint(
-                                timestamp=now_iso(),
-                                trigger=trigger,
-                                original_prompt=prompt,
-                                completed_tools=completed_tools,
-                                accumulated_text="\n".join(full_text_parts),
-                                retry_count=retry_count,
+                self._active_streaming_executor = active_executor
+                try:
+                    async for chunk in active_executor.execute_streaming(
+                        current_system_prompt,
+                        current_prompt,
+                        tracker,
+                        images=images,
+                        prior_messages=prior_messages,
+                        trigger=trigger,
+                        thread_id=thread_id,
+                    ):
+                        if self._progress_callback:
+                            self._progress_callback()
+                        if chunk["type"] == "done":
+                            full_text_parts.append(chunk["full_text"])
+                            text_parts_this_attempt.append(chunk["full_text"])
+                            if _is_meeting_turn and MEETING_DONE_SENTINEL in chunk["full_text"]:
+                                _sentinel_seen = True
+                            result_message = chunk["result_message"]
+                            all_tool_call_records.extend(chunk.get("tool_call_records", []))
+                            _merge_stream_usage(_stream_usage, chunk.get("usage"))
+                            transcript_replied = chunk.get("replied_to_from_transcript", set())
+                            if transcript_replied:
+                                self._tool_handler.merge_replied_to(transcript_replied)
+                            if chunk.get("force_chain", False):
+                                _stream_force_chain = True
+                            if chunk.get("truncated", False):
+                                stream_truncated = True
+                            stream_succeeded = True
+                        elif chunk["type"] == "error" and chunk.get("terminal") is True:
+                            terminal_error_message = chunk.get("message", "[Terminal LLM error]")
+                            terminal_error_reason = str(chunk.get("reason") or "")
+                            yield chunk
+                        elif chunk["type"] == "tool_end" and checkpoint_enabled:
+                            record = chunk.get("record")
+                            summary = (getattr(record, "result_summary", "") if record else "") or chunk.get(
+                                "tool_name", "unknown"
                             )
-                        )
-                        yield chunk
-                    else:
-                        if chunk["type"] == "text_delta":
-                            _delta_text = chunk.get("text", "")
-                            text_parts_this_attempt.append(_delta_text)
-                            if _is_meeting_turn:
-                                _emit = _filter_meeting_delta(_delta_text)
-                                if _emit:
-                                    yield {**chunk, "text": _emit}
-                                continue
-                        elif chunk["type"] == "thinking_delta":
-                            thinking_text_parts.append(chunk.get("text", ""))
-                        yield chunk
+                            completed_tools.append(
+                                {
+                                    "tool_name": chunk.get("tool_name", ""),
+                                    "tool_id": chunk.get("tool_id", ""),
+                                    "summary": summary,
+                                }
+                            )
+                            from core.memory.shortterm import StreamCheckpoint
+
+                            shortterm.save_checkpoint(
+                                StreamCheckpoint(
+                                    timestamp=now_iso(),
+                                    trigger=trigger,
+                                    original_prompt=prompt,
+                                    completed_tools=completed_tools,
+                                    accumulated_text="\n".join(full_text_parts),
+                                    retry_count=retry_count,
+                                )
+                            )
+                            yield chunk
+                        else:
+                            if chunk["type"] == "text_delta":
+                                _delta_text = chunk.get("text", "")
+                                text_parts_this_attempt.append(_delta_text)
+                                if _is_meeting_turn:
+                                    _emit = _filter_meeting_delta(_delta_text)
+                                    if _emit:
+                                        yield {**chunk, "text": _emit}
+                                    continue
+                            elif chunk["type"] == "thinking_delta":
+                                thinking_text_parts.append(chunk.get("text", ""))
+                            yield chunk
+                finally:
+                    if self._active_streaming_executor is active_executor:
+                        self._active_streaming_executor = None
 
             except Exception as e:
                 from core.execution.base import StreamDisconnectedError

@@ -265,6 +265,54 @@ def _agent_session_context(owner: Any):
     return nullcontext()
 
 
+async def _inject_chat_message(
+    owner: Any,
+    content: str,
+    *,
+    from_person: str,
+    thread_id: str,
+    attachment_paths: list[str] | None = None,
+) -> bool:
+    """Persist and inject one user turn into the active Mode S stream."""
+    conversation = owner._active_chat_conversations.get(thread_id)
+    if conversation is None or not owner.agent.supports_message_injection:
+        return False
+
+    state = conversation.load()
+    conversation.append_turn("human", content, attachments=attachment_paths or [])
+    injected_turn = state.turns[-1]
+    conversation.save()
+    try:
+        injected = await owner.agent.inject_message(content)
+    except Exception:
+        state.turns[:] = [turn for turn in state.turns if turn is not injected_turn]
+        conversation.save()
+        raise
+    if not injected:
+        state.turns[:] = [turn for turn in state.turns if turn is not injected_turn]
+        conversation.save()
+        return False
+
+    conversation.write_transcript(
+        "human",
+        content,
+        from_person=from_person,
+        thread_id=thread_id,
+        attachments=attachment_paths or None,
+    )
+    owner._log_human_conversation(content, from_person, thread_id)
+    owner._activity.log(
+        "message_received",
+        content=content,
+        summary=content[:100],
+        from_person=from_person,
+        channel="chat",
+        meta={"from_type": "human", "thread_id": thread_id, "steer": True},
+        origin=ORIGIN_HUMAN,
+    )
+    return True
+
+
 def _chat_cycle_isolated(
     cycle_result: CycleResult | dict[str, Any],
     *,
@@ -351,6 +399,24 @@ def _collect_meeting_redirects() -> list[dict[str, str]]:
 
 class MessagingMixin:
     """Mixin: human chat processing, bootstrap, and greeting."""
+
+    async def inject_message(
+        self,
+        content: str,
+        *,
+        from_person: str = "human",
+        thread_id: str = "default",
+        attachment_paths: list[str] | None = None,
+    ) -> bool:
+        """Inject and persist a user turn in the active streaming chat."""
+        self._validate_thread_id(thread_id)
+        return await _inject_chat_message(
+            self,
+            content,
+            from_person=from_person,
+            thread_id=thread_id,
+            attachment_paths=attachment_paths,
+        )
 
     def _sync_interactive_bootstrap_state(self) -> None:
         """Persist completed/repair state after chat-driven bootstrap changes."""
@@ -1056,6 +1122,7 @@ class MessagingMixin:
                 partial_response = ""
                 cycle_done = False
                 agent_session_acquired = False
+                self._active_chat_conversations[thread_id] = conv_memory
 
                 try:
                     agent_session_lock = getattr(self, "_agent_session_lock", None)
@@ -1263,6 +1330,8 @@ class MessagingMixin:
                         "message": "Internal error",
                     }
                 finally:
+                    if self._active_chat_conversations.get(thread_id) is conv_memory:
+                        self._active_chat_conversations.pop(thread_id, None)
                     if agent_session_acquired:
                         agent_session_lock.release()
                     if not cycle_done:

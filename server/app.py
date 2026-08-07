@@ -671,6 +671,7 @@ async def _prepare_startup_vector_worker(app: FastAPI) -> None:
     app.state.child_env_urls = {
         "ANIMAWORKS_EMBED_URL": f"http://127.0.0.1:{_server_port}/api/internal/embed",
         "ANIMAWORKS_VECTOR_URL": f"http://127.0.0.1:{_server_port}/api/internal/vector",
+        "ANIMAWORKS_RERANK_URL": f"http://127.0.0.1:{_server_port}/api/internal/rerank",
     }
     app.state.supervisor.child_env_urls = app.state.child_env_urls
 
@@ -1023,6 +1024,7 @@ def create_app(
         log_dir=log_dir,
         ws_manager=ws_manager,
         health_config=health_cfg,
+        vector_worker_manager=vector_worker,
     )
 
     # Auto-migrate old Japanese cron.md format to standard cron expressions

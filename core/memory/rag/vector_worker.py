@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import concurrent.futures
 import functools
+import hmac
 import logging
 import os
 import threading
@@ -21,7 +22,7 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.platform.fd_limits import raise_fd_soft_limit
 
@@ -204,6 +205,12 @@ class VectorQuickCheckRequest(BaseModel):
     record_repair: bool = True
 
 
+class VectorRepairVerifyRequest(BaseModel):
+    anima_name: str
+    repair_nonce: str = Field(min_length=1)
+    expected_chunks: int = Field(ge=0)
+
+
 def _set_future_result(future: asyncio.Future[Any], result: Any) -> None:
     if not future.done():
         future.set_result(result)
@@ -265,6 +272,29 @@ def _has_active_repair_state(anima_name: str) -> bool:
     except Exception:
         logger.debug("Failed to read RAG repair state for owner=%s", anima_name, exc_info=True)
         return True
+
+
+def _repair_nonce_matches(anima_name: str, repair_nonce: str) -> bool:
+    from core.memory.rag import repair_state
+
+    state = repair_state.read_state(anima_name)
+    expected = state.get("repair_nonce")
+    return (
+        state.get("status") in repair_state.ACTIVE_REPAIR_STATUSES
+        and isinstance(expected, str)
+        and bool(expected)
+        and hmac.compare_digest(expected, repair_nonce)
+    )
+
+
+def _verify_repair_store(anima_name: str, expected_chunks: int) -> dict[str, int]:
+    from core.memory.rag.singleton import get_vector_store, vector_store_operation
+
+    with vector_store_operation(anima_name):
+        store = get_vector_store(anima_name)
+        if store is None:
+            raise RuntimeError("vector store unavailable")
+        return store.verify_rebuilt_data(expected_chunks=expected_chunks)
 
 
 def _begin_latched_store_recovery(anima_name: str) -> bool:
@@ -471,10 +501,27 @@ def _clear_owner_write_circuit_breakers(anima_name: str | None) -> None:
             _write_circuit_breakers.pop(key, None)
 
 
+def _phase3_owner_guard(anima_name: str | None) -> JSONResponse | None:
+    if anima_name:
+        from core.config.resolver import resolve_process_model_config
+        from core.paths import get_animas_dir
+
+        process_config = resolve_process_model_config(get_animas_dir() / anima_name)
+        if process_config.valid and process_config.process_model == "phase3":
+            return JSONResponse(
+                status_code=409,
+                content={"detail": f"Vector worker disabled for phase3 anima: {anima_name}"},
+            )
+    return None
+
+
 def _before_vector_access(
     anima_name: str | None,
     collection: str | None = None,
 ) -> JSONResponse | None:
+    owner_guard = _phase3_owner_guard(anima_name)
+    if owner_guard is not None:
+        return owner_guard
     if anima_name and _has_active_repair_state(anima_name):
         logger.warning(
             "Vector access deferred during active RAG repair: owner=%s collection=%s",
@@ -707,13 +754,30 @@ def create_app() -> FastAPI:
         }
 
     @app.post("/reset-store")
-    async def vector_reset_store(body: VectorListCollectionsRequest) -> dict[str, str]:
+    async def vector_reset_store(body: VectorListCollectionsRequest):
+        owner_guard = _phase3_owner_guard(body.anima_name)
+        if owner_guard is not None:
+            return owner_guard
         from core.memory.rag.singleton import reset_vector_store
 
         await run_native(reset_vector_store, body.anima_name)
         _clear_owner_write_circuit_breakers(body.anima_name)
         _clear_owner_self_heal_escalation(body.anima_name)
         return {"status": "ok"}
+
+    @app.post("/verify-repair")
+    async def vector_verify_repair(body: VectorRepairVerifyRequest):
+        owner_guard = _phase3_owner_guard(body.anima_name)
+        if owner_guard is not None:
+            return owner_guard
+        if not _repair_nonce_matches(body.anima_name, body.repair_nonce):
+            return JSONResponse(status_code=403, content={"detail": "Invalid RAG repair nonce"})
+        try:
+            result = await run_native(_verify_repair_store, body.anima_name, body.expected_chunks)
+        except Exception as exc:
+            logger.warning("Vector repair verification failed for owner=%s", body.anima_name, exc_info=True)
+            return JSONResponse(status_code=500, content={"detail": str(exc)})
+        return {"status": "ok", **result}
 
     @app.post("/query")
     async def vector_query(body: VectorQueryRequest):
@@ -878,13 +942,16 @@ def create_app() -> FastAPI:
             lambda store: store.list_collections(),
         )
         if collections is None:
-            return {"collections": []}
+            return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
         if _is_vector_action_error(collections):
-            return {"collections": []}
+            return JSONResponse(status_code=503, content={"detail": "Vector store unavailable"})
         return {"collections": collections}
 
     @app.post("/quick-check")
     async def vector_quick_check(body: VectorQuickCheckRequest):
+        owner_guard = _phase3_owner_guard(body.anima_name)
+        if owner_guard is not None:
+            return owner_guard
         from core.memory.rag.sqlite_health import check_anima_vectordb_health
 
         result = await run_native(

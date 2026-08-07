@@ -5,11 +5,18 @@
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
 
-"""Company-fixed GitHub identity resolution for executor environments.
+"""GitHub identity resolution for executor environments.
 
-Injects ``GH_TOKEN`` from ``gh auth token -u <account>`` when the anima's
-company is mapped in ``config.github_identities``.  This decouples push
-identity from the host-wide ``~/.config/gh/hosts.yml`` active account.
+Injects ``GH_TOKEN`` from ``gh auth token -u <account>`` when the anima is
+mapped in ``config.github_identities``.  This decouples push identity from
+the host-wide ``~/.config/gh/hosts.yml`` active account.
+
+``github_identities`` keys use two namespaces:
+
+- ``anima:<name>`` — per-anima override (e.g. ``{"anima:sumire": "animaworks-reviewer"}``)
+- company slug — company-wide default (e.g. ``{"fs": "animaworks-dev-team"}``)
+
+Resolution order: per-anima override, then company mapping.
 """
 
 from __future__ import annotations
@@ -31,28 +38,26 @@ __all__ = ["resolve_github_token_env"]
 
 
 def resolve_github_token_env(anima_dir: Path) -> dict[str, str]:
-    """Return ``{"GH_TOKEN": ...}`` when company maps to a GitHub account.
+    """Return ``{"GH_TOKEN": ...}`` when anima or company maps to a GitHub account.
 
-    Never logs token values.  On missing config / company / token failure,
+    Lookup order:
+
+    1. ``identities["anima:<anima_dir.name>"]`` (per-anima override)
+    2. ``identities[<company>]`` (company default)
+
+    Never logs token values.  On missing config / mapping / token failure,
     returns an empty dict so callers fall back to legacy hosts.yml behaviour.
     """
     try:
         from core.config.anima_registry import read_anima_company
         from core.config.models import load_config
 
-        company = read_anima_company(anima_dir)
-        if not company:
-            return {}
-
         cfg = load_config()
         identities = getattr(cfg, "github_identities", None) or {}
         if not isinstance(identities, dict):
             return {}
 
-        account = identities.get(company)
-        if not account or not isinstance(account, str):
-            return {}
-        account = account.strip()
+        account = _resolve_account(anima_dir, identities, read_anima_company)
         if not account:
             return {}
 
@@ -67,6 +72,32 @@ def resolve_github_token_env(anima_dir: Path) -> dict[str, str]:
             exc_info=True,
         )
         return {}
+
+
+def _resolve_account(
+    anima_dir: Path,
+    identities: dict,
+    read_anima_company,
+) -> str | None:
+    """Pick GitHub account from identities map (per-anima then company)."""
+    # 1. per-anima override (key namespace: anima:<name>)
+    anima_key = f"anima:{anima_dir.name}"
+    account = _normalize_account(identities.get(anima_key))
+    if account:
+        return account
+
+    # 2. company-wide mapping (legacy)
+    company = read_anima_company(anima_dir)
+    if not company:
+        return None
+    return _normalize_account(identities.get(company))
+
+
+def _normalize_account(value: object) -> str | None:
+    if not value or not isinstance(value, str):
+        return None
+    account = value.strip()
+    return account or None
 
 
 def _get_token_for_account(account: str) -> str | None:

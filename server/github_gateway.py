@@ -274,6 +274,7 @@ class GitHubWebhookManager:
         number = int(pr.get("number") or 0)
         if self._is_bot(author):
             # bot自身のreviewはFRC判定(HOLD/PASS)の投稿なので、除外せずrinへ転送する
+            # reviewer_login 名義の APPROVED / CHANGES_REQUESTED も同様にFRC結果として扱う
             await asyncio.to_thread(
                 self._dispatch_frc_result_once,
                 f"review:{review_id}",
@@ -282,6 +283,7 @@ class GitHubWebhookManager:
                 str((pr.get("head") or {}).get("sha") or ""),
                 str(review.get("body") or ""),
                 str(review.get("html_url") or ""),
+                str(review.get("state") or ""),
             )
             return
         state = str(review.get("state") or "").upper()
@@ -357,18 +359,25 @@ class GitHubWebhookManager:
         head_sha: str,
         body: str,
         url: str,
+        review_state: str = "",
     ) -> None:
         with locked_dispatch_state(self._require_state_file()) as state:
             seen = state["seen_comments"]
             if dedupe_key in seen:
                 return
-            head = body.lstrip().upper()
-            if head.startswith("HOLD"):
-                verdict = "HOLD"
-            elif head.startswith("PASS"):
+            state_upper = (review_state or "").strip().upper()
+            if state_upper == "APPROVED":
                 verdict = "PASS"
+            elif state_upper == "CHANGES_REQUESTED":
+                verdict = "HOLD"
             else:
-                verdict = t("github_gateway.unknown_verdict")
+                head = body.lstrip().upper()
+                if head.startswith("HOLD"):
+                    verdict = "HOLD"
+                elif head.startswith("PASS"):
+                    verdict = "PASS"
+                else:
+                    verdict = t("github_gateway.unknown_verdict")
             summary = body.replace("\n", " ")[:200]
             content = t(
                 "github_gateway.frc_result",
@@ -430,9 +439,13 @@ class GitHubWebhookManager:
                 notified[key] = now
 
     def _is_bot(self, author: str) -> bool:
-        """True when the author is the configured bot account itself."""
+        """True when the author is bot_login or reviewer_login."""
+        if not author:
+            return False
+        author_cf = author.casefold()
         bot = self._config.bot_login
-        return bool(bot) and author.casefold() == bot.casefold()
+        reviewer = self._config.reviewer_login
+        return (bool(bot) and author_cf == bot.casefold()) or (bool(reviewer) and author_cf == reviewer.casefold())
 
     def _send(self, to: str, content: str, kind: str, key: str) -> None:
         Messenger(self._require_shared_dir(), "pr-review-dispatch").send(

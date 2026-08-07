@@ -248,10 +248,15 @@ class SDKOptionsMixin:
             "PYTHONPATH": str(PROJECT_DIR),
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         }
-        # Without the embed/vector URLs the MCP server cannot delegate to the
-        # animaworks server and silently loads SentenceTransformer models
-        # in-process (2026-07-17 OOM incident).
-        for key in ("ANIMAWORKS_EMBED_URL", "ANIMAWORKS_VECTOR_URL"):
+        # Without the embed/vector/rerank URLs the MCP server cannot delegate
+        # to the animaworks server and silently loads SentenceTransformer /
+        # CrossEncoder models in-process (2026-07-17 OOM / 2026-08-07 rerank
+        # load storms).
+        for key in (
+            "ANIMAWORKS_EMBED_URL",
+            "ANIMAWORKS_VECTOR_URL",
+            "ANIMAWORKS_RERANK_URL",
+        ):
             value = os.environ.get(key)
             if value:
                 env[key] = value

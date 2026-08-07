@@ -22,7 +22,6 @@ from core.config.models import (
     save_config,
 )
 
-
 # ── Helpers ──────────────────────────────────────────────────
 
 
@@ -449,6 +448,10 @@ class TestCmdAnimaRename:
         (data_dir / "animas" / "sakura" / "index_meta.json").write_text(
             '{"old": "data"}\n', encoding="utf-8",
         )
+        (data_dir / "animas" / "sakura" / "shared_index_meta.json").write_text(
+            '{"shared_company_name": "old-company"}\n',
+            encoding="utf-8",
+        )
 
         mock_data_dir.return_value = data_dir
         mock_animas_dir.return_value = data_dir / "animas"
@@ -457,6 +460,8 @@ class TestCmdAnimaRename:
 
         meta = (data_dir / "animas" / "hinata" / "index_meta.json").read_text(encoding="utf-8")
         assert json.loads(meta) == {}
+        shared_meta = (data_dir / "animas" / "hinata" / "shared_index_meta.json").read_text(encoding="utf-8")
+        assert json.loads(shared_meta) == {}
 
     @patch("core.paths.get_data_dir")
     @patch("core.paths.get_animas_dir")

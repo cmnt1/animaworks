@@ -35,6 +35,7 @@ _PROTECTED_FILES = frozenset(
         "permissions.json",
         "identity.md",
         "bootstrap.md",
+        "status.json",
     }
 )
 

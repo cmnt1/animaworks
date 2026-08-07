@@ -285,9 +285,22 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         super().__init__(model_config, anima_dir, interrupt_event=interrupt_event)
         self._tool_registry = tool_registry or []
         self._personal_tools = personal_tools or {}
+        self._active_client: ClaudeSDKClient | None = None
 
     @property
     def supports_streaming(self) -> bool:  # noqa: D102
+        return True
+
+    @property
+    def supports_message_injection(self) -> bool:  # noqa: D102
+        return True
+
+    async def inject_message(self, message: str) -> bool:
+        """Send an additional user turn to the active bidirectional SDK client."""
+        client = self._active_client
+        if client is None:
+            return False
+        await client.query(message)
         return True
 
     def _init_session_stats(self, system_prompt: str, prompt: str, trigger: str) -> dict[str, Any]:
@@ -639,6 +652,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
             try:
                 async with ClaudeSDKClient(options=fresh_opts) as fc:
                     logger.info("ClaudeSDKClient connected (fresh session retry)")
+                    self._active_client = fc
                     sdk_pid = _extract_sdk_pid(fc)
                     sdk_pid_create_time = None
                     if sdk_pid is not None:
@@ -650,8 +664,12 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                                 sdk_pid,
                                 exc_info=True,
                             )
-                    async for ev in process_stream_messages(fc, ctx, state):
-                        yield ev
+                    try:
+                        async for ev in process_stream_messages(fc, ctx, state):
+                            yield ev
+                    finally:
+                        if self._active_client is fc:
+                            self._active_client = None
             except BaseException as exc:
                 if isinstance(exc, (asyncio.CancelledError, GeneratorExit)):
                     raise
@@ -665,6 +683,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
             nonlocal emitted_text_delta, sdk_pid, sdk_pid_create_time
             async with ClaudeSDKClient(options=run_options) as client:
                 logger.info("ClaudeSDKClient connected")
+                self._active_client = client
                 sdk_pid = _extract_sdk_pid(client)
                 sdk_pid_create_time = None
                 if sdk_pid is not None:
@@ -676,27 +695,31 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
                             sdk_pid,
                             exc_info=True,
                         )
-                gen = process_stream_messages(client, ctx, state)
-                if resume_guard:
-                    try:
-                        first = await asyncio.wait_for(gen.__anext__(), timeout=RESUME_TIMEOUT_SEC)
-                    except TimeoutError:
-                        logger.warning("Resume timed out (session_id=%s)", session_id_to_resume)
-                        await gen.aclose()
-                        _sdk_session._clear_session_id(self._anima_dir, session_type, thread_id=thread_id)
-                        raise
-                    except StopAsyncIteration:
-                        logger.warning("Resume stream empty (session_id=%s)", session_id_to_resume)
-                        _sdk_session._clear_session_id(self._anima_dir, session_type, thread_id=thread_id)
-                        raise
-                    else:
-                        if first.get("type") == "text_delta":
+                try:
+                    gen = process_stream_messages(client, ctx, state)
+                    if resume_guard:
+                        try:
+                            first = await asyncio.wait_for(gen.__anext__(), timeout=RESUME_TIMEOUT_SEC)
+                        except TimeoutError:
+                            logger.warning("Resume timed out (session_id=%s)", session_id_to_resume)
+                            await gen.aclose()
+                            _sdk_session._clear_session_id(self._anima_dir, session_type, thread_id=thread_id)
+                            raise
+                        except StopAsyncIteration:
+                            logger.warning("Resume stream empty (session_id=%s)", session_id_to_resume)
+                            _sdk_session._clear_session_id(self._anima_dir, session_type, thread_id=thread_id)
+                            raise
+                        else:
+                            if first.get("type") == "text_delta":
+                                emitted_text_delta = True
+                            yield first
+                    async for ev in gen:
+                        if ev.get("type") == "text_delta":
                             emitted_text_delta = True
-                        yield first
-                async for ev in gen:
-                    if ev.get("type") == "text_delta":
-                        emitted_text_delta = True
-                    yield ev
+                        yield ev
+                finally:
+                    if self._active_client is client:
+                        self._active_client = None
 
         try:
             logger.info("ClaudeSDKClient connecting (streaming, resume=%s)", session_id_to_resume)

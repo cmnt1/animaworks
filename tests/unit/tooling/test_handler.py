@@ -1554,6 +1554,7 @@ class TestMemoryWriteSecurity:
             "permissions.md",
             "identity.md",
             "bootstrap.md",
+            "status.json",
         ],
     )
     def test_write_memory_file_blocked_for_protected(
@@ -1582,6 +1583,13 @@ class TestMemoryWriteSecurity:
         written = (anima_dir / "knowledge" / "safe.md").read_text(encoding="utf-8")
         assert "safe content" in written
         assert written.startswith("---")  # auto-frontmatter
+
+    def test_read_memory_file_status_json_still_allowed(
+        self,
+        handler: ToolHandler,
+    ):
+        result = handler.handle("read_memory_file", {"path": "status.json"})
+        assert json.loads(result) == {}
 
     def test_read_memory_file_cannot_bypass_explicit_deny(self, handler: ToolHandler, anima_dir: Path):
         from core.config.models import PermissionsConfig
@@ -1759,6 +1767,21 @@ class TestFilePermissionWriteProtection:
         )
         parsed = json.loads(result)
         assert parsed["error_type"] == "PermissionDenied"
+
+    def test_write_file_handler_blocks_status_json_without_modifying_it(
+        self,
+        handler: ToolHandler,
+        anima_dir: Path,
+    ):
+        status_path = anima_dir / "status.json"
+        original = status_path.read_text(encoding="utf-8")
+        result = handler.handle(
+            "write_file",
+            {"path": str(status_path), "content": '{"process_model":"phase3"}'},
+        )
+        parsed = json.loads(result)
+        assert parsed["error_type"] == "PermissionDenied"
+        assert status_path.read_text(encoding="utf-8") == original
 
     def test_edit_file_handler_blocks_protected(
         self,

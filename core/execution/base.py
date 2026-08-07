@@ -636,6 +636,15 @@ class BaseExecutor(ABC):
         """
         return True
 
+    @property
+    def supports_message_injection(self) -> bool:
+        """Whether an active streaming turn accepts additional user input."""
+        return False
+
+    async def inject_message(self, message: str) -> bool:
+        """Inject a user message into the active stream when supported."""
+        return False
+
     # -- Subordinate detection ----------------------------
 
     def _has_subordinates(self) -> bool:

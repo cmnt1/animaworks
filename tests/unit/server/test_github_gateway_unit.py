@@ -17,6 +17,7 @@ from server.github_gateway import GitHubWebhookManager, locked_dispatch_state
 
 REPO = "example-org/example-repo"
 BOT_LOGIN = "example-bot"
+REVIEWER_LOGIN = "example-reviewer"
 OTHER_REPO = "elsewhere/project"
 SHA_1 = "1" * 40
 SHA_2 = "2" * 40
@@ -317,8 +318,10 @@ class TestReviewAndCommentDispatch:
     @pytest.mark.parametrize("verdict", ["HOLD", "PASS"])
     async def test_bot_review_is_forwarded_as_frc_result(self, gateway, verdict: str) -> None:
         manager, sends, state_file = gateway
+        # state=commented: verdict comes from body prefix (legacy FRC text path)
         payload = _review_payload(
             author=BOT_LOGIN,
+            state="commented",
             body=f"{verdict}\n\nFRC review details here.",
         )
         await manager.handle_event("pull_request_review", payload)
@@ -389,6 +392,112 @@ class TestReviewAndCommentDispatch:
         )
         assert sends == []
         assert not state_file.exists()
+
+    async def test_reviewer_login_comments_are_ignored(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        shared_dir = tmp_path / "shared"
+        state_file = shared_dir / github_gateway.STATE_FILENAME
+        manager = GitHubWebhookManager(
+            config=GitHubWebhookConfig(
+                enabled=True,
+                repos=[REPO],
+                bot_login=BOT_LOGIN,
+                reviewer_login=REVIEWER_LOGIN,
+            ),
+            shared_dir=shared_dir,
+            state_file=state_file,
+        )
+        sends: list[dict[str, str]] = []
+        monkeypatch.setattr(
+            manager,
+            "_send",
+            lambda to, content, kind, key: sends.append(
+                {"to": to, "content": content, "kind": kind, "key": key}
+            ),
+        )
+        await manager.start()
+        try:
+            await manager.handle_event(
+                "issue_comment",
+                _comment_payload(event="issue_comment", author=REVIEWER_LOGIN),
+            )
+        finally:
+            await manager.stop()
+        assert sends == []
+        assert not state_file.exists()
+
+    @pytest.mark.parametrize(
+        ("state", "body", "expected_verdict"),
+        [
+            ("approved", "Looks good after checks.", "PASS"),
+            ("changes_requested", "Please fix the race.", "HOLD"),
+            ("commented", "PASS\n\nBody-based verdict.", "PASS"),
+            ("commented", "HOLD\n\nBody-based hold.", "HOLD"),
+        ],
+    )
+    async def test_reviewer_login_review_is_frc_result(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        state: str,
+        body: str,
+        expected_verdict: str,
+    ) -> None:
+        shared_dir = tmp_path / "shared"
+        state_file = shared_dir / github_gateway.STATE_FILENAME
+        manager = GitHubWebhookManager(
+            config=GitHubWebhookConfig(
+                enabled=True,
+                repos=[REPO],
+                bot_login=BOT_LOGIN,
+                reviewer_login=REVIEWER_LOGIN,
+                dispatcher_anima="rin",
+            ),
+            shared_dir=shared_dir,
+            state_file=state_file,
+        )
+        sends: list[dict[str, str]] = []
+        monkeypatch.setattr(
+            manager,
+            "_send",
+            lambda to, content, kind, key: sends.append(
+                {"to": to, "content": content, "kind": kind, "key": key}
+            ),
+        )
+        await manager.start()
+        try:
+            payload = _review_payload(
+                author=REVIEWER_LOGIN,
+                state=state,
+                body=body,
+            )
+            await manager.handle_event("pull_request_review", payload)
+        finally:
+            await manager.stop()
+        assert len(sends) == 1
+        assert sends[0]["to"] == "rin"
+        assert sends[0]["kind"] == "frc-result"
+        assert f"- 判定: {expected_verdict}" in sends[0]["content"]
+        assert "【外部レビューコメント検知】" not in sends[0]["content"]
+
+    async def test_empty_reviewer_login_preserves_legacy_bot_only_behavior(
+        self, gateway
+    ) -> None:
+        """reviewer_login empty: only bot_login reviews take FRC path."""
+        manager, sends, _state_file = gateway
+        # Non-bot review with APPROVED must NOT become FRC just from state.
+        await manager.handle_event(
+            "pull_request_review",
+            _review_payload(
+                author="human-reviewer",
+                state="approved",
+                body="LGTM",
+            ),
+        )
+        assert len(sends) == 1
+        assert sends[0]["kind"] == "comment"
+        assert "【外部レビューコメント検知】" in sends[0]["content"]
 
 
 class TestWorkflowRunDispatch:

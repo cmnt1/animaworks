@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from core.config.global_permissions import GlobalPermissionsCache
-from core.paths import PROJECT_DIR
+from core.execution._sdk_hooks import _collect_all_subordinates
 from core.execution.agent_sdk import (
     _PROTECTED_FILES,
     _WRITE_COMMANDS,
@@ -22,7 +22,7 @@ from core.execution.agent_sdk import (
     _sanitise_tool_args,
     _summarise_tool_input,
 )
-from core.execution._sdk_hooks import _collect_all_subordinates
+from core.paths import PROJECT_DIR
 
 
 @pytest.fixture(autouse=True)
@@ -74,6 +74,7 @@ class TestConstants:
         assert "permissions.md" in _PROTECTED_FILES
         assert "identity.md" in _PROTECTED_FILES
         assert "bootstrap.md" in _PROTECTED_FILES
+        assert "status.json" in _PROTECTED_FILES
 
     def test_protected_files_is_frozenset(self):
         assert isinstance(_PROTECTED_FILES, frozenset)
@@ -109,6 +110,11 @@ class TestCheckA1FileAccess:
         result = _check_a1_file_access(path, anima_dir, write=True)
         assert result is not None
         assert "protected file" in result
+
+    def test_write_to_own_status_blocked_but_read_allowed(self, anima_dir: Path):
+        path = str(anima_dir / "status.json")
+        assert _check_a1_file_access(path, anima_dir, write=True) is not None
+        assert _check_a1_file_access(path, anima_dir, write=False) is None
 
     def test_read_own_permissions_allowed(self, anima_dir: Path):
         """Reading protected files should be allowed."""

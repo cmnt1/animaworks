@@ -62,7 +62,6 @@ def upsert_file_documents(
     documents: list[Any],
 ) -> bool:
     """Upsert current chunks and remove obsolete chunks for the same source file."""
-    indexer.vector_store.create_collection(collection_name)
     existing_ids = get_indexed_file_document_ids(indexer, collection_name, source_file)
     if existing_ids is None:
         logger.warning("Could not inspect existing chunks for %s, skipping index", file_path)

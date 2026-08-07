@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 logger = logging.getLogger("animaworks.config")
 
@@ -69,6 +69,38 @@ class AnimaModelConfig(BaseModel):
     token_budget_monthly: int | None = None
     aliases: list[str] = []
     """Alternative names (e.g. Japanese) that resolve to this anima's canonical name."""
+
+
+ProcessModel = Literal["legacy", "phase2", "phase3"]
+
+
+class TaskProcessIsolationConfig(BaseModel):
+    """Strict Phase 2 lane isolation flags stored in ``status.json``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cron: StrictBool = False
+    heartbeat: StrictBool = False
+    task: StrictBool = False
+    background: StrictBool = False
+
+
+def _phase3_isolation() -> TaskProcessIsolationConfig:
+    return TaskProcessIsolationConfig(cron=True, heartbeat=True, task=True, background=True)
+
+
+class ResolvedProcessModelConfig(BaseModel):
+    """Validated process topology resolution result.
+
+    The default topology is ``phase3`` (task-runner isolation + root DB
+    ownership); ``legacy``/``phase2`` remain available as explicit opt-outs.
+    """
+
+    process_model: ProcessModel = "phase3"
+    task_process_isolation: TaskProcessIsolationConfig = Field(default_factory=_phase3_isolation)
+    valid: bool = True
+    error: str | None = None
+    warnings: tuple[str, ...] = ()
 
 
 # ── Default model names (single source of truth) ─────────────────────────────
@@ -287,6 +319,9 @@ class RAGConfig(BaseModel):
     # Serialize repairs (1) by default so each rebuild runs in isolation.
     repair_max_concurrent: int = 1
     upsert_quarantine_failure_threshold: int = Field(default=3, ge=1)
+    shared_check_ttl_seconds: float = Field(default=30.0, ge=0)
+    shared_check_backoff_initial_seconds: float = Field(default=5.0, ge=0)
+    shared_check_backoff_max_seconds: float = Field(default=300.0, ge=0)
     startup_repair_preflight_enabled: bool = True
     startup_repair_window_minutes: int = 1440
     quick_check_timeout_seconds: float = 10.0
@@ -606,6 +641,9 @@ class GitHubWebhookConfig(BaseModel):
     reviewer_anima: str = "sumire"
     dispatcher_anima: str = "rin"
     bot_login: str = ""
+    # Dedicated review-bot GitHub login (e.g. animaworks-reviewer).
+    # Treated like bot_login for comment exclusion and FRC review dispatch.
+    reviewer_login: str = ""
     quiet_seconds: float = Field(default=180, ge=0)
 
 

@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 
 import psutil
 
+from core.config.resolver import resolve_process_model_config
 from core.exceptions import AnimaNotRunningError, ExecutionError, MemoryWriteError, ProcessError  # noqa: F401
 from core.i18n import t
 from core.memory.streaming_journal import StreamingJournal
@@ -210,6 +211,10 @@ class AnimaRunner:
 
             logger.info("Initializing Anima: %s", self.anima_name)
 
+            process_config = resolve_process_model_config(self._anima_dir)
+            if not process_config.valid:
+                raise ValueError(process_config.error or "invalid process model configuration")
+
             # Deferred import: pulling in DigitalAnima loads the heavy RAG/model
             # stack (~4.5s warm, far more on a cold OneDrive-backed disk). Keeping
             # it out of module import means the socket above binds immediately, so
@@ -237,6 +242,7 @@ class AnimaRunner:
                 anima_name=self.anima_name,
                 anima_dir=self._anima_dir,
                 shutdown_event=self.shutdown_event,
+                task_runner_supervisor=self._scheduler_mgr._task_runner_supervisor,
             )
             self.anima._pending_executor = self._pending_executor
             if hasattr(self.anima, "_set_pending_executor_wake"):
@@ -254,6 +260,8 @@ class AnimaRunner:
                 anima=self.anima,
                 anima_name=self.anima_name,
                 anima_dir=self._anima_dir,
+                task_runner_supervisor=self._scheduler_mgr._task_runner_supervisor,
+                chat_isolated=self._scheduler_mgr._chat_isolated,
             )
 
             inbox_limiter = self._inbox_limiter
@@ -368,6 +376,14 @@ class AnimaRunner:
             raise ProcessError("Runner delegates are not initialized")
 
         self._scheduler_mgr.setup()
+        if (
+            self._scheduler_mgr._task_runner_supervisor is not None
+            and self._scheduler_mgr._task_runner_supervisor._memory_service is not None
+        ):
+            asyncio.create_task(
+                self._scheduler_mgr._task_runner_supervisor.start(),
+                name=f"root-memory-start-{self.anima_name}",
+            )
         self.inbox_watcher_task = asyncio.create_task(self._inbox_limiter.inbox_watcher_loop())
         self.pending_task_watcher_task = asyncio.create_task(self._pending_executor.watcher_loop())
         self._orphan_cleanup_task = asyncio.create_task(
@@ -806,6 +822,8 @@ class AnimaRunner:
             "process_inbox": self._handle_process_inbox,
             "run_cron_task": self._handle_run_cron_task,
             "run_consolidation": self._handle_run_consolidation,
+            "memory": self._handle_memory,
+            "repair_memory": self._handle_repair_memory,
             "get_status": self._handle_get_status,
             "ping": self._handle_ping,
             "startup_ack": self._handle_startup_ack,
@@ -817,10 +835,32 @@ class AnimaRunner:
         }
         return handlers.get(method)
 
+    async def _handle_memory(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Expose the phase3 root MemoryService to server-side schedulers."""
+        supervisor = self._scheduler_mgr._task_runner_supervisor if self._scheduler_mgr is not None else None
+        method = params.get("method")
+        request_params = params.get("params")
+        if supervisor is None or not isinstance(method, str) or not isinstance(request_params, dict):
+            raise ValueError("root memory service is unavailable")
+        return await supervisor.handle_memory(method, request_params)
+
+    async def _handle_repair_memory(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Run phase3 RAG repair in this root instead of the global worker."""
+        supervisor = self._scheduler_mgr._task_runner_supervisor if self._scheduler_mgr is not None else None
+        include_shared = params.get("include_shared", True)
+        if supervisor is None or not isinstance(include_shared, bool):
+            raise ValueError("root memory service is unavailable")
+        return await supervisor.repair_memory(include_shared=include_shared)
+
     async def _handle_process_message(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle non-streaming process_message request."""
         if not self.anima:
             raise AnimaNotRunningError("Anima not initialized")
+        if self._scheduler_mgr is not None and self._scheduler_mgr._chat_isolated:
+            supervisor = self._scheduler_mgr._task_runner_supervisor
+            if supervisor is None:
+                raise AnimaNotRunningError("Chat task runner supervisor is unavailable")
+            return await supervisor.run_chat(kind="message", payload=params)
 
         message = params.get("message", "")
         from_person = params.get("from_person", "human")
@@ -864,12 +904,24 @@ class AnimaRunner:
         if not self.anima:
             raise AnimaNotRunningError("Anima not initialized")
 
+        if self._scheduler_mgr is not None and self._scheduler_mgr._chat_isolated:
+            supervisor = self._scheduler_mgr._task_runner_supervisor
+            if supervisor is None:
+                raise AnimaNotRunningError("Chat task runner supervisor is unavailable")
+            return await supervisor.run_chat(kind="greet", payload=params)
+
         return await self.anima.process_greet()
 
     async def _handle_run_bootstrap(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle run_bootstrap request (background bootstrap execution)."""
         if not self.anima:
             raise AnimaNotRunningError("Anima not initialized")
+
+        if self._scheduler_mgr is not None and self._scheduler_mgr._chat_isolated:
+            supervisor = self._scheduler_mgr._task_runner_supervisor
+            if supervisor is None:
+                raise AnimaNotRunningError("Chat task runner supervisor is unavailable")
+            return await supervisor.run_chat(kind="bootstrap", payload=params)
 
         result = await self.anima.run_bootstrap()
         return {
@@ -882,6 +934,11 @@ class AnimaRunner:
         """Handle run_heartbeat request."""
         if not self.anima:
             raise AnimaNotRunningError("Anima not initialized")
+
+        # Prefer scheduler path so process-isolation flag and overlap guard apply.
+        if self._scheduler_mgr is not None:
+            await self._scheduler_mgr.heartbeat_tick()
+            return {"status": "completed"}
 
         result = await self.anima.run_heartbeat()
 
@@ -928,6 +985,24 @@ class AnimaRunner:
             raise AnimaNotRunningError("Anima not initialized")
 
         consolidation_type = params.get("consolidation_type", "daily")
+
+        # background lane isolation: run consolidation inside a task-runner child.
+        supervisor = self._scheduler_mgr._task_runner_supervisor if self._scheduler_mgr is not None else None
+        background_isolated = bool(
+            self._scheduler_mgr is not None and getattr(self._scheduler_mgr, "_background_isolated", False)
+        )
+        if background_isolated and supervisor is not None:
+            isolated = await supervisor.run_background(
+                kind="consolidation",
+                payload={"consolidation_type": consolidation_type},
+                display_lane="background",
+            )
+            return {
+                "status": "completed",
+                "summary": str(isolated.get("summary") or "")[:500],
+                "duration_ms": int(isolated.get("duration_ms") or 0),
+            }
+
         result = await self.anima.run_consolidation(consolidation_type=consolidation_type)
 
         return {
@@ -1031,6 +1106,11 @@ class AnimaRunner:
         if not self.anima:
             raise AnimaNotRunningError("Anima not initialized")
         thread_id = params.get("thread_id")
+        if self._scheduler_mgr is not None and self._scheduler_mgr._chat_isolated:
+            supervisor = self._scheduler_mgr._task_runner_supervisor
+            if supervisor is None:
+                raise AnimaNotRunningError("Chat task runner supervisor is unavailable")
+            return await supervisor.interrupt_chat(thread_id=thread_id)
         return await self.anima.interrupt(thread_id=thread_id)
 
     # ── Cleanup ───────────────────────────────────────────────────
@@ -1081,6 +1161,7 @@ class AnimaRunner:
         # Stop scheduler
         if self._scheduler_mgr:
             self._scheduler_mgr.shutdown()
+            await self._scheduler_mgr.shutdown_task_runners()
 
         # Stop IPC server
         if self.ipc_server:

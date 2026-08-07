@@ -20,6 +20,7 @@ from core.supervisor.scheduler_manager import SchedulerManager
 def scheduler_mgr(tmp_path: Path) -> SchedulerManager:
     anima_dir = tmp_path / "animas" / "test"
     anima_dir.mkdir(parents=True)
+    (anima_dir / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
     anima = MagicMock()
     anima._activity = MagicMock()
     anima.memory.read_cron_config.return_value = ""

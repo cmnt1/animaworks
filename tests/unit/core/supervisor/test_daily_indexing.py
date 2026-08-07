@@ -7,11 +7,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from core.memory.rag.indexer import IndexDirectoryResult
+from core.memory.rag.shared_meta import read_shared_hash, shared_index_meta_path, write_shared_hash
+from core.memory.rag.store import CollectionExistence
+from core.memory.rag_search import _compute_dir_hash
 from core.supervisor._mgr_scheduler import _marker_dir
 
 
@@ -35,7 +38,7 @@ def _create_anima_dir(animas_dir: Path, name: str, *, with_knowledge: bool = Fal
     d = animas_dir / name
     d.mkdir(parents=True, exist_ok=True)
     (d / "identity.md").write_text(f"# {name}", encoding="utf-8")
-    (d / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
+    (d / "status.json").write_text(json.dumps({"enabled": True, "process_model": "legacy"}), encoding="utf-8")
     if with_knowledge:
         (d / "knowledge").mkdir(exist_ok=True)
         (d / "knowledge" / "test.md").write_text("# test", encoding="utf-8")
@@ -69,6 +72,48 @@ async def test_daily_indexing_uses_per_anima_vectordb(tmp_path: Path) -> None:
 
     assert len(get_vs_calls) >= 1
     assert get_vs_calls[0] == "sakura"
+
+
+@pytest.mark.asyncio
+async def test_daily_indexing_uses_phase3_root_memory_service(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    anima_dir = sup.animas_dir / "sakura"
+    _create_anima_dir(sup.animas_dir, "sakura", with_knowledge=True)
+    (anima_dir / "status.json").write_text(
+        json.dumps({"enabled": True, "process_model": "phase3"}),
+        encoding="utf-8",
+    )
+
+    async def send_request(_anima_name, _method, payload, timeout=60.0):
+        assert timeout == 120.0
+        assert payload == {
+            "method": "memory.create_collection",
+            "params": {"collection": "sakura_knowledge"},
+        }
+        return {"ok": True}
+
+    def make_indexer(store, *_args, **_kwargs):
+        indexer = MagicMock()
+
+        def index_directory(*_args, **_kwargs):
+            assert store.create_collection("sakura_knowledge")
+            return IndexDirectoryResult(chunks_indexed=1)
+
+        indexer.index_directory.side_effect = index_directory
+        return indexer
+
+    sup.send_request = AsyncMock(side_effect=send_request)
+    with (
+        patch("core.paths.get_data_dir", return_value=tmp_path),
+        patch("core.memory.rag.singleton.get_vector_store") as get_vector_store,
+        patch("core.memory.rag.MemoryIndexer", side_effect=make_indexer),
+        patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
+        patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
+    ):
+        await sup._run_daily_indexing()
+
+    get_vector_store.assert_not_called()
+    sup.send_request.assert_awaited()
 
 
 @pytest.mark.asyncio
@@ -233,9 +278,41 @@ async def test_daily_indexing_does_not_write_shared_hash_after_failure(tmp_path:
         )
         await sup._run_daily_indexing()
 
-    meta_path = sup.animas_dir / "sakura" / "index_meta.json"
+    meta_path = shared_index_meta_path(sup.animas_dir / "sakura")
     if meta_path.exists():
         assert "shared_common_knowledge_hash" not in json.loads(meta_path.read_text(encoding="utf-8"))
+
+
+@pytest.mark.asyncio
+async def test_daily_indexing_skips_shared_reindex_when_collection_unavailable(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    anima_dir = sup.animas_dir / "sakura"
+    _create_anima_dir(sup.animas_dir, "sakura")
+    common_knowledge = tmp_path / "common_knowledge"
+    common_knowledge.mkdir()
+    (common_knowledge / "guide.md").write_text("# Guide", encoding="utf-8")
+    write_shared_hash(
+        anima_dir,
+        "shared_common_knowledge_hash",
+        _compute_dir_hash(common_knowledge, "*.md"),
+    )
+
+    mock_store = MagicMock()
+    mock_store.collection_exists.return_value = CollectionExistence.UNAVAILABLE
+    with (
+        patch("core.paths.get_data_dir", return_value=tmp_path),
+        patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
+        patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
+        patch("core.paths.get_common_knowledge_dir", return_value=common_knowledge),
+        patch("core.paths.get_common_skills_dir", return_value=tmp_path / "common_skills"),
+    ):
+        mock_indexer_cls.return_value.index_directory.return_value = IndexDirectoryResult()
+        await sup._run_daily_indexing()
+
+    mock_store.collection_exists.assert_called_once_with("shared_common_knowledge")
+    assert read_shared_hash(anima_dir, "shared_common_knowledge_hash") is not None
+    assert mock_indexer_cls.call_count == 1
+    mock_indexer_cls.return_value.index_directory.assert_not_called()
 
 
 @pytest.mark.asyncio

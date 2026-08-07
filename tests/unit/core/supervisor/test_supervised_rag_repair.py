@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -21,6 +22,7 @@ def _make_supervisor(tmp_path: Path):
         animas_dir=animas_dir,
         shared_dir=shared_dir,
         run_dir=run_dir,
+        vector_worker_manager=SimpleNamespace(base_url="http://127.0.0.1:43931"),
     )
 
 
@@ -28,13 +30,14 @@ def _create_anima(sup, name: str = "sora") -> Path:
     anima_dir = sup.animas_dir / name
     (anima_dir / "state").mkdir(parents=True, exist_ok=True)
     (anima_dir / "vectordb").mkdir(exist_ok=True)
+    (anima_dir / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
     return anima_dir
 
 
 def _create_enabled_anima(sup, name: str = "sora") -> Path:
     anima_dir = _create_anima(sup, name)
     (anima_dir / "identity.md").write_text(f"# {name}\n", encoding="utf-8")
-    (anima_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
+    (anima_dir / "status.json").write_text(json.dumps({"enabled": True, "process_model": "legacy"}), encoding="utf-8")
     return anima_dir
 
 
@@ -125,6 +128,32 @@ async def test_supervised_rag_repair_legacy_mode_stops_repairs_and_restarts(tmp_
     state = _read_state(anima_dir)
     assert state["status"] == "healthy"
     assert state["stage"] == "complete"
+
+
+@pytest.mark.asyncio
+async def test_phase3_repair_is_sent_to_root_even_when_stop_config_is_enabled(tmp_path: Path) -> None:
+    sup = _make_supervisor(tmp_path)
+    anima_dir = _create_anima(sup)
+    (anima_dir / "status.json").write_text('{"process_model":"phase3"}', encoding="utf-8")
+    sup._rag_repair_stop_anima = lambda: True
+    sup.stop_anima = AsyncMock()
+    sup._run_rag_repair_cli_process = AsyncMock()
+    sup.send_request = AsyncMock(return_value={"ok": True, "status": "success", "chunks_indexed": 3})
+
+    await sup._run_supervised_rag_repair(
+        "sora",
+        {"status": "requested", "reason": "hnsw_corruption", "include_shared": True},
+    )
+
+    sup.stop_anima.assert_not_awaited()
+    sup._run_rag_repair_cli_process.assert_not_awaited()
+    sup.send_request.assert_awaited_once_with(
+        "sora",
+        "repair_memory",
+        {"reason": "hnsw_corruption", "include_shared": True},
+        timeout=1830.0,
+    )
+    assert _read_state(anima_dir)["status"] == "healthy"
 
 
 @pytest.mark.asyncio
@@ -294,6 +323,7 @@ async def test_reconcile_defers_restart_requested_during_rag_repair(tmp_path: Pa
 async def test_repair_cli_process_passes_reason_to_subprocess(tmp_path: Path, monkeypatch) -> None:
     sup = _make_supervisor(tmp_path)
     anima_dir = _create_anima(sup)
+    monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://127.0.0.1:40379")
     captured: dict[str, object] = {}
 
     class FakeProc:
@@ -303,9 +333,10 @@ async def test_repair_cli_process_passes_reason_to_subprocess(tmp_path: Path, mo
         async def communicate(self):
             return b"ok", b""
 
-    async def fake_create_subprocess_exec(*cmd, cwd, stdout, stderr):
+    async def fake_create_subprocess_exec(*cmd, cwd, env, stdout, stderr):
         captured["cmd"] = cmd
         captured["cwd"] = cwd
+        captured["env"] = env
         captured["stdout"] = stdout
         captured["stderr"] = stderr
         return FakeProc()
@@ -325,8 +356,13 @@ async def test_repair_cli_process_passes_reason_to_subprocess(tmp_path: Path, mo
     assert "--reason" in cmd
     assert cmd[cmd.index("--reason") + 1] == "sqlite_malformed"
     assert "--shared" in cmd
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert env["ANIMAWORKS_VECTOR_URL"] == "http://127.0.0.1:43931"
+    assert env["ANIMAWORKS_RAG_REPAIR_NONCE"]
     state = _read_state(anima_dir)
     assert state["pid"] == 12345
+    assert state["repair_nonce"] == env["ANIMAWORKS_RAG_REPAIR_NONCE"]
 
 
 @pytest.mark.asyncio
@@ -352,7 +388,7 @@ async def test_repair_cli_process_timeout_kills_subprocess(tmp_path: Path, monke
 
     proc = FakeProc()
 
-    async def fake_create_subprocess_exec(*cmd, cwd, stdout, stderr):
+    async def fake_create_subprocess_exec(*cmd, cwd, env, stdout, stderr):
         return proc
 
     monkeypatch.setattr("asyncio.create_subprocess_exec", fake_create_subprocess_exec)

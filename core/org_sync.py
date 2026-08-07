@@ -281,6 +281,8 @@ _TRIVIAL_ENTRIES = frozenset(
         "vectordb",
         "status.json",
         "index_meta.json",
+        "shared_index_meta.json",
+        "shared_index_meta.json.lock",
         "identity.md",
     }
 )
@@ -456,7 +458,8 @@ def detect_orphan_animas(
     *age_threshold_s* seconds (possibly still being created) are skipped.
 
     **Trivial orphans** (containing only ``vectordb/``, ``.orphan_notified``,
-    ``status.json``, or ``index_meta.json``) are automatically deleted.
+    ``status.json``, ``index_meta.json``, or ``shared_index_meta.json``) are
+    automatically deleted.
     **Non-trivial orphans** (containing episodes, knowledge, state, etc.)
     are archived to ``archive/orphans/{name}_{timestamp}/`` and then deleted.
 

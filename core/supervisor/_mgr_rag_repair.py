@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import secrets
 import sys
 from pathlib import Path
 
@@ -28,6 +30,12 @@ class RAGRepairMixin:
     ) -> bool:
         """Run RAG repair before restart when failure correlates with RAG corruption."""
         try:
+            from core.config.resolver import resolve_process_model_config
+
+            process_config = resolve_process_model_config(self.animas_dir / anima_name)
+            if process_config.valid and process_config.process_model == "phase3":
+                return False
+
             from core.memory.rag.repair import classify_corruption_error, get_repair_service
 
             service = get_repair_service()
@@ -176,7 +184,7 @@ class RAGRepairMixin:
         reason = str(state.get("reason") or "requested_rag_repair")
         include_shared = bool(state.get("include_shared", True))
         try:
-            if self._rag_repair_stop_anima():
+            if not self._phase3_repair_owned_by_root(anima_name) and self._rag_repair_stop_anima():
                 if not await self._stop_anima_for_rag_repair(anima_name, reason, include_shared):
                     return
 
@@ -262,6 +270,7 @@ class RAGRepairMixin:
                     "pid": None,
                     "reason": reason,
                     "include_shared": include_shared,
+                    "repair_nonce": None,
                     "last_error": None if repair_succeeded else current.get("last_error"),
                 },
             )
@@ -324,6 +333,16 @@ class RAGRepairMixin:
                 "last_error": None,
             },
         )
+        if self._phase3_repair_owned_by_root(anima_name):
+            try:
+                return await self.send_request(
+                    anima_name,
+                    "repair_memory",
+                    {"reason": reason, "include_shared": include_shared},
+                    timeout=float(self._rag_repair_timeout_seconds() + 30),
+                )
+            except Exception as exc:
+                return {"ok": False, "status": "failed", "error": str(exc)}
         return await self._run_rag_repair_cli_process(
             anima_name,
             reason=reason,
@@ -348,6 +367,7 @@ class RAGRepairMixin:
                 "pid": None,
                 "reason": reason,
                 "include_shared": include_shared,
+                "repair_nonce": None,
                 "last_error": error,
             },
         )
@@ -427,15 +447,40 @@ class RAGRepairMixin:
             cmd.append("--shared")
         timeout = self._rag_repair_timeout_seconds()
         repo_root = Path(__file__).resolve().parents[2]
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=repo_root,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        vector_url = getattr(getattr(self, "vector_worker_manager", None), "base_url", None)
+        if not isinstance(vector_url, str) or not vector_url:
+            return {
+                "ok": False,
+                "status": "failed",
+                "error": "current vector worker URL unavailable",
+            }
+        repair_nonce = secrets.token_urlsafe(32)
         current_stage = self._read_rag_repair_state(anima_name).get("stage")
         if not current_stage or current_stage == "complete":
             current_stage = "repair_process"
+        self._write_rag_repair_state(
+            anima_name,
+            {
+                "status": "repairing",
+                "stage": current_stage,
+                "pid": None,
+                "started_at": repair_state.now_iso(),
+                "reason": reason,
+                "include_shared": include_shared,
+                "repair_nonce": repair_nonce,
+                "last_error": None,
+            },
+        )
+        env = os.environ.copy()
+        env["ANIMAWORKS_VECTOR_URL"] = vector_url
+        env["ANIMAWORKS_RAG_REPAIR_NONCE"] = repair_nonce
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=repo_root,
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
         self._write_rag_repair_state(
             anima_name,
             {
@@ -445,6 +490,7 @@ class RAGRepairMixin:
                 "started_at": repair_state.now_iso(),
                 "reason": reason,
                 "include_shared": include_shared,
+                "repair_nonce": repair_nonce,
                 "last_error": None,
             },
         )
@@ -497,6 +543,12 @@ class RAGRepairMixin:
             return int(getattr(load_config().rag, "repair_timeout_seconds", 1800))
         except Exception:
             return 1800
+
+    def _phase3_repair_owned_by_root(self, anima_name: str) -> bool:
+        from core.config.resolver import resolve_process_model_config
+
+        process_config = resolve_process_model_config(self.animas_dir / anima_name)
+        return bool(process_config.valid and process_config.process_model == "phase3")
 
     def _rag_repair_stop_anima(self) -> bool:
         try:
