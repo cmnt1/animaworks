@@ -657,9 +657,24 @@ def test_vector_worker_native_exception_does_not_escape_asgi(monkeypatch) -> Non
     ):
         resp = client.post("/list-collections", json={"anima_name": "natsume"})
 
-    assert resp.status_code == 200
-    assert resp.json() == {"collections": []}
+    assert resp.status_code == 503
+    assert resp.json() == {"detail": "Vector store unavailable"}
     reset.assert_called_once_with("natsume")
+
+
+def test_vector_worker_list_store_unavailable_returns_503(monkeypatch) -> None:
+    monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
+
+    from core.memory.rag.vector_worker import create_app
+
+    with (
+        patch("core.memory.rag.singleton.get_vector_store", return_value=None),
+        TestClient(create_app()) as client,
+    ):
+        resp = client.post("/list-collections", json={"anima_name": "sora"})
+
+    assert resp.status_code == 503
+    assert resp.json() == {"detail": "Vector store unavailable"}
 
 
 def test_vector_worker_write_endpoints_success(monkeypatch) -> None:

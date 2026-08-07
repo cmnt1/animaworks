@@ -18,6 +18,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core.memory.rag.store import CollectionExistence
+
 
 @pytest.fixture
 def anima_dir(tmp_path: Path) -> Path:
@@ -39,7 +41,15 @@ def _make_indexer(anima_dir: Path):
         )
     # Patch embedding generation to return deterministic vectors
     idx._generate_embeddings = MagicMock(return_value=[[0.1] * 4])
+    idx.vector_store.list_collections_checked.side_effect = lambda: _checked_collections(idx.vector_store)
     return idx
+
+
+def _checked_collections(vector_store):
+    try:
+        return vector_store.list_collections()
+    except Exception:
+        return None
 
 
 class TestCollectionExistenceCache:
@@ -48,16 +58,16 @@ class TestCollectionExistenceCache:
     def test_first_call_populates_cache(self, anima_dir: Path):
         idx = _make_indexer(anima_dir)
         idx.vector_store.list_collections.return_value = ["foo", "bar"]
-        assert idx._collection_exists("foo") is True
+        assert idx._collection_exists("foo") is CollectionExistence.EXISTS
         assert idx.vector_store.list_collections.call_count == 1
         # Second call uses cache
-        assert idx._collection_exists("bar") is True
+        assert idx._collection_exists("bar") is CollectionExistence.EXISTS
         assert idx.vector_store.list_collections.call_count == 1
 
     def test_missing_returns_false(self, anima_dir: Path):
         idx = _make_indexer(anima_dir)
         idx.vector_store.list_collections.return_value = ["foo"]
-        assert idx._collection_exists("missing") is False
+        assert idx._collection_exists("missing") is CollectionExistence.MISSING
 
     def test_listing_failure_is_conservative(self, anima_dir: Path):
         """When list_collections raises, we should NOT trigger spurious re-index."""
@@ -65,16 +75,16 @@ class TestCollectionExistenceCache:
         idx.vector_store.list_collections.side_effect = RuntimeError("transient")
         # Be conservative: assume the collection exists rather than
         # forcing a full re-index of everything on a transient error.
-        assert idx._collection_exists("any") is True
+        assert idx._collection_exists("any") is CollectionExistence.UNAVAILABLE
 
     def test_mark_known_adds_to_cache(self, anima_dir: Path):
         idx = _make_indexer(anima_dir)
         idx.vector_store.list_collections.return_value = []
         # Initially not present
-        assert idx._collection_exists("new") is False
+        assert idx._collection_exists("new") is CollectionExistence.MISSING
         # After marking known, present without re-listing
         idx._mark_collection_known("new")
-        assert idx._collection_exists("new") is True
+        assert idx._collection_exists("new") is CollectionExistence.EXISTS
 
 
 class TestIndexFileCollectionRecovery:
@@ -135,6 +145,23 @@ class TestIndexFileCollectionRecovery:
         chunks = idx.index_file(f, "knowledge")
         assert chunks > 0, "should have re-indexed despite hash match"
         assert idx.vector_store.upsert.called, "must recreate collection via upsert"
+
+    def test_unavailable_collection_check_does_not_reindex_or_embed(self, anima_dir: Path):
+        idx = _make_indexer(anima_dir)
+        idx.vector_store.upsert.return_value = True
+        f = anima_dir / "knowledge" / "topic.md"
+        f.write_text(self._SAMPLE_MD, encoding="utf-8")
+
+        assert idx.index_file(f, "knowledge") > 0
+        idx._known_collections = None
+        idx.vector_store.list_collections_checked.side_effect = None
+        idx.vector_store.list_collections_checked.return_value = None
+        idx.vector_store.upsert.reset_mock()
+        idx._generate_embeddings.reset_mock()
+
+        assert idx.index_file(f, "knowledge") == 0
+        idx._generate_embeddings.assert_not_called()
+        idx.vector_store.upsert.assert_not_called()
 
 
 class TestIndexConversationSummaryRecovery:

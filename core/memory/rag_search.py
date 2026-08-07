@@ -12,6 +12,7 @@ from pathlib import Path
 
 from core.company_resources import company_resource_pointer, get_company_resources, infer_data_dir
 from core.memory.fact_observability import warn_rate_limited
+from core.memory.rag.store import CollectionExistence
 
 logger = logging.getLogger("animaworks.memory")
 
@@ -86,20 +87,9 @@ def _write_shared_hash(meta_path: Path, key: str, value: str) -> None:
     )
 
 
-def _shared_collection_exists(vector_store, collection_name: str) -> bool:
-    """Return True if *collection_name* exists in *vector_store*.
-
-    Used to verify shared collections (``shared_common_knowledge`` /
-    ``shared_common_skills``) before short-circuiting on hash match.
-    Returns ``True`` on listing failure (be conservative — preserve
-    legacy behavior on transient errors rather than triggering full
-    re-indexing across all animas).
-    """
-    try:
-        return collection_name in vector_store.list_collections()
-    except Exception as exc:
-        logger.debug("Failed to list collections for existence check: %s", exc)
-        return True
+def _shared_collection_exists(vector_store, collection_name: str) -> CollectionExistence:
+    """Return the checked existence state for a shared collection."""
+    return vector_store.collection_exists(collection_name)
 
 
 # ── RAGMemorySearch ───────────────────────────────────────
@@ -271,8 +261,12 @@ class RAGMemorySearch:
             # Verify the shared collection still exists in this anima's
             # vector store; if missing, fall through with force=True so
             # the collection gets recreated.
-            if _shared_collection_exists(vector_store, "shared_common_knowledge"):
+            existence = _shared_collection_exists(vector_store, "shared_common_knowledge")
+            if existence is CollectionExistence.EXISTS:
                 logger.debug("common_knowledge unchanged (hash match), skipping")
+                return
+            if existence is CollectionExistence.UNAVAILABLE:
+                logger.debug("common_knowledge collection availability unknown; skipping re-index")
                 return
             logger.info("shared_common_knowledge collection missing despite tracked hash, forcing re-index")
             force = True
@@ -318,8 +312,12 @@ class RAGMemorySearch:
         stored_hash = _read_shared_hash(meta_path, "shared_common_skills_hash")
         force = False
         if current_hash == stored_hash:
-            if _shared_collection_exists(vector_store, "shared_common_skills"):
+            existence = _shared_collection_exists(vector_store, "shared_common_skills")
+            if existence is CollectionExistence.EXISTS:
                 logger.debug("common_skills unchanged (hash match), skipping")
+                return
+            if existence is CollectionExistence.UNAVAILABLE:
+                logger.debug("common_skills collection availability unknown; skipping re-index")
                 return
             logger.info("shared_common_skills collection missing despite tracked hash, forcing re-index")
             force = True
@@ -388,9 +386,12 @@ class RAGMemorySearch:
         current_hash = _compute_dir_hash(directory, glob)
         stored_hash = _read_shared_hash(meta_path, meta_key)
         collection = f"shared_{memory_type}"
-        force = current_hash == stored_hash and not _shared_collection_exists(vector_store, collection)
-        if current_hash == stored_hash and not force:
-            return
+        force = False
+        if current_hash == stored_hash:
+            existence = _shared_collection_exists(vector_store, collection)
+            if existence is not CollectionExistence.MISSING:
+                return
+            force = True
         try:
             from core.memory.rag import MemoryIndexer
 

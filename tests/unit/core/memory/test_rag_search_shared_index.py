@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.memory.rag.indexer import IndexDirectoryResult
+from core.memory.rag.store import CollectionExistence
 from core.memory.rag_search import (
     RAGMemorySearch,
     _compute_dir_hash,
@@ -228,7 +229,7 @@ class TestEnsureSharedKnowledgeChangeDetection:
         mock_vs = MagicMock()
         # Simulate the shared collection existing in the vector store
         # so the existence check after hash match also passes.
-        mock_vs.list_collections.return_value = ["shared_common_knowledge"]
+        mock_vs.collection_exists.return_value = CollectionExistence.EXISTS
         rag._indexer = MagicMock()
 
         with patch("core.memory.rag.MemoryIndexer") as MockIdx:
@@ -284,7 +285,7 @@ class TestEnsureSharedKnowledgeChangeDetection:
         (common_knowledge_dir / "guide.md").write_text("# Guide")
         mock_vs = MagicMock()
         # First call: no collection yet, should index normally
-        mock_vs.list_collections.return_value = []
+        mock_vs.collection_exists.return_value = CollectionExistence.MISSING
         rag._indexer = MagicMock()
 
         with patch("core.memory.rag.MemoryIndexer") as MockIdx:
@@ -312,6 +313,29 @@ class TestEnsureSharedKnowledgeChangeDetection:
                 "common_knowledge",
                 force=True,
             )
+
+    def test_unavailable_collection_does_not_force_reindex(
+        self,
+        rag: RAGMemorySearch,
+        common_knowledge_dir: Path,
+    ) -> None:
+        (common_knowledge_dir / "guide.md").write_text("# Guide")
+        mock_vs = MagicMock()
+        rag._indexer = MagicMock()
+
+        with patch("core.memory.rag.MemoryIndexer") as MockIdx:
+            mock_shared = MagicMock()
+            mock_shared.index_directory.return_value = IndexDirectoryResult(chunks_indexed=5, files_indexed=1)
+            MockIdx.return_value = mock_shared
+            rag._ensure_shared_knowledge_indexed(mock_vs)
+
+            MockIdx.reset_mock()
+            mock_shared.reset_mock()
+            mock_vs.collection_exists.return_value = CollectionExistence.UNAVAILABLE
+            rag._ensure_shared_knowledge_indexed(mock_vs)
+
+            MockIdx.assert_not_called()
+            mock_shared.index_directory.assert_not_called()
 
 
 class TestEnsureSharedSkillsChangeDetection:
@@ -358,7 +382,7 @@ class TestEnsureSharedSkillsChangeDetection:
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("# Deploy")
         mock_vs = MagicMock()
-        mock_vs.list_collections.return_value = ["shared_common_skills"]
+        mock_vs.collection_exists.return_value = CollectionExistence.EXISTS
         rag._indexer = MagicMock()
 
         with patch("core.memory.rag.MemoryIndexer") as MockIdx:
@@ -385,7 +409,7 @@ class TestEnsureSharedSkillsChangeDetection:
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("# Deploy")
         mock_vs = MagicMock()
-        mock_vs.list_collections.return_value = []
+        mock_vs.collection_exists.return_value = CollectionExistence.MISSING
         rag._indexer = MagicMock()
 
         with patch("core.memory.rag.MemoryIndexer") as MockIdx:

@@ -29,6 +29,7 @@ from core.memory.rag.contextual_header import apply_contextual_header
 from core.memory.rag.episode_time import apply_episode_heading_event_time
 from core.memory.rag.exclusion import is_archive_path, is_rag_excluded
 from core.memory.rag.facts_chunker import chunk_facts_jsonl
+from core.memory.rag.store import CollectionExistence
 from core.time_utils import ensure_aware, now_iso
 
 if TYPE_CHECKING:
@@ -163,26 +164,24 @@ class MemoryIndexer:
         # short-circuiting (recovery from a wiped/recreated vectordb).
         self._known_collections: set[str] | None = None
 
-    def _collection_exists(self, name: str) -> bool:
-        """Return True if *name* is present in the vector store.
+    def _collection_exists(self, name: str) -> CollectionExistence:
+        """Return the checked existence state for *name*.
 
         Lazily populates ``self._known_collections`` from
-        ``vector_store.list_collections()`` on first access.  Subsequent
+        ``vector_store.list_collections_checked()`` on first access.  Subsequent
         calls reuse the cache; callers add to the cache after successful
         ``create_collection()`` / ``upsert()`` to avoid repeated listing.
 
-        Returns ``True`` on listing failure to preserve legacy behavior
-        (skip when uncertain).
+        An unavailable result is not cached so a later check can recover.
         """
         if self._known_collections is None:
-            try:
-                self._known_collections = set(self.vector_store.list_collections())
-            except Exception as exc:
-                logger.debug("Failed to list collections for cache: %s", exc)
-                # Be conservative: assume it exists rather than triggering
-                # spurious re-indexing of every file on a transient error.
-                return True
-        return name in self._known_collections
+            collections = self.vector_store.list_collections_checked()
+            if collections is None:
+                return CollectionExistence.UNAVAILABLE
+            self._known_collections = set(collections)
+        if name in self._known_collections:
+            return CollectionExistence.EXISTS
+        return CollectionExistence.MISSING
 
     def _mark_collection_known(self, name: str) -> None:
         """Record that *name* is present in the vector store.
@@ -192,10 +191,10 @@ class MemoryIndexer:
         re-list collections.
         """
         if self._known_collections is None:
-            try:
-                self._known_collections = set(self.vector_store.list_collections())
-            except Exception:
-                self._known_collections = set()
+            collections = self.vector_store.list_collections_checked()
+            if collections is None:
+                return
+            self._known_collections = set(collections)
         self._known_collections.add(name)
 
     def _init_embedding_model(self) -> None:
@@ -463,8 +462,12 @@ class MemoryIndexer:
                 # recreated since the last index, the meta hash would
                 # otherwise cause us to silently skip and the collection
                 # would never be re-created.
-                if self._collection_exists(collection_name):
+                existence = self._collection_exists(collection_name)
+                if existence is CollectionExistence.EXISTS:
                     logger.debug("File unchanged, skipping: %s", file_path)
+                    return self._finish_index_file(0, "unchanged")
+                if existence is CollectionExistence.UNAVAILABLE:
+                    logger.debug("Collection availability unknown, skipping re-index of %s", file_path)
                     return self._finish_index_file(0, "unchanged")
                 logger.info(
                     "Collection '%s' missing despite tracked hash, forcing re-index of %s",
@@ -759,8 +762,12 @@ class MemoryIndexer:
             if self.index_meta[meta_key].get("hash") == content_hash:
                 # Verify the collection still exists; force re-index if
                 # the vectordb was wiped/recreated.
-                if self._collection_exists(collection_name):
+                existence = self._collection_exists(collection_name)
+                if existence is CollectionExistence.EXISTS:
                     logger.debug("compressed_summary unchanged, skipping")
+                    return 0
+                if existence is CollectionExistence.UNAVAILABLE:
+                    logger.debug("Conversation collection availability unknown, skipping re-index")
                     return 0
                 logger.info(
                     "Collection '%s' missing despite tracked hash, forcing re-index of conversation_summary",

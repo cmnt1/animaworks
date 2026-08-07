@@ -17,6 +17,7 @@ from pathlib import Path
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from core.memory.rag.store import CollectionExistence
 from core.supervisor.process_handle import ProcessState
 from core.time_utils import get_app_timezone, now_local
 
@@ -773,11 +774,8 @@ class SchedulerMixin:
                     shared_collection = f"shared_{label}"
                     force = False
                     if current_hash == stored_hash:
-                        try:
-                            existing = vector_store.list_collections()
-                        except Exception:
-                            existing = None
-                        if existing is None or shared_collection in existing:
+                        existence = vector_store.collection_exists(shared_collection)
+                        if existence is not CollectionExistence.MISSING:
                             continue
                         logger.info(
                             "%s: collection '%s' missing despite tracked hash, forcing re-index",

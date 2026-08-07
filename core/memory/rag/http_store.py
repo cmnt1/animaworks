@@ -241,6 +241,16 @@ class HttpVectorStore(VectorStore):
             return list(data["collections"])
         return []
 
+    def list_collections_checked(self) -> list[str] | None:
+        """List collections while preserving transport/service failures."""
+        data = self._post("/list-collections", {"anima_name": self._anima_name})
+        if data is None or "collections" not in data:
+            return None
+        collections = data["collections"]
+        if not isinstance(collections, list) or not all(isinstance(name, str) for name in collections):
+            return None
+        return list(collections)
+
     def upsert(self, collection: str, documents: list[Document]) -> bool:
         """Insert or update documents in a collection."""
         if not documents:
