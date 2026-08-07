@@ -223,6 +223,18 @@ class HttpVectorStore(VectorStore):
         self._write_circuit_suppressed.clear()
         return True
 
+    def verify_repair(self, repair_nonce: str, *, expected_chunks: int) -> bool:
+        """Verify a swapped DB through the worker while its repair fence is active."""
+        data = self._post(
+            "/verify-repair",
+            {
+                "anima_name": self._anima_name,
+                "repair_nonce": repair_nonce,
+                "expected_chunks": expected_chunks,
+            },
+        )
+        return data is not None and data.get("status") == "ok"
+
     def delete_collection(self, name: str) -> bool:
         """Delete a collection."""
         return (
@@ -240,6 +252,16 @@ class HttpVectorStore(VectorStore):
         if data and "collections" in data:
             return list(data["collections"])
         return []
+
+    def list_collections_checked(self) -> list[str] | None:
+        """List collections while preserving transport/service failures."""
+        data = self._post("/list-collections", {"anima_name": self._anima_name})
+        if data is None or "collections" not in data:
+            return None
+        collections = data["collections"]
+        if not isinstance(collections, list) or not all(isinstance(name, str) for name in collections):
+            return None
+        return list(collections)
 
     def upsert(self, collection: str, documents: list[Document]) -> bool:
         """Insert or update documents in a collection."""

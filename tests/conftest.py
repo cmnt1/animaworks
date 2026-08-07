@@ -219,6 +219,7 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     # Clear HTTP delegation env vars so tests use local ChromaDB / models
     monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
     monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
+    monkeypatch.delenv("ANIMAWORKS_RERANK_URL", raising=False)
 
     # Invalidate caches to pick up the new data dir
     invalidate_cache()

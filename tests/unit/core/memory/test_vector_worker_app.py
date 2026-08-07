@@ -549,6 +549,38 @@ def test_vector_worker_reset_store_clears_cache_and_owner_breakers(monkeypatch) 
     assert "other:knowledge" in vector_worker._write_circuit_breakers
 
 
+def test_vector_worker_repair_verify_requires_nonce_and_bypasses_fence(monkeypatch, data_dir) -> None:
+    monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
+    state_path = data_dir / "animas" / "sora" / "state" / "rag_repair.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps({"status": "repairing", "repair_nonce": "repair-secret"}),
+        encoding="utf-8",
+    )
+
+    from core.memory.rag.vector_worker import create_app
+
+    store = MagicMock()
+    store.verify_rebuilt_data.return_value = {"collections": 1, "query_results": 1}
+    with (
+        patch("core.memory.rag.singleton.get_vector_store", return_value=store),
+        TestClient(create_app()) as client,
+    ):
+        rejected = client.post(
+            "/verify-repair",
+            json={"anima_name": "sora", "repair_nonce": "wrong", "expected_chunks": 1},
+        )
+        verified = client.post(
+            "/verify-repair",
+            json={"anima_name": "sora", "repair_nonce": "repair-secret", "expected_chunks": 1},
+        )
+
+    assert rejected.status_code == 403
+    assert verified.status_code == 200
+    assert verified.json() == {"status": "ok", "collections": 1, "query_results": 1}
+    store.verify_rebuilt_data.assert_called_once_with(expected_chunks=1)
+
+
 def test_vector_worker_read_endpoints(monkeypatch) -> None:
     monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
 
@@ -657,9 +689,24 @@ def test_vector_worker_native_exception_does_not_escape_asgi(monkeypatch) -> Non
     ):
         resp = client.post("/list-collections", json={"anima_name": "natsume"})
 
-    assert resp.status_code == 200
-    assert resp.json() == {"collections": []}
+    assert resp.status_code == 503
+    assert resp.json() == {"detail": "Vector store unavailable"}
     reset.assert_called_once_with("natsume")
+
+
+def test_vector_worker_list_store_unavailable_returns_503(monkeypatch) -> None:
+    monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
+
+    from core.memory.rag.vector_worker import create_app
+
+    with (
+        patch("core.memory.rag.singleton.get_vector_store", return_value=None),
+        TestClient(create_app()) as client,
+    ):
+        resp = client.post("/list-collections", json={"anima_name": "sora"})
+
+    assert resp.status_code == 503
+    assert resp.json() == {"detail": "Vector store unavailable"}
 
 
 def test_vector_worker_write_endpoints_success(monkeypatch) -> None:
