@@ -525,12 +525,15 @@ def _run_rag_startup_preflight(*, force_all_vectordb: bool = False) -> None:
         joined = ", ".join(suspects)
         print(f"RAG startup preflight: repairing suspected vector DB(s): {joined}")
         startup_progress.set_phase("repairing", detail=joined, done_count=0, total_count=len(suspects))
-        results = service.repair_animas_if_allowed(
-            suspects,
-            reason=reason,
-            source="startup_preflight",
-            include_shared=True,
-        )
+        from core.memory.rag.repair_utils import rag_repair_nonce_env
+
+        with rag_repair_nonce_env():
+            results = service.repair_animas_if_allowed(
+                suspects,
+                reason=reason,
+                source="startup_preflight",
+                include_shared=True,
+            )
         for result in results.values():
             if result.ok:
                 logger.warning(
