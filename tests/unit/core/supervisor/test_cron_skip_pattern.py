@@ -24,10 +24,13 @@ def _make_scheduler_mgr() -> SchedulerManager:
     mock_anima.run_cron_task = AsyncMock()
     mock_anima.run_heartbeat = AsyncMock()
 
+    anima_dir = Path("/tmp/animas/test")
+    anima_dir.mkdir(parents=True, exist_ok=True)
+    (anima_dir / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
     mgr = SchedulerManager(
         anima=mock_anima,
         anima_name="test",
-        anima_dir=Path("/tmp/animas/test"),
+        anima_dir=anima_dir,
         emit_event=MagicMock(),
     )
     return mgr

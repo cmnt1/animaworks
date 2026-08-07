@@ -127,6 +127,7 @@ class TestClassificationMatrix:
             "usageLimitExceeded",
             "Usage Limit Exceeded",
             "Usage limit reached for this account",
+            "API error (status 402 Payment Required): Grok Build usage balance exhausted",
             "You have reached your weekly limit",
             "code=usage_limit_reached",
         ],
@@ -140,8 +141,15 @@ class TestClassificationMatrix:
         assert hint.backoff_s == 1800.0
 
     def test_quota_exhausted_exception(self) -> None:
+        reason, _ = classify_llm_error(_ApiError("usageLimitExceeded: quota exceeded", status_code=429))
+        assert reason is FailoverReason.QUOTA_EXHAUSTED
+
+    def test_grok_usage_balance_exhausted_precedes_402_billing(self) -> None:
         reason, _ = classify_llm_error(
-            _ApiError("usageLimitExceeded: quota exceeded", status_code=429)
+            _ApiError(
+                "API error (status 402 Payment Required): Grok Build usage balance exhausted",
+                status_code=402,
+            )
         )
         assert reason is FailoverReason.QUOTA_EXHAUSTED
 
@@ -162,9 +170,7 @@ class TestClassificationMatrix:
         assert reason is FailoverReason.OVERLOADED
 
     def test_context_overflow_400(self) -> None:
-        reason, _ = classify_llm_error(
-            _ApiError("prompt is too long: 250000 tokens", status_code=400)
-        )
+        reason, _ = classify_llm_error(_ApiError("prompt is too long: 250000 tokens", status_code=400))
         assert reason is FailoverReason.CONTEXT_OVERFLOW
 
     def test_payload_too_large_413(self) -> None:
@@ -178,9 +184,7 @@ class TestClassificationMatrix:
         assert hint.fallback_ok is False
 
     def test_content_policy_beats_400_status(self) -> None:
-        reason, _ = classify_llm_error(
-            _ApiError("prompt was flagged by our safety system", status_code=400)
-        )
+        reason, _ = classify_llm_error(_ApiError("prompt was flagged by our safety system", status_code=400))
         assert reason is FailoverReason.CONTENT_POLICY
 
     def test_timeout_type(self) -> None:
@@ -227,16 +231,12 @@ class TestClassificationMatrix:
 
 class TestDisambiguation:
     def test_quota_precedes_overload_rate_and_billing(self) -> None:
-        reason, _ = classify_llm_error_message(
-            "usageLimitExceeded: overloaded, rate limit, insufficient credits"
-        )
+        reason, _ = classify_llm_error_message("usageLimitExceeded: overloaded, rate limit, insufficient credits")
         assert reason is FailoverReason.QUOTA_EXHAUSTED
 
     def test_429_rate_vs_overloaded(self) -> None:
         rate, _ = classify_llm_error(_ApiError("rate limit exceeded", status_code=429))
-        overloaded, _ = classify_llm_error(
-            _ApiError("server is temporarily overloaded", status_code=429)
-        )
+        overloaded, _ = classify_llm_error(_ApiError("server is temporarily overloaded", status_code=429))
         assert rate is FailoverReason.RATE_LIMIT
         assert overloaded is FailoverReason.OVERLOADED
 
@@ -249,16 +249,12 @@ class TestDisambiguation:
                 status_code=400,
             )
         )
-        context, _ = classify_llm_error(
-            _ApiError("context length exceeded", status_code=400)
-        )
+        context, _ = classify_llm_error(_ApiError("context length exceeded", status_code=400))
         assert invalid is FailoverReason.INVALID_REQUEST
         assert context is FailoverReason.CONTEXT_OVERFLOW
 
     def test_5xx_request_validation_is_invalid_request(self) -> None:
-        reason, hint = classify_llm_error(
-            _ApiError("unknown parameter: foo", status_code=502)
-        )
+        reason, hint = classify_llm_error(_ApiError("unknown parameter: foo", status_code=502))
         assert reason is FailoverReason.INVALID_REQUEST
         assert hint.retryable is False
 
@@ -268,21 +264,15 @@ class TestDisambiguation:
 
 class TestRetryAfter:
     def test_header_retry_after(self) -> None:
-        _, hint = classify_llm_error(
-            _ApiError("rate", status_code=429, headers={"retry-after": "30"})
-        )
+        _, hint = classify_llm_error(_ApiError("rate", status_code=429, headers={"retry-after": "30"}))
         assert hint.backoff_s == 30.0
 
     def test_negative_retry_after_is_none(self) -> None:
-        _, hint = classify_llm_error(
-            _ApiError("rate", status_code=429, headers={"retry-after": "-5"})
-        )
+        _, hint = classify_llm_error(_ApiError("rate", status_code=429, headers={"retry-after": "-5"}))
         assert hint.backoff_s is None
 
     def test_text_retry_after_seconds(self) -> None:
-        _, hint = classify_llm_error(
-            _ApiError("Rate limited. Please retry after 12 seconds")
-        )
+        _, hint = classify_llm_error(_ApiError("Rate limited. Please retry after 12 seconds"))
         assert hint.backoff_s == 12.0
 
     def test_text_retry_after_minutes(self) -> None:

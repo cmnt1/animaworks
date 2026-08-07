@@ -619,6 +619,7 @@ async def test_process_message_stream_uses_status_config_for_human_chat(tmp_path
     anima.needs_bootstrap = False
     anima._thread_locks = {"default": asyncio.Lock()}
     anima._interrupt_events = {}
+    anima._active_chat_conversations = {}
     anima._session_compactor = _FakeSessionCompactor()
     anima._status_slots = {}
     anima._task_slots = {}

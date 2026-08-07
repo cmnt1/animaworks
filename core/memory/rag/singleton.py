@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from sentence_transformers import SentenceTransformer
 
     from core.memory.rag.http_store import HttpVectorStore
+    from core.memory.rag.ipc_store import IpcVectorStore, MemoryRequester
     from core.memory.rag.store import VectorStore
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,8 @@ _native_ops_lock = threading.Lock()
 _vector_stores: dict[str | None, VectorStore | None] = {}
 _vector_store_init_failed: set[str | None] = set()
 _http_stores: dict[tuple[str, str | None], HttpVectorStore] = {}
+_ipc_stores: dict[tuple[str, str | None], IpcVectorStore] = {}
+_ipc_vector_requester: MemoryRequester | None = None
 _embedding_model: SentenceTransformer | None = None
 _embedding_model_name: str | None = None
 _embedding_model_device: str | None = None
@@ -252,6 +255,30 @@ def _get_http_store(base_url: str, anima_name: str | None) -> HttpVectorStore:
     return _http_stores[key]
 
 
+def configure_ipc_vector_requester(requester: MemoryRequester | None) -> None:
+    """Install the task runner's root-memory requester for phase3 operations."""
+    global _ipc_vector_requester
+
+    with _lock:
+        _ipc_vector_requester = requester
+        _ipc_stores.clear()
+
+
+def _get_ipc_store(base_url: str, anima_name: str | None) -> IpcVectorStore | None:
+    requester = _ipc_vector_requester
+    if requester is None:
+        return None
+    normalized_url = base_url.rstrip("/")
+    key = (normalized_url, anima_name)
+    if key not in _ipc_stores:
+        with _lock:
+            if key not in _ipc_stores:
+                from core.memory.rag.ipc_store import IpcVectorStore
+
+                _ipc_stores[key] = IpcVectorStore(normalized_url, anima_name, requester)
+    return _ipc_stores[key]
+
+
 def get_vector_store(anima_name: str | None = None) -> VectorStore | None:
     """Return process-level singleton VectorStore per anima.
 
@@ -271,6 +298,11 @@ def get_vector_store(anima_name: str | None = None) -> VectorStore | None:
     global _direct_disabled_warned, _init_failed
 
     vector_url = os.environ.get("ANIMAWORKS_VECTOR_URL")
+    if os.environ.get("ANIMAWORKS_MEMORY_VIA_ROOT") == "1":
+        if vector_url:
+            return _get_ipc_store(vector_url, anima_name)
+        logger.warning("IPC vector store unavailable: ANIMAWORKS_VECTOR_URL is missing")
+        return None
     if vector_url:
         return _get_http_store(vector_url, anima_name)
 
@@ -916,7 +948,8 @@ def get_embedding_e5_prefix_enabled() -> bool:
 def _reset_for_testing():
     """Reset singletons for test isolation."""
     global _bulk_yield_count, _direct_disabled_warned, _embedding_model, _embedding_model_device, _embedding_model_name
-    global _init_failed, _interactive_waiters, _last_error_reset_monotonic, _vector_store_lifecycle_gate
+    global _init_failed, _interactive_waiters, _ipc_vector_requester, _last_error_reset_monotonic
+    global _vector_store_lifecycle_gate
     from core.gpu import reset_gpu_status_for_testing
 
     with _error_reset_lock:
@@ -926,6 +959,8 @@ def _reset_for_testing():
         _vector_stores.clear()
         _vector_store_init_failed.clear()
         _http_stores.clear()
+        _ipc_stores.clear()
+        _ipc_vector_requester = None
         _embedding_model = None
         _embedding_model_name = None
         _embedding_model_device = None

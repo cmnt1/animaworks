@@ -21,10 +21,11 @@ logger = logging.getLogger("animaworks.cli.index")
 def _setup_server_delegation() -> bool:
     """Detect running server and configure HTTP delegation.
 
-    When the server is running, sets ``ANIMAWORKS_VECTOR_URL`` and
-    ``ANIMAWORKS_EMBED_URL`` so that ``get_vector_store()`` returns
-    ``HttpVectorStore`` and embeddings are generated server-side.
-    This prevents unsafe concurrent ChromaDB access.
+    When the server is running, sets ``ANIMAWORKS_VECTOR_URL``,
+    ``ANIMAWORKS_EMBED_URL``, and ``ANIMAWORKS_RERANK_URL`` so that
+    ``get_vector_store()`` returns ``HttpVectorStore`` and embeddings /
+    rerank are generated server-side.  This prevents unsafe concurrent
+    ChromaDB access and per-process model loads.
 
     Returns:
         True if delegation was activated (server is running).
@@ -45,6 +46,7 @@ def _setup_server_delegation() -> bool:
     base = f"http://127.0.0.1:{port}/api"
     os.environ["ANIMAWORKS_VECTOR_URL"] = f"{base}/internal/vector"
     os.environ["ANIMAWORKS_EMBED_URL"] = f"{base}/internal/embed"
+    os.environ["ANIMAWORKS_RERANK_URL"] = f"{base}/internal/rerank"
     logger.info(
         "Server detected (pid=%d). Using HTTP delegation for safe ChromaDB access.",
         pid,
@@ -187,6 +189,13 @@ def _is_anima_enabled(anima_dir: Path) -> bool:
         return True
 
 
+def _uses_root_vector_store(anima_dir: Path) -> bool:
+    from core.config.resolver import resolve_process_model_config
+
+    config = resolve_process_model_config(anima_dir)
+    return config.valid and config.process_model == "phase3"
+
+
 def _index_shared_collections(
     anima_dirs: list[Path],
     base_dir: Path,
@@ -198,11 +207,13 @@ def _index_shared_collections(
 
     Returns total chunks indexed across all animas.
     """
-    from core.company_resources import get_company_resources
+    from core.company_resources import get_company_resources_for_company
+    from core.config.models import read_anima_company_checked
     from core.memory.rag import MemoryIndexer
     from core.memory.rag.repair import is_repair_locked
+    from core.memory.rag.shared_meta import read_shared_hash, reset_shared_for_company_change, write_shared_hash
     from core.memory.rag.singleton import get_vector_store
-    from core.memory.rag_search import _compute_dir_hash, _read_shared_hash, _write_shared_hash
+    from core.memory.rag_search import _compute_dir_hash
 
     ck_dir = base_dir / "common_knowledge"
     cs_dir = base_dir / "common_skills"
@@ -216,17 +227,27 @@ def _index_shared_collections(
     total = 0
     for anima_dir in anima_dirs:
         anima_name = anima_dir.name
+        if _uses_root_vector_store(anima_dir):
+            logger.error(
+                "Cannot index phase3 anima %s from the CLI; use the running server's daily root indexing",
+                anima_name,
+            )
+            continue
         if is_repair_locked(anima_name):
             logger.warning("  %s: skipping shared indexing because RAG repair lock is held", anima_name)
             continue
-        meta_path = anima_dir / "index_meta.json"
+        company_valid, company = read_anima_company_checked(anima_dir)
+        if not company_valid:
+            logger.warning("  %s: company membership unavailable, skipping shared indexing", anima_name)
+            continue
+        current_company = company or ""
+        company_resources = get_company_resources_for_company(company, data_dir=base_dir)
         vector_store = get_vector_store(anima_name)
         if vector_store is None:
             logger.warning("Vector store unavailable for %s, skipping shared indexing", anima_name)
             continue
 
         anima_shared_dirs = list(shared_dirs)
-        company_resources = get_company_resources(anima_dir, data_dir=base_dir)
         if company_resources is not None:
             if company_resources.knowledge_dir.is_dir() and any(company_resources.knowledge_dir.rglob("*.md")):
                 anima_shared_dirs.append(
@@ -247,30 +268,17 @@ def _index_shared_collections(
                     )
                 )
 
+        if not dry_run and not reset_shared_for_company_change(anima_dir, vector_store, current_company):
+            logger.warning("  %s: shared reset incomplete, skipping indexing", anima_name)
+            continue
+
         if not anima_shared_dirs:
             logger.info("  %s: no shared knowledge/skills files found, skipping", anima_name)
             continue
 
-        current_company = company_resources.name if company_resources is not None else ""
-        stored_company = _read_shared_hash(meta_path, "shared_company_name")
-        if not dry_run and stored_company != current_company and (stored_company is not None or current_company):
-            for collection in ("shared_common_knowledge", "shared_common_skills"):
-                try:
-                    vector_store.delete_collection(collection)
-                except Exception:
-                    logger.warning("  %s: failed to reset %s", anima_name, collection, exc_info=True)
-            _write_shared_hash(meta_path, "shared_company_name", current_company)
-            for key in (
-                "shared_common_knowledge_hash",
-                "shared_common_skills_hash",
-                "shared_company_knowledge_hash",
-                "shared_company_skills_hash",
-            ):
-                _write_shared_hash(meta_path, key, "")
-
         for label, src_dir, glob, meta_key in anima_shared_dirs:
             current_hash = _compute_dir_hash(src_dir, glob)
-            stored_hash = _read_shared_hash(meta_path, meta_key)
+            stored_hash = read_shared_hash(anima_dir, meta_key)
 
             if not full and current_hash == stored_hash:
                 logger.info("  %s: %s unchanged, skipping", anima_name, label)
@@ -291,7 +299,7 @@ def _index_shared_collections(
             result = shared_indexer.index_directory(src_dir, label, force=full)
             total += result.chunks_indexed
             if result.files_failed == 0:
-                _write_shared_hash(meta_path, meta_key, current_hash)
+                write_shared_hash(anima_dir, meta_key, current_hash)
             logger.info("    Indexed %d chunks", result.chunks_indexed)
 
     return total
@@ -316,25 +324,33 @@ def index_command(args: argparse.Namespace) -> None:
         logger.info("Run 'animaworks init' first to set up the environment")
         return
 
-    server_mode = _setup_server_delegation()
-    temp_worker = _setup_offline_vector_worker_if_needed(server_mode)
-
-    current_model = _check_model_change(base_dir, args.full)
-    logger.info("Embedding model: %s", current_model)
-
     if args.anima:
         anima_dirs = [animas_dir / args.anima]
         if not anima_dirs[0].is_dir():
             logger.error("Anima not found: %s", args.anima)
-            _stop_offline_vector_worker(temp_worker)
             return
     else:
         anima_dirs = [p for p in sorted(animas_dir.iterdir()) if p.is_dir()]
 
     if not anima_dirs:
         logger.warning("No animas found to index")
-        _stop_offline_vector_worker(temp_worker)
         return
+
+    phase3_dirs = [anima_dir for anima_dir in anima_dirs if _uses_root_vector_store(anima_dir)]
+    for anima_dir in phase3_dirs:
+        logger.error(
+            "Cannot index phase3 anima %s from the CLI; use the running server's daily root indexing",
+            anima_dir.name,
+        )
+    anima_dirs = [anima_dir for anima_dir in anima_dirs if anima_dir not in phase3_dirs]
+    if not anima_dirs:
+        return
+
+    server_mode = _setup_server_delegation()
+    temp_worker = _setup_offline_vector_worker_if_needed(server_mode)
+
+    current_model = _check_model_change(base_dir, args.full)
+    logger.info("Embedding model: %s", current_model)
 
     include_shared = args.shared or (not args.anima)
 
@@ -359,7 +375,14 @@ def index_command(args: argparse.Namespace) -> None:
                 "Full rebuild: deleting collections for %s (will recreate with cosine similarity)",
                 anima_name,
             )
-            for collection in vector_store.list_collections():
+            collections = vector_store.list_collections_checked()
+            if collections is None:
+                logger.warning(
+                    "Cannot list collections for %s; skipping full rebuild to avoid partial deletion",
+                    anima_name,
+                )
+                continue
+            for collection in collections:
                 vector_store.delete_collection(collection)
 
         indexer = MemoryIndexer(vector_store, anima_name, anima_dir)

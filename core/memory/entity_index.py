@@ -221,6 +221,9 @@ def sync_entity_collection(
             sorted_items = [(key, entry) for key, entry in sorted_items if normalize_entity_key(key) in wanted]
             if not sorted_items:
                 return True
+        collection = f"{Path(anima_dir).name}_entities"
+        if not vector_store.create_collection(collection):
+            return False
         contents = [_entity_document_content(entry) for _key, entry in sorted_items]
         embeddings = embedding_fn(contents)
         if len(embeddings) != len(contents):
@@ -234,8 +237,6 @@ def sync_entity_collection(
                     metadata=_entity_document_metadata(key, entry),
                 )
             )
-        collection = f"{Path(anima_dir).name}_entities"
-        vector_store.create_collection(collection)
         return bool(vector_store.upsert(collection, docs))
     except Exception:
         logger.warning("Failed to sync entity collection for %s", anima_dir, exc_info=True)

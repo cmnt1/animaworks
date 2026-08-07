@@ -142,3 +142,61 @@ class TestResolveGithubTokenEnv:
 
         assert first == second == {"GH_TOKEN": "cached_token"}
         assert mock_run.call_count == 1
+
+    def test_per_anima_override_takes_priority_over_company(self, tmp_path: Path) -> None:
+        anima = _anima_dir(tmp_path, company="fs")
+        # anima dir is named "natsume" via helper
+        cfg = AnimaWorksConfig()
+        cfg.github_identities = {
+            "fs": "animaworks-dev-team",
+            "anima:natsume": "animaworks-reviewer",
+        }
+
+        completed = MagicMock()
+        completed.returncode = 0
+        completed.stdout = "reviewer_token\n"
+        completed.stderr = ""
+
+        with (
+            patch("core.config.models.load_config", return_value=cfg),
+            patch("subprocess.run", return_value=completed) as mock_run,
+        ):
+            env = resolve_github_token_env(anima)
+
+        assert env == {"GH_TOKEN": "reviewer_token"}
+        args = mock_run.call_args[0][0]
+        assert args == ["gh", "auth", "token", "-u", "animaworks-reviewer"]
+
+    def test_company_fallback_when_per_anima_unset(self, tmp_path: Path) -> None:
+        anima = _anima_dir(tmp_path, company="fs")
+        cfg = AnimaWorksConfig()
+        cfg.github_identities = {
+            "fs": "animaworks-dev-team",
+            "anima:sumire": "animaworks-reviewer",
+        }
+
+        completed = MagicMock()
+        completed.returncode = 0
+        completed.stdout = "company_token\n"
+        completed.stderr = ""
+
+        with (
+            patch("core.config.models.load_config", return_value=cfg),
+            patch("subprocess.run", return_value=completed) as mock_run,
+        ):
+            env = resolve_github_token_env(anima)
+
+        assert env == {"GH_TOKEN": "company_token"}
+        args = mock_run.call_args[0][0]
+        assert args == ["gh", "auth", "token", "-u", "animaworks-dev-team"]
+
+    def test_exception_returns_empty_dict(self, tmp_path: Path) -> None:
+        anima = _anima_dir(tmp_path, company="fs")
+
+        with patch(
+            "core.config.models.load_config",
+            side_effect=RuntimeError("config boom"),
+        ):
+            env = resolve_github_token_env(anima)
+
+        assert env == {}

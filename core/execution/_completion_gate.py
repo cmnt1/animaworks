@@ -43,6 +43,19 @@ def cleanup_gate_marker(anima_dir: Path) -> None:
         logger.debug("Failed to cleanup completion gate marker", exc_info=True)
 
 
+GATE_TOOL_NAME = "completion_gate"
+
+
+def is_gate_only_turn(tool_names: list[str]) -> bool:
+    """Return True when a turn's only tool call is the completion gate.
+
+    Text written on such a turn is meta-commentary about having finished
+    ("answer is above, please check") rather than part of the answer, so the
+    caller drops it when real answer text already exists.
+    """
+    return bool(tool_names) and all(name == GATE_TOOL_NAME for name in tool_names)
+
+
 def completion_gate_applies_to_trigger(trigger: str | None) -> bool:
     """Return True when pre-completion verification applies.
 

@@ -43,6 +43,9 @@ class TestHealthCheckDuringStreaming:
 
     @pytest.fixture
     def supervisor(self, tmp_path: Path) -> ProcessSupervisor:
+        anima_dir = tmp_path / "animas" / "test"
+        anima_dir.mkdir(parents=True, exist_ok=True)
+        (anima_dir / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
         return ProcessSupervisor(
             animas_dir=tmp_path / "animas",
             shared_dir=tmp_path / "shared",

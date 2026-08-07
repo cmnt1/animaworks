@@ -63,6 +63,7 @@ def state_with_defaults(state: dict[str, Any] | None = None) -> dict[str, Any]:
         "collection": None,
         "source": None,
         "include_shared": False,
+        "repair_nonce": None,
         "last_error": None,
         "last_quarantine_path": None,
         "last_chunks_indexed": 0,

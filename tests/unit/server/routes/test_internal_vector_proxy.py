@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -81,3 +84,30 @@ async def test_reset_store_proxy_forwards_to_worker() -> None:
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
     assert worker.calls == [("/reset-store", {"anima_name": "mei"})]
+
+
+@pytest.mark.asyncio
+async def test_vector_proxy_rejects_phase3_anima(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "sakura"
+    anima_dir.mkdir(parents=True)
+    (anima_dir / "status.json").write_text('{"process_model":"phase3"}', encoding="utf-8")
+    worker = _RecordingVectorWorker()
+    app = FastAPI()
+    app.state.vector_worker = worker
+    app.include_router(create_internal_router(), prefix="/api")
+
+    with patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/internal/vector/query",
+                json={
+                    "anima_name": "sakura",
+                    "collection": "knowledge",
+                    "embedding": [0.1],
+                },
+            )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Vector proxy disabled for phase3 anima: sakura"}
+    assert worker.calls == []

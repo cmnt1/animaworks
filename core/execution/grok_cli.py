@@ -23,8 +23,10 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 from collections.abc import AsyncGenerator
 from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +37,13 @@ from core.execution.base import (
     ToolCallRecord,
     _truncate_for_record,
 )
+from core.execution.error_classifier import (
+    FailoverReason,
+    classify_llm_error_message,
+    guard_key,
+    provider_family_of,
+)
+from core.execution.rate_guard import get_rate_guard
 from core.i18n import t
 from core.memory.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
@@ -50,6 +59,7 @@ __all__ = [
     "_clear_session_id",
     "_find_grok_binary",
     "_load_session_id",
+    "_resolve_real_error",
     "_resolve_grok_model",
     "_resolve_session_type",
     "_save_session_id",
@@ -79,6 +89,9 @@ _AUTH_ERROR_WORDS = (
     "authentication",
     "credential",
 )
+_REAL_ERROR_LOG_BYTES = 256 * 1024
+_REAL_ERROR_CLOCK_SKEW_SECONDS = 5.0
+_REAL_ERROR_MESSAGES = frozenset({"shell.turn.inference_failed", "turn.terminal_failure"})
 
 
 def _find_grok_binary() -> str | None:
@@ -149,6 +162,92 @@ def _load_session_id(
 
 def _clear_session_id(anima_dir: Path, session_type: str, thread_id: str = "default") -> None:
     _session_id_path(anima_dir, session_type, thread_id).unlink(missing_ok=True)
+
+
+def _resolve_real_error(
+    pid: int,
+    session_id: str,
+    since_ts: float,
+    log_path: Path | None = None,
+) -> dict[str, Any] | None:
+    """Return the newest matching Grok CLI failure context, if available.
+
+    The CLI only exposes detailed provider failures in its unified log.  Read
+    at most the tail of that file and fail open on every format or I/O error so
+    an unofficial log format change cannot turn into an executor failure.
+    """
+    path = log_path or Path.home() / ".grok" / "logs" / "unified.jsonl"
+    try:
+        with path.open("rb") as log_file:
+            log_file.seek(0, os.SEEK_END)
+            size = log_file.tell()
+            start = max(0, size - _REAL_ERROR_LOG_BYTES)
+            log_file.seek(start)
+            tail = log_file.read(_REAL_ERROR_LOG_BYTES)
+        if start:
+            newline = tail.find(b"\n")
+            tail = tail[newline + 1 :] if newline >= 0 else b""
+
+        threshold = float(since_ts) - _REAL_ERROR_CLOCK_SKEW_SECONDS
+        newest: tuple[float, dict[str, Any]] | None = None
+        for raw_line in tail.splitlines():
+            try:
+                entry = json.loads(raw_line)
+                if not isinstance(entry, dict) or entry.get("msg") not in _REAL_ERROR_MESSAGES:
+                    continue
+                pid_matches = entry.get("pid") == pid
+                sid_matches = bool(session_id) and entry.get("sid") == session_id
+                if not (pid_matches or sid_matches):
+                    continue
+                raw_ts = entry.get("ts")
+                if not isinstance(raw_ts, str):
+                    continue
+                parsed_ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+                if parsed_ts.tzinfo is None:
+                    parsed_ts = parsed_ts.replace(tzinfo=UTC)
+                timestamp = parsed_ts.timestamp()
+                if timestamp < threshold:
+                    continue
+                ctx = entry.get("ctx")
+                if not isinstance(ctx, dict) or not (ctx.get("message") or ctx.get("status_code")):
+                    continue
+                if newest is None or timestamp >= newest[0]:
+                    newest = (timestamp, dict(ctx))
+            except Exception:  # noqa: BLE001
+                continue
+        return newest[1] if newest is not None else None
+    except Exception:  # noqa: BLE001
+        logger.debug("Failed to resolve Grok provider error from unified log", exc_info=True)
+        return None
+
+
+def _grok_error_metadata(message: str, model: str) -> dict[str, Any]:
+    """Classify a Grok failure, report fleet blocks, and return chunk metadata."""
+    reason, _hint = classify_llm_error_message(message)
+    guarded_reasons = {
+        FailoverReason.RATE_LIMIT,
+        FailoverReason.OVERLOADED,
+        FailoverReason.QUOTA_EXHAUSTED,
+    }
+    if reason in guarded_reasons:
+        try:
+            guard = get_rate_guard()
+            cfg = guard.config
+            block_seconds = (
+                cfg.quota_block_seconds if reason is FailoverReason.QUOTA_EXHAUSTED else cfg.default_block_seconds
+            )
+            guard.report_block(
+                guard_key(provider_family_of(model), "grok"),
+                block_seconds,
+                reason.value,
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to report Grok error to rate guard", exc_info=True)
+
+    # At this point the short-lived Grok ACP process has already failed and
+    # exited.  Unlike an in-flight SDK notification, every such failure is a
+    # terminal outcome for this attempt, including otherwise retryable classes.
+    return {"terminal": True, "reason": reason.value}
 
 
 @dataclass
@@ -344,9 +443,9 @@ class GrokCLIExecutor(BaseExecutor):
                 # (a dict fails schema validation: "did not match any variant
                 # of untagged enum McpServer").
                 # The MCP server runs with ONLY these variables — without the
-                # embed/vector URLs it silently falls back to loading
-                # SentenceTransformer models in-process (2026-07-17 OOM:
-                # a 61.8GB python3 killed the whole fleet).
+                # embed/vector/rerank URLs it silently falls back to loading
+                # SentenceTransformer / CrossEncoder models in-process
+                # (2026-07-17 OOM; 2026-08-07 CrossEncoder load storm).
                 "env": [
                     {"name": "ANIMAWORKS_ANIMA_DIR", "value": str(self._anima_dir)},
                     {"name": "ANIMAWORKS_PROJECT_DIR", "value": str(PROJECT_DIR)},
@@ -354,7 +453,11 @@ class GrokCLIExecutor(BaseExecutor):
                     {"name": "PATH", "value": os.environ.get("PATH", "/usr/bin:/bin")},
                     *(
                         {"name": key, "value": os.environ[key]}
-                        for key in ("ANIMAWORKS_EMBED_URL", "ANIMAWORKS_VECTOR_URL")
+                        for key in (
+                            "ANIMAWORKS_EMBED_URL",
+                            "ANIMAWORKS_VECTOR_URL",
+                            "ANIMAWORKS_RERANK_URL",
+                        )
                         if os.environ.get(key)
                     ),
                 ],
@@ -708,6 +811,7 @@ class GrokCLIExecutor(BaseExecutor):
         resume_session_id: str | None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Run one ACP connection and yield converted non-terminal events."""
+        started_at = time.time()
         cmd = self._build_command()
         sandbox_enabled = self._write_sandbox_config()
         env = os.environ.copy()
@@ -982,6 +1086,10 @@ class GrokCLIExecutor(BaseExecutor):
                 if not state.error_text:
                     detail = state.stderr[:500] or f"exit {proc.returncode}"
                     state.error_text = self._translated_error(f"exit {proc.returncode}: {detail}")
+            if state.failed and proc is not None:
+                real_error = _resolve_real_error(proc.pid, state.session_id, started_at)
+                if real_error is not None and real_error.get("message"):
+                    state.error_text = self._translated_error(str(real_error["message"]))
             for fd in (pty_slave_fd, pty_master_fd):
                 if fd is not None:
                     try:
@@ -1118,6 +1226,16 @@ class GrokCLIExecutor(BaseExecutor):
             if not state.full_text:
                 state.full_text = "[Session interrupted by user]"
         elif state.error_text:
+            error_metadata = _grok_error_metadata(
+                state.error_text,
+                self._model_config.model,
+            )
+            if error_metadata.get("terminal") is True:
+                yield {
+                    "type": "error",
+                    "message": state.error_text,
+                    **error_metadata,
+                }
             if state.full_text:
                 state.full_text += "\n\n" + state.error_text
                 yield {"type": "text_delta", "text": "\n\n" + state.error_text}

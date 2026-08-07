@@ -326,18 +326,28 @@ class RAGRepairService:
         )
 
     def list_repairable_animas(self, *, animas_dir: Path | None = None) -> list[str]:
-        """Return enabled anima names that can safely be considered for repair."""
+        """Return enabled anima names still owned by the global vector worker."""
         if animas_dir is None:
             from core.paths import get_animas_dir
 
             animas_dir = get_animas_dir()
         if not animas_dir.is_dir():
             return []
-        return [
-            anima_dir.name
-            for anima_dir in sorted(animas_dir.iterdir())
-            if anima_dir.is_dir() and (anima_dir / "identity.md").is_file() and self._anima_enabled(anima_dir)
-        ]
+        from core.config.resolver import resolve_process_model_config
+
+        repairable: list[str] = []
+        for anima_dir in sorted(animas_dir.iterdir()):
+            if (
+                not anima_dir.is_dir()
+                or not (anima_dir / "identity.md").is_file()
+                or not self._anima_enabled(anima_dir)
+            ):
+                continue
+            process_config = resolve_process_model_config(anima_dir)
+            if process_config.valid and process_config.process_model == "phase3":
+                continue
+            repairable.append(anima_dir.name)
+        return repairable
 
     def discover_suspect_animas(
         self,
@@ -782,8 +792,12 @@ class RAGRepairService:
                     from core.memory.rag.repair_rebuild import reset_worker_vector_store
                     from core.memory.rag.singleton import reset_vector_store
 
-                    reset_worker_vector_store(anima_name)
+                    if not reset_worker_vector_store(anima_name):
+                        raise RuntimeError(f"vector worker reset failed for healthy repair skip: {anima_name}")
                     reset_vector_store(anima_name)
+                    from core.memory.rag.shared_check_registry import invalidate_shared_checks
+
+                    invalidate_shared_checks(anima_name)
                     repair_state.update_repair_state(
                         anima_name,
                         status="success",
@@ -794,6 +808,7 @@ class RAGRepairService:
                         collection=collection,
                         source=source,
                         include_shared=include_shared,
+                        repair_nonce=None,
                         last_success_at=iso(),
                         last_error=None,
                         consecutive_failures=0,
@@ -823,6 +838,7 @@ class RAGRepairService:
                     collection=collection,
                     source=source,
                     include_shared=include_shared,
+                    repair_nonce=os.environ.get("ANIMAWORKS_RAG_REPAIR_NONCE"),
                     last_reason=reason,
                     last_collection=collection,
                     last_source=source,
@@ -843,6 +859,7 @@ class RAGRepairService:
                     pid=None,
                     last_success_at=iso(),
                     last_error=None,
+                    repair_nonce=None,
                     consecutive_failures=0,
                     last_quarantine_path=str(quarantine_path) if quarantine_path else None,
                     last_chunks_indexed=chunks,
@@ -878,6 +895,7 @@ class RAGRepairService:
                     pid=None,
                     last_failure_at=iso(),
                     last_error=str(exc),
+                    repair_nonce=None,
                     consecutive_failures=failures,
                     last_quarantine_path=str(quarantine_path) if quarantine_path else None,
                 )

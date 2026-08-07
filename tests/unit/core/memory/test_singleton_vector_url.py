@@ -12,7 +12,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.memory.rag.http_store import HttpVectorStore
-from core.memory.rag.singleton import _reset_for_testing, get_vector_store
+from core.memory.rag.ipc_store import IpcVectorStore
+from core.memory.rag.singleton import _reset_for_testing, configure_ipc_vector_requester, get_vector_store
 from core.memory.rag.store import ChromaVectorStore
 
 
@@ -32,6 +33,23 @@ def test_returns_http_store_when_env_set():
         assert isinstance(store, HttpVectorStore)
         assert store._anima_name == "test_anima"
         assert store._base_url == "http://localhost:18500/api/internal/vector"
+
+
+def test_phase3_returns_ipc_store_for_reads() -> None:
+    requester = MagicMock(return_value={"collections": []})
+    configure_ipc_vector_requester(requester)
+    with patch.dict(
+        os.environ,
+        {
+            "ANIMAWORKS_VECTOR_URL": "http://localhost:18500/api/internal/vector",
+            "ANIMAWORKS_MEMORY_VIA_ROOT": "1",
+        },
+    ):
+        store = get_vector_store("test_anima")
+
+    assert isinstance(store, IpcVectorStore)
+    assert store.list_collections_checked() == []
+    requester.assert_called_once_with("memory.list_collections_checked", {})
 
 
 def test_returns_none_when_vector_url_and_direct_allow_are_not_set(monkeypatch):

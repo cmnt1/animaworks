@@ -17,6 +17,7 @@ import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
@@ -48,6 +49,14 @@ class SearchResult:
     score: float
 
 
+class CollectionExistence(StrEnum):
+    """Three-state result for a collection existence check."""
+
+    EXISTS = "exists"
+    MISSING = "missing"
+    UNAVAILABLE = "unavailable"
+
+
 # ── VectorStore abstract base class ────────────────────────────────
 
 
@@ -76,6 +85,26 @@ class VectorStore(ABC):
     @abstractmethod
     def list_collections(self) -> list[str]:
         """List all collection names."""
+
+    def list_collections_checked(self) -> list[str] | None:
+        """List collections without conflating failures with an empty store.
+
+        Returns ``None`` when the backend cannot determine the collection
+        list.  ``[]`` is reserved for a successful read of an empty store.
+        """
+        try:
+            return self.list_collections()
+        except Exception:
+            return None
+
+    def collection_exists(self, name: str) -> CollectionExistence:
+        """Return whether a collection exists, is missing, or is unavailable."""
+        collections = self.list_collections_checked()
+        if collections is None:
+            return CollectionExistence.UNAVAILABLE
+        if name in collections:
+            return CollectionExistence.EXISTS
+        return CollectionExistence.MISSING
 
     @abstractmethod
     def upsert(self, collection: str, documents: list[Document]) -> bool:
@@ -544,6 +573,32 @@ class ChromaVectorStore(VectorStore):
                 e,
             )
             raise
+
+    def verify_rebuilt_data(self, *, expected_chunks: int) -> dict[str, int]:
+        """Run a real similarity query against freshly reopened Chroma data."""
+        collections = self._list_collections_once()
+        opened = [(name, self.client.get_collection(name=name)) for name in collections]
+        chunks = sum(collection.count() for _name, collection in opened)
+        if chunks != expected_chunks:
+            raise RuntimeError(f"expected {expected_chunks} chunks after rebuild, found {chunks}")
+        if expected_chunks <= 0:
+            return {"collections": len(collections), "chunks": chunks, "query_results": 0}
+        if not collections:
+            raise RuntimeError(f"no collections found despite indexing {expected_chunks} chunks")
+
+        for _name, collection in opened:
+            sample = collection.get(limit=1, include=["embeddings"])
+            ids = sample.get("ids") or []
+            embeddings = sample.get("embeddings")
+            if not ids or embeddings is None or len(embeddings) == 0:
+                continue
+            embedding = list(embeddings[0])
+            queried = collection.query(query_embeddings=[embedding], n_results=1)
+            result_ids = queried.get("ids") or []
+            if result_ids and result_ids[0]:
+                return {"collections": len(collections), "chunks": chunks, "query_results": len(result_ids[0])}
+
+        raise RuntimeError(f"no queryable documents found despite indexing {expected_chunks} chunks")
 
     def _upsert_once(self, collection: str, documents: list[Document]) -> bool:
         coll = self.client.get_or_create_collection(

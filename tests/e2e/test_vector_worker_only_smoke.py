@@ -17,6 +17,9 @@ def test_temporary_vector_worker_http_store_roundtrip(data_dir: Path) -> None:
     from core.memory.rag.singleton import get_vector_store
     from core.memory.rag.vector_worker_client import start_temporary_vector_worker
 
+    anima_dir = data_dir / "animas" / "worker_smoke"
+    anima_dir.mkdir(parents=True, exist_ok=True)
+    (anima_dir / "status.json").write_text('{"process_model": "legacy"}', encoding="utf-8")
     worker = start_temporary_vector_worker(log_dir=data_dir / "logs")
     try:
         store = get_vector_store("worker_smoke")

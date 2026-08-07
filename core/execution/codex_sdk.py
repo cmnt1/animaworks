@@ -40,6 +40,7 @@ from core.execution.base import (
     TokenUsage,
     ToolCallRecord,
     _truncate_for_record,
+    join_answer_parts,
 )
 from core.execution.error_classifier import (
     FailoverReason,
@@ -1863,8 +1864,12 @@ class CodexSDKExecutor(BaseExecutor):
             if tid and persist_thread:
                 _save_thread_id(self._anima_dir, tid, session_type, chat_thread_id)
 
-            response_text = getattr(turn, "final_response", "") or ""
             items = getattr(turn, "items", []) or []
+            response_parts = [
+                text for item in items if _item_type(item) == "agent_message" and (text := _extract_item_text(item))
+            ]
+            response_parts.append(getattr(turn, "final_response", "") or "")
+            response_text = join_answer_parts(response_parts)
             tool_records = _extract_tool_records(items)
 
             if not response_text and tool_records:

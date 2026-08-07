@@ -214,6 +214,20 @@ class TestExecuteSimple:
             result = await executor.execute("test")
         assert result.result_message is None
 
+    async def test_final_drain_does_not_append_system_reminder_to_response(self, executor):
+        """Undelivered system-reminders must not leak into user-facing response text."""
+        executor.reminder_queue.push_sync("出力がmax_tokensで途切れた")
+        resp = make_litellm_response(content="User-facing answer", tool_calls=None)
+        mock = AsyncMock(side_effect=[resp])
+        _install_litellm_mock(mock)
+        with patch("litellm.acompletion", mock):
+            result = await executor.execute("test prompt", system_prompt="sys")
+        assert result.text == "User-facing answer"
+        assert "<system-reminder>" not in result.text
+        assert "max_tokens" not in result.text
+        # Queue is drained (not left pending for a nonexistent next turn).
+        assert executor.reminder_queue.drain_formatted() is None
+
 
 # ── execute() — tool call loop ───────────────────────────────
 

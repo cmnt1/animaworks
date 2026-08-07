@@ -98,10 +98,11 @@ class DigitalAnima(
                 f"Invalid thread_id: {thread_id!r}. Must be 1-36 alphanumeric, underscore, or hyphen characters."
             )
 
-    def __init__(self, anima_dir: Path, shared_dir: Path) -> None:
+    def __init__(self, anima_dir: Path, shared_dir: Path, *, busy_status_enabled: bool = True) -> None:
         self.anima_dir = anima_dir
         self.shared_dir = shared_dir
         self.name = anima_dir.name
+        self._busy_status_enabled = busy_status_enabled
         self._activity = ActivityLogger(anima_dir)
 
         self.memory = MemoryManager(anima_dir)
@@ -123,6 +124,7 @@ class DigitalAnima(
 
         # 3-lock structure: conversation (human chat) / inbox (Anima-to-Anima MSG) / background (HB/cron/TaskExec)
         self._conversation_locks: dict[str, asyncio.Lock] = {}
+        self._active_chat_conversations: dict[str, Any] = {}
         self._inbox_lock = asyncio.Lock()
         self._background_lock = asyncio.Lock()
         # AgentCore carries mutable executor/tool state, so each execution lane
@@ -162,6 +164,7 @@ class DigitalAnima(
         self._last_activity: datetime | None = None
         self._last_progress_at: datetime | None = None
         self._busy_since: datetime | None = None
+        self._isolated_busy_jobs_provider: Callable[[], dict[str, Any]] | None = None
         self._on_lock_released: Callable[[], None] | None = None
 
         # Idle compaction timer (per-thread)
@@ -315,11 +318,31 @@ class DigitalAnima(
 
     # ── Progress tracking ────────────────────────────────────────
 
+    def _set_isolated_busy_jobs_provider(self, provider: Callable[[], dict[str, Any]]) -> None:
+        """Include root-owned isolated jobs in the existing busy marker."""
+        self._isolated_busy_jobs_provider = provider
+
+    def _isolated_busy_jobs(self) -> dict[str, Any]:
+        provider = getattr(self, "_isolated_busy_jobs_provider", None)
+        if provider is None:
+            return {}
+        try:
+            return provider()
+        except Exception:
+            logger.debug("[%s] Failed to collect isolated busy jobs", self.name, exc_info=True)
+            return {}
+
     def _has_active_busy_lock(self) -> bool:
         """Return True while any local execution lane is actively holding work."""
         any_conversation_locked = any(lock.locked() for lock in self._conversation_locks.values())
         active_workers = bool(getattr(self, "_active_background_workers", {}))
-        return any_conversation_locked or self._background_lock.locked() or self._inbox_lock.locked() or active_workers
+        return (
+            any_conversation_locked
+            or self._background_lock.locked()
+            or self._inbox_lock.locked()
+            or active_workers
+            or bool(self._isolated_busy_jobs())
+        )
 
     def _mark_busy_start(self) -> None:
         """Reset progress timestamp at the start of a new busy period.
@@ -343,6 +366,8 @@ class DigitalAnima(
 
     def _busy_status_sidecar_path(self) -> Path | None:
         """Path used by the supervisor as an IPC-independent busy signal."""
+        if not self._busy_status_enabled:
+            return None
         shared_dir = getattr(self, "shared_dir", None)
         if shared_dir is None:
             return None
@@ -369,6 +394,11 @@ class DigitalAnima(
                     lanes.append("inbox")
                 for slot_id, task_id in getattr(self, "_active_background_workers", {}).items():
                     lanes.append(f"background-worker:{slot_id}:{task_id}")
+                for job in self._isolated_busy_jobs().values():
+                    identity = getattr(job, "identity", None)
+                    lane = getattr(identity, "display_lane", None)
+                    if lane and lane not in lanes:
+                        lanes.append(str(lane))
             except Exception:
                 logger.debug("[%s] Failed to collect busy status lanes", self.name, exc_info=True)
             payload = {
