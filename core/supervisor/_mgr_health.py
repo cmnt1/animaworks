@@ -17,6 +17,7 @@ from datetime import datetime as _dt
 from pathlib import Path
 from typing import Any
 
+from core.config.resolver import resolve_process_model_config
 from core.supervisor.process_handle import ProcessHandle, ProcessState
 from core.time_utils import ensure_aware, now_local
 
@@ -33,6 +34,14 @@ class HealthMixin:
     def is_consolidating(self, anima_name: str) -> bool:
         """Return True if the anima is currently running daily/weekly consolidation."""
         return anima_name in getattr(self, "_consolidating", set())
+
+    def _runner_busy_hang_exempt(self, anima_name: str) -> bool:
+        """Return whether task-level monitoring owns busy-hang recovery."""
+        animas_dir = getattr(self, "animas_dir", None)
+        if animas_dir is None:
+            return False
+        config = resolve_process_model_config(Path(animas_dir) / anima_name)
+        return config.valid and any(config.task_process_isolation.model_dump().values())
 
     def _busy_sidecar_path(self, anima_name: str) -> Path | None:
         """Return the IPC-independent busy marker path, if run_dir is available."""
@@ -342,6 +351,8 @@ class HealthMixin:
                 )
                 asyncio.create_task(self._handle_process_failure(anima_name, handle))
                 return
+            if self._runner_busy_hang_exempt(anima_name):
+                return
             # Streaming stall detection: progress-aware, mirroring
             # _handle_busy_health.  A long stream is healthy as long as the
             # runner keeps reporting progress (busy sidecar last_progress_at,
@@ -461,6 +472,10 @@ class HealthMixin:
 
         if success:
             if is_busy:
+                if self._runner_busy_hang_exempt(anima_name):
+                    handle.stats.missed_pings = 0
+                    handle.stats.last_busy_since = None
+                    return
                 self._handle_busy_health(
                     anima_name,
                     handle,
@@ -475,7 +490,7 @@ class HealthMixin:
 
         # Ping failed
         busy_sidecar = self._read_busy_sidecar(anima_name, handle)
-        if busy_sidecar is not None:
+        if busy_sidecar is not None and not self._runner_busy_hang_exempt(anima_name):
             logger.debug(
                 "Ping failed for %s, but busy sidecar is present; using progress-aware health check",
                 anima_name,

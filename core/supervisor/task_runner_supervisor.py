@@ -32,6 +32,8 @@ logger = logging.getLogger(__name__)
 
 _TASK_RUNNER_CONNECT_TIMEOUT = 10.0
 _TASK_RUNNER_EXIT_TIMEOUT = 5.0
+_TASK_RUNNER_TERM_TIMEOUT = 5.0
+_HANG_CHECK_INTERVAL_MAX = 5.0
 
 OnSpawned = Callable[["TaskRunnerJob"], Awaitable[None] | None]
 
@@ -54,6 +56,8 @@ class TaskRunnerJob:
     pgid: int | None = None
     connection: IPCV2Connection | None = None
     last_progress: dict[str, Any] = field(default_factory=dict)
+    last_progress_at: float = 0.0
+    hang_kill_started: bool = False
     grace_acked: asyncio.Event = field(default_factory=asyncio.Event)
     process_start_time: float | None = None
 
@@ -68,6 +72,8 @@ class TaskRunnerSupervisor:
         shared_dir: Path,
         *,
         max_concurrent: int | None = None,
+        busy_hang_threshold_sec: float = 900.0,
+        busy_status_owner: Any | None = None,
     ) -> None:
         self.anima_name = anima_name
         self.anima_dir = anima_dir
@@ -78,6 +84,15 @@ class TaskRunnerSupervisor:
         self._start_lock = asyncio.Lock()
         self._jobs: dict[str, TaskRunnerJob] = {}
         self._accepting = True
+        self._busy_hang_threshold_sec = max(0.0, float(busy_hang_threshold_sec))
+        self._hang_check_interval = min(
+            _HANG_CHECK_INTERVAL_MAX,
+            max(0.05, self._busy_hang_threshold_sec / 2),
+        )
+        self._busy_status_owner = busy_status_owner
+        set_provider = getattr(busy_status_owner, "_set_isolated_busy_jobs_provider", None)
+        if callable(set_provider):
+            set_provider(lambda: self._jobs)
         # Cap concurrent child processes for task/background lanes (pool size).
         pool = max_concurrent if isinstance(max_concurrent, int) and max_concurrent >= 1 else None
         self._max_concurrent = pool
@@ -262,6 +277,7 @@ class TaskRunnerSupervisor:
             params=params_builder(url_env),
             result=loop.create_future(),
             peer_state=IPCV2ConnectionState(identity),
+            last_progress_at=loop.time(),
         )
         self._jobs[job_id] = job
 
@@ -281,6 +297,7 @@ class TaskRunnerSupervisor:
             }
         )
 
+        hang_watch: asyncio.Task[None] | None = None
         try:
             process = await asyncio.create_subprocess_exec(
                 sys.executable,
@@ -300,6 +317,7 @@ class TaskRunnerSupervisor:
             job.process = process
             job.pid = process.pid
             job.pgid = process.pid
+            self._mark_busy_start()
             try:
                 import psutil
 
@@ -322,6 +340,7 @@ class TaskRunnerSupervisor:
                     await maybe
 
             process_wait = asyncio.create_task(process.wait())
+            hang_watch = asyncio.create_task(self._watch_job(job))
             done, _ = await asyncio.wait(
                 {job.result, process_wait},
                 return_when=asyncio.FIRST_COMPLETED,
@@ -360,9 +379,86 @@ class TaskRunnerSupervisor:
                 await job.process.wait()
             raise
         finally:
+            if hang_watch is not None:
+                if not job.hang_kill_started:
+                    hang_watch.cancel()
+                await asyncio.gather(hang_watch, return_exceptions=True)
             self._jobs.pop(job_id, None)
+            self._clear_busy_if_idle()
             # A-07: recover orphan streaming journals after every task ends.
             self._recover_task_journals()
+
+    async def _watch_job(self, job: TaskRunnerJob) -> None:
+        """Kill only this task-runner group after progress stops."""
+        while job.identity.job_id in self._jobs:
+            await asyncio.sleep(self._hang_check_interval)
+            process = job.process
+            if process is None or process.returncode is not None:
+                return
+            idle_sec = asyncio.get_running_loop().time() - job.last_progress_at
+            if idle_sec <= self._busy_hang_threshold_sec:
+                continue
+            job.hang_kill_started = True
+            logger.error(
+                "Task runner hang: anima=%s job=%s lane=%s pid=%s pgid=%s idle=%.1fs threshold=%.1fs",
+                self.anima_name,
+                job.identity.job_id,
+                job.identity.lane,
+                job.pid,
+                job.pgid,
+                idle_sec,
+                self._busy_hang_threshold_sec,
+            )
+            await self._terminate_hung_job(job)
+            return
+
+    async def _terminate_hung_job(self, job: TaskRunnerJob) -> None:
+        """Terminate a hung task group, escalating to SIGKILL after grace."""
+        process = job.process
+        if process is None:
+            return
+        self._terminate_job_group(job)
+        try:
+            await asyncio.wait_for(asyncio.shield(process.wait()), timeout=_TASK_RUNNER_TERM_TIMEOUT)
+        except TimeoutError:
+            pass
+        if self._job_group_exists(job):
+            self._kill_job_group(job)
+        if process.returncode is None:
+            await process.wait()
+
+    @staticmethod
+    def _job_group_exists(job: TaskRunnerJob) -> bool:
+        if os.name != "posix" or not job.pgid:
+            return bool(job.process is not None and job.process.returncode is None)
+        try:
+            os.killpg(job.pgid, 0)
+        except ProcessLookupError:
+            return False
+        return True
+
+    def _mark_busy_start(self) -> None:
+        owner = self._busy_status_owner
+        if owner is None:
+            return
+        callback = getattr(owner, "_mark_busy_start" if len(self._jobs) == 1 else "_mark_busy_progress", None)
+        if callable(callback):
+            callback()
+
+    def _mark_busy_progress(self) -> None:
+        callback = getattr(self._busy_status_owner, "_mark_busy_progress", None)
+        if callable(callback):
+            callback()
+
+    def _record_progress(self, job: TaskRunnerJob, data: dict[str, Any]) -> None:
+        job.last_progress = data
+        job.last_progress_at = asyncio.get_running_loop().time()
+        self._mark_busy_progress()
+
+    def _clear_busy_if_idle(self) -> None:
+        callback = getattr(self._busy_status_owner, "_clear_busy_status_sidecar_if_idle", None)
+        if callable(callback):
+            callback()
 
     def _recover_task_journals(self) -> None:
         """Best-effort orphan StreamingJournal recovery after a child exits."""
@@ -452,9 +548,9 @@ class TaskRunnerSupervisor:
                         job.result.set_result(terminal)
                     continue
                 if envelope.kind == "event" and envelope.body["event"] == "progress":
-                    job.last_progress = envelope.body["data"]
                     if envelope.identity.display_lane != job.identity.display_lane:
                         raise IPCV2ProtocolError("progress display_lane does not match registry")
+                    self._record_progress(job, envelope.body["data"])
                     continue
                 if envelope.kind == "event" and envelope.body["event"] == "grace_ack":
                     job.grace_acked.set()
@@ -534,12 +630,12 @@ class TaskRunnerSupervisor:
     @staticmethod
     def _terminate_job_group(job: TaskRunnerJob) -> None:
         process = job.process
-        if process is None or process.returncode is not None:
+        if process is None:
             return
         try:
             if os.name == "posix" and job.pgid:
                 os.killpg(job.pgid, signal.SIGTERM)
-            else:
+            elif process.returncode is None:
                 process.terminate()
         except ProcessLookupError:
             return
@@ -547,12 +643,12 @@ class TaskRunnerSupervisor:
     @staticmethod
     def _kill_job_group(job: TaskRunnerJob) -> None:
         process = job.process
-        if process is None or process.returncode is not None:
+        if process is None:
             return
         try:
             if os.name == "posix" and job.pgid:
                 os.killpg(job.pgid, signal.SIGKILL)
-            else:
+            elif process.returncode is None:
                 process.kill()
         except ProcessLookupError:
             return

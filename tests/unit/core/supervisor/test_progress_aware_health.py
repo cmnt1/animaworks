@@ -115,11 +115,13 @@ class TestProgressAwareBusyHang:
         """Process busy with recent progress should NOT be killed."""
         handle = _make_handle(tmp_path)
         now = now_jst()
-        handle.ping = AsyncMock(return_value={
-            "success": True,
-            "is_busy": True,
-            "last_progress_at": (now - timedelta(seconds=30)).isoformat(),
-        })
+        handle.ping = AsyncMock(
+            return_value={
+                "success": True,
+                "is_busy": True,
+                "last_progress_at": (now - timedelta(seconds=30)).isoformat(),
+            }
+        )
 
         sup = _make_supervisor()
         hang_calls: list[str] = []
@@ -139,11 +141,13 @@ class TestProgressAwareBusyHang:
         """Process busy with no progress for >15min should be killed."""
         handle = _make_handle(tmp_path)
         now = now_jst()
-        handle.ping = AsyncMock(return_value={
-            "success": True,
-            "is_busy": True,
-            "last_progress_at": (now - timedelta(minutes=16)).isoformat(),
-        })
+        handle.ping = AsyncMock(
+            return_value={
+                "success": True,
+                "is_busy": True,
+                "last_progress_at": (now - timedelta(minutes=16)).isoformat(),
+            }
+        )
 
         sup = _make_supervisor()
         hang_calls: list[str] = []
@@ -160,14 +164,48 @@ class TestProgressAwareBusyHang:
         assert hang_calls[0] == "test-anima"
 
     @pytest.mark.asyncio
+    async def test_isolated_root_is_not_busy_hang_target(self, tmp_path: Path):
+        """Task-level monitoring owns busy hangs when any isolation flag is enabled."""
+        anima_dir = tmp_path / "animas" / "test-anima"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "status.json").write_text(
+            json.dumps(
+                {
+                    "process_model": "phase2",
+                    "task_process_isolation": {"cron": True},
+                }
+            ),
+            encoding="utf-8",
+        )
+        handle = _make_handle(tmp_path)
+        handle.ping = AsyncMock(
+            return_value={
+                "success": True,
+                "is_busy": True,
+                "last_progress_at": (now_jst() - timedelta(minutes=16)).isoformat(),
+            }
+        )
+        sup = _make_supervisor()
+        sup.animas_dir = tmp_path / "animas"
+        sup._handle_process_hang = AsyncMock()
+
+        await sup._check_process_health("test-anima", handle)
+        await asyncio.sleep(0)
+
+        sup._handle_process_hang.assert_not_called()
+        assert handle.stats.missed_pings == 0
+
+    @pytest.mark.asyncio
     async def test_busy_without_progress_info_fallback(self, tmp_path: Path):
         """Process busy without last_progress_at should use fallback timer."""
         handle = _make_handle(tmp_path)
-        handle.ping = AsyncMock(return_value={
-            "success": True,
-            "is_busy": True,
-            "last_progress_at": None,
-        })
+        handle.ping = AsyncMock(
+            return_value={
+                "success": True,
+                "is_busy": True,
+                "last_progress_at": None,
+            }
+        )
 
         sup = _make_supervisor()
         hang_calls: list[str] = []
@@ -194,21 +232,25 @@ class TestProgressAwareBusyHang:
         handle = _make_handle(tmp_path)
 
         # First: busy (no progress info)
-        handle.ping = AsyncMock(return_value={
-            "success": True,
-            "is_busy": True,
-            "last_progress_at": None,
-        })
+        handle.ping = AsyncMock(
+            return_value={
+                "success": True,
+                "is_busy": True,
+                "last_progress_at": None,
+            }
+        )
         sup = _make_supervisor()
         sup._handle_process_hang = AsyncMock()
         await sup._check_process_health("test-anima", handle)
         assert handle.stats.last_busy_since is not None
 
         # Then: idle
-        handle.ping = AsyncMock(return_value={
-            "success": True,
-            "is_busy": False,
-        })
+        handle.ping = AsyncMock(
+            return_value={
+                "success": True,
+                "is_busy": False,
+            }
+        )
         await sup._check_process_health("test-anima", handle)
         assert handle.stats.last_busy_since is None
 
@@ -217,11 +259,13 @@ class TestProgressAwareBusyHang:
         """Custom busy_hang_threshold_sec should be respected."""
         handle = _make_handle(tmp_path)
         now = now_jst()
-        handle.ping = AsyncMock(return_value={
-            "success": True,
-            "is_busy": True,
-            "last_progress_at": (now - timedelta(minutes=6)).isoformat(),
-        })
+        handle.ping = AsyncMock(
+            return_value={
+                "success": True,
+                "is_busy": True,
+                "last_progress_at": (now - timedelta(minutes=6)).isoformat(),
+            }
+        )
 
         # 5-minute threshold (300s)
         config = HealthConfig(busy_hang_threshold_sec=300.0)
@@ -242,11 +286,13 @@ class TestProgressAwareBusyHang:
         """Process at exactly 15 min should NOT be killed (> not >=)."""
         handle = _make_handle(tmp_path)
         now = now_jst()
-        handle.ping = AsyncMock(return_value={
-            "success": True,
-            "is_busy": True,
-            "last_progress_at": (now - timedelta(seconds=899)).isoformat(),
-        })
+        handle.ping = AsyncMock(
+            return_value={
+                "success": True,
+                "is_busy": True,
+                "last_progress_at": (now - timedelta(seconds=899)).isoformat(),
+            }
+        )
 
         sup = _make_supervisor()
         hang_calls: list[str] = []
@@ -265,9 +311,11 @@ class TestProgressAwareBusyHang:
         handle = _make_handle(tmp_path)
         handle.stats.last_busy_since = now_jst() - timedelta(minutes=5)
 
-        handle.ping = AsyncMock(return_value={
-            "success": False,
-        })
+        handle.ping = AsyncMock(
+            return_value={
+                "success": False,
+            }
+        )
 
         sup = _make_supervisor()
         sup._handle_process_hang = AsyncMock()
@@ -280,22 +328,26 @@ class TestProgressAwareBusyHang:
         """A fresh child busy marker should prevent false hang kills when IPC ping times out."""
         handle = _make_handle(tmp_path)
         handle.stats.missed_pings = 1
-        handle.ping = AsyncMock(return_value={
-            "success": False,
-        })
+        handle.ping = AsyncMock(
+            return_value={
+                "success": False,
+            }
+        )
 
         run_dir = tmp_path / "run"
         sidecar = run_dir / "animas" / "test-anima.busy.json"
         sidecar.parent.mkdir(parents=True)
         sidecar.write_text(
-            json.dumps({
-                "anima": "test-anima",
-                "pid": handle.get_pid(),
-                "is_busy": True,
-                "busy_since": (now_jst() - timedelta(minutes=1)).isoformat(),
-                "last_progress_at": (now_jst() - timedelta(seconds=20)).isoformat(),
-                "updated_at": now_jst().isoformat(),
-            }),
+            json.dumps(
+                {
+                    "anima": "test-anima",
+                    "pid": handle.get_pid(),
+                    "is_busy": True,
+                    "busy_since": (now_jst() - timedelta(minutes=1)).isoformat(),
+                    "last_progress_at": (now_jst() - timedelta(seconds=20)).isoformat(),
+                    "updated_at": now_jst().isoformat(),
+                }
+            ),
             encoding="utf-8",
         )
 
@@ -312,22 +364,26 @@ class TestProgressAwareBusyHang:
     async def test_ping_failure_with_stale_busy_sidecar_killed(self, tmp_path: Path):
         """A stale busy marker still triggers progress-aware hang recovery."""
         handle = _make_handle(tmp_path)
-        handle.ping = AsyncMock(return_value={
-            "success": False,
-        })
+        handle.ping = AsyncMock(
+            return_value={
+                "success": False,
+            }
+        )
 
         run_dir = tmp_path / "run"
         sidecar = run_dir / "animas" / "test-anima.busy.json"
         sidecar.parent.mkdir(parents=True)
         sidecar.write_text(
-            json.dumps({
-                "anima": "test-anima",
-                "pid": handle.get_pid(),
-                "is_busy": True,
-                "busy_since": (now_jst() - timedelta(minutes=20)).isoformat(),
-                "last_progress_at": (now_jst() - timedelta(minutes=16)).isoformat(),
-                "updated_at": (now_jst() - timedelta(minutes=16)).isoformat(),
-            }),
+            json.dumps(
+                {
+                    "anima": "test-anima",
+                    "pid": handle.get_pid(),
+                    "is_busy": True,
+                    "busy_since": (now_jst() - timedelta(minutes=20)).isoformat(),
+                    "last_progress_at": (now_jst() - timedelta(minutes=16)).isoformat(),
+                    "updated_at": (now_jst() - timedelta(minutes=16)).isoformat(),
+                }
+            ),
             encoding="utf-8",
         )
 
@@ -345,22 +401,26 @@ class TestProgressAwareBusyHang:
         """Stale marker from a previous PID must not suppress normal missed-ping recovery."""
         handle = _make_handle(tmp_path)
         handle.stats.missed_pings = HealthConfig().max_missed_pings
-        handle.ping = AsyncMock(return_value={
-            "success": False,
-        })
+        handle.ping = AsyncMock(
+            return_value={
+                "success": False,
+            }
+        )
 
         run_dir = tmp_path / "run"
         sidecar = run_dir / "animas" / "test-anima.busy.json"
         sidecar.parent.mkdir(parents=True)
         sidecar.write_text(
-            json.dumps({
-                "anima": "test-anima",
-                "pid": int(handle.get_pid()) + 1,
-                "is_busy": True,
-                "busy_since": now_jst().isoformat(),
-                "last_progress_at": now_jst().isoformat(),
-                "updated_at": now_jst().isoformat(),
-            }),
+            json.dumps(
+                {
+                    "anima": "test-anima",
+                    "pid": int(handle.get_pid()) + 1,
+                    "is_busy": True,
+                    "busy_since": now_jst().isoformat(),
+                    "last_progress_at": now_jst().isoformat(),
+                    "updated_at": now_jst().isoformat(),
+                }
+            ),
             encoding="utf-8",
         )
 
@@ -379,10 +439,12 @@ class TestProgressAwareBusyHang:
         handle = _make_handle(tmp_path)
         handle.stats.last_busy_since = now_jst()
 
-        handle.ping = AsyncMock(return_value={
-            "success": True,
-            "is_busy": False,
-        })
+        handle.ping = AsyncMock(
+            return_value={
+                "success": True,
+                "is_busy": False,
+            }
+        )
 
         sup = _make_supervisor()
         sup._handle_process_hang = AsyncMock()
