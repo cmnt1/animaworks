@@ -840,6 +840,11 @@ class AnimaRunner:
         if not self.anima:
             raise AnimaNotRunningError("Anima not initialized")
 
+        # Prefer scheduler path so process-isolation flag and overlap guard apply.
+        if self._scheduler_mgr is not None:
+            await self._scheduler_mgr.heartbeat_tick()
+            return {"status": "completed"}
+
         await self.anima.run_heartbeat()
 
         return {"status": "completed"}

@@ -1,6 +1,6 @@
 """Disposable task runner entry point.
 
-Usage: ``python -m core.supervisor.task_runner --anima X --lane cron --job ID``
+Usage: ``python -m core.supervisor.task_runner --anima X --lane cron|heartbeat --job ID``
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 _CONNECT_DEADLINE_SECONDS = 10.0
 _PROGRESS_INTERVAL_SECONDS = 5.0
+_SUPPORTED_LANES = frozenset({"cron", "heartbeat"})
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -120,6 +121,23 @@ async def execute_cron_contract(anima: DigitalAnima, task: CronTask) -> dict[str
         "followup_result": followup,
         "success": success,
         "usage": usage,
+    }
+
+
+async def execute_heartbeat_contract(
+    anima: DigitalAnima,
+    *,
+    cascade_suppressed_senders: list[str] | None = None,
+) -> dict[str, Any]:
+    """Execute the legacy heartbeat contract inside the child process."""
+    senders = set(cascade_suppressed_senders) if cascade_suppressed_senders else None
+    result = await anima.run_heartbeat(cascade_suppressed_senders=senders)
+    result_dict = result.model_dump(mode="json")
+    return {
+        "task_type": "heartbeat",
+        "result": result_dict,
+        "success": result.action not in {"error", "cancelled", "failed"},
+        "usage": result.usage,
     }
 
 
@@ -211,12 +229,43 @@ async def _send_terminal(
         return reconnected
 
 
+async def _prepare_execution(
+    args: argparse.Namespace,
+    identity: IPCV2Identity,
+    params: dict[str, Any],
+) -> asyncio.Task[dict[str, Any]]:
+    """Validate the run contract and return the lane execution task."""
+    if identity.lane not in _SUPPORTED_LANES:
+        raise ValueError(f"unsupported task runner lane: {identity.lane!r}")
+
+    anima = DigitalAnima(
+        anima_dir=get_animas_dir() / args.anima,
+        shared_dir=get_shared_dir(),
+        busy_status_enabled=False,
+    )
+    if identity.lane == "heartbeat":
+        raw_senders = params.get("cascade_suppressed_senders")
+        senders: list[str] | None
+        if raw_senders is None:
+            senders = None
+        elif isinstance(raw_senders, list) and all(isinstance(item, str) for item in raw_senders):
+            senders = list(raw_senders)
+        else:
+            raise ValueError("cascade_suppressed_senders must be a list of strings or null")
+        return asyncio.create_task(execute_heartbeat_contract(anima, cascade_suppressed_senders=senders))
+
+    task_data = params.get("task")
+    if not isinstance(task_data, dict):
+        raise ValueError("run contract requires task")
+    task = CronTask.model_validate(task_data)
+    return asyncio.create_task(execute_cron_contract(anima, task))
+
+
 async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2Identity) -> int:
     state = IPCV2ConnectionState(identity)
     connection, run_envelope = await _connect(socket_path, state)
     request_id = run_envelope.body["request_id"]
     params = run_envelope.body["params"]
-    task_data = params.get("task")
     contract_urls = (params.get("environment") or {}).get("urls")
     if not isinstance(contract_urls, dict) or contract_urls.get("ANIMAWORKS_EMBED_URL") != os.environ.get(
         "ANIMAWORKS_EMBED_URL"
@@ -231,21 +280,16 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
         )
         await connection.close()
         return 2
-    if not isinstance(task_data, dict):
+
+    try:
+        execution = await _prepare_execution(args, identity, params)
+    except ValueError as exc:
         await connection.send_response(
             request_id,
-            error=ipc_v2_error("PROTOCOL_ERROR", "run contract requires task", retryable=False),
+            error=ipc_v2_error("PROTOCOL_ERROR", str(exc), retryable=False),
         )
         await connection.close()
         return 2
-
-    try:
-        anima = DigitalAnima(
-            anima_dir=get_animas_dir() / args.anima,
-            shared_dir=get_shared_dir(),
-            busy_status_enabled=False,
-        )
-        task = CronTask.model_validate(task_data)
     except Exception as exc:
         await connection.send_response(
             request_id,
@@ -253,7 +297,6 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
         )
         await connection.close()
         return 1
-    execution = asyncio.create_task(execute_cron_contract(anima, task))
     progress = asyncio.create_task(_progress_loop(connection, identity))
     expected_parent_pid = int(os.environ.get("ANIMAWORKS_TASK_ROOT_PID", os.getppid()))
     parent_monitor = asyncio.create_task(_parent_monitor(expected_parent_pid))

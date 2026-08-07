@@ -8,6 +8,7 @@ import os
 import signal
 import sys
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -53,7 +54,7 @@ class TaskRunnerJob:
 
 
 class TaskRunnerSupervisor:
-    """Expose one IPC v2 endpoint and run cron jobs in isolated process groups."""
+    """Expose one IPC v2 endpoint and run jobs in isolated process groups."""
 
     def __init__(self, anima_name: str, anima_dir: Path, shared_dir: Path) -> None:
         self.anima_name = anima_name
@@ -97,28 +98,61 @@ class TaskRunnerSupervisor:
 
     async def run_cron(self, task: CronTask) -> dict[str, Any]:
         """Spawn one cron task runner and return its terminal result."""
+        return await self._run_isolated_job(
+            lane="cron",
+            job_prefix="cron",
+            params_builder=lambda url_env: {
+                "task": task.model_dump(mode="json"),
+                "environment": {"urls": url_env},
+            },
+            log_context=f"task={task.name}",
+        )
+
+    async def run_heartbeat(
+        self,
+        *,
+        cascade_suppressed_senders: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Spawn one heartbeat task runner and return its terminal result."""
+        senders = list(cascade_suppressed_senders) if cascade_suppressed_senders else None
+        return await self._run_isolated_job(
+            lane="heartbeat",
+            job_prefix="heartbeat",
+            params_builder=lambda url_env: {
+                "cascade_suppressed_senders": senders,
+                "environment": {"urls": url_env},
+            },
+            log_context="heartbeat",
+        )
+
+    async def _run_isolated_job(
+        self,
+        *,
+        lane: str,
+        job_prefix: str,
+        params_builder: Callable[[dict[str, str]], dict[str, Any]],
+        log_context: str,
+    ) -> dict[str, Any]:
+        """Spawn one task runner process and return its terminal result."""
         if not self._accepting:
             raise TaskRunnerError("task runner supervisor is shutting down")
         await self._ensure_started()
         url_env = self._required_url_environment()
 
-        job_id = f"cron-{uuid.uuid4()}"
+        job_id = f"{job_prefix}-{uuid.uuid4()}"
         request_id = f"run-{uuid.uuid4()}"
         identity = IPCV2Identity(
             job_id=job_id,
             root_epoch=self.root_epoch,
             attempt=1,
-            lane="cron",
+            lane=lane,
             display_lane="background",
         )
         loop = asyncio.get_running_loop()
         job = TaskRunnerJob(
             identity=identity,
             request_id=request_id,
-            params={
-                "task": task.model_dump(mode="json"),
-                "environment": {"urls": url_env},
-            },
+            params=params_builder(url_env),
             result=loop.create_future(),
             peer_state=IPCV2ConnectionState(identity),
         )
@@ -148,7 +182,7 @@ class TaskRunnerSupervisor:
                 "--anima",
                 self.anima_name,
                 "--lane",
-                "cron",
+                lane,
                 "--job",
                 job_id,
                 env=env,
@@ -160,9 +194,10 @@ class TaskRunnerSupervisor:
             job.pid = process.pid
             job.pgid = process.pid
             logger.info(
-                "Spawned cron task runner anima=%s task=%s job=%s pid=%s pgid=%s",
+                "Spawned %s task runner anima=%s %s job=%s pid=%s pgid=%s",
+                lane,
                 self.anima_name,
-                task.name,
+                log_context,
                 job_id,
                 job.pid,
                 job.pgid,
