@@ -847,7 +847,15 @@ class _FakeBuildStore:
         self.closed = True
 
 
-def _patch_atomic_build(monkeypatch, *, chunks_per_dir=2, collections=None, indexer_calls=None):
+def _patch_atomic_build(
+    monkeypatch,
+    *,
+    chunks_per_dir=2,
+    collections=None,
+    indexer_calls=None,
+    files_failed=0,
+    files_unprocessed=0,
+):
     """Patch the pieces ``atomic_rebuild_vectordb`` builds with (no real chroma)."""
 
     class FakeIndexer:
@@ -857,7 +865,12 @@ def _patch_atomic_build(monkeypatch, *, chunks_per_dir=2, collections=None, inde
         def index_directory(self, *args, **kwargs):
             if indexer_calls is not None:
                 indexer_calls.append((self.anima_name, str(args[1])))
-            return IndexDirectoryResult(chunks_indexed=chunks_per_dir, files_indexed=1)
+            return IndexDirectoryResult(
+                chunks_indexed=chunks_per_dir,
+                files_indexed=0 if files_failed else 1,
+                files_failed=files_failed,
+                files_unprocessed=files_unprocessed,
+            )
 
         def index_conversation_summary(self, *args, **kwargs):
             return chunks_per_dir
@@ -868,6 +881,10 @@ def _patch_atomic_build(monkeypatch, *, chunks_per_dir=2, collections=None, inde
         lambda *a, **k: _FakeBuildStore(collections=collections),
     )
     monkeypatch.setattr("core.memory.rag.repair_rebuild.reset_worker_vector_store", lambda anima_name: True)
+    monkeypatch.setattr(
+        "core.memory.rag.repair_rebuild.verify_worker_vector_store",
+        lambda anima_name, expected_chunks: True,
+    )
 
 
 def test_repair_rebuilds_swaps_and_archives(data_dir: Path, monkeypatch):
@@ -1308,3 +1325,117 @@ def test_repair_if_allowed_retries_before_failure_limit(data_dir: Path):
 
     assert result.status == "success"
     service.repair_anima.assert_called_once()
+
+
+def test_atomic_rebuild_reset_failure_keeps_live_db(data_dir: Path, monkeypatch) -> None:
+    anima_dir = data_dir / "animas" / "sora"
+    (anima_dir / "knowledge").mkdir(parents=True)
+    (anima_dir / "knowledge" / "topic.md").write_text("content", encoding="utf-8")
+    (anima_dir / "state").mkdir()
+    live = anima_dir / "vectordb"
+    live.mkdir()
+    (live / "live.bin").write_text("old-vector", encoding="utf-8")
+
+    _patch_atomic_build(monkeypatch)
+    monkeypatch.setattr("core.memory.rag.repair_rebuild.reset_worker_vector_store", lambda _name: False)
+    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda _name=None: None)
+
+    result = RAGRepairService(enabled=True).repair_anima("sora", reason="hnsw_corruption", source="test")
+
+    assert result.status == "failed"
+    assert "reset failed before swap" in (result.error or "")
+    assert (live / "live.bin").read_text(encoding="utf-8") == "old-vector"
+    assert not (anima_dir / "archive").exists()
+
+
+def test_atomic_rebuild_verify_failure_rolls_back_vector_and_bm25(data_dir: Path, monkeypatch) -> None:
+    from core.memory.bm25 import longterm_bm25_dirty_path, longterm_bm25_index_path
+
+    anima_dir = data_dir / "animas" / "sora"
+    (anima_dir / "knowledge").mkdir(parents=True)
+    (anima_dir / "knowledge" / "topic.md").write_text("content", encoding="utf-8")
+    (anima_dir / "state").mkdir()
+    live = anima_dir / "vectordb"
+    live.mkdir()
+    (live / "live.bin").write_text("old-vector", encoding="utf-8")
+    longterm_bm25_index_path(anima_dir).write_text("old-bm25", encoding="utf-8")
+    longterm_bm25_dirty_path(anima_dir).write_text("dirty", encoding="utf-8")
+
+    _patch_atomic_build(monkeypatch)
+    monkeypatch.setattr(
+        "core.memory.rag.repair_rebuild.verify_worker_vector_store",
+        lambda _name, expected_chunks: False,
+    )
+    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda _name=None: None)
+
+    result = RAGRepairService(enabled=True).repair_anima("sora", reason="hnsw_corruption", source="test")
+
+    assert result.status == "failed"
+    assert "verification failed after swap" in (result.error or "")
+    assert (live / "live.bin").read_text(encoding="utf-8") == "old-vector"
+    assert longterm_bm25_index_path(anima_dir).read_text(encoding="utf-8") == "old-bm25"
+    assert longterm_bm25_dirty_path(anima_dir).read_text(encoding="utf-8") == "dirty"
+    assert list((anima_dir / "archive").glob("vectordb-rebuild-failed-*"))
+    assert not list((anima_dir / "archive").glob("vectordb-corrupt-*"))
+
+
+def test_atomic_rebuild_partial_failure_does_not_swap_or_write_shared_hash(data_dir: Path, monkeypatch) -> None:
+    anima_dir = data_dir / "animas" / "sora"
+    (anima_dir / "state").mkdir(parents=True)
+    live = anima_dir / "vectordb"
+    live.mkdir()
+    (live / "live.bin").write_text("old-vector", encoding="utf-8")
+    common = data_dir / "common_knowledge"
+    common.mkdir(exist_ok=True)
+    (common / "topic.md").write_text("content", encoding="utf-8")
+
+    _patch_atomic_build(monkeypatch, chunks_per_dir=0, files_failed=1)
+    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda _name=None: None)
+
+    result = RAGRepairService(enabled=True).repair_anima(
+        "sora",
+        reason="hnsw_corruption",
+        source="test",
+        include_shared=True,
+    )
+
+    assert result.status == "failed"
+    assert "failed to fully rebuild" in (result.error or "")
+    assert (live / "live.bin").read_text(encoding="utf-8") == "old-vector"
+    assert read_shared_hash(anima_dir, "shared_common_knowledge_hash") is None
+    assert not list(anima_dir.glob("vectordb.staging-*"))
+
+
+def test_healthy_skip_reset_failure_is_recorded_as_repair_failure(data_dir: Path, monkeypatch) -> None:
+    anima_dir = data_dir / "animas" / "sora"
+    (anima_dir / "state").mkdir(parents=True)
+    (anima_dir / "vectordb").mkdir()
+    monkeypatch.setattr("core.memory.rag.repair_rebuild.reset_worker_vector_store", lambda _name: False)
+    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda _name=None: None)
+
+    service = RAGRepairService(enabled=True)
+    service._sqlite_quick_check_ok = MagicMock(return_value=True)  # type: ignore[method-assign]
+    result = service.repair_anima("sora", reason="sqlite_malformed", source="test")
+
+    assert result.status == "failed"
+    assert "healthy repair skip" in (result.error or "")
+    state = json.loads((anima_dir / "state" / "rag_repair.json").read_text(encoding="utf-8"))
+    assert state["status"] == "failed"
+
+
+def test_chroma_repair_verification_runs_real_query() -> None:
+    from core.memory.rag.store import ChromaVectorStore
+
+    collection = MagicMock()
+    collection.get.return_value = {"ids": ["doc-1"], "embeddings": [[0.1, 0.2]]}
+    collection.query.return_value = {"ids": [["doc-1"]]}
+    store = ChromaVectorStore.__new__(ChromaVectorStore)
+    store.client = MagicMock()
+    store.client.list_collections.return_value = [MagicMock(name="knowledge")]
+    store.client.list_collections.return_value[0].name = "knowledge"
+    store.client.get_collection.return_value = collection
+
+    result = store.verify_rebuilt_data(expected_chunks=1)
+
+    assert result == {"collections": 1, "query_results": 1}
+    collection.query.assert_called_once_with(query_embeddings=[[0.1, 0.2]], n_results=1)

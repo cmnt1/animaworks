@@ -1025,6 +1025,7 @@ def create_app(
         log_dir=log_dir,
         ws_manager=ws_manager,
         health_config=health_cfg,
+        vector_worker_manager=vector_worker,
     )
 
     # Auto-migrate old Japanese cron.md format to standard cron expressions

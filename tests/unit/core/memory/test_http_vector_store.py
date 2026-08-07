@@ -355,6 +355,23 @@ def test_reset_store_returns_false_on_old_or_unavailable_worker():
         assert store.reset_store() is False
 
 
+def test_verify_repair_posts_nonce_and_expected_chunks():
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"status": "ok", "collections": 1, "query_results": 1}
+    mock_client.post.return_value = mock_response
+
+    with patch("httpx.Client", return_value=mock_client):
+        store = _make_store()
+        assert store.verify_repair("repair-secret", expected_chunks=3) is True
+
+    mock_client.post.assert_called_once_with(
+        "/verify-repair",
+        json={"anima_name": "rin", "repair_nonce": "repair-secret", "expected_chunks": 3},
+    )
+
+
 # ── test_close ─────────────────────────────────────────────────────
 
 
