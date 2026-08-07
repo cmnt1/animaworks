@@ -107,10 +107,9 @@ async def _grace_root_harness(anima_dir: Path, event_path: Path) -> int:
     journal.open("cron:grace", session_id="fault-e2e")
     journal.write_text("recover me")
     journal.close()
-    _record_event(event_path, "ready", root_pid=os.getpid(), child_pid=job.pid, child_pgid=job.pgid)
-
     stopping = asyncio.Event()
     asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, stopping.set)
+    _record_event(event_path, "ready", root_pid=os.getpid(), child_pid=job.pid, child_pgid=job.pgid)
     await stopping.wait()
     shutdown = asyncio.create_task(supervisor.close())
     await job.grace_acked.wait()
