@@ -20,6 +20,7 @@ from core.anima import DigitalAnima
 from core.i18n import t
 from core.paths import get_animas_dir, get_data_dir, get_shared_dir
 from core.schemas import CronTask
+from core.supervisor.ipc import IPCRequest
 from core.supervisor.ipc_v2 import (
     IPC_V2_MAX_FRAME_BYTES,
     IPCV2Connection,
@@ -30,13 +31,14 @@ from core.supervisor.ipc_v2 import (
     IPCV2PayloadTooLarge,
     ipc_v2_error,
 )
+from core.supervisor.streaming_handler import StreamingIPCHandler
 from core.supervisor.transport import open_ipc_connection
 
 logger = logging.getLogger(__name__)
 
 _CONNECT_DEADLINE_SECONDS = 10.0
 _PROGRESS_INTERVAL_SECONDS = 5.0
-_SUPPORTED_LANES = frozenset({"cron", "heartbeat", "task", "background"})
+_SUPPORTED_LANES = frozenset({"chat", "cron", "heartbeat", "task", "background"})
 
 # Module-level registry of open StreamingJournal instances for grace flush.
 _ACTIVE_JOURNALS: list[Any] = []
@@ -278,6 +280,87 @@ async def execute_background_contract(
     raise ValueError(f"unknown background kind: {kind!r}")
 
 
+async def execute_chat_contract(
+    anima: DigitalAnima,
+    *,
+    kind: str,
+    payload: dict[str, Any],
+    send_stream_event: Any,
+) -> dict[str, Any]:
+    """Execute the legacy chat contracts inside one disposable child."""
+    try:
+        if kind == "greet":
+            return await anima.process_greet()
+        if kind == "bootstrap":
+            result = await anima.run_bootstrap()
+            return {"status": "completed", "summary": result.summary, "duration_ms": result.duration_ms}
+        if kind != "message":
+            raise ValueError(f"unknown chat contract kind: {kind!r}")
+
+        if payload.get("stream"):
+            handler = StreamingIPCHandler(anima, anima.name, anima.anima_dir)
+            request = IPCRequest(id="chat", method="process_message", params=payload)
+            async for response in handler.handle_stream(request):
+                if response.error:
+                    raise RuntimeError(response.error.get("message") or "chat stream failed")
+                if response.chunk is not None:
+                    await send_stream_event(
+                        "stream",
+                        {"stream": True, "chunk": response.chunk},
+                    )
+                if response.done:
+                    return response.result or {"response": "", "replied_to": []}
+            return {"response": "", "replied_to": []}
+
+        result = await anima.process_message(
+            str(payload.get("message") or ""),
+            from_person=str(payload.get("from_person") or "human"),
+            intent=str(payload.get("intent") or ""),
+            images=payload.get("images") or None,
+            attachment_paths=payload.get("attachment_paths") or None,
+            thread_id=str(payload.get("thread_id") or "default"),
+            include_cycle_result=True,
+            source=str(payload.get("source") or ""),
+            meeting_room_id=str(payload.get("meeting_room_id") or ""),
+            meeting_participants=payload.get("meeting_participants") or None,
+        )
+        cycle_result = result if isinstance(result, dict) else {}
+        return {
+            "response": cycle_result.get("summary", "") if cycle_result else result,
+            "cycle_result": cycle_result,
+            "images": cycle_result.get("images") or [],
+            "replied_to": [],
+            "notifications": anima.drain_notifications(),
+        }
+    finally:
+        _fsync_chat_state(anima.anima_dir)
+
+
+def _fsync_chat_state(anima_dir: Path) -> None:
+    """Durably flush chat conversation, resume, and journal files before exit."""
+    paths = [
+        anima_dir / "state" / "conversation.json",
+        anima_dir / "shortterm" / "streaming_journal_chat.jsonl",
+        anima_dir / "shortterm" / "streaming_journal.jsonl",
+    ]
+    paths.extend((anima_dir / "state").glob("current_session_chat*.json"))
+    paths.extend((anima_dir / "state" / "conversations").glob("*.json"))
+    chat_shortterm = anima_dir / "shortterm" / "chat"
+    if chat_shortterm.is_dir():
+        paths.extend(path for path in chat_shortterm.rglob("*") if path.is_file())
+    for path in paths:
+        if not path.is_file():
+            continue
+        try:
+            fd = os.open(path, os.O_RDONLY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        except OSError:
+            logger.warning("Failed to fsync chat state file %s", path, exc_info=True)
+
+
 async def _connect(
     socket_path: Path,
     state: IPCV2ConnectionState,
@@ -399,6 +482,9 @@ async def _prepare_execution(
     args: argparse.Namespace,
     identity: IPCV2Identity,
     params: dict[str, Any],
+    *,
+    send_stream_event: Any | None = None,
+    control: dict[str, Any] | None = None,
 ) -> asyncio.Task[dict[str, Any]]:
     """Validate the run contract and return the lane execution task."""
     if identity.lane not in _SUPPORTED_LANES:
@@ -409,6 +495,21 @@ async def _prepare_execution(
         shared_dir=get_shared_dir(),
         busy_status_enabled=False,
     )
+    if control is not None:
+        control["anima"] = anima
+    if identity.lane == "chat":
+        kind = params.get("kind")
+        payload = params.get("payload")
+        if not isinstance(kind, str) or not isinstance(payload, dict) or send_stream_event is None:
+            raise ValueError("run contract requires chat kind, payload, and event sender")
+        return asyncio.create_task(
+            execute_chat_contract(
+                anima,
+                kind=kind,
+                payload=payload,
+                send_stream_event=send_stream_event,
+            )
+        )
     if identity.lane == "heartbeat":
         raw_senders = params.get("cascade_suppressed_senders")
         senders: list[str] | None
@@ -470,7 +571,14 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
         configure_ipc_vector_requester(memory_client.request)
 
     try:
-        execution = await _prepare_execution(args, identity, params)
+        execution_control: dict[str, Any] = {}
+        execution = await _prepare_execution(
+            args,
+            identity,
+            params,
+            send_stream_event=connection.send_event,
+            control=execution_control,
+        )
     except ValueError as exc:
         await connection.send_response(
             request_id,
@@ -536,6 +644,13 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
                     execution.cancel()
                     cancelled = True
                     break
+                if control.kind == "event" and control.body["event"] == "interrupt":
+                    anima = execution_control.get("anima")
+                    data = control.body.get("data") or {}
+                    if anima is not None:
+                        await anima.interrupt(thread_id=data.get("thread_id") or None)
+                    receiver = asyncio.create_task(connection.receive())
+                    continue
                 receiver = asyncio.create_task(connection.receive())
 
         if cancelled or root_lost:
