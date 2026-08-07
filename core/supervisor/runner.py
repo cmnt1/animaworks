@@ -251,6 +251,8 @@ class AnimaRunner:
                 anima=self.anima,
                 anima_name=self.anima_name,
                 anima_dir=self._anima_dir,
+                task_runner_supervisor=self._scheduler_mgr._task_runner_supervisor,
+                chat_isolated=self._scheduler_mgr._chat_isolated,
             )
 
             inbox_limiter = self._inbox_limiter
@@ -806,6 +808,11 @@ class AnimaRunner:
         """Handle non-streaming process_message request."""
         if not self.anima:
             raise AnimaNotRunningError("Anima not initialized")
+        if self._scheduler_mgr is not None and self._scheduler_mgr._chat_isolated:
+            supervisor = self._scheduler_mgr._task_runner_supervisor
+            if supervisor is None:
+                raise AnimaNotRunningError("Chat task runner supervisor is unavailable")
+            return await supervisor.run_chat(kind="message", payload=params)
 
         message = params.get("message", "")
         from_person = params.get("from_person", "human")
@@ -849,12 +856,24 @@ class AnimaRunner:
         if not self.anima:
             raise AnimaNotRunningError("Anima not initialized")
 
+        if self._scheduler_mgr is not None and self._scheduler_mgr._chat_isolated:
+            supervisor = self._scheduler_mgr._task_runner_supervisor
+            if supervisor is None:
+                raise AnimaNotRunningError("Chat task runner supervisor is unavailable")
+            return await supervisor.run_chat(kind="greet", payload=params)
+
         return await self.anima.process_greet()
 
     async def _handle_run_bootstrap(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle run_bootstrap request (background bootstrap execution)."""
         if not self.anima:
             raise AnimaNotRunningError("Anima not initialized")
+
+        if self._scheduler_mgr is not None and self._scheduler_mgr._chat_isolated:
+            supervisor = self._scheduler_mgr._task_runner_supervisor
+            if supervisor is None:
+                raise AnimaNotRunningError("Chat task runner supervisor is unavailable")
+            return await supervisor.run_chat(kind="bootstrap", payload=params)
 
         result = await self.anima.run_bootstrap()
         return {
@@ -1035,6 +1054,11 @@ class AnimaRunner:
         if not self.anima:
             raise AnimaNotRunningError("Anima not initialized")
         thread_id = params.get("thread_id")
+        if self._scheduler_mgr is not None and self._scheduler_mgr._chat_isolated:
+            supervisor = self._scheduler_mgr._task_runner_supervisor
+            if supervisor is None:
+                raise AnimaNotRunningError("Chat task runner supervisor is unavailable")
+            return await supervisor.interrupt_chat(thread_id=thread_id)
         return await self.anima.interrupt(thread_id=thread_id)
 
     # ── Cleanup ───────────────────────────────────────────────────

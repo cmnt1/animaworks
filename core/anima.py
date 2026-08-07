@@ -124,6 +124,7 @@ class DigitalAnima(
 
         # 3-lock structure: conversation (human chat) / inbox (Anima-to-Anima MSG) / background (HB/cron/TaskExec)
         self._conversation_locks: dict[str, asyncio.Lock] = {}
+        self._active_chat_conversations: dict[str, Any] = {}
         self._inbox_lock = asyncio.Lock()
         self._background_lock = asyncio.Lock()
         # AgentCore carries mutable executor/tool state, so each execution lane

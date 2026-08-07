@@ -87,6 +87,7 @@ class AgentCore(
         self._sdk_available = self._check_sdk()
         self._agent_locks: dict[str, asyncio.Lock] = {}
         self._progress_callback: Callable[[], None] | None = None
+        self._active_streaming_executor: Any | None = None
 
         # Build human notifier for top-level animas
         human_notifier = self._build_human_notifier()
@@ -131,6 +132,19 @@ class AgentCore(
         self._interrupt_event = event
         if hasattr(self._executor, "_interrupt_event"):
             self._executor._interrupt_event = event
+
+    @property
+    def supports_message_injection(self) -> bool:
+        """Whether the active executor can accept another streaming user turn."""
+        executor = self._active_streaming_executor
+        return bool(executor is not None and executor.supports_message_injection)
+
+    async def inject_message(self, message: str) -> bool:
+        """Forward a user turn to the active streaming executor."""
+        executor = self._active_streaming_executor
+        if executor is None or not executor.supports_message_injection:
+            return False
+        return await executor.inject_message(message)
 
     def _get_agent_lock(self, thread_id: str = "default") -> asyncio.Lock:
         """Get or create a per-thread agent lock with LRU eviction."""

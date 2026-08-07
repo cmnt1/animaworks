@@ -21,6 +21,7 @@ from core.supervisor.ipc import IPCRequest, IPCResponse
 
 if TYPE_CHECKING:
     from core.anima import DigitalAnima
+    from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +52,14 @@ class StreamingIPCHandler:
         anima: DigitalAnima,
         anima_name: str,
         anima_dir: Any,
+        task_runner_supervisor: TaskRunnerSupervisor | None = None,
+        chat_isolated: bool = False,
     ) -> None:
         self._anima = anima
         self._anima_name = anima_name
         self._anima_dir = anima_dir
+        self._task_runner_supervisor = task_runner_supervisor
+        self._chat_isolated = chat_isolated
 
     def _clear_stream_abort_state(self, reason: str, thread_id: str = "default") -> None:
         """Clear checkpoint after abnormal stream termination.
@@ -85,6 +90,38 @@ class StreamingIPCHandler:
         if not self._anima:
             yield IPCResponse(id=request.id, error={"code": "NOT_INITIALIZED", "message": "Anima not initialized"})
             return
+
+        if self._chat_isolated:
+            if self._task_runner_supervisor is None:
+                yield IPCResponse(
+                    id=request.id,
+                    error={"code": "CHAT_RUNNER_UNAVAILABLE", "message": "Chat task runner is unavailable"},
+                )
+                return
+            try:
+                async for item in self._task_runner_supervisor.run_chat_stream(request.params):
+                    if item.get("done"):
+                        yield IPCResponse(
+                            id=request.id,
+                            stream=True,
+                            done=True,
+                            result=item.get("result") or {},
+                        )
+                    elif isinstance(item.get("chunk"), str):
+                        yield IPCResponse(
+                            id=request.id,
+                            stream=True,
+                            chunk=item["chunk"],
+                        )
+                return
+            except Exception as exc:
+                logger.exception("Isolated chat task runner failed: %s", exc)
+                self._clear_stream_abort_state("chat task runner failed", request.params.get("thread_id", "default"))
+                yield IPCResponse(
+                    id=request.id,
+                    error={"code": "CHAT_RUNNER_ERROR", "message": str(exc)},
+                )
+                return
 
         # ── Resolve keep-alive interval from config ──────────────
         try:

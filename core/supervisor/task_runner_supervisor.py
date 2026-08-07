@@ -9,11 +9,12 @@ import os
 import signal
 import sys
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from core.i18n import t
 from core.platform.process import subprocess_session_kwargs
 from core.schemas import CronTask
 from core.supervisor.ipc_v2 import (
@@ -61,6 +62,10 @@ class TaskRunnerJob:
     hang_kill_started: bool = False
     grace_acked: asyncio.Event = field(default_factory=asyncio.Event)
     process_start_time: float | None = None
+    capabilities: dict[str, bool] = field(default_factory=dict)
+    stream_events: list[asyncio.Queue[dict[str, Any] | None]] = field(default_factory=list)
+    inject_waiters: dict[str, asyncio.Future[dict[str, Any]]] = field(default_factory=dict)
+    interrupt_thread_id: str | None = None
 
 
 class TaskRunnerSupervisor:
@@ -100,6 +105,8 @@ class TaskRunnerSupervisor:
         pool = max_concurrent if isinstance(max_concurrent, int) and max_concurrent >= 1 else None
         self._max_concurrent = pool
         self._spawn_semaphore = asyncio.Semaphore(pool) if pool is not None else None
+        self._chat_lock = asyncio.Lock()
+        self._greet_cache: tuple[float, dict[str, Any]] | None = None
 
     @property
     def jobs(self) -> dict[str, TaskRunnerJob]:
@@ -219,6 +226,173 @@ class TaskRunnerSupervisor:
             use_pool_limit=True,
         )
 
+    async def run_chat(self, *, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Run a chat contract, steering an active Mode S stream when possible."""
+        if kind == "greet" and self._greet_cache is not None:
+            cached_at, cached = self._greet_cache
+            if asyncio.get_running_loop().time() - cached_at < 3600:
+                return {**cached, "cached": True}
+
+        active = None
+        if kind == "message":
+            found, active, _ = await self._try_inject_active_chat(payload)
+            if found and active is not None:
+                return self._terminal_result(await asyncio.shield(active.result))
+            if found:
+                await self._interrupt_active_chat(str(payload.get("thread_id") or "default"))
+
+        async with self._chat_lock:
+            result = await self._run_isolated_job(
+                lane="chat",
+                job_prefix=f"chat-{kind}",
+                params_builder=lambda url_env: {
+                    "kind": kind,
+                    "payload": payload,
+                    "environment": {"urls": url_env},
+                },
+                log_context=f"kind={kind}",
+                display_lane="chat",
+            )
+            if kind == "greet" and not result.get("cached"):
+                self._greet_cache = (asyncio.get_running_loop().time(), result)
+            return result
+
+    async def run_chat_stream(self, payload: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
+        """Run or steer one streaming chat and relay its IPC v2 events."""
+        thread_id = str(payload.get("thread_id") or "default")
+        found, active, queue = await self._try_inject_active_chat(payload, subscribe=True)
+        if found and active is not None and queue is not None:
+            try:
+                while (event := await queue.get()) is not None:
+                    yield event
+                yield {"done": True, "result": self._terminal_result(await asyncio.shield(active.result))}
+            finally:
+                if queue in active.stream_events:
+                    active.stream_events.remove(queue)
+            return
+        if found:
+            await self._interrupt_active_chat(thread_id)
+
+        async with self._chat_lock:
+            queue = asyncio.Queue()
+
+            async def _produce() -> dict[str, Any]:
+                try:
+                    return await self._run_isolated_job(
+                        lane="chat",
+                        job_prefix="chat-stream",
+                        params_builder=lambda url_env: {
+                            "kind": "message",
+                            "payload": {**payload, "stream": True},
+                            "environment": {"urls": url_env},
+                        },
+                        log_context=f"thread={thread_id}",
+                        display_lane="chat",
+                        stream_events=[queue],
+                    )
+                finally:
+                    await queue.put(None)
+
+            producer = asyncio.create_task(_produce())
+            try:
+                while (event := await queue.get()) is not None:
+                    yield event
+                yield {"done": True, "result": await producer}
+            finally:
+                if not producer.done():
+                    producer.cancel()
+                await asyncio.gather(producer, return_exceptions=True)
+
+    async def _try_inject_active_chat(
+        self,
+        payload: dict[str, Any],
+        *,
+        subscribe: bool = False,
+    ) -> tuple[bool, TaskRunnerJob | None, asyncio.Queue[dict[str, Any] | None] | None]:
+        """Attempt one inject_message event; report whether an active chat existed."""
+        thread_id = str(payload.get("thread_id") or "default")
+        active = next(
+            (job for job in self._jobs.values() if job.identity.lane == "chat" and not job.result.done()),
+            None,
+        )
+        if active is None:
+            return False, None, None
+        active_payload = active.params.get("payload") or {}
+        if (
+            not active_payload.get("stream")
+            or str(active_payload.get("thread_id") or "default") != thread_id
+            or not active.capabilities.get("steer", False)
+            or active.connection is None
+            or payload.get("images")
+            or payload.get("attachment_paths")
+        ):
+            return True, None, None
+
+        injection_id = f"inject-{uuid.uuid4()}"
+        waiter = asyncio.get_running_loop().create_future()
+        active.inject_waiters[injection_id] = waiter
+        queue: asyncio.Queue[dict[str, Any] | None] | None = asyncio.Queue() if subscribe else None
+        if queue is not None:
+            active.stream_events.append(queue)
+        try:
+            await active.connection.send_event(
+                "inject_message",
+                {
+                    "injection_id": injection_id,
+                    "message": str(payload.get("message") or ""),
+                    "from_person": str(payload.get("from_person") or "human"),
+                    "thread_id": thread_id,
+                    "attachment_paths": payload.get("attachment_paths") or [],
+                },
+            )
+            result = await asyncio.wait_for(asyncio.shield(waiter), timeout=5.0)
+            if result.get("accepted") is True:
+                return True, active, queue
+            logger.info(
+                "Chat steer declined for job=%s: %s", active.identity.job_id, result.get("error") or "unsupported"
+            )
+        except Exception as exc:
+            logger.warning("Chat steer failed for job=%s: %s", active.identity.job_id, exc)
+        finally:
+            active.inject_waiters.pop(injection_id, None)
+        if queue is not None and queue in active.stream_events:
+            active.stream_events.remove(queue)
+        return True, None, None
+
+    async def _interrupt_active_chat(self, thread_id: str) -> None:
+        """Match legacy auto-interrupt-before-lock behavior for a queued turn."""
+        for job in self._jobs.values():
+            if job.identity.lane != "chat":
+                continue
+            if job.connection is None:
+                job.interrupt_thread_id = thread_id
+            else:
+                await job.connection.send_event("interrupt", {"thread_id": thread_id})
+            return
+
+    async def interrupt_chat(self, thread_id: str | None = None) -> dict[str, Any]:
+        """Forward an explicit root interrupt to active chat children."""
+        interrupted = False
+        for job in self._jobs.values():
+            if job.identity.lane != "chat":
+                continue
+            interrupted = True
+            if job.connection is None:
+                job.interrupt_thread_id = thread_id or "default"
+            else:
+                await job.connection.send_event("interrupt", {"thread_id": thread_id or ""})
+        return {"status": "interrupted" if interrupted else "idle", "name": self.anima_name}
+
+    @staticmethod
+    def _terminal_result(terminal: dict[str, Any]) -> dict[str, Any]:
+        if "error" in terminal:
+            error = terminal["error"]
+            raise TaskRunnerError(f"{error.get('code', 'EXECUTION_ERROR')}: {error.get('message', '')}")
+        result = terminal.get("result")
+        if not isinstance(result, dict):
+            raise TaskRunnerError("task runner returned a malformed result")
+        return result
+
     async def _run_isolated_job(
         self,
         *,
@@ -230,6 +404,7 @@ class TaskRunnerSupervisor:
         display_lane: str = "background",
         on_spawned: OnSpawned | None = None,
         use_pool_limit: bool = False,
+        stream_events: list[asyncio.Queue[dict[str, Any] | None]] | None = None,
     ) -> dict[str, Any]:
         """Spawn one task runner process and return its terminal result."""
         if not self._accepting:
@@ -253,6 +428,7 @@ class TaskRunnerSupervisor:
                 display_lane=display_lane,
                 on_spawned=on_spawned,
                 url_env=url_env,
+                stream_events=stream_events,
             )
         finally:
             if sem is not None:
@@ -269,6 +445,7 @@ class TaskRunnerSupervisor:
         display_lane: str,
         on_spawned: OnSpawned | None,
         url_env: dict[str, str],
+        stream_events: list[asyncio.Queue[dict[str, Any] | None]] | None = None,
     ) -> dict[str, Any]:
         job_id = f"{job_prefix}-{uuid.uuid4()}"
         request_id = f"run-{uuid.uuid4()}"
@@ -287,6 +464,7 @@ class TaskRunnerSupervisor:
             result=loop.create_future(),
             peer_state=IPCV2ConnectionState(identity),
             last_progress_at=loop.time(),
+            stream_events=list(stream_events or []),
         )
         self._jobs[job_id] = job
 
@@ -375,14 +553,9 @@ class TaskRunnerSupervisor:
                         self._kill_job_group(job)
                         await process.wait()
                     raise TaskRunnerError("task runner returned a result but did not exit") from exc
-            if "error" in terminal:
-                error = terminal["error"]
-                raise TaskRunnerError(f"{error.get('code', 'EXECUTION_ERROR')}: {error.get('message', '')}")
+            result = self._terminal_result(terminal)
             if process.returncode != 0:
                 raise TaskRunnerError(f"task runner exited with status {process.returncode}")
-            result = terminal.get("result")
-            if not isinstance(result, dict):
-                raise TaskRunnerError("task runner returned a malformed result")
             return result
         except asyncio.CancelledError:
             self._terminate_job_group(job)
@@ -395,9 +568,14 @@ class TaskRunnerSupervisor:
                     hang_watch.cancel()
                 await asyncio.gather(hang_watch, return_exceptions=True)
             self._jobs.pop(job_id, None)
+            for queue in job.stream_events:
+                queue.put_nowait(None)
+            for waiter in job.inject_waiters.values():
+                if not waiter.done():
+                    waiter.set_result({"accepted": False, "error": "chat job ended"})
             self._clear_busy_if_idle()
             # A-07: recover orphan streaming journals after every task ends.
-            self._recover_task_journals()
+            self._recover_task_journals((lane,))
 
     async def _watch_job(self, job: TaskRunnerJob) -> None:
         """Kill only this task-runner group after progress stops."""
@@ -471,13 +649,16 @@ class TaskRunnerSupervisor:
         if callable(callback):
             callback()
 
-    def _recover_task_journals(self) -> None:
+    def _recover_task_journals(
+        self,
+        session_types: tuple[str, ...] = ("task", "heartbeat", "chat", "cron"),
+    ) -> None:
         """Best-effort orphan StreamingJournal recovery after a child exits."""
         try:
             from core.memory.streaming_journal import StreamingJournal
         except Exception:
             return
-        for session_type in ("task", "heartbeat", "chat", "cron"):
+        for session_type in session_types:
             try:
                 if not StreamingJournal.has_orphan(self.anima_dir, session_type=session_type):
                     continue
@@ -488,18 +669,45 @@ class TaskRunnerSupervisor:
                         session_type,
                         thread_id=thread_id,
                     )
-                    if recovery is not None:
-                        StreamingJournal.confirm_recovery(
+                    if recovery is None:
+                        continue
+                    if session_type == "chat" and recovery.recovered_text:
+                        from core.memory.conversation import ConversationMemory
+
+                        owner = self._busy_status_owner
+                        model_config = getattr(owner, "model_config", None)
+                        if model_config is None:
+                            logger.error("Cannot persist recovered chat journal without root model config")
+                            continue
+                        conversation = ConversationMemory(
                             self.anima_dir,
-                            session_type,
+                            model_config,
                             thread_id=thread_id,
                         )
-                        logger.info(
-                            "Recovered orphan journal after task exit: anima=%s session=%s thread=%s",
-                            self.anima_name,
-                            session_type,
-                            thread_id,
+                        marker = t("anima.response_interrupted")
+                        saved_text = recovery.recovered_text + "\n" + marker
+                        last_assistant = next(
+                            (turn for turn in reversed(conversation.load().turns) if turn.role == "assistant"),
+                            None,
                         )
+                        already_saved = last_assistant is not None and (
+                            last_assistant.content == saved_text
+                            or recovery.recovered_text.strip() in last_assistant.content.replace(marker, "").strip()
+                        )
+                        if not already_saved:
+                            conversation.append_turn("assistant", saved_text)
+                            conversation.save()
+                    StreamingJournal.confirm_recovery(
+                        self.anima_dir,
+                        session_type,
+                        thread_id=thread_id,
+                    )
+                    logger.info(
+                        "Recovered orphan journal after task exit: anima=%s session=%s thread=%s",
+                        self.anima_name,
+                        session_type,
+                        thread_id,
+                    )
             except Exception:
                 logger.debug(
                     "Orphan journal recovery failed for %s/%s",
@@ -530,6 +738,13 @@ class TaskRunnerSupervisor:
                 raise IPCV2ProtocolError("the first task runner frame must be hello")
             job.connection = connection
             hello_data = accepted.body["data"]
+            capabilities = hello_data.get("capabilities") or {}
+            if not isinstance(capabilities, dict):
+                raise IPCV2ProtocolError("hello.capabilities must be an object")
+            job.capabilities = {
+                "reconnect": capabilities.get("reconnect") is True,
+                "steer": capabilities.get("steer") is True,
+            }
             last_received = hello_data.get("last_received_seq", 0)
             if not isinstance(last_received, int) or isinstance(last_received, bool) or last_received < 0:
                 raise IPCV2ProtocolError("hello.last_received_seq must be a non-negative integer")
@@ -537,13 +752,15 @@ class TaskRunnerSupervisor:
             await connection.send_event(
                 "hello_ack",
                 {
-                    "capabilities": {"reconnect": True, "steer": False},
+                    "capabilities": {"reconnect": True, "steer": True},
                     "last_received_seq": job.peer_state.received_seq,
                     "last_acked_seq": job.peer_state.last_acked_seq,
                 },
             )
             await connection.replay_after(last_received, through_seq=replay_through)
             await connection.send_request(job.request_id, "run", job.params)
+            if job.interrupt_thread_id is not None:
+                await connection.send_event("interrupt", {"thread_id": job.interrupt_thread_id})
 
             while True:
                 envelope = await asyncio.wait_for(connection.receive(), timeout=15.0)
@@ -568,6 +785,21 @@ class TaskRunnerSupervisor:
                     continue
                 if envelope.kind == "event" and envelope.body["event"] == "grace_ack":
                     job.grace_acked.set()
+                    continue
+                if envelope.kind == "event" and envelope.body["event"] == "capabilities":
+                    job.capabilities["steer"] = envelope.body["data"].get("steer") is True
+                    continue
+                if envelope.kind == "event" and envelope.body["event"] == "stream":
+                    if job.identity.lane != "chat" or not job.stream_events:
+                        raise IPCV2ProtocolError("stream event is only valid for streaming chat jobs")
+                    for queue in tuple(job.stream_events):
+                        await queue.put(envelope.body["data"])
+                    continue
+                if envelope.kind == "event" and envelope.body["event"] == "inject_result":
+                    data = envelope.body["data"]
+                    waiter = job.inject_waiters.get(str(data.get("injection_id") or ""))
+                    if waiter is not None and not waiter.done():
+                        waiter.set_result(data)
                     continue
         except (TimeoutError, IPCV2ConnectionError):
             logger.debug("Task runner IPC connection ended", exc_info=True)
