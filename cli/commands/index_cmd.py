@@ -21,10 +21,11 @@ logger = logging.getLogger("animaworks.cli.index")
 def _setup_server_delegation() -> bool:
     """Detect running server and configure HTTP delegation.
 
-    When the server is running, sets ``ANIMAWORKS_VECTOR_URL`` and
-    ``ANIMAWORKS_EMBED_URL`` so that ``get_vector_store()`` returns
-    ``HttpVectorStore`` and embeddings are generated server-side.
-    This prevents unsafe concurrent ChromaDB access.
+    When the server is running, sets ``ANIMAWORKS_VECTOR_URL``,
+    ``ANIMAWORKS_EMBED_URL``, and ``ANIMAWORKS_RERANK_URL`` so that
+    ``get_vector_store()`` returns ``HttpVectorStore`` and embeddings /
+    rerank are generated server-side.  This prevents unsafe concurrent
+    ChromaDB access and per-process model loads.
 
     Returns:
         True if delegation was activated (server is running).
@@ -45,6 +46,7 @@ def _setup_server_delegation() -> bool:
     base = f"http://127.0.0.1:{port}/api"
     os.environ["ANIMAWORKS_VECTOR_URL"] = f"{base}/internal/vector"
     os.environ["ANIMAWORKS_EMBED_URL"] = f"{base}/internal/embed"
+    os.environ["ANIMAWORKS_RERANK_URL"] = f"{base}/internal/rerank"
     logger.info(
         "Server detected (pid=%d). Using HTTP delegation for safe ChromaDB access.",
         pid,
