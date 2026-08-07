@@ -178,9 +178,7 @@ def test_store_init_failed_is_single_shot_and_not_refuted_by_quick_check(data_di
         background=True,
     )
     service._sqlite_quick_check_ok.assert_not_called()
-    state = json.loads(
-        (data_dir / "animas" / "sora" / "state" / "rag_repair.json").read_text(encoding="utf-8")
-    )
+    state = json.loads((data_dir / "animas" / "sora" / "state" / "rag_repair.json").read_text(encoding="utf-8"))
     assert state["recent_signals"][-1]["reason"] == "store_init_failed"
 
 
@@ -205,9 +203,7 @@ def test_store_init_failed_signal_is_throttled_for_ten_minutes(data_dir: Path):
     assert first is True
     assert second is False
     assert service.request_repair.call_count == 1
-    state = json.loads(
-        (data_dir / "animas" / "sora" / "state" / "rag_repair.json").read_text(encoding="utf-8")
-    )
+    state = json.loads((data_dir / "animas" / "sora" / "state" / "rag_repair.json").read_text(encoding="utf-8"))
     assert [signal["reason"] for signal in state["recent_signals"]] == ["store_init_failed"]
 
 
@@ -446,6 +442,23 @@ def test_discover_suspect_animas_includes_quick_check_corruption(data_dir: Path,
             "record_repair": False,
         }
     ]
+
+
+def test_discover_suspect_animas_does_not_check_phase3_db(data_dir: Path, monkeypatch):
+    anima_dir = data_dir / "animas" / "sora"
+    anima_dir.mkdir(parents=True)
+    (anima_dir / "identity.md").write_text("# sora", encoding="utf-8")
+    (anima_dir / "status.json").write_text('{"process_model":"phase3"}', encoding="utf-8")
+    quick_check = MagicMock()
+    monkeypatch.setattr(
+        "core.memory.rag.sqlite_health.check_anima_vectordb_health_via_worker_or_direct",
+        quick_check,
+    )
+
+    suspects = RAGRepairService(enabled=True).discover_suspect_animas(include_logs=False)
+
+    assert suspects == []
+    quick_check.assert_not_called()
 
 
 def test_discover_suspect_animas_ignores_signals_before_success(data_dir: Path):

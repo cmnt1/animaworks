@@ -594,14 +594,8 @@ class TaskRunnerSupervisor:
                 error=ipc_v2_error("PROTOCOL_ERROR", f"unsupported task request: {method}", retryable=False),
             )
             return
-        if self._memory_service is None:
-            await connection.send_response(
-                request_id,
-                error=ipc_v2_error("UNAVAILABLE", "root memory service is disabled", retryable=True),
-            )
-            return
         try:
-            result = await self._memory_service.handle(method, params)
+            result = await self.handle_memory(method, params)
         except MemoryServiceUnavailable as exc:
             await connection.send_response(
                 request_id,
@@ -619,6 +613,12 @@ class TaskRunnerSupervisor:
             )
         else:
             await connection.send_response(request_id, result=result)
+
+    async def handle_memory(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Serve root-local and IPC callers through the same memory queue."""
+        if self._memory_service is None:
+            raise MemoryServiceUnavailable("root memory service is disabled")
+        return await self._memory_service.handle(method, params)
 
     async def close(self) -> None:
         """Stop accepting jobs, grace active runners, then reap process groups."""

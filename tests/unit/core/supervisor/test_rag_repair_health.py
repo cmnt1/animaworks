@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from core.supervisor._mgr_health import HealthMixin
 from core.supervisor._mgr_rag_repair import RAGRepairMixin
@@ -29,6 +30,23 @@ class _RepairServiceForTest:
 
     def has_recent_corruption(self, anima_name: str) -> bool:
         return self.recent
+
+
+async def test_phase3_restart_does_not_use_global_worker_repair(monkeypatch, tmp_path: Path) -> None:
+    anima_dir = tmp_path / "sora"
+    anima_dir.mkdir()
+    (anima_dir / "status.json").write_text('{"process_model":"phase3"}', encoding="utf-8")
+    get_service = MagicMock()
+    monkeypatch.setattr("core.memory.rag.repair.get_repair_service", get_service)
+
+    supervisor = _SupervisorForTest(tmp_path)
+    repaired = await supervisor._maybe_repair_rag_before_restart(
+        "sora",
+        SimpleNamespace(stats=SimpleNamespace(exit_code=-11)),
+    )
+
+    assert repaired is False
+    get_service.assert_not_called()
 
 
 async def test_repair_before_restart_on_sigsegv(monkeypatch, tmp_path):

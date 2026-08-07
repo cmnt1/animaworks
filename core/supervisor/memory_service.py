@@ -1,4 +1,4 @@
-"""Root-owned, read-only vector memory service."""
+"""Root-owned vector memory service."""
 
 from __future__ import annotations
 
@@ -15,11 +15,11 @@ logger = logging.getLogger(__name__)
 
 
 class MemoryServiceUnavailable(RuntimeError):
-    """The root memory service cannot safely answer a read."""
+    """The root memory service cannot safely answer a request."""
 
 
 class MemoryService:
-    """Serialize one anima's native vector reads on one bounded worker."""
+    """Serialize one anima's native vector operations on one bounded worker."""
 
     def __init__(
         self,
@@ -55,7 +55,7 @@ class MemoryService:
             logger.warning("Root memory store open failed for %s: %s", self.anima_name, exc)
 
     async def handle(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
-        """Run one checked read or raise an explicit unavailable error."""
+        """Run one checked operation or raise an explicit unavailable error."""
         if not self._started:
             await self.start()
         if self._store is None:
@@ -82,8 +82,8 @@ class MemoryService:
         except ValueError:
             raise
         except Exception as exc:
-            logger.warning("Root memory read failed for %s: %s", self.anima_name, exc)
-            raise MemoryServiceUnavailable(f"memory read failed: {exc}") from exc
+            logger.warning("Root memory operation failed for %s: %s", self.anima_name, exc)
+            raise MemoryServiceUnavailable(f"memory operation failed: {exc}") from exc
         finally:
             self._pending -= 1
 
@@ -124,6 +124,34 @@ class MemoryService:
                 raise ValueError("ids must be a list of strings")
             get = getattr(store, "_get_by_ids_once", store.get_by_ids)
             return {"documents": self._documents(get(collection, ids))}
+        if method == "memory.create_collection":
+            collection = self._string(params, "collection")
+            create = getattr(store, "_create_collection_once", store.create_collection)
+            return {"ok": bool(create(collection))}
+        if method == "memory.delete_collection":
+            collection = self._string(params, "collection")
+            delete = getattr(store, "_delete_collection_once", store.delete_collection)
+            return {"ok": bool(delete(collection))}
+        if method == "memory.upsert":
+            collection = self._string(params, "collection")
+            documents = self._document_params(params.get("documents"))
+            upsert = getattr(store, "_upsert_once", store.upsert)
+            return {"ok": bool(upsert(collection, documents))}
+        if method == "memory.delete_documents":
+            collection = self._string(params, "collection")
+            ids = self._strings(params.get("ids"), "ids")
+            delete = getattr(store, "_delete_documents_once", store.delete_documents)
+            return {"ok": bool(delete(collection, ids))}
+        if method == "memory.update_metadata":
+            collection = self._string(params, "collection")
+            ids = self._strings(params.get("ids"), "ids")
+            metadatas = params.get("metadatas")
+            if not isinstance(metadatas, list) or not all(isinstance(item, dict) for item in metadatas):
+                raise ValueError("metadatas must be a list of objects")
+            if len(ids) != len(metadatas):
+                raise ValueError("ids and metadatas must have the same length")
+            update = getattr(store, "_update_metadata_once", store.update_metadata)
+            return {"ok": bool(update(collection, ids, metadatas))}
         raise ValueError(f"unsupported memory method: {method}")
 
     @staticmethod
@@ -132,6 +160,38 @@ class MemoryService:
         if not isinstance(value, str) or not value:
             raise ValueError(f"{key} must be a non-empty string")
         return value
+
+    @staticmethod
+    def _strings(value: Any, key: str) -> list[str]:
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise ValueError(f"{key} must be a list of strings")
+        return value
+
+    @staticmethod
+    def _document_params(value: Any) -> list[Document]:
+        if not isinstance(value, list):
+            raise ValueError("documents must be a list")
+        documents: list[Document] = []
+        for item in value:
+            if not isinstance(item, dict):
+                raise ValueError("documents must contain objects")
+            doc_id = item.get("id")
+            content = item.get("content", "")
+            embedding = item.get("embedding")
+            metadata = item.get("metadata", {})
+            if not isinstance(doc_id, str) or not doc_id:
+                raise ValueError("document id must be a non-empty string")
+            if not isinstance(content, str):
+                raise ValueError("document content must be a string")
+            if embedding is not None and (
+                not isinstance(embedding, list)
+                or not all(isinstance(number, (int, float)) and not isinstance(number, bool) for number in embedding)
+            ):
+                raise ValueError("document embedding must be a list of numbers or null")
+            if not isinstance(metadata, dict):
+                raise ValueError("document metadata must be an object")
+            documents.append(Document(id=doc_id, content=content, embedding=embedding, metadata=metadata))
+        return documents
 
     @staticmethod
     def _documents(documents: list[Document]) -> list[dict[str, Any]]:
@@ -159,7 +219,7 @@ class MemoryService:
         return state.get("status") in repair_state.ACTIVE_REPAIR_STATUSES
 
     async def close(self) -> None:
-        """Close the sole native handle after queued reads drain."""
+        """Close the sole native handle after queued operations drain."""
         store, self._store = self._store, None
         if store is not None:
             try:

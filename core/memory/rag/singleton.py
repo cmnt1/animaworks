@@ -256,7 +256,7 @@ def _get_http_store(base_url: str, anima_name: str | None) -> HttpVectorStore:
 
 
 def configure_ipc_vector_requester(requester: MemoryRequester | None) -> None:
-    """Install the task runner's root-memory requester for phase3 reads."""
+    """Install the task runner's root-memory requester for phase3 operations."""
     global _ipc_vector_requester
 
     with _lock:
@@ -301,7 +301,7 @@ def get_vector_store(anima_name: str | None = None) -> VectorStore | None:
     if os.environ.get("ANIMAWORKS_MEMORY_VIA_ROOT") == "1":
         if vector_url:
             return _get_ipc_store(vector_url, anima_name)
-        logger.warning("IPC vector store unavailable: write-side ANIMAWORKS_VECTOR_URL is missing")
+        logger.warning("IPC vector store unavailable: ANIMAWORKS_VECTOR_URL is missing")
         return None
     if vector_url:
         return _get_http_store(vector_url, anima_name)
