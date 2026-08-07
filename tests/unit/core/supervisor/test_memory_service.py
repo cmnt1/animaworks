@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 import threading
 import uuid
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -111,6 +112,26 @@ async def test_memory_service_unavailable_is_not_an_empty_success(tmp_path: Path
 
     with pytest.raises(MemoryServiceUnavailable):
         await service.handle("memory.list_collections_checked", {})
+    await service.close()
+
+
+@pytest.mark.asyncio
+async def test_phase3_memory_does_not_use_cross_process_repair_fence(tmp_path: Path) -> None:
+    from core.memory.rag import repair_state
+
+    anima_dir = tmp_path / "animas" / "sakura"
+    anima_dir.mkdir(parents=True)
+    repair_state.write_repair_request_state(
+        "sakura",
+        reason="hnsw_corruption",
+        collection=None,
+        source="test",
+        include_shared=False,
+        animas_dir=anima_dir.parent,
+    )
+    service = MemoryService("sakura", anima_dir, opener=_store)
+
+    assert await service.handle("memory.list_collections_checked", {}) == {"collections": ["sakura_knowledge"]}
     await service.close()
 
 
@@ -289,3 +310,169 @@ def test_ipc_vector_store_collection_existence_is_three_state() -> None:
     assert available.collection_exists("sakura_knowledge") is CollectionExistence.EXISTS
     assert available.collection_exists("missing") is CollectionExistence.MISSING
     assert unavailable.collection_exists("sakura_knowledge") is CollectionExistence.UNAVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_root_repair_builds_staging_in_subprocess(tmp_path: Path, monkeypatch) -> None:
+    anima_dir = tmp_path / "animas" / "sakura"
+    anima_dir.mkdir(parents=True)
+    captured: dict[str, object] = {}
+
+    class FakeProc:
+        returncode = 0
+
+        async def communicate(self):
+            return b"", b""
+
+    async def create_subprocess(*cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured["kwargs"] = kwargs
+        result_path = Path(cmd[cmd.index("--result") + 1])
+        staging = Path(cmd[cmd.index("--staging") + 1])
+        staging.mkdir()
+        result_path.write_text('{"chunks": 2, "shared_hashes": {}}', encoding="utf-8")
+        return FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create_subprocess)
+    service = MemoryService("sakura", anima_dir, opener=_store)
+
+    staging, chunks, hashes = await service._build_staging_subprocess(True)
+
+    cmd = captured["cmd"]
+    assert isinstance(cmd, tuple)
+    assert cmd[1:3] == ("-m", "core.memory.rag.repair_rebuild")
+    assert "--shared" in cmd
+    assert staging.name.startswith("vectordb.staging-root-")
+    assert chunks == 2
+    assert hashes == {}
+    shutil.rmtree(staging)
+    await service.close()
+
+
+@pytest.mark.asyncio
+async def test_root_repair_swaps_reopens_and_queries(tmp_path: Path, monkeypatch) -> None:
+    anima_dir = tmp_path / "animas" / "sakura"
+    (anima_dir / "state").mkdir(parents=True)
+    live = anima_dir / "vectordb"
+    live.mkdir()
+    (live / "old.bin").write_text("old", encoding="utf-8")
+    staging = anima_dir / "vectordb.staging-test"
+    staging.mkdir()
+    (staging / "new.bin").write_text("new", encoding="utf-8")
+    old_store = _store()
+    reopened = _store()
+    reopened.verify_rebuilt_data.return_value = {"collections": 1, "chunks": 1, "query_results": 1}
+    service = MemoryService("sakura", anima_dir, opener=MagicMock(side_effect=[old_store, reopened]))
+    service._build_staging_subprocess = AsyncMock(return_value=(staging, 1, {}))  # type: ignore[method-assign]
+    monkeypatch.setattr(service, "_rebuild_bm25_sync", lambda: None)
+
+    await service.start()
+    result = await service.repair(include_shared=False)
+
+    assert result["ok"] is True
+    assert (live / "new.bin").read_text(encoding="utf-8") == "new"
+    assert list((anima_dir / "archive").glob("vectordb-corrupt-*/old.bin"))
+    old_store.close.assert_called_once()
+    reopened.verify_rebuilt_data.assert_called_once_with(expected_chunks=1)
+    await service.close()
+
+
+@pytest.mark.asyncio
+async def test_root_repair_verification_failure_rolls_back_vector_and_bm25(tmp_path: Path, monkeypatch) -> None:
+    from core.memory.bm25 import longterm_bm25_index_path
+
+    anima_dir = tmp_path / "animas" / "sakura"
+    (anima_dir / "state").mkdir(parents=True)
+    live = anima_dir / "vectordb"
+    live.mkdir()
+    (live / "old.bin").write_text("old", encoding="utf-8")
+    bm25 = longterm_bm25_index_path(anima_dir)
+    bm25.write_text("old-bm25", encoding="utf-8")
+    staging = anima_dir / "vectordb.staging-test"
+    staging.mkdir()
+    (staging / "new.bin").write_text("new", encoding="utf-8")
+    reopened = _store()
+    reopened.verify_rebuilt_data.side_effect = RuntimeError("query failed")
+    service = MemoryService(
+        "sakura",
+        anima_dir,
+        opener=MagicMock(side_effect=[_store(), reopened, _store()]),
+    )
+    service._build_staging_subprocess = AsyncMock(return_value=(staging, 1, {}))  # type: ignore[method-assign]
+    monkeypatch.setattr(service, "_rebuild_bm25_sync", lambda: bm25.write_text("new-bm25", encoding="utf-8"))
+
+    await service.start()
+    with pytest.raises(RuntimeError, match="query failed"):
+        await service.repair(include_shared=False)
+
+    assert (live / "old.bin").read_text(encoding="utf-8") == "old"
+    assert bm25.read_text(encoding="utf-8") == "old-bm25"
+    assert list((anima_dir / "archive").glob("vectordb-rebuild-failed-*/new.bin"))
+    await service.close()
+
+
+@pytest.mark.asyncio
+async def test_root_repair_swap_failure_reopens_untouched_store(tmp_path: Path, monkeypatch) -> None:
+    anima_dir = tmp_path / "animas" / "sakura"
+    (anima_dir / "state").mkdir(parents=True)
+    live = anima_dir / "vectordb"
+    live.mkdir()
+    (live / "old.bin").write_text("old", encoding="utf-8")
+    missing_staging = anima_dir / "vectordb.staging-missing"
+    reopened = _store()
+    service = MemoryService(
+        "sakura",
+        anima_dir,
+        opener=MagicMock(side_effect=[_store(), reopened]),
+    )
+    service._build_staging_subprocess = AsyncMock(return_value=(missing_staging, 1, {}))  # type: ignore[method-assign]
+    monkeypatch.setattr(service, "_rebuild_bm25_sync", lambda: None)
+
+    await service.start()
+    with pytest.raises(FileNotFoundError):
+        await service.repair(include_shared=False)
+
+    assert (live / "old.bin").read_text(encoding="utf-8") == "old"
+    assert await service.handle("memory.list_collections_checked", {}) == {"collections": ["sakura_knowledge"]}
+    await service.close()
+
+
+@pytest.mark.asyncio
+async def test_root_memory_is_explicitly_unavailable_during_repair(tmp_path: Path) -> None:
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    service = MemoryService("sakura", tmp_path / "sakura", opener=_store)
+
+    async def build(_include_shared: bool):
+        entered.set()
+        await release.wait()
+        raise RuntimeError("stop test repair")
+
+    service._build_staging_subprocess = build  # type: ignore[method-assign]
+    repair = asyncio.create_task(service.repair(include_shared=False))
+    await entered.wait()
+
+    with pytest.raises(MemoryServiceUnavailable, match="repair in progress"):
+        await service.handle("memory.list_collections_checked", {})
+
+    release.set()
+    with pytest.raises(RuntimeError, match="stop test repair"):
+        await repair
+    await service.close()
+
+
+@pytest.mark.asyncio
+async def test_root_open_failure_marks_background_repair_without_failing_startup(tmp_path: Path) -> None:
+    from core.memory.rag import repair_state
+
+    anima_dir = tmp_path / "animas" / "sakura"
+    anima_dir.mkdir(parents=True)
+    service = MemoryService("sakura", anima_dir, opener=MagicMock(side_effect=RuntimeError("broken DB")))
+
+    await service.start()
+
+    state = repair_state.read_state("sakura", animas_dir=anima_dir.parent)
+    assert state["status"] == "requested"
+    assert state["reason"] == "store_init_failed"
+    assert state["source"] == "phase3_root_startup"
+    await service.close()
