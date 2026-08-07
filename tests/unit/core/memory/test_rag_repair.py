@@ -964,6 +964,55 @@ def test_atomic_rebuild_includes_facts_and_conversation_summary(data_dir: Path, 
     ]
 
 
+def test_atomic_rebuild_invalidates_shared_check_ttl(data_dir: Path, monkeypatch):
+    from core.memory.rag import repair_state
+    from core.memory.rag.repair_rebuild import atomic_rebuild_vectordb
+    from core.memory.rag.shared_check_registry import (
+        SharedCheckOutcome,
+        make_shared_check_key,
+        reset_shared_check_registry,
+        run_shared_check,
+    )
+
+    anima_dir = data_dir / "animas" / "sora"
+    knowledge_dir = anima_dir / "knowledge"
+    knowledge_dir.mkdir(parents=True)
+    (knowledge_dir / "note.md").write_text("content", encoding="utf-8")
+    _patch_atomic_build(monkeypatch, chunks_per_dir=2)
+    monkeypatch.setattr("core.memory.rag.singleton.reset_vector_store", lambda anima_name=None: None)
+    repair_state.update_repair_state("sora", status="repairing", stage="repair")
+
+    store = MagicMock()
+    store._base_url = "http://vector.example/api"
+    key = make_shared_check_key("sora", store, "shared_common_knowledge", "source:hash")
+    calls = 0
+
+    def check() -> SharedCheckOutcome:
+        nonlocal calls
+        calls += 1
+        return SharedCheckOutcome.SUCCESS
+
+    def run() -> None:
+        run_shared_check(
+            key,
+            check,
+            ttl_seconds=30,
+            backoff_initial_seconds=5,
+            backoff_max_seconds=300,
+        )
+
+    reset_shared_check_registry()
+    try:
+        run()
+        run()
+        assert calls == 1
+        atomic_rebuild_vectordb("sora", include_shared=False, anima_dir=anima_dir)
+        run()
+        assert calls == 2
+    finally:
+        reset_shared_check_registry()
+
+
 def test_atomic_rebuild_refuses_swap_without_active_fence(data_dir: Path, monkeypatch):
     from core.memory.rag.repair_rebuild import RebuildVerificationError, atomic_rebuild_vectordb
 

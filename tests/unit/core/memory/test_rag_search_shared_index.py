@@ -16,6 +16,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.memory.rag.indexer import IndexDirectoryResult, MemoryIndexer
+from core.memory.rag.shared_check_registry import (
+    SharedCheckOutcome,
+    invalidate_shared_checks,
+    make_shared_check_key,
+    reset_shared_check_registry,
+    run_shared_check,
+)
 from core.memory.rag.shared_meta import (
     SharedIndexMetaError,
     read_shared_hash,
@@ -28,6 +35,13 @@ from core.memory.rag_search import (
     RAGMemorySearch,
     _compute_dir_hash,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_process_shared_check_registry():
+    reset_shared_check_registry()
+    yield
+    reset_shared_check_registry()
 
 # ── _compute_dir_hash ─────────────────────────────────────
 
@@ -462,6 +476,7 @@ class TestEnsureSharedKnowledgeChangeDetection:
             # Second call: hash matches but collection STILL missing
             # (simulating a vectordb wipe between calls).
             # → must force re-index so collection is recreated.
+            invalidate_shared_checks(rag._anima_dir.name)
             rag._ensure_shared_knowledge_indexed(mock_vs)
             assert MockIdx.call_count == 1
             mock_shared.index_directory.assert_called_once_with(
@@ -576,12 +591,160 @@ class TestEnsureSharedSkillsChangeDetection:
             MockIdx.reset_mock()
             mock_shared.reset_mock()
 
+            invalidate_shared_checks(rag._anima_dir.name)
             rag._ensure_shared_skills_indexed(mock_vs)
             mock_shared.index_directory.assert_called_once_with(
                 common_skills_dir,
                 "common_skills",
                 force=True,
             )
+
+
+class TestSharedCheckRegistry:
+    def test_ttl_skips_then_rechecks_after_expiry(self, monkeypatch) -> None:
+        from core.memory.rag import shared_check_registry
+
+        now = [100.0]
+        monkeypatch.setattr(shared_check_registry.time, "monotonic", lambda: now[0])
+        key = make_shared_check_key("alice", object(), "shared_common_knowledge", "source:hash")
+        calls = 0
+
+        def check() -> SharedCheckOutcome:
+            nonlocal calls
+            calls += 1
+            return SharedCheckOutcome.SUCCESS
+
+        for _ in range(2):
+            run_shared_check(
+                key,
+                check,
+                ttl_seconds=10,
+                backoff_initial_seconds=2,
+                backoff_max_seconds=8,
+            )
+        assert calls == 1
+
+        now[0] = 110.1
+        run_shared_check(
+            key,
+            check,
+            ttl_seconds=10,
+            backoff_initial_seconds=2,
+            backoff_max_seconds=8,
+        )
+        assert calls == 2
+
+    def test_transient_failure_uses_exponential_backoff(self, monkeypatch) -> None:
+        from core.memory.rag import shared_check_registry
+
+        now = [100.0]
+        monkeypatch.setattr(shared_check_registry.time, "monotonic", lambda: now[0])
+        key = make_shared_check_key("alice", object(), "shared_common_knowledge", "source:hash")
+        outcomes = iter(
+            [
+                SharedCheckOutcome.TRANSIENT,
+                SharedCheckOutcome.TRANSIENT,
+                SharedCheckOutcome.SUCCESS,
+            ]
+        )
+        calls = 0
+
+        def check() -> SharedCheckOutcome:
+            nonlocal calls
+            calls += 1
+            return next(outcomes)
+
+        def run() -> None:
+            run_shared_check(
+                key,
+                check,
+                ttl_seconds=10,
+                backoff_initial_seconds=2,
+                backoff_max_seconds=8,
+            )
+
+        run()
+        run()
+        assert calls == 1
+        now[0] = 102.1
+        run()
+        assert calls == 2
+        now[0] = 106.0
+        run()
+        assert calls == 2
+        now[0] = 106.2
+        run()
+        assert calls == 3
+
+    def test_multiple_wrappers_share_one_reindex_flight(
+        self,
+        rag: RAGMemorySearch,
+        common_knowledge_dir: Path,
+    ) -> None:
+        from threading import Event
+
+        (common_knowledge_dir / "guide.md").write_text("# Guide")
+        second = RAGMemorySearch(rag._anima_dir, common_knowledge_dir, rag._common_skills_dir)
+        vector_store = MagicMock()
+        vector_store._base_url = "http://vector.example/api"
+        rag._indexer = SimpleNamespace(embedding_model=None)
+        second._indexer = SimpleNamespace(embedding_model=None)
+        started = Event()
+        release = Event()
+
+        def index_directory(*_args, **_kwargs) -> IndexDirectoryResult:
+            started.set()
+            assert release.wait(timeout=2)
+            return IndexDirectoryResult(chunks_indexed=1, files_indexed=1)
+
+        with (
+            patch.object(rag, "_shared_check_timing", return_value=(0.0, 2.0, 8.0)),
+            patch.object(second, "_shared_check_timing", return_value=(0.0, 2.0, 8.0)),
+            patch("core.memory.rag.MemoryIndexer") as MockIdx,
+            ThreadPoolExecutor(max_workers=2) as executor,
+        ):
+            MockIdx.return_value.index_directory.side_effect = index_directory
+            first_future = executor.submit(rag._ensure_shared_knowledge_indexed, vector_store)
+            assert started.wait(timeout=2)
+            second_future = executor.submit(second._ensure_shared_knowledge_indexed, vector_store)
+            time.sleep(0.05)
+            release.set()
+            first_future.result(timeout=2)
+            second_future.result(timeout=2)
+
+        MockIdx.return_value.index_directory.assert_called_once()
+
+    def test_company_reset_invalidates_positive_ttl(
+        self,
+        rag: RAGMemorySearch,
+        common_knowledge_dir: Path,
+    ) -> None:
+        (common_knowledge_dir / "guide.md").write_text("# Guide")
+        current_hash = _compute_dir_hash(common_knowledge_dir)
+        write_shared_hashes(
+            rag._anima_dir,
+            {
+                "shared_company_name": "old",
+                "shared_common_knowledge_hash": current_hash,
+            },
+        )
+        (rag._anima_dir / "status.json").write_text('{"company": "new"}', encoding="utf-8")
+        vector_store = MagicMock()
+        vector_store._base_url = "http://vector.example/api"
+        vector_store.collection_exists.return_value = CollectionExistence.EXISTS
+        vector_store.delete_collection.return_value = True
+        rag._indexer = SimpleNamespace(embedding_model=None)
+
+        with (
+            patch.object(rag, "_shared_check_timing", return_value=(30.0, 2.0, 8.0)),
+            patch("core.memory.rag.MemoryIndexer") as MockIdx,
+        ):
+            rag._ensure_shared_knowledge_indexed(vector_store)
+            assert rag._reset_shared_for_company_change(vector_store) == (True, "new")
+            MockIdx.return_value.index_directory.return_value = IndexDirectoryResult(files_indexed=1)
+            rag._ensure_shared_knowledge_indexed(vector_store)
+
+        MockIdx.return_value.index_directory.assert_called_once()
 
 
 # ── _get_indexer calls _check_shared_collections ──────────

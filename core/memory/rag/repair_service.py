@@ -785,6 +785,9 @@ class RAGRepairService:
                     if not reset_worker_vector_store(anima_name):
                         raise RuntimeError(f"vector worker reset failed for healthy repair skip: {anima_name}")
                     reset_vector_store(anima_name)
+                    from core.memory.rag.shared_check_registry import invalidate_shared_checks
+
+                    invalidate_shared_checks(anima_name)
                     repair_state.update_repair_state(
                         anima_name,
                         status="success",

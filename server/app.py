@@ -674,6 +674,7 @@ async def _prepare_startup_vector_worker(app: FastAPI) -> None:
     app.state.child_env_urls = {
         "ANIMAWORKS_EMBED_URL": f"http://127.0.0.1:{_server_port}/api/internal/embed",
         "ANIMAWORKS_VECTOR_URL": f"http://127.0.0.1:{_server_port}/api/internal/vector",
+        "ANIMAWORKS_RERANK_URL": f"http://127.0.0.1:{_server_port}/api/internal/rerank",
     }
     app.state.supervisor.child_env_urls = app.state.child_env_urls
 

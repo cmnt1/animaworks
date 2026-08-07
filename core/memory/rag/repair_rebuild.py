@@ -364,6 +364,9 @@ def atomic_rebuild_vectordb(
             from core.memory.rag.shared_meta import write_shared_hashes
 
             write_shared_hashes(resolved_anima_dir, shared_hashes)
+        from core.memory.rag.shared_check_registry import invalidate_shared_checks
+
+        invalidate_shared_checks(anima_name)
         succeeded = True
         return chunks, archive
     except BaseException as exc:
