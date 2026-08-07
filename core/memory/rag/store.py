@@ -577,13 +577,16 @@ class ChromaVectorStore(VectorStore):
     def verify_rebuilt_data(self, *, expected_chunks: int) -> dict[str, int]:
         """Run a real similarity query against freshly reopened Chroma data."""
         collections = self._list_collections_once()
+        opened = [(name, self.client.get_collection(name=name)) for name in collections]
+        chunks = sum(collection.count() for _name, collection in opened)
+        if chunks != expected_chunks:
+            raise RuntimeError(f"expected {expected_chunks} chunks after rebuild, found {chunks}")
         if expected_chunks <= 0:
-            return {"collections": len(collections), "query_results": 0}
+            return {"collections": len(collections), "chunks": chunks, "query_results": 0}
         if not collections:
             raise RuntimeError(f"no collections found despite indexing {expected_chunks} chunks")
 
-        for name in collections:
-            collection = self.client.get_collection(name=name)
+        for _name, collection in opened:
             sample = collection.get(limit=1, include=["embeddings"])
             ids = sample.get("ids") or []
             embeddings = sample.get("embeddings")
@@ -593,7 +596,7 @@ class ChromaVectorStore(VectorStore):
             queried = collection.query(query_embeddings=[embedding], n_results=1)
             result_ids = queried.get("ids") or []
             if result_ids and result_ids[0]:
-                return {"collections": len(collections), "query_results": len(result_ids[0])}
+                return {"collections": len(collections), "chunks": chunks, "query_results": len(result_ids[0])}
 
         raise RuntimeError(f"no queryable documents found despite indexing {expected_chunks} chunks")
 

@@ -116,6 +116,10 @@ class TaskRunnerSupervisor:
         """Number of currently registered task-runner jobs."""
         return len(self._jobs)
 
+    async def start(self) -> None:
+        """Start the root IPC endpoint and its optional memory service."""
+        await self._ensure_started()
+
     async def _ensure_started(self) -> None:
         if self._server is not None:
             return
@@ -747,6 +751,12 @@ class TaskRunnerSupervisor:
         if self._memory_service is None:
             raise MemoryServiceUnavailable("root memory service is disabled")
         return await self._memory_service.handle(method, params)
+
+    async def repair_memory(self, *, include_shared: bool) -> dict[str, Any]:
+        """Run phase3 repair inside the root-owned memory service."""
+        if self._memory_service is None:
+            raise MemoryServiceUnavailable("root memory service is disabled")
+        return await self._memory_service.repair(include_shared=include_shared)
 
     async def close(self) -> None:
         """Stop accepting jobs, grace active runners, then reap process groups."""

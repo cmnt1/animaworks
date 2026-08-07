@@ -367,6 +367,14 @@ class AnimaRunner:
             raise ProcessError("Runner delegates are not initialized")
 
         self._scheduler_mgr.setup()
+        if (
+            self._scheduler_mgr._task_runner_supervisor is not None
+            and self._scheduler_mgr._task_runner_supervisor._memory_service is not None
+        ):
+            asyncio.create_task(
+                self._scheduler_mgr._task_runner_supervisor.start(),
+                name=f"root-memory-start-{self.anima_name}",
+            )
         self.inbox_watcher_task = asyncio.create_task(self._inbox_limiter.inbox_watcher_loop())
         self.pending_task_watcher_task = asyncio.create_task(self._pending_executor.watcher_loop())
         self._orphan_cleanup_task = asyncio.create_task(
@@ -767,6 +775,7 @@ class AnimaRunner:
             "run_cron_task": self._handle_run_cron_task,
             "run_consolidation": self._handle_run_consolidation,
             "memory": self._handle_memory,
+            "repair_memory": self._handle_repair_memory,
             "get_status": self._handle_get_status,
             "ping": self._handle_ping,
             "startup_ack": self._handle_startup_ack,
@@ -786,6 +795,14 @@ class AnimaRunner:
         if supervisor is None or not isinstance(method, str) or not isinstance(request_params, dict):
             raise ValueError("root memory service is unavailable")
         return await supervisor.handle_memory(method, request_params)
+
+    async def _handle_repair_memory(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Run phase3 RAG repair in this root instead of the global worker."""
+        supervisor = self._scheduler_mgr._task_runner_supervisor if self._scheduler_mgr is not None else None
+        include_shared = params.get("include_shared", True)
+        if supervisor is None or not isinstance(include_shared, bool):
+            raise ValueError("root memory service is unavailable")
+        return await supervisor.repair_memory(include_shared=include_shared)
 
     async def _handle_process_message(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle non-streaming process_message request."""
