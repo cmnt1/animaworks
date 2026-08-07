@@ -227,11 +227,7 @@ class TaskRunnerSupervisor:
                 return
             connection = IPCV2Connection(reader, writer, job.peer_state)
             accepted = await connection.accept_first(first)
-            if (
-                accepted is None
-                or accepted.kind != "event"
-                or accepted.body.get("event") != "hello"
-            ):
+            if accepted is None or accepted.kind != "event" or accepted.body.get("event") != "hello":
                 raise IPCV2ProtocolError("the first task runner frame must be hello")
             job.connection = connection
             hello_data = accepted.body["data"]
@@ -274,9 +270,7 @@ class TaskRunnerSupervisor:
             if connection is not None and connection.state.identity.job_id in self._jobs:
                 job = self._jobs.get(connection.state.identity.job_id)
                 if job is not None and not job.result.done():
-                    job.result.set_result(
-                        {"error": ipc_v2_error("PROTOCOL_ERROR", str(exc), retryable=False)}
-                    )
+                    job.result.set_result({"error": ipc_v2_error("PROTOCOL_ERROR", str(exc), retryable=False)})
                     self._terminate_job_group(job)
         finally:
             if connection is not None:
