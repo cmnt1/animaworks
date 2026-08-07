@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import os
 import signal
 import sys
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,8 @@ logger = logging.getLogger(__name__)
 _TASK_RUNNER_CONNECT_TIMEOUT = 10.0
 _TASK_RUNNER_EXIT_TIMEOUT = 5.0
 
+OnSpawned = Callable[["TaskRunnerJob"], Awaitable[None] | None]
+
 
 class TaskRunnerError(RuntimeError):
     """A task runner could not complete its execution contract."""
@@ -51,12 +54,21 @@ class TaskRunnerJob:
     pgid: int | None = None
     connection: IPCV2Connection | None = None
     last_progress: dict[str, Any] = field(default_factory=dict)
+    grace_acked: asyncio.Event = field(default_factory=asyncio.Event)
+    process_start_time: float | None = None
 
 
 class TaskRunnerSupervisor:
     """Expose one IPC v2 endpoint and run jobs in isolated process groups."""
 
-    def __init__(self, anima_name: str, anima_dir: Path, shared_dir: Path) -> None:
+    def __init__(
+        self,
+        anima_name: str,
+        anima_dir: Path,
+        shared_dir: Path,
+        *,
+        max_concurrent: int | None = None,
+    ) -> None:
         self.anima_name = anima_name
         self.anima_dir = anima_dir
         self.shared_dir = shared_dir
@@ -66,11 +78,20 @@ class TaskRunnerSupervisor:
         self._start_lock = asyncio.Lock()
         self._jobs: dict[str, TaskRunnerJob] = {}
         self._accepting = True
+        # Cap concurrent child processes for task/background lanes (pool size).
+        pool = max_concurrent if isinstance(max_concurrent, int) and max_concurrent >= 1 else None
+        self._max_concurrent = pool
+        self._spawn_semaphore = asyncio.Semaphore(pool) if pool is not None else None
 
     @property
     def jobs(self) -> dict[str, TaskRunnerJob]:
         """Return the live registry for health diagnostics and tests."""
         return self._jobs
+
+    @property
+    def active_child_count(self) -> int:
+        """Number of currently registered task-runner jobs."""
+        return len(self._jobs)
 
     async def _ensure_started(self) -> None:
         if self._server is not None:
@@ -125,6 +146,55 @@ class TaskRunnerSupervisor:
             log_context="heartbeat",
         )
 
+    async def run_task(
+        self,
+        task_desc: dict[str, Any],
+        *,
+        attempt: int = 1,
+        display_lane: str = "background",
+        on_spawned: OnSpawned | None = None,
+    ) -> dict[str, Any]:
+        """Spawn one TaskExec (lane=task) runner and return its terminal result."""
+        task_id = str(task_desc.get("task_id") or "unknown")
+        return await self._run_isolated_job(
+            lane="task",
+            job_prefix="task",
+            params_builder=lambda url_env: {
+                "task_desc": task_desc,
+                "environment": {"urls": url_env},
+            },
+            log_context=f"task_id={task_id}",
+            attempt=attempt,
+            display_lane=display_lane,
+            on_spawned=on_spawned,
+            use_pool_limit=True,
+        )
+
+    async def run_background(
+        self,
+        *,
+        kind: str,
+        payload: dict[str, Any],
+        attempt: int = 1,
+        display_lane: str = "background",
+        on_spawned: OnSpawned | None = None,
+    ) -> dict[str, Any]:
+        """Spawn one background-lane runner (command tool or consolidation)."""
+        return await self._run_isolated_job(
+            lane="background",
+            job_prefix=f"bg-{kind}",
+            params_builder=lambda url_env: {
+                "kind": kind,
+                "payload": payload,
+                "environment": {"urls": url_env},
+            },
+            log_context=f"kind={kind}",
+            attempt=attempt,
+            display_lane=display_lane,
+            on_spawned=on_spawned,
+            use_pool_limit=True,
+        )
+
     async def _run_isolated_job(
         self,
         *,
@@ -132,6 +202,10 @@ class TaskRunnerSupervisor:
         job_prefix: str,
         params_builder: Callable[[dict[str, str]], dict[str, Any]],
         log_context: str,
+        attempt: int = 1,
+        display_lane: str = "background",
+        on_spawned: OnSpawned | None = None,
+        use_pool_limit: bool = False,
     ) -> dict[str, Any]:
         """Spawn one task runner process and return its terminal result."""
         if not self._accepting:
@@ -139,14 +213,47 @@ class TaskRunnerSupervisor:
         await self._ensure_started()
         url_env = self._required_url_environment()
 
+        if attempt < 1:
+            raise TaskRunnerError("attempt must be >= 1")
+
+        sem = self._spawn_semaphore if use_pool_limit else None
+        if sem is not None:
+            await sem.acquire()
+        try:
+            return await self._spawn_and_await(
+                lane=lane,
+                job_prefix=job_prefix,
+                params_builder=params_builder,
+                log_context=log_context,
+                attempt=attempt,
+                display_lane=display_lane,
+                on_spawned=on_spawned,
+                url_env=url_env,
+            )
+        finally:
+            if sem is not None:
+                sem.release()
+
+    async def _spawn_and_await(
+        self,
+        *,
+        lane: str,
+        job_prefix: str,
+        params_builder: Callable[[dict[str, str]], dict[str, Any]],
+        log_context: str,
+        attempt: int,
+        display_lane: str,
+        on_spawned: OnSpawned | None,
+        url_env: dict[str, str],
+    ) -> dict[str, Any]:
         job_id = f"{job_prefix}-{uuid.uuid4()}"
         request_id = f"run-{uuid.uuid4()}"
         identity = IPCV2Identity(
             job_id=job_id,
             root_epoch=self.root_epoch,
-            attempt=1,
+            attempt=attempt,
             lane=lane,
-            display_lane="background",
+            display_lane=display_lane,
         )
         loop = asyncio.get_running_loop()
         job = TaskRunnerJob(
@@ -168,8 +275,8 @@ class TaskRunnerSupervisor:
                 "ANIMAWORKS_DATA_DIR": str(self.shared_dir.parent),
                 "ANIMAWORKS_TASK_IPC_PATH": str(self.socket_path),
                 "ANIMAWORKS_TASK_ROOT_EPOCH": self.root_epoch,
-                "ANIMAWORKS_TASK_ATTEMPT": "1",
-                "ANIMAWORKS_TASK_DISPLAY_LANE": "background",
+                "ANIMAWORKS_TASK_ATTEMPT": str(attempt),
+                "ANIMAWORKS_TASK_DISPLAY_LANE": display_lane,
                 "ANIMAWORKS_TASK_ROOT_PID": str(os.getpid()),
             }
         )
@@ -193,15 +300,26 @@ class TaskRunnerSupervisor:
             job.process = process
             job.pid = process.pid
             job.pgid = process.pid
+            try:
+                import psutil
+
+                job.process_start_time = float(psutil.Process(process.pid).create_time())
+            except Exception:
+                job.process_start_time = None
             logger.info(
-                "Spawned %s task runner anima=%s %s job=%s pid=%s pgid=%s",
+                "Spawned %s task runner anima=%s %s job=%s pid=%s pgid=%s attempt=%s",
                 lane,
                 self.anima_name,
                 log_context,
                 job_id,
                 job.pid,
                 job.pgid,
+                attempt,
             )
+            if on_spawned is not None:
+                maybe = on_spawned(job)
+                if inspect.isawaitable(maybe):
+                    await maybe
 
             process_wait = asyncio.create_task(process.wait())
             done, _ = await asyncio.wait(
@@ -243,6 +361,45 @@ class TaskRunnerSupervisor:
             raise
         finally:
             self._jobs.pop(job_id, None)
+            # A-07: recover orphan streaming journals after every task ends.
+            self._recover_task_journals()
+
+    def _recover_task_journals(self) -> None:
+        """Best-effort orphan StreamingJournal recovery after a child exits."""
+        try:
+            from core.memory.streaming_journal import StreamingJournal
+        except Exception:
+            return
+        for session_type in ("task", "heartbeat", "chat", "cron"):
+            try:
+                if not StreamingJournal.has_orphan(self.anima_dir, session_type=session_type):
+                    continue
+                thread_ids = StreamingJournal.list_orphan_thread_ids(self.anima_dir, session_type)
+                for thread_id in thread_ids or ("default",):
+                    recovery = StreamingJournal.recover(
+                        self.anima_dir,
+                        session_type,
+                        thread_id=thread_id,
+                    )
+                    if recovery is not None:
+                        StreamingJournal.confirm_recovery(
+                            self.anima_dir,
+                            session_type,
+                            thread_id=thread_id,
+                        )
+                        logger.info(
+                            "Recovered orphan journal after task exit: anima=%s session=%s thread=%s",
+                            self.anima_name,
+                            session_type,
+                            thread_id,
+                        )
+            except Exception:
+                logger.debug(
+                    "Orphan journal recovery failed for %s/%s",
+                    self.anima_name,
+                    session_type,
+                    exc_info=True,
+                )
 
     async def _handle_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         connection: IPCV2Connection | None = None
@@ -298,6 +455,10 @@ class TaskRunnerSupervisor:
                     job.last_progress = envelope.body["data"]
                     if envelope.identity.display_lane != job.identity.display_lane:
                         raise IPCV2ProtocolError("progress display_lane does not match registry")
+                    continue
+                if envelope.kind == "event" and envelope.body["event"] == "grace_ack":
+                    job.grace_acked.set()
+                    continue
         except (TimeoutError, IPCV2ConnectionError):
             logger.debug("Task runner IPC connection ended", exc_info=True)
         except Exception as exc:
@@ -318,14 +479,31 @@ class TaskRunnerSupervisor:
                 await writer.wait_closed()
 
     async def close(self) -> None:
-        """Stop accepting jobs and reap every task runner process group."""
+        """Stop accepting jobs, grace active runners, then reap process groups."""
         self._accepting = False
         for job in list(self._jobs.values()):
             if job.connection is not None:
                 try:
-                    await job.connection.send_event("grace", {"deadline_seconds": _TASK_RUNNER_EXIT_TIMEOUT})
+                    await job.connection.send_event(
+                        "grace",
+                        {"deadline_seconds": _TASK_RUNNER_EXIT_TIMEOUT},
+                    )
                 except Exception:
-                    logger.debug("Could not send grace to task runner %s", job.identity.job_id, exc_info=True)
+                    logger.debug(
+                        "Could not send grace to task runner %s",
+                        job.identity.job_id,
+                        exc_info=True,
+                    )
+
+        # Wait briefly for grace_ack from each child before escalating.
+        if self._jobs:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*(job.grace_acked.wait() for job in self._jobs.values())),
+                    timeout=_TASK_RUNNER_EXIT_TIMEOUT,
+                )
+            except TimeoutError:
+                logger.debug("Timed out waiting for grace_ack from some task runners")
 
         processes = [job.process for job in self._jobs.values() if job.process is not None]
         if processes:
@@ -351,6 +529,7 @@ class TaskRunnerSupervisor:
             await self._server.wait_closed()
             self._server = None
         cleanup_ipc_endpoint(self.socket_path)
+        self._recover_task_journals()
 
     @staticmethod
     def _terminate_job_group(job: TaskRunnerJob) -> None:

@@ -22,11 +22,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from core.config.resolver import resolve_process_model_config
 from core.exceptions import ToolExecutionError
 from core.i18n import t
 from core.platform.processing_lease import (
     is_processing_lease_live,
     processing_lease_path,
+    read_processing_lease,
     write_processing_lease,
 )
 from core.taskboard.attention_resolver import resolver_for_anima_dir
@@ -34,6 +36,7 @@ from core.taskboard.models import AttentionDecision
 
 if TYPE_CHECKING:
     from core.anima import BackgroundWorkerSlot, DigitalAnima
+    from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
 
 logger = logging.getLogger(__name__)
 
@@ -242,6 +245,8 @@ class PendingTaskExecutor:
         anima_name: str,
         anima_dir: Path,
         shutdown_event: asyncio.Event,
+        *,
+        task_runner_supervisor: TaskRunnerSupervisor | None = None,
     ) -> None:
         self._anima = anima
         self._anima_name = anima_name
@@ -253,6 +258,16 @@ class PendingTaskExecutor:
         self._active_task_ids: set[str] = set()
         self._batch_dispatch_lock = asyncio.Lock()
         self._exclusion_locks: dict[str, asyncio.Lock] = {}
+        self._task_runner_supervisor = task_runner_supervisor
+        process_config = resolve_process_model_config(anima_dir)
+        if process_config.valid:
+            self._task_isolated = bool(process_config.task_process_isolation.task)
+            self._background_isolated = bool(process_config.task_process_isolation.background)
+        else:
+            self._task_isolated = False
+            self._background_isolated = False
+        # attempt tracking: task_id -> last attempt written to a lease (same attempt re-claim ban)
+        self._attempt_by_task_id: dict[str, int] = {}
 
     def _worker_pool_size(self) -> int:
         """Return a validated pool size while tolerating legacy test doubles."""
@@ -298,6 +313,14 @@ class PendingTaskExecutor:
 
         task.add_done_callback(_done)
 
+    def _next_attempt(self, task_id: str) -> int:
+        """Allocate a new attempt number; never reuses a previously claimed one."""
+        previous = self._attempt_by_task_id.get(task_id, 0)
+        # Also inspect any leftover lease so restarts do not reuse attempt.
+        attempt = previous + 1
+        self._attempt_by_task_id[task_id] = attempt
+        return attempt
+
     def _claim_processing_task(
         self,
         processing_path: Path,
@@ -306,6 +329,25 @@ class PendingTaskExecutor:
     ) -> str | None:
         """Create a lease and register a task id, quarantining duplicates."""
         task_id = str(task_desc.get("task_id") or processing_path.stem).strip()
+
+        # C-03: refuse re-claim of the same attempt recorded on an existing lease.
+        existing = read_processing_lease(processing_path)
+        if existing is not None:
+            existing_attempt = existing.get("attempt")
+            if (
+                isinstance(existing_attempt, int)
+                and not isinstance(existing_attempt, bool)
+                and existing_attempt >= 1
+                and self._attempt_by_task_id.get(task_id) == existing_attempt
+                and is_processing_lease_live(processing_path, expected_anima=self._anima_name)
+            ):
+                logger.warning(
+                    "Rejecting re-claim of live attempt=%s for task_id=%s",
+                    existing_attempt,
+                    task_id,
+                )
+                return None
+
         try:
             write_processing_lease(
                 processing_path,
@@ -338,6 +380,40 @@ class PendingTaskExecutor:
 
         self._active_task_ids.add(task_id)
         return task_id
+
+    def set_task_runner_supervisor(self, supervisor: TaskRunnerSupervisor | None) -> None:
+        """Wire the shared root-side TaskRunnerSupervisor (process isolation)."""
+        self._task_runner_supervisor = supervisor
+
+    def _display_lane_for_task(self, task_id: str, slot_id: int | None) -> str:
+        if slot_id is not None and self._worker_pool_size() > 1:
+            return f"background-worker:{slot_id}:{task_id}"
+        return "background"
+
+    async def _write_lease_v2_for_job(
+        self,
+        processing_path: Path,
+        *,
+        task_id: str,
+        job: Any,
+        attempt: int,
+    ) -> None:
+        """Upgrade the claim lease to schema v2 with the task-runner identity."""
+        try:
+            write_processing_lease(
+                processing_path,
+                anima=self._anima_name,
+                task_id=task_id,
+                pid=os.getpid(),
+                job_id=job.identity.job_id,
+                task_pid=job.pid,
+                pgid=job.pgid if job.pgid is not None else job.pid,
+                root_epoch=job.identity.root_epoch,
+                attempt=attempt,
+                process_start_time=job.process_start_time,
+            )
+        except OSError:
+            logger.exception("Failed to write lease v2 for task %s", task_id)
 
     async def _touch_processing_descriptor(self, processing_path: Path) -> None:
         """Keep a long-running processing descriptor younger than housekeeping."""
@@ -854,7 +930,10 @@ class PendingTaskExecutor:
             name=f"task-touch-{self._anima_name}-{task_id}",
         )
         try:
-            await self.execute_pending_task(task_desc, worker_slot=worker_slot)
+            exec_kwargs: dict[str, Any] = {"worker_slot": worker_slot}
+            if self._task_isolated and self._task_runner_supervisor is not None:
+                exec_kwargs["processing_path"] = processing_path
+            await self.execute_pending_task(task_desc, **exec_kwargs)
             _unlink_processing_descriptor(processing_path)
         except asyncio.CancelledError:
             try:
@@ -991,7 +1070,10 @@ class PendingTaskExecutor:
                             task_desc.get("subcommand", ""),
                             self._anima_name,
                         )
-                        background_task = await self.execute_pending_task(task_desc)
+                        cmd_kwargs: dict[str, Any] = {}
+                        if self._background_isolated and self._task_runner_supervisor is not None:
+                            cmd_kwargs["processing_path"] = processing_path
+                        background_task = await self.execute_pending_task(task_desc, **cmd_kwargs)
                         if isinstance(background_task, asyncio.Task):
                             self._track_command_claim(
                                 background_task,
@@ -1480,6 +1562,7 @@ class PendingTaskExecutor:
         completed_results: dict[str, str] | None = None,
         *,
         worker_slot: BackgroundWorkerSlot | None = None,
+        processing_path: Path | None = None,
     ) -> str:
         """Run one LLM task with explicit exclusion and a worker lease."""
         task_id = task_desc.get("task_id", "unknown")
@@ -1496,6 +1579,21 @@ class PendingTaskExecutor:
             leased_here = worker_slot is None
             slot = worker_slot or await self._acquire_worker(task_id)
             try:
+                if self._task_isolated and self._task_runner_supervisor is not None:
+                    # Dependency context is already embedded in task_desc by callers
+                    # that need it; isolated children re-evaluate from task_desc alone.
+                    if completed_results:
+                        # Stash dep results into a copy so the child can reconstruct context.
+                        task_desc = dict(task_desc)
+                        task_desc = {
+                            **task_desc,
+                            "_completed_results": completed_results,
+                        }
+                    return await self._run_llm_task_isolated(
+                        task_desc,
+                        worker_slot=slot,
+                        processing_path=processing_path,
+                    )
                 return await self._run_llm_task(
                     task_desc,
                     completed_results,
@@ -1883,6 +1981,7 @@ class PendingTaskExecutor:
         task_desc: dict[str, Any],
         *,
         worker_slot: BackgroundWorkerSlot | None = None,
+        processing_path: Path | None = None,
     ) -> asyncio.Task[None] | None:
         """Execute a pending task via BackgroundTaskManager or LLM.
 
@@ -1891,12 +1990,21 @@ class PendingTaskExecutor:
         task_type = task_desc.get("task_type", "command")
 
         if task_type == "llm":
-            await self._execute_llm_task(task_desc, worker_slot=worker_slot)
+            await self._execute_llm_task(
+                task_desc,
+                worker_slot=worker_slot,
+                processing_path=processing_path,
+            )
             return None
 
         if not self._anima:
             logger.warning("Cannot execute pending task: anima not initialized")
-            return
+            return None
+
+        # Isolated background command path: run tool inside a task-runner child.
+        if self._background_isolated and self._task_runner_supervisor is not None:
+            await self._execute_command_task_isolated(task_desc, processing_path=processing_path)
+            return None
 
         lane_getter = getattr(type(self._anima), "_agent_for_lane", None)
         agent = self._anima._agent_for_lane("background") if callable(lane_getter) else self._anima.agent
@@ -1905,7 +2013,7 @@ class PendingTaskExecutor:
             logger.warning(
                 "Cannot execute pending task: BackgroundTaskManager not available",
             )
-            return
+            return None
 
         tool_name = task_desc.get("tool_name", "")
         subcommand = task_desc.get("subcommand", "")
@@ -1930,7 +2038,6 @@ class PendingTaskExecutor:
 
         def _dispatch_fn(name: str, args: dict[str, Any]) -> str:
             """Execute the tool via CLI subprocess (same as direct execution)."""
-            import os
             import subprocess
 
             # name may be composite (e.g. "transcribe:audio"); extract module name
@@ -1942,7 +2049,7 @@ class PendingTaskExecutor:
             cmd.extend(args.get("raw_args", []))
             # Remove subcommand from raw_args if it's already the first element
             if subcmd and args.get("raw_args") and args["raw_args"][0] == subcmd:
-                cmd = ["animaworks-tool", module_name] + args["raw_args"]
+                cmd = ["animaworks-tool", module_name, *args["raw_args"]]
             cmd.append("-j")
 
             env = {
@@ -1958,6 +2065,7 @@ class PendingTaskExecutor:
                 text=True,
                 timeout=_PENDING_TASK_SUBPROCESS_TIMEOUT,
                 env=env,
+                check=False,
             )
             if result.returncode != 0:
                 error_msg = result.stderr.strip() or f"Exit code {result.returncode}"
@@ -1974,17 +2082,66 @@ class PendingTaskExecutor:
                 return background_task
         return None
 
+    async def _execute_command_task_isolated(
+        self,
+        task_desc: dict[str, Any],
+        *,
+        processing_path: Path | None = None,
+    ) -> None:
+        """Run a command-type pending task inside a background-lane child."""
+        from core.supervisor.task_runner_supervisor import TaskRunnerError
+
+        assert self._task_runner_supervisor is not None
+        task_id = str(task_desc.get("task_id") or "unknown")
+        attempt = self._next_attempt(task_id)
+        payload = {
+            "tool_name": task_desc.get("tool_name", ""),
+            "subcommand": task_desc.get("subcommand", ""),
+            "raw_args": task_desc.get("raw_args", []),
+            "anima_dir": task_desc.get("anima_dir", str(self._anima_dir)),
+        }
+
+        async def _on_spawned(job: Any) -> None:
+            if processing_path is not None:
+                await self._write_lease_v2_for_job(
+                    processing_path,
+                    task_id=task_id,
+                    job=job,
+                    attempt=attempt,
+                )
+
+        try:
+            await self._task_runner_supervisor.run_background(
+                kind="command",
+                payload=payload,
+                attempt=attempt,
+                display_lane="background",
+                on_spawned=_on_spawned,
+            )
+        except TaskRunnerError as exc:
+            logger.warning(
+                "[%s] Isolated background command failed: id=%s err=%s",
+                self._anima_name,
+                task_id,
+                exc,
+            )
+            raise RuntimeError(
+                "INTERRUPTED: background task runner child exited without a result."
+            ) from exc
+
     async def _execute_llm_task(
         self,
         task_desc: dict[str, Any],
         *,
         worker_slot: BackgroundWorkerSlot | None = None,
+        processing_path: Path | None = None,
     ) -> None:
         """Execute an LLM task in an isolated background worker.
 
         The task is executed as a minimal-context LLM session using
         the task_exec.md template.  Delegates to ``_run_llm_task``
-        for the actual execution logic.
+        for the actual execution logic.  When ``task_process_isolation.task``
+        is enabled, the LLM session runs in a disposable task-runner child.
         """
         task_id = task_desc.get("task_id", "unknown")
 
@@ -2011,8 +2168,15 @@ class PendingTaskExecutor:
                     keepalive_task = asyncio.ensure_future(keepalive_result)
             self._anima._status_slots["background"] = "task_exec"
             self._anima._task_slots["background"] = task_id
-            if pool_capable:
-                result = await self._run_task_in_worker(task_desc, worker_slot=worker_slot)
+            if pool_capable or (
+                self._task_isolated and self._task_runner_supervisor is not None
+            ):
+                # Worker lease also gates concurrent isolated children (pool size).
+                result = await self._run_task_in_worker(
+                    task_desc,
+                    worker_slot=worker_slot,
+                    processing_path=processing_path,
+                )
             else:
                 result = await self._run_llm_task(task_desc)
             status, summary = _classify_task_result(result)
@@ -2101,3 +2265,56 @@ class PendingTaskExecutor:
                 self._anima._status_slots["background"] = "idle"
                 self._anima._task_slots["background"] = ""
             self._anima._clear_busy_status_sidecar_if_idle()
+
+    async def _run_llm_task_isolated(
+        self,
+        task_desc: dict[str, Any],
+        *,
+        worker_slot: BackgroundWorkerSlot | None = None,
+        processing_path: Path | None = None,
+    ) -> str:
+        """Run TaskExec LLM work in a disposable task-runner child process.
+
+        Caller is responsible for exclusion locks and worker-slot leasing.
+        """
+        from core.supervisor.task_runner_supervisor import TaskRunnerError
+
+        assert self._task_runner_supervisor is not None
+        task_id = str(task_desc.get("task_id") or "unknown")
+        attempt = self._next_attempt(task_id)
+        slot_id = worker_slot.slot_id if worker_slot is not None else None
+        display_lane = self._display_lane_for_task(task_id, slot_id)
+
+        async def _on_spawned(job: Any) -> None:
+            if processing_path is not None:
+                await self._write_lease_v2_for_job(
+                    processing_path,
+                    task_id=task_id,
+                    job=job,
+                    attempt=attempt,
+                )
+
+        try:
+            isolated = await self._task_runner_supervisor.run_task(
+                task_desc,
+                attempt=attempt,
+                display_lane=display_lane,
+                on_spawned=_on_spawned,
+            )
+        except TaskRunnerError as exc:
+            logger.warning(
+                "[%s] Isolated TaskExec child failed: id=%s err=%s",
+                self._anima_name,
+                task_id,
+                exc,
+            )
+            # Crash semantics: treat as interrupted / retryable for Layer2.
+            raise RuntimeError(
+                "INTERRUPTED: task runner child exited without a result and may have "
+                "PARTIALLY EXECUTED. Verify actual completion state before re-delegating."
+            ) from exc
+
+        result = isolated.get("result")
+        if not isinstance(result, str):
+            result = str(result) if result is not None else ""
+        return result
