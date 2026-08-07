@@ -14,10 +14,69 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from core.config.local_llm import is_local_llm_default, resolve_local_llm_role_model
-from core.config.schemas import AnimaDefaults, AnimaModelConfig, AnimaWorksConfig, CredentialConfig
+from core.config.schemas import (
+    AnimaDefaults,
+    AnimaModelConfig,
+    AnimaWorksConfig,
+    CredentialConfig,
+    ResolvedProcessModelConfig,
+    TaskProcessIsolationConfig,
+)
 
 logger = logging.getLogger("animaworks.config")
+
+
+def resolve_process_model_config(anima_dir: Path) -> ResolvedProcessModelConfig:
+    """Resolve the process topology SSoT from ``status.json``.
+
+    Invalid topology fields are returned as an explicit invalid result.  They
+    are never coerced to legacy because doing so could switch process or DB
+    ownership silently.
+    """
+    status_path = anima_dir / "status.json"
+    if not status_path.is_file():
+        return ResolvedProcessModelConfig()
+    try:
+        data = json.loads(status_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        return ResolvedProcessModelConfig(valid=False, error=f"invalid status.json: {exc}")
+    if not isinstance(data, dict):
+        return ResolvedProcessModelConfig(valid=False, error="status.json must contain a JSON object")
+
+    process_model = data.get("process_model", "legacy")
+    if not isinstance(process_model, str) or process_model not in {"legacy", "phase2", "phase3"}:
+        return ResolvedProcessModelConfig(valid=False, error=f"invalid process_model: {process_model!r}")
+
+    has_flags = "task_process_isolation" in data
+    if process_model == "legacy":
+        warnings = ("task_process_isolation is ignored for legacy process_model",) if has_flags else ()
+        return ResolvedProcessModelConfig(warnings=warnings)
+    if process_model == "phase3":
+        warnings = ("task_process_isolation is ignored for phase3 process_model",) if has_flags else ()
+        return ResolvedProcessModelConfig(
+            process_model="phase3",
+            task_process_isolation=TaskProcessIsolationConfig(
+                cron=True,
+                heartbeat=True,
+                task=True,
+                background=True,
+            ),
+            warnings=warnings,
+        )
+
+    raw_flags = data.get("task_process_isolation", {})
+    try:
+        flags = TaskProcessIsolationConfig.model_validate(raw_flags)
+    except ValidationError as exc:
+        return ResolvedProcessModelConfig(
+            process_model="phase2",
+            valid=False,
+            error=f"invalid task_process_isolation: {exc.errors(include_url=False)}",
+        )
+    return ResolvedProcessModelConfig(process_model="phase2", task_process_isolation=flags)
 
 
 def _load_status_json(anima_dir: Path) -> dict[str, Any]:
@@ -158,4 +217,5 @@ def resolve_anima_config(
 __all__ = [
     "_load_status_json",
     "resolve_anima_config",
+    "resolve_process_model_config",
 ]

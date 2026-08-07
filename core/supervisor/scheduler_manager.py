@@ -23,9 +23,11 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from core.config.models import ActivityScheduleEntry, load_config, save_config
+from core.config.resolver import resolve_process_model_config
 from core.i18n import t
 from core.schedule_parser import parse_cron_md, parse_heartbeat_config, parse_schedule
 from core.schemas import CronTask
+from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
 from core.time_utils import get_app_timezone, now_local
 
 _INDENTED_SCHEDULE_RE = re.compile(r"^\s+schedule:", re.MULTILINE)
@@ -76,6 +78,16 @@ class SchedulerManager:
         self._cron_md_mtime: float = 0.0
         self._heartbeat_md_mtime: float = 0.0
         self._last_schedule_level: int | None = None
+        process_config = resolve_process_model_config(anima_dir)
+        if not process_config.valid:
+            raise ValueError(process_config.error or "invalid process model configuration")
+        self._task_runner_supervisor: TaskRunnerSupervisor | None = None
+        if process_config.task_process_isolation.cron:
+            self._task_runner_supervisor = TaskRunnerSupervisor(
+                anima_name=anima_name,
+                anima_dir=anima_dir,
+                shared_dir=Path(anima.shared_dir),
+            )
 
         # Polling-based heartbeat state (used when effective_interval > 60)
         self._hb_effective_interval: int = 0
@@ -883,6 +895,24 @@ class SchedulerManager:
         success = False
         usage: dict[str, int] | None = None
         try:
+            if self._task_runner_supervisor is not None:
+                isolated = await self._task_runner_supervisor.run_cron(task)
+                success = bool(isolated.get("success"))
+                isolated_usage = isolated.get("usage")
+                usage = isolated_usage if isinstance(isolated_usage, dict) else None
+                result = isolated.get("result")
+                if not isinstance(result, dict):
+                    raise ValueError("isolated cron result must be an object")
+                self._emit_event(
+                    "anima.cron",
+                    {
+                        "name": self._anima_name,
+                        "task": task.name,
+                        "task_type": task.type,
+                        "result": result,
+                    },
+                )
+                return
             if task.type == "llm":
                 skill_kwargs = {"skills": task.skills} if task.skills else {}
                 result = await self._anima.run_cron_task(task.name, task.description, **skill_kwargs)
@@ -971,6 +1001,11 @@ class SchedulerManager:
         finally:
             self._record_cron_result(task.name, success=success, usage=usage)
             self._cron_running.discard(task.name)
+
+    async def shutdown_task_runners(self) -> None:
+        """Grace and reap isolated task processes before root shutdown."""
+        if self._task_runner_supervisor is not None:
+            await self._task_runner_supervisor.close()
 
     # ── Reload ───────────────────────────────────────────────────
 

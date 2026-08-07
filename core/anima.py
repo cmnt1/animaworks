@@ -98,10 +98,11 @@ class DigitalAnima(
                 f"Invalid thread_id: {thread_id!r}. Must be 1-36 alphanumeric, underscore, or hyphen characters."
             )
 
-    def __init__(self, anima_dir: Path, shared_dir: Path) -> None:
+    def __init__(self, anima_dir: Path, shared_dir: Path, *, busy_status_enabled: bool = True) -> None:
         self.anima_dir = anima_dir
         self.shared_dir = shared_dir
         self.name = anima_dir.name
+        self._busy_status_enabled = busy_status_enabled
         self._activity = ActivityLogger(anima_dir)
 
         self.memory = MemoryManager(anima_dir)
@@ -343,6 +344,8 @@ class DigitalAnima(
 
     def _busy_status_sidecar_path(self) -> Path | None:
         """Path used by the supervisor as an IPC-independent busy signal."""
+        if not self._busy_status_enabled:
+            return None
         shared_dir = getattr(self, "shared_dir", None)
         if shared_dir is None:
             return None
