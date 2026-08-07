@@ -487,7 +487,11 @@ class TaskRunnerSupervisor:
             env["ANIMAWORKS_MEMORY_VIA_ROOT"] = "1"
 
         hang_watch: asyncio.Task[None] | None = None
+        stderr_file = None
         try:
+            stderr_path = self.shared_dir.parent / "logs" / "animas" / self.anima_name / "task-runner.stderr.log"
+            stderr_path.parent.mkdir(parents=True, exist_ok=True)
+            stderr_file = stderr_path.open("ab")
             process = await asyncio.create_subprocess_exec(
                 sys.executable,
                 "-m",
@@ -500,7 +504,7 @@ class TaskRunnerSupervisor:
                 job_id,
                 env=env,
                 stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
+                stderr=stderr_file,
                 **subprocess_session_kwargs(),
             )
             job.process = process
@@ -563,6 +567,8 @@ class TaskRunnerSupervisor:
                 await job.process.wait()
             raise
         finally:
+            if stderr_file is not None:
+                stderr_file.close()
             if hang_watch is not None:
                 if not job.hang_kill_started:
                     hang_watch.cancel()

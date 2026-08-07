@@ -447,16 +447,16 @@ async def _send_terminal(
     socket_path: Path,
     state: IPCV2ConnectionState,
     request_id: str,
+    receiver: asyncio.Task[IPCV2Envelope] | None,
     *,
     result: dict[str, Any] | None = None,
     error: dict[str, Any] | None = None,
 ) -> IPCV2Connection:
     """Send a terminal response, reconnecting once if the socket was lost."""
     try:
-        await connection.send_response(request_id, result=result, error=error)
-        return connection
+        terminal_seq = await connection.send_response(request_id, result=result, error=error)
     except IPCV2PayloadTooLarge:
-        await connection.send_response(
+        terminal_seq = await connection.send_response(
             request_id,
             error=ipc_v2_error(
                 "PAYLOAD_TOO_LARGE",
@@ -464,15 +464,24 @@ async def _send_terminal(
                 retryable=False,
             ),
         )
-        return connection
     except IPCV2ConnectionError:
         await connection.close()
-        reconnected, replayed_run = await _connect(socket_path, state)
+        connection, replayed_run = await _connect(socket_path, state)
         if replayed_run.body["request_id"] != request_id:
-            await reconnected.close()
+            await connection.close()
             raise
-        await reconnected.send_response(request_id, result=result, error=error)
-        return reconnected
+        terminal_seq = await connection.send_response(request_id, result=result, error=error)
+
+    if receiver is not None:
+        receiver.cancel()
+        await asyncio.gather(receiver, return_exceptions=True)
+    ack_receiver = asyncio.create_task(connection.receive())
+    try:
+        await connection.wait_for_ack(terminal_seq)
+    finally:
+        ack_receiver.cancel()
+        await asyncio.gather(ack_receiver, return_exceptions=True)
+    return connection
 
 
 async def _prepare_execution(
@@ -693,6 +702,7 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
                     socket_path,
                     state,
                     request_id,
+                    receiver,
                     error=ipc_v2_error("CANCELLED", "task runner was cancelled", retryable=True),
                 )
             elif graced and not root_lost:
@@ -701,6 +711,7 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
                     socket_path,
                     state,
                     request_id,
+                    receiver,
                     error=ipc_v2_error("CANCELLED", "task runner shut down under grace", retryable=True),
                 )
             return 1
@@ -714,6 +725,7 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
                 socket_path,
                 state,
                 request_id,
+                receiver,
                 error=ipc_v2_error("EXECUTION_ERROR", str(exc), retryable=False),
             )
             return 1
@@ -722,6 +734,7 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
             socket_path,
             state,
             request_id,
+            receiver,
             result=result,
         )
         return 0

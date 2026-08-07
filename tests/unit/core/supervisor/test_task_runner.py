@@ -36,6 +36,9 @@ class FakeConnection:
         await asyncio.Event().wait()
         raise AssertionError("unreachable")
 
+    async def wait_for_ack(self, _seq: int) -> None:
+        pass
+
     async def close(self) -> None:
         self.closed = True
 
@@ -55,7 +58,7 @@ def _contract(identity: IPCV2Identity) -> IPCV2Envelope:
                     "schedule": "0 9 * * *",
                     "type": "llm",
                     "description": "run daily",
-                }
+                },
             },
         },
     )
@@ -206,4 +209,3 @@ async def test_heartbeat_lane_execution_returns_result(
             None,
         )
     ]
-
