@@ -10,9 +10,16 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
-from core.company_resources import company_resource_pointer, get_company_resources, infer_data_dir
+from core.company_resources import (
+    CompanyResources,
+    company_resource_pointer,
+    get_company_resources,
+    get_company_resources_for_company,
+    infer_data_dir,
+)
+from core.config.models import read_anima_company_checked
 from core.memory.fact_observability import warn_rate_limited
-from core.memory.rag.shared_meta import read_shared_hash, write_shared_hash, write_shared_hashes
+from core.memory.rag.shared_meta import read_shared_hash, reset_shared_for_company_change, write_shared_hash
 from core.memory.rag.store import CollectionExistence
 
 logger = logging.getLogger("animaworks.memory")
@@ -183,38 +190,31 @@ class RAGMemorySearch:
             return
         try:
             vector_store = self._indexer.vector_store
-            self._reset_shared_for_company_change(vector_store)
+            company_valid, company = self._reset_shared_for_company_change(vector_store)
+            if not company_valid:
+                return
+            company_resources = get_company_resources_for_company(
+                company,
+                data_dir=infer_data_dir(self._anima_dir),
+            )
             self._ensure_shared_knowledge_indexed(vector_store)
             self._ensure_shared_skills_indexed(vector_store)
-            self._ensure_company_knowledge_indexed(vector_store)
-            self._ensure_company_skills_indexed(vector_store)
+            self._ensure_company_knowledge_indexed(vector_store, company_resources)
+            self._ensure_company_skills_indexed(vector_store, company_resources)
         except ImportError:
             pass
         except Exception as e:
             logger.debug("Shared collection check failed: %s", e)
 
-    def _reset_shared_for_company_change(self, vector_store) -> None:
-        """Drop stale company content when this Anima's assignment changes."""
-        resources = get_company_resources(self._anima_dir)
-        current = resources.name if resources is not None else ""
-        stored = read_shared_hash(self._anima_dir, "shared_company_name")
-        if stored == current or (stored is None and not current):
-            return
-        for collection in ("shared_common_knowledge", "shared_common_skills"):
-            try:
-                vector_store.delete_collection(collection)
-            except Exception:
-                logger.warning("Failed to reset %s after company assignment change", collection, exc_info=True)
-        write_shared_hashes(
-            self._anima_dir,
-            {
-                "shared_company_name": current,
-                "shared_common_knowledge_hash": "",
-                "shared_common_skills_hash": "",
-                "shared_company_knowledge_hash": "",
-                "shared_company_skills_hash": "",
-            },
-        )
+    def _reset_shared_for_company_change(self, vector_store) -> tuple[bool, str | None]:
+        """Drop stale company content only after a checked membership read."""
+        valid, company = read_anima_company_checked(self._anima_dir)
+        if not valid:
+            logger.warning("Company membership unavailable for %s; skipping shared indexing", self._anima_dir.name)
+            return False, None
+        if not reset_shared_for_company_change(self._anima_dir, vector_store, company or ""):
+            return False, company
+        return True, company
 
     def _ensure_shared_knowledge_indexed(self, vector_store) -> None:
         """Index common_knowledge/ into ``shared_common_knowledge`` collection.
@@ -324,8 +324,11 @@ class RAGMemorySearch:
         except Exception as e:
             logger.warning("Failed to index shared common_skills: %s", e)
 
-    def _ensure_company_knowledge_indexed(self, vector_store) -> None:
-        resources = get_company_resources(self._anima_dir)
+    def _ensure_company_knowledge_indexed(
+        self,
+        vector_store,
+        resources: CompanyResources | None,
+    ) -> None:
         if resources is None or not resources.knowledge_dir.is_dir() or not any(resources.knowledge_dir.rglob("*.md")):
             return
         self._index_company_directory(
@@ -336,8 +339,11 @@ class RAGMemorySearch:
             "shared_company_knowledge_hash",
         )
 
-    def _ensure_company_skills_indexed(self, vector_store) -> None:
-        resources = get_company_resources(self._anima_dir)
+    def _ensure_company_skills_indexed(
+        self,
+        vector_store,
+        resources: CompanyResources | None,
+    ) -> None:
         if resources is None or not resources.skills_dir.is_dir() or not any(resources.skills_dir.rglob("SKILL.md")):
             return
         self._index_company_directory(

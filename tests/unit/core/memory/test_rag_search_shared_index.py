@@ -21,6 +21,7 @@ from core.memory.rag.shared_meta import (
     read_shared_hash,
     shared_index_meta_path,
     write_shared_hash,
+    write_shared_hashes,
 )
 from core.memory.rag.store import CollectionExistence
 from core.memory.rag_search import (
@@ -180,20 +181,115 @@ class TestReadWriteSharedHash:
         assert read_shared_hash(tmp_path, "shared_common_knowledge_hash") == "shared"
 
     def test_migration_prevents_false_company_reset(self, rag: RAGMemorySearch) -> None:
+        (rag._anima_dir / "status.json").write_text(json.dumps({"company": "acme"}), encoding="utf-8")
         (rag._anima_dir / "index_meta.json").write_text(
             json.dumps({"shared_company_name": "acme"}),
             encoding="utf-8",
         )
         vector_store = MagicMock()
 
-        with patch(
-            "core.memory.rag_search.get_company_resources",
-            return_value=SimpleNamespace(name="acme"),
-        ):
-            rag._reset_shared_for_company_change(vector_store)
+        rag._reset_shared_for_company_change(vector_store)
 
         vector_store.delete_collection.assert_not_called()
         assert read_shared_hash(rag._anima_dir, "shared_company_name") == "acme"
+
+    @pytest.mark.parametrize("status", [None, "{invalid", "[]"])
+    def test_unreadable_company_skips_reset_and_hash_updates(
+        self,
+        rag: RAGMemorySearch,
+        status: str | None,
+    ) -> None:
+        if status is not None:
+            (rag._anima_dir / "status.json").write_text(status, encoding="utf-8")
+        write_shared_hashes(
+            rag._anima_dir,
+            {
+                "shared_company_name": "old",
+                "shared_common_knowledge_hash": "common",
+                "shared_common_skills_hash": "skills",
+                "shared_company_knowledge_hash": "company-knowledge",
+                "shared_company_skills_hash": "company-skills",
+            },
+        )
+        meta_path = shared_index_meta_path(rag._anima_dir)
+        before = meta_path.read_text(encoding="utf-8")
+        vector_store = MagicMock()
+        rag._indexer = SimpleNamespace(vector_store=vector_store)
+
+        rag._check_shared_collections()
+
+        vector_store.delete_collection.assert_not_called()
+        assert meta_path.read_text(encoding="utf-8") == before
+
+    def test_company_read_oserror_skips_reset_and_hash_updates(self, rag: RAGMemorySearch) -> None:
+        (rag._anima_dir / "status.json").write_text("{}", encoding="utf-8")
+        write_shared_hash(rag._anima_dir, "shared_company_name", "old")
+        meta_path = shared_index_meta_path(rag._anima_dir)
+        before = meta_path.read_text(encoding="utf-8")
+        vector_store = MagicMock()
+        rag._indexer = SimpleNamespace(vector_store=vector_store)
+
+        with patch.object(Path, "read_text", side_effect=PermissionError("denied")):
+            rag._check_shared_collections()
+
+        vector_store.delete_collection.assert_not_called()
+        assert meta_path.read_text(encoding="utf-8") == before
+
+    def test_company_change_resets_collections_and_metadata(self, rag: RAGMemorySearch) -> None:
+        (rag._anima_dir / "status.json").write_text(json.dumps({"company": "new"}), encoding="utf-8")
+        write_shared_hash(rag._anima_dir, "shared_company_name", "old")
+        vector_store = MagicMock()
+        vector_store.delete_collection.return_value = True
+
+        assert rag._reset_shared_for_company_change(vector_store) == (True, "new")
+
+        assert [call.args[0] for call in vector_store.delete_collection.call_args_list] == [
+            "shared_common_knowledge",
+            "shared_common_skills",
+        ]
+        assert read_shared_hash(rag._anima_dir, "shared_company_name") == "new"
+        assert read_shared_hash(rag._anima_dir, "shared_common_knowledge_hash") == ""
+        assert read_shared_hash(rag._anima_dir, "shared_common_skills_hash") == ""
+
+    def test_partial_delete_failure_preserves_company_metadata(self, rag: RAGMemorySearch) -> None:
+        (rag._anima_dir / "status.json").write_text(json.dumps({"company": "new"}), encoding="utf-8")
+        write_shared_hashes(
+            rag._anima_dir,
+            {
+                "shared_company_name": "old",
+                "shared_common_knowledge_hash": "common",
+            },
+        )
+        meta_path = shared_index_meta_path(rag._anima_dir)
+        before = meta_path.read_text(encoding="utf-8")
+        vector_store = MagicMock()
+        vector_store.delete_collection.side_effect = [True, False]
+
+        assert rag._reset_shared_for_company_change(vector_store) == (False, "new")
+        assert meta_path.read_text(encoding="utf-8") == before
+
+    def test_checked_company_value_is_reused_for_marker_and_resources(self, rag: RAGMemorySearch) -> None:
+        status_path = rag._anima_dir / "status.json"
+        status_path.write_text(json.dumps({"company": "alpha"}), encoding="utf-8")
+        company_knowledge = rag._anima_dir.parent.parent / "companies" / "alpha" / "knowledge"
+        company_knowledge.mkdir(parents=True)
+        (company_knowledge / "guide.md").write_text("# Alpha", encoding="utf-8")
+        write_shared_hash(rag._anima_dir, "shared_company_name", "old")
+        vector_store = MagicMock()
+
+        def delete_and_change_status(_collection: str) -> bool:
+            status_path.write_text(json.dumps({"company": "beta"}), encoding="utf-8")
+            return True
+
+        vector_store.delete_collection.side_effect = delete_and_change_status
+        rag._indexer = SimpleNamespace(vector_store=vector_store)
+
+        with patch.object(rag, "_index_company_directory") as index_company:
+            rag._check_shared_collections()
+
+        assert read_shared_hash(rag._anima_dir, "shared_company_name") == "alpha"
+        index_company.assert_called_once()
+        assert index_company.call_args.args[1] == company_knowledge
 
 
 # ── _ensure_shared_knowledge_indexed (change detection) ───

@@ -21,7 +21,7 @@ from cli.commands.index_cmd import (
     setup_index_command,
 )
 from core.memory.rag.indexer import IndexDirectoryResult
-from core.memory.rag.shared_meta import shared_index_meta_path
+from core.memory.rag.shared_meta import shared_index_meta_path, write_shared_hash
 
 # ── _is_anima_enabled ─────────────────────────────────────
 
@@ -119,6 +119,8 @@ class TestIndexSharedCollections:
         alice.mkdir(parents=True, exist_ok=True)
         bob = animas / "bob"
         bob.mkdir(parents=True, exist_ok=True)
+        for directory in (alice, bob):
+            (directory / "status.json").write_text("{}", encoding="utf-8")
         return [alice, bob]
 
     def test_dry_run_does_not_write_meta(
@@ -186,6 +188,57 @@ class TestIndexSharedCollections:
 
         assert total == 0
         assert all(not shared_index_meta_path(directory).exists() for directory in anima_dirs)
+
+    @pytest.mark.parametrize("status", [None, "{invalid", "[]"])
+    def test_unreadable_company_skips_delete_and_hash_updates(
+        self,
+        anima_dirs: list[Path],
+        base_dir: Path,
+        status: str | None,
+    ) -> None:
+        anima_dir = anima_dirs[0]
+        status_path = anima_dir / "status.json"
+        status_path.unlink()
+        if status is not None:
+            status_path.write_text(status, encoding="utf-8")
+        write_shared_hash(anima_dir, "shared_company_name", "old")
+        meta_path = shared_index_meta_path(anima_dir)
+        before = meta_path.read_text(encoding="utf-8")
+        vector_store = MagicMock()
+
+        with (
+            patch("core.memory.rag.repair.is_repair_locked", return_value=False),
+            patch("core.memory.rag.singleton.get_vector_store", return_value=vector_store),
+            patch(_PATCH_INDEXER) as indexer,
+        ):
+            _index_shared_collections([anima_dir], base_dir, full=False, dry_run=False)
+
+        vector_store.delete_collection.assert_not_called()
+        indexer.assert_not_called()
+        assert meta_path.read_text(encoding="utf-8") == before
+
+    def test_company_read_oserror_skips_delete_and_hash_updates(
+        self,
+        anima_dirs: list[Path],
+        base_dir: Path,
+    ) -> None:
+        anima_dir = anima_dirs[0]
+        write_shared_hash(anima_dir, "shared_company_name", "old")
+        meta_path = shared_index_meta_path(anima_dir)
+        before = meta_path.read_text(encoding="utf-8")
+        vector_store = MagicMock()
+
+        with (
+            patch.object(Path, "read_text", side_effect=PermissionError("denied")),
+            patch("core.memory.rag.repair.is_repair_locked", return_value=False),
+            patch("core.memory.rag.singleton.get_vector_store", return_value=vector_store),
+            patch(_PATCH_INDEXER) as indexer,
+        ):
+            _index_shared_collections([anima_dir], base_dir, full=False, dry_run=False)
+
+        vector_store.delete_collection.assert_not_called()
+        indexer.assert_not_called()
+        assert meta_path.read_text(encoding="utf-8") == before
 
     def test_skips_repair_locked_anima(
         self,
