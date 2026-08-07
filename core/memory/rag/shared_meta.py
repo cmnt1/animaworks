@@ -7,12 +7,15 @@ from __future__ import annotations
 """Process-safe storage for per-Anima shared-index metadata."""
 
 import json
+import logging
 import os
 import tempfile
 import time
 from pathlib import Path
 
 from core.platform.locks import file_lock
+
+logger = logging.getLogger("animaworks.memory")
 
 SHARED_INDEX_META_FILE = "shared_index_meta.json"
 SHARED_INDEX_META_LOCK_FILE = f"{SHARED_INDEX_META_FILE}.lock"
@@ -135,6 +138,37 @@ def write_shared_hashes(anima_dir: Path, updates: dict[str, str]) -> None:
 
 def write_shared_hash(anima_dir: Path, key: str, value: str) -> None:
     write_shared_hashes(anima_dir, {key: value})
+
+
+def reset_shared_for_company_change(anima_dir: Path, vector_store, current_company: str) -> bool:
+    """Reset shared collections and metadata as one successful-delete commit."""
+    stored_company = read_shared_hash(anima_dir, "shared_company_name")
+    if stored_company == current_company or (stored_company is None and not current_company):
+        return True
+
+    deleted = True
+    for collection in ("shared_common_knowledge", "shared_common_skills"):
+        try:
+            if vector_store.delete_collection(collection) is not True:
+                deleted = False
+                logger.warning("Failed to reset %s after company assignment change", collection)
+        except Exception:
+            deleted = False
+            logger.warning("Failed to reset %s after company assignment change", collection, exc_info=True)
+    if not deleted:
+        return False
+
+    write_shared_hashes(
+        anima_dir,
+        {
+            "shared_company_name": current_company,
+            "shared_common_knowledge_hash": "",
+            "shared_common_skills_hash": "",
+            "shared_company_knowledge_hash": "",
+            "shared_company_skills_hash": "",
+        },
+    )
+    return True
 
 
 def clear_shared_meta(anima_dir: Path) -> None:

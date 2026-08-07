@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from cli.commands.index_cmd import _index_shared_collections
 from core.memory.rag.indexer import IndexDirectoryResult
-from core.memory.rag.shared_meta import shared_index_meta_path
+from core.memory.rag.shared_meta import read_shared_hash, shared_index_meta_path, write_shared_hashes
 
 
 def _anima(base: Path, name: str, company: str | None) -> Path:
@@ -33,6 +33,8 @@ def test_shared_index_targets_each_animas_own_company_only(tmp_path: Path) -> No
     _knowledge(tmp_path, "other")
 
     stores = {name: MagicMock(name=f"store-{name}") for name in ("alice", "bob", "legacy")}
+    for store in stores.values():
+        store.delete_collection.return_value = True
     indexed: list[tuple[MagicMock, Path, str]] = []
 
     def make_indexer(store, **_kwargs):
@@ -73,3 +75,62 @@ def test_company_shared_index_dry_run_does_not_mutate(tmp_path: Path) -> None:
     indexer.assert_not_called()
     assert not (alice / "index_meta.json").exists()
     assert not shared_index_meta_path(alice).exists()
+
+
+def test_company_change_delete_failure_preserves_marker_and_hashes(tmp_path: Path) -> None:
+    alice = _anima(tmp_path, "alice", "alpha")
+    _knowledge(tmp_path, "alpha")
+    write_shared_hashes(
+        alice,
+        {
+            "shared_company_name": "old",
+            "shared_company_knowledge_hash": "old-hash",
+        },
+    )
+    meta_path = shared_index_meta_path(alice)
+    before = meta_path.read_text(encoding="utf-8")
+    store = MagicMock()
+    store.delete_collection.side_effect = [True, False]
+
+    with (
+        patch("core.memory.rag.repair.is_repair_locked", return_value=False),
+        patch("core.memory.rag.singleton.get_vector_store", return_value=store),
+        patch("core.memory.rag.MemoryIndexer") as indexer,
+    ):
+        assert _index_shared_collections([alice], tmp_path, full=False, dry_run=False) == 0
+
+    indexer.assert_not_called()
+    assert meta_path.read_text(encoding="utf-8") == before
+
+
+def test_company_checked_value_is_reused_for_cli_marker_and_resources(tmp_path: Path) -> None:
+    alice = _anima(tmp_path, "alice", "alpha")
+    alpha = _knowledge(tmp_path, "alpha")
+    _knowledge(tmp_path, "beta")
+    write_shared_hashes(alice, {"shared_company_name": "old"})
+    status_path = alice / "status.json"
+    store = MagicMock()
+
+    def delete_and_change_status(_collection: str) -> bool:
+        status_path.write_text(json.dumps({"company": "beta"}), encoding="utf-8")
+        return True
+
+    store.delete_collection.side_effect = delete_and_change_status
+    indexed: list[Path] = []
+
+    def make_indexer(*_args, **_kwargs):
+        indexer = MagicMock()
+        indexer.index_directory.side_effect = lambda directory, *_args, **_kwargs: (
+            indexed.append(directory) or IndexDirectoryResult(chunks_indexed=1, files_indexed=1)
+        )
+        return indexer
+
+    with (
+        patch("core.memory.rag.repair.is_repair_locked", return_value=False),
+        patch("core.memory.rag.singleton.get_vector_store", return_value=store),
+        patch("core.memory.rag.MemoryIndexer", side_effect=make_indexer),
+    ):
+        assert _index_shared_collections([alice], tmp_path, full=False, dry_run=False) == 1
+
+    assert indexed == [alpha]
+    assert read_shared_hash(alice, "shared_company_name") == "alpha"

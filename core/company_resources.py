@@ -45,10 +45,20 @@ def get_company_resources(
     from core.config.models import read_anima_company
 
     company = read_anima_company(Path(anima_dir))
+    base = Path(data_dir) if data_dir is not None else infer_data_dir(Path(anima_dir))
+    return get_company_resources_for_company(company, data_dir=base)
+
+
+def get_company_resources_for_company(
+    company: str | None,
+    *,
+    data_dir: Path,
+) -> CompanyResources | None:
+    """Resolve resources from an already-read company value."""
     if not company or company in {".", ".."} or Path(company).name != company or "\\" in company:
         return None
 
-    base = Path(data_dir) if data_dir is not None else infer_data_dir(Path(anima_dir))
+    base = Path(data_dir)
     companies_dir = (base / "companies").resolve()
     root = (companies_dir / company).resolve()
     try:
