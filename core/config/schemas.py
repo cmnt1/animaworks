@@ -92,12 +92,15 @@ def _phase3_isolation() -> TaskProcessIsolationConfig:
 class ResolvedProcessModelConfig(BaseModel):
     """Validated process topology resolution result.
 
-    The default topology is ``phase3`` (task-runner isolation + root DB
-    ownership); ``legacy``/``phase2`` remain available as explicit opt-outs.
+    Fork policy: the default topology stays ``legacy`` so that adopting an
+    upstream release never silently switches a running fleet to task-runner
+    isolation + root DB ownership.  Upstream defaults this to ``phase3``;
+    we migrate per anima by writing ``process_model`` into ``status.json``
+    explicitly.  ``phase2``/``phase3`` remain fully available that way.
     """
 
-    process_model: ProcessModel = "phase3"
-    task_process_isolation: TaskProcessIsolationConfig = Field(default_factory=_phase3_isolation)
+    process_model: ProcessModel = "legacy"
+    task_process_isolation: TaskProcessIsolationConfig = Field(default_factory=TaskProcessIsolationConfig)
     valid: bool = True
     error: str | None = None
     warnings: tuple[str, ...] = ()

@@ -15,15 +15,20 @@ def _write_status(anima_dir: Path, value: object) -> None:
     (anima_dir / "status.json").write_text(json.dumps(value), encoding="utf-8")
 
 
-def test_missing_status_defaults_to_phase3(tmp_path: Path) -> None:
+def test_missing_status_defaults_to_legacy(tmp_path: Path) -> None:
+    """Fork policy: absent/incomplete status.json must not imply isolation.
+
+    Upstream defaults this to phase3; we keep legacy so syncing upstream
+    never switches a running fleet's process topology implicitly.
+    """
     resolved = resolve_process_model_config(tmp_path / "anima")
 
     assert resolved.valid
-    assert resolved.process_model == "phase3"
-    assert resolved.task_process_isolation.cron
-    assert resolved.task_process_isolation.heartbeat
-    assert resolved.task_process_isolation.task
-    assert resolved.task_process_isolation.background
+    assert resolved.process_model == "legacy"
+    assert not resolved.task_process_isolation.cron
+    assert not resolved.task_process_isolation.heartbeat
+    assert not resolved.task_process_isolation.task
+    assert not resolved.task_process_isolation.background
 
 
 def test_phase2_uses_strict_lane_flags(tmp_path: Path) -> None:

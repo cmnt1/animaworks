@@ -47,7 +47,9 @@ def resolve_process_model_config(anima_dir: Path) -> ResolvedProcessModelConfig:
     if not isinstance(data, dict):
         return ResolvedProcessModelConfig(valid=False, error="status.json must contain a JSON object")
 
-    process_model = data.get("process_model", "phase3")
+    # Fork policy: default to legacy (see ResolvedProcessModelConfig) so an
+    # upstream sync never flips a running anima's process topology implicitly.
+    process_model = data.get("process_model", "legacy")
     if not isinstance(process_model, str) or process_model not in {"legacy", "phase2", "phase3"}:
         return ResolvedProcessModelConfig(valid=False, error=f"invalid process_model: {process_model!r}")
 
