@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -164,6 +164,49 @@ class TestReadBeforeWriteGuard:
         )
 
         assert "ReadBeforeWrite" in result or "read_memory_file" in result
+
+
+class TestEpisodeOverwriteArchive:
+    def test_existing_episode_is_archived_before_overwrite(self, handler, anima_dir):
+        episode = anima_dir / "episodes" / "2026-03-15.md"
+        episode.write_text("original episode", encoding="utf-8")
+
+        result = handler.handle(
+            "write_memory_file",
+            {"path": "episodes/2026-03-15.md", "content": "compressed episode", "mode": "overwrite"},
+        )
+
+        archived = list((anima_dir / "archive" / "episodes").glob("2026-03-15_*.md"))
+        assert "Written" in result
+        assert episode.read_text(encoding="utf-8") == "compressed episode"
+        assert len(archived) == 1
+        assert archived[0].read_text(encoding="utf-8") == "original episode"
+
+    def test_archive_failure_leaves_existing_episode_unchanged(self, handler, anima_dir):
+        episode = anima_dir / "episodes" / "2026-03-15.md"
+        episode.write_text("original episode", encoding="utf-8")
+
+        with patch("core.memory._io.shutil.copy2", side_effect=OSError("archive unavailable")):
+            result = handler.handle(
+                "write_memory_file",
+                {"path": "episodes/2026-03-15.md", "content": "compressed episode", "mode": "overwrite"},
+            )
+
+        assert "WriteError" in result
+        assert "archive unavailable" in result
+        assert episode.read_text(encoding="utf-8") == "original episode"
+
+    def test_new_episode_is_created_without_archive(self, handler, anima_dir):
+        episode = anima_dir / "episodes" / "2026-03-15.md"
+
+        result = handler.handle(
+            "write_memory_file",
+            {"path": "episodes/2026-03-15.md", "content": "new episode", "mode": "overwrite"},
+        )
+
+        assert "Written" in result
+        assert episode.read_text(encoding="utf-8") == "new episode"
+        assert not (anima_dir / "archive" / "episodes").exists()
 
 
 # ── Filename token hint ──────────────────────────────────
