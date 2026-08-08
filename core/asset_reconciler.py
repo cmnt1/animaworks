@@ -440,6 +440,42 @@ def _resolve_prompt(anima_dir: Path, style: str) -> str | None:
     return None
 
 
+_APPEARANCE_LABEL_RE = re.compile(
+    r"(?:image[_ ]?prompt|画像プロンプト|外見|appearance|キャラクターデザイン|character[_ ]?design)"
+    r"[*\s]*[:：][*\s]*(.*)",
+    re.IGNORECASE,
+)
+
+
+def _extract_appearance_field(text: str) -> str | None:
+    """Find an appearance label and return its value.
+
+    Tolerates markdown bold markers around the label (``- **外見**:``) and
+    collects the following indented lines when the value is written as a
+    multi-line bullet section instead of on the same line.
+    """
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        match = _APPEARANCE_LABEL_RE.search(line)
+        if not match:
+            continue
+        inline = match.group(1).strip(" \t*")
+        if inline:
+            return inline
+        # Value continues on following, more-indented lines
+        indent = len(line) - len(line.lstrip())
+        block: list[str] = []
+        for follow in lines[i + 1 :]:
+            if not follow.strip():
+                break
+            if len(follow) - len(follow.lstrip()) <= indent:
+                break
+            block.append(follow.strip().lstrip("-•* \t"))
+        if block:
+            return "、".join(block)
+    return None
+
+
 async def _extract_prompt(
     anima_dir: Path,
     style: str = "anime",
@@ -470,20 +506,14 @@ async def _extract_prompt(
         return None
 
     # Step 1: Look for a dedicated image_prompt / appearance field
-    patterns = [
-        r"(?:image[_ ]?prompt|画像プロンプト|外見|appearance)\s*[:\uff1a]\s*(.+)",
-        r"(?:キャラクターデザイン|character[_ ]?design)\s*[:\uff1a]\s*(.+)",
-    ]
     for text in candidates:
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                raw = match.group(1).strip()
-                if style == "realistic":
-                    from core.tools._image_clients import _convert_anime_to_realistic
+        raw = _extract_appearance_field(text)
+        if raw:
+            if style == "realistic":
+                from core.tools._image_clients import _convert_anime_to_realistic
 
-                    return _convert_anime_to_realistic(raw)
-                return raw
+                return _convert_anime_to_realistic(raw)
+            return raw
 
     # Step 2: Check cached prompt for the requested style
     cached = _resolve_prompt(anima_dir, style)
