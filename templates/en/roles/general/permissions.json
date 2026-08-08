@@ -14,10 +14,11 @@
       "discord_channel_post",
       "discord_send",
       "discord_channel_history",
-      "discord_unreplied",
-      "notion"
+      "discord_unreplied"
     ],
-    "deny": []
+    "deny": [
+      "notion"
+    ]
   },
   "tool_creation": {
     "personal": true,

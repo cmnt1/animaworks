@@ -9,7 +9,9 @@
   "external_tools": {
     "allow_all": true,
     "allow": [],
-    "deny": []
+    "deny": [
+      "notion"
+    ]
   },
   "tool_creation": {
     "personal": true,
