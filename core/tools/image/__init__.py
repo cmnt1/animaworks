@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from .codex import CodexFirstClient, CodexImageClient, codex_available
 from .constants import (
     _DEFAULT_ANIMATIONS,
     _DOWNLOAD_TIMEOUT,
@@ -27,7 +28,6 @@ from .constants import (
     NOVELAI_ENCODE_URL,
     NOVELAI_MODEL,
 )
-from .codex import CodexFirstClient, CodexImageClient, codex_available
 from .diffusers_local import LocalDiffusersClient
 from .fal import FalTextToImageClient, FluxKontextClient
 from .meshy import MeshyClient
