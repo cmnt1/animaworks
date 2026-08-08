@@ -515,6 +515,7 @@ class ImageGenConfig(BaseModel):
 
     backend: Literal["api", "diffusers"] = "api"
     image_style: Literal["anime", "realistic"] = "realistic"
+    prefer_codex: bool = True  # codex CLIがあれば画像生成に最優先で使う
     style_reference: str | None = None  # Path to organization-wide style reference image
     style_prefix: str = ""  # Common style tags prepended to character prompt
     style_suffix: str = ""  # Common style tags appended to character prompt
