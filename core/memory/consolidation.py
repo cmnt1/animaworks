@@ -115,19 +115,9 @@ class ConsolidationEngine:
 
     def archive_episode_before_write(self, episode_path: Path) -> Path | None:
         """Copy an existing episode file to archive/episodes before overwriting it."""
-        if not episode_path.exists():
-            return None
+        from core.memory._io import archive_episode_before_write
 
-        archive_dir = self.anima_dir / "archive" / "episodes"
-        archive_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = now_local().strftime("%Y%m%dT%H%M%S%z")
-        archive_path = archive_dir / f"{episode_path.stem}_{timestamp}{episode_path.suffix}"
-        counter = 1
-        while archive_path.exists():
-            archive_path = archive_dir / f"{episode_path.stem}_{timestamp}_{counter}{episode_path.suffix}"
-            counter += 1
-        shutil.copy2(episode_path, archive_path)
-        return archive_path
+        return archive_episode_before_write(self.anima_dir, episode_path)
 
     def write_consolidated_episode(self, target_date: date, consolidated_timeline: str) -> Path:
         """Merge a consolidated timeline into the target daily episode file."""
@@ -1588,48 +1578,6 @@ class ConsolidationEngine:
 
             forgetter = ForgettingEngine(self.anima_dir, self.anima_name)
             result = forgetter.complete_forgetting()
-
-            try:
-                from core.config import load_config
-                from core.config.models import ConsolidationConfig
-
-                default_retention_days = ConsolidationConfig().episode_retention_days
-                default_batch_limit = ConsolidationConfig().episode_retention_batch_limit
-                consolidation_cfg = getattr(load_config(), "consolidation", None)
-                retention_days = int(
-                    getattr(
-                        consolidation_cfg,
-                        "episode_retention_days",
-                        default_retention_days,
-                    )
-                )
-                batch_limit = int(
-                    getattr(
-                        consolidation_cfg,
-                        "episode_retention_batch_limit",
-                        default_batch_limit,
-                    )
-                )
-            except Exception:
-                logger.debug(
-                    "Failed to load episode retention config for anima=%s; using default",
-                    self.anima_name,
-                    exc_info=True,
-                )
-                from core.config.models import ConsolidationConfig
-
-                retention_days = ConsolidationConfig().episode_retention_days
-                batch_limit = ConsolidationConfig().episode_retention_batch_limit
-
-            retention_result = forgetter.archive_expired_episodes(retention_days, batch_limit)
-            result["episode_retention"] = retention_result
-            result.setdefault("archived_files", []).extend(retention_result.get("archived_files", []))
-            logger.info(
-                "Episode retention archival for anima=%s: archived=%d retention_days=%d",
-                self.anima_name,
-                retention_result.get("archived_count", 0),
-                retention_result.get("retention_days", retention_days),
-            )
 
             # Clean up old procedure version archives
             try:

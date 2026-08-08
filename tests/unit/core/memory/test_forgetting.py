@@ -13,12 +13,11 @@ from __future__ import annotations
 Tests cover:
 - ForgettingEngine._is_protected() classification
 - Synaptic downscaling (Stage 1)
-- Complete forgetting with archival (Stage 3)
-- Integration with ConsolidationEngine (daily + weekly hooks)
+- Complete forgetting with archival (Stage 2)
+- Integration with ConsolidationEngine (daily hook)
 """
 
 import logging
-import os
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -80,32 +79,6 @@ def _make_chunk(
             "source_file": source_file,
         },
     }
-
-
-def _make_indexed_chunk(
-    engine: ForgettingEngine,
-    path: Path,
-    *,
-    doc_id: str,
-    chunk_index: int,
-    content: str,
-    memory_type: str = "knowledge",
-) -> dict[str, Any]:
-    chunk = _make_chunk(
-        doc_id=doc_id,
-        content=content,
-        memory_type=memory_type,
-        source_file=str(path.relative_to(engine.anima_dir)),
-        activation_level="low",
-    )
-    chunk["metadata"].update(
-        {
-            "chunk_index": chunk_index,
-            "source_hash": engine._compute_source_hash(path),
-            "source_mtime_ns": path.stat().st_mtime_ns,
-        }
-    )
-    return chunk
 
 
 # ── _is_protected Tests ─────────────────────────────────────────────
@@ -435,199 +408,11 @@ class TestSynapticDownscaling:
 # ── Neurogenesis Source Sync Tests ─────────────────────────────────
 
 
-class TestNeurogenesisSourceSync:
-    """Test chunk-level source syncing for neurogenesis merges."""
-
-    def test_find_similar_pairs_batches_embeddings(self, forgetting_engine):
-        chunks = [
-            _make_chunk(doc_id="a", content="alpha"),
-            _make_chunk(doc_id="b", content="alpha duplicate"),
-            _make_chunk(doc_id="c", content="gamma"),
-        ]
-        store = MagicMock()
-
-        def fake_query(*, collection, embedding, top_k):
-            assert collection == "test_anima_knowledge"
-            assert top_k == 5
-            if embedding == [1.0]:
-                return [
-                    SimpleNamespace(document=SimpleNamespace(id="a"), score=1.0),
-                    SimpleNamespace(document=SimpleNamespace(id="b"), score=0.86),
-                ]
-            return []
-
-        store.query.side_effect = fake_query
-
-        with patch(
-            "core.memory.rag.singleton.generate_embeddings",
-            return_value=[[1.0], [2.0], [3.0]],
-        ) as mock_embeddings:
-            pairs = forgetting_engine._find_similar_pairs(chunks, "test_anima_knowledge", store)
-
-        mock_embeddings.assert_called_once_with(
-            ["alpha", "alpha duplicate", "gamma"],
-            purpose="query",
-            priority="bulk",
-        )
-        assert [(a["id"], b["id"], score) for a, b, score in pairs] == [("a", "b", 0.86)]
-
-    def test_sync_replaces_only_target_chunk(self, forgetting_engine, anima_dir):
-        primary = anima_dir / "knowledge" / "primary.md"
-        secondary = anima_dir / "knowledge" / "secondary.md"
-        primary.write_text(
-            "## Keep One\n\nAlpha stays.\n\n## Merge Me\n\nOld duplicate detail.\n\n## Keep Two\n\nGamma stays.",
-            encoding="utf-8",
-        )
-        secondary.write_text("## Merge Source\n\nNew duplicate detail.", encoding="utf-8")
-
-        chunk_a = _make_indexed_chunk(
-            forgetting_engine,
-            primary,
-            doc_id="a",
-            chunk_index=1,
-            content="## Merge Me\n\nOld duplicate detail.",
-        )
-        chunk_b = _make_indexed_chunk(
-            forgetting_engine,
-            secondary,
-            doc_id="b",
-            chunk_index=0,
-            content="## Merge Source\n\nNew duplicate detail.",
-        )
-
-        assert forgetting_engine._sync_merged_source_files(chunk_a, chunk_b, "## Merged\n\nCombined detail.")
-
-        updated = primary.read_text(encoding="utf-8")
-        assert "## Keep One\n\nAlpha stays." in updated
-        assert "## Keep Two\n\nGamma stays." in updated
-        assert "## Merged\n\nCombined detail." in updated
-        assert "Old duplicate detail." not in updated
-        assert not secondary.exists()
-
-    def test_sync_preserves_frontmatter(self, forgetting_engine, anima_dir):
-        primary = anima_dir / "knowledge" / "frontmatter.md"
-        secondary = anima_dir / "knowledge" / "dup.md"
-        frontmatter = "---\ntitle: Deployment Notes\nconfidence: 0.8\n---"
-        primary.write_text(
-            f"{frontmatter}\n\n## Merge\n\nOld deploy detail.\n\n## Keep\n\nKeep this.",
-            encoding="utf-8",
-        )
-        secondary.write_text("## Duplicate\n\nNew deploy detail.", encoding="utf-8")
-
-        chunk_a = _make_indexed_chunk(
-            forgetting_engine,
-            primary,
-            doc_id="a",
-            chunk_index=0,
-            content="## Merge\n\nOld deploy detail.",
-        )
-        chunk_b = _make_indexed_chunk(
-            forgetting_engine,
-            secondary,
-            doc_id="b",
-            chunk_index=0,
-            content="## Duplicate\n\nNew deploy detail.",
-        )
-
-        assert forgetting_engine._sync_merged_source_files(chunk_a, chunk_b, "## Merge\n\nMerged deploy detail.")
-
-        updated = primary.read_text(encoding="utf-8")
-        assert updated.startswith(frontmatter)
-        assert "confidence: 0.8" in updated
-        assert "Merged deploy detail." in updated
-        assert "## Keep\n\nKeep this." in updated
-
-    def test_sync_skips_when_source_changed_since_index(
-        self,
-        forgetting_engine,
-        anima_dir,
-        caplog,
-    ):
-        primary = anima_dir / "knowledge" / "changed.md"
-        secondary = anima_dir / "knowledge" / "secondary.md"
-        primary.write_text("## Merge\n\nOld indexed detail.", encoding="utf-8")
-        secondary.write_text("## Duplicate\n\nSecondary detail.", encoding="utf-8")
-
-        chunk_a = _make_indexed_chunk(
-            forgetting_engine,
-            primary,
-            doc_id="a",
-            chunk_index=0,
-            content="## Merge\n\nOld indexed detail.",
-        )
-        chunk_b = _make_indexed_chunk(
-            forgetting_engine,
-            secondary,
-            doc_id="b",
-            chunk_index=0,
-            content="## Duplicate\n\nSecondary detail.",
-        )
-        primary.write_text("## Merge\n\nUser edited after indexing.", encoding="utf-8")
-
-        with caplog.at_level(logging.WARNING, logger="animaworks.forgetting"):
-            result = forgetting_engine._sync_merged_source_files(chunk_a, chunk_b, "## Merged\n\nShould skip.")
-
-        assert result is False
-        assert primary.read_text(encoding="utf-8") == "## Merge\n\nUser edited after indexing."
-        assert "source file content changed since indexing" in caplog.text
-        assert not (anima_dir / "archive" / "merged").exists()
-
-    @pytest.mark.asyncio
-    async def test_merge_reject_skips_llm_merge(self, forgetting_engine):
-        with patch(
-            "core.memory._llm_utils.one_shot_completion",
-            new=AsyncMock(return_value="MERGE_REJECT\nDifferent topics."),
-        ):
-            merged = await forgetting_engine._merge_chunks_llm(
-                {"id": "a", "content": "A"},
-                {"id": "b", "content": "B"},
-                0.91,
-                "test-model",
-            )
-
-        assert merged is None
-
-    def test_secondary_partial_absorption_keeps_file_unarchived(self, forgetting_engine, anima_dir):
-        primary = anima_dir / "knowledge" / "primary.md"
-        secondary = anima_dir / "knowledge" / "secondary.md"
-        primary.write_text("## Primary\n\nPrimary duplicate.", encoding="utf-8")
-        secondary.write_text(
-            "## Keep One\n\nFirst survives.\n\n## Remove Me\n\nDuplicate absorbed.\n\n## Keep Two\n\nSecond survives.",
-            encoding="utf-8",
-        )
-
-        chunk_a = _make_indexed_chunk(
-            forgetting_engine,
-            primary,
-            doc_id="a",
-            chunk_index=0,
-            content="## Primary\n\nPrimary duplicate.",
-        )
-        chunk_b = _make_indexed_chunk(
-            forgetting_engine,
-            secondary,
-            doc_id="b",
-            chunk_index=1,
-            content="## Remove Me\n\nDuplicate absorbed.",
-        )
-
-        assert forgetting_engine._sync_merged_source_files(chunk_a, chunk_b, "## Merged\n\nMerged duplicate.")
-
-        secondary_text = secondary.read_text(encoding="utf-8")
-        assert "## Keep One\n\nFirst survives." in secondary_text
-        assert "## Keep Two\n\nSecond survives." in secondary_text
-        assert "Duplicate absorbed." not in secondary_text
-
-        archive_names = [path.name for path in (anima_dir / "archive" / "merged").iterdir()]
-        assert any(name.startswith("primary_") for name in archive_names)
-        assert not any(name.startswith("secondary_") for name in archive_names)
-
-
 # ── Complete Forgetting Tests ───────────────────────────────────────
 
 
 class TestCompleteForgetting:
-    """Test complete_forgetting() (Stage 3: monthly archive and delete)."""
+    """Test complete_forgetting() (Stage 2: monthly archive and delete)."""
 
     def test_complete_forgetting_archives_and_deletes(self, forgetting_engine, anima_dir):
         """Test that low-activation chunks are archived and deleted.
@@ -860,114 +645,6 @@ class TestCompleteForgetting:
         assert "forgotten=3" in caplog.text
 
 
-class TestEpisodeRetentionArchival:
-    """Test deterministic retention archival for old episode files."""
-
-    def test_archive_expired_episodes_moves_files_and_deletes_rag(self, forgetting_engine, anima_dir):
-        old_date = (now_jst().date() - timedelta(days=45)).isoformat()
-        recent_date = (now_jst().date() - timedelta(days=5)).isoformat()
-        old_file = anima_dir / "episodes" / f"{old_date}.md"
-        recent_file = anima_dir / "episodes" / f"{recent_date}.md"
-        old_file.write_text("# Old episode\n\nArchive me.", encoding="utf-8")
-        recent_file.write_text("# Recent episode\n\nKeep me.", encoding="utf-8")
-
-        mock_store = MagicMock()
-        mock_store.get_by_metadata.return_value = [
-            SimpleNamespace(document=SimpleNamespace(id="test_anima/episodes/old#0")),
-        ]
-        mock_store.delete_documents.return_value = True
-
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            result = forgetting_engine.archive_expired_episodes(retention_days=30)
-
-        assert result["scanned"] == 2
-        assert result["archived_count"] == 1
-        assert result["archived_files"] == [f"episodes/{old_date}.md"]
-        assert result["deleted_indexed_chunks"] == 1
-        assert not old_file.exists()
-        assert recent_file.exists()
-        assert (anima_dir / "archive" / "episodes" / f"{old_date}.md").exists()
-        mock_store.get_by_metadata.assert_called_once_with(
-            "test_anima_episodes",
-            {"source_file": f"episodes/{old_date}.md"},
-            limit=10_000,
-        )
-        mock_store.delete_documents.assert_called_once_with(
-            "test_anima_episodes",
-            ["test_anima/episodes/old#0"],
-        )
-
-    def test_archive_expired_episodes_archives_when_rag_unavailable(self, forgetting_engine, anima_dir):
-        old_date = (now_jst().date() - timedelta(days=45)).isoformat()
-        old_file = anima_dir / "episodes" / f"{old_date}.md"
-        old_file.write_text("# Old episode\n\nArchive me.", encoding="utf-8")
-
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=None):
-            result = forgetting_engine.archive_expired_episodes(retention_days=30)
-
-        assert result["batch_limit"] == 0
-        assert result["attempted"] == 1
-        assert result["archived_count"] == 1
-        assert result["deleted_indexed_chunks"] == 0
-        assert result["index_delete_failures"] == 0
-        assert result["index_skipped_reason"] == "rag_unavailable"
-        assert not old_file.exists()
-
-    def test_archives_recovered_markdown_jsonl_and_undated_by_mtime(
-        self,
-        forgetting_engine,
-        anima_dir,
-    ):
-        old_date = (now_jst().date() - timedelta(days=45)).isoformat()
-        recovered = anima_dir / "episodes" / f"recovered_{old_date}_010234.md"
-        legacy_jsonl = anima_dir / "episodes" / f"{old_date}.jsonl"
-        undated = anima_dir / "episodes" / "notes.md"
-        for path in (recovered, legacy_jsonl, undated):
-            path.write_text("old", encoding="utf-8")
-        old_timestamp = (now_jst() - timedelta(days=45)).timestamp()
-        undated.touch()
-        os.utime(undated, (old_timestamp, old_timestamp))
-
-        mock_store = MagicMock()
-        mock_store.get_by_metadata.return_value = []
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store):
-            result = forgetting_engine.archive_expired_episodes(retention_days=30)
-
-        assert result["archived_count"] == 3
-        assert result["skipped_undated"] == 0
-        assert not recovered.exists()
-        assert not legacy_jsonl.exists()
-        assert not undated.exists()
-        assert (anima_dir / "archive" / "episodes" / recovered.name).exists()
-        assert (anima_dir / "archive" / "episodes" / legacy_jsonl.name).exists()
-        assert (anima_dir / "archive" / "episodes" / undated.name).exists()
-        assert any(
-            call.args[1] == {"source_file": f"episodes/{legacy_jsonl.name}"}
-            for call in mock_store.get_by_metadata.call_args_list
-        )
-
-    def test_batch_limit_reports_remaining_and_zero_is_unlimited(self, forgetting_engine, anima_dir):
-        old_date = (now_jst().date() - timedelta(days=45)).isoformat()
-        for index in range(3):
-            (anima_dir / "episodes" / f"{old_date}_{index}.md").write_text("old", encoding="utf-8")
-
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=None):
-            limited = forgetting_engine.archive_expired_episodes(retention_days=30, batch_limit=1)
-
-        assert limited["archived_count"] == 1
-        assert limited["attempted"] == 1
-        assert limited["batch_limited"] is True
-        assert limited["remaining_count"] == 2
-
-        with patch.object(forgetting_engine, "_get_vector_store", return_value=None):
-            unlimited = forgetting_engine.archive_expired_episodes(retention_days=30, batch_limit=0)
-
-        assert unlimited["archived_count"] == 2
-        assert unlimited["attempted"] == 2
-        assert unlimited["batch_limited"] is False
-        assert unlimited["remaining_count"] == 0
-
-
 # ── Consolidation Integration Tests ─────────────────────────────────
 
 
@@ -977,7 +654,6 @@ class TestConsolidationForgettingHooks:
     After the Anima-driven consolidation refactoring, forgetting hooks
     are called from lifecycle.py as post-processing steps:
     - Daily: lifecycle._handle_daily_consolidation calls synaptic_downscaling
-    - Weekly: lifecycle._handle_weekly_integration calls neurogenesis_reorganize
     """
 
     @pytest.mark.asyncio
@@ -1043,60 +719,6 @@ class TestConsolidationForgettingHooks:
         # Verify downscaling was called
         mock_forgetter.synaptic_downscaling.assert_called_once()
 
-    @pytest.mark.asyncio
-    async def test_consolidation_weekly_calls_reorganization(self, tmp_path: Path):
-        """Test that _handle_weekly_integration calls neurogenesis_reorganize().
-
-        After the Anima-driven consolidation, the lifecycle handler
-        invokes ForgettingEngine.neurogenesis_reorganize as post-processing.
-        """
-        from core.lifecycle import LifecycleManager
-
-        manager = LifecycleManager()
-
-        anima_dir = tmp_path / "test_anima"
-        anima_dir.mkdir(parents=True)
-
-        # Mock anima
-        mock_anima = MagicMock()
-        mock_anima.name = "test_anima"
-        mock_anima.memory = MagicMock()
-        mock_anima.memory.anima_dir = anima_dir
-
-        mock_result = MagicMock()
-        mock_result.duration_ms = 200
-        mock_result.summary = "weekly integration done"
-        mock_anima.run_consolidation = AsyncMock(return_value=mock_result)
-
-        manager.animas["test_anima"] = mock_anima
-
-        mock_config = MagicMock()
-        mock_consolidation_cfg = MagicMock()
-        mock_consolidation_cfg.weekly_enabled = True
-        mock_consolidation_cfg.llm_model = "anthropic/claude-sonnet-4-6"
-        mock_config.consolidation = mock_consolidation_cfg
-
-        mock_reorg_result = {"merged_count": 3, "merged_pairs": ["a+b", "c+d", "e+f"]}
-
-        with (
-            patch("core.config.load_config", return_value=mock_config),
-            patch("core.lifecycle.system_consolidation.should_skip_inactive_consolidation", return_value=False),
-            patch("core.lifecycle.system_consolidation.detect_communities_if_neo4j", AsyncMock()),
-            patch("core.memory.forgetting.ForgettingEngine") as MockForgettingEngine,
-            patch("core.memory.consolidation.ConsolidationEngine"),
-        ):
-            mock_forgetter = MagicMock()
-            mock_forgetter.neurogenesis_reorganize = AsyncMock(
-                return_value=mock_reorg_result,
-            )
-            MockForgettingEngine.return_value = mock_forgetter
-
-            await manager._handle_weekly_integration()
-
-        # Verify neurogenesis_reorganize was called
-        mock_forgetter.neurogenesis_reorganize.assert_called_once()
-
-
 # ── Monthly Forgetting Hook Test ────────────────────────────────────
 
 
@@ -1120,105 +742,20 @@ class TestMonthlyForgettingHook:
     async def test_monthly_forget_calls_complete_forgetting(self, consolidation_engine):
         """Test that monthly_forget() calls ForgettingEngine.complete_forgetting()."""
         mock_result = {"forgotten_chunks": 5, "archived_files": ["a.md", "b.md"]}
-        retention_result = {
-            "retention_days": 17,
-            "scanned": 3,
-            "archived_count": 1,
-            "archived_files": ["episodes/old.md"],
-            "archive_destinations": ["archive/episodes/old.md"],
-            "deleted_indexed_chunks": 1,
-            "skipped_undated": 0,
-            "index_delete_failures": 0,
-        }
 
         with patch("core.memory.forgetting.ForgettingEngine") as MockForgettingEngine:
             mock_forgetter = MagicMock()
             mock_forgetter.complete_forgetting.return_value = mock_result
-            mock_forgetter.archive_expired_episodes.return_value = retention_result
+            mock_forgetter.cleanup_procedure_archives.return_value = {"deleted_count": 0, "kept_count": 0}
             MockForgettingEngine.return_value = mock_forgetter
 
-            config = SimpleNamespace(
-                consolidation=SimpleNamespace(
-                    episode_retention_days=17,
-                    episode_retention_batch_limit=23,
-                ),
-            )
-            with (
-                patch("core.config.load_config", return_value=config),
-                patch.object(consolidation_engine, "_rebuild_rag_index"),
-            ):
+            with patch.object(consolidation_engine, "_rebuild_rag_index"):
                 result = await consolidation_engine.monthly_forget()
 
         mock_forgetter.complete_forgetting.assert_called_once()
-        mock_forgetter.archive_expired_episodes.assert_called_once_with(17, 23)
         assert result["forgotten_chunks"] == 5
-        assert len(result["archived_files"]) == 3
-        assert result["episode_retention"] == retention_result
-
-
-# ── F10: no direct upsert of synthetic "merged" chunks ─────────────
-
-
-class TestMergedChunkNoDirectUpsert:
-    """F10: neurogenesis no longer upserts a synthetic 'merged' chunk.
-
-    Merged content lives only in the primary source .md (re-indexed by the
-    weekly rebuild). Legacy source_file='merged' chunks are purged.
-    """
-
-    def test_index_merged_chunk_removed(self, forgetting_engine: ForgettingEngine) -> None:
-        """The direct-upsert helper (_index_merged_chunk) has been removed."""
-        assert not hasattr(forgetting_engine, "_index_merged_chunk")
-
-    def test_purge_merged_chunks_deletes_merged_source(self, forgetting_engine: ForgettingEngine) -> None:
-        """_purge_merged_chunks deletes chunks whose source_file == 'merged'."""
-        mock_store = MagicMock()
-        merged_result = MagicMock()
-        merged_result.document.id = "merged-1"
-        mock_store.get_by_metadata.return_value = [merged_result]
-        mock_store.delete_documents.return_value = True
-
-        deleted = forgetting_engine._purge_merged_chunks("test_anima_knowledge", mock_store)
-
-        assert deleted == 1
-        mock_store.get_by_metadata.assert_called_once_with(
-            "test_anima_knowledge", {"source_file": "merged"}, limit=100_000
-        )
-        mock_store.delete_documents.assert_called_once_with("test_anima_knowledge", ["merged-1"])
-
-    def test_purge_merged_chunks_noop_when_none(self, forgetting_engine: ForgettingEngine) -> None:
-        """No merged chunks → nothing deleted."""
-        mock_store = MagicMock()
-        mock_store.get_by_metadata.return_value = []
-
-        deleted = forgetting_engine._purge_merged_chunks("test_anima_knowledge", mock_store)
-
-        assert deleted == 0
-        mock_store.delete_documents.assert_not_called()
-
-    def test_purge_merged_chunks_handles_no_store(self, forgetting_engine: ForgettingEngine) -> None:
-        """A missing vector store is a safe no-op."""
-        assert forgetting_engine._purge_merged_chunks("test_anima_knowledge", None) == 0
-
-    @pytest.mark.asyncio
-    async def test_neurogenesis_purges_and_never_upserts(self, forgetting_engine: ForgettingEngine) -> None:
-        """neurogenesis_reorganize purges merged chunks per collection, no upsert."""
-        mock_store = MagicMock()
-        mock_store.get_by_metadata.return_value = []  # no legacy merged chunks
-
-        with (
-            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
-            patch.object(forgetting_engine, "_get_all_chunks", return_value=[]),
-        ):
-            result = await forgetting_engine.neurogenesis_reorganize(model="test-model")
-
-        # Purge is attempted for each of knowledge/episodes/procedures
-        assert mock_store.get_by_metadata.call_count == 3
-        for call in mock_store.get_by_metadata.call_args_list:
-            assert call.args[1] == {"source_file": "merged"}
-        # No synthetic merged chunk is upserted anymore
-        mock_store.upsert.assert_not_called()
-        assert result["merged_count"] == 0
+        assert result["archived_files"] == ["a.md", "b.md"]
+        assert "episode_retention" not in result
 
 
 # ── F11: usage metrics combine explicit use and automatic recall ───

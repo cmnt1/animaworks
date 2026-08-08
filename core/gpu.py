@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 DevicePreference = Literal["auto", "cuda", "cpu"]
 ResolvedDevice = Literal["cuda", "cpu"]
 
-_VALID_COMPONENTS = {"embedding", "nli", "reranker"}
+_VALID_COMPONENTS = {"embedding", "reranker"}
 _CUDA_FAILURE_MARKERS = (
     "cuda",
     "cublas",
@@ -58,12 +58,10 @@ def _normalize_component(component: str) -> str:
 def _preference_from_config(config: Any, component: str) -> DevicePreference:
     defaults: dict[str, DevicePreference] = {
         "embedding": "auto",
-        "nli": "cpu",
         "reranker": "cpu",
     }
     attr_by_component = {
         "embedding": "embedding_device",
-        "nli": "nli_device",
         "reranker": "reranker_device",
     }
     gpu_cfg = getattr(config, "gpu", None)

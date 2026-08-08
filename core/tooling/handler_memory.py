@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from core.file_access_policy import load_denied_roots, memory_source_is_allowed, resolve_memory_source_path
 from core.i18n import t
+from core.memory._io import archive_episode_before_write
 from core.memory.scope_policy import (
     LEGACY_ONLY_SCOPES,
     LEGACY_ONLY_SCOPES_FOR_ALL,
@@ -968,6 +969,16 @@ class MemoryToolsMixin:
         if lock:
             lock.acquire()
         try:
+            if rel.startswith("episodes/") and mode == "overwrite" and _was_existing:
+                try:
+                    archive_episode_before_write(self._anima_dir, path)
+                except OSError as exc:
+                    logger.warning("Failed to archive episode before overwrite: %s", path, exc_info=True)
+                    return _error_result(
+                        "WriteError",
+                        f"Failed to archive existing episode before overwrite: {exc}",
+                    )
+
             # Auto-add YAML frontmatter for procedure overwrite writes
             auto_frontmatter_applied = False
             if (

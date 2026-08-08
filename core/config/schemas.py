@@ -379,7 +379,6 @@ class GPUConfig(BaseModel):
     """GPU device preferences for local ML components."""
 
     embedding_device: Literal["auto", "cuda", "cpu"] = "auto"
-    nli_device: Literal["auto", "cuda", "cpu"] = "cpu"
     reranker_device: Literal["auto", "cuda", "cpu"] = "cpu"
     embedding_batch_size: int = Field(default=32, ge=1)
     embedding_bulk_yield_batches: int = Field(
@@ -491,20 +490,13 @@ class ConsolidationConfig(BaseModel):
     weekly_enabled: bool = True  # Phase 3 implementation
     weekly_time: str = "sun:03:00"  # Format: day:HH:MM
     duplicate_threshold: float = 0.85  # Similarity threshold for duplicate detection
-    episode_retention_days: int = 30  # Days to retain uncompressed episodes
-    episode_retention_batch_limit: int = Field(default=200, ge=0)
     monthly_enabled: bool = True  # Monthly forgetting toggle
     monthly_time: str = "1:04:00"  # Format: day:HH:MM (day of month)
     indexing_enabled: bool = True  # Daily RAG indexing toggle
     indexing_time: str = "04:00"  # Format: HH:MM
     knowledge_self_correction_enabled: bool = True
-    knowledge_self_correction_max_contradiction_pairs: int = Field(default=20, ge=0)
     knowledge_self_correction_max_reconsolidation_files: int = Field(default=5, ge=0)
     knowledge_self_correction_timeout_seconds: int = Field(default=300, ge=1)
-    knowledge_self_correction_recent_hours: int = Field(default=24, ge=1)
-    weekly_full_contradiction_max_pairs: int = Field(default=50, ge=0)
-    contradiction_batch_size: int = Field(default=20, ge=1)
-    contradiction_nli_prefilter_threshold: float | None = Field(default=0.70, ge=0.0, le=1.0)
     post_processing_cooldown_seconds: int = Field(default=30, ge=0)
     inactivity_skip_enabled: bool = True
     inactivity_days: int = Field(default=7, ge=1)

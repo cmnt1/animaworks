@@ -180,12 +180,11 @@ Priming은 자동으로 동작하므로 명시적인 조작은 불필요합니�
 
 ### Forgetting (능동적 망각)
 
-기억을 무한히 쌓으면 검색 정확도가 떨어지므로 3단계로 능동적으로 망각합니다:
+기억을 무한히 쌓으면 검색 정확도가 떨어지므로 2단계로 능동적으로 망각합니다:
 
 | 단계 | 빈도 | 처리 |
 |------|------|------|
 | Synaptic downscaling | 일별 | 90일간 미접근, 3회 미만 참조된 청크를 마킹 |
-| Neurogenesis reorganization | 주별 | 유사도 0.80 이상의 저활성 청크를 병합 |
 | Complete forgetting | 월별 | 90일 이상 저활성 청크를 아카이브 및 삭제 |
 
 **보호 대상**: 중요한 knowledge/procedures, 성숙한 절차, 보호 지정된 절차, `skills/`, `shared/users/`

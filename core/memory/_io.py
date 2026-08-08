@@ -15,10 +15,30 @@ to protect against data loss on process crash or power failure.
 
 import logging
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
+from core.time_utils import now_local
+
 logger = logging.getLogger("animaworks.memory._io")
+
+
+def archive_episode_before_write(anima_dir: Path, episode_path: Path) -> Path | None:
+    """Copy an existing episode to archive/episodes before overwriting it."""
+    if not episode_path.exists():
+        return None
+
+    archive_dir = anima_dir / "archive" / "episodes"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = now_local().strftime("%Y%m%dT%H%M%S%z")
+    archive_path = archive_dir / f"{episode_path.stem}_{timestamp}{episode_path.suffix}"
+    counter = 1
+    while archive_path.exists():
+        archive_path = archive_dir / f"{episode_path.stem}_{timestamp}_{counter}{episode_path.suffix}"
+        counter += 1
+    shutil.copy2(episode_path, archive_path)
+    return archive_path
 
 
 def atomic_write_text(path: Path, content: str, encoding: str = "utf-8") -> None:
