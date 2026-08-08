@@ -12,6 +12,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _clear_failure_cooldowns():
+    """Isolate the module-level cooldown registry between tests."""
+    from core.asset_reconciler import _failure_cooldowns
+
+    _failure_cooldowns.clear()
+    yield
+    _failure_cooldowns.clear()
+
+
 # ── check_anima_assets ──────────────────────────────────────────
 
 
