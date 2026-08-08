@@ -63,43 +63,43 @@ def _build_spec(
     orientation: str = "portrait",
     reference_roles: list[str] | None = None,
 ) -> str:
-    """Build a Japanese markdown spec prompt for codex image_gen."""
+    """Build a markdown spec prompt for codex image_gen."""
     if image_style == "realistic":
-        style_line = "フォトリアリスティックな実写調"
+        style_line = "Photorealistic, live-action look"
     else:
-        style_line = "アニメ調イラスト"
-    style_line = f"{style_line}。構図は{orientation}"
+        style_line = "Anime-style illustration"
+    style_line = f"{style_line}. Composition: {orientation}."
 
     lines = [
-        "# 画像生成仕様書",
+        "# Image generation spec",
         "",
-        "## 使用ツール",
-        "組み込みの `image_gen` ツールを使う。SVG/HTML/CSS/手描きスクリプトでの代替は不可。",
+        "## Tool",
+        "Use the built-in `image_gen` tool. Substituting SVG/HTML/CSS or hand-drawn scripts is not acceptable.",
         "",
-        "## 被写体",
+        "## Subject",
         prompt,
         "",
-        "## スタイル",
+        "## Style",
         style_line,
         "",
     ]
     if negative_prompt:
         lines.extend(
             [
-                "## 避けるもの",
+                "## Avoid",
                 negative_prompt,
                 "",
             ]
         )
     if reference_roles:
-        lines.append("## 参照画像の役割")
+        lines.append("## Reference image roles")
         for role in reference_roles:
             lines.append(f"- {role}")
         lines.append("")
     lines.extend(
         [
-            "## 出力契約",
-            "生成した画像をカレントディレクトリに `out.png` という名前のPNGで保存して終了する。他のファイルは作らない。",
+            "## Output contract",
+            "Save the generated image as a PNG named `out.png` in the current directory, then finish. Do not create any other files.",
             "",
         ]
     )
@@ -132,10 +132,10 @@ class CodexImageClient:
         roles: list[str] = []
         if vibe_image:
             refs.append(vibe_image)
-            roles.append(f"参照画像{len(refs)}の画風に合わせる")
+            roles.append(f"Match the art style of reference image {len(refs)}")
         if face_reference_image:
             refs.append(face_reference_image)
-            roles.append(f"参照画像{len(refs)}の人物の顔立ちを反映する")
+            roles.append(f"Reflect the facial features of the person in reference image {len(refs)}")
 
         orientation = "portrait" if height >= width else "square"
         if width == height:
@@ -160,7 +160,7 @@ class CodexImageClient:
         target = _ASPECT_SIZES.get(aspect_ratio, (1024, 1024))
         tw, th = target
         orientation = "square" if tw == th else "portrait"
-        roles = ["参照画像1のキャラクターの同一性（髪型・髪色・瞳・服装）を維持する"]
+        roles = ["Preserve the identity of the character in reference image 1 (hairstyle, hair color, eyes, outfit)"]
         spec = _build_spec(
             prompt=prompt,
             image_style=self._image_style,
