@@ -534,6 +534,111 @@ function _bindConsolidationModelPicker(models, currentModel, currentCredential) 
   providerSelect.addEventListener("change", () => setModels(routeSelect.value, providerSelect.value));
 }
 
+const _MODEL_REFRESH_PROVIDER_LABELS = {
+  claude_code: "Claude Code",
+  codex: "Codex",
+  nanogpt: "nanoGPT",
+  google: "Google",
+};
+
+function _modelRefreshSourceLabel(result) {
+  const source = result?.source || "";
+  const status = result?.status || "";
+  if (source === "known" || status === "fallback") return t("animas.model_refresh_source_known");
+  if (source === "cache" || status === "cached") return t("animas.model_refresh_source_cache");
+  if (source === "none" || status === "skipped") return t("animas.model_refresh_source_none");
+  if (status === "error") return t("animas.model_refresh_source_error");
+  return status || t("animas.model_refresh_source_unknown");
+}
+
+function _modelRefreshStatusInfo(results) {
+  const nonDynamic = (Array.isArray(results) ? results : []).filter(result => result && result.dynamic !== true);
+  if (nonDynamic.length === 0) {
+    return {
+      text: t("animas.model_refreshed"),
+      color: "var(--color-success, #28a745)",
+      title: "",
+      transient: true,
+    };
+  }
+
+  const providerLabel = provider => _MODEL_REFRESH_PROVIDER_LABELS[provider] || provider || "";
+  const providers = nonDynamic
+    .map(result => `${providerLabel(result.provider)}: ${_modelRefreshSourceLabel(result)}`)
+    .join(", ");
+  const details = nonDynamic
+    .map(result => {
+      const detail = `${providerLabel(result.provider)}: ${_modelRefreshSourceLabel(result)}`;
+      return result.message ? `${detail} - ${result.message}` : detail;
+    })
+    .join("\n");
+  return {
+    text: t("animas.model_refresh_non_dynamic", { providers }),
+    color: "var(--color-warning, #e8a000)",
+    title: details,
+    transient: false,
+  };
+}
+
+function _replaceConsolidationModelPicker(models, currentModel, currentCredential) {
+  const picker = document.querySelector("#serverConsolidationModel .model-picker");
+  if (!picker) return;
+  picker.outerHTML = _consolidationModelPickerHtml(models, currentModel, currentCredential);
+  _bindConsolidationModelPicker(models, currentModel, currentCredential);
+}
+
+async function _refreshConsolidationModels() {
+  const btn = document.getElementById("consolidationModelRefreshBtn");
+  const saveBtn = document.getElementById("consolidationModelSaveBtn");
+  const status = document.getElementById("consolidationModelStatus");
+  const modelSelect = document.getElementById("consolidationModelSelect");
+  if (!btn || !status) return;
+
+  const selectedOption = modelSelect?.options[modelSelect.selectedIndex];
+  const currentModel = modelSelect?.value || "";
+  const currentCredential = selectedOption?.dataset?.credential || "";
+  btn.disabled = true;
+  if (saveBtn) saveBtn.disabled = true;
+  btn.textContent = t("animas.model_refreshing");
+  status.textContent = "";
+  status.removeAttribute("title");
+
+  try {
+    const result = await api("/api/system/available-models/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ providers: ["claude_code", "codex", "nanogpt", "google"] }),
+    });
+    if (Array.isArray(result.models)) {
+      _consolidationModels = result.models;
+    } else {
+      const modelsData = await api("/api/system/available-models");
+      _consolidationModels = modelsData.models || [];
+    }
+    _replaceConsolidationModelPicker(_consolidationModels, currentModel, currentCredential);
+
+    const info = _modelRefreshStatusInfo(result.providers);
+    status.textContent = info.text;
+    status.style.color = info.color;
+    if (info.title) status.title = info.title;
+    if (info.transient) {
+      setTimeout(() => {
+        status.textContent = "";
+        status.removeAttribute("title");
+      }, 5000);
+    }
+  } catch (err) {
+    status.textContent = t("animas.model_refresh_failed");
+    status.style.color = "var(--color-danger, #dc3545)";
+    status.removeAttribute("title");
+    console.error("Consolidation model refresh failed:", err);
+  } finally {
+    btn.disabled = false;
+    if (saveBtn) saveBtn.disabled = false;
+    btn.textContent = t("animas.model_refresh");
+  }
+}
+
 async function _loadConsolidationModel() {
   const content = document.getElementById("serverConsolidationModel");
   if (!content) return;
@@ -549,12 +654,14 @@ async function _loadConsolidationModel() {
         <label style="font-weight:600; font-size:0.9rem; min-width:160px; flex-shrink:0;">${t("server.consolidation_model")}:</label>
         ${_consolidationModelPickerHtml(_consolidationModels, consolidation.llm_model, consolidation.llm_credential)}
         <button class="btn-primary" id="consolidationModelSaveBtn" style="font-size:0.85rem; padding:0.4rem 0.75rem;">${t("server.consolidation_model_save")}</button>
+        <button class="btn-secondary" id="consolidationModelRefreshBtn" style="font-size:0.85rem; padding:0.4rem 0.75rem;">${t("animas.model_refresh")}</button>
         <span id="consolidationModelStatus" style="font-size:0.75rem; color:var(--text-secondary,#888);"></span>
         <div style="flex-basis:100%; margin-left:172px; font-size:0.75rem; color:var(--text-secondary,#888);">${t("server.consolidation_model_hint")}</div>
       </div>
     `;
     _bindConsolidationModelPicker(_consolidationModels, consolidation.llm_model, consolidation.llm_credential);
     document.getElementById("consolidationModelSaveBtn")?.addEventListener("click", _saveConsolidationModel);
+    document.getElementById("consolidationModelRefreshBtn")?.addEventListener("click", _refreshConsolidationModels);
   } catch (err) {
     content.innerHTML = `<div class="loading-placeholder">${escapeHtml(t("server.consolidation_model_load_failed"))}</div>`;
     console.error("Consolidation model load failed:", err);

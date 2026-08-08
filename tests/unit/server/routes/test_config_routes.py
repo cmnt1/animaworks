@@ -402,6 +402,10 @@ class TestOpenAIAuthSettings:
         assert result["status"] == "ok"
         assert result["source"] == "subscription"
         assert result["dynamic"] is True
+        ids = {item["id"] for item in resp.json()["models"]}
+        assert "codex/gpt-5.6-sol" in ids
+        assert "codex/gpt-5.6-terra" in ids
+        assert "codex/gpt-5.6-luna" in ids
         cache = json.loads((tmp_path / "model_catalog_cache.json").read_text(encoding="utf-8"))
         assert cache["providers"]["codex"]["models"] == ["codex/gpt-5.6-sol", "codex/gpt-5.6-terra"]
 
@@ -435,7 +439,8 @@ class TestOpenAIAuthSettings:
         assert data["providers"][0]["source"] == "api"
         assert data["providers"][0]["dynamic"] is True
         assert "codex/gpt-5.6" in ids
-        assert "codex/gpt-5.5" not in ids
+        assert "codex/gpt-5.6-sol" in ids
+        assert "codex/gpt-5.5" in ids
 
         cache = json.loads((tmp_path / "model_catalog_cache.json").read_text(encoding="utf-8"))
         assert "codex/gpt-5.6" in cache["providers"]["codex"]["models"]

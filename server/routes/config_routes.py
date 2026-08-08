@@ -658,6 +658,13 @@ def _available_models_payload(config) -> list[dict[str, str]]:
         )
         seen.add(model_id)
 
+    known_codex_models = _known_codex_models()
+    cached_codex_models = _models_for_provider("codex", known_codex_models)
+    # The subscription runtime can lag behind AnimaWorks' supported Codex
+    # catalog (for example, it may omit newly enabled gpt-5.6 variants).  Keep
+    # known supported models visible and append any dynamic-only discoveries.
+    codex_models = _unique_model_ids([*known_codex_models, *cached_codex_models])
+
     for provider, cred in config.credentials.items():
         if not cred.api_key and cred.type not in ("claude_code_login", "codex_login"):
             continue
@@ -693,14 +700,14 @@ def _available_models_payload(config) -> list[dict[str, str]]:
                 ):
                     add(model_id, route="A", provider_label="OpenAI", credential="openai")
             if cred.type == "codex_login" or cred.api_key:
-                for model_id in _models_for_provider("codex", _known_codex_models()):
+                for model_id in codex_models:
                     add(model_id, route="C", provider_label="OpenAI", credential="openai")
         elif provider in ("google", "gemini"):
             for model_id in _models_for_provider("google", _known_google_models()):
                 add(model_id, route="A", provider_label="Google", credential="google")
 
     if is_codex_login_available():
-        for model_id in _models_for_provider("codex", _known_codex_models()):
+        for model_id in codex_models:
             add(model_id, route="C", provider_label="OpenAI", credential="codex")
 
     if is_grok_authenticated():

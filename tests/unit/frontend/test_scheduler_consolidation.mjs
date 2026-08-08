@@ -31,6 +31,9 @@ test("scheduler restores the memory consolidation management panel", () => {
   assert.match(source, /consolidationRouteSelect/);
   assert.match(source, /consolidationProviderSelect/);
   assert.match(source, /consolidationModelSelect/);
+  assert.match(source, /consolidationModelRefreshBtn/);
+  assert.match(source, /\/api\/system\/available-models\/refresh/);
+  assert.match(source, /_replaceConsolidationModelPicker/);
   assert.match(source, /\/api\/system\/consolidation\/status/);
   assert.match(source, /data-consolidation-run/);
   assert.match(source, /\/api\/system\/consolidation\/catchup/);
