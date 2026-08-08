@@ -13,13 +13,9 @@ Tests cover:
 - report_knowledge_outcome handler
 - Knowledge protection in forgetting
 - Knowledge reconsolidation targets
-- Contradiction-driven failure_count increment
-- Contradiction history JSONL persistence
 - Backward compatibility with legacy knowledge files
 """
 
-import json
-from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -35,16 +31,6 @@ def anima_dir(tmp_path: Path) -> Path:
     for sub in ("knowledge", "episodes", "skills", "procedures", "state", "shortterm", "activity_log", "archive"):
         (d / sub).mkdir(parents=True)
     return d
-
-
-@pytest.fixture
-def shared_dir(tmp_path: Path) -> Path:
-    """Shared directory for contradiction history."""
-    d = tmp_path / "shared"
-    d.mkdir(parents=True)
-    return d
-
-
 def _write_knowledge(
     anima_dir: Path,
     name: str,
@@ -372,137 +358,6 @@ class TestKnowledgeReconsolidation:
 
 
 # ── 5. Contradiction failure_count increment ───────────────────
-
-
-class TestContradictionFailureIncrement:
-    def test_increment_failure_count(self, anima_dir: Path) -> None:
-        from core.memory.contradiction import ContradictionDetector
-
-        _write_knowledge(
-            anima_dir,
-            "old.md",
-            "old info",
-            {
-                "confidence": 0.7,
-                "success_count": 1,
-                "failure_count": 0,
-                "version": 1,
-            },
-        )
-
-        detector = ContradictionDetector(anima_dir, "test_anima")
-        detector._increment_failure_count(anima_dir / "knowledge" / "old.md")
-
-        from core.memory.manager import MemoryManager
-
-        meta = MemoryManager(anima_dir).read_knowledge_metadata(
-            anima_dir / "knowledge" / "old.md",
-        )
-        assert meta["failure_count"] == 1
-        assert meta["confidence"] == 0.5  # 1/(1+1) = 0.5
-
-    def test_increment_missing_file_no_crash(self, anima_dir: Path) -> None:
-        from core.memory.contradiction import ContradictionDetector
-
-        detector = ContradictionDetector(anima_dir, "test_anima")
-        # Should not raise — gracefully skips
-        detector._increment_failure_count(anima_dir / "knowledge" / "gone.md")
-
-    def test_increment_no_frontmatter(self, anima_dir: Path) -> None:
-        from core.memory.contradiction import ContradictionDetector
-
-        _write_knowledge(anima_dir, "plain.md", "no meta")
-        detector = ContradictionDetector(anima_dir, "test_anima")
-        detector._increment_failure_count(anima_dir / "knowledge" / "plain.md")
-
-        from core.memory.manager import MemoryManager
-
-        meta = MemoryManager(anima_dir).read_knowledge_metadata(
-            anima_dir / "knowledge" / "plain.md",
-        )
-        assert meta["failure_count"] == 1
-        assert meta["confidence"] == 0.0  # 0/(0+1) = 0
-
-
-# ── 6. Contradiction history JSONL persistence ─────────────────
-
-
-class TestContradictionHistoryPersistence:
-    def test_persist_creates_jsonl_entry(
-        self,
-        anima_dir: Path,
-        shared_dir: Path,
-        monkeypatch,
-    ) -> None:
-        from core.memory.contradiction import ContradictionDetector, ContradictionPair
-
-        monkeypatch.setattr(
-            "core.paths.get_shared_dir",
-            lambda: shared_dir,
-        )
-
-        detector = ContradictionDetector(anima_dir, "test_anima")
-        pair = ContradictionPair(
-            file_a=Path("newer.md"),
-            file_b=Path("older.md"),
-            text_a="new text",
-            text_b="old text",
-            confidence=0.85,
-            resolution="supersede",
-            reason="newer info",
-            merged_content=None,
-        )
-        detector._persist_contradiction_history(pair, "supersede")
-
-        history = shared_dir / "contradiction_history.jsonl"
-        assert history.exists()
-
-        entries = [json.loads(line) for line in history.read_text().strip().split("\n")]
-        assert len(entries) == 1
-        entry = entries[0]
-        assert entry["anima"] == "test_anima"
-        assert entry["file_a"] == "newer.md"
-        assert entry["file_b"] == "older.md"
-        assert entry["confidence"] == 0.85
-        assert entry["resolution"] == "supersede"
-        assert entry["reason"] == "newer info"
-        assert entry["merged_content"] is None
-        assert "ts" in entry
-        # Verify ts is valid ISO8601
-        datetime.fromisoformat(entry["ts"])
-
-    def test_persist_appends_multiple_entries(
-        self,
-        anima_dir: Path,
-        shared_dir: Path,
-        monkeypatch,
-    ) -> None:
-        from core.memory.contradiction import ContradictionDetector, ContradictionPair
-
-        monkeypatch.setattr(
-            "core.paths.get_shared_dir",
-            lambda: shared_dir,
-        )
-
-        detector = ContradictionDetector(anima_dir, "test_anima")
-        for i in range(3):
-            pair = ContradictionPair(
-                file_a=Path(f"a{i}.md"),
-                file_b=Path(f"b{i}.md"),
-                text_a="",
-                text_b="",
-                confidence=0.9,
-                resolution="coexist",
-                reason="context-dependent",
-            )
-            detector._persist_contradiction_history(pair, "coexist")
-
-        history = shared_dir / "contradiction_history.jsonl"
-        entries = [json.loads(line) for line in history.read_text().strip().split("\n")]
-        assert len(entries) == 3
-
-
-# ── 7. ChromaDB metadata extraction ───────────────────────────
 
 
 class TestIndexerMetadataExtraction:

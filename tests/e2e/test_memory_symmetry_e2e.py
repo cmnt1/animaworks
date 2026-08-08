@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -8,14 +9,12 @@ from __future__ import annotations
 Tests the full integration of:
 1. Knowledge failure tracking (success_count/failure_count lifecycle)
 2. Channel D stub (priming returns no matched skills; catalog lives in system prompt)
-3. Contradiction history persistence + failure_count auto-increment
 
 Requires ChromaDB and sentence-transformers.
 """
 
-import json
-from datetime import datetime
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 import yaml
@@ -186,83 +185,7 @@ async def test_reconsolidation_targets_e2e(anima_dir):
     assert "borderline.md" not in names
 
 
-# ── Test 3: Contradiction History Full Pipeline ────────────────
-
-
-def test_contradiction_history_and_failure_increment(anima_dir, monkeypatch):
-    """Contradiction resolution persists history and increments failure_count."""
-    from core.memory.contradiction import ContradictionDetector, ContradictionPair
-    from core.memory.manager import MemoryManager
-
-    # Set shared_dir to our test data_dir
-    shared_dir = anima_dir.parent.parent / "shared"
-    shared_dir.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr(
-        "core.paths.get_shared_dir",
-        lambda: shared_dir,
-    )
-
-    # Create two knowledge files
-    _write_knowledge(anima_dir, "newer.md", "Updated policy.", {
-        "confidence": 0.8,
-        "success_count": 2,
-        "failure_count": 0,
-        "version": 1,
-        "created_at": "2026-02-19",
-    })
-    _write_knowledge(anima_dir, "older.md", "Outdated policy.", {
-        "confidence": 0.7,
-        "success_count": 1,
-        "failure_count": 0,
-        "version": 1,
-        "created_at": "2026-01-01",
-    })
-
-    detector = ContradictionDetector(anima_dir, "test_anima")
-    pair = ContradictionPair(
-        file_a=anima_dir / "knowledge" / "newer.md",
-        file_b=anima_dir / "knowledge" / "older.md",
-        text_a="Updated policy.",
-        text_b="Outdated policy.",
-        confidence=0.85,
-        resolution="supersede",
-        reason="Newer policy supersedes older",
-    )
-
-    # Simulate the resolution flow manually:
-    # 1. Increment failure_count before resolution
-    detector._increment_failure_count(pair.file_b)
-    # 2. Persist history
-    detector._persist_contradiction_history(pair, "supersede")
-
-    # Verify failure_count was incremented on older file
-    mm = MemoryManager(anima_dir)
-    meta_old = mm.read_knowledge_metadata(anima_dir / "knowledge" / "older.md")
-    assert meta_old["failure_count"] == 1
-    assert meta_old["confidence"] == 0.5  # 1/(1+1) = 0.5
-
-    # Verify newer file is unchanged
-    meta_new = mm.read_knowledge_metadata(anima_dir / "knowledge" / "newer.md")
-    assert meta_new["failure_count"] == 0
-    assert meta_new["success_count"] == 2
-
-    # Verify JSONL history
-    history_path = shared_dir / "contradiction_history.jsonl"
-    assert history_path.exists()
-
-    entries = [json.loads(line) for line in history_path.read_text().strip().split("\n")]
-    assert len(entries) == 1
-    entry = entries[0]
-    assert entry["anima"] == "test_anima"
-    assert entry["file_a"] == "newer.md"
-    assert entry["file_b"] == "older.md"
-    assert entry["confidence"] == 0.85
-    assert entry["resolution"] == "supersede"
-    assert entry["reason"] == "Newer policy supersedes older"
-    datetime.fromisoformat(entry["ts"])
-
-
-# ── Test 4: Backward Compatibility ─────────────────────────────
+# ── Test 3: Backward Compatibility ─────────────────────────────
 
 
 def test_backward_compatibility_legacy_knowledge(anima_dir):
@@ -271,7 +194,6 @@ def test_backward_compatibility_legacy_knowledge(anima_dir):
     from core.memory.forgetting import ForgettingEngine
     from core.memory.manager import MemoryManager
     from core.tooling.handler import ToolHandler
-    from unittest.mock import MagicMock
 
     # Legacy file: no tracking fields at all
     _write_knowledge(anima_dir, "legacy_no_meta.md", "Old content without frontmatter")

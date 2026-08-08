@@ -40,8 +40,7 @@ def _iter_reconsolidation_files(root: Path) -> list[Path]:
     Uses ``rglob`` so knowledge/procedure files kept in subdirectories are
     scanned for reconsolidation (F4). Any path with an ``archive`` directory
     component is skipped so superseded/merged/versioned copies (which live
-    under ``archive/``) are never treated as live reconsolidation targets —
-    matching the archive-free traversal used by the contradiction scanner.
+    under ``archive/``) are never treated as live reconsolidation targets.
 
     Args:
         root: Directory to scan (e.g. ``knowledge/`` or ``procedures/``).

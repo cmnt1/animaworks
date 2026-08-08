@@ -6,10 +6,9 @@ from __future__ import annotations
 
 """E2E tests for forgetting pipeline fixes.
 
-Tests three aspects of the forgetting pipeline that were fixed:
-1. Stage 2: _sync_merged_source_files() archives originals and writes merged content
-2. Stage 3: complete_forgetting() deletes vectors before archiving files
-3. Monthly forgetting schedule: ProcessSupervisor registers the monthly job
+Tests two aspects of the forgetting pipeline that were fixed:
+1. Complete forgetting deletes vectors before archiving files
+2. ProcessSupervisor registers the monthly forgetting job
 """
 
 from pathlib import Path
@@ -17,107 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# ── Test 1: Stage 2 — _sync_merged_source_files ──────────────────
-
-
-class TestSyncMergedSourceFiles:
-    """Verify _sync_merged_source_files archives originals and writes merged content."""
-
-    def test_sync_merged_source_files(self, tmp_path: Path) -> None:
-        """After neurogenesis merge, source files are updated on disk."""
-        from core.memory.forgetting import ForgettingEngine
-
-        anima_dir = tmp_path / "test_anima"
-        (anima_dir / "knowledge").mkdir(parents=True)
-
-        # Create two source files
-        file_a = anima_dir / "knowledge" / "topic-a.md"
-        file_b = anima_dir / "knowledge" / "topic-b.md"
-        file_a.write_text("Original content A", encoding="utf-8")
-        file_b.write_text("Original content B", encoding="utf-8")
-
-        engine = ForgettingEngine(anima_dir, "test_anima")
-
-        chunk_a = {"id": "chunk_a", "metadata": {"source_file": "knowledge/topic-a.md"}}
-        chunk_b = {"id": "chunk_b", "metadata": {"source_file": "knowledge/topic-b.md"}}
-        merged = "Merged content from A and B"
-
-        engine._sync_merged_source_files(chunk_a, chunk_b, merged)
-
-        # Primary file should have merged content
-        assert file_a.read_text(encoding="utf-8") == merged
-        # Secondary file should be deleted
-        assert not file_b.exists()
-        # Archive should have both originals
-        archive_dir = anima_dir / "archive" / "merged"
-        assert archive_dir.exists()
-        archived = list(archive_dir.iterdir())
-        assert len(archived) == 2
-
-    def test_sync_merged_source_files_skips_empty_source(self, tmp_path: Path) -> None:
-        """When source_file is empty or 'merged', no files are touched."""
-        from core.memory.forgetting import ForgettingEngine
-
-        anima_dir = tmp_path / "test_anima"
-        anima_dir.mkdir(parents=True)
-
-        engine = ForgettingEngine(anima_dir, "test_anima")
-
-        chunk_a = {"id": "a", "metadata": {"source_file": ""}}
-        chunk_b = {"id": "b", "metadata": {"source_file": "merged"}}
-        # Should not raise
-        engine._sync_merged_source_files(chunk_a, chunk_b, "content")
-
-        # No archive directory should be created
-        assert not (anima_dir / "archive" / "merged").exists()
-
-    def test_sync_merged_source_files_handles_missing_files(self, tmp_path: Path) -> None:
-        """Gracefully handles source files that no longer exist on disk."""
-        from core.memory.forgetting import ForgettingEngine
-
-        anima_dir = tmp_path / "test_anima"
-        (anima_dir / "knowledge").mkdir(parents=True)
-
-        engine = ForgettingEngine(anima_dir, "test_anima")
-
-        chunk_a = {"id": "a", "metadata": {"source_file": "knowledge/nonexistent-a.md"}}
-        chunk_b = {"id": "b", "metadata": {"source_file": "knowledge/nonexistent-b.md"}}
-
-        # Should not raise even though files don't exist
-        engine._sync_merged_source_files(chunk_a, chunk_b, "merged content")
-
-        # Primary file should be created with merged content
-        primary = anima_dir / "knowledge" / "nonexistent-a.md"
-        assert primary.exists()
-        assert primary.read_text(encoding="utf-8") == "merged content"
-
-    def test_sync_merged_source_files_same_source(self, tmp_path: Path) -> None:
-        """When both chunks come from the same file, only one archive copy is made."""
-        from core.memory.forgetting import ForgettingEngine
-
-        anima_dir = tmp_path / "test_anima"
-        (anima_dir / "knowledge").mkdir(parents=True)
-
-        source_file = anima_dir / "knowledge" / "shared.md"
-        source_file.write_text("Original content", encoding="utf-8")
-
-        engine = ForgettingEngine(anima_dir, "test_anima")
-
-        chunk_a = {"id": "a", "metadata": {"source_file": "knowledge/shared.md"}}
-        chunk_b = {"id": "b", "metadata": {"source_file": "knowledge/shared.md"}}
-
-        engine._sync_merged_source_files(chunk_a, chunk_b, "merged")
-
-        # Primary file should have merged content
-        assert source_file.read_text(encoding="utf-8") == "merged"
-        # Archive should have exactly one copy (secondary == primary, so no removal)
-        archive_dir = anima_dir / "archive" / "merged"
-        assert archive_dir.exists()
-        archived = list(archive_dir.iterdir())
-        assert len(archived) == 1
-
-
-# ── Test 2: Stage 3 — complete_forgetting() archive order ────────
+# ── Test 1: complete_forgetting() archive order ──────────────────
 
 
 class TestCompleteForgettingOrder:
@@ -285,7 +184,7 @@ class TestCompleteForgettingOrder:
         )
 
 
-# ── Test 3: Monthly forgetting schedule ───────────────────────────
+# ── Test 2: Monthly forgetting schedule ───────────────────────────
 
 
 class TestMonthlyForgettingSchedule:
