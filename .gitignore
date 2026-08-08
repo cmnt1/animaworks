@@ -79,6 +79,7 @@ docs/paper/evaluation_results.md
 !docs/gpu-operations.md
 !docs/memory.md
 !docs/memory.ja.md
+!docs/process-architecture.ja.md
 !docs/security.md
 !docs/security.ja.md
 !docs/slack-socket-mode-setup.md
