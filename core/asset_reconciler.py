@@ -275,6 +275,8 @@ async def reconcile_anima_assets(
                 "No prompt available for %s — cannot generate assets",
                 anima_name,
             )
+            # Without cooldown this retries every reconcile tick (~30s) forever
+            _record_failure(anima_name, "no prompt available")
             return {
                 "anima": anima_name,
                 "skipped": True,
@@ -575,7 +577,9 @@ async def _synthesize_prompt_via_llm(
                 system_prompt=system_content,
                 model=model or "",
                 credential=credential,
-                max_tokens=256,
+                # thinking系モデルはreasoningだけで数百トークン消費するため、
+                # 256だとcontentが空のままfinish_reason=lengthになる
+                max_tokens=4096,
             )
             or ""
         ).strip()
