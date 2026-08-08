@@ -1103,10 +1103,20 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         except Exception:
             logger.debug("Failed to read bootstrap status for %s", anima_name, exc_info=True)
 
+        subprocesses: list[dict] = []
+        try:
+            sidecar = self._read_busy_sidecar(anima_name, handle)
+            if sidecar:
+                subprocesses = [p for p in sidecar.get("processes") or [] if isinstance(p, dict)]
+        except Exception:
+            logger.debug("Failed to read subprocess info for %s", anima_name, exc_info=True)
+
         return {
             "status": status_value,
             "error": self._failure_reasons.get(anima_name),
             "pid": handle.get_pid(),
+            "process_count": 1 + len(subprocesses),
+            "subprocesses": subprocesses,
             "uptime_sec": uptime,
             "restart_count": self._restart_counts.get(anima_name, 0),
             "start_fail_count": self._start_fail_counts.get(anima_name, 0),

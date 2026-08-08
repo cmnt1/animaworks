@@ -160,6 +160,9 @@ export function buildAnimaListStatusHtml(p) {
   const uptime = p.uptime_sec ? formatUptime(p.uptime_sec) : "";
   const parts = [status];
   if (uptime && uptime !== "--") parts.push(uptime);
+  const subprocesses = Array.isArray(p.subprocesses) ? p.subprocesses : [];
+  const processCount = p.process_count || (subprocesses.length ? 1 + subprocesses.length : 0);
+  if (processCount > 1) parts.push(t("processes.count_short", { count: processCount }));
 
   let tone = "neutral";
   if (status === "error" || status === "down") tone = "error";
@@ -168,7 +171,10 @@ export function buildAnimaListStatusHtml(p) {
   else if (status === "stopped" || status === "not_found" || status === "offline") tone = "neutral";
   else tone = "warning";
 
-  const pidTitle = p.pid != null && p.pid !== "" ? `PID: ${p.pid}` : "";
+  let pidTitle = p.pid != null && p.pid !== "" ? `PID: ${p.pid}` : "";
+  if (subprocesses.length) {
+    pidTitle += ` · ${subprocesses.map((s) => `${s.kind || "?"}: ${s.pid ?? "--"}`).join(", ")}`;
+  }
   return `<span class="anima-list-status anima-list-status--${tone}" title="${escapeHtml(pidTitle)}">${health}<span class="anima-list-status-text">${escapeHtml(parts.join(" · "))}</span></span>`;
 }
 

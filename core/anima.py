@@ -384,6 +384,7 @@ class DigitalAnima(
                 return
             path.parent.mkdir(parents=True, exist_ok=True)
             lanes: list[str] = []
+            subprocesses: list[dict[str, Any]] = []
             try:
                 for key, lock in self._conversation_locks.items():
                     if lock.locked():
@@ -399,6 +400,9 @@ class DigitalAnima(
                     lane = getattr(identity, "display_lane", None)
                     if lane and lane not in lanes:
                         lanes.append(str(lane))
+                    job_pid = getattr(job, "pid", None)
+                    if job_pid is not None:
+                        subprocesses.append({"pid": job_pid, "kind": str(getattr(identity, "lane", None) or "task")})
             except Exception:
                 logger.debug("[%s] Failed to collect busy status lanes", self.name, exc_info=True)
             payload = {
@@ -409,6 +413,7 @@ class DigitalAnima(
                 "last_progress_at": last_progress.isoformat(),
                 "updated_at": now.isoformat(),
                 "lanes": lanes,
+                "processes": subprocesses,
             }
             tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
             tmp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")

@@ -116,6 +116,8 @@ def create_animas_router() -> APIRouter:
                 "needs_repair": proc_status.get("needs_repair", False),
                 "needs_background_bootstrap": proc_status.get("needs_background_bootstrap", False),
                 "pid": proc_status.get("pid"),
+                "process_count": proc_status.get("process_count"),
+                "subprocesses": proc_status.get("subprocesses") or [],
                 "uptime_sec": proc_status.get("uptime_sec"),
                 "last_busy_since": proc_status.get("last_busy_since"),
                 "busy": _read_busy_sidecar(name),

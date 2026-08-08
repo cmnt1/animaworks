@@ -107,6 +107,24 @@ class TestMarkBusyStart:
         dp._clear_busy_status_sidecar_if_idle()
         assert not sidecar.exists()
 
+    def test_sidecar_includes_isolated_job_processes(self, data_dir, make_anima):
+        """Isolated task-runner jobs surface as pid+kind subprocess entries."""
+        anima_dir = make_anima("alice")
+        shared_dir = data_dir / "shared"
+        dp = _make_digital_anima(anima_dir, shared_dir)
+
+        job = MagicMock()
+        job.pid = 12345
+        job.identity.lane = "chat"
+        job.identity.display_lane = "chat"
+        dp._set_isolated_busy_jobs_provider(lambda: {"chat-x": job})
+
+        dp._mark_busy_start()
+
+        sidecar = data_dir / "run" / "animas" / "alice.busy.json"
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+        assert data["processes"] == [{"pid": 12345, "kind": "chat"}]
+
     def test_progress_callback_refreshes_busy_sidecar(self, data_dir, make_anima):
         """Streaming progress should refresh the IPC-independent busy marker."""
         anima_dir = make_anima("alice")
@@ -154,14 +172,19 @@ class TestHeartbeatCallsMarkBusyStart:
         from core.schemas import CycleResult
 
         mock_result = CycleResult(
-            trigger="heartbeat", action="idle", summary="done", duration_ms=100,
+            trigger="heartbeat",
+            action="idle",
+            summary="done",
+            duration_ms=100,
         )
-        with patch.object(dp, "_build_heartbeat_prompt", return_value=[]), \
-             patch.object(dp, "_execute_heartbeat_cycle", return_value=mock_result), \
-             patch.object(dp, "_build_prior_messages", return_value=[]), \
-             patch.object(dp._activity, "log"), \
-             patch.object(dp.messenger, "has_unread", return_value=False), \
-             patch("core.tooling.handler.active_session_type"):
+        with (
+            patch.object(dp, "_build_heartbeat_prompt", return_value=[]),
+            patch.object(dp, "_execute_heartbeat_cycle", return_value=mock_result),
+            patch.object(dp, "_build_prior_messages", return_value=[]),
+            patch.object(dp._activity, "log"),
+            patch.object(dp.messenger, "has_unread", return_value=False),
+            patch("core.tooling.handler.active_session_type"),
+        ):
             try:
                 await dp.run_heartbeat()
             except Exception:
@@ -202,11 +225,13 @@ class TestHealthCheckWithFreshProgress:
         fresh_progress = now - timedelta(seconds=3)
         from unittest.mock import AsyncMock
 
-        handle.ping = AsyncMock(return_value={
-            "success": True,
-            "is_busy": True,
-            "last_progress_at": fresh_progress.isoformat(),
-        })
+        handle.ping = AsyncMock(
+            return_value={
+                "success": True,
+                "is_busy": True,
+                "last_progress_at": fresh_progress.isoformat(),
+            }
+        )
 
         sup = object.__new__(HealthMixin)
         sup.health_config = HealthConfig()
@@ -232,9 +257,7 @@ class TestHealthCheckWithFreshProgress:
 
         await sup._check_process_health("test-anima", handle)
 
-        assert len(hang_calls) == 0, (
-            "Process with fresh _last_progress_at (3s ago) should NOT be killed"
-        )
+        assert len(hang_calls) == 0, "Process with fresh _last_progress_at (3s ago) should NOT be killed"
 
     @pytest.mark.asyncio
     async def test_stale_progress_still_triggers_kill(self, tmp_path):
@@ -259,11 +282,13 @@ class TestHealthCheckWithFreshProgress:
         handle.process = mock_proc
 
         stale_progress = now_jst() - timedelta(minutes=20)
-        handle.ping = AsyncMock(return_value={
-            "success": True,
-            "is_busy": True,
-            "last_progress_at": stale_progress.isoformat(),
-        })
+        handle.ping = AsyncMock(
+            return_value={
+                "success": True,
+                "is_busy": True,
+                "last_progress_at": stale_progress.isoformat(),
+            }
+        )
 
         sup = object.__new__(HealthMixin)
         sup.health_config = HealthConfig()
@@ -290,9 +315,7 @@ class TestHealthCheckWithFreshProgress:
         await sup._check_process_health("test-anima", handle)
         await asyncio.sleep(0)
 
-        assert len(hang_calls) == 1, (
-            "Process with genuinely stale progress (20min) should be killed"
-        )
+        assert len(hang_calls) == 1, "Process with genuinely stale progress (20min) should be killed"
 
 
 class TestPingReturnsBusySince:
