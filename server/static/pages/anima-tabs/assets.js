@@ -19,6 +19,8 @@ let _previewHistory = [];
 let _currentPreviewIdx = -1;
 let _galleryReloadTimer = null;
 let _faceDebounceTimer = null;
+let _previewPollTimer = null;
+let _previewPollDeadline = 0;
 
 const EXPRESSION_LIST = ["neutral", "smile", "laugh", "troubled", "surprised", "thinking", "embarrassed"];
 
@@ -66,6 +68,7 @@ export function destroy() {
     clearTimeout(_faceDebounceTimer);
     _faceDebounceTimer = null;
   }
+  _stopPreviewPolling();
   // Force-close modals even mid-rebuild (client leak prevention; server job continues)
   _forceCloseModals();
   _container = null;
@@ -785,6 +788,13 @@ async function _generatePreview() {
   if (importAsIs) requestBody.import_as_is = true;
 
   try {
+    // Snapshot existing server-side previews so polling only reports new ones
+    let baseline = new Set();
+    try {
+      const pre = await api(`/api/animas/${enc}/assets/remake-preview`);
+      baseline = new Set(pre.previews || []);
+    } catch { /* non-fatal — history-based dedupe still applies */ }
+
     const result = await api(`/api/animas/${enc}/assets/remake-preview`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -796,7 +806,8 @@ async function _generatePreview() {
     if (result.status === "generating") {
       // 202 Accepted — generation running in background.
       // Progress and result arrive via WebSocket (anima.image_gen_progress / anima.remake_preview_ready).
-      // Buttons stay disabled until WS events fire.
+      // Polling covers WS loss (mobile browsers suspend sockets in background tabs).
+      _startPreviewPolling(baseline);
       return;
     }
 
@@ -818,8 +829,64 @@ async function _generatePreview() {
 }
 
 function _addPreviewToHistory(url, previewFile, seed) {
+  // Dedupe: the same preview may arrive via both WebSocket and polling
+  if (previewFile && _previewHistory.some((e) => e.previewFile === previewFile)) return;
   _previewHistory.push({ url, previewFile, seed, index: _previewHistory.length });
   _currentPreviewIdx = _previewHistory.length - 1;
+}
+
+// ── Polling fallback (WS events can be lost on mobile) ──
+
+const PREVIEW_POLL_INTERVAL_MS = 5000;
+const PREVIEW_POLL_TIMEOUT_MS = 10 * 60 * 1000;
+
+let _previewPollBaseline = new Set();
+
+function _startPreviewPolling(baseline) {
+  _stopPreviewPolling();
+  _previewPollBaseline = baseline || new Set();
+  _previewPollDeadline = Date.now() + PREVIEW_POLL_TIMEOUT_MS;
+  _previewPollTimer = setInterval(_pollPreviewOnce, PREVIEW_POLL_INTERVAL_MS);
+}
+
+function _stopPreviewPolling() {
+  if (_previewPollTimer) {
+    clearInterval(_previewPollTimer);
+    _previewPollTimer = null;
+  }
+}
+
+async function _pollPreviewOnce() {
+  if (!_selectedAnima) {
+    _stopPreviewPolling();
+    return;
+  }
+  if (Date.now() > _previewPollDeadline) {
+    _stopPreviewPolling();
+    const previewContainer = document.getElementById("assetsPreviewContainer");
+    if (previewContainer && !_previewGenerated) {
+      previewContainer.innerHTML = `<div class="assets-error">${t("assets.preview_failed")}: timeout</div>`;
+      previewContainer.className = "assets-modal-preview-placeholder";
+      const generateBtn = document.getElementById("assetsGeneratePreviewBtn");
+      if (generateBtn) { generateBtn.disabled = false; generateBtn.textContent = "Generate Preview"; }
+    }
+    return;
+  }
+  const enc = encodeURIComponent(_selectedAnima);
+  let status;
+  try {
+    status = await api(`/api/animas/${enc}/assets/remake-preview`);
+  } catch {
+    return; // transient network error — keep polling
+  }
+  const known = new Set(_previewHistory.map((e) => e.previewFile));
+  const fresh = (status.previews || []).filter((f) => !known.has(f) && !_previewPollBaseline.has(f));
+  if (!fresh.length) return;
+  _stopPreviewPolling();
+  _previewBackupId = _previewBackupId || status.backup_id;
+  const latest = fresh[fresh.length - 1];
+  _addPreviewToHistory(`/api/animas/${enc}/assets/${latest}?v=${Date.now()}`, latest, null);
+  _showCurrentPreview();
 }
 
 function _showCurrentPreview() {
@@ -1079,6 +1146,7 @@ function _onImageGenProgress(data) {
 
   // Error case: generation failed
   if (data.error) {
+    _stopPreviewPolling();
     previewContainer.innerHTML = `<div class="assets-error">${t("assets.preview_failed")}: ${escapeHtml(data.error)}</div>`;
     previewContainer.className = "assets-modal-preview-placeholder";
     const generateBtn = document.getElementById("assetsGeneratePreviewBtn");
@@ -1118,6 +1186,7 @@ function _onPreviewReady(data) {
   const animaName = data.name || data.anima;
   if (animaName !== _selectedAnima) return;
 
+  _stopPreviewPolling();
   const previewUrl = data.preview_url || data.url;
   if (previewUrl) {
     _previewBackupId = data.backup_id || _previewBackupId;

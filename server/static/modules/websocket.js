@@ -236,6 +236,7 @@ function handleWsMessage(raw) {
     }
 
     case "anima.remake_preview_ready":
+    case "anima.image_gen_progress":
     case "anima.remake_progress":
     case "anima.remake_complete": {
       // Delegate to assets page handler if registered

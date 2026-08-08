@@ -754,3 +754,42 @@ class TestUploadFullbodyAsset:
         out = anima_dir / "assets" / "avatar_fullbody_realistic.png"
         assert out.read_bytes() == jpeg
         assert resp.json()["filename"] == "avatar_fullbody_realistic.png"
+
+
+# ── GET /animas/{name}/assets/remake-preview ────────────
+
+
+class TestListRemakePreviews:
+    async def test_anima_not_found(self, tmp_path):
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/animas/nobody/assets/remake-preview")
+        assert resp.status_code == 404
+
+    async def test_empty(self, tmp_path):
+        (tmp_path / "alice").mkdir()
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/animas/alice/assets/remake-preview")
+        assert resp.status_code == 200
+        assert resp.json() == {"previews": [], "backup_id": None}
+
+    async def test_lists_previews_and_latest_backup(self, tmp_path):
+        anima_dir = tmp_path / "alice"
+        assets_dir = anima_dir / "assets"
+        assets_dir.mkdir(parents=True)
+        (assets_dir / "_preview_001_realistic.png").write_bytes(b"\x89PNG")
+        (assets_dir / "_preview_002_realistic.png").write_bytes(b"\x89PNG")
+        (assets_dir / "avatar_fullbody_realistic.png").write_bytes(b"\x89PNG")
+        (anima_dir / "assets_backup_20260101_000000").mkdir()
+        (anima_dir / "assets_backup_20260808_113051").mkdir()
+
+        app = _make_test_app(animas_dir=tmp_path)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/animas/alice/assets/remake-preview")
+        data = resp.json()
+        assert data["previews"] == ["_preview_001_realistic.png", "_preview_002_realistic.png"]
+        assert data["backup_id"] == "assets_backup_20260808_113051"
