@@ -262,7 +262,14 @@ async def test_hang_kills_only_stalled_group_while_other_lane_continues(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     anima_dir, shared_dir = phase2_anima
-    threshold = 6.0
+    # NOTE: _busy_hang_threshold_sec is supervisor-wide, not per-job, so once
+    # it is tightened below it also bounds the "healthy" job's own spawn-to-
+    # first-progress latency. On loaded/shared CI runners, spawning a fresh
+    # `python -m core.supervisor.task_runner` (heavy imports) can occasionally
+    # take several seconds, so the threshold needs real headroom above that
+    # cost or "healthy" gets mistakenly hang-killed too (observed in CI as
+    # `idle=6.1s threshold=6.0s` for the healthy job, exit=-15).
+    threshold = 15.0
     supervisor = TaskRunnerSupervisor(
         _ANIMA,
         anima_dir,
@@ -284,16 +291,16 @@ async def test_hang_kills_only_stalled_group_while_other_lane_continues(
 
         healthy = await asyncio.wait_for(
             supervisor.run_cron(_cron("healthy", "printf lane-ok")),
-            timeout=15,
+            timeout=20,
         )
         with pytest.raises(TaskRunnerError):
-            await asyncio.wait_for(stalled, timeout=8)
+            await asyncio.wait_for(stalled, timeout=threshold + 6)
         elapsed = asyncio.get_running_loop().time() - stopped_at
 
         assert healthy["success"] is True
         assert healthy["result"]["stdout"] == "lane-ok"
         assert job.hang_kill_started
-        assert elapsed <= threshold + (supervisor._hang_check_interval * 2) + 0.5
+        assert elapsed <= threshold + (supervisor._hang_check_interval * 2) + 3.0
         assert not _group_exists(job.pgid or 0)
         assert os.getpid() == root_pid
     finally:
