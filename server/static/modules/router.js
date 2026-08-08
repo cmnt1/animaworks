@@ -12,6 +12,10 @@ let containerEl = null;
 // Keys are path prefixes (without '#'). Values are full hashes including '#'.
 // Note: /setup is handled by an explicit block in handleRoute (kept for
 // compatibility with existing structure tests) and is also listed here.
+//
+// Fork policy (docs/fork-policy.md #3): upstream folds the list views into the
+// home org chart and points /processes and /server at "#/". We keep /animas as
+// a first-class management page, so these two stay pointed at our pages.
 export const REDIRECTS = {
   "/processes": "#/animas",
   "/server": "#/scheduler",

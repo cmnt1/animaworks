@@ -215,6 +215,7 @@ class AnimaRunner:
             if not process_config.valid:
                 raise ValueError(process_config.error or "invalid process model configuration")
 
+            # Fork policy (docs/fork-policy.md #5) — keep this import deferred.
             # Deferred import: pulling in DigitalAnima loads the heavy RAG/model
             # stack (~4.5s warm, far more on a cold OneDrive-backed disk). Keeping
             # it out of module import means the socket above binds immediately, so

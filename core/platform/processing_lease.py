@@ -176,9 +176,10 @@ def _validate_common_fields(payload: dict[str, Any], expected_anima: str | None)
 def _pid_exists(pid: int) -> bool | None:
     """Return True/False when known, ``None`` when existence is uncertain.
 
-    Probing is psutil-backed rather than ``os.kill(pid, 0)``: on Windows
-    ``os.kill`` maps to ``TerminateProcess``, so a liveness probe written
-    that way would kill the very process it is checking.
+    Fork policy (``docs/fork-policy.md`` #4): probing is psutil-backed rather
+    than ``os.kill(pid, 0)``.  On Windows ``os.kill`` maps to
+    ``TerminateProcess``, so a liveness probe written that way would kill the
+    very process it is checking.
 
     Overflow/ValueError (e.g. absurdly large PIDs) are treated as dead so
     malformed leases do not block recovery.  Probe failures we cannot

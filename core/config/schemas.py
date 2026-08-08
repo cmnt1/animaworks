@@ -92,7 +92,7 @@ def _phase3_isolation() -> TaskProcessIsolationConfig:
 class ResolvedProcessModelConfig(BaseModel):
     """Validated process topology resolution result.
 
-    Fork policy: the default topology stays ``legacy`` so that adopting an
+    Fork policy (``docs/fork-policy.md`` #1): the default topology stays ``legacy`` so that adopting an
     upstream release never silently switches a running fleet to task-runner
     isolation + root DB ownership.  Upstream defaults this to ``phase3``;
     we migrate per anima by writing ``process_model`` into ``status.json``
