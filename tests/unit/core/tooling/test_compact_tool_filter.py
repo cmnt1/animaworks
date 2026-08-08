@@ -28,10 +28,18 @@ class TestCompactToolFilter:
         tools = build_unified_tool_list(compact=True, include_create_skill=False)
         names = _tool_names(tools)
         for expected in [
-            "Read", "Write", "Edit", "Bash", "Grep", "Glob",
-            "search_memory", "read_memory_file", "write_memory_file",
+            "Read",
+            "Write",
+            "Edit",
+            "Bash",
+            "Grep",
+            "Glob",
+            "search_memory",
+            "read_memory_file",
+            "write_memory_file",
             "heartbeat_observe_snapshot",
-            "send_message", "post_channel", "completion_gate",
+            "send_message",
+            "post_channel",
         ]:
             assert expected in names, f"{expected} missing from compact tools"
 
@@ -57,7 +65,9 @@ class TestCompactToolFilter:
     def test_compact_with_consolidation_trigger(self):
         """compact + consolidation: both filters apply."""
         tools = build_unified_tool_list(
-            compact=True, include_create_skill=False, trigger="consolidation:daily",
+            compact=True,
+            include_create_skill=False,
+            trigger="consolidation:daily",
         )
         names = _tool_names(tools)
         assert "send_message" not in names
@@ -72,7 +82,9 @@ class TestCompactToolFilter:
     def test_compact_with_supervisor_still_filters(self):
         """Supervisor tools should be excluded by compact filter."""
         tools = build_unified_tool_list(
-            compact=True, include_supervisor_tools=True, include_create_skill=False,
+            compact=True,
+            include_supervisor_tools=True,
+            include_create_skill=False,
         )
         names = _tool_names(tools)
         assert "delegate_task" not in names

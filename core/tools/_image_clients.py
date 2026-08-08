@@ -40,6 +40,8 @@ from core.tools.image import (
     NOVELAI_API_URL,
     NOVELAI_ENCODE_URL,
     NOVELAI_MODEL,
+    CodexFirstClient,
+    CodexImageClient,
     FalTextToImageClient,
     FluxKontextClient,
     LocalDiffusersClient,
@@ -50,6 +52,7 @@ from core.tools.image import (
     _convert_anime_to_realistic,
     _image_to_data_uri,
     _retry,
+    codex_available,
 )
 
 __all__ = [
@@ -88,4 +91,7 @@ __all__ = [
     "MeshyClient",
     "NanoGPTImageClient",
     "OpenAIImageClient",
+    "CodexImageClient",
+    "CodexFirstClient",
+    "codex_available",
 ]

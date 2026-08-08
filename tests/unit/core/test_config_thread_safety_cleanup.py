@@ -10,7 +10,6 @@ from __future__ import annotations
 """Tests for config-thread-safety-cleanup issue fixes.
 
 Covers:
-- forgetting.py uses load_config().consolidation.llm_model
 - reminder.py push_sync/drain_sync are thread-safe
 - get_depth_limiter() reloads config on each call
 - check_and_record emits DeprecationWarning
@@ -24,20 +23,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
-@pytest.mark.unit
-class TestForgettingUsesConfigModel:
-    """forgetting.py neurogenesis_reorganize uses load_config().consolidation.llm_model."""
-
-    def test_uses_config_model_when_model_not_provided(self):
-        """When model param is empty, load_config() is called."""
-        with patch("core.config.models.load_config") as mock_load:
-            mock_cfg = MagicMock()
-            mock_cfg.consolidation.llm_model = "test-model-123"
-            mock_load.return_value = mock_cfg
-            from core.config.models import load_config
-            cfg = load_config()
-            assert cfg.consolidation.llm_model == "test-model-123"
 
 @pytest.mark.unit
 class TestReminderSyncThreadSafety:

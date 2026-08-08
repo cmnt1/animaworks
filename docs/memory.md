@@ -491,7 +491,7 @@ Waking (conversation)                     Sleeping (no conversation)
 | **episode compression** | Compress episodes older than 30 days to essentials (skip `[IMPORTANT]`) |
 | **contradiction resolution** | Detect conflicting knowledge; archive or merge |
 
-**2. Post-processing**: `ForgettingEngine.neurogenesis_reorganize()` (async), RAG rebuild
+**2. Post-processing**: pattern distillation, RAG rebuild, and configured graph-backend updates
 
 ### Monthly forgetting pipeline
 
@@ -508,7 +508,7 @@ Daily and weekly consolidation run as **background triggers** (`consolidation:da
 2. `config.json` `consolidation.llm_credential` when a dedicated credential is configured
 3. Framework defaults from `ConsolidationConfig`
 
-A lighter consolidation model keeps a heavy main model for chat while cutting consolidation cost. Weekly `neurogenesis_reorganize`, pattern distillation, and full contradiction scanning use the same consolidation model value.
+A lighter consolidation model keeps a heavy main model for chat while cutting consolidation cost. Weekly pattern distillation uses the same consolidation model value.
 
 ### Consolidation stages summary
 
@@ -516,7 +516,7 @@ A lighter consolidation model keeps a heavy main model for chat while cutting co
 |---|---|---|---|---|
 | **Immediate encoding** | Fast hippocampal encoding | Session boundary (10 min idle or heartbeat) → diff summary → `episodes/` + auto state + resolution propagation | Framework (bg LLM) | At session boundary |
 | **Daily consolidation** | NREM slow-wave / spindle / ripple cascade | Midnight cron → `run_consolidation("daily")` → post: synaptic downscaling + RAG rebuild | Anima + framework post | Nightly |
-| **Weekly integration** | Cortical long-term integration | Weekly cron → `run_consolidation("weekly")` → post: neurogenesis reorganization + RAG rebuild | Anima + framework post | Weekly |
+| **Weekly integration** | Cortical long-term integration | Weekly cron → `run_consolidation("weekly")` → post: pattern distillation + RAG rebuild | Anima + framework post | Weekly |
 | **Monthly forgetting** | Sub-threshold synapse loss | Monthly cron → `complete_forgetting()` + archive cleanup | Framework (bg cron) | Monthly |
 | **Intentional memorization** | PFC elaborative encoding | `write_memory_file` | Agent | On demand |
 
@@ -550,60 +550,9 @@ Resolution propagates in three layers to the local Anima and others:
 
 ---
 
-## Knowledge consistency checks
-
-> Implementation: `core/memory/contradiction.py` — `ContradictionDetector`; `core/memory/nli.py` — `SharedNLIModel`.
-
-Writing raw LLM-extracted knowledge risks hallucinations and contradictions. The current Anima-led consolidation path writes memory through tools, then uses contradiction scanning to catch inconsistent `knowledge/` entries after daily and weekly consolidation. The older standalone knowledge-validation path was removed; NLI is now a shared helper used by contradiction scanning.
-
-### NLI model
-
-- Model: `MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7`
-- Multilingual zero-shot NLI (includes Japanese)
-- GPU if available, else CPU
-- If NLI unavailable, contradiction scanning skips the local NLI pre-check and relies on LLM review for candidate pairs.
-
-### NLI helper behavior
-
-```
-Knowledge file pair
-    │
-    ▼
-[SharedNLIModel]
-    ├── entailment above detector threshold → pair is consistent; skip LLM
-    ├── contradiction above detector threshold → send to LLM for resolution strategy
-    └── neutral / below threshold → send to LLM deep dive
-```
-
-NLI is only a pre-check. The contradiction detector still asks the LLM to confirm and propose a resolution strategy before modifying memory.
-
----
-
 ## Knowledge contradiction detection and resolution
 
-> Implementation: `core/memory/contradiction.py` — `ContradictionDetector`
-
-Contradictions can appear across `knowledge/` (e.g. “A owns X” vs. “A owns Y”). Anima-led consolidation resolves them per `consolidation_instruction` with tools. `ContradictionDetector` is a utility for automatic NLI+LLM detection/resolution.
-
-### Contradiction detection flow
-
-```
-New/updated knowledge file
-    │
-    ▼
-[RAG] Similar knowledge
-    │
-    ▼
-[NLI] Per pair: entailment / contradiction / neutral
-    ├── entailment ≥ 0.70  → no contradiction (skip LLM)
-    ├── contradiction ≥ 0.65 → contradiction → LLM resolution
-    └── neutral / below threshold → LLM deep dive
-                                  │
-                                  ▼
-                             [LLM]
-                                  ├── contradiction → choose strategy
-                                  └── none → skip
-```
+Contradictions can appear across `knowledge/` (e.g. “A owns X” vs. “A owns Y”). Weekly Anima-led consolidation resolves them per `weekly_consolidation_instruction` with memory tools. There is no separate scheduled mechanical detector or automatic resolver.
 
 ### Three resolution strategies
 
@@ -617,8 +566,7 @@ New/updated knowledge file
 
 | When | Target | Description |
 |---|---|---|
-| **Daily** | Files created/updated that day | Final step of daily consolidation |
-| **Weekly** | All `knowledge/` | Catch contradictions missed daily |
+| **Weekly** | All `knowledge/` | Anima reviews and resolves contradictions with memory tools |
 
 ---
 
@@ -702,7 +650,7 @@ New episode
 
 ## Active forgetting: synaptic homeostasis
 
-The brain actively forgets as well as remembers. AnimaWorks implements three forgetting stages based on synaptic homeostasis (Tononi & Cirelli, 2003).
+The brain actively forgets as well as remembers. AnimaWorks implements two forgetting stages based on synaptic homeostasis (Tononi & Cirelli, 2003).
 
 ```
 Waking (conversation)                     Sleeping (no conversation)
@@ -717,12 +665,6 @@ Waking (conversation)                     Sleeping (no conversation)
                                             or utility<0.3 + failure≥3 → immediate mark
                                             (synaptic homeostasis)
                                                  │
-                                            Weekly cron
-                                                 │
-                                                 ▼
-                                            [Neurogenesis reorganization]
-                                            LLM merge of low-activity + similar memory
-                                                 │
                                             Monthly cron
                                                  │
                                                  ▼
@@ -736,7 +678,6 @@ Waking (conversation)                     Sleeping (no conversation)
 | Stage | Brain process | AnimaWorks implementation | Frequency |
 |---|---|---|---|
 | **Daily downscaling** | NREM synaptic downscaling | knowledge: 90d+ no access → low-activity mark. procedures: 180d+ unused or utility<0.3+failure≥3 → low-activity mark | Daily cron |
-| **Neurogenesis reorganization** | Dentate gyrus neurogenesis rewiring | LLM merge of similar low-activity pairs | Weekly cron |
 | **Complete forgetting** | Sub-threshold synapse loss | Remove vector index for low-activity 90d+ + access_count≤2; archive sources (knowledge + episodes + procedures) | Monthly cron |
 
 ### knowledge/ forgetting thresholds
@@ -766,7 +707,6 @@ More lenient than knowledge/ (procedural memory is more forgetting-resistant in 
 | `knowledge/` (success_count ≥ 2) | Conditional | Knowledge validated useful multiple times |
 | `procedures/` (version ≥ 3) | Conditional | Mature after 3+ reconsolidations |
 | `procedures/` (`protected: true`) | Conditional | Manual frontmatter flag |
-| `episodes/` retention | Conditional | Files older than `episode_retention_days` are archived monthly to `archive/episodes/` and removed from the RAG index independently of low-activation forgetting. |
 
 ### Monthly archive cleanup
 
@@ -956,7 +896,7 @@ Public API: `from core.memory.priming import PrimingEngine, PrimingResult, forma
 | `activity.py` | `ActivityLogger` | Timeline core (split into `_activity_*.py`) |
 | `_activity_models.py`, etc. | — | Models / priming formatting / API timeline / conversation view / rotation |
 | `consolidation.py` | `ConsolidationEngine` | Consolidation pre/post (RAG rebuild, etc.) |
-| `forgetting.py` | `ForgettingEngine` | `synaptic_downscaling` / `neurogenesis_reorganize` / `complete_forgetting` / `cleanup_procedure_archives` |
+| `forgetting.py` | `ForgettingEngine` | `synaptic_downscaling` / `complete_forgetting` / `cleanup_procedure_archives` |
 | `streaming_journal.py` | `StreamingJournal` | WAL for streaming |
 | `task_queue.py` | `TaskQueueManager` | Persistent task queue JSONL |
 | `action_gate.py` | Functions | Memory checks before side-effecting actions |
@@ -965,8 +905,6 @@ Public API: `from core.memory.priming import PrimingEngine, PrimingResult, forma
 | `resolution_tracker.py` | `ResolutionTracker` | `shared/resolutions.jsonl` |
 | `cron_logger.py` | `CronLogger` | `state/cron_logs/` |
 | `skill_metadata.py` | Functions | Skill match normalization / keywords |
-| `nli.py` | `SharedNLIModel` | Shared NLI helper for contradiction detection |
-| `contradiction.py` | `ContradictionDetector` | Contradiction utilities |
 | `dedup.py` | — | Message dedup, heartbeat rate limits |
 | `housekeeping.py` | `run_housekeeping()` | Daily cleanup of logs, shortterm, etc. |
 | `frontmatter.py` | `FrontmatterService` | YAML frontmatter |

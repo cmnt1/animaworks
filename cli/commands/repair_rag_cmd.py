@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import secrets
 import sys
 
 
@@ -83,47 +82,44 @@ def repair_rag_command(args: argparse.Namespace) -> None:
 
         temp_worker = start_temporary_vector_worker()
 
-    previous_nonce = os.environ.get("ANIMAWORKS_RAG_REPAIR_NONCE")
-    if previous_nonce is None:
-        os.environ["ANIMAWORKS_RAG_REPAIR_NONCE"] = secrets.token_urlsafe(32)
+    from core.memory.rag.repair_utils import rag_repair_nonce_env
 
     reason = str(getattr(args, "reason", "manual_repair_rag_cli"))
     try:
-        if anima:
-            result = service.repair_anima_if_allowed(
-                anima,
+        with rag_repair_nonce_env():
+            if anima:
+                result = service.repair_anima_if_allowed(
+                    anima,
+                    reason=reason,
+                    collection=None,
+                    source="cli",
+                    include_shared=bool(args.shared),
+                )
+                _print_single_result(result)
+                return
+
+            if all_animas:
+                targets = service.list_repairable_animas()
+            else:
+                targets = service.discover_suspect_animas(window_minutes=window_minutes)
+
+            if not targets:
+                print("No RAG repair targets found.")
+                return
+
+            results = service.repair_animas_if_allowed(
+                targets,
                 reason=reason,
-                collection=None,
                 source="cli",
                 include_shared=bool(args.shared),
             )
-            _print_single_result(result)
-            return
-
-        if all_animas:
-            targets = service.list_repairable_animas()
-        else:
-            targets = service.discover_suspect_animas(window_minutes=window_minutes)
-
-        if not targets:
-            print("No RAG repair targets found.")
-            return
-
-        results = service.repair_animas_if_allowed(
-            targets,
-            reason=reason,
-            source="cli",
-            include_shared=bool(args.shared),
-        )
-        failed = False
-        for result in results.values():
-            failed = failed or not result.ok
-            _print_result_line(result)
-        if failed:
-            raise SystemExit(1)
+            failed = False
+            for result in results.values():
+                failed = failed or not result.ok
+                _print_result_line(result)
+            if failed:
+                raise SystemExit(1)
     finally:
-        if previous_nonce is None:
-            os.environ.pop("ANIMAWORKS_RAG_REPAIR_NONCE", None)
         if temp_worker is not None:
             temp_worker.stop()
 

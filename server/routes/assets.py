@@ -912,6 +912,31 @@ def create_assets_router() -> APIRouter:
             headers={"Cache-Control": "no-store"},
         )
 
+    @router.get("/animas/{name}/assets/remake-preview")
+    async def list_remake_previews(name: str, request: Request):
+        """List generated preview files.
+
+        Polling fallback for clients whose WebSocket dropped while the
+        background generation was running (mobile browsers suspend sockets
+        in background tabs, losing the one-shot remake_preview_ready event).
+        Registered before the {filename} catch-all so it takes precedence.
+        """
+        animas_dir = request.app.state.animas_dir
+        anima_dir = animas_dir / name
+        if not anima_dir.exists():
+            raise HTTPException(status_code=404, detail=f"Anima not found: {name}")
+
+        assets_dir = anima_dir / "assets"
+        previews = sorted(p.name for p in assets_dir.glob("_preview_*.png")) if assets_dir.exists() else []
+        backups = sorted(
+            (d.name for d in anima_dir.iterdir() if d.is_dir() and d.name.startswith("assets_backup_")),
+            reverse=True,
+        )
+        return {
+            "previews": previews,
+            "backup_id": backups[0] if backups else None,
+        }
+
     @router.api_route("/animas/{name}/assets/{filename}", methods=["GET", "HEAD"])
     async def get_asset(
         name: str,

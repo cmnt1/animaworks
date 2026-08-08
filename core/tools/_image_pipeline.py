@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,7 +24,6 @@ from core.tools._image_clients import (
     _REALISTIC_CHAT_ICON_PROMPT,
     _REALISTIC_EXPRESSION_GUIDANCE,
     _REALISTIC_EXPRESSION_PROMPTS,
-    LocalDiffusersClient,
 )
 from core.tools._image_glb import (
     _download_armature_animation,
@@ -267,12 +265,9 @@ class ImageGenPipeline:
 
         self._assets_dir.mkdir(parents=True, exist_ok=True)
 
-        if self._use_diffusers:
-            kontext = LocalDiffusersClient(self._config)
-        else:
-            from core.tools.image_gen import FluxKontextClient
+        from core.tools.image_gen import _build_reference_client
 
-            kontext = FluxKontextClient()
+        kontext = _build_reference_client(self._config)
         if self._is_realistic:
             guidance = _REALISTIC_EXPRESSION_GUIDANCE.get(expression, 4.5)
         else:
@@ -341,7 +336,7 @@ class ImageGenPipeline:
         Returns:
             PipelineResult with paths and error info.
         """
-        from core.tools.image_gen import FalTextToImageClient, FluxKontextClient, MeshyClient, NovelAIClient
+        from core.tools.image_gen import MeshyClient, _build_fullbody_client, _build_reference_client
 
         self._assets_dir.mkdir(parents=True, exist_ok=True)
         if steps:
@@ -373,40 +368,8 @@ class ImageGenPipeline:
             else:
                 try:
                     _notify("fullbody", "generating", 0)
-                    if generation_model and generation_model.startswith("nanogpt:"):
-                        nanogpt_model = generation_model.split(":", 1)[1]
-                        from core.tools.image.nanogpt import NanoGPTImageClient
-
-                        logger.info("Step 1: Generating full-body with NanoGPT (%s) …", nanogpt_model)
-                        client: NanoGPTImageClient | NovelAIClient | FalTextToImageClient | LocalDiffusersClient = (
-                            NanoGPTImageClient(model=nanogpt_model)
-                        )
-                    elif generation_model and generation_model.startswith("openai:"):
-                        openai_model = generation_model.split(":", 1)[1]
-                        from core.tools.image.openai import OpenAIImageClient
-
-                        logger.info("Step 1: Generating full-body with OpenAI Images (%s) …", openai_model)
-                        client = OpenAIImageClient(model=openai_model)
-                    elif self._use_diffusers:
-                        logger.info("Step 1: Generating full-body with local Diffusers …")
-                        client = LocalDiffusersClient(
-                            self._config,
-                        )
-                    elif self._is_realistic:
-                        if not os.environ.get("FAL_KEY"):
-                            raise RuntimeError("FAL_KEY required for realistic image generation.")
-                        logger.info("Step 1: Generating realistic full-body with Fal Flux Pro …")
-                        client: NovelAIClient | FalTextToImageClient = FalTextToImageClient()
-                    elif os.environ.get("NOVELAI_TOKEN"):
-                        logger.info("Step 1: Generating full-body with NovelAI …")
-                        client = NovelAIClient()
-                    elif os.environ.get("FAL_KEY"):
-                        logger.info(
-                            "Step 1: Generating full-body with Fal Flux Pro (fallback) …",
-                        )
-                        client = FalTextToImageClient()
-                    else:
-                        raise RuntimeError("No image generation API key configured. Set NOVELAI_TOKEN or FAL_KEY.")
+                    client = _build_fullbody_client(self._config, generation_model=generation_model)
+                    logger.info("Step 1: Generating full-body with %s …", type(client).__name__)
 
                     # ── A: Load style reference for Vibe Transfer ──
                     # Direct vibe_image parameter takes precedence over config.
@@ -578,7 +541,7 @@ class ImageGenPipeline:
                     if self._config.style_suffix:
                         prompt = prompt + self._config.style_suffix
                     logger.info("Step 3: Generating icon from bustup …")
-                    kontext = FluxKontextClient()
+                    kontext = _build_reference_client(self._config)
                     raw = kontext.generate_from_reference(
                         reference_image=bust_bytes,
                         prompt=prompt,
@@ -612,12 +575,8 @@ class ImageGenPipeline:
             else:
                 try:
                     _notify("chibi", "generating", 0)
-                    if self._use_diffusers:
-                        logger.info("Step 4: Generating chibi with local Diffusers …")
-                        kontext = LocalDiffusersClient(self._config)
-                    else:
-                        logger.info("Step 4: Generating chibi with Flux Kontext …")
-                        kontext = FluxKontextClient()
+                    kontext = _build_reference_client(self._config)
+                    logger.info("Step 4: Generating chibi with %s …", type(kontext).__name__)
                     chibi_bytes = kontext.generate_from_reference(
                         reference_image=fullbody_bytes,
                         prompt=_CHIBI_PROMPT,

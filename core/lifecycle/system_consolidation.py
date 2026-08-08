@@ -202,17 +202,7 @@ async def run_weekly_integration_post_processing(
     model: str,
 ) -> None:
     """Run framework-side weekly integration post-processing."""
-    try:
-        from core.memory.forgetting import ForgettingEngine
-
-        forgetter = ForgettingEngine(anima_dir, anima_name)
-        reorg_result = await forgetter.neurogenesis_reorganize(model=model)
-        logger.info("Neurogenesis reorganization for %s: %s", anima_name, reorg_result)
-    except Exception:
-        logger.exception("Neurogenesis reorganization failed for anima=%s", anima_name)
-
     await run_weekly_pattern_distillation(anima_dir, anima_name, model=model)
-    await run_weekly_full_contradiction_scan(anima_dir, anima_name, consolidation_cfg, model=model)
 
     try:
         from core.memory.consolidation import ConsolidationEngine
@@ -250,65 +240,6 @@ async def run_weekly_pattern_distillation(
         logger.exception("Weekly pattern distillation failed for anima=%s", anima_name)
 
 
-async def run_weekly_full_contradiction_scan(
-    anima_dir: Path,
-    anima_name: str,
-    consolidation_cfg: Any,
-    *,
-    model: str,
-) -> None:
-    """Run a full knowledge contradiction scan during weekly post-processing."""
-    default_cfg = ConsolidationConfig()
-    max_llm_checks = int(
-        getattr(
-            consolidation_cfg,
-            "weekly_full_contradiction_max_pairs",
-            getattr(
-                consolidation_cfg,
-                "knowledge_self_correction_max_contradiction_pairs",
-                default_cfg.knowledge_self_correction_max_contradiction_pairs,
-            ),
-        )
-        if consolidation_cfg is not None
-        else default_cfg.knowledge_self_correction_max_contradiction_pairs
-    )
-    if max_llm_checks <= 0:
-        logger.info("Weekly full contradiction scan skipped for %s: max_llm_checks=%d", anima_name, max_llm_checks)
-        return
-
-    try:
-        from core.memory.activity import ActivityLogger
-        from core.memory.contradiction import ContradictionDetector
-        from core.memory.manager import MemoryManager
-
-        detector = ContradictionDetector(
-            anima_dir,
-            anima_name,
-            ActivityLogger(anima_dir),
-            memory_manager=MemoryManager(anima_dir),
-            batch_size=getattr(consolidation_cfg, "contradiction_batch_size", default_cfg.contradiction_batch_size),
-            nli_prefilter_threshold=getattr(
-                consolidation_cfg,
-                "contradiction_nli_prefilter_threshold",
-                default_cfg.contradiction_nli_prefilter_threshold,
-            ),
-        )
-        pairs = await detector.scan_contradictions(
-            model=model,
-            max_llm_checks=max_llm_checks,
-        )
-        resolved = await detector.resolve_contradictions(pairs, model) if pairs else {}
-        logger.info(
-            "Weekly full contradiction scan for %s: detected=%d resolved=%s stats=%s",
-            anima_name,
-            len(pairs),
-            resolved,
-            detector.last_scan_stats,
-        )
-    except Exception:
-        logger.exception("Weekly full contradiction scan failed for anima=%s", anima_name)
-
-
 async def run_knowledge_self_correction_if_enabled(
     anima_dir: Path,
     anima_name: str,
@@ -332,11 +263,6 @@ async def run_knowledge_self_correction_if_enabled(
         )
 
         limits = KnowledgeCorrectionLimits(
-            max_contradiction_pairs=getattr(
-                consolidation_cfg,
-                "knowledge_self_correction_max_contradiction_pairs",
-                default_cfg.knowledge_self_correction_max_contradiction_pairs,
-            ),
             max_reconsolidation_files=getattr(
                 consolidation_cfg,
                 "knowledge_self_correction_max_reconsolidation_files",
@@ -348,21 +274,6 @@ async def run_knowledge_self_correction_if_enabled(
                     "knowledge_self_correction_timeout_seconds",
                     default_cfg.knowledge_self_correction_timeout_seconds,
                 )
-            ),
-            recent_hours=getattr(
-                consolidation_cfg,
-                "knowledge_self_correction_recent_hours",
-                default_cfg.knowledge_self_correction_recent_hours,
-            ),
-            contradiction_batch_size=getattr(
-                consolidation_cfg,
-                "contradiction_batch_size",
-                default_cfg.contradiction_batch_size,
-            ),
-            contradiction_nli_prefilter_threshold=getattr(
-                consolidation_cfg,
-                "contradiction_nli_prefilter_threshold",
-                default_cfg.contradiction_nli_prefilter_threshold,
             ),
         )
         result = await run_post_consolidation_knowledge_correction(

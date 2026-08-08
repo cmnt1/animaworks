@@ -228,15 +228,6 @@ class TestCallersSendAnimaName:
         source = inspect.getsource(RetrieverCache.get_or_create)
         assert "get_vector_store(anima_name)" in source
 
-    def test_contradiction_passes_anima_name(self):
-        """ContradictionDetector uses get_vector_store(self.anima_name)."""
-        import inspect
-
-        from core.memory.contradiction import ContradictionDetector
-
-        source = inspect.getsource(ContradictionDetector._find_candidates_via_rag)
-        assert "get_vector_store(self.anima_name)" in source
-
     def test_distillation_passes_anima_name(self):
         """ProceduralDistiller uses get_vector_store(self.anima_name)."""
         import inspect

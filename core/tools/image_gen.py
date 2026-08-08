@@ -70,6 +70,8 @@ from core.tools._image_clients import (
     NOVELAI_API_URL,
     NOVELAI_ENCODE_URL,
     NOVELAI_MODEL,
+    CodexFirstClient,
+    CodexImageClient,
     FalTextToImageClient,
     FluxKontextClient,
     LocalDiffusersClient,
@@ -79,6 +81,7 @@ from core.tools._image_clients import (
     OpenAIImageClient,
     _image_to_data_uri,
     _retry,
+    codex_available,
 )
 
 # ── Re-exports: _image_glb ────────────────────────────────
@@ -149,9 +152,8 @@ def _use_diffusers_backend(image_config: Any) -> bool:
     return getattr(image_config, "backend", "api") == "diffusers"
 
 
-def _build_fullbody_client(image_config: Any) -> Any:
-    if _use_diffusers_backend(image_config):
-        return LocalDiffusersClient(image_config)
+def _build_fullbody_api_client(image_config: Any) -> Any:
+    """Select the API fullbody client (NovelAI / Fal). Used as codex fallback."""
     if getattr(image_config, "image_style", "anime") == "realistic":
         if not os.environ.get("FAL_KEY"):
             raise RuntimeError("FAL_KEY required for realistic image generation.")
@@ -163,9 +165,33 @@ def _build_fullbody_client(image_config: Any) -> Any:
     raise RuntimeError("No image generation backend configured. Enable Diffusers or set NOVELAI_TOKEN/FAL_KEY.")
 
 
+def _build_fullbody_client(image_config: Any, *, generation_model: str | None = None) -> Any:
+    if generation_model and generation_model.startswith("nanogpt:"):
+        from core.tools.image.nanogpt import NanoGPTImageClient as SelectedNanoGPTImageClient
+
+        return SelectedNanoGPTImageClient(model=generation_model.split(":", 1)[1])
+    if generation_model and generation_model.startswith("openai:"):
+        from core.tools.image.openai import OpenAIImageClient as SelectedOpenAIImageClient
+
+        return SelectedOpenAIImageClient(model=generation_model.split(":", 1)[1])
+    if _use_diffusers_backend(image_config):
+        return LocalDiffusersClient(image_config)
+    if getattr(image_config, "prefer_codex", True) and codex_available():
+        return CodexFirstClient(
+            fallback_factory=lambda: _build_fullbody_api_client(image_config),
+            image_config=image_config,
+        )
+    return _build_fullbody_api_client(image_config)
+
+
 def _build_reference_client(image_config: Any) -> Any:
     if _use_diffusers_backend(image_config):
         return LocalDiffusersClient(image_config)
+    if getattr(image_config, "prefer_codex", True) and codex_available():
+        return CodexFirstClient(
+            fallback_factory=FluxKontextClient,
+            image_config=image_config,
+        )
     return FluxKontextClient()
 
 
@@ -278,7 +304,7 @@ def dispatch(tool_name: str, args: dict[str, Any]) -> Any:
             prompt = config.style_prefix + prompt
         if config.style_suffix:
             prompt = prompt + config.style_suffix
-        client = FluxKontextClient()
+        client = _build_reference_client(config)
         img = client.generate_from_reference(
             reference_image=ref_path.read_bytes(),
             prompt=prompt,

@@ -510,3 +510,33 @@ class TestHealthCheckStoppingDetection:
 
         # State should remain STOPPING
         assert handle.state == ProcessState.STOPPING
+
+    @pytest.mark.asyncio
+    async def test_health_check_stuck_stopping_during_shutdown_leaves_state_alone(
+        self, supervisor: ProcessSupervisor, tmp_path: Path,
+    ):
+        """A STOPPING handle stuck >30s must not be marked FAILED once the
+        supervisor has started shutting down: every other writer of
+        handle.state for a failure already checks _shutdown first, and this
+        branch did not.
+        """
+        handle = ProcessHandle(
+            anima_name="stuck-anima",
+            socket_path=tmp_path / "stuck.sock",
+            animas_dir=tmp_path / "animas",
+            shared_dir=tmp_path / "shared",
+        )
+        handle.state = ProcessState.STOPPING
+        handle.stopping_since = now_jst() - timedelta(seconds=60)
+
+        supervisor.processes["stuck-anima"] = handle
+        supervisor._shutdown = True
+
+        with patch.object(
+            supervisor, "_handle_process_failure", new_callable=AsyncMock,
+        ) as mock_failure:
+            await supervisor._check_process_health("stuck-anima", handle)
+            await asyncio.sleep(0)
+
+        assert handle.state == ProcessState.STOPPING
+        mock_failure.assert_not_called()

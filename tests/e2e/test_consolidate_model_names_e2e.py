@@ -112,7 +112,6 @@ class TestNoHardcodedModelDefaults:
     MODIFIED_FILES = [
         "core/lifecycle.py",
         "core/memory/consolidation.py",
-        "core/memory/contradiction.py",
         "core/memory/distillation.py",
         "core/memory/forgetting.py",
         "core/memory/reconsolidation.py",
@@ -206,10 +205,10 @@ class TestNoHardcodedModelDefaults:
         # Files that should have the fallback pattern (all except context.py)
         # NOTE: consolidation.py removed — its model-accepting methods were deleted
         # in the consolidation refactor.
+        # NOTE: contradiction.py deleted and forgetting.py's LLM merge removed
+        # when machine memory reorganization was retired.
         expected_fallback_files = [
-            "core/memory/contradiction.py",
             "core/memory/distillation.py",
-            "core/memory/forgetting.py",
             "core/memory/reconsolidation.py",
         ]
 

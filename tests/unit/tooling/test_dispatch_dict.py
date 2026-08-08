@@ -115,7 +115,6 @@ EXPECTED_BUILTIN_TOOLS = frozenset(
         "vault_store",
         "vault_list",
         "todo_write",
-        "completion_gate",
     }
 )
 
@@ -136,8 +135,8 @@ class TestDispatchDictCompleteness:
         assert extra == set(), f"Unexpected tools in dispatch dict: {extra}"
 
     def test_dispatch_count(self, handler: ToolHandler):
-        """Dispatch dict should have exactly 68 entries (60 + 8 CC aliases)."""
-        assert len(handler._dispatch) == 68
+        """Dispatch count should match the canonical expected tool set."""
+        assert len(handler._dispatch) == len(EXPECTED_BUILTIN_TOOLS)
 
     def test_all_dispatch_values_are_callable(self, handler: ToolHandler):
         """Every value in the dispatch dict must be callable."""

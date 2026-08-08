@@ -38,6 +38,7 @@ def test_rag_startup_preflight_repairs_suspects() -> None:
         source="startup_preflight",
         include_shared=True,
     )
+    service.repair_animas_if_allowed.assert_not_called()
 
 
 def test_rag_startup_preflight_ignores_unclean_exit_without_suspects() -> None:

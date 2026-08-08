@@ -11,6 +11,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _clear_failure_cooldowns():
+    """Isolate the module-level cooldown registry between tests."""
+    from core.asset_reconciler import _failure_cooldowns
+
+    _failure_cooldowns.clear()
+    yield
+    _failure_cooldowns.clear()
+
+
 # ── check_anima_assets ──────────────────────────────────────────
 
 
@@ -605,3 +616,33 @@ class TestReconcileAllAssets:
             "anima.assets_updated",
             {"name": "aoi", "source": "reconciliation"},
         )
+
+
+# ── _extract_appearance_field ────────────────────────────────────
+
+
+class TestExtractAppearanceField:
+    """Bold-marker tolerance and multi-line bullet sections (yoru regression)."""
+
+    def test_bold_label_inline_value(self) -> None:
+        from core.asset_reconciler import _extract_appearance_field
+
+        assert _extract_appearance_field("- **外見**: 銀髪ショート") == "銀髪ショート"
+
+    def test_bold_label_multiline_bullets(self) -> None:
+        from core.asset_reconciler import _extract_appearance_field
+
+        text = "- **性格**: 大人びている\n- **外見**:\n  - 髪: 漆黒のロング\n  - 瞳: ガーネット\n- **口調**: 丁寧語\n"
+        result = _extract_appearance_field(text)
+        assert result == "髪: 漆黒のロング、瞳: ガーネット"
+
+    def test_multiline_stops_at_blank_line(self) -> None:
+        from core.asset_reconciler import _extract_appearance_field
+
+        text = "外見:\n  - 銀髪\n\n  - これは別セクション\n"
+        assert _extract_appearance_field(text) == "銀髪"
+
+    def test_no_label_returns_none(self) -> None:
+        from core.asset_reconciler import _extract_appearance_field
+
+        assert _extract_appearance_field("性格: 優しい\n") is None

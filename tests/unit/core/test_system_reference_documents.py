@@ -835,7 +835,6 @@ _EXPECTED_FILES = [
     "communication/sending-limits.md",
     "operations/action-rules-guide.md",
     "operations/background-tasks.md",
-    "operations/completion-gate-guide.md",
     "operations/heartbeat-observe-guide.md",
     "operations/knowledge-promotion-review.md",
     "operations/machine/tool-usage.md",
@@ -1113,7 +1112,6 @@ class TestIndexFileReferences:
         "security/prompt-injection-awareness.md",
         "anatomy/what-is-anima.md",
         "operations/task-board-guide.md",
-
     ]
 
     _EXPECTED_REFERENCE_LINKS = [
@@ -1136,7 +1134,6 @@ class TestIndexFileReferences:
         "reference/troubleshooting/common-issues.md",
         "reference/troubleshooting/escalation-flowchart.md",
         "reference/usecases/usecase-overview.md",
-
     ]
 
     @pytest.mark.parametrize("rel_path", _EXPECTED_REFERENCED_FILES)

@@ -77,7 +77,7 @@ def _path_from_doc_id(doc_id: str, memory_type: str = "knowledge") -> str:
     if not doc_id:
         return ""
     doc_path = str(doc_id).split("#", 1)[0]
-    for marker in ("common_knowledge/", "knowledge/", "episodes/"):
+    for marker in ("companies/", "common_knowledge/", "knowledge/", "episodes/"):
         if marker in doc_path:
             return marker + doc_path.split(marker, 1)[1]
     marker = f"{memory_type}/"
@@ -94,7 +94,11 @@ def to_read_memory_path(metadata: dict, anima_name: str, doc_id: str = "") -> st
     if not source:
         return ""
     if metadata.get("anima") == "shared":
-        return f"common_knowledge/{source}" if not source.startswith("common_knowledge/") else source
+        # companies/ paths are directly readable via read_memory_file; prefixing
+        # common_knowledge/ would make them unresolvable
+        if source.startswith(("common_knowledge/", "companies/")):
+            return source
+        return f"common_knowledge/{source}"
     return source
 
 

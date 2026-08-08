@@ -230,7 +230,7 @@ class TestBaseToolCount:
     def test_base_tool_count(self, executor):
         """Base tools include CC, AW essentials, skill authoring, and curator APIs."""
         tools = executor._build_base_tools()
-        assert len(tools) == 31
+        assert len(tools) == 30
         names = {t["function"]["name"] for t in tools}
         # CC built-in tools (8)
         assert "Read" in names
@@ -245,6 +245,7 @@ class TestBaseToolCount:
         assert "search_memory" in names
         assert "read_memory_file" in names
         assert "write_memory_file" in names
+        assert "heartbeat_observe_snapshot" in names
         assert "report_procedure_outcome" in names
         assert "report_knowledge_outcome" in names
         assert "grant_workspace_access" in names
@@ -269,7 +270,5 @@ class TestBaseToolCount:
         assert "set_skill_lifecycle" in names
         # AW-essential: planning
         assert "todo_write" in names
-        # AW-essential: completion gate
-        assert "completion_gate" in names
         # Mode B only — must NOT be in Mode A
         assert "use_tool" not in names

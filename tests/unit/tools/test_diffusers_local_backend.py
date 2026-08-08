@@ -14,7 +14,7 @@ def test_pipeline_uses_local_diffusers_for_fullbody(tmp_path: Path) -> None:
     config = ImageGenConfig(image_style="anime", backend="diffusers")
     pipeline = ImageGenPipeline(tmp_path, config=config)
 
-    with patch("core.tools._image_pipeline.LocalDiffusersClient") as mock_cls:
+    with patch("core.tools.image_gen.LocalDiffusersClient") as mock_cls:
         mock_client = MagicMock()
         mock_client.generate_fullbody.return_value = b"PNG-DATA"
         mock_cls.return_value = mock_client
@@ -35,7 +35,7 @@ def test_realistic_diffusers_fullbody_enforces_single_subject(tmp_path: Path) ->
     config = ImageGenConfig(image_style="realistic", backend="diffusers")
     pipeline = ImageGenPipeline(tmp_path, config=config)
 
-    with patch("core.tools._image_pipeline.LocalDiffusersClient") as mock_cls:
+    with patch("core.tools.image_gen.LocalDiffusersClient") as mock_cls:
         mock_client = MagicMock()
         mock_client.generate_fullbody.return_value = b"PNG-DATA"
         mock_cls.return_value = mock_client
@@ -60,7 +60,7 @@ def test_pipeline_uses_local_diffusers_for_bustup_expression(tmp_path: Path) -> 
     config = ImageGenConfig(image_style="anime", backend="diffusers")
     pipeline = ImageGenPipeline(tmp_path, config=config)
 
-    with patch("core.tools._image_pipeline.LocalDiffusersClient") as mock_cls:
+    with patch("core.tools.image_gen.LocalDiffusersClient") as mock_cls:
         mock_client = MagicMock()
         mock_client.generate_from_reference.return_value = b"BUSTUP-DATA"
         mock_cls.return_value = mock_client

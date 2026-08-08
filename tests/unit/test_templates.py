@@ -207,6 +207,7 @@ class TestPrimingChannelsReference:
             "implemented",
             "investigations",
             "legacy",
+            "plans",
             "records",
             "reports",
             "research",

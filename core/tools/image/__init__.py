@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from .codex import CodexFirstClient, CodexImageClient, codex_available
 from .constants import (
     _DEFAULT_ANIMATIONS,
     _DOWNLOAD_TIMEOUT,
@@ -82,4 +83,7 @@ __all__ = [
     "MeshyClient",
     "NanoGPTImageClient",
     "OpenAIImageClient",
+    "CodexImageClient",
+    "CodexFirstClient",
+    "codex_available",
 ]

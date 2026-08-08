@@ -67,15 +67,15 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Human-facing one-line summary shown on TaskBoard. It should make the work item, state, and next action clear when read alone",
     },
     "schema.call_human.body": {
-        "ja": "通知の本文（詳細な報告内容）",
-        "en": "Notification body (detailed report content)",
+        "ja": "通知の本文。パッと見て人間が判断できるよう、話し言葉でシンプルに簡潔に書くこと。詳細（ログ・集計・経緯）は本文に貼らず、ファイルパスやURLで参照させる",
+        "en": "Notification body. Write simply and concisely in plain conversational language so a human can decide at a glance. Do not paste details (logs, tallies, background) into the body; reference them by file path or URL",
     },
     "schema.call_human.desc": {
         "ja": (
-            "人間の管理者に連絡します。重要な報告、問題のエスカレーション、判断が必要な事項がある場合に使用してください。チャット画面と外部通知チャネル（Slack等）の両方に届きます。"
+            "人間の管理者に連絡します。重要な報告、問題のエスカレーション、判断が必要な事項がある場合に使用してください。チャット画面と外部通知チャネル（Slack等）の両方に届きます。本文はパッと見て判断できるよう話し言葉で簡潔に。"
         ),
         "en": (
-            "Contact the human administrator. Use this for important reports, problem escalation, or matters requiring human judgment. Notifications are delivered to both the chat UI and external channels (Slack, etc.)."
+            "Contact the human administrator. Use this for important reports, problem escalation, or matters requiring human judgment. Notifications are delivered to both the chat UI and external channels (Slack, etc.). Keep the body short and conversational so a human can decide at a glance."
         ),
     },
     "schema.call_human.priority": {

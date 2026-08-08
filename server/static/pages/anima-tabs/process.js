@@ -76,6 +76,11 @@ async function _load() {
     const restarts = proc.restart_count ?? "--";
     const lastPing = proc.last_ping ? timeStr(proc.last_ping) : "--";
     const pid = proc.pid || "--";
+    const subprocesses = Array.isArray(proc.subprocesses) ? proc.subprocesses : [];
+    const processCount = proc.process_count || (proc.pid ? 1 : 0);
+    const subprocHtml = subprocesses.length
+      ? subprocesses.map((s) => `${escapeHtml(String(s.kind || "?"))} (PID ${escapeHtml(String(s.pid ?? "--"))})`).join("<br>")
+      : "--";
 
     content.innerHTML = `
       <div class="card" style="margin-bottom:1.5rem;">
@@ -94,6 +99,14 @@ async function _load() {
               <tr>
                 <th>${t("processes.table_pid")}</th>
                 <td>${escapeHtml(String(pid))}</td>
+              </tr>
+              <tr>
+                <th>${t("processes.table_process_count")}</th>
+                <td>${escapeHtml(String(processCount))}</td>
+              </tr>
+              <tr>
+                <th>${t("processes.table_subprocesses")}</th>
+                <td>${subprocHtml}</td>
               </tr>
               <tr>
                 <th>${t("processes.table_status")}</th>

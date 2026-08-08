@@ -340,7 +340,7 @@ class HealthMixin:
 
         # Detect handles stuck in STOPPING state (e.g. after failed shutdown)
         if handle.state == ProcessState.STOPPING:
-            if not handle.stopping_since:
+            if self._shutdown or not handle.stopping_since:
                 return
             stopping_duration = (now_local() - ensure_aware(handle.stopping_since)).total_seconds()
             if stopping_duration > 30:

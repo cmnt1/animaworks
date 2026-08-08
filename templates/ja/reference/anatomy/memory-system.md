@@ -200,19 +200,18 @@ Priming は自動で動くため、通常は明示的な操作は不要。必要
 | 頻度 | 処理の流れ（概要） |
 |------|-------------------|
 | **日次** | 直近24時間のエピソード数が閾値以上なら **Phase A → Phase B** → 続けて **Synaptic downscaling**（メタデータのみ）→ **RAG インデックス再構築** |
-| **週次** | `run_consolidation(weekly)`（単一フェーズ、Phase Aなし） → **Neurogenesis reorganization**（低活性チャンク同士の LLM マージ）→ **RAG 再構築** |
+| **週次** | `run_consolidation(weekly)`（単一フェーズ、Phase Aなし） → パターン蒸留 → **RAG 再構築** |
 | **月次** | **Complete forgetting**（低活性が長期続いたチャンクの削除・アーカイブ）と手続きアーカイブ整理 → **RAG 再構築**（Anima ループは走らない） |
 
 日次は設定で無効化・エピソード閾値・`max_turns` を変えられる。実行が極端に短い場合はリトライがスケジュールされる。
 
 ### Forgetting（能動的忘却）
 
-無限に記憶を溜め続けると検索精度が落ちるため、3段階で能動的に忘却する:
+無限に記憶を溜め続けると検索精度が落ちるため、2段階で能動的に忘却する:
 
 | 段階 | 頻度 | 条件 | 処理 |
 |------|------|------|------|
 | Synaptic downscaling | 日次 | knowledge/episodes: 90日間アクセスなし **かつ** 参照3回未満 → `low` マーク。procedures は別閾値（180日非使用かつ利用計3回未満、または失敗多発で utility が低い等） | 活性 `low` と `low_activation_since` を記録 |
-| Neurogenesis reorganization | 週次 | 活性 `low` かつ保護外で、ベクトル類似度 **0.80 以上**のペア | LLM でマージ → 元チャンク削除・ディスク上のソースも統合（`archive/merged/` に退避） |
 | Complete forgetting | 月次 | `low` のまま **90日超** かつ `access_count <= 2` | ベクトルから削除し、ソースを `archive/forgotten/` へ |
 
 **保護ルール**（忘却されにくい条件）:

@@ -10,18 +10,6 @@
 from __future__ import annotations
 
 STRINGS: dict[str, dict[str, str]] = {
-    "contradiction.knowledge_resolution": {
-        "ja": "knowledge矛盾解決({strategy})",
-        "en": "Knowledge contradiction resolved ({strategy})",
-    },
-    "contradiction.resolution_summary": {
-        "ja": "矛盾解決: {file_a} vs {file_b}",
-        "en": "Contradiction resolved: {file_a} vs {file_b}",
-    },
-    "contradiction.strategy_label": {
-        "ja": " → 戦略: {strategy}",
-        "en": " → Strategy: {strategy}",
-    },
     "conversation.activity_context_header": {
         "ja": "## セッション中のその他の活動",
         "en": "## Other activity during session",

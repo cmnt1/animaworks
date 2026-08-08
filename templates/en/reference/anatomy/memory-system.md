@@ -187,19 +187,18 @@ For side-effecting actions such as external sends, channel posts, human notifica
 | Frequency | Flow (summary) |
 |-----------|----------------|
 | **Daily** | If episode count in the last 24h meets the threshold → `run_consolidation(daily)` → then **Synaptic downscaling** (metadata only) → **RAG index rebuild** |
-| **Weekly** | `run_consolidation(weekly)` → **Neurogenesis reorganization** (LLM merge of low-activity similar chunks) → **RAG rebuild** |
+| **Weekly** | `run_consolidation(weekly)` → pattern distillation → **RAG rebuild** |
 | **Monthly** | **Complete forgetting** (delete / archive chunks that stayed low-activity long-term) and procedure archive housekeeping → **RAG rebuild** (no Anima loop) |
 
 Daily runs can be disabled or tuned (episode threshold, `max_turns`) via config. Very short runs may be retried on schedule.
 
 ### Forgetting (active forgetting)
 
-If memories accumulate without bound, search quality drops; forgetting is applied in three stages:
+If memories accumulate without bound, search quality drops; forgetting is applied in two stages:
 
 | Stage | Frequency | Condition | Action |
 |-------|-----------|-----------|--------|
 | Synaptic downscaling | Daily | `knowledge` / `episodes`: no access for **90 days** **and** fewer than **3** references → mark `low`. Procedures use different thresholds (e.g. unused **180** days and fewer than **3** total uses, or many failures and low utility) | Record activity `low` and `low_activation_since` |
-| Neurogenesis reorganization | Weekly | Activity `low`, not protected, vector similarity **≥ 0.80** between pairs | LLM merge → remove original chunks; merge on-disk sources (moved under `archive/merged/`) |
 | Complete forgetting | Monthly | Stays `low` for **> 90 days** and `access_count <= 2` | Remove from vectors; move sources to `archive/forgotten/` |
 
 **Protection rules** (harder to forget):

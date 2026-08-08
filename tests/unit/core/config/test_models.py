@@ -476,6 +476,26 @@ class TestLoadConfig:
         assert config.animas["alice"].supervisor == "bob"
         assert config.animas["alice"].speciality == "engineer"
 
+    def test_removed_consolidation_keys_are_ignored(self, tmp_path):
+        path = tmp_path / "config.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "consolidation": {
+                        "episode_retention_days": 30,
+                        "episode_retention_batch_limit": 200,
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        config = load_config(path)
+
+        fields = type(config.consolidation).model_fields
+        assert "episode_retention_days" not in fields
+        assert "episode_retention_batch_limit" not in fields
+
 
 # ── stale activity_level repair ───────────────────────────
 
