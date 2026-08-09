@@ -77,6 +77,11 @@ supplying `workspace_pixel/assets/scene/office_bg.png` together with
 `office_bg_slots.json`. When both load, the renderer draws the illustration and
 seats characters at the declared slots instead of generating a tile layout.
 
+The bundled `office_bg.png` shows a two-company office (left/right floor
+zones). When the fleet has only one company, `office_bg_single.png` (same
+geometry, unified floor) is used instead and seats are assigned by
+interleaving the slot sides, so both variants share `office_bg_slots.json`.
+
 `office_bg_slots.json` holds:
 
 - `slots`: seats in assignment order. Each has `id`, `x`, `y`, an optional

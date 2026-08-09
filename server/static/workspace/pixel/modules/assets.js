@@ -305,6 +305,11 @@ export class AssetStore {
     return this.images.get("scene.office_bg") || null;
   }
 
+  selectOfficeBackground(companyCount) {
+    const single = this.images.get("scene.office_bg_single");
+    if (companyCount <= 1 && single) this.images.set("scene.office_bg", single);
+  }
+
   prop(name, width = 96, height = 64) {
     const image = this.images.get(`scene.props.${name}`);
     if (image) return image;

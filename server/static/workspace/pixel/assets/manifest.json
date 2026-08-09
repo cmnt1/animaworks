@@ -521,6 +521,12 @@
       "h": 736,
       "anchor": "top-left"
     },
+    "office_bg_single": {
+      "file": "scene/office_bg_single.png",
+      "w": 1120,
+      "h": 736,
+      "anchor": "top-left"
+    },
     "tiles": {
       "wood_warm": {
         "file": "scene/tile_wood_warm.png",

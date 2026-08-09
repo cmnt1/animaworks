@@ -967,9 +967,28 @@ export class ActorManager {
       anima,
     ]));
     const backgroundSlots = this.scene.background_mode?.slots;
-    const availableSlots = backgroundSlots?.slots || [];
+    let availableSlots = backgroundSlots?.slots || [];
     let slotIndex = 0;
     const deskEntries = Object.entries(this.scene.desks || {});
+    const companies = new Set(deskEntries
+      .filter(([id, desk]) => !(desk.is_human || id === (this.scene.human_id || "human")))
+      .map(([id, desk]) => String(desk.company || known.get(id)?.company || "default")));
+    if (companies.size <= 1 && availableSlots.length) {
+      // single company: interleave the slot sides so a small team fills the room evenly
+      const sides = new Map();
+      for (const slot of availableSlots) {
+        const side = String(slot.company || "");
+        if (!sides.has(side)) sides.set(side, []);
+        sides.get(side).push(slot);
+      }
+      if (sides.size > 1) {
+        const lists = [...sides.values()];
+        availableSlots = [];
+        for (let i = 0; i < Math.max(...lists.map((list) => list.length)); i += 1) {
+          for (const list of lists) if (i < list.length) availableSlots.push(list[i]);
+        }
+      }
+    }
     const orderedEntries = backgroundSlots
       ? deskEntries.sort(([leftId, leftDesk], [rightId, rightDesk]) => {
         const leftHuman = leftDesk.is_human || leftId === (this.scene.human_id || "human");

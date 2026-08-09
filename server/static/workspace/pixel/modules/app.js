@@ -62,6 +62,9 @@ function resizeCanvas() {
 async function start() {
   let live = null;
   let initialAnimas = forceMock ? sampleAnimas() : [];
+  if (forceMock && params.get("companies") === "1") {
+    initialAnimas = initialAnimas.map((anima) => ({ ...anima, company: "alpha" }));
+  }
   if (!forceMock) {
     live = new LiveClient(null, null);
     initialAnimas = await live.fetchInitial();
@@ -72,6 +75,12 @@ async function start() {
     AssetStore.load(initialAnimas, { runtime: !forceMock }),
     preloadPixelFonts(),
   ]);
+  const companyCount = new Set(
+    initialAnimas
+      .filter((anima) => !anima.is_human)
+      .map((anima) => String(anima.company || "default")),
+  ).size;
+  assets.selectOfficeBackground(companyCount);
   const officeBackground = assets.officeBackground();
   if (officeBackground && assets.officeBackgroundSlots) {
     const config = assets.manifest.scene.office_bg;
