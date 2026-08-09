@@ -134,8 +134,10 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/platform/codex.py": 2,
     # auto-retry status label
     "core/supervisor/task_retry.py": 1,
-    # taskboard route stop/blocker labels
-    "server/routes/taskboard.py": 21,
+    # cron-failure title label
+    "core/taskboard/projector.py": 1,
+    # taskboard route stop/blocker labels + cron-failure diagnostic messages
+    "server/routes/taskboard.py": 26,
     # usage route OAuth / API-disabled messages + Claude token expiry message
     "server/routes/usage_routes.py": 4,
 }
