@@ -154,3 +154,79 @@ class TestApproveWebApi:
             json={"token": req.approval_token, "decision": "a"},
         )
         assert second.status_code == 409
+
+
+class TestAuthenticatedResolveApi:
+    """POST /api/animas/{name}/interactions/{callback_id}/resolve (main UI)."""
+
+    @pytest.fixture
+    def client(self, approval_env: Path):
+        from server.routes.animas import create_animas_router
+
+        app = FastAPI()
+        app.include_router(create_animas_router(), prefix="/api")
+        return TestClient(app)
+
+    def test_resolve_ok(self, client: TestClient, approval_env: Path, tmp_path: Path):
+        from core.notification.interactive import get_interaction_router
+
+        async def setup():
+            return await get_interaction_router().create(
+                "ui_anima", "approval", ["approve", "reject"]
+            )
+
+        import asyncio
+
+        req = asyncio.run(setup())
+        with (
+            patch("core.messenger.Messenger"),
+            patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
+        ):
+            (tmp_path / "animas" / "ui_anima" / "activity_log").mkdir(parents=True)
+            r = client.post(
+                f"/api/animas/ui_anima/interactions/{req.callback_id}/resolve",
+                json={"decision": "approve", "comment": ""},
+            )
+        assert r.status_code == 200
+        assert r.json().get("status") == "ok"
+        assert r.json().get("decision") == "approve"
+
+    def test_resolve_missing_decision_400(self, client: TestClient, approval_env: Path):
+        from core.notification.interactive import get_interaction_router
+
+        async def setup():
+            return await get_interaction_router().create("ui_anima", "approval", ["approve"])
+
+        import asyncio
+
+        req = asyncio.run(setup())
+        r = client.post(
+            f"/api/animas/ui_anima/interactions/{req.callback_id}/resolve",
+            json={"comment": "no decision"},
+        )
+        assert r.status_code == 400
+
+    def test_resolve_already_resolved_409(self, client: TestClient, approval_env: Path, tmp_path: Path):
+        from core.notification.interactive import get_interaction_router
+
+        async def setup():
+            return await get_interaction_router().create("ui_anima", "approval", ["approve"])
+
+        import asyncio
+
+        req = asyncio.run(setup())
+        with (
+            patch("core.messenger.Messenger"),
+            patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
+        ):
+            (tmp_path / "animas" / "ui_anima" / "activity_log").mkdir(parents=True)
+            first = client.post(
+                f"/api/animas/ui_anima/interactions/{req.callback_id}/resolve",
+                json={"decision": "approve"},
+            )
+            second = client.post(
+                f"/api/animas/ui_anima/interactions/{req.callback_id}/resolve",
+                json={"decision": "approve"},
+            )
+        assert first.status_code == 200
+        assert second.status_code == 409

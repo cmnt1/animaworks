@@ -333,6 +333,29 @@ class InteractionRouter:
             external_user_id=actor,
             intent="question",
         )
+
+        # Main-thread conversation view: human_reply card for web/slack/text_reply.
+        try:
+            from core.memory.activity import ActivityLogger
+            from core.paths import get_animas_dir
+
+            reply_content = f"{decision}: {comment}" if comment else decision
+            ActivityLogger(get_animas_dir() / req.anima_name).log(
+                "human_reply",
+                content=reply_content,
+                from_person=actor,
+                via=source,
+                meta={"callback_id": callback_id, "decision": decision},
+                safe=True,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to log human_reply activity for callback_id=%s anima=%s",
+                callback_id,
+                req.anima_name,
+                exc_info=True,
+            )
+
         return result
 
     async def list_resolved_for_anima(

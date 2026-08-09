@@ -164,6 +164,8 @@ class ActivityLogger(
             "channel_post",
             "task_created",
             "task_updated",
+            "human_notify",
+            "human_reply",
         }
     )
 
