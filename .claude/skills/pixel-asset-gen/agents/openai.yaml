@@ -1,0 +1,7 @@
+interface:
+  display_name: "Pixel Anima Asset"
+  short_description: "Mio基準でAnimaのPixelスプライトを生成・検証"
+  default_prompt: "Use $pixel-asset-gen to regenerate and validate an AnimaWorks pixel character sheet."
+
+policy:
+  allow_implicit_invocation: true

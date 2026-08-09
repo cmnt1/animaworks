@@ -40,7 +40,8 @@ magick <作業ディレクトリ>/ref/base_row0_idle.png \
 ```
 
 `row0_idle` は各行のファイル名に置き換える。低解像度の384×96を直接渡すと、
-モデルが顔を大きく描き直したため、必ず最近傍400%版を編集土台にする。
+モデルが顔・髪・体型を再解釈するため、**全10行を例外なく**最近傍400%版の編集土台にする。
+途中の行から低解像度入力へ戻してはいけない。
 
 ### 実際に使用したプロンプト
 
@@ -59,6 +60,9 @@ Scene/backdrop: perfectly flat solid #FF00FF chroma-key background only.
 Constraints: Change only character identity colors and identity details. Preserve the clean flat skin area of the face. Eyes, eyebrows, nose, mouth, and blush must remain small, separated, readable pixel clusters matching Image 1. No new dark marks, shadows, outlines, hair strands, or isolated pixels may overlap the eyes, nose, mouth, cheeks, or exposed face. Keep dark hair clearly separated from the face boundary. The background must be one uniform #FF00FF with no shadows, gradients, texture, floor, or lighting variation.
 Avoid: extra frames, merged frames, panels, borders, labels, text, speech bubbles, props, desk, chair, monitor, keyboard, cast shadow, reflection, watermark, smooth vector edges, painterly shading, facial moles, facial dirt, black blobs, stray dark pixels, and any dark patch crossing onto the face.
 ```
+
+`Subject` の直後に、生成前に確定したidentityを曖昧さなく追記する。参照画像間に矛盾がある場合、
+モデルへ選択させない。例えば瞳色やサイドポニーの有無を1つに決め、10行すべてで同じ文を使う。
 
 `<state instructions>` は次を使う。
 
@@ -128,6 +132,9 @@ python3 .claude/skills/pixel-asset-gen/scripts/process_generated_row.py \
 5. 96×96透明キャンバスの `(ref_left, ref_top)` へ整数座標で配置する。
 6. 4セルを横連結して384×96にする。
 
+この処理は生成物を救済するための自由変形ではない。生成された人物の縦横比が目視で崩れている場合は
+その行を不合格にして再生成する。処理後にシート全体へ横85%などの追加スケールを掛けてはいけない。
+
 実コードではPillowの次の処理に相当する。
 
 ```python
@@ -186,6 +193,7 @@ magick \
 - posterizeや減色で顔のゴミを消そうとする。
 - 小数座標移動、複数回リサイズ、補間付き平行移動をする。
 - compareスクリプトだけで合格にする。顔は必ず目視する。
+- 最終検証後にシート全体または全セルへ横・縦だけの一括補正を掛ける。
 - 机、椅子、モニタ、キーボード、影、文字、吹き出しを追加する。
 
 ## 7. 行ごとの検査
@@ -206,4 +214,5 @@ python3 .claude/skills/pixel-asset-gen/scripts/compare_to_reference.py \
 ```
 
 合格条件は逸脱0、面積比0.75〜1.35、384×960 RGBA、アルファ2値、クロマ残滓4px以下、
-および全40フレームの顔の目視合格。
+全40フレームの顔の目視合格、identity不変条件の40/40一致、遷移GIFでの別人化・伸縮なし。
+候補は `~/work/_tmp/` で人間の承認を得てからruntimeへ反映する。
