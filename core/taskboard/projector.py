@@ -637,6 +637,9 @@ def _title_for_link(task: BoardTask | None) -> str | None:
 
 
 def _display_title_for_task(task: BoardTask) -> str | None:
+    cron_failure = _cron_failure_display_title(task)
+    if cron_failure:
+        return cron_failure
     meta = task.meta or {}
     task_desc = meta.get("task_desc")
     if isinstance(task_desc, dict):
@@ -646,6 +649,22 @@ def _display_title_for_task(task: BoardTask) -> str | None:
     if not _is_diagnostic_summary(task.summary):
         return None
     return _compact_relation_title(task.original_instruction)
+
+
+def _cron_failure_display_title(task: BoardTask) -> str | None:
+    if not _has_cron_failure_metadata(task):
+        return None
+    cron_name = task.cron_task_name or "cron"
+    return f"停止: cron失敗: {cron_name}"
+
+
+def _has_cron_failure_metadata(task: BoardTask) -> bool:
+    if not task.is_from_cron or task.queue_status not in {"blocked", "failed"}:
+        return False
+    return any(
+        key in (task.meta or {})
+        for key in ("cron_exit_code", "cron_error_excerpt", "cron_stderr_preview")
+    )
 
 
 def _is_diagnostic_summary(value: str | None) -> bool:

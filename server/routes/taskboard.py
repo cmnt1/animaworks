@@ -477,6 +477,9 @@ def _task_to_response(task: BoardTask) -> dict[str, Any]:
     data["summary"] = _task_display_text(data.get("summary"))
     data["display_title"] = _task_display_title(task, fallback_summary=data.get("summary"))
     data["diagnostic_summary"] = data["summary"] if _is_diagnostic_summary(raw_summary) else None
+    cron_failure = _cron_failure_diagnostic_summary(task)
+    if cron_failure:
+        data["diagnostic_summary"] = cron_failure
     if task.queue_missing and not data["diagnostic_summary"]:
         data["diagnostic_summary"] = "TaskQueue本体が見つからないため、TaskBoardメタデータから復元表示しています。"
     if task.is_from_cron and task.queue_status == "in_progress" and task.column == BoardColumn.BLOCKED:
@@ -511,6 +514,9 @@ def _task_display_title(task: BoardTask, *, fallback_summary: Any) -> str | None
     if task.is_from_cron and task.queue_status == "in_progress" and task.column == BoardColumn.BLOCKED:
         cron_name = task.cron_task_name or "cron"
         return f"停止: 古いcron実行中: {cron_name}"
+    cron_failure = _cron_failure_display_title(task)
+    if cron_failure:
+        return cron_failure
 
     meta = task.meta or {}
     task_desc = meta.get("task_desc")
@@ -532,6 +538,42 @@ def _task_display_title(task: BoardTask, *, fallback_summary: Any) -> str | None
                 return related.title.strip()
         return f"欠落タスク: {task.anima_name}:{task.task_id}"
     return fallback_summary if isinstance(fallback_summary, str) else None
+
+
+def _cron_failure_display_title(task: BoardTask) -> str | None:
+    if not _has_cron_failure_metadata(task):
+        return None
+    cron_name = task.cron_task_name or "cron"
+    return f"停止: cron失敗: {cron_name}"
+
+
+def _cron_failure_diagnostic_summary(task: BoardTask) -> str | None:
+    if not _has_cron_failure_metadata(task):
+        return None
+    meta = task.meta or {}
+    exit_code = meta.get("cron_exit_code")
+    excerpt = _single_line(meta.get("cron_error_excerpt"))
+    if exit_code is not None and excerpt:
+        return f"cron失敗: exit={exit_code} / {excerpt}"
+    if exit_code is not None:
+        return f"cron失敗: exit={exit_code}"
+    if excerpt:
+        return f"cron失敗: {excerpt}"
+    return "cron実行が失敗し、停止扱いになっています。原因確認または再実行が必要です。"
+
+
+def _has_cron_failure_metadata(task: BoardTask) -> bool:
+    if not task.is_from_cron or task.queue_status not in {"blocked", "failed"}:
+        return False
+    meta = task.meta or {}
+    return any(key in meta for key in ("cron_exit_code", "cron_error_excerpt", "cron_stderr_preview"))
+
+
+def _single_line(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = " ".join(value.strip().split())
+    return text or None
 
 
 def _task_display_text(value: Any) -> Any:

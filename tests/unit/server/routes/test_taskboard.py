@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -211,6 +212,58 @@ class TestTaskBoardList:
         assert projected["display_title"] == "停止: 古いcron実行中: weekly knowledge"
         assert projected["diagnostic_summary"] == (
             "古いcron実行中が停止扱いになっています。再実行または環境確認が必要です。"
+        )
+
+    async def test_cron_failure_title_uses_cron_metadata_after_heartbeat_summary_overwrite(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        app = _make_app(tmp_path, ["sakura"])
+        queue = _queue(app, "sakura")
+        task = queue.add_task(
+            source="anima",
+            original_instruction='"python.exe" "review_anjo_1k_product_draft.py"',
+            assignee="sakura",
+            summary="cron running",
+            task_id="cron-failed",
+            status="in_progress",
+            meta={
+                "from_cron": True,
+                "cron_task_name": "安城市1K賃貸 Productsレビュー・完了報告",
+                "cron_type": "command",
+                "cron_exit_code": 1,
+                "cron_error_excerpt": "RuntimeError: Hikaru draft evidence is not done: blocked",
+            },
+        )
+        queue.queue_path.write_text(
+            queue.queue_path.read_text(encoding="utf-8")
+            + "\n"
+            + json.dumps(
+                {
+                    "task_id": task.task_id,
+                    "status": "blocked",
+                    "summary": (
+                        "17:52 Heartbeat確認: Hikaru/Sora/Kanna/Ayaneから新規判断依頼なし。"
+                        "sora CHANGELOG判断依頼なし。activeはblocked 5、overdue 2、stale 0。"
+                    ),
+                    "updated_at": "2026-08-07T03:24:40.469862+09:00",
+                    "_event": "update",
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/task-board")
+
+        assert resp.status_code == 200
+        projected = resp.json()["tasks"][0]
+        assert projected["display_title"] == "停止: cron失敗: 安城市1K賃貸 Productsレビュー・完了報告"
+        assert projected["diagnostic_summary"] == (
+            "cron失敗: exit=1 / RuntimeError: Hikaru draft evidence is not done: blocked"
         )
 
     async def test_include_missing_returns_metadata_only_tasks(self, tmp_path: Path) -> None:

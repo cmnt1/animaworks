@@ -44,7 +44,10 @@ _MAX_INSTRUCTION_CHARS = 10_000
 _STALE_TASK_THRESHOLD_SEC = 1800
 # Relative deadline pattern: digits + unit (m=minutes, h=hours, d=days)
 _RELATIVE_DEADLINE_RE = re.compile(r"^(\d+)([mhd])$")
-_HEARTBEAT_OBSERVATION_PREFIX_RE = re.compile(r"^\s*(?:\d{1,2}:\d{2}\s*(?:jst)?\s*)?(?:hb|heartbeat)\s*:", re.I)
+_HEARTBEAT_OBSERVATION_PREFIX_RE = re.compile(
+    r"^\s*(?:\d{1,2}\s*:\s*\d{2}\s*(?:jst)?\s*)?(?:hb|heartbeat)(?:\s*:|確認\s*:)",
+    re.I,
+)
 _TIMED_OBSERVATION_PREFIX_RE = re.compile(r"^\s*\d{1,2}:\d{2}\s*jst\b", re.I)
 _STATUS_REPORT_SUMMARY_MAX_CHARS = 120
 _STATUS_REPORT_MARKERS = (
@@ -65,6 +68,10 @@ _STATUS_REPORT_MARKERS = (
     "verified",
 )
 _OBSERVATION_LOG_MARKERS = (
+    "active",
+    "blocked",
+    "overdue",
+    "stale",
     "inbox",
     "未読",
     "governor",

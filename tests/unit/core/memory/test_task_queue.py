@@ -96,7 +96,23 @@ def test_add_task_rejects_heartbeat_observation_summary(tmp_path: Path) -> None:
         )
 
 
-def test_update_status_ignores_heartbeat_observation_summary(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "observation_summary",
+    [
+        (
+            "10:32 JST HB: Sakura Inbox未読1件は09:22 Hikaru完了通知のみ。"
+            "Governor未読0、pending/background通知0。10:40までは検収待機。"
+        ),
+        (
+            "17:52 Heartbeat確認: Hikaru/Sora/Kanna/Ayaneから新規判断依頼なし。"
+            "sora CHANGELOG判断依頼なし。activeはblocked 5、overdue 2、stale 0。"
+        ),
+    ],
+)
+def test_update_status_ignores_heartbeat_observation_summary(
+    tmp_path: Path,
+    observation_summary: str,
+) -> None:
     anima_dir = tmp_path / "anima"
     (anima_dir / "state").mkdir(parents=True, exist_ok=True)
     tqm = TaskQueueManager(anima_dir)
@@ -111,10 +127,7 @@ def test_update_status_ignores_heartbeat_observation_summary(tmp_path: Path) -> 
     result = tqm.update_status(
         entry.task_id,
         "blocked",
-        summary=(
-            "10:32 JST HB: Sakura Inbox未読1件は09:22 Hikaru完了通知のみ。"
-            "Governor未読0、pending/background通知0。10:40までは検収待機。"
-        ),
+        summary=observation_summary,
     )
 
     assert result is not None
