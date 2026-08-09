@@ -345,38 +345,49 @@ def setup_logging(
     attach_standard_log_filters(console, redaction_enabled=redaction_enabled)
     root.addHandler(console)
 
-    # File handler: rotated, JSON (via orjson for performance)
+    # File handler: rotated, JSON (via orjson for performance).
+    # Sandboxed anima shells mount the data dir read-only; a CLI must fall
+    # back to console-only logging instead of dying with EROFS at startup.
     if log_dir is not None:
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / "animaworks.log"
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = log_dir / "animaworks.log"
 
-        renderer = _build_json_renderer() if json_file else structlog.dev.ConsoleRenderer(colors=False)
-        file_formatter = _build_processor_formatter(renderer, foreign_pre_chain, redaction_enabled=redaction_enabled)
+            renderer = _build_json_renderer() if json_file else structlog.dev.ConsoleRenderer(colors=False)
+            file_formatter = _build_processor_formatter(
+                renderer, foreign_pre_chain, redaction_enabled=redaction_enabled
+            )
 
-        file_handler = RotatingFileHandler(
-            log_path,
-            maxBytes=10 * 1024 * 1024,  # 10 MB
-            backupCount=5,
-            encoding="utf-8",
-        )
-        file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(file_formatter)
-        attach_standard_log_filters(file_handler, redaction_enabled=redaction_enabled)
-        root.addHandler(file_handler)
+            file_handler = RotatingFileHandler(
+                log_path,
+                maxBytes=10 * 1024 * 1024,  # 10 MB
+                backupCount=5,
+                encoding="utf-8",
+            )
+            file_handler.setLevel(logging.DEBUG)
+            file_handler.setFormatter(file_formatter)
+            attach_standard_log_filters(file_handler, redaction_enabled=redaction_enabled)
+            root.addHandler(file_handler)
 
-        # Severity-separated triage log: WARNING+ only, always JSON.
-        errors_handler = RotatingFileHandler(
-            log_dir / "errors.log",
-            maxBytes=10 * 1024 * 1024,  # 10 MB
-            backupCount=3,
-            encoding="utf-8",
-        )
-        errors_handler.setLevel(logging.WARNING)
-        errors_handler.setFormatter(
-            _build_processor_formatter(_build_json_renderer(), foreign_pre_chain, redaction_enabled=redaction_enabled)
-        )
-        attach_standard_log_filters(errors_handler, redaction_enabled=redaction_enabled)
-        root.addHandler(errors_handler)
+            # Severity-separated triage log: WARNING+ only, always JSON.
+            errors_handler = RotatingFileHandler(
+                log_dir / "errors.log",
+                maxBytes=10 * 1024 * 1024,  # 10 MB
+                backupCount=3,
+                encoding="utf-8",
+            )
+            errors_handler.setLevel(logging.WARNING)
+            errors_handler.setFormatter(
+                _build_processor_formatter(
+                    _build_json_renderer(), foreign_pre_chain, redaction_enabled=redaction_enabled
+                )
+            )
+            attach_standard_log_filters(errors_handler, redaction_enabled=redaction_enabled)
+            root.addHandler(errors_handler)
+        except OSError as exc:
+            logging.getLogger("animaworks.logging").warning(
+                "File logging unavailable (%s); falling back to console only", exc
+            )
 
     # Reduce noise from third-party libraries
     logging.getLogger("httpx").setLevel(logging.WARNING)
