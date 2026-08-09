@@ -86,7 +86,7 @@ reviewer: sakura
     assert evidence["task_closure"]["acceptance_checks"]
 
 
-def test_minimini_gate_blocks_failed_or_incomplete_snapshot() -> None:
+def test_minimini_gate_reports_failed_or_incomplete_snapshot() -> None:
     gate = report.validate_minimini_snapshot(
         {
             "minimini_url_snapshot": {
@@ -101,6 +101,62 @@ def test_minimini_gate_blocks_failed_or_incomplete_snapshot() -> None:
     assert gate["ok"] is False
     assert "fetch_status=failed" in gate["reasons"]
     assert "listing_count_missing_or_invalid" in gate["reasons"]
+
+
+def test_write_evidence_allows_minimini_unavailable_with_note(tmp_path: Path) -> None:
+    report_path = tmp_path / "products" / "Property" / "P-00002_anjo-1k-20260613.md"
+    data_json = tmp_path / "data" / "P-00002_anjo-1k-20260613_data.json"
+    source_json = tmp_path / "suumo" / "anjo_1k_market_metrics_20260613.json"
+    source_data = {
+        "latest_date": "2026-06-13",
+        "minimini_url_snapshot": {
+            "fetch_status": "failed",
+            "listing_count": None,
+            "http_status": 200,
+            "error": "Google reCAPTCHA challenge page returned instead of listing HTML",
+        },
+    }
+    write_text(data_json, json.dumps(source_data) + "\n")
+    write_text(source_json, data_json.read_text(encoding="utf-8"))
+    digest = report.sha256_file(source_json)
+    write_text(
+        report_path,
+        f"""---
+type: product
+code: P-00002
+category: Property
+status: レビュー待ち
+task_code: {report.TASK_CODE}
+report_date: 2026-06-13
+source_json_sha256: {digest}
+assignee: hikaru
+reviewer: sakura
+---
+# Report
+
+> [!warning] minimini掲載一覧は取得未完了（注記付き完了可）
+""",
+    )
+
+    evidence = report.write_evidence(
+        "P-00002",
+        "2026-06-13",
+        report_path,
+        data_json,
+        source_json,
+        digest,
+        task_results_dir=tmp_path / "task_results",
+        script_provenance=report.script_preflight(),
+    )
+
+    assert evidence["status"] == "done"
+    assert evidence["read_after_write_checks"]["minimini_available"] is False
+    assert all(evidence["blocking_read_after_write_checks"].values())
+    assert evidence["advisory_checks"] == {"minimini_available": False}
+    assert evidence["completion_policy"]["minimini_required"] is False
+    assert evidence["task_closure"]["can_submit"] is True
+    assert evidence["task_closure"]["remaining_blockers"] == []
+    assert evidence["warnings"][0]["code"] == "minimini_unavailable"
 
 
 def test_minimini_unavailable_notification_is_sent_once(tmp_path: Path, monkeypatch) -> None:
@@ -136,7 +192,7 @@ def test_minimini_unavailable_notification_is_sent_once(tmp_path: Path, monkeypa
     assert first["message_id"] == "123456789"
     assert second["status"] == "verified_existing"
     assert len(calls) == 1
-    assert any("取得未完了" in part for part in calls[0])
+    assert any("取得未完了" in part and "注記付き完了可" in part for part in calls[0])
 
 
 def test_get_prev_minimini_count_ignores_untrusted_patterns(tmp_path: Path, monkeypatch) -> None:

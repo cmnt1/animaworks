@@ -227,7 +227,7 @@ def get_prev_minimini_count(prev_date: str) -> int | None:
 
 
 def validate_minimini_snapshot(data: dict) -> dict:
-    """Return the completion gate for the current minimini listing snapshot."""
+    """Return the advisory availability check for the minimini snapshot."""
     snapshot = data.get("minimini_url_snapshot")
     reasons: list[str] = []
     if not isinstance(snapshot, dict):
@@ -311,7 +311,7 @@ def send_minimini_unavailable_notification(
     gate: dict,
     task_results_dir: Path,
 ) -> dict:
-    """Post one deterministic Discord warning per report date when the gate blocks."""
+    """Post one deterministic Discord warning per report date when minimini is unavailable."""
     marker = task_results_dir / f"anjo-1k-minimini-unavailable-{report_date.replace('-', '')}.json"
     if marker.exists():
         try:
@@ -326,14 +326,15 @@ def send_minimini_unavailable_notification(
             }
 
     message = (
-        f"【取得未完了 / 完了保留】{code} 安城市1K賃貸 市場動向 日次レポート（{report_date}）は、"
-        "minimini掲載一覧を取得できていないため、Products DBを完了に更新しません。\n\n"
+        f"【minimini取得未完了 / 注記付き完了可】{code} 安城市1K賃貸 市場動向 日次レポート（{report_date}）は、"
+        "minimini掲載一覧を取得できていません。"
+        "miniminiは補助情報のため、主要データの検証が通れば注記付きで完了できます。\n\n"
         f"- fetch_status: {gate.get('fetch_status')}\n"
         f"- listing_count: {gate.get('listing_count')}\n"
         f"- error: {gate.get('error') or '-'}\n"
         f"- report: {report_path}\n"
         f"- source JSON: {source_json}\n"
-        "一覧取得・付随データ反映・検証が完了した後に、あらためて完了報告します。"
+        "minimini値は当日レポートには含めず、取得不可の根拠を証跡JSONに保存します。"
     )
     if not ANIMAWORKS_TOOL.exists():
         result = {
@@ -591,12 +592,12 @@ def render_markdown(
 | HTTPステータス | {minimini.get("http_status", "-")} |
 {build_minimini_listing_section(minimini)}"""
     else:
-        minimini_summary_line = "\n- minimini掲載一覧: **取得未完了（完了保留）**"
+        minimini_summary_line = "\n- minimini掲載一覧: **取得未完了（注記付き完了可）**"
         minimini_section = f"""
 ## minimini掲載状況
 
 > [!warning] 取得未完了
-> minimini掲載一覧を取得できていないため、このレポートは完了に更新できません。
+> minimini掲載一覧は取得できていません。miniminiは補助情報のため、主要データの検証が通れば注記付きで完了できます。
 
 | 項目 | 値 |
 |---|---|
@@ -611,11 +612,11 @@ def render_markdown(
     roof_summary_line, roof_section = build_roof_tree_section(data)
 
     review_request = (
-        f"Sakuraはこの下書きを確認し、問題がなければ frontmatter の `status` を `完了`、"
+        f"Sakuraはこの下書きを確認し、主要データに問題がなければ frontmatter の `status` を `完了`、"
         f"`submitted` を `{d}` に更新したうえで、Discordスレッド `{DISCORD_THREAD_ID}` に完成報告してください。"
-        if minimini_gate["ok"]
-        else "minimini掲載一覧が取得未完了のため、frontmatterのstatusを完了に更新しないでください。"
     )
+    if not minimini_gate["ok"]:
+        review_request += " miniminiは取得未完了の注記を残し、完了の必須条件にはしません。"
 
     markdown = f"""---
 type: product
@@ -719,7 +720,7 @@ def write_evidence(
     except (OSError, json.JSONDecodeError):
         source_data = {}
     minimini_gate = validate_minimini_snapshot(source_data)
-    checks = {
+    blocking_checks = {
         "report_exists": out_md.exists(),
         "data_copy_exists": copy_json.exists(),
         "source_json_exists": source_json.exists(),
@@ -734,8 +735,11 @@ def write_evidence(
         "assignee_hikaru": fm.get("assignee") == "hikaru",
         "reviewer_sakura": fm.get("reviewer") == "sakura",
         "script_preflight_ok": bool(script_provenance.get("ok")),
+    }
+    advisory_checks = {
         "minimini_available": bool(minimini_gate.get("ok")),
     }
+    checks = {**blocking_checks, **advisory_checks}
     from core.task_closure import build_task_closure
 
     closure = build_task_closure(
@@ -747,9 +751,14 @@ def write_evidence(
                 "status": "passed" if ok else "failed",
                 "evidence": "read_after_write_checks",
             }
-            for name, ok in checks.items()
+            for name, ok in blocking_checks.items()
         ],
-        remaining_blockers=[name for name, ok in checks.items() if not ok],
+        remaining_blockers=[name for name, ok in blocking_checks.items() if not ok],
+        notes=(
+            "minimini is advisory; the report may complete with an explicit unavailability note."
+            if not advisory_checks["minimini_available"]
+            else ""
+        ),
     )
     task_results_dir.mkdir(parents=True, exist_ok=True)
     evidence_path = task_results_dir / f"anjo-1k-daily-products-draft-{report_date.replace('-', '')}.json"
@@ -780,6 +789,23 @@ def write_evidence(
             )
         },
         "read_after_write_checks": checks,
+        "blocking_read_after_write_checks": blocking_checks,
+        "advisory_checks": advisory_checks,
+        "completion_policy": {
+            "minimini_required": False,
+            "minimini_unavailable_action": "complete_with_note",
+        },
+        "warnings": (
+            [
+                {
+                    "code": "minimini_unavailable",
+                    "message": "minimini掲載一覧は取得未完了ですが、補助情報のため注記付きで完了できます。",
+                    "reasons": minimini_gate.get("reasons", []),
+                }
+            ]
+            if not advisory_checks["minimini_available"]
+            else []
+        ),
         "minimini_completion_gate": minimini_gate,
         "discord_thread_id": DISCORD_THREAD_ID,
         "script_path": script_provenance.get("script_path"),
