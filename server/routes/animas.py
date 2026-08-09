@@ -717,6 +717,46 @@ def create_animas_router() -> APIRouter:
 
         return {"status": "deleted", "name": name}
 
+    # ── Interactive call_human resolve (authenticated UI) ──
+
+    @router.post("/animas/{name}/interactions/{callback_id}/resolve")
+    async def resolve_interaction(name: str, callback_id: str, request: Request):
+        """Resolve an interactive call_human request from the main chat UI.
+
+        Body: ``{"decision": "approve", "comment": ""}``
+        """
+        _validate_anima_name(name)
+
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid JSON body") from None
+
+        decision = (body.get("decision") or "").strip() if isinstance(body, dict) else ""
+        comment = (body.get("comment") or "") if isinstance(body, dict) else ""
+        if not decision:
+            raise HTTPException(status_code=400, detail="Missing decision")
+
+        actor = "web_user"
+        user = getattr(request.state, "user", None)
+        if user and getattr(user, "username", None):
+            actor = user.username
+
+        from core.notification.interactive import get_interaction_router
+
+        rtr = get_interaction_router()
+        result = await rtr.resolve(
+            callback_id,
+            decision=decision,
+            actor=actor,
+            source="web",
+            comment=comment,
+        )
+        if result is None:
+            raise HTTPException(status_code=409, detail="Already resolved or expired")
+
+        return {"status": "ok", "decision": decision}
+
     # ── Org Chart ─────────────────────────────────────────
 
     @router.get("/org/chart")

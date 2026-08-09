@@ -8,6 +8,7 @@ import {
   renderSessionDivider as _sharedRenderSessionDivider,
   bindToolCallHandlers as _sharedBindToolCallHandlers,
   bindBubbleActionHandlers as _sharedBindBubbleActionHandlers,
+  bindHumanNotifyHandlers as _sharedBindHumanNotifyHandlers,
   renderLiveBubble,
   renderStreamingBubbleInner,
   updateStreamingZone,
@@ -351,6 +352,9 @@ export function createChatRenderer(ctx) {
     bindToolCallHandlers(messagesEl);
     _sharedBindCollapsibleSessionHandlers(messagesEl);
     _sharedBindBubbleActionHandlers(messagesEl);
+    _sharedBindHumanNotifyHandlers(messagesEl, {
+      getAnimaName: () => state.selectedAnima,
+    });
     if (window.lucide) lucide.createIcons({ nodes: [messagesEl] });
     initTextArtifactHandlers();
 

@@ -153,6 +153,40 @@ class TestInteractionRouter:
             assert result2 is None
 
     @pytest.mark.asyncio
+    async def test_resolve_logs_human_reply_activity(self, _patch_dirs, data_dir, tmp_path):
+        """Successful resolve writes human_reply to the anima activity_log."""
+        from core.memory.activity import ActivityLogger
+        from core.notification.interactive import get_interaction_router
+
+        anima_dir = tmp_path / "animas" / "test_anima"
+        (anima_dir / "activity_log").mkdir(parents=True)
+
+        router = get_interaction_router()
+        req = await router.create("test_anima", "approval", ["approve", "reject"])
+
+        with (
+            patch("core.messenger.Messenger"),
+            patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
+        ):
+            result = await router.resolve(
+                req.callback_id,
+                "approve",
+                "tester",
+                "web",
+                comment="LGTM",
+            )
+            assert result is not None
+
+        logger = ActivityLogger(anima_dir)
+        view = logger.get_conversation_view(thread_id="default", limit=20)
+        messages = [m for s in view["sessions"] for m in s["messages"]]
+        replies = [m for m in messages if m.get("type") == "human_reply"]
+        assert len(replies) == 1
+        assert replies[0]["content"] == "approve: LGTM"
+        assert replies[0]["from_person"] == "tester"
+        assert replies[0]["via"] == "web"
+
+    @pytest.mark.asyncio
     async def test_verify_approval_token(self, _patch_dirs):
         from core.notification.interactive import get_interaction_router
 
