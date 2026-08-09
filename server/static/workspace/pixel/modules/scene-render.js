@@ -187,7 +187,7 @@ export class SceneRenderer {
       const nameOffsetY = collisionFreeOffset(
         nameBounds,
         placedNames,
-        [0, 13, -13, 26, -26, 39, -39],
+        [0, 15, -15, 30, -30, 45, -45],
         this.canvas.height,
       );
       placedNames.push({ ...nameBounds, y: nameBounds.y + nameOffsetY });
@@ -397,7 +397,7 @@ export class SceneRenderer {
       const nameOffsetY = actor.isSeated ? 0 : collisionFreeOffset(
         nameBounds,
         placedNames,
-        [0, 13, -13, 26, -26, 39, -39],
+        [0, 15, -15, 30, -30, 45, -45],
         this.canvas.height,
       );
       placedNames.push({ ...nameBounds, y: nameBounds.y + nameOffsetY });
@@ -854,24 +854,24 @@ export class SceneRenderer {
       const [x1, y1, x2] = zone.rect;
       if (y1 < 4) continue;
       ctx.save();
-      const textOptions = { fontSize: 4, scale: 2, bold: true };
+      const textOptions = { scale: 1, bold: true };
       const width = measurePixelText(zone.label, textOptions) + 18;
       const zoneLeft = x1 * tile;
       const zoneRight = (x2 + 1) * tile;
       const x = Math.min(zoneRight - width - 8, zoneLeft + 40);
       const y = zone.kind === "entrance" ? y1 * tile - 54 : y1 * tile + 7;
       ctx.fillStyle = "#3e291f";
-      ctx.fillRect(x - 2, y - 2, width + 4, 20);
+      ctx.fillRect(x - 2, y - 2, width + 4, 18);
       ctx.fillStyle = "#8b603c";
-      ctx.fillRect(x, y, width, 16);
+      ctx.fillRect(x, y, width, 14);
       ctx.fillStyle = "#c99a62";
       ctx.fillRect(x + 2, y + 2, width - 4, 2);
-      drawPixelText(ctx, zone.label, x + 9, y + 3, {
+      drawPixelText(ctx, zone.label, x + 9, y + 1, {
         ...textOptions,
         color: "#fff0cd",
         shadow: "#3d281f",
-        shadowX: 2,
-        shadowY: 2,
+        shadowX: 1,
+        shadowY: 1,
       });
       ctx.restore();
     }
@@ -884,13 +884,13 @@ export class SceneRenderer {
       if (!zone.label) continue;
       const [x1, y1, x2] = zone.rect;
       if (y1 < 4) continue;
-      const textOptions = { fontSize: 4, scale: 2, bold: true };
+      const textOptions = { scale: 1, bold: true };
       const width = measurePixelText(zone.label, textOptions) + 18;
       const zoneLeft = x1 * tile;
       const zoneRight = (x2 + 1) * tile;
       const x = Math.min(zoneRight - width - 8, zoneLeft + 40);
       const y = zone.kind === "entrance" ? y1 * tile - 54 : y1 * tile + 7;
-      bounds.push({ x: x - 2, y: y - 2, width: width + 4, height: 20 });
+      bounds.push({ x: x - 2, y: y - 2, width: width + 4, height: 18 });
     }
     return bounds;
   }
@@ -1262,12 +1262,13 @@ export class SceneRenderer {
     const width = backgroundBoard ? board.w : board.w * this.tile;
     const ctx = this.ctx;
     ctx.save();
-    const options = { fontSize: 9, scale: 1, bold: false, color: "#343039" };
+    const options = { scale: 1, bold: false, color: "#343039" };
+    const lineH = 14;
     drawPixelText(ctx, "今日の指示", x + 13, y + 8, options);
     this.instructions.forEach((line, index) => {
       let safe = String(line).replaceAll(/\s+/g, " ").slice(0, 22);
       while (safe && measurePixelText(`${index + 1}. ${safe}`, options) > width - 26) safe = safe.slice(0, -1);
-      drawPixelText(ctx, `${index + 1}. ${safe}`, x + 13, y + 23 + index * 12, options);
+      drawPixelText(ctx, `${index + 1}. ${safe}`, x + 13, y + 24 + index * lineH, options);
     });
     ctx.restore();
   }
@@ -1297,14 +1298,12 @@ export class SceneRenderer {
     ctx.fillStyle = "#d5a063";
     ctx.fillRect(x + 9, y + 9, width - 18, 2);
     drawPixelText(ctx, "ANIMAWORKS PIXEL OFFICE", x + 20, y + 15, {
-      fontSize: 8,
       scale: 1,
       bold: true,
-      bitmap: false,
       color: "#fff0ca",
       shadow: "#2d1b14",
-      shadowX: 2,
-      shadowY: 2,
+      shadowX: 1,
+      shadowY: 1,
     });
     const definition = this.assets.fxDefinition(this.mode === "night" ? "moon" : "sun");
     ctx.drawImage(
@@ -1319,10 +1318,8 @@ export class SceneRenderer {
       24,
     );
     drawPixelText(ctx, this.signDate, x + width - 69, y + 15, {
-      fontSize: 9,
       scale: 1,
       bold: true,
-      bitmap: false,
       color: "#fff0ca",
       shadow: "#2d1b14",
       shadowX: 1,
@@ -1337,10 +1334,10 @@ export class SceneRenderer {
       .filter(([, config]) => config.legend)
       .map(([key, config]) => ({ key, label: config.legend, color: config.border }));
     if (!entries.length) return;
-    const textOptions = { fontSize: 8, scale: 1, bold: true, bitmap: false };
+    const textOptions = { scale: 1, bold: true };
     const chip = 6;
     const gap = 4;
-    const rowH = 12;
+    const rowH = 14;
     const padX = 6;
     const padY = 5;
     let maxLabelW = 0;
