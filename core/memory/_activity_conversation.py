@@ -179,6 +179,12 @@ class ConversationMixin:
         entries: list[ActivityEntry] = []
         today = now_local().date()
         max_scan_days = 365
+        # Thread filters may match few entries and never reach target_raw;
+        # without a file cap the scan reads (and JSON-parses) every log file
+        # ever written, blocking for seconds per request. Named threads have
+        # a conversation-file fallback for older history.
+        max_files_scanned = 30
+        files_scanned = 0
 
         for day_offset in range(max_scan_days):
             target = today - timedelta(days=day_offset)
@@ -239,7 +245,8 @@ class ConversationMixin:
                 logger.exception("Failed to read activity log %s", path)
 
             entries = day_entries + entries
-            if len(entries) >= target_raw:
+            files_scanned += 1
+            if len(entries) >= target_raw or files_scanned >= max_files_scanned:
                 break
 
         return entries
