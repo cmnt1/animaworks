@@ -150,8 +150,7 @@ function placeholderProp(label, width, height, color = "#87694f") {
   ctx.lineWidth = 3;
   ctx.strokeRect(3, 3, width - 10, height - 14);
   drawPixelText(ctx, String(label).replaceAll("_", " ").slice(0, 14), width / 2 - 2, height / 2 - 3, {
-    fontSize: 5,
-    scale: 2,
+    scale: 1,
     align: "center",
     baseline: "middle",
     color: "#fff6de",
@@ -171,8 +170,7 @@ function placeholderFx(label) {
   ctx.lineWidth = 2;
   ctx.strokeRect(2, 2, 118, 34);
   drawPixelText(ctx, label, 61, 19, {
-    fontSize: 5,
-    scale: 2,
+    scale: 1,
     align: "center",
     baseline: "middle",
     color: "#392d34",
@@ -303,6 +301,11 @@ export class AssetStore {
 
   officeBackground() {
     return this.images.get("scene.office_bg") || null;
+  }
+
+  selectOfficeBackground(companyCount) {
+    const single = this.images.get("scene.office_bg_single");
+    if (companyCount <= 1 && single) this.images.set("scene.office_bg", single);
   }
 
   prop(name, width = 96, height = 64) {

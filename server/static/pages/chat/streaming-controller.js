@@ -3,7 +3,6 @@ import {
   saveDraft, clearDraft, chatInputMaxHeight,
   scheduleSaveChatUiState, CONSTANTS,
 } from "./ctx.js";
-import { getDescendants } from "../../shared/chat/org-utils.js";
 import { TextAnimator, stripThinkTags } from "../../shared/chat/render-utils.js";
 import { attachMeetingRound, streamMeetingChat } from "../../shared/chat-stream.js";
 
@@ -387,17 +386,6 @@ export function createStreamingController(ctx) {
     const renderBubble = (streamingMsg, zone = "all") => { if (isVisible()) ctx.controllers.renderer.renderStreamingBubble(streamingMsg, zone); };
     const renderFull = () => { if (isVisible()) ctx.controllers.renderer.renderChat(!ctx.controllers.renderer.isUserDetached()); };
 
-    let _subThrottleTimer = null;
-    let _subThrottlePending = false;
-    const _throttledSubRender = () => {
-      if (_subThrottleTimer) { _subThrottlePending = true; return; }
-      renderBubble(streamingMsg, "subordinate");
-      _subThrottleTimer = setTimeout(() => {
-        _subThrottleTimer = null;
-        if (_subThrottlePending) { _subThrottlePending = false; renderBubble(streamingMsg, "subordinate"); }
-      }, 150);
-    };
-
     const _toolDetailTimers = new Map();
     const _throttledToolDetail = (toolId) => {
       if (_toolDetailTimers.has(toolId)) return;
@@ -413,7 +401,8 @@ export function createStreamingController(ctx) {
     let _rafPending = false;
     let _rafZone = "all";
     const _scheduleRender = (msg, zone = "text") => {
-      if (_rafZone !== "all") _rafZone = zone;
+      if (!_rafPending) _rafZone = zone;
+      else if (_rafZone !== zone) _rafZone = "all";
       if (_rafPending) return;
       _rafPending = true;
       requestAnimationFrame(() => {
@@ -429,31 +418,6 @@ export function createStreamingController(ctx) {
     let streamingMsg = null;
     let _textAnimator = null;
     let _thinkingAnimator = null;
-
-    const _SUB_ACTIVITY_TYPES = new Set([
-      "tool_start", "tool_detail", "tool_end",
-      "inbox_processing_start", "inbox_processing_end",
-    ]);
-    const _descendants = getDescendants(name, state.animas || []);
-    const _onSubordinateActivity = (e) => {
-      const { name: subName, event: evtType, tool_name: toolName, detail: toolDetail, thread_id: evtThreadId } = e.detail || {};
-      if (!streamingMsg?.streaming || subName === name) return;
-      if (evtThreadId && evtThreadId !== tid) return;
-      if (!_descendants.has(subName)) return;
-      if (!_SUB_ACTIVITY_TYPES.has(evtType)) return;
-      if (!streamingMsg.subordinateActivity) streamingMsg.subordinateActivity = {};
-      if (evtType === "tool_start") {
-        streamingMsg.subordinateActivity[subName] = { type: evtType, tool: toolName, summary: t("chat.tool_running", { tool: toolName }) };
-      } else if (evtType === "tool_detail") {
-        streamingMsg.subordinateActivity[subName] = { type: evtType, tool: toolName, summary: `${toolName}: ${toolDetail || ""}` };
-      } else if (evtType === "tool_end") {
-        streamingMsg.subordinateActivity[subName] = { type: evtType, tool: toolName, summary: t("chat.tool_done", { tool: toolName }) };
-      } else {
-        streamingMsg.subordinateActivity[subName] = { type: evtType, tool: toolName || "", summary: evtType };
-      }
-      _throttledSubRender();
-    };
-    document.addEventListener("anima-tool-activity", _onSubordinateActivity);
 
     const { success, error } = await mgr.sendChat(name, tid, message, {
       images,
@@ -641,9 +605,7 @@ export function createStreamingController(ctx) {
       onFinally: () => {
         if (_textAnimator) { _textAnimator.stop(); _textAnimator = null; }
         if (_thinkingAnimator) { _thinkingAnimator.stop(); _thinkingAnimator = null; }
-        document.removeEventListener("anima-tool-activity", _onSubordinateActivity);
         ctx.controllers.workIndicator?.onStreamSettled();
-        if (_subThrottleTimer) { clearTimeout(_subThrottleTimer); _subThrottleTimer = null; }
         for (const t of _toolDetailTimers.values()) clearTimeout(t);
         _toolDetailTimers.clear();
         try {
@@ -686,7 +648,7 @@ export function createStreamingController(ctx) {
       },
     });
 
-    ctx.controllers.renderer.renderChat();
+    ctx.controllers.renderer.renderChat(!ctx.controllers.renderer.isUserDetached());
 
     if (!success && error && error.name !== "AbortError") {
       logger.error("Chat stream error", { anima: name, error: error.message, name: error.name });
@@ -706,12 +668,15 @@ export function createStreamingController(ctx) {
     let _rafPending = false;
     let _rafZone = "all";
     const _scheduleRender = (msg, zone = "text") => {
-      if (_rafZone !== "all") _rafZone = zone;
+      if (!_rafPending) _rafZone = zone;
+      else if (_rafZone !== zone) _rafZone = "all";
       if (_rafPending) return;
       _rafPending = true;
       requestAnimationFrame(() => {
         _rafPending = false;
-        renderBubble(msg, _rafZone);
+        const z = _rafZone;
+        _rafZone = "all";
+        renderBubble(msg, z);
       });
     };
 
@@ -1005,7 +970,8 @@ export function createStreamingController(ctx) {
     let _rafPendingR = false;
     let _rafZoneR = "all";
     const _scheduleRenderR = (msg, zone = "text") => {
-      if (_rafZoneR !== "all") _rafZoneR = zone;
+      if (!_rafPendingR) _rafZoneR = zone;
+      else if (_rafZoneR !== zone) _rafZoneR = "all";
       if (_rafPendingR) return;
       _rafPendingR = true;
       requestAnimationFrame(() => {

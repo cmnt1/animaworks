@@ -90,6 +90,8 @@ class ConversationMixin:
         "task_exec_start",
         "task_exec_end",
         "error",
+        "human_notify",
+        "human_reply",
     }
 
     def get_conversation_view(
@@ -179,6 +181,12 @@ class ConversationMixin:
         entries: list[ActivityEntry] = []
         today = now_local().date()
         max_scan_days = 365
+        # Thread filters may match few entries and never reach target_raw;
+        # without a file cap the scan reads (and JSON-parses) every log file
+        # ever written, blocking for seconds per request. Named threads have
+        # a conversation-file fallback for older history.
+        max_files_scanned = 30
+        files_scanned = 0
 
         for day_offset in range(max_scan_days):
             target = today - timedelta(days=day_offset)
@@ -204,7 +212,13 @@ class ConversationMixin:
                     if raw.get("type") not in self._CONVERSATION_TYPES:
                         continue
                     is_inbox_entry = _is_inbox_raw_entry(raw)
-                    if thread_id != "inbox" and is_inbox_entry:
+                    # call_human notify/reply stay on the default thread even when
+                    # the activity row was written during inbox/heartbeat handling.
+                    if (
+                        thread_id != "inbox"
+                        and is_inbox_entry
+                        and raw.get("type") not in ("human_notify", "human_reply")
+                    ):
                         continue
                     ts = raw.get("ts", "")
                     if before and ts >= before:
@@ -239,7 +253,8 @@ class ConversationMixin:
                 logger.exception("Failed to read activity log %s", path)
 
             entries = day_entries + entries
-            if len(entries) >= target_raw:
+            files_scanned += 1
+            if len(entries) >= target_raw or files_scanned >= max_files_scanned:
                 break
 
         return entries
@@ -313,6 +328,9 @@ class ConversationMixin:
                     pending_tool_calls.clear()
 
             elif e.type == "tool_use":
+                # human_notify card is the canonical display for call_human.
+                if e.tool == "call_human":
+                    continue
                 tid = e.meta.get("tool_use_id", "")
                 result_entry = tool_results.get(tid) if tid else None
                 if not result_entry:
@@ -333,6 +351,38 @@ class ConversationMixin:
 
             elif e.type == "tool_result":
                 pass
+
+            elif e.type == "human_notify":
+                self._flush_tool_calls(messages, pending_tool_calls)
+                messages.append(
+                    {
+                        "ts": e.ts,
+                        "role": "system",
+                        "type": "human_notify",
+                        "content": e.content,
+                        "subject": e.meta.get("subject", ""),
+                        "priority": e.meta.get("priority", "normal"),
+                        "callback_id": e.meta.get("callback_id", ""),
+                        "from_person": "",
+                        "source_key": "call_human",
+                        "tool_calls": [],
+                    }
+                )
+
+            elif e.type == "human_reply":
+                self._flush_tool_calls(messages, pending_tool_calls)
+                messages.append(
+                    {
+                        "ts": e.ts,
+                        "role": "human",
+                        "type": "human_reply",
+                        "content": e.content,
+                        "from_person": e.from_person,
+                        "via": e.via,
+                        "source_key": "call_human_reply",
+                        "tool_calls": [],
+                    }
+                )
 
             elif e.type == "heartbeat_start":
                 self._flush_tool_calls(messages, pending_tool_calls)

@@ -129,6 +129,59 @@ const DYNAMIC_BUBBLE_FILL = "#fbf0e4";
 const DEFAULT_WORK_BORDER = "#3f7a38";
 const DEFAULT_WORK_TEXT = "#356b2e";
 
+// Labels formerly baked into fx/bubbles.png rows — keep wording identical.
+const STATE_BUBBLE_LABELS = Object.freeze({
+  working: "作業中",
+  working_scheduled: "定時作業中",
+  thinking: "思考中",
+  talking: "打合せ中",
+  reporting: "報告中",
+  sleeping: "居眠り中",
+  error: "エラー",
+  idle: "休憩中",
+});
+
+// Transient bubble overrides (setTransientBubble) keyed by former fx names.
+const BUBBLE_FX_LABELS = Object.freeze({
+  bubble_working: "作業中",
+  bubble_thinking: "思考中",
+  bubble_meeting: "打合せ中",
+  bubble_sleeping: "居眠り中",
+  bubble_reporting: "報告中",
+  bubble_error: "エラー",
+  bubble_break: "休憩中",
+  bubble_instruction: "指示受領",
+  bubble_delivery: "届け物中",
+  bubble_cron: "定時作業中",
+});
+
+// Default border/text colors matching former bubbles.png rows.
+const STATE_BUBBLE_COLORS = Object.freeze({
+  working: { border: "#397b30", text: "#397b30" },
+  working_scheduled: { border: "#397b30", text: "#397b30" },
+  thinking: { border: "#3565a8", text: "#3565a8" },
+  talking: { border: "#248a9b", text: "#248a9b" },
+  reporting: { border: "#b85e18", text: "#b85e18" },
+  error: { border: "#b93c46", text: "#b93c46" },
+  idle: { border: "#bd4f72", text: "#bd4f72" },
+  sleeping: { border: "#7d3ca1", text: "#7d3ca1" },
+});
+
+const BUBBLE_FX_COLORS = Object.freeze({
+  bubble_instruction: { border: "#9b720f", text: "#9b720f" },
+  bubble_delivery: { border: "#805028", text: "#805028" },
+  bubble_meeting: { border: "#248a9b", text: "#248a9b" },
+  bubble_working: { border: "#397b30", text: "#397b30" },
+  bubble_thinking: { border: "#3565a8", text: "#3565a8" },
+  bubble_sleeping: { border: "#7d3ca1", text: "#7d3ca1" },
+  bubble_reporting: { border: "#b85e18", text: "#b85e18" },
+  bubble_error: { border: "#b93c46", text: "#b93c46" },
+  bubble_break: { border: "#bd4f72", text: "#bd4f72" },
+  bubble_cron: { border: "#397b30", text: "#397b30" },
+});
+
+const NAME_PLATE_H = 14;
+
 function workKindFromContext(ctx) {
   const context = String(ctx || "").toLowerCase();
   if (!context) return "";
@@ -151,18 +204,20 @@ function workKindConfig(kind) {
   return (kind && WORK_KINDS[kind]) || null;
 }
 
+function labelForBubbleName(name) {
+  if (!name) return "";
+  if (BUBBLE_FX_LABELS[name]) return BUBBLE_FX_LABELS[name];
+  return "";
+}
+
 const DYNAMIC_BUBBLE_TEXT = Object.freeze({
-  fontSize: 12,
   scale: 1,
   bold: true,
-  bitmap: false,
 });
 
 const NAME_TEXT_OPTIONS = Object.freeze({
-  fontSize: 4,
   scale: 1,
   bold: true,
-  letterSpacing: 3,
 });
 
 function normalizeState(value) {
@@ -454,11 +509,34 @@ export class Actor {
 
   workBubbleColors() {
     const config = workKindConfig(this.workKind);
+    if (config) {
+      return {
+        border: config.border,
+        text: config.text,
+        fill: DYNAMIC_BUBBLE_FILL,
+      };
+    }
+    if (this.bubbleOverride && BUBBLE_FX_COLORS[this.bubbleOverride]) {
+      return { ...BUBBLE_FX_COLORS[this.bubbleOverride], fill: DYNAMIC_BUBBLE_FILL };
+    }
+    const stateColors = STATE_BUBBLE_COLORS[this.state];
+    if (stateColors) {
+      return { ...stateColors, fill: DYNAMIC_BUBBLE_FILL };
+    }
     return {
-      border: config?.border || DEFAULT_WORK_BORDER,
-      text: config?.text || DEFAULT_WORK_TEXT,
+      border: DEFAULT_WORK_BORDER,
+      text: DEFAULT_WORK_TEXT,
       fill: DYNAMIC_BUBBLE_FILL,
     };
+  }
+
+  // Activity label, transient override, or state default — all draw via the
+  // same programmatic bubble path (no baked text in bubbles.png).
+  fullBubbleLabel() {
+    const activity = this.dynamicLabel();
+    if (activity) return activity;
+    if (this.bubbleOverride) return labelForBubbleName(this.bubbleOverride);
+    return STATE_BUBBLE_LABELS[this.state] || labelForBubbleName(this.currentBubble());
   }
 
   animationSpeed() {
@@ -703,7 +781,7 @@ export class Actor {
   }
 
   hasFullBubble() {
-    return !this.isCompactStatus() && Boolean(this.currentBubble());
+    return !this.isCompactStatus() && Boolean(this.fullBubbleLabel());
   }
 
   nameBounds(position = {}) {
@@ -714,37 +792,26 @@ export class Actor {
       x: x - width / 2 - 1,
       y,
       width: width + 12,
-      height: 11,
+      height: NAME_PLATE_H,
     };
   }
 
-  dynamicBubbleSize() {
-    const label = this.dynamicLabel();
-    const textWidth = measurePixelText(label, DYNAMIC_BUBBLE_TEXT);
-    return { width: textWidth + 22, height: 30 };
+  dynamicBubbleSize(label = this.fullBubbleLabel()) {
+    const textWidth = measurePixelText(label || " ", DYNAMIC_BUBBLE_TEXT);
+    // 10px PixelMplus raster is 12px tall; body + tail ≈ 24.
+    return { width: Math.max(40, textWidth + 18), height: 24 };
   }
 
   bubbleBounds(name = this.currentBubble(), spriteY = this.spriteY(), offsetY = 0, offsetX = 0) {
-    if (this.dynamicLabel()) {
-      const size = this.dynamicBubbleSize();
-      const x = Math.round(this.x - size.width / 2 + offsetX);
-      const headTop = this.headTop(spriteY);
-      const headGap = this.backgroundSlot ? 0 : 8;
-      const y = Math.round(headTop - headGap - (size.height - 3) + offsetY);
-      return { x, y, width: size.width, height: size.height };
-    }
-    const definition = this.assets.fxDefinition(name, name);
-    const width = definition.frameW;
-    const height = definition.frameH;
-    const x = Math.round(this.x - width / 2 + offsetX);
+    const label = this.dynamicLabel() || labelForBubbleName(name) ||
+      STATE_BUBBLE_LABELS[this.state] || "";
+    const size = this.dynamicBubbleSize(label);
+    const x = Math.round(this.x - size.width / 2 + offsetX);
     const headTop = this.headTop(spriteY);
-    const tailBottom = definition.frameH - 3;
     const headGap = this.backgroundSlot ? 0 : 8;
     const bob = this.backgroundSlot ? 0 : Math.sin(this.fxTime * 3) * 2;
-    const y = Math.round(
-      headTop - headGap - tailBottom + bob + offsetY,
-    );
-    return { x, y, width, height };
+    const y = Math.round(headTop - headGap - (size.height - 3) + bob + offsetY);
+    return { x, y, width: size.width, height: size.height };
   }
 
   drawName(ctx, position = {}) {
@@ -753,10 +820,10 @@ export class Actor {
     const x = Math.round(position.x ?? this.x);
     const y = Math.round((position.y ?? this.y + 3) + (position.offsetY || 0));
     ctx.fillStyle = "#573722";
-    ctx.fillRect(x - width / 2 - 1, y, width + 2, 11);
+    ctx.fillRect(x - width / 2 - 1, y, width + 2, NAME_PLATE_H);
     ctx.fillStyle = "#f3dfb5";
-    ctx.fillRect(x - width / 2, y + 1, width, 9);
-    drawPixelText(ctx, this.id, x, y + 5, {
+    ctx.fillRect(x - width / 2, y + 1, width, NAME_PLATE_H - 2);
+    drawPixelText(ctx, this.id, x, y + Math.round(NAME_PLATE_H / 2), {
       ...NAME_TEXT_OPTIONS,
       align: "center",
       baseline: "middle",
@@ -780,44 +847,21 @@ export class Actor {
   }
 
   drawBubble(ctx, name, spriteY, options = {}) {
-    const label = this.dynamicLabel();
-    if (label) {
-      this.drawDynamicBubble(ctx, label, spriteY, options);
-      return;
-    }
-    const definition = this.assets.fxDefinition(name, name);
-    const frame = Math.floor(this.fxTime * definition.fps) % definition.frames;
-    const scale = 1;
-    const width = Math.round(definition.frameW * scale);
-    const height = Math.round(definition.frameH * scale);
+    const label = this.dynamicLabel() || labelForBubbleName(name) ||
+      STATE_BUBBLE_LABELS[this.state] || "";
+    if (!label) return;
+    this.drawDynamicBubble(ctx, label, spriteY, options);
+  }
+
+  // Hand-drawn speech bubble for activity / state labels, styled to match the
+  // former baked fx/bubbles.png rows. Colors prefer workKind, else state default.
+  drawDynamicBubble(ctx, label, spriteY, options = {}) {
     const bounds = this.bubbleBounds(
-      name,
+      this.currentBubble(),
       spriteY,
       options.offsetY || 0,
       options.offsetX || 0,
     );
-    const x = bounds.x;
-    const y = bounds.y;
-    ctx.save();
-    if (options.quiet) ctx.globalAlpha = 0.55;
-    ctx.drawImage(
-      definition.image,
-      frame * definition.frameW,
-      definition.row * definition.frameH,
-      definition.frameW,
-      definition.frameH,
-      x,
-      y,
-      width,
-      height,
-    );
-    ctx.restore();
-  }
-
-  // Hand-drawn speech bubble for dynamic activity labels ("コーディング中"
-  // etc.), styled to match the baked fx/bubbles.png rows. Colors come from workKind.
-  drawDynamicBubble(ctx, label, spriteY, options = {}) {
-    const bounds = this.bubbleBounds("", spriteY, options.offsetY || 0, options.offsetX || 0);
     const { x, y, width } = bounds;
     const bodyHeight = bounds.height - 6;
     const { border, text, fill } = this.workBubbleColors();
@@ -905,9 +949,9 @@ export class Actor {
 
   drawLaneBadge(ctx, x, y, count) {
     const text = `×${count}`;
-    const options = { fontSize: 8, scale: 1, bold: true, bitmap: false };
+    const options = { scale: 1, bold: true };
     const width = measurePixelText(text, options) + 6;
-    const height = 12;
+    const height = 14;
     const left = Math.round(x - width / 2);
     const top = Math.round(y - height / 2);
     ctx.save();
@@ -967,9 +1011,28 @@ export class ActorManager {
       anima,
     ]));
     const backgroundSlots = this.scene.background_mode?.slots;
-    const availableSlots = backgroundSlots?.slots || [];
+    let availableSlots = backgroundSlots?.slots || [];
     let slotIndex = 0;
     const deskEntries = Object.entries(this.scene.desks || {});
+    const companies = new Set(deskEntries
+      .filter(([id, desk]) => !(desk.is_human || id === (this.scene.human_id || "human")))
+      .map(([id, desk]) => String(desk.company || known.get(id)?.company || "default")));
+    if (companies.size <= 1 && availableSlots.length) {
+      // single company: interleave the slot sides so a small team fills the room evenly
+      const sides = new Map();
+      for (const slot of availableSlots) {
+        const side = String(slot.company || "");
+        if (!sides.has(side)) sides.set(side, []);
+        sides.get(side).push(slot);
+      }
+      if (sides.size > 1) {
+        const lists = [...sides.values()];
+        availableSlots = [];
+        for (let i = 0; i < Math.max(...lists.map((list) => list.length)); i += 1) {
+          for (const list of lists) if (i < list.length) availableSlots.push(list[i]);
+        }
+      }
+    }
     const orderedEntries = backgroundSlots
       ? deskEntries.sort(([leftId, leftDesk], [rightId, rightDesk]) => {
         const leftHuman = leftDesk.is_human || leftId === (this.scene.human_id || "human");

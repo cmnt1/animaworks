@@ -3,6 +3,7 @@ from __future__ import annotations
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
+import asyncio
 import json
 import logging
 
@@ -210,7 +211,10 @@ def create_sessions_router() -> APIRouter:
 
         limit = max(1, min(limit, 200))
         activity = ActivityLogger(anima_dir)
-        view = activity.get_conversation_view(
+        # Log scanning is sync file I/O + JSON parsing; keep it off the
+        # event loop (UI polls this endpoint every few seconds).
+        view = await asyncio.to_thread(
+            activity.get_conversation_view,
             before=before,
             limit=limit,
             thread_id=thread_id,

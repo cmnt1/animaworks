@@ -143,6 +143,7 @@ class ToolHandler(
             "task": [],
             "inbox": [],
         }
+        self._last_call_human_callback_id: str | None = None
         self._replied_to: dict[str, set[str]] = {
             "chat": set(),
             "background": set(),
@@ -733,6 +734,11 @@ class ToolHandler(
                 subject = args.get("subject", "")
                 meta["subject"] = subject
                 meta["notification_key"] = notification_key_for(subject, body)
+                meta["priority"] = args.get("priority") or "normal"
+                callback_id = getattr(self, "_last_call_human_callback_id", None)
+                if callback_id:
+                    meta["callback_id"] = callback_id
+                    self._last_call_human_callback_id = None
                 self._activity.log(
                     activity_type,
                     content=body[:1000],

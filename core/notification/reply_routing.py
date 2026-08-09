@@ -355,6 +355,41 @@ async def route_thread_reply(
         external_thread_ts=event.get("thread_ts", ""),
         intent="question",
     )
+
+    # Record raw reply on the main-thread conversation view (no thread_ctx).
+    # Interactive number replies are logged inside InteractionRouter.resolve.
+    try:
+        from core.memory.activity import ActivityLogger
+        from core.paths import get_animas_dir
+
+        user_id = str(event.get("user") or "")
+        from_person = user_id
+        try:
+            from server.slack_socket import _get_cached_user_name
+
+            from_person = _get_cached_user_name(user_id) or user_id
+        except Exception:
+            logger.debug(
+                "Failed to resolve Slack display name for human_reply log",
+                exc_info=True,
+            )
+        ActivityLogger(get_animas_dir() / target).log(
+            "human_reply",
+            content=text,
+            from_person=from_person,
+            via="slack",
+            ctx="chat",
+            meta={"thread_ts": thread_ts},
+            safe=True,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to log human_reply activity for thread_ts=%s anima=%s",
+            thread_ts,
+            target,
+            exc_info=True,
+        )
+
     logger.info(
         "Thread reply routed: thread_ts=%s -> anima=%s (ctx=%s)",
         thread_ts,

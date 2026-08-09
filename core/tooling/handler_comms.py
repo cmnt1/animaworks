@@ -1016,6 +1016,7 @@ class CommsToolsMixin:
             )
 
         interaction_req = None
+        self._last_call_human_callback_id = None
         if interactive:
             from core.config.models import load_config
             from core.notification.interactive import create_interaction_resilient
@@ -1049,6 +1050,9 @@ class CommsToolsMixin:
                     f"Failed to persist interactive request: {oe}",
                     suggestion="Check that the AnimaWorks server is reachable from this process",
                 )
+            if interaction_req is not None:
+                # Consumed by _log_tool_activity (runs after this handler returns).
+                self._last_call_human_callback_id = interaction_req.callback_id
 
         try:
             coro = notifier.notify(

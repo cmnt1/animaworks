@@ -395,6 +395,65 @@ function _renderMessageMeta(msg, escapeHtml) {
  * @param {string}  [opts.animaName]
  * @param {number}  [opts.truncateLen] - Tool result truncation length
  */
+function _viaBadgeLabel(via) {
+  if (!via) return "";
+  const key = `chat.via_${via}`;
+  const localized = t(key);
+  if (localized !== key) return localized;
+  return `via ${via}`;
+}
+
+function _renderHumanNotifyCard(msg, opts) {
+  const { escapeHtml, smartTimestamp } = opts;
+  const ts = msg.ts ? smartTimestamp(msg.ts) : "";
+  const tsHtml = ts ? `<span class="chat-ts">${escapeHtml(ts)}</span>` : "";
+  const subject = msg.subject || "";
+  const priority = (msg.priority || "normal").toLowerCase();
+  const showPriority = priority === "high" || priority === "urgent";
+  const priorityClass = showPriority ? ` chat-human-notify--${priority}` : "";
+  const priorityBadge = showPriority
+    ? `<span class="chat-human-notify-priority chat-human-notify-priority--${escapeHtml(priority)}">${escapeHtml(t(`chat.priority_${priority}`) === `chat.priority_${priority}` ? priority : t(`chat.priority_${priority}`))}</span>`
+    : "";
+  const callbackId = msg.callback_id || "";
+  let actionsHtml = "";
+  if (callbackId) {
+    const cid = escapeHtml(callbackId);
+    actionsHtml =
+      `<div class="chat-human-notify-actions" data-callback-id="${cid}">` +
+      `<button type="button" class="chat-human-notify-btn" data-decision="approve" data-callback-id="${cid}">${escapeHtml(t("chat.human_notify_approve"))}</button>` +
+      `<button type="button" class="chat-human-notify-btn chat-human-notify-btn--reject" data-decision="reject" data-callback-id="${cid}">${escapeHtml(t("chat.human_notify_reject"))}</button>` +
+      `<button type="button" class="chat-human-notify-btn chat-human-notify-btn--comment" data-decision="comment" data-callback-id="${cid}">${escapeHtml(t("chat.human_notify_comment"))}</button>` +
+      `</div>`;
+  }
+  return (
+    `<div class="chat-human-notify${priorityClass}" data-type="human_notify">` +
+    `<div class="chat-human-notify-label">\u{1F4E3} ${escapeHtml(t("chat.human_notify_label"))}${priorityBadge}</div>` +
+    (subject ? `<div class="chat-human-notify-subject">${escapeHtml(subject)}</div>` : "") +
+    `<div class="chat-human-notify-body">${escapeHtml(msg.content || "")}</div>` +
+    actionsHtml +
+    tsHtml +
+    `</div>`
+  );
+}
+
+function _renderHumanReplyBubble(msg, opts) {
+  const { escapeHtml, smartTimestamp } = opts;
+  const ts = msg.ts ? smartTimestamp(msg.ts) : "";
+  const tsHtml = ts ? `<span class="chat-ts">${escapeHtml(ts)}</span>` : "";
+  const viaLabel = _viaBadgeLabel(msg.via);
+  const viaBadge = viaLabel
+    ? `<span class="chat-via-badge">${escapeHtml(viaLabel)}</span>`
+    : "";
+  const fromName = msg.from_person || "";
+  const fromLabel = fromName
+    ? `<div class="chat-human-reply-from">${escapeHtml(fromName)}${viaBadge}</div>`
+    : (viaBadge ? `<div class="chat-human-reply-from">${viaBadge}</div>` : "");
+  const contentHtml = `<div class="chat-text">${escapeHtml(msg.content || "")}</div>`;
+  const bubble = `<div class="chat-bubble user" data-type="human_reply">${fromLabel}${contentHtml}${tsHtml}</div>`;
+  const avatarHtml = _renderAvatar(null, opts.avatarMap || null, opts.companyColors);
+  return _wrapRow("user", bubble, avatarHtml);
+}
+
 export function renderHistoryMessage(msg, opts) {
   const { escapeHtml, renderMarkdown, smartTimestamp } = opts;
   const renderImages = opts.renderChatImages || (() => "");
@@ -403,6 +462,14 @@ export function renderHistoryMessage(msg, opts) {
 
   const ts = msg.ts ? smartTimestamp(msg.ts) : "";
   const tsHtml = ts ? `<span class="chat-ts">${escapeHtml(ts)}</span>` : "";
+
+  if (msg.type === "human_notify") {
+    return _renderHumanNotifyCard(msg, opts);
+  }
+
+  if (msg.type === "human_reply") {
+    return _renderHumanReplyBubble(msg, opts);
+  }
 
   if (msg.role === "system") {
     return `<div class="chat-bubble assistant" style="opacity:0.7; font-style:italic;">${escapeHtml(msg.content || "")}${tsHtml}</div>`;
@@ -1005,7 +1072,6 @@ export function renderStreamingBubbleInner(msg, opts) {
     + metaHtml
     + `<div class="streaming-zone-text">${_renderTextZoneContent(msg, opts)}</div>`
     + `<div class="streaming-zone-tools">${_renderToolZoneContent(msg, opts)}</div>`
-    + `<div class="streaming-zone-subordinate">${_renderSubordinateZoneContent(msg, opts)}</div>`
     + `<div class="streaming-zone-thinking">${_renderThinkingZoneContent(msg, opts)}</div>`;
 }
 
@@ -1014,7 +1080,7 @@ export function renderStreamingBubbleInner(msg, opts) {
  * @param {HTMLElement} bubble - The .chat-bubble.assistant.streaming element
  * @param {object} msg - Streaming message state
  * @param {object} opts - Same as renderLiveBubble opts
- * @param {string} zone - Which zone to update: "text" | "tools" | "subordinate" | "thinking" | "all"
+ * @param {string} zone - Which zone to update: "text" | "tools" | "thinking" | "all"
  */
 const _MD_RERENDER_MS = 80;
 const _MD_RERENDER_CHARS = 40;
@@ -1033,11 +1099,6 @@ export function updateStreamingZone(bubble, msg, opts, zone = "all") {
     _scrollThinkingToBottom(bubble);
     return;
   }
-  if (zone === "subordinate") {
-    _patchSubordinateZone(el, msg, opts);
-    return;
-  }
-
   // Fast path: append-only textContent update (no innerHTML replacement)
   if (zone === "text" && msg.streaming && msg._mdCache) {
     const visibleText = msg._displayText || msg.text;
@@ -1148,71 +1209,6 @@ function _renderToolZoneContent(msg, opts) {
   return "";
 }
 
-function _renderSubordinateZoneContent(msg, opts) {
-  const { escapeHtml } = opts;
-  const subActivity = msg.subordinateActivity;
-  if (!subActivity || Object.keys(subActivity).length === 0) return "";
-  let html = "";
-  for (const [subName, act] of Object.entries(subActivity)) {
-    if (act.type === "inbox_processing_end") continue;
-    const icon = act.type === "inbox_processing_start"
-      ? "⏳" : (act.type === "tool_end" || act.type === "tool_use") ? "✓" : "🔧";
-    const label = act.summary || act.tool || act.type;
-    html += `<div class="subordinate-activity subordinate-activity--animate" data-sub-name="${escapeHtml(subName)}">
-      <img class="subordinate-avatar" src="/api/animas/${encodeURIComponent(subName)}/avatar" alt="" onerror="this.style.display='none'">
-      <span class="subordinate-name">${escapeHtml(subName)}</span>
-      <span class="subordinate-tool">${icon} ${escapeHtml(label)}</span>
-    </div>`;
-  }
-  return html;
-}
-
-/**
- * Patch the subordinate zone with minimal DOM ops — reuse existing elements
- * if the same anima name is already present, avoiding img re-fetch.
- */
-function _patchSubordinateZone(container, msg, opts) {
-  const { escapeHtml } = opts;
-  const subActivity = msg.subordinateActivity;
-  if (!subActivity || Object.keys(subActivity).length === 0) {
-    if (container.innerHTML) container.innerHTML = "";
-    return;
-  }
-
-  const existingByName = new Map();
-  for (const el of container.querySelectorAll(".subordinate-activity[data-sub-name]")) {
-    existingByName.set(el.dataset.subName, el);
-  }
-
-  const desiredNames = new Set();
-  for (const [subName, act] of Object.entries(subActivity)) {
-    if (act.type === "inbox_processing_end") continue;
-    desiredNames.add(subName);
-
-    const icon = act.type === "inbox_processing_start"
-      ? "⏳" : (act.type === "tool_end" || act.type === "tool_use") ? "✓" : "🔧";
-    const label = act.summary || act.tool || act.type;
-
-    const existing = existingByName.get(subName);
-    if (existing) {
-      const toolSpan = existing.querySelector(".subordinate-tool");
-      if (toolSpan) toolSpan.textContent = `${icon} ${label}`;
-    } else {
-      const div = document.createElement("div");
-      div.className = "subordinate-activity subordinate-activity--animate";
-      div.dataset.subName = subName;
-      div.innerHTML = `<img class="subordinate-avatar" src="/api/animas/${encodeURIComponent(subName)}/avatar" alt="" onerror="this.style.display='none'">` +
-        `<span class="subordinate-name">${escapeHtml(subName)}</span>` +
-        `<span class="subordinate-tool">${icon} ${escapeHtml(label)}</span>`;
-      container.appendChild(div);
-    }
-  }
-
-  for (const [name, el] of existingByName) {
-    if (!desiredNames.has(name)) el.remove();
-  }
-}
-
 function _renderThinkingZoneContent(msg, opts) {
   const { escapeHtml } = opts;
   const visibleThinking = msg._displayThinkingText || msg.thinkingText;
@@ -1308,6 +1304,84 @@ export function bindBubbleActionHandlers(container) {
           if (a !== actions) a.classList.remove("visible");
         });
         actions.classList.toggle("visible");
+      }
+    }
+  });
+}
+
+/**
+ * Bind approve/reject/comment handlers for human_notify cards.
+ * @param {HTMLElement|null} container
+ * @param {object} [opts]
+ * @param {string} [opts.animaName] - Current anima name for the resolve API
+ * @param {function} [opts.getAnimaName] - Lazy anima name resolver
+ */
+export function bindHumanNotifyHandlers(container, opts = {}) {
+  if (!container || container.dataset.humanNotifyBound) return;
+  container.dataset.humanNotifyBound = "1";
+
+  container.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".chat-human-notify-btn");
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const decision = btn.dataset.decision || "";
+    const callbackId = btn.dataset.callbackId || "";
+    if (!callbackId) return;
+
+    if (decision === "comment") {
+      const input = document.getElementById("chatPageInput");
+      if (input) {
+        input.focus();
+        input.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+      return;
+    }
+
+    if (decision !== "approve" && decision !== "reject") return;
+
+    const animaName = (typeof opts.getAnimaName === "function" ? opts.getAnimaName() : null)
+      || opts.animaName
+      || "";
+    if (!animaName) return;
+
+    const actions = btn.closest(".chat-human-notify-actions");
+    const card = btn.closest(".chat-human-notify");
+    if (actions) {
+      actions.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+    }
+
+    try {
+      let path = `/api/animas/${encodeURIComponent(animaName)}/interactions/${encodeURIComponent(callbackId)}/resolve`;
+      try {
+        const { basePath } = await import("/shared/base-path.js");
+        if (basePath && path.startsWith("/")) path = `${basePath}${path}`;
+      } catch {
+        // base-path optional when not running under the dashboard shell
+      }
+      const res = await fetch(path, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision, comment: "" }),
+      });
+      if (res.ok || res.status === 409) {
+        if (actions) {
+          const label = res.status === 409
+            ? t("chat.human_notify_resolved")
+            : `${t("chat.human_notify_resolved")}: ${decision}`;
+          actions.innerHTML = `<span class="chat-human-notify-resolved">${label}</span>`;
+        }
+        if (card) card.classList.add("chat-human-notify--resolved");
+      } else {
+        if (actions) {
+          actions.querySelectorAll("button").forEach((b) => { b.disabled = false; });
+        }
+      }
+    } catch {
+      if (actions) {
+        actions.querySelectorAll("button").forEach((b) => { b.disabled = false; });
       }
     }
   });

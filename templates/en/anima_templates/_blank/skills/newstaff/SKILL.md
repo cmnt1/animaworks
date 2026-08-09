@@ -126,6 +126,19 @@ This automatically performs:
 - `execution_mode`: autonomous or assisted
 - `speciality`: Role/specialty
 
+### 4.5. Propose and Set Heartbeat Frequency
+
+Propose a periodic heartbeat interval to the requester based on how the new staff's work is driven, then set the agreed value:
+
+| Work style | Recommended interval | Examples |
+|-----------|---------------------|----------|
+| Proactive judgment / coordination | 30 min (default) | Team coordinator, progress supervisor |
+| Message / event driven | 60-120 min | Reviewer, developer |
+| Mainly cron scheduled tasks | 120-240 min | Monitoring, accounting, legal |
+
+Set it by adding `"heartbeat_interval_minutes": <minutes>` (1-1440) to `{data_dir}/animas/{english_name}/status.json`.
+Message-triggered heartbeats and cron run regardless of this setting, so a longer interval does not hurt responsiveness. When unsure, choose longer (no-op heartbeats waste tokens).
+
 ### 5. Apply to Server
 
 Use **Bash** to reload the server:

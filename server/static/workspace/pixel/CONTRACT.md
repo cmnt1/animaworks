@@ -63,10 +63,11 @@ Full scene objects contain:
 
 ## Effects and scene assets
 
-Manifest scene entries declare files by stable functional keys. Status bubbles
-use the fixed rows in `fx/bubbles.png`; the same state must always resolve to
-the same manifest key. Missing scene or effect assets may use renderer
-placeholders, but missing character sheets should normally use a bundled sample.
+Manifest scene entries declare files by stable functional keys. Status bubble
+text (作業中 / 思考中 / …) is drawn programmatically with PixelMplus10; only
+icon bubbles (`bubble_small_*`) and accent FX remain as sprites. Missing scene
+or effect assets may use renderer placeholders, but missing character sheets
+should normally use a bundled sample.
 
 All pixel assets are rendered with nearest-neighbor sampling.
 
@@ -76,6 +77,11 @@ A deployment can replace the tiled scene with a single illustrated office by
 supplying `workspace_pixel/assets/scene/office_bg.png` together with
 `office_bg_slots.json`. When both load, the renderer draws the illustration and
 seats characters at the declared slots instead of generating a tile layout.
+
+The bundled `office_bg.png` shows a two-company office (left/right floor
+zones). When the fleet has only one company, `office_bg_single.png` (same
+geometry, unified floor) is used instead and seats are assigned by
+interleaving the slot sides, so both variants share `office_bg_slots.json`.
 
 `office_bg_slots.json` holds:
 
