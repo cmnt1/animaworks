@@ -63,10 +63,11 @@ Full scene objects contain:
 
 ## Effects and scene assets
 
-Manifest scene entries declare files by stable functional keys. Status bubbles
-use the fixed rows in `fx/bubbles.png`; the same state must always resolve to
-the same manifest key. Missing scene or effect assets may use renderer
-placeholders, but missing character sheets should normally use a bundled sample.
+Manifest scene entries declare files by stable functional keys. Status bubble
+text (作業中 / 思考中 / …) is drawn programmatically with PixelMplus10; only
+icon bubbles (`bubble_small_*`) and accent FX remain as sprites. Missing scene
+or effect assets may use renderer placeholders, but missing character sheets
+should normally use a bundled sample.
 
 All pixel assets are rendered with nearest-neighbor sampling.
 

@@ -1,4 +1,4 @@
-import { drawPixelText } from "./pixel-text.js";
+import { drawPixelText, measurePixelText } from "./pixel-text.js";
 
 const MAX_ACTIVE = 5;
 const MAX_QUEUED = 5;
@@ -428,20 +428,38 @@ export class Director {
   }
 
   drawTalk(ctx, effect, progress) {
-    const definition = this.assets.fxDefinition("bubble_meeting", effect.label);
-    const frame = Math.floor(effect.elapsed * definition.fps) % definition.frames;
+    // Programmatic bubble matching former bubble_meeting ("打合せ中") row.
+    const label = "打合せ中";
+    const border = "#248a9b";
+    const fill = "#fbf0e4";
+    const textColor = "#248a9b";
+    const width = Math.max(40, measurePixelText(label, { scale: 1, bold: true }) + 18);
+    const height = 24;
+    const bodyHeight = height - 6;
     const bob = Math.sin(progress * Math.PI * 10) * 3;
-    ctx.drawImage(
-      definition.image,
-      frame * definition.frameW,
-      definition.row * definition.frameH,
-      definition.frameW,
-      definition.frameH,
-      Math.round(effect.x - definition.frameW / 2),
-      Math.round(effect.y + bob),
-      definition.frameW,
-      definition.frameH,
-    );
+    const x = Math.round(effect.x - width / 2);
+    const y = Math.round(effect.y + bob);
+    const tailX = Math.round(x + width / 2);
+    ctx.save();
+    ctx.fillStyle = border;
+    ctx.fillRect(x + 2, y, width - 4, bodyHeight);
+    ctx.fillRect(x, y + 2, width, bodyHeight - 4);
+    ctx.fillStyle = fill;
+    ctx.fillRect(x + 3, y + 2, width - 6, bodyHeight - 4);
+    ctx.fillRect(x + 2, y + 3, width - 4, bodyHeight - 6);
+    ctx.fillStyle = border;
+    ctx.fillRect(tailX - 4, y + bodyHeight, 8, 2);
+    ctx.fillRect(tailX - 2, y + bodyHeight + 2, 4, 2);
+    ctx.fillStyle = fill;
+    ctx.fillRect(tailX - 3, y + bodyHeight - 1, 6, 2);
+    drawPixelText(ctx, label, tailX, y + Math.round(bodyHeight / 2), {
+      scale: 1,
+      bold: true,
+      align: "center",
+      baseline: "middle",
+      color: textColor,
+    });
+    ctx.restore();
   }
 
   drawCustomer(ctx, effect, progress) {
@@ -498,8 +516,7 @@ export class Director {
     ctx.save();
     ctx.globalAlpha = visible;
     drawPixelText(ctx, "guest", x, y + 2, {
-      fontSize: 5,
-      scale: 2,
+      scale: 1,
       align: "center",
       color: "#fff6dc",
       shadow: "#60432e",
