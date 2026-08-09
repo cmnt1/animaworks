@@ -126,6 +126,19 @@ animaworks anima create --from-md /tmp/{english_name}.md --name {english_name} -
 - `execution_mode`: autonomous または assisted
 - `speciality`: 役職/専門
 
+### 4.5. heartbeat頻度の提案・設定
+
+新しい社員の仕事の駆動型に応じて、定期heartbeatの間隔を依頼者に提案し、合意した値を設定する:
+
+| 駆動型 | 推奨間隔 | 例 |
+|--------|---------|-----|
+| 自発的な状況判断・調整が主業務 | 30分（デフォルト） | チーム調整役、進行監督 |
+| メッセージ・イベント駆動が主体 | 60〜120分 | レビュー担当、開発担当 |
+| cron定期業務が主体 | 120〜240分 | 監視、経理、法務 |
+
+設定は `{data_dir}/animas/{英名}/status.json` に `"heartbeat_interval_minutes": <分>`（1〜1440）を追記する。
+メッセージ起因heartbeatとcronはこの設定と無関係に動くため、間隔を延ばしても応答性は落ちない。迷ったら長めを選ぶ（空振りheartbeatはトークンの無駄になる）。
+
 ### 5. サーバーに反映
 
 ```

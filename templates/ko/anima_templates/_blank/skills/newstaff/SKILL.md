@@ -126,6 +126,19 @@ animaworks anima create --from-md /tmp/{english_name}.md --name {english_name} -
 - `execution_mode`: autonomous 또는 assisted
 - `speciality`: 직책/전문
 
+### 4.5. heartbeat 빈도 제안·설정
+
+새 직원의 업무 구동 방식에 따라 정기 heartbeat 간격을 의뢰자에게 제안하고, 합의된 값을 설정한다:
+
+| 구동 방식 | 권장 간격 | 예 |
+|-----------|----------|-----|
+| 자발적 판단·조정이 주 업무 | 30분（기본값） | 팀 조정역, 진행 감독 |
+| 메시지·이벤트 구동 위주 | 60〜120분 | 리뷰 담당, 개발 담당 |
+| cron 정기 업무 위주 | 120〜240분 | 모니터링, 회계, 법무 |
+
+설정은 `{data_dir}/animas/{영문명}/status.json` 에 `"heartbeat_interval_minutes": <분>`（1〜1440）을 추가한다.
+메시지 기반 heartbeat와 cron은 이 설정과 무관하게 동작하므로, 간격을 늘려도 응답성은 떨어지지 않는다. 애매하면 긴 쪽을 선택한다（빈 heartbeat는 토큰 낭비）.
+
 ### 5. 서버에 반영
 
 **Bash**를 사용하여 서버를 리로드합니다:
