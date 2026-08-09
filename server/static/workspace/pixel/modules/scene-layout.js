@@ -79,12 +79,12 @@ function companyRects(groups, rule) {
   const right = rule.right ?? 39;
   const fit = (group, slotLeft, slotRight) => {
     const slotWidth = slotRight - slotLeft + 1;
-    const columns = Math.max(1, Math.min(rule.desk_columns || 4, group.members.length));
+    const columns = Math.max(3, Math.min(5, rule.desk_columns || 4));
     const rows = Math.max(1, Math.ceil(group.members.length / columns));
     const width = Math.min(slotWidth, Math.max(10, columns * 4 + 3));
     const height = Math.min(
       bottom - top + 1,
-      rule.height || Math.max(15, 11 + rows * 2),
+      rule.height || Math.max(15, 11 + (rows - 1) * (rule.desk_row_step || 4)),
     );
     const x1 = Math.round((slotLeft + slotRight + 1 - width) / 2);
     return [x1, top, x1 + width - 1, top + height - 1];
@@ -200,10 +200,12 @@ function addCompanyProps(props, plants, group, rect) {
   );
 }
 
-export function sampleAnimas() {
-  return Array.from({ length: 12 }, (_, index) => ({
+export function sampleAnimas(count = 12) {
+  const parsed = Number.parseInt(count, 10);
+  const size = Math.max(1, Math.min(60, Number.isFinite(parsed) ? parsed : 12));
+  return Array.from({ length: size }, (_, index) => ({
     name: `anima-${index + 1}`,
-    company: index < 6 ? "alpha" : "beta",
+    company: index < Math.ceil(size / 2) ? "alpha" : "beta",
     status: "idle",
   }));
 }
@@ -221,19 +223,28 @@ export function generateScene(animas, template) {
   const humanRect = humanRule.zone || [17, 8, 21, 14];
   const tile = template.canvas?.tile || 32;
   const canvasWidth = template.canvas?.w || 1120;
-  const canvasHeight = template.canvas?.h || 736;
+  const baseCanvasHeight = template.canvas?.h || 736;
+  const deskColumns = Math.max(
+    3,
+    Math.min(5, groups.length >= 3 ? 3 : companyRule.desk_columns || 4),
+  );
+  const rowStep = companyRule.desk_row_step || 4;
+  const rows = Math.max(...groups.map((group) => Math.ceil(group.members.length / deskColumns)));
+  const baseCompanyHeight = companyRule.height || 15;
+  const companyHeight = Math.max(baseCompanyHeight, 11 + (rows - 1) * rowStep);
+  const growth = companyHeight - baseCompanyHeight;
+  const canvasHeight = baseCanvasHeight + growth * tile;
   const canvasColumns = Math.floor(canvasWidth / tile);
   const roomBottom = Math.floor(canvasHeight / tile) - 3;
   const rects = companyRects(groups, {
     ...companyRule,
-    bottom: Math.min(companyRule.bottom ?? roomBottom, roomBottom),
+    bottom: Math.min((companyRule.bottom ?? roomBottom) + growth, roomBottom),
     centerRect: humanRect,
+    desk_columns: deskColumns,
+    height: companyHeight,
   });
-  const plazaTop = Math.min(
-    plazaRule.top ?? roomBottom,
-    Math.max(...rects.map((rect) => rect[3])) + 1,
-  );
-  const plazaBottom = Math.min(roomBottom, plazaRule.bottom ?? roomBottom);
+  const plazaTop = Math.min(roomBottom, (plazaRule.top ?? roomBottom) + growth);
+  const plazaBottom = Math.min(roomBottom, (plazaRule.bottom ?? roomBottom) + growth);
   const zones = {};
   const desks = {};
   const pathTemplate = pathRule.zone || [18, 14, 21, 22];
@@ -244,13 +255,13 @@ export function generateScene(animas, template) {
   const entranceLeft = Math.round(entranceAxisX - entranceWidth / 2);
   const entranceZone = [
     entranceLeft,
-    entranceTemplate[1],
+    entranceTemplate[1] + growth,
     entranceLeft + entranceWidth - 1,
     roomBottom,
   ];
   const doorTile = [
     entranceAxisX - 3,
-    (entranceRule.door || [18, 23])[1],
+    (entranceRule.door || [18, 23])[1] + growth,
   ];
   const props = {
     whiteboard: { tile: [canvasColumns / 2 - 3, 1], w: 6, h: 2, sprite: "whiteboard" },
@@ -321,11 +332,10 @@ export function generateScene(animas, template) {
       h: 1,
       decor: "guide_lamp",
     },
-    cat: { tile: [rects.at(-1)[0] + 2, 14], w: 1, h: 1, sprite: "cat" },
-    cat_bed: { tile: [rects.at(-1)[0] + 3, 15], w: 1, h: 1, sprite: "cat_bed" },
+    cat: { tile: [rects.at(-1)[0] + 2, rects.at(-1)[3] - 4], w: 1, h: 1, sprite: "cat" },
+    cat_bed: { tile: [rects.at(-1)[0] + 3, rects.at(-1)[3] - 3], w: 1, h: 1, sprite: "cat_bed" },
   };
   const plants = [];
-  let deskIndex = 0;
 
   groups.forEach((group, index) => {
     const rect = rects[index];
@@ -337,22 +347,19 @@ export function generateScene(animas, template) {
       company: group.company,
     };
     const positions = gridForZone(rect, group.members.length, {
-      columns: groups.length >= 3 ? 3 : companyRule.desk_columns || 4,
+      columns: deskColumns,
       stepX: companyRule.desk_column_step || 4,
-      rowStep: companyRule.desk_row_step || 4,
+      rowStep,
       topOffset: companyRule.desk_top_offset ?? 3,
       avoidRect: humanRect,
     });
     group.members.forEach((anima, memberIndex) => {
-      const itemNumber = String((deskIndex % 14) + 1).padStart(2, "0");
       desks[anima.id] = {
         tile: positions[memberIndex] || [rect[0] + 2, rect[1] + 3],
         facing: "down",
         company: group.company,
-        item: `item_${itemNumber}`,
         sample_index: anima.index,
       };
-      deskIndex += 1;
     });
     addCompanyProps(props, plants, group, rect);
   });
@@ -395,13 +402,12 @@ export function generateScene(animas, template) {
     wide: 2,
     company: HUMAN_ID,
     is_human: true,
-    item: "item_14",
   };
 
   return {
     canvas: {
-      w: template.canvas?.w || 1120,
-      h: template.canvas?.h || 736,
+      w: canvasWidth,
+      h: canvasHeight,
       tile,
     },
     human_id: HUMAN_ID,

@@ -30,6 +30,12 @@ expected_prop_sizes = {
     "desk": (112, 72),
     "desk_taka": (136, 80),
     "door_frame": (192, 112),
+    "desk64": (108, 48),
+    "chair64": (39, 58),
+    "pc_laptop": (26, 18),
+    "pc_desktop": (38, 28),
+    "prop_mug": (16, 16),
+    "prop_plant": (20, 24),
 }
 for prop_name, expected_size in expected_prop_sizes.items():
     prop = scene["props"][prop_name]
@@ -45,8 +51,8 @@ entries = [
     *scene["props"].values(),
     *scene["items"].values(),
 ]
-if len(entries) != 49:
-    raise SystemExit(f"expected 49 scene assets, got {len(entries)}")
+if len(entries) != 55:
+    raise SystemExit(f"expected 55 scene assets, got {len(entries)}")
 for entry in entries:
     for field in ("file", "w", "h", "anchor"):
         if field not in entry:
@@ -62,7 +68,17 @@ for entry in entries:
                 f"{entry['file']}: expected {(entry['w'], entry['h'])}, got {image.size}"
             )
 
-for prop_name in ("door_frame", "desk", "desk_taka"):
+for prop_name in (
+    "door_frame",
+    "desk",
+    "desk_taka",
+    "desk64",
+    "chair64",
+    "pc_laptop",
+    "pc_desktop",
+    "prop_mug",
+    "prop_plant",
+):
     prop_path = manifest_path.parent / scene["props"][prop_name]["file"]
     with Image.open(prop_path) as image:
         alpha_values = set(

@@ -16,6 +16,7 @@ const dayNightButton = document.querySelector("#dayNight");
 const params = new URLSearchParams(location.search);
 const forceMock = params.get("mock") === "1";
 const fastMock = params.get("fast") === "1";
+const DISPLAY_SCALE = 4;
 let logicalWidth = Number(canvas.getAttribute("width")) || 1120;
 let logicalHeight = Number(canvas.getAttribute("height")) || 736;
 
@@ -41,27 +42,21 @@ function updateDateBoard() {
 updateDateBoard();
 
 function resizeCanvas() {
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-  const scale = Math.max(
-    1,
-    Math.floor(Math.min(viewportWidth / logicalWidth, viewportHeight / logicalHeight)),
-  );
-  const width = logicalWidth * scale;
-  const height = logicalHeight * scale;
+  const width = logicalWidth * DISPLAY_SCALE;
+  const height = logicalHeight * DISPLAY_SCALE;
   const stage = document.querySelector("#stage");
-  document.documentElement.style.setProperty("--pixel-scale", String(scale));
-  stage.dataset.pixelScale = String(scale);
+  document.documentElement.style.setProperty("--pixel-scale", String(DISPLAY_SCALE));
+  stage.dataset.pixelScale = String(DISPLAY_SCALE);
   stage.style.width = `${width}px`;
   stage.style.height = `${height}px`;
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
-  window.__pixelDisplayScale = scale;
+  window.__pixelDisplayScale = DISPLAY_SCALE;
 }
 
 async function start() {
   let live = null;
-  let initialAnimas = forceMock ? sampleAnimas() : [];
+  let initialAnimas = forceMock ? sampleAnimas(params.get("count")) : [];
   if (forceMock && params.get("companies") === "1") {
     initialAnimas = initialAnimas.map((anima) => ({ ...anima, company: "alpha" }));
   }
@@ -75,22 +70,6 @@ async function start() {
     AssetStore.load(initialAnimas, { runtime: !forceMock }),
     preloadPixelFonts(),
   ]);
-  const companyCount = new Set(
-    initialAnimas
-      .filter((anima) => !anima.is_human)
-      .map((anima) => String(anima.company || "default")),
-  ).size;
-  assets.selectOfficeBackground(companyCount);
-  const officeBackground = assets.officeBackground();
-  if (officeBackground && assets.officeBackgroundSlots) {
-    const config = assets.manifest.scene.office_bg;
-    scene.background_mode = {
-      enabled: true,
-      slots: assets.officeBackgroundSlots,
-    };
-    scene.canvas.w = config.w || officeBackground.naturalWidth || scene.canvas.w;
-    scene.canvas.h = config.h || officeBackground.naturalHeight || scene.canvas.h;
-  }
   logicalWidth = scene.canvas.w;
   logicalHeight = scene.canvas.h;
   resizeCanvas();
@@ -158,7 +137,6 @@ async function start() {
   loading.classList.add("hidden");
 }
 
-window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
 start().catch((error) => {
   window.__pixelErrors.push(String(error?.stack || error));

@@ -83,11 +83,6 @@ export class SceneRenderer {
     this.ctx.imageSmoothingEnabled = false;
     this.scene = scene;
     this.assets = assets;
-    this.backgroundMode = Boolean(
-      scene.background_mode?.enabled &&
-      assets.officeBackground() &&
-      scene.background_mode?.slots,
-    );
     this.tile = scene.canvas.tile;
     this.mode = "day";
     this.instructions = [];
@@ -97,7 +92,7 @@ export class SceneRenderer {
       day: "2-digit",
       weekday: "short",
     }).format(new Date());
-    const catProp = this.backgroundMode ? null : scene.props.cat;
+    const catProp = scene.props.cat;
     this.cat = catProp ? {
       x: (catProp.tile[0] + 0.5) * this.tile,
       y: (catProp.tile[1] + 1) * this.tile,
@@ -111,9 +106,6 @@ export class SceneRenderer {
     this.toneCanvas = document.createElement("canvas");
     this.toneCanvas.width = scene.canvas.w;
     this.toneCanvas.height = scene.canvas.h;
-    this.backgroundFrameCanvas = document.createElement("canvas");
-    this.backgroundFrameCanvas.width = scene.canvas.w;
-    this.backgroundFrameCanvas.height = scene.canvas.h;
   }
 
   setLighting(mode) {
@@ -136,10 +128,6 @@ export class SceneRenderer {
   draw(actors, director, timeSeconds = 0) {
     const { ctx } = this;
     ctx.imageSmoothingEnabled = false;
-    if (this.backgroundMode) {
-      this.drawBackgroundMode(actors, director);
-      return;
-    }
     this.drawFloor();
     this.drawHumanPlatform();
     this.drawPathChevrons();
@@ -166,6 +154,7 @@ export class SceneRenderer {
         draw: () => this.drawCat(),
       });
     }
+    layers.push(...(director?.customerLayers(ctx) || []));
     layers.sort((a, b) => (a.y - b.y) || ((a.priority ?? 1) - (b.priority ?? 1)));
     layers.forEach((layer) => layer.draw());
 
@@ -206,9 +195,8 @@ export class SceneRenderer {
     }));
     const placedBubbles = [...this.staticLabelBounds(), ...bubbleNameObstacles];
     for (const [id, desk] of Object.entries(this.scene.desks)) {
-      const isHuman = id === (this.scene.human_id || "human");
-      const width = isHuman ? 136 : 112;
-      const height = isHuman ? 80 : 72;
+      const width = 108;
+      const height = 112;
       const footX = desk.tile[0] * this.tile + this.tile / 2;
       const footY = (desk.tile[1] + 2) * this.tile;
       placedBubbles.push({
@@ -267,238 +255,6 @@ export class SceneRenderer {
     this.drawVignette();
     this.applyUnifiedTone();
     this.drawWorkKindLegend();
-  }
-
-  drawBackgroundMode(actors, director) {
-    const { ctx } = this;
-    const background = this.assets.officeBackground();
-    ctx.drawImage(background, 0, 0, this.canvas.width, this.canvas.height);
-    if (this.mode === "night") this.drawBackgroundNight();
-    this.drawWhiteboardText();
-    const backgroundFrameCtx = this.backgroundFrameCanvas.getContext("2d");
-    backgroundFrameCtx.imageSmoothingEnabled = false;
-    backgroundFrameCtx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    backgroundFrameCtx.drawImage(this.canvas, 0, 0);
-
-    const allActors = [...actors.values()];
-    const seated = allActors
-      .filter((actor) => actor.isSeated)
-      .sort((left, right) => (left.y - right.y) || (left.x - right.x));
-    const walking = allActors
-      .filter((actor) => !actor.isSeated)
-      .sort((left, right) => (left.y - right.y) || (left.x - right.x));
-    const seatedLayers = seated.flatMap((actor) => {
-      const rect = this.deskOcclusionRect(actor);
-      const depth = rect ? rect[1] + rect[3] : actor.y;
-      return [
-        {
-          depth,
-          priority: 0,
-          x: actor.x,
-          draw: () => this.drawSeatedBackgroundActor(actor),
-        },
-        {
-          depth,
-          priority: 1,
-          x: actor.x,
-          draw: () => this.drawDeskOcclusion(actor),
-        },
-        {
-          depth: depth + 2,
-          priority: 0,
-          x: actor.x,
-          draw: () => actor.drawName(this.ctx, actor.backgroundNamePosition || {}),
-        },
-      ];
-    });
-    seatedLayers
-      .sort((left, right) =>
-        (left.depth - right.depth) ||
-        (left.priority - right.priority) ||
-        (left.x - right.x))
-      .forEach((layer) => layer.draw());
-    walking.forEach((actor) => actor.draw(ctx));
-    director?.draw(ctx);
-    this.drawBackgroundOverlays(allActors);
-    this.drawPaletteUnifier();
-    this.drawVignette();
-    this.applyUnifiedTone();
-    this.drawWorkKindLegend();
-  }
-
-  deskOcclusionRect(actor) {
-    return actor.backgroundSlot?.desk_rect || null;
-  }
-
-  drawDeskOcclusion(actor) {
-    const rect = this.deskOcclusionRect(actor);
-    if (!rect) return;
-    // desk_rect は机そのもの。front_rects は机より上に飛び出す前景物
-    // (モニタ・卓上ライト等) を個別に指定するためのもので、指定した矩形だけを
-    // 背景から描き戻すためキャラの周囲に不要な切り取り線ができない。
-    const rects = [rect, ...(actor.backgroundSlot?.front_rects || [])];
-    for (const [x, y, width, height] of rects) {
-      this.ctx.save();
-      this.ctx.beginPath();
-      this.ctx.rect(x, y, width, height);
-      this.ctx.clip();
-      this.ctx.drawImage(
-        this.backgroundFrameCanvas,
-        x,
-        y,
-        width,
-        height,
-        x,
-        y,
-        width,
-        height,
-      );
-      this.ctx.restore();
-    }
-  }
-
-  drawSeatedBackgroundActor(actor) {
-    // 着席キャラは机・PCより先に描き、そのあとで机の領域を背景から描き戻す
-    // (drawDeskOcclusion)。机とPCが手前・キャラが奥、という重なりになる。
-    actor.draw(this.ctx);
-  }
-
-  drawBackgroundNight() {
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.globalCompositeOperation = "multiply";
-    ctx.globalAlpha = 0.46;
-    ctx.fillStyle = this.scene.lighting?.night?.tint || "#2a2a4a";
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    ctx.restore();
-  }
-
-  drawBackgroundOverlays(allActors) {
-    const layouts = [];
-    const placedNames = [];
-    const overlayActors = [...allActors].sort((left, right) =>
-      (left.y - right.y) || (left.x - right.x));
-    for (const actor of overlayActors) {
-      let namePosition = actor.isSeated && actor.backgroundNamePosition
-        ? actor.backgroundNamePosition
-        : {};
-      const door = this.scene.background_mode?.slots?.door;
-      const nearDoor = !actor.isSeated && door &&
-        Math.abs(actor.x - door.x) <= 112 &&
-        actor.y >= door.y - 150;
-      if (nearDoor) {
-        const headTop = actor.headTop(actor.y);
-        namePosition = {
-          x: actor.x,
-          y: actor.hasFullBubble() ? actor.bubbleBounds().y - 19 : headTop - 14,
-        };
-      }
-      const nameBounds = actor.nameBounds(namePosition);
-      const nameOffsetY = actor.isSeated ? 0 : collisionFreeOffset(
-        nameBounds,
-        placedNames,
-        [0, 15, -15, 30, -30, 45, -45],
-        this.canvas.height,
-      );
-      placedNames.push({ ...nameBounds, y: nameBounds.y + nameOffsetY });
-      layouts.push({ actor, namePosition, nameOffsetY });
-    }
-
-    const nameObstaclePadding = BUBBLE_NAME_GAP - COLLISION_PADDING;
-    const nameObstacles = placedNames.map((bounds) => ({
-      x: bounds.x - nameObstaclePadding,
-      y: bounds.y - nameObstaclePadding,
-      width: bounds.width + nameObstaclePadding * 2,
-      height: bounds.height + nameObstaclePadding * 2,
-    }));
-    const placedBubbles = [];
-    const actorObstacles = overlayActors.map((actor) => {
-      const spriteY = actor.spriteY();
-      const top = spriteY - actor.sprite.frameH;
-      const visibleBottom = actor.isSeated && actor.backgroundSlot?.desk_rect
-        ? actor.backgroundSlot.desk_rect[1]
-        : spriteY;
-      return {
-        actor,
-        x: actor.x - actor.sprite.frameW / 2,
-        y: top,
-        width: actor.sprite.frameW,
-        height: Math.max(0, visibleBottom - top),
-      };
-    });
-    // Keep the tail on its owner unless the bubble would cover a character in
-    // the row behind it. Candidates are ordered by total displacement (with
-    // horizontal moves penalized) so a bubble prefers rising slightly above
-    // its owner over flying sideways to another character's desk.
-    const candidates = [{ x: 0, y: 0 }];
-    for (const rise of [0, -20, -27, -36, -52, -72, -88, -108]) {
-      for (const shift of [
-        0, -16, 16, -32, 32, -48, 48, -64, 64, -80, 80,
-        -96, 96, -128, 128, -160, 160, -200, 200,
-        -240, 240, -300, 300, -360, 360, -400, 400,
-      ]) {
-        if (rise === 0 && shift === 0) continue;
-        candidates.push({ x: shift, y: rise });
-      }
-    }
-    candidates.sort((left, right) =>
-      (Math.abs(left.x) * 1.6 + Math.abs(left.y)) -
-      (Math.abs(right.x) * 1.6 + Math.abs(right.y)));
-    const nearbyCandidates = candidates.filter((candidate) =>
-      Math.abs(candidate.x) * 1.6 + Math.abs(candidate.y) <= 130);
-    for (const layout of layouts) {
-      const { actor } = layout;
-      if (!actor.hasFullBubble()) continue;
-      const bounds = actor.bubbleBounds();
-      const behindActorObstacles = actorObstacles.filter((obstacle) =>
-        obstacle.actor !== actor && obstacle.actor.y < actor.y);
-      // Stay near the owner: first try nearby spots that cover nobody, then
-      // nearby spots that may cover a back-row character, and only then move
-      // far away as a last resort.
-      const placement = findCollisionFreePlacement(
-        bounds,
-        [
-          ...nameObstacles,
-          ...placedBubbles,
-          ...behindActorObstacles,
-        ],
-        nearbyCandidates,
-        this.canvas.width,
-        this.canvas.height,
-      ) || findCollisionFreePlacement(
-        bounds,
-        [...nameObstacles, ...placedBubbles],
-        nearbyCandidates,
-        this.canvas.width,
-        this.canvas.height,
-      ) || findCollisionFreePlacement(
-        bounds,
-        [...nameObstacles, ...placedBubbles],
-        candidates,
-        this.canvas.width,
-        this.canvas.height,
-      ) || { x: 0, y: 0 };
-      placedBubbles.push({
-        ...bounds,
-        x: bounds.x + placement.x,
-        y: bounds.y + placement.y,
-      });
-      layout.bubbleOffsetX = placement.x;
-      layout.bubbleOffsetY = placement.y;
-    }
-    layouts.forEach((layout) => layout.actor.drawStatusOverlay(this.ctx, layout));
-    layouts.forEach((layout) => {
-      if (!layout.actor.isSeated) {
-        layout.actor.drawName(this.ctx, {
-          ...layout.namePosition,
-          offsetY: layout.nameOffsetY || 0,
-        });
-      }
-      layout.actor.drawStatusDot(this.ctx, {
-        ...layout.namePosition,
-        offsetY: layout.nameOffsetY || 0,
-      });
-    });
   }
 
   drawFloor() {
@@ -902,50 +658,32 @@ export class SceneRenderer {
 
     for (const [id, desk] of Object.entries(scene.desks)) {
       const isHuman = id === (scene.human_id || "human");
-      const deskAsset = isHuman ? "desk_taka" : "desk";
-      const deskImage = assets.prop(deskAsset, isHuman ? 136 : 112, isHuman ? 80 : 72);
-      const width = deskImage.naturalWidth || deskImage.width || (isHuman ? 136 : 112);
-      const height = deskImage.naturalHeight || deskImage.height || (isHuman ? 80 : 72);
+      const deskImage = assets.prop("desk64", 108, 48);
+      const width = deskImage.naturalWidth || deskImage.width || 108;
+      const height = deskImage.naturalHeight || deskImage.height || 48;
       const footX = desk.tile[0] * tile + tile / 2;
       const footY = (desk.tile[1] + 2) * tile;
-      const actor = actors.get(id);
-      if (actor?.isSeated) {
-        layers.push({
-          y: footY - 2,
-          priority: -1,
-          draw: () => {
-            const chair = assets.prop("chair", 32, 40);
-            // The seated poses are wider than the opaque chair pixels; 48px keeps
-            // the requested ~44px scale while exposing a 2px armrest cue per side.
-            const chairWidth = 48;
-            const sourceX = 3;
-            const sourceY = 1;
-            const sourceWidth = 26;
-            const sourceHeight = 38;
-            const chairHeight = Math.round(chairWidth * sourceHeight / sourceWidth);
-            drawGroundShadow(
-              this.ctx,
-              Math.round(actor.seatPosition.x),
-              Math.round(actor.seatPosition.y - 2),
-              18,
-              5,
-            );
-            this.ctx.drawImage(
-              chair,
-              sourceX,
-              sourceY,
-              sourceWidth,
-              sourceHeight,
-              Math.round(actor.seatPosition.x - chairWidth / 2),
-              Math.round(actor.seatPosition.y - chairHeight + 9),
-              chairWidth,
-              chairHeight,
-            );
-          },
-        });
-      }
       layers.push({
-        y: footY,
+        y: footY - 2,
+        priority: -2,
+        draw: () => {
+          if (actors.get(id)?.isSeated) return;
+          const chair = assets.prop("chair64", 39, 58);
+          const chairWidth = chair.naturalWidth || chair.width || 39;
+          const chairHeight = chair.naturalHeight || chair.height || 58;
+          drawGroundShadow(this.ctx, footX, footY - 4, 13, 4);
+          this.ctx.drawImage(
+            chair,
+            Math.round(footX - chairWidth / 2),
+            Math.round(footY - chairHeight - 3),
+            chairWidth,
+            chairHeight,
+          );
+        },
+      });
+      layers.push({
+        y: footY - 1,
+        priority: actors.get(id)?.deskInFront() ? 1 : -1,
         draw: () => {
           const ctx = this.ctx;
           if (isHuman && this.humanFlash > 0) {
@@ -956,35 +694,19 @@ export class SceneRenderer {
             ctx.restore();
           }
           drawGroundShadow(ctx, footX, footY - 3, width * 0.36, 7);
-          ctx.drawImage(deskImage, footX - width / 2, footY - height, width, height);
-          this.drawPersonalItem(desk.item || id, footX, footY, width, height);
-          this.drawDeskClutter(id, footX, footY, width);
-          this.drawDeskLamp(id, footX, footY, width);
+          ctx.drawImage(
+            deskImage,
+            Math.round(footX - width / 2),
+            Math.round(footY - height),
+            width,
+            height,
+          );
         },
       });
-    }
-
-    const desksByRow = new Map();
-    for (const [id, desk] of Object.entries(scene.desks)) {
-      if (id === (scene.human_id || "human")) continue;
-      const key = `${desk.company || "default"}:${desk.tile[1]}`;
-      if (!desksByRow.has(key)) desksByRow.set(key, []);
-      desksByRow.get(key).push(desk);
-    }
-    for (const row of desksByRow.values()) {
-      row.sort((left, right) => left.tile[0] - right.tile[0]);
-      for (let index = 0; index < row.length - 1; index += 1) {
-        const left = row[index];
-        const right = row[index + 1];
-        if (right.tile[0] - left.tile[0] > 5) continue;
-        const x = ((left.tile[0] + right.tile[0] + 1) / 2) * tile;
-        const footY = (left.tile[1] + 2) * tile;
-        layers.push({
-          y: footY - 1,
-          priority: -0.5,
-          draw: () => this.drawDeskPartition(x, footY),
-        });
-      }
+      layers.push({
+        y: footY,
+        draw: () => this.drawDeskItems(id, footX, footY, height),
+      });
     }
 
     for (const [name, prop] of Object.entries(scene.props)) {
@@ -1038,25 +760,6 @@ export class SceneRenderer {
       });
     }
     return { under, layers };
-  }
-
-  drawDeskPartition(centerX, footY) {
-    const ctx = this.ctx;
-    const x = Math.round(centerX - 6);
-    const y = Math.round(footY - 43);
-    ctx.save();
-    drawGroundShadow(ctx, centerX, footY - 2, 8, 3);
-    ctx.fillStyle = "#4d3328";
-    ctx.fillRect(x, y, 12, 38);
-    ctx.fillStyle = "#c89461";
-    ctx.fillRect(x + 2, y + 3, 8, 29);
-    ctx.fillStyle = "#efd2a0";
-    ctx.fillRect(x + 3, y + 4, 6, 26);
-    ctx.fillStyle = "#2d211d";
-    ctx.fillRect(x - 1, y, 14, 3);
-    ctx.fillRect(x + 1, y + 35, 3, 7);
-    ctx.fillRect(x + 8, y + 35, 3, 7);
-    ctx.restore();
   }
 
   drawSceneDecoration(type, x, footY, width, height, timeSeconds) {
@@ -1151,61 +854,34 @@ export class SceneRenderer {
     drawParcel(x + 9, footY - definition.frameH - 13);
   }
 
-  drawPersonalItem(id, centerX, footY, width, height) {
-    const image = this.assets.item(id);
-    const itemWidth = image.naturalWidth || image.width || 32;
-    const itemHeight = image.naturalHeight || image.height || 32;
-    const tabletopLeft = centerX - width / 2 + 4;
-    const seatingBoundary = centerX - 8;
-    const x = Math.min(tabletopLeft, seatingBoundary - itemWidth);
-    const y = footY - height - 3;
-    this.ctx.drawImage(image, x, y, itemWidth, itemHeight);
-  }
-
-  drawDeskClutter(id, centerX, footY, deskWidth) {
+  drawDeskItems(id, centerX, footY, deskHeight) {
     const hash = stableHash(id);
-    const count = id === (this.scene.human_id || "human") ? 1 : 1 + (hash % 2);
-    const positions = [-deskWidth / 2 + 3, -deskWidth / 2 + 15];
-    for (let index = 0; index < count; index += 1) {
-      const variant = String.fromCharCode(97 + ((hash >>> (index * 3 + 2)) % 4));
-      const image = this.assets.prop(`clutter_${variant}`, 32, 16);
-      const width = image.naturalWidth || image.width || 32;
-      const height = image.naturalHeight || image.height || 16;
-      const jitter = ((hash >>> (index * 5 + 4)) % 5) - 2;
-      const seatingBoundary = centerX - 8;
-      const x = Math.round(Math.min(
-        centerX + positions[index] + jitter,
-        seatingBoundary - width,
-      ));
-      const yJitter = (hash >>> (index * 4 + 3)) % 4;
-      const y = Math.round(footY - 29 - height - yJitter);
-      this.ctx.drawImage(image, x, y, width, height);
+    const pcName = hash % 2 ? "pc_laptop" : "pc_desktop";
+    const pc = this.assets.prop(pcName, pcName === "pc_laptop" ? 26 : 38, pcName === "pc_laptop" ? 18 : 28);
+    const pcWidth = pc.naturalWidth || pc.width;
+    const pcHeight = pc.naturalHeight || pc.height;
+    const tabletopY = footY - deskHeight;
+    const itemBottomY = tabletopY + 25;
+    this.ctx.drawImage(
+      pc,
+      Math.round(centerX - pcWidth / 2),
+      Math.round(itemBottomY - pcHeight),
+      pcWidth,
+      pcHeight,
+    );
+
+    for (const [index, name] of ["prop_mug", "prop_plant"].entries()) {
+      if (!((hash >>> (index + 1)) & 1)) continue;
+      const image = this.assets.prop(name, name === "prop_mug" ? 16 : 20, name === "prop_mug" ? 16 : 24);
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
+      const right = (hash >>> (index + 3)) & 1;
+      const x = centerX + (name === "prop_mug"
+        ? (right ? 21 : -37)
+        : (right ? 34 : -54));
+      this.ctx.drawImage(image, Math.round(x), Math.round(itemBottomY - height), width, height);
     }
   }
-
-  drawDeskLamp(id, centerX, footY, deskWidth) {
-    const hash = stableHash(`lamp:${id}`);
-    if (hash % 3 === 0) return;
-    const ctx = this.ctx;
-    const center = Math.round(Math.min(centerX - 18, centerX + deskWidth / 2 - 18));
-    const baseY = Math.round(footY - 29);
-    ctx.save();
-    ctx.globalAlpha = 0.18;
-    ctx.fillStyle = "#1b1218";
-    ctx.beginPath();
-    ctx.ellipse(center, baseY, 7, 2, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = "#4b3027";
-    ctx.fillRect(center - 6, baseY - 3, 12, 3);
-    ctx.fillRect(center - 1, baseY - 14, 3, 12);
-    ctx.fillStyle = hash % 2 ? "#d28a55" : "#66869a";
-    ctx.fillRect(center - 7, baseY - 18, 14, 5);
-    ctx.fillStyle = "#ffe2a0";
-    ctx.fillRect(center - 4, baseY - 15, 8, 2);
-    ctx.restore();
-  }
-
   updateCat(deltaSeconds) {
     if (!this.cat) return;
     this.cat.nextMove -= deltaSeconds;
@@ -1254,12 +930,11 @@ export class SceneRenderer {
   }
 
   drawWhiteboardText() {
-    const backgroundBoard = this.scene.background_mode?.slots?.whiteboard;
-    const board = backgroundBoard || this.scene.props.whiteboard;
+    const board = this.scene.props.whiteboard;
     if (!board) return;
-    const x = backgroundBoard ? board.x : board.tile[0] * this.tile;
-    const y = backgroundBoard ? board.y : board.tile[1] * this.tile;
-    const width = backgroundBoard ? board.w : board.w * this.tile;
+    const x = board.tile[0] * this.tile;
+    const y = board.tile[1] * this.tile;
+    const width = board.w * this.tile;
     const ctx = this.ctx;
     ctx.save();
     const options = { scale: 1, bold: false, color: "#343039" };
@@ -1373,7 +1048,6 @@ export class SceneRenderer {
   }
 
   drawLighting() {
-    if (this.backgroundMode) return;
     if (this.mode !== "night") return;
     const ctx = this.ctx;
     ctx.save();

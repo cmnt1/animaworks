@@ -10,7 +10,7 @@
     :root {
       color-scheme: dark;
       font-family: ui-monospace, "SFMono-Regular", "Noto Sans JP", monospace;
-      --pixel-scale: 1;
+      --pixel-scale: 4;
       --letterbox-color: #17131d;
       background: var(--letterbox-color);
     }
@@ -18,15 +18,15 @@
     html, body { width: 100%; height: 100%; margin: 0; overflow: auto; }
     body {
       display: grid;
-      place-items: center;
-      min-width: 1120px;
-      min-height: 736px;
+      place-items: start;
+      min-width: 100%;
+      min-height: 100%;
       background: var(--letterbox-color);
     }
     #stage {
       position: relative;
-      width: 1120px;
-      height: 736px;
+      width: calc(1120px * var(--pixel-scale));
+      height: calc(736px * var(--pixel-scale));
       flex: none;
       overflow: hidden;
       image-rendering: pixelated;
@@ -40,8 +40,8 @@
     }
     #workspace {
       display: block;
-      width: 1120px;
-      height: 736px;
+      width: calc(1120px * var(--pixel-scale));
+      height: calc(736px * var(--pixel-scale));
       image-rendering: crisp-edges;
       image-rendering: pixelated;
       background: #d7b98b;

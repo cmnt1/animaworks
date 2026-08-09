@@ -2,8 +2,8 @@
   "chars": {
     "sample_01": {
       "file": "chars/sample_01.png",
-      "frameW": 96,
-      "frameH": 96,
+      "frameW": 64,
+      "frameH": 64,
       "anims": {
         "idle": {
           "row": 0,
@@ -48,463 +48,8 @@
         "success": {
           "row": 8,
           "frames": 4,
-          "fps": 8
-        },
-        "error": {
-          "row": 9,
-          "frames": 4,
-          "fps": 8
-        }
-      }
-    },
-    "sample_02": {
-      "file": "chars/sample_02.png",
-      "frameW": 96,
-      "frameH": 96,
-      "anims": {
-        "idle": {
-          "row": 0,
-          "frames": 4,
-          "fps": 4
-        },
-        "working": {
-          "row": 1,
-          "frames": 4,
-          "fps": 3
-        },
-        "thinking": {
-          "row": 2,
-          "frames": 4,
-          "fps": 4
-        },
-        "talking": {
-          "row": 3,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_down": {
-          "row": 4,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_up": {
-          "row": 5,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_side": {
-          "row": 6,
-          "frames": 4,
-          "fps": 8
-        },
-        "sleeping": {
-          "row": 7,
-          "frames": 4,
-          "fps": 2
-        },
-        "success": {
-          "row": 8,
-          "frames": 4,
-          "fps": 8
-        },
-        "error": {
-          "row": 9,
-          "frames": 4,
-          "fps": 8
-        }
-      }
-    },
-    "sample_03": {
-      "file": "chars/sample_03.png",
-      "frameW": 96,
-      "frameH": 96,
-      "anims": {
-        "idle": {
-          "row": 0,
-          "frames": 4,
-          "fps": 4
-        },
-        "working": {
-          "row": 1,
-          "frames": 4,
-          "fps": 3
-        },
-        "thinking": {
-          "row": 2,
-          "frames": 4,
-          "fps": 4
-        },
-        "talking": {
-          "row": 3,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_down": {
-          "row": 4,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_up": {
-          "row": 5,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_side": {
-          "row": 6,
-          "frames": 4,
-          "fps": 8
-        },
-        "sleeping": {
-          "row": 7,
-          "frames": 4,
-          "fps": 2
-        },
-        "success": {
-          "row": 8,
-          "frames": 4,
-          "fps": 8
-        },
-        "error": {
-          "row": 9,
-          "frames": 4,
-          "fps": 8
-        }
-      }
-    },
-    "sample_04": {
-      "file": "chars/sample_04.png",
-      "frameW": 96,
-      "frameH": 96,
-      "anims": {
-        "idle": {
-          "row": 0,
-          "frames": 4,
-          "fps": 4
-        },
-        "working": {
-          "row": 1,
-          "frames": 4,
-          "fps": 3
-        },
-        "thinking": {
-          "row": 2,
-          "frames": 4,
-          "fps": 4
-        },
-        "talking": {
-          "row": 3,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_down": {
-          "row": 4,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_up": {
-          "row": 5,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_side": {
-          "row": 6,
-          "frames": 4,
-          "fps": 8
-        },
-        "sleeping": {
-          "row": 7,
-          "frames": 4,
-          "fps": 2
-        },
-        "success": {
-          "row": 8,
-          "frames": 4,
-          "fps": 8
-        },
-        "error": {
-          "row": 9,
-          "frames": 4,
-          "fps": 8
-        }
-      }
-    },
-    "sample_05": {
-      "file": "chars/sample_05.png",
-      "frameW": 96,
-      "frameH": 96,
-      "anims": {
-        "idle": {
-          "row": 0,
-          "frames": 4,
-          "fps": 4
-        },
-        "working": {
-          "row": 1,
-          "frames": 4,
-          "fps": 3
-        },
-        "thinking": {
-          "row": 2,
-          "frames": 4,
-          "fps": 4
-        },
-        "talking": {
-          "row": 3,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_down": {
-          "row": 4,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_up": {
-          "row": 5,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_side": {
-          "row": 6,
-          "frames": 4,
-          "fps": 8
-        },
-        "sleeping": {
-          "row": 7,
-          "frames": 4,
-          "fps": 2
-        },
-        "success": {
-          "row": 8,
-          "frames": 4,
-          "fps": 8
-        },
-        "error": {
-          "row": 9,
-          "frames": 4,
-          "fps": 8
-        }
-      }
-    },
-    "sample_06": {
-      "file": "chars/sample_06.png",
-      "frameW": 96,
-      "frameH": 96,
-      "anims": {
-        "idle": {
-          "row": 0,
-          "frames": 4,
-          "fps": 4
-        },
-        "working": {
-          "row": 1,
-          "frames": 4,
-          "fps": 3
-        },
-        "thinking": {
-          "row": 2,
-          "frames": 4,
-          "fps": 4
-        },
-        "talking": {
-          "row": 3,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_down": {
-          "row": 4,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_up": {
-          "row": 5,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_side": {
-          "row": 6,
-          "frames": 4,
-          "fps": 8
-        },
-        "sleeping": {
-          "row": 7,
-          "frames": 4,
-          "fps": 2
-        },
-        "success": {
-          "row": 8,
-          "frames": 4,
-          "fps": 8
-        },
-        "error": {
-          "row": 9,
-          "frames": 4,
-          "fps": 8
-        }
-      }
-    },
-    "human": {
-      "file": "chars/human.png",
-      "frameW": 96,
-      "frameH": 96,
-      "anims": {
-        "idle": {
-          "row": 0,
-          "frames": 4,
-          "fps": 4
-        },
-        "working": {
-          "row": 1,
-          "frames": 4,
-          "fps": 3
-        },
-        "thinking": {
-          "row": 2,
-          "frames": 4,
-          "fps": 4
-        },
-        "talking": {
-          "row": 3,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_down": {
-          "row": 4,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_up": {
-          "row": 5,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_side": {
-          "row": 6,
-          "frames": 4,
-          "fps": 8
-        },
-        "sleeping": {
-          "row": 7,
-          "frames": 4,
-          "fps": 2
-        },
-        "success": {
-          "row": 8,
-          "frames": 4,
-          "fps": 8
-        },
-        "error": {
-          "row": 9,
-          "frames": 4,
-          "fps": 8
-        }
-      }
-    },
-    "customer_a": {
-      "file": "chars/customer_a.png",
-      "frameW": 96,
-      "frameH": 96,
-      "anims": {
-        "idle": {
-          "row": 0,
-          "frames": 4,
-          "fps": 4
-        },
-        "working": {
-          "row": 1,
-          "frames": 4,
-          "fps": 3
-        },
-        "thinking": {
-          "row": 2,
-          "frames": 4,
-          "fps": 4
-        },
-        "talking": {
-          "row": 3,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_down": {
-          "row": 4,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_up": {
-          "row": 5,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_side": {
-          "row": 6,
-          "frames": 4,
-          "fps": 8
-        },
-        "sleeping": {
-          "row": 7,
-          "frames": 4,
-          "fps": 2
-        },
-        "success": {
-          "row": 8,
-          "frames": 4,
-          "fps": 8
-        },
-        "error": {
-          "row": 9,
-          "frames": 4,
-          "fps": 8
-        }
-      }
-    },
-    "customer_b": {
-      "file": "chars/customer_b.png",
-      "frameW": 96,
-      "frameH": 96,
-      "anims": {
-        "idle": {
-          "row": 0,
-          "frames": 4,
-          "fps": 4
-        },
-        "working": {
-          "row": 1,
-          "frames": 4,
-          "fps": 3
-        },
-        "thinking": {
-          "row": 2,
-          "frames": 4,
-          "fps": 4
-        },
-        "talking": {
-          "row": 3,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_down": {
-          "row": 4,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_up": {
-          "row": 5,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_side": {
-          "row": 6,
-          "frames": 4,
-          "fps": 8
-        },
-        "sleeping": {
-          "row": 7,
-          "frames": 4,
-          "fps": 2
-        },
-        "success": {
-          "row": 8,
-          "frames": 4,
-          "fps": 8
+          "fps": 8,
+          "deskFront": true
         },
         "error": {
           "row": 9,
@@ -515,18 +60,6 @@
     }
   },
   "scene": {
-    "office_bg": {
-      "file": "scene/office_bg.png",
-      "w": 1120,
-      "h": 736,
-      "anchor": "top-left"
-    },
-    "office_bg_single": {
-      "file": "scene/office_bg_single.png",
-      "w": 1120,
-      "h": 736,
-      "anchor": "top-left"
-    },
     "tiles": {
       "wood_warm": {
         "file": "scene/tile_wood_warm.png",
@@ -744,6 +277,42 @@
         "file": "scene/desk_taka.png",
         "w": 136,
         "h": 80,
+        "anchor": "bottom"
+      },
+      "desk64": {
+        "file": "scene/desk64.png",
+        "w": 108,
+        "h": 48,
+        "anchor": "bottom"
+      },
+      "chair64": {
+        "file": "scene/chair64.png",
+        "w": 39,
+        "h": 58,
+        "anchor": "bottom"
+      },
+      "pc_laptop": {
+        "file": "scene/pc_laptop.png",
+        "w": 26,
+        "h": 18,
+        "anchor": "bottom"
+      },
+      "pc_desktop": {
+        "file": "scene/pc_desktop.png",
+        "w": 38,
+        "h": 28,
+        "anchor": "bottom"
+      },
+      "prop_mug": {
+        "file": "scene/prop_mug.png",
+        "w": 16,
+        "h": 16,
+        "anchor": "bottom"
+      },
+      "prop_plant": {
+        "file": "scene/prop_plant.png",
+        "w": 20,
+        "h": 24,
         "anchor": "bottom"
       }
     },
