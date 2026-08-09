@@ -365,7 +365,8 @@ export function createStreamingController(ctx) {
     let _rafPending = false;
     let _rafZone = "all";
     const _scheduleRender = (msg, zone = "text") => {
-      if (_rafZone !== "all") _rafZone = zone;
+      if (!_rafPending) _rafZone = zone;
+      else if (_rafZone !== zone) _rafZone = "all";
       if (_rafPending) return;
       _rafPending = true;
       requestAnimationFrame(() => {
@@ -631,7 +632,7 @@ export function createStreamingController(ctx) {
       },
     });
 
-    ctx.controllers.renderer.renderChat();
+    ctx.controllers.renderer.renderChat(!ctx.controllers.renderer.isUserDetached());
 
     if (!success && error && error.name !== "AbortError") {
       logger.error("Chat stream error", { anima: name, error: error.message, name: error.name });
@@ -677,12 +678,15 @@ export function createStreamingController(ctx) {
     let _rafPending = false;
     let _rafZone = "all";
     const _scheduleRender = (msg, zone = "text") => {
-      if (_rafZone !== "all") _rafZone = zone;
+      if (!_rafPending) _rafZone = zone;
+      else if (_rafZone !== zone) _rafZone = "all";
       if (_rafPending) return;
       _rafPending = true;
       requestAnimationFrame(() => {
         _rafPending = false;
-        renderBubble(msg, _rafZone);
+        const z = _rafZone;
+        _rafZone = "all";
+        renderBubble(msg, z);
       });
     };
 
@@ -812,7 +816,8 @@ export function createStreamingController(ctx) {
     let _rafPendingR = false;
     let _rafZoneR = "all";
     const _scheduleRenderR = (msg, zone = "text") => {
-      if (_rafZoneR !== "all") _rafZoneR = zone;
+      if (!_rafPendingR) _rafZoneR = zone;
+      else if (_rafZoneR !== zone) _rafZoneR = "all";
       if (_rafPendingR) return;
       _rafPendingR = true;
       requestAnimationFrame(() => {

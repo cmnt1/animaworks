@@ -239,7 +239,11 @@ export function createChatRenderer(ctx) {
 
   // ── Main Chat Rendering ──
 
-  function renderChat(scrollToBottom = true) {
+  // compensatePrepend: keep viewport stable when older messages are prepended
+  // (infinite scroll). For all other non-sticky renders, leave scrollTop alone —
+  // adjusting by the height delta on bottom-of-page changes (e.g. streaming
+  // bubble collapsing on completion) yanks the viewport upward.
+  function renderChat(scrollToBottom = true, compensatePrepend = false) {
     const messagesEl = $("chatPageMessages");
     if (!messagesEl) return;
 
@@ -352,7 +356,7 @@ export function createChatRenderer(ctx) {
 
     if (scrollToBottom) {
       messagesEl.scrollTop = messagesEl.scrollHeight;
-    } else {
+    } else if (compensatePrepend) {
       messagesEl.scrollTop += (messagesEl.scrollHeight - prevScrollHeight);
     }
     observeChatSentinel();
@@ -416,7 +420,7 @@ export function createChatRenderer(ctx) {
       await mgr.loadMoreHistory(name, tid, CONSTANTS.HISTORY_PAGE_SIZE);
     } finally {
       _loadingOlder = false;
-      renderChat(false);
+      renderChat(false, true);
     }
   }
 
