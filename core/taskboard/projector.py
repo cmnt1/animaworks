@@ -661,10 +661,7 @@ def _cron_failure_display_title(task: BoardTask) -> str | None:
 def _has_cron_failure_metadata(task: BoardTask) -> bool:
     if not task.is_from_cron or task.queue_status not in {"blocked", "failed"}:
         return False
-    return any(
-        key in (task.meta or {})
-        for key in ("cron_exit_code", "cron_error_excerpt", "cron_stderr_preview")
-    )
+    return any(key in (task.meta or {}) for key in ("cron_exit_code", "cron_error_excerpt", "cron_stderr_preview"))
 
 
 def _is_diagnostic_summary(value: str | None) -> bool:
