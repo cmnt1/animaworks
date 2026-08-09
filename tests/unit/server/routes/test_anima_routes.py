@@ -113,6 +113,8 @@ class TestListAnimas:
                 "needs_repair": False,
                 "needs_background_bootstrap": False,
                 "pid": 12345,
+                "process_count": None,
+                "subprocesses": [],
                 "uptime_sec": 60,
                 "last_busy_since": None,
                 "busy": None,
