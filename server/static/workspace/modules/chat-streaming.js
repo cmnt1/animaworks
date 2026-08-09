@@ -6,7 +6,6 @@ import { getState, setState } from "./state.js";
 import { t } from "../../shared/i18n.js";
 import { getCurrentUser } from "./login.js";
 import { escapeHtml } from "./utils.js";
-import { getDescendants } from "../../shared/chat/org-utils.js";
 import { setExpression, setTalking } from "./live2d.js";
 import { createLogger } from "../../shared/logger.js";
 import { renderConvMessages, renderOpts } from "./chat-history.js";
@@ -187,47 +186,12 @@ async function _sendConversation(text, overrideImages = null) {
   // await would not be initialized when SSE callbacks fire during streaming.
   let streamingMsg = null;
 
-  const _SUB_ACTIVITY_TYPES = new Set([
-    "tool_start", "tool_detail", "tool_end",
-    "inbox_processing_start", "inbox_processing_end",
-  ]);
-  let _wsSubThrottleTimer = null;
-  let _wsSubThrottlePending = false;
-  const _throttledWsSubRender = () => {
-    if (_wsSubThrottleTimer) { _wsSubThrottlePending = true; return; }
-    updateStreamingBubble(streamingMsg, "subordinate");
-    _wsSubThrottleTimer = setTimeout(() => {
-      _wsSubThrottleTimer = null;
-      if (_wsSubThrottlePending) { _wsSubThrottlePending = false; updateStreamingBubble(streamingMsg, "subordinate"); }
-    }, 150);
-  };
   const _wsToolDetailTimers = new Map();
   const _throttledWsToolDetail = (toolId) => {
     if (_wsToolDetailTimers.has(toolId)) return;
     updateStreamingBubble(streamingMsg, "tools");
     _wsToolDetailTimers.set(toolId, setTimeout(() => { _wsToolDetailTimers.delete(toolId); updateStreamingBubble(streamingMsg, "tools"); }, 200));
   };
-  const _descendants = getDescendants(anima, getState().animas || []);
-  const _onSubordinateActivity = (e) => {
-    const { name: subName, event: evtType, tool_name: toolName, detail: toolDetail, thread_id: evtThreadId } = e.detail || {};
-    if (!streamingMsg?.streaming || subName === anima) return;
-    if (evtThreadId && evtThreadId !== thread) return;
-    if (!_descendants.has(subName)) return;
-    if (!_SUB_ACTIVITY_TYPES.has(evtType)) return;
-    if (!streamingMsg.subordinateActivity) streamingMsg.subordinateActivity = {};
-    if (evtType === "tool_start") {
-      streamingMsg.subordinateActivity[subName] = { type: evtType, tool: toolName, summary: t("chat.tool_running", { tool: toolName }) };
-    } else if (evtType === "tool_detail") {
-      streamingMsg.subordinateActivity[subName] = { type: evtType, tool: toolName, summary: `${toolName}: ${toolDetail || ""}` };
-    } else if (evtType === "tool_end") {
-      streamingMsg.subordinateActivity[subName] = { type: evtType, tool: toolName, summary: t("chat.tool_done", { tool: toolName }) };
-    } else {
-      streamingMsg.subordinateActivity[subName] = { type: evtType, tool: toolName || "", summary: evtType };
-    }
-    _throttledWsSubRender();
-  };
-  document.addEventListener("anima-tool-activity", _onSubordinateActivity);
-
   let _textAnimator = null;
   let _thinkingAnimator = null;
 
@@ -328,8 +292,6 @@ async function _sendConversation(text, overrideImages = null) {
     onFinally: () => {
       if (_textAnimator) { _textAnimator.stop(); _textAnimator = null; }
       if (_thinkingAnimator) { _thinkingAnimator.stop(); _thinkingAnimator = null; }
-      document.removeEventListener("anima-tool-activity", _onSubordinateActivity);
-      if (_wsSubThrottleTimer) { clearTimeout(_wsSubThrottleTimer); _wsSubThrottleTimer = null; }
       for (const t of _wsToolDetailTimers.values()) clearTimeout(t);
       _wsToolDetailTimers.clear();
       try {

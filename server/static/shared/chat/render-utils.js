@@ -1003,7 +1003,6 @@ export function renderStreamingBubbleInner(msg, opts) {
     + metaHtml
     + `<div class="streaming-zone-text">${_renderTextZoneContent(msg, opts)}</div>`
     + `<div class="streaming-zone-tools">${_renderToolZoneContent(msg, opts)}</div>`
-    + `<div class="streaming-zone-subordinate">${_renderSubordinateZoneContent(msg, opts)}</div>`
     + `<div class="streaming-zone-thinking">${_renderThinkingZoneContent(msg, opts)}</div>`;
 }
 
@@ -1012,7 +1011,7 @@ export function renderStreamingBubbleInner(msg, opts) {
  * @param {HTMLElement} bubble - The .chat-bubble.assistant.streaming element
  * @param {object} msg - Streaming message state
  * @param {object} opts - Same as renderLiveBubble opts
- * @param {string} zone - Which zone to update: "text" | "tools" | "subordinate" | "thinking" | "all"
+ * @param {string} zone - Which zone to update: "text" | "tools" | "thinking" | "all"
  */
 const _MD_RERENDER_MS = 80;
 const _MD_RERENDER_CHARS = 40;
@@ -1031,11 +1030,6 @@ export function updateStreamingZone(bubble, msg, opts, zone = "all") {
     _scrollThinkingToBottom(bubble);
     return;
   }
-  if (zone === "subordinate") {
-    _patchSubordinateZone(el, msg, opts);
-    return;
-  }
-
   // Fast path: append-only textContent update (no innerHTML replacement)
   if (zone === "text" && msg.streaming && msg._mdCache) {
     const visibleText = msg._displayText || msg.text;
@@ -1144,71 +1138,6 @@ function _renderToolZoneContent(msg, opts) {
     return `<div class="tool-indicator"><span class="tool-spinner"></span>${typeof toolLabel === "function" ? toolLabel(msg.activeTool) : toolLabel}</div>`;
   }
   return "";
-}
-
-function _renderSubordinateZoneContent(msg, opts) {
-  const { escapeHtml } = opts;
-  const subActivity = msg.subordinateActivity;
-  if (!subActivity || Object.keys(subActivity).length === 0) return "";
-  let html = "";
-  for (const [subName, act] of Object.entries(subActivity)) {
-    if (act.type === "inbox_processing_end") continue;
-    const icon = act.type === "inbox_processing_start"
-      ? "⏳" : (act.type === "tool_end" || act.type === "tool_use") ? "✓" : "🔧";
-    const label = act.summary || act.tool || act.type;
-    html += `<div class="subordinate-activity subordinate-activity--animate" data-sub-name="${escapeHtml(subName)}">
-      <img class="subordinate-avatar" src="/api/animas/${encodeURIComponent(subName)}/avatar" alt="" onerror="this.style.display='none'">
-      <span class="subordinate-name">${escapeHtml(subName)}</span>
-      <span class="subordinate-tool">${icon} ${escapeHtml(label)}</span>
-    </div>`;
-  }
-  return html;
-}
-
-/**
- * Patch the subordinate zone with minimal DOM ops — reuse existing elements
- * if the same anima name is already present, avoiding img re-fetch.
- */
-function _patchSubordinateZone(container, msg, opts) {
-  const { escapeHtml } = opts;
-  const subActivity = msg.subordinateActivity;
-  if (!subActivity || Object.keys(subActivity).length === 0) {
-    if (container.innerHTML) container.innerHTML = "";
-    return;
-  }
-
-  const existingByName = new Map();
-  for (const el of container.querySelectorAll(".subordinate-activity[data-sub-name]")) {
-    existingByName.set(el.dataset.subName, el);
-  }
-
-  const desiredNames = new Set();
-  for (const [subName, act] of Object.entries(subActivity)) {
-    if (act.type === "inbox_processing_end") continue;
-    desiredNames.add(subName);
-
-    const icon = act.type === "inbox_processing_start"
-      ? "⏳" : (act.type === "tool_end" || act.type === "tool_use") ? "✓" : "🔧";
-    const label = act.summary || act.tool || act.type;
-
-    const existing = existingByName.get(subName);
-    if (existing) {
-      const toolSpan = existing.querySelector(".subordinate-tool");
-      if (toolSpan) toolSpan.textContent = `${icon} ${label}`;
-    } else {
-      const div = document.createElement("div");
-      div.className = "subordinate-activity subordinate-activity--animate";
-      div.dataset.subName = subName;
-      div.innerHTML = `<img class="subordinate-avatar" src="/api/animas/${encodeURIComponent(subName)}/avatar" alt="" onerror="this.style.display='none'">` +
-        `<span class="subordinate-name">${escapeHtml(subName)}</span>` +
-        `<span class="subordinate-tool">${icon} ${escapeHtml(label)}</span>`;
-      container.appendChild(div);
-    }
-  }
-
-  for (const [name, el] of existingByName) {
-    if (!desiredNames.has(name)) el.remove();
-  }
 }
 
 function _renderThinkingZoneContent(msg, opts) {

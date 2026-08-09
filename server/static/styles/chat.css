@@ -1821,12 +1821,10 @@
 
 .streaming-zone-text,
 .streaming-zone-tools,
-.streaming-zone-subordinate,
 .streaming-zone-thinking {
   /* Zones are block-level wrappers; empty zones collapse */
 }
 .streaming-zone-tools:empty,
-.streaming-zone-subordinate:empty,
 .streaming-zone-thinking:empty {
   display: none;
 }
@@ -1914,52 +1912,6 @@
 .tool-activity-list {
   transition: max-height 0.25s ease;
   overflow: hidden;
-}
-
-/* ── Subordinate Activity ──────────────── */
-
-.subordinate-activity {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-  padding: 4px 10px;
-  background: var(--aw-color-bg-secondary, #f0f4f8);
-  border-radius: 8px;
-  font-size: 0.76rem;
-  transition: opacity 0.15s ease;
-}
-
-.subordinate-activity--animate {
-  animation: aw-slide-in 0.25s ease-out;
-}
-
-@keyframes aw-avatar-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
-  50%      { box-shadow: 0 0 6px 2px rgba(99, 102, 241, 0.4); }
-}
-
-.subordinate-avatar {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  object-fit: cover;
-  animation: aw-avatar-glow 2s ease-in-out infinite;
-}
-
-.subordinate-name {
-  font-weight: 600;
-  color: var(--aw-color-text-secondary);
-  min-width: 40px;
-}
-
-.subordinate-tool {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--aw-font-mono, monospace);
-  opacity: 0.9;
 }
 
 /* ── Heartbeat Relay Indicator ──────────── */
