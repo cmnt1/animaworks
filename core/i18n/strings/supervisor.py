@@ -10,6 +10,64 @@
 from __future__ import annotations
 
 STRINGS: dict[str, dict[str, str]] = {
+    "pending_executor.continuation_checkpoint": {
+        "ja": (
+            "## 前回実行のcheckpoint（自動継続 {count}回目）\n"
+            "このタスクは前回、完了宣言なしにセッションが終了したため自動継続されている。\n"
+            "以下は前回セッションの末尾出力と実行済みツールの記録である。実施済みの操作を\n"
+            "重複実行せず、残作業を完了させ、完了時は必ず "
+            "`update_task(status=\"done\", result=\"...\")` を呼ぶこと。\n"
+            "### 前回の出力（末尾）\n{output}\n"
+            "### 実行済みツール（最大30件）\n{records}"
+        ),
+        "en": (
+            "## Previous execution checkpoint (automatic continuation {count})\n"
+            "The previous session ended without a completion declaration, so this task was continued automatically.\n"
+            "The previous session's final output and executed tools follow. Do not repeat completed operations; "
+            "finish the remaining work and call `update_task(status=\"done\", result=\"...\")` when done.\n"
+            "### Previous output (tail)\n{output}\n"
+            "### Executed tools (up to 30)\n{records}"
+        ),
+        "ko": (
+            "## 이전 실행 checkpoint(자동 계속 {count}회차)\n"
+            "이전 세션이 완료 선언 없이 종료되어 이 작업이 자동으로 계속되었습니다.\n"
+            "이전 세션의 마지막 출력과 실행한 도구 기록입니다. 완료한 작업을 반복하지 말고 남은 작업을 끝낸 뒤 "
+            "`update_task(status=\"done\", result=\"...\")`를 호출하세요.\n"
+            "### 이전 출력(마지막 부분)\n{output}\n"
+            "### 실행한 도구(최대 30개)\n{records}"
+        ),
+    },
+    "pending_executor.crash_checkpoint": {
+        "ja": (
+            "## 前回実行のcheckpoint（自動継続 {count}回目）\n"
+            "前回はプロセス異常終了のため自動継続されている。実施済みの操作を確認し、残作業を完了させること。"
+        ),
+        "en": (
+            "## Previous execution checkpoint (automatic continuation {count})\n"
+            "The previous process terminated unexpectedly. Review completed operations and finish the remaining work."
+        ),
+        "ko": (
+            "## 이전 실행 checkpoint(자동 계속 {count}회차)\n"
+            "이전 프로세스가 비정상 종료되었습니다. 완료한 작업을 확인하고 남은 작업을 끝내세요."
+        ),
+    },
+    "pending_executor.recovered_checkpoint": {
+        "ja": (
+            "## プロセス異常終了から回収したcheckpoint\n"
+            "### 前回の出力（末尾）\n{output}\n"
+            "### 実行済みツール（最大30件）\n{records}"
+        ),
+        "en": (
+            "## Checkpoint recovered after an unexpected process termination\n"
+            "### Previous output (tail)\n{output}\n"
+            "### Executed tools (up to 30)\n{records}"
+        ),
+        "ko": (
+            "## 프로세스 비정상 종료에서 복구한 checkpoint\n"
+            "### 이전 출력(마지막 부분)\n{output}\n"
+            "### 실행한 도구(최대 30개)\n{records}"
+        ),
+    },
     "pending_executor.dep_result_header": {
         "ja": "## 先行タスク [{dep_id}] の結果",
         "en": "## Preceding task [{dep_id}] result",

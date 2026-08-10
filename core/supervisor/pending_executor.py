@@ -55,6 +55,8 @@ _PROCESSING_TOUCH_INTERVAL_SECONDS = 600
 _SENTINEL_CANCELLED = "(cancelled)"
 _SENTINEL_EXPIRED = "(expired)"
 _SENTINEL_DEFERRED = "(deferred)"
+_SENTINEL_CONTINUED = "(continued)"
+_MAX_TASK_CONTINUATIONS = 3
 
 _QUEUE_TERMINAL_STATUSES = {"done", "cancelled", "failed"}
 _QUEUE_ACTIVE_STATUSES = {"pending", "in_progress", "blocked", "delegated"}
@@ -173,10 +175,22 @@ def _classify_task_result(result: str) -> tuple[str, str]:
         return "cancelled", "expired (TTL exceeded)"
     if result == _SENTINEL_DEFERRED:
         return "pending", "snoozed by TaskBoard"
+    if result == _SENTINEL_CONTINUED:
+        return "in_progress", "automatic continuation scheduled"
     auth_failure = _detect_task_auth_failure(result)
     if auth_failure:
         return "failed", f"FAILED: {auth_failure}"
     return "done", (result or "")[:200]
+
+
+def _completion_declaration_required() -> bool:
+    try:
+        from core.config.models import load_config
+
+        return load_config().background_task.completion_declaration_required
+    except Exception:
+        logger.warning("Failed to load completion declaration setting; using safe default", exc_info=True)
+        return True
 
 
 def _resolve_default_workspace(anima_dir: Path) -> str:
@@ -484,6 +498,95 @@ class PendingTaskExecutor:
         path = results_dir / f"{task_id}.md"
         truncated = summary[:_TASK_RESULT_MAX_CHARS]
         path.write_text(truncated, encoding="utf-8")
+
+    def _reenqueue_with_checkpoint(
+        self,
+        task_desc: dict[str, Any],
+        accumulated_text: str,
+        tool_call_records: list[dict[str, Any]],
+    ) -> None:
+        """Re-enqueue an undeclared task with enough context to resume safely."""
+        from core.memory._io import atomic_write_text
+
+        task_id = str(task_desc.get("task_id") or "unknown")
+        continuation_count = task_desc.get("continuation_count", 0)
+        if not isinstance(continuation_count, int) or isinstance(continuation_count, bool):
+            continuation_count = 0
+        continuation_count += 1
+        records = []
+        for record in tool_call_records[-30:]:
+            if not isinstance(record, dict):
+                continue
+            name = record.get("tool_name") or record.get("tool") or "unknown"
+            args = record.get("input_summary") or record.get("args_summary") or ""
+            records.append(f"- {name}: {str(args)[:500]}")
+        record_text = "\n".join(records) or f"- {t('pending_executor.none_value')}"
+        checkpoint = t(
+            "pending_executor.continuation_checkpoint",
+            count=continuation_count,
+            output=accumulated_text[-2000:],
+            records=record_text,
+        )
+        next_desc = dict(task_desc)
+        next_desc["continuation_count"] = continuation_count
+        previous_context = str(task_desc.get("context") or "").strip()
+        next_desc["context"] = f"{previous_context}\n\n{checkpoint}".strip()
+
+        pending_dir = self._anima_dir / "state" / "pending"
+        pending_dir.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(
+            pending_dir / f"{task_id}.json",
+            json.dumps(next_desc, ensure_ascii=False, indent=2) + "\n",
+        )
+        self._wake_event.set()
+
+    def add_recovered_task_checkpoint(
+        self,
+        task_id: str,
+        recovered_text: str,
+        tool_calls: list[dict[str, Any]],
+    ) -> bool:
+        """Attach an orphaned task journal to the descriptor recovered next."""
+        if not _completion_declaration_required():
+            return False
+        processing_path = self._anima_dir / "state" / "pending" / "processing" / f"{task_id}.json"
+        try:
+            task_desc = json.loads(processing_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        if not isinstance(task_desc, dict) or task_desc.get("task_type") != "llm":
+            return False
+        continuation_count = task_desc.get("continuation_count", 0)
+        if not isinstance(continuation_count, int) or isinstance(continuation_count, bool):
+            continuation_count = 0
+        entry = self._get_task_queue_entry(task_id)
+        if continuation_count >= _MAX_TASK_CONTINUATIONS or (
+            entry is not None and entry.status not in _QUEUE_ACTIVE_STATUSES
+        ):
+            return False
+
+        records = []
+        for record in tool_calls[-30:]:
+            if isinstance(record, dict):
+                name = record.get("tool_name") or record.get("tool") or "unknown"
+                args = record.get("input_summary") or record.get("args_summary") or ""
+                records.append(f"- {name}: {str(args)[:500]}")
+        record_text = "\n".join(records) or f"- {t('pending_executor.none_value')}"
+        checkpoint = t(
+            "pending_executor.recovered_checkpoint",
+            output=recovered_text[-2000:],
+            records=record_text,
+        )
+        previous_context = str(task_desc.get("context") or "").strip()
+        task_desc["context"] = f"{previous_context}\n\n{checkpoint}".strip()
+
+        from core.memory._io import atomic_write_text
+
+        atomic_write_text(
+            processing_path,
+            json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
+        )
+        return True
 
     def _build_dependency_context(
         self,
@@ -857,12 +960,10 @@ class PendingTaskExecutor:
         failed_dir: Path,
         anima_dir: Path | None = None,
     ) -> None:
-        """Move orphaned files from processing/ to failed/ on startup.
+        """Recover orphaned processing files on startup.
 
-        When *anima_dir* is provided, the matching Layer2 task_queue entry is
-        also transitioned to ``failed`` so a task interrupted mid-execution does
-        not linger in ``in_progress`` forever (the JSONL log is otherwise never
-        told the process died).
+        TaskExec descriptors within the continuation limit return to pending;
+        other descriptors retain the legacy failed behavior.
         """
         if not processing_dir.exists():
             return
@@ -876,14 +977,68 @@ class PendingTaskExecutor:
                 )
                 continue
             task_id = ""
+            task_desc: dict[str, Any] = {}
+            entry = None
             if anima_dir is not None:
                 try:
-                    task_desc = json.loads(orphan.read_text(encoding="utf-8"))
-                    task_id = (task_desc.get("task_id") or "").strip() if isinstance(task_desc, dict) else ""
+                    loaded = json.loads(orphan.read_text(encoding="utf-8"))
+                    task_desc = loaded if isinstance(loaded, dict) else {}
+                    task_id = str(task_desc.get("task_id") or "").strip()
                 except (json.JSONDecodeError, OSError):
                     task_id = ""
                 if not task_id:
                     task_id = orphan.stem
+
+                try:
+                    from core.memory.task_queue import TaskQueueManager
+
+                    entry = TaskQueueManager(anima_dir).get_task_by_id(task_id)
+                except Exception:
+                    logger.exception("Failed to read Layer2 task_queue for recovered task: %s", task_id)
+
+            continuation_count = task_desc.get("continuation_count", 0)
+            if not isinstance(continuation_count, int) or isinstance(continuation_count, bool):
+                continuation_count = 0
+            should_continue = (
+                anima_dir is not None
+                and task_desc.get("task_type") == "llm"
+                and _completion_declaration_required()
+                and continuation_count < _MAX_TASK_CONTINUATIONS
+                and (entry is None or entry.status in _ACTIVE)
+            )
+            if should_continue:
+                from core.memory._io import atomic_write_text
+
+                next_desc = dict(task_desc)
+                next_desc["continuation_count"] = continuation_count + 1
+                previous_context = str(task_desc.get("context") or "").strip()
+                crash_note = t(
+                    "pending_executor.crash_checkpoint",
+                    count=continuation_count + 1,
+                )
+                next_desc["context"] = f"{previous_context}\n\n{crash_note}".strip()
+                try:
+                    pending_path = processing_dir.parent / orphan.name
+                    if pending_path.exists():
+                        _unlink_processing_descriptor(orphan)
+                        logger.warning(
+                            "Discarded orphaned descriptor already re-enqueued: %s",
+                            orphan.name,
+                        )
+                        continue
+                    atomic_write_text(
+                        pending_path,
+                        json.dumps(next_desc, ensure_ascii=False, indent=2) + "\n",
+                    )
+                    _unlink_processing_descriptor(orphan)
+                    logger.warning(
+                        "Re-enqueued orphaned TaskExec task: %s continuation=%d",
+                        orphan.name,
+                        continuation_count + 1,
+                    )
+                    continue
+                except Exception:
+                    logger.exception("Failed to re-enqueue orphaned task: %s", orphan.name)
             try:
                 _move_processing_with_lease(
                     orphan,
@@ -899,7 +1054,7 @@ class PendingTaskExecutor:
                     from core.memory.task_queue import TaskQueueManager
 
                     manager = TaskQueueManager(anima_dir)
-                    entry = manager.get_task_by_id(task_id)
+                    entry = entry or manager.get_task_by_id(task_id)
                     if entry is not None and entry.status in _ACTIVE:
                         manager.update_status(
                             task_id,
@@ -1422,7 +1577,9 @@ class PendingTaskExecutor:
                                             )
                             except Exception:
                                 logger.warning("[%s] Failed to build batch failure notification", self._anima_name)
-                    elif result == _SENTINEL_DEFERRED:
+                    elif result in {_SENTINEL_DEFERRED, _SENTINEL_CONTINUED}:
+                        # A continued task is not failed, but its DAG dependents
+                        # must wait for the later standalone continuation.
                         failed.add(task["task_id"])
                     elif task.get("_attention_suppressed_reason"):
                         failed.add(task["task_id"])
@@ -1445,7 +1602,8 @@ class PendingTaskExecutor:
                         completed,
                         batch_id,
                     )
-                    if result == _SENTINEL_DEFERRED:
+                    if result in {_SENTINEL_DEFERRED, _SENTINEL_CONTINUED}:
+                        # Stop this batch branch until the continuation finishes.
                         failed.add(task["task_id"])
                     elif task.get("_attention_suppressed_reason"):
                         failed.add(task["task_id"])
@@ -1531,11 +1689,12 @@ class PendingTaskExecutor:
             }
             try:
                 result = await self._run_task_in_worker(task_desc, completed_results)
-                self._save_task_result(task_id, result)
                 status, summary = _classify_task_result(result)
-                self._sync_task_queue(task_id, status, summary=summary)
-                if status == "done":
-                    await self._handle_goal_completion(task_desc, result)
+                if result != _SENTINEL_CONTINUED:
+                    self._save_task_result(task_id, result)
+                    self._sync_task_queue(task_id, status, summary=summary)
+                    if status == "done":
+                        await self._handle_goal_completion(task_desc, result)
                 return result
             finally:
                 self._anima._active_parallel_tasks.pop(task_id, None)
@@ -1549,11 +1708,12 @@ class PendingTaskExecutor:
         """Execute a serial batch task under _background_lock."""
         task_id = task_desc.get("task_id", "unknown")
         result = await self._run_task_in_worker(task_desc, completed_results)
-        self._save_task_result(task_id, result)
         status, summary = _classify_task_result(result)
-        self._sync_task_queue(task_id, status, summary=summary)
-        if status == "done":
-            await self._handle_goal_completion(task_desc, result)
+        if result != _SENTINEL_CONTINUED:
+            self._save_task_result(task_id, result)
+            self._sync_task_queue(task_id, status, summary=summary)
+            if status == "done":
+                await self._handle_goal_completion(task_desc, result)
         return result
 
     async def _run_task_in_worker(
@@ -1664,6 +1824,7 @@ class PendingTaskExecutor:
             _SENTINEL_CANCELLED: "cancelled",
             _SENTINEL_EXPIRED: "expired",
             _SENTINEL_DEFERRED: "deferred",
+            _SENTINEL_CONTINUED: "continued",
         }.get(result, "completed")
         activity.log(
             "task_exec_end",
@@ -1802,6 +1963,7 @@ class PendingTaskExecutor:
 
         accumulated_text = ""
         result_summary = ""
+        tool_call_records: list[dict[str, Any]] = []
         task_failed_reason = ""
         had_error = False
         error_message = ""
@@ -1857,6 +2019,9 @@ class PendingTaskExecutor:
                             error_message = ""
                         elif chunk_type == "cycle_done":
                             cycle_result = chunk.get("cycle_result", {})
+                            tool_call_records = cycle_result.get("tool_call_records", [])
+                            if not isinstance(tool_call_records, list):
+                                tool_call_records = []
                             result_summary = cycle_result.get(
                                 "summary",
                                 accumulated_text[:500],
@@ -1902,6 +2067,29 @@ class PendingTaskExecutor:
         auth_failure = _detect_task_auth_failure(result_summary or accumulated_text)
         if auth_failure:
             raise TaskExecError(auth_failure)
+
+        if _completion_declaration_required():
+            entry = self._get_task_queue_entry(task_id)
+            meta = entry.meta if entry is not None and isinstance(entry.meta, dict) else {}
+            if meta.get("completed_by") == "agent_declaration":
+                result_summary = str(meta.get("result_note") or result_summary)
+            else:
+                continuation_count = task_desc.get("continuation_count", 0)
+                if not isinstance(continuation_count, int) or isinstance(continuation_count, bool):
+                    continuation_count = 0
+                if continuation_count < _MAX_TASK_CONTINUATIONS:
+                    self._reenqueue_with_checkpoint(task_desc, accumulated_text, tool_call_records)
+                    logger.info(
+                        "[%s] LLM task continued without declaration: id=%s continuation=%d",
+                        self._anima_name,
+                        task_id,
+                        continuation_count + 1,
+                    )
+                    return _SENTINEL_CONTINUED
+                raise TaskExecError(
+                    f"Task {task_id}: no completion declaration after "
+                    f"{_MAX_TASK_CONTINUATIONS} continuations"
+                )
 
         # Send completion notification
         if reply_to:
@@ -2176,9 +2364,10 @@ class PendingTaskExecutor:
             else:
                 result = await self._run_llm_task(task_desc)
             status, summary = _classify_task_result(result)
-            self._sync_task_queue(task_id, status, summary=summary)
-            if status == "done":
-                await self._handle_goal_completion(task_desc, result)
+            if result != _SENTINEL_CONTINUED:
+                self._sync_task_queue(task_id, status, summary=summary)
+                if status == "done":
+                    await self._handle_goal_completion(task_desc, result)
         except Exception as exc:
             logger.exception(
                 "[%s] LLM task failed: id=%s",

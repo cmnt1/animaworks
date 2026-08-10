@@ -756,6 +756,7 @@ class BackgroundTaskConfig(BaseModel):
     """Configuration for background tool execution."""
 
     enabled: bool = True
+    completion_declaration_required: bool = True
     shutdown_drain_seconds: float = Field(default=600.0, ge=0)
     eligible_tools: dict[str, BackgroundToolConfig] = {
         "generate_character_assets": BackgroundToolConfig(threshold_s=30),

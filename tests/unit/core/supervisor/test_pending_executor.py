@@ -16,6 +16,15 @@ from core.i18n import t
 from core.supervisor.pending_executor import PendingTaskExecutor
 
 
+@pytest.fixture(autouse=True)
+def _legacy_completion_semantics():
+    with patch(
+        "core.supervisor.pending_executor._completion_declaration_required",
+        return_value=False,
+    ):
+        yield
+
+
 def _make_executor(tmp_path: Path) -> PendingTaskExecutor:
     """Create a PendingTaskExecutor with minimal dependencies."""
     anima_dir = tmp_path / "animas" / "test-anima"

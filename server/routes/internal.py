@@ -144,6 +144,14 @@ class DelegateTaskPersistRequest(BaseModel):
     persist_pending: bool = True  # create state/pending/<id>.json
 
 
+class UpdateTaskPersistRequest(BaseModel):
+    anima_name: str
+    task_id: str
+    status: Literal["pending", "in_progress", "done", "cancelled", "blocked", "failed"]
+    meta: dict[str, Any] = {}
+    summary: str | None = None
+
+
 def create_internal_router() -> APIRouter:
     router = APIRouter()
 
@@ -667,6 +675,39 @@ def create_internal_router() -> APIRouter:
             "sub_task_id": ids["sub_task_id"],
             "tracking_task_id": ids["tracking_task_id"],
         }
+
+    @router.post("/internal/update-task")
+    async def internal_update_task(body: UpdateTaskPersistRequest):
+        """Persist a task update outside sandbox EROFS constraints."""
+        from core.anima_factory import validate_anima_name
+        from core.memory.task_queue import TaskQueueManager
+        from core.paths import get_animas_dir
+
+        if validate_anima_name(body.anima_name):
+            return JSONResponse(status_code=400, content={"detail": "Invalid anima name"})
+        anima_dir = get_animas_dir() / body.anima_name
+        if not anima_dir.is_dir():
+            return JSONResponse(
+                status_code=404,
+                content={"detail": f"Anima directory not found: {body.anima_name}"},
+            )
+
+        def _persist() -> Any:
+            manager = TaskQueueManager(anima_dir)
+            entry = manager.update_meta(body.task_id, body.meta, summary=body.summary)
+            if entry is None:
+                return None
+            return manager.update_status(body.task_id, body.status, summary=body.summary)
+
+        try:
+            loop = asyncio.get_running_loop()
+            entry = await loop.run_in_executor(_native_executor, _persist)
+        except Exception as exc:
+            logger.exception("internal update-task failed")
+            return JSONResponse(status_code=500, content={"detail": str(exc)})
+        if entry is None:
+            return JSONResponse(status_code=404, content={"detail": f"Task not found: {body.task_id}"})
+        return {"ok": True, "task": entry.model_dump(mode="json")}
 
     @router.post("/internal/vector/reset-store")
     async def vector_reset_store(body: VectorListCollectionsRequest, request: Request):

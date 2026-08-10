@@ -677,6 +677,17 @@ class TaskRunnerSupervisor:
                     )
                     if recovery is None:
                         continue
+                    if session_type in {"task", "task_exec"} and (
+                        recovery.recovered_text.strip() or recovery.tool_calls
+                    ):
+                        owner = self._busy_status_owner
+                        pending_executor = getattr(owner, "_pending_executor", None)
+                        if pending_executor is not None:
+                            pending_executor.add_recovered_task_checkpoint(
+                                thread_id,
+                                recovery.recovered_text,
+                                recovery.tool_calls,
+                            )
                     if session_type == "chat" and recovery.recovered_text:
                         from core.memory.conversation import ConversationMemory
 

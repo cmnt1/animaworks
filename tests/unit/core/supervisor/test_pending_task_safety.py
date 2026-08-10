@@ -28,6 +28,15 @@ from core.platform.processing_lease import (
 )
 from core.supervisor.pending_executor import PendingTaskExecutor
 
+
+@pytest.fixture(autouse=True)
+def _legacy_completion_semantics():
+    with patch(
+        "core.supervisor.pending_executor._completion_declaration_required",
+        return_value=False,
+    ):
+        yield
+
 # ── Helpers ──────────────────────────────────────────────────
 
 
