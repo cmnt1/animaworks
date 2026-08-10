@@ -179,6 +179,12 @@ def _supervisor_tools() -> list[dict[str, Any]]:
                         "type": "string",
                         "description": _t("schema.delegate_task.exclusive_key"),
                     },
+                    "acceptance_criteria": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": _t("schema.delegate_task.acceptance_criteria"),
+                        "default": [],
+                    },
                 },
                 "required": ["name", "instruction", "deadline"],
             },

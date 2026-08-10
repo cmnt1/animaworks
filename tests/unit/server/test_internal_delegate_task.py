@@ -122,6 +122,7 @@ class TestInternalDelegateTask:
         assert pending_data["reply_to"] == "rin"
         assert pending_data["source"] == "delegation"
         assert pending_data["description"] == "fix the merge conflict on PR #3553"
+        assert pending_data["acceptance_criteria"] == []
 
         mock_tb.assert_called_once()
         kwargs = mock_tb.call_args.kwargs
@@ -193,6 +194,28 @@ class TestInternalDelegateTask:
 
         assert resp.status_code == 404
         assert "natsume" in resp.json()["detail"]
+
+    @pytest.mark.anyio
+    async def test_acceptance_criteria_written_to_pending(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        animas = _setup_animas(tmp_path)
+        monkeypatch.setattr("core.paths.get_animas_dir", lambda: animas)
+        criteria = ["unit tests green", "no regression"]
+
+        app = _make_test_app()
+        transport = ASGITransport(app=app)
+        with patch("core.tooling.handler_delegation._record_taskboard_delegation"):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/internal/delegate-task",
+                    json=_base_payload(acceptance_criteria=criteria),
+                )
+
+        assert resp.status_code == 200
+        pending = animas / "natsume" / "state" / "pending" / "aabbccddeeff.json"
+        pending_data = json.loads(pending.read_text(encoding="utf-8"))
+        assert pending_data["acceptance_criteria"] == criteria
 
     @pytest.mark.anyio
     async def test_invalid_deadline_returns_422(
