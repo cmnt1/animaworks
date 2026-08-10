@@ -260,7 +260,7 @@ export function generateScene(animas, template) {
     bookshelf: { tile: [8, 1], w: 3.5, h: 2, sprite: "bookshelf" },
     refreshment: { tile: [canvasColumns - 4, 1], w: 3, h: 2.25, sprite: "coffee_corner" },
     welcome_mat: {
-      tile: [doorTile[0] + 1.5, doorTile[1] + 0.25],
+      tile: [doorTile[0] + 1.5, doorTile[1] + 1.75],
       w: 3,
       h: 1.5,
       sprite: "welcome_mat",
@@ -348,8 +348,10 @@ export function generateScene(animas, template) {
       avoidRect: humanRect,
     });
     group.members.forEach((anima, memberIndex) => {
+      const position = positions[memberIndex] || [rect[0] + 2, rect[1] + 3];
+      const inward = groups.length === 2 ? (index === 0 ? 1 : -1) : 0;
       desks[anima.id] = {
-        tile: positions[memberIndex] || [rect[0] + 2, rect[1] + 3],
+        tile: [position[0] + inward, position[1]],
         facing: "down",
         company: group.company,
         sample_index: anima.index,
