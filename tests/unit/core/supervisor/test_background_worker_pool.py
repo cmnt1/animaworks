@@ -96,6 +96,7 @@ def test_pool_size_one_reuses_legacy_background_agent_and_session() -> None:
 class _PoolStub:
     def __init__(self, pool_size: int) -> None:
         self._background_worker_pool_size = pool_size
+        self.messenger = MagicMock()
         self._available: asyncio.Queue[BackgroundWorkerSlot] = asyncio.Queue()
         for slot_id in range(pool_size):
             self._available.put_nowait(_slot(slot_id))
@@ -346,9 +347,10 @@ async def test_cancelled_claim_syncs_layer2_task_queue_to_failed(tmp_path: Path)
     entry = queue.get_task_by_id(task_id)
     assert entry.status == "failed"
     assert entry.summary == (
-        "INTERRUPTED: task was cancelled by a shutdown/restart and may have "
+        "INTERRUPTED: task was cancelled outside shutdown and may have "
         "PARTIALLY EXECUTED. Verify actual completion state before re-delegating."
     )
+    assert executor._anima.messenger.send.call_args.kwargs["to"] == "pool-test"
 
 
 async def test_watcher_shutdown_waits_for_active_dispatch_to_finish(tmp_path: Path) -> None:

@@ -302,6 +302,7 @@ class TestExecuteLlmTaskStatusMapping:
             mock_sync.assert_called_once()
             assert mock_sync.call_args[0][1] == "failed"
             assert mock_sync.call_args.kwargs["summary"].startswith("FAILED: Failed to authenticate.")
+            assert executor._anima.messenger.send.call_args.kwargs["to"] == "test-anima"
 
     @pytest.mark.asyncio
     async def test_error_exception_maps_to_failed(self, tmp_path):

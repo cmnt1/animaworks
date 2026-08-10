@@ -197,6 +197,35 @@ async def test_child_crash_records_failed_retryable_and_root_continues(tmp_path:
 
 
 @pytest.mark.asyncio
+async def test_child_crash_during_shutdown_stays_for_startup_recovery(tmp_path: Path) -> None:
+    executor, anima, anima_dir = _executor(tmp_path, task_isolated=True)
+    assert executor._task_runner_supervisor is not None
+    type(anima)._acquire_background_worker = None  # type: ignore[attr-defined]
+    executor._task_runner_supervisor.run_task = AsyncMock(
+        side_effect=TaskRunnerError("task runner exited during shutdown")
+    )
+    task_desc = {
+        "task_id": "t-shutdown-crash",
+        "title": "shutdown crash",
+        "description": "work",
+        "task_type": "llm",
+    }
+    processing = anima_dir / "state" / "pending" / "processing"
+    failed = anima_dir / "state" / "pending" / "failed"
+    processing.mkdir(parents=True)
+    failed.mkdir()
+    processing_path = processing / "t-shutdown-crash.json"
+    processing_path.write_text(json.dumps(task_desc), encoding="utf-8")
+    executor._shutdown_event.set()
+
+    await executor._execute_claimed_llm_task(task_desc, processing_path, failed, None)
+
+    assert processing_path.exists()
+    assert not list(failed.glob("*.json"))
+    anima.messenger.send.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_same_attempt_not_reclaimed_while_lease_live(tmp_path: Path) -> None:
     executor, _, anima_dir = _executor(tmp_path, task_isolated=True)
     processing = anima_dir / "state" / "pending" / "processing"
