@@ -310,7 +310,7 @@ def test_should_defer_claim_while_prior_attempt_finishing(tmp_path: Path) -> Non
     pending_dir = executor._anima_dir / "state" / "pending"
     processing_dir = pending_dir / "processing"
     processing_dir.mkdir(parents=True, exist_ok=True)
-    pending_path = pending_dir / "aaaa11112222.json"
+    pending_path = pending_dir / "aaaa11112222.json"  # canonical: stem == task_id
     pending_path.write_text('{"task_id": "aaaa11112222", "task_type": "llm"}')
     desc = {"task_id": "aaaa11112222", "task_type": "llm"}
 
@@ -326,3 +326,16 @@ def test_should_defer_claim_while_prior_attempt_finishing(tmp_path: Path) -> Non
     # Case 3: fully cleaned up -> claimable
     (processing_dir / "aaaa11112222.json").unlink()
     assert executor._should_defer_claim(pending_path, desc, processing_dir) is False
+
+
+def test_should_defer_claim_ignores_non_canonical_duplicates(tmp_path: Path) -> None:
+    """Genuine duplicates (different filename, same task_id) still get quarantined."""
+    executor = _make_executor(tmp_path)
+    pending_dir = executor._anima_dir / "state" / "pending"
+    processing_dir = pending_dir / "processing"
+    processing_dir.mkdir(parents=True, exist_ok=True)
+    dup_path = pending_dir / "second.json"
+    dup_path.write_text('{"task_id": "aaaa11112222", "task_type": "llm"}')
+    executor._active_task_ids.add("aaaa11112222")
+    desc = {"task_id": "aaaa11112222", "task_type": "llm"}
+    assert executor._should_defer_claim(dup_path, desc, processing_dir) is False

@@ -354,6 +354,10 @@ class PendingTaskExecutor:
         next poll instead.
         """
         task_id = str(task_desc.get("task_id") or pending_path.stem).strip()
+        if pending_path.stem != task_id:
+            # Non-canonical filename with a duplicated task_id is a genuine
+            # duplicate descriptor; let the claim path quarantine it.
+            return False
         if task_id in self._active_task_ids:
             return True
         return (processing_dir / pending_path.name).exists()
