@@ -357,7 +357,7 @@ class GitHubWebhookManager:
                 dispatch_direct_task(
                     target=self._config.implementer_anima,
                     task_id=f"gh-cmd-{comment_id}",
-                    summary=f"GitHubコメント対応 {repo}#{number}",
+                    summary=t("github_gateway.command_summary", repo=repo, number=number),
                     instruction=instruction,
                     meta={"repo": repo, "number": number, "url": url, "kind": kind},
                 )
@@ -468,7 +468,7 @@ class GitHubWebhookManager:
                 dispatch_direct_task(
                     target=self._config.implementer_anima,
                     task_id=f"gh-ci-{repo.replace('/', '-')}#{number}-{sha[:8]}",
-                    summary=f"CI失敗修正 {repo}#{number}",
+                    summary=t("github_gateway.ci_summary", repo=repo, number=number),
                     instruction=instruction,
                     meta={"repo": repo, "number": number, "sha": sha, "workflow_url": url},
                 )

@@ -289,6 +289,10 @@ STRINGS: dict[str, dict[str, str]] = {
             "confirm tests pass, use a normal push, and never force-push."
         ),
     },
+    "github_gateway.command_summary": {
+        "ja": "GitHubコメント対応 {repo}#{number}",
+        "en": "Handle GitHub comment {repo}#{number}",
+    },
     "github_gateway.ci_task": {
         "ja": (
             "PR #{number} ({pr_url}) の CI ({workflow_name}) が head {sha} で失敗。"
@@ -298,5 +302,9 @@ STRINGS: dict[str, dict[str, str]] = {
             "CI ({workflow_name}) failed at head {sha} for PR #{number} ({pr_url}). "
             "Investigate the cause, fix it, and push the fix.\nworkflow URL: {workflow_url}"
         ),
+    },
+    "github_gateway.ci_summary": {
+        "ja": "CI失敗修正 {repo}#{number}",
+        "en": "Fix CI failure {repo}#{number}",
     },
 }
