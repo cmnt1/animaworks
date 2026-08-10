@@ -1,5 +1,7 @@
 const TEMPLATE_URL = new URL("../assets/scene.json", import.meta.url);
 const HUMAN_ID = "human";
+export const LOGICAL_CANVAS_WIDTH = 1120;
+export const LOGICAL_CANVAS_HEIGHT = 736;
 
 export function resolveBasePath() {
   const configured = document.querySelector('meta[name="aw-base-path"]')?.content || "";
@@ -46,18 +48,20 @@ function gridForZone(rect, count, options = {}) {
     Math.min(count || 1, options.columns || 4, Math.floor((x2 - x1 + 1) / stepX)),
   );
   const rows = Math.max(1, Math.ceil(count / columns));
-  const top = y1 + (options.topOffset ?? 3);
+  const dense = rows > 2;
+  const top = y1 + (dense ? 2 : (options.topOffset ?? 3));
   const rowStep = options.rowStep || 4;
-  const bottom = Math.max(top, y2 - 7);
+  const bottom = Math.max(top, y2 - (dense ? 5 : 7));
   const candidates = [];
-  const columnLeft = x1 + 2;
+  const columnLeft = x1 + (dense ? 1 : 2);
   const columnRight = Math.max(columnLeft, x2 - 2);
+  const columnStart = (columnLeft + columnRight - (columns - 1) * stepX) / 2;
   for (let row = 0; row < rows; row += 1) {
     const y = Math.min(bottom, top + row * rowStep);
     for (let column = 0; column < columns; column += 1) {
       const x = columns === 1
         ? Math.round((columnLeft + columnRight) / 2)
-        : Math.round(columnLeft + (columnRight - columnLeft) * column / (columns - 1));
+        : Math.round(columnStart + column * stepX);
       if (!options.avoidRect || !overlapsRect(x, y, options.avoidRect)) candidates.push([x, y]);
     }
   }
@@ -213,18 +217,15 @@ export function generateScene(animas, template) {
   const entranceRule = layout.entrance || {};
   const humanRect = humanRule.zone || [17, 8, 21, 14];
   const tile = template.canvas?.tile || 32;
-  const canvasWidth = template.canvas?.w || 1120;
-  const baseCanvasHeight = template.canvas?.h || 736;
+  const canvasWidth = LOGICAL_CANVAS_WIDTH;
+  const canvasHeight = LOGICAL_CANVAS_HEIGHT;
   const deskColumns = Math.max(
     3,
     Math.min(5, groups.length >= 3 ? 3 : companyRule.desk_columns || 4),
   );
-  const rowStep = companyRule.desk_row_step || 4;
-  const rows = Math.max(...groups.map((group) => Math.ceil(group.members.length / deskColumns)));
-  const baseCompanyHeight = companyRule.height || 15;
-  const companyHeight = Math.max(baseCompanyHeight, 11 + (rows - 1) * rowStep);
-  const growth = companyHeight - baseCompanyHeight;
-  const canvasHeight = baseCanvasHeight + growth * tile;
+  const rowStep = companyRule.desk_row_step || 3;
+  const companyHeight = companyRule.height || 15;
+  const growth = 0;
   const canvasColumns = Math.floor(canvasWidth / tile);
   const roomBottom = Math.floor(canvasHeight / tile) - 3;
   const rects = companyRects(groups, {
@@ -338,9 +339,10 @@ export function generateScene(animas, template) {
       kind: "company",
       company: group.company,
     };
+    const groupColumns = group.members.length > 9 ? 4 : deskColumns;
     const positions = gridForZone(rect, group.members.length, {
-      columns: deskColumns,
-      stepX: companyRule.desk_column_step || 4,
+      columns: groupColumns,
+      stepX: groupColumns === 4 ? 3 : (companyRule.desk_column_step || 4),
       rowStep,
       topOffset: companyRule.desk_top_offset ?? 3,
       avoidRect: humanRect,
@@ -418,6 +420,11 @@ function normalizeRuntimeScene(scene) {
   const humanId = String(scene.human_id || HUMAN_ID).toLowerCase();
   return {
     ...scene,
+    canvas: {
+      ...scene.canvas,
+      w: LOGICAL_CANVAS_WIDTH,
+      h: LOGICAL_CANVAS_HEIGHT,
+    },
     human_id: humanId,
     desks: Object.fromEntries(
       Object.entries(scene.desks || {}).map(([id, desk]) => [String(id).toLowerCase(), desk]),

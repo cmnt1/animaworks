@@ -1,4 +1,4 @@
-import { drawPixelText, measurePixelText } from "./pixel-text.js";
+import { drawPixelText } from "./pixel-text.js";
 
 const MAX_ACTIVE = 5;
 const MAX_QUEUED = 5;
@@ -188,13 +188,7 @@ export class Director {
     const arrived = participants.filter((id, index) => arrivals[index]);
     if (!arrived.length) return;
     arrived.forEach((id) => this.actors.setState(id, "talking"));
-    await this.addEffect({
-      type: "talk",
-      x: (table.tile[0] + table.w / 2) * this.scene.canvas.tile,
-      y: table.tile[1] * this.scene.canvas.tile - 10,
-      label: "打合せ中",
-      duration: 3,
-    });
+    await this.pause(3);
     await Promise.all(arrived.map((id) => this.actors.returnHome(id)));
     participants.forEach((id) => this.actors.setState(id, previous.get(id)));
   }
@@ -318,7 +312,6 @@ export class Director {
       if (effect.type === "envelope") this.drawEnvelope(ctx, effect, progress);
       else if (effect.type === "heart") this.drawHeart(ctx, effect, progress);
       else if (effect.type === "burst") this.drawBurst(ctx, effect, progress);
-      else if (effect.type === "talk") this.drawTalk(ctx, effect, progress);
       else if (effect.type === "package") this.drawPackage(ctx, effect, progress);
     }
   }
@@ -396,41 +389,6 @@ export class Director {
       ctx.lineTo(effect.x + Math.cos(angle) * radius, effect.y + Math.sin(angle) * radius);
       ctx.stroke();
     }
-    ctx.restore();
-  }
-
-  drawTalk(ctx, effect, progress) {
-    // Programmatic bubble matching former bubble_meeting ("打合せ中") row.
-    const label = "打合せ中";
-    const border = "#248a9b";
-    const fill = "#fbf0e4";
-    const textColor = "#248a9b";
-    const width = Math.max(40, measurePixelText(label, { scale: 1, bold: true }) + 18);
-    const height = 24;
-    const bodyHeight = height - 6;
-    const bob = Math.sin(progress * Math.PI * 10) * 3;
-    const x = Math.round(effect.x - width / 2);
-    const y = Math.round(effect.y + bob);
-    const tailX = Math.round(x + width / 2);
-    ctx.save();
-    ctx.fillStyle = border;
-    ctx.fillRect(x + 2, y, width - 4, bodyHeight);
-    ctx.fillRect(x, y + 2, width, bodyHeight - 4);
-    ctx.fillStyle = fill;
-    ctx.fillRect(x + 3, y + 2, width - 6, bodyHeight - 4);
-    ctx.fillRect(x + 2, y + 3, width - 4, bodyHeight - 6);
-    ctx.fillStyle = border;
-    ctx.fillRect(tailX - 4, y + bodyHeight, 8, 2);
-    ctx.fillRect(tailX - 2, y + bodyHeight + 2, 4, 2);
-    ctx.fillStyle = fill;
-    ctx.fillRect(tailX - 3, y + bodyHeight - 1, 6, 2);
-    drawPixelText(ctx, label, tailX, y + Math.round(bodyHeight / 2), {
-      scale: 1,
-      bold: true,
-      align: "center",
-      baseline: "middle",
-      color: textColor,
-    });
     ctx.restore();
   }
 

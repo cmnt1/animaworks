@@ -2,7 +2,24 @@ import { drawPixelText, measurePixelText } from "./pixel-text.js";
 import { WORK_KINDS } from "./actors.js";
 
 const COLLISION_PADDING = 2;
-const BUBBLE_NAME_GAP = 8;
+const DESK_PROPS = [
+  ["prop_mug", 16, 16],
+  ["prop_plant", 20, 24],
+  ["prop_documents", 20, 16],
+  ["prop_papers_stack", 20, 12],
+  ["prop_pen_stand", 12, 20],
+  ["prop_books", 22, 16],
+  ["prop_book_open", 24, 16],
+  ["prop_binder", 20, 20],
+  ["prop_sticky_notes", 14, 10],
+  ["prop_photo_frame", 16, 20],
+  ["prop_tissue_box", 20, 14],
+  ["prop_headphones", 22, 16],
+  ["prop_water_bottle", 10, 22],
+  ["prop_figurine", 12, 20],
+  ["prop_mug_red", 16, 16],
+  ["prop_mug_green", 16, 16],
+];
 
 function rectFromZone(zone, tile) {
   const [x1, y1, x2, y2] = zone.rect;
@@ -44,32 +61,6 @@ function collisionFreeOffset(bounds, placed, candidates, canvasHeight) {
   return candidates.at(-1) || 0;
 }
 
-function findCollisionFreePlacement(bounds, placed, candidates, canvasWidth, canvasHeight) {
-  for (const candidate of candidates) {
-    const shifted = {
-      ...bounds,
-      x: bounds.x + candidate.x,
-      y: bounds.y + candidate.y,
-    };
-    if (shifted.x < 2 || shifted.x + shifted.width > canvasWidth - 2 ||
-        shifted.y < 2 || shifted.y + shifted.height > canvasHeight - 2) continue;
-    if (!placed.some((other) => rectanglesOverlap(shifted, other))) return candidate;
-  }
-  return null;
-}
-
-function collisionFreePlacement(bounds, placed, candidates, canvasWidth, canvasHeight) {
-  const placement = findCollisionFreePlacement(
-    bounds,
-    placed,
-    candidates,
-    canvasWidth,
-    canvasHeight,
-  );
-  if (placement) return placement;
-  return candidates.at(-1) || { x: 0, y: 0 };
-}
-
 export class SceneRenderer {
   constructor(canvas, scene, assets) {
     this.canvas = canvas;
@@ -77,6 +68,7 @@ export class SceneRenderer {
     this.ctx.imageSmoothingEnabled = false;
     this.scene = scene;
     this.assets = assets;
+    this.backdrop = assets.officeBackground();
     this.tile = scene.canvas.tile;
     this.mode = "day";
     this.instructions = [];
@@ -122,14 +114,19 @@ export class SceneRenderer {
   draw(actors, director, timeSeconds = 0) {
     const { ctx } = this;
     ctx.imageSmoothingEnabled = false;
-    this.drawFloor();
-    this.drawPathChevrons();
-    this.drawPlazaGuideLines();
-    this.drawWalls();
+    if (this.backdrop) {
+      ctx.drawImage(this.backdrop, 0, 0, this.canvas.width, this.canvas.height);
+    } else {
+      this.drawFloor();
+      this.drawPathChevrons();
+      this.drawPlazaGuideLines();
+      this.drawWalls();
+    }
     const { under, layers } = this.buildFurnitureLayers(timeSeconds, actors);
     under.sort((a, b) => a.y - b.y).forEach((layer) => layer.draw());
-    this.drawBottomWall();
+    if (!this.backdrop) this.drawBottomWall();
 
+    const drawnActors = new Set();
     for (const actor of actors.values()) {
       const desk = this.scene.desks[actor.id];
       const deskFootY = desk ? (desk.tile[1] + 2) * this.tile : actor.y;
@@ -138,7 +135,9 @@ export class SceneRenderer {
           ? deskFootY - 1
           : actor.y,
         priority: 0,
-        draw: () => actor.draw(ctx),
+        draw: () => {
+          if (actor.draw(ctx)) drawnActors.add(actor.id);
+        },
       });
     }
     if (this.cat) {
@@ -158,8 +157,9 @@ export class SceneRenderer {
     director?.draw(ctx);
     const overlayLayouts = [];
     const placedNames = [];
-    const overlayActors = [...actors.values()].sort((left, right) =>
-      (left.y - right.y) || (left.x - right.x));
+    const overlayActors = [...actors.values()]
+      .filter((actor) => drawnActors.has(actor.id))
+      .sort((left, right) => (left.y - right.y) || (left.x - right.x));
     for (const actor of overlayActors) {
       const desk = this.scene.desks[actor.id];
       const footX = desk ? desk.tile[0] * this.tile + this.tile / 2 : actor.x;
@@ -178,64 +178,6 @@ export class SceneRenderer {
         namePosition,
         nameOffsetY,
       });
-    }
-    const nameObstaclePadding = BUBBLE_NAME_GAP - COLLISION_PADDING;
-    const bubbleNameObstacles = placedNames.map((bounds) => ({
-      x: bounds.x - nameObstaclePadding,
-      y: bounds.y - nameObstaclePadding,
-      width: bounds.width + nameObstaclePadding * 2,
-      height: bounds.height + nameObstaclePadding * 2,
-    }));
-    const placedBubbles = [...this.staticLabelBounds(), ...bubbleNameObstacles];
-    for (const [id, desk] of Object.entries(this.scene.desks)) {
-      const width = 108;
-      const height = 112;
-      const footX = desk.tile[0] * this.tile + this.tile / 2;
-      const footY = (desk.tile[1] + 2) * this.tile;
-      placedBubbles.push({
-        x: footX - width / 2,
-        y: footY - height,
-        width,
-        height,
-      });
-    }
-    const actorBubbleObstacles = overlayActors.map((actor) => {
-      const spriteY = actor.spriteY();
-      return {
-        actor,
-        x: actor.x - actor.sprite.frameW / 2,
-        y: spriteY - actor.sprite.frameH,
-        width: actor.sprite.frameW,
-        height: actor.sprite.frameH,
-      };
-    });
-    const bubbleCandidates = [];
-    for (const rise of [0, -36, -72, -108, -144, -180]) {
-      for (const shift of [0, -100, 100, -200, 200, -300, 300, -400, 400]) {
-        bubbleCandidates.push({ x: shift, y: rise });
-      }
-    }
-    for (const layout of overlayLayouts) {
-      const { actor } = layout;
-      if (!actor.hasFullBubble()) continue;
-      const bubbleBounds = actor.bubbleBounds();
-      const bubblePlacement = collisionFreePlacement(
-        bubbleBounds,
-        [
-          ...placedBubbles,
-          ...actorBubbleObstacles.filter((obstacle) => obstacle.actor !== actor),
-        ],
-        bubbleCandidates,
-        this.canvas.width,
-        this.canvas.height,
-      );
-      placedBubbles.push({
-        ...bubbleBounds,
-        x: bubbleBounds.x + bubblePlacement.x,
-        y: bubbleBounds.y + bubblePlacement.y,
-      });
-      layout.bubbleOffsetX = bubblePlacement.x;
-      layout.bubbleOffsetY = bubblePlacement.y;
     }
     for (const layout of overlayLayouts) {
       layout.actor.drawStatusOverlay(ctx, layout);
@@ -396,14 +338,21 @@ export class SceneRenderer {
       const width = measurePixelText(zone.label, textOptions) + 18;
       const zoneLeft = x1 * tile;
       const zoneRight = (x2 + 1) * tile;
-      const x = Math.min(zoneRight - width - 8, zoneLeft + 40);
-      const y = zone.kind === "entrance" ? y1 * tile - 54 : y1 * tile + 7;
-      ctx.fillStyle = "#3e291f";
-      ctx.fillRect(x - 2, y - 2, width + 4, 18);
-      ctx.fillStyle = "#8b603c";
-      ctx.fillRect(x, y, width, 14);
-      ctx.fillStyle = "#c99a62";
-      ctx.fillRect(x + 2, y + 2, width - 4, 2);
+      const entrance = this.scene.props.entrance;
+      const x = zone.kind === "entrance" && entrance
+        ? (entrance.tile[0] + entrance.w / 2) * tile - width / 2
+        : Math.min(zoneRight - width - 8, zoneLeft + 40);
+      const y = zone.kind === "entrance"
+        ? (this.backdrop ? 507 : y1 * tile - 54)
+        : y1 * tile + 7;
+      if (!this.backdrop || zone.kind !== "entrance") {
+        ctx.fillStyle = "#3e291f";
+        ctx.fillRect(x - 2, y - 2, width + 4, 18);
+        ctx.fillStyle = "#8b603c";
+        ctx.fillRect(x, y, width, 14);
+        ctx.fillStyle = "#c99a62";
+        ctx.fillRect(x + 2, y + 2, width - 4, 2);
+      }
       drawPixelText(ctx, zone.label, x + 9, y + 1, {
         ...textOptions,
         color: "#fff0cd",
@@ -413,24 +362,6 @@ export class SceneRenderer {
       });
       ctx.restore();
     }
-  }
-
-  staticLabelBounds() {
-    const bounds = [];
-    const { tile } = this;
-    for (const zone of Object.values(this.scene.zones)) {
-      if (!zone.label) continue;
-      const [x1, y1, x2] = zone.rect;
-      if (y1 < 4) continue;
-      const textOptions = { scale: 1, bold: true };
-      const width = measurePixelText(zone.label, textOptions) + 18;
-      const zoneLeft = x1 * tile;
-      const zoneRight = (x2 + 1) * tile;
-      const x = Math.min(zoneRight - width - 8, zoneLeft + 40);
-      const y = zone.kind === "entrance" ? y1 * tile - 54 : y1 * tile + 7;
-      bounds.push({ x: x - 2, y: y - 2, width: width + 4, height: 18 });
-    }
-    return bounds;
   }
 
   buildFurnitureLayers(timeSeconds, actors) {
@@ -494,6 +425,7 @@ export class SceneRenderer {
     for (const [name, prop] of Object.entries(scene.props)) {
       if (name === "plants" || name === "cat" ||
           name === "entrance") continue;
+      if (this.backdrop && name !== "whiteboard") continue;
       const width = prop.w * tile;
       const height = prop.h * tile;
       const x = prop.tile[0] * tile;
@@ -534,7 +466,7 @@ export class SceneRenderer {
       });
     }
 
-    for (const [xTile, yTile] of scene.props.plants || []) {
+    for (const [xTile, yTile] of this.backdrop ? [] : (scene.props.plants || [])) {
       const width = tile;
       const x = xTile * tile;
       const footY = (yTile + 1) * tile;
@@ -661,16 +593,34 @@ export class SceneRenderer {
       pcHeight,
     );
 
-    for (const [index, name] of ["prop_mug", "prop_plant"].entries()) {
-      if (!((hash >>> (index + 1)) & 1)) continue;
-      const image = this.assets.prop(name, name === "prop_mug" ? 16 : 20, name === "prop_mug" ? 16 : 24);
+    const sides = pcName === "pc_desktop"
+      ? [{ cursor: centerX - 51, end: centerX - 26, direction: 1 },
+        { cursor: centerX + 51, end: centerX + 10, direction: -1 }]
+      : [{ cursor: centerX - 51, end: centerX - 15, direction: 1 },
+        { cursor: centerX + 51, end: centerX + 15, direction: -1 }];
+    const count = 2 + hash % 3;
+    let mugs = 0;
+    let placed = 0;
+    const candidates = [...DESK_PROPS].sort((left, right) =>
+      stableHash(`${id}:${left[0]}`) - stableHash(`${id}:${right[0]}`));
+    for (const [index, [name, fallbackWidth, fallbackHeight]] of candidates.entries()) {
+      if (placed >= count) break;
+      const isMug = name.startsWith("prop_mug");
+      if (isMug && mugs) continue;
+      const image = this.assets.prop(name, fallbackWidth, fallbackHeight);
       const width = image.naturalWidth || image.width;
       const height = image.naturalHeight || image.height;
-      const right = (hash >>> (index + 3)) & 1;
-      const x = centerX + (name === "prop_mug"
-        ? (right ? 21 : -37)
-        : (right ? 34 : -54));
+      const preferred = (hash >>> (index % 24)) & 1;
+      const side = [sides[preferred], sides[1 - preferred]].find((candidate) =>
+        candidate.direction > 0
+          ? candidate.cursor + width <= candidate.end
+          : candidate.cursor - width >= candidate.end);
+      if (!side) continue;
+      const x = side.direction > 0 ? side.cursor : side.cursor - width;
+      side.cursor += side.direction * (width + 2);
       this.ctx.drawImage(image, Math.round(x), Math.round(itemBottomY - height), width, height);
+      mugs += isMug ? 1 : 0;
+      placed += 1;
     }
   }
   updateCat(deltaSeconds) {
@@ -768,28 +718,30 @@ export class SceneRenderer {
 
   drawHangingSign() {
     const ctx = this.ctx;
-    const x = 32;
-    const y = 34;
+    const x = this.backdrop ? 190 : 32;
+    const y = this.backdrop ? 0 : 34;
     const width = 280;
     const height = 42;
     ctx.save();
-    ctx.fillStyle = "#31231d";
-    for (const chainX of [x + 54, x + width - 54]) {
-      for (let chainY = 22; chainY < y; chainY += 5) {
-        ctx.fillRect(chainX, chainY, 3, 3);
-        ctx.fillRect(chainX + 2, chainY + 3, 3, 3);
+    if (!this.backdrop) {
+      ctx.fillStyle = "#31231d";
+      for (const chainX of [x + 54, x + width - 54]) {
+        for (let chainY = 22; chainY < y; chainY += 5) {
+          ctx.fillRect(chainX, chainY, 3, 3);
+          ctx.fillRect(chainX + 2, chainY + 3, 3, 3);
+        }
       }
+      ctx.fillStyle = "#1d120e";
+      ctx.fillRect(x + 5, y + 5, width, height);
+      ctx.fillStyle = "#4a2d1d";
+      ctx.fillRect(x, y, width, height);
+      ctx.fillStyle = "#a66f3f";
+      ctx.fillRect(x + 3, y + 3, width - 6, height - 6);
+      ctx.fillStyle = "#5d3924";
+      ctx.fillRect(x + 7, y + 7, width - 14, height - 14);
+      ctx.fillStyle = "#d5a063";
+      ctx.fillRect(x + 9, y + 9, width - 18, 2);
     }
-    ctx.fillStyle = "#1d120e";
-    ctx.fillRect(x + 5, y + 5, width, height);
-    ctx.fillStyle = "#4a2d1d";
-    ctx.fillRect(x, y, width, height);
-    ctx.fillStyle = "#a66f3f";
-    ctx.fillRect(x + 3, y + 3, width - 6, height - 6);
-    ctx.fillStyle = "#5d3924";
-    ctx.fillRect(x + 7, y + 7, width - 14, height - 14);
-    ctx.fillStyle = "#d5a063";
-    ctx.fillRect(x + 9, y + 9, width - 18, 2);
     drawPixelText(ctx, "ANIMAWORKS PIXEL OFFICE", x + 20, y + 15, {
       scale: 1,
       bold: true,

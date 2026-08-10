@@ -225,6 +225,10 @@ export class AssetStore {
       const image = await loadDeclaredImage(file, url);
       if (image) this.images.set(key, image);
     }));
+    const backgroundUrl = new URL("scene/office_bg.png", ASSET_ROOT);
+    backgroundUrl.searchParams.set("fresh", String(Date.now()));
+    const background = await loadDeclaredImage("scene/office_bg.png", backgroundUrl);
+    if (background) this.images.set("scene.office_bg", background);
   }
 
   character(id) {
@@ -256,6 +260,10 @@ export class AssetStore {
 
   wall(mode) {
     return this.images.get(`scene.walls.${mode}`) || null;
+  }
+
+  officeBackground() {
+    return this.images.get("scene.office_bg") || null;
   }
 
   prop(name, width = 96, height = 64) {

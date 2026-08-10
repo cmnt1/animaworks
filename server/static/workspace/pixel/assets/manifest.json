@@ -257,6 +257,90 @@
         "w": 20,
         "h": 24,
         "anchor": "bottom"
+      },
+      "prop_documents": {
+        "file": "scene/props/prop_documents.png",
+        "w": 20,
+        "h": 16,
+        "anchor": "bottom"
+      },
+      "prop_papers_stack": {
+        "file": "scene/props/prop_papers_stack.png",
+        "w": 20,
+        "h": 12,
+        "anchor": "bottom"
+      },
+      "prop_pen_stand": {
+        "file": "scene/props/prop_pen_stand.png",
+        "w": 12,
+        "h": 20,
+        "anchor": "bottom"
+      },
+      "prop_books": {
+        "file": "scene/props/prop_books.png",
+        "w": 22,
+        "h": 16,
+        "anchor": "bottom"
+      },
+      "prop_book_open": {
+        "file": "scene/props/prop_book_open.png",
+        "w": 24,
+        "h": 16,
+        "anchor": "bottom"
+      },
+      "prop_binder": {
+        "file": "scene/props/prop_binder.png",
+        "w": 20,
+        "h": 20,
+        "anchor": "bottom"
+      },
+      "prop_sticky_notes": {
+        "file": "scene/props/prop_sticky_notes.png",
+        "w": 14,
+        "h": 10,
+        "anchor": "bottom"
+      },
+      "prop_photo_frame": {
+        "file": "scene/props/prop_photo_frame.png",
+        "w": 16,
+        "h": 20,
+        "anchor": "bottom"
+      },
+      "prop_tissue_box": {
+        "file": "scene/props/prop_tissue_box.png",
+        "w": 20,
+        "h": 14,
+        "anchor": "bottom"
+      },
+      "prop_headphones": {
+        "file": "scene/props/prop_headphones.png",
+        "w": 22,
+        "h": 16,
+        "anchor": "bottom"
+      },
+      "prop_water_bottle": {
+        "file": "scene/props/prop_water_bottle.png",
+        "w": 10,
+        "h": 22,
+        "anchor": "bottom"
+      },
+      "prop_figurine": {
+        "file": "scene/props/prop_figurine.png",
+        "w": 12,
+        "h": 20,
+        "anchor": "bottom"
+      },
+      "prop_mug_red": {
+        "file": "scene/props/prop_mug_red.png",
+        "w": 16,
+        "h": 16,
+        "anchor": "bottom"
+      },
+      "prop_mug_green": {
+        "file": "scene/props/prop_mug_green.png",
+        "w": 16,
+        "h": 16,
+        "anchor": "bottom"
       }
     }
   },

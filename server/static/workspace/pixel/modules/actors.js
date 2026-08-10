@@ -521,7 +521,7 @@ export class Actor {
   }
 
   renderScale() {
-    return this.isSeated ? 1 : 1.5;
+    return 1;
   }
 
   walk(path, speed = 120) {
@@ -684,6 +684,7 @@ export class Actor {
   }
 
   draw(ctx) {
+    if (!this.sprite.image) return false;
     const spriteY = this.spriteY();
     const scale = this.renderScale();
     const drawX = this.x + this.shakeOffsetX();
@@ -702,7 +703,7 @@ export class Actor {
     );
     ctx.fill();
     ctx.restore();
-    this.sprite.draw(ctx, drawX, spriteY, scale);
+    return this.sprite.draw(ctx, drawX, spriteY, scale);
   }
 
   drawStatusOverlay(ctx, options = {}) {

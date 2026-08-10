@@ -16,6 +16,12 @@ scene_dir = Path(sys.argv[2])
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 scene = manifest["scene"]
 
+office_bg = scene_dir / "office_bg.png"
+if office_bg.is_file():
+    with Image.open(office_bg) as image:
+        if image.size != (1120, 736):
+            raise SystemExit(f"office_bg.png: expected 1120x736, got {image.size}")
+
 if "items" in scene:
     raise SystemExit("legacy scene items must not be declared")
 if "desk_taka" not in scene["props"]:
@@ -53,6 +59,20 @@ expected_prop_sizes = {
     "pc_desktop": (32, 24),
     "prop_mug": (16, 16),
     "prop_plant": (20, 24),
+    "prop_documents": (20, 16),
+    "prop_papers_stack": (20, 12),
+    "prop_pen_stand": (12, 20),
+    "prop_books": (22, 16),
+    "prop_book_open": (24, 16),
+    "prop_binder": (20, 20),
+    "prop_sticky_notes": (14, 10),
+    "prop_photo_frame": (16, 20),
+    "prop_tissue_box": (20, 14),
+    "prop_headphones": (22, 16),
+    "prop_water_bottle": (10, 22),
+    "prop_figurine": (12, 20),
+    "prop_mug_red": (16, 16),
+    "prop_mug_green": (16, 16),
 }
 for prop_name, expected_size in expected_prop_sizes.items():
     prop = scene["props"][prop_name]
@@ -110,6 +130,20 @@ for prop_name in (
     "pc_desktop",
     "prop_mug",
     "prop_plant",
+    "prop_documents",
+    "prop_papers_stack",
+    "prop_pen_stand",
+    "prop_books",
+    "prop_book_open",
+    "prop_binder",
+    "prop_sticky_notes",
+    "prop_photo_frame",
+    "prop_tissue_box",
+    "prop_headphones",
+    "prop_water_bottle",
+    "prop_figurine",
+    "prop_mug_red",
+    "prop_mug_green",
 ):
     prop_path = manifest_path.parent / scene["props"][prop_name]["file"]
     with Image.open(prop_path) as image:
