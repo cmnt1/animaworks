@@ -149,3 +149,65 @@ def test_signed_pr_webhook_dispatches_to_real_inbox(data_dir, monkeypatch):
     assert manager._started is False
     assert manager._event_tasks == set()
     assert manager._debounce_tasks == {}
+
+
+def test_signed_command_comment_creates_real_implementer_task(data_dir, make_anima, monkeypatch):
+    secret = secrets.token_hex(32)
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", secret)
+    target_dir = make_anima("natsume")
+    shared_dir = data_dir / "shared"
+    manager = GitHubWebhookManager(
+        config=GitHubWebhookConfig(
+            enabled=True,
+            repos=["example-org/example-repo"],
+            dispatcher_anima="rin",
+            implementer_anima="natsume",
+            bot_login="example-bot",
+        ),
+        shared_dir=shared_dir,
+        state_file=shared_dir / "pr-review-dispatch-state.json",
+    )
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        await manager.start()
+        app.state.github_gateway_manager = manager
+        try:
+            yield
+        finally:
+            await manager.stop()
+
+    app = FastAPI(lifespan=lifespan)
+    app.include_router(create_webhooks_router(), prefix="/api")
+    payload = {
+        "action": "created",
+        "repository": {"full_name": "example-org/example-repo"},
+        "issue": {"number": 42},
+        "comment": {
+            "id": 123,
+            "user": {"login": "human"},
+            "body": "@example-bot resolve this conflict",
+            "html_url": "https://github.com/example-org/example-repo/pull/42#issuecomment-123",
+        },
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/webhooks/github",
+            content=body,
+            headers={
+                "X-GitHub-Event": "issue_comment",
+                "X-GitHub-Delivery": "e2e-command-001",
+                "X-Hub-Signature-256": _signature(body, secret),
+            },
+        )
+        assert response.status_code == 200
+        pending = target_dir / "state" / "pending" / "gh-cmd-123.json"
+        _wait_until(pending.exists)
+
+        task = json.loads(pending.read_text(encoding="utf-8"))
+        assert task["task_id"] == "gh-cmd-123"
+        assert task["submitted_by"] == "github-event-dispatch"
+        assert "@example-bot resolve this conflict" in task["description"]
+        assert not (shared_dir / "inbox" / "rin").exists()
