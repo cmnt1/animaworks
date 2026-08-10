@@ -302,3 +302,27 @@ def test_recovered_streaming_journal_is_added_to_checkpoint(tmp_path: Path) -> N
     recovered = json.loads(descriptor.read_text(encoding="utf-8"))
     assert "recovered partial output" in recovered["context"]
     assert "run_command: git status" in recovered["context"]
+
+
+def test_should_defer_claim_while_prior_attempt_finishing(tmp_path: Path) -> None:
+    """Continuation re-enqueue must not be claimed while the old attempt cleans up."""
+    executor = _make_executor(tmp_path)
+    pending_dir = executor._anima_dir / "state" / "pending"
+    processing_dir = pending_dir / "processing"
+    processing_dir.mkdir(parents=True, exist_ok=True)
+    pending_path = pending_dir / "aaaa11112222.json"
+    pending_path.write_text('{"task_id": "aaaa11112222", "task_type": "llm"}')
+    desc = {"task_id": "aaaa11112222", "task_type": "llm"}
+
+    # Case 1: old attempt still registered in _active_task_ids
+    executor._active_task_ids.add("aaaa11112222")
+    assert executor._should_defer_claim(pending_path, desc, processing_dir) is True
+
+    # Case 2: id released but old processing descriptor not yet unlinked
+    executor._active_task_ids.discard("aaaa11112222")
+    (processing_dir / "aaaa11112222.json").write_text("{}")
+    assert executor._should_defer_claim(pending_path, desc, processing_dir) is True
+
+    # Case 3: fully cleaned up -> claimable
+    (processing_dir / "aaaa11112222.json").unlink()
+    assert executor._should_defer_claim(pending_path, desc, processing_dir) is False

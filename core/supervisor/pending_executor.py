@@ -338,6 +338,26 @@ class PendingTaskExecutor:
         self._attempt_by_task_id[task_id] = attempt
         return attempt
 
+    def _should_defer_claim(
+        self,
+        pending_path: Path,
+        task_desc: dict[str, Any],
+        processing_dir: Path,
+    ) -> bool:
+        """True when a prior attempt of the same task is still finishing.
+
+        A continuation re-enqueue writes pending/<id>.json while the previous
+        attempt is still cleaning up (descriptor unlink + _active_task_ids
+        discard).  Claiming in that window either quarantines the descriptor
+        as a duplicate or lets the old attempt's cleanup delete it, stranding
+        the task in_progress forever.  Leave it in pending/ and retry on the
+        next poll instead.
+        """
+        task_id = str(task_desc.get("task_id") or pending_path.stem).strip()
+        if task_id in self._active_task_ids:
+            return True
+        return (processing_dir / pending_path.name).exists()
+
     def _claim_processing_task(
         self,
         processing_path: Path,
@@ -1214,6 +1234,9 @@ class PendingTaskExecutor:
                         path.unlink(missing_ok=True)
                         continue
 
+                    if self._should_defer_claim(path, task_desc, cmd_processing_dir):
+                        continue
+
                     try:
                         processing_path = cmd_processing_dir / path.name
                         path.rename(processing_path)
@@ -1297,6 +1320,9 @@ class PendingTaskExecutor:
                         suppressed_dir=llm_suppressed_dir,
                         failed_dir=llm_failed_dir,
                     ):
+                        continue
+
+                    if self._should_defer_claim(path, task_desc, llm_processing_dir):
                         continue
 
                     try:
