@@ -107,8 +107,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Task execution started: {title}",
     },
     "pending_executor.task_fail_notify": {
-        "ja": ("[タスク失敗通知]\nタスクID: {task_id}\nタスク: {title}\nエラー: {error}"),
-        "en": ("[Task Failure]\nTask ID: {task_id}\nTask: {title}\nError: {error}"),
+        "ja": (
+            "[タスク失敗通知]\nタスクID: {task_id}\nタスク: {title}\nエラー: {error}\n"
+            "必要なら再委譲を判断してください。"
+        ),
+        "en": (
+            "[Task Failure]\nTask ID: {task_id}\nTask: {title}\nError: {error}\n"
+            "Decide whether to re-delegate if needed."
+        ),
+        "ko": (
+            "[작업 실패 알림]\n작업 ID: {task_id}\n작업: {title}\n오류: {error}\n"
+            "필요한 경우 재위임 여부를 판단하세요."
+        ),
     },
     "pending_executor.workspace_not_specified": {
         "ja": "(指定なし)",
