@@ -58,10 +58,12 @@ function gridForZone(rect, count, options = {}) {
   const columnStart = (columnLeft + columnRight - (columns - 1) * stepX) / 2;
   for (let row = 0; row < rows; row += 1) {
     const y = Math.min(bottom, top + row * rowStep);
-    for (let column = 0; column < columns; column += 1) {
-      const x = columns === 1
+    const rowCount = Math.min(columns, count - row * columns);
+    const rowStart = columnStart + (columns - rowCount) * stepX / 2;
+    for (let column = 0; column < rowCount; column += 1) {
+      const x = rowCount === 1
         ? Math.round((columnLeft + columnRight) / 2)
-        : Math.round(columnStart + column * stepX);
+        : Math.round(rowStart + column * stepX);
       if (!options.avoidRect || !overlapsRect(x, y, options.avoidRect)) candidates.push([x, y]);
     }
   }
@@ -349,7 +351,7 @@ export function generateScene(animas, template) {
     });
     group.members.forEach((anima, memberIndex) => {
       const position = positions[memberIndex] || [rect[0] + 2, rect[1] + 3];
-      const inward = groups.length === 2 ? (index === 0 ? 1 : -1) : 0;
+      const inward = groups.length === 2 ? (index === 0 ? 2 : -2) : 0;
       desks[anima.id] = {
         tile: [position[0] + inward, position[1]],
         facing: "down",

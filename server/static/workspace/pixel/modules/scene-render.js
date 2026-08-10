@@ -635,7 +635,7 @@ export class SceneRenderer {
       const zone = companyZones.at(-1);
       const minX = zone ? zone.rect[0] + 1 : 1;
       const maxX = zone ? zone.rect[2] - 1 : Math.floor(this.canvas.width / this.tile) - 2;
-      const minY = zone ? zone.rect[1] + 2 : 6;
+      const minY = zone ? zone.rect[3] - 4 : 6;
       const maxY = zone ? zone.rect[3] - 1 : Math.floor(this.canvas.height / this.tile) - 4;
       this.cat.targetX = (Math.max(minX, Math.min(maxX, tileX + dx)) + 0.5) * this.tile;
       this.cat.targetY = (Math.max(minY, Math.min(maxY, tileY + dy)) + 1) * this.tile;
