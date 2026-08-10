@@ -161,9 +161,7 @@ class DelegationMixin(OrgHelpersMixin):
         exclusive_key = args.get("exclusive_key", "")
         raw_criteria = args.get("acceptance_criteria")
         acceptance_criteria: list[str] = (
-            [c for c in raw_criteria if isinstance(c, str)]
-            if isinstance(raw_criteria, list)
-            else []
+            [c for c in raw_criteria if isinstance(c, str)] if isinstance(raw_criteria, list) else []
         )
 
         workspace_raw = args.get("workspace", "")

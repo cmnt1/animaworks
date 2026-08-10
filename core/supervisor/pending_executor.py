@@ -366,11 +366,7 @@ class PendingTaskExecutor:
             # duplicate descriptor; let the claim path quarantine it.
             return False
         not_before = task_desc.get("continuation_not_before")
-        if (
-            isinstance(not_before, (int, float))
-            and not isinstance(not_before, bool)
-            and time.time() < not_before
-        ):
+        if isinstance(not_before, (int, float)) and not isinstance(not_before, bool) and time.time() < not_before:
             return True
         if task_id in self._active_task_ids:
             return True
@@ -2189,9 +2185,7 @@ class PendingTaskExecutor:
                     continuation_count + 1,
                 )
                 return _SENTINEL_CONTINUED
-            raise TaskExecError(
-                f"Task {task_id}: {stop_kind} after {_MAX_TASK_CONTINUATIONS} continuations"
-            )
+            raise TaskExecError(f"Task {task_id}: {stop_kind} after {_MAX_TASK_CONTINUATIONS} continuations")
 
         if _completion_declaration_required():
             entry = self._get_task_queue_entry(task_id)
@@ -2221,8 +2215,7 @@ class PendingTaskExecutor:
                     )
                     return _SENTINEL_CONTINUED
                 raise TaskExecError(
-                    f"Task {task_id}: no completion declaration after "
-                    f"{_MAX_TASK_CONTINUATIONS} continuations"
+                    f"Task {task_id}: no completion declaration after {_MAX_TASK_CONTINUATIONS} continuations"
                 )
 
         # Send completion notification

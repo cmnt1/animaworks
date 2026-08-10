@@ -780,8 +780,7 @@ class TaskQueueManager:
                         {"acceptance": "legacy_unverified"},
                     )
                     logger.warning(
-                        "sync_delegated: legacy unverified completion "
-                        "task_id=%s target=%s child_id=%s",
+                        "sync_delegated: legacy unverified completion task_id=%s target=%s child_id=%s",
                         task.task_id,
                         target,
                         child_id,

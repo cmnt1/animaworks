@@ -220,8 +220,7 @@ async def execute_task_contract(anima: DigitalAnima, task_desc: dict[str, Any]) 
     return {
         "task_type": "llm",
         "result": result,
-        "success": result
-        not in {_SENTINEL_CANCELLED, _SENTINEL_CONTINUED, _SENTINEL_EXPIRED, _SENTINEL_DEFERRED},
+        "success": result not in {_SENTINEL_CANCELLED, _SENTINEL_CONTINUED, _SENTINEL_EXPIRED, _SENTINEL_DEFERRED},
     }
 
 

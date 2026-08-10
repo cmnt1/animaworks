@@ -413,11 +413,7 @@ class AnimaRunner:
 
                 has_recovered_payload = bool(recovery.recovered_text.strip()) or bool(recovery.tool_calls)
                 pending_executor = getattr(self, "_pending_executor", None)
-                if (
-                    session_type in {"task", "task_exec"}
-                    and has_recovered_payload
-                    and pending_executor is not None
-                ):
+                if session_type in {"task", "task_exec"} and has_recovered_payload and pending_executor is not None:
                     try:
                         pending_executor.add_recovered_task_checkpoint(
                             thread_id,

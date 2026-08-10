@@ -1176,9 +1176,7 @@ class GrokCLIExecutor(BaseExecutor):
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Stream converted Grok ACP events, ending with exactly one ``done``."""
         if self._check_interrupted():
-            yield self._done_event(
-                "[Session interrupted by user]", [], TokenUsage(), "", 0, stop_kind="interrupted"
-            )
+            yield self._done_event("[Session interrupted by user]", [], TokenUsage(), "", 0, stop_kind="interrupted")
             return
 
         if not _find_grok_binary():

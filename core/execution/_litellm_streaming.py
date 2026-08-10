@@ -672,7 +672,11 @@ class StreamingMixin:
                         "tool_call_records": [asdict(r) for r in all_tool_records],
                         "usage": _usage_acc.to_dict(),
                         "stop_kind": (
-                            "runaway_halt" if is_final_iteration else "empty_response" if _empty_final_response else "normal"
+                            "runaway_halt"
+                            if is_final_iteration
+                            else "empty_response"
+                            if _empty_final_response
+                            else "normal"
                         ),
                         "truncated": is_final_iteration or _empty_final_response,
                     }

@@ -1049,7 +1049,8 @@
   cursor: pointer;
 }
 
-.chat-human-notify-btn:hover:not(:disabled) {
+.chat-human-notify-btn:hover:not(:disabled),
+.chat-human-notify-btn:active:not(:disabled) {
   border-color: var(--aw-color-accent, #5b8def);
 }
 
