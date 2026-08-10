@@ -339,3 +339,57 @@ def test_should_defer_claim_ignores_non_canonical_duplicates(tmp_path: Path) -> 
     executor._active_task_ids.add("aaaa11112222")
     desc = {"task_id": "aaaa11112222", "task_type": "llm"}
     assert executor._should_defer_claim(dup_path, desc, processing_dir) is False
+
+
+def test_reenqueue_backoff_delays_second_and_later_continuations(tmp_path: Path) -> None:
+    import time
+
+    executor = _make_executor(tmp_path)
+    pending_dir = executor._anima_dir / "state" / "pending"
+
+    executor._reenqueue_with_checkpoint(_task("backoff"), "output", [])
+    first = json.loads((pending_dir / "backoff.json").read_text(encoding="utf-8"))
+    assert first["continuation_count"] == 1
+    assert "continuation_not_before" not in first
+
+    executor._reenqueue_with_checkpoint(first, "output", [])
+    second = json.loads((pending_dir / "backoff.json").read_text(encoding="utf-8"))
+    assert second["continuation_count"] == 2
+    assert second["continuation_not_before"] == pytest.approx(time.time() + 180.0, abs=5.0)
+
+
+def test_should_defer_claim_respects_backoff(tmp_path: Path) -> None:
+    import time
+
+    executor = _make_executor(tmp_path)
+    pending_dir = executor._anima_dir / "state" / "pending"
+    processing_dir = pending_dir / "processing"
+    processing_dir.mkdir(parents=True, exist_ok=True)
+    pending_path = pending_dir / "backoff2.json"
+    desc = {"task_id": "backoff2", "task_type": "llm", "continuation_not_before": time.time() + 60}
+    pending_path.write_text(json.dumps(desc))
+    assert executor._should_defer_claim(pending_path, desc, processing_dir) is True
+
+    desc["continuation_not_before"] = time.time() - 1
+    assert executor._should_defer_claim(pending_path, desc, processing_dir) is False
+
+
+@pytest.mark.asyncio
+async def test_blocked_declaration_stops_continuation(tmp_path: Path) -> None:
+    executor = _make_executor(tmp_path)
+    manager = _queue_task(executor, "stuck")
+    manager.update_status("stuck", "blocked", summary="waiting on repo permission")
+    executor._anima.messenger.send = MagicMock()
+
+    with (
+        patch("core.paths.load_prompt", return_value="prompt"),
+        patch("core.memory.activity.ActivityLogger"),
+        patch("core.supervisor.pending_executor._completion_declaration_required", return_value=True),
+    ):
+        await executor._execute_llm_task(_task("stuck"))
+
+    entry = manager.get_task_by_id("stuck")
+    assert entry is not None
+    assert entry.status == "blocked"
+    assert not (executor._anima_dir / "state" / "pending" / "stuck.json").exists()
+    executor._anima.messenger.send.assert_not_called()

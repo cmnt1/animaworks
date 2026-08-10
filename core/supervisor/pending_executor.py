@@ -57,7 +57,11 @@ _SENTINEL_EXPIRED = "(expired)"
 _SENTINEL_DEFERRED = "(deferred)"
 _SENTINEL_CONTINUED = "(continued)"
 _SENTINEL_BUDGET_SKIPPED = "(budget_skipped)"
+_SENTINEL_BLOCKED = "(blocked)"
 _MAX_TASK_CONTINUATIONS = 3
+# Delay before each continuation may be claimed, keyed by continuation_count.
+# A task stuck on an obstacle otherwise burns all continuations in minutes.
+_CONTINUATION_BACKOFF_SECONDS = {1: 0.0, 2: 180.0, 3: 600.0}
 
 _QUEUE_TERMINAL_STATUSES = {"done", "cancelled", "failed"}
 _QUEUE_ACTIVE_STATUSES = {"pending", "in_progress", "blocked", "delegated"}
@@ -180,6 +184,8 @@ def _classify_task_result(result: str) -> tuple[str, str]:
         return "in_progress", "automatic continuation scheduled"
     if result == _SENTINEL_BUDGET_SKIPPED:
         return "pending", "execution skipped because token budget is unavailable"
+    if result == _SENTINEL_BLOCKED:
+        return "blocked", "agent declared blocked; waiting on an external blocker"
     auth_failure = _detect_task_auth_failure(result)
     if auth_failure:
         return "failed", f"FAILED: {auth_failure}"
@@ -358,6 +364,13 @@ class PendingTaskExecutor:
             # Non-canonical filename with a duplicated task_id is a genuine
             # duplicate descriptor; let the claim path quarantine it.
             return False
+        not_before = task_desc.get("continuation_not_before")
+        if (
+            isinstance(not_before, (int, float))
+            and not isinstance(not_before, bool)
+            and time.time() < not_before
+        ):
+            return True
         if task_id in self._active_task_ids:
             return True
         return (processing_dir / pending_path.name).exists()
@@ -558,6 +571,11 @@ class PendingTaskExecutor:
         )
         next_desc = dict(task_desc)
         next_desc["continuation_count"] = continuation_count
+        backoff = _CONTINUATION_BACKOFF_SECONDS.get(continuation_count, 600.0)
+        if backoff > 0:
+            next_desc["continuation_not_before"] = time.time() + backoff
+        else:
+            next_desc.pop("continuation_not_before", None)
         previous_context = str(task_desc.get("context") or "").strip()
         next_desc["context"] = f"{previous_context}\n\n{checkpoint}".strip()
 
@@ -577,7 +595,8 @@ class PendingTaskExecutor:
                     {"completed_by": None, "result_note": None},
                 )
             self._sync_task_queue(task_id, "in_progress", summary="automatic continuation scheduled")
-        self._wake_event.set()
+        if backoff <= 0:
+            self._wake_event.set()
 
     def add_recovered_task_checkpoint(
         self,
@@ -1628,6 +1647,7 @@ class PendingTaskExecutor:
                         _SENTINEL_DEFERRED,
                         _SENTINEL_CONTINUED,
                         _SENTINEL_BUDGET_SKIPPED,
+                        _SENTINEL_BLOCKED,
                     }:
                         # Non-completing tasks cannot satisfy DAG dependencies.
                         failed.add(task["task_id"])
@@ -1658,6 +1678,7 @@ class PendingTaskExecutor:
                         _SENTINEL_DEFERRED,
                         _SENTINEL_CONTINUED,
                         _SENTINEL_BUDGET_SKIPPED,
+                        _SENTINEL_BLOCKED,
                     }:
                         # Stop this batch branch until the continuation finishes.
                         failed.add(task["task_id"])
@@ -1882,6 +1903,7 @@ class PendingTaskExecutor:
             _SENTINEL_DEFERRED: "deferred",
             _SENTINEL_CONTINUED: "continued",
             _SENTINEL_BUDGET_SKIPPED: "budget_skipped",
+            _SENTINEL_BLOCKED: "blocked",
         }.get(result, "completed")
         activity.log(
             "task_exec_end",
@@ -2164,6 +2186,15 @@ class PendingTaskExecutor:
 
         if _completion_declaration_required():
             entry = self._get_task_queue_entry(task_id)
+            if entry is not None and entry.status == "blocked":
+                # The agent declared it cannot proceed; do not burn
+                # continuations retrying the same obstacle.
+                logger.info(
+                    "[%s] Task %s declared blocked; stopping continuations",
+                    self._anima_name,
+                    task_id,
+                )
+                return _SENTINEL_BLOCKED
             meta = entry.meta if entry is not None and isinstance(entry.meta, dict) else {}
             if meta.get("completed_by") == "agent_declaration":
                 result_summary = str(meta.get("result_note") or result_summary)

@@ -18,6 +18,9 @@ STRINGS: dict[str, dict[str, str]] = {
             "以下は前回セッションの末尾出力と実行済みツールの記録である。実施済みの操作を\n"
             "重複実行せず、残作業を完了させ、完了時は必ず "
             "`update_task(status=\"done\", result=\"...\")` を呼ぶこと。\n"
+            "外部要因（権限不足・依存待ち・環境障害など）で進められない場合は、同じ操作を"
+            "繰り返さず `update_task(status=\"blocked\", summary=\"障害内容\")` を宣言して"
+            "停止すること。\n"
             "### 前回の出力（末尾）\n{output}\n"
             "### 実行済みツール（最大30件）\n{records}"
         ),
@@ -27,6 +30,8 @@ STRINGS: dict[str, dict[str, str]] = {
             "Stop kind: {stop_kind}\n"
             "The previous session's final output and executed tools follow. Do not repeat completed operations; "
             "finish the remaining work and call `update_task(status=\"done\", result=\"...\")` when done.\n"
+            "If an external factor (missing permission, dependency, environment failure) prevents progress, "
+            "do not repeat the same operations; declare `update_task(status=\"blocked\", summary=\"<blocker>\")` and stop.\n"
             "### Previous output (tail)\n{output}\n"
             "### Executed tools (up to 30)\n{records}"
         ),
@@ -36,6 +41,8 @@ STRINGS: dict[str, dict[str, str]] = {
             "종료 유형: {stop_kind}\n"
             "이전 세션의 마지막 출력과 실행한 도구 기록입니다. 완료한 작업을 반복하지 말고 남은 작업을 끝낸 뒤 "
             "`update_task(status=\"done\", result=\"...\")`를 호출하세요.\n"
+            "외부 요인(권한 부족, 의존성 대기, 환경 장애 등)으로 진행할 수 없으면 같은 작업을 반복하지 말고 "
+            "`update_task(status=\"blocked\", summary=\"<장애 내용>\")`을 선언하고 중지하세요.\n"
             "### 이전 출력(마지막 부분)\n{output}\n"
             "### 실행한 도구(최대 30개)\n{records}"
         ),

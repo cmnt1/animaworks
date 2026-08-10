@@ -32,6 +32,7 @@ Other workers of the same Anima (your siblings) are currently executing the foll
 - After completing the task, call `update_task(status="done", result="summary of results")` before ending. This is the only completion declaration mechanism
 - Ending the session without a completion declaration automatically continues the task (up to 3 times), after which it is marked failed
 - If you cannot proceed immediately, such as while waiting for a background command, you may end without declaring completion. Check the result in the next automatically continued session
+- If an external factor (missing permission, dependency, environment failure) prevents progress, do not repeat the same operations; declare `update_task(status="blocked", summary="<blocker>")` and stop. Automatic continuation is then cancelled
 - Observe the constraints
 - If anything is unclear, do your best within the information provided
 - **Parallel worker coordination**: The parallel worker status above is a snapshot from task start. Right before starting work on a new PR, branch, or resource, re-check what your siblings are working on via `list_tasks` (status="in_progress"). If a sibling is touching the same resource (same PR, same branch, etc.), avoid that resource and pick another target, or wait for the sibling to finish
