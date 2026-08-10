@@ -293,8 +293,8 @@ function waypointCandidates(scene) {
         [prop.tile[0], prop.tile[1] + prop.h],
         [prop.tile[0] + prop.w - 1, prop.tile[1] + prop.h],
       );
-    } else if (sprite === "sofa" || sprite === "coffee") {
-      const frontY = prop.tile[1] + prop.h + (sprite === "coffee" ? 1 : 0);
+    } else if (sprite === "sofa" || sprite === "coffee_corner") {
+      const frontY = prop.tile[1] + prop.h + (sprite === "coffee_corner" ? 1 : 0);
       points.push([prop.tile[0] + Math.floor(prop.w / 2), frontY]);
     }
   }

@@ -123,7 +123,6 @@ export class SceneRenderer {
     const { ctx } = this;
     ctx.imageSmoothingEnabled = false;
     this.drawFloor();
-    this.drawHumanPlatform();
     this.drawPathChevrons();
     this.drawPlazaGuideLines();
     this.drawWalls();
@@ -153,8 +152,8 @@ export class SceneRenderer {
     layers.forEach((layer) => layer.draw());
 
     this.drawStaticLabels();
-    this.drawHumanGlass();
     this.drawWhiteboardText();
+    this.drawFixtureText();
     this.drawHangingSign();
     director?.draw(ctx);
     const overlayLayouts = [];
@@ -253,26 +252,20 @@ export class SceneRenderer {
 
   drawFloor() {
     const { ctx, tile } = this;
-    ctx.fillStyle = "#493936";
+    const wood = this.assets.tile("floor_wood");
+    const carpet = this.assets.tile("floor_carpet");
+    ctx.fillStyle = wood ? ctx.createPattern(wood, "repeat") : "#d8b982";
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    const floorColors = {
-      wood_warm: "#d8b982",
-      wood_cool: "#beb29c",
-      carpet_blue: "#8797aa",
-      mat: "#a77b65",
-      stone_warm: "#c6b087",
-      plaza: "#d7c19b",
-    };
     for (const zone of Object.values(this.scene.zones)) {
-      if (zone.kind === "entrance") continue;
+      if (zone.kind !== "company") continue;
       const [x, y, width, height] = rectFromZone(zone, tile);
-      ctx.fillStyle = floorColors[zone.floor] || floorColors.wood_warm;
+      ctx.fillStyle = carpet ? ctx.createPattern(carpet, "repeat") : "#aaa59b";
       ctx.fillRect(x, y, width, height);
-      const wash = ctx.createLinearGradient(0, y, 0, y + height);
-      wash.addColorStop(0, "rgba(255,255,255,0.025)");
-      wash.addColorStop(1, "rgba(0,0,0,0.025)");
-      ctx.fillStyle = wash;
+      ctx.save();
+      ctx.globalAlpha = 0.16;
+      ctx.fillStyle = zone.floor === "wood_cool" ? "#7188a4" : "#d6a85f";
       ctx.fillRect(x, y, width, height);
+      ctx.restore();
     }
     this.drawFloorAmbient();
   }
@@ -288,19 +281,6 @@ export class SceneRenderer {
     ctx.save();
     ctx.fillStyle = gradient;
     ctx.fillRect(0, top, this.canvas.width, bottom - top);
-    ctx.restore();
-  }
-
-  drawHumanPlatform() {
-    const zone = this.scene.zones.human;
-    if (!zone) return;
-    const [x, y, width, height] = rectFromZone(zone, this.tile);
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.fillStyle = "#211925";
-    ctx.globalAlpha = 0.22;
-    ctx.fillRect(x + 6, y + height - 2, width - 6, 7);
-    ctx.fillRect(x + width - 2, y + 6, 7, height - 6);
     ctx.restore();
   }
 
@@ -342,49 +322,25 @@ export class SceneRenderer {
     ctx.restore();
   }
 
-  drawHumanGlass() {
-    const zone = this.scene.zones.human;
-    if (!zone) return;
-    const [x, y, width, height] = rectFromZone(zone, this.tile);
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.fillStyle = "#eaf8ff";
-    ctx.globalAlpha = 0.035;
-    ctx.fillRect(x + 3, y + 3, width - 6, height - 6);
-    ctx.globalAlpha = 0.42;
-    ctx.fillStyle = "#d9f2f5";
-    ctx.fillRect(x, y, width, 2);
-    ctx.fillRect(x, y, 2, height);
-    ctx.fillRect(x + width - 2, y, 2, height);
-    ctx.fillRect(x, y + height - 2, this.tile, 2);
-    ctx.globalAlpha = 0.7;
-    ctx.fillStyle = "#4c5960";
-    ctx.fillRect(x - 2, y - 2, 5, 7);
-    ctx.fillRect(x + width - 3, y - 2, 5, 7);
-    ctx.fillRect(x - 2, y + height - 5, 5, 7);
-    ctx.fillRect(x + width - 3, y + height - 5, 5, 7);
-    for (let frameX = x + this.tile * 2; frameX < x + width; frameX += this.tile * 2) {
-      ctx.globalAlpha = 0.28;
-      ctx.fillRect(frameX, y, 2, height - this.tile);
-    }
-    ctx.restore();
-  }
-
   drawWalls() {
     const { ctx, tile } = this;
     ctx.fillStyle = "#3b2b38";
     ctx.fillRect(0, 0, this.canvas.width, tile);
-    ctx.fillStyle = this.mode === "night" ? "#8b8190" : "#dfcfb6";
-    ctx.fillRect(0, tile, this.canvas.width, tile * 3);
-    const wash = ctx.createLinearGradient(0, tile, 0, tile * 4);
-    wash.addColorStop(0, "rgba(255,255,255,0.05)");
-    wash.addColorStop(1, "rgba(0,0,0,0.05)");
-    ctx.fillStyle = wash;
-    ctx.fillRect(0, tile, this.canvas.width, tile * 3);
-    ctx.fillStyle = "#3d281f";
-    ctx.fillRect(0, tile * 4 - 2, this.canvas.width, 1);
-    ctx.fillStyle = "#c08b56";
-    ctx.fillRect(0, tile * 4 - 1, this.canvas.width, 1);
+    const segment = this.assets.wall("segment");
+    const plain = this.assets.wall("plain");
+    let x = 0;
+    let useSegment = true;
+    while (x < this.canvas.width) {
+      const image = useSegment ? segment : plain;
+      const width = image?.naturalWidth || image?.width || (useSegment ? 256 : 128);
+      if (image) ctx.drawImage(image, x, tile, width, 96);
+      else {
+        ctx.fillStyle = "#dfcfb6";
+        ctx.fillRect(x, tile, width, 96);
+      }
+      x += width;
+      useSegment = !useSegment;
+    }
   }
 
   drawBottomWall() {
@@ -397,7 +353,7 @@ export class SceneRenderer {
     ctx.fillRect(0, wallY, this.canvas.width, 2);
 
     const entrance = this.scene.zones.entrance?.rect;
-    const door = this.scene.props.door_frame || {
+    const door = this.scene.props.entrance || {
       tile: [
         entrance ? Math.floor((entrance[0] + entrance[2] - 5) / 2) : 17,
         Math.floor(this.canvas.height / tile) - 3,
@@ -406,11 +362,11 @@ export class SceneRenderer {
       h: 4,
       bottom_inset: 64,
     };
-    const image = this.assets.prop("door_frame", door.w * tile, door.h * tile);
-    const width = image.naturalWidth || image.width || door.w * tile;
-    const height = image.naturalHeight || image.height || door.h * tile;
+    const image = this.assets.prop("entrance", 176, 120);
+    const width = image.naturalWidth || image.width || 176;
+    const height = image.naturalHeight || image.height || 120;
     const bottomInset = door.bottom_inset ?? 64;
-    const x = door.tile[0] * tile;
+    const x = door.tile[0] * tile + (door.w * tile - width) / 2;
     const y = this.canvas.height - height - bottomInset;
     const bottom = y + height;
     ctx.save();
@@ -537,7 +493,7 @@ export class SceneRenderer {
 
     for (const [name, prop] of Object.entries(scene.props)) {
       if (name === "plants" || name === "cat" ||
-          name === "door" || name === "door_frame" || name === "sign_stand") continue;
+          name === "entrance") continue;
       const width = prop.w * tile;
       const height = prop.h * tile;
       const x = prop.tile[0] * tile;
@@ -562,6 +518,14 @@ export class SceneRenderer {
             drawGroundShadow(this.ctx, x + drawWidth / 2, footY - 2, Math.max(8, drawWidth * 0.34), 5);
           }
           this.ctx.drawImage(image, x, footY - drawHeight, drawWidth, drawHeight);
+          if (prop.text) {
+            drawPixelText(this.ctx, prop.text, x + drawWidth / 2, footY - drawHeight + 3, {
+              scale: 1,
+              bold: true,
+              align: "center",
+              color: "#4c3020",
+            });
+          }
           if (name === "server_rack") {
             this.ctx.fillStyle = Math.floor(timeSeconds * 4) % 2 ? "#6dff9a" : "#efba5e";
             this.ctx.fillRect(x + drawWidth - 15, footY - drawHeight + 12, 5, 5);
@@ -577,9 +541,9 @@ export class SceneRenderer {
       layers.push({
         y: footY,
         draw: () => {
-          const image = assets.prop("plant", width, 48);
+          const image = assets.prop("plant_large", width, 56);
           const drawWidth = image.naturalWidth || image.width || width;
-          const drawHeight = image.naturalHeight || image.height || 48;
+          const drawHeight = image.naturalHeight || image.height || 56;
           drawGroundShadow(this.ctx, x + drawWidth / 2, footY - 2, 12, 4);
           this.ctx.drawImage(image, x, footY - drawHeight, drawWidth, drawHeight);
         },
@@ -744,9 +708,9 @@ export class SceneRenderer {
   }
 
   drawCat() {
-    const image = this.assets.prop("cat", 32, 32);
-    const width = image.naturalWidth || image.width || 32;
-    const height = image.naturalHeight || image.height || 32;
+    const image = this.assets.prop("cat", 28, 20);
+    const width = image.naturalWidth || image.width || 28;
+    const height = image.naturalHeight || image.height || 20;
     const flipped = this.cat.targetX < this.cat.x;
     this.ctx.save();
     this.ctx.translate(Math.round(this.cat.x), Math.round(this.cat.y));
@@ -761,18 +725,45 @@ export class SceneRenderer {
     if (!board) return;
     const x = board.tile[0] * this.tile;
     const y = board.tile[1] * this.tile;
-    const width = board.w * this.tile;
     const ctx = this.ctx;
     ctx.save();
     const options = { scale: 1, bold: false, color: "#343039" };
-    const lineH = 14;
-    drawPixelText(ctx, "今日の指示", x + 13, y + 8, options);
-    this.instructions.forEach((line, index) => {
+    const left = x + 25;
+    const innerWidth = 110;
+    const surfaceBottom = y + 48;
+    const lines = this.instructions.length
+      ? this.instructions.slice(0, 3)
+      : ["進行確認", "レビュー整理", "完了共有"];
+    ctx.beginPath();
+    ctx.rect(left, y + 7, innerWidth, surfaceBottom - y - 7);
+    ctx.clip();
+    drawPixelText(ctx, "今日の指示", left, y + 9, options);
+    lines.forEach((line, index) => {
+      const lineY = y + 24 + index * 11;
+      if (lineY + 10 > surfaceBottom) return;
       let safe = String(line).replaceAll(/\s+/g, " ").slice(0, 22);
-      while (safe && measurePixelText(`${index + 1}. ${safe}`, options) > width - 26) safe = safe.slice(0, -1);
-      drawPixelText(ctx, `${index + 1}. ${safe}`, x + 13, y + 24 + index * lineH, options);
+      while (safe && measurePixelText(`${index + 1}. ${safe}`, options) > innerWidth) safe = safe.slice(0, -1);
+      drawPixelText(ctx, `${index + 1}. ${safe}`, left, lineY, options);
     });
     ctx.restore();
+  }
+
+  drawFixtureText() {
+    const { ctx, tile } = this;
+    const mat = this.scene.props.welcome_mat;
+    if (mat) {
+      const image = this.assets.prop("welcome_mat", 96, 48);
+      const width = image.naturalWidth || image.width || 96;
+      const height = image.naturalHeight || image.height || 48;
+      const x = mat.tile[0] * tile;
+      const y = (mat.tile[1] + mat.h) * tile - height;
+      drawPixelText(ctx, "WELCOME", x + width / 2, y + 18, {
+        scale: 1,
+        bold: true,
+        align: "center",
+        color: "#d8efff",
+      });
+    }
   }
 
   drawHangingSign() {
@@ -882,18 +873,6 @@ export class SceneRenderer {
     ctx.fillStyle = this.scene.lighting.night.tint;
     ctx.globalAlpha = 0.48;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    const firstCompany = Object.values(this.scene.zones).find((zone) => zone.kind === "company");
-    if (firstCompany) {
-      ctx.globalCompositeOperation = "screen";
-      ctx.globalAlpha = 0.12;
-      ctx.fillStyle = "#ffb35a";
-      ctx.fillRect(
-        firstCompany.rect[0] * this.tile,
-        Math.max(firstCompany.rect[1], firstCompany.rect[3] - 4) * this.tile,
-        Math.min(9, firstCompany.rect[2] - firstCompany.rect[0] + 1) * this.tile,
-        Math.min(5, firstCompany.rect[3] - firstCompany.rect[1] + 1) * this.tile,
-      );
-    }
     ctx.restore();
   }
 

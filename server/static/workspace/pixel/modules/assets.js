@@ -70,15 +70,6 @@ function shade(hex, amount) {
   return `rgb(${channel(16)},${channel(8)},${channel(0)})`;
 }
 
-function stableHash(value) {
-  let hash = 2166136261;
-  for (const char of String(value || "")) {
-    hash ^= char.codePointAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
 // Characters are always flip-book sprite sheets (codex-generated pixel art).
 // Program-drawn faces are abolished; when no sheet loads at all we render a
 // transparent sheet rather than synthesizing a face.
@@ -212,12 +203,17 @@ export class AssetStore {
     };
     visit(this.manifest);
     const freshAssets = new Set([
-      "scene.tiles.carpet_blue",
-      "scene.tiles.mat",
+      "scene.tiles.floor_wood",
+      "scene.tiles.floor_carpet",
+      "scene.walls.segment",
+      "scene.walls.plain",
       "scene.props.sofa",
       "scene.props.rug",
       "scene.props.side_table",
-      "scene.props.bookshelf_b",
+      "scene.props.bookshelf",
+      "scene.props.whiteboard",
+      "scene.props.coffee_corner",
+      "scene.props.entrance",
       "scene.props.poster_a",
       "scene.props.poster_b",
     ]);
@@ -262,10 +258,6 @@ export class AssetStore {
     return this.images.get(`scene.walls.${mode}`) || null;
   }
 
-  wallBottom() {
-    return this.images.get("scene.walls.wall_bottom") || null;
-  }
-
   prop(name, width = 96, height = 64) {
     const image = this.images.get(`scene.props.${name}`);
     if (image) return image;
@@ -273,24 +265,10 @@ export class AssetStore {
     if (!this.placeholders.has(key)) {
       const colors = {
         desk: "#8d684a", desk_human: "#745239", meeting_table: "#9b7450",
-        whiteboard: "#d8d5c6", plant: "#557c52", door: "#704b3f",
+        whiteboard: "#d8d5c6", plant_large: "#557c52", entrance: "#704b3f",
         side_table: "#79583e", cat: "#4e4543",
       };
       this.placeholders.set(key, placeholderProp(name, width, height, colors[name] || "#806d5b"));
-    }
-    return this.placeholders.get(key);
-  }
-
-  item(id) {
-    const raw = String(id ?? "1");
-    const itemName = /^item_\d{2}$/.test(raw)
-      ? raw
-      : `item_${String((stableHash(raw) % 14) + 1).padStart(2, "0")}`;
-    const image = this.images.get(`scene.items.${itemName}`);
-    if (image) return image;
-    const key = `item:${itemName}`;
-    if (!this.placeholders.has(key)) {
-      this.placeholders.set(key, placeholderProp(itemName, 32, 32, "#806d5b"));
     }
     return this.placeholders.get(key);
   }

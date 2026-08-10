@@ -211,7 +211,7 @@ export class Director {
     actor.setTransientBubble("bubble_delivery", 30);
     const route = pathTiles(this.scene);
     const entrance = this.scene.zones.entrance?.rect;
-    const door = this.scene.props.door_frame || {
+    const door = this.scene.props.entrance || {
       tile: [
         entrance ? Math.floor((entrance[0] + entrance[2] - 5) / 2) : 17,
         Math.floor(this.scene.canvas.h / this.scene.canvas.tile) - 3,
@@ -442,13 +442,14 @@ export class Director {
     const frame = Math.floor(effect.elapsed * animation.fps) % animation.frames;
     // Walking characters render at 1.5x, so the visiting customer matches.
     const scale = 1.5;
-    const door = this.scene.props.door_frame;
-    const doorImage = this.assets.prop("door_frame", 192, 112);
-    const doorWidth = doorImage.naturalWidth || doorImage.width || 192;
-    const doorHeight = doorImage.naturalHeight || doorImage.height || 112;
+    const door = this.scene.props.entrance;
+    const doorImage = this.assets.prop("entrance", 176, 120);
+    const doorWidth = doorImage.naturalWidth || doorImage.width || 176;
+    const doorHeight = doorImage.naturalHeight || doorImage.height || 120;
     const doorBottom = this.scene.canvas.h - (door?.bottom_inset ?? 64);
     const doorTop = doorBottom - doorHeight;
-    const doorX = (door?.tile?.[0] ?? 17) * this.scene.canvas.tile;
+    const doorX = (door?.tile?.[0] ?? 17) * this.scene.canvas.tile +
+      (((door?.w ?? 6) * this.scene.canvas.tile) - doorWidth) / 2;
     const crossingThreshold = doorBottom - 21;
     ctx.save();
     if (y > crossingThreshold) {

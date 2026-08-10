@@ -115,7 +115,6 @@ function addCompanyProps(props, plants, group, rect) {
   const [x1, y1, x2, y2] = rect;
   const width = x2 - x1 + 1;
   if (width >= 10) {
-    const loungeWidth = Math.min(7, width - 2);
     props[`lounge_${group.index + 1}`] = {
       tile: [x1 + 1, y2 - 3],
       w: 3,
@@ -124,51 +123,43 @@ function addCompanyProps(props, plants, group, rect) {
     };
     props[`lounge_rug_${group.index + 1}`] = {
       tile: [x1 + 1, y2 - 4],
-      w: loungeWidth,
-      h: 4,
+      w: 4.5,
+      h: 3,
       sprite: "rug",
       under: true,
     };
     props[`side_table_${group.index + 1}`] = {
       tile: [x1 + 4, y2 - 2],
-      w: 2,
-      h: 2,
+      w: 1.75,
+      h: 1.375,
       sprite: "side_table",
       kind: "meeting",
       company: group.company,
     };
     props[`bookshelf_${group.index + 1}`] = {
       tile: [Math.max(x1 + 1, x2 - 3), y2 - 3],
-      w: 4,
+      w: 3.5,
       h: 2,
-      sprite: group.index % 2 ? "bookshelf_b" : "bookshelf",
+      sprite: "bookshelf",
     };
     props[`trash_${group.index + 1}`] = {
       tile: [x2 - 1, y2 - 1],
-      w: 1,
-      h: 1,
+      w: 0.625,
+      h: 0.875,
       sprite: "trash_bin",
     };
-    for (let index = 0; index < 2; index += 1) {
-      props[`floor_clutter_${group.index + 1}_${index + 1}`] = {
-        tile: [Math.min(x2 - 1, x1 + 6 + index * 2), y2 - 1],
-        w: 1,
-        h: 1,
-        sprite: `clutter_${String.fromCharCode(97 + ((group.index + index) % 4))}`,
-      };
-    }
   }
   props[`poster_${group.index + 1}`] = {
     tile: [Math.min(x2 - 1, x1 + Math.floor(width / 2)), 2],
-    w: 1,
-    h: 2,
+    w: 0.75,
+    h: 1.125,
     sprite: group.index % 2 ? "poster_b" : "poster_a",
     wall: true,
   };
   props[`poster_extra_${group.index + 1}`] = {
     tile: [group.index % 2 ? x1 + 2 : x2 - 3, 2],
-    w: 1,
-    h: 2,
+    w: 0.75,
+    h: 1.125,
     sprite: group.index % 2 ? "poster_b" : "poster_a",
     wall: true,
   };
@@ -264,35 +255,34 @@ export function generateScene(animas, template) {
     (entranceRule.door || [18, 23])[1] + growth,
   ];
   const props = {
-    whiteboard: { tile: [canvasColumns / 2 - 3, 1], w: 6, h: 2, sprite: "whiteboard" },
-    bookshelf: { tile: [8, 1], w: 4, h: 2, sprite: "bookshelf" },
-    refreshment: { tile: [canvasColumns - 4, 1], w: 3, h: 2, sprite: "coffee" },
+    whiteboard: { tile: [canvasColumns / 2 - 2.5, 1], w: 5, h: 2.25, sprite: "whiteboard" },
+    bookshelf: { tile: [8, 1], w: 3.5, h: 2, sprite: "bookshelf" },
+    refreshment: { tile: [canvasColumns - 4, 1], w: 3, h: 2.25, sprite: "coffee_corner" },
     welcome_mat: {
-      tile: [doorTile[0] + 1, doorTile[1] - 3],
-      w: 4,
-      h: 2,
+      tile: [doorTile[0] + 1.5, doorTile[1] + 0.25],
+      w: 3,
+      h: 1.5,
       sprite: "welcome_mat",
-      under: true,
     },
-    door_frame: {
+    entrance: {
       tile: doorTile,
       w: 6,
       h: 4,
-      sprite: "door_frame",
+      sprite: "entrance",
       architectural: true,
-      bottom_inset: 64,
+      bottom_inset: 128,
       service_tile: [Math.round(doorTile[0] + 4.5), doorTile[1] - 2],
     },
     trolley: {
       tile: [pathZone[0] - 3, Math.min(roomBottom - 1, plazaTop + 1)],
-      w: 2,
-      h: 2,
+      w: 1.75,
+      h: 1.75,
       sprite: "trolley",
     },
     path_trash: {
       tile: [pathZone[2] + 2, Math.min(roomBottom, plazaTop + 2)],
-      w: 1,
-      h: 1,
+      w: 0.625,
+      h: 0.875,
       sprite: "trash_bin",
     },
     corridor_lamp_left: {
@@ -305,25 +295,27 @@ export function generateScene(animas, template) {
       tile: [pathZone[0] - 0.5, pathZone[1] + 1],
       w: 1,
       h: 1,
-      decor: "guide_sign",
+      sprite: "sign_stand",
+      text: "←",
     },
     corridor_plant_left: {
       tile: [pathZone[0] - 0.5, pathZone[1] + 2],
       w: 1,
       h: 1,
-      sprite: "plant",
+      sprite: "plant_large",
     },
     corridor_plant_right: {
       tile: [pathZone[2] + 0.5, pathZone[1]],
       w: 1,
       h: 1,
-      sprite: "plant",
+      sprite: "plant_large",
     },
     corridor_sign_right: {
       tile: [pathZone[2] + 0.5, pathZone[1] + 1],
       w: 1,
       h: 1,
-      decor: "guide_sign",
+      sprite: "sign_stand",
+      text: "→",
       flip: true,
     },
     corridor_lamp_right: {
@@ -332,8 +324,8 @@ export function generateScene(animas, template) {
       h: 1,
       decor: "guide_lamp",
     },
-    cat: { tile: [rects.at(-1)[0] + 2, rects.at(-1)[3] - 4], w: 1, h: 1, sprite: "cat" },
-    cat_bed: { tile: [rects.at(-1)[0] + 3, rects.at(-1)[3] - 3], w: 1, h: 1, sprite: "cat_bed" },
+    cat: { tile: [rects.at(-1)[0] + 2, rects.at(-1)[3] - 4], w: 0.875, h: 0.625, sprite: "cat" },
+    cat_bed: { tile: [rects.at(-1)[0] + 3, rects.at(-1)[3] - 3], w: 1, h: 0.625, sprite: "cat_bed" },
   };
   const plants = [];
 

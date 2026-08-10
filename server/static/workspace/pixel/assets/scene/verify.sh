@@ -16,20 +16,37 @@ scene_dir = Path(sys.argv[2])
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 scene = manifest["scene"]
 
-expected_items = {f"item_{index:02d}" for index in range(1, 15)}
-if set(scene["items"]) != expected_items:
-    raise SystemExit("scene item keys must be item_01 through item_14")
+if "items" in scene:
+    raise SystemExit("legacy scene items must not be declared")
 if "desk_taka" not in scene["props"]:
     raise SystemExit("scene props must declare desk_taka")
-if "wall_bottom" not in scene["walls"]:
-    raise SystemExit("scene walls must declare wall_bottom")
-if "door_frame" not in scene["props"]:
-    raise SystemExit("scene props must declare door_frame")
+if set(scene["walls"]) != {"segment", "plain"}:
+    raise SystemExit("scene walls must declare segment and plain")
+if set(scene["tiles"]) != {"floor_wood", "floor_carpet"}:
+    raise SystemExit("scene tiles must declare floor_wood and floor_carpet")
 
 expected_prop_sizes = {
     "desk": (112, 72),
     "desk_taka": (136, 80),
-    "door_frame": (192, 112),
+    "whiteboard": (160, 72),
+    "coffee_corner": (96, 72),
+    "sofa": (96, 56),
+    "vending": (56, 88),
+    "server_rack": (56, 88),
+    "meeting_table": (96, 56),
+    "welcome_mat": (96, 48),
+    "entrance": (176, 120),
+    "bookshelf": (112, 64),
+    "plant_large": (32, 56),
+    "cat": (28, 20),
+    "rug": (144, 96),
+    "trash_bin": (20, 28),
+    "side_table": (56, 44),
+    "trolley": (56, 56),
+    "cat_bed": (32, 20),
+    "sign_stand": (24, 44),
+    "poster_a": (24, 36),
+    "poster_b": (24, 36),
     "desk64": (108, 48),
     "chair64": (39, 58),
     "pc_laptop": (26, 18),
@@ -49,10 +66,7 @@ entries = [
     *scene["tiles"].values(),
     *scene["walls"].values(),
     *scene["props"].values(),
-    *scene["items"].values(),
 ]
-if len(entries) != 55:
-    raise SystemExit(f"expected 55 scene assets, got {len(entries)}")
 for entry in entries:
     for field in ("file", "w", "h", "anchor"):
         if field not in entry:
@@ -69,7 +83,25 @@ for entry in entries:
             )
 
 for prop_name in (
-    "door_frame",
+    "entrance",
+    "whiteboard",
+    "coffee_corner",
+    "sofa",
+    "vending",
+    "server_rack",
+    "meeting_table",
+    "welcome_mat",
+    "bookshelf",
+    "plant_large",
+    "cat",
+    "rug",
+    "trash_bin",
+    "side_table",
+    "trolley",
+    "cat_bed",
+    "sign_stand",
+    "poster_a",
+    "poster_b",
     "desk",
     "desk_taka",
     "desk64",
@@ -89,32 +121,17 @@ for prop_name in (
                 f"{prop_path.name} must use clean binary transparency"
             )
 
-for tile_name in ("wood_warm", "wood_cool"):
+for tile_name in ("floor_wood", "floor_carpet"):
     tile_path = manifest_path.parent / scene["tiles"][tile_name]["file"]
     with Image.open(tile_path) as image:
         rgb = image.convert("RGB")
-        top = [rgb.getpixel((x, 0)) for x in range(32)]
-        left = [rgb.getpixel((0, y)) for y in range(32)]
-        if len(set(top + left)) != 1:
-            raise SystemExit(f"{tile_path.name}: grout must be a solid 1px top/left edge")
-        grout = top[0]
-        if all(rgb.getpixel((x, 1)) == grout for x in range(1, 32)):
-            raise SystemExit(f"{tile_path.name}: top grout is thicker than 1px")
-        if all(rgb.getpixel((1, y)) == grout for y in range(1, 32)):
-            raise SystemExit(f"{tile_path.name}: left grout is thicker than 1px")
-        interior = [
-            rgb.getpixel((x, y))
-            for y in range(1, 32)
-            for x in range(1, 32)
-        ]
-        grout_luma = sum(grout) / 3
-        interior_luma = sum(sum(pixel) / 3 for pixel in interior) / len(interior)
-        if grout_luma >= interior_luma:
-            raise SystemExit(f"{tile_path.name}: grout must be darker than the floor")
+        if any(rgb.getpixel((0, y)) != rgb.getpixel((127, y)) for y in range(128)):
+            raise SystemExit(f"{tile_path.name}: horizontal seam mismatch")
+        if any(rgb.getpixel((x, 0)) != rgb.getpixel((x, 127)) for x in range(128)):
+            raise SystemExit(f"{tile_path.name}: vertical seam mismatch")
 
-disk_items = {path.stem for path in scene_dir.glob("item_*.png")}
-if disk_items != expected_items:
-    raise SystemExit(f"unexpected item assets: {sorted(disk_items ^ expected_items)}")
+if list(scene_dir.glob("item_*.png")):
+    raise SystemExit("legacy item assets must be removed")
 PY
 
 printf 'OK: verified generic scene assets and manifest\n'
