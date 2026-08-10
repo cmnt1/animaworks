@@ -39,20 +39,21 @@ def mod(tmp_path, monkeypatch):
     return module
 
 
-def _run(mod, state: dict, prs: list[dict]) -> list[str]:
-    sent: list[str] = []
+def _run(mod, state: dict, prs: list[dict]) -> list[dict]:
+    tasks: list[dict] = []
     mod.gh = lambda args: json.dumps(prs)
-    mod.send = lambda to, content: sent.append(content)
+    mod.dispatch_task = lambda **kwargs: tasks.append(kwargs) or True
     mod.check_conflicts(state)
-    return sent
+    return tasks
 
 
 def test_conflicting_pr_notifies_once(mod):
     state = mod.default_state()
     sent = _run(mod, state, [_pr(1, "CONFLICTING")])
     assert len(sent) == 1
-    assert "マージコンフリクト検知" in sent[0]
-    assert "o/r#1" in sent[0]
+    assert sent[0]["target"] == "natsume"
+    assert sent[0]["task_id"] == "gh-conflict-o-r#1-aaaaaaaa"
+    assert "procedures/pr-conflict-resolution.md" in sent[0]["instruction"]
     # 同一headのままの再巡回では再通知しない
     assert _run(mod, state, [_pr(1, "CONFLICTING")]) == []
 

@@ -621,6 +621,7 @@ class GitHubWebhookConfig(BaseModel):
     repos: list[str] = Field(default_factory=list)
     reviewer_anima: str = "sumire"
     dispatcher_anima: str = "rin"
+    implementer_anima: str = "natsume"
     bot_login: str = ""
     # Dedicated review-bot GitHub login (e.g. animaworks-reviewer).
     # Treated like bot_login for comment exclusion and FRC review dispatch.
