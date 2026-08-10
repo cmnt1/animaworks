@@ -1209,5 +1209,14 @@ class AssistedExecutor(BaseExecutor):
             "result_message": None,
             "tool_call_records": [asdict(r) for r in all_tool_records],
             "usage": _usage_acc_bs.to_dict(),
+            "stop_kind": (
+                "interrupted"
+                if _interrupted
+                else "runaway_halt"
+                if _tools_halted
+                else "empty_response"
+                if _empty_exhausted
+                else "normal"
+            ),
             "truncated": _interrupted or _halted_final or _empty_exhausted,
         }

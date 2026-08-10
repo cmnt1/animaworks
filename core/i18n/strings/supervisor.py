@@ -13,7 +13,8 @@ STRINGS: dict[str, dict[str, str]] = {
     "pending_executor.continuation_checkpoint": {
         "ja": (
             "## 前回実行のcheckpoint（自動継続 {count}回目）\n"
-            "このタスクは前回、完了宣言なしにセッションが終了したため自動継続されている。\n"
+            "このタスクは前回セッションを正常完了と判定できなかったため自動継続されている。\n"
+            "終了種別: {stop_kind}\n"
             "以下は前回セッションの末尾出力と実行済みツールの記録である。実施済みの操作を\n"
             "重複実行せず、残作業を完了させ、完了時は必ず "
             "`update_task(status=\"done\", result=\"...\")` を呼ぶこと。\n"
@@ -22,7 +23,8 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "en": (
             "## Previous execution checkpoint (automatic continuation {count})\n"
-            "The previous session ended without a completion declaration, so this task was continued automatically.\n"
+            "The previous session could not be considered complete, so this task was continued automatically.\n"
+            "Stop kind: {stop_kind}\n"
             "The previous session's final output and executed tools follow. Do not repeat completed operations; "
             "finish the remaining work and call `update_task(status=\"done\", result=\"...\")` when done.\n"
             "### Previous output (tail)\n{output}\n"
@@ -30,7 +32,8 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
         "ko": (
             "## 이전 실행 checkpoint(자동 계속 {count}회차)\n"
-            "이전 세션이 완료 선언 없이 종료되어 이 작업이 자동으로 계속되었습니다.\n"
+            "이전 세션을 정상 완료로 판단할 수 없어 이 작업이 자동으로 계속되었습니다.\n"
+            "종료 유형: {stop_kind}\n"
             "이전 세션의 마지막 출력과 실행한 도구 기록입니다. 완료한 작업을 반복하지 말고 남은 작업을 끝낸 뒤 "
             "`update_task(status=\"done\", result=\"...\")`를 호출하세요.\n"
             "### 이전 출력(마지막 부분)\n{output}\n"

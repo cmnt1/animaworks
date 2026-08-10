@@ -284,6 +284,7 @@ class StreamingState:
     result_message: Any = None
     message_count: int = 0
     usage_acc: Any = None
+    interrupted: bool = False
 
 
 def _append_assistant_blocks_to_state(
@@ -383,6 +384,7 @@ async def process_stream_messages(
 
         if ctx.check_interrupted():
             logger.info("Agent SDK streaming interrupted — sending graceful interrupt")
+            state.interrupted = True
             yield {"type": "text_delta", "text": "[Session interrupted by user]"}
             await _graceful_interrupt_stream(
                 client,

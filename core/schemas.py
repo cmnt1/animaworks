@@ -190,6 +190,15 @@ class ToolCallRecordDict(TypedDict):
 class CycleResult(BaseModel):
     trigger: str
     action: str
+    stop_kind: Literal[
+        "normal",
+        "interrupted",
+        "runaway_halt",
+        "empty_response",
+        "stream_error",
+        "budget_skipped",
+        "hard_timeout",
+    ] = "normal"
     summary: str = ""
     reason: str = ""
     thinking_text: str = ""

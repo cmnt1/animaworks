@@ -1595,6 +1595,8 @@ class TestStreamingExecution:
         texts = [e.get("text", "") for e in events if e.get("type") == "text_delta"]
         combined = " ".join(texts)
         assert "interrupted" in combined.lower()
+        done = next(event for event in events if event["type"] == "done")
+        assert done["stop_kind"] == "interrupted"
 
 
 # ── Progressive streaming tests ───────────────────────────────

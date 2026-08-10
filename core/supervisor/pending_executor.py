@@ -56,6 +56,7 @@ _SENTINEL_CANCELLED = "(cancelled)"
 _SENTINEL_EXPIRED = "(expired)"
 _SENTINEL_DEFERRED = "(deferred)"
 _SENTINEL_CONTINUED = "(continued)"
+_SENTINEL_BUDGET_SKIPPED = "(budget_skipped)"
 _MAX_TASK_CONTINUATIONS = 3
 
 _QUEUE_TERMINAL_STATUSES = {"done", "cancelled", "failed"}
@@ -177,6 +178,8 @@ def _classify_task_result(result: str) -> tuple[str, str]:
         return "pending", "snoozed by TaskBoard"
     if result == _SENTINEL_CONTINUED:
         return "in_progress", "automatic continuation scheduled"
+    if result == _SENTINEL_BUDGET_SKIPPED:
+        return "pending", "execution skipped because token budget is unavailable"
     auth_failure = _detect_task_auth_failure(result)
     if auth_failure:
         return "failed", f"FAILED: {auth_failure}"
@@ -504,6 +507,7 @@ class PendingTaskExecutor:
         task_desc: dict[str, Any],
         accumulated_text: str,
         tool_call_records: list[dict[str, Any]],
+        stop_kind: str = "normal",
     ) -> None:
         """Re-enqueue an undeclared task with enough context to resume safely."""
         from core.memory._io import atomic_write_text
@@ -524,6 +528,7 @@ class PendingTaskExecutor:
         checkpoint = t(
             "pending_executor.continuation_checkpoint",
             count=continuation_count,
+            stop_kind=stop_kind,
             output=accumulated_text[-2000:],
             records=record_text,
         )
@@ -538,6 +543,16 @@ class PendingTaskExecutor:
             pending_dir / f"{task_id}.json",
             json.dumps(next_desc, ensure_ascii=False, indent=2) + "\n",
         )
+        entry = self._get_task_queue_entry(task_id)
+        if entry is not None:
+            if isinstance(entry.meta, dict) and entry.meta.get("completed_by") == "agent_declaration":
+                from core.memory.task_queue import TaskQueueManager
+
+                TaskQueueManager(self._anima_dir).update_meta(
+                    task_id,
+                    {"completed_by": None, "result_note": None},
+                )
+            self._sync_task_queue(task_id, "in_progress", summary="automatic continuation scheduled")
         self._wake_event.set()
 
     def add_recovered_task_checkpoint(
@@ -1577,9 +1592,14 @@ class PendingTaskExecutor:
                                             )
                             except Exception:
                                 logger.warning("[%s] Failed to build batch failure notification", self._anima_name)
-                    elif result in {_SENTINEL_DEFERRED, _SENTINEL_CONTINUED}:
-                        # A continued task is not failed, but its DAG dependents
-                        # must wait for the later standalone continuation.
+                    elif result in {
+                        _SENTINEL_CANCELLED,
+                        _SENTINEL_EXPIRED,
+                        _SENTINEL_DEFERRED,
+                        _SENTINEL_CONTINUED,
+                        _SENTINEL_BUDGET_SKIPPED,
+                    }:
+                        # Non-completing tasks cannot satisfy DAG dependencies.
                         failed.add(task["task_id"])
                     elif task.get("_attention_suppressed_reason"):
                         failed.add(task["task_id"])
@@ -1602,7 +1622,13 @@ class PendingTaskExecutor:
                         completed,
                         batch_id,
                     )
-                    if result in {_SENTINEL_DEFERRED, _SENTINEL_CONTINUED}:
+                    if result in {
+                        _SENTINEL_CANCELLED,
+                        _SENTINEL_EXPIRED,
+                        _SENTINEL_DEFERRED,
+                        _SENTINEL_CONTINUED,
+                        _SENTINEL_BUDGET_SKIPPED,
+                    }:
                         # Stop this batch branch until the continuation finishes.
                         failed.add(task["task_id"])
                     elif task.get("_attention_suppressed_reason"):
@@ -1825,6 +1851,7 @@ class PendingTaskExecutor:
             _SENTINEL_EXPIRED: "expired",
             _SENTINEL_DEFERRED: "deferred",
             _SENTINEL_CONTINUED: "continued",
+            _SENTINEL_BUDGET_SKIPPED: "budget_skipped",
         }.get(result, "completed")
         activity.log(
             "task_exec_end",
@@ -1967,6 +1994,7 @@ class PendingTaskExecutor:
         task_failed_reason = ""
         had_error = False
         error_message = ""
+        stop_kind = "normal"
         try:
             if worker_slot is not None:
                 session_context = worker_slot.session_lock
@@ -2026,7 +2054,8 @@ class PendingTaskExecutor:
                                 "summary",
                                 accumulated_text[:500],
                             )
-                            if cycle_result.get("action") == "error":
+                            stop_kind = str(cycle_result.get("stop_kind") or "normal")
+                            if cycle_result.get("action") == "error" or stop_kind == "stream_error":
                                 task_failed_reason = result_summary or "task execution failed"
                             journal.finalize(summary=result_summary[:500])
                 finally:
@@ -2036,30 +2065,42 @@ class PendingTaskExecutor:
         finally:
             journal.close()
 
-        if had_error:
-            _queue_done = False
+        error_suppressed = False
+        if had_error or task_failed_reason:
             try:
                 from core.memory.task_queue import TaskQueueManager
 
                 _entry = TaskQueueManager(self._anima_dir).get_task_by_id(task_id)
-                if _entry and _entry.status == "done":
-                    _queue_done = True
+                if (
+                    _entry
+                    and _entry.status == "done"
+                    and isinstance(_entry.meta, dict)
+                    and _entry.meta.get("completed_by") == "agent_declaration"
+                ):
+                    error_suppressed = True
                     logger.info(
                         "[%s] Task %s stream error suppressed: already marked done in queue",
                         self._anima_name,
                         task_id,
                     )
-                    if not result_summary:
-                        result_summary = (
-                            _entry.summary or accumulated_text[:500] or t("pending_executor.task_completed")
-                        )
+                    result_summary = str(
+                        _entry.meta.get("result_note")
+                        or _entry.summary
+                        or result_summary
+                        or accumulated_text[:500]
+                        or t("pending_executor.task_completed")
+                    )
             except Exception as e:
                 logger.debug("pending_executor: failed to check task queue for task %s: %s", task_id, e)
 
-            if not _queue_done:
-                raise TaskExecError(f"Task {task_id} encountered streaming error: {error_message}")
-        if task_failed_reason:
+        if had_error and not error_suppressed:
+            raise TaskExecError(f"Task {task_id} encountered streaming error: {error_message}")
+        if task_failed_reason and not error_suppressed:
             raise RuntimeError(task_failed_reason)
+
+        if stop_kind == "budget_skipped":
+            logger.info("[%s] Task %s skipped without execution: token budget unavailable", self._anima_name, task_id)
+            return _SENTINEL_BUDGET_SKIPPED
 
         if not result_summary:
             result_summary = accumulated_text[:500] or t("pending_executor.task_completed")
@@ -2067,6 +2108,29 @@ class PendingTaskExecutor:
         auth_failure = _detect_task_auth_failure(result_summary or accumulated_text)
         if auth_failure:
             raise TaskExecError(auth_failure)
+
+        if stop_kind in {"interrupted", "runaway_halt", "empty_response", "hard_timeout"}:
+            continuation_count = task_desc.get("continuation_count", 0)
+            if not isinstance(continuation_count, int) or isinstance(continuation_count, bool):
+                continuation_count = 0
+            if continuation_count < _MAX_TASK_CONTINUATIONS:
+                self._reenqueue_with_checkpoint(
+                    task_desc,
+                    accumulated_text,
+                    tool_call_records,
+                    stop_kind=stop_kind,
+                )
+                logger.info(
+                    "[%s] LLM task continued after %s: id=%s continuation=%d",
+                    self._anima_name,
+                    stop_kind,
+                    task_id,
+                    continuation_count + 1,
+                )
+                return _SENTINEL_CONTINUED
+            raise TaskExecError(
+                f"Task {task_id}: {stop_kind} after {_MAX_TASK_CONTINUATIONS} continuations"
+            )
 
         if _completion_declaration_required():
             entry = self._get_task_queue_entry(task_id)

@@ -481,6 +481,7 @@ class GeminiCLIExecutor(BaseExecutor):
                 "full_text": "[Session interrupted by user]",
                 "result_message": None,
                 "tool_call_records": [],
+                "stop_kind": "interrupted",
             }
             return
 
@@ -530,6 +531,7 @@ class GeminiCLIExecutor(BaseExecutor):
                                 "full_text": accumulated_text or "[Session interrupted by user]",
                                 "result_message": None,
                                 "tool_call_records": [r.__dict__ for r in tool_records],
+                                "stop_kind": "interrupted",
                             }
                             return
 

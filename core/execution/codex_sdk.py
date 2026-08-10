@@ -1926,7 +1926,12 @@ class CodexSDKExecutor(BaseExecutor):
         """
         if self._check_interrupted():
             yield {"type": "text_delta", "text": "[Session interrupted by user]"}
-            yield {"type": "done", "full_text": "[Session interrupted by user]", "result_message": None}
+            yield {
+                "type": "done",
+                "full_text": "[Session interrupted by user]",
+                "result_message": None,
+                "stop_kind": "interrupted",
+            }
             return
 
         if _should_prefer_cli_exec(trigger):
@@ -2072,7 +2077,16 @@ class CodexSDKExecutor(BaseExecutor):
                         end_chunk = _thinking_end_chunk()
                         if end_chunk:
                             yield end_chunk
-                        yield {"type": "text_delta", "text": "[Session interrupted by user]"}
+                        interrupted_text = "[Session interrupted by user]"
+                        yield {"type": "text_delta", "text": interrupted_text}
+                        yield {
+                            "type": "done",
+                            "full_text": _current_full_text() or interrupted_text,
+                            "result_message": None,
+                            "tool_call_records": [asdict(r) for r in all_tool_records],
+                            "usage": usage_acc.to_dict(),
+                            "stop_kind": "interrupted",
+                        }
                         return
 
                     method = _event_method(event)

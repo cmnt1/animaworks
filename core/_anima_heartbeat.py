@@ -682,6 +682,7 @@ class HeartbeatMixin:
                 result = CycleResult(
                     trigger="heartbeat",
                     action="responded",
+                    stop_kind="hard_timeout",
                     summary=accumulated_text or "(no result)",
                 )
 

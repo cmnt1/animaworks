@@ -628,6 +628,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
                         "type": "done",
                         "full_text": "[Session interrupted by user]",
                         "result_message": None,
+                        "stop_kind": "interrupted",
                         "truncated": True,
                     }
                     return
@@ -765,6 +766,7 @@ class AnthropicFallbackExecutor(BaseExecutor):
                         "result_message": None,
                         "tool_call_records": [asdict(r) for r in all_tool_records],
                         "usage": _usage_acc_s.to_dict(),
+                        "stop_kind": "runaway_halt",
                         "truncated": True,
                     }
                     return
@@ -916,5 +918,12 @@ class AnthropicFallbackExecutor(BaseExecutor):
             "result_message": None,
             "tool_call_records": [asdict(r) for r in all_tool_records],
             "usage": _usage_acc_s.to_dict(),
+            "stop_kind": (
+                "runaway_halt"
+                if _force_final_s
+                else "empty_response"
+                if full_text == FINAL_RESPONSE_ERROR_TEXT
+                else "normal"
+            ),
             "truncated": _force_final_s or full_text == FINAL_RESPONSE_ERROR_TEXT,
         }
