@@ -19,12 +19,6 @@ function drawGroundShadow(ctx, x, y, radiusX, radiusY = 5) {
   ctx.restore();
 }
 
-function floorVariation(x, y, floorName) {
-  let seed = Math.imul(x + 17, 73856093) ^ Math.imul(y + 31, 19349663);
-  for (const character of floorName) seed = Math.imul(seed ^ character.charCodeAt(0), 83492791);
-  return ((seed >>> 0) % 7 - 3) / 100;
-}
-
 function stableHash(value) {
   let hash = 2166136261;
   for (const character of value) {
@@ -261,121 +255,26 @@ export class SceneRenderer {
     const { ctx, tile } = this;
     ctx.fillStyle = "#493936";
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    ctx.save();
-    ctx.fillStyle = "#251c20";
-    ctx.globalAlpha = 0.28;
-    for (let row = 4; row < Math.ceil(this.canvas.height / tile); row += 1) {
-      const y = row * tile;
-      ctx.fillRect(0, y, this.canvas.width, 1);
-      const offset = row % 2 ? tile * 1.5 : 0;
-      for (let x = offset; x < this.canvas.width; x += tile * 3) {
-        ctx.fillRect(Math.round(x), y, 1, tile);
-      }
-    }
-    ctx.restore();
-    this.drawExteriorDetails();
-
     const floorColors = {
-      wood_warm: ["#dcbf8b", "#d4b37d"],
-      wood_cool: ["#c4b8a2", "#b9ab94"],
-      carpet_blue: ["#8a9aae", "#8493a5"],
-      mat: ["#aa7f69", "#9d725e"],
-      stone_warm: ["#cbb58f", "#c2aa83"],
-      plaza: ["#dcc9a5", "#d3bc94"],
+      wood_warm: "#d8b982",
+      wood_cool: "#beb29c",
+      carpet_blue: "#8797aa",
+      mat: "#a77b65",
+      stone_warm: "#c6b087",
+      plaza: "#d7c19b",
     };
-    const cells = new Map();
-    for (const [name, zone] of Object.entries(this.scene.zones)) {
+    for (const zone of Object.values(this.scene.zones)) {
       if (zone.kind === "entrance") continue;
-      const floorName = zone.floor;
-      const group = name;
-      const [x1, y1, x2, y2] = zone.rect;
-      for (let tileY = y1; tileY <= y2; tileY += 1) {
-        for (let tileX = x1; tileX <= x2; tileX += 1) {
-          cells.set(`${tileX},${tileY}`, { x: tileX, y: tileY, floorName, group });
-        }
-      }
+      const [x, y, width, height] = rectFromZone(zone, tile);
+      ctx.fillStyle = floorColors[zone.floor] || floorColors.wood_warm;
+      ctx.fillRect(x, y, width, height);
+      const wash = ctx.createLinearGradient(0, y, 0, y + height);
+      wash.addColorStop(0, "rgba(255,255,255,0.025)");
+      wash.addColorStop(1, "rgba(0,0,0,0.025)");
+      ctx.fillStyle = wash;
+      ctx.fillRect(x, y, width, height);
     }
-
-    for (const cell of cells.values()) {
-      const px = cell.x * tile;
-      const py = cell.y * tile;
-      const colors = floorColors[cell.floorName] || floorColors.wood_warm;
-      const tileImage = this.assets.tile(cell.floorName);
-      ctx.globalAlpha = 1;
-      if (tileImage) {
-        ctx.drawImage(tileImage, px, py, tile, tile);
-      } else {
-        ctx.fillStyle = colors[(cell.x + cell.y) % 2];
-        ctx.fillRect(px, py, tile, tile);
-        ctx.fillStyle = "#fff1";
-        ctx.fillRect(px, py, tile, 2);
-        ctx.fillStyle = "#53351b12";
-        ctx.fillRect(px, py + tile - 2, tile, 2);
-        if (cell.floorName === "stone_warm" || cell.floorName === "plaza") {
-          ctx.fillStyle = "#705b451f";
-          ctx.fillRect(px, py, 1, tile);
-          ctx.fillRect(px, py + tile - 1, tile, 1);
-        }
-      }
-      const variation = floorVariation(cell.x, cell.y, cell.floorName);
-      if (variation !== 0) {
-        ctx.save();
-        ctx.globalAlpha = Math.abs(variation);
-        ctx.fillStyle = variation > 0 ? "#ffffff" : "#000000";
-        ctx.fillRect(px, py, tile, tile);
-        ctx.restore();
-      }
-    }
-
-    const shadeEdge = (cell, side) => {
-      const px = cell.x * tile;
-      const py = cell.y * tile;
-      ctx.save();
-      ctx.fillStyle = "#3b2a25";
-      ctx.globalAlpha = 0.2;
-      if (side === "left") ctx.fillRect(px, py, 1, tile);
-      else if (side === "right") ctx.fillRect(px + tile - 1, py, 1, tile);
-      else if (side === "top") ctx.fillRect(px, py, tile, 1);
-      else ctx.fillRect(px, py + tile - 1, tile, 1);
-      ctx.restore();
-    };
-    for (const cell of cells.values()) {
-      const neighbors = [
-        ["left", cell.x - 1, cell.y],
-        ["right", cell.x + 1, cell.y],
-        ["top", cell.x, cell.y - 1],
-        ["bottom", cell.x, cell.y + 1],
-      ];
-      for (const [side, x, y] of neighbors) {
-        if (cells.get(`${x},${y}`)?.group !== cell.group) shadeEdge(cell, side);
-      }
-    }
-
-    this.drawCorridorPaving();
     this.drawFloorAmbient();
-  }
-
-  drawCorridorPaving() {
-    const path = this.scene.zones.path;
-    const entrance = this.scene.zones.entrance;
-    if (!path) return;
-    const [x1, y1, x2, pathBottom] = path.rect;
-    const y2 = Math.min(pathBottom, (entrance?.rect?.[1] ?? pathBottom + 1) + 1);
-    const ctx = this.ctx;
-    ctx.save();
-    for (let tileY = y1; tileY <= y2; tileY += 1) {
-      for (let tileX = x1; tileX <= x2; tileX += 1) {
-        ctx.globalAlpha = 0.09;
-        ctx.fillStyle = (tileX + tileY) % 2 ? "#f1ddba" : "#8f7965";
-        ctx.fillRect(
-          tileX * this.tile + 1,
-          tileY * this.tile + 1,
-          this.tile - 2,
-          this.tile - 2,
-        );
-      }
-    }
-    ctx.restore();
   }
 
   drawFloorAmbient() {
@@ -389,64 +288,6 @@ export class SceneRenderer {
     ctx.save();
     ctx.fillStyle = gradient;
     ctx.fillRect(0, top, this.canvas.width, bottom - top);
-    ctx.restore();
-  }
-
-  drawExteriorDetails() {
-    const { ctx, tile } = this;
-    const windows = [
-      [4, 20], [11, 21], [16, 20],
-      [22, 20], [28, 20], [35, 21],
-    ];
-    ctx.save();
-    for (const [tileX, tileY] of windows) {
-      const x = tileX * tile + 4;
-      const y = tileY * tile + 5;
-      ctx.fillStyle = "#21191d";
-      ctx.globalAlpha = 0.68;
-      ctx.fillRect(x - 3, y - 3, 30, 24);
-      ctx.fillStyle = "#8f7059";
-      ctx.fillRect(x - 1, y - 1, 26, 20);
-      ctx.fillStyle = "#344b58";
-      ctx.fillRect(x + 2, y + 2, 20, 14);
-      ctx.fillStyle = "#9bb8bd";
-      ctx.globalAlpha = 0.34;
-      ctx.fillRect(x + 4, y + 4, 7, 2);
-      ctx.fillRect(x + 12, y + 6, 6, 2);
-      ctx.globalAlpha = 0.5;
-      ctx.fillStyle = "#1d171a";
-      ctx.fillRect(x + 11, y + 2, 2, 14);
-    }
-
-    for (const tileX of [17, 23]) {
-      const x = tileX * tile + (tileX === 17 ? 23 : 6);
-      const top = 19 * tile + 7;
-      const bottom = 24 * tile;
-      ctx.globalAlpha = 0.62;
-      ctx.fillStyle = "#21191d";
-      ctx.fillRect(x - 2, top, 6, bottom - top);
-      ctx.fillRect(tileX === 17 ? x - 12 : x, top - 2, 14, 6);
-      ctx.fillStyle = "#9a6b4c";
-      ctx.fillRect(x, top + 1, 2, bottom - top - 2);
-      ctx.fillRect(tileX === 17 ? x - 10 : x + 2, top, 10, 2);
-      ctx.fillStyle = "#bb8a61";
-      ctx.fillRect(x, top + 8, 2, 3);
-      ctx.fillRect(x, top + 55, 2, 3);
-    }
-
-    for (const [tileX, tileY] of [[7, 22], [31, 22]]) {
-      const x = tileX * tile;
-      const y = tileY * tile + 4;
-      ctx.globalAlpha = 0.56;
-      ctx.fillStyle = "#21191d";
-      ctx.fillRect(x, y, 36, 20);
-      ctx.fillStyle = "#72594c";
-      ctx.fillRect(x + 2, y + 2, 32, 16);
-      ctx.fillStyle = "#2d2426";
-      for (let line = 0; line < 4; line += 1) {
-        ctx.fillRect(x + 6, y + 5 + line * 3, 24, 1);
-      }
-    }
     ctx.restore();
   }
 
@@ -531,25 +372,15 @@ export class SceneRenderer {
 
   drawWalls() {
     const { ctx, tile } = this;
-    const wall = this.assets.wall(this.mode);
     ctx.fillStyle = "#3b2b38";
     ctx.fillRect(0, 0, this.canvas.width, tile);
-    if (wall) {
-      const half = this.canvas.width / 2;
-      ctx.drawImage(wall, 0, 0, half, wall.naturalHeight, 0, tile, half, tile * 3);
-      ctx.save();
-      ctx.translate(this.canvas.width, 0);
-      ctx.scale(-1, 1);
-      ctx.drawImage(wall, half, 0, half, wall.naturalHeight, 0, tile, half, tile * 3);
-      ctx.restore();
-    } else {
-      ctx.fillStyle = "#f0dec0";
-      ctx.fillRect(0, tile, this.canvas.width, tile * 3);
-      ctx.fillStyle = this.mode === "night" ? "#29365c" : "#9bd0df";
-      for (let x = tile; x < this.canvas.width - tile; x += tile * 5) {
-        ctx.fillRect(x, tile + 10, tile * 4, tile * 2);
-      }
-    }
+    ctx.fillStyle = this.mode === "night" ? "#8b8190" : "#dfcfb6";
+    ctx.fillRect(0, tile, this.canvas.width, tile * 3);
+    const wash = ctx.createLinearGradient(0, tile, 0, tile * 4);
+    wash.addColorStop(0, "rgba(255,255,255,0.05)");
+    wash.addColorStop(1, "rgba(0,0,0,0.05)");
+    ctx.fillStyle = wash;
+    ctx.fillRect(0, tile, this.canvas.width, tile * 3);
     ctx.fillStyle = "#3d281f";
     ctx.fillRect(0, tile * 4 - 2, this.canvas.width, 1);
     ctx.fillStyle = "#c08b56";
@@ -558,17 +389,12 @@ export class SceneRenderer {
 
   drawBottomWall() {
     const { ctx, tile } = this;
-    const wall = this.assets.wallBottom();
-    const wallHeight = wall?.naturalHeight || wall?.height || tile * 2;
+    const wallHeight = tile * 2;
     const wallY = this.canvas.height - wallHeight;
-    if (wall) {
-      ctx.drawImage(wall, 0, wallY, this.canvas.width, wallHeight);
-    } else {
-      ctx.fillStyle = "#4a3027";
-      ctx.fillRect(0, wallY, this.canvas.width, wallHeight);
-      ctx.fillStyle = "#b47a4e";
-      ctx.fillRect(0, wallY, this.canvas.width, 2);
-    }
+    ctx.fillStyle = "#5a4034";
+    ctx.fillRect(0, wallY, this.canvas.width, wallHeight);
+    ctx.fillStyle = "#b47a4e";
+    ctx.fillRect(0, wallY, this.canvas.width, 2);
 
     const entrance = this.scene.zones.entrance?.rect;
     const door = this.scene.props.door_frame || {
@@ -683,7 +509,7 @@ export class SceneRenderer {
       });
       layers.push({
         y: footY - 1,
-        priority: actors.get(id)?.deskInFront() ? 1 : -1,
+        priority: -1,
         draw: () => {
           const ctx = this.ctx;
           if (isHuman && this.humanFlash > 0) {
@@ -857,15 +683,16 @@ export class SceneRenderer {
   drawDeskItems(id, centerX, footY, deskHeight) {
     const hash = stableHash(id);
     const pcName = hash % 2 ? "pc_laptop" : "pc_desktop";
-    const pc = this.assets.prop(pcName, pcName === "pc_laptop" ? 26 : 38, pcName === "pc_laptop" ? 18 : 28);
+    const pc = this.assets.prop(pcName, pcName === "pc_laptop" ? 26 : 32, pcName === "pc_laptop" ? 18 : 24);
     const pcWidth = pc.naturalWidth || pc.width;
     const pcHeight = pc.naturalHeight || pc.height;
     const tabletopY = footY - deskHeight;
     const itemBottomY = tabletopY + 25;
+    const pcBottomY = tabletopY + 25;
     this.ctx.drawImage(
       pc,
-      Math.round(centerX - pcWidth / 2),
-      Math.round(itemBottomY - pcHeight),
+      Math.round(centerX - pcWidth / 2 - (pcName === "pc_desktop" ? 8 : 0)),
+      Math.round(pcBottomY - pcHeight),
       pcWidth,
       pcHeight,
     );

@@ -45,11 +45,10 @@
           "frames": 4,
           "fps": 2
         },
-        "success": {
-          "row": 8,
-          "frames": 4,
-          "fps": 8,
-          "deskFront": true
+      "success": {
+        "row": 8,
+        "frames": 4,
+        "fps": 8
         },
         "error": {
           "row": 9,
@@ -299,8 +298,8 @@
       },
       "pc_desktop": {
         "file": "scene/pc_desktop.png",
-        "w": 38,
-        "h": 28,
+        "w": 32,
+        "h": 24,
         "anchor": "bottom"
       },
       "prop_mug": {

@@ -683,10 +683,6 @@ export class Actor {
     return this.visualY();
   }
 
-  deskInFront() {
-    return Boolean(this.sprite.anims[this.sprite.animation]?.deskFront);
-  }
-
   draw(ctx) {
     const spriteY = this.spriteY();
     const scale = this.renderScale();
@@ -982,7 +978,7 @@ export class ActorManager {
       const deskFootY = (desk.tile[1] + deskRows) * this.tile;
       const seatPosition = {
         x: desk.tile[0] * this.tile + this.tile / 2 + (desk.seat_offset_x ?? 0),
-        y: deskFootY - deskHeight + (desk.seat_sink ?? 24),
+        y: deskFootY - deskHeight + (desk.seat_sink ?? 20),
       };
       const actor = new Actor(
         id,

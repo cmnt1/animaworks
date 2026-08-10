@@ -12,7 +12,7 @@ const DEFAULT_ANIMS = Object.freeze({
   walk_up: { row: 5, frames: 4, fps: 8 },
   walk_side: { row: 6, frames: 4, fps: 8 },
   sleeping: { row: 7, frames: 4, fps: 2 },
-  success: { row: 8, frames: 4, fps: 8, deskFront: true },
+  success: { row: 8, frames: 4, fps: 8 },
   error: { row: 9, frames: 4, fps: 5 },
 });
 

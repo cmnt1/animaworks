@@ -29,8 +29,6 @@ rows = {
 chars = json.loads(manifest_path.read_text(encoding="utf-8")).get("chars", {})
 if set(chars) != {"sample_01"}:
     raise SystemExit(f"manifest chars mismatch: {sorted(chars)}")
-if not chars["sample_01"]["anims"]["success"].get("deskFront"):
-    raise SystemExit("success animation must draw the desk in front")
 config = chars["sample_01"]
 if config.get("file") != "chars/sample_01.png":
     raise SystemExit("sample_01: invalid file")

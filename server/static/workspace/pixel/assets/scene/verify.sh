@@ -33,7 +33,7 @@ expected_prop_sizes = {
     "desk64": (108, 48),
     "chair64": (39, 58),
     "pc_laptop": (26, 18),
-    "pc_desktop": (38, 28),
+    "pc_desktop": (32, 24),
     "prop_mug": (16, 16),
     "prop_plant": (20, 24),
 }
