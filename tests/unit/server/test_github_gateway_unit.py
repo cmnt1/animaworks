@@ -51,6 +51,7 @@ def _comment_payload(
     action: str = "created",
     author: str = "reviewer",
     comment_id: int = 101,
+    body: str = "Please fix this\nedge case.",
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "action": action,
@@ -58,7 +59,7 @@ def _comment_payload(
         "comment": {
             "id": comment_id,
             "user": {"login": author},
-            "body": "Please fix this\nedge case.",
+            "body": body,
             "html_url": f"https://github.test/comments/{comment_id}",
         },
     }
@@ -134,11 +135,13 @@ async def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         state_file=state_file,
     )
     sends: list[dict[str, str]] = []
+    direct_task = MagicMock(return_value=True)
 
     def capture_send(to: str, content: str, kind: str, key: str) -> None:
         sends.append({"to": to, "content": content, "kind": kind, "key": key})
 
     monkeypatch.setattr(manager, "_send", capture_send)
+    monkeypatch.setattr(github_gateway, "dispatch_direct_task", direct_task)
     await manager.start()
     try:
         yield manager, sends, state_file
@@ -153,6 +156,7 @@ class TestConfigurationAndGating:
         assert config.repos == []
         assert config.reviewer_anima == "sumire"
         assert config.dispatcher_anima == "rin"
+        assert config.implementer_anima == "natsume"
         assert config.quiet_seconds == 180
 
     async def test_disabled_manager_does_not_create_state(self, tmp_path: Path) -> None:
@@ -364,6 +368,29 @@ class TestReviewAndCommentDispatch:
         state = json.loads(state_file.read_text(encoding="utf-8"))
         assert dedupe_key in state["seen_comments"]
 
+    @pytest.mark.parametrize("event", ["issue_comment", "pull_request_review_comment"])
+    async def test_bot_mention_dispatches_direct_task_without_dm(self, gateway, event: str) -> None:
+        manager, sends, state_file = gateway
+        body = f"@{BOT_LOGIN.upper()} please resolve the conflict"
+        payload = _comment_payload(event=event, body=body)
+
+        await manager.handle_event(event, payload)
+        await manager.handle_event(event, payload)
+
+        assert sends == []
+        direct_task = github_gateway.dispatch_direct_task
+        direct_task.assert_called_once()
+        kwargs = direct_task.call_args.kwargs
+        assert kwargs["target"] == "natsume"
+        assert kwargs["task_id"] == "gh-cmd-101"
+        assert body in kwargs["instruction"]
+        assert f"{REPO}#17" in kwargs["instruction"]
+        assert "force-push禁止" in kwargs["instruction"]
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+        assert f"{'review' if event == 'pull_request_review_comment' else 'issue'}-comment:101" in state[
+            "seen_comments"
+        ]
+
     async def test_updated_comment_is_ignored(self, gateway) -> None:
         manager, sends, state_file = gateway
         await manager.handle_event(
@@ -506,11 +533,15 @@ class TestWorkflowRunDispatch:
         payload = _workflow_payload()
         await manager.handle_event("workflow_run", payload)
         await manager.handle_event("workflow_run", payload)
-        assert len(sends) == 1
-        assert sends[0]["to"] == "rin"
-        assert sends[0]["kind"] == "ci"
+        assert sends == []
+        direct_task = github_gateway.dispatch_direct_task
+        direct_task.assert_called_once()
+        kwargs = direct_task.call_args.kwargs
+        assert kwargs["target"] == "natsume"
+        assert kwargs["task_id"] == f"gh-ci-example-org-example-repo#17-{SHA_1[:8]}"
+        assert "quality-gate" in kwargs["instruction"]
+        assert SHA_1 in kwargs["instruction"]
         key = f"{REPO}#17_{SHA_1[:8]}"
-        assert sends[0]["key"] == key
         state = json.loads(state_file.read_text(encoding="utf-8"))
         assert key in state["ci_notified"]
 

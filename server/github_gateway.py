@@ -23,6 +23,7 @@ from core.i18n import t
 from core.messenger import Messenger
 from core.paths import get_shared_dir
 from core.platform.locks import acquire_file_lock, release_file_lock
+from core.tasks_dispatch import dispatch_direct_task
 
 logger = logging.getLogger("animaworks.github_gateway")
 
@@ -340,6 +341,28 @@ class GitHubWebhookManager:
             seen = state["seen_comments"]
             if dedupe_key in seen:
                 return
+            if (
+                kind in {"issue-comment", "review-comment"}
+                and self._config.bot_login
+                and f"@{self._config.bot_login}".casefold() in body.casefold()
+            ):
+                comment_id = dedupe_key.rsplit(":", 1)[-1]
+                instruction = t(
+                    "github_gateway.command_task",
+                    repo=repo,
+                    number=number,
+                    body=body,
+                    url=url,
+                )
+                dispatch_direct_task(
+                    target=self._config.implementer_anima,
+                    task_id=f"gh-cmd-{comment_id}",
+                    summary=t("github_gateway.command_summary", repo=repo, number=number),
+                    instruction=instruction,
+                    meta={"repo": repo, "number": number, "url": url, "kind": kind},
+                )
+                seen[dedupe_key] = _now_iso()
+                return
             summary = body.replace("\n", " ")[:140]
             content = (
                 "【外部レビューコメント検知】\n\n"
@@ -431,11 +454,24 @@ class GitHubWebhookManager:
             ]
             if not fresh:
                 return
-            lines = "\n".join(f"- {repo}#{number} {sha[:8]}: {workflow_name}" for number, sha, _ in fresh)
-            content = t("github_gateway.ci_failure", lines=lines, url=url)
-            self._send(self._config.dispatcher_anima, content, "ci", fresh[0][2])
             now = _now_iso()
-            for _, _, key in fresh:
+            for number, sha, key in fresh:
+                pr_url = f"https://github.com/{repo}/pull/{number}"
+                instruction = t(
+                    "github_gateway.ci_task",
+                    number=number,
+                    pr_url=pr_url,
+                    workflow_name=workflow_name,
+                    sha=sha,
+                    workflow_url=url,
+                )
+                dispatch_direct_task(
+                    target=self._config.implementer_anima,
+                    task_id=f"gh-ci-{repo.replace('/', '-')}#{number}-{sha[:8]}",
+                    summary=t("github_gateway.ci_summary", repo=repo, number=number),
+                    instruction=instruction,
+                    meta={"repo": repo, "number": number, "sha": sha, "workflow_url": url},
+                )
                 notified[key] = now
 
     def _is_bot(self, author: str) -> bool:

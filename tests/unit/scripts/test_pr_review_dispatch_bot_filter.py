@@ -89,3 +89,82 @@ def test_check_comments_excludes_reviewer_login(mod, monkeypatch):
     assert "review-comment:3" in state["seen_comments"]
     assert "review-comment:1" not in state["seen_comments"]
     assert "review-comment:2" not in state["seen_comments"]
+
+
+def test_check_comments_dispatches_bot_mention_directly(mod, monkeypatch):
+    comment = {
+        "id": 9,
+        "user": {"login": "external"},
+        "body": "@DEV-BOT fix this",
+        "html_url": "https://gh.test/o/r/pull/17#issuecomment-9",
+        "issue_url": "https://api.github.test/repos/o/r/issues/17",
+    }
+    monkeypatch.setattr(
+        mod,
+        "gh",
+        lambda args: json.dumps([comment]) if "/issues/comments" in args[1] else "[]",
+    )
+    send = MagicMock()
+    task = MagicMock(return_value=True)
+    monkeypatch.setattr(mod, "send", send)
+    monkeypatch.setattr(mod, "dispatch_task", task)
+    state = {"last_comment_check": "2026-07-14T00:00:00Z", "seen_comments": {}}
+
+    mod.check_comments(state)
+
+    send.assert_not_called()
+    assert task.call_args.kwargs["task_id"] == "gh-cmd-9"
+    assert task.call_args.kwargs["target"] == "natsume"
+    assert "o/r#17" in task.call_args.kwargs["instruction"]
+
+
+def test_check_ci_dispatches_failure_directly(mod, monkeypatch):
+    monkeypatch.setattr(
+        mod,
+        "gh",
+        lambda args: json.dumps(
+            [
+                {
+                    "number": 17,
+                    "headRefOid": "a" * 40,
+                    "statusCheckRollup": [
+                        {
+                            "name": "tests",
+                            "conclusion": "FAILURE",
+                            "detailsUrl": "https://gh.test/actions/1",
+                        }
+                    ],
+                }
+            ]
+        ),
+    )
+    task = MagicMock(return_value=True)
+    monkeypatch.setattr(mod, "dispatch_task", task)
+    state = mod.default_state()
+
+    mod.check_ci(state)
+
+    kwargs = task.call_args.kwargs
+    assert kwargs["target"] == "natsume"
+    assert kwargs["task_id"] == "gh-ci-o-r#17-aaaaaaaa"
+    assert "CI (tests)" in kwargs["instruction"]
+    assert "https://gh.test/actions/1" in kwargs["instruction"]
+    assert "o/r#17_aaaaaaaa" in state["ci_notified"]
+
+
+def test_dispatch_task_dry_run_only_logs(mod, monkeypatch):
+    direct = MagicMock()
+    monkeypatch.setattr(mod, "DRY_RUN", True)
+    monkeypatch.setattr(mod, "dispatch_direct_task", direct)
+
+    assert (
+        mod.dispatch_task(
+            target="natsume",
+            task_id="gh-cmd-1",
+            summary="dry run",
+            instruction="noop",
+        )
+        is False
+    )
+    direct.assert_not_called()
+    assert "DRY_RUN task -> natsume: gh-cmd-1 dry run" in mod.LOG_FILE.read_text(encoding="utf-8")

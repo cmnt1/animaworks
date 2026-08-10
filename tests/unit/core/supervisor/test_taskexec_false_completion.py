@@ -29,6 +29,16 @@ from core.supervisor.pending_executor import (
     _classify_task_result_for_desc,
 )
 
+
+@pytest.fixture(autouse=True)
+def _legacy_completion_semantics():
+    with patch(
+        "core.supervisor.pending_executor._completion_declaration_required",
+        return_value=False,
+    ):
+        yield
+
+
 # ── Helpers ──────────────────────────────────────────────
 
 
@@ -713,6 +723,7 @@ class TestExecuteLlmTaskStatusMapping:
             assert mock_sync.call_args_list[0].args == ("test-task-1", "in_progress")
             assert mock_sync.call_args_list[-1].args[1] == "failed"
             assert mock_sync.call_args_list[-1].kwargs["summary"].startswith("FAILED: Failed to authenticate.")
+            assert executor._anima.messenger.send.call_args.kwargs["to"] == "test-anima"
 
     @pytest.mark.asyncio
     async def test_error_exception_maps_to_failed(self, tmp_path):

@@ -169,6 +169,7 @@ class CycleMixin:
             return CycleResult(
                 trigger=trigger,
                 action="skipped",
+                stop_kind="budget_skipped",
                 summary="Monthly token budget could not be verified; LLM cycle skipped",
             )
 
@@ -205,6 +206,7 @@ class CycleMixin:
         return CycleResult(
             trigger=trigger,
             action="skipped",
+            stop_kind="budget_skipped",
             summary="Monthly token budget reached; LLM cycle skipped",
         )
 
@@ -1303,6 +1305,7 @@ class CycleMixin:
         }
         terminal_error_message = ""
         terminal_error_reason = ""
+        stream_stop_kind = "normal"
         stream_truncated = False
         current_prompt = prompt
         current_system_prompt = system_prompt
@@ -1364,6 +1367,7 @@ class CycleMixin:
                                 _stream_force_chain = True
                             if chunk.get("truncated", False):
                                 stream_truncated = True
+                            stream_stop_kind = str(chunk.get("stop_kind") or "normal")
                             stream_succeeded = True
                         elif chunk["type"] == "error" and chunk.get("terminal") is True:
                             terminal_error_message = chunk.get("message", "[Terminal LLM error]")
@@ -1756,6 +1760,7 @@ class CycleMixin:
             "cycle_result": CycleResult(
                 trigger=trigger,
                 action=final_action,
+                stop_kind="stream_error" if terminal_error_message else stream_stop_kind,
                 summary=final_summary,
                 reason=terminal_error_reason,
                 thread_id=thread_id,

@@ -800,6 +800,11 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
             "type": "done",
             "full_text": full_text,
             "result_message": state.result_message,
+            "stop_kind": "interrupted"
+            if state.interrupted
+            else "empty_response"
+            if full_text == "(no response)"
+            else "normal",
             "replied_to_from_transcript": replied_to,
             "tool_call_records": [asdict(r) for r in all_tool_records],
             "force_chain": session_stats.get("force_chain", False),

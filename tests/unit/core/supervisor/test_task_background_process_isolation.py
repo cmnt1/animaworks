@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.memory.streaming_journal import StreamingJournal
 from core.platform.processing_lease import (
     read_processing_lease,
     write_processing_lease,
@@ -83,6 +84,32 @@ def _executor(
         task_runner_supervisor=supervisor,
     )
     return executor, anima, anima_dir
+
+
+def test_isolated_task_journal_recovery_attaches_checkpoint_before_delete(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "sakura"
+    anima_dir.mkdir(parents=True)
+    journal = StreamingJournal(anima_dir, session_type="task", thread_id="task-1")
+    journal.open(trigger="task:task-1")
+    journal.write_text("partial task output")
+    journal.close()
+    pending_executor = MagicMock()
+    owner = SimpleNamespace(_pending_executor=pending_executor)
+    supervisor = TaskRunnerSupervisor(
+        "sakura",
+        anima_dir,
+        tmp_path / "shared",
+        busy_status_owner=owner,
+    )
+
+    supervisor._recover_task_journals(("task",))
+
+    pending_executor.add_recovered_task_checkpoint.assert_called_once_with(
+        "task-1",
+        "partial task output",
+        [],
+    )
+    assert not StreamingJournal.has_orphan(anima_dir, "task")
 
 
 @pytest.mark.asyncio
@@ -167,6 +194,35 @@ async def test_child_crash_records_failed_retryable_and_root_continues(tmp_path:
     sync.assert_called()
     assert sync.call_args[0][1] == "failed"
     assert "INTERRUPTED" in str(sync.call_args.kwargs.get("summary") or sync.call_args[1].get("summary", ""))
+
+
+@pytest.mark.asyncio
+async def test_child_crash_during_shutdown_stays_for_startup_recovery(tmp_path: Path) -> None:
+    executor, anima, anima_dir = _executor(tmp_path, task_isolated=True)
+    assert executor._task_runner_supervisor is not None
+    type(anima)._acquire_background_worker = None  # type: ignore[attr-defined]
+    executor._task_runner_supervisor.run_task = AsyncMock(
+        side_effect=TaskRunnerError("task runner exited during shutdown")
+    )
+    task_desc = {
+        "task_id": "t-shutdown-crash",
+        "title": "shutdown crash",
+        "description": "work",
+        "task_type": "llm",
+    }
+    processing = anima_dir / "state" / "pending" / "processing"
+    failed = anima_dir / "state" / "pending" / "failed"
+    processing.mkdir(parents=True)
+    failed.mkdir()
+    processing_path = processing / "t-shutdown-crash.json"
+    processing_path.write_text(json.dumps(task_desc), encoding="utf-8")
+    executor._shutdown_event.set()
+
+    await executor._execute_claimed_llm_task(task_desc, processing_path, failed, None)
+
+    assert processing_path.exists()
+    assert not list(failed.glob("*.json"))
+    anima.messenger.send.assert_not_called()
 
 
 @pytest.mark.asyncio

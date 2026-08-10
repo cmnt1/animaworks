@@ -33,6 +33,15 @@ from core.schemas import ModelConfig
 from core.supervisor.pending_executor import PendingTaskExecutor
 from core.taskboard.models import AttentionDecision
 
+
+@pytest.fixture(autouse=True)
+def _legacy_completion_semantics():
+    with patch(
+        "core.supervisor.pending_executor._completion_declaration_required",
+        return_value=False,
+    ):
+        yield
+
 # ── Helpers ──────────────────────────────────────────────────
 
 
@@ -492,17 +501,154 @@ class TestExecuteLLMTaskFailureHandling:
         assert call_kwargs[1]["to"] == "some-anima"
 
     @pytest.mark.asyncio
-    async def test_no_notification_without_reply_to(self, tmp_path: Path) -> None:
-        """When no reply_to, only writes failed result, no notification."""
+    async def test_self_notification_without_reply_to(self, tmp_path: Path) -> None:
+        """When no reply_to, sends the failure notification to self."""
         executor = _make_executor(tmp_path)
 
         with patch.object(executor, "_run_llm_task", side_effect=RuntimeError("fail")):
             task_desc = {"task_id": "fail-noreply", "description": "test"}
             await executor._execute_llm_task(task_desc)
 
-        executor._anima.messenger.send.assert_not_called()
+        executor._anima.messenger.send.assert_called_once()
+        assert executor._anima.messenger.send.call_args.kwargs["to"] == "test-anima"
         result_path = executor._anima_dir / "state" / "task_results" / "fail-noreply.md"
         assert result_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_non_shutdown_cancel_fails_and_notifies_reply_to(self, tmp_path: Path) -> None:
+        executor = _make_executor(tmp_path)
+        task_desc = {
+            "task_type": "llm",
+            "task_id": "cancelled",
+            "title": "Cancelled task",
+            "reply_to": "manager-anima",
+        }
+        processing = executor._anima_dir / "state" / "pending" / "processing"
+        failed = executor._anima_dir / "state" / "pending" / "failed"
+        processing.mkdir(parents=True)
+        failed.mkdir()
+        processing_path = processing / "cancelled.json"
+        processing_path.write_text(json.dumps(task_desc), encoding="utf-8")
+
+        from core.memory.task_queue import TaskQueueManager
+
+        queue = TaskQueueManager(executor._anima_dir)
+        queue.add_task(
+            source="anima",
+            original_instruction="work",
+            assignee="test-anima",
+            summary="work",
+            status="in_progress",
+            task_id="cancelled",
+        )
+        executor.execute_pending_task = AsyncMock(side_effect=asyncio.CancelledError)
+
+        with pytest.raises(asyncio.CancelledError):
+            await executor._execute_claimed_llm_task(task_desc, processing_path, failed, None)
+
+        assert not processing_path.exists()
+        assert (failed / "cancelled.json").exists()
+        assert queue.get_task_by_id("cancelled").status == "failed"
+        assert executor._anima.messenger.send.call_args.kwargs["to"] == "manager-anima"
+
+    @pytest.mark.asyncio
+    async def test_shutdown_cancel_stays_active_then_recovers(self, tmp_path: Path) -> None:
+        executor = _make_executor(tmp_path)
+        task_desc = {
+            "task_type": "llm",
+            "task_id": "shutdown",
+            "title": "Restarted task",
+            "context": "original",
+        }
+        pending = executor._anima_dir / "state" / "pending"
+        processing = pending / "processing"
+        failed = pending / "failed"
+        processing.mkdir(parents=True)
+        failed.mkdir()
+        processing_path = processing / "shutdown.json"
+        processing_path.write_text(json.dumps(task_desc), encoding="utf-8")
+
+        from core.memory.task_queue import TaskQueueManager
+
+        queue = TaskQueueManager(executor._anima_dir)
+        queue.add_task(
+            source="anima",
+            original_instruction="work",
+            assignee="test-anima",
+            summary="work",
+            status="in_progress",
+            task_id="shutdown",
+        )
+        executor.execute_pending_task = AsyncMock(side_effect=asyncio.CancelledError)
+        executor._shutdown_event.set()
+
+        with pytest.raises(asyncio.CancelledError):
+            await executor._execute_claimed_llm_task(task_desc, processing_path, failed, None)
+
+        assert processing_path.exists()
+        assert not list(failed.glob("*.json"))
+        assert queue.get_task_by_id("shutdown").status == "in_progress"
+        executor._anima.messenger.send.assert_not_called()
+
+        with patch(
+            "core.supervisor.pending_executor._completion_declaration_required",
+            return_value=True,
+        ):
+            PendingTaskExecutor._recover_processing(
+                processing,
+                failed,
+                executor._anima_dir,
+                executor._fail_task_terminal,
+            )
+
+        recovered = json.loads((pending / "shutdown.json").read_text(encoding="utf-8"))
+        assert recovered["continuation_count"] == 1
+        assert "continuation_not_before" not in recovered
+        assert "プロセス異常終了" in recovered["context"]
+        assert queue.get_task_by_id("shutdown").status == "in_progress"
+        executor._anima.messenger.send.assert_not_called()
+
+    def test_recovery_at_continuation_limit_notifies_reply_to(self, tmp_path: Path) -> None:
+        executor = _make_executor(tmp_path)
+        task_desc = {
+            "task_type": "llm",
+            "task_id": "exhausted",
+            "title": "Exhausted task",
+            "reply_to": "manager-anima",
+            "continuation_count": 3,
+        }
+        processing = executor._anima_dir / "state" / "pending" / "processing"
+        failed = executor._anima_dir / "state" / "pending" / "failed"
+        processing.mkdir(parents=True)
+        failed.mkdir()
+        (processing / "exhausted.json").write_text(json.dumps(task_desc), encoding="utf-8")
+
+        from core.memory.task_queue import TaskQueueManager
+
+        queue = TaskQueueManager(executor._anima_dir)
+        queue.add_task(
+            source="anima",
+            original_instruction="work",
+            assignee="test-anima",
+            summary="work",
+            status="in_progress",
+            task_id="exhausted",
+        )
+
+        with patch(
+            "core.supervisor.pending_executor._completion_declaration_required",
+            return_value=True,
+        ):
+            PendingTaskExecutor._recover_processing(
+                processing,
+                failed,
+                executor._anima_dir,
+                executor._fail_task_terminal,
+            )
+
+        assert (failed / "exhausted.json").exists()
+        assert queue.get_task_by_id("exhausted").status == "failed"
+        assert executor._anima.messenger.send.call_args.kwargs["to"] == "manager-anima"
 
     @pytest.mark.asyncio
     async def test_notification_failure_does_not_propagate(self, tmp_path: Path) -> None:
@@ -610,6 +756,7 @@ class TestI18nTemplate:
         assert "test-123" in result
         assert "テストタスク" in result
         assert "RuntimeError: boom" in result
+        assert "再委譲" in result
 
     def test_en_template(self) -> None:
         from core.i18n import t
@@ -624,3 +771,18 @@ class TestI18nTemplate:
         assert "test-456" in result
         assert "Test Task" in result
         assert "ValueError: bad" in result
+        assert "re-delegate" in result
+
+    def test_ko_template(self) -> None:
+        from core.i18n import t
+
+        result = t(
+            "pending_executor.task_fail_notify",
+            locale="ko",
+            task_id="test-789",
+            title="테스트 작업",
+            error="RuntimeError: 실패",
+        )
+        assert "test-789" in result
+        assert "테스트 작업" in result
+        assert "재위임" in result

@@ -29,6 +29,10 @@ Other workers of the same Anima (your siblings) are currently executing the foll
 - You have access to the same identity, behavior guidelines, memory directories, and organization info as the main Anima. Use memory search and file reading as needed
 - Focus on and execute the work described above
 - End the task when completion criteria are met
+- After completing the task, call `update_task(status="done", result="summary of results")` before ending. This is the only completion declaration mechanism
+- Ending the session without a completion declaration automatically continues the task (up to 3 times), after which it is marked failed
+- If you cannot proceed immediately, such as while waiting for a background command, you may end without declaring completion. Check the result in the next automatically continued session
+- If an external factor (missing permission, dependency, environment failure) prevents progress, do not repeat the same operations; declare `update_task(status="blocked", summary="<blocker>")` and stop. Automatic continuation is then cancelled
 - Observe the constraints
 - If anything is unclear, do your best within the information provided
 - When completion criteria are not "(none)", append a final single-line JSON object prefixed with `TASK_CLOSURE:`. The JSON must include `latest_user_request`, `changed_files`, `acceptance_checks` (each item has `name`, `status`, and `evidence`), `remaining_blockers`, and `can_submit`. Set `can_submit: true` only when every completion criterion is satisfied

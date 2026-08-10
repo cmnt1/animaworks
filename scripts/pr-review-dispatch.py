@@ -61,6 +61,8 @@ sys.path.insert(
     os.environ.get("ANIMAWORKS_REPO_ROOT", str(Path(__file__).resolve().parents[1])),
 )
 
+from core.tasks_dispatch import dispatch_direct_task
+
 
 def is_our_bot(login: str) -> bool:
     """True when *login* is BOT_LOGIN or REVIEWER_LOGIN (our bot accounts)."""
@@ -112,6 +114,14 @@ def send(to: str, content: str) -> None:
         meta={"source": "pr-review-dispatch.py"},
         source="system",
     )
+
+
+def dispatch_task(**kwargs: Any) -> bool:
+    """Dispatch unless this poller is running in dry-run mode."""
+    if DRY_RUN:
+        log(f"DRY_RUN task -> {kwargs['target']}: {kwargs['task_id']} {kwargs['summary']}")
+        return False
+    return dispatch_direct_task(**kwargs)
 
 
 def default_state() -> dict:
@@ -790,8 +800,34 @@ def check_comments(state: dict) -> None:
                 dedupe_key = f"{kind}:{comment.get('id')}"
                 if dedupe_key in seen:
                     continue
+                raw_body = str(comment.get("body") or "")
+                if BOT_LOGIN and f"@{BOT_LOGIN}".casefold() in raw_body.casefold():
+                    resource_url = str(
+                        comment.get("pull_request_url" if kind == "review-comment" else "issue_url") or ""
+                    )
+                    try:
+                        number = int(resource_url.rstrip("/").rsplit("/", 1)[-1])
+                    except ValueError:
+                        number = 0
+                    url = str(comment.get("html_url") or "")
+                    instruction = (
+                        f"GitHub の {repo}#{number} に次のコメントが投稿された。\n\n"
+                        f"{raw_body}\n\nURL: {url}\n\n"
+                        "上記コメントの指示に従って対応せよ。コンフリクト解消の場合は "
+                        "procedures/pr-conflict-resolution.md の手順（worktreeでorigin/baseをmerge・"
+                        "テスト通過確認・通常push・force-push禁止）に従う。"
+                    )
+                    dispatch_task(
+                        target=FIXER,
+                        task_id=f"gh-cmd-{comment.get('id')}",
+                        summary=f"GitHubコメント対応 {repo}#{number}",
+                        instruction=instruction,
+                        meta={"repo": repo, "number": number, "url": url, "kind": kind},
+                    )
+                    seen[dedupe_key] = iso(now)
+                    continue
                 seen[dedupe_key] = iso(now)
-                body = (comment.get("body") or "").replace("\n", " ")[:140]
+                body = raw_body.replace("\n", " ")[:140]
                 lines.append(f"- [{kind}] {author}: {body}\n  {comment.get('html_url', '')}")
 
     state["last_comment_check"] = iso(now)
@@ -813,7 +849,6 @@ def check_comments(state: dict) -> None:
 
 def check_ci(state: dict) -> None:
     """Dispatch CI failures once per PR and head SHA."""
-    lines: list[str] = []
     for repo in REPOS:
         prs = json.loads(
             gh(
@@ -838,26 +873,39 @@ def check_ci(state: dict) -> None:
             key = f"{repo}#{pr['number']}_{pr['headRefOid'][:8]}"
             if key in state["ci_notified"]:
                 continue
+            workflow_url = next(
+                (
+                    str(check.get("detailsUrl") or "")
+                    for check in (pr.get("statusCheckRollup") or [])
+                    if str(check.get("conclusion") or "").upper() in FAILING_CI_CONCLUSIONS
+                ),
+                "",
+            )
+            number = pr["number"]
+            sha = pr["headRefOid"]
+            pr_url = f"https://github.com/{repo}/pull/{number}"
+            workflow_name = ", ".join(failed[:6])
+            dispatch_task(
+                target=FIXER,
+                task_id=f"gh-ci-{repo.replace('/', '-')}#{number}-{sha[:8]}",
+                summary=f"CI失敗修正 {repo}#{number}",
+                instruction=(
+                    f"PR #{number} ({pr_url}) の CI ({workflow_name}) が head {sha} で失敗。"
+                    f"原因を調査し修正をpushせよ。\nworkflow URL: {workflow_url}"
+                ),
+                meta={"repo": repo, "number": number, "sha": sha, "workflow_url": workflow_url},
+            )
             state["ci_notified"][key] = iso(now_utc())
-            lines.append(f"- {repo}#{pr['number']} {pr['headRefOid'][:8]}: {', '.join(failed[:6])}")
 
     cutoff = iso(now_utc() - timedelta(days=30))
     state["ci_notified"] = {key: value for key, value in state["ci_notified"].items() if value >= cutoff}
-    if lines:
-        send(
-            DISPATCHER,
-            "【CI FAILURE検知】\n\n"
-            + "\n".join(lines)
-            + f"\n\n修正担当（{FIXER}）へのディスパッチをお願いします。",
-        )
-        log(f"ci dispatch -> {DISPATCHER}: {len(lines)} PR(s)")
 
 
 def check_conflicts(state: dict) -> None:
     """Dispatch merge conflicts once per PR head; renotify after re-conflict."""
     notified = state.setdefault("conflict_notified", {})
     open_keys: set[str] = set()
-    lines: list[str] = []
+    dispatched = 0
     for repo in REPOS:
         prs = json.loads(
             gh(
@@ -869,7 +917,7 @@ def check_conflicts(state: dict) -> None:
                     "--state",
                     "open",
                     "--json",
-                    "number,title,headRefName,baseRefName,headRefOid,mergeable,isDraft",
+                    "number,title,headRefName,baseRefName,headRefOid,mergeable,isDraft,url",
                     "--limit",
                     "100",
                 ]
@@ -892,25 +940,26 @@ def check_conflicts(state: dict) -> None:
             if notified.get(key) == sha:
                 continue
             notified[key] = sha
-            lines.append(
-                f"- {key} {sha} ({pr.get('headRefName', '')} -> {pr.get('baseRefName', '')}): "
-                f"{pr.get('title', '')[:100]}"
+            url = str(pr.get("url") or f"https://github.com/{repo}/pull/{pr['number']}")
+            dispatch_task(
+                target=FIXER,
+                task_id=f"gh-conflict-{repo.replace('/', '-')}#{pr['number']}-{sha}",
+                summary=f"コンフリクト解消 {repo}#{pr['number']}",
+                instruction=(
+                    f"PR #{pr['number']}「{pr.get('title', '')}」"
+                    f"（{pr.get('headRefName', '')} -> {pr.get('baseRefName', '')}）\nURL: {url}\n\n"
+                    "baseブランチとのコンフリクトを解消せよ。手順は "
+                    "procedures/pr-conflict-resolution.md に従う（該当ブランチのworktreeで "
+                    "origin/base をmergeして解消・テスト通過確認・通常push・force-push禁止）。"
+                    "解消pushの後は既存の静穏検知で差分レビューが自動起動する。"
+                ),
+                meta={"repo": repo, "number": pr["number"], "sha": pr["headRefOid"], "url": url},
             )
+            dispatched += 1
 
     state["conflict_notified"] = {key: value for key, value in notified.items() if key in open_keys}
-    if lines:
-        send(
-            DISPATCHER,
-            "【マージコンフリクト検知】\n\n"
-            + "\n".join(lines)
-            + "\n\n上記PRがbaseブランチとコンフリクトしています（mergeable=CONFLICTING）。"
-            f"{FIXER}へコンフリクト解消をディスパッチしてください。"
-            f"解消手順は {FIXER} の procedures/pr-conflict-resolution.md に従うこと"
-            "（該当ブランチのworktreeで origin/base をmergeして解消・テスト通過確認・"
-            "通常push。force-push禁止）。解消pushの後は既存の静穏検知で差分レビューが"
-            "自動起動します。",
-        )
-        log(f"conflict dispatch -> {DISPATCHER}: {len(lines)} PR(s)")
+    if dispatched:
+        log(f"conflict task dispatch -> {FIXER}: {dispatched} PR(s)")
 
 
 def main() -> int:

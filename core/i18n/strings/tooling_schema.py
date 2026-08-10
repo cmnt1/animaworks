@@ -276,6 +276,11 @@ STRINGS: dict[str, dict[str, str]] = {
             "동일한 키의 태스크는 직렬 실행된다. 생략 시 배타 없음"
         ),
     },
+    "schema.delegate_task.acceptance_criteria": {
+        "ja": "検証可能な受入条件。部下の実行プロンプトに埋め込まれる",
+        "en": "Verifiable acceptance criteria. Embedded in the subordinate's execution prompt",
+        "ko": "검증 가능한 수락 조건. 부하의 실행 프롬프트에 포함된다",
+    },
     "schema.disable_subordinate.desc": {
         "ja": "配下のAnimaを休止させる（プロセス停止 + 自動復帰防止）。自分の配下であれば操作可能。",
         "en": ("Disable a descendant Anima (stop process + prevent auto-restart). Any descendant can be targeted."),

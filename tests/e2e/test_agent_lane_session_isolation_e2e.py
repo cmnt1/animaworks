@@ -83,6 +83,10 @@ async def test_taskexec_runs_on_background_lane_while_chat_session_lock_is_held(
     with (
         patch("core.paths.load_prompt", return_value="task prompt"),
         patch("core.memory.activity.ActivityLogger") as mock_activity,
+        patch(
+            "core.supervisor.pending_executor._completion_declaration_required",
+            return_value=False,
+        ),
     ):
         mock_activity.return_value.log = MagicMock()
         async with anima._agent_session_context("chat"):

@@ -93,6 +93,12 @@ STRINGS: dict[str, dict[str, str]] = {
     "schema.update_task.summary": {
         "ja": "更新後の要約（任意）",
         "en": "Updated summary (optional)",
+        "ko": "업데이트 후 요약(선택 사항)",
+    },
+    "schema.update_task.result": {
+        "ja": "完了時の成果要約（任意）",
+        "en": "Completion result summary (optional)",
+        "ko": "완료 결과 요약(선택 사항)",
     },
     "schema.update_task.task_id": {
         "ja": "タスクID（backlog_task時に返されたID）",

@@ -1148,6 +1148,7 @@ class GrokCLIExecutor(BaseExecutor):
         *,
         session_rotated: bool = False,
         session_rotation_pending: bool = False,
+        stop_kind: str = "normal",
     ) -> dict[str, Any]:
         usage_dict = usage.to_dict()
         return {
@@ -1160,6 +1161,7 @@ class GrokCLIExecutor(BaseExecutor):
             ),
             "tool_call_records": [asdict(record) for record in records],
             "usage": usage_dict,
+            "stop_kind": stop_kind,
             "session_rotated": session_rotated,
             "session_rotation_pending": session_rotation_pending,
         }
@@ -1176,7 +1178,7 @@ class GrokCLIExecutor(BaseExecutor):
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Stream converted Grok ACP events, ending with exactly one ``done``."""
         if self._check_interrupted():
-            yield self._done_event("[Session interrupted by user]", [], TokenUsage(), "", 0)
+            yield self._done_event("[Session interrupted by user]", [], TokenUsage(), "", 0, stop_kind="interrupted")
             return
 
         if not _find_grok_binary():
@@ -1283,4 +1285,5 @@ class GrokCLIExecutor(BaseExecutor):
             new_turn,
             session_rotated=session_rotated,
             session_rotation_pending=rotation_pending,
+            stop_kind="interrupted" if state.interrupted else "normal",
         )

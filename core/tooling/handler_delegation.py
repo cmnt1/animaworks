@@ -87,6 +87,7 @@ class DelegationMixin(OrgHelpersMixin):
         tracking_task_id: str,
         workspace: str,
         exclusive_key: str,
+        acceptance_criteria: list[str],
         persist_sub: bool,
         persist_tracking: bool,
         persist_pending: bool,
@@ -110,6 +111,7 @@ class DelegationMixin(OrgHelpersMixin):
             "tracking_task_id": tracking_task_id,
             "workspace": workspace,
             "exclusive_key": exclusive_key,
+            "acceptance_criteria": acceptance_criteria,
             "persist_sub": persist_sub,
             "persist_tracking": persist_tracking,
             "persist_pending": persist_pending,
@@ -158,6 +160,10 @@ class DelegationMixin(OrgHelpersMixin):
         summary = args.get("summary", "") or instruction[:100]
         deadline = args.get("deadline", "")
         exclusive_key = args.get("exclusive_key", "")
+        raw_criteria = args.get("acceptance_criteria")
+        acceptance_criteria: list[str] = (
+            [c for c in raw_criteria if isinstance(c, str)] if isinstance(raw_criteria, list) else []
+        )
 
         workspace_raw = args.get("workspace", "")
         resolved_wd = ""
@@ -289,7 +295,7 @@ class DelegationMixin(OrgHelpersMixin):
                 "title": summary,
                 "description": instruction,
                 "context": "",
-                "acceptance_criteria": [],
+                "acceptance_criteria": acceptance_criteria,
                 "constraints": [],
                 "file_paths": [],
                 "allow_multistage": bool(args.get("allow_multistage")),
@@ -348,6 +354,7 @@ class DelegationMixin(OrgHelpersMixin):
                 tracking_task_id=tracking_task_id,
                 workspace=resolved_wd,
                 exclusive_key=exclusive_key,
+                acceptance_criteria=acceptance_criteria,
                 persist_sub=not persisted_sub,
                 persist_tracking=not persisted_tracking,
                 persist_pending=not persisted_pending,

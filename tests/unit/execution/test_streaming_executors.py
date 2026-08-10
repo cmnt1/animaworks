@@ -12,6 +12,7 @@ All LLM calls are mocked — no real API calls are made.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -628,6 +629,22 @@ class TestA2TokenLevelTextOnly:
         assert len(done) == 1
         assert done[0]["full_text"] == "Hello world!"
         assert done[0]["result_message"] is None
+
+    async def test_interrupt_sets_stop_kind(self, litellm_executor) -> None:
+        interrupt_event = asyncio.Event()
+        interrupt_event.set()
+        litellm_executor._interrupt_event = interrupt_event
+
+        events = await _collect_events(
+            litellm_executor.execute_streaming(
+                system_prompt="sys",
+                prompt="Hi",
+                tracker=MagicMock(spec=ContextTracker),
+            )
+        )
+
+        done = next(event for event in events if event["type"] == "done")
+        assert done["stop_kind"] == "interrupted"
 
 
 class TestA2TokenLevelWithToolCall:

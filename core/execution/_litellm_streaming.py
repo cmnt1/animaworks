@@ -183,6 +183,7 @@ class StreamingMixin:
                         "type": "done",
                         "full_text": "[Session interrupted by user]",
                         "result_message": None,
+                        "stop_kind": "interrupted",
                         "truncated": True,
                     }
                     return
@@ -282,6 +283,7 @@ class StreamingMixin:
                             "type": "done",
                             "full_text": "[Session interrupted by user]",
                             "result_message": None,
+                            "stop_kind": "interrupted",
                             "truncated": True,
                         }
                         return
@@ -669,6 +671,13 @@ class StreamingMixin:
                         "result_message": None,
                         "tool_call_records": [asdict(r) for r in all_tool_records],
                         "usage": _usage_acc.to_dict(),
+                        "stop_kind": (
+                            "runaway_halt"
+                            if is_final_iteration
+                            else "empty_response"
+                            if _empty_final_response
+                            else "normal"
+                        ),
                         "truncated": is_final_iteration or _empty_final_response,
                     }
                     return
@@ -845,6 +854,7 @@ class StreamingMixin:
             "result_message": None,
             "tool_call_records": [asdict(r) for r in all_tool_records],
             "usage": _usage_acc.to_dict(),
+            "stop_kind": "runaway_halt",
             "truncated": True,
         }
 
@@ -901,6 +911,7 @@ class StreamingMixin:
                         "full_text": "[Session interrupted by user]",
                         "result_message": None,
                         "usage": _usage_acc_ol.to_dict(),
+                        "stop_kind": "interrupted",
                         "truncated": True,
                     }
                     return
@@ -1020,6 +1031,7 @@ class StreamingMixin:
                             "full_text": "[Session interrupted by user]",
                             "result_message": None,
                             "usage": _usage_acc_ol.to_dict(),
+                            "stop_kind": "interrupted",
                             "truncated": True,
                         }
                         return
@@ -1156,6 +1168,13 @@ class StreamingMixin:
                         "result_message": None,
                         "tool_call_records": [asdict(r) for r in all_tool_records],
                         "usage": _usage_acc_ol.to_dict(),
+                        "stop_kind": (
+                            "runaway_halt"
+                            if is_final_iteration
+                            else "empty_response"
+                            if _empty_final_response_ol
+                            else "normal"
+                        ),
                         "truncated": is_final_iteration or _empty_final_response_ol,
                     }
                     return
@@ -1300,5 +1319,6 @@ class StreamingMixin:
             "result_message": None,
             "tool_call_records": [asdict(r) for r in all_tool_records],
             "usage": _usage_acc_ol.to_dict(),
+            "stop_kind": "runaway_halt",
             "truncated": True,
         }

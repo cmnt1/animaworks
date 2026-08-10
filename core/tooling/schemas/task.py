@@ -147,6 +147,10 @@ def _task_tools() -> list[dict[str, Any]]:
                         "type": "string",
                         "description": _t("schema.update_task.summary"),
                     },
+                    "result": {
+                        "type": "string",
+                        "description": _t("schema.update_task.result"),
+                    },
                 },
                 "required": ["task_id", "status"],
             },

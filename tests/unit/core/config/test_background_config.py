@@ -93,6 +93,7 @@ class TestBackgroundTaskConfig:
         """BackgroundTaskConfig has expected defaults."""
         btc = BackgroundTaskConfig()
         assert btc.enabled is True
+        assert btc.completion_declaration_required is True
         assert btc.result_retention_hours == 24
         assert btc.result_memory_retention_minutes == 60
         assert btc.max_completed_tasks_in_memory == 200

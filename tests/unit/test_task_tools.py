@@ -30,6 +30,7 @@ class TestTaskToolSchemas:
         required = update_task["parameters"]["required"]
         assert "task_id" in required
         assert "status" in required
+        assert update_task["parameters"]["properties"]["result"]["type"] == "string"
 
     def test_list_tasks_schema(self):
         task_tools = _task_tools()

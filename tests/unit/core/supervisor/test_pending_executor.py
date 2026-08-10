@@ -17,6 +17,15 @@ from core.memory.task_queue import TaskQueueManager
 from core.supervisor.pending_executor import PendingTaskExecutor
 
 
+@pytest.fixture(autouse=True)
+def _legacy_completion_semantics():
+    with patch(
+        "core.supervisor.pending_executor._completion_declaration_required",
+        return_value=False,
+    ):
+        yield
+
+
 def _make_executor(tmp_path: Path) -> PendingTaskExecutor:
     """Create a PendingTaskExecutor with minimal dependencies."""
     anima_dir = tmp_path / "animas" / "test-anima"
@@ -379,11 +388,11 @@ class TestMachineDirectiveInjection:
 
 
 class TestStreamErrorSuppression:
-    """Test that stream errors are suppressed when task queue is already done."""
+    """Test that stream errors are suppressed only after an agent declaration."""
 
     @pytest.mark.asyncio
     async def test_suppressed_when_queue_is_done(self, tmp_path):
-        """Stream error should NOT raise when task queue status is 'done'."""
+        """Stream error should not raise for a declared-done task."""
         executor = _make_executor(tmp_path)
         bg_event = asyncio.Event()
         executor._anima._get_interrupt_event = lambda _name: bg_event
@@ -391,6 +400,14 @@ class TestStreamErrorSuppression:
         async def _stream_with_error(*args, **kwargs):
             yield {"type": "text_delta", "text": "partial output"}
             yield {"type": "error", "message": "stream disconnected 3 times"}
+            yield {
+                "type": "cycle_done",
+                "cycle_result": {
+                    "action": "error",
+                    "stop_kind": "stream_error",
+                    "summary": "stream disconnected 3 times",
+                },
+            }
 
         executor._anima.agent.run_cycle_streaming = _stream_with_error
         executor._anima.agent.reset_reply_tracking = MagicMock()
@@ -407,6 +424,7 @@ class TestStreamErrorSuppression:
         mock_entry = MagicMock()
         mock_entry.status = "done"
         mock_entry.summary = "Task completed successfully"
+        mock_entry.meta = {"completed_by": "agent_declaration"}
 
         from core.taskboard.models import AttentionDecision
 

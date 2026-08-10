@@ -636,6 +636,7 @@ class GitHubWebhookConfig(BaseModel):
     repos: list[str] = Field(default_factory=list)
     reviewer_anima: str = "sumire"
     dispatcher_anima: str = "rin"
+    implementer_anima: str = "natsume"
     bot_login: str = ""
     # Dedicated review-bot GitHub login (e.g. animaworks-reviewer).
     # Treated like bot_login for comment exclusion and FRC review dispatch.
@@ -777,6 +778,7 @@ class BackgroundTaskConfig(BaseModel):
     """Configuration for background tool execution."""
 
     enabled: bool = True
+    completion_declaration_required: bool = True
     shutdown_drain_seconds: float = Field(default=600.0, ge=0)
     eligible_tools: dict[str, BackgroundToolConfig] = {
         "generate_character_assets": BackgroundToolConfig(threshold_s=30),

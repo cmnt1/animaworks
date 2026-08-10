@@ -275,4 +275,36 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "【CI FAILURE検知】\n\n{lines}\n  {url}\n\n修正担当（natsume）へのディスパッチをお願いします。",
         "en": "[CI FAILURE detected]\n\n{lines}\n  {url}\n\nPlease dispatch this to the fix owner (natsume).",
     },
+    "github_gateway.command_task": {
+        "ja": (
+            "GitHub の {repo}#{number} に次のコメントが投稿された。\n\n{body}\n\nURL: {url}\n\n"
+            "上記コメントの指示に従って対応せよ。コンフリクト解消の場合は "
+            "procedures/pr-conflict-resolution.md の手順（worktreeでorigin/baseをmerge・"
+            "テスト通過確認・通常push・force-push禁止）に従う。"
+        ),
+        "en": (
+            "The following comment was posted on GitHub at {repo}#{number}.\n\n{body}\n\nURL: {url}\n\n"
+            "Follow the instructions in the comment. For conflict resolution, follow "
+            "procedures/pr-conflict-resolution.md: merge origin/base in the branch worktree, "
+            "confirm tests pass, use a normal push, and never force-push."
+        ),
+    },
+    "github_gateway.command_summary": {
+        "ja": "GitHubコメント対応 {repo}#{number}",
+        "en": "Handle GitHub comment {repo}#{number}",
+    },
+    "github_gateway.ci_task": {
+        "ja": (
+            "PR #{number} ({pr_url}) の CI ({workflow_name}) が head {sha} で失敗。"
+            "原因を調査し修正をpushせよ。\nworkflow URL: {workflow_url}"
+        ),
+        "en": (
+            "CI ({workflow_name}) failed at head {sha} for PR #{number} ({pr_url}). "
+            "Investigate the cause, fix it, and push the fix.\nworkflow URL: {workflow_url}"
+        ),
+    },
+    "github_gateway.ci_summary": {
+        "ja": "CI失敗修正 {repo}#{number}",
+        "en": "Fix CI failure {repo}#{number}",
+    },
 }

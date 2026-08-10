@@ -200,6 +200,7 @@ async def execute_task_contract(anima: DigitalAnima, task_desc: dict[str, Any]) 
     """
     from core.supervisor.pending_executor import (
         _SENTINEL_CANCELLED,
+        _SENTINEL_CONTINUED,
         _SENTINEL_DEFERRED,
         _SENTINEL_EXPIRED,
         PendingTaskExecutor,
@@ -219,7 +220,7 @@ async def execute_task_contract(anima: DigitalAnima, task_desc: dict[str, Any]) 
     return {
         "task_type": "llm",
         "result": result,
-        "success": result not in {_SENTINEL_CANCELLED, _SENTINEL_EXPIRED, _SENTINEL_DEFERRED},
+        "success": result not in {_SENTINEL_CANCELLED, _SENTINEL_CONTINUED, _SENTINEL_EXPIRED, _SENTINEL_DEFERRED},
     }
 
 

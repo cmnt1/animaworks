@@ -183,6 +183,7 @@ class TestCycleResult:
         cr = CycleResult(trigger="heartbeat", action="responded")
         assert cr.trigger == "heartbeat"
         assert cr.action == "responded"
+        assert cr.stop_kind == "normal"
         assert cr.summary == ""
         assert cr.duration_ms == 0
         assert isinstance(cr.timestamp, datetime)
@@ -205,6 +206,10 @@ class TestCycleResult:
         assert cr.context_usage_ratio == 0.45
         assert cr.session_chained is True
         assert cr.total_turns == 5
+
+    def test_rejects_unknown_stop_kind(self):
+        with pytest.raises(ValidationError):
+            CycleResult(trigger="heartbeat", action="responded", stop_kind="unknown")
 
     def test_model_dump(self):
         cr = CycleResult(trigger="t", action="a", summary="s")
