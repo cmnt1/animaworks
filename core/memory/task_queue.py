@@ -729,7 +729,11 @@ class TaskQueueManager:
 
         For each task in ``delegated`` status, reads the subordinate's
         queue (with archive fallback) and transitions:
-        - subordinate done/cancelled → own entry ``done``
+        - subordinate done + ``meta.completed_by == "agent_declaration"``
+          → own entry ``done``
+        - subordinate done without declaration meta → own entry ``done``
+          with ``meta.acceptance = "legacy_unverified"`` (compat)
+        - subordinate cancelled → own entry ``failed``
         - subordinate failed → own entry ``failed``
 
         Returns the number of tasks synced.
@@ -746,14 +750,52 @@ class TaskQueueManager:
             if not target_dir.is_dir():
                 logger.debug("sync_delegated: target dir missing for %s", target)
                 continue
-            sub_status = self._resolve_subordinate_status(target_dir, child_id)
-            if sub_status is None:
+            outcome = self._resolve_subordinate_outcome(target_dir, child_id)
+            if outcome is None:
                 continue
-            if sub_status in ("done", "cancelled"):
+            sub_status, sub_meta, sub_summary = outcome
+            if sub_status == "done":
+                done_summary = t(
+                    "task_queue.sync_done",
+                    orig=task.summary,
+                    target=target,
+                )
+                snip = (sub_summary or "")[:200]
+                if snip:
+                    done_summary = f"{done_summary} {snip}"
+                if sub_meta.get("completed_by") == "agent_declaration":
+                    self.update_status(
+                        task.task_id,
+                        "done",
+                        summary=done_summary,
+                    )
+                else:
+                    self.update_status(
+                        task.task_id,
+                        "done",
+                        summary=done_summary,
+                    )
+                    self.update_meta(
+                        task.task_id,
+                        {"acceptance": "legacy_unverified"},
+                    )
+                    logger.warning(
+                        "sync_delegated: legacy unverified completion "
+                        "task_id=%s target=%s child_id=%s",
+                        task.task_id,
+                        target,
+                        child_id,
+                    )
+                synced += 1
+            elif sub_status == "cancelled":
                 self.update_status(
                     task.task_id,
-                    "done",
-                    summary=t("task_queue.sync_done", orig=task.summary, target=target),
+                    "failed",
+                    summary=t(
+                        "task_queue.sync_cancelled",
+                        orig=task.summary,
+                        target=target,
+                    ),
                 )
                 synced += 1
             elif sub_status == "failed":
@@ -767,12 +809,34 @@ class TaskQueueManager:
 
     def _resolve_subordinate_status(self, target_dir: Path, child_id: str) -> str | None:
         """Look up subordinate task status, falling back to archive."""
+        outcome = self._resolve_subordinate_outcome(target_dir, child_id)
+        return outcome[0] if outcome is not None else None
+
+    def _resolve_subordinate_outcome(
+        self,
+        target_dir: Path,
+        child_id: str,
+    ) -> tuple[str, dict[str, Any], str] | None:
+        """Look up subordinate terminal status with meta and summary.
+
+        Returns ``(status, meta, summary)`` or None when not terminal / missing.
+        Archive fallback returns empty meta/summary (legacy path).
+        """
         try:
             sub_tqm = TaskQueueManager(target_dir)
             sub_task = sub_tqm.get_task_by_id(child_id)
             if sub_task:
-                return sub_task.status if sub_task.status in _TERMINAL_STATUSES else None
-            return self._search_archive(target_dir, child_id)
+                if sub_task.status not in _TERMINAL_STATUSES:
+                    return None
+                return (
+                    sub_task.status,
+                    dict(sub_task.meta or {}),
+                    sub_task.summary or "",
+                )
+            archived = self._search_archive(target_dir, child_id)
+            if archived is None:
+                return None
+            return archived, {}, ""
         except Exception:
             logger.debug(
                 "sync_delegated: failed to read subordinate queue at %s",

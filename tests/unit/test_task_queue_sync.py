@@ -40,7 +40,27 @@ def _add_delegated(sup_tqm: TaskQueueManager, sub_tqm: TaskQueueManager, target:
 class TestSyncDelegated:
     """Tests for TaskQueueManager.sync_delegated()."""
 
-    def test_subordinate_done_syncs_to_done(self, tmp_path):
+    def test_subordinate_done_with_agent_declaration_syncs_to_done(self, tmp_path):
+        animas_dir = _make_animas_dir(tmp_path)
+        sup_tqm = TaskQueueManager(animas_dir / "supervisor")
+        sub_tqm = TaskQueueManager(animas_dir / "subordinate")
+
+        sup_id, sub_id = _add_delegated(sup_tqm, sub_tqm, "subordinate")
+        sub_tqm.update_status(sub_id, "done", summary="Completed the assigned work")
+        sub_tqm.update_meta(sub_id, {"completed_by": "agent_declaration"})
+
+        synced = sup_tqm.sync_delegated(animas_dir)
+
+        assert synced == 1
+        task = sup_tqm.get_task_by_id(sup_id)
+        assert task is not None
+        assert task.status == "done"
+        assert "subordinate" in task.summary
+        assert "完了" in task.summary or "done" in task.summary
+        assert "Completed the assigned work" in task.summary
+        assert "acceptance" not in (task.meta or {})
+
+    def test_subordinate_done_without_declaration_is_legacy_unverified(self, tmp_path):
         animas_dir = _make_animas_dir(tmp_path)
         sup_tqm = TaskQueueManager(animas_dir / "supervisor")
         sub_tqm = TaskQueueManager(animas_dir / "subordinate")
@@ -56,6 +76,7 @@ class TestSyncDelegated:
         assert task.status == "done"
         assert "subordinate" in task.summary
         assert "完了" in task.summary or "done" in task.summary
+        assert (task.meta or {}).get("acceptance") == "legacy_unverified"
 
     def test_subordinate_failed_syncs_to_failed(self, tmp_path):
         animas_dir = _make_animas_dir(tmp_path)
@@ -73,7 +94,7 @@ class TestSyncDelegated:
         assert task.status == "failed"
         assert "再委任" in task.summary or "re-delegation" in task.summary
 
-    def test_subordinate_cancelled_syncs_to_done(self, tmp_path):
+    def test_subordinate_cancelled_syncs_to_failed(self, tmp_path):
         animas_dir = _make_animas_dir(tmp_path)
         sup_tqm = TaskQueueManager(animas_dir / "supervisor")
         sub_tqm = TaskQueueManager(animas_dir / "subordinate")
@@ -85,7 +106,9 @@ class TestSyncDelegated:
 
         assert synced == 1
         task = sup_tqm.get_task_by_id(sup_id)
-        assert task.status == "done"
+        assert task is not None
+        assert task.status == "failed"
+        assert "キャンセル" in task.summary or "cancelled" in task.summary
 
     def test_subordinate_still_pending_no_sync(self, tmp_path):
         animas_dir = _make_animas_dir(tmp_path)

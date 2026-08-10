@@ -186,6 +186,57 @@ class TestDelegateTaskWritesPending:
         for field in required_fields:
             assert field in task_data, f"Missing required field: {field}"
 
+    def test_pending_file_includes_acceptance_criteria(self, handler_with_sub):
+        """acceptance_criteria from delegate_task args is written into pending JSON."""
+        handler, animas_dir, cfg = handler_with_sub
+        alice_dir = animas_dir / "alice"
+        criteria = ["tests pass", "PR description updated"]
+
+        with (
+            patch("core.paths.get_animas_dir", return_value=animas_dir),
+            patch("core.config.models.load_config", return_value=cfg),
+            patch("core.tooling.handler_delegation.build_outgoing_origin_chain", return_value=["anima"]),
+        ):
+            result = handler.handle(
+                "delegate_task",
+                {
+                    "name": "alice",
+                    "instruction": "Ship the fix",
+                    "summary": "Ship fix",
+                    "deadline": "1h",
+                    "acceptance_criteria": criteria,
+                },
+            )
+
+        pending_files = list((alice_dir / "state" / "pending").glob("*.json"))
+        assert len(pending_files) == 1, f"Expected 1 pending file: {result}"
+        task_data = json.loads(pending_files[0].read_text(encoding="utf-8"))
+        assert task_data["acceptance_criteria"] == criteria
+
+    def test_pending_file_defaults_acceptance_criteria_empty(self, handler_with_sub):
+        """Omitting acceptance_criteria leaves an empty list (backward compatible)."""
+        handler, animas_dir, cfg = handler_with_sub
+        alice_dir = animas_dir / "alice"
+
+        with (
+            patch("core.paths.get_animas_dir", return_value=animas_dir),
+            patch("core.config.models.load_config", return_value=cfg),
+            patch("core.tooling.handler_delegation.build_outgoing_origin_chain", return_value=["anima"]),
+        ):
+            handler.handle(
+                "delegate_task",
+                {
+                    "name": "alice",
+                    "instruction": "Do something",
+                    "summary": "Task",
+                    "deadline": "1h",
+                },
+            )
+
+        pending_files = list((alice_dir / "state" / "pending").glob("*.json"))
+        task_data = json.loads(pending_files[0].read_text(encoding="utf-8"))
+        assert task_data["acceptance_criteria"] == []
+
 
 # ── PendingTaskExecutor cancelled check ─────────────────────
 

@@ -139,6 +139,7 @@ class DelegateTaskPersistRequest(BaseModel):
     tracking_task_id: str  # client-assigned 12hex id
     workspace: str = ""  # resolve_workspace absolute path string
     exclusive_key: str = ""  # optional task exclusion group
+    acceptance_criteria: list[str] = []  # verifiable acceptance criteria for pending JSON
     persist_sub: bool = True  # write to subordinate queue
     persist_tracking: bool = True  # write delegated entry on delegator queue
     persist_pending: bool = True  # create state/pending/<id>.json
@@ -620,7 +621,7 @@ def create_internal_router() -> APIRouter:
                     "title": body.summary,
                     "description": body.instruction,
                     "context": "",
-                    "acceptance_criteria": [],
+                    "acceptance_criteria": list(body.acceptance_criteria or []),
                     "constraints": [],
                     "file_paths": [],
                     "submitted_by": body.delegator,

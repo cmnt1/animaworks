@@ -486,10 +486,17 @@ STRINGS: dict[str, dict[str, str]] = {
     "task_queue.sync_done": {
         "ja": "{orig} (→{target}: 完了)",
         "en": "{orig} (→{target}: done)",
+        "ko": "{orig} (→{target}: 완료)",
     },
     "task_queue.sync_failed": {
         "ja": "{orig} (→{target}: 失敗 — 再委任を検討)",
         "en": "{orig} (→{target}: failed — consider re-delegation)",
+        "ko": "{orig} (→{target}: 실패 — 재위임 검토)",
+    },
+    "task_queue.sync_cancelled": {
+        "ja": "{orig} (→{target}: 部下タスクがキャンセルされた)",
+        "en": "{orig} (→{target}: subordinate task was cancelled)",
+        "ko": "{orig} (→{target}: 부하 태스크가 취소됨)",
     },
     "task_queue.delegated_unknown": {
         "ja": "不明",
