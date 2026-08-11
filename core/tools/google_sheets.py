@@ -17,6 +17,7 @@ Google Calendar tools.
 import argparse
 import json
 import logging
+import os
 import re
 import sys
 from pathlib import Path
@@ -42,6 +43,22 @@ _DEFAULT_CREDENTIALS_DIR = Path.home() / ".animaworks" / "credentials" / "google
 _SPREADSHEET_URL_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9_-]+)")
 
 
+def _credentials_dir() -> Path:
+    """Prefer credentials isolated to the running Anima's company."""
+    anima_dir_value = os.environ.get("ANIMAWORKS_ANIMA_DIR")
+    if anima_dir_value:
+        from core.company import get_company
+
+        anima_dir = Path(anima_dir_value).resolve()
+        company = get_company(anima_dir.name, animas_dir=anima_dir.parent)
+        if company:
+            companies_dir = (anima_dir.parent.parent / "companies").resolve()
+            company_dir = (companies_dir / company / "credentials" / company / "google_sheets").resolve()
+            if company_dir.is_relative_to(companies_dir) and company_dir.is_dir():
+                return company_dir
+    return _DEFAULT_CREDENTIALS_DIR
+
+
 def _extract_spreadsheet_id(id_or_url: str) -> str:
     """Accept either a bare spreadsheet ID or a full docs.google.com URL."""
     m = _SPREADSHEET_URL_RE.search(id_or_url)
@@ -59,8 +76,9 @@ class GoogleSheetsClient:
         credentials_path: Path | None = None,
         token_path: Path | None = None,
     ) -> None:
-        self.credentials_path = credentials_path or (_DEFAULT_CREDENTIALS_DIR / "credentials.json")
-        self.token_path = token_path or (_DEFAULT_CREDENTIALS_DIR / "token.json")
+        credentials_dir = _credentials_dir()
+        self.credentials_path = credentials_path or (credentials_dir / "credentials.json")
+        self.token_path = token_path or (credentials_dir / "token.json")
         self._service = None
 
     def _get_credentials(self) -> Any:
