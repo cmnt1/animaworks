@@ -5,8 +5,8 @@ private character art are runtime data and must not be committed here.
 
 ## Character sheets
 
-Each sheet is a transparent PNG with four 96×96 frames per row
-(384×960 overall). Rows are fixed:
+Each sheet is a transparent PNG with four 64×64 frames per row
+(256×640 overall). Rows are fixed:
 
 | Row | State |
 | ---: | --- |
@@ -22,9 +22,8 @@ Each sheet is a transparent PNG with four 96×96 frames per row
 | 9 | error |
 
 At startup the renderer probes
-`GET /api/animas/<name>/assets/pixel_sheet.png`. When it is unavailable, the
-anima name is hashed to one of `sample_01.png` through `sample_06.png`.
-`human.png` and the two customer sheets are reserved generic roles.
+`GET /api/animas/<name>/assets/pixel_sheet.png`. When it is unavailable, every
+role uses the bundled `sample_01.png` placeholder.
 
 The `chars` section of `assets/manifest.json` declares `file`, `frameW`,
 `frameH`, and each animation's `row`, `frames`, and `fps`.
@@ -34,7 +33,16 @@ The `chars` section of `assets/manifest.json` declares `file`, `frameW`,
 `assets/scene.json` contains dimensions and placement rules only. The browser
 uses the `{name, company}` entries from `GET /api/animas` to create company
 zones, desk grids, a central `human` desk, meeting areas, and shared props.
-Desk items use `item_01.png` through `item_14.png` in deterministic desk order.
+Each generated desk uses the bundled 64px desk and chair sprites. Laptop or
+desktop PC type and zero to two small props are assigned deterministically from
+the anima name.
+
+For seated bust-up characters, render the desk first, the character over it,
+then the centered rear-view PC and tabletop props. Align the character's
+bottom-edge hands with the tabletop and omit the chair while seated. An
+animation can set `deskFront: true` in the manifest to draw the desk after the
+character; the bundled `success` row uses this for its raised-hand pose.
+Walking characters retain normal y-sort behavior.
 
 A deployment can supply a complete scene at:
 
@@ -46,8 +54,8 @@ generated layout.
 
 Deployments can also override any bundled asset by placing a file with the same
 relative name under `workspace_pixel/assets/`. For example,
-`workspace_pixel/assets/scene/desk.png` replaces the bundled
-`assets/scene/desk.png`, and `workspace_pixel/assets/manifest.json` replaces the
+`workspace_pixel/assets/scene/desk64.png` replaces the bundled
+`assets/scene/desk64.png`, and `workspace_pixel/assets/manifest.json` replaces the
 bundled manifest. The renderer requests runtime files first and falls back to
 the bundled copy when no override exists.
 
@@ -70,40 +78,3 @@ or effect assets may use renderer placeholders, but missing character sheets
 should normally use a bundled sample.
 
 All pixel assets are rendered with nearest-neighbor sampling.
-
-## Illustration background mode
-
-A deployment can replace the tiled scene with a single illustrated office by
-supplying `workspace_pixel/assets/scene/office_bg.png` together with
-`office_bg_slots.json`. When both load, the renderer draws the illustration and
-seats characters at the declared slots instead of generating a tile layout.
-
-The bundled `office_bg.png` shows a two-company office (left/right floor
-zones). When the fleet has only one company, `office_bg_single.png` (same
-geometry, unified floor) is used instead and seats are assigned by
-interleaving the slot sides, so both variants share `office_bg_slots.json`.
-
-`office_bg_slots.json` holds:
-
-- `slots`: seats in assignment order. Each has `id`, `x`, `y`, an optional
-  `company`, and `desk_rect`
-- `human`: the seat used for the human role, same shape as a slot
-- `whiteboard`, `door`, `standing_waypoints`: coordinates used by effects and
-  walking routes
-
-`desk_rect` is `[x, y, width, height]` covering the desk itself. Seated
-characters are drawn first and the renderer then repaints that rectangle from
-the background, so the desk occludes the lower body.
-
-A slot may also declare `front_rects`, an array of rectangles in the same form.
-Use it for objects that rise above the desk surface — a tall monitor, a desk
-lamp — which would otherwise be covered by the character. Each rectangle is
-repainted from the background after the character is drawn.
-
-Do not enlarge `desk_rect` upward to cover such objects: the rectangle repaints
-the empty floor above the desk as well, which slices the character with a
-straight edge and leaves it floating.
-
-Sheets are cropped by the topmost occluding edge, so only the frame area above
-it is ever visible. Poses that rely on hands resting at desk height will not
-read on screen; express desk work with the upper body instead.

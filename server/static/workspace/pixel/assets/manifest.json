@@ -2,293 +2,8 @@
   "chars": {
     "sample_01": {
       "file": "chars/sample_01.png",
-      "frameW": 96,
-      "frameH": 96,
-      "anims": {
-        "idle": {
-          "row": 0,
-          "frames": 4,
-          "fps": 4
-        },
-        "working": {
-          "row": 1,
-          "frames": 4,
-          "fps": 3
-        },
-        "thinking": {
-          "row": 2,
-          "frames": 4,
-          "fps": 4
-        },
-        "talking": {
-          "row": 3,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_down": {
-          "row": 4,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_up": {
-          "row": 5,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_side": {
-          "row": 6,
-          "frames": 4,
-          "fps": 8
-        },
-        "sleeping": {
-          "row": 7,
-          "frames": 4,
-          "fps": 2
-        },
-        "success": {
-          "row": 8,
-          "frames": 4,
-          "fps": 8
-        },
-        "error": {
-          "row": 9,
-          "frames": 4,
-          "fps": 8
-        }
-      }
-    },
-    "sample_02": {
-      "file": "chars/sample_02.png",
-      "frameW": 96,
-      "frameH": 96,
-      "anims": {
-        "idle": {
-          "row": 0,
-          "frames": 4,
-          "fps": 4
-        },
-        "working": {
-          "row": 1,
-          "frames": 4,
-          "fps": 3
-        },
-        "thinking": {
-          "row": 2,
-          "frames": 4,
-          "fps": 4
-        },
-        "talking": {
-          "row": 3,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_down": {
-          "row": 4,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_up": {
-          "row": 5,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_side": {
-          "row": 6,
-          "frames": 4,
-          "fps": 8
-        },
-        "sleeping": {
-          "row": 7,
-          "frames": 4,
-          "fps": 2
-        },
-        "success": {
-          "row": 8,
-          "frames": 4,
-          "fps": 8
-        },
-        "error": {
-          "row": 9,
-          "frames": 4,
-          "fps": 8
-        }
-      }
-    },
-    "sample_03": {
-      "file": "chars/sample_03.png",
-      "frameW": 96,
-      "frameH": 96,
-      "anims": {
-        "idle": {
-          "row": 0,
-          "frames": 4,
-          "fps": 4
-        },
-        "working": {
-          "row": 1,
-          "frames": 4,
-          "fps": 3
-        },
-        "thinking": {
-          "row": 2,
-          "frames": 4,
-          "fps": 4
-        },
-        "talking": {
-          "row": 3,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_down": {
-          "row": 4,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_up": {
-          "row": 5,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_side": {
-          "row": 6,
-          "frames": 4,
-          "fps": 8
-        },
-        "sleeping": {
-          "row": 7,
-          "frames": 4,
-          "fps": 2
-        },
-        "success": {
-          "row": 8,
-          "frames": 4,
-          "fps": 8
-        },
-        "error": {
-          "row": 9,
-          "frames": 4,
-          "fps": 8
-        }
-      }
-    },
-    "sample_04": {
-      "file": "chars/sample_04.png",
-      "frameW": 96,
-      "frameH": 96,
-      "anims": {
-        "idle": {
-          "row": 0,
-          "frames": 4,
-          "fps": 4
-        },
-        "working": {
-          "row": 1,
-          "frames": 4,
-          "fps": 3
-        },
-        "thinking": {
-          "row": 2,
-          "frames": 4,
-          "fps": 4
-        },
-        "talking": {
-          "row": 3,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_down": {
-          "row": 4,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_up": {
-          "row": 5,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_side": {
-          "row": 6,
-          "frames": 4,
-          "fps": 8
-        },
-        "sleeping": {
-          "row": 7,
-          "frames": 4,
-          "fps": 2
-        },
-        "success": {
-          "row": 8,
-          "frames": 4,
-          "fps": 8
-        },
-        "error": {
-          "row": 9,
-          "frames": 4,
-          "fps": 8
-        }
-      }
-    },
-    "sample_05": {
-      "file": "chars/sample_05.png",
-      "frameW": 96,
-      "frameH": 96,
-      "anims": {
-        "idle": {
-          "row": 0,
-          "frames": 4,
-          "fps": 4
-        },
-        "working": {
-          "row": 1,
-          "frames": 4,
-          "fps": 3
-        },
-        "thinking": {
-          "row": 2,
-          "frames": 4,
-          "fps": 4
-        },
-        "talking": {
-          "row": 3,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_down": {
-          "row": 4,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_up": {
-          "row": 5,
-          "frames": 4,
-          "fps": 8
-        },
-        "walk_side": {
-          "row": 6,
-          "frames": 4,
-          "fps": 8
-        },
-        "sleeping": {
-          "row": 7,
-          "frames": 4,
-          "fps": 2
-        },
-        "success": {
-          "row": 8,
-          "frames": 4,
-          "fps": 8
-        },
-        "error": {
-          "row": 9,
-          "frames": 4,
-          "fps": 8
-        }
-      }
-    },
-    "sample_06": {
-      "file": "chars/sample_06.png",
-      "frameW": 96,
-      "frameH": 96,
+      "frameW": 64,
+      "frameH": 64,
       "anims": {
         "idle": {
           "row": 0,
@@ -344,8 +59,8 @@
     },
     "human": {
       "file": "chars/human.png",
-      "frameW": 96,
-      "frameH": 96,
+      "frameW": 64,
+      "frameH": 64,
       "anims": {
         "idle": {
           "row": 0,
@@ -401,8 +116,8 @@
     },
     "customer_a": {
       "file": "chars/customer_a.png",
-      "frameW": 96,
-      "frameH": 96,
+      "frameW": 64,
+      "frameH": 64,
       "anims": {
         "idle": {
           "row": 0,
@@ -458,8 +173,8 @@
     },
     "customer_b": {
       "file": "chars/customer_b.png",
-      "frameW": 96,
-      "frameH": 96,
+      "frameW": 64,
+      "frameH": 64,
       "anims": {
         "idle": {
           "row": 0,
@@ -515,65 +230,33 @@
     }
   },
   "scene": {
-    "office_bg": {
-      "file": "scene/office_bg.png",
-      "w": 1120,
-      "h": 736,
-      "anchor": "top-left"
-    },
-    "office_bg_single": {
-      "file": "scene/office_bg_single.png",
-      "w": 1120,
-      "h": 736,
-      "anchor": "top-left"
-    },
     "tiles": {
-      "wood_warm": {
-        "file": "scene/tile_wood_warm.png",
-        "w": 32,
-        "h": 32,
-        "px": 32,
+      "floor_wood": {
+        "file": "scene/floor_wood.png",
+        "w": 128,
+        "h": 128,
+        "px": 128,
         "anchor": "top-left"
       },
-      "wood_cool": {
-        "file": "scene/tile_wood_cool.png",
-        "w": 32,
-        "h": 32,
-        "px": 32,
-        "anchor": "top-left"
-      },
-      "carpet_blue": {
-        "file": "scene/tile_carpet_blue.png",
-        "w": 32,
-        "h": 32,
-        "px": 32,
-        "anchor": "top-left"
-      },
-      "mat": {
-        "file": "scene/tile_mat.png",
-        "w": 32,
-        "h": 32,
-        "px": 32,
+      "floor_carpet": {
+        "file": "scene/floor_carpet.png",
+        "w": 128,
+        "h": 128,
+        "px": 128,
         "anchor": "top-left"
       }
     },
     "walls": {
-      "day": {
-        "file": "scene/wall_strip.png",
-        "w": 1280,
+      "segment": {
+        "file": "scene/wall_segment.png",
+        "w": 256,
         "h": 96,
         "anchor": "top-left"
       },
-      "night": {
-        "file": "scene/wall_night.png",
-        "w": 1280,
+      "plain": {
+        "file": "scene/wall_plain.png",
+        "w": 128,
         "h": 96,
-        "anchor": "top-left"
-      },
-      "wall_bottom": {
-        "file": "scene/wall_bottom.png",
-        "w": 1280,
-        "h": 64,
         "anchor": "top-left"
       }
     },
@@ -586,74 +269,68 @@
       },
       "whiteboard": {
         "file": "scene/whiteboard.png",
-        "w": 192,
-        "h": 64,
+        "w": 160,
+        "h": 72,
         "anchor": "bottom"
       },
-      "coffee": {
-        "file": "scene/coffee.png",
+      "coffee_corner": {
+        "file": "scene/coffee_corner.png",
         "w": 96,
-        "h": 64,
+        "h": 72,
         "anchor": "bottom"
       },
       "sofa": {
         "file": "scene/sofa.png",
         "w": 96,
-        "h": 64,
+        "h": 56,
         "anchor": "bottom"
       },
       "vending": {
         "file": "scene/vending.png",
-        "w": 64,
-        "h": 96,
+        "w": 56,
+        "h": 88,
         "anchor": "bottom"
       },
       "server_rack": {
         "file": "scene/server_rack.png",
-        "w": 64,
-        "h": 64,
+        "w": 56,
+        "h": 88,
         "anchor": "bottom"
       },
       "meeting_table": {
         "file": "scene/meeting_table.png",
         "w": 96,
-        "h": 64,
+        "h": 56,
         "anchor": "bottom"
       },
       "welcome_mat": {
         "file": "scene/welcome_mat.png",
-        "w": 128,
-        "h": 64,
+        "w": 96,
+        "h": 48,
         "anchor": "bottom"
       },
-      "door": {
-        "file": "scene/door.png",
-        "w": 64,
-        "h": 64,
-        "anchor": "bottom"
-      },
-      "door_frame": {
-        "file": "scene/door_frame.png",
-        "w": 192,
-        "h": 112,
+      "entrance": {
+        "file": "scene/entrance.png",
+        "w": 176,
+        "h": 120,
         "anchor": "bottom"
       },
       "bookshelf": {
         "file": "scene/bookshelf.png",
-        "w": 128,
+        "w": 112,
         "h": 64,
         "anchor": "bottom"
       },
-      "plant": {
-        "file": "scene/plant.png",
+      "plant_large": {
+        "file": "scene/plant_large.png",
         "w": 32,
-        "h": 48,
+        "h": 56,
         "anchor": "bottom"
       },
       "cat": {
         "file": "scene/cat.png",
-        "w": 32,
-        "h": 32,
+        "w": 28,
+        "h": 20,
         "anchor": "bottom"
       },
       "chair": {
@@ -664,80 +341,50 @@
       },
       "rug": {
         "file": "scene/rug.png",
-        "w": 160,
-        "h": 128,
+        "w": 144,
+        "h": 96,
         "anchor": "bottom"
       },
       "trash_bin": {
         "file": "scene/trash_bin.png",
-        "w": 32,
-        "h": 32,
+        "w": 20,
+        "h": 28,
         "anchor": "bottom"
       },
       "side_table": {
         "file": "scene/side_table.png",
-        "w": 64,
-        "h": 64,
-        "anchor": "bottom"
-      },
-      "clutter_a": {
-        "file": "scene/clutter_a.png",
-        "w": 32,
-        "h": 16,
-        "anchor": "bottom"
-      },
-      "clutter_b": {
-        "file": "scene/clutter_b.png",
-        "w": 32,
-        "h": 16,
-        "anchor": "bottom"
-      },
-      "clutter_c": {
-        "file": "scene/clutter_c.png",
-        "w": 32,
-        "h": 16,
-        "anchor": "bottom"
-      },
-      "clutter_d": {
-        "file": "scene/clutter_d.png",
-        "w": 32,
-        "h": 16,
+        "w": 56,
+        "h": 44,
         "anchor": "bottom"
       },
       "trolley": {
         "file": "scene/trolley.png",
-        "w": 64,
-        "h": 64,
+        "w": 56,
+        "h": 56,
         "anchor": "bottom"
       },
       "cat_bed": {
         "file": "scene/cat_bed.png",
         "w": 32,
-        "h": 32,
+        "h": 20,
         "anchor": "bottom"
       },
       "sign_stand": {
         "file": "scene/sign_stand.png",
-        "w": 32,
-        "h": 48,
-        "anchor": "bottom"
-      },
-      "bookshelf_b": {
-        "file": "scene/bookshelf_b.png",
-        "w": 128,
-        "h": 64,
+        "w": 24,
+        "h": 44,
         "anchor": "bottom"
       },
       "poster_a": {
         "file": "scene/poster_a.png",
-        "w": 32,
-        "h": 48,
+        "w": 24,
+        "h": 36,
         "anchor": "bottom"
       },
       "poster_b": {
         "file": "scene/poster_b.png",
-        "w": 32,
-        "h": 48,
+        "w": 24,
+        "h": 36,
         "anchor": "bottom"
       },
       "desk_taka": {
@@ -745,91 +392,125 @@
         "w": 136,
         "h": 80,
         "anchor": "bottom"
-      }
-    },
-    "items": {
-      "item_01": {
-        "file": "scene/item_01.png",
-        "w": 32,
-        "h": 32,
+      },
+      "desk64": {
+        "file": "scene/desk64.png",
+        "w": 108,
+        "h": 48,
         "anchor": "bottom"
       },
-      "item_02": {
-        "file": "scene/item_02.png",
-        "w": 32,
-        "h": 32,
+      "chair64": {
+        "file": "scene/chair64.png",
+        "w": 39,
+        "h": 58,
         "anchor": "bottom"
       },
-      "item_03": {
-        "file": "scene/item_03.png",
-        "w": 32,
-        "h": 32,
+      "pc_laptop": {
+        "file": "scene/pc_laptop.png",
+        "w": 26,
+        "h": 18,
         "anchor": "bottom"
       },
-      "item_04": {
-        "file": "scene/item_04.png",
+      "pc_desktop": {
+        "file": "scene/pc_desktop.png",
         "w": 32,
-        "h": 32,
+        "h": 24,
         "anchor": "bottom"
       },
-      "item_05": {
-        "file": "scene/item_05.png",
-        "w": 32,
-        "h": 32,
+      "prop_mug": {
+        "file": "scene/prop_mug.png",
+        "w": 16,
+        "h": 16,
         "anchor": "bottom"
       },
-      "item_06": {
-        "file": "scene/item_06.png",
-        "w": 32,
-        "h": 32,
+      "prop_plant": {
+        "file": "scene/prop_plant.png",
+        "w": 20,
+        "h": 24,
         "anchor": "bottom"
       },
-      "item_07": {
-        "file": "scene/item_07.png",
-        "w": 32,
-        "h": 32,
+      "prop_documents": {
+        "file": "scene/props/prop_documents.png",
+        "w": 20,
+        "h": 16,
         "anchor": "bottom"
       },
-      "item_08": {
-        "file": "scene/item_08.png",
-        "w": 32,
-        "h": 32,
+      "prop_papers_stack": {
+        "file": "scene/props/prop_papers_stack.png",
+        "w": 20,
+        "h": 12,
         "anchor": "bottom"
       },
-      "item_09": {
-        "file": "scene/item_09.png",
-        "w": 32,
-        "h": 32,
+      "prop_pen_stand": {
+        "file": "scene/props/prop_pen_stand.png",
+        "w": 12,
+        "h": 20,
         "anchor": "bottom"
       },
-      "item_10": {
-        "file": "scene/item_10.png",
-        "w": 32,
-        "h": 32,
+      "prop_books": {
+        "file": "scene/props/prop_books.png",
+        "w": 22,
+        "h": 16,
         "anchor": "bottom"
       },
-      "item_11": {
-        "file": "scene/item_11.png",
-        "w": 32,
-        "h": 32,
+      "prop_book_open": {
+        "file": "scene/props/prop_book_open.png",
+        "w": 24,
+        "h": 16,
         "anchor": "bottom"
       },
-      "item_12": {
-        "file": "scene/item_12.png",
-        "w": 32,
-        "h": 32,
+      "prop_binder": {
+        "file": "scene/props/prop_binder.png",
+        "w": 20,
+        "h": 20,
         "anchor": "bottom"
       },
-      "item_13": {
-        "file": "scene/item_13.png",
-        "w": 32,
-        "h": 32,
+      "prop_sticky_notes": {
+        "file": "scene/props/prop_sticky_notes.png",
+        "w": 14,
+        "h": 10,
         "anchor": "bottom"
       },
-      "item_14": {
-        "file": "scene/item_14.png",
-        "w": 32,
-        "h": 32,
+      "prop_photo_frame": {
+        "file": "scene/props/prop_photo_frame.png",
+        "w": 16,
+        "h": 20,
+        "anchor": "bottom"
+      },
+      "prop_tissue_box": {
+        "file": "scene/props/prop_tissue_box.png",
+        "w": 20,
+        "h": 14,
+        "anchor": "bottom"
+      },
+      "prop_headphones": {
+        "file": "scene/props/prop_headphones.png",
+        "w": 22,
+        "h": 16,
+        "anchor": "bottom"
+      },
+      "prop_water_bottle": {
+        "file": "scene/props/prop_water_bottle.png",
+        "w": 10,
+        "h": 22,
+        "anchor": "bottom"
+      },
+      "prop_figurine": {
+        "file": "scene/props/prop_figurine.png",
+        "w": 12,
+        "h": 20,
+        "anchor": "bottom"
+      },
+      "prop_mug_red": {
+        "file": "scene/props/prop_mug_red.png",
+        "w": 16,
+        "h": 16,
+        "anchor": "bottom"
+      },
+      "prop_mug_green": {
+        "file": "scene/props/prop_mug_green.png",
+        "w": 16,
+        "h": 16,
         "anchor": "bottom"
       }
     }

@@ -64,48 +64,16 @@ async function loadDeclaredImage(file, bundledUrl) {
   return loadImage(bundledUrl);
 }
 
-async function loadDeclaredJson(file) {
-  const runtimeResponse = await fetchRuntimeAsset(file);
-  if (runtimeResponse) {
-    try {
-      return await runtimeResponse.json();
-    } catch {
-      // Fall through to the bundled definition.
-    }
-  }
-  try {
-    const response = await fetch(new URL(file, ASSET_ROOT), { cache: "no-store" });
-    return response.ok ? await response.json() : null;
-  } catch {
-    return null;
-  }
-}
-
 function shade(hex, amount) {
   const value = Number.parseInt(hex.slice(1), 16);
   const channel = (shift) => Math.max(0, Math.min(255, ((value >> shift) & 255) + amount));
   return `rgb(${channel(16)},${channel(8)},${channel(0)})`;
 }
 
-function stableHash(value) {
-  let hash = 2166136261;
-  for (const char of String(value || "")) {
-    hash ^= char.codePointAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function sampleKey(id) {
-  const trailing = /(\d+)\s*$/.exec(String(id));
-  const index = trailing ? (parseInt(trailing[1], 10) - 1) % 6 : stableHash(id) % 6;
-  return `sample_${String(index + 1).padStart(2, "0")}`;
-}
-
 // Characters are always flip-book sprite sheets (codex-generated pixel art).
 // Program-drawn faces are abolished; when no sheet loads at all we render a
 // transparent sheet rather than synthesizing a face.
-function blankCharacterSheet(frameW = 96, frameH = 96) {
+function blankCharacterSheet(frameW = 64, frameH = 64) {
   return canvas(frameW * 4, frameH * 10);
 }
 
@@ -184,7 +152,6 @@ export class AssetStore {
     this.images = new Map();
     this.placeholders = new Map();
     this.runtimeCharacters = new Map();
-    this.officeBackgroundSlots = null;
   }
 
   static async load(animas = [], options = {}) {
@@ -206,10 +173,7 @@ export class AssetStore {
       }
     }
     const store = new AssetStore(manifest);
-    await Promise.all([
-      store.loadDeclaredImages(),
-      store.loadOfficeBackgroundSlots(),
-    ]);
+    await store.loadDeclaredImages();
     if (options.runtime !== false) await store.loadRuntimeCharacters(animas);
     return store;
   }
@@ -222,13 +186,10 @@ export class AssetStore {
       const name = encodeURIComponent(String(anima.name));
       const url = `${basePath}/api/animas/${name}/assets/pixel_sheet.png?fresh=${Date.now()}`;
       const image = await loadImage(url);
-      if (image) this.runtimeCharacters.set(id, image);
+      if (image?.naturalWidth === 256 && image.naturalHeight === 640) {
+        this.runtimeCharacters.set(id, image);
+      }
     }));
-  }
-
-  async loadOfficeBackgroundSlots() {
-    if (!this.manifest.scene?.office_bg) return;
-    this.officeBackgroundSlots = await loadDeclaredJson("scene/office_bg_slots.json");
   }
 
   async loadDeclaredImages() {
@@ -242,13 +203,17 @@ export class AssetStore {
     };
     visit(this.manifest);
     const freshAssets = new Set([
-      "scene.office_bg",
-      "scene.tiles.carpet_blue",
-      "scene.tiles.mat",
+      "scene.tiles.floor_wood",
+      "scene.tiles.floor_carpet",
+      "scene.walls.segment",
+      "scene.walls.plain",
       "scene.props.sofa",
       "scene.props.rug",
       "scene.props.side_table",
-      "scene.props.bookshelf_b",
+      "scene.props.bookshelf",
+      "scene.props.whiteboard",
+      "scene.props.coffee_corner",
+      "scene.props.entrance",
       "scene.props.poster_a",
       "scene.props.poster_b",
     ]);
@@ -260,20 +225,22 @@ export class AssetStore {
       const image = await loadDeclaredImage(file, url);
       if (image) this.images.set(key, image);
     }));
+    const backgroundUrl = new URL("scene/office_bg.png", ASSET_ROOT);
+    backgroundUrl.searchParams.set("fresh", String(Date.now()));
+    const background = await loadDeclaredImage("scene/office_bg.png", backgroundUrl);
+    if (background) this.images.set("scene.office_bg", background);
   }
 
   character(id) {
     const normalized = String(id || "").toLowerCase();
-    const declared = ["human", "customer_a", "customer_b"].includes(normalized)
+    const declared = Object.hasOwn(this.manifest.chars || {}, normalized)
       ? normalized
-      : sampleKey(normalized);
+      : "sample_01";
     const config = this.manifest.chars?.[declared] || {};
     const runtimeImage = this.runtimeCharacters.get(normalized);
-    const image = runtimeImage ||
-      this.images.get(`chars.${declared}`) ||
-      this.images.get(`chars.${sampleKey(normalized)}`);
-    const frameW = config.frameW || 96;
-    const frameH = config.frameH || 96;
+    const image = runtimeImage || this.images.get(`chars.${declared}`);
+    const frameW = config.frameW || 64;
+    const frameH = config.frameH || 64;
     const key = `char:blank:${frameW}:${frameH}`;
     if (!image && !this.placeholders.has(key)) {
       this.placeholders.set(key, blankCharacterSheet(frameW, frameH));
@@ -295,17 +262,8 @@ export class AssetStore {
     return this.images.get(`scene.walls.${mode}`) || null;
   }
 
-  wallBottom() {
-    return this.images.get("scene.walls.wall_bottom") || null;
-  }
-
   officeBackground() {
     return this.images.get("scene.office_bg") || null;
-  }
-
-  selectOfficeBackground(companyCount) {
-    const single = this.images.get("scene.office_bg_single");
-    if (companyCount <= 1 && single) this.images.set("scene.office_bg", single);
   }
 
   prop(name, width = 96, height = 64) {
@@ -315,24 +273,10 @@ export class AssetStore {
     if (!this.placeholders.has(key)) {
       const colors = {
         desk: "#8d684a", desk_human: "#745239", meeting_table: "#9b7450",
-        whiteboard: "#d8d5c6", plant: "#557c52", door: "#704b3f",
+        whiteboard: "#d8d5c6", plant_large: "#557c52", entrance: "#704b3f",
         side_table: "#79583e", cat: "#4e4543",
       };
       this.placeholders.set(key, placeholderProp(name, width, height, colors[name] || "#806d5b"));
-    }
-    return this.placeholders.get(key);
-  }
-
-  item(id) {
-    const raw = String(id ?? "1");
-    const itemName = /^item_\d{2}$/.test(raw)
-      ? raw
-      : `item_${String((stableHash(raw) % 14) + 1).padStart(2, "0")}`;
-    const image = this.images.get(`scene.items.${itemName}`);
-    if (image) return image;
-    const key = `item:${itemName}`;
-    if (!this.placeholders.has(key)) {
-      this.placeholders.set(key, placeholderProp(itemName, 32, 32, "#806d5b"));
     }
     return this.placeholders.get(key);
   }
