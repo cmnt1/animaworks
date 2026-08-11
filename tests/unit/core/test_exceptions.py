@@ -8,15 +8,33 @@ from __future__ import annotations
 import pytest
 
 from core.exceptions import (
+    AnimaNotFoundError,
+    AnimaNotRunningError,
     AnimaWorksError,
-    ExecutionError, LLMAPIError, LLMTimeoutError, StreamDisconnectedError,
-    ToolError, ToolConfigError, ToolExecutionError, ToolNotFoundError,
-    MemoryIOError, MemoryReadError, MemoryWriteError, MemoryCorruptedError,
+    ChannelAccessDeniedError,
+    ChannelNotFoundError,
+    ConfigError,
+    ConfigNotFoundError,
+    ConfigValidationError,
+    DeliveryError,
+    ExecutionError,
+    ExecutorUnavailableError,
+    IPCConnectionError,
+    LLMAPIError,
+    LLMTimeoutError,
+    MemoryCorruptedError,
+    MemoryIOError,
+    MemoryReadError,
+    MemoryWriteError,
+    MessagingError,
+    ProcessError,
+    RecipientNotFoundError,
+    StreamDisconnectedError,
     TaskPersistenceError,
-    ProcessError, AnimaNotFoundError, AnimaNotRunningError, IPCConnectionError,
-    ConfigError, ConfigNotFoundError, ConfigValidationError,
-    MessagingError, RecipientNotFoundError, DeliveryError,
-    ChannelNotFoundError, ChannelAccessDeniedError,
+    ToolConfigError,
+    ToolError,
+    ToolExecutionError,
+    ToolNotFoundError,
 )
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -24,6 +42,7 @@ from core.exceptions import (
 ALL_EXCEPTIONS = [
     AnimaWorksError,
     ExecutionError, LLMAPIError, LLMTimeoutError, StreamDisconnectedError,
+    ExecutorUnavailableError,
     ToolError, ToolConfigError, ToolExecutionError, ToolNotFoundError,
     MemoryIOError, MemoryReadError, MemoryWriteError, MemoryCorruptedError,
     TaskPersistenceError,
@@ -34,7 +53,7 @@ ALL_EXCEPTIONS = [
 ]
 
 LEAF_EXCEPTIONS = [
-    LLMAPIError, LLMTimeoutError, StreamDisconnectedError,
+    LLMAPIError, LLMTimeoutError, StreamDisconnectedError, ExecutorUnavailableError,
     ToolConfigError, ToolExecutionError, ToolNotFoundError,
     MemoryReadError, MemoryWriteError, MemoryCorruptedError,
     TaskPersistenceError,
@@ -45,7 +64,9 @@ LEAF_EXCEPTIONS = [
 ]
 
 FAMILY_MAP: dict[type[AnimaWorksError], list[type[AnimaWorksError]]] = {
-    ExecutionError: [LLMAPIError, LLMTimeoutError, StreamDisconnectedError],
+    ExecutionError: [
+        LLMAPIError, LLMTimeoutError, StreamDisconnectedError, ExecutorUnavailableError,
+    ],
     ToolError: [ToolConfigError, ToolExecutionError, ToolNotFoundError],
     MemoryIOError: [MemoryReadError, MemoryWriteError, MemoryCorruptedError, TaskPersistenceError],
     ProcessError: [AnimaNotFoundError, AnimaNotRunningError, IPCConnectionError],

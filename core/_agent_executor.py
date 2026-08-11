@@ -165,6 +165,23 @@ class ExecutorFactoryMixin:
                         active_config.model,
                         fallback_model_config.model,
                     )
+
+                # openai/* fallback without credentials cannot succeed — fail
+                # clearly instead of empty-response retry storms.
+                if fallback_model_config.model.startswith("openai/"):
+                    import os
+
+                    has_openai_cred = bool(fallback_model_config.api_key) or bool(
+                        os.environ.get("OPENAI_API_KEY")
+                    )
+                    if not has_openai_cred:
+                        from core.exceptions import ExecutorUnavailableError
+                        from core.i18n import t
+
+                        raise ExecutorUnavailableError(
+                            t("executor.codex_unavailable_no_openai_cred")
+                        ) from None
+
                 return LiteLLMExecutor(
                     model_config=fallback_model_config,
                     anima_dir=self.anima_dir,

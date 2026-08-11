@@ -57,6 +57,15 @@ class StreamDisconnectedError(ExecutionError):
         self.immediate_retry = immediate_retry
 
 
+class ExecutorUnavailableError(ExecutionError):
+    """Required execution backend is missing or cannot authenticate.
+
+    Non-retryable: restoring packages/credentials is required before retry.
+    """
+
+    retryable = False
+
+
 # ── Tool ─────────────────────────────────────────────────────
 
 
