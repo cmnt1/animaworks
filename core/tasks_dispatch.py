@@ -14,6 +14,8 @@ from core.memory._io import atomic_write_text
 from core.memory.task_queue import TaskQueueManager
 from core.paths import get_animas_dir
 
+FAILING_CI_CONCLUSIONS = frozenset({"FAILURE", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE"})
+
 
 def dispatch_direct_task(
     *,
@@ -31,7 +33,7 @@ def dispatch_direct_task(
     if not target_dir.is_dir():
         raise ValueError(f"Anima directory not found: {target}")
 
-    task_meta = {**(meta or {}), "origin": "github-event"}
+    task_meta = {**(meta or {}), "origin": "github-event", "executor": "taskexec"}
     entry = TaskQueueManager(target_dir).add_task_if_absent(
         lambda task: task.task_id == task_id,
         source="anima",

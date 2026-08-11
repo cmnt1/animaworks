@@ -62,7 +62,13 @@ sys.path.insert(
     os.environ.get("ANIMAWORKS_REPO_ROOT", str(Path(__file__).resolve().parents[1])),
 )
 
-from core.tasks_dispatch import dispatch_direct_task
+from core.memory.task_queue import TaskQueueManager
+from core.paths import get_animas_dir
+from core.tasks_dispatch import FAILING_CI_CONCLUSIONS, dispatch_direct_task
+
+MAX_FAILED_REDISPATCHES = 2
+SUPPRESSED_REMINDER_HOURS = 6
+HUMAN_ESCALATION_HOURS = 24
 
 
 def is_our_bot(login: str) -> bool:
@@ -129,7 +135,10 @@ def default_state() -> dict:
         "last_comment_check": iso(now_utc()),
         "seen_comments": {},
         "ci_notified": {},
+        "ci_failure_signatures": {},
         "conflict_notified": {},
+        "failed_task_retries": {},
+        "review_tasks": {},
         "stale_watch": {},
         "consecutive_failures": 0,
     }
@@ -143,7 +152,10 @@ def load_state() -> dict:
                 state.setdefault("prs", {})
                 state.setdefault("seen_comments", {})
                 state.setdefault("ci_notified", {})
+                state.setdefault("ci_failure_signatures", {})
                 state.setdefault("conflict_notified", {})
+                state.setdefault("failed_task_retries", {})
+                state.setdefault("review_tasks", {})
                 state.setdefault("stale_watch", {})
                 return state
         except (json.JSONDecodeError, OSError):
@@ -216,9 +228,47 @@ def ci_stale_item_id(repo: str, number: int, sha: str) -> str:
     return f"ci:{repo}#{number}:{sha}"
 
 
-# 2026-07-27 taka指示: CANCELLED(60分timeout等)/TIMED_OUTも「CI NG」として扱う。
-# #3854のFeature Tests CANCELLEDがFAILURE限定判定のため警告ゼロで放置された。
-FAILING_CI_CONCLUSIONS = frozenset({"FAILURE", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE"})
+def _ci_task_id(repo: str, number: int, sha: str) -> str:
+    return f"gh-ci-{repo.replace('/', '-')}#{number}-{sha[:8]}"
+
+
+def _conflict_task_id(repo: str, number: int, sha: str) -> str:
+    return f"gh-conflict-{repo.replace('/', '-')}#{number}-{sha[:8]}"
+
+
+def _direct_task(task_id: str):
+    if DRY_RUN:
+        return None
+    target_dir = get_animas_dir() / FIXER
+    if not target_dir.is_dir():
+        return None
+    return TaskQueueManager(target_dir).get_task_by_id(task_id)
+
+
+def reopen_failed_dispatches(state: dict) -> None:
+    """Release failed CI/conflict latches, up to two redispatches per task ID."""
+    retries = state.setdefault("failed_task_retries", {})
+    candidates: list[tuple[str, str, str]] = []
+    for key in state.setdefault("ci_notified", {}):
+        try:
+            repo_number, sha = key.rsplit("_", 1)
+            repo, number = repo_number.rsplit("#", 1)
+            candidates.append(("ci_notified", key, _ci_task_id(repo, int(number), sha)))
+        except (ValueError, TypeError):
+            continue
+    for key, sha in state.setdefault("conflict_notified", {}).items():
+        try:
+            repo, number = key.rsplit("#", 1)
+            candidates.append(("conflict_notified", key, _conflict_task_id(repo, int(number), str(sha))))
+        except (ValueError, TypeError):
+            continue
+
+    for latch_name, key, task_id in candidates:
+        task = _direct_task(task_id)
+        if task is None or task.status != "failed" or int(retries.get(task_id, 0)) >= MAX_FAILED_REDISPATCHES:
+            continue
+        state[latch_name].pop(key, None)
+        retries[task_id] = int(retries.get(task_id, 0)) + 1
 
 
 def failed_check_names(status_check_rollup: list[dict[str, Any]] | None) -> list[str]:
@@ -269,9 +319,9 @@ def determine_warning_stage(
     if age < timedelta(hours=warn_hours):
         return "none"
 
-    escalate_due = age >= timedelta(hours=escalate_hours) and (
-        escalated_at is None or (now - escalated_at) >= timedelta(hours=escalate_hours)
-    )
+    if escalated_at is not None:
+        return "none"
+    escalate_due = age >= timedelta(hours=escalate_hours)
     if last_warned is None:
         dispatcher_stage = "warn"
     elif (now - last_warned) >= timedelta(hours=rewarn_hours):
@@ -366,6 +416,57 @@ def _latest_bot_activity(
     return bot_commit_at, bot_comment_at
 
 
+def _dispatch_review_task_once(state: dict, item: dict[str, Any]) -> None:
+    review_id = str(item["review_id"])
+    review_tasks = state.setdefault("review_tasks", {})
+    if review_id in review_tasks:
+        return
+    repo = str(item["repo"])
+    number = int(item["number"])
+    author = str(item.get("author") or "unknown")
+    body = str(item.get("body") or "")[:500]
+    bot_note = "bot由来のCHANGES_REQUESTEDです。" if item.get("bot_derived") else "人間レビュアー由来です。"
+    dispatch_task(
+        target=FIXER,
+        task_id=f"gh-review-{repo.replace('/', '-')}#{number}-{review_id}",
+        summary=f"レビュー指摘対応 {repo}#{number}",
+        instruction=(
+            f"PR #{number} ({item.get('url') or f'https://github.com/{repo}/pull/{number}'}) に "
+            f"@{author} から CHANGES_REQUESTED が投稿された。{bot_note}\n\n"
+            f"レビュー本文:\n{body}\n\n"
+            "指摘を確認して必要な修正を行うこと。レビュアーが人間の場合、指摘に技術的に"
+            "同意できない時は独断で押し切らず上長(rin)へ報告して判断を仰ぐこと。"
+        ),
+        meta={
+            "repo": repo,
+            "number": number,
+            "review_id": review_id,
+            "reviewer": author,
+            "url": item.get("url") or "",
+            "bot_derived": bool(item.get("bot_derived")),
+        },
+    )
+    review_tasks[review_id] = iso(now_utc())
+
+
+def _direct_task_for_stale_item(item: dict[str, Any]):
+    if item.get("kind") not in {"ci", "conflict"}:
+        return None
+    repo = str(item["repo"])
+    number = int(item["number"])
+    sha = str(item.get("sha") or "")
+    task_ids = (
+        (_ci_task_id(repo, number, sha), _conflict_task_id(repo, number, sha))
+        if item.get("kind") == "ci"
+        else (_conflict_task_id(repo, number, sha), _ci_task_id(repo, number, sha))
+    )
+    for task_id in task_ids:
+        task = _direct_task(task_id)
+        if task is not None:
+            return task
+    return None
+
+
 def _collect_pr_stale_items(
     repo: str,
     number: int,
@@ -436,8 +537,6 @@ def _collect_pr_stale_items(
         if state_upper != "CHANGES_REQUESTED":
             continue
         author = (review.get("user") or {}).get("login", "")
-        if is_our_bot(author):
-            continue
         created = parse_gh_time(review.get("submitted_at"))
         if created is None:
             continue
@@ -449,6 +548,7 @@ def _collect_pr_stale_items(
             {
                 "item_id": item_id,
                 "kind": "review",
+                "review_id": review.get("id"),
                 "repo": repo,
                 "number": number,
                 "author": author,
@@ -460,6 +560,8 @@ def _collect_pr_stale_items(
                 "bot_comment_at": bot_comment_at,
                 "review_dismissed": False,
                 "review_decision": review_decision,
+                "bot_derived": is_our_bot(author),
+                "skip_stale": is_our_bot(author),
             }
         )
 
@@ -564,6 +666,8 @@ def check_unaddressed(state: dict) -> None:
     # kind -> lines for dispatcher / escalate (separate message templates)
     dispatcher_by_kind: dict[str, list[str]] = {"review": [], "ci": [], "comment": []}
     escalate_by_kind: dict[str, list[str]] = {"review": [], "ci": [], "comment": []}
+    human_by_kind: dict[str, list[str]] = {"review": [], "ci": [], "comment": []}
+    suppressed_reminders: list[str] = []
     open_pr_count = 0
 
     for repo in REPOS:
@@ -601,6 +705,10 @@ def check_unaddressed(state: dict) -> None:
                     head_sha_changed=bool(item.get("head_sha_changed")),
                 ):
                     continue
+                if kind == "review":
+                    _dispatch_review_task_once(state, item)
+                    if item.get("skip_stale"):
+                        continue
                 item_id = item["item_id"]
                 active_ids.add(item_id)
                 entry = watch.get(item_id)
@@ -619,6 +727,18 @@ def check_unaddressed(state: dict) -> None:
                         "kind": kind,
                     }
                     watch[item_id] = entry
+                if kind == "ci":
+                    failure_signature = "\n".join(sorted(item.get("failed_checks") or []))
+                    previous_signature = entry.get("failure_signature")
+                    if previous_signature and previous_signature != failure_signature:
+                        entry = {
+                            "first_seen": iso(now),
+                            "last_warned": None,
+                            "escalated_at": None,
+                            "kind": kind,
+                        }
+                        watch[item_id] = entry
+                    entry["failure_signature"] = failure_signature
                 last_warned = parse_gh_time(entry.get("last_warned"))
                 escalated_at = parse_gh_time(entry.get("escalated_at"))
                 # CI age is measured from first_seen (no event timestamp on the check rollup).
@@ -628,6 +748,45 @@ def check_unaddressed(state: dict) -> None:
                 else:
                     item_created_at = item["created_at"]
                     warn_hours = STALE_WARN_HOURS
+                task = _direct_task_for_stale_item(item)
+                if task is not None and task.status == "done":
+                    entry["suppressed_by_task"] = task.task_id
+                    last_sent = parse_gh_time(entry.get("suppressed_last_sent"))
+                    if last_sent is None or now - last_sent >= timedelta(hours=SUPPRESSED_REMINDER_HOURS):
+                        summary = task.summary.replace("\n", " ")[:120]
+                        suppressed_reminders.append(
+                            f"- {repo}#{number}: 診断済み: {summary}。状態変化まで再通知を抑制中"
+                        )
+                        entry["suppressed_last_sent"] = iso(now)
+                    continue
+                if task is not None and task.status in {"waiting", "in_progress", "pending"}:
+                    entry["suppressed_by_task"] = task.task_id
+                    if last_warned is not None:
+                        continue
+                else:
+                    entry.pop("suppressed_by_task", None)
+                    entry.pop("suppressed_last_sent", None)
+
+                if (
+                    escalated_at is not None
+                    and not entry.get("human_notified_at")
+                    and now - escalated_at >= timedelta(hours=HUMAN_ESCALATION_HOURS)
+                ):
+                    line = _format_stale_line(
+                        repo=item["repo"],
+                        number=item["number"],
+                        author=item.get("author") or "",
+                        body=item.get("body") or "",
+                        url=item.get("url") or "",
+                        created_at=item_created_at,
+                        now=now,
+                        kind=kind,
+                        sha=str(item.get("sha") or ""),
+                        failed_checks=item.get("failed_checks"),
+                    )
+                    human_by_kind[kind if kind in ("review", "ci") else "comment"].append(line)
+                    entry["human_notified_at"] = iso(now)
+                    continue
                 stage = determine_warning_stage(
                     item_created_at=item_created_at,
                     now=now,
@@ -637,6 +796,8 @@ def check_unaddressed(state: dict) -> None:
                     rewarn_hours=STALE_REWARN_HOURS,
                     escalate_hours=STALE_ESCALATE_HOURS,
                 )
+                if task is not None and task.status in {"waiting", "in_progress", "pending"}:
+                    stage = "warn" if now - item_created_at >= timedelta(hours=warn_hours) else "none"
                 if stage == "none":
                     continue
                 line = _format_stale_line(
@@ -683,6 +844,18 @@ def check_unaddressed(state: dict) -> None:
         if lines:
             send(ESCALATION_TARGET, _stale_message(lines, kind=msg_kind))
             log(f"stale escalate ({msg_kind}) -> {ESCALATION_TARGET}: {len(lines)} item(s)")
+    if suppressed_reminders:
+        send(DISPATCHER, "【低頻度リマインド】\n\n" + "\n".join(suppressed_reminders))
+        log(f"stale suppressed reminder -> {DISPATCHER}: {len(suppressed_reminders)} item(s)")
+    for msg_kind, lines in human_by_kind.items():
+        if lines:
+            send(
+                ESCALATION_TARGET,
+                "【人間判断が必要】\n\n"
+                + "\n".join(lines)
+                + "\n\n状態が24時間変化していません。takaへ call_human で報告すること。",
+            )
+            log(f"stale human escalation ({msg_kind}) -> {ESCALATION_TARGET}: {len(lines)} item(s)")
 
 
 def save_state(state: dict) -> None:
@@ -859,6 +1032,7 @@ def check_ci(state: dict) -> None:
     REVIEWERへ一度だけ再通知する（green_notified でSHAごとにラッチ）。
     """
     green_notified = state.setdefault("ci_green_notified", {})
+    failure_signatures = state.setdefault("ci_failure_signatures", {})
     green_ready: list[str] = []
     for repo in REPOS:
         prs = json.loads(
@@ -899,6 +1073,11 @@ def check_ci(state: dict) -> None:
                     green_notified[green_key] = iso(now_utc())
                 continue
             key = f"{repo}#{pr['number']}_{pr['headRefOid'][:8]}"
+            signature = "\n".join(sorted(failed))
+            if failure_signatures.get(key) not in (None, signature):
+                state["ci_notified"].pop(key, None)
+            elif key in state["ci_notified"]:
+                failure_signatures.setdefault(key, signature)
             if key in state["ci_notified"]:
                 continue
             workflow_url = next(
@@ -915,7 +1094,7 @@ def check_ci(state: dict) -> None:
             workflow_name = ", ".join(failed[:6])
             dispatch_task(
                 target=FIXER,
-                task_id=f"gh-ci-{repo.replace('/', '-')}#{number}-{sha[:8]}",
+                task_id=_ci_task_id(repo, number, sha),
                 summary=f"CI失敗修正 {repo}#{number}",
                 instruction=(
                     f"PR #{number} ({pr_url}) の CI ({workflow_name}) が head {sha} で失敗。"
@@ -924,6 +1103,7 @@ def check_ci(state: dict) -> None:
                 meta={"repo": repo, "number": number, "sha": sha, "workflow_url": workflow_url},
             )
             state["ci_notified"][key] = iso(now_utc())
+            failure_signatures[key] = signature
 
     if green_ready:
         send(
@@ -937,6 +1117,9 @@ def check_ci(state: dict) -> None:
 
     cutoff = iso(now_utc() - timedelta(days=30))
     state["ci_notified"] = {key: value for key, value in state["ci_notified"].items() if value >= cutoff}
+    state["ci_failure_signatures"] = {
+        key: value for key, value in failure_signatures.items() if key in state["ci_notified"]
+    }
     state["ci_green_notified"] = {key: value for key, value in green_notified.items() if value >= cutoff}
 
 
@@ -982,7 +1165,7 @@ def check_conflicts(state: dict) -> None:
             url = str(pr.get("url") or f"https://github.com/{repo}/pull/{pr['number']}")
             dispatch_task(
                 target=FIXER,
-                task_id=f"gh-conflict-{repo.replace('/', '-')}#{pr['number']}-{sha}",
+                task_id=_conflict_task_id(repo, pr["number"], sha),
                 summary=f"コンフリクト解消 {repo}#{pr['number']}",
                 instruction=(
                     f"PR #{pr['number']}「{pr.get('title', '')}」"
@@ -1007,6 +1190,7 @@ def main() -> int:
         return 2
     with locked_state() as state:
         try:
+            reopen_failed_dispatches(state)
             check_commits(state)
             check_comments(state)
             check_ci(state)

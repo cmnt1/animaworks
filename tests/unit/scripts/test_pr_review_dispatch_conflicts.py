@@ -3,6 +3,7 @@
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -87,3 +88,37 @@ def test_closed_pr_record_is_pruned(mod):
     assert "o/r#1" in state["conflict_notified"]
     _run(mod, state, [])
     assert state["conflict_notified"] == {}
+
+
+def test_failed_dispatch_latches_reopen_twice_then_stop(mod, monkeypatch):
+    ci_key = "o/r#1_aaaaaaaa"
+    conflict_key = "o/r#2"
+    state = mod.default_state()
+    state["ci_notified"][ci_key] = "2026-08-11T00:00:00Z"
+    state["conflict_notified"][conflict_key] = "bbbbbbbb"
+    monkeypatch.setattr(mod, "_direct_task", lambda task_id: SimpleNamespace(status="failed"))
+
+    for retry in (1, 2):
+        mod.reopen_failed_dispatches(state)
+        assert ci_key not in state["ci_notified"]
+        assert conflict_key not in state["conflict_notified"]
+        assert set(state["failed_task_retries"].values()) == {retry}
+        state["ci_notified"][ci_key] = "2026-08-11T00:00:00Z"
+        state["conflict_notified"][conflict_key] = "bbbbbbbb"
+
+    mod.reopen_failed_dispatches(state)
+    assert ci_key in state["ci_notified"]
+    assert conflict_key in state["conflict_notified"]
+    assert set(state["failed_task_retries"].values()) == {2}
+
+
+@pytest.mark.parametrize("status", ["pending", "in_progress", "waiting", "done"])
+def test_nonfailed_dispatch_keeps_latch(mod, monkeypatch, status):
+    state = mod.default_state()
+    state["ci_notified"]["o/r#1_aaaaaaaa"] = "2026-08-11T00:00:00Z"
+    monkeypatch.setattr(mod, "_direct_task", lambda task_id: SimpleNamespace(status=status))
+
+    mod.reopen_failed_dispatches(state)
+
+    assert "o/r#1_aaaaaaaa" in state["ci_notified"]
+    assert state["failed_task_retries"] == {}
