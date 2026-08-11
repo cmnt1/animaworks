@@ -165,4 +165,14 @@ STRINGS: dict[str, dict[str, str]] = {
             "Please review the rule above, take any required pre-actions, then retry."
         ),
     },
+    "executor.codex_unavailable_no_openai_cred": {
+        "ja": (
+            "Codex SDK が利用できず、フォールバック先 openai/* の認証情報も無いため実行不能。"
+            "openai-codex パッケージの復元が必要"
+        ),
+        "en": (
+            "Codex SDK is unavailable and no credentials for the openai/* fallback; cannot execute. "
+            "Restore the openai-codex package."
+        ),
+    },
 }
