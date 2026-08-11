@@ -152,6 +152,33 @@ def test_check_ci_dispatches_failure_directly(mod, monkeypatch):
     assert "o/r#17_aaaaaaaa" in state["ci_notified"]
 
 
+def test_check_ci_new_failure_type_on_same_sha_dispatches_again(mod, monkeypatch):
+    monkeypatch.setattr(
+        mod,
+        "gh",
+        lambda args: json.dumps(
+            [
+                {
+                    "number": 17,
+                    "headRefOid": "a" * 40,
+                    "statusCheckRollup": [{"name": "new-check", "conclusion": "FAILURE"}],
+                }
+            ]
+        ),
+    )
+    task = MagicMock(return_value=True)
+    monkeypatch.setattr(mod, "dispatch_task", task)
+    state = mod.default_state()
+    key = "o/r#17_aaaaaaaa"
+    state["ci_notified"][key] = "2026-08-11T00:00:00Z"
+    state["ci_failure_signatures"][key] = "old-check"
+
+    mod.check_ci(state)
+
+    task.assert_called_once()
+    assert state["ci_failure_signatures"][key] == "new-check"
+
+
 def test_dispatch_task_dry_run_only_logs(mod, monkeypatch):
     direct = MagicMock()
     monkeypatch.setattr(mod, "DRY_RUN", True)
@@ -168,3 +195,30 @@ def test_dispatch_task_dry_run_only_logs(mod, monkeypatch):
     )
     direct.assert_not_called()
     assert "DRY_RUN task -> natsume: gh-cmd-1 dry run" in mod.LOG_FILE.read_text(encoding="utf-8")
+
+
+def test_changes_requested_dispatches_review_task_once(mod, monkeypatch):
+    task = MagicMock(return_value=True)
+    monkeypatch.setattr(mod, "dispatch_task", task)
+    state = mod.default_state()
+    item = {
+        "review_id": 77,
+        "repo": "o/r",
+        "number": 17,
+        "author": "review-bot",
+        "body": "x" * 600,
+        "url": "https://gh.test/o/r/pull/17#review-77",
+        "bot_derived": True,
+    }
+
+    mod._dispatch_review_task_once(state, item)
+    mod._dispatch_review_task_once(state, item)
+
+    task.assert_called_once()
+    kwargs = task.call_args.kwargs
+    assert kwargs["task_id"] == "gh-review-o-r#17-77"
+    assert "bot由来" in kwargs["instruction"]
+    assert "x" * 500 in kwargs["instruction"]
+    assert "x" * 501 not in kwargs["instruction"]
+    assert "独断で押し切らず上長(rin)へ報告" in kwargs["instruction"]
+    assert list(state["review_tasks"]) == ["77"]

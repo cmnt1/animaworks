@@ -119,6 +119,7 @@ def _workflow_payload(
 @pytest.fixture
 async def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Started manager with captured local Messenger sends."""
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path / "data"))
     shared_dir = tmp_path / "shared"
     state_file = shared_dir / github_gateway.STATE_FILENAME
     config = GitHubWebhookConfig(
@@ -408,8 +409,15 @@ class TestReviewAndCommentDispatch:
         assert len(sends) == 1
         assert sends[0]["key"] == "review:202"
         assert "【CHANGES_REQUESTED】" in sends[0]["content"]
+        direct_task = github_gateway.dispatch_direct_task
+        direct_task.assert_called_once()
+        task = direct_task.call_args.kwargs
+        assert task["task_id"] == "gh-review-example-org-example-repo#17-202"
+        assert "レビュアーが人間の場合" in task["instruction"]
+        assert task["meta"]["bot_derived"] is False
         state = json.loads(state_file.read_text(encoding="utf-8"))
         assert "review:202" in state["seen_comments"]
+        assert "202" in state["review_tasks"]
 
     async def test_non_submitted_review_is_ignored(self, gateway) -> None:
         manager, sends, state_file = gateway
@@ -485,6 +493,8 @@ class TestReviewAndCommentDispatch:
             state_file=state_file,
         )
         sends: list[dict[str, str]] = []
+        direct_task = MagicMock(return_value=True)
+        monkeypatch.setattr(github_gateway, "dispatch_direct_task", direct_task)
         monkeypatch.setattr(
             manager,
             "_send",
@@ -507,6 +517,14 @@ class TestReviewAndCommentDispatch:
         assert sends[0]["kind"] == "frc-result"
         assert f"- 判定: {expected_verdict}" in sends[0]["content"]
         assert "【外部レビューコメント検知】" not in sends[0]["content"]
+        if state == "changes_requested":
+            direct_task.assert_called_once()
+            task = direct_task.call_args.kwargs
+            assert task["task_id"] == "gh-review-example-org-example-repo#17-202"
+            assert "bot由来" in task["instruction"]
+            assert task["meta"]["bot_derived"] is True
+        else:
+            direct_task.assert_not_called()
 
     async def test_empty_reviewer_login_preserves_legacy_bot_only_behavior(
         self, gateway
@@ -528,9 +546,10 @@ class TestReviewAndCommentDispatch:
 
 
 class TestWorkflowRunDispatch:
-    async def test_ci_failure_is_deduped_by_pr_and_sha(self, gateway) -> None:
+    @pytest.mark.parametrize("conclusion", ["failure", "cancelled", "timed_out", "startup_failure"])
+    async def test_ci_failure_is_deduped_by_pr_and_sha(self, gateway, conclusion: str) -> None:
         manager, sends, state_file = gateway
-        payload = _workflow_payload()
+        payload = _workflow_payload(conclusion=conclusion)
         await manager.handle_event("workflow_run", payload)
         await manager.handle_event("workflow_run", payload)
         assert sends == []
@@ -567,6 +586,52 @@ class TestWorkflowRunDispatch:
         )
         assert sends == []
         assert not state_file.exists()
+
+    async def test_new_workflow_failure_on_same_sha_dispatches_again(self, gateway) -> None:
+        manager, sends, state_file = gateway
+        first = _workflow_payload()
+        second = _workflow_payload()
+        second["workflow_run"]["name"] = "different-check"
+
+        await manager.handle_event("workflow_run", first)
+        await manager.handle_event("workflow_run", second)
+
+        assert sends == []
+        assert github_gateway.dispatch_direct_task.call_count == 2
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+        key = f"{REPO}#17_{SHA_1[:8]}"
+        assert state["ci_failure_signatures"][key] == "different-check"
+
+    async def test_failed_ci_task_is_redispatched_twice_then_stays_latched(self, gateway) -> None:
+        manager, sends, state_file = gateway
+        target_dir = github_gateway.get_animas_dir() / "natsume"
+        target_dir.mkdir(parents=True)
+        task_id = f"gh-ci-example-org-example-repo#17-{SHA_1[:8]}"
+        queue = github_gateway.TaskQueueManager(target_dir)
+        queue.add_task(
+            source="anima",
+            original_instruction="fix CI",
+            assignee="natsume",
+            summary="failed CI task",
+            task_id=task_id,
+            meta={"executor": "taskexec"},
+        )
+        queue.update_status(task_id, "failed")
+        key = f"{REPO}#17_{SHA_1[:8]}"
+        with locked_dispatch_state(state_file) as state:
+            state["ci_notified"][key] = "2026-08-11T00:00:00Z"
+
+        payload = _workflow_payload()
+        await manager.handle_event("workflow_run", payload)
+        await manager.handle_event("workflow_run", payload)
+        await manager.handle_event("workflow_run", payload)
+
+        assert sends == []
+        direct_task = github_gateway.dispatch_direct_task
+        assert direct_task.call_count == 2
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+        assert state["failed_task_retries"][task_id] == 2
+        assert key in state["ci_notified"]
 
 
 class TestSharedStateLocking:
