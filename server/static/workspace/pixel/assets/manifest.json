@@ -45,10 +45,181 @@
           "frames": 4,
           "fps": 2
         },
-      "success": {
-        "row": 8,
-        "frames": 4,
-        "fps": 8
+        "success": {
+          "row": 8,
+          "frames": 4,
+          "fps": 8
+        },
+        "error": {
+          "row": 9,
+          "frames": 4,
+          "fps": 8
+        }
+      }
+    },
+    "human": {
+      "file": "chars/human.png",
+      "frameW": 64,
+      "frameH": 64,
+      "anims": {
+        "idle": {
+          "row": 0,
+          "frames": 4,
+          "fps": 4
+        },
+        "working": {
+          "row": 1,
+          "frames": 4,
+          "fps": 3
+        },
+        "thinking": {
+          "row": 2,
+          "frames": 4,
+          "fps": 4
+        },
+        "talking": {
+          "row": 3,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_down": {
+          "row": 4,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_up": {
+          "row": 5,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_side": {
+          "row": 6,
+          "frames": 4,
+          "fps": 8
+        },
+        "sleeping": {
+          "row": 7,
+          "frames": 4,
+          "fps": 2
+        },
+        "success": {
+          "row": 8,
+          "frames": 4,
+          "fps": 8
+        },
+        "error": {
+          "row": 9,
+          "frames": 4,
+          "fps": 8
+        }
+      }
+    },
+    "customer_a": {
+      "file": "chars/customer_a.png",
+      "frameW": 64,
+      "frameH": 64,
+      "anims": {
+        "idle": {
+          "row": 0,
+          "frames": 4,
+          "fps": 4
+        },
+        "working": {
+          "row": 1,
+          "frames": 4,
+          "fps": 3
+        },
+        "thinking": {
+          "row": 2,
+          "frames": 4,
+          "fps": 4
+        },
+        "talking": {
+          "row": 3,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_down": {
+          "row": 4,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_up": {
+          "row": 5,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_side": {
+          "row": 6,
+          "frames": 4,
+          "fps": 8
+        },
+        "sleeping": {
+          "row": 7,
+          "frames": 4,
+          "fps": 2
+        },
+        "success": {
+          "row": 8,
+          "frames": 4,
+          "fps": 8
+        },
+        "error": {
+          "row": 9,
+          "frames": 4,
+          "fps": 8
+        }
+      }
+    },
+    "customer_b": {
+      "file": "chars/customer_b.png",
+      "frameW": 64,
+      "frameH": 64,
+      "anims": {
+        "idle": {
+          "row": 0,
+          "frames": 4,
+          "fps": 4
+        },
+        "working": {
+          "row": 1,
+          "frames": 4,
+          "fps": 3
+        },
+        "thinking": {
+          "row": 2,
+          "frames": 4,
+          "fps": 4
+        },
+        "talking": {
+          "row": 3,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_down": {
+          "row": 4,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_up": {
+          "row": 5,
+          "frames": 4,
+          "fps": 8
+        },
+        "walk_side": {
+          "row": 6,
+          "frames": 4,
+          "fps": 8
+        },
+        "sleeping": {
+          "row": 7,
+          "frames": 4,
+          "fps": 2
+        },
+        "success": {
+          "row": 8,
+          "frames": 4,
+          "fps": 8
         },
         "error": {
           "row": 9,
