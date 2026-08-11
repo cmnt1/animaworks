@@ -69,9 +69,7 @@ def is_our_bot(login: str) -> bool:
     """True when *login* is BOT_LOGIN or REVIEWER_LOGIN (our bot accounts)."""
     if not login:
         return False
-    return (bool(BOT_LOGIN) and login == BOT_LOGIN) or (
-        bool(REVIEWER_LOGIN) and login == REVIEWER_LOGIN
-    )
+    return (bool(BOT_LOGIN) and login == BOT_LOGIN) or (bool(REVIEWER_LOGIN) and login == REVIEWER_LOGIN)
 
 
 def now_utc() -> datetime:
@@ -232,6 +230,26 @@ def failed_check_names(status_check_rollup: list[dict[str, Any]] | None) -> list
     ]
 
 
+GREEN_CI_CONCLUSIONS = frozenset({"SUCCESS", "NEUTRAL", "SKIPPED"})
+
+
+def ci_all_green(status_check_rollup: list[dict[str, Any]] | None) -> bool:
+    """True when every check is terminal and none is failing (rollup mixes CheckRun/StatusContext)."""
+    rollup = status_check_rollup or []
+    if not rollup:
+        return False
+    for check in rollup:
+        if "state" in check:  # StatusContext (commit status)
+            if str(check.get("state") or "").upper() != "SUCCESS":
+                return False
+        else:  # CheckRun
+            if str(check.get("status") or "").upper() != "COMPLETED":
+                return False
+            if str(check.get("conclusion") or "").upper() not in GREEN_CI_CONCLUSIONS:
+                return False
+    return True
+
+
 def determine_warning_stage(
     *,
     item_created_at: datetime,
@@ -286,17 +304,11 @@ def _format_stale_line(
 ) -> str:
     elapsed = _elapsed_label(created_at, now)
     if kind == "review":
-        return (
-            f"- PR #{number} が CHANGES_REQUESTED のまま未解除です"
-            f"（@{author}/経過{elapsed}）\n  {url}"
-        )
+        return f"- PR #{number} が CHANGES_REQUESTED のまま未解除です（@{author}/経過{elapsed}）\n  {url}"
     if kind == "ci":
         checks = ", ".join((failed_checks or [])[:6]) or "?"
         sha8 = (sha or "")[:8] or "?"
-        return (
-            f"- PR #{number} のCI失敗が未修正のまま放置されています"
-            f"（{sha8}・{checks}・経過{elapsed}）\n  {url}"
-        )
+        return f"- PR #{number} のCI失敗が未修正のまま放置されています（{sha8}・{checks}・経過{elapsed}）\n  {url}"
     snippet = (body or "").replace("\n", " ").strip()[:140]
     return f"- {repo}#{number} (経過{elapsed}) @{author}: {snippet}\n  {url}"
 
@@ -345,9 +357,7 @@ def _latest_bot_activity(
             if committed is not None and (bot_commit_at is None or committed > bot_commit_at):
                 bot_commit_at = committed
     for comment in comments:
-        author = (comment.get("user") or {}).get("login") or (comment.get("author") or {}).get(
-            "login", ""
-        )
+        author = (comment.get("user") or {}).get("login") or (comment.get("author") or {}).get("login", "")
         if not is_our_bot(author):
             continue
         created = parse_gh_time(comment.get("created_at") or comment.get("createdAt") or comment.get("submitted_at"))
@@ -404,9 +414,7 @@ def _collect_pr_stale_items(
         )
     )
     threads = (
-        (((graphql.get("data") or {}).get("repository") or {}).get("pullRequest") or {})
-        .get("reviewThreads")
-        or {}
+        (((graphql.get("data") or {}).get("repository") or {}).get("pullRequest") or {}).get("reviewThreads") or {}
     ).get("nodes") or []
 
     all_comment_like: list[dict[str, Any]] = list(issue_comments) + list(review_comments)
@@ -645,10 +653,7 @@ def check_unaddressed(state: dict) -> None:
                 )
                 dispatcher_due = stage in ("warn", "rewarn") or (
                     stage == "escalate"
-                    and (
-                        last_warned is None
-                        or (now - last_warned) >= timedelta(hours=STALE_REWARN_HOURS)
-                    )
+                    and (last_warned is None or (now - last_warned) >= timedelta(hours=STALE_REWARN_HOURS))
                 )
                 # thread/comment share the generic message template
                 msg_kind = kind if kind in ("review", "ci") else "comment"
@@ -847,7 +852,14 @@ def check_comments(state: dict) -> None:
 
 
 def check_ci(state: dict) -> None:
-    """Dispatch CI failures once per PR and head SHA."""
+    """Dispatch CI failures once per PR and head SHA.
+
+    2026-08-11 taka指示: CI待ちでレビュー保留したPRが「全チェックgreen化」を検知できず
+    放置される問題への対処として、review dispatch済みHEADのCI全green化を
+    REVIEWERへ一度だけ再通知する（green_notified でSHAごとにラッチ）。
+    """
+    green_notified = state.setdefault("ci_green_notified", {})
+    green_ready: list[str] = []
     for repo in REPOS:
         prs = json.loads(
             gh(
@@ -859,7 +871,7 @@ def check_ci(state: dict) -> None:
                     "--state",
                     "open",
                     "--json",
-                    "number,headRefOid,statusCheckRollup",
+                    "number,headRefOid,statusCheckRollup,reviewDecision",
                     "--limit",
                     "100",
                 ]
@@ -868,6 +880,23 @@ def check_ci(state: dict) -> None:
         for pr in prs:
             failed = failed_check_names(pr.get("statusCheckRollup"))
             if not failed:
+                number = pr["number"]
+                sha = pr["headRefOid"]
+                pr_key = f"{repo}#{number}"
+                green_key = f"{pr_key}_{sha[:8]}"
+                entry = state["prs"].get(pr_key) or {}
+                # review dispatch済みのHEADに限る（未通知HEADはcheck_commitsが通常経路で拾う）。
+                # APPROVED済みはレビュー保留ではないので通知しない。
+                if (
+                    green_key not in green_notified
+                    and entry.get("notified_sha") == sha
+                    and str(pr.get("reviewDecision") or "").upper() != "APPROVED"
+                    and ci_all_green(pr.get("statusCheckRollup"))
+                ):
+                    green_ready.append(
+                        f"- {pr_key} {sha[:8]}: {entry.get('title', '')}\n  https://github.com/{repo}/pull/{number}"
+                    )
+                    green_notified[green_key] = iso(now_utc())
                 continue
             key = f"{repo}#{pr['number']}_{pr['headRefOid'][:8]}"
             if key in state["ci_notified"]:
@@ -896,8 +925,19 @@ def check_ci(state: dict) -> None:
             )
             state["ci_notified"][key] = iso(now_utc())
 
+    if green_ready:
+        send(
+            REVIEWER,
+            "【CI全チェックgreen化検知】\n\n" + "\n".join(green_ready) + "\n\n"
+            "上記PRは既にレビュー通知済みのHEADで、全CIチェックがterminal・greenになりました。"
+            "CI待ちで保留していた場合は直ちにレビュー/FRCに着手してください。"
+            "レビュー投稿済みの場合はこの通知への対応は不要です。",
+        )
+        log(f"ci-green dispatch -> {REVIEWER}: {len(green_ready)} PR(s)")
+
     cutoff = iso(now_utc() - timedelta(days=30))
     state["ci_notified"] = {key: value for key, value in state["ci_notified"].items() if value >= cutoff}
+    state["ci_green_notified"] = {key: value for key, value in green_notified.items() if value >= cutoff}
 
 
 def check_conflicts(state: dict) -> None:
