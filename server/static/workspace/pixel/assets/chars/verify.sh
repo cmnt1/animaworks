@@ -27,7 +27,7 @@ rows = {
 }
 
 chars = json.loads(manifest_path.read_text(encoding="utf-8")).get("chars", {})
-if set(chars) != {"sample_01"}:
+if set(chars) != {"sample_01", "human", "customer_a", "customer_b"}:
     raise SystemExit(f"manifest chars mismatch: {sorted(chars)}")
 config = chars["sample_01"]
 if config.get("file") != "chars/sample_01.png":
