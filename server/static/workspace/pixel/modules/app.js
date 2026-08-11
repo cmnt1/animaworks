@@ -13,10 +13,13 @@ const dateText = document.querySelector("#dateText");
 const demoMark = document.querySelector("#demoMark");
 const connectionDot = document.querySelector("#connectionDot");
 const dayNightButton = document.querySelector("#dayNight");
+const displayScaleSelect = document.querySelector("#displayScale");
 const params = new URLSearchParams(location.search);
 const forceMock = params.get("mock") === "1";
 const fastMock = params.get("fast") === "1";
-const DISPLAY_SCALE = 4;
+const DISPLAY_SCALE_KEY = "aw-pixel-display-scale";
+const storedDisplayScale = Number(localStorage.getItem(DISPLAY_SCALE_KEY));
+let displayScale = [1, 2, 3, 4].includes(storedDisplayScale) ? storedDisplayScale : 2;
 let logicalWidth = Number(canvas.getAttribute("width")) || 1120;
 let logicalHeight = Number(canvas.getAttribute("height")) || 736;
 
@@ -42,17 +45,26 @@ function updateDateBoard() {
 updateDateBoard();
 
 function resizeCanvas() {
-  const width = logicalWidth * DISPLAY_SCALE;
-  const height = logicalHeight * DISPLAY_SCALE;
+  const width = logicalWidth * displayScale;
+  const height = logicalHeight * displayScale;
   const stage = document.querySelector("#stage");
-  document.documentElement.style.setProperty("--pixel-scale", String(DISPLAY_SCALE));
-  stage.dataset.pixelScale = String(DISPLAY_SCALE);
+  document.documentElement.style.setProperty("--pixel-scale", String(displayScale));
+  stage.dataset.pixelScale = String(displayScale);
   stage.style.width = `${width}px`;
   stage.style.height = `${height}px`;
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
-  window.__pixelDisplayScale = DISPLAY_SCALE;
+  window.__pixelDisplayScale = displayScale;
 }
+
+displayScaleSelect.value = String(displayScale);
+displayScaleSelect.addEventListener("change", () => {
+  const next = Number(displayScaleSelect.value);
+  if (![1, 2, 3, 4].includes(next)) return;
+  displayScale = next;
+  localStorage.setItem(DISPLAY_SCALE_KEY, String(displayScale));
+  resizeCanvas();
+});
 
 async function start() {
   let live = null;
