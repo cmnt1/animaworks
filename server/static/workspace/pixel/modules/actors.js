@@ -521,7 +521,7 @@ export class Actor {
   }
 
   renderScale() {
-    return 1;
+    return this.sprite.animation.startsWith("walk_") ? 2 : 1;
   }
 
   walk(path, speed = 120) {
