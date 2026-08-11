@@ -300,7 +300,11 @@ def check_anima_vectordb_health_via_worker_or_direct(
 
 
 def _run_quick_check(db_path: Path, timeout_seconds: float) -> tuple[str, ...]:
-    with _connect(db_path, timeout_seconds) as conn:
+    # Read-only: an rw maintenance connection deletes the -wal/-shm files on
+    # close when it believes it is the last connection (chroma's Rust-side
+    # SQLite locks are invisible to it), leaving live chroma connections on
+    # stale deleted-WAL fds → "file is not a database" storms (2026-08-11).
+    with _connect(db_path, timeout_seconds, mode="ro") as conn:
         conn.execute(f"PRAGMA busy_timeout = {int(timeout_seconds * 1000)}")
         deadline = time.monotonic() + timeout_seconds
         timed_out = False
@@ -324,8 +328,8 @@ def _run_quick_check(db_path: Path, timeout_seconds: float) -> tuple[str, ...]:
     return tuple(str(row[0]) for row in rows)
 
 
-def _connect(db_path: Path, timeout_seconds: float) -> sqlite3.Connection:
-    uri = f"file:{db_path}?mode=rw"
+def _connect(db_path: Path, timeout_seconds: float, *, mode: str = "rw") -> sqlite3.Connection:
+    uri = f"file:{db_path}?mode={mode}"
     return sqlite3.connect(uri, uri=True, timeout=timeout_seconds)
 
 

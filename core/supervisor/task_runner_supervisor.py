@@ -472,6 +472,13 @@ class TaskRunnerSupervisor:
         for name in tuple(env):
             if name.startswith("ANIMAWORKS_") and name.endswith("_URL"):
                 env.pop(name)
+        # Direct-chroma ownership must NOT leak into task runners: the root
+        # process self-enables ANIMAWORKS_ALLOW_DIRECT_CHROMA via
+        # enable_direct_chroma_for_process(), and a child inheriting it opens
+        # the same chroma.sqlite3, then deletes the WAL on close — leaving the
+        # root's live connections on stale (deleted) WAL fds ("file is not a
+        # database" storms; 2026-08-11 incident).
+        env.pop("ANIMAWORKS_ALLOW_DIRECT_CHROMA", None)
         env.update(url_env)
         env.update(
             {
