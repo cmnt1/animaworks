@@ -307,4 +307,31 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "CI失敗修正 {repo}#{number}",
         "en": "Fix CI failure {repo}#{number}",
     },
+    "github_gateway.review_task_bot_note": {
+        "ja": "bot由来のCHANGES_REQUESTEDです。",
+        "en": "This CHANGES_REQUESTED review came from a bot.",
+    },
+    "github_gateway.review_task_human_note": {
+        "ja": "人間レビュアー由来です。",
+        "en": "This review came from a human reviewer.",
+    },
+    "github_gateway.review_task_summary": {
+        "ja": "レビュー指摘対応 {repo}#{number}",
+        "en": "Address review feedback {repo}#{number}",
+    },
+    "github_gateway.review_task": {
+        "ja": (
+            "PR #{number} ({url}) に @{author} から CHANGES_REQUESTED が投稿された。{bot_note}\n\n"
+            "レビュー本文:\n{body}\n\n"
+            "指摘を確認して必要な修正を行うこと。レビュアーが人間の場合、指摘に技術的に"
+            "同意できない時は独断で押し切らず上長(rin)へ報告して判断を仰ぐこと。"
+        ),
+        "en": (
+            "@{author} submitted CHANGES_REQUESTED on PR #{number} ({url}). {bot_note}\n\n"
+            "Review body:\n{body}\n\n"
+            "Review the feedback and make the necessary changes. If the reviewer is human and you "
+            "technically disagree, do not override the feedback unilaterally; report it to your manager "
+            "(rin) and ask for a decision."
+        ),
+    },
 }

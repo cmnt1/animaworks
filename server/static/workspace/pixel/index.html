@@ -10,7 +10,7 @@
     :root {
       color-scheme: dark;
       font-family: ui-monospace, "SFMono-Regular", "Noto Sans JP", monospace;
-      --pixel-scale: 1;
+      --pixel-scale: 2;
       --letterbox-color: #17131d;
       background: var(--letterbox-color);
     }
@@ -18,15 +18,16 @@
     html, body { width: 100%; height: 100%; margin: 0; overflow: auto; }
     body {
       display: grid;
-      place-items: center;
-      min-width: 1120px;
-      min-height: 736px;
+      align-items: safe center;
+      justify-items: safe center;
+      min-width: 100%;
+      min-height: 100%;
       background: var(--letterbox-color);
     }
     #stage {
       position: relative;
-      width: 1120px;
-      height: 736px;
+      width: calc(1120px * var(--pixel-scale));
+      height: calc(736px * var(--pixel-scale));
       flex: none;
       overflow: hidden;
       image-rendering: pixelated;
@@ -40,11 +41,36 @@
     }
     #workspace {
       display: block;
-      width: 1120px;
-      height: 736px;
+      width: calc(1120px * var(--pixel-scale));
+      height: calc(736px * var(--pixel-scale));
       image-rendering: crisp-edges;
       image-rendering: pixelated;
       background: #d7b98b;
+    }
+    #zoomControl {
+      position: absolute;
+      z-index: 10;
+      top: 6px;
+      left: 12px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      height: 20px;
+      padding: 2px 4px;
+      color: #fff0c8;
+      background: #20191d;
+      border: 1px solid #0f0b0d;
+      box-shadow: 2px 2px 0 #0b0809aa;
+      font-size: 10px;
+    }
+    #displayScale {
+      height: 16px;
+      padding: 0 2px;
+      color: inherit;
+      background: #2b2227;
+      border: 0;
+      font: inherit;
+      cursor: pointer;
     }
     header {
       position: absolute;
@@ -157,6 +183,15 @@
 <body>
   <main id="stage">
     <canvas id="workspace" width="1120" height="736" aria-label="AnimaWorks pixel office"></canvas>
+    <label id="zoomControl">
+      表示
+      <select id="displayScale" aria-label="表示倍率">
+        <option value="1">1x</option>
+        <option value="2">2x</option>
+        <option value="3">3x</option>
+        <option value="4">4x</option>
+      </select>
+    </label>
     <header>
       <span class="title">ANIMAWORKS // PIXEL OFFICE</span>
       <span class="status">

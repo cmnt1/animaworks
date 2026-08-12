@@ -137,10 +137,15 @@ class MemoryService:
         from core.config import load_config
 
         timeout = int(getattr(load_config().rag, "repair_timeout_seconds", 1800))
+        # Staging build legitimately opens native chroma (in the staging dir),
+        # so grant direct access explicitly — the process-local grant of this
+        # root process does not propagate through the environment.
+        from core.memory.rag.direct_access import DIRECT_CHROMA_ENV
+
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             cwd=Path(__file__).resolve().parents[2],
-            env=os.environ.copy(),
+            env={**os.environ, DIRECT_CHROMA_ENV: "1"},
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )

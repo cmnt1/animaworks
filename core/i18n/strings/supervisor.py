@@ -61,6 +61,27 @@ STRINGS: dict[str, dict[str, str]] = {
             "이전 프로세스가 비정상 종료되었습니다. 완료한 작업을 확인하고 남은 작업을 끝내세요."
         ),
     },
+    "pending_executor.declaration_probe": {
+        "ja": (
+            "タスク {task_id} のセッションが完了宣言なしで終了しました。新しい作業は一切せず、"
+            "現状に応じて今すぐ update_task を1回だけ呼んでください。完遂済みなら "
+            'status="done" と result、外部要因で進められないなら status="blocked" と summary、'
+            'バックグラウンド処理を待っているだけなら status="in_progress" と '
+            'summary="[待機] <何を待っているか>" を指定してください。'
+        ),
+        "en": (
+            "Task {task_id} ended without a completion declaration. Do no new work. Call update_task exactly once "
+            'now: use status="done" with result if complete, status="blocked" with summary if an external blocker '
+            'prevents progress, or status="in_progress" with summary="[waiting] <what you are waiting for>" if only '
+            "waiting for background work."
+        ),
+        "ko": (
+            "작업 {task_id} 세션이 완료 선언 없이 종료되었습니다. 새로운 작업은 하지 말고 지금 update_task를 "
+            '정확히 한 번 호출하세요. 완료했다면 status="done"과 result, 외부 요인으로 진행할 수 없다면 '
+            'status="blocked"와 summary, 백그라운드 작업을 기다리는 중이라면 status="in_progress"와 '
+            'summary="[대기] <기다리는 대상>"을 지정하세요.'
+        ),
+    },
     "pending_executor.recovered_checkpoint": {
         "ja": (
             "## プロセス異常終了から回収したcheckpoint\n"

@@ -6,6 +6,7 @@ import importlib.util
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -222,9 +223,7 @@ def test_ci_item_id_changes_with_sha(mod):
     assert old_id != new_id
     # old item addressed via head_sha_changed; new item still open
     assert mod.is_addressed(pr_closed=False, kind="ci", ci_still_failing=True, head_sha_changed=True)
-    assert not mod.is_addressed(
-        pr_closed=False, kind="ci", ci_still_failing=True, head_sha_changed=False
-    )
+    assert not mod.is_addressed(pr_closed=False, kind="ci", ci_still_failing=True, head_sha_changed=False)
 
 
 def test_failed_check_names_filters_failure_only(mod):
@@ -463,7 +462,7 @@ def test_stage_escalate_once_suppressed(mod):
     )
 
 
-def test_stage_escalate_again_after_interval(mod):
+def test_stage_never_escalates_again(mod):
     now = T0 + timedelta(hours=16)
     last_warned = T0 + timedelta(hours=14)
     escalated_at = T0 + timedelta(hours=8)
@@ -477,7 +476,7 @@ def test_stage_escalate_again_after_interval(mod):
             rewarn_hours=4.0,
             escalate_hours=8.0,
         )
-        == "escalate"
+        == "none"
     )
 
 
@@ -622,15 +621,11 @@ def test_default_ladder_15_30_45_60(mod):
     assert mod.determine_warning_stage(now=T0 + timedelta(minutes=14), last_warned=None, **kw) == "none"
     assert mod.determine_warning_stage(now=T0 + timedelta(minutes=15), last_warned=None, **kw) == "warn"
     assert (
-        mod.determine_warning_stage(
-            now=T0 + timedelta(minutes=30), last_warned=T0 + timedelta(minutes=15), **kw
-        )
+        mod.determine_warning_stage(now=T0 + timedelta(minutes=30), last_warned=T0 + timedelta(minutes=15), **kw)
         == "rewarn"
     )
     assert (
-        mod.determine_warning_stage(
-            now=T0 + timedelta(minutes=45), last_warned=T0 + timedelta(minutes=30), **kw
-        )
+        mod.determine_warning_stage(now=T0 + timedelta(minutes=45), last_warned=T0 + timedelta(minutes=30), **kw)
         == "rewarn"
     )
     assert (
@@ -648,3 +643,115 @@ def test_default_env_ladder_constants(mod):
     assert mod.STALE_WARN_HOURS == 0.25
     assert mod.STALE_REWARN_HOURS == 0.25
     assert mod.STALE_ESCALATE_HOURS == 1.0
+
+
+def _ci_stale_item() -> dict:
+    sha = "a" * 40
+    return {
+        "item_id": f"ci:o/r#1:{sha}",
+        "kind": "ci",
+        "repo": "o/r",
+        "number": 1,
+        "author": "ci",
+        "body": "tests",
+        "url": "https://gh.test/o/r/pull/1",
+        "created_at": None,
+        "sha": sha,
+        "failed_checks": ["tests"],
+        "ci_still_failing": True,
+        "head_sha_changed": False,
+        "thread_resolved": False,
+        "bot_commit_at": None,
+        "bot_comment_at": None,
+    }
+
+
+def _stub_ci_stale_scan(mod, monkeypatch, task, now_box, sends):
+    monkeypatch.setattr(mod, "now_utc", lambda: now_box[0])
+    monkeypatch.setattr(mod, "gh", lambda args: json.dumps([{"number": 1}]))
+    monkeypatch.setattr(mod, "_collect_pr_stale_items", lambda repo, number, pr_meta: [_ci_stale_item()])
+    monkeypatch.setattr(mod, "_direct_task_for_stale_item", lambda item: task)
+    monkeypatch.setattr(mod, "send", lambda to, content: sends.append((to, content)))
+    monkeypatch.setattr(mod, "log", lambda message: None)
+
+
+def test_done_task_suppresses_warnings_and_reminds_every_six_hours(mod, monkeypatch):
+    task = SimpleNamespace(task_id="gh-ci-o-r#1-aaaaaaaa", status="done", summary="infra failure diagnosed")
+    now_box = [T0]
+    sends: list[tuple[str, str]] = []
+    _stub_ci_stale_scan(mod, monkeypatch, task, now_box, sends)
+    state = mod.default_state()
+
+    mod.check_unaddressed(state)
+    now_box[0] = T0 + timedelta(hours=5)
+    mod.check_unaddressed(state)
+    now_box[0] = T0 + timedelta(hours=6)
+    mod.check_unaddressed(state)
+
+    assert len(sends) == 2
+    assert all(to == "rin" and "診断済み: infra failure diagnosed" in body for to, body in sends)
+    entry = state["stale_watch"][_ci_stale_item()["item_id"]]
+    assert entry["suppressed_by_task"] == task.task_id
+
+
+def test_in_progress_task_warns_once_then_suppresses(mod, monkeypatch):
+    task = SimpleNamespace(task_id="gh-ci-o-r#1-aaaaaaaa", status="in_progress", summary="fixing")
+    now_box = [T0]
+    sends: list[tuple[str, str]] = []
+    _stub_ci_stale_scan(mod, monkeypatch, task, now_box, sends)
+    state = mod.default_state()
+
+    mod.check_unaddressed(state)
+    now_box[0] = T0 + timedelta(hours=2)
+    mod.check_unaddressed(state)
+
+    assert len(sends) == 1
+    assert sends[0][0] == "rin"
+    assert "CI失敗" in sends[0][1]
+
+
+def test_escalated_item_sends_one_human_judgment_dm_after_24_hours(mod, monkeypatch):
+    now_box = [T0]
+    sends: list[tuple[str, str]] = []
+    _stub_ci_stale_scan(mod, monkeypatch, None, now_box, sends)
+    item_id = _ci_stale_item()["item_id"]
+    state = mod.default_state()
+    state["stale_watch"][item_id] = {
+        "first_seen": mod.iso(T0 - timedelta(hours=30)),
+        "last_warned": mod.iso(T0 - timedelta(hours=29)),
+        "escalated_at": mod.iso(T0 - timedelta(hours=24)),
+        "kind": "ci",
+    }
+
+    mod.check_unaddressed(state)
+    mod.check_unaddressed(state)
+
+    assert len(sends) == 1
+    assert sends[0][0] == "sakura"
+    assert "人間判断が必要" in sends[0][1]
+    assert "takaへ call_human で報告すること" in sends[0][1]
+    assert state["stale_watch"][item_id]["human_notified_at"]
+
+
+def test_new_failure_type_resets_escalated_stale_entry(mod, monkeypatch):
+    now_box = [T0]
+    sends: list[tuple[str, str]] = []
+    _stub_ci_stale_scan(mod, monkeypatch, None, now_box, sends)
+    item_id = _ci_stale_item()["item_id"]
+    state = mod.default_state()
+    state["stale_watch"][item_id] = {
+        "first_seen": mod.iso(T0 - timedelta(hours=30)),
+        "last_warned": mod.iso(T0 - timedelta(hours=29)),
+        "escalated_at": mod.iso(T0 - timedelta(hours=24)),
+        "human_notified_at": mod.iso(T0 - timedelta(hours=1)),
+        "failure_signature": "old-check",
+        "kind": "ci",
+    }
+
+    mod.check_unaddressed(state)
+
+    entry = state["stale_watch"][item_id]
+    assert entry["failure_signature"] == "tests"
+    assert entry["escalated_at"] is None
+    assert "human_notified_at" not in entry
+    assert len(sends) == 1 and sends[0][0] == "rin"

@@ -234,7 +234,7 @@ class ChromaVectorStore(VectorStore):
             )
             persist_dir.mkdir(parents=True, exist_ok=True)
 
-        from core.memory.rag.sqlite_health import configure_chroma_sqlite_pragmas, prepare_chroma_sqlite_for_startup
+        from core.memory.rag.sqlite_health import prepare_chroma_sqlite_for_startup
 
         prepare_chroma_sqlite_for_startup(persist_dir, anima_name=anima_name)
         logger.debug("Initializing ChromaDB at %s", persist_dir)
@@ -245,14 +245,12 @@ class ChromaVectorStore(VectorStore):
         self._closed = False
         self._lightweight_self_heal_failures = 0
         self._missing_collections_logged: set[str] = set()
-        post_init_pragma = configure_chroma_sqlite_pragmas(persist_dir)
-        if not post_init_pragma.ok and post_init_pragma.status != "missing":
-            logger.warning(
-                "Failed to configure Chroma SQLite pragmas after client init at %s: status=%s detail=%s",
-                post_init_pragma.db_path,
-                post_init_pragma.status,
-                post_init_pragma.error or post_init_pragma.details,
-            )
+        # No maintenance connection after PersistentClient init: closing a
+        # Python sqlite3 rw connection here deletes the -wal/-shm the live
+        # client just created (POSIX locks cannot see the Rust client's locks
+        # in the same process), stranding it on deleted-WAL fds → "file is not
+        # a database" storms (2026-08-11 incident). WAL mode is already
+        # ensured by prepare_chroma_sqlite_for_startup() before client init.
 
     def close(self) -> None:
         """Close the underlying Chroma client if supported.

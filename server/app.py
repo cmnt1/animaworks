@@ -196,8 +196,9 @@ class BasePathMiddleware:
 
 
 def _startup_default_preflight_runner(*, force_all_vectordb: bool = False) -> None:
-    from cli.commands.server import _run_rag_startup_preflight
+    from cli.commands.server import _run_execution_sdk_preflight, _run_rag_startup_preflight
 
+    _run_execution_sdk_preflight()
     _run_rag_startup_preflight(force_all_vectordb=force_all_vectordb)
 
 

@@ -61,6 +61,15 @@ class StreamDisconnectedError(ExecutionError):
         self.category = category
 
 
+class ExecutorUnavailableError(ExecutionError):
+    """Required execution backend is missing or cannot authenticate.
+
+    Non-retryable: restoring packages/credentials is required before retry.
+    """
+
+    retryable = False
+
+
 # ── Tool ─────────────────────────────────────────────────────
 
 

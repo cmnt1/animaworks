@@ -31,7 +31,7 @@ Other workers of the same Anima (your siblings) are currently executing the foll
 - End the task when completion criteria are met
 - After completing the task, call `update_task(status="done", result="summary of results")` before ending. This is the only completion declaration mechanism
 - Ending the session without a completion declaration automatically continues the task (up to 3 times), after which it is marked failed
-- If you cannot proceed immediately, such as while waiting for a background command, you may end without declaring completion. Check the result in the next automatically continued session
+- When waiting for background work, call `update_task(status="in_progress", summary="[waiting] <what you are waiting for>")` before ending (the system also treats an undeclared exit as waiting, but declaring it is more reliable)
 - If an external factor (missing permission, dependency, environment failure) prevents progress, do not repeat the same operations; declare `update_task(status="blocked", summary="<blocker>")` and stop. Automatic continuation is then cancelled
 - Observe the constraints
 - If anything is unclear, do your best within the information provided

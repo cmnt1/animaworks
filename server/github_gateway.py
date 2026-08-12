@@ -20,14 +20,16 @@ from typing import Any
 from core.config.models import load_config
 from core.config.schemas import GitHubWebhookConfig
 from core.i18n import t
+from core.memory.task_queue import TaskQueueManager
 from core.messenger import Messenger
-from core.paths import get_shared_dir
+from core.paths import get_animas_dir, get_shared_dir
 from core.platform.locks import acquire_file_lock, release_file_lock
-from core.tasks_dispatch import dispatch_direct_task
+from core.tasks_dispatch import FAILING_CI_CONCLUSIONS, dispatch_direct_task
 
 logger = logging.getLogger("animaworks.github_gateway")
 
 STATE_FILENAME = "pr-review-dispatch-state.json"
+MAX_FAILED_REDISPATCHES = 2
 
 
 def _now_iso() -> str:
@@ -40,6 +42,11 @@ def _default_state() -> dict[str, Any]:
         "last_comment_check": _now_iso(),
         "seen_comments": {},
         "ci_notified": {},
+        "ci_failure_signatures": {},
+        "conflict_notified": {},
+        "failed_task_retries": {},
+        "review_tasks": {},
+        "stale_watch": {},
         "consecutive_failures": 0,
     }
 
@@ -71,6 +78,11 @@ def locked_dispatch_state(state_file: Path) -> Iterator[dict[str, Any]]:
             state.setdefault("prs", {})
             state.setdefault("seen_comments", {})
             state.setdefault("ci_notified", {})
+            state.setdefault("ci_failure_signatures", {})
+            state.setdefault("conflict_notified", {})
+            state.setdefault("failed_task_retries", {})
+            state.setdefault("review_tasks", {})
+            state.setdefault("stale_watch", {})
             yield state
             temp_path: Path | None = None
             try:
@@ -273,6 +285,7 @@ class GitHubWebhookManager:
             return
         pr = payload.get("pull_request") or {}
         number = int(pr.get("number") or 0)
+        state = str(review.get("state") or "").upper()
         if self._is_bot(author):
             # bot自身のreviewはFRC判定(HOLD/PASS)の投稿なので、除外せずrinへ転送する
             # reviewer_login 名義の APPROVED / CHANGES_REQUESTED も同様にFRC結果として扱う
@@ -286,8 +299,18 @@ class GitHubWebhookManager:
                 str(review.get("html_url") or ""),
                 str(review.get("state") or ""),
             )
+            if state == "CHANGES_REQUESTED":
+                await asyncio.to_thread(
+                    self._dispatch_review_task_once,
+                    repo,
+                    number,
+                    str(review_id),
+                    author,
+                    str(review.get("body") or ""),
+                    str(review.get("html_url") or ""),
+                    True,
+                )
             return
-        state = str(review.get("state") or "").upper()
         emphasis = "【CHANGES_REQUESTED】 " if state == "CHANGES_REQUESTED" else ""
         await asyncio.to_thread(
             self._dispatch_comment_once,
@@ -299,6 +322,17 @@ class GitHubWebhookManager:
             str(review.get("html_url") or ""),
             f"{emphasis}review {state}".strip(),
         )
+        if state == "CHANGES_REQUESTED":
+            await asyncio.to_thread(
+                self._dispatch_review_task_once,
+                repo,
+                number,
+                str(review_id),
+                author,
+                str(review.get("body") or ""),
+                str(review.get("html_url") or ""),
+                False,
+            )
 
     async def _handle_comment(self, event: str, repo: str, payload: dict[str, Any]) -> None:
         if payload.get("action") != "created":
@@ -414,9 +448,53 @@ class GitHubWebhookManager:
             self._send(self._config.dispatcher_anima, content, "frc-result", dedupe_key)
             seen[dedupe_key] = _now_iso()
 
+    def _dispatch_review_task_once(
+        self,
+        repo: str,
+        number: int,
+        review_id: str,
+        author: str,
+        body: str,
+        url: str,
+        bot_derived: bool,
+    ) -> None:
+        with locked_dispatch_state(self._require_state_file()) as state:
+            review_tasks = state["review_tasks"]
+            if review_id in review_tasks:
+                return
+            bot_note = t(
+                "github_gateway.review_task_bot_note" if bot_derived else "github_gateway.review_task_human_note"
+            )
+            dispatch_direct_task(
+                target=self._config.implementer_anima,
+                task_id=f"gh-review-{repo.replace('/', '-')}#{number}-{review_id}",
+                summary=t("github_gateway.review_task_summary", repo=repo, number=number),
+                instruction=t(
+                    "github_gateway.review_task",
+                    repo=repo,
+                    number=number,
+                    url=url or f"https://github.com/{repo}/pull/{number}",
+                    author=author or "unknown",
+                    bot_note=bot_note,
+                    body=body[:500],
+                ),
+                meta={
+                    "repo": repo,
+                    "number": number,
+                    "review_id": review_id,
+                    "reviewer": author,
+                    "url": url,
+                    "bot_derived": bot_derived,
+                },
+            )
+            review_tasks[review_id] = _now_iso()
+
     async def _handle_workflow_run(self, repo: str, payload: dict[str, Any]) -> None:
         workflow = payload.get("workflow_run") or {}
-        if payload.get("action") != "completed" or str(workflow.get("conclusion") or "").lower() != "failure":
+        if (
+            payload.get("action") != "completed"
+            or str(workflow.get("conclusion") or "").upper() not in FAILING_CI_CONCLUSIONS
+        ):
             return
         sha = str(workflow.get("head_sha") or "")
         if not sha:
@@ -447,6 +525,26 @@ class GitHubWebhookManager:
     ) -> None:
         with locked_dispatch_state(self._require_state_file()) as state:
             notified = state["ci_notified"]
+            failure_signatures = state["ci_failure_signatures"]
+            retries = state["failed_task_retries"]
+            target_dir = get_animas_dir() / self._config.implementer_anima
+            for number, sha in items:
+                key = f"{repo}#{number}_{sha[:8]}"
+                if failure_signatures.get(key) not in (None, workflow_name):
+                    notified.pop(key, None)
+                elif key in notified:
+                    failure_signatures.setdefault(key, workflow_name)
+                if key not in notified or not target_dir.is_dir():
+                    continue
+                task_id = f"gh-ci-{repo.replace('/', '-')}#{number}-{sha[:8]}"
+                task = TaskQueueManager(target_dir).get_task_by_id(task_id)
+                if (
+                    task is not None
+                    and task.status == "failed"
+                    and int(retries.get(task_id, 0)) < MAX_FAILED_REDISPATCHES
+                ):
+                    notified.pop(key, None)
+                    retries[task_id] = int(retries.get(task_id, 0)) + 1
             fresh = [
                 (number, sha, f"{repo}#{number}_{sha[:8]}")
                 for number, sha in items
@@ -473,6 +571,7 @@ class GitHubWebhookManager:
                     meta={"repo": repo, "number": number, "sha": sha, "workflow_url": url},
                 )
                 notified[key] = now
+                failure_signatures[key] = workflow_name
 
     def _is_bot(self, author: str) -> bool:
         """True when the author is bot_login or reviewer_login."""

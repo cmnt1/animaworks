@@ -474,6 +474,12 @@ class RAGRepairMixin:
         env = os.environ.copy()
         env["ANIMAWORKS_VECTOR_URL"] = vector_url
         env["ANIMAWORKS_RAG_REPAIR_NONCE"] = repair_nonce
+        # Repair is a legitimate native-chroma owner (staging rebuild); the
+        # process-local grant does not propagate via environment, so pass it
+        # explicitly.
+        from core.memory.rag.direct_access import DIRECT_CHROMA_ENV
+
+        env[DIRECT_CHROMA_ENV] = "1"
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             cwd=repo_root,

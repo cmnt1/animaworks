@@ -30,7 +30,7 @@ export class SpriteSheet {
   }
 
   draw(ctx, footX, footY, scale = 1) {
-    if (!this.image) return;
+    if (!this.image) return false;
     const anim = this.anims[this.animation] || this.anims.idle || { row: 0 };
     const sourceX = this.frame * this.frameW;
     const sourceY = (anim.row || 0) * this.frameH;
@@ -51,5 +51,6 @@ export class SpriteSheet {
       height,
     );
     ctx.restore();
+    return true;
   }
 }

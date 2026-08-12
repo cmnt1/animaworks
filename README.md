@@ -67,7 +67,7 @@ Windows (PowerShell):
 ```powershell
 git clone https://github.com/xuiltul/animaworks.git
 cd animaworks
-uv sync
+uv sync --all-extras
 uv run animaworks start
 ```
 
@@ -109,11 +109,13 @@ export PATH="$HOME/.local/bin:$PATH"
 
 # Clone and install
 git clone https://github.com/xuiltul/animaworks.git && cd animaworks
-uv sync                 # downloads Python 3.12+ and all dependencies
+uv sync --all-extras    # downloads Python 3.12+ and all dependencies (including codex/claude extras)
 
 # Start
 uv run animaworks start
 ```
+
+> **Always use `--all-extras` with `uv sync`.** In both production and development, run `uv sync --all-extras` (or `uv sync --frozen --all-extras`). A filtered sync, or an implicit sync from `uv run` that omits extras, can remove the `codex` / `claude` execution packages from the venv and break Mode C / Mode S animas across the fleet.
 
 </details>
 

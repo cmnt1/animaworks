@@ -26,10 +26,9 @@ def test_dispatch_direct_task_queues_and_publishes_pending(tmp_path: Path) -> No
     assert task is not None
     assert task.assignee == "natsume"
     assert task.meta["origin"] == "github-event"
+    assert task.meta["executor"] == "taskexec"
     assert task.meta["repo"] == "o/r"
-    pending = json.loads(
-        (target_dir / "state" / "pending" / "gh-cmd-101.json").read_text(encoding="utf-8")
-    )
+    pending = json.loads((target_dir / "state" / "pending" / "gh-cmd-101.json").read_text(encoding="utf-8"))
     assert pending == {
         "task_type": "llm",
         "task_id": "gh-cmd-101",

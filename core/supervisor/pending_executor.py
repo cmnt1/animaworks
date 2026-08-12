@@ -60,9 +60,12 @@ _SENTINEL_DEFERRED = "(deferred)"
 _SENTINEL_PROVIDER_RATE_LIMIT = "(provider_rate_limit_deferred)"
 _PROVIDER_COOLDOWN_FALLBACK_S = 120
 _SENTINEL_CONTINUED = "(continued)"
+_SENTINEL_WAITING = "(waiting)"
 _SENTINEL_BUDGET_SKIPPED = "(budget_skipped)"
 _SENTINEL_BLOCKED = "(blocked)"
 _MAX_TASK_CONTINUATIONS = 3
+_MAX_WAITING_REENQUEUES = 12
+_WAITING_REENQUEUE_DELAY_SECONDS = 300.0
 # Delay before each continuation may be claimed, keyed by continuation_count.
 # A task stuck on an obstacle otherwise burns all continuations in minutes.
 _CONTINUATION_BACKOFF_SECONDS = {1: 0.0, 2: 180.0, 3: 600.0}
@@ -579,6 +582,8 @@ def _classify_task_result(result: str) -> tuple[str, str]:
         return "pending", t("pending_executor.provider_rate_limit_deferred")
     if result == _SENTINEL_CONTINUED:
         return "in_progress", "automatic continuation scheduled"
+    if result == _SENTINEL_WAITING:
+        return "in_progress", "background work waiting; automatic recheck scheduled"
     if result == _SENTINEL_BUDGET_SKIPPED:
         return "pending", "execution skipped because token budget is unavailable"
     if result == _SENTINEL_BLOCKED:
@@ -660,6 +665,17 @@ def _completion_declaration_required() -> bool:
     except Exception:
         logger.warning("Failed to load completion declaration setting; using safe default", exc_info=True)
         return True
+
+
+def _is_waiting_session(tool_call_records: list[dict[str, Any]]) -> bool:
+    """Return whether the session's final recorded tool indicates waiting."""
+    for record in reversed(tool_call_records):
+        if not isinstance(record, dict):
+            continue
+        name = record.get("tool_name") or record.get("tool")
+        if name:
+            return str(name).removeprefix("mcp__aw__") in {"Monitor", "ScheduleWakeup"}
+    return False
 
 
 def _resolve_default_workspace(anima_dir: Path) -> str:
@@ -1001,6 +1017,8 @@ class PendingTaskExecutor:
         accumulated_text: str,
         tool_call_records: list[dict[str, Any]],
         stop_kind: str = "normal",
+        *,
+        waiting: bool = False,
     ) -> None:
         """Re-enqueue an undeclared task with enough context to resume safely."""
         from core.memory._io import atomic_write_text
@@ -1009,7 +1027,13 @@ class PendingTaskExecutor:
         continuation_count = task_desc.get("continuation_count", 0)
         if not isinstance(continuation_count, int) or isinstance(continuation_count, bool):
             continuation_count = 0
-        continuation_count += 1
+        waiting_count = task_desc.get("waiting_reenqueue_count", 0)
+        if not isinstance(waiting_count, int) or isinstance(waiting_count, bool):
+            waiting_count = 0
+        if waiting:
+            waiting_count += 1
+        else:
+            continuation_count += 1
         records = []
         for record in tool_call_records[-30:]:
             if not isinstance(record, dict):
@@ -1020,14 +1044,20 @@ class PendingTaskExecutor:
         record_text = "\n".join(records) or f"- {t('pending_executor.none_value')}"
         checkpoint = t(
             "pending_executor.continuation_checkpoint",
-            count=continuation_count,
-            stop_kind=stop_kind,
+            count=waiting_count if waiting else continuation_count,
+            stop_kind="waiting" if waiting else stop_kind,
             output=accumulated_text[-2000:],
             records=record_text,
         )
         next_desc = dict(task_desc)
         next_desc["continuation_count"] = continuation_count
-        backoff = _CONTINUATION_BACKOFF_SECONDS.get(continuation_count, 600.0)
+        if waiting:
+            next_desc["waiting_reenqueue_count"] = waiting_count
+        backoff = (
+            _WAITING_REENQUEUE_DELAY_SECONDS
+            if waiting
+            else _CONTINUATION_BACKOFF_SECONDS.get(continuation_count, 600.0)
+        )
         if backoff > 0:
             next_desc["continuation_not_before"] = time.time() + backoff
         else:
@@ -1050,7 +1080,12 @@ class PendingTaskExecutor:
                     task_id,
                     {"completed_by": None, "result_note": None},
                 )
-            self._sync_task_queue(task_id, "in_progress", summary="automatic continuation scheduled")
+            summary = (
+                "background work waiting; automatic recheck scheduled"
+                if waiting
+                else "automatic continuation scheduled"
+            )
+            self._sync_task_queue(task_id, "in_progress", summary=summary)
         if backoff <= 0:
             self._wake_event.set()
 
@@ -2353,6 +2388,7 @@ class PendingTaskExecutor:
                         _SENTINEL_EXPIRED,
                         _SENTINEL_DEFERRED,
                         _SENTINEL_CONTINUED,
+                        _SENTINEL_WAITING,
                         _SENTINEL_BUDGET_SKIPPED,
                         _SENTINEL_BLOCKED,
                     }:
@@ -2384,6 +2420,7 @@ class PendingTaskExecutor:
                         _SENTINEL_EXPIRED,
                         _SENTINEL_DEFERRED,
                         _SENTINEL_CONTINUED,
+                        _SENTINEL_WAITING,
                         _SENTINEL_BUDGET_SKIPPED,
                         _SENTINEL_BLOCKED,
                     }:
@@ -2438,7 +2475,7 @@ class PendingTaskExecutor:
             try:
                 result = await self._run_task_in_worker(task_desc, completed_results)
                 status, summary = _classify_task_result_for_desc(result, task_desc)
-                if result != _SENTINEL_CONTINUED:
+                if result not in {_SENTINEL_CONTINUED, _SENTINEL_WAITING}:
                     if status == "failed":
                         self._fail_task_terminal(task_desc, summary)
                     else:
@@ -2460,7 +2497,7 @@ class PendingTaskExecutor:
         task_id = task_desc.get("task_id", "unknown")
         result = await self._run_task_in_worker(task_desc, completed_results)
         status, summary = _classify_task_result_for_desc(result, task_desc)
-        if result != _SENTINEL_CONTINUED:
+        if result not in {_SENTINEL_CONTINUED, _SENTINEL_WAITING}:
             if status == "failed":
                 self._fail_task_terminal(task_desc, summary)
             else:
@@ -2579,6 +2616,7 @@ class PendingTaskExecutor:
             _SENTINEL_EXPIRED: "expired",
             _SENTINEL_DEFERRED: "deferred",
             _SENTINEL_CONTINUED: "continued",
+            _SENTINEL_WAITING: "waiting",
             _SENTINEL_BUDGET_SKIPPED: "budget_skipped",
             _SENTINEL_BLOCKED: "blocked",
         }.get(result, "completed")
@@ -2967,21 +3005,103 @@ class PendingTaskExecutor:
             if meta.get("completed_by") == "agent_declaration":
                 result_summary = str(meta.get("result_note") or result_summary)
             else:
-                continuation_count = task_desc.get("continuation_count", 0)
-                if not isinstance(continuation_count, int) or isinstance(continuation_count, bool):
-                    continuation_count = 0
-                if continuation_count < _MAX_TASK_CONTINUATIONS:
-                    self._reenqueue_with_checkpoint(task_desc, accumulated_text, tool_call_records)
-                    logger.info(
-                        "[%s] LLM task continued without declaration: id=%s continuation=%d",
-                        self._anima_name,
-                        task_id,
-                        continuation_count + 1,
+                waiting_session = _is_waiting_session(tool_call_records)
+                if not waiting_session:
+                    probe_started_at = datetime.now(UTC)
+                    probe_tool_call_records: list[dict[str, Any]] = []
+                    try:
+                        async with session_context:
+                            async for chunk in agent.run_cycle_streaming(
+                                t("pending_executor.declaration_probe", task_id=task_id),
+                                trigger=trigger,
+                                thread_id=task_id,
+                            ):
+                                chunk_type = chunk.get("type")
+                                if chunk_type == "error":
+                                    logger.warning(
+                                        "[%s] Declaration probe stream error for task %s: %s",
+                                        self._anima_name,
+                                        task_id,
+                                        chunk.get("message", "unknown error"),
+                                    )
+                                elif chunk_type == "cycle_done":
+                                    cycle_result = chunk.get("cycle_result", {})
+                                    if isinstance(cycle_result, dict):
+                                        records = cycle_result.get("tool_call_records", [])
+                                        if isinstance(records, list):
+                                            probe_tool_call_records = records
+                    except Exception:
+                        logger.warning(
+                            "[%s] Declaration probe failed for task %s; falling back to continuation",
+                            self._anima_name,
+                            task_id,
+                            exc_info=True,
+                        )
+
+                    entry = self._get_task_queue_entry(task_id)
+                    if entry is not None and entry.status == "blocked":
+                        logger.info(
+                            "[%s] Task %s declared blocked during declaration probe",
+                            self._anima_name,
+                            task_id,
+                        )
+                        return _SENTINEL_BLOCKED
+                    meta = entry.meta if entry is not None and isinstance(entry.meta, dict) else {}
+                    if meta.get("completed_by") == "agent_declaration":
+                        result_summary = str(meta.get("result_note") or result_summary)
+                    else:
+                        probe_called_update = any(
+                            isinstance(record, dict)
+                            and str(record.get("tool_name") or record.get("tool") or "").removeprefix("mcp__aw__")
+                            == "update_task"
+                            for record in probe_tool_call_records
+                        )
+                        probe_updated_entry = False
+                        if entry is not None:
+                            try:
+                                probe_updated_entry = datetime.fromisoformat(entry.updated_at) > probe_started_at
+                            except (TypeError, ValueError):
+                                pass
+                        waiting_session = (
+                            entry is not None
+                            and entry.status == "in_progress"
+                            and (probe_updated_entry or probe_called_update)
+                        )
+
+                if meta.get("completed_by") != "agent_declaration":
+                    waiting_count = task_desc.get("waiting_reenqueue_count", 0)
+                    if not isinstance(waiting_count, int) or isinstance(waiting_count, bool):
+                        waiting_count = 0
+                    if waiting_session and waiting_count < _MAX_WAITING_REENQUEUES:
+                        self._reenqueue_with_checkpoint(
+                            task_desc,
+                            accumulated_text,
+                            tool_call_records,
+                            waiting=True,
+                        )
+                        logger.info(
+                            "[%s] LLM task waiting: id=%s reenqueue=%d",
+                            self._anima_name,
+                            task_id,
+                            waiting_count + 1,
+                        )
+                        return _SENTINEL_WAITING
+
+                    continuation_count = task_desc.get("continuation_count", 0)
+                    if not isinstance(continuation_count, int) or isinstance(continuation_count, bool):
+                        continuation_count = 0
+                    if continuation_count < _MAX_TASK_CONTINUATIONS:
+                        self._reenqueue_with_checkpoint(task_desc, accumulated_text, tool_call_records)
+                        logger.info(
+                            "[%s] LLM task continued without declaration: id=%s continuation=%d",
+                            self._anima_name,
+                            task_id,
+                            continuation_count + 1,
+                        )
+                        return _SENTINEL_CONTINUED
+                    raise TaskExecError(
+                        f"Task {task_id}: no completion declaration after {_MAX_TASK_CONTINUATIONS} continuations"
                     )
-                    return _SENTINEL_CONTINUED
-                raise TaskExecError(
-                    f"Task {task_id}: no completion declaration after {_MAX_TASK_CONTINUATIONS} continuations"
-                )
 
         # Send completion notification
         if reply_to:
@@ -3346,7 +3466,7 @@ class PendingTaskExecutor:
             else:
                 result = await self._run_llm_task(task_desc)
             status, summary = _classify_task_result_for_desc(result, task_desc)
-            if result != _SENTINEL_CONTINUED:
+            if result not in {_SENTINEL_CONTINUED, _SENTINEL_WAITING}:
                 if status == "failed":
                     self._fail_task_terminal(task_desc, summary)
                 else:
