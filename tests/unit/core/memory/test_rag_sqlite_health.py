@@ -81,6 +81,15 @@ def test_configure_chroma_sqlite_pragmas_missing_db_is_healthy(tmp_path: Path) -
     assert result.status == "missing"
 
 
+def test_prepare_chroma_sqlite_for_startup_creates_missing_db_in_wal_mode(tmp_path: Path) -> None:
+    prepare_chroma_sqlite_for_startup(tmp_path, anima_name="sora")
+
+    db_path = chroma_sqlite_path(tmp_path)
+    assert db_path.is_file()
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+
+
 def test_rebuild_chroma_fts5_indexes_uses_valid_fts5_rebuild_syntax(tmp_path: Path) -> None:
     db_path = chroma_sqlite_path(tmp_path)
     with sqlite3.connect(db_path) as conn:
@@ -285,7 +294,7 @@ def test_prepare_startup_continues_when_corruption_clears_on_recheck(
         prepare_chroma_sqlite_for_startup(tmp_path, anima_name="sora")
 
     repair.assert_called_once()
-    configure.assert_called_once_with(tmp_path)
+    configure.assert_called_once_with(tmp_path, create_if_missing=True)
     assert "transient corruption signal cleared on re-check" in caplog.text
 
 

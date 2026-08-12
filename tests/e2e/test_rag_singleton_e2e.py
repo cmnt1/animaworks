@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -147,3 +148,18 @@ class TestMemoryManagerSingleton:
             # Both should share the same embedding model instance
             assert indexer1.embedding_model is indexer2.embedding_model
             assert indexer1.embedding_model is mock_model
+
+
+def test_fresh_vector_store_starts_in_wal_mode(tmp_path, monkeypatch):
+    """A new Chroma database must inherit WAL before its live client opens."""
+    monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
+
+    from core.memory.rag.store import ChromaVectorStore
+
+    persist_dir = tmp_path / "vectordb"
+    store = ChromaVectorStore(persist_dir=persist_dir, anima_name="test-anima")
+    try:
+        with sqlite3.connect(persist_dir / "chroma.sqlite3") as conn:
+            assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+    finally:
+        store.close()

@@ -151,6 +151,7 @@ def configure_chroma_sqlite_pragmas(
     persist_dir: Path,
     *,
     timeout_seconds: float = DEFAULT_QUICK_CHECK_TIMEOUT_SECONDS,
+    create_if_missing: bool = False,
 ) -> SQLiteHealthResult:
     """Set defensive SQLite pragmas for an existing Chroma database.
 
@@ -160,11 +161,14 @@ def configure_chroma_sqlite_pragmas(
     validates the setting for any maintenance connection opened here.
     """
     db_path = chroma_sqlite_path(persist_dir)
-    if not db_path.exists():
+    if not db_path.exists() and not create_if_missing:
         return SQLiteHealthResult(db_path=db_path, ok=True, status="missing")
+    if create_if_missing:
+        persist_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        with _connect(db_path, timeout_seconds) as conn:
+        mode = "rwc" if create_if_missing else "rw"
+        with _connect(db_path, timeout_seconds, mode=mode) as conn:
             current_journal_mode = str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower()
             conn.execute(f"PRAGMA busy_timeout = {int(timeout_seconds * 1000)}")
             journal_mode = current_journal_mode
@@ -227,7 +231,10 @@ def prepare_chroma_sqlite_for_startup(persist_dir: Path, *, anima_name: str | No
                 f"Chroma SQLite database corrupt before startup: {rechecked.db_path} "
                 f"status={rechecked.status} detail={rechecked.error or rechecked.details}"
             )
-    pragma = configure_chroma_sqlite_pragmas(persist_dir)
+    # A fresh Chroma store has no SQLite file yet. Create the empty database
+    # in WAL mode before PersistentClient starts so Chroma inherits WAL without
+    # requiring a maintenance connection after the live client is open.
+    pragma = configure_chroma_sqlite_pragmas(persist_dir, create_if_missing=True)
     if not pragma.ok and pragma.status != "missing":
         logger.warning(
             "Failed to configure Chroma SQLite pragmas at %s: status=%s detail=%s",
