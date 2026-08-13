@@ -110,13 +110,13 @@ class CrossEncoderReranker:
 
     def _score_http(self, query: str, texts: list[str], rerank_url: str) -> list[float] | None:
         """Score via server's /api/internal/rerank. On failure return None (skip)."""
-        import httpx
+        from core.memory.rag.singleton import _shared_http_client
 
         all_scores: list[float] = []
         try:
             for i in range(0, len(texts), _BATCH_LIMIT):
                 batch = texts[i : i + _BATCH_LIMIT]
-                resp = httpx.post(
+                resp = _shared_http_client().post(
                     rerank_url,
                     json={"query": query, "documents": batch},
                     timeout=_HTTP_TIMEOUT,

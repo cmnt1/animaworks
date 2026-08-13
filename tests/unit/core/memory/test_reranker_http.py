@@ -75,7 +75,7 @@ class TestRerankerHTTP:
         mock_response.json.return_value = {"scores": [0.2, 0.8]}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("httpx.post", return_value=mock_response) as mock_post:
+        with patch("httpx.Client.post", return_value=mock_response) as mock_post:
             from core.memory.retrieval.reranker import CrossEncoderReranker
 
             reranker = CrossEncoderReranker()
@@ -108,7 +108,7 @@ class TestRerankerHTTP:
         mock_response.raise_for_status = MagicMock()
 
         try:
-            with patch("httpx.post", return_value=mock_response):
+            with patch("httpx.Client.post", return_value=mock_response):
                 from core.memory.retrieval.reranker import CrossEncoderReranker
 
                 reranker = CrossEncoderReranker()
@@ -147,7 +147,7 @@ class TestRerankerHTTP:
         st_original = sys.modules.pop("sentence_transformers", None)
 
         try:
-            with patch("httpx.post", return_value=mock_response):
+            with patch("httpx.Client.post", return_value=mock_response):
                 from core.memory.retrieval.reranker import CrossEncoderReranker
 
                 reranker = CrossEncoderReranker()
@@ -196,7 +196,7 @@ class TestRerankerHTTP:
 
         items = [{"content": f"d{i}"} for i in range(1002)]
 
-        with patch("httpx.post", side_effect=[batch1, batch2]) as mock_post:
+        with patch("httpx.Client.post", side_effect=[batch1, batch2]) as mock_post:
             from core.memory.retrieval.reranker import CrossEncoderReranker
 
             reranker = CrossEncoderReranker()
@@ -211,7 +211,7 @@ class TestRerankerHTTP:
         """Empty items return immediately without HTTP call."""
         monkeypatch.setenv("ANIMAWORKS_RERANK_URL", "http://localhost/rerank")
 
-        with patch("httpx.post") as mock_post:
+        with patch("httpx.Client.post") as mock_post:
             from core.memory.retrieval.reranker import CrossEncoderReranker
 
             reranker = CrossEncoderReranker()
@@ -229,7 +229,7 @@ class TestRerankerHTTP:
         mock_response.json.return_value = {"scores": [0.3, 0.7]}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("httpx.post", return_value=mock_response):
+        with patch("httpx.Client.post", return_value=mock_response):
             from core.memory.retrieval.reranker import CrossEncoderReranker
 
             reranker = CrossEncoderReranker()
