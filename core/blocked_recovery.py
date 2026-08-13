@@ -75,6 +75,15 @@ def _age_hours(entry: TaskEntry) -> float | None:
     return max(0.0, (now_local() - blocked_at).total_seconds() / 3600)
 
 
+def _blocked_since(entry: TaskEntry) -> datetime:
+    """Return a stable timestamp for oldest-first recovery."""
+    value = entry.meta.get("blocked_at") or entry.updated_at
+    try:
+        return ensure_aware(datetime.fromisoformat(str(value)))
+    except (TypeError, ValueError):
+        return datetime.max.replace(tzinfo=now_local().tzinfo)
+
+
 def _count(meta: dict, key: str) -> int:
     value = meta.get(key, 0)
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
@@ -130,7 +139,13 @@ def revalidate_blocked_tasks(anima_dir: Path, anima_name: str) -> list[str]:
 
     manager = TaskQueueManager(anima_dir)
     unblocked: list[str] = []
-    for entry in manager.list_tasks(status="blocked"):
+    entries = sorted(
+        manager.list_tasks(status="blocked"),
+        key=lambda entry: (_blocked_since(entry), entry.task_id),
+    )
+    for entry in entries:
+        if len(unblocked) >= config.blocked_reprobe_batch_limit:
+            break
         try:
             try:
                 from core.taskboard.attention_resolver import resolver_for_anima_dir
@@ -221,6 +236,14 @@ def revalidate_blocked_tasks(anima_dir: Path, anima_name: str) -> list[str]:
                 manager.update_status(entry.task_id, "blocked", summary=entry.summary)
                 raise
             unblocked.append(entry.task_id)
+            from core.memory.activity import ActivityLogger
+
+            ActivityLogger(anima_dir).log(
+                "blocked_recovery",
+                summary="Unblock check passed" if has_check else "Scheduled blocked task reprobe",
+                meta={"task_id": entry.task_id, "method": "check" if has_check else "reprobe"},
+                safe=True,
+            )
         except Exception:
             logger.warning("Failed to revalidate blocked task %s", entry.task_id, exc_info=True)
     return unblocked

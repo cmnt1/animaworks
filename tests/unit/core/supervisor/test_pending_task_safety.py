@@ -517,7 +517,7 @@ class TestExecuteLLMTaskFailureHandling:
         assert executor._anima.messenger.send.call_args.kwargs["to"] == "manager-anima"
 
     @pytest.mark.asyncio
-    async def test_shutdown_cancel_stays_active_then_recovers(self, tmp_path: Path) -> None:
+    async def test_shutdown_preserves_live_lease_before_restart_recovery(self, tmp_path: Path) -> None:
         executor = _make_executor(tmp_path)
         task_desc = {
             "task_type": "llm",
@@ -532,6 +532,11 @@ class TestExecuteLLMTaskFailureHandling:
         failed.mkdir()
         processing_path = processing / "shutdown.json"
         processing_path.write_text(json.dumps(task_desc), encoding="utf-8")
+        write_processing_lease(
+            processing_path,
+            anima="test-anima",
+            task_id="shutdown",
+        )
 
         from core.memory.task_queue import TaskQueueManager
 
@@ -551,13 +556,34 @@ class TestExecuteLLMTaskFailureHandling:
             await executor._execute_claimed_llm_task(task_desc, processing_path, failed, None)
 
         assert processing_path.exists()
+        assert processing_lease_path(processing_path).exists()
         assert not list(failed.glob("*.json"))
         assert queue.get_task_by_id("shutdown").status == "in_progress"
         executor._anima.messenger.send.assert_not_called()
 
-        with patch(
-            "core.supervisor.pending_executor._completion_declaration_required",
-            return_value=True,
+        with (
+            patch(
+                "core.supervisor.pending_executor._completion_declaration_required",
+                return_value=True,
+            ),
+            patch("core.supervisor.pending_executor.is_processing_lease_live", return_value=True),
+        ):
+            PendingTaskExecutor._recover_processing(
+                processing,
+                failed,
+                executor._anima_dir,
+                executor._fail_task_terminal,
+            )
+
+        assert processing_path.exists()
+        assert not (pending / "shutdown.json").exists()
+
+        with (
+            patch(
+                "core.supervisor.pending_executor._completion_declaration_required",
+                return_value=True,
+            ),
+            patch("core.supervisor.pending_executor.is_processing_lease_live", return_value=False),
         ):
             PendingTaskExecutor._recover_processing(
                 processing,

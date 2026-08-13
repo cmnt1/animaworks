@@ -11,6 +11,7 @@ import pytest
 
 from core._anima_heartbeat import HeartbeatMixin
 from core.blocked_recovery import revalidate_blocked_tasks
+from core.config.schemas import BackgroundTaskConfig
 from core.memory.task_queue import TaskQueueManager
 from core.time_utils import now_local
 
@@ -19,6 +20,7 @@ def _config(**overrides):
     defaults = {
         "blocked_recovery_enabled": True,
         "blocked_reprobe_after_hours": 6.0,
+        "blocked_reprobe_batch_limit": 3,
         "blocked_max_reprobes": 4,
         "blocked_check_timeout_seconds": 60,
     }
@@ -102,6 +104,45 @@ def test_check_success_republishes_without_consuming_retry(tmp_path: Path) -> No
     assert kwargs["env"]["ANIMAWORKS_ANIMA_DIR"] == str(anima_dir)
 
 
+def test_recovery_batch_limit_uses_oldest_blocked_tasks(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "worker"
+    base = now_local() - timedelta(days=1)
+    for index in range(5):
+        _blocked_task(
+            anima_dir,
+            task_id=f"task-{index}",
+            meta={"blocked_at": (base + timedelta(hours=index)).isoformat(), "unblock_check": "true"},
+        )
+
+    with (
+        patch("core.config.models.load_config", return_value=_config()),
+        patch(
+            "core.blocked_recovery.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 0),
+        ),
+    ):
+        assert revalidate_blocked_tasks(anima_dir, "worker") == ["task-0", "task-1", "task-2"]
+
+    manager = TaskQueueManager(anima_dir)
+    assert [manager.get_task_by_id(f"task-{index}").status for index in range(5)] == [
+        "pending",
+        "pending",
+        "pending",
+        "blocked",
+        "blocked",
+    ]
+    activity_files = list((anima_dir / "activity_log").glob("*.jsonl"))
+    events = [json.loads(line) for line in activity_files[0].read_text(encoding="utf-8").splitlines()]
+    assert [event["meta"]["task_id"] for event in events] == ["task-0", "task-1", "task-2"]
+    assert all(event["type"] == "blocked_recovery" for event in events)
+
+
+def test_blocked_reprobe_batch_limit_default_and_validation() -> None:
+    assert BackgroundTaskConfig().blocked_reprobe_batch_limit == 3
+    with pytest.raises(ValueError):
+        BackgroundTaskConfig(blocked_reprobe_batch_limit=0)
+
+
 def test_missing_bwrap_fails_closed_and_warns(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     anima_dir = tmp_path / "animas" / "worker"
     manager = _blocked_task(
@@ -174,43 +215,17 @@ def test_publish_failure_restores_blocked_status(tmp_path: Path) -> None:
     assert manager.get_task_by_id("publish-fails").status == "blocked"
 
 
-async def test_heartbeat_revalidates_and_republishes_blocked_task(tmp_path: Path) -> None:
-    anima_dir = tmp_path / "animas" / "worker"
-    manager = _blocked_task(
-        anima_dir,
-        task_id="heartbeat-check",
-        meta={
-            "unblock_check": "true",
-            "task_desc": {"title": "finish", "description": "finish the task"},
-        },
-    )
-
-    with (
-        patch("core.config.models.load_config", return_value=_config()),
-        patch("core._anima_heartbeat.load_prompt", return_value="heartbeat"),
-        patch("core._anima_heartbeat._build_curator_review_part", return_value=None),
-    ):
-        await _heartbeat(anima_dir)._build_heartbeat_prompt()
-
-    current = manager.get_task_by_id("heartbeat-check")
-    assert current is not None
-    assert current.status == "pending"
-    assert (anima_dir / "state" / "pending" / "heartbeat-check.json").is_file()
-
-
-async def test_heartbeat_ignores_recovery_failure(tmp_path: Path) -> None:
+async def test_heartbeat_does_not_revalidate_blocked_tasks(tmp_path: Path) -> None:
     anima_dir = tmp_path / "animas" / "worker"
     anima_dir.mkdir(parents=True)
 
     with (
-        patch(
-            "core.blocked_recovery.revalidate_blocked_tasks",
-            side_effect=RuntimeError("broken scanner"),
-        ),
+        patch("core.blocked_recovery.revalidate_blocked_tasks") as revalidate,
         patch("core._anima_heartbeat.load_prompt", return_value="heartbeat"),
         patch("core._anima_heartbeat._build_curator_review_part", return_value=None),
     ):
         assert await _heartbeat(anima_dir)._build_heartbeat_prompt() == ["heartbeat"]
+    revalidate.assert_not_called()
 
 
 def test_checkless_task_waits_for_reprobe_interval(tmp_path: Path) -> None:

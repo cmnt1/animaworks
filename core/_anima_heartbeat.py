@@ -15,6 +15,7 @@ import json
 import logging
 import re
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +27,7 @@ from core.messenger import InboxItem
 from core.paths import load_prompt
 from core.schemas import CycleResult
 from core.skills.cron_context import SkillContextRejection, SkillContextWarning
-from core.time_utils import now_iso, now_local
+from core.time_utils import ensure_aware, now_iso, now_local
 
 logger = logging.getLogger("animaworks.anima")
 
@@ -99,6 +100,45 @@ def _build_curator_review_part(anima_dir: Path, name: str) -> str | None:
         )
     except Exception:
         logger.debug("[%s] Failed to build curator review part", name, exc_info=True)
+        return None
+
+
+def _build_stale_task_scoreboard(anima_dir: Path, name: str) -> str | None:
+    """Build the oldest-first non-terminal task scoreboard for heartbeat."""
+    try:
+        from core.memory.task_queue import TaskQueueManager
+
+        now = now_local()
+        rows: list[tuple[float, str]] = []
+        for task in TaskQueueManager(anima_dir).get_all_active():
+            try:
+                elapsed_seconds = max(
+                    0.0,
+                    (now - ensure_aware(datetime.fromisoformat(task.updated_at or task.ts))).total_seconds(),
+                )
+            except (TypeError, ValueError):
+                elapsed_seconds = -1.0
+            marker = "⚠️ " if elapsed_seconds > 24 * 60 * 60 else ""
+            hours = max(0, int(elapsed_seconds // 3600))
+            summary = task.summary.replace("\n", " ")[:80]
+            rows.append(
+                (
+                    elapsed_seconds,
+                    f"- {marker}{task.task_id[:12]} | {task.status} | {hours}h | {summary}",
+                )
+            )
+
+        if not rows:
+            return None
+        rows.sort(key=lambda row: row[0], reverse=True)
+        overflow = len(rows) - 20
+        return load_prompt(
+            "fragments/stale_task_scoreboard",
+            tasks="\n".join(row for _, row in rows[:20]),
+            overflow=f"\n- {t('heartbeat.stale_task_overflow', count=overflow)}" if overflow else "",
+        )
+    except Exception:
+        logger.debug("[%s] Failed to build stale task scoreboard", name, exc_info=True)
         return None
 
 
@@ -470,13 +510,6 @@ class HeartbeatMixin:
         When current_state.md nears the cleanup threshold, a compression
         instruction is prepended so the anima trims it first.
         """
-        try:
-            from core.blocked_recovery import revalidate_blocked_tasks
-
-            await asyncio.to_thread(revalidate_blocked_tasks, self.anima_dir, self.name)
-        except Exception:
-            logger.warning("[%s] Failed to revalidate blocked tasks", self.name, exc_info=True)
-
         hb_config = self.memory.read_heartbeat_config()
         checklist = hb_config or load_prompt("heartbeat_default_checklist")
         parts = [load_prompt("heartbeat", checklist=checklist)]
@@ -486,6 +519,10 @@ class HeartbeatMixin:
             parts.append(cleanup)
 
         parts.extend(self._build_background_context_parts())
+
+        scoreboard = _build_stale_task_scoreboard(self.anima_dir, self.name)
+        if scoreboard:
+            parts.append(scoreboard)
 
         curator_part = _build_curator_review_part(self.anima_dir, self.name)
         if curator_part:

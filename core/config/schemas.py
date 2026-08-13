@@ -780,6 +780,8 @@ class BackgroundTaskConfig(BaseModel):
     worker_pool_size: int = Field(default=1, ge=1, le=10)
     blocked_recovery_enabled: bool = True
     blocked_reprobe_after_hours: float = Field(default=6.0, ge=0)
+    blocked_reprobe_batch_limit: int = Field(default=3, ge=1)
+    blocked_recovery_scan_minutes: float = Field(default=15.0, ge=1)
     blocked_max_reprobes: int = Field(default=4, ge=0)
     blocked_check_timeout_seconds: int = Field(default=60, ge=1)
 
