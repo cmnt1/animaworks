@@ -334,6 +334,33 @@ class TestVoiceModeSuffix:
         assert "smile" in VOICE_MODE_SUFFIX
         assert "絵文字" in VOICE_MODE_SUFFIX
 
+    def test_suffix_defers_long_running_requests_to_task(self) -> None:
+        from core.voice.session import VOICE_MODE_SUFFIX
+
+        assert "自分宛てにタスクを作成" in VOICE_MODE_SUFFIX
+        assert "タスクに積んでやっておきますね" in VOICE_MODE_SUFFIX
+
+
+class TestVoiceThinkingEffortConfig:
+    def test_schema_defaults_and_override(self) -> None:
+        from core.config.schemas import AnimaDefaults
+        from core.schemas import ModelConfig
+
+        assert ModelConfig().voice_thinking_effort is None
+        assert AnimaDefaults(voice_thinking_effort="medium").voice_thinking_effort == "medium"
+
+    def test_voice_effort_loaded_from_status(self, tmp_path: Path) -> None:
+        from core.config.resolver import _load_status_json
+
+        anima_dir = tmp_path / "animas" / "voice"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "status.json").write_text(
+            json.dumps({"voice_thinking_effort": "medium"}),
+            encoding="utf-8",
+        )
+
+        assert _load_status_json(anima_dir)["voice_thinking_effort"] == "medium"
+
 
 # ── TestVoiceSession ────────────────────────────────────────────
 
@@ -967,7 +994,10 @@ class TestResponseDoneGuarantee:
         supervisor = MagicMock()
         voice_config = MagicMock(stt_refine_enabled=False)
 
+        requests = []
+
         async def mock_stream(*args, **kwargs):
+            requests.append(kwargs)
             yield IPCResponse(id="m1", done=False, chunk='{"type":"text_delta","text":"hello"}', result=None)
             yield IPCResponse(id="m2", done=False, chunk='{"type":"text_delta","text":" world."}', result=None)
 
@@ -985,3 +1015,4 @@ class TestResponseDoneGuarantee:
             if c.args and isinstance(c.args[0], dict) and c.args[0].get("type") == "response_done"
         ]
         assert len(response_done_calls) == 1
+        assert requests[0]["params"]["voice_mode"] is True

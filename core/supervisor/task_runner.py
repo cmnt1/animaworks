@@ -323,6 +323,7 @@ async def execute_chat_contract(
             thread_id=str(payload.get("thread_id") or "default"),
             include_cycle_result=True,
             source=str(payload.get("source") or ""),
+            voice_mode=payload.get("voice_mode") is True,
             meeting_room_id=str(payload.get("meeting_room_id") or ""),
             meeting_participants=payload.get("meeting_participants") or None,
         )

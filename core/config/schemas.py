@@ -117,6 +117,7 @@ class AnimaDefaults(BaseModel):
     background_model: str | None = None
     background_credential: str | None = None
     background_thinking_effort: str | None = None  # heartbeat/cron thinking effort override
+    voice_thinking_effort: str | None = None  # voice chat thinking effort override
     max_tokens: int = 8192
     credential: str = "anthropic"
     context_threshold: float = 0.50

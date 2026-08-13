@@ -117,6 +117,7 @@ def _load_status_json(anima_dir: Path) -> dict[str, Any]:
         "thinking": "thinking",
         "thinking_effort": "thinking_effort",
         "background_thinking_effort": "background_thinking_effort",
+        "voice_thinking_effort": "voice_thinking_effort",
         "llm_timeout": "llm_timeout",
         "mode_s_auth": "mode_s_auth",
         "max_outbound_per_hour": "max_outbound_per_hour",

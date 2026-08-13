@@ -834,6 +834,7 @@ class AnimaRunner:
         attachment_paths = params.get("attachment_paths") or None
         thread_id = params.get("thread_id", "default")
         source = params.get("source", "")
+        voice_mode = params.get("voice_mode") is True
         meeting_room_id = params.get("meeting_room_id", "")
         meeting_participants = params.get("meeting_participants") or None
 
@@ -846,6 +847,7 @@ class AnimaRunner:
             thread_id=thread_id,
             include_cycle_result=True,
             source=source,
+            voice_mode=voice_mode,
             meeting_room_id=meeting_room_id,
             meeting_participants=meeting_participants,
         )
