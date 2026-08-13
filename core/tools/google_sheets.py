@@ -7,11 +7,11 @@ from __future__ import annotations
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
 
-"""AnimaWorks Google Sheets tool -- read-only Sheets API access.
+"""AnimaWorks Google Sheets tool -- Sheets API access.
 
-Provides spreadsheet value reading and sheet (tab) listing via Google
-Sheets API. Uses the same OAuth2 credential pattern as the Gmail and
-Google Calendar tools.
+Provides spreadsheet value reading/writing and sheet (tab) listing via
+Google Sheets API. Uses the same OAuth2 credential pattern as the Gmail
+and Google Calendar tools.
 """
 
 import argparse
@@ -30,9 +30,11 @@ logger = logging.getLogger(__name__)
 EXECUTION_PROFILE: dict[str, dict[str, object]] = {
     "read": {"expected_seconds": 10, "background_eligible": False},
     "tabs": {"expected_seconds": 10, "background_eligible": False},
+    "write_values": {"expected_seconds": 10, "background_eligible": False},
+    "append_values": {"expected_seconds": 10, "background_eligible": False},
 }
 
-TOOL_DESCRIPTION = "Google Sheets read-only access (values and sheet tabs)"
+TOOL_DESCRIPTION = "Google Sheets access (read/write values and sheet tabs)"
 
 # The stored token carries the full spreadsheets scope; requesting the
 # same scope here keeps refresh compatible with the existing token.
@@ -69,7 +71,7 @@ def _extract_spreadsheet_id(id_or_url: str) -> str:
 
 
 class GoogleSheetsClient:
-    """Google Sheets API client with OAuth2 authentication (read-only use)."""
+    """Google Sheets API client with OAuth2 authentication."""
 
     def __init__(
         self,
@@ -178,13 +180,161 @@ class GoogleSheetsClient:
             "values": result.get("values", []),
         }
 
+    def write_values(
+        self,
+        spreadsheet_id: str,
+        range_a1: str,
+        values: list[list],
+        value_input_option: str = "USER_ENTERED",
+    ) -> dict[str, Any]:
+        """Overwrite cell values in a spreadsheet range.
 
-# ── Tool schemas (empty — use skill-based documentation) ──
+        Args:
+            spreadsheet_id: Spreadsheet ID or full URL.
+            range_a1: A1 notation, optionally with sheet name (e.g. "Sheet1!A1:C10").
+            values: 2D list of cell values (rows of columns).
+            value_input_option: How input data is interpreted (USER_ENTERED or RAW).
+        """
+        service = self._build_service()
+        result = (
+            service.spreadsheets()
+            .values()
+            .update(
+                spreadsheetId=_extract_spreadsheet_id(spreadsheet_id),
+                range=range_a1,
+                valueInputOption=value_input_option,
+                body={"values": values},
+            )
+            .execute()
+        )
+        return {
+            "updated_range": result.get("updatedRange", ""),
+            "updated_cells": result.get("updatedCells", 0),
+        }
+
+    def append_values(
+        self,
+        spreadsheet_id: str,
+        range_a1: str,
+        values: list[list],
+        value_input_option: str = "USER_ENTERED",
+    ) -> dict[str, Any]:
+        """Append rows after the last data in a spreadsheet range/table.
+
+        Args:
+            spreadsheet_id: Spreadsheet ID or full URL.
+            range_a1: A1 notation identifying the table (e.g. "Sheet1!A:C").
+            values: 2D list of cell values to append (rows of columns).
+            value_input_option: How input data is interpreted (USER_ENTERED or RAW).
+        """
+        service = self._build_service()
+        result = (
+            service.spreadsheets()
+            .values()
+            .append(
+                spreadsheetId=_extract_spreadsheet_id(spreadsheet_id),
+                range=range_a1,
+                valueInputOption=value_input_option,
+                insertDataOption="INSERT_ROWS",
+                body={"values": values},
+            )
+            .execute()
+        )
+        updates = result.get("updates") or {}
+        return {
+            "updated_range": updates.get("updatedRange", result.get("updatedRange", "")),
+            "updated_cells": updates.get("updatedCells", result.get("updatedCells", 0)),
+        }
+
+
+# ── Tool schemas ──────────────────────────────────────────
 
 
 def get_tool_schemas() -> list[dict]:
-    """Return tool schemas (empty — accessed via use_tool)."""
-    return []
+    """Return Anthropic tool_use schemas for Google Sheets tools."""
+    spreadsheet_id_prop = {
+        "type": "string",
+        "description": "Spreadsheet ID or full docs.google.com URL",
+    }
+    range_prop = {
+        "type": "string",
+        "description": "A1 range, optionally with sheet name (e.g. 'Sheet1!A1:C10')",
+    }
+    values_prop = {
+        "type": "array",
+        "description": "2D array of cell values (list of rows)",
+        "items": {"type": "array", "items": {}},
+    }
+    value_input_option_prop = {
+        "type": "string",
+        "description": "How input is interpreted: USER_ENTERED (default) or RAW",
+        "enum": ["USER_ENTERED", "RAW"],
+    }
+    write_caution = (
+        "上書きに注意。既存データ確認にはread_valuesを先に使う。"
+    )
+    return [
+        {
+            "name": "google_sheets_tabs",
+            "description": "List sheet tabs and basic metadata of a spreadsheet (list_tabs).",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": spreadsheet_id_prop,
+                },
+                "required": ["spreadsheet_id"],
+            },
+        },
+        {
+            "name": "google_sheets_read",
+            "description": "Read cell values from a spreadsheet range (read_values).",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": spreadsheet_id_prop,
+                    "range": {
+                        **range_prop,
+                        "description": range_prop["description"] + " Default: A1:Z1000",
+                    },
+                },
+                "required": ["spreadsheet_id"],
+            },
+        },
+        {
+            "name": "google_sheets_write_values",
+            "description": (
+                "Overwrite cell values in a spreadsheet range (write_values). "
+                + write_caution
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": spreadsheet_id_prop,
+                    "range": range_prop,
+                    "values": values_prop,
+                    "value_input_option": value_input_option_prop,
+                },
+                "required": ["spreadsheet_id", "range", "values"],
+            },
+        },
+        {
+            "name": "google_sheets_append_values",
+            "description": (
+                "Append rows after the last data in a spreadsheet range/table "
+                "(append_values). " + write_caution
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": spreadsheet_id_prop,
+                    "range": range_prop,
+                    "values": values_prop,
+                    "value_input_option": value_input_option_prop,
+                },
+                "required": ["spreadsheet_id", "range", "values"],
+            },
+        },
+    ]
 
 
 # ── Dispatch ──────────────────────────────────────────────
@@ -209,6 +359,40 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
         if not spreadsheet_id:
             return {"error": "spreadsheet_id is required"}
         return client.list_tabs(spreadsheet_id)
+
+    if name == "google_sheets_write_values":
+        spreadsheet_id = _args.get("spreadsheet_id", "")
+        range_a1 = _args.get("range", "")
+        values = _args.get("values")
+        if not spreadsheet_id:
+            return {"error": "spreadsheet_id is required"}
+        if not range_a1:
+            return {"error": "range is required"}
+        if not isinstance(values, list):
+            return {"error": "values is required (2D list)"}
+        return client.write_values(
+            spreadsheet_id,
+            range_a1,
+            values,
+            value_input_option=_args.get("value_input_option", "USER_ENTERED"),
+        )
+
+    if name == "google_sheets_append_values":
+        spreadsheet_id = _args.get("spreadsheet_id", "")
+        range_a1 = _args.get("range", "")
+        values = _args.get("values")
+        if not spreadsheet_id:
+            return {"error": "spreadsheet_id is required"}
+        if not range_a1:
+            return {"error": "range is required"}
+        if not isinstance(values, list):
+            return {"error": "values is required (2D list)"}
+        return client.append_values(
+            spreadsheet_id,
+            range_a1,
+            values,
+            value_input_option=_args.get("value_input_option", "USER_ENTERED"),
+        )
 
     return {"error": f"Unknown action: {name}"}
 
