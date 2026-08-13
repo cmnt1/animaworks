@@ -331,7 +331,6 @@ class TaskRunnerSupervisor:
             or active.connection is None
             or payload.get("images")
             or payload.get("attachment_paths")
-            or payload.get("voice_mode") is True
         ):
             return True, None, None
 

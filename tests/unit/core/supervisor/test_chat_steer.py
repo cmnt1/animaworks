@@ -163,25 +163,6 @@ async def test_unsupported_engine_falls_back_to_interrupt_then_lock(tmp_path: Pa
 
 
 @pytest.mark.asyncio
-async def test_voice_message_starts_fresh_job_for_per_message_options(tmp_path: Path) -> None:
-    supervisor = TaskRunnerSupervisor("sakura", tmp_path / "animas" / "sakura", tmp_path / "shared")
-    job = _active_job(supervisor, steer=True)
-    job.connection = AsyncMock()
-    supervisor._run_isolated_job = AsyncMock(return_value={"response": "voice"})
-
-    events = [
-        event
-        async for event in supervisor.run_chat_stream(
-            {"message": "voice", "thread_id": "default", "voice_mode": True}
-        )
-    ]
-
-    job.connection.send_event.assert_awaited_once_with("interrupt", {"thread_id": "default"})
-    supervisor._run_isolated_job.assert_awaited_once()
-    assert events[-1] == {"done": True, "result": {"response": "voice"}}
-
-
-@pytest.mark.asyncio
 async def test_rejected_injection_falls_back_without_dropping_message(tmp_path: Path) -> None:
     supervisor = TaskRunnerSupervisor("sakura", tmp_path / "animas" / "sakura", tmp_path / "shared")
     job = _active_job(supervisor, steer=True)
