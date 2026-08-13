@@ -223,9 +223,7 @@ def test_ci_item_id_changes_with_sha(mod):
     assert old_id != new_id
     # old item addressed via head_sha_changed; new item still open
     assert mod.is_addressed(pr_closed=False, kind="ci", ci_still_failing=True, head_sha_changed=True)
-    assert not mod.is_addressed(
-        pr_closed=False, kind="ci", ci_still_failing=True, head_sha_changed=False
-    )
+    assert not mod.is_addressed(pr_closed=False, kind="ci", ci_still_failing=True, head_sha_changed=False)
 
 
 def test_failed_check_names_filters_failure_only(mod):
@@ -445,10 +443,10 @@ def test_stage_escalate_first_time(mod):
     )
 
 
-def test_stage_escalate_once_suppressed(mod):
-    """Escalated recently → no re-escalate even if age > 8h; rewarn may still apply."""
+def test_stage_escalate_recently_suppressed_within_repeat_interval(mod):
+    """Escalated recently → no re-escalate until ESCALATE_REPEAT_HOURS elapses."""
     now = T0 + timedelta(hours=10)
-    last_warned = T0 + timedelta(hours=9)  # within rewarn window
+    last_warned = T0 + timedelta(hours=9, minutes=59)  # within rewarn window
     escalated_at = T0 + timedelta(hours=8)
     assert (
         mod.determine_warning_stage(
@@ -464,22 +462,30 @@ def test_stage_escalate_once_suppressed(mod):
     )
 
 
-def test_stage_never_escalates_again(mod):
-    now = T0 + timedelta(hours=16)
-    last_warned = T0 + timedelta(hours=14)
+def test_stage_escalates_again_after_repeat_interval(mod):
+    """Escalation repeats (decayed, never zero) after ESCALATE_REPEAT_HOURS."""
     escalated_at = T0 + timedelta(hours=8)
+    now = escalated_at + timedelta(hours=mod.ESCALATE_REPEAT_HOURS)
     assert (
         mod.determine_warning_stage(
             item_created_at=T0,
             now=now,
-            last_warned=last_warned,
+            last_warned=now - timedelta(minutes=1),
             escalated_at=escalated_at,
             warn_hours=2.0,
             rewarn_hours=4.0,
             escalate_hours=8.0,
         )
-        == "none"
+        == "escalate"
     )
+
+
+def test_decayed_interval_doubles_and_caps(mod):
+    assert mod.decayed_interval_hours(0.25, 0) == 0.25
+    assert mod.decayed_interval_hours(0.25, 1) == 0.25
+    assert mod.decayed_interval_hours(0.25, 2) == 0.5
+    assert mod.decayed_interval_hours(0.25, 3) == 1.0
+    assert mod.decayed_interval_hours(0.25, 10) == mod.REWARN_CAP_HOURS
 
 
 def test_stage_custom_thresholds(mod):
@@ -623,15 +629,11 @@ def test_default_ladder_15_30_45_60(mod):
     assert mod.determine_warning_stage(now=T0 + timedelta(minutes=14), last_warned=None, **kw) == "none"
     assert mod.determine_warning_stage(now=T0 + timedelta(minutes=15), last_warned=None, **kw) == "warn"
     assert (
-        mod.determine_warning_stage(
-            now=T0 + timedelta(minutes=30), last_warned=T0 + timedelta(minutes=15), **kw
-        )
+        mod.determine_warning_stage(now=T0 + timedelta(minutes=30), last_warned=T0 + timedelta(minutes=15), **kw)
         == "rewarn"
     )
     assert (
-        mod.determine_warning_stage(
-            now=T0 + timedelta(minutes=45), last_warned=T0 + timedelta(minutes=30), **kw
-        )
+        mod.determine_warning_stage(now=T0 + timedelta(minutes=45), last_warned=T0 + timedelta(minutes=30), **kw)
         == "rewarn"
     )
     assert (
@@ -676,12 +678,13 @@ def _stub_ci_stale_scan(mod, monkeypatch, task, now_box, sends):
     monkeypatch.setattr(mod, "now_utc", lambda: now_box[0])
     monkeypatch.setattr(mod, "gh", lambda args: json.dumps([{"number": 1}]))
     monkeypatch.setattr(mod, "_collect_pr_stale_items", lambda repo, number, pr_meta: [_ci_stale_item()])
-    monkeypatch.setattr(mod, "_direct_task_for_stale_item", lambda item: task)
+    monkeypatch.setattr(mod, "_direct_task_for_stale_item", lambda item, retries=None: task)
     monkeypatch.setattr(mod, "send", lambda to, content: sends.append((to, content)))
     monkeypatch.setattr(mod, "log", lambda message: None)
 
 
-def test_done_task_suppresses_warnings_and_reminds_every_six_hours(mod, monkeypatch):
+def test_done_task_does_not_suppress_and_marks_whiff(mod, monkeypatch):
+    """done で終わったのに CI が赤いまま → 抑制せず「空振り」として警告継続。"""
     task = SimpleNamespace(task_id="gh-ci-o-r#1-aaaaaaaa", status="done", summary="infra failure diagnosed")
     now_box = [T0]
     sends: list[tuple[str, str]] = []
@@ -689,34 +692,36 @@ def test_done_task_suppresses_warnings_and_reminds_every_six_hours(mod, monkeypa
     state = mod.default_state()
 
     mod.check_unaddressed(state)
-    now_box[0] = T0 + timedelta(hours=5)
-    mod.check_unaddressed(state)
-    now_box[0] = T0 + timedelta(hours=6)
-    mod.check_unaddressed(state)
 
-    assert len(sends) == 2
-    assert all(to == "rin" and "診断済み: infra failure diagnosed" in body for to, body in sends)
+    assert len(sends) == 1
+    to, body = sends[0]
+    assert to == "rin"
+    assert "空振り" in body
     entry = state["stale_watch"][_ci_stale_item()["item_id"]]
-    assert entry["suppressed_by_task"] == task.task_id
+    assert "suppressed_by_task" not in entry
 
 
-def test_in_progress_task_warns_once_then_suppresses(mod, monkeypatch):
+def test_in_progress_task_damps_but_never_silences(mod, monkeypatch):
+    """実行中タスクありは頻度を落とす（1h floor）が、ゼロにはしない。"""
     task = SimpleNamespace(task_id="gh-ci-o-r#1-aaaaaaaa", status="in_progress", summary="fixing")
     now_box = [T0]
     sends: list[tuple[str, str]] = []
     _stub_ci_stale_scan(mod, monkeypatch, task, now_box, sends)
     state = mod.default_state()
 
-    mod.check_unaddressed(state)
-    now_box[0] = T0 + timedelta(hours=2)
-    mod.check_unaddressed(state)
+    mod.check_unaddressed(state)  # immediate first warn
+    now_box[0] = T0 + timedelta(minutes=30)
+    mod.check_unaddressed(state)  # within 1h floor → damped
+    warns_after_damp = len(sends)
+    now_box[0] = T0 + timedelta(hours=20)
+    mod.check_unaddressed(state)  # far past any decayed interval → reminded again
 
-    assert len(sends) == 1
-    assert sends[0][0] == "rin"
-    assert "CI失敗" in sends[0][1]
+    assert warns_after_damp == 1
+    assert len(sends) >= 2
+    assert all("実行中" in body for _, body in sends)
 
 
-def test_escalated_item_sends_one_human_judgment_dm_after_24_hours(mod, monkeypatch):
+def test_escalated_item_sends_repeating_human_judgment_dm(mod, monkeypatch):
     now_box = [T0]
     sends: list[tuple[str, str]] = []
     _stub_ci_stale_scan(mod, monkeypatch, None, now_box, sends)
@@ -730,13 +735,19 @@ def test_escalated_item_sends_one_human_judgment_dm_after_24_hours(mod, monkeypa
     }
 
     mod.check_unaddressed(state)
-    mod.check_unaddressed(state)
+    mod.check_unaddressed(state)  # same tick → no duplicate
 
-    assert len(sends) == 1
-    assert sends[0][0] == "sakura"
-    assert "人間判断が必要" in sends[0][1]
-    assert "takaへ call_human で報告すること" in sends[0][1]
+    human_sends = [s for s in sends if "人間判断が必要" in s[1]]
+    assert len(human_sends) == 1
+    assert human_sends[0][0] == "sakura"
+    assert "takaへ call_human で報告すること" in human_sends[0][1]
     assert state["stale_watch"][item_id]["human_notified_at"]
+
+    # 24h後にもう一度届く（1回きりで終わらない）
+    now_box[0] = T0 + timedelta(hours=24)
+    mod.check_unaddressed(state)
+    human_sends = [s for s in sends if "人間判断が必要" in s[1]]
+    assert len(human_sends) == 2
 
 
 def test_new_failure_type_resets_escalated_stale_entry(mod, monkeypatch):
