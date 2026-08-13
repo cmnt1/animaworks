@@ -80,6 +80,7 @@ def load_model_config(anima_dir: Path) -> ModelConfig:
         thinking=resolved.thinking,
         thinking_effort=resolved.thinking_effort,
         background_thinking_effort=resolved.background_thinking_effort,
+        voice_thinking_effort=resolved.voice_thinking_effort,
         heartbeat_enabled=resolved.heartbeat_enabled,
         token_budget_monthly=resolved.token_budget_monthly,
         llm_timeout=resolved.llm_timeout,

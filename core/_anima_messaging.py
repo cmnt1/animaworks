@@ -109,6 +109,15 @@ def _resolve_chat_model_config(
     return effective_config
 
 
+def _resolve_voice_model_config(model_config: Any, voice_mode: bool) -> Any:
+    """Override thinking effort for this voice message only."""
+    if not voice_mode or not isinstance(model_config, ModelConfig):
+        return model_config
+    return model_config.model_copy(
+        update={"thinking_effort": model_config.voice_thinking_effort or "low"}
+    )
+
+
 def _resolve_chat_retry_config(
     owner: Any,
     primary_config: Any,
@@ -654,6 +663,7 @@ class MessagingMixin:
         source: str = "",
         meeting_room_id: str = "",
         meeting_participants: list[str] | None = None,
+        voice_mode: bool = False,
     ) -> str | dict[str, Any]:
         self._validate_thread_id(thread_id)
         # Auto-interrupt: if a session is already running on this thread,
@@ -711,7 +721,10 @@ class MessagingMixin:
 
                 # Human-facing chat must use the per-Anima status.json model,
                 # independent of any background/helper model in flight.
-                primary_model_config = self.memory.read_model_config()
+                primary_model_config = _resolve_voice_model_config(
+                    self.memory.read_model_config(),
+                    voice_mode,
+                )
                 base_model_config = _resolve_chat_model_config(
                     self,
                     primary_model_config,
@@ -956,6 +969,7 @@ class MessagingMixin:
         source: str = "",
         meeting_room_id: str = "",
         meeting_participants: list[str] | None = None,
+        voice_mode: bool = False,
     ) -> AsyncGenerator[dict, None]:
         """Streaming version of process_message.
 
@@ -1034,7 +1048,10 @@ class MessagingMixin:
 
                 # Human-facing chat must use the per-Anima status.json model,
                 # independent of any background/helper model in flight.
-                primary_model_config = self.memory.read_model_config()
+                primary_model_config = _resolve_voice_model_config(
+                    self.memory.read_model_config(),
+                    voice_mode,
+                )
                 base_model_config = _resolve_chat_model_config(
                     self,
                     primary_model_config,

@@ -138,6 +138,7 @@ class StreamingIPCHandler:
         attachment_paths = request.params.get("attachment_paths") or None
         thread_id = request.params.get("thread_id", "default")
         source = request.params.get("source", "")
+        voice_mode = request.params.get("voice_mode") is True
         meeting_room_id = request.params.get("meeting_room_id", "")
         meeting_participants = request.params.get("meeting_participants") or None
         full_response = ""
@@ -181,6 +182,7 @@ class StreamingIPCHandler:
                     attachment_paths=attachment_paths,
                     thread_id=thread_id,
                     source=source,
+                    voice_mode=voice_mode,
                     meeting_room_id=meeting_room_id,
                     meeting_participants=meeting_participants,
                 ):

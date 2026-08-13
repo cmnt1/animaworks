@@ -31,6 +31,8 @@ VOICE_MODE_SUFFIX = (
     "\n\n[voice-mode: 音声会話です。感情が伝わる話し言葉で200文字以内で簡潔に回答してください。"
     "絵文字を使ってよい（字幕表示用）。"
     "Markdown記法（見出し・太字・リスト・コードブロック等）は使わないでください。"
+    "調査・実装・資料作成など時間のかかる依頼はその場で実行せず、自分宛てにタスクを作成して、"
+    "『タスクに積んでやっておきますね』のように短く返答してください。"
     "毎応答の最後の行に必ず感情タグを1つ付けてください:"
     ' <!-- emotion: {"emotion": "<感情名>"} -->'
     "（感情名: neutral/smile/laugh/troubled/surprised/thinking/embarrassed。"
@@ -283,6 +285,7 @@ class VoiceSession:
                     "from_person": from_person,
                     "intent": "",
                     "stream": True,
+                    "voice_mode": True,
                     "images": [],
                     "attachment_paths": [],
                 },
