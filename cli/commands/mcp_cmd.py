@@ -8,13 +8,35 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
+from pathlib import Path
 
 from cli.commands.index_cmd import _setup_server_delegation
 from core.paths import get_animas_dir
 
 _DEFAULT_TOOLS = "search_memory,read_memory_file,write_memory_file"
+
+
+def _project_from_cwd(anima_dir: Path) -> str | None:
+    """Resolve the project whose registered repo contains the current directory."""
+    try:
+        registry = json.loads((anima_dir / "projects.json").read_text(encoding="utf-8"))
+        cwd = Path.cwd().resolve()
+    except Exception:
+        return None
+    best: tuple[int, str] | None = None
+    for name, entry in registry.items():
+        repo = entry.get("repo") if isinstance(entry, dict) else None
+        if not repo:
+            continue
+        repo_path = Path(repo).resolve()
+        if cwd == repo_path or cwd.is_relative_to(repo_path):
+            depth = len(repo_path.parts)
+            if best is None or depth > best[0]:
+                best = (depth, name)
+    return best[1] if best else None
 
 
 def setup_mcp_command(subparsers: argparse._SubParsersAction) -> None:
@@ -34,8 +56,9 @@ def mcp_command(args: argparse.Namespace) -> None:
 
     os.environ["ANIMAWORKS_ANIMA_DIR"] = str(anima_dir)
     os.environ["ANIMAWORKS_MCP_TOOLS"] = args.tools
-    if args.project:
-        os.environ["ANIMAWORKS_MCP_PROJECT"] = args.project
+    project = args.project or _project_from_cwd(anima_dir)
+    if project:
+        os.environ["ANIMAWORKS_MCP_PROJECT"] = project
     _setup_server_delegation()
 
     from core.mcp.server import main
