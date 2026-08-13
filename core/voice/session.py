@@ -19,7 +19,7 @@ from core.voice.tts_base import BaseTTSProvider, TTSConfig, TTSSynthesisError
 
 logger = logging.getLogger(__name__)
 
-IPC_STREAM_TIMEOUT = 60.0
+IPC_STREAM_TIMEOUT = 300.0  # chat/streamと同水準。ツール往復する応答が60sを超えるため
 MAX_AUDIO_BUFFER_BYTES = 60 * 16_000 * 2  # 60 seconds of 16kHz 16-bit mono PCM
 PCM16_SAMPLE_RATE = 16_000
 PCM16_BYTES_PER_SAMPLE = 2

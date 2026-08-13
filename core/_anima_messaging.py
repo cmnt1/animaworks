@@ -113,9 +113,14 @@ def _resolve_voice_model_config(model_config: Any, voice_mode: bool) -> Any:
     """Override thinking effort for this voice message only."""
     if not voice_mode or not isinstance(model_config, ModelConfig):
         return model_config
-    return model_config.model_copy(
-        update={"thinking_effort": model_config.voice_thinking_effort or "low"}
+    effort = model_config.voice_thinking_effort or "low"
+    logger.info(
+        "Voice mode: thinking_effort %s -> %s (model=%s)",
+        model_config.thinking_effort,
+        effort,
+        model_config.model,
     )
+    return model_config.model_copy(update={"thinking_effort": effort})
 
 
 def _resolve_chat_retry_config(
