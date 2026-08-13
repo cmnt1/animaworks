@@ -436,11 +436,13 @@ class VoiceSession:
         anima's chat runner / priming caches before the first utterance.
         Uses the cached greet path (1h cooldown), so repeated popups are cheap."""
         try:
+            # 90s: cold greet = runner spawn + generate (~25s) + slow-exit
+            # kill-wait (30s) can exceed 60s. Cached greets return instantly.
             result = await self._supervisor.send_request(
                 anima_name=self._anima_name,
                 method="greet",
                 params={},
-                timeout=60.0,
+                timeout=90.0,
             )
         except Exception as e:
             logger.info("Voice greet skipped (%s): %s", self._anima_name, e)

@@ -754,6 +754,41 @@ async def _run_model_warmup() -> None:
         logger.exception("Model warmup failed: stt")
 
 
+async def _warm_voice_greets(app: FastAPI) -> None:
+    """Pre-populate the greet cache for voice-enabled animas (those with a
+    per-anima voice_id) so the popup greeting is instant after a restart."""
+    import json as _json
+
+    from core.paths import get_animas_dir
+
+    voiced: list[str] = []
+    try:
+        for status_path in sorted(get_animas_dir().glob("*/status.json")):
+            try:
+                voice = (_json.loads(status_path.read_text(encoding="utf-8")).get("voice") or {})
+            except (OSError, ValueError):
+                continue
+            if isinstance(voice, dict) and voice.get("voice_id"):
+                voiced.append(status_path.parent.name)
+    except OSError:
+        return
+    if not voiced:
+        return
+
+    supervisor = app.state.supervisor
+    for name in voiced:
+        # Wait for the anima process to come up (startup spawns them async).
+        for _ in range(60):
+            if supervisor.get_process_status(name).get("status") == "running":
+                break
+            await asyncio.sleep(5)
+        try:
+            await supervisor.send_request(anima_name=name, method="greet", params={}, timeout=120.0)
+            logger.info("Voice greet cache warmed: %s", name)
+        except Exception as e:
+            logger.info("Voice greet warmup skipped (%s): %s", name, e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Only start anima processes when setup is complete
@@ -954,6 +989,7 @@ async def lifespan(app: FastAPI):
             _run_startup_initialization(app),
         )
         app.state._model_warmup_task = asyncio.create_task(_run_model_warmup())
+        app.state._voice_greet_warmup_task = asyncio.create_task(_warm_voice_greets(app))
 
         logger.info("Server started (startup initialization running in background)")
     else:
