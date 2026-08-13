@@ -28,8 +28,13 @@ MIN_SPEECH_BYTES = int(MIN_SPEECH_SEC * PCM16_SAMPLE_RATE * PCM16_BYTES_PER_SAMP
 SILENCE_RMS_THRESHOLD = 0.008
 
 VOICE_MODE_SUFFIX = (
-    "\n\n[voice-mode: 音声会話です。話し言葉で200文字以内で簡潔に回答してください。"
-    "Markdown記法（見出し・太字・リスト・コードブロック等）は使わないでください]"
+    "\n\n[voice-mode: 音声会話です。感情が伝わる話し言葉で200文字以内で簡潔に回答してください。"
+    "絵文字を使ってよい（字幕表示用）。"
+    "Markdown記法（見出し・太字・リスト・コードブロック等）は使わないでください。"
+    "毎応答の最後の行に必ず感情タグを1つ付けてください:"
+    ' <!-- emotion: {"emotion": "<感情名>"} -->'
+    "（感情名: neutral/smile/laugh/troubled/surprised/thinking/embarrassed。"
+    "neutral以外を優先）]"
 )
 
 # ── TTS output sanitization ──────────────────────────────────
@@ -45,10 +50,44 @@ _RE_MD_LIST_BULLET = re.compile(r"^[\s]*[-*+]\s+", re.MULTILINE)
 _RE_MD_LIST_NUMBERED = re.compile(r"^[\s]*\d+\.\s+", re.MULTILINE)
 _RE_MD_TABLE_PIPE = re.compile(r"\|")
 _RE_MD_HR = re.compile(r"^-{3,}$", re.MULTILINE)
-
+# Unicode emoji ranges (no external emoji lib). Includes ZWJ/VS16 so sequences collapse.
+# Ranges must stay disjoint and must NOT swallow CJK (U+3000–U+9FFF).
+_RE_EMOJI = re.compile(
+    "(?:"
+    "[\U0001F1E0-\U0001F1FF]"  # flags
+    "|[\U0001F300-\U0001F5FF]"  # symbols & pictographs
+    "|[\U0001F600-\U0001F64F]"  # emoticons
+    "|[\U0001F680-\U0001F6FF]"  # transport & map
+    "|[\U0001F700-\U0001F77F]"  # alchemical
+    "|[\U0001F780-\U0001F7FF]"  # geometric shapes extended
+    "|[\U0001F800-\U0001F8FF]"  # supplemental arrows-C
+    "|[\U0001F900-\U0001F9FF]"  # supplemental symbols
+    "|[\U0001FA00-\U0001FA6F]"  # chess symbols
+    "|[\U0001FA70-\U0001FAFF]"  # symbols and pictographs extended-A
+    "|[\U00002702-\U000027B0]"  # dingbats
+    "|[\U00002600-\U000026FF]"  # misc symbols (☀ etc.)
+    "|[\U0000231A-\U0000231B]"  # watch / hourglass
+    "|[\U000023E9-\U000023F3]"  # media controls
+    "|[\U000023F8-\U000023FA]"  # more media
+    "|[\U000025AA-\U000025AB]"  # small squares
+    "|[\U000025B6\U000025C0]"  # play/reverse
+    "|[\U000025FB-\U000025FE]"  # medium squares
+    "|[\U00002B05-\U00002B07]"  # arrows
+    "|[\U00002B1B-\U00002B1C]"  # black/white large square
+    "|[\U00002B50\U00002B55]"  # star / heavy circle
+    "|[\U00002934-\U00002935]"  # arrows
+    "|[\U00003030\U0000303D]"  # wavy dash / part alternation
+    "|[\U00003297\U00003299]"  # circled ideographs used as emoji
+    "|[\U000000A9\U000000AE\U00002122\U00002139\U00002194-\U00002199]"
+    "|[\U000021A9-\U000021AA]"
+    "|\U0000FE0F"  # variation selector-16
+    "|\U0000200D"  # zero-width joiner
+    "|\U000020E3"  # combining enclosing keycap
+    ")+",
+)
 
 def sanitize_for_tts(text: str) -> str:
-    """Strip Markdown formatting and HTML comments for TTS consumption."""
+    """Strip Markdown, HTML comments, and emoji for TTS consumption."""
     text = _RE_HTML_COMMENT.sub("", text)
     text = _RE_MD_CODE_BLOCK.sub("", text)
     text = _RE_MD_HEADING.sub("", text)
@@ -60,6 +99,7 @@ def sanitize_for_tts(text: str) -> str:
     text = _RE_MD_LIST_NUMBERED.sub("", text)
     text = _RE_MD_TABLE_PIPE.sub("", text)
     text = _RE_MD_HR.sub("", text)
+    text = _RE_EMOJI.sub("", text)
     return text.strip()
 
 
@@ -260,6 +300,12 @@ class VoiceSession:
                         await self._synthesize_and_send(remaining)
                     await self._ws.send_json(
                         {
+                            "type": "emotion",
+                            "emotion": emotion,
+                        }
+                    )
+                    await self._ws.send_json(
+                        {
                             "type": "response_done",
                             "emotion": emotion,
                         }
@@ -315,6 +361,12 @@ class VoiceSession:
                             await self._synthesize_and_send(remaining)
                         await self._ws.send_json(
                             {
+                                "type": "emotion",
+                                "emotion": emotion,
+                            }
+                        )
+                        await self._ws.send_json(
+                            {
                                 "type": "response_done",
                                 "emotion": emotion,
                             }
@@ -328,6 +380,12 @@ class VoiceSession:
         finally:
             if not response_done_sent:
                 try:
+                    await self._ws.send_json(
+                        {
+                            "type": "emotion",
+                            "emotion": "neutral",
+                        }
+                    )
                     await self._ws.send_json(
                         {
                             "type": "response_done",

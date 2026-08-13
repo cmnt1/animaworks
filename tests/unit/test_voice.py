@@ -18,6 +18,7 @@ from core.voice.sentence_splitter import StreamingSentenceSplitter, split_senten
 from core.voice.tts_base import TTSConfig
 from core.voice.tts_elevenlabs import ElevenLabsTTS
 from core.voice.tts_factory import create_tts_provider
+from core.voice.tts_irodori import IrodoriTTS
 from core.voice.tts_sbv2 import StyleBertVits2TTS
 from core.voice.tts_voicevox import VoicevoxTTS
 
@@ -111,6 +112,10 @@ class TestTTSFactory:
     def test_sbv2(self) -> None:
         provider = create_tts_provider("style_bert_vits2", VoiceConfig())
         assert isinstance(provider, StyleBertVits2TTS)
+
+    def test_irodori(self) -> None:
+        provider = create_tts_provider("irodori", VoiceConfig())
+        assert isinstance(provider, IrodoriTTS)
 
     def test_unknown_raises(self) -> None:
         with pytest.raises(ValueError, match="Unknown TTS provider"):
@@ -296,6 +301,19 @@ class TestSanitizeForTTS:
         text = '了解しました。\n<!-- emothion: {"emotion": "smile"} -->'
         assert sanitize_for_tts(text) == "了解しました。"
 
+    def test_strip_emoji(self) -> None:
+        from core.voice.session import sanitize_for_tts
+
+        assert sanitize_for_tts("こんにちは😊") == "こんにちは"
+        assert sanitize_for_tts("嬉しい🎉です👍") == "嬉しいです"
+        assert sanitize_for_tts("普通のテキスト") == "普通のテキスト"
+
+    def test_strip_emoji_and_emotion_comment(self) -> None:
+        from core.voice.session import sanitize_for_tts
+
+        text = 'やったね✨\n<!-- emotion: {"emotion": "laugh"} -->'
+        assert sanitize_for_tts(text) == "やったね"
+
 
 # ── TestVoiceModeSuffix ──────────────────────────────────────────
 
@@ -307,6 +325,14 @@ class TestVoiceModeSuffix:
         assert "voice-mode" in VOICE_MODE_SUFFIX
         assert "200文字以内" in VOICE_MODE_SUFFIX
         assert "Markdown" in VOICE_MODE_SUFFIX
+
+    def test_suffix_requires_emotion_tag(self) -> None:
+        from core.voice.session import VOICE_MODE_SUFFIX
+
+        assert "emotion" in VOICE_MODE_SUFFIX
+        assert "<!-- emotion:" in VOICE_MODE_SUFFIX
+        assert "smile" in VOICE_MODE_SUFFIX
+        assert "絵文字" in VOICE_MODE_SUFFIX
 
 
 # ── TestVoiceSession ────────────────────────────────────────────
@@ -487,6 +513,7 @@ class TestVoiceConfig:
         assert vc.voicevox.base_url == "http://localhost:50021"
         assert vc.elevenlabs.api_key_env == "ELEVENLABS_API_KEY"
         assert vc.style_bert_vits2.base_url == "http://localhost:5000"
+        assert vc.irodori.base_url == "http://xserverng2:7861"
 
     def test_animaworks_config_has_voice(self) -> None:
         config = AnimaWorksConfig()
@@ -595,6 +622,23 @@ class TestTTSSynthesisError:
                 await provider.synthesize_full("hello", config)
 
     @pytest.mark.asyncio
+    async def test_irodori_raises_on_http_error(self) -> None:
+        provider = IrodoriTTS(VoiceConfig())
+        config = TTSConfig(provider="irodori", voice_id="default")
+
+        from core.voice.tts_base import TTSSynthesisError
+
+        with patch("core.voice.tts_irodori.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(side_effect=httpx.ConnectError("connection refused"))
+            mock_cls.return_value = mock_client
+
+            with pytest.raises(TTSSynthesisError, match="Irodori-TTS synthesis failed"):
+                await provider.synthesize_full("hello", config)
+
+    @pytest.mark.asyncio
     async def test_elevenlabs_raises_on_no_api_key(self) -> None:
         from core.voice.tts_base import TTSSynthesisError
 
@@ -605,6 +649,132 @@ class TestTTSSynthesisError:
             chunks = []
             async for chunk in provider.synthesize("hello", config):
                 chunks.append(chunk)
+
+
+# ── TestIrodoriTTS ────────────────────────────────────────────────
+
+
+class TestIrodoriTTS:
+    def test_default_base_url(self) -> None:
+        provider = IrodoriTTS(VoiceConfig())
+        assert provider._base_url == "http://xserverng2:7861"
+
+    def test_custom_base_url_from_config(self) -> None:
+        vc = VoiceConfig(irodori={"base_url": "http://localhost:9999/"})
+        provider = IrodoriTTS(vc)
+        assert provider._base_url == "http://localhost:9999"
+
+    def test_custom_base_url_from_dict_attr(self) -> None:
+        vc = MagicMock()
+        vc.irodori = {"base_url": "http://example:7861"}
+        provider = IrodoriTTS(vc)
+        assert provider._base_url == "http://example:7861"
+
+    @pytest.mark.asyncio
+    async def test_synthesize_posts_json_payload(self) -> None:
+        provider = IrodoriTTS(VoiceConfig())
+        config = TTSConfig(provider="irodori", voice_id="v1", speed=1.2)
+        wav = b"RIFF....WAVEfmt "
+
+        with patch("core.voice.tts_irodori.httpx.AsyncClient") as mock_cls:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.content = wav
+            mock_resp.raise_for_status = MagicMock()
+
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_resp)
+            mock_cls.return_value = mock_client
+
+            result = await provider.synthesize_full("こんにちは", config)
+
+        assert result == wav
+        mock_client.post.assert_awaited_once()
+        call_args = mock_client.post.call_args
+        assert call_args.args[0] == "http://xserverng2:7861/voice"
+        assert call_args.kwargs["json"] == {
+            "text": "こんにちは",
+            "voice_id": "v1",
+            "speed": 1.2,
+        }
+
+    @pytest.mark.asyncio
+    async def test_synthesize_null_voice_id_and_speed(self) -> None:
+        provider = IrodoriTTS(VoiceConfig())
+        config = TTSConfig(provider="irodori", voice_id="", speed=0.0)
+        wav = b"audio"
+
+        with patch("core.voice.tts_irodori.httpx.AsyncClient") as mock_cls:
+            mock_resp = MagicMock()
+            mock_resp.content = wav
+            mock_resp.raise_for_status = MagicMock()
+
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_resp)
+            mock_cls.return_value = mock_client
+
+            await provider.synthesize_full("hi", config)
+
+        assert mock_client.post.call_args.kwargs["json"] == {
+            "text": "hi",
+            "voice_id": None,
+            "speed": None,
+        }
+
+    @pytest.mark.asyncio
+    async def test_synthesize_empty_response_raises(self) -> None:
+        from core.voice.tts_base import TTSSynthesisError
+
+        provider = IrodoriTTS(VoiceConfig())
+        config = TTSConfig(provider="irodori")
+
+        with patch("core.voice.tts_irodori.httpx.AsyncClient") as mock_cls:
+            mock_resp = MagicMock()
+            mock_resp.content = b""
+            mock_resp.raise_for_status = MagicMock()
+
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_resp)
+            mock_cls.return_value = mock_client
+
+            with pytest.raises(TTSSynthesisError, match="empty audio"):
+                await provider.synthesize_full("hi", config)
+
+    @pytest.mark.asyncio
+    async def test_health_check_ok(self) -> None:
+        provider = IrodoriTTS(VoiceConfig())
+
+        with patch("core.voice.tts_irodori.httpx.AsyncClient") as mock_cls:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(return_value=mock_resp)
+            mock_cls.return_value = mock_client
+
+            assert await provider.health_check() is True
+            mock_client.get.assert_awaited_once_with("http://xserverng2:7861/health")
+
+    @pytest.mark.asyncio
+    async def test_health_check_connection_error(self) -> None:
+        provider = IrodoriTTS(VoiceConfig())
+
+        with patch("core.voice.tts_irodori.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
+            mock_cls.return_value = mock_client
+
+            assert await provider.health_check() is False
 
 
 # ── TestConsecutiveTTSFailures ───────────────────────────────────
