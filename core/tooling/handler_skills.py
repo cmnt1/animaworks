@@ -622,6 +622,7 @@ class SkillsToolsMixin:
         status = args.get("status", "")
         summary = args.get("summary")
         result = args.get("result")
+        unblock_check = args.get("unblock_check")
 
         if not task_id:
             return _error_result("InvalidArguments", "task_id is required")
@@ -629,6 +630,8 @@ class SkillsToolsMixin:
             return _error_result("InvalidArguments", "status is required")
         if result is not None and not isinstance(result, str):
             return _error_result("InvalidArguments", "result must be a string")
+        if unblock_check is not None and not isinstance(unblock_check, str):
+            return _error_result("InvalidArguments", "unblock_check must be a string")
         if result is not None:
             summary = result
 
@@ -654,6 +657,12 @@ class SkillsToolsMixin:
             }
             if result is not None:
                 declaration_meta["result_note"] = result
+        elif status == "blocked":
+            declaration_meta = {
+                "blocked_at": now_iso(),
+                "unblock_check": unblock_check,
+                "unblock_check_failures": 0,
+            }
 
         try:
             if declaration_meta:
@@ -772,32 +781,9 @@ class SkillsToolsMixin:
         except Exception:
             logger.warning("Failed to persist retry_count for task %s", entry.task_id, exc_info=True)
 
-        task_desc_meta = entry.meta.get("task_desc", {})
-        task_desc = {
-            "task_type": "llm",
-            "task_id": entry.task_id,
-            "batch_id": entry.meta.get("batch_id", ""),
-            "title": task_desc_meta.get("title", entry.summary),
-            "description": task_desc_meta.get("description", entry.original_instruction),
-            "parallel": False,  # retry は常に単体実行
-            "depends_on": [],  # retry は依存なし
-            "context": task_desc_meta.get("context", ""),
-            "acceptance_criteria": task_desc_meta.get("acceptance_criteria", []),
-            "constraints": task_desc_meta.get("constraints", []),
-            "file_paths": task_desc_meta.get("file_paths", []),
-            "submitted_by": self._anima_name,
-            "submitted_at": now_iso(),
-            "reply_to": task_desc_meta.get("reply_to", self._anima_name),
-            "working_directory": task_desc_meta.get("working_directory", ""),
-        }
+        from core.blocked_recovery import regenerate_pending_json
 
-        pending_dir = self._anima_dir / "state" / "pending"
-        pending_dir.mkdir(parents=True, exist_ok=True)
-        path = pending_dir / f"{entry.task_id}.json"
-        atomic_write_text(
-            path,
-            _json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
-        )
+        regenerate_pending_json(self._anima_dir, self._anima_name, entry)
 
         # Wake the pending executor
         if hasattr(self, "_pending_executor_wake") and self._pending_executor_wake:

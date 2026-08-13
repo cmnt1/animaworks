@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 import pytest
 
@@ -31,6 +32,10 @@ class TestTaskToolSchemas:
         assert "task_id" in required
         assert "status" in required
         assert update_task["parameters"]["properties"]["result"]["type"] == "string"
+        assert update_task["parameters"]["properties"]["unblock_check"]["type"] == "string"
+        assert "exit 0" in update_task["parameters"]["properties"]["unblock_check"]["description"]
+        assert "読み取り検証専用" in update_task["parameters"]["properties"]["unblock_check"]["description"]
+        assert "unblock_check" not in required
 
     def test_list_tasks_schema(self):
         task_tools = _task_tools()
@@ -104,6 +109,31 @@ class TestTaskToolHandler:
         })
         data = json.loads(result)
         assert data["status"] == "in_progress"
+
+    def test_handle_update_task_blocked_saves_unblock_check(self, handler):
+        task = json.loads(handler.handle("backlog_task", {
+            "source": "human",
+            "original_instruction": "test",
+            "assignee": "rin",
+            "summary": "s",
+            "deadline": "1h",
+        }))
+
+        result = json.loads(handler.handle("update_task", {
+            "task_id": task["task_id"],
+            "status": "blocked",
+            "unblock_check": "test -w .",
+        }))
+
+        assert result["status"] == "blocked"
+        assert result["meta"]["unblock_check"] == "test -w ."
+        datetime.fromisoformat(result["meta"]["blocked_at"])
+
+        repeated = json.loads(handler.handle("update_task", {
+            "task_id": task["task_id"],
+            "status": "blocked",
+        }))
+        assert repeated["meta"]["unblock_check"] is None
 
     def test_handle_update_nonexistent(self, handler):
         result = handler.handle("update_task", {

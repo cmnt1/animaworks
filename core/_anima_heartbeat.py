@@ -470,6 +470,13 @@ class HeartbeatMixin:
         When current_state.md nears the cleanup threshold, a compression
         instruction is prepended so the anima trims it first.
         """
+        try:
+            from core.blocked_recovery import revalidate_blocked_tasks
+
+            await asyncio.to_thread(revalidate_blocked_tasks, self.anima_dir, self.name)
+        except Exception:
+            logger.warning("[%s] Failed to revalidate blocked tasks", self.name, exc_info=True)
+
         hb_config = self.memory.read_heartbeat_config()
         checklist = hb_config or load_prompt("heartbeat_default_checklist")
         parts = [load_prompt("heartbeat", checklist=checklist)]

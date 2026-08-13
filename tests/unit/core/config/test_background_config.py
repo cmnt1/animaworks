@@ -99,6 +99,10 @@ class TestBackgroundTaskConfig:
         assert btc.max_completed_tasks_in_memory == 200
         assert btc.worker_pool_size == 1
         assert btc.shutdown_drain_seconds == 600
+        assert btc.blocked_recovery_enabled is True
+        assert btc.blocked_reprobe_after_hours == 6.0
+        assert btc.blocked_max_reprobes == 4
+        assert btc.blocked_check_timeout_seconds == 60
         assert isinstance(btc.eligible_tools, dict)
 
     @pytest.mark.parametrize(

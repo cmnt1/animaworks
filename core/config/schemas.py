@@ -778,6 +778,10 @@ class BackgroundTaskConfig(BaseModel):
     max_completed_tasks_in_memory: int = Field(default=200, ge=0)
     max_parallel_llm_tasks: int = Field(default=3, ge=1, le=10)
     worker_pool_size: int = Field(default=1, ge=1, le=10)
+    blocked_recovery_enabled: bool = True
+    blocked_reprobe_after_hours: float = Field(default=6.0, ge=0)
+    blocked_max_reprobes: int = Field(default=4, ge=0)
+    blocked_check_timeout_seconds: int = Field(default=60, ge=1)
 
 
 def resolve_background_worker_pool_size(
