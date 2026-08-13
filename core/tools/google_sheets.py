@@ -404,7 +404,7 @@ def cli_main(argv: list[str] | None = None) -> None:
     """CLI entry point for the Google Sheets tool."""
     parser = argparse.ArgumentParser(
         prog="animaworks-tool google_sheets",
-        description="Google Sheets read-only operations",
+        description="Google Sheets operations (read/write values and sheet tabs)",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -418,6 +418,21 @@ def cli_main(argv: list[str] | None = None) -> None:
     p_tabs = subparsers.add_parser("tabs", help="List sheet tabs")
     p_tabs.add_argument("spreadsheet_id", help="Spreadsheet ID or URL")
     p_tabs.add_argument("-j", "--json", action="store_true", help="JSON output")
+
+    # write / append (shared arguments)
+    values_help = "Cell values as JSON 2D array (e.g. '[[\"a\",1],[\"b\",2]]'), or '-' to read from stdin"
+    p_write = subparsers.add_parser("write", help="Overwrite cell values in a range")
+    p_append = subparsers.add_parser("append", help="Append rows after the last data in a range")
+    for p in (p_write, p_append):
+        p.add_argument("spreadsheet_id", help="Spreadsheet ID or URL")
+        p.add_argument("range", help="A1 range, e.g. 'Sheet1!A1:C10'")
+        p.add_argument("values", help=values_help)
+        p.add_argument(
+            "--raw",
+            action="store_true",
+            help="Interpret values as RAW instead of USER_ENTERED",
+        )
+        p.add_argument("-j", "--json", action="store_true", help="JSON output")
 
     args = parser.parse_args(argv)
     client = GoogleSheetsClient()
@@ -439,6 +454,20 @@ def cli_main(argv: list[str] | None = None) -> None:
                 print(f"{result.get('title', '')} ({result.get('spreadsheet_id', '')})")
                 for s in result.get("sheets", []):
                     print(f"  {s['title']}  ({s['rows']}x{s['cols']})")
+
+        elif args.command in ("write", "append"):
+            raw_values = sys.stdin.read() if args.values == "-" else args.values
+            values = json.loads(raw_values)
+            if not isinstance(values, list) or not all(isinstance(r, list) for r in values):
+                print("Error: values must be a JSON 2D array (rows of columns)", file=sys.stderr)
+                sys.exit(1)
+            option = "RAW" if args.raw else "USER_ENTERED"
+            fn = client.write_values if args.command == "write" else client.append_values
+            result = fn(args.spreadsheet_id, args.range, values, value_input_option=option)
+            if args.json:
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                print(f"{result.get('updated_range', '')}: {result.get('updated_cells', 0)} cells")
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
