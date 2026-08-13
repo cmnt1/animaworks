@@ -27,6 +27,31 @@ _SQLITE_REFUTABLE_SELF_HEAL_REASONS = {"chroma_corruption", "sqlite_malformed"}
 _SQLITE_LIGHTWEIGHT_RETRY_STATUSES = {"ok", "busy"}
 _persistent_client_init_lock = threading.Lock()
 _lightweight_failure_marker_lock = threading.Lock()
+_missing_collection_warned: set[str] = set()
+_missing_collection_warned_lock = threading.Lock()
+
+
+def _is_missing_collection_error(error: BaseException | str) -> bool:
+    text = str(error).lower()
+    return "collection" in text and "does not exist" in text
+
+
+def log_missing_collection_once(collection: str, message: str, *args: Any) -> None:
+    """Log a missing-collection warning once per process; later hits are DEBUG."""
+    with _missing_collection_warned_lock:
+        first = collection not in _missing_collection_warned
+        if first:
+            _missing_collection_warned.add(collection)
+    if first:
+        logger.warning(message, *args)
+    else:
+        logger.debug(message, *args)
+
+
+def reset_missing_collection_warnings() -> None:
+    """Clear the process-local missing-collection warning set (tests only)."""
+    with _missing_collection_warned_lock:
+        _missing_collection_warned.clear()
 
 # ── Data structures ────────────────────────────────────────────────
 
@@ -637,14 +662,12 @@ class ChromaVectorStore(VectorStore):
             return self._with_self_heal("upsert", collection, lambda store: store._upsert_once(collection, documents))
         except Exception as e:
             self._report_chroma_error(collection, e, "upsert")
-            logger.warning(
-                "Failed to upsert %d documents to '%s': owner=%s db_path=%s error=%s",
-                len(documents),
-                collection,
-                self._owner_label(),
-                self.persist_dir,
-                e,
-            )
+            msg = "Failed to upsert %d documents to '%s': owner=%s db_path=%s error=%s"
+            msg_args = (len(documents), collection, self._owner_label(), self.persist_dir, e)
+            if _is_missing_collection_error(e):
+                log_missing_collection_once(collection, msg, *msg_args)
+            else:
+                logger.warning(msg, *msg_args)
             return False
 
     def _query_once(
@@ -707,13 +730,12 @@ class ChromaVectorStore(VectorStore):
             )
         except Exception as e:
             self._report_chroma_error(collection, e, "query")
-            logger.warning(
-                "ChromaDB query failed for collection '%s': owner=%s db_path=%s error=%s",
-                collection,
-                self._owner_label(),
-                self.persist_dir,
-                e,
-            )
+            msg = "ChromaDB query failed for collection '%s': owner=%s db_path=%s error=%s"
+            msg_args = (collection, self._owner_label(), self.persist_dir, e)
+            if _is_missing_collection_error(e):
+                log_missing_collection_once(collection, msg, *msg_args)
+            else:
+                logger.warning(msg, *msg_args)
             return []
 
     def _delete_documents_once(self, collection: str, ids: list[str]) -> bool:
@@ -735,13 +757,12 @@ class ChromaVectorStore(VectorStore):
             )
         except Exception as e:
             self._report_chroma_error(collection, e, "delete_documents")
-            logger.warning(
-                "Failed to delete documents from '%s': owner=%s db_path=%s error=%s",
-                collection,
-                self._owner_label(),
-                self.persist_dir,
-                e,
-            )
+            msg = "Failed to delete documents from '%s': owner=%s db_path=%s error=%s"
+            msg_args = (collection, self._owner_label(), self.persist_dir, e)
+            if _is_missing_collection_error(e):
+                log_missing_collection_once(collection, msg, *msg_args)
+            else:
+                logger.warning(msg, *msg_args)
             return False
 
     def _update_metadata_once(
@@ -768,13 +789,12 @@ class ChromaVectorStore(VectorStore):
             )
         except Exception as e:
             self._report_chroma_error(collection, e, "update_metadata")
-            logger.warning(
-                "Failed to update metadata in '%s': owner=%s db_path=%s error=%s",
-                collection,
-                self._owner_label(),
-                self.persist_dir,
-                e,
-            )
+            msg = "Failed to update metadata in '%s': owner=%s db_path=%s error=%s"
+            msg_args = (collection, self._owner_label(), self.persist_dir, e)
+            if _is_missing_collection_error(e):
+                log_missing_collection_once(collection, msg, *msg_args)
+            else:
+                logger.warning(msg, *msg_args)
             return False
 
     def _get_by_metadata_once(
