@@ -199,16 +199,6 @@ class ExecutorFactoryMixin:
                     )
                 fallback_model_config.execution_mode = "A"
                 fallback_model_config.resolved_mode = "A"
-                from core.execution.fallback_activity import log_model_fallback
-                from core.memory.activity import ActivityLogger
-
-                log_model_fallback(
-                    ActivityLogger(self.anima_dir),
-                    active_config,
-                    fallback_model_config,
-                    channel="executor",
-                    phase="unavailable",
-                )
 
                 # openai/* fallback without credentials cannot succeed — fail
                 # clearly instead of empty-response retry storms.
@@ -225,6 +215,17 @@ class ExecutorFactoryMixin:
                         raise ExecutorUnavailableError(
                             t("executor.codex_unavailable_no_openai_cred")
                         ) from None
+
+                from core.execution.fallback_activity import log_model_fallback
+                from core.memory.activity import ActivityLogger
+
+                log_model_fallback(
+                    ActivityLogger(self.anima_dir),
+                    active_config,
+                    fallback_model_config,
+                    channel="executor",
+                    phase="unavailable",
+                )
 
                 return LiteLLMExecutor(
                     model_config=fallback_model_config,
