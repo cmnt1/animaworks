@@ -822,6 +822,7 @@
   "voice.popup_disconnected": "Disconnected",
   "voice.popup_listening": "Listening…",
   "voice.popup_mic_denied": "Microphone access denied. Switch to PTT or close.",
+  "voice.popup_mic_insecure": "Microphone API is unavailable on this URL. Please access via https.",
   "voice.popup_speaking": "Speaking…",
   "voice.popup_title": "Voice chat",
   "websocket.assets_updated": "Assets updated:",

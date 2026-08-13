@@ -257,12 +257,17 @@ async function _startSession(animaName) {
   els.mode.textContent = "AUTO";
 
   // Surface mic-permission failures (VAD init may only warn).
+  if (!navigator.mediaDevices?.getUserMedia) {
+    // http origin etc. — permission state is irrelevant, the API itself is absent.
+    _showError(t("voice.popup_mic_insecure"));
+    return;
+  }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach((tr) => tr.stop());
-  } catch {
+  } catch (err) {
     if (!_session || _session.closed) return;
-    _showMicDenied();
+    _showMicDenied(err);
   }
 
   if (!_session || _session.closed) return;
@@ -271,8 +276,11 @@ async function _startSession(animaName) {
   }
 }
 
-function _showMicDenied() {
-  _showError(t("voice.popup_mic_denied"));
+function _showMicDenied(err) {
+  // Keep the raw error name visible — NotAllowedError (site/OS permission),
+  // NotFoundError (no device), NotReadableError (device busy) need different fixes.
+  const name = err?.name ? ` [${err.name}]` : "";
+  _showError(t("voice.popup_mic_denied") + name);
   // Guide user toward PTT (still needs mic) or close.
   if (voiceManager.mode === "vad") {
     voiceManager.setMode("ptt");

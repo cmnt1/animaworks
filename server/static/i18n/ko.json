@@ -768,6 +768,7 @@
   "voice.popup_disconnected": "연결이 끊겼습니다",
   "voice.popup_listening": "듣는 중…",
   "voice.popup_mic_denied": "마이크 사용이 거부되었습니다. PTT로 전환하거나 닫아 주세요.",
+  "voice.popup_mic_insecure": "이 URL에서는 마이크 API를 사용할 수 없습니다. https로 접속해 주세요.",
   "voice.popup_speaking": "말하는 중…",
   "voice.popup_title": "음성 대화",
   "websocket.assets_updated": "에셋 업데이트:",
