@@ -108,6 +108,16 @@ class TestClassificationMatrix:
         reason, _ = classify_llm_error(_ApiError("forbidden", status_code=403))
         assert reason is FailoverReason.AUTH
 
+    def test_litellm_missing_credentials_message_is_auth(self) -> None:
+        reason, hint = classify_llm_error_message(
+            "litellm.InternalServerError: openai.OpenAIError: Missing credentials. "
+            "Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set "
+            "the `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` environment variable."
+        )
+        assert reason is FailoverReason.AUTH
+        assert hint.retryable is False
+        assert hint.fallback_ok is True
+
     def test_billing_402(self) -> None:
         reason, hint = classify_llm_error(_ApiError("payment required", status_code=402))
         assert reason is FailoverReason.BILLING

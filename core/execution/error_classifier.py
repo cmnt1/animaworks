@@ -271,6 +271,7 @@ _REQUEST_VALIDATION_PATTERNS = (
 )
 
 _AUTH_PATTERNS = (
+    "missing credentials",
     "invalid api key",
     "invalid_api_key",
     "authentication",
