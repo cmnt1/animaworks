@@ -459,7 +459,14 @@ class VoiceSession:
             await self._ws.send_json({"type": "emotion", "emotion": emotion})
             if tts_ok:
                 self._tts_playing = True
-                await self._synthesize_and_send(text)
+                # Sentence-by-sentence so the first audio arrives in seconds
+                # instead of after one long whole-text synthesis.
+                from core.voice.sentence_splitter import split_sentences
+
+                for sentence in split_sentences(text):
+                    if self._interrupted or self._processing:
+                        break
+                    await self._synthesize_and_send(sentence)
             await self._ws.send_json({"type": "response_done", "emotion": emotion})
         except Exception as e:
             logger.debug("Voice greet delivery failed (%s): %s", self._anima_name, e)
