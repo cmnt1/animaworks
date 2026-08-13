@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import re
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -124,6 +124,12 @@ class EntityAliasIndex:
     alias_owner: dict[str, str]
     synonyms: dict[str, frozenset[str]]
     related: dict[str, frozenset[str]]
+    # Precomputed (key, surfaces sorted longest-first, len>=2 only). Sorting per
+    # lookup was 55M sorted() calls per search — see 2026-08-13 profile.
+    sorted_synonyms: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    # Per-index memo for _match_registry_keys_in_text (query/phrase texts repeat
+    # tens of thousands of times per search). Excluded from eq/repr.
+    match_cache: dict[str, frozenset[str]] = field(default_factory=dict, compare=False, repr=False)
 
 
 @dataclass
@@ -408,10 +414,15 @@ def _build_alias_index(entities: dict[str, Any]) -> EntityAliasIndex:
         for entity_key in group:
             related.setdefault(entity_key, set()).update(group - {entity_key})
 
+    frozen_synonyms = {key: frozenset(values) for key, values in synonyms.items()}
     return EntityAliasIndex(
         alias_owner=alias_owner,
-        synonyms={key: frozenset(values) for key, values in synonyms.items()},
+        synonyms=frozen_synonyms,
         related={key: frozenset(values) for key, values in related.items()},
+        sorted_synonyms=tuple(
+            (key, tuple(sorted((s for s in values if len(s) >= 2), key=len, reverse=True)))
+            for key, values in frozen_synonyms.items()
+        ),
     )
 
 
@@ -437,6 +448,10 @@ def _match_registry_keys_in_text(text: str, index: EntityAliasIndex | None) -> s
     """Return registry keys whose canonical/alias surface appears in text."""
     if not index or not text:
         return set()
+    cached = index.match_cache.get(text)
+    if cached is not None:
+        return set(cached)
+
     from core.memory.entity_index import normalize_entity_key
 
     haystacks = {
@@ -449,14 +464,21 @@ def _match_registry_keys_in_text(text: str, index: EntityAliasIndex | None) -> s
         return set()
 
     matched: set[str] = set()
-    for key, synonyms in index.synonyms.items():
-        # Longer surfaces first so more specific aliases win diagnostics.
-        for surface in sorted(synonyms, key=len, reverse=True):
-            if len(surface) < 2:
-                continue
+    # Precomputed longest-first surfaces (len>=2) — see EntityAliasIndex.
+    entries = index.sorted_synonyms or tuple(
+        (key, tuple(sorted((s for s in values if len(s) >= 2), key=len, reverse=True)))
+        for key, values in index.synonyms.items()
+    )
+    for key, surfaces in entries:
+        for surface in surfaces:
             if any(surface in hay for hay in haystacks):
                 matched.add(key)
                 break
+    # ponytail: unbounded growth guard — one search touches at most a few
+    # thousand unique texts; reset instead of LRU bookkeeping.
+    if len(index.match_cache) > 20_000:
+        index.match_cache.clear()
+    index.match_cache[text] = frozenset(matched)
     return matched
 
 
