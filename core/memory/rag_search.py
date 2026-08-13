@@ -9,7 +9,9 @@ import logging
 import os
 import re
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from core.company_resources import (
     CompanyResources,
@@ -41,21 +43,44 @@ _DEFAULT_TOP_K = 5
 WEIGHT_TOKEN_OVERLAP = 0.1
 
 
+@lru_cache(maxsize=256)
+def _keyword_compound_pattern(token: str) -> re.Pattern[str] | None:
+    parts = {
+        re.escape(token[start:end])
+        for start in range(len(token))
+        for end in range(start + 3, len(token))
+    }
+    if not parts:
+        return None
+    return re.compile(rf"(?<!\w)(?:{'|'.join(sorted(parts, key=len, reverse=True))})(?!\w)")
+
+
 def _keyword_token_matches(token: str, content_lower: str) -> bool:
     """Return True when a keyword token matches content directly or as a compound term."""
     if token in content_lower:
         return True
     if len(token) < 4:
         return False
-    for content_token in re.findall(r"[\w]+", content_lower, re.UNICODE):
-        if len(content_token) >= 3 and content_token in token:
-            return True
+    pattern = _keyword_compound_pattern(token)
+    if pattern is not None and pattern.search(content_lower):
+        return True
     if any("\u3040" <= ch <= "\u30ff" or "\u4e00" <= ch <= "\u9fff" for ch in token):
         for size in (8, 6, 4):
             for start in range(0, max(0, len(token) - size + 1)):
                 if token[start : start + size] in content_lower:
                     return True
     return False
+
+
+@lru_cache(maxsize=4096)
+def _read_keyword_file_by_signature(path: Path, mtime_ns: int, size: int) -> str:
+    del mtime_ns, size
+    return path.read_text(encoding="utf-8")
+
+
+def _read_keyword_file(path: Path) -> tuple[str, os.stat_result]:
+    stat = path.stat()
+    return _read_keyword_file_by_signature(path, stat.st_mtime_ns, stat.st_size), stat
 
 
 # ── Shared-index change detection helpers ─────────────────
@@ -96,6 +121,7 @@ class RAGMemorySearch:
         self._common_knowledge_dir = common_knowledge_dir
         self._common_skills_dir = common_skills_dir
         self._indexer = None
+        self._retriever = None
         self._indexer_initialized = False
         self._auto_index_on_access = not os.environ.get("ANIMAWORKS_TASK_IPC_PATH", "").strip()
         self._last_search_meta: dict[str, object] = {}
@@ -427,6 +453,18 @@ class RAGMemorySearch:
             self._check_shared_collections()
         return self._indexer
 
+    def _get_retriever(self, indexer, knowledge_dir: Path):
+        """Reuse the retriever so its loaded graph survives across searches."""
+        from core.memory.rag.retriever import MemoryRetriever
+
+        if (
+            self._retriever is None
+            or self._retriever.indexer is not indexer
+            or self._retriever.knowledge_dir != knowledge_dir
+        ):
+            self._retriever = MemoryRetriever(indexer.vector_store, indexer, knowledge_dir)
+        return self._retriever
+
     # ── Search methods ────────────────────────────────────
 
     def search_memory_text(
@@ -451,6 +489,8 @@ class RAGMemorySearch:
         """
         offset = max(0, min(offset, 50))
         self._last_search_meta = {}
+        if self._retriever is not None:
+            self._retriever.clear_search_cache()
 
         if scope == "activity_log":
             if search_activity_log is None:
@@ -640,20 +680,19 @@ class RAGMemorySearch:
         query: str,
         pool_k: int,
         knowledge_dir: Path,
+        *,
+        embedding: list[float] | None = None,
+        indexer: Any | None = None,
+        access_batch=None,
     ) -> list[dict]:
         """Episodes vector search with graph spreading activation."""
-        from core.memory.rag.retriever import MemoryRetriever
-
-        indexer = self._get_indexer()
+        if indexer is None:
+            indexer = self._get_indexer()
         if indexer is None:
             return []
 
         anima_name = self._anima_dir.name
-        retriever = MemoryRetriever(
-            indexer.vector_store,
-            indexer,
-            knowledge_dir,
-        )
+        retriever = self._get_retriever(indexer, knowledge_dir)
         try:
             rag_results = retriever.search(
                 query=query,
@@ -661,6 +700,8 @@ class RAGMemorySearch:
                 memory_type="episodes",
                 top_k=pool_k,
                 enable_spreading_activation=True,
+                embedding=embedding,
+                access_batch=access_batch,
             )
         except Exception:
             logger.debug("graph episodes search failed", exc_info=True)
@@ -719,19 +760,15 @@ class RAGMemorySearch:
         *,
         result_limit: int | None = None,
         entity_boost=None,
+        embedding: list[float] | None = None,
+        access_batch=None,
     ) -> list[dict]:
         """Perform vector search as primary result source."""
-        from core.memory.rag.retriever import MemoryRetriever
-
         if self._indexer is None:
             return []
 
         anima_name = self._anima_dir.name
-        retriever = MemoryRetriever(
-            self._indexer.vector_store,
-            self._indexer,
-            knowledge_dir,
-        )
+        retriever = self._get_retriever(self._indexer, knowledge_dir)
 
         include_shared = scope in ("common_knowledge", "skills", "all")
         all_results: list[dict] = []
@@ -751,6 +788,8 @@ class RAGMemorySearch:
                 memory_type=memory_type,
                 top_k=fetch_k,
                 include_shared=include_shared,
+                embedding=embedding,
+                access_batch=access_batch,
             )
             rag_results = [
                 result
@@ -759,7 +798,15 @@ class RAGMemorySearch:
             ]
 
             if rag_results:
-                retriever.record_access(rag_results, anima_name, kind="retrieved")
+                if access_batch is None:
+                    retriever.record_access(
+                        rag_results,
+                        anima_name,
+                        kind="retrieved",
+                        use_result_metadata=True,
+                    )
+                else:
+                    access_batch.record(rag_results, anima_name, kind="retrieved")
 
             for r in rag_results:
                 score = r.score
@@ -910,11 +957,11 @@ class RAGMemorySearch:
             if not d.is_dir():
                 continue
             for f in d.glob("*.md"):
-                if memory_type == "knowledge" and self._knowledge_file_is_superseded(f):
-                    continue
                 try:
-                    content = f.read_text(encoding="utf-8")
+                    content, stat = _read_keyword_file(f)
                 except OSError:
+                    continue
+                if memory_type == "knowledge" and self._knowledge_file_is_superseded(f, content=content):
                     continue
                 content_lower = content.lower()
                 matched = sum(1 for tok in tokens if _keyword_token_matches(tok, content_lower))
@@ -933,7 +980,7 @@ class RAGMemorySearch:
                         "total_chunks": 1,
                         "memory_type": memory_type,
                         "search_method": "keyword_fallback",
-                        **self._keyword_file_metadata(f, memory_type),
+                        **self._keyword_file_metadata(f, memory_type, content=content, stat=stat),
                     }
 
         if scope in ("skills", "all"):
@@ -981,11 +1028,11 @@ class RAGMemorySearch:
         return results[offset : offset + page_size]
 
     @staticmethod
-    def _knowledge_file_is_superseded(path: Path) -> bool:
+    def _knowledge_file_is_superseded(path: Path, *, content: str | None = None) -> bool:
         try:
             from core.memory.frontmatter import parse_frontmatter
 
-            meta, _ = parse_frontmatter(path.read_text(encoding="utf-8"))
+            meta, _ = parse_frontmatter(content if content is not None else path.read_text(encoding="utf-8"))
         except Exception:
             logger.debug("Failed to inspect knowledge validity for keyword search: %s", path, exc_info=True)
             return False
@@ -1022,8 +1069,8 @@ class RAGMemorySearch:
             return []
 
         try:
+            from core.memory.rag.retriever import _load_skill_document_cached
             from core.skills.curator import curator_allows_access, replay_curator_state
-            from core.skills.loader import load_skill_metadata
         except ImportError:
             return []
 
@@ -1051,7 +1098,7 @@ class RAGMemorySearch:
                 if not skill_path.is_file():
                     continue
                 try:
-                    meta = load_skill_metadata(skill_path)
+                    meta, content = _load_skill_document_cached(skill_path)
                     allowed, _reason = curator_allows_access(meta, replay=replay)
                 except Exception:
                     logger.debug(
@@ -1061,10 +1108,6 @@ class RAGMemorySearch:
                     )
                     continue
                 if not allowed:
-                    continue
-                try:
-                    content = skill_path.read_text(encoding="utf-8")
-                except OSError:
                     continue
                 content_lower = content.lower()
                 matched = sum(1 for tok in tokens if _keyword_token_matches(tok, content_lower))
@@ -1165,10 +1208,19 @@ class RAGMemorySearch:
         return results
 
     @staticmethod
-    def _keyword_file_metadata(path: Path, memory_type: str) -> dict[str, str]:
+    def _keyword_file_metadata(
+        path: Path,
+        memory_type: str,
+        *,
+        content: str | None = None,
+        stat: os.stat_result | None = None,
+    ) -> dict[str, str]:
         metadata: dict[str, str] = {}
         try:
-            metadata["updated_at"] = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).isoformat()
+            metadata["updated_at"] = datetime.fromtimestamp(
+                stat.st_mtime if stat is not None else path.stat().st_mtime,
+                tz=UTC,
+            ).isoformat()
         except OSError:
             return metadata
         if memory_type not in {"knowledge", "common_knowledge"}:
@@ -1176,7 +1228,7 @@ class RAGMemorySearch:
         try:
             from core.memory.frontmatter import parse_frontmatter
 
-            meta, _ = parse_frontmatter(path.read_text(encoding="utf-8"))
+            meta, _ = parse_frontmatter(content if content is not None else path.read_text(encoding="utf-8"))
         except Exception:
             logger.debug("Failed to inspect knowledge metadata for keyword search: %s", path, exc_info=True)
             return metadata

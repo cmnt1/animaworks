@@ -161,6 +161,37 @@ def test_search_activity_log_empty_query(tmp_path: Path) -> None:
     assert search_activity_log(anima_dir, "   ") == []
 
 
+def test_activity_cache_tokenizes_only_appended_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    today = today_local().isoformat()
+    first_content = "ZephyrNova initial activity"
+    second_content = "Meridian appended activity"
+    _write_activity_log(
+        anima_dir,
+        [{"ts": f"{today}T10:00:00", "type": "message_received", "content": first_content}],
+        date_str=today,
+    )
+    search_activity_log(anima_dir, "ZephyrNova", days=3)
+
+    tokenized: list[str] = []
+    original = bm25_module.tokenize
+
+    def tracked(text: str) -> list[str]:
+        tokenized.append(text)
+        return original(text)
+
+    monkeypatch.setattr(bm25_module, "tokenize", tracked)
+    path = anima_dir / "activity_log" / f"{today}.jsonl"
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"ts": f"{today}T10:01:00", "type": "message_received", "content": second_content}) + "\n")
+
+    results = search_activity_log(anima_dir, "Meridian", days=3)
+
+    assert any(second_content in result["content"] for result in results)
+    assert second_content in tokenized
+    assert first_content not in tokenized
+
+
 def test_noise_filter() -> None:
     long_bash = _long_tool_content("valid bash output for indexing")
     assert _should_index_entry({"type": "tool_result", "tool": "Bash", "content": long_bash}) is True
@@ -321,6 +352,96 @@ def test_longterm_bm25_respects_ragignore(tmp_path: Path, monkeypatch: pytest.Mo
     )
 
     assert [hit["source_file"] for hit in hits] == ["knowledge/included.md"]
+
+
+def test_longterm_source_validation_cache_invalidates_on_mtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    source = anima_dir / "knowledge" / "memo.md"
+    _write_longterm_memory(anima_dir, "knowledge/memo.md", "# Memo\n\nZephyrNova launch review.")
+    rebuild_longterm_bm25_index(anima_dir)
+    calls = 0
+    original = bm25_module._bm25_docs_for_file
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(bm25_module, "_bm25_docs_for_file", counted)
+    kwargs = {"memory_types": ("knowledge",), "top_k": 10}
+    first = search_longterm_memory_bm25(anima_dir, "ZephyrNova", **kwargs)
+    second = search_longterm_memory_bm25(anima_dir, "ZephyrNova", **kwargs)
+    assert first == second
+    assert calls == 1
+
+    stat = source.stat()
+    os.utime(source, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+    rebuild_longterm_bm25_index(anima_dir)
+    calls_before_search = calls
+    third = search_longterm_memory_bm25(anima_dir, "ZephyrNova", **kwargs)
+    assert [(hit["doc_id"], hit["content"], hit["score"]) for hit in third] == [
+        (hit["doc_id"], hit["content"], hit["score"]) for hit in first
+    ]
+    assert calls == calls_before_search + 1
+
+
+def test_longterm_source_validation_checks_each_file_once_per_search(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.memory.rag.indexer import MemoryIndexer
+
+    anima_dir = tmp_path / "animas" / "alice"
+    _write_longterm_memory(anima_dir, "knowledge/memo.md", "# Memo\n\nZephyrNova launch review.")
+    rebuild_longterm_bm25_index(anima_dir)
+    payload = json.loads(longterm_bm25_index_path(anima_dir).read_text(encoding="utf-8"))
+    doc = payload["documents"][0]
+    calls = 0
+    original = MemoryIndexer.is_ragignored
+
+    def counted(path: Path) -> bool:
+        nonlocal calls
+        calls += 1
+        return original(path)
+
+    monkeypatch.setattr(MemoryIndexer, "is_ragignored", counted)
+    cache: dict = {}
+
+    assert bm25_module._longterm_doc_matches_current_source(anima_dir, doc, cache)
+    calls_after_first = calls
+    assert bm25_module._longterm_doc_matches_current_source(anima_dir, doc, cache)
+    assert calls == calls_after_first
+
+
+def test_longterm_query_scoring_is_shared_across_scopes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    for memory_type in ("knowledge", "episodes", "procedures"):
+        _write_longterm_memory(
+            anima_dir,
+            f"{memory_type}/meridian.md",
+            f"# Meridian\n\n{memory_type} telemetry review.",
+        )
+    rebuild_longterm_bm25_index(anima_dir)
+    bm25_module._LONGTERM_QUERY_CACHE.clear()
+    original = bm25_module._longterm_bm25_scores
+    calls = 0
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(bm25_module, "_longterm_bm25_scores", counted)
+    hits = [
+        search_longterm_memory_bm25(anima_dir, "Meridian", memory_types=(memory_type,), top_k=3)
+        for memory_type in ("knowledge", "episodes", "procedures")
+    ]
+
+    assert calls == 1
+    assert [scope_hits[0]["memory_type"] for scope_hits in hits] == ["knowledge", "episodes", "procedures"]
 
 
 def test_longterm_bm25_excludes_archive_subtrees_without_ragignore(tmp_path: Path) -> None:

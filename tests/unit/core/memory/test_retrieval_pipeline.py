@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
+from core.memory.retrieval import entity as entity_module
 from core.memory.retrieval.access_boost import AccessBoostConfig
 from core.memory.retrieval.entity import EntityBoostConfig, expand_alias_terms, extract_entities
 from core.memory.retrieval.pipeline import RetrievalPipeline
@@ -204,6 +207,27 @@ def test_extract_entities_deduplicates_phrases_and_ignores_speakers() -> None:
     assert "becoming nicole" in entities
     assert "book" in entities
     assert "suggestion" in entities
+
+
+def test_extract_entities_caches_without_sharing_mutable_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    entity_module._extract_entities_cached.cache_clear()
+    calls = 0
+    original = entity_module._content_tokens
+
+    def counted(text: str, ignored: set[str]) -> list[str]:
+        nonlocal calls
+        calls += 1
+        return original(text, ignored)
+
+    monkeypatch.setattr(entity_module, "_content_tokens", counted)
+    text = "ZephyrNova launch review by Caroline"
+    first = extract_entities(text)
+    first.add("mutated")
+    second = extract_entities(text)
+
+    assert calls == 1
+    assert "mutated" not in second
+    assert first - {"mutated"} == second
 
 
 def test_expand_alias_terms_returns_triggered_aliases_deterministically() -> None:

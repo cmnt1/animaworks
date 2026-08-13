@@ -13,7 +13,7 @@ import pytest
 
 pytest.importorskip("scipy")
 
-from core.memory.rag.graph import KnowledgeGraph
+from core.memory.rag.graph import KnowledgeGraph, _read_node_file
 
 
 class MockVectorStore:
@@ -164,6 +164,28 @@ def test_personalized_pagerank(temp_knowledge_dir):
 
     # file1 should have highest score (starting point)
     assert scores["file1"] > scores["file3"]
+
+
+def test_personalized_pagerank_caches_equivalent_query_nodes(temp_knowledge_dir, monkeypatch):
+    import core.memory.rag.graph as graph_module
+
+    graph_builder = KnowledgeGraph(MockVectorStore(), MockIndexer())
+    graph_builder.build_graph("test_anima", temp_knowledge_dir)
+    original = graph_module.nx.pagerank
+    calls = 0
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(graph_module.nx, "pagerank", counted)
+    first = graph_builder.personalized_pagerank(["file1", "file2", "file1"])
+    first["sentinel"] = 1.0
+    second = graph_builder.personalized_pagerank(["file2", "file1"])
+
+    assert calls == 1
+    assert "sentinel" not in second
 
 
 def test_spreading_activation(temp_knowledge_dir):
@@ -750,6 +772,22 @@ def test_fetch_node_content_file_exists(temp_knowledge_dir):
     content = graph_builder._fetch_node_content("file1", file_path, "knowledge")
     assert "File 1" in content
     assert "links to [[file2]]" in content
+
+
+def test_fetch_node_content_cache_invalidates_on_file_change(temp_knowledge_dir):
+    graph_builder = KnowledgeGraph(MockVectorStore(), MockIndexer())
+    file_path = temp_knowledge_dir / "file1.md"
+    _read_node_file.cache_clear()
+
+    first = graph_builder._fetch_node_content("file1", file_path, "knowledge")
+    second = graph_builder._fetch_node_content("file1", file_path, "knowledge")
+    file_path.write_text(first + "\nchanged", encoding="utf-8")
+    graph_builder.clear_search_cache()
+    changed = graph_builder._fetch_node_content("file1", file_path, "knowledge")
+
+    assert second == first
+    assert _read_node_file.cache_info().misses == 2
+    assert changed.endswith("changed")
 
 
 def test_fetch_node_content_missing_file_uses_source_filter():

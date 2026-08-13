@@ -55,7 +55,7 @@ class FakeRAGSearch:
             return self.vector_query_returns[(query, scope)]
         return self.vector_returns.get(scope, [])
 
-    def _graph_episodes_search(self, query: str, pool_k: int, knowledge_dir: Path) -> list[dict[str, Any]]:
+    def _graph_episodes_search(self, query: str, pool_k: int, knowledge_dir: Path, **kwargs) -> list[dict[str, Any]]:
         self.graph_calls += 1
         return self.graph_returns
 
