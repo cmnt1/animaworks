@@ -34,11 +34,12 @@ MEMORY_TOOLS: list[dict[str, Any]] = [
                         "common_knowledge",
                         "skills",
                         "activity_log",
+                        "code",
                         "all",
                     ],
                     "description": (
                         "Memory category to search. 'facts' searches atomic extracted facts. 'activity_log' searches recent tool results "
-                        "and messages (last 3 days via BM25)."
+                        "and messages (last 3 days via BM25). 'code' searches tracked files in a registered project."
                     ),
                 },
                 "offset": {

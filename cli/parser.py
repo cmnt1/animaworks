@@ -257,6 +257,11 @@ def cli_main() -> None:
 
     setup_index_command(sub)
 
+    # ── MCP stdio server ──────────────────────────────────
+    from cli.commands.mcp_cmd import setup_mcp_command
+
+    setup_mcp_command(sub)
+
     # ── RAG Repair ───────────────────────────────────────
     from cli.commands.repair_rag_cmd import setup_repair_rag_command
 

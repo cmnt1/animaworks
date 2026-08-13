@@ -549,6 +549,16 @@ class MemoryToolsMixin:
                 "InvalidArguments",
                 "project must contain only letters, numbers, underscores, or hyphens",
             )
+        if scope == "code":
+            if not project:
+                return "code検索にはprojectが必要です"
+            from core.memory.code_index import search_code
+
+            code_results = search_code(self._anima_dir, project, query, limit=offset + 10)
+            if isinstance(code_results, str):
+                return code_results
+            results = code_results[offset:]
+            return self._format_search_results(query, scope, offset, results)
         time_range = args.get("time_range") or {}
         if not isinstance(time_range, dict):
             time_range = {}
@@ -633,6 +643,17 @@ class MemoryToolsMixin:
             results = [
                 result for result in results if _source_is_in_project(str(result.get("source_file", "")), project)
             ]
+        return self._format_search_results(query, scope, offset, results, anima_hint=anima_hint)
+
+    def _format_search_results(
+        self,
+        query: str,
+        scope: str,
+        offset: int,
+        results: list[dict[str, Any]],
+        *,
+        anima_hint: str | None = None,
+    ) -> str:
         logger.debug(
             "search_memory query=%s scope=%s offset=%d results=%d",
             query,
@@ -670,6 +691,8 @@ class MemoryToolsMixin:
             total_chunks = r.get("total_chunks", 1)
             content = r.get("content", "")
             metadata_line = format_result_metadata_line(r)
+            if r.get("last_scan"):
+                metadata_line = f"indexed: {r['last_scan']}"
 
             entry_header = (
                 f"[{offset + shown_count + 1}] score={score:.2f} | {source} | chunk {chunk_idx + 1}/{total_chunks}"

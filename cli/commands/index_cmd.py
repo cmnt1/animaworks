@@ -44,9 +44,9 @@ def _setup_server_delegation() -> bool:
         port = 18500
 
     base = f"http://127.0.0.1:{port}/api"
-    os.environ["ANIMAWORKS_VECTOR_URL"] = f"{base}/internal/vector"
-    os.environ["ANIMAWORKS_EMBED_URL"] = f"{base}/internal/embed"
-    os.environ["ANIMAWORKS_RERANK_URL"] = f"{base}/internal/rerank"
+    os.environ.setdefault("ANIMAWORKS_VECTOR_URL", f"{base}/internal/vector")
+    os.environ.setdefault("ANIMAWORKS_EMBED_URL", f"{base}/internal/embed")
+    os.environ.setdefault("ANIMAWORKS_RERANK_URL", f"{base}/internal/rerank")
     logger.info(
         "Server detected (pid=%d). Using HTTP delegation for safe ChromaDB access.",
         pid,

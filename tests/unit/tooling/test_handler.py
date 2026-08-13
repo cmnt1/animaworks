@@ -180,6 +180,31 @@ class TestHandleRouting:
         assert "knowledge/k1.md" in result
         assert "some result" in result
 
+    def test_search_memory_routes_code_scope(self, handler: ToolHandler, anima_dir: Path) -> None:
+        code_result = {
+            "source_file": "code:demo/sample.py#L1-L2",
+            "content": "def LibrarianNeedle():\n    pass",
+            "score": 1.0,
+            "chunk_index": 0,
+            "total_chunks": 1,
+            "search_method": "bm25",
+            "last_scan": "2026-08-13T00:00:00+00:00",
+        }
+        with patch("core.memory.code_index.search_code", return_value=[code_result]) as search:
+            result = handler.handle(
+                "search_memory",
+                {"query": "LibrarianNeedle", "scope": "code", "project": "demo"},
+            )
+
+        search.assert_called_once_with(anima_dir, "demo", "LibrarianNeedle", limit=10)
+        assert "code:demo/sample.py#L1-L2" in result
+
+    def test_search_memory_code_scope_requires_project(self, handler: ToolHandler, memory: MagicMock) -> None:
+        result = handler.handle("search_memory", {"query": "needle", "scope": "code"})
+
+        assert "code検索にはprojectが必要" in result
+        memory.search_memory_text.assert_not_called()
+
     def test_search_memory_no_results(self, handler: ToolHandler, memory: MagicMock):
         memory.search_memory_text.return_value = []
         result = handler.handle("search_memory", {"query": "nothing"})

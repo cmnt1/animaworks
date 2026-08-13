@@ -257,6 +257,25 @@ class TestListToolsHandler:
 
         assert asyncio.iscoroutinefunction(list_tools)
 
+    async def test_environment_whitelist_limits_list_tools(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import core.mcp.server as mcp_mod
+
+        monkeypatch.setenv(
+            "ANIMAWORKS_MCP_TOOLS",
+            "search_memory,read_memory_file,not_exposed",
+        )
+        tools, exposed = mcp_mod._build_mcp_tools()
+        with (
+            patch.object(mcp_mod, "MCP_TOOLS", tools),
+            patch.object(mcp_mod, "_EXPOSED_NAMES", exposed),
+            patch.object(mcp_mod, "_is_supervisor", False),
+            patch.object(mcp_mod, "_has_newstaff", False),
+        ):
+            result = await mcp_mod.list_tools()
+
+        assert {tool.name for tool in result} == {"search_memory", "read_memory_file"}
+        assert exposed == frozenset({"search_memory", "read_memory_file"})
+
 
 # ── TestCallToolHandler ──────────────────────────────────────────────
 
