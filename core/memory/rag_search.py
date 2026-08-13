@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -96,6 +97,7 @@ class RAGMemorySearch:
         self._common_skills_dir = common_skills_dir
         self._indexer = None
         self._indexer_initialized = False
+        self._auto_index_on_access = not os.environ.get("ANIMAWORKS_TASK_IPC_PATH", "").strip()
         self._last_search_meta: dict[str, object] = {}
 
     def _init_indexer(self) -> None:
@@ -117,6 +119,9 @@ class RAGMemorySearch:
                 return
             self._indexer = MemoryIndexer(vector_store, anima_name, self._anima_dir)
             logger.debug("RAG indexer initialized for anima=%s", anima_name)
+
+            if not self._auto_index_on_access:
+                return
 
             # Cold catch-up: index personal memory dirs that have sources.
             # index_directory uses index_meta hash + collection existence checks
@@ -412,11 +417,14 @@ class RAGMemorySearch:
     def _get_indexer(self):
         """Return the RAG indexer, initializing it on first call.
 
-        Also checks shared collections for changes on every call.
+        Also checks shared collections for changes on every root-process call.
+        Task runners initialize only the read-capable indexer; root preflight,
+        consolidation, and cron remain responsible for automatic indexing.
         """
         if not self._indexer_initialized:
             self._init_indexer()
-        self._check_shared_collections()
+        if self._auto_index_on_access:
+            self._check_shared_collections()
         return self._indexer
 
     # ── Search methods ────────────────────────────────────

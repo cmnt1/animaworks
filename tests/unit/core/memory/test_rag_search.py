@@ -79,6 +79,63 @@ class TestGetIndexerLazyInit:
             rag._get_indexer()
             mock_init.assert_called_once()
 
+    def test_task_runner_search_skips_auto_indexing_but_reads_existing_data(
+        self,
+        anima_dir: Path,
+        common_knowledge_dir: Path,
+        common_skills_dir: Path,
+        knowledge_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("ANIMAWORKS_TASK_IPC_PATH", "/tmp/task-runner.sock")
+        (knowledge_dir / "pending.md").write_text("not indexed yet", encoding="utf-8")
+        rag = RAGMemorySearch(anima_dir, common_knowledge_dir, common_skills_dir)
+        existing = RetrievalResult(
+            doc_id="alice/knowledge/existing#0",
+            content="existing indexed memory",
+            score=0.8,
+            metadata={"source_file": "knowledge/existing.md", "memory_type": "knowledge"},
+            source_scores={},
+        )
+
+        with (
+            patch("core.memory.rag.singleton.get_vector_store", return_value=object()),
+            patch("core.memory.rag.MemoryIndexer") as indexer_cls,
+            patch("core.memory.rag.retriever.MemoryRetriever") as retriever_cls,
+            patch.object(rag, "_check_shared_collections") as check_shared,
+        ):
+            retriever_cls.return_value.search.return_value = [existing]
+            rag._get_indexer()
+            results = rag._vector_search_primary("existing", "knowledge", 0, knowledge_dir)
+
+        indexer_cls.return_value.index_directory.assert_not_called()
+        indexer_cls.return_value.index_conversation_summary.assert_not_called()
+        check_shared.assert_not_called()
+        assert results[0]["content"] == "existing indexed memory"
+
+    def test_root_search_keeps_auto_indexing(
+        self,
+        anima_dir: Path,
+        common_knowledge_dir: Path,
+        common_skills_dir: Path,
+        knowledge_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv("ANIMAWORKS_TASK_IPC_PATH", raising=False)
+        (knowledge_dir / "pending.md").write_text("index me", encoding="utf-8")
+        rag = RAGMemorySearch(anima_dir, common_knowledge_dir, common_skills_dir)
+
+        with (
+            patch("core.memory.rag.singleton.get_vector_store", return_value=object()),
+            patch("core.memory.rag.MemoryIndexer") as indexer_cls,
+            patch.object(rag, "_check_shared_collections") as check_shared,
+        ):
+            indexer_cls.return_value.index_directory.return_value.chunks_indexed = 0
+            rag._get_indexer()
+
+        indexer_cls.return_value.index_directory.assert_any_call(knowledge_dir, "knowledge")
+        check_shared.assert_called_once()
+
 
 class TestLongtermBM25Refresh:
     def test_index_file_marks_longterm_bm25_dirty_without_rebuilding(
