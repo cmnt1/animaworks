@@ -19,7 +19,8 @@ STRINGS: dict[str, dict[str, str]] = {
             "重複実行せず、残作業を完了させ、完了時は必ず "
             '`update_task(status="done", result="...")` を呼ぶこと。\n'
             "外部要因（権限不足・依存待ち・環境障害など）で進められない場合は、同じ操作を"
-            '繰り返さず `update_task(status="blocked", summary="障害内容")` を宣言して'
+            '繰り返さず `update_task(status="blocked", summary="障害内容")` を宣言し、可能な限り '
+            "`unblock_check` を添えて"
             "停止すること。\n"
             "### 前回の出力（末尾）\n{output}\n"
             "### 実行済みツール（最大30件）\n{records}"
@@ -31,7 +32,8 @@ STRINGS: dict[str, dict[str, str]] = {
             "The previous session's final output and executed tools follow. Do not repeat completed operations; "
             'finish the remaining work and call `update_task(status="done", result="...")` when done.\n'
             "If an external factor (missing permission, dependency, environment failure) prevents progress, "
-            'do not repeat the same operations; declare `update_task(status="blocked", summary="<blocker>")` and stop.\n'
+            'do not repeat the same operations; declare `update_task(status="blocked", summary="<blocker>")`, '
+            "including `unblock_check` whenever possible, and stop.\n"
             "### Previous output (tail)\n{output}\n"
             "### Executed tools (up to 30)\n{records}"
         ),
@@ -42,7 +44,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "이전 세션의 마지막 출력과 실행한 도구 기록입니다. 완료한 작업을 반복하지 말고 남은 작업을 끝낸 뒤 "
             '`update_task(status="done", result="...")`를 호출하세요.\n'
             "외부 요인(권한 부족, 의존성 대기, 환경 장애 등)으로 진행할 수 없으면 같은 작업을 반복하지 말고 "
-            '`update_task(status="blocked", summary="<장애 내용>")`을 선언하고 중지하세요.\n'
+            '`update_task(status="blocked", summary="<장애 내용>")`을 선언하고 가능하면 `unblock_check`를 첨부한 뒤 중지하세요.\n'
             "### 이전 출력(마지막 부분)\n{output}\n"
             "### 실행한 도구(최대 30개)\n{records}"
         ),
@@ -65,20 +67,22 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": (
             "タスク {task_id} のセッションが完了宣言なしで終了しました。新しい作業は一切せず、"
             "現状に応じて今すぐ update_task を1回だけ呼んでください。完遂済みなら "
-            'status="done" と result、外部要因で進められないなら status="blocked" と summary、'
+            'status="done" と result、外部要因で進められないなら status="blocked" と summary（可能な限り '
+            "unblock_check も指定）、"
             'バックグラウンド処理を待っているだけなら status="in_progress" と '
             'summary="[待機] <何を待っているか>" を指定してください。'
         ),
         "en": (
             "Task {task_id} ended without a completion declaration. Do no new work. Call update_task exactly once "
-            'now: use status="done" with result if complete, status="blocked" with summary if an external blocker '
+            'now: use status="done" with result if complete, status="blocked" with summary and, whenever possible, '
+            "unblock_check if an external blocker "
             'prevents progress, or status="in_progress" with summary="[waiting] <what you are waiting for>" if only '
             "waiting for background work."
         ),
         "ko": (
             "작업 {task_id} 세션이 완료 선언 없이 종료되었습니다. 새로운 작업은 하지 말고 지금 update_task를 "
             '정확히 한 번 호출하세요. 완료했다면 status="done"과 result, 외부 요인으로 진행할 수 없다면 '
-            'status="blocked"와 summary, 백그라운드 작업을 기다리는 중이라면 status="in_progress"와 '
+            'status="blocked"와 summary(가능하면 unblock_check도 지정), 백그라운드 작업을 기다리는 중이라면 status="in_progress"와 '
             'summary="[대기] <기다리는 대상>"을 지정하세요.'
         ),
     },
