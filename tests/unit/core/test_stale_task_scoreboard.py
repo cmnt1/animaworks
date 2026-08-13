@@ -90,3 +90,24 @@ def test_scoreboard_limits_to_twenty_oldest_tasks(tmp_path: Path) -> None:
     assert "task-20" not in scoreboard and "task-21" not in scoreboard
     assert scoreboard.count(" | pending | ") == 20
     assert "他2件" in scoreboard
+
+
+def test_scoreboard_below_limit_has_no_overflow_line(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "worker"
+    manager = TaskQueueManager(anima_dir)
+    manager.add_task(
+        source="human",
+        original_instruction="finish",
+        assignee="worker",
+        summary="only task",
+        task_id="task-00",
+    )
+
+    with (
+        patch("core._anima_heartbeat.load_prompt", side_effect=_prompt),
+        patch("core._anima_heartbeat.t", return_value="SHOULD_NOT_APPEAR"),
+    ):
+        scoreboard = _build_stale_task_scoreboard(anima_dir, "worker")
+
+    assert scoreboard is not None
+    assert "SHOULD_NOT_APPEAR" not in scoreboard

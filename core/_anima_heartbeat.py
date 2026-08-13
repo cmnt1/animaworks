@@ -136,7 +136,7 @@ def _build_stale_task_scoreboard(anima_dir: Path, name: str) -> str | None:
         return load_prompt(
             "fragments/stale_task_scoreboard",
             tasks="\n".join(row for _, row in rows[:20]),
-            overflow=f"\n- {t('heartbeat.stale_task_overflow', count=overflow)}" if overflow else "",
+            overflow=f"\n- {t('heartbeat.stale_task_overflow', count=overflow)}" if overflow > 0 else "",
         )
     except Exception:
         logger.debug("[%s] Failed to build stale task scoreboard", name, exc_info=True)
