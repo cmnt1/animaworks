@@ -489,6 +489,8 @@ class TaskRunnerSupervisor:
         env.update(
             {
                 "ANIMAWORKS_DATA_DIR": str(self.shared_dir.parent),
+                "ANIMAWORKS_ANIMA_NAME": self.anima_name,
+                "ANIMAWORKS_ANIMA_DIR": str(self.anima_dir),
                 "ANIMAWORKS_TASK_IPC_PATH": str(self.socket_path),
                 "ANIMAWORKS_TASK_ROOT_EPOCH": self.root_epoch,
                 "ANIMAWORKS_TASK_ATTEMPT": str(attempt),

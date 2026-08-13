@@ -79,13 +79,21 @@ def _make_rate_guard_reporter(guard: Any, key: str, label: str) -> Any:
     """
 
     def _report(reason: Any, hint: Any, exc: Exception, attempt: int) -> None:
-        if reason in (FailoverReason.RATE_LIMIT, FailoverReason.OVERLOADED):
+        if reason in (
+            FailoverReason.RATE_LIMIT,
+            FailoverReason.OVERLOADED,
+            FailoverReason.QUOTA_EXHAUSTED,
+            FailoverReason.AUTH,
+        ):
+            long_lived = reason in (FailoverReason.QUOTA_EXHAUSTED, FailoverReason.AUTH)
             guard.report_block(
                 key,
-                hint.backoff_s or guard.config.default_block_seconds,
+                guard.config.quota_block_seconds
+                if long_lived
+                else hint.backoff_s or guard.config.default_block_seconds,
                 reason.value,
             )
-        elif reason in (FailoverReason.AUTH, FailoverReason.BILLING):
+        if reason in (FailoverReason.AUTH, FailoverReason.BILLING):
             logger.error(
                 "%s LiteLLM %s — human attention required: %s",
                 label,

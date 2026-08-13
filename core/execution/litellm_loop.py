@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any
 
 from core.exceptions import ConfigError, LLMAPIError, ToolExecutionError  # noqa: F401
 from core.execution._litellm_context import ContextMixin, _extract_tool_uses_from_messages
-from core.execution._litellm_streaming import StreamingMixin
+from core.execution._litellm_streaming import StreamingMixin, _make_rate_guard_reporter
 
 # ── Mixin imports ──────────────────────────────────────────
 # ── Backward-compatible re-exports ────────────────────────
@@ -56,7 +56,6 @@ from core.execution.base import (
     strip_thinking_tags,
 )
 from core.execution.error_classifier import (
-    FailoverReason,
     classify_llm_error,
     guard_key,
     litellm_realm_of,
@@ -204,20 +203,7 @@ class LiteLLMExecutor(
         _force_final = False
         _final_reminder_sent = False
         _classify = partial(classify_llm_error, provider_family=_guard_family)
-
-        def _on_llm_error(reason: Any, hint: Any, exc: Exception, attempt: int) -> None:
-            if reason in (FailoverReason.RATE_LIMIT, FailoverReason.OVERLOADED):
-                _guard.report_block(
-                    _guard_key,
-                    hint.backoff_s or _guard.config.default_block_seconds,
-                    reason.value,
-                )
-            elif reason in (FailoverReason.AUTH, FailoverReason.BILLING):
-                logger.error(
-                    "A LiteLLM %s — human attention required: %s",
-                    reason.value,
-                    exc,
-                )
+        _on_llm_error = _make_rate_guard_reporter(_guard, _guard_key, "A")
 
         iteration = -1
         while True:

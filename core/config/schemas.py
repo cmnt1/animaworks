@@ -746,6 +746,7 @@ class LlmRateGuardConfig(BaseModel):
     default_block_seconds: int = Field(default=60, ge=0)
     max_block_seconds: int = Field(default=600, ge=0)
     quota_block_seconds: int = Field(default=1800, ge=0)
+    max_quota_block_seconds: int = Field(default=14400, ge=0)
 
 
 class BackgroundToolConfig(BaseModel):
