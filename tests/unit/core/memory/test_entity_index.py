@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -13,10 +14,16 @@ from core.memory import entity_index
 from core.memory.entity_index import (
     load_entity_registry,
     match_query_entities,
+    rebuild_entity_collection,
     sync_entity_collection,
     upsert_entities_from_facts,
 )
 from core.memory.facts import FactRecord, append_fact_records
+from core.memory.rag.store import (
+    _is_missing_collection_error,
+    log_missing_collection_once,
+    reset_missing_collection_warnings,
+)
 
 
 def _fact(
@@ -243,3 +250,93 @@ def test_sync_entity_collection_can_limit_to_changed_entity_keys(tmp_path: Path)
 
     assert ok is True
     assert [doc.metadata["entity_key"] for doc in docs] == ["melanie"]
+
+
+@pytest.mark.unit
+def test_rebuild_entity_collection_from_registry_without_existing_collection(tmp_path: Path) -> None:
+    """Registry present + collection missing → rebuild creates collection and query works."""
+    anima_dir = tmp_path / "alice"
+    registry = upsert_entities_from_facts(
+        anima_dir,
+        [_fact("Caroline suggested a book.", fact_id="fact-1", entities=["Caroline"])],
+    )
+    created: list[str] = []
+    upserted: list[tuple[str, list[object]]] = []
+
+    class FakeStore:
+        def create_collection(self, name: str) -> bool:
+            created.append(name)
+            return True
+
+        def upsert(self, collection: str, documents: list[object]) -> bool:
+            upserted.append((collection, documents))
+            return True
+
+        def query(self, collection: str, embedding: list[float], top_k: int = 10):
+            assert collection in created
+            return [
+                SimpleNamespace(
+                    document=SimpleNamespace(metadata={"entity_key": "caroline"}),
+                    score=0.9,
+                )
+            ]
+
+    store = FakeStore()
+    ok = rebuild_entity_collection(
+        anima_dir,
+        registry=registry,
+        vector_store=store,
+        embedding_fn=lambda texts: [[0.1, 0.2] for _ in texts],
+    )
+
+    assert ok is True
+    assert created == ["alice_entities"]
+    assert upserted[0][0] == "alice_entities"
+    assert upserted[0][1][0].metadata["entity_key"] == "caroline"
+
+    matches = match_query_entities(
+        anima_dir,
+        "Who suggested that memoir?",
+        vector_store=store,
+        embedding_fn=lambda texts: [[0.1, 0.2] for _ in texts],
+    )
+    assert matches == {"caroline"}
+
+
+@pytest.mark.unit
+def test_rebuild_entity_collection_without_registry_is_noop(tmp_path: Path) -> None:
+    """New anima with no registry must not error."""
+    anima_dir = tmp_path / "newbie"
+    store = MagicMock()
+
+    ok = rebuild_entity_collection(
+        anima_dir,
+        vector_store=store,
+        embedding_fn=MagicMock(side_effect=AssertionError("should not embed")),
+    )
+
+    assert ok is True
+    store.create_collection.assert_not_called()
+    store.upsert.assert_not_called()
+
+
+@pytest.mark.unit
+def test_missing_collection_warning_is_deduped_per_process(caplog: pytest.LogCaptureFixture) -> None:
+    reset_missing_collection_warnings()
+    assert _is_missing_collection_error(Exception("Collection [mei_entities] does not exist"))
+    assert _is_missing_collection_error(Exception("Collection mei_entities does not exist."))
+    assert not _is_missing_collection_error(Exception("connection refused"))
+
+    with caplog.at_level(logging.DEBUG, logger="animaworks.rag.store"):
+        log_missing_collection_once("mei_entities", "missing %s first", "mei_entities")
+        log_missing_collection_once("mei_entities", "missing %s again", "mei_entities")
+        log_missing_collection_once("other_entities", "missing %s other", "other_entities")
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    debugs = [r for r in caplog.records if r.levelno == logging.DEBUG and "missing" in r.getMessage()]
+    assert len(warnings) == 2
+    assert any("first" in r.getMessage() for r in warnings)
+    assert any("other" in r.getMessage() for r in warnings)
+    assert len(debugs) == 1
+    assert "again" in debugs[0].getMessage()
+    reset_missing_collection_warnings()

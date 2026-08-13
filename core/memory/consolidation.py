@@ -1565,6 +1565,21 @@ class ConsolidationEngine:
                 indexer.index_file(fact_file, memory_type="facts")
                 logger.debug("Re-indexed facts: %s", fact_file.name)
 
+            try:
+                from core.memory.entity_index import rebuild_entity_collection
+
+                if not rebuild_entity_collection(self.anima_dir, vector_store=vector_store):
+                    logger.warning(
+                        "Failed to rebuild entity collection during RAG rebuild for anima=%s",
+                        self.anima_name,
+                    )
+            except Exception:
+                logger.warning(
+                    "Failed to rebuild entity collection during RAG rebuild for anima=%s",
+                    self.anima_name,
+                    exc_info=True,
+                )
+
             self._rebuild_longterm_bm25_index()
 
             logger.info("RAG index rebuild complete for anima=%s", self.anima_name)

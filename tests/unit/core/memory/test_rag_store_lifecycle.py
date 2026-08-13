@@ -75,8 +75,8 @@ def test_chroma_vector_store_configures_sqlite_pragmas(
 
     ChromaVectorStore(persist_dir=tmp_path, anima_name="sora")
 
-    # prepare_chroma_sqlite_for_startup configures pragmas once before client init;
-    # post-init reconfigure was removed (WAL fd storms; see store.py comment).
+    # prepare_chroma_sqlite_for_startup applies pragmas once before client init;
+    # post-init configure was removed to avoid WAL cascade storms.
     assert configure.call_count == 1
     fake_chromadb.PersistentClient.assert_called_once_with(path=str(tmp_path))  # type: ignore[attr-defined]
 

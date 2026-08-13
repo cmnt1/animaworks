@@ -45,6 +45,7 @@ KNOWN_MEMORY_SUFFIXES = (
     "_skills",
     "_conversation_summary",
     "_shared_users",
+    "_entities",
 )
 
 SINGLE_SHOT_REASONS = {
