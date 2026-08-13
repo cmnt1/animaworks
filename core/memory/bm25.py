@@ -220,6 +220,52 @@ def _load_activity_entries(anima_dir: Path, days: int) -> list[tuple[str, dict[s
     return rows
 
 
+# Tokenized activity corpus cache. Re-tokenizing thousands of JSONL entries on
+# every query cost ~5s per search on busy animas (2026-08-13 profile).
+# Keyed by anima dir + days; invalidated when any day file's (mtime, size) moves.
+_ACTIVITY_CORPUS_CACHE: dict[
+    tuple[str, int],
+    tuple[tuple[tuple[str, int, int], ...], list[list[str]], list[tuple[str, dict[str, Any]]]],
+] = {}
+
+
+def _activity_files_signature(anima_dir: Path, days: int) -> tuple[tuple[str, int, int], ...]:
+    base = anima_dir / "activity_log"
+    sig: list[tuple[str, int, int]] = []
+    for d in _activity_log_dates(days):
+        path = base / f"{d.isoformat()}.jsonl"
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        sig.append((d.isoformat(), stat.st_mtime_ns, stat.st_size))
+    return tuple(sig)
+
+
+def _activity_corpus_cached(
+    anima_dir: Path, days: int
+) -> tuple[list[list[str]], list[tuple[str, dict[str, Any]]]]:
+    key = (str(anima_dir), days)
+    signature = _activity_files_signature(anima_dir, days)
+    cached = _ACTIVITY_CORPUS_CACHE.get(key)
+    if cached is not None and cached[0] == signature:
+        return cached[1], cached[2]
+
+    corpus_tokens: list[list[str]] = []
+    kept: list[tuple[str, dict[str, Any]]] = []
+    for date_str, entry in _load_activity_entries(anima_dir, days):
+        if not _should_index_entry(entry):
+            continue
+        doc_tokens = tokenize(entry.get("content") or "")
+        if not doc_tokens:
+            continue
+        corpus_tokens.append(doc_tokens)
+        kept.append((date_str, entry))
+    _ACTIVITY_CORPUS_CACHE[key] = (signature, corpus_tokens, kept)
+    # ponytail: unbounded only by anima count x days variants; tiny in practice.
+    return corpus_tokens, kept
+
+
 def _fallback_scores(corpus_tokens: list[list[str]], query_tokens: list[str]) -> list[float]:
     if not query_tokens:
         return [0.0] * len(corpus_tokens)
@@ -738,19 +784,7 @@ def search_activity_log(
         if not query_tokens:
             return []
 
-        rows = _load_activity_entries(anima_dir, days)
-        corpus_tokens: list[list[str]] = []
-        kept: list[tuple[str, dict[str, Any]]] = []
-        for date_str, entry in rows:
-            if not _should_index_entry(entry):
-                continue
-            content = entry.get("content") or ""
-            doc_tokens = tokenize(content)
-            if not doc_tokens:
-                continue
-            corpus_tokens.append(doc_tokens)
-            kept.append((date_str, entry))
-
+        corpus_tokens, kept = _activity_corpus_cached(anima_dir, days)
         if not corpus_tokens:
             return []
 
