@@ -39,6 +39,11 @@ def _retry_after_ms(exc: BaseException) -> int | None:
     # conversion). Match the known code prefix only.
     message = str(exc)
     if message.startswith("UNAVAILABLE:") or message.startswith("UNAVAILABLE "):
+        # Deterministic failures never heal within one retry window — waiting
+        # 250ms per query for a permanently missing collection just burns the
+        # priming budget (observed fleet-wide with {anima}_entities).
+        if "does not exist" in message or "already exists" in message:
+            return None
         return _DEFAULT_RETRY_AFTER_MS
     return None
 
