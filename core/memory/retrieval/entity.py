@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -124,9 +125,9 @@ class EntityAliasIndex:
     alias_owner: dict[str, str]
     synonyms: dict[str, frozenset[str]]
     related: dict[str, frozenset[str]]
-    # Precomputed (key, surfaces sorted longest-first, len>=2 only). Sorting per
-    # lookup was 55M sorted() calls per search — see 2026-08-13 profile.
-    sorted_synonyms: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    automaton_gotos: tuple[dict[str, int], ...] = ()
+    automaton_failures: tuple[int, ...] = ()
+    automaton_outputs: tuple[frozenset[str], ...] = ()
     # Per-index memo for _match_registry_keys_in_text (query/phrase texts repeat
     # tens of thousands of times per search). Excluded from eq/repr.
     match_cache: dict[str, frozenset[str]] = field(default_factory=dict, compare=False, repr=False)
@@ -280,6 +281,8 @@ def apply_entity_boost(
     if alias_index and query_keys:
         for key in query_keys:
             query_surfaces.update(alias_index.synonyms.get(key, ()))
+    registered_surfaces = set(alias_index.alias_owner) if alias_index else set()
+    unreg_query = {phrase for phrase in query_entities if phrase not in registered_surfaces}
 
     related_boost_value = (
         float(config.related_boost) if config.related_boost is not None else max(0.0, float(config.boost)) * 0.5
@@ -289,15 +292,21 @@ def apply_entity_boost(
 
     boosted: list[dict[str, Any]] = []
     for candidate in candidates:
-        candidate_entities = _candidate_entities(candidate, config)
+        extract_content_entities = not alias_index or bool(unreg_query)
+        candidate_entities, entities_from_metadata = _candidate_entities(
+            candidate,
+            config,
+            extract_content=extract_content_entities,
+        )
+        content_entities_deferred = not entities_from_metadata and not extract_content_entities
         content = str(candidate.get("content", "") or "")
         candidate_keys = set()
         if alias_index:
             candidate_keys |= _match_registry_keys_in_text(content, alias_index)
-            candidate_keys |= _resolve_entity_keys(candidate_entities, alias_index)
-            # Metadata entity lists (may not appear in content text).
-            for value in candidate_entities:
-                candidate_keys |= _resolve_entity_keys({value}, alias_index)
+            # Extracted entities came from content already scanned above. Metadata
+            # entities may not appear in content and still need explicit resolution.
+            if entities_from_metadata:
+                candidate_keys |= _resolve_entity_keys(candidate_entities, alias_index)
         candidate_surfaces = set(candidate_entities)
         if alias_index and candidate_keys:
             for key in candidate_keys:
@@ -312,8 +321,6 @@ def apply_entity_boost(
             related_keys_hit = related_of_query & candidate_keys
             related_keys_hit -= primary_keys
             # Unregistered phrases keep the historical intersection path.
-            registered_surfaces = set(alias_index.alias_owner)
-            unreg_query = {p for p in query_entities if p not in registered_surfaces}
             unreg_candidate = {p for p in candidate_entities if p not in registered_surfaces}
             phrase_overlap = unreg_query & unreg_candidate
         else:
@@ -336,6 +343,12 @@ def apply_entity_boost(
         if primary_count == 0 and related_count == 0:
             boosted.append(candidate)
             continue
+
+        if content_entities_deferred:
+            candidate_entities, _ = _candidate_entities(candidate, config)
+            candidate_surfaces = set(candidate_entities)
+            for key in candidate_keys:
+                candidate_surfaces.update(alias_index.synonyms.get(key, ()))
 
         overlap_labels = set(phrase_overlap) | set(primary_keys)
         if primary_keys and alias_index:
@@ -415,15 +428,52 @@ def _build_alias_index(entities: dict[str, Any]) -> EntityAliasIndex:
             related.setdefault(entity_key, set()).update(group - {entity_key})
 
     frozen_synonyms = {key: frozenset(values) for key, values in synonyms.items()}
+    automaton_gotos, automaton_failures, automaton_outputs = _build_alias_automaton(frozen_synonyms)
     return EntityAliasIndex(
         alias_owner=alias_owner,
         synonyms=frozen_synonyms,
         related={key: frozenset(values) for key, values in related.items()},
-        sorted_synonyms=tuple(
-            (key, tuple(sorted((s for s in values if len(s) >= 2), key=len, reverse=True)))
-            for key, values in frozen_synonyms.items()
-        ),
+        automaton_gotos=automaton_gotos,
+        automaton_failures=automaton_failures,
+        automaton_outputs=automaton_outputs,
     )
+
+
+def _build_alias_automaton(
+    synonyms: dict[str, frozenset[str]],
+) -> tuple[tuple[dict[str, int], ...], tuple[int, ...], tuple[frozenset[str], ...]]:
+    """Build an Aho-Corasick automaton for all registry surfaces."""
+    gotos: list[dict[str, int]] = [{}]
+    failures = [0]
+    outputs: list[set[str]] = [set()]
+    for key, surfaces in synonyms.items():
+        for surface in surfaces:
+            if len(surface) < 2:
+                continue
+            state = 0
+            for char in surface:
+                next_state = gotos[state].get(char)
+                if next_state is None:
+                    next_state = len(gotos)
+                    gotos[state][char] = next_state
+                    gotos.append({})
+                    failures.append(0)
+                    outputs.append(set())
+                state = next_state
+            outputs[state].add(key)
+
+    queue = deque(gotos[0].values())
+    while queue:
+        state = queue.popleft()
+        for char, next_state in gotos[state].items():
+            queue.append(next_state)
+            fallback = failures[state]
+            while fallback and char not in gotos[fallback]:
+                fallback = failures[fallback]
+            failures[next_state] = gotos[fallback].get(char, 0)
+            outputs[next_state].update(outputs[failures[next_state]])
+
+    return tuple(gotos), tuple(failures), tuple(frozenset(values) for values in outputs)
 
 
 def _resolve_entity_keys(phrases: set[str], index: EntityAliasIndex | None) -> set[str]:
@@ -463,17 +513,17 @@ def _match_registry_keys_in_text(text: str, index: EntityAliasIndex | None) -> s
     if not haystacks:
         return set()
 
+    gotos, failures, outputs = index.automaton_gotos, index.automaton_failures, index.automaton_outputs
+    if not gotos:
+        gotos, failures, outputs = _build_alias_automaton(index.synonyms)
     matched: set[str] = set()
-    # Precomputed longest-first surfaces (len>=2) — see EntityAliasIndex.
-    entries = index.sorted_synonyms or tuple(
-        (key, tuple(sorted((s for s in values if len(s) >= 2), key=len, reverse=True)))
-        for key, values in index.synonyms.items()
-    )
-    for key, surfaces in entries:
-        for surface in surfaces:
-            if any(surface in hay for hay in haystacks):
-                matched.add(key)
-                break
+    for haystack in haystacks:
+        state = 0
+        for char in haystack:
+            while state and char not in gotos[state]:
+                state = failures[state]
+            state = gotos[state].get(char, 0)
+            matched.update(outputs[state])
     # ponytail: unbounded growth guard — one search touches at most a few
     # thousand unique texts; reset instead of LRU bookkeeping.
     if len(index.match_cache) > 20_000:
@@ -482,15 +532,25 @@ def _match_registry_keys_in_text(text: str, index: EntityAliasIndex | None) -> s
     return matched
 
 
-def _candidate_entities(candidate: dict[str, Any], config: EntityBoostConfig) -> set[str]:
+def _candidate_entities(
+    candidate: dict[str, Any],
+    config: EntityBoostConfig,
+    *,
+    extract_content: bool = True,
+) -> tuple[set[str], bool]:
     if config.prefer_candidate_metadata:
         metadata_entities = _metadata_entities(candidate, ignored_entities=config.ignored_entities)
         if metadata_entities:
-            return metadata_entities
-    return extract_entities(
-        str(candidate.get("content", "") or ""),
-        ignored_entities=config.ignored_entities,
-        use_content_tokens=config.use_content_tokens,
+            return metadata_entities, True
+    if not extract_content:
+        return set(), False
+    return (
+        extract_entities(
+            str(candidate.get("content", "") or ""),
+            ignored_entities=config.ignored_entities,
+            use_content_tokens=config.use_content_tokens,
+        ),
+        False,
     )
 
 
