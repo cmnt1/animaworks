@@ -72,16 +72,13 @@ class TestAppendCronLog:
         entry = json.loads(path.read_text(encoding="utf-8").strip())
         assert len(entry["summary"]) == 500
 
-    def test_bounding_at_max_lines(self, cl: CronLogger, anima_dir: Path) -> None:
-        """Writing more than MAX_LINES entries keeps only the last 50."""
+    def test_more_than_50_entries_are_preserved(self, cl: CronLogger, anima_dir: Path) -> None:
         for i in range(55):
             cl.append_cron_log(f"task-{i}", summary=f"entry {i}", duration_ms=i)
         path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         lines = path.read_text(encoding="utf-8").strip().splitlines()
-        assert len(lines) == 50
-        # The first 5 entries should be trimmed; first remaining is task-5
-        first_entry = json.loads(lines[0])
-        assert first_entry["task"] == "task-5"
+        assert len(lines) == 55
+        assert json.loads(lines[0])["task"] == "task-0"
 
     def test_creates_parent_directories(self, cl: CronLogger, anima_dir: Path) -> None:
         log_dir = anima_dir / "state" / "cron_logs"
@@ -89,15 +86,24 @@ class TestAppendCronLog:
         cl.append_cron_log("task", summary="ok", duration_ms=0)
         assert log_dir.is_dir()
 
-    def test_truncation_uses_atomic_write(self, cl: CronLogger, anima_dir: Path) -> None:
-        """Truncation beyond MAX_LINES uses atomic_write_text, not path.write_text."""
-        for i in range(50):
-            cl.append_cron_log(f"task-{i}", summary=f"entry {i}", duration_ms=i)
+    def test_writes_scheduler_audit_event(self, cl: CronLogger, anima_dir: Path) -> None:
+        cl.append_cron_event("daily", "skipped", reason="already running", schedule="0 9 * * *")
+        path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
+        entry = json.loads(path.read_text(encoding="utf-8"))
+        assert entry["task"] == "daily"
+        assert entry["event"] == "skipped"
+        assert entry["reason"] == "already running"
+        assert entry["schedule"] == "0 9 * * *"
 
-        with patch("core.memory._io.atomic_write_text") as mock_atomic:
-            cl.append_cron_log("overflow-task", summary="triggers truncate", duration_ms=0)
+    def test_append_rotates_logs_older_than_14_days(self, cl: CronLogger, anima_dir: Path) -> None:
+        log_dir = anima_dir / "state" / "cron_logs"
+        log_dir.mkdir(parents=True)
+        old_path = log_dir / f"{(_jst_today() - timedelta(days=20)).isoformat()}.jsonl"
+        old_path.write_text("{}\n", encoding="utf-8")
 
-        mock_atomic.assert_called_once()
+        cl.append_cron_event("daily", "fired")
+
+        assert not old_path.exists()
 
     def test_concurrent_appends_no_data_loss(self, anima_dir: Path) -> None:
         """Concurrent appends from multiple threads preserve all entries."""
@@ -121,8 +127,7 @@ class TestAppendCronLog:
         path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         lines = path.read_text(encoding="utf-8").strip().splitlines()
         total_expected = n_threads * entries_per_thread
-        assert total_expected > CronLogger._MAX_LINES
-        assert len(lines) <= CronLogger._MAX_LINES
+        assert len(lines) == total_expected
         for line in lines:
             entry = json.loads(line)
             assert "task" in entry
@@ -214,31 +219,14 @@ class TestAppendCronCommandLog:
         assert entry["stderr_lines"] == 1
         assert "Error" in entry["stderr_preview"]
 
-    def test_bounding_at_max_lines(self, cl: CronLogger, anima_dir: Path) -> None:
-        """Writing more than MAX_LINES command entries keeps only the last 50."""
+    def test_more_than_50_command_entries_are_preserved(self, cl: CronLogger, anima_dir: Path) -> None:
         for i in range(55):
             cl.append_cron_command_log(
                 f"task-{i}", exit_code=0, stdout=f"out-{i}", stderr="", duration_ms=i,
             )
         path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         lines = path.read_text(encoding="utf-8").strip().splitlines()
-        assert len(lines) == 50
-
-    def test_command_truncation_uses_atomic_write(
-        self, cl: CronLogger, anima_dir: Path,
-    ) -> None:
-        """Command log truncation uses atomic_write_text."""
-        for i in range(50):
-            cl.append_cron_command_log(
-                f"task-{i}", exit_code=0, stdout="ok", stderr="", duration_ms=i,
-            )
-
-        with patch("core.memory._io.atomic_write_text") as mock_atomic:
-            cl.append_cron_command_log(
-                "overflow-cmd", exit_code=0, stdout="ok", stderr="", duration_ms=0,
-            )
-
-        mock_atomic.assert_called_once()
+        assert len(lines) == 55
 
 
 # ── read_cron_log ────────────────────────────────────────

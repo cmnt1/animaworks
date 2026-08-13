@@ -190,6 +190,29 @@ class AnimaRunner:
         pid_path.write_text(str(os.getpid()))
         logger.info("Process lock acquired: %s (pid=%d)", self.anima_name, os.getpid())
 
+    def _repair_interrupted_heartbeat(self) -> None:
+        """Close a heartbeat left open by the previous process."""
+        if self.anima is None:
+            return
+        try:
+            page = self.anima._activity.recent_page(
+                hours=24,
+                limit=1,
+                types=["heartbeat_start", "heartbeat_end"],
+            )
+            if page.entries and page.entries[0].type == "heartbeat_start":
+                self.anima._activity.log(
+                    "heartbeat_end",
+                    summary="Heartbeat interrupted",
+                    meta={
+                        "status": "interrupted",
+                        "reason": "no terminal event (restart?)",
+                    },
+                    safe=True,
+                )
+        except Exception:
+            logger.debug("Failed to repair interrupted heartbeat", exc_info=True)
+
     async def run(self) -> None:
         """
         Run the anima process.
@@ -214,6 +237,7 @@ class AnimaRunner:
 
             # Initialize DigitalAnima (heavy: RAG indexer, model loading)
             self.anima = DigitalAnima(anima_dir=self._anima_dir, shared_dir=self.shared_dir)
+            self._repair_interrupted_heartbeat()
 
             # Create delegate instances
             self._scheduler_mgr = SchedulerManager(

@@ -188,6 +188,13 @@ class TestParseSchedule:
         trigger = parse_schedule("")
         assert trigger is None
 
+    def test_quiet_parse_suppresses_display_poll_warnings(self, caplog):
+        content = "## Notes\nNo schedule\n## Code\nschedule: 0 9 * * *\ntype: llm\n```sh\necho ok\n```"
+        tasks = parse_cron_md(content, warn=False)
+        assert parse_schedule(tasks[0].schedule, warn=False) is None
+        assert parse_schedule(tasks[1].schedule, warn=False) is not None
+        assert caplog.records == []
+
     def test_japanese_schedule_no_longer_supported(self):
         """Old Japanese format is not supported by the new parser."""
         trigger = parse_schedule("毎日 9:00 JST")

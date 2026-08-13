@@ -452,5 +452,5 @@ type: llm
 - **同時実行**: **タスク名が異なれば**、同一分に複数ジョブが重なっても `asyncio.create_task` により並行しうる。同一タスク名は実行中に再入しない（`_cron_running` でスキップ）。各ジョブは `max_instances=1`
 - command 型は失敗してもプロセスは止めない（`cron_executed` が記録され、`stderr` / exit_code がログに残る）。**フォローアップ cron LLM は成功かつ stdout があるときのみ**（前述）
 - `type: llm` の定期実行には **バックグラウンド用モデル**（`status.json` の `background_model` 等、未設定時はメインモデル）が使われる
-- command の詳細出力は `state/cron_logs/`（日次 JSONL）に蓄積され、保持日数は設定の `cron_log_retention_days`（デフォルト30日）でハウスキーピングされる
+- command の詳細出力は `state/cron_logs/`（日次 JSONL）に蓄積され、最大14日間ハウスキーピングされる
 - **他のAnimaのtools/ディレクトリにアクセスする場合は、権限を事前に確認すること**
