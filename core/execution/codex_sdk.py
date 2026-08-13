@@ -1221,6 +1221,7 @@ class CodexSDKExecutor(BaseExecutor):
         from core.file_access_policy import (
             company_shared_write_root,
             resolve_effective_denied_roots,
+            shared_git_write_roots,
             shared_tool_cache_write_root,
         )
 
@@ -1292,6 +1293,15 @@ class CodexSDKExecutor(BaseExecutor):
                 shared_root = str(company_shared.resolve())
                 shell_filesystem_rules[shared_root] = "write"
                 mcp_filesystem_rules[shared_root] = "write"
+
+            # Fleet-shared git collaboration trees (canonical repos and
+            # review worktrees) are model-managed artifacts like the company
+            # shared root; without this re-grant every git operation in a
+            # shared checkout fails with EROFS.
+            for git_root in shared_git_write_roots(self._anima_dir):
+                git_root_str = str(git_root)
+                shell_filesystem_rules[git_root_str] = "write"
+                mcp_filesystem_rules[git_root_str] = "write"
 
             # External-tool caches (Chatwork/Slack message DBs and the
             # identity map) live outside the Anima directory.  Without write

@@ -220,6 +220,43 @@ def test_company_shared_write_root_rejects_symlink_redirects(tmp_path: Path) -> 
     assert company_shared_write_root(anima_dir) is None
 
 
+def test_shared_git_write_roots_requires_file_roots_coverage(tmp_path: Path) -> None:
+    from core.file_access_policy import shared_git_write_roots
+
+    data_dir = tmp_path / "data"
+    anima_dir = data_dir / "animas" / "agent"
+    anima_dir.mkdir(parents=True)
+    repos = data_dir / "shared" / "repos"
+    worktrees = data_dir / "shared" / "worktrees"
+    repos.mkdir(parents=True)
+    worktrees.mkdir()
+
+    # file_roots covers shared/ → both git roots granted.
+    (anima_dir / "permissions.json").write_text(
+        json.dumps({"version": 1, "file_roots": [str(data_dir / "shared")]}),
+        encoding="utf-8",
+    )
+    assert shared_git_write_roots(anima_dir) == (repos.resolve(), worktrees.resolve())
+
+    # file_roots without shared/ → no grant.
+    (anima_dir / "permissions.json").write_text(
+        json.dumps({"version": 1, "file_roots": [str(tmp_path / "elsewhere")]}),
+        encoding="utf-8",
+    )
+    assert shared_git_write_roots(anima_dir) == ()
+
+    # Symlinked repos dir is refused even when file_roots covers shared/.
+    (anima_dir / "permissions.json").write_text(
+        json.dumps({"version": 1, "file_roots": [str(data_dir / "shared")]}),
+        encoding="utf-8",
+    )
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    repos.rmdir()
+    (data_dir / "shared" / "repos").symlink_to(outside, target_is_directory=True)
+    assert shared_git_write_roots(anima_dir) == (worktrees.resolve(),)
+
+
 def test_shared_tool_cache_write_root_creates_and_rejects_symlink(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     anima_dir = data_dir / "animas" / "agent"

@@ -63,6 +63,39 @@ def company_shared_write_root(anima_dir: Path) -> Path | None:
     return shared_root
 
 
+def shared_git_write_roots(anima_dir: Path) -> tuple[Path, ...]:
+    """Return the fleet-shared git collaboration roots that must stay writable.
+
+    ``shared/repos`` and ``shared/worktrees`` hold model-managed git
+    checkouts.  Sandbox shells deliberately drop write roots under the
+    runtime data dir (symlink-swap protection for trusted runtime inputs),
+    which turns every ``git commit``/``push`` in a canonical shared checkout
+    into ``EROFS``.  These two subtrees are collaboration artifacts, not
+    runtime inputs, so they get the same narrow re-grant as the company
+    ``shared`` root.  Only granted when the Anima's ``file_roots`` already
+    cover the path, so per-Anima policy still decides access.
+    """
+    from core.config.models import load_permissions
+
+    anima_dir = Path(anima_dir)
+    data_dir = anima_dir.resolve().parent.parent
+    shared_dir = data_dir / "shared"
+
+    allowed_roots = resolve_denied_roots(load_permissions(anima_dir).file_roots)
+    roots: list[Path] = []
+    for name in ("repos", "worktrees"):
+        candidate = shared_dir / name
+        if candidate.is_symlink() or not candidate.is_dir():
+            continue
+        resolved = candidate.resolve()
+        if resolved.parent != shared_dir:
+            continue
+        if not any(resolved.is_relative_to(root) for root in allowed_roots):
+            continue
+        roots.append(resolved)
+    return tuple(roots)
+
+
 def shared_tool_cache_write_root(anima_dir: Path) -> Path | None:
     """Return the shared external-tool cache root that must stay writable.
 
