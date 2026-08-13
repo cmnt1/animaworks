@@ -151,6 +151,7 @@ class TestSetupCronTasksHealthIntegration:
     ) -> None:
         scheduler_mgr._anima.memory.read_cron_config.return_value = (
             "## Notes\nNot a cron job\n"
+            "## Broken\ntype: command\ncommand: echo hi\n"
             "## Daily\nschedule: 0 9 * * *\ntype: llm\nDo something\n"
         )
         scheduler_mgr.scheduler = MagicMock()
@@ -159,7 +160,9 @@ class TestSetupCronTasksHealthIntegration:
 
         result = json.loads((tmp_path / "state" / "cron_registration.json").read_text(encoding="utf-8"))
         assert result["registered"] == [{"name": "Daily", "schedule": "0 9 * * *"}]
-        assert result["rejected"] == [{"name": "Notes", "reason": "Empty schedule expression"}]
+        # Prose sections are ignored; only a section with an action but no
+        # schedule is a real misconfiguration worth nagging the anima about.
+        assert result["rejected"] == [{"name": "Broken", "reason": "Empty schedule expression"}]
         assert result["parsed_at"]
         scheduler_mgr._anima.memory.append_cron_event.assert_called_once_with(
             "Daily",

@@ -418,8 +418,12 @@ class SchedulerManager:
 
             trigger = parse_schedule(task.schedule)
             if not trigger:
-                reason = "Empty schedule expression" if not task.schedule.strip() else "Invalid cron expression"
-                rejected_tasks.append({"name": task.name, "reason": reason})
+                # A section with no schedule *and* no action is prose (notes,
+                # migration memos), not a misconfigured job — don't nag about it.
+                is_job = bool(task.schedule.strip() or task.command or task.tool)
+                if is_job:
+                    reason = "Empty schedule expression" if not task.schedule.strip() else "Invalid cron expression"
+                    rejected_tasks.append({"name": task.name, "reason": reason})
                 logger.warning(
                     "Could not parse schedule for cron task '%s': '%s'",
                     task.name,
