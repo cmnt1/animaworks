@@ -185,7 +185,7 @@ async def test_root_restart_recovers_background_lease_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     anima_dir, shared_dir = phase2_anima
-    monkeypatch.setattr(task_runner_supervisor, "_TASK_RUNNER_EXIT_TIMEOUT", 0.2)
+    monkeypatch.setattr(task_runner_supervisor, "_TASK_RUNNER_GRACE_TIMEOUT", 0.2)
     old_root = TaskRunnerSupervisor(_ANIMA, anima_dir, shared_dir)
     queue = TaskQueueManager(anima_dir)
     entry = queue.add_task(

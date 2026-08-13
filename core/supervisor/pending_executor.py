@@ -2297,8 +2297,10 @@ class PendingTaskExecutor:
                                 probe_updated_entry = datetime.fromisoformat(entry.updated_at) > probe_started_at
                             except (TypeError, ValueError):
                                 pass
-                        waiting_session = entry is not None and entry.status == "in_progress" and (
-                            probe_updated_entry or probe_called_update
+                        waiting_session = (
+                            entry is not None
+                            and entry.status == "in_progress"
+                            and (probe_updated_entry or probe_called_update)
                         )
 
                 if meta.get("completed_by") != "agent_declaration":
@@ -2558,7 +2560,9 @@ class PendingTaskExecutor:
                 task_id,
                 exc,
             )
-            raise RuntimeError("INTERRUPTED: background task runner child exited without a result.") from exc
+            raise RuntimeError(
+                f"INTERRUPTED: background task runner child exited without a result. (cause: {exc})"
+            ) from exc
 
     async def _execute_llm_task(
         self,
@@ -2694,9 +2698,12 @@ class PendingTaskExecutor:
                 exc,
             )
             # Crash semantics: treat as interrupted / retryable for Layer2.
+            # Keep the original TaskRunnerError early in the summary (before the
+            # 200-char truncation) — flattening it cost a day of log archaeology
+            # on 2026-08-12.
             raise RuntimeError(
-                "INTERRUPTED: task runner child exited without a result and may have "
-                "PARTIALLY EXECUTED. Verify actual completion state before re-delegating."
+                f"INTERRUPTED: task runner child exited without a result (cause: {exc}). "
+                "May have PARTIALLY EXECUTED; verify actual completion state before re-delegating."
             ) from exc
 
         result = isolated.get("result")

@@ -33,7 +33,13 @@ from core.supervisor.transport import cleanup_ipc_endpoint, start_ipc_server
 logger = logging.getLogger(__name__)
 
 _TASK_RUNNER_CONNECT_TIMEOUT = 10.0
-_TASK_RUNNER_EXIT_TIMEOUT = 5.0
+# Post-result exit wait. Under load the child's interpreter shutdown (CLI
+# grandchild reaping, thread joins, MCP cleanup) can exceed several seconds;
+# a laggy exit must not turn a delivered result into a failure (2026-08-12).
+_TASK_RUNNER_EXIT_TIMEOUT = 30.0
+# close()-time grace deadline; kept short so a fleet drain is not serialized
+# behind stuck children (13 animas x 2 waits would be minutes at 30s).
+_TASK_RUNNER_GRACE_TIMEOUT = 5.0
 _TASK_RUNNER_TERM_TIMEOUT = 5.0
 _HANG_CHECK_INTERVAL_MAX = 5.0
 
@@ -553,19 +559,30 @@ class TaskRunnerSupervisor:
                         f"task runner exited before returning a result (exit={process.returncode})"
                     ) from exc
             terminal = await job.result
+            slow_exit = False
             if not process_wait.done():
                 try:
                     await asyncio.wait_for(process_wait, timeout=_TASK_RUNNER_EXIT_TIMEOUT)
-                except TimeoutError as exc:
+                except TimeoutError:
+                    # The child already delivered its terminal result; a laggy exit
+                    # must not fail a completed task. Kill the group, keep the result.
                     self._terminate_job_group(job)
                     try:
                         await asyncio.wait_for(process.wait(), timeout=2.0)
                     except TimeoutError:
                         self._kill_job_group(job)
                         await process.wait()
-                    raise TaskRunnerError("task runner returned a result but did not exit") from exc
+                    slow_exit = True
+                    logger.warning(
+                        "Task runner delivered a result but did not exit within %.0fs; "
+                        "killed group and kept the result anima=%s job=%s pid=%s",
+                        _TASK_RUNNER_EXIT_TIMEOUT,
+                        self.anima_name,
+                        job_id,
+                        job.pid,
+                    )
             result = self._terminal_result(terminal)
-            if process.returncode != 0:
+            if not slow_exit and process.returncode != 0:
                 raise TaskRunnerError(f"task runner exited with status {process.returncode}")
             return result
         except asyncio.CancelledError:
@@ -894,7 +911,7 @@ class TaskRunnerSupervisor:
                 try:
                     await job.connection.send_event(
                         "grace",
-                        {"deadline_seconds": _TASK_RUNNER_EXIT_TIMEOUT},
+                        {"deadline_seconds": _TASK_RUNNER_GRACE_TIMEOUT},
                     )
                 except Exception:
                     logger.debug(
@@ -908,7 +925,7 @@ class TaskRunnerSupervisor:
             try:
                 await asyncio.wait_for(
                     asyncio.gather(*(job.grace_acked.wait() for job in self._jobs.values())),
-                    timeout=_TASK_RUNNER_EXIT_TIMEOUT,
+                    timeout=_TASK_RUNNER_GRACE_TIMEOUT,
                 )
             except TimeoutError:
                 logger.debug("Timed out waiting for grace_ack from some task runners")
@@ -918,7 +935,7 @@ class TaskRunnerSupervisor:
             try:
                 await asyncio.wait_for(
                     asyncio.gather(*(process.wait() for process in processes)),
-                    timeout=_TASK_RUNNER_EXIT_TIMEOUT,
+                    timeout=_TASK_RUNNER_GRACE_TIMEOUT,
                 )
             except TimeoutError:
                 for job in list(self._jobs.values()):

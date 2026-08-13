@@ -193,7 +193,10 @@ async def test_child_crash_records_failed_retryable_and_root_continues(tmp_path:
     write_failed.assert_called_once()
     sync.assert_called()
     assert sync.call_args[0][1] == "failed"
-    assert "INTERRUPTED" in str(sync.call_args.kwargs.get("summary") or sync.call_args[1].get("summary", ""))
+    summary = str(sync.call_args.kwargs.get("summary") or sync.call_args[1].get("summary", ""))
+    assert "INTERRUPTED" in summary
+    # The original TaskRunnerError must survive into the summary (no flattening).
+    assert "exit=-9" in summary
 
 
 @pytest.mark.asyncio
@@ -349,9 +352,12 @@ async def test_background_flag_true_spawns_child(tmp_path: Path) -> None:
     )
     executor._task_runner_supervisor.run_background.assert_awaited_once()
     kwargs = executor._task_runner_supervisor.run_background.await_args
-    assert kwargs.kwargs["kind"] == "command" or kwargs[1].get("kind") == "command" or (
-        kwargs.args and kwargs.args[0] == "command"
-    ) or kwargs.kwargs.get("kind") == "command"
+    assert (
+        kwargs.kwargs["kind"] == "command"
+        or kwargs[1].get("kind") == "command"
+        or (kwargs.args and kwargs.args[0] == "command")
+        or kwargs.kwargs.get("kind") == "command"
+    )
     # Prefer kwargs form
     assert executor._task_runner_supervisor.run_background.await_args.kwargs["kind"] == "command"
 
@@ -386,13 +392,9 @@ async def test_background_pool_limit_caps_concurrent_children(tmp_path: Path) ->
             return_value={"ANIMAWORKS_EMBED_URL": "http://embed.test"},
         ),
     ):
-        first = asyncio.create_task(
-            supervisor.run_background(kind="command", payload={"tool_name": "a"})
-        )
+        first = asyncio.create_task(supervisor.run_background(kind="command", payload={"tool_name": "a"}))
         await started.wait()
-        second = asyncio.create_task(
-            supervisor.run_background(kind="command", payload={"tool_name": "b"})
-        )
+        second = asyncio.create_task(supervisor.run_background(kind="command", payload={"tool_name": "b"}))
         await asyncio.sleep(0.05)
         assert max_seen == 1
         assert not second.done()
