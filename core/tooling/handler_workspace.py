@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from core.execution._sanitize import ORIGIN_HUMAN
+from core.file_access_policy import effective_write_roots
 from core.tooling.handler_base import _error_result
 from core.tooling.org_helpers import resolve_anima_name
 
@@ -219,17 +220,15 @@ class WorkspaceToolsMixin:
         from core.config.models import load_permissions
 
         permissions = load_permissions(target_dir)
+        current_roots = effective_write_roots(target_dir, permissions.file_roots)
         if permissions.file_roots == ["/"]:
             return False, True
 
-        for root in permissions.file_roots:
-            try:
-                allowed = Path(root).expanduser().resolve()
-            except OSError:
-                continue
+        for allowed in current_roots:
             if workspace_path == allowed or workspace_path.is_relative_to(allowed):
                 return False, False
 
+        effective_write_roots(target_dir, [str(workspace_path)])
         permissions.file_roots.append(str(workspace_path))
         payload = permissions.model_dump(mode="json")
         (target_dir / "permissions.json").write_text(

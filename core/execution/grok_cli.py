@@ -333,39 +333,33 @@ class GrokCLIExecutor(BaseExecutor):
 
         from core.config.models import load_permissions
         from core.file_access_policy import (
-            company_shared_write_root,
+            effective_write_roots,
             resolve_effective_denied_roots,
             shared_tool_cache_write_root,
         )
 
         permissions_config = load_permissions(self._anima_dir)
+        write_roots = effective_write_roots(
+            self._anima_dir,
+            permissions_config.file_roots,
+            self._task_cwd,
+        )
         denied_roots = list(
             resolve_effective_denied_roots(
                 self._anima_dir,
                 getattr(permissions_config, "file_roots_denied", []),
             )
         )
-        company_shared = company_shared_write_root(self._anima_dir)
-        if company_shared is not None:
-            company_shared.mkdir(parents=True, exist_ok=True)
         if not denied_roots and "/" in permissions_config.file_roots:
             return False
 
-        read_write = [str(self._anima_dir.resolve())]
+        read_write = [str(self._anima_dir.resolve()), *(str(root) for root in write_roots)]
         # External-tool caches (Chatwork/Slack message DBs and the identity
         # map) sit outside the Anima directory; without write access even a
         # plain inbox read fails with EROFS.
         tool_cache_root = shared_tool_cache_write_root(self._anima_dir)
         if tool_cache_root is not None:
             read_write.append(str(tool_cache_root))
-        for root in permissions_config.file_roots:
-            resolved = str(Path(root).resolve())
-            if resolved != "/" and resolved not in read_write:
-                read_write.append(resolved)
-        if company_shared is not None:
-            shared_root = str(company_shared.resolve())
-            if shared_root not in read_write:
-                read_write.append(shared_root)
 
         deny = [str(Path(root).resolve()) for root in denied_roots]
 

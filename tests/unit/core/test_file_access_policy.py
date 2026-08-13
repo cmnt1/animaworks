@@ -10,9 +10,13 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from core.execution._sdk_security import _check_a1_file_access
 from core.file_access_policy import (
+    FileRootsConfigError,
     company_shared_write_root,
+    effective_write_roots,
     find_denied_root,
     find_internal_cache_root,
     load_denied_roots,
@@ -220,41 +224,64 @@ def test_company_shared_write_root_rejects_symlink_redirects(tmp_path: Path) -> 
     assert company_shared_write_root(anima_dir) is None
 
 
-def test_shared_git_write_roots_requires_file_roots_coverage(tmp_path: Path) -> None:
-    from core.file_access_policy import shared_git_write_roots
-
+def test_effective_write_roots_combines_charter_roots(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     anima_dir = data_dir / "animas" / "agent"
     anima_dir.mkdir(parents=True)
-    repos = data_dir / "shared" / "repos"
-    worktrees = data_dir / "shared" / "worktrees"
-    repos.mkdir(parents=True)
-    worktrees.mkdir()
+    (anima_dir / "status.json").write_text(json.dumps({"company": "alpha"}), encoding="utf-8")
+    (data_dir / "companies" / "alpha").mkdir(parents=True)
+    external = tmp_path / "external"
+    task_cwd = tmp_path / "task"
 
-    # file_roots covers shared/ → both git roots granted.
-    (anima_dir / "permissions.json").write_text(
-        json.dumps({"version": 1, "file_roots": [str(data_dir / "shared")]}),
-        encoding="utf-8",
-    )
-    assert shared_git_write_roots(anima_dir) == (repos.resolve(), worktrees.resolve())
+    roots = effective_write_roots(anima_dir, [str(external)], task_cwd)
 
-    # file_roots without shared/ → no grant.
-    (anima_dir / "permissions.json").write_text(
-        json.dumps({"version": 1, "file_roots": [str(tmp_path / "elsewhere")]}),
-        encoding="utf-8",
+    assert roots == (
+        (data_dir / "companies" / "alpha" / "shared").resolve(),
+        external.resolve(),
+        task_cwd.resolve(),
     )
-    assert shared_git_write_roots(anima_dir) == ()
 
-    # Symlinked repos dir is refused even when file_roots covers shared/.
-    (anima_dir / "permissions.json").write_text(
-        json.dumps({"version": 1, "file_roots": [str(data_dir / "shared")]}),
-        encoding="utf-8",
+
+def test_effective_write_roots_rejects_data_dir_entries(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = data_dir / "animas" / "agent"
+    anima_dir.mkdir(parents=True)
+    violating = data_dir / "shared" / "worktrees"
+
+    with pytest.raises(FileRootsConfigError, match=str(violating.resolve())) as exc_info:
+        effective_write_roots(anima_dir, [str(violating)])
+
+    assert "data_dir 外" in str(exc_info.value)
+    assert "companies/<社>/shared" in str(exc_info.value)
+
+
+def test_effective_write_roots_allows_own_company_shared_entry(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = data_dir / "animas" / "agent"
+    anima_dir.mkdir(parents=True)
+    (anima_dir / "status.json").write_text(json.dumps({"company": "alpha"}), encoding="utf-8")
+    company_root = data_dir / "companies" / "alpha"
+    company_root.mkdir(parents=True)
+    shared_child = company_root / "shared" / "project"
+
+    assert effective_write_roots(anima_dir, [str(shared_child)]) == (
+        (company_root / "shared").resolve(),
+        shared_child.resolve(),
     )
+
+
+def test_effective_write_roots_rejects_symlinked_company_shared(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = data_dir / "animas" / "agent"
+    anima_dir.mkdir(parents=True)
+    (anima_dir / "status.json").write_text(json.dumps({"company": "alpha"}), encoding="utf-8")
+    company_root = data_dir / "companies" / "alpha"
+    company_root.mkdir(parents=True)
     outside = tmp_path / "outside"
     outside.mkdir()
-    repos.rmdir()
-    (data_dir / "shared" / "repos").symlink_to(outside, target_is_directory=True)
-    assert shared_git_write_roots(anima_dir) == (worktrees.resolve(),)
+    (company_root / "shared").symlink_to(outside, target_is_directory=True)
+
+    assert effective_write_roots(anima_dir, []) == ()
 
 
 def test_shared_tool_cache_write_root_creates_and_rejects_symlink(tmp_path: Path) -> None:

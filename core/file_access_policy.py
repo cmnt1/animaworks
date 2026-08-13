@@ -24,6 +24,10 @@ _ANIMA_MEMORY_ROOTS = frozenset(
 )
 
 
+class FileRootsConfigError(ValueError):
+    """Raised when ``file_roots`` violates the write-access charter."""
+
+
 def resolve_denied_roots(roots: Iterable[str | Path]) -> tuple[Path, ...]:
     """Canonicalize configured deny roots once for repeated comparisons."""
     return tuple(Path(root).resolve() for root in roots)
@@ -63,37 +67,37 @@ def company_shared_write_root(anima_dir: Path) -> Path | None:
     return shared_root
 
 
-def shared_git_write_roots(anima_dir: Path) -> tuple[Path, ...]:
-    """Return the fleet-shared git collaboration roots that must stay writable.
+def effective_write_roots(
+    anima_dir: Path,
+    file_roots: list[str],
+    task_cwd: Path | None = None,
+) -> tuple[Path, ...]:
+    """Return canonical writable roots from the write-access charter.
 
-    ``shared/repos`` and ``shared/worktrees`` hold model-managed git
-    checkouts.  Sandbox shells deliberately drop write roots under the
-    runtime data dir (symlink-swap protection for trusted runtime inputs),
-    which turns every ``git commit``/``push`` in a canonical shared checkout
-    into ``EROFS``.  These two subtrees are collaboration artifacts, not
-    runtime inputs, so they get the same narrow re-grant as the company
-    ``shared`` root.  Only granted when the Anima's ``file_roots`` already
-    cover the path, so per-Anima policy still decides access.
+    See ``docs/specs/write-access-charter.ja.md``.
     """
-    from core.config.models import load_permissions
-
     anima_dir = Path(anima_dir)
     data_dir = anima_dir.resolve().parent.parent
-    shared_dir = data_dir / "shared"
-
-    allowed_roots = resolve_denied_roots(load_permissions(anima_dir).file_roots)
+    company_shared = company_shared_write_root(anima_dir)
     roots: list[Path] = []
-    for name in ("repos", "worktrees"):
-        candidate = shared_dir / name
-        if candidate.is_symlink() or not candidate.is_dir():
-            continue
-        resolved = candidate.resolve()
-        if resolved.parent != shared_dir:
-            continue
-        if not any(resolved.is_relative_to(root) for root in allowed_roots):
-            continue
+    if company_shared is not None:
+        company_shared.mkdir(parents=True, exist_ok=True)
+        roots.append(company_shared)
+
+    for root in file_roots:
+        resolved = Path(root).expanduser().resolve()
+        if resolved.is_relative_to(data_dir) and not (
+            company_shared is not None and resolved.is_relative_to(company_shared)
+        ):
+            raise FileRootsConfigError(
+                f"file_roots のパスは data_dir 配下に置けません: {resolved}。"
+                "作業ディレクトリは data_dir 外に置くか companies/<社>/shared を使ってください。"
+            )
         roots.append(resolved)
-    return tuple(roots)
+
+    if task_cwd is not None:
+        roots.append(Path(task_cwd).expanduser().resolve())
+    return tuple(dict.fromkeys(roots))
 
 
 def shared_tool_cache_write_root(anima_dir: Path) -> Path | None:

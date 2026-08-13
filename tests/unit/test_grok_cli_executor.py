@@ -387,7 +387,7 @@ class TestSandboxConfiguration:
         anima_dir: Path,
         tmp_path: Path,
     ) -> None:
-        allowed = tmp_path / "allowed"
+        allowed = tmp_path.parent / f"{tmp_path.name}-allowed"
         denied = tmp_path / "denied"
         allowed.mkdir()
         denied.mkdir()
@@ -405,8 +405,8 @@ class TestSandboxConfiguration:
             "extends": "workspace",
             "read_write": [
                 str(anima_dir.resolve()),
-                str((tmp_path / "cache").resolve()),
                 str(allowed.resolve()),
+                str((tmp_path / "cache").resolve()),
             ],
             "deny": [str(denied.resolve())],
         }
@@ -444,8 +444,10 @@ class TestSandboxConfiguration:
         anima_dir: Path,
         tmp_path: Path,
     ) -> None:
-        allowed = tmp_path / "normal-root"
+        allowed = tmp_path.parent / f"{tmp_path.name}-normal-root"
         allowed.mkdir()
+        task_cwd = tmp_path.parent / f"{tmp_path.name}-task"
+        executor.set_task_cwd(task_cwd)
         (tmp_path / "companies" / "fs" / "shared").mkdir(parents=True)
         self._write_permissions(anima_dir, file_roots=[str(allowed)])
 
@@ -455,8 +457,9 @@ class TestSandboxConfiguration:
         ]["animaworks"]
         assert profile["read_write"] == [
             str(anima_dir.resolve()),
-            str((tmp_path / "cache").resolve()),
             str(allowed.resolve()),
+            str(task_cwd.resolve()),
+            str((tmp_path / "cache").resolve()),
         ]
         assert profile["deny"] == []
 
@@ -486,8 +489,8 @@ class TestSandboxConfiguration:
         ]["animaworks"]
         assert profile["read_write"] == [
             str(anima_dir.resolve()),
-            str((tmp_path / "cache").resolve()),
             str(own_shared.resolve()),
+            str((tmp_path / "cache").resolve()),
         ]
         assert profile["deny"] == [str(foreign_company.resolve())]
         for name in ("knowledge", "skills", "vision.md", "company.json", "credentials"):
@@ -518,7 +521,7 @@ class TestSandboxConfiguration:
         anima_dir: Path,
         tmp_path: Path,
     ) -> None:
-        unusual_root = tmp_path / 'quote"and\\backslash'
+        unusual_root = tmp_path.parent / f'{tmp_path.name}-quote"and\\backslash'
         unusual_root.mkdir()
         self._write_permissions(anima_dir, file_roots=[str(unusual_root)])
 
@@ -526,7 +529,7 @@ class TestSandboxConfiguration:
         profile = tomllib.loads((executor._workspace / ".grok" / "sandbox.toml").read_text(encoding="utf-8"))[
             "profiles"
         ]["animaworks"]
-        assert profile["read_write"][-1] == str(unusual_root.resolve())
+        assert str(unusual_root.resolve()) in profile["read_write"]
 
     def test_sandbox_event_logs_enforced_profile(
         self,
