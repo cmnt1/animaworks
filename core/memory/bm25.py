@@ -115,12 +115,9 @@ _STOPWORDS: frozenset[str] = frozenset(
     }
 )
 
-_CJK_RANGES: tuple[tuple[int, int], ...] = (
-    (0x4E00, 0x9FFF),
-    (0x3040, 0x309F),
-    (0x30A0, 0x30FF),
-    (0xAC00, 0xD7AF),
-    (0x0E00, 0x0E7F),
+_TOKEN_RE = re.compile(
+    r"[A-Za-z0-9_]+|[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0e00-\u0e7fー]+|[^\W\d_]+",
+    re.UNICODE,
 )
 
 LONGTERM_BM25_INDEX_FILE = "bm25_longterm_index.json"
@@ -151,45 +148,15 @@ class LongTermBM25BuildResult:
 # ── Tokenizer ───────────────────────────────────────────────
 
 
-def _char_in_cjk_ranges(ch: str) -> bool:
-    o = ord(ch)
-    return any(lo <= o <= hi for lo, hi in _CJK_RANGES)
-
-
 def tokenize(text: str) -> list[str]:
     """Split *text* into filtered lowercase tokens for BM25 indexing."""
-    runs: list[tuple[str, str]] = []
-    chars: list[str] = []
-    current_class = ""
-
-    def flush() -> None:
-        if chars:
-            runs.append((current_class, "".join(chars)))
-            chars.clear()
-
-    for ch in text:
-        if ch.isascii() and (ch.isalnum() or ch == "_"):
-            char_class = "ascii"
-        elif _char_in_cjk_ranges(ch):
-            char_class = "cjk"
-        elif ch.isalpha():
-            char_class = "unicode"
-        else:
-            flush()
-            current_class = ""
-            continue
-        if char_class != current_class:
-            flush()
-            current_class = char_class
-        chars.append(ch)
-    flush()
-
     out: list[str] = []
-    for char_class, raw in runs:
+    for match in _TOKEN_RE.finditer(text):
+        raw = match.group(0)
         t = raw.lower()
         if t in _STOPWORDS:
             continue
-        if char_class != "ascii" or len(t) >= 3:
+        if not raw.isascii() or len(t) >= 3:
             out.append(t)
     return out
 
@@ -455,6 +422,8 @@ def update_longterm_bm25_source(anima_dir: Path, source_file: str) -> Path:
 
 def _sync_longterm_bm25_sources(anima_dir: Path, base: dict[str, Any] | None) -> None:
     """Stat live Markdown sources and delta-index only paths whose signature changed."""
+    if base is None:
+        return
     indexed: dict[str, tuple[int, int]] = {}
     for doc in (base or {}).get("documents", []):
         if not isinstance(doc, dict):
@@ -827,11 +796,12 @@ def _merged_longterm_bm25_payload(anima_dir: Path, base: dict[str, Any] | None) 
     cached = _LONGTERM_MERGED_CACHE.get(cache_key)
     if cached is not None:
         return cached
-    base_current = base is not None and int(base.get("schema_version") or 0) == LONGTERM_BM25_SCHEMA_VERSION
+    base_version = int((base or {}).get("schema_version") or 0)
+    base_usable = base_version in {LONGTERM_BM25_SCHEMA_VERSION - 1, LONGTERM_BM25_SCHEMA_VERSION}
     delta = _load_longterm_bm25_delta(anima_dir)
-    if base_current and delta is None:
+    if base_usable and delta is None:
         return base
-    docs = [doc for doc in (base or {}).get("documents", []) if isinstance(doc, dict)] if base_current else []
+    docs = [doc for doc in (base or {}).get("documents", []) if isinstance(doc, dict)] if base_usable else []
     sources = delta.get("sources") if delta else None
     if isinstance(sources, dict):
         replaced = set(map(str, sources))
@@ -840,7 +810,7 @@ def _merged_longterm_bm25_payload(anima_dir: Path, base: dict[str, Any] | None) 
             if not isinstance(value, dict) or value.get("tombstone"):
                 continue
             docs.extend(doc for doc in value.get("documents", []) if isinstance(doc, dict))
-    if not base_current and not docs:
+    if not base_usable and not docs:
         return None
     corpus_tokens = [list(map(str, doc.get("tokens", []))) for doc in docs]
     payload = {

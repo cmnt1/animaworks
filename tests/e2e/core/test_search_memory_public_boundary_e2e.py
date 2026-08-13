@@ -33,6 +33,20 @@ def test_public_search_reads_fresh_mixed_script_write_and_abstains(tmp_path: Pat
     assert "Bitcoin自己保管方針" in hit
     assert miss == "No results for 'qzxv_nonexistent_847291'"
 
+    handler.handle("read_memory_file", {"path": "knowledge/custody.md"})
+    handler.handle(
+        "write_memory_file",
+        {"path": "knowledge/custody.md", "content": "Meridian hardware wallet policy", "mode": "overwrite"},
+    )
+    assert "No results" in handler.handle("search_memory", {"query": "Bitcoin", "scope": "knowledge"})
+    assert "knowledge/custody.md" in handler.handle("search_memory", {"query": "Meridian", "scope": "knowledge"})
+
+    handler.handle(
+        "archive_memory_file",
+        {"path": "knowledge/custody.md", "reason": "superseded in boundary test"},
+    )
+    assert "No results" in handler.handle("search_memory", {"query": "Meridian", "scope": "knowledge"})
+
 
 def test_public_activity_search_applies_exact_time_range(tmp_path: Path) -> None:
     anima_dir = tmp_path / "animas" / "test"
@@ -66,3 +80,26 @@ def test_public_activity_search_applies_exact_time_range(tmp_path: Path) -> None
 
     assert "Meridian late" in result
     assert "Meridian early" not in result
+
+
+def test_public_search_fixed_gold_set_meets_hit_targets(tmp_path: Path) -> None:
+    handler = _handler(tmp_path / "animas" / "test")
+    gold = {
+        "Coldcard": ("knowledge/custody.md", "Coldcard Bitcoin hardware wallet custody"),
+        "espresso": ("knowledge/coffee.md", "Alice prefers espresso for morning focus"),
+        "ZephyrNova": ("knowledge/project.md", "ZephyrNova launch checklist and telemetry"),
+        "請求書": ("knowledge/accounting.md", "請求書の月次照合と承認手順"),
+        "incident": ("knowledge/ops.md", "production incident response procedure"),
+    }
+    for source, content in gold.values():
+        handler.handle("write_memory_file", {"path": source, "content": content})
+
+    hit_at_1 = 0
+    for query, (source, _content) in gold.items():
+        result = handler.handle("search_memory", {"query": query, "scope": "knowledge"})
+        assert source in result
+        first_result = next(line for line in result.splitlines() if line.startswith("[1]"))
+        hit_at_1 += source in first_result
+
+    assert hit_at_1 / len(gold) >= 0.8
+    assert "No results" in handler.handle("search_memory", {"query": "qzxv_negative_gold_9384", "scope": "knowledge"})

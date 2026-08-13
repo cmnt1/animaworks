@@ -638,6 +638,7 @@ def test_longterm_bm25_missing_index_uses_live_delta_without_full_rebuild(
         raise AssertionError("search path should not rebuild long-term BM25 by default")
 
     monkeypatch.setattr(bm25_module, "rebuild_longterm_bm25_index", fail_rebuild)
+    update_longterm_bm25_source(anima_dir, "knowledge/a.md")
 
     hits = search_longterm_memory_bm25(anima_dir, "ZephyrNova", memory_types=("knowledge",))
     assert hits[0]["source_file"] == "knowledge/a.md"
@@ -678,6 +679,31 @@ def test_longterm_bm25_rejects_index_doc_with_stale_source_signature(tmp_path: P
     )
 
     assert hits == []
+
+
+def test_previous_schema_remains_searchable_until_background_rebuild(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    _write_longterm_memory(anima_dir, "knowledge/a.md", "# A\n\nZephyrNova launchpad audit.")
+    rebuild_longterm_bm25_index(anima_dir)
+    index_path = longterm_bm25_index_path(anima_dir)
+    payload = json.loads(index_path.read_text(encoding="utf-8"))
+    payload["schema_version"] = bm25_module.LONGTERM_BM25_SCHEMA_VERSION - 1
+    index_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    hits = search_longterm_memory_bm25(
+        anima_dir,
+        "ZephyrNova",
+        memory_types=("knowledge",),
+        rebuild_if_missing=False,
+    )
+
+    assert hits[0]["source_file"] == "knowledge/a.md"
+    assert bm25_module.is_longterm_bm25_dirty(anima_dir)
+
+    _write_longterm_memory(anima_dir, "knowledge/new.md", "# New\n\nMeridian custody policy.")
+    update_longterm_bm25_source(anima_dir, "knowledge/new.md")
+    assert search_longterm_memory_bm25(anima_dir, "ZephyrNova", memory_types=("knowledge",))
+    assert search_longterm_memory_bm25(anima_dir, "Meridian", memory_types=("knowledge",))
 
 
 def test_longterm_bm25_can_skip_source_validation(
@@ -756,6 +782,32 @@ def test_longterm_sync_rechunks_only_changed_source(tmp_path: Path, monkeypatch:
     (anima_dir / "knowledge" / "b.md").write_text("# B\n\nGamma changed memory.", encoding="utf-8")
     assert search_longterm_memory_bm25(anima_dir, "Gamma", memory_types=("knowledge",))
     assert calls == ["knowledge/b.md"]
+
+
+def test_missing_index_does_not_build_quadratic_delta_on_search(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    for index in range(20):
+        _write_longterm_memory(anima_dir, f"knowledge/{index}.md", f"# {index}\n\nMeridian memory {index}.")
+    updates: list[str] = []
+    monkeypatch.setattr(
+        bm25_module,
+        "update_longterm_bm25_source",
+        lambda _root, source: updates.append(source),
+    )
+
+    assert (
+        search_longterm_memory_bm25(
+            anima_dir,
+            "Meridian",
+            memory_types=("knowledge",),
+            rebuild_if_missing=False,
+        )
+        == []
+    )
+    assert updates == []
 
 
 def test_concurrent_longterm_delta_updates_do_not_lose_sources(tmp_path: Path) -> None:

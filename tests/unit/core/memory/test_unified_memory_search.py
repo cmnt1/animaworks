@@ -518,6 +518,42 @@ def test_min_score_applied_to_reranked_results(
     assert [item["doc_id"] for item in results] == ["ce-high"]
 
 
+def test_min_score_filters_before_soft_source_collapse(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.vector_returns["knowledge"] = [{"doc_id": "seed", "content": "seed", "score": 0.1}]
+    CapturingPipeline.return_items = [
+        {
+            "doc_id": "a-1",
+            "source_file": "knowledge/a.md",
+            "total_chunks": 2,
+            "score": 0.9,
+            "search_method": "cross_encoder",
+        },
+        {
+            "doc_id": "a-2",
+            "source_file": "knowledge/a.md",
+            "total_chunks": 2,
+            "score": 0.8,
+            "search_method": "cross_encoder",
+        },
+        {
+            "doc_id": "b-1",
+            "source_file": "knowledge/b.md",
+            "total_chunks": 2,
+            "score": 0.2,
+            "search_method": "cross_encoder",
+        },
+    ]
+
+    results = _searcher(fake_rag).search("query", scope="knowledge", limit=2, trigger="chat", min_score=0.5)
+
+    assert [item["doc_id"] for item in results] == ["a-1", "a-2"]
+
+
 def test_tool_and_priming_overlap_share_top_doc_ids(
     fake_rag: FakeRAGSearch,
     monkeypatch: pytest.MonkeyPatch,

@@ -469,9 +469,10 @@ class UnifiedMemorySearch:
                     },
                 }
             )
-            items = self._soft_source_collapse(ranked_lists[0])[offset : offset + limit]
+            items = ranked_lists[0]
             if min_score > 0.0:
                 items = [item for item in items if float(item.get("score", 0.0) or 0.0) >= min_score]
+            items = self._soft_source_collapse(items)[offset : offset + limit]
             items = self._maybe_iterative_search(
                 items,
                 query=query,
@@ -538,7 +539,7 @@ class UnifiedMemorySearch:
             }
         )
 
-        items = self._soft_source_collapse(result.items)[offset : offset + limit]
+        items = result.items
         # Only apply min_score to reranked results: after cross-encoder rerank
         # the score is a CE logit that min_score is calibrated against. In RRF
         # order the score is a tiny fusion value (~0.03 max) that min_score
@@ -546,6 +547,7 @@ class UnifiedMemorySearch:
         # guards quality there. See F2.
         if min_score > 0.0 and self._rerank_was_applied(items):
             items = [item for item in items if float(item.get("score", 0.0) or 0.0) >= min_score]
+        items = self._soft_source_collapse(items)[offset : offset + limit]
         items = self._maybe_iterative_search(
             items,
             query=query,
