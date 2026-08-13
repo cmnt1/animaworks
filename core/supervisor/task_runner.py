@@ -233,7 +233,11 @@ async def execute_background_contract(
     """Execute a background-lane contract (consolidation or command tool)."""
     if kind == "consolidation":
         consolidation_type = str(payload.get("consolidation_type") or "daily")
-        result = await anima.run_consolidation(consolidation_type=consolidation_type)
+        project = payload.get("project")
+        kwargs = {"consolidation_type": consolidation_type}
+        if project is not None:
+            kwargs["project"] = project
+        result = await anima.run_consolidation(**kwargs)
         result_dict = result.model_dump(mode="json") if result is not None else {}
         return {
             "task_type": "consolidation",

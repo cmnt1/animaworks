@@ -36,6 +36,14 @@ from core.time_utils import ensure_aware, get_app_timezone, now_iso, now_local
 logger = logging.getLogger("animaworks.consolidation")
 
 
+def list_project_archives(anima_dir: Path) -> list[str]:
+    """List project archive names found below episodes/projects/."""
+    projects_dir = Path(anima_dir) / "episodes" / "projects"
+    if not projects_dir.is_dir():
+        return []
+    return sorted(path.name for path in projects_dir.iterdir() if path.is_dir())
+
+
 # ── ConsolidationEngine ────────────────────────────────────────
 
 
@@ -50,7 +58,14 @@ class ConsolidationEngine:
       legacy knowledge migration
     """
 
-    def __init__(self, anima_dir: Path, anima_name: str, *, rag_store: Any | None = None) -> None:
+    def __init__(
+        self,
+        anima_dir: Path,
+        anima_name: str,
+        *,
+        rag_store: Any | None = None,
+        project: str | None = None,
+    ) -> None:
         """Initialize consolidation engine.
 
         Args:
@@ -59,11 +74,22 @@ class ConsolidationEngine:
             rag_store: Optional shared RAG vector store instance.
                 When provided, avoids re-creating the singleton internally.
         """
+        if project is not None and (
+            not isinstance(project, str) or re.fullmatch(r"[A-Za-z0-9_-]+", project) is None
+        ):
+            raise ValueError("project must contain only letters, numbers, underscores, or hyphens")
         self.anima_dir = anima_dir
         self.anima_name = anima_name
+        self.project = project
         self._rag_store = rag_store
         self.episodes_dir = anima_dir / "episodes"
         self.knowledge_dir = anima_dir / "knowledge"
+        if project is not None:
+            self.episodes_dir /= Path("projects", project)
+            self.knowledge_dir /= Path("projects", project)
+        self._phase_b_carryover_file = (
+            f"consolidation_phase_b_carryover_{project}.json" if project is not None else self.PHASE_B_CARRYOVER_FILE
+        )
         self.episodes_dir.mkdir(parents=True, exist_ok=True)
         self.knowledge_dir.mkdir(parents=True, exist_ok=True)
 
@@ -135,7 +161,7 @@ class ConsolidationEngine:
 
     def phase_b_carryover_path(self) -> Path:
         """Return the persistent Phase B carry-over state path."""
-        return self.anima_dir / "state" / self.PHASE_B_CARRYOVER_FILE
+        return self.anima_dir / "state" / self._phase_b_carryover_file
 
     def load_phase_b_carryover(self) -> list[dict[str, Any]]:
         """Load pending Phase B source bundles from previous runs."""

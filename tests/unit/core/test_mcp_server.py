@@ -257,6 +257,25 @@ class TestListToolsHandler:
 
         assert asyncio.iscoroutinefunction(list_tools)
 
+    async def test_environment_whitelist_limits_list_tools(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import core.mcp.server as mcp_mod
+
+        monkeypatch.setenv(
+            "ANIMAWORKS_MCP_TOOLS",
+            "search_memory,read_memory_file,not_exposed",
+        )
+        tools, exposed = mcp_mod._build_mcp_tools()
+        with (
+            patch.object(mcp_mod, "MCP_TOOLS", tools),
+            patch.object(mcp_mod, "_EXPOSED_NAMES", exposed),
+            patch.object(mcp_mod, "_is_supervisor", False),
+            patch.object(mcp_mod, "_has_newstaff", False),
+        ):
+            result = await mcp_mod.list_tools()
+
+        assert {tool.name for tool in result} == {"search_memory", "read_memory_file"}
+        assert exposed == frozenset({"search_memory", "read_memory_file"})
+
 
 # ── TestCallToolHandler ──────────────────────────────────────────────
 
@@ -382,6 +401,36 @@ class TestCallToolHandler:
         assert '{"status": "ok", "data": "hello"}' in result[0].text
         assert "</tool_result>" in result[0].text
         mock_handler.handle.assert_called_once_with("send_message", {"to": "x", "content": "y"})
+
+    async def test_search_memory_injects_project_from_environment(self, monkeypatch) -> None:
+        import core.mcp.server as mcp_mod
+
+        mock_handler = MagicMock()
+        mock_handler.handle.return_value = '{"status": "ok"}'
+        monkeypatch.setenv("ANIMAWORKS_MCP_PROJECT", "animaworks")
+
+        with patch.object(mcp_mod, "_get_tool_handler", return_value=mock_handler):
+            await mcp_mod.call_tool("search_memory", {"query": "test"})
+
+        mock_handler.handle.assert_called_once_with(
+            "search_memory",
+            {"query": "test", "project": "animaworks"},
+        )
+
+    async def test_search_memory_explicit_project_overrides_environment(self, monkeypatch) -> None:
+        import core.mcp.server as mcp_mod
+
+        mock_handler = MagicMock()
+        mock_handler.handle.return_value = '{"status": "ok"}'
+        monkeypatch.setenv("ANIMAWORKS_MCP_PROJECT", "default")
+
+        with patch.object(mcp_mod, "_get_tool_handler", return_value=mock_handler):
+            await mcp_mod.call_tool("search_memory", {"query": "test", "project": "explicit"})
+
+        mock_handler.handle.assert_called_once_with(
+            "search_memory",
+            {"query": "test", "project": "explicit"},
+        )
 
     async def test_passes_empty_dict_when_arguments_none(self) -> None:
         """When arguments is None, passes {} to ToolHandler.handle()."""

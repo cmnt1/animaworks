@@ -232,7 +232,12 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
     machine_schemas = _machine_tool_schemas()
     all_schemas.extend(machine_schemas)
 
-    exposed = _EXPOSED_TOOL_NAMES | {s["name"] for s in machine_schemas}
+    configured = os.environ.get("ANIMAWORKS_MCP_TOOLS")
+    if configured is None:
+        exposed = _EXPOSED_TOOL_NAMES | {s["name"] for s in machine_schemas}
+    else:
+        requested = {name.strip() for name in configured.split(",") if name.strip()}
+        exposed = _EXPOSED_TOOL_NAMES & requested
 
     # Apply file-backed description overrides
     from core.tooling.schemas import apply_prompt_descriptions
@@ -262,7 +267,7 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
 
     # Verify we found all expected internal tools
     found = {t.name for t in tools}
-    missing = _EXPOSED_TOOL_NAMES - found
+    missing = exposed - found
     if missing:
         logger.warning("MCP tool schemas missing for: %s", ", ".join(sorted(missing)))
 
@@ -509,7 +514,7 @@ def _get_tool_handler() -> Any:
         # Check debug_superuser flag from status.json
         _superuser = False
         _status_path = anima_dir / "status.json"
-        if _status_path.is_file():
+        if "ANIMAWORKS_MCP_TOOLS" not in os.environ and _status_path.is_file():
             try:
                 import json as _json_mod
 
@@ -746,6 +751,10 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
         ]
 
     coerced_args = _coerce_integers(dict(arguments or {}), name)
+    if name == "search_memory" and "project" not in coerced_args:
+        project = os.environ.get("ANIMAWORKS_MCP_PROJECT")
+        if project is not None:
+            coerced_args["project"] = project
     timeout = _resolve_tool_timeout(name)
 
     try:

@@ -946,6 +946,7 @@ class AnimaRunner:
             raise AnimaNotRunningError("Anima not initialized")
 
         consolidation_type = params.get("consolidation_type", "daily")
+        project = params.get("project")
 
         # background lane isolation: run consolidation inside a task-runner child.
         supervisor = self._scheduler_mgr._task_runner_supervisor if self._scheduler_mgr is not None else None
@@ -953,9 +954,12 @@ class AnimaRunner:
             self._scheduler_mgr is not None and getattr(self._scheduler_mgr, "_background_isolated", False)
         )
         if background_isolated and supervisor is not None:
+            payload = {"consolidation_type": consolidation_type}
+            if project is not None:
+                payload["project"] = project
             isolated = await supervisor.run_background(
                 kind="consolidation",
-                payload={"consolidation_type": consolidation_type},
+                payload=payload,
                 display_lane="background",
             )
             return {
@@ -964,7 +968,10 @@ class AnimaRunner:
                 "duration_ms": int(isolated.get("duration_ms") or 0),
             }
 
-        result = await self.anima.run_consolidation(consolidation_type=consolidation_type)
+        kwargs = {"consolidation_type": consolidation_type}
+        if project is not None:
+            kwargs["project"] = project
+        result = await self.anima.run_consolidation(**kwargs)
 
         return {
             "status": "completed",

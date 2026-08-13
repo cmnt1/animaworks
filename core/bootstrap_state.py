@@ -35,6 +35,7 @@ PRESERVED_STATUS_KEYS = {
     "background_model",
     "background_credential",
     "background_execution_mode",
+    "heartbeat_enabled",
 }
 
 

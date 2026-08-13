@@ -50,6 +50,21 @@ _SEARCH_MAX_TOKENS = 25_000
 _SEARCH_MAX_LINES = 2_000
 _SEARCH_CONTEXT_BASE = 128_000
 _SEARCH_MIN_RESULTS = 3
+_PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _source_is_in_project(source: str, project: str) -> bool:
+    """Return whether a search source belongs to exactly one project archive."""
+    normalized = source.replace("\\", "/")
+    if ".." in normalized.split("/"):
+        return False
+    return (
+        re.match(
+            rf"^(?:episodes|knowledge|procedures|facts)/projects/{re.escape(project)}/",
+            normalized,
+        )
+        is not None
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -366,6 +381,7 @@ class MemoryToolsMixin:
         time_start: str | None = None,
         time_end: str | None = None,
         denied_roots: tuple[Path, ...] = (),
+        project: str | None = None,
     ) -> str | None:
         """Execute search via Neo4j backend, returning formatted string or None on failure."""
         memories = self._retrieve_neo4j_memories(
@@ -383,6 +399,10 @@ class MemoryToolsMixin:
                 memory
                 for memory in memories
                 if not self._memory_source_is_denied(self._graph_memory_source(memory), denied_roots)
+            ]
+        if project:
+            memories = [
+                memory for memory in memories if _source_is_in_project(self._graph_memory_source(memory), project)
             ]
 
         if offset:
@@ -417,6 +437,7 @@ class MemoryToolsMixin:
         time_start: str | None = None,
         time_end: str | None = None,
         denied_roots: tuple[Path, ...] = (),
+        project: str | None = None,
     ) -> str | None:
         """Search Neo4j graph memory plus legacy-only scopes for scope='all'."""
         graph_memories = self._retrieve_neo4j_memories(
@@ -432,7 +453,10 @@ class MemoryToolsMixin:
         context_window = getattr(self, "_context_window", _SEARCH_CONTEXT_BASE)
         items: list[SearchResultItem] = []
         for mem in graph_memories:
-            if not self._memory_source_is_denied(self._graph_memory_source(mem), denied_roots):
+            source = self._graph_memory_source(mem)
+            if not self._memory_source_is_denied(source, denied_roots) and (
+                not project or _source_is_in_project(source, project)
+            ):
                 items.append(SearchResultItem("Graph Memory", "graph", mem))
 
         for legacy_scope in LEGACY_ONLY_SCOPES_FOR_ALL:
@@ -449,7 +473,9 @@ class MemoryToolsMixin:
             section_title = title_for_legacy_scope(legacy_scope)
             for result in legacy_results:
                 source = str(result.get("source_file", ""))
-                if not self._memory_source_is_denied(source, denied_roots):
+                if not self._memory_source_is_denied(source, denied_roots) and (
+                    not project or _source_is_in_project(source, project)
+                ):
                     items.append(SearchResultItem(section_title, "legacy", result))
 
         return format_hybrid_search_results(
@@ -517,6 +543,22 @@ class MemoryToolsMixin:
         scope = args.get("scope", "all")
         query = args.get("query", "")
         offset = int(args.get("offset", 0))
+        project = args["project"] if "project" in args else getattr(self, "_default_project", None)
+        if project is not None and (not isinstance(project, str) or not _PROJECT_NAME_RE.fullmatch(project)):
+            return _error_result(
+                "InvalidArguments",
+                "project must contain only letters, numbers, underscores, or hyphens",
+            )
+        if scope == "code":
+            if not project:
+                return "code検索にはprojectが必要です"
+            from core.memory.code_index import search_code
+
+            code_results = search_code(self._anima_dir, project, query, limit=offset + 10)
+            if isinstance(code_results, str):
+                return code_results
+            results = code_results[offset:]
+            return self._format_search_results(query, scope, offset, results)
         time_range = args.get("time_range") or {}
         if not isinstance(time_range, dict):
             time_range = {}
@@ -548,6 +590,7 @@ class MemoryToolsMixin:
                     time_start=time_start,
                     time_end=time_end,
                     denied_roots=denied_roots,
+                    project=project,
                 )
                 if neo4j_result is not None:
                     if not neo4j_result:
@@ -570,6 +613,7 @@ class MemoryToolsMixin:
                     time_start=time_start,
                     time_end=time_end,
                     denied_roots=denied_roots,
+                    project=project,
                 )
             if neo4j_result is not None:
                 if not neo4j_result and anima_hint:
@@ -595,6 +639,21 @@ class MemoryToolsMixin:
                 for result in results
                 if not self._memory_source_is_denied(str(result.get("source_file", "")), denied_roots)
             ]
+        if project:
+            results = [
+                result for result in results if _source_is_in_project(str(result.get("source_file", "")), project)
+            ]
+        return self._format_search_results(query, scope, offset, results, anima_hint=anima_hint)
+
+    def _format_search_results(
+        self,
+        query: str,
+        scope: str,
+        offset: int,
+        results: list[dict[str, Any]],
+        *,
+        anima_hint: str | None = None,
+    ) -> str:
         logger.debug(
             "search_memory query=%s scope=%s offset=%d results=%d",
             query,
@@ -632,6 +691,8 @@ class MemoryToolsMixin:
             total_chunks = r.get("total_chunks", 1)
             content = r.get("content", "")
             metadata_line = format_result_metadata_line(r)
+            if r.get("last_scan"):
+                metadata_line = f"indexed: {r['last_scan']}"
 
             entry_header = (
                 f"[{offset + shown_count + 1}] score={score:.2f} | {source} | chunk {chunk_idx + 1}/{total_chunks}"

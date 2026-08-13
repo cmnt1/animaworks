@@ -41,6 +41,58 @@ class _FakeHandler(MemoryToolsMixin):
 
 
 class TestSearchMemoryCountHeader:
+    def test_project_filter_matches_exact_archive_and_normalizes_separators(self) -> None:
+        handler = _FakeHandler(
+            [
+                _make_result("episodes/projects/foo/session.md", "foo episode"),
+                _make_result(r"knowledge\projects\foo\topic.md", "foo knowledge"),
+                _make_result("episodes/projects/foobar/session.md", "foobar episode"),
+                _make_result("knowledge/general.md", "global knowledge"),
+            ]
+        )
+
+        output = handler._handle_search_memory({"query": "test", "project": "foo"})
+
+        assert "foo episode" in output
+        assert "foo knowledge" in output
+        assert "foobar episode" not in output
+        assert "global knowledge" not in output
+
+    def test_project_filter_is_not_applied_when_unspecified(self) -> None:
+        handler = _FakeHandler(
+            [
+                _make_result("episodes/projects/foo/session.md", "foo episode"),
+                _make_result("episodes/projects/foobar/session.md", "foobar episode"),
+            ]
+        )
+
+        output = handler._handle_search_memory({"query": "test"})
+
+        assert "foo episode" in output
+        assert "foobar episode" in output
+
+    def test_default_project_filters_when_argument_is_absent(self) -> None:
+        handler = _FakeHandler(
+            [
+                _make_result("episodes/projects/foo/session.md", "foo episode"),
+                _make_result("episodes/projects/bar/session.md", "bar episode"),
+            ]
+        )
+        handler._default_project = "foo"
+
+        output = handler._handle_search_memory({"query": "test"})
+
+        assert "foo episode" in output
+        assert "bar episode" not in output
+
+    def test_invalid_project_name_returns_error_without_searching(self) -> None:
+        handler = _FakeHandler([])
+
+        output = handler._handle_search_memory({"query": "test", "project": "../foo"})
+
+        assert '"error_type": "InvalidArguments"' in output
+        handler._memory.search_memory_text.assert_not_called()
+
     def test_legacy_search_propagates_explicit_time_range(self) -> None:
         handler = _FakeHandler([])
 

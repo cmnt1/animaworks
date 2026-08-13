@@ -34,16 +34,21 @@ MEMORY_TOOLS: list[dict[str, Any]] = [
                         "common_knowledge",
                         "skills",
                         "activity_log",
+                        "code",
                         "all",
                     ],
                     "description": (
                         "Memory category to search. 'facts' searches atomic extracted facts. 'activity_log' searches recent tool results "
-                        "and messages (last 3 days via BM25)."
+                        "and messages (last 3 days via BM25). 'code' searches tracked files in a registered project."
                     ),
                 },
                 "offset": {
                     "type": "integer",
                     "description": "Pagination offset (0=first page, 10=second page, max 50)",
+                },
+                "project": {
+                    "type": "string",
+                    "description": "Restrict results to the given project archive (projects/<name>/ subtree)",
                 },
                 "time_range": {
                     "type": "object",

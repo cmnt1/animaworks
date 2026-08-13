@@ -362,6 +362,7 @@ class LifecycleMixin:
     async def run_consolidation(
         self,
         consolidation_type: str = "daily",
+        project: str | None = None,
     ) -> CycleResult:
         """Run memory consolidation as a 2-phase Anima-driven task.
 
@@ -381,6 +382,7 @@ class LifecycleMixin:
 
         Args:
             consolidation_type: "daily" or "weekly"
+            project: Optional project archive to consolidate without Phase A.
         """
         logger.info(
             "[%s] run_consolidation START type=%s",
@@ -397,6 +399,9 @@ class LifecycleMixin:
                 self._task_slots["background"] = f"Memory consolidation ({consolidation_type})"
                 agent = _agent_for_lane(self, "background")
                 _session_token = agent._tool_handler.set_active_session_type("heartbeat")
+                previous_default_project = getattr(agent._tool_handler, "_default_project", None)
+                if project is not None:
+                    agent._tool_handler._default_project = project
 
                 _consolidation_flag = self.anima_dir / "state" / ".consolidation_mode"
                 try:
@@ -407,7 +412,11 @@ class LifecycleMixin:
                 try:
                     from core.memory.consolidation import ConsolidationEngine
 
-                    engine = ConsolidationEngine(self.anima_dir, self.name)
+                    engine = (
+                        ConsolidationEngine(self.anima_dir, self.name, project=project)
+                        if project is not None
+                        else ConsolidationEngine(self.anima_dir, self.name)
+                    )
 
                     self._activity.log(
                         "consolidation_start",
@@ -452,6 +461,8 @@ class LifecycleMixin:
                     )
                     raise
                 finally:
+                    if project is not None:
+                        agent._tool_handler._default_project = previous_default_project
                     _keepalive.cancel()
                     _consolidation_flag.unlink(missing_ok=True)
                     active_session_type.reset(_session_token)
@@ -478,14 +489,19 @@ class LifecycleMixin:
         _llm_cred = getattr(cfg.consolidation, "llm_credential", None)
         consolidation_credential = _llm_cred if isinstance(_llm_cred, str) else ""
         start_mono = _time.monotonic()
+        project = getattr(engine, "project", None)
 
         # ── Phase A: Episode extraction ─────────────────────────
         target_date, window_start, window_end = engine.previous_local_day_window(now_local())
-        chunks = engine.collect_activity_chunks(
-            hours=24,
-            model=consolidation_model,
-            since=window_start,
-            until=window_end,
+        chunks = (
+            engine.collect_activity_chunks(
+                hours=24,
+                model=consolidation_model,
+                since=window_start,
+                until=window_end,
+            )
+            if project is None
+            else []
         )
         episode_parts: list[str] = []
 
@@ -595,10 +611,10 @@ class LifecycleMixin:
                 + reflections_text
             )
 
-        resolved = engine._collect_resolved_events(hours=24)
+        resolved = engine._collect_resolved_events(hours=24) if project is None else []
         resolved_text = "\n".join(f"- {r['ts'][:16]}: {r['content']}" for r in resolved) if resolved else ""
 
-        error_patterns = engine._collect_error_entries(hours=24)
+        error_patterns = engine._collect_error_entries(hours=24) if project is None else ""
         knowledge_files = engine._list_knowledge_files_with_meta()
         knowledge_list_text = _format_knowledge_list(knowledge_files)
 
@@ -619,6 +635,13 @@ class LifecycleMixin:
             merge_candidates=merge_candidates_text,
             error_patterns_summary=error_patterns,
         )
+        if project is not None:
+            prompt += (
+                "\n\n## Project archive boundary\n"
+                f"Read episodes only from `episodes/projects/{project}/`. "
+                f"Read and write knowledge only in `knowledge/projects/{project}/`. "
+                "Do not use or modify memory outside this project archive."
+            )
 
         base_model_config = self.memory.read_model_config()
         consolidation_model_config = _consolidation_model_config(
@@ -687,6 +710,7 @@ class LifecycleMixin:
         cfg = load_config()
         consolidation_model = cfg.consolidation.llm_model
         start_mono = _time.monotonic()
+        project = getattr(engine, "project", None)
 
         knowledge_files = engine._list_knowledge_files_with_meta()
         knowledge_list_text = _format_knowledge_list(knowledge_files)
@@ -699,11 +723,14 @@ class LifecycleMixin:
         merge_candidates_text = _format_merge_candidates(merge_candidates)
 
         try:
-            hygiene_report = scan_memory_hygiene(self.anima_dir)
-            hygiene_section = _format_hygiene_section(
-                hygiene_report,
-                locale=getattr(cfg, "locale", None),
-            )
+            if project is None:
+                hygiene_report = scan_memory_hygiene(self.anima_dir)
+                hygiene_section = _format_hygiene_section(
+                    hygiene_report,
+                    locale=getattr(cfg, "locale", None),
+                )
+            else:
+                hygiene_section = ""
         except Exception:
             logger.warning("[%s] memory hygiene scan failed", self.name, exc_info=True)
             hygiene_section = ""
@@ -716,6 +743,12 @@ class LifecycleMixin:
             total_knowledge_count=len(knowledge_files),
             hygiene_section=hygiene_section,
         )
+        if project is not None:
+            prompt += (
+                "\n\n## Project archive boundary\n"
+                f"Read and write knowledge only in `knowledge/projects/{project}/`. "
+                "Do not use or modify memory outside this project archive."
+            )
 
         base_model_config = self.memory.read_model_config()
         consolidation_model_config = _consolidation_model_config(
