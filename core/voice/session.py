@@ -431,6 +431,39 @@ class VoiceSession:
             except Exception:
                 pass
 
+    async def greet_and_speak(self) -> None:
+        """Greet on connect — instant audio feedback that also warms the
+        anima's chat runner / priming caches before the first utterance.
+        Uses the cached greet path (1h cooldown), so repeated popups are cheap."""
+        try:
+            result = await self._supervisor.send_request(
+                anima_name=self._anima_name,
+                method="greet",
+                params={},
+                timeout=60.0,
+            )
+        except Exception as e:
+            logger.info("Voice greet skipped (%s): %s", self._anima_name, e)
+            return
+        text = str((result or {}).get("response", "")).strip()
+        if not text or self._processing:
+            return
+        emotion = (result or {}).get("emotion", "neutral")
+        tts_ok = await self._check_tts_health()
+        self._interrupted = False
+        try:
+            await self._ws.send_json({"type": "response_start"})
+            await self._ws.send_json({"type": "response_text", "text": text})
+            await self._ws.send_json({"type": "emotion", "emotion": emotion})
+            if tts_ok:
+                self._tts_playing = True
+                await self._synthesize_and_send(text)
+            await self._ws.send_json({"type": "response_done", "emotion": emotion})
+        except Exception as e:
+            logger.debug("Voice greet delivery failed (%s): %s", self._anima_name, e)
+        finally:
+            self._tts_playing = False
+
     async def handle_interrupt(self) -> None:
         """Handle barge-in: stop TTS, prepare for new STT."""
         self._interrupted = True

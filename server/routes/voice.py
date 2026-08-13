@@ -171,6 +171,10 @@ def create_voice_router() -> APIRouter:
             await ws.send_json({"type": "status", "state": "ready"})
 
             running_tasks: list[asyncio.Task] = []
+            # Greet on connect: instant feedback + warms the chat runner path.
+            greet_task = asyncio.create_task(session.greet_and_speak())
+            greet_task.add_done_callback(_speech_end_done)
+            running_tasks.append(greet_task)
             while True:
                 msg = await ws.receive()
                 if msg["type"] == "websocket.disconnect":

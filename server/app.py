@@ -724,6 +724,36 @@ async def _run_startup_initialization(app: FastAPI) -> None:
         logger.exception("Startup initialization failed")
 
 
+async def _run_model_warmup() -> None:
+    """Pre-load embed/rerank/STT models in the background so the first real
+    request (e.g. a voice utterance right after restart) doesn't pay the
+    20-30s cold-load penalty."""
+
+    def _warm_native() -> None:
+        from core.memory.rag.singleton import thread_safe_encode
+        from core.memory.retrieval.reranker import get_reranker
+
+        thread_safe_encode(["ウォームアップ"], purpose="query")
+        get_reranker().score_sync("ウォームアップ", ["テスト"])
+
+    try:
+        await asyncio.to_thread(_warm_native)
+        logger.info("Model warmup complete: embed+rerank")
+    except Exception:
+        logger.exception("Model warmup failed: embed/rerank")
+
+    try:
+        from core.config import load_config
+        from server.routes.voice import _get_stt
+
+        stt = _get_stt(load_config().voice)
+        # 1s of 16kHz mono PCM16 silence — enough to force the model load.
+        await stt.transcribe_buffer_async(b"\x00\x00" * 16000)
+        logger.info("Model warmup complete: stt")
+    except Exception:
+        logger.exception("Model warmup failed: stt")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Only start anima processes when setup is complete
@@ -923,6 +953,7 @@ async def lifespan(app: FastAPI):
         app.state._anima_startup_task = asyncio.create_task(
             _run_startup_initialization(app),
         )
+        app.state._model_warmup_task = asyncio.create_task(_run_model_warmup())
 
         logger.info("Server started (startup initialization running in background)")
     else:
