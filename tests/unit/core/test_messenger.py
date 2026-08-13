@@ -791,3 +791,65 @@ class TestActivityLoggingWarning:
         assert msg.from_person == "alice"
         bob_inbox = shared_dir / "inbox" / "bob"
         assert len(list(bob_inbox.glob("*.json"))) == 1
+
+
+class TestServerFallback:
+    """EROFS → internal server API fallback (write-access charter)."""
+
+    def test_send_falls_back_to_server_on_erofs(self, messenger: Messenger) -> None:
+        captured: dict = {}
+
+        def fake_post(url, json=None, timeout=None):
+            captured["url"] = url
+            captured["json"] = json
+            resp = MagicMock()
+            resp.raise_for_status.return_value = None
+            return resp
+
+        with (
+            patch("pathlib.Path.write_text", side_effect=OSError(30, "Read-only file system")),
+            patch("httpx.post", side_effect=fake_post),
+        ):
+            msg = messenger.send("bob", "hello", skip_logging=True)
+
+        assert captured["url"].endswith("/api/internal/send-message")
+        assert captured["json"]["message"]["to_person"] == "bob"
+        assert captured["json"]["message"]["id"] == msg.id
+
+    def test_send_raises_delivery_error_when_fallback_fails(self, messenger: Messenger) -> None:
+        with (
+            patch("pathlib.Path.write_text", side_effect=OSError(30, "Read-only file system")),
+            patch("httpx.post", side_effect=ConnectionError("server down")),
+            pytest.raises(DeliveryError, match="server fallback"),
+        ):
+            messenger.send("bob", "hello", skip_logging=True)
+
+    def test_post_channel_falls_back_to_server_on_erofs(self, messenger: Messenger, shared_dir: Path) -> None:
+        channels = shared_dir / "channels"
+        channels.mkdir()
+        (channels / "general.jsonl").write_text("", encoding="utf-8")
+        captured: dict = {}
+
+        def fake_post(url, json=None, timeout=None):
+            captured["url"] = url
+            captured["json"] = json
+            resp = MagicMock()
+            resp.raise_for_status.return_value = None
+            return resp
+
+        real_open = Path.open
+
+        def deny_append(self, mode="r", *args, **kwargs):
+            if "a" in mode:
+                raise OSError(30, "Read-only file system")
+            return real_open(self, mode, *args, **kwargs)
+
+        with (
+            patch("pathlib.Path.open", deny_append),
+            patch("httpx.post", side_effect=fake_post),
+        ):
+            messenger.post_channel("general", "hi all")
+
+        assert captured["url"].endswith("/api/internal/post-channel")
+        assert captured["json"]["channel"] == "general"
+        assert captured["json"]["from_anima"] == "alice"
