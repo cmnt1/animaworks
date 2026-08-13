@@ -10,6 +10,7 @@ from typing import Any
 
 from core.voice.tts_base import BaseTTSProvider
 from core.voice.tts_elevenlabs import ElevenLabsTTS
+from core.voice.tts_irodori import IrodoriTTS
 from core.voice.tts_sbv2 import StyleBertVits2TTS
 from core.voice.tts_voicevox import VoicevoxTTS
 
@@ -23,7 +24,7 @@ def create_tts_provider(
     """Create TTS provider instance by name.
 
     Args:
-        provider_name: One of "voicevox", "style_bert_vits2", "elevenlabs".
+        provider_name: One of "voicevox", "style_bert_vits2", "elevenlabs", "irodori".
         voice_config: Voice configuration object (e.g. config.voice).
 
     Returns:
@@ -36,6 +37,7 @@ def create_tts_provider(
         "voicevox": VoicevoxTTS,
         "style_bert_vits2": StyleBertVits2TTS,
         "elevenlabs": ElevenLabsTTS,
+        "irodori": IrodoriTTS,
     }
     cls = providers.get(provider_name.lower())
     if cls is None:

@@ -999,6 +999,12 @@ class StyleBertVits2Config(BaseModel):
     base_url: str = "http://localhost:5000"
 
 
+class IrodoriConfig(BaseModel):
+    """Irodori-TTS HTTP API connection settings."""
+
+    base_url: str = "http://xserverng2:7861"
+
+
 class VoiceConfig(BaseModel):
     """Voice chat configuration."""
 
@@ -1012,6 +1018,7 @@ class VoiceConfig(BaseModel):
     voicevox: VoicevoxConfig = VoicevoxConfig()
     elevenlabs: ElevenLabsVoiceConfig = ElevenLabsVoiceConfig()
     style_bert_vits2: StyleBertVits2Config = StyleBertVits2Config()
+    irodori: IrodoriConfig = IrodoriConfig()
 
 
 # ── UI Config ────────────────────────────────────────────────────────────────
@@ -1362,6 +1369,7 @@ __all__ = [
     "ImageGenConfig",
     "InboxConfig",
     "InteractionConfig",
+    "IrodoriConfig",
     "LlmRateGuardConfig",
     "LocalLLMConfig",
     "LoggingConfig",
