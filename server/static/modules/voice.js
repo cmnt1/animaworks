@@ -225,7 +225,11 @@ export class VoiceManager {
   }
 
   setMode(mode) {
-    if (mode === this._mode) return;
+    if (mode === this._mode) {
+      // After disconnect, mode stays but VAD instance is gone — restart if needed.
+      if (mode === 'vad' && !this._vad) this._startVAD();
+      return;
+    }
     this._mode = mode;
     if (mode === 'vad') {
       this._startVAD();
@@ -269,6 +273,9 @@ export class VoiceManager {
           break;
         case 'response_done':
           this._emit('responseDone', { emotion: msg.emotion });
+          break;
+        case 'emotion':
+          this._emit('emotion', { emotion: msg.emotion });
           break;
         case 'tts_start':
           this._ttsPlaying = true;

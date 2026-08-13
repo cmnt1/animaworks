@@ -6,6 +6,9 @@ import {
 } from "./ctx.js";
 import { bustupCandidates, resolveCachedAvatar } from "../../modules/avatar-resolver.js";
 import { companyColor } from "../../shared/avatar-utils.js";
+import { openVoicePopup } from "./voice-popup.js";
+
+const LONG_PRESS_MS = 500;
 
 export function createAnimaController(ctx) {
   const $ = ctx.$;
@@ -153,6 +156,12 @@ export function createAnimaController(ctx) {
 
     container.querySelectorAll(".anima-tab").forEach(btn => {
       btn.addEventListener("click", e => {
+        if (btn._longPressFired) {
+          e.preventDefault();
+          e.stopPropagation();
+          btn._longPressFired = false;
+          return;
+        }
         const anima = e.currentTarget?.dataset?.anima;
         if (!anima) return;
         if (anima === state.selectedAnima) {
@@ -160,6 +169,15 @@ export function createAnimaController(ctx) {
           return;
         }
         openOrSelectAnima(anima);
+      });
+      _bindAnimaLongPress(btn, (anima) => {
+        openVoicePopup(anima, {
+          onClose: () => {
+            if (state.selectedAnima) {
+              ctx.controllers.imageVoice?.updateVoiceAnima(state.selectedAnima);
+            }
+          },
+        });
       });
       btn.addEventListener("mouseenter", () => _showTabTooltip(btn));
       btn.addEventListener("mouseleave", () => _hideTabTooltip());
@@ -412,6 +430,62 @@ export function createAnimaController(ctx) {
       }
     }
     for (const n of names) ensureAnimaTabAvatar(n);
+  }
+
+  /**
+   * Long-press (500ms) on anima tab opens the voice popup.
+   * Cancels on pointerup/leave/cancel/scroll. Suppresses click after fire.
+   * Blocks contextmenu only while the long-press timer is active.
+   */
+  function _bindAnimaLongPress(el, onLongPress) {
+    let timer = null;
+    let suppressContextMenu = false;
+
+    const clearTimer = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      suppressContextMenu = false;
+      window.removeEventListener("scroll", onScroll, true);
+    };
+
+    const onScroll = () => clearTimer();
+
+    el.addEventListener("pointerdown", (e) => {
+      if (e.button != null && e.button !== 0) return;
+      el._longPressFired = false;
+      suppressContextMenu = true;
+      window.addEventListener("scroll", onScroll, true);
+      timer = setTimeout(() => {
+        timer = null;
+        suppressContextMenu = false;
+        window.removeEventListener("scroll", onScroll, true);
+        const anima = el.dataset?.anima;
+        if (!anima) return;
+        el._longPressFired = true;
+        try { el.releasePointerCapture?.(e.pointerId); } catch { /* ignore */ }
+        onLongPress(anima);
+      }, LONG_PRESS_MS);
+    });
+
+    el.addEventListener("pointerup", clearTimer);
+    el.addEventListener("pointerleave", clearTimer);
+    el.addEventListener("pointercancel", clearTimer);
+
+    el.addEventListener("contextmenu", (e) => {
+      if (suppressContextMenu || el._longPressFired) {
+        e.preventDefault();
+      }
+    });
+
+    // Swallow click that follows a fired long-press (capture, before select handlers).
+    el.addEventListener("click", (e) => {
+      if (!el._longPressFired) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      el._longPressFired = false;
+    }, true);
   }
 
   return {
