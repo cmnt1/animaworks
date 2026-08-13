@@ -364,6 +364,130 @@ class TestCronLLMSession:
             assert captured_prompt is not None
             assert "no errors found" in captured_prompt
 
+    async def test_cron_retries_once_with_runtime_fallback(self, data_dir, make_anima):
+        anima_dir = make_anima("cron_fallback")
+        shared_dir = data_dir / "shared"
+
+        with (
+            patch("core.anima.AgentCore"),
+            patch("core._anima_heartbeat.ConversationMemory"),
+            patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
+        ):
+            from core.anima import DigitalAnima
+            from core.schemas import CycleResult, ModelConfig
+
+            dp = DigitalAnima(anima_dir, shared_dir)
+            primary = ModelConfig(model="grok/grok-4.5", resolved_mode="X")
+            fallback = primary.model_copy(update={"model": "claude-sonnet-4-6", "resolved_mode": "S"})
+            dp.agent.model_config = primary
+            dp._resolve_background_config = MagicMock(return_value=primary)
+            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+            dp.agent.run_cycle = AsyncMock(
+                side_effect=[
+                    CycleResult(
+                        trigger="cron:daily",
+                        action="error",
+                        stop_kind="stream_error",
+                        reason="quota_exhausted",
+                    ),
+                    CycleResult(trigger="cron:daily", action="responded", summary="fallback ok"),
+                ]
+            )
+
+            with (
+                patch("core.execution.fallback_activity.resolve_effective_model_config", return_value=fallback),
+                patch("core.execution.fallback_activity.log_model_fallback"),
+            ):
+                result = await dp.run_cron_task("daily", "run daily")
+
+            assert result.summary == "fallback ok"
+            assert dp.agent.run_cycle.await_count == 2
+            assert [
+                call.kwargs["model_config_override"] for call in dp.agent.run_cycle.await_args_list
+            ] == [primary, fallback]
+
+    async def test_cron_retry_failure_is_recorded_as_error(self, data_dir, make_anima):
+        anima_dir = make_anima("cron_fallback_failure")
+        shared_dir = data_dir / "shared"
+
+        with (
+            patch("core.anima.AgentCore"),
+            patch("core._anima_heartbeat.ConversationMemory"),
+            patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
+        ):
+            from core.anima import DigitalAnima
+            from core.schemas import CycleResult, ModelConfig
+
+            dp = DigitalAnima(anima_dir, shared_dir)
+            primary = ModelConfig(model="grok/grok-4.5", resolved_mode="X")
+            fallback = primary.model_copy(update={"model": "claude-sonnet-4-6", "resolved_mode": "S"})
+            dp.agent.model_config = primary
+            dp._resolve_background_config = MagicMock(return_value=primary)
+            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+            dp.agent.run_cycle = AsyncMock(
+                side_effect=[
+                    CycleResult(trigger="cron:daily", action="error", reason="quota_exhausted"),
+                    CycleResult(
+                        trigger="cron:daily",
+                        action="error",
+                        stop_kind="stream_error",
+                        summary="fallback failed",
+                        reason="auth",
+                    ),
+                ]
+            )
+
+            with (
+                patch("core.execution.fallback_activity.resolve_effective_model_config", return_value=fallback),
+                patch("core.execution.fallback_activity.log_model_fallback"),
+            ):
+                result = await dp.run_cron_task("daily", "run daily")
+
+            assert result.action == "error"
+            from core.time_utils import today_local
+
+            cron_log = anima_dir / "state" / "cron_logs" / f"{today_local().isoformat()}.jsonl"
+            assert "[ERROR:auth] fallback failed" in cron_log.read_text(encoding="utf-8")
+            assert dp.agent.run_cycle.await_count == 2
+
+    async def test_cron_retry_exception_is_recorded_as_error(self, data_dir, make_anima):
+        anima_dir = make_anima("cron_fallback_exception")
+        shared_dir = data_dir / "shared"
+
+        with (
+            patch("core.anima.AgentCore"),
+            patch("core._anima_heartbeat.ConversationMemory"),
+            patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
+        ):
+            from core.anima import DigitalAnima
+            from core.schemas import CycleResult, ModelConfig
+
+            dp = DigitalAnima(anima_dir, shared_dir)
+            primary = ModelConfig(model="grok/grok-4.5", resolved_mode="X")
+            fallback = primary.model_copy(update={"model": "claude-sonnet-4-6", "resolved_mode": "S"})
+            dp.agent.model_config = primary
+            dp._resolve_background_config = MagicMock(return_value=primary)
+            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+            dp.agent.run_cycle = AsyncMock(
+                side_effect=[
+                    CycleResult(trigger="cron:daily", action="error", reason="quota_exhausted"),
+                    RuntimeError("fallback crashed"),
+                ]
+            )
+
+            with (
+                patch("core.execution.fallback_activity.resolve_effective_model_config", return_value=fallback),
+                patch("core.execution.fallback_activity.log_model_fallback"),
+                pytest.raises(RuntimeError, match="fallback crashed"),
+            ):
+                await dp.run_cron_task("daily", "run daily")
+
+            from core.time_utils import today_local
+
+            cron_log = anima_dir / "state" / "cron_logs" / f"{today_local().isoformat()}.jsonl"
+            assert "[ERROR:RuntimeError] fallback crashed" in cron_log.read_text(encoding="utf-8")
+            assert dp.agent.run_cycle.await_count == 2
+
     async def test_run_cron_task_records_skill_rejections(self, data_dir, make_anima):
         """run_cron_task should expose rejected cron skills in result and cron log."""
         anima_dir = make_anima("cron_skill_reject")

@@ -364,6 +364,9 @@ class CycleMixin:
         active_executor = (
             self._create_executor(active_model_config) if model_config_override is not None else self._executor
         )
+        executor_config = getattr(active_executor, "_model_config", None)
+        if isinstance(executor_config, ModelConfig):
+            active_model_config = executor_config
         mode = self._resolve_execution_mode(active_model_config)
         logger.info(
             "run_cycle START trigger=%s prompt_len=%d mode=%s",
@@ -723,8 +726,10 @@ class CycleMixin:
             )
             return CycleResult(
                 trigger=trigger,
-                action="responded",
+                action="error" if result.error else "responded",
+                stop_kind="stream_error" if result.error else "normal",
                 summary=result.text,
+                reason=result.reason,
                 duration_ms=duration_ms,
                 context_usage_ratio=tracker.usage_ratio,
                 context_window=tracker.context_window,
@@ -1015,6 +1020,9 @@ class CycleMixin:
         active_executor = (
             self._create_executor(active_model_config) if model_config_override is not None else self._executor
         )
+        executor_config = getattr(active_executor, "_model_config", None)
+        if isinstance(executor_config, ModelConfig):
+            active_model_config = executor_config
         mode = self._resolve_execution_mode(active_model_config)
         logger.info(
             "run_cycle_streaming START trigger=%s prompt_len=%d mode=%s",

@@ -75,7 +75,9 @@ def test_chroma_vector_store_configures_sqlite_pragmas(
 
     ChromaVectorStore(persist_dir=tmp_path, anima_name="sora")
 
-    assert configure.call_count == 2
+    # Pragmas are applied once before client init; post-init configure can
+    # delete the live client's WAL files.
+    assert configure.call_count == 1
     fake_chromadb.PersistentClient.assert_called_once_with(path=str(tmp_path))  # type: ignore[attr-defined]
 
 

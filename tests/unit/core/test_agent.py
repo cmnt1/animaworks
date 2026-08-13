@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from core.execution.base import ExecutionResult
 from core.prompt.builder import BuildResult
 from core.schemas import CycleResult, ModelConfig
 
@@ -90,6 +91,29 @@ class TestIsClaude:
 
 
 class TestModeCFallback:
+    def test_mode_c_prefers_configured_fallback_when_sdk_missing(self, tmp_path):
+        agent = _make_agent(tmp_path, model="codex/gpt-5.3-codex", resolved_mode="C")
+        agent.model_config.fallback_models = ["a:openai/gpt-4o"]
+        fallback = agent.model_config.model_copy(
+            update={"model": "openai/gpt-4o", "execution_mode": "A", "resolved_mode": "A"}
+        )
+        sentinel = MagicMock()
+        guard = MagicMock()
+        guard.config.default_block_seconds = 60
+
+        with (
+            patch("core.execution.codex_sdk.is_codex_sdk_available", return_value=False),
+            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.config.model_config.resolve_effective_model_config", return_value=fallback),
+            patch("core.execution.fallback_activity.log_model_fallback") as log_fallback,
+            patch("core.execution.LiteLLMExecutor", return_value=sentinel) as litellm,
+        ):
+            created = agent._create_executor()
+
+        assert created is sentinel
+        assert litellm.call_args.kwargs["model_config"] == fallback
+        log_fallback.assert_called_once()
+
     def test_mode_c_fallback_remaps_model_when_sdk_missing(self, tmp_path, caplog):
         agent = _make_agent(
             tmp_path,
@@ -99,16 +123,21 @@ class TestModeCFallback:
         agent.model_config.api_key_env = "OPENAI_API_KEY"
 
         sentinel_executor = MagicMock(name="litellm_executor")
-        with patch("core.execution.codex_sdk.is_codex_sdk_available", return_value=False), \
-             patch("core.execution.LiteLLMExecutor", return_value=sentinel_executor) as mock_litellm:
+        with (
+            patch("core.execution.codex_sdk.is_codex_sdk_available", return_value=False),
+            patch("core.execution.LiteLLMExecutor", return_value=sentinel_executor) as mock_litellm,
+            patch("core.execution.fallback_activity.log_model_fallback") as log_fallback,
+        ):
             created = agent._create_executor()
 
         assert created is sentinel_executor
         kwargs = mock_litellm.call_args.kwargs
         assert kwargs["model_config"].model == "openai/gpt-5.3-codex"
-        assert kwargs["model_config"].resolved_mode == "C"
+        assert kwargs["model_config"].resolved_mode == "A"
         assert "model=codex/gpt-5.3-codex resolved_mode=C" in caplog.text
-        assert "without changing resolved_mode" in caplog.text
+        assert "falling back to LiteLLM (Mode A)" in caplog.text
+        log_fallback.assert_called_once()
+        assert log_fallback.call_args.kwargs == {"channel": "executor", "phase": "unavailable"}
 
     def test_mode_c_fallback_uses_anthropic_when_key_is_anthropic(self, tmp_path):
         agent = _make_agent(
@@ -132,6 +161,29 @@ class TestModeCFallback:
 
 
 class TestModeXExecutor:
+    def test_mode_x_prefers_configured_fallback_when_cli_missing(self, tmp_path):
+        agent = _make_agent(tmp_path, model="grok/grok-4.5", resolved_mode="X")
+        agent.model_config.fallback_models = ["a:openai/gpt-4o"]
+        fallback = agent.model_config.model_copy(
+            update={"model": "openai/gpt-4o", "execution_mode": "A", "resolved_mode": "A"}
+        )
+        sentinel = MagicMock()
+        guard = MagicMock()
+        guard.config.default_block_seconds = 60
+
+        with (
+            patch("core.execution.grok_cli.is_grok_cli_available", return_value=False),
+            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.config.model_config.resolve_effective_model_config", return_value=fallback),
+            patch("core.execution.fallback_activity.log_model_fallback") as log_fallback,
+            patch("core.execution.LiteLLMExecutor", return_value=sentinel) as litellm,
+        ):
+            created = agent._create_executor()
+
+        assert created is sentinel
+        assert litellm.call_args.kwargs["model_config"] == fallback
+        log_fallback.assert_called_once()
+
     def test_mode_x_creates_grok_executor_with_runtime_dependencies(self, tmp_path):
         agent = _make_agent(
             tmp_path,
@@ -166,16 +218,19 @@ class TestModeXExecutor:
         with (
             patch("core.execution.grok_cli.is_grok_cli_available", return_value=False),
             patch("core.execution.LiteLLMExecutor", return_value=sentinel_executor) as mock_litellm,
+            patch("core.execution.fallback_activity.log_model_fallback") as log_fallback,
         ):
             created = agent._create_executor()
 
         assert created is sentinel_executor
         kwargs = mock_litellm.call_args.kwargs
         assert kwargs["model_config"].model == "xai/grok-4.5"
-        assert kwargs["model_config"].resolved_mode == "X"
+        assert kwargs["model_config"].resolved_mode == "A"
         assert agent.model_config.model == "grok/grok-4.5"
         assert "model=grok/grok-4.5 resolved_mode=X" in caplog.text
-        assert "without changing resolved_mode" in caplog.text
+        assert "falling back to LiteLLM (Mode A)" in caplog.text
+        log_fallback.assert_called_once()
+        assert log_fallback.call_args.kwargs == {"channel": "executor", "phase": "unavailable"}
 
 
 # ── Callbacks / reply tracking ────────────────────────────
@@ -228,6 +283,23 @@ class TestResolveApiKey:
 
 
 class TestRunCycle:
+    async def test_mode_x_terminal_error_propagates_action_and_reason(self, tmp_path):
+        agent = _make_agent(tmp_path, model="grok/grok-4.5", resolved_mode="X")
+        agent._executor.execute = AsyncMock(
+            return_value=ExecutionResult(text="", error=True, reason="quota_exhausted")
+        )
+
+        with (
+            patch("core._agent_cycle.build_system_prompt", return_value=BuildResult(system_prompt="sysprompt")),
+            patch("core._agent_cycle.ShortTermMemory") as shortterm,
+        ):
+            shortterm.return_value.has_pending.return_value = False
+            result = await agent.run_cycle("Hello", trigger="cron:test")
+
+        assert result.action == "error"
+        assert result.reason == "quota_exhausted"
+        assert result.stop_kind == "stream_error"
+
     async def test_mode_b_returns_result(self, tmp_path):
         agent = _make_agent(tmp_path, resolved_mode="B")
         mock_result = MagicMock()
