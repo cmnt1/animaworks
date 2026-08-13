@@ -81,6 +81,25 @@ class TestStreamingSentenceSplitter:
         s = StreamingSentenceSplitter()
         assert s.flush() is None
 
+    def test_emotion_tag_not_split_and_sanitized(self) -> None:
+        # Regression: "!" in "<!--" must not split the comment, or
+        # sanitize_for_tts can't strip it and TTS reads it aloud.
+        from core.voice.session import sanitize_for_tts
+
+        tag = ' <!-- emotion: {"emotion": "smile"} -->'
+        s = StreamingSentenceSplitter()
+        sentences = s.feed("こんにちは！元気です。" + tag)
+        remaining = s.flush()
+        if remaining:
+            sentences.append(remaining)
+        spoken = [t for t in (sanitize_for_tts(x) for x in sentences) if t]
+        assert spoken == ["こんにちは！", "元気です。"]
+
+    def test_unterminated_comment_sanitized(self) -> None:
+        from core.voice.session import sanitize_for_tts
+
+        assert sanitize_for_tts('本文です。<!-- emotion: {"emo') == "本文です。"
+
 
 # ── TestTTSConfig ────────────────────────────────────────────────
 

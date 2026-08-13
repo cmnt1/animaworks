@@ -10,7 +10,9 @@ import re
 
 # ── Split pattern ──────────────────────────────────────────────
 
-_SPLIT_PATTERN = re.compile(r"(?<=[。！？\!\?\n])")
+# (?!--): don't split after the "!" of "<!--" so emotion-tag HTML comments
+# stay in one piece for sanitize_for_tts to strip.
+_SPLIT_PATTERN = re.compile(r"(?<=[。！？\!\?\n])(?!--)")
 
 
 # ── Batch splitter ──────────────────────────────────────────────

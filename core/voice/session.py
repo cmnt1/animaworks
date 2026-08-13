@@ -45,6 +45,8 @@ VOICE_MODE_SUFFIX = (
 # ── TTS output sanitization ──────────────────────────────────
 
 _RE_HTML_COMMENT = re.compile(r"<!--[\s\S]*?-->")
+# Stream may truncate before "-->"; drop an unterminated trailing comment too.
+_RE_HTML_COMMENT_OPEN = re.compile(r"<!--[\s\S]*$")
 _RE_MD_CODE_BLOCK = re.compile(r"```[\s\S]*?```")
 _RE_MD_HEADING = re.compile(r"^#{1,6}\s+", re.MULTILINE)
 _RE_MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
@@ -94,6 +96,7 @@ _RE_EMOJI = re.compile(
 def sanitize_for_tts(text: str) -> str:
     """Strip Markdown, HTML comments, and emoji for TTS consumption."""
     text = _RE_HTML_COMMENT.sub("", text)
+    text = _RE_HTML_COMMENT_OPEN.sub("", text)
     text = _RE_MD_CODE_BLOCK.sub("", text)
     text = _RE_MD_HEADING.sub("", text)
     text = _RE_MD_BOLD.sub(r"\1", text)
