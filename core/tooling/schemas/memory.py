@@ -45,6 +45,10 @@ MEMORY_TOOLS: list[dict[str, Any]] = [
                     "type": "integer",
                     "description": "Pagination offset (0=first page, 10=second page, max 50)",
                 },
+                "project": {
+                    "type": "string",
+                    "description": "Restrict results to the given project archive (projects/<name>/ subtree)",
+                },
                 "time_range": {
                     "type": "object",
                     "properties": {

@@ -383,6 +383,36 @@ class TestCallToolHandler:
         assert "</tool_result>" in result[0].text
         mock_handler.handle.assert_called_once_with("send_message", {"to": "x", "content": "y"})
 
+    async def test_search_memory_injects_project_from_environment(self, monkeypatch) -> None:
+        import core.mcp.server as mcp_mod
+
+        mock_handler = MagicMock()
+        mock_handler.handle.return_value = '{"status": "ok"}'
+        monkeypatch.setenv("ANIMAWORKS_MCP_PROJECT", "animaworks")
+
+        with patch.object(mcp_mod, "_get_tool_handler", return_value=mock_handler):
+            await mcp_mod.call_tool("search_memory", {"query": "test"})
+
+        mock_handler.handle.assert_called_once_with(
+            "search_memory",
+            {"query": "test", "project": "animaworks"},
+        )
+
+    async def test_search_memory_explicit_project_overrides_environment(self, monkeypatch) -> None:
+        import core.mcp.server as mcp_mod
+
+        mock_handler = MagicMock()
+        mock_handler.handle.return_value = '{"status": "ok"}'
+        monkeypatch.setenv("ANIMAWORKS_MCP_PROJECT", "default")
+
+        with patch.object(mcp_mod, "_get_tool_handler", return_value=mock_handler):
+            await mcp_mod.call_tool("search_memory", {"query": "test", "project": "explicit"})
+
+        mock_handler.handle.assert_called_once_with(
+            "search_memory",
+            {"query": "test", "project": "explicit"},
+        )
+
     async def test_passes_empty_dict_when_arguments_none(self) -> None:
         """When arguments is None, passes {} to ToolHandler.handle()."""
         import core.mcp.server as mcp_mod

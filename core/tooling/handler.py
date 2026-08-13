@@ -121,9 +121,11 @@ class ToolHandler(
         context_window: int = 32_000,
         process_supervisor: ProcessSupervisorLike | None = None,
         superuser: bool = False,
+        default_project: str | None = None,
     ) -> None:
         self._anima_dir = anima_dir
         self._superuser = superuser
+        self._default_project = default_project
         self._anima_name = anima_dir.name
         self._memory = memory
         self._messenger = messenger

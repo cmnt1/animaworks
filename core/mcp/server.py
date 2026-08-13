@@ -746,6 +746,10 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
         ]
 
     coerced_args = _coerce_integers(dict(arguments or {}), name)
+    if name == "search_memory" and "project" not in coerced_args:
+        project = os.environ.get("ANIMAWORKS_MCP_PROJECT")
+        if project is not None:
+            coerced_args["project"] = project
     timeout = _resolve_tool_timeout(name)
 
     try:

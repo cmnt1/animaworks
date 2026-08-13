@@ -166,6 +166,31 @@ class TestCreateNeo4jBackend:
 
 
 class TestSearchViaNeo4j:
+    def test_project_filter_excludes_similar_archive_name(self, mock_memory) -> None:
+        handler, mock_backend = _make_handler_mixin(mock_memory)
+        mock_backend.retrieve = AsyncMock(
+            return_value=[
+                RetrievedMemory(
+                    content="foo result",
+                    score=0.9,
+                    source="episode:1",
+                    metadata={"source_file": "episodes/projects/foo/session.md"},
+                ),
+                RetrievedMemory(
+                    content="foobar result",
+                    score=0.8,
+                    source="episode:2",
+                    metadata={"source_file": "episodes/projects/foobar/session.md"},
+                ),
+            ]
+        )
+
+        result = handler._search_via_neo4j("query", "episodes", 0, project="foo")
+
+        assert result is not None
+        assert "foo result" in result
+        assert "foobar result" not in result
+
     def test_returns_formatted_results(self, mock_memory) -> None:
         handler, mock_backend = _make_handler_mixin(mock_memory)
         mock_backend.retrieve = AsyncMock(
