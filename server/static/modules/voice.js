@@ -19,6 +19,7 @@ export class VoiceManager {
     this._mediaStream = null;
     this._playback = new VoicePlayback();
     this._playback.onPlaybackEnd = () => {
+      this._lastPlaybackEndMs = performance.now();
       if (this._ttsPlaying) {
         this._ttsPlaying = false;
         this._emit('playbackEnd');
@@ -26,6 +27,7 @@ export class VoiceManager {
     };
     this._vad = null;
     this._ttsPlaying = false;
+    this._lastPlaybackEndMs = 0;
     this._listeners = {};
     this._reconnectTimer = null;
     this._reconnectAttempts = 0;
@@ -219,6 +221,15 @@ export class VoiceManager {
     }
   }
 
+  _outputActive() {
+    return (
+      this._ttsPlaying ||
+      this._playback.isPlaying ||
+      this._playback.queueLength > 0 ||
+      performance.now() - this._lastPlaybackEndMs < 500
+    );
+  }
+
   interrupt() {
     this._playback.stop();
     this._ttsPlaying = false;
@@ -252,7 +263,14 @@ export class VoiceManager {
       return;
     }
     this._vad = new VoiceVAD({
-      onSpeechStart: () => this.startRecording(),
+      // Half-duplex: the VAD hears the anima's own TTS from the speakers and
+      // would barge-in on it (AEC doesn't cover WebAudio output). Ignore
+      // speech while TTS audio is playing/queued plus a short echo tail.
+      // ponytail: voice barge-in disabled in vad mode; switch to PTT to interrupt.
+      onSpeechStart: () => {
+        if (this._outputActive()) return;
+        this.startRecording();
+      },
       onSpeechEnd: () => this.stopRecording(),
     });
     await this._vad.start();
