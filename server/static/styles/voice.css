@@ -312,6 +312,7 @@
 }
 
 .voice-popup-bustup-wrap {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -320,6 +321,25 @@
   border-radius: 12px;
   background: var(--aw-color-bg-secondary, var(--bg-secondary, #f5f5f5));
   overflow: hidden;
+}
+
+/* YouTube-style playback-synced subtitle over the bottom of the bustup */
+.voice-popup-subtitle {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  max-width: 92%;
+  padding: 5px 12px;
+  border-radius: 6px;
+  background: rgba(40, 40, 40, 0.72);
+  color: #fff;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  text-align: center;
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
 }
 
 .voice-popup-bustup {

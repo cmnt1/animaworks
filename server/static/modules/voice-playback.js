@@ -12,6 +12,7 @@ export class VoicePlayback {
     this._volume = 1.0;
     this._onPlaybackStart = null;
     this._onPlaybackEnd = null;
+    this._onCaption = null;
   }
 
   _ensureContext() {
@@ -30,15 +31,16 @@ export class VoicePlayback {
     }
   }
 
-  async enqueue(audioData) {
-    // audioData is ArrayBuffer (wav or mp3)
+  async enqueue(audioData, caption = null) {
+    // audioData is ArrayBuffer (wav or mp3); caption is shown when this
+    // buffer actually starts playing (playback-synced subtitle).
     this._ensureContext();
     if (this._ctx.state === 'suspended') {
       await this._ctx.resume();
     }
     try {
       const buffer = await this._ctx.decodeAudioData(audioData.slice(0));
-      this._queue.push(buffer);
+      this._queue.push({ buffer, caption });
       if (!this._playing) this._playNext();
     } catch (err) {
       console.warn('[VoicePlayback] Failed to decode audio:', err);
@@ -48,6 +50,7 @@ export class VoicePlayback {
   _playNext() {
     if (this._queue.length === 0) {
       this._playing = false;
+      if (this._onCaption) this._onCaption(null);
       if (this._onPlaybackEnd) this._onPlaybackEnd();
       return;
     }
@@ -55,7 +58,8 @@ export class VoicePlayback {
     if (this._onPlaybackStart && this._queue.length === 1) {
       this._onPlaybackStart();
     }
-    const buffer = this._queue.shift();
+    const { buffer, caption } = this._queue.shift();
+    if (caption != null && this._onCaption) this._onCaption(caption);
     const source = this._ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(this._gainNode);
@@ -69,6 +73,7 @@ export class VoicePlayback {
 
   stop() {
     this._queue = [];
+    if (this._onCaption) this._onCaption(null);
     if (this._currentSource) {
       try {
         this._currentSource.stop();
@@ -98,6 +103,9 @@ export class VoicePlayback {
   }
   set onPlaybackEnd(fn) {
     this._onPlaybackEnd = fn;
+  }
+  set onCaption(fn) {
+    this._onCaption = fn;
   }
 
   destroy() {

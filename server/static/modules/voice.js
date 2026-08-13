@@ -25,6 +25,8 @@ export class VoiceManager {
         this._emit('playbackEnd');
       }
     };
+    this._playback.onCaption = (text) => this._emit('caption', { text });
+    this._pendingCaption = null;
     this._vad = null;
     this._ttsPlaying = false;
     this._lastPlaybackEndMs = 0;
@@ -112,6 +114,8 @@ export class VoiceManager {
         this._emit('playbackEnd');
       }
     };
+    this._playback.onCaption = (text) => this._emit('caption', { text });
+    this._pendingCaption = null;
     if (this._vad) {
       this._vad.destroy();
       this._vad = null;
@@ -231,6 +235,7 @@ export class VoiceManager {
   }
 
   interrupt() {
+    this._pendingCaption = null;
     this._playback.stop();
     this._ttsPlaying = false;
     if (this._ws && this._ws.readyState === WebSocket.OPEN) {
@@ -278,7 +283,9 @@ export class VoiceManager {
 
   _handleMessage(event) {
     if (event.data instanceof ArrayBuffer) {
-      this._playback.enqueue(event.data);
+      // First chunk after a tts_start carries that sentence's subtitle.
+      this._playback.enqueue(event.data, this._pendingCaption);
+      this._pendingCaption = null;
       return;
     }
     try {
@@ -301,6 +308,7 @@ export class VoiceManager {
           break;
         case 'tts_start':
           this._ttsPlaying = true;
+          this._pendingCaption = msg.text || null;
           this._emit('ttsStart');
           break;
         case 'tts_done':

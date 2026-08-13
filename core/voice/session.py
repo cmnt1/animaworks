@@ -494,7 +494,8 @@ class VoiceSession:
         if not text:
             return
         try:
-            await self._ws.send_json({"type": "tts_start"})
+            # text rides along so the client can show a playback-synced subtitle
+            await self._ws.send_json({"type": "tts_start", "text": text})
             async for audio_chunk in self._tts.synthesize(text, self._tts_config):
                 if self._interrupted:
                     break

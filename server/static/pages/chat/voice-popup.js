@@ -48,6 +48,7 @@ export function openVoicePopup(animaName, opts = {}) {
       </div>
       <div class="voice-popup-bustup-wrap">
         <img class="voice-popup-bustup" data-vp="bustup" alt="${escapeHtml(animaName)}" draggable="false">
+        <div class="voice-popup-subtitle" data-vp="subtitle" hidden></div>
       </div>
       <div class="voice-popup-captions">
         <div class="voice-popup-transcript" data-vp="transcript"></div>
@@ -73,6 +74,7 @@ export function openVoicePopup(animaName, opts = {}) {
     status: q("status"),
     bustup: q("bustup"),
     transcript: q("transcript"),
+    subtitle: q("subtitle"),
     response: q("response"),
     error: q("error"),
     rec: q("rec"),
@@ -190,6 +192,15 @@ function _bindVoiceEvents() {
   _bind("playbackEnd", () => {
     if (!_session) return;
     els.tts.style.display = "none";
+  });
+  _bind("caption", ({ text }) => {
+    if (!_session) return;
+    if (text) {
+      els.subtitle.textContent = text;
+      els.subtitle.hidden = false;
+    } else {
+      els.subtitle.hidden = true;
+    }
   });
   _bind("transcript", ({ text }) => {
     if (!_session || !text) return;
@@ -340,7 +351,9 @@ function _setBustupExpression(animaName, expression) {
       return;
     }
     const filename = candidates[idx++];
-    const url = `${assetUrl(animaName, filename)}?size=L`;
+    // Original image, not ?size=L: the L thumbnail is a center-square crop
+    // that beheads portrait bustups.
+    const url = assetUrl(animaName, filename);
     img.onerror = tryNext;
     img.onload = () => {
       img.onerror = null;
