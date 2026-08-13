@@ -173,7 +173,7 @@ class TestGetIndexerLazyInit:
 
 
 class TestLongtermBM25Refresh:
-    def test_index_file_marks_longterm_bm25_dirty_without_rebuilding(
+    def test_index_file_updates_longterm_bm25_without_rebuilding(
         self,
         rag: RAGMemorySearch,
         anima_dir: Path,
@@ -197,7 +197,7 @@ class TestLongtermBM25Refresh:
             memory_types=("knowledge",),
             top_k=5,
         )
-        assert hits == []
+        assert hits[0]["source_file"] == "knowledge/new.md"
 
     def test_get_indexer_only_inits_once(self, rag: RAGMemorySearch) -> None:
         """Second call to _get_indexer() does not call _init_indexer() again."""
@@ -299,6 +299,29 @@ class TestGraphEpisodesSearch:
 
 
 class TestSearchMemoryTextKeywordOnly:
+    def test_activity_time_range_is_forwarded_to_bm25(
+        self,
+        rag: RAGMemorySearch,
+        knowledge_dir: Path,
+        episodes_dir: Path,
+        procedures_dir: Path,
+        common_knowledge_dir: Path,
+    ) -> None:
+        with patch("core.memory.rag_search.search_activity_log", return_value=[]) as search:
+            rag.search_memory_text(
+                "meeting",
+                scope="activity_log",
+                knowledge_dir=knowledge_dir,
+                episodes_dir=episodes_dir,
+                procedures_dir=procedures_dir,
+                common_knowledge_dir=common_knowledge_dir,
+                time_start="2026-07-01",
+                time_end="2026-07-02",
+            )
+
+        assert search.call_args.kwargs["time_start"] == "2026-07-01"
+        assert search.call_args.kwargs["time_end"] == "2026-07-02"
+
     def test_explicit_time_range_is_forwarded_to_unified_search(
         self,
         rag: RAGMemorySearch,

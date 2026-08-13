@@ -433,6 +433,24 @@ class TestHandleSearchMemoryIntegration:
         assert "common result" in result
         assert "[2]" in result
 
+    def test_all_scope_forwards_time_range_to_legacy_scopes(self, mock_memory) -> None:
+        handler, _ = _make_handler_mixin(mock_memory)
+
+        handler._handle_search_memory(
+            {
+                "query": "test",
+                "scope": "all",
+                "time_range": {
+                    "after": "2026-08-13T00:00:00+09:00",
+                    "before": "2026-08-14T00:00:00+09:00",
+                },
+            }
+        )
+
+        for recorded in mock_memory.search_memory_text.call_args_list:
+            assert recorded.kwargs["time_start"] == "2026-08-13T00:00:00+09:00"
+            assert recorded.kwargs["time_end"] == "2026-08-14T00:00:00+09:00"
+
     def test_all_scope_falls_back_to_legacy_all_on_neo4j_failure(self, mock_memory) -> None:
         handler, mock_backend = _make_handler_mixin(mock_memory)
         mock_backend.retrieve = AsyncMock(side_effect=RuntimeError("crash"))

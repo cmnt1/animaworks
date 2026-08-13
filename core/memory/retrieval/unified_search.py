@@ -322,9 +322,9 @@ class UnifiedMemorySearch:
             iterative_min_results = max(0, int(settings.get("iterative_min_results", 2) or 0))
         except (TypeError, ValueError):
             iterative_min_results = 2
-        pool_k = max(int(settings.get("rerank_candidate_pool", policy.pool_k) or policy.pool_k), limit)
+        pool_k = max(int(settings.get("rerank_candidate_pool", policy.pool_k) or policy.pool_k), offset + limit)
         if pipeline_settings is None:
-            pool_k = max(policy.pool_k, limit)
+            pool_k = max(policy.pool_k, offset + limit)
         rerank_enabled = bool(settings.get("rerank_enabled", policy.rerank)) and policy.rerank
         confidence_enabled = bool(settings.get("abstain_on_low_confidence", policy.confidence_gate))
         confidence_enabled = confidence_enabled and policy.confidence_gate
@@ -399,6 +399,8 @@ class UnifiedMemorySearch:
             indexer=indexer,
             access_batch=access_batch,
             skip_bm25_validation=skip_bm25_validation,
+            time_start=time_start,
+            time_end=time_end,
         )
         logger.info(
             "Unified search retrieval: scope=%s query_chars=%d elapsed=%.3fs lists=%d candidates=%d",
@@ -467,9 +469,10 @@ class UnifiedMemorySearch:
                     },
                 }
             )
-            items = ranked_lists[0][offset : offset + limit]
+            items = ranked_lists[0]
             if min_score > 0.0:
                 items = [item for item in items if float(item.get("score", 0.0) or 0.0) >= min_score]
+            items = self._soft_source_collapse(items)[offset : offset + limit]
             items = self._maybe_iterative_search(
                 items,
                 query=query,
@@ -489,6 +492,7 @@ class UnifiedMemorySearch:
                 min_results=iterative_min_results,
                 allow_iterative=_allow_iterative,
             )
+            items = self._soft_source_collapse(items)[:limit]
             logger.info(
                 "Unified search complete: scope=%s mode=keyword-only elapsed=%.3fs results=%d",
                 scope,
@@ -506,7 +510,7 @@ class UnifiedMemorySearch:
         result = pipeline.run(
             dense_query,
             ranked_lists,
-            limit=offset + limit,
+            limit=pool_k,
             pool_k=pool_k,
             rerank_enabled=rerank_enabled,
             abstain_on_low_confidence=confidence_enabled,
@@ -535,7 +539,7 @@ class UnifiedMemorySearch:
             }
         )
 
-        items = result.items[offset : offset + limit]
+        items = result.items
         # Only apply min_score to reranked results: after cross-encoder rerank
         # the score is a CE logit that min_score is calibrated against. In RRF
         # order the score is a tiny fusion value (~0.03 max) that min_score
@@ -543,6 +547,7 @@ class UnifiedMemorySearch:
         # guards quality there. See F2.
         if min_score > 0.0 and self._rerank_was_applied(items):
             items = [item for item in items if float(item.get("score", 0.0) or 0.0) >= min_score]
+        items = self._soft_source_collapse(items)[offset : offset + limit]
         items = self._maybe_iterative_search(
             items,
             query=query,
@@ -562,6 +567,7 @@ class UnifiedMemorySearch:
             min_results=iterative_min_results,
             allow_iterative=_allow_iterative,
         )
+        items = self._soft_source_collapse(items)[:limit]
         logger.info(
             "Unified search complete: scope=%s mode=hybrid elapsed=%.3fs results=%d",
             scope,
@@ -638,10 +644,12 @@ class UnifiedMemorySearch:
             if current is None or float(marked.get("score", 0.0) or 0.0) > float(current.get("score", 0.0) or 0.0):
                 best[key] = marked
 
-        merged = sorted(
-            best.values(),
-            key=lambda item: float(item.get("score", 0.0) or 0.0),
-            reverse=True,
+        merged = self._soft_source_collapse(
+            sorted(
+                best.values(),
+                key=lambda item: float(item.get("score", 0.0) or 0.0),
+                reverse=True,
+            )
         )[:limit]
         self._set_last_search_meta(
             {
@@ -843,7 +851,7 @@ class UnifiedMemorySearch:
                     "cross-encoder/ms-marco-MiniLM-L-12-v2",
                 )
             )
-            merged = get_reranker(model_name).rerank_sync(queries[0], merged, top_k=limit)
+            merged = get_reranker(model_name).rerank_sync(queries[0], merged, top_k=len(merged))
             if min_score > 0.0 and self._rerank_was_applied(merged):
                 merged = [item for item in merged if float(item.get("score", 0.0) or 0.0) >= min_score]
             logger.info(
@@ -854,8 +862,7 @@ class UnifiedMemorySearch:
                 perf_counter() - rerank_started,
                 len(merged),
             )
-        else:
-            merged = merged[:limit]
+        merged = self._soft_source_collapse(merged)[:limit]
         self._set_last_search_meta(
             {
                 "abstain": saw_abstain and not merged,
@@ -870,6 +877,30 @@ class UnifiedMemorySearch:
             len(merged),
         )
         return merged
+
+    @staticmethod
+    def _soft_source_collapse(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Prefer one chunk per Markdown source, then append deferred chunks."""
+        first: list[dict[str, Any]] = []
+        deferred: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in items:
+            source = str(item.get("source_file", "") or item.get("source", ""))
+            memory_type = str(item.get("memory_type", "")).lower()
+            try:
+                total_chunks = int(item.get("total_chunks", 1) or 1)
+            except (TypeError, ValueError):
+                total_chunks = 1
+            collapsible = (
+                total_chunks > 1 and source.lower().endswith(".md") and memory_type not in {"activity_log", "facts"}
+            )
+            if collapsible and source in seen:
+                deferred.append(item)
+            else:
+                first.append(item)
+                if collapsible:
+                    seen.add(source)
+        return first + deferred
 
     def _ensure_rag_search(self) -> Any:
         if self._rag_search is None:
@@ -920,6 +951,8 @@ class UnifiedMemorySearch:
         indexer: Any | None,
         access_batch: Any,
         skip_bm25_validation: bool,
+        time_start: str | None,
+        time_end: str | None,
     ) -> list[list[dict[str, Any]]]:
         # Vector and graph retrieval use the dense query; BM25-backed
         # activity_log and keyword fallbacks use the sparse query. See F19.
@@ -983,7 +1016,15 @@ class UnifiedMemorySearch:
 
         with ThreadPoolExecutor(max_workers=len(vector_groups) + 2) as pool:
             activity_future = (
-                pool.submit(search_activity_log, self._anima_dir, sparse_query, top_k=pool_k, offset=0)
+                pool.submit(
+                    search_activity_log,
+                    self._anima_dir,
+                    sparse_query,
+                    top_k=pool_k,
+                    offset=0,
+                    time_start=time_start,
+                    time_end=time_end,
+                )
                 if "activity_log" in scopes and search_activity_log is not None
                 else None
             )
