@@ -355,7 +355,7 @@ class TestHandleRouting:
         assert "File not found" in result
 
     def test_write_memory_file_overwrite(self, handler: ToolHandler, anima_dir: Path):
-        handler._mark_longterm_bm25_dirty = MagicMock()
+        handler._update_longterm_bm25_source = MagicMock()
         result = handler.handle(
             "write_memory_file",
             {"path": "knowledge/new.md", "content": "new content"},
@@ -364,7 +364,7 @@ class TestHandleRouting:
         written = (anima_dir / "knowledge" / "new.md").read_text(encoding="utf-8")
         assert "new content" in written
         assert written.startswith("---")  # auto-frontmatter
-        handler._mark_longterm_bm25_dirty.assert_called_once_with("knowledge/new.md")
+        handler._update_longterm_bm25_source.assert_called_once_with("knowledge/new.md")
 
     def test_write_memory_file_append(self, handler: ToolHandler, anima_dir: Path):
         (anima_dir / "knowledge").mkdir(exist_ok=True)
@@ -2282,14 +2282,14 @@ class TestWriteMemoryFileEpisodeWarning:
         handler: ToolHandler,
         anima_dir: Path,
     ):
-        handler._mark_longterm_bm25_dirty = MagicMock()
+        handler._update_longterm_bm25_source = MagicMock()
         result = handler.handle(
             "write_memory_file",
             {"path": "episodes/2026-02-17.md", "content": "## 10:00 — テスト\n"},
         )
         assert "Written to" in result
         assert "WARNING" not in result
-        handler._mark_longterm_bm25_dirty.assert_called_once_with("episodes/2026-02-17.md")
+        handler._update_longterm_bm25_source.assert_called_once_with("episodes/2026-02-17.md")
 
     def test_suffixed_episode_no_warning(
         self,

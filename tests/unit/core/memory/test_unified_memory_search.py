@@ -153,6 +153,120 @@ def test_tool_offset_applies_after_final_ranking(fake_rag: FakeRAGSearch, monkey
     assert chat_results[0]["doc_id"] == "a"
 
 
+def test_activity_time_range_is_forwarded_in_all_scope(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def activity(*args, **kwargs):
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", activity)
+
+    _searcher(fake_rag).search(
+        "meeting",
+        scope="all",
+        limit=3,
+        trigger="tool",
+        time_start="2026-07-01",
+        time_end="2026-07-02",
+    )
+
+    assert calls[0]["time_start"] == "2026-07-01"
+    assert calls[0]["time_end"] == "2026-07-02"
+
+
+def test_soft_source_collapse_precedes_offset_and_keeps_facts(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.vector_returns["knowledge"] = [{"doc_id": "seed", "content": "seed", "score": 0.1}]
+    CapturingPipeline.return_items = [
+        {
+            "doc_id": "a-1",
+            "source_file": "knowledge/a.md",
+            "memory_type": "knowledge",
+            "total_chunks": 2,
+            "score": 0.9,
+        },
+        {
+            "doc_id": "a-2",
+            "source_file": "knowledge/a.md",
+            "memory_type": "knowledge",
+            "total_chunks": 2,
+            "score": 0.8,
+        },
+        {
+            "doc_id": "b-1",
+            "source_file": "knowledge/b.md",
+            "memory_type": "knowledge",
+            "total_chunks": 2,
+            "score": 0.7,
+        },
+        {
+            "doc_id": "fact-1",
+            "source_file": "facts/facts.md",
+            "memory_type": "facts",
+            "total_chunks": 3,
+            "score": 0.6,
+        },
+        {
+            "doc_id": "activity-1",
+            "source_file": "activity_log/log.md",
+            "memory_type": "activity_log",
+            "total_chunks": 3,
+            "score": 0.5,
+        },
+    ]
+
+    results = _searcher(fake_rag).search("query", scope="knowledge", limit=3, trigger="tool", offset=1)
+
+    assert [item["doc_id"] for item in results] == ["b-1", "fact-1", "activity-1"]
+
+
+def test_keyword_only_soft_collapse_keeps_same_source_as_second_pass(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.keyword_returns["knowledge"] = [
+        {
+            "doc_id": "a-1",
+            "source_file": "knowledge/a.md",
+            "memory_type": "knowledge",
+            "total_chunks": 2,
+            "score": 0.9,
+            "search_method": "keyword_fallback",
+        },
+        {
+            "doc_id": "a-2",
+            "source_file": "knowledge/a.md",
+            "memory_type": "knowledge",
+            "total_chunks": 2,
+            "score": 0.8,
+            "search_method": "keyword_fallback",
+        },
+        {
+            "doc_id": "b-1",
+            "source_file": "knowledge/b.md",
+            "memory_type": "knowledge",
+            "total_chunks": 2,
+            "score": 0.7,
+            "search_method": "keyword_fallback",
+        },
+    ]
+
+    diverse = _searcher(fake_rag).search("query", scope="knowledge", limit=2, trigger="tool")
+    all_chunks = _searcher(fake_rag).search("query", scope="knowledge", limit=3, trigger="tool")
+
+    assert [item["doc_id"] for item in diverse] == ["a-1", "b-1"]
+    assert [item["doc_id"] for item in all_chunks] == ["a-1", "b-1", "a-2"]
+
+
 def test_abstain_propagates_last_search_meta(fake_rag: FakeRAGSearch, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
     monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])

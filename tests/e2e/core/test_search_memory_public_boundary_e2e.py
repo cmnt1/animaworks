@@ -1,0 +1,68 @@
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+from core.memory.manager import MemoryManager
+from core.tooling.handler import ToolHandler
+
+
+def _handler(anima_dir: Path) -> ToolHandler:
+    anima_dir.mkdir(parents=True)
+    (anima_dir / "permissions.json").write_text(
+        '{"version":1,"file_roots":["/"],"commands":{"allow_all":true,"allow":[],"deny":[]},'
+        '"external_tools":{"allow_all":true},"tool_creation":{"personal":true,"shared":false}}',
+        encoding="utf-8",
+    )
+    return ToolHandler(anima_dir, MemoryManager(anima_dir), tool_registry=[], superuser=True)
+
+
+def test_public_search_reads_fresh_mixed_script_write_and_abstains(tmp_path: Path) -> None:
+    handler = _handler(tmp_path / "animas" / "test")
+
+    handler.handle(
+        "write_memory_file",
+        {"path": "knowledge/custody.md", "content": "Coldcard乱数問題とBitcoin自己保管方針"},
+    )
+
+    hit = handler.handle("search_memory", {"query": "Bitcoin", "scope": "knowledge"})
+    miss = handler.handle("search_memory", {"query": "qzxv_nonexistent_847291", "scope": "knowledge"})
+
+    assert "knowledge/custody.md" in hit
+    assert "Bitcoin自己保管方針" in hit
+    assert miss == "No results for 'qzxv_nonexistent_847291'"
+
+
+def test_public_activity_search_applies_exact_time_range(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "test"
+    handler = _handler(anima_dir)
+    now = datetime.now(UTC)
+    day = now.date().isoformat()
+    early = now.replace(hour=8, minute=0, second=0, microsecond=0)
+    late = early + timedelta(hours=2)
+    log_dir = anima_dir / "activity_log"
+    log_dir.mkdir()
+    (log_dir / f"{day}.jsonl").write_text(
+        "\n".join(
+            json.dumps({"ts": ts.isoformat(), "type": "message_received", "content": content})
+            for ts, content in ((early, "Meridian early"), (late, "Meridian late"))
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = handler.handle(
+        "search_memory",
+        {
+            "query": "Meridian",
+            "scope": "activity_log",
+            "time_range": {
+                "after": (early + timedelta(minutes=30)).isoformat(),
+                "before": (late + timedelta(minutes=30)).isoformat(),
+            },
+        },
+    )
+
+    assert "Meridian late" in result
+    assert "Meridian early" not in result

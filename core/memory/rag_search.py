@@ -484,6 +484,8 @@ class RAGMemorySearch:
                 query,
                 top_k=10,
                 offset=offset,
+                time_start=time_start,
+                time_end=time_end,
             )
 
         if scope in (
@@ -1263,16 +1265,16 @@ class RAGMemorySearch:
                 indexer.index_file(path, memory_type, force=force, origin=origin)
             except Exception as e:
                 logger.warning("Failed to index %s file: %s", memory_type, e)
-        self._mark_longterm_bm25_dirty(memory_type)
+        self._update_longterm_bm25_source(path, memory_type)
 
-    def _mark_longterm_bm25_dirty(self, memory_type: str) -> None:
+    def _update_longterm_bm25_source(self, path: Path, memory_type: str) -> None:
         try:
-            from core.memory.bm25 import LONGTERM_BM25_MEMORY_TYPES, mark_longterm_bm25_dirty
+            from core.memory.bm25 import LONGTERM_BM25_MEMORY_TYPES, update_longterm_bm25_source
 
             if memory_type in LONGTERM_BM25_MEMORY_TYPES:
-                mark_longterm_bm25_dirty(self._anima_dir, reason=f"index_file:{memory_type}")
+                update_longterm_bm25_source(self._anima_dir, str(path.relative_to(self._anima_dir)))
         except Exception:
-            logger.debug("Failed to mark long-term BM25 index dirty for %s", self._anima_dir.name, exc_info=True)
+            logger.debug("Failed to update long-term BM25 index for %s", self._anima_dir.name, exc_info=True)
 
     def _maybe_rebuild_dirty_longterm_bm25(self) -> None:
         """Rebuild the long-term BM25 index before searching if it is stale (F14).

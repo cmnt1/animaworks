@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,7 @@ from core.memory.bm25 import (
     _SEARCHABLE_TYPES,
     _should_index_entry,
     is_longterm_bm25_dirty,
+    longterm_bm25_delta_path,
     longterm_bm25_index_path,
     longterm_bm25_rebuild_marker_path,
     mark_longterm_bm25_dirty,
@@ -27,6 +29,7 @@ from core.memory.bm25 import (
     search_activity_log,
     search_longterm_memory_bm25,
     tokenize,
+    update_longterm_bm25_source,
 )
 from core.time_utils import today_local
 
@@ -82,6 +85,11 @@ def test_tokenize_mixed() -> None:
     assert "gmail" in joined.lower()
     assert any(any(ord(ch) > 127 for ch in tok) for tok in result)
     assert "tanaka" in result or "example" in result
+
+
+def test_tokenize_splits_ascii_at_cjk_boundaries() -> None:
+    tokens = tokenize("Coldcard乱数問題とtakaのBitcoin自己保管方針")
+    assert tokens == ["coldcard", "乱数問題と", "taka", "の", "bitcoin", "自己保管方針"]
 
 
 def test_tokenize_empty() -> None:
@@ -159,6 +167,40 @@ def test_search_activity_log_empty_query(tmp_path: Path) -> None:
     )
     assert search_activity_log(anima_dir, "") == []
     assert search_activity_log(anima_dir, "   ") == []
+
+
+def test_activity_requires_actual_token_match_even_for_zero_scores(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    today = today_local().isoformat()
+    _write_activity_log(
+        anima_dir,
+        [
+            {"ts": f"{today}T09:00:00Z", "type": "message_received", "content": "common alpha"},
+            {"ts": f"{today}T10:00:00Z", "type": "message_received", "content": "common beta"},
+        ],
+    )
+    assert search_activity_log(anima_dir, "qzxv_nonexistent_847291") == []
+    assert len(search_activity_log(anima_dir, "common")) == 2
+
+
+def test_activity_time_range_filters_matches(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    today = today_local().isoformat()
+    _write_activity_log(
+        anima_dir,
+        [
+            {"ts": f"{today}T09:00:00Z", "type": "message_received", "content": "Meridian early"},
+            {"ts": f"{today}T11:00:00Z", "type": "message_received", "content": "Meridian late"},
+        ],
+    )
+    hits = search_activity_log(
+        anima_dir,
+        "Meridian",
+        time_start=f"{today}T10:00:00Z",
+        time_end=f"{today}T12:00:00Z",
+    )
+    assert [hit["ts"] for hit in hits] == [f"{today}T11:00:00Z"]
+    assert search_activity_log(anima_dir, "Meridian", time_start="2099-01-01T00:00:00Z") == []
 
 
 def test_activity_cache_tokenizes_only_appended_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -354,12 +396,11 @@ def test_longterm_bm25_respects_ragignore(tmp_path: Path, monkeypatch: pytest.Mo
     assert [hit["source_file"] for hit in hits] == ["knowledge/included.md"]
 
 
-def test_longterm_source_validation_cache_invalidates_on_mtime(
+def test_longterm_clean_validation_does_not_rechunk_sources(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     anima_dir = tmp_path / "animas" / "alice"
-    source = anima_dir / "knowledge" / "memo.md"
     _write_longterm_memory(anima_dir, "knowledge/memo.md", "# Memo\n\nZephyrNova launch review.")
     rebuild_longterm_bm25_index(anima_dir)
     calls = 0
@@ -375,17 +416,7 @@ def test_longterm_source_validation_cache_invalidates_on_mtime(
     first = search_longterm_memory_bm25(anima_dir, "ZephyrNova", **kwargs)
     second = search_longterm_memory_bm25(anima_dir, "ZephyrNova", **kwargs)
     assert first == second
-    assert calls == 1
-
-    stat = source.stat()
-    os.utime(source, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
-    rebuild_longterm_bm25_index(anima_dir)
-    calls_before_search = calls
-    third = search_longterm_memory_bm25(anima_dir, "ZephyrNova", **kwargs)
-    assert [(hit["doc_id"], hit["content"], hit["score"]) for hit in third] == [
-        (hit["doc_id"], hit["content"], hit["score"]) for hit in first
-    ]
-    assert calls == calls_before_search + 1
+    assert calls == 0
 
 
 def test_longterm_source_validation_checks_each_file_once_per_search(
@@ -596,7 +627,7 @@ def test_maybe_rebuild_failure_keeps_dirty_marker_and_cools_down(
     assert calls == [1]
 
 
-def test_longterm_bm25_missing_index_does_not_rebuild_by_default(
+def test_longterm_bm25_missing_index_uses_live_delta_without_full_rebuild(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -608,17 +639,11 @@ def test_longterm_bm25_missing_index_does_not_rebuild_by_default(
 
     monkeypatch.setattr(bm25_module, "rebuild_longterm_bm25_index", fail_rebuild)
 
-    assert (
-        search_longterm_memory_bm25(
-            anima_dir,
-            "ZephyrNova",
-            memory_types=("knowledge",),
-        )
-        == []
-    )
+    hits = search_longterm_memory_bm25(anima_dir, "ZephyrNova", memory_types=("knowledge",))
+    assert hits[0]["source_file"] == "knowledge/a.md"
 
 
-def test_longterm_bm25_rejects_poisoned_index_content(tmp_path: Path) -> None:
+def test_longterm_bm25_rejects_index_doc_with_stale_source_signature(tmp_path: Path) -> None:
     anima_dir = tmp_path / "animas" / "alice"
     _write_longterm_memory(anima_dir, "knowledge/a.md", "# A\n\nBaseline launchpad audit.")
     rebuild_longterm_bm25_index(anima_dir)
@@ -635,7 +660,7 @@ def test_longterm_bm25_rejects_poisoned_index_content(tmp_path: Path) -> None:
             "token_counts": {"zephyrnova": 1, "forged": 1, "memo": 1},
             "doc_len": 3,
             "source_mtime_ns": stat.st_mtime_ns,
-            "source_size": stat.st_size,
+            "source_size": stat.st_size + 1,
             "chunk_index": 99,
             "total_chunks": 100,
             "memory_type": "knowledge",
@@ -676,6 +701,76 @@ def test_longterm_bm25_can_skip_source_validation(
     )
 
     assert len(hits) == 1
+
+
+def test_longterm_source_delta_is_fresh_without_full_rebuild(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    source = anima_dir / "knowledge" / "memo.md"
+    _write_longterm_memory(anima_dir, "knowledge/memo.md", "# Memo\n\nZephyrNova launch review.")
+    rebuild_longterm_bm25_index(anima_dir)
+
+    source.write_text("# Memo\n\nMeridian launch review with changed content.", encoding="utf-8")
+    rebuilds: list[Path] = []
+    monkeypatch.setattr(bm25_module, "rebuild_longterm_bm25_index", lambda path: rebuilds.append(path))
+
+    assert search_longterm_memory_bm25(anima_dir, "ZephyrNova", memory_types=("knowledge",)) == []
+    hits = search_longterm_memory_bm25(anima_dir, "Meridian", memory_types=("knowledge",))
+    assert hits[0]["source_file"] == "knowledge/memo.md"
+    assert maybe_rebuild_dirty_longterm_bm25(anima_dir, cooldown_seconds=0) is False
+    assert rebuilds == []
+    assert longterm_bm25_delta_path(anima_dir).is_file()
+
+
+def test_longterm_delta_add_and_tombstone(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    _write_longterm_memory(anima_dir, "knowledge/base.md", "# Base\n\nUnrelated launch notes.")
+    rebuild_longterm_bm25_index(anima_dir)
+
+    _write_longterm_memory(anima_dir, "knowledge/new.md", "# New\n\nColdcard custody policy.")
+    update_longterm_bm25_source(anima_dir, "knowledge/new.md")
+    assert search_longterm_memory_bm25(anima_dir, "Coldcard", memory_types=("knowledge",))[0]["source_file"] == (
+        "knowledge/new.md"
+    )
+
+    (anima_dir / "knowledge" / "new.md").unlink()
+    update_longterm_bm25_source(anima_dir, "knowledge/new.md")
+    assert search_longterm_memory_bm25(anima_dir, "Coldcard", memory_types=("knowledge",)) == []
+
+
+def test_longterm_sync_rechunks_only_changed_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    _write_longterm_memory(anima_dir, "knowledge/a.md", "# A\n\nAlpha baseline memory.")
+    _write_longterm_memory(anima_dir, "knowledge/b.md", "# B\n\nBeta baseline memory.")
+    rebuild_longterm_bm25_index(anima_dir)
+    original = bm25_module._bm25_docs_for_file
+    calls: list[str] = []
+
+    def counted(root: Path, path: Path, memory_type: str):
+        calls.append(str(path.relative_to(root)))
+        return original(root, path, memory_type)
+
+    monkeypatch.setattr(bm25_module, "_bm25_docs_for_file", counted)
+    assert search_longterm_memory_bm25(anima_dir, "Alpha", memory_types=("knowledge",))
+    assert calls == []
+
+    (anima_dir / "knowledge" / "b.md").write_text("# B\n\nGamma changed memory.", encoding="utf-8")
+    assert search_longterm_memory_bm25(anima_dir, "Gamma", memory_types=("knowledge",))
+    assert calls == ["knowledge/b.md"]
+
+
+def test_concurrent_longterm_delta_updates_do_not_lose_sources(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    _write_longterm_memory(anima_dir, "knowledge/base.md", "# Base\n\nBaseline memory.")
+    rebuild_longterm_bm25_index(anima_dir)
+    sources = [f"knowledge/update-{index}.md" for index in range(8)]
+    for index, source in enumerate(sources):
+        _write_longterm_memory(anima_dir, source, f"# Update\n\nSignal{index} concurrent memory.")
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        list(executor.map(lambda source: update_longterm_bm25_source(anima_dir, source), sources))
+
+    payload = json.loads(longterm_bm25_delta_path(anima_dir).read_text(encoding="utf-8"))
+    assert set(payload["sources"]) == set(sources)
 
 
 class TestBM25RebuildSingleFlight:
