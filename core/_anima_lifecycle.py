@@ -18,6 +18,7 @@ from contextlib import nullcontext
 from typing import Any
 
 from core.execution._sanitize import ORIGIN_SYSTEM
+from core.execution.fallback_activity import run_with_model_fallback
 from core.i18n import t
 from core.memory.hygiene import scan_memory_hygiene
 from core.paths import load_prompt
@@ -839,13 +840,24 @@ class LifecycleMixin:
                         agent.set_interrupt_event(self._get_interrupt_event("_background"))
                         _session_token = agent._tool_handler.set_active_session_type("cron")
                         agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
-                        original_config = None
                         bg_config = self._resolve_background_config("cron")
-                        if bg_config is not None:
-                            original_config = agent.model_config
-                            agent.update_model_config(bg_config)
+                        active_config = bg_config or agent.model_config
+
+                        async def _run(config):  # noqa: ANN001
+                            return await agent.run_cycle(
+                                prompt,
+                                trigger=f"cron:{task_name}",
+                                model_config_override=config,
+                            )
+
                         try:
-                            result = await agent.run_cycle(prompt, trigger=f"cron:{task_name}")
+                            result = await run_with_model_fallback(
+                                _run,
+                                activity=self._activity,
+                                primary_config=active_config,
+                                active_config=active_config,
+                                channel="cron",
+                            )
                         except asyncio.CancelledError:
                             current = asyncio.current_task()
                             if current is not None and current.cancelling():
@@ -862,8 +874,6 @@ class LifecycleMixin:
                                 duration_ms=0,
                             )
                         finally:
-                            if original_config is not None:
-                                agent.update_model_config(original_config)
                             active_session_type.reset(_session_token)
                     self._last_activity = now_local()
 
@@ -882,9 +892,14 @@ class LifecycleMixin:
                     ]
                     result.cron_skill_rejections = rejection_dicts
                     result.cron_skill_warnings = warning_dicts
+                    cron_summary = (
+                        f"[ERROR:{result.reason or result.stop_kind}] {result.summary}"
+                        if result.action == "error"
+                        else result.summary
+                    )
                     self.memory.append_cron_log(
                         task_name,
-                        summary=result.summary,
+                        summary=cron_summary,
                         duration_ms=result.duration_ms,
                         skill_rejections=rejection_dicts,
                     )
@@ -927,6 +942,18 @@ class LifecycleMixin:
                         self.name,
                         task_name,
                     )
+                    try:
+                        self.memory.append_cron_log(
+                            task_name,
+                            summary=f"[ERROR:{type(exc).__name__}] {str(exc)}",
+                            duration_ms=0,
+                            skill_rejections=[
+                                {"ref": rejection.ref, "reason": rejection.reason}
+                                for rejection in cron_skill_rejections
+                            ],
+                        )
+                    except Exception:
+                        logger.warning("[%s] Failed to append cron error log", self.name, exc_info=True)
                     # Activity log: error (safe=True to prevent double-fault)
                     self._activity.log(
                         "error",

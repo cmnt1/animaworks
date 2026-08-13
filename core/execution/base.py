@@ -571,6 +571,8 @@ class ExecutionResult:
     session_rotated: bool = False
     session_rotation_pending: bool = False
     truncated: bool = False
+    error: bool = False
+    reason: str = ""
 
 
 class BaseExecutor(ABC):
