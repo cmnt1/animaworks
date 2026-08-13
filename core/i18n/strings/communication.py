@@ -40,6 +40,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "(+{count}件)",
         "en": "(+{count} more)",
     },
+    "heartbeat.stale_task_overflow": {
+        "ja": "他{count}件",
+        "en": "{count} more tasks",
+        "ko": "외 {count}건",
+    },
     "messenger.read_receipt": {
         "ja": "[既読通知] {count}件のメッセージを受信しました: {summary}",
         "en": "[Read receipt] Received {count} messages: {summary}",
