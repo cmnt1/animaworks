@@ -75,7 +75,7 @@ def test_chroma_vector_store_configures_sqlite_pragmas(
 
     ChromaVectorStore(persist_dir=tmp_path, anima_name="sora")
 
-    assert configure.call_count == 2
+    configure.assert_called_once_with(tmp_path)
     fake_chromadb.PersistentClient.assert_called_once_with(path=str(tmp_path))  # type: ignore[attr-defined]
 
 
