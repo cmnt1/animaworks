@@ -12,7 +12,9 @@ existing RAG search helpers for vector, graph, keyword, and activity sources.
 
 import logging
 import re
+import threading
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from pathlib import Path
@@ -268,10 +270,20 @@ class UnifiedMemorySearch:
         self._common_skills_dir = common_skills_dir
         self._rag_search = rag_search
         self._last_search_meta: dict[str, object] = {}
+        # Thread-local so search_many can run queries in parallel without
+        # clobbering per-query abstain metadata across worker threads.
+        self._search_meta_tls = threading.local()
+
+    def _set_last_search_meta(self, meta: dict[str, object]) -> None:
+        self._last_search_meta = meta
+        self._search_meta_tls.meta = meta
 
     @property
     def last_search_meta(self) -> dict[str, object]:
-        """Metadata from the latest pipeline run."""
+        """Metadata from the latest pipeline run (this thread)."""
+        meta = getattr(self._search_meta_tls, "meta", None)
+        if isinstance(meta, dict):
+            return dict(meta)
         return dict(self._last_search_meta)
 
     def search(
@@ -295,7 +307,7 @@ class UnifiedMemorySearch:
         """Search Legacy memories through a trigger-aware shared policy."""
         limit = max(0, int(limit))
         if limit <= 0:
-            self._last_search_meta = {"abstain": False, "abstain_reason": ""}
+            self._set_last_search_meta({"abstain": False, "abstain_reason": ""})
             return []
         offset = max(0, min(int(offset), 50)) if trigger == "tool" else 0
         policy = self._policy_for(trigger)
@@ -366,16 +378,18 @@ class UnifiedMemorySearch:
         )
 
         if not ranked_lists:
-            self._last_search_meta = {
-                "abstain": False,
-                "abstain_reason": "",
-                "query_expansion": {
-                    "original": expanded.original,
-                    "search_text": search_query,
-                    "time_hint_start": time_hint_start,
-                    "time_hint_end": time_hint_end,
-                },
-            }
+            self._set_last_search_meta(
+                {
+                    "abstain": False,
+                    "abstain_reason": "",
+                    "query_expansion": {
+                        "original": expanded.original,
+                        "search_text": search_query,
+                        "time_hint_start": time_hint_start,
+                        "time_hint_end": time_hint_end,
+                    },
+                }
+            )
             return self._maybe_iterative_search(
                 [],
                 query=query,
@@ -396,16 +410,18 @@ class UnifiedMemorySearch:
                 allow_iterative=_allow_iterative,
             )
         if self._is_keyword_only_fallback(ranked_lists):
-            self._last_search_meta = {
-                "abstain": False,
-                "abstain_reason": "",
-                "query_expansion": {
-                    "original": expanded.original,
-                    "search_text": search_query,
-                    "time_hint_start": time_hint_start,
-                    "time_hint_end": time_hint_end,
-                },
-            }
+            self._set_last_search_meta(
+                {
+                    "abstain": False,
+                    "abstain_reason": "",
+                    "query_expansion": {
+                        "original": expanded.original,
+                        "search_text": search_query,
+                        "time_hint_start": time_hint_start,
+                        "time_hint_end": time_hint_end,
+                    },
+                }
+            )
             items = ranked_lists[0][offset : offset + limit]
             if min_score > 0.0:
                 items = [item for item in items if float(item.get("score", 0.0) or 0.0) >= min_score]
@@ -447,16 +463,18 @@ class UnifiedMemorySearch:
             entity_boost=entity_boost,
             access_boost=access_boost,
         )
-        self._last_search_meta = {
-            "abstain": result.abstain,
-            "abstain_reason": result.abstain_reason,
-            "query_expansion": {
-                "original": expanded.original,
-                "search_text": search_query,
-                "time_hint_start": time_hint_start,
-                "time_hint_end": time_hint_end,
-            },
-        }
+        self._set_last_search_meta(
+            {
+                "abstain": result.abstain,
+                "abstain_reason": result.abstain_reason,
+                "query_expansion": {
+                    "original": expanded.original,
+                    "search_text": search_query,
+                    "time_hint_start": time_hint_start,
+                    "time_hint_end": time_hint_end,
+                },
+            }
+        )
 
         items = result.items[offset : offset + limit]
         # Only apply min_score to reranked results: after cross-encoder rerank
@@ -559,19 +577,23 @@ class UnifiedMemorySearch:
             key=lambda item: float(item.get("score", 0.0) or 0.0),
             reverse=True,
         )[:limit]
-        self._last_search_meta = {
-            **first_meta,
-            "abstain": (bool(first_meta.get("abstain", False)) or bool(second_meta.get("abstain", False)))
-            and not merged,
-            "abstain_reason": (
-                str(second_meta.get("abstain_reason", "") or first_meta.get("abstain_reason", "")) if not merged else ""
-            ),
-            "iterative_retrieval": {
-                "attempted": True,
-                "queries": queries,
-                "second_round_results": len(second_round),
-            },
-        }
+        self._set_last_search_meta(
+            {
+                **first_meta,
+                "abstain": (bool(first_meta.get("abstain", False)) or bool(second_meta.get("abstain", False)))
+                and not merged,
+                "abstain_reason": (
+                    str(second_meta.get("abstain_reason", "") or first_meta.get("abstain_reason", ""))
+                    if not merged
+                    else ""
+                ),
+                "iterative_retrieval": {
+                    "attempted": True,
+                    "queries": queries,
+                    "second_round_results": len(second_round),
+                },
+            }
+        )
         return merged
 
     def _build_iterative_queries(self, query: str) -> list[str]:
@@ -682,27 +704,37 @@ class UnifiedMemorySearch:
         _allow_iterative: bool = False,
     ) -> list[dict[str, Any]]:
         """Run multiple queries and merge by stable document identity."""
+        search_kwargs: dict[str, Any] = {
+            "scope": scope,
+            "limit": limit,
+            "trigger": trigger,
+            "offset": offset,
+            "min_score": min_score,
+            "time_start": time_start,
+            "time_end": time_end,
+            "scope_override": scope_override,
+            "pipeline_settings": pipeline_settings,
+            "temporal_boost": temporal_boost,
+            "entity_boost": entity_boost,
+            "reference_time": reference_time,
+            "_allow_iterative": _allow_iterative,
+        }
+
+        def _run_one(query: str) -> tuple[list[dict[str, Any]], dict[str, object]]:
+            results = self.search(query, **search_kwargs)
+            return results, self.last_search_meta
+
+        if len(queries) <= 1:
+            per_query = [_run_one(query) for query in queries]
+        else:
+            # Parallelize independent queries (priming C/F can issue up to 3).
+            with ThreadPoolExecutor(max_workers=len(queries)) as pool:
+                per_query = list(pool.map(_run_one, queries))
+
         best: dict[str, dict[str, Any]] = {}
         saw_abstain = False
         abstain_reason = ""
-        for query in queries:
-            results = self.search(
-                query,
-                scope=scope,
-                limit=limit,
-                trigger=trigger,
-                offset=offset,
-                min_score=min_score,
-                time_start=time_start,
-                time_end=time_end,
-                scope_override=scope_override,
-                pipeline_settings=pipeline_settings,
-                temporal_boost=temporal_boost,
-                entity_boost=entity_boost,
-                reference_time=reference_time,
-                _allow_iterative=_allow_iterative,
-            )
-            meta = self.last_search_meta
+        for results, meta in per_query:
             if bool(meta.get("abstain", False)):
                 saw_abstain = True
                 abstain_reason = str(meta.get("abstain_reason", "") or abstain_reason)
@@ -713,10 +745,12 @@ class UnifiedMemorySearch:
                     best[key] = item
 
         merged = sorted(best.values(), key=lambda item: float(item.get("score", 0.0) or 0.0), reverse=True)[:limit]
-        self._last_search_meta = {
-            "abstain": saw_abstain and not merged,
-            "abstain_reason": abstain_reason if saw_abstain and not merged else "",
-        }
+        self._set_last_search_meta(
+            {
+                "abstain": saw_abstain and not merged,
+                "abstain_reason": abstain_reason if saw_abstain and not merged else "",
+            }
+        )
         return merged
 
     def _ensure_rag_search(self) -> Any:

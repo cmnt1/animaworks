@@ -582,3 +582,70 @@ def test_iterative_retrieval_merges_deduplicates_and_marks_round_two(
     ]
     assert all(item["retrieval_round"] == 2 for item in results)
     assert fake_rag.vector_queries == [query, *transformed]
+
+
+def test_search_many_merges_parallel_queries_by_best_score(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Multiple queries keep best score per doc and honor limit after parallel run."""
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.vector_query_returns[("alpha", "episodes")] = [
+        {"doc_id": "shared", "content": "from alpha", "score": 0.6, "source_file": "a.md"},
+        {"doc_id": "only-a", "content": "a", "score": 0.5, "source_file": "a2.md"},
+    ]
+    fake_rag.vector_query_returns[("beta", "episodes")] = [
+        {"doc_id": "shared", "content": "from beta", "score": 0.9, "source_file": "b.md"},
+        {"doc_id": "only-b", "content": "b", "score": 0.7, "source_file": "b2.md"},
+    ]
+    fake_rag.vector_query_returns[("gamma", "episodes")] = [
+        {"doc_id": "only-g", "content": "g", "score": 0.4, "source_file": "g.md"},
+    ]
+
+    results = _searcher(fake_rag).search_many(
+        ["alpha", "beta", "gamma"],
+        scope="episodes",
+        limit=3,
+        trigger="chat",
+    )
+
+    assert [item["doc_id"] for item in results] == ["shared", "only-b", "only-a"]
+    assert results[0]["score"] == 0.9
+    assert results[0]["content"] == "from beta"
+    assert len(results) == 3
+
+
+def test_search_many_parallel_matches_serial_order_and_count(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Parallel merge must match the pre-parallel serial merge semantics."""
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.vector_query_returns[("q1", "knowledge")] = [
+        {"doc_id": "d1", "content": "one", "score": 0.8},
+        {"doc_id": "d2", "content": "two", "score": 0.5},
+    ]
+    fake_rag.vector_query_returns[("q2", "knowledge")] = [
+        {"doc_id": "d2", "content": "two-better", "score": 0.85},
+        {"doc_id": "d3", "content": "three", "score": 0.7},
+    ]
+
+    searcher = _searcher(fake_rag)
+    parallel = searcher.search_many(["q1", "q2"], scope="knowledge", limit=5, trigger="chat")
+
+    # Serial baseline: same merge rules applied manually.
+    serial_best: dict[str, dict[str, Any]] = {}
+    for query in ("q1", "q2"):
+        for item in searcher.search(query, scope="knowledge", limit=5, trigger="chat"):
+            key = str(item.get("doc_id", ""))
+            existing = serial_best.get(key)
+            if existing is None or float(item.get("score", 0.0) or 0.0) > float(existing.get("score", 0.0) or 0.0):
+                serial_best[key] = item
+    serial = sorted(serial_best.values(), key=lambda item: float(item.get("score", 0.0) or 0.0), reverse=True)[:5]
+
+    assert [(item["doc_id"], item["score"]) for item in parallel] == [
+        (item["doc_id"], item["score"]) for item in serial
+    ]
+    assert len(parallel) == 3
