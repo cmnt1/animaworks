@@ -61,4 +61,11 @@ fi
   printf '### Final assistant message\n\n%s\n' "$assistant_text"
 } >>"$archive_file" 2>/dev/null || true
 
+# Mark the librarian BM25 long-term index dirty so the next search rebuilds it.
+state_dir="$data_dir/animas/librarian/state"
+if [ -d "$state_dir" ]; then
+  printf '{"dirty_at": "%s", "reason": "librarian_stop_hook"}\n' "$(date -u +%FT%TZ)" \
+    >"$state_dir/bm25_longterm_index.dirty" 2>/dev/null || true
+fi
+
 exit 0
