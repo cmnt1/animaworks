@@ -933,15 +933,15 @@ class HeartbeatConfig(BaseModel):
         description="Seconds before injecting a wrap-up system-reminder into the HB session",
     )
     hard_timeout_seconds: int = Field(
-        default=600,
-        ge=60,
+        default=0,
+        ge=0,
         le=7200,
-        description="Seconds before forcefully terminating the HB session",
+        description="Seconds before forcefully terminating the HB session; 0 = disabled",
     )
 
     @model_validator(mode="after")
     def _validate_soft_lt_hard(self) -> HeartbeatConfig:
-        if self.soft_timeout_seconds >= self.hard_timeout_seconds:
+        if self.hard_timeout_seconds and self.soft_timeout_seconds >= self.hard_timeout_seconds:
             raise ValueError(
                 f"soft_timeout_seconds ({self.soft_timeout_seconds}) must be "
                 f"less than hard_timeout_seconds ({self.hard_timeout_seconds})"

@@ -712,7 +712,7 @@ class HeartbeatMixin:
                                 _elapsed,
                                 _soft_timeout,
                             )
-                        if _elapsed > _hard_timeout:
+                        if _hard_timeout and _elapsed > _hard_timeout:
                             _hard_exceeded = True
                             logger.warning(
                                 "[%s] Heartbeat hard timeout reached (%.0fs > %ds) — breaking",
@@ -789,12 +789,8 @@ class HeartbeatMixin:
                 _hb_meta.update({"status": "failed", "reason": result.reason})
             self._activity.log("heartbeat_end", summary=result.summary, meta=_hb_meta)
 
-            # Session boundary: finalize pending conversation turns
-            try:
-                conv_mem = ConversationMemory(self.anima_dir, self.model_config)
-                await conv_mem.finalize_if_session_ended()
-            except Exception:
-                logger.debug("[%s] finalize_if_session_ended failed", self.name, exc_info=True)
+            # Session boundary finalization moved to run_heartbeat()'s finally block,
+            # so a hard timeout / cancellation cannot skip it.
 
             # A-3: Record important heartbeat actions to episodes
             if result.action != "error" and result.summary and "HEARTBEAT_OK" not in result.summary:

@@ -234,14 +234,18 @@ class LifecycleMixin:
                         _session_token = agent._tool_handler.set_active_session_type("heartbeat")
                         agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
                         try:
-                            result = await asyncio.wait_for(
-                                self._execute_heartbeat_cycle(
-                                    heartbeat_text,
-                                    [],
-                                    0,
-                                    prior_messages=prior_msgs,
-                                ),
-                                timeout=float(_hard_timeout),
+                            _cycle = self._execute_heartbeat_cycle(
+                                heartbeat_text,
+                                [],
+                                0,
+                                prior_messages=prior_msgs,
+                            )
+                            # hard_timeout_seconds == 0 disables forced termination:
+                            # busy-hang detection (progress-based) remains the safety net.
+                            result = (
+                                await asyncio.wait_for(_cycle, timeout=float(_hard_timeout))
+                                if _hard_timeout
+                                else await _cycle
                             )
                         except TimeoutError:
                             return self._handle_hard_timeout(_hard_timeout)
@@ -273,6 +277,16 @@ class LifecycleMixin:
                 finally:
                     self._status_slots["background"] = "idle"
                     self._task_slots["background"] = ""
+                    # Session boundary: finalize pending conversation turns.
+                    # Must run here (not inside the cycle) so a hard timeout or
+                    # cancellation of _execute_heartbeat_cycle cannot skip it —
+                    # otherwise raw turns pile up until the 50-turn compression.
+                    try:
+                        from core.memory.conversation import ConversationMemory
+
+                        await ConversationMemory(self.anima_dir, self.model_config).finalize_if_session_ended()
+                    except Exception:
+                        logger.debug("[%s] finalize_if_session_ended failed", self.name, exc_info=True)
         finally:
             self._notify_lock_released()
             # Signal pending task execution after heartbeat completes
