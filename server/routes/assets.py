@@ -518,20 +518,25 @@ def create_assets_router() -> APIRouter:
                 content_type = "image/webp"
 
         stat = serve_path.stat()
-        etag_src = f"{serve_path}:{stat.st_size}:{stat.st_mtime_ns}"
+        # Include the original file mtime so a remade icon.png invalidates
+        # thumbnail ETags even if a stale .thumbs file is still on disk.
+        etag_src = f"{serve_path}:{stat.st_size}:{stat.st_mtime_ns}:{file_path.stat().st_mtime_ns}"
         etag = f'"{hashlib.md5(etag_src.encode()).hexdigest()}"'  # noqa: S324
+        cache_control = (
+            "public, max-age=0, must-revalidate" if size is not None else "public, max-age=3600"
+        )
 
         if_none_match = request.headers.get("if-none-match")
         if if_none_match == etag:
             return Response(
                 status_code=304,
-                headers={"ETag": etag, "Cache-Control": "public, max-age=3600"},
+                headers={"ETag": etag, "Cache-Control": cache_control},
             )
 
         return FileResponse(
             serve_path,
             media_type=content_type,
-            headers={"Cache-Control": "public, max-age=3600", "ETag": etag},
+            headers={"Cache-Control": cache_control, "ETag": etag},
         )
 
     @router.api_route("/animas/{name}/attachments/{filename}", methods=["GET", "HEAD"])

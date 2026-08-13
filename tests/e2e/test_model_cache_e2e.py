@@ -129,7 +129,7 @@ class TestAssetThumbnailE2E:
         r1 = client.get("/api/animas/sakura/assets/icon.png?size=S")
         assert r1.status_code == 200
         assert "image/webp" in r1.headers["content-type"]
-        assert "max-age=3600" in r1.headers["cache-control"]
+        assert "must-revalidate" in r1.headers["cache-control"]
 
         from io import BytesIO
 

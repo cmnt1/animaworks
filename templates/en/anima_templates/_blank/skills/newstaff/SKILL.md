@@ -22,10 +22,11 @@ Interview the requester for the following information. **Bold items are required
 **Required:**
 - **English name** (lowercase alphanumeric only; becomes directory name)
 - **Role/specialty**: What they will handle (e.g., research, development, communication, infrastructure monitoring)
+- **Personality direction**: temperature, not job gravity (genki, gyaru, airhead, hot-blooded, ojou, onee-san). Do not pick cool if the org already has 2
+- **Face type**: exactly one from `{data_dir}/prompts/face_types.md`. Avoid clustering with existing members
 
 **Optional (reflect if specified, auto-generate if not):**
 - Japanese name
-- Personality direction (e.g., "cheerful", "cool", "easy-going" is fine)
 - Age
 - Any other preferences
 
@@ -47,9 +48,13 @@ Present this table for selection:
 
 ### 2. Character Design (Auto-generated)
 
-From the minimal information gathered in the interview, **create a coherent, in-depth character profile**.
+Flesh out the character from the interview. **Personality first, job second.**
 
-Read the **Character Design Guide** (`{data_dir}/prompts/character_design_guide.md`) in the runtime data directory and flesh out the character according to its rules.
+Always Read in this order:
+1. `{data_dir}/prompts/face_types.md`
+2. `{data_dir}/prompts/character_design_guide.md`
+
+Do not infer a cool beauty from the role. Hobbies must not all be job extensions. Check hair color, face type, and speech against existing members.
 
 ### 3. Create Character Sheet and Bulk-create via CLI
 
