@@ -146,7 +146,11 @@ export class VoiceManager {
 
       this._audioContext = new AudioContext({ sampleRate: 48000 });
 
-      await this._audioContext.audioWorklet.addModule('/modules/voice-worklet.js');
+      // Resolve against this module's URL so the /app/ base path and version
+      // prefix are preserved (an absolute '/modules/...' 404s behind nginx).
+      await this._audioContext.audioWorklet.addModule(
+        new URL('./voice-worklet.js', import.meta.url),
+      );
 
       if (this._pendingStop) {
         this._audioContext.close();

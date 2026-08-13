@@ -224,8 +224,13 @@ function _bindVoiceEvents() {
   _bind("error", ({ message }) => {
     if (!_session) return;
     console.warn("[VoicePopup]", message);
-    if (/microphone|permission|notallowed|denied/i.test(String(message || ""))) {
+    const msg = String(message || "");
+    // "Microphone error: ..." also covers non-permission failures (e.g. worklet
+    // load) — only permission-shaped errors get the mic-denied guidance.
+    if (/permission|notallowed|denied|拒否/i.test(msg)) {
       _showMicDenied();
+    } else {
+      _showError(msg);
     }
   });
   _bind("modeChange", ({ mode }) => {
