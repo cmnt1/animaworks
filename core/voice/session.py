@@ -26,6 +26,9 @@ PCM16_BYTES_PER_SAMPLE = 2
 MIN_SPEECH_SEC = 0.35
 MIN_SPEECH_BYTES = int(MIN_SPEECH_SEC * PCM16_SAMPLE_RATE * PCM16_BYTES_PER_SAMPLE)
 SILENCE_RMS_THRESHOLD = 0.008
+# Prefetch depth for sentence TTS. TTS backend is serial; larger values only
+# buffer more text when synthesis is faster than realtime.
+TTS_QUEUE_MAXSIZE = 8
 
 VOICE_MODE_SUFFIX = (
     "\n\n[voice-mode: 音声会話です。感情が伝わる話し言葉で200文字以内で簡潔に回答してください。"
@@ -167,6 +170,8 @@ class VoiceSession:
         self._tts_available: bool | None = None
         self._splitter = StreamingSentenceSplitter()
         self._consecutive_tts_failures: int = 0
+        self._tts_queue: asyncio.Queue[str] | None = None
+        self._tts_worker: asyncio.Task[None] | None = None
 
     async def handle_audio_chunk(self, data: bytes) -> None:
         """Receive audio chunk from browser, accumulate in buffer."""
@@ -276,6 +281,8 @@ class VoiceSession:
             pass
 
         response_done_sent = False
+        if tts_ok:
+            await self._start_tts_worker()
         try:
             async for ipc_response in self._supervisor.send_request_stream(
                 anima_name=self._anima_name,
@@ -300,19 +307,8 @@ class VoiceSession:
                     emotion = cycle_result.get("emotion", "neutral")
                     remaining = self._splitter.flush()
                     if remaining and tts_ok:
-                        await self._synthesize_and_send(remaining)
-                    await self._ws.send_json(
-                        {
-                            "type": "emotion",
-                            "emotion": emotion,
-                        }
-                    )
-                    await self._ws.send_json(
-                        {
-                            "type": "response_done",
-                            "emotion": emotion,
-                        }
-                    )
+                        await self._enqueue_tts(remaining)
+                    await self._finish_tts_and_response_done(emotion)
                     response_done_sent = True
                     break
 
@@ -340,7 +336,7 @@ class VoiceSession:
                                 for sentence in sentences:
                                     if self._interrupted:
                                         break
-                                    await self._synthesize_and_send(sentence)
+                                    await self._enqueue_tts(sentence)
 
                     elif chunk_data.get("type") == "thinking_start":
                         await self._ws.send_json({"type": "thinking_status", "thinking": True})
@@ -361,19 +357,8 @@ class VoiceSession:
                         emotion = cycle_result.get("emotion", "neutral")
                         remaining = self._splitter.flush()
                         if remaining and tts_ok:
-                            await self._synthesize_and_send(remaining)
-                        await self._ws.send_json(
-                            {
-                                "type": "emotion",
-                                "emotion": emotion,
-                            }
-                        )
-                        await self._ws.send_json(
-                            {
-                                "type": "response_done",
-                                "emotion": emotion,
-                            }
-                        )
+                            await self._enqueue_tts(remaining)
+                        await self._finish_tts_and_response_done(emotion)
                         response_done_sent = True
                         break
 
@@ -383,6 +368,10 @@ class VoiceSession:
         finally:
             if not response_done_sent:
                 try:
+                    # Drain any enqueued audio before the fallback terminal frames
+                    # unless barge-in already discarded the queue.
+                    if tts_ok and not self._interrupted:
+                        await self._drain_tts_queue()
                     await self._ws.send_json(
                         {
                             "type": "emotion",
@@ -397,9 +386,104 @@ class VoiceSession:
                     )
                 except Exception:
                     pass
+            await self._stop_tts_worker()
             self._tts_playing = False
             self._interrupted = False
             self._splitter.flush()
+
+    async def _start_tts_worker(self) -> None:
+        """Start a single ordered TTS consumer for the current utterance."""
+        await self._stop_tts_worker()
+        self._tts_queue = asyncio.Queue(maxsize=TTS_QUEUE_MAXSIZE)
+        self._tts_worker = asyncio.create_task(
+            self._tts_consumer_loop(),
+            name=f"tts-worker-{self._anima_name}",
+        )
+
+    async def _tts_consumer_loop(self) -> None:
+        """Pull sentences in order and synthesize. One consumer preserves order."""
+        queue = self._tts_queue
+        if queue is None:
+            return
+        try:
+            while True:
+                sentence = await queue.get()
+                try:
+                    if not self._interrupted:
+                        await self._synthesize_and_send(sentence)
+                except Exception:
+                    # Keep the session alive; synthesis errors are handled inside
+                    # _synthesize_and_send, this is a last-resort guard.
+                    logger.exception(
+                        "TTS worker unexpected error (%s)", self._anima_name
+                    )
+                finally:
+                    queue.task_done()
+        except asyncio.CancelledError:
+            raise
+
+    async def _enqueue_tts(self, sentence: str) -> None:
+        """Producer side: enqueue a sentence without waiting for synthesis."""
+        queue = self._tts_queue
+        if not sentence or queue is None or self._interrupted:
+            return
+        await queue.put(sentence)
+
+    async def _drain_tts_queue(self) -> None:
+        """Wait until the consumer finishes every enqueued sentence."""
+        queue = self._tts_queue
+        if queue is None:
+            return
+        await queue.join()
+
+    def _clear_tts_queue(self) -> None:
+        """Discard pending sentences (barge-in). In-flight item is left to consumer."""
+        queue = self._tts_queue
+        if queue is None:
+            return
+        while True:
+            try:
+                queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            else:
+                queue.task_done()
+
+    async def _stop_tts_worker(self) -> None:
+        """Cancel consumer task and drop the queue (no leak on disconnect)."""
+        worker = self._tts_worker
+        queue = self._tts_queue
+        self._tts_worker = None
+        self._tts_queue = None
+        if queue is not None:
+            while True:
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                else:
+                    queue.task_done()
+        if worker is not None and not worker.done():
+            worker.cancel()
+            try:
+                await worker
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.debug("TTS worker stop error", exc_info=True)
+
+    async def _finish_tts_and_response_done(self, emotion: str) -> None:
+        """Drain TTS then emit emotion + response_done in that order."""
+        if not self._interrupted:
+            await self._drain_tts_queue()
+        await self._ws.send_json({"type": "emotion", "emotion": emotion})
+        await self._ws.send_json({"type": "response_done", "emotion": emotion})
+
+    async def close(self) -> None:
+        """Cancel TTS worker on session teardown (WS disconnect)."""
+        self._interrupted = True
+        self._clear_tts_queue()
+        await self._stop_tts_worker()
 
     async def _synthesize_and_send(self, text: str) -> None:
         """TTS synthesize a sentence and send audio to client."""
@@ -459,24 +543,29 @@ class VoiceSession:
             await self._ws.send_json({"type": "emotion", "emotion": emotion})
             if tts_ok:
                 self._tts_playing = True
-                # Sentence-by-sentence so the first audio arrives in seconds
-                # instead of after one long whole-text synthesis.
+                # Same prefetch worker as speech replies — first audio still
+                # arrives after the first sentence synthesizes, later ones pipeline.
                 from core.voice.sentence_splitter import split_sentences
 
+                await self._start_tts_worker()
                 for sentence in split_sentences(text):
                     if self._interrupted or self._processing:
                         break
-                    await self._synthesize_and_send(sentence)
+                    await self._enqueue_tts(sentence)
+                if not self._interrupted and not self._processing:
+                    await self._drain_tts_queue()
             await self._ws.send_json({"type": "response_done", "emotion": emotion})
         except Exception as e:
             logger.debug("Voice greet delivery failed (%s): %s", self._anima_name, e)
         finally:
+            await self._stop_tts_worker()
             self._tts_playing = False
 
     async def handle_interrupt(self) -> None:
-        """Handle barge-in: stop TTS, prepare for new STT."""
+        """Handle barge-in: stop TTS, drop queued sentences, prepare for new STT."""
         self._interrupted = True
         self._audio_buffer.clear()
+        self._clear_tts_queue()
 
     async def _send_error(self, message: str) -> None:
         """Send error message to client."""
