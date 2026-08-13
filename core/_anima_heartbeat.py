@@ -11,6 +11,7 @@ references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -99,6 +100,41 @@ def _build_curator_review_part(anima_dir: Path, name: str) -> str | None:
         )
     except Exception:
         logger.debug("[%s] Failed to build curator review part", name, exc_info=True)
+        return None
+
+
+def _build_cron_rejected_notice(anima_dir: Path, name: str) -> str | None:
+    """Return a notice once for each distinct rejected-cron list."""
+    registration_path = anima_dir / "state" / "cron_registration.json"
+    marker_path = anima_dir / "state" / "cron_rejected_notice.sha256"
+    try:
+        registration = json.loads(registration_path.read_text(encoding="utf-8"))
+        rejected = registration.get("rejected") if isinstance(registration, dict) else None
+        if not isinstance(rejected, list):
+            return None
+        digest = hashlib.sha256(
+            json.dumps(rejected, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        if marker_path.is_file() and marker_path.read_text(encoding="utf-8").strip() == digest:
+            return None
+        notice = None
+        if rejected:
+            jobs = "\n".join(
+                f"- {item.get('name', '(unnamed)')}: {item.get('reason', 'unknown reason')}"
+                for item in rejected
+                if isinstance(item, dict)
+            )
+            notice = load_prompt("fragments/cron_rejected_notice", rejected_jobs=jobs)
+        try:
+            from core.memory._io import atomic_write_text
+
+            marker_path.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write_text(marker_path, digest + "\n")
+        except Exception:
+            logger.warning("[%s] Failed to persist rejected cron notice marker", name, exc_info=True)
+        return notice
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        logger.debug("[%s] Failed to build rejected cron notice", name, exc_info=True)
         return None
 
 
@@ -484,6 +520,10 @@ class HeartbeatMixin:
         cleanup = self._build_state_cleanup_instruction()
         if cleanup:
             parts.append(cleanup)
+
+        cron_notice = _build_cron_rejected_notice(self.anima_dir, self.name)
+        if cron_notice:
+            parts.append(cron_notice)
 
         parts.extend(self._build_background_context_parts())
 

@@ -9,9 +9,8 @@ from dataclasses import fields
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
+from core._anima_heartbeat import _build_cron_rejected_notice
 from core.schemas import CycleResult, Message
-
 
 # ── Helpers ───────────────────────────────────────────────
 
@@ -131,6 +130,61 @@ class TestInboxResult:
 
 
 class TestBuildHeartbeatPrompt:
+    def test_cron_rejection_notice_only_when_content_changes(self, tmp_path):
+        state = tmp_path / "state"
+        state.mkdir()
+        registration = state / "cron_registration.json"
+        registration.write_text(
+            '{"rejected":[{"name":"Notes","reason":"Empty schedule expression"}]}',
+            encoding="utf-8",
+        )
+
+        with patch("core._anima_heartbeat.load_prompt", return_value="NOTICE") as load:
+            assert _build_cron_rejected_notice(tmp_path, "alice") == "NOTICE"
+            assert _build_cron_rejected_notice(tmp_path, "alice") is None
+            load.assert_called_once()
+
+            registration.write_text('{"rejected":[]}', encoding="utf-8")
+            assert _build_cron_rejected_notice(tmp_path, "alice") is None
+            registration.write_text(
+                '{"rejected":[{"name":"Notes","reason":"Empty schedule expression"}]}',
+                encoding="utf-8",
+            )
+            assert _build_cron_rejected_notice(tmp_path, "alice") == "NOTICE"
+
+    def test_cron_rejection_notice_survives_marker_write_failure(self, tmp_path):
+        state = tmp_path / "state"
+        state.mkdir()
+        (state / "cron_registration.json").write_text(
+            '{"rejected":[{"name":"Notes","reason":"Empty schedule expression"}]}',
+            encoding="utf-8",
+        )
+
+        with (
+            patch("core._anima_heartbeat.load_prompt", return_value="NOTICE"),
+            patch("core.memory._io.atomic_write_text", side_effect=OSError("read-only")),
+        ):
+            assert _build_cron_rejected_notice(tmp_path, "alice") == "NOTICE"
+
+    async def test_cron_rejection_notice_is_in_heartbeat_prompt(self, data_dir, make_anima):
+        anima_dir = make_anima("alice")
+        dp, mocks = _create_anima(anima_dir, data_dir / "shared")
+        try:
+            dp._load_heartbeat_history = MagicMock(return_value="")
+            dp.drain_background_notifications = MagicMock(return_value=[])
+            with (
+                patch("core._anima_heartbeat._build_cron_rejected_notice", return_value="NOTICE"),
+                patch("core._anima_heartbeat.ConversationMemory") as mock_conversation,
+                patch("core.config.models.load_config") as mock_config,
+            ):
+                mock_conversation.return_value.load.return_value = MagicMock(turns=[])
+                mock_config.return_value.animas = {}
+                parts = await dp._build_heartbeat_prompt()
+
+            assert "NOTICE" in parts
+        finally:
+            _stop_patches(mocks)
+
     async def test_basic_prompt_parts(self, data_dir, make_anima):
         """Basic call returns at least the heartbeat checklist prompt."""
         anima_dir = make_anima("alice")
@@ -447,7 +501,7 @@ class TestBuildHeartbeatPrompt:
                 MockConv.return_value.load.return_value = MagicMock(turns=[])
                 MockCfg.return_value.animas = {}
 
-                parts = await dp._build_heartbeat_prompt()
+                await dp._build_heartbeat_prompt()
 
             # load_prompt should have been called with "heartbeat_default_checklist"
             # first (to get the fallback checklist), then with "heartbeat"
@@ -847,7 +901,7 @@ class TestExecuteHeartbeatCycle:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            with patch("core._anima_heartbeat.StreamingJournal") as MockSJ, \
+            with patch("core._anima_heartbeat.StreamingJournal"), \
                  patch("core.anima.ActivityLogger"), \
                  patch("core._anima_heartbeat.ConversationMemory") as MockConv:
                 MockConv.return_value.finalize_if_session_ended = AsyncMock()
@@ -921,7 +975,7 @@ class TestExecuteHeartbeatCycle:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            with patch("core._anima_heartbeat.StreamingJournal") as MockSJ, \
+            with patch("core._anima_heartbeat.StreamingJournal"), \
                  patch("core.anima.ActivityLogger"), \
                  patch("core._anima_heartbeat.ConversationMemory") as MockConv:
                 MockConv.return_value.finalize_if_session_ended = AsyncMock()
@@ -955,7 +1009,7 @@ class TestExecuteHeartbeatCycle:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            with patch("core._anima_heartbeat.StreamingJournal") as MockSJ, \
+            with patch("core._anima_heartbeat.StreamingJournal"), \
                  patch("core.anima.ActivityLogger"), \
                  patch("core._anima_heartbeat.ConversationMemory") as MockConv:
                 MockConv.return_value.finalize_if_session_ended = AsyncMock()
@@ -991,7 +1045,7 @@ class TestExecuteHeartbeatCycle:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            with patch("core._anima_heartbeat.StreamingJournal") as MockSJ, \
+            with patch("core._anima_heartbeat.StreamingJournal"), \
                  patch("core.anima.ActivityLogger"), \
                  patch("core._anima_heartbeat.ConversationMemory") as MockConv:
                 MockConv.return_value.finalize_if_session_ended = AsyncMock()
@@ -1029,7 +1083,7 @@ class TestExecuteHeartbeatCycle:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            with patch("core._anima_heartbeat.StreamingJournal") as MockSJ, \
+            with patch("core._anima_heartbeat.StreamingJournal"), \
                  patch("core.anima.ActivityLogger"), \
                  patch("core._anima_heartbeat.ConversationMemory") as MockConv:
                 MockConv.return_value.finalize_if_session_ended = AsyncMock()
@@ -1065,7 +1119,7 @@ class TestExecuteHeartbeatCycle:
 
             dp.agent.run_cycle_streaming = mock_stream
 
-            with patch("core._anima_heartbeat.StreamingJournal") as MockSJ, \
+            with patch("core._anima_heartbeat.StreamingJournal"), \
                  patch("core.anima.ActivityLogger"), \
                  patch("core._anima_heartbeat.ConversationMemory") as MockConv:
                 MockConv.return_value.finalize_if_session_ended = AsyncMock()
@@ -1483,7 +1537,7 @@ class TestHandleHeartbeatFailure:
             recovery_path = anima_dir / "state" / "recovery_note.md"
             content = recovery_path.read_text(encoding="utf-8")
             # The error content line should contain at most 200 chars of the error
-            error_line = [l for l in content.split("\n") if "エラー内容" in l][0]
+            error_line = [line for line in content.split("\n") if "エラー内容" in line][0]
             # str(error)[:200] = first 200 'x' chars
             assert "x" * 200 in error_line
             # But not the full 500

@@ -102,6 +102,8 @@ def _collect_cron_last_runs(anima_dir: Path, task_names: set[str]) -> dict[str, 
 
             task = str(entry.get("task", "")).strip()
             ts = str(entry.get("timestamp", "")).strip()
+            if entry.get("event") not in (None, "fired"):
+                continue
             if not task or not ts:
                 continue
             if task in task_names and task not in found:
@@ -124,12 +126,12 @@ def _parse_cron_jobs(animas_dir: Path, anima_names: list[str]) -> list[dict]:
             content = cron_path.read_text(encoding="utf-8")
         except OSError:
             continue
-        parsed_tasks = parse_cron_md(content)
+        parsed_tasks = parse_cron_md(content, warn=False)
         task_names = {task.name for task in parsed_tasks if task.name}
         last_runs = _collect_cron_last_runs(animas_dir / name, task_names)
         now = now_local()
         for idx, task in enumerate(parsed_tasks):
-            trigger = parse_schedule(task.schedule)
+            trigger = parse_schedule(task.schedule, warn=False)
             next_run_dt = trigger.get_next_fire_time(None, now) if trigger is not None else None
             next_run = next_run_dt.isoformat() if next_run_dt else None
             schedule = task.schedule.strip() if task.schedule else ""

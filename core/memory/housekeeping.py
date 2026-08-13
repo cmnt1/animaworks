@@ -45,7 +45,7 @@ async def run_housekeeping(
     anima_log_total_max_size_mb: int = 200,
     frontend_log_backup_count: int = 7,
     dm_log_archive_retention_days: int = 30,
-    cron_log_retention_days: int = 30,
+    cron_log_retention_days: int = 14,
     shortterm_retention_days: int = 7,
     shortterm_archive_retention_days: int = 30,
     shortterm_thread_gc_days: int = 30,
@@ -1066,7 +1066,7 @@ def _cleanup_cron_logs(
     if not animas_dir.exists():
         return {"skipped": True}
 
-    cutoff = (today_local() - timedelta(days=retention_days)).isoformat()
+    cutoff = (today_local() - timedelta(days=min(retention_days, 14))).isoformat()
     total_deleted = 0
 
     for anima_dir in sorted(animas_dir.iterdir()):

@@ -379,15 +379,27 @@ class SchedulerManager:
 
         config = self._anima.memory.read_cron_config()
         if not config:
+            self._write_cron_registration([], [])
             return
 
         tasks = parse_cron_md(config)
         disabled_tasks = self._read_cron_state(self._anima_dir / "state" / "cron_disabled.json")
+        registered_tasks: list[dict[str, str]] = []
+        rejected_tasks: list[dict[str, str]] = []
         registered = 0
         skipped_disabled = 0
         for i, task in enumerate(tasks):
             if task.name in disabled_tasks:
                 skipped_disabled += 1
+                rejected_tasks.append(
+                    {
+                        "name": task.name,
+                        "reason": (
+                            "Auto-disabled by cron guard; fix the failure, then run "
+                            f"animaworks cron-guard enable {self._anima_name} {task.name}"
+                        ),
+                    }
+                )
                 logger.info(
                     "Cron registration skipped (auto-disabled): %s -> %s",
                     self._anima_name,
@@ -406,6 +418,8 @@ class SchedulerManager:
 
             trigger = parse_schedule(task.schedule)
             if not trigger:
+                reason = "Empty schedule expression" if not task.schedule.strip() else "Invalid cron expression"
+                rejected_tasks.append({"name": task.name, "reason": reason})
                 logger.warning(
                     "Could not parse schedule for cron task '%s': '%s'",
                     task.name,
@@ -424,6 +438,8 @@ class SchedulerManager:
                 max_instances=1,
             )
             registered += 1
+            registered_tasks.append({"name": task.name, "schedule": task.schedule})
+            self._log_cron_event(task, "scheduled")
             logger.info(
                 "Cron registered: %s -> %s (%s) [%s]",
                 self._anima_name,
@@ -432,7 +448,38 @@ class SchedulerManager:
                 task.type,
             )
 
+        self._write_cron_registration(registered_tasks, rejected_tasks)
         self._check_cron_parse_health(config, tasks, registered + skipped_disabled)
+
+    def _write_cron_registration(
+        self,
+        registered: list[dict[str, str]],
+        rejected: list[dict[str, str]],
+    ) -> None:
+        """Persist the outcome of one cron registration cycle."""
+        try:
+            self._write_cron_state(
+                self._anima_dir / "state" / "cron_registration.json",
+                {
+                    "parsed_at": now_local().isoformat(),
+                    "registered": registered,
+                    "rejected": rejected,
+                },
+            )
+        except OSError:
+            logger.warning("Failed to persist cron registration for %s", self._anima_name, exc_info=True)
+
+    def _log_cron_event(self, task: CronTask, event: str, reason: str = "") -> None:
+        """Best-effort scheduler audit logging."""
+        try:
+            self._anima.memory.append_cron_event(
+                task.name,
+                event,
+                reason=reason,
+                schedule=task.schedule,
+            )
+        except Exception:
+            logger.debug("Failed to record cron audit event", exc_info=True)
 
     # ── Cron Guard ───────────────────────────────────────────────
 
@@ -898,6 +945,7 @@ class SchedulerManager:
 
         # Detect schedule file changes and skip stale tasks
         if self._check_schedule_freshness():
+            self._log_cron_event(task, "skipped", "schedule reloaded")
             logger.info(
                 "Skipping stale cron '%s' for %s (schedule reloaded)",
                 task.name,
@@ -906,6 +954,7 @@ class SchedulerManager:
             return
 
         if task.name in self._cron_running:
+            self._log_cron_event(task, "skipped", "already running")
             logger.info(
                 "Scheduled cron SKIPPED (already running): %s -> %s",
                 self._anima_name,
@@ -914,11 +963,17 @@ class SchedulerManager:
             return
 
         logger.info("Scheduled cron: %s -> %s [%s]", self._anima_name, task.name, task.type)
+        self._log_cron_event(task, "fired")
         # Run in separate task to avoid blocking other scheduled jobs
-        asyncio.create_task(
-            self._run_cron_task(task),
-            name=f"cron-{self._anima_name}-{task.name}",
-        )
+        self._cron_running.add(task.name)
+        try:
+            asyncio.create_task(
+                self._run_cron_task(task),
+                name=f"cron-{self._anima_name}-{task.name}",
+            )
+        except Exception:
+            self._cron_running.discard(task.name)
+            raise
 
     async def _run_cron_task(self, task: CronTask) -> None:
         """Run a single cron task (LLM or command type)."""
@@ -1033,6 +1088,8 @@ class SchedulerManager:
             logger.exception("Cron task failed: %s -> %s", self._anima_name, task.name)
         finally:
             self._record_cron_result(task.name, success=success, usage=usage)
+            if not success:
+                self._log_cron_event(task, "failed", "execution failed")
             self._cron_running.discard(task.name)
 
     async def shutdown_task_runners(self) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -144,6 +145,57 @@ class TestSetupCronTasksHealthIntegration:
         scheduler_mgr._setup_cron_tasks()
 
         assert _notif_files(tmp_path) == []
+
+    def test_registration_result_records_registered_and_rejected(
+        self, scheduler_mgr: SchedulerManager, tmp_path: Path
+    ) -> None:
+        scheduler_mgr._anima.memory.read_cron_config.return_value = (
+            "## Notes\nNot a cron job\n"
+            "## Daily\nschedule: 0 9 * * *\ntype: llm\nDo something\n"
+        )
+        scheduler_mgr.scheduler = MagicMock()
+
+        scheduler_mgr._setup_cron_tasks()
+
+        result = json.loads((tmp_path / "state" / "cron_registration.json").read_text(encoding="utf-8"))
+        assert result["registered"] == [{"name": "Daily", "schedule": "0 9 * * *"}]
+        assert result["rejected"] == [{"name": "Notes", "reason": "Empty schedule expression"}]
+        assert result["parsed_at"]
+        scheduler_mgr._anima.memory.append_cron_event.assert_called_once_with(
+            "Daily",
+            "scheduled",
+            reason="",
+            schedule="0 9 * * *",
+        )
+
+    def test_invalid_rejected_but_llm_codeblock_registered(
+        self, scheduler_mgr: SchedulerManager, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        scheduler_mgr._anima.memory.read_cron_config.return_value = (
+            "## Invalid\nschedule: tomorrow\ntype: llm\nNo\n"
+            "## Scripted\nschedule: 0 9 * * *\ntype: llm\n```sh\necho ok\n```\n"
+        )
+        scheduler_mgr.scheduler = MagicMock()
+
+        scheduler_mgr._setup_cron_tasks()
+
+        result = json.loads((tmp_path / "state" / "cron_registration.json").read_text(encoding="utf-8"))
+        assert result["registered"] == [{"name": "Scripted", "schedule": "0 9 * * *"}]
+        assert result["rejected"] == [{"name": "Invalid", "reason": "Invalid cron expression"}]
+        assert "contains a code block" in caplog.text
+
+    def test_registration_write_failure_does_not_stop_registration(
+        self, scheduler_mgr: SchedulerManager
+    ) -> None:
+        scheduler_mgr._anima.memory.read_cron_config.return_value = (
+            "## Daily\nschedule: 0 9 * * *\ntype: llm\nDo something\n"
+        )
+        scheduler_mgr.scheduler = MagicMock()
+
+        with patch.object(scheduler_mgr, "_write_cron_state", side_effect=OSError("read-only")):
+            scheduler_mgr._setup_cron_tasks()
+
+        scheduler_mgr.scheduler.add_job.assert_called_once()
 
 
 # ── Layer 2: _cron_health_tick ────────────────────────────────

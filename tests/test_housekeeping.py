@@ -35,7 +35,7 @@ class TestHousekeepingConfig:
         assert cfg.anima_log_total_max_size_mb == 200
         assert cfg.frontend_log_backup_count == 7
         assert cfg.dm_log_archive_retention_days == 30
-        assert cfg.cron_log_retention_days == 30
+        assert cfg.cron_log_retention_days == 14
         assert cfg.shortterm_retention_days == 7
         assert cfg.shortterm_archive_retention_days == 30
         assert cfg.shortterm_thread_gc_days == 30
@@ -394,6 +394,20 @@ class TestCleanupCronLogs:
         assert result["deleted_files"] == 1
         assert not (cron_dir / f"{old_date}.jsonl").exists()
         assert (cron_dir / f"{today}.jsonl").exists()
+
+    def test_retention_never_exceeds_14_days(self, tmp_path: Path):
+        from core.memory.housekeeping import _cleanup_cron_logs
+
+        cron_dir = tmp_path / "alice" / "state" / "cron_logs"
+        cron_dir.mkdir(parents=True)
+        old_date = (today_local() - timedelta(days=20)).isoformat()
+        old_path = cron_dir / f"{old_date}.jsonl"
+        old_path.write_text("{}\n")
+
+        result = _cleanup_cron_logs(tmp_path, retention_days=30)
+
+        assert result["deleted_files"] == 1
+        assert not old_path.exists()
 
     def test_skips_anima_without_cron_logs(self, tmp_path: Path):
         from core.memory.housekeeping import _cleanup_cron_logs

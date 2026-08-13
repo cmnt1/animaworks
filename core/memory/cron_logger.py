@@ -26,10 +26,9 @@ class CronLogger:
     """
 
     _LOG_DIR = "state/cron_logs"
-    _MAX_LINES = 50
-
     def __init__(self, anima_dir: Path) -> None:
         self._anima_dir = anima_dir
+        self._last_cleanup_date = None
 
     def _log_dir(self) -> Path:
         return self._anima_dir / self._LOG_DIR
@@ -45,18 +44,42 @@ class CronLogger:
                 release_file_lock(lock_file)
 
     def _append_entry(self, path: Path, entry: str) -> None:
-        with self._daily_log_lock(path):
-            with open(path, "a", encoding="utf-8") as f:
-                f.write(entry + "\n")
-                f.flush()
-                os.fsync(f.fileno())
+        today = now_local().date()
+        if self._last_cleanup_date != today:
+            cutoff = (today - timedelta(days=14)).isoformat()
+            try:
+                for old_path in self._log_dir().glob("*.jsonl"):
+                    if old_path.stem < cutoff:
+                        try:
+                            old_path.unlink()
+                        except OSError:
+                            logger.warning("Failed to delete old cron log: %s", old_path)
+            except OSError:
+                logger.warning("Failed to rotate old cron logs", exc_info=True)
+            self._last_cleanup_date = today
+        with self._daily_log_lock(path), open(path, "a", encoding="utf-8") as f:
+            f.write(entry + "\n")
+            f.flush()
+            os.fsync(f.fileno())
 
-            # Keep file bounded — use atomic write for truncation
-            lines = path.read_text(encoding="utf-8").strip().splitlines()
-            if len(lines) > self._MAX_LINES:
-                from core.memory._io import atomic_write_text
-
-                atomic_write_text(path, "\n".join(lines[-self._MAX_LINES :]) + "\n")
+    def append_cron_event(
+        self,
+        task_name: str,
+        event: str,
+        *,
+        reason: str = "",
+        schedule: str = "",
+    ) -> None:
+        """Append a scheduler audit event to the daily log."""
+        log_dir = self._log_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        path = log_dir / f"{now_local().date().isoformat()}.jsonl"
+        entry = {"timestamp": now_iso(), "task": task_name, "event": event}
+        if reason:
+            entry["reason"] = reason
+        if schedule:
+            entry["schedule"] = schedule
+        self._append_entry(path, json.dumps(entry, ensure_ascii=False))
 
     def append_cron_log(
         self,
@@ -150,7 +173,10 @@ class CronLogger:
             for line in path.read_text(encoding="utf-8").strip().splitlines():
                 try:
                     e = json.loads(line)
-                    if "summary" in e:
+                    if "event" in e:
+                        reason = f" ({e['reason']})" if e.get("reason") else ""
+                        line_text = f"- {e['timestamp']}: [{e['task']}] {e['event']}{reason}"
+                    elif "summary" in e:
                         line_text = f"- {e['timestamp']}: [{e['task']}] {e['summary'][:200]} ({e['duration_ms']}ms)"
                     else:
                         exit_code = e.get("exit_code", "?")
