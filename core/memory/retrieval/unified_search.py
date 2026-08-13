@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 try:
@@ -303,8 +304,10 @@ class UnifiedMemorySearch:
         entity_boost: Any | None = None,
         reference_time: Any | None = None,
         _allow_iterative: bool = True,
+        skip_bm25_validation: bool = False,
     ) -> list[dict[str, Any]]:
         """Search Legacy memories through a trigger-aware shared policy."""
+        search_started = perf_counter()
         limit = max(0, int(limit))
         if limit <= 0:
             self._set_last_search_meta({"abstain": False, "abstain_reason": ""})
@@ -369,13 +372,22 @@ class UnifiedMemorySearch:
         access_batch = AccessBatch()
 
         embedding = None
+        embedding_started = perf_counter()
         generate_embeddings = getattr(indexer, "_generate_embeddings", None)
         if callable(generate_embeddings):
             try:
                 embedding = generate_embeddings([dense_query], purpose="query")[0]
             except Exception:
                 logger.debug("Unified query embedding prefetch failed", exc_info=True)
+        logger.info(
+            "Unified search embedding: scope=%s query_chars=%d elapsed=%.3fs available=%s",
+            scope,
+            len(query),
+            perf_counter() - embedding_started,
+            embedding is not None,
+        )
 
+        collect_started = perf_counter()
         ranked_lists = self._collect_ranked_lists(
             rag,
             dense_query=dense_query,
@@ -386,6 +398,15 @@ class UnifiedMemorySearch:
             embedding=embedding,
             indexer=indexer,
             access_batch=access_batch,
+            skip_bm25_validation=skip_bm25_validation,
+        )
+        logger.info(
+            "Unified search retrieval: scope=%s query_chars=%d elapsed=%.3fs lists=%d candidates=%d",
+            scope,
+            len(query),
+            perf_counter() - collect_started,
+            len(ranked_lists),
+            sum(len(items) for items in ranked_lists),
         )
         access_batch.flush(getattr(indexer, "vector_store", None))
         ranked_lists = filter_ranked_lists_by_time_hint(
@@ -407,7 +428,7 @@ class UnifiedMemorySearch:
                     },
                 }
             )
-            return self._maybe_iterative_search(
+            items = self._maybe_iterative_search(
                 [],
                 query=query,
                 scope=scope,
@@ -426,6 +447,13 @@ class UnifiedMemorySearch:
                 min_results=iterative_min_results,
                 allow_iterative=_allow_iterative,
             )
+            logger.info(
+                "Unified search complete: scope=%s mode=empty elapsed=%.3fs results=%d",
+                scope,
+                perf_counter() - search_started,
+                len(items),
+            )
+            return items
         if self._is_keyword_only_fallback(ranked_lists):
             self._set_last_search_meta(
                 {
@@ -442,7 +470,7 @@ class UnifiedMemorySearch:
             items = ranked_lists[0][offset : offset + limit]
             if min_score > 0.0:
                 items = [item for item in items if float(item.get("score", 0.0) or 0.0) >= min_score]
-            return self._maybe_iterative_search(
+            items = self._maybe_iterative_search(
                 items,
                 query=query,
                 scope=scope,
@@ -461,12 +489,20 @@ class UnifiedMemorySearch:
                 min_results=iterative_min_results,
                 allow_iterative=_allow_iterative,
             )
+            logger.info(
+                "Unified search complete: scope=%s mode=keyword-only elapsed=%.3fs results=%d",
+                scope,
+                perf_counter() - search_started,
+                len(items),
+            )
+            return items
 
         from core.memory.retrieval.pipeline import RetrievalPipeline
 
         pipeline = RetrievalPipeline(
             cross_encoder_model=str(settings.get("cross_encoder_model", "cross-encoder/ms-marco-MiniLM-L-12-v2")),
         )
+        pipeline_started = perf_counter()
         result = pipeline.run(
             dense_query,
             ranked_lists,
@@ -479,6 +515,12 @@ class UnifiedMemorySearch:
             temporal_boost=temporal_boost,
             entity_boost=entity_boost,
             access_boost=access_boost,
+        )
+        logger.info(
+            "Unified search pipeline: scope=%s elapsed=%.3fs rerank_enabled=%s",
+            scope,
+            perf_counter() - pipeline_started,
+            rerank_enabled,
         )
         self._set_last_search_meta(
             {
@@ -501,7 +543,7 @@ class UnifiedMemorySearch:
         # guards quality there. See F2.
         if min_score > 0.0 and self._rerank_was_applied(items):
             items = [item for item in items if float(item.get("score", 0.0) or 0.0) >= min_score]
-        return self._maybe_iterative_search(
+        items = self._maybe_iterative_search(
             items,
             query=query,
             scope=scope,
@@ -520,6 +562,13 @@ class UnifiedMemorySearch:
             min_results=iterative_min_results,
             allow_iterative=_allow_iterative,
         )
+        logger.info(
+            "Unified search complete: scope=%s mode=hybrid elapsed=%.3fs results=%d",
+            scope,
+            perf_counter() - search_started,
+            len(items),
+        )
+        return items
 
     def _maybe_iterative_search(
         self,
@@ -719,8 +768,21 @@ class UnifiedMemorySearch:
         entity_boost: Any | None = None,
         reference_time: Any | None = None,
         _allow_iterative: bool = False,
+        rerank_after_merge: bool = False,
+        skip_bm25_validation: bool = False,
     ) -> list[dict[str, Any]]:
         """Run multiple queries and merge by stable document identity."""
+        search_many_started = perf_counter()
+        merge_rerank_enabled = rerank_after_merge and len(queries) > 1
+        merged_pipeline_settings = pipeline_settings
+        if merge_rerank_enabled:
+            policy = self._policy_for(trigger)
+            rag = self._ensure_rag_search()
+            merged_pipeline_settings = dict(pipeline_settings or rag._load_rag_pipeline_settings())
+            if pipeline_settings is None:
+                merged_pipeline_settings["rerank_candidate_pool"] = max(policy.pool_k, limit)
+            merge_rerank_enabled = policy.rerank and bool(merged_pipeline_settings.get("rerank_enabled", policy.rerank))
+            merged_pipeline_settings["rerank_enabled"] = False
         search_kwargs: dict[str, Any] = {
             "scope": scope,
             "limit": limit,
@@ -730,15 +792,24 @@ class UnifiedMemorySearch:
             "time_start": time_start,
             "time_end": time_end,
             "scope_override": scope_override,
-            "pipeline_settings": pipeline_settings,
+            "pipeline_settings": merged_pipeline_settings,
             "temporal_boost": temporal_boost,
             "entity_boost": entity_boost,
             "reference_time": reference_time,
             "_allow_iterative": _allow_iterative,
+            "skip_bm25_validation": skip_bm25_validation,
         }
 
         def _run_one(query: str) -> tuple[list[dict[str, Any]], dict[str, object]]:
+            started = perf_counter()
             results = self.search(query, **search_kwargs)
+            logger.info(
+                "Unified search_many query complete: scope=%s query_chars=%d elapsed=%.3fs results=%d",
+                scope,
+                len(query),
+                perf_counter() - started,
+                len(results),
+            )
             return results, self.last_search_meta
 
         if len(queries) <= 1:
@@ -761,12 +832,42 @@ class UnifiedMemorySearch:
                 if existing is None or float(item.get("score", 0.0) or 0.0) > float(existing.get("score", 0.0) or 0.0):
                     best[key] = item
 
-        merged = sorted(best.values(), key=lambda item: float(item.get("score", 0.0) or 0.0), reverse=True)[:limit]
+        merged = sorted(best.values(), key=lambda item: float(item.get("score", 0.0) or 0.0), reverse=True)
+        if merge_rerank_enabled and len(merged) >= 2:
+            from core.memory.retrieval.reranker import get_reranker
+
+            rerank_started = perf_counter()
+            model_name = str(
+                (merged_pipeline_settings or {}).get(
+                    "cross_encoder_model",
+                    "cross-encoder/ms-marco-MiniLM-L-12-v2",
+                )
+            )
+            merged = get_reranker(model_name).rerank_sync(queries[0], merged, top_k=limit)
+            if min_score > 0.0 and self._rerank_was_applied(merged):
+                merged = [item for item in merged if float(item.get("score", 0.0) or 0.0) >= min_score]
+            logger.info(
+                "Unified search_many merged rerank: scope=%s query_chars=%d candidates=%d elapsed=%.3fs results=%d",
+                scope,
+                len(queries[0]),
+                len(best),
+                perf_counter() - rerank_started,
+                len(merged),
+            )
+        else:
+            merged = merged[:limit]
         self._set_last_search_meta(
             {
                 "abstain": saw_abstain and not merged,
                 "abstain_reason": abstain_reason if saw_abstain and not merged else "",
             }
+        )
+        logger.info(
+            "Unified search_many complete: scope=%s queries=%d elapsed=%.3fs results=%d",
+            scope,
+            len(queries),
+            perf_counter() - search_many_started,
+            len(merged),
         )
         return merged
 
@@ -818,6 +919,7 @@ class UnifiedMemorySearch:
         embedding: list[float] | None,
         indexer: Any | None,
         access_batch: Any,
+        skip_bm25_validation: bool,
     ) -> list[list[dict[str, Any]]]:
         # Vector and graph retrieval use the dense query; BM25-backed
         # activity_log and keyword fallbacks use the sparse query. See F19.
@@ -892,6 +994,7 @@ class UnifiedMemorySearch:
                 vector_scopes,
                 pool_k,
                 entity_boost=entity_boost,
+                skip_bm25_validation=skip_bm25_validation,
             )
             vector_futures = [pool.submit(_run_vector_group, *group) for group in vector_groups]
             vector_hits: dict[str, list[dict[str, Any]]] = {}
@@ -979,6 +1082,7 @@ class UnifiedMemorySearch:
         pool_k: int,
         *,
         entity_boost: Any | None,
+        skip_bm25_validation: bool,
     ) -> list[dict[str, Any]]:
         merged: dict[str, dict[str, Any]] = {}
         for scope in scopes:
@@ -988,6 +1092,7 @@ class UnifiedMemorySearch:
                 scope,
                 pool_k,
                 entity_boost=entity_boost,
+                skip_bm25_validation=skip_bm25_validation,
                 merged=merged,
             )
         return sorted(merged.values(), key=lambda item: float(item.get("score", 0.0) or 0.0), reverse=True)[:pool_k]
@@ -1000,6 +1105,7 @@ class UnifiedMemorySearch:
         pool_k: int,
         *,
         entity_boost: Any | None,
+        skip_bm25_validation: bool,
         merged: dict[str, dict[str, Any]],
     ) -> None:
         try:
@@ -1013,6 +1119,7 @@ class UnifiedMemorySearch:
                 common_knowledge_dir=self._common_knowledge_dir,
                 result_limit=pool_k,
                 entity_boost=entity_boost,
+                skip_bm25_validation=skip_bm25_validation,
             )
         except Exception:
             logger.debug("Unified keyword search failed for scope=%s", scope, exc_info=True)

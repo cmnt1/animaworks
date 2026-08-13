@@ -248,9 +248,7 @@ def _activity_files_signature(anima_dir: Path, days: int) -> tuple[tuple[str, in
     return tuple(sig)
 
 
-def _activity_corpus_cached(
-    anima_dir: Path, days: int
-) -> tuple[list[list[str]], list[tuple[str, dict[str, Any]]]]:
+def _activity_corpus_cached(anima_dir: Path, days: int) -> tuple[list[list[str]], list[tuple[str, dict[str, Any]]]]:
     key = (str(anima_dir), days)
     signature = _activity_files_signature(anima_dir, days)
     cached = _ACTIVITY_CORPUS_CACHE.get(key)
@@ -493,12 +491,22 @@ def search_longterm_memory_bm25(
     top_k: int = 10,
     offset: int = 0,
     rebuild_if_missing: bool = False,
+    validate_sources: bool = True,
 ) -> list[dict[str, Any]]:
     """Search persisted long-term memory BM25 chunks."""
+    search_started = time.perf_counter()
     query_tokens = tokenize(query)
     if not query_tokens:
         return []
+    load_started = time.perf_counter()
     payload = _load_longterm_bm25_payload(anima_dir)
+    logger.info(
+        "Long-term BM25 load: anima=%s query_chars=%d elapsed=%.3fs available=%s",
+        anima_dir.name,
+        len(query),
+        time.perf_counter() - load_started,
+        payload is not None,
+    )
     if payload is not None and int(payload.get("schema_version") or 0) < LONGTERM_BM25_SCHEMA_VERSION:
         payload = None
     if payload is None and rebuild_if_missing:
@@ -511,11 +519,7 @@ def search_longterm_memory_bm25(
         return []
 
     wanted = set(memory_types)
-    all_docs = [
-        doc
-        for doc in payload.get("documents", [])
-        if isinstance(doc, dict) and doc.get("tokens")
-    ]
+    all_docs = [doc for doc in payload.get("documents", []) if isinstance(doc, dict) and doc.get("tokens")]
     docs = [doc for doc in all_docs if str(doc.get("memory_type", "")) in wanted]
     if not docs:
         return []
@@ -528,13 +532,27 @@ def search_longterm_memory_bm25(
     except OSError:
         validation_key = None
         signature = None
-    if validation_key is not None and _LONGTERM_VALIDATION_WARMED.get(validation_key) != signature:
+    validation_needed = (
+        validate_sources and validation_key is not None and _LONGTERM_VALIDATION_WARMED.get(validation_key) != signature
+    )
+    validation_started = time.perf_counter()
+    validated_sources = 0
+    if validation_needed:
         source_cache: dict[str, tuple[int, int, set[tuple[int, str]]]] = {}
         for doc in docs:
             source_file = str(doc.get("source_file", "") or "")
             if source_file not in source_cache:
                 _longterm_doc_matches_current_source(anima_dir, doc, source_cache)
         _LONGTERM_VALIDATION_WARMED[validation_key] = signature
+        validated_sources = len(source_cache)
+    logger.info(
+        "Long-term BM25 validation: anima=%s types=%s elapsed=%.3fs needed=%s sources=%d",
+        anima_dir.name,
+        ",".join(sorted(wanted)),
+        time.perf_counter() - validation_started,
+        validation_needed,
+        validated_sources,
+    )
 
     query_key = (
         index_path,
@@ -543,20 +561,27 @@ def search_longterm_memory_bm25(
         tuple(query_tokens),
     )
     cached_query = _LONGTERM_QUERY_CACHE.get(query_key)
+    score_started = time.perf_counter()
+    score_cached = cached_query is not None
     if cached_query is None:
         corpus_tokens = [doc.get("tokens", []) for doc in all_docs]
         scores = _longterm_bm25_scores(all_docs, corpus_tokens, query_tokens, payload)
-        ranked_list = [
-            (idx, float(score))
-            for idx, score in enumerate(scores)
-            if score > 0.0
-        ]
+        ranked_list = [(idx, float(score)) for idx, score in enumerate(scores) if score > 0.0]
         ranked_list.sort(key=lambda item: item[1], reverse=True)
         cached_query = (all_docs, tuple(ranked_list))
         if len(_LONGTERM_QUERY_CACHE) >= 64:
             _LONGTERM_QUERY_CACHE.pop(next(iter(_LONGTERM_QUERY_CACHE)))
         _LONGTERM_QUERY_CACHE[query_key] = cached_query
     ranked_docs, ranked = cached_query
+    logger.info(
+        "Long-term BM25 score: anima=%s tokens=%d docs=%d elapsed=%.3fs cached=%s hits=%d",
+        anima_dir.name,
+        len(query_tokens),
+        len(all_docs),
+        time.perf_counter() - score_started,
+        score_cached,
+        len(ranked),
+    )
 
     search_method = "bm25"
     results: list[dict[str, Any]] = []
@@ -566,7 +591,7 @@ def search_longterm_memory_bm25(
         doc = ranked_docs[idx]
         if str(doc.get("memory_type", "")) not in wanted:
             continue
-        if not _longterm_doc_matches_current_source(anima_dir, doc, source_cache):
+        if validate_sources and not _longterm_doc_matches_current_source(anima_dir, doc, source_cache):
             continue
         if skipped_valid < offset:
             skipped_valid += 1
@@ -589,6 +614,12 @@ def search_longterm_memory_bm25(
         results.append(row)
         if len(results) >= top_k:
             break
+    logger.info(
+        "Long-term BM25 complete: anima=%s elapsed=%.3fs results=%d",
+        anima_dir.name,
+        time.perf_counter() - search_started,
+        len(results),
+    )
     return results
 
 

@@ -9,6 +9,7 @@ import json
 import logging
 import re
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Literal
 
 from fastapi import APIRouter, Request
@@ -326,11 +327,23 @@ def create_internal_router() -> APIRouter:
 
         from core.memory.retrieval.reranker import get_reranker
 
+        started = perf_counter()
+        init_started = perf_counter()
         reranker = get_reranker()
+        init_elapsed = perf_counter() - init_started
         loop = asyncio.get_running_loop()
+        score_started = perf_counter()
         scores = await loop.run_in_executor(
             _native_executor,
             partial(reranker.score_sync, body.query, body.documents),
+        )
+        logger.info(
+            "Internal rerank complete: query_chars=%d documents=%d elapsed=%.3fs init=%.3fs score=%.3fs",
+            len(body.query),
+            len(body.documents),
+            perf_counter() - started,
+            init_elapsed,
+            perf_counter() - score_started,
         )
         if scores is None:
             # Explicit failure — never collapse to empty success (caller must

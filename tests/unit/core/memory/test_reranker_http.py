@@ -64,6 +64,20 @@ class TestRerankerLocal:
 
 
 class TestRerankerHTTP:
+    def test_http_mode_skips_local_device_detection(self, monkeypatch):
+        monkeypatch.setenv("ANIMAWORKS_RERANK_URL", "http://localhost/rerank")
+
+        with (
+            patch("core.gpu.is_component_degraded") as mock_degraded,
+            patch("core.gpu.resolve_device") as mock_resolve,
+        ):
+            from core.memory.retrieval.reranker import CrossEncoderReranker
+
+            CrossEncoderReranker()
+
+        mock_degraded.assert_not_called()
+        mock_resolve.assert_not_called()
+
     def test_http_mode_calls_endpoint(self, monkeypatch):
         """When ANIMAWORKS_RERANK_URL is set, scoring uses HTTP."""
         monkeypatch.setenv(

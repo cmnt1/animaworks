@@ -24,10 +24,11 @@ from core.memory.rag_search import (
 @pytest.mark.parametrize(
     ("token", "content", "expected"),
     [
-        ("foobar", "foo release", True),
+        ("foobar", "foo release", False),
         ("foobar", "xxfoo release", False),
         ("foobar", "xxfoobarxx", True),
         ("週次圧縮について", "週次圧縮", True),
+        ("長い日本語入力" * 100, "日本語入力", True),
         ("foo", "fo release", False),
     ],
 )

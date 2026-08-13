@@ -105,7 +105,7 @@ async def channel_f_episodes(
     """
     try:
         denied_roots = load_denied_roots(anima_dir)
-        queries = build_queries(message, keywords, recent_human_messages)
+        queries = build_queries(message, keywords, recent_human_messages)[:1]
         if not queries:
             return ""
 
@@ -190,6 +190,8 @@ async def channel_f_episodes(
             limit=5,
             trigger=normalize_trigger(trigger),
             min_score=float(_min_score) if _min_score is not None else 0.0,
+            pipeline_settings={"rerank_candidate_pool": 10},
+            skip_bm25_validation=True,
         )
         if bool(searcher.last_search_meta.get("abstain", False)):
             logger.debug("Channel F: unified search abstained")

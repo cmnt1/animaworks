@@ -655,6 +655,29 @@ def test_longterm_bm25_rejects_poisoned_index_content(tmp_path: Path) -> None:
     assert hits == []
 
 
+def test_longterm_bm25_can_skip_source_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    _write_longterm_memory(anima_dir, "knowledge/a.md", "# A\n\nZephyrNova launchpad audit.")
+    rebuild_longterm_bm25_index(anima_dir)
+
+    def fail_validation(*args, **kwargs):
+        raise AssertionError("source validation should be skipped")
+
+    monkeypatch.setattr(bm25_module, "_longterm_doc_matches_current_source", fail_validation)
+
+    hits = search_longterm_memory_bm25(
+        anima_dir,
+        "ZephyrNova",
+        memory_types=("knowledge",),
+        validate_sources=False,
+    )
+
+    assert len(hits) == 1
+
+
 class TestBM25RebuildSingleFlight:
     """R5: concurrent dirty rebuilds must not stack."""
 

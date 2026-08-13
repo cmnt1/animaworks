@@ -7,7 +7,6 @@ import hashlib
 import json
 import logging
 import os
-import re
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -43,27 +42,12 @@ _DEFAULT_TOP_K = 5
 WEIGHT_TOKEN_OVERLAP = 0.1
 
 
-@lru_cache(maxsize=256)
-def _keyword_compound_pattern(token: str) -> re.Pattern[str] | None:
-    parts = {
-        re.escape(token[start:end])
-        for start in range(len(token))
-        for end in range(start + 3, len(token))
-    }
-    if not parts:
-        return None
-    return re.compile(rf"(?<!\w)(?:{'|'.join(sorted(parts, key=len, reverse=True))})(?!\w)")
-
-
 def _keyword_token_matches(token: str, content_lower: str) -> bool:
-    """Return True when a keyword token matches content directly or as a compound term."""
+    """Return True when a keyword token matches directly or by bounded CJK slices."""
     if token in content_lower:
         return True
     if len(token) < 4:
         return False
-    pattern = _keyword_compound_pattern(token)
-    if pattern is not None and pattern.search(content_lower):
-        return True
     if any("\u3040" <= ch <= "\u30ff" or "\u4e00" <= ch <= "\u9fff" for ch in token):
         for size in (8, 6, 4):
             for start in range(0, max(0, len(token) - size + 1)):
@@ -893,6 +877,7 @@ class RAGMemorySearch:
         common_knowledge_dir: Path,
         result_limit: int | None = None,
         entity_boost=None,
+        skip_bm25_validation: bool = False,
     ) -> list[dict]:
         """Sparse keyword search used alongside vectors and as fallback.
 
@@ -926,7 +911,8 @@ class RAGMemorySearch:
 
         bm25_hits: list[dict] = []
         if longterm_types and search_longterm_memory_bm25 is not None:
-            self._maybe_rebuild_dirty_longterm_bm25()
+            if not skip_bm25_validation:
+                self._maybe_rebuild_dirty_longterm_bm25()
             try:
                 bm25_hits = search_longterm_memory_bm25(
                     self._anima_dir,
@@ -934,6 +920,7 @@ class RAGMemorySearch:
                     memory_types=tuple(longterm_types),
                     top_k=fetch_limit,
                     offset=0,
+                    validate_sources=not skip_bm25_validation,
                 )
             except Exception:
                 logger.debug("Long-term BM25 search failed", exc_info=True)

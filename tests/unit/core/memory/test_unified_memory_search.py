@@ -4,6 +4,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -379,9 +380,7 @@ def test_min_score_skipped_for_rrf_order_results(
         {"doc_id": "rrf-2", "content": "b", "score": 0.02, "search_method": "rrf"},
     ]
 
-    results = _searcher(fake_rag).search(
-        "query", scope="episodes", limit=5, trigger="heartbeat", min_score=0.3
-    )
+    results = _searcher(fake_rag).search("query", scope="episodes", limit=5, trigger="heartbeat", min_score=0.3)
 
     assert [item["doc_id"] for item in results] == ["rrf-1", "rrf-2"]
 
@@ -400,9 +399,7 @@ def test_min_score_applied_to_reranked_results(
         {"doc_id": "ce-low", "content": "b", "score": 0.1, "search_method": "cross_encoder"},
     ]
 
-    results = _searcher(fake_rag).search(
-        "query", scope="episodes", limit=5, trigger="chat", min_score=0.3
-    )
+    results = _searcher(fake_rag).search("query", scope="episodes", limit=5, trigger="chat", min_score=0.3)
 
     assert [item["doc_id"] for item in results] == ["ce-high"]
 
@@ -613,6 +610,43 @@ def test_search_many_merges_parallel_queries_by_best_score(
     assert [item["doc_id"] for item in results] == ["shared", "only-b", "only-a"]
     assert results[0]["score"] == 0.9
     assert results[0]["content"] == "from beta"
+    assert len(results) == 3
+
+
+def test_search_many_can_rerank_once_after_query_merge(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.vector_query_returns[("alpha", "episodes")] = [
+        {"doc_id": "a", "content": "a", "score": 0.8},
+        {"doc_id": "shared", "content": "shared", "score": 0.7},
+    ]
+    fake_rag.vector_query_returns[("beta", "episodes")] = [
+        {"doc_id": "b", "content": "b", "score": 0.9},
+        {"doc_id": "shared", "content": "shared", "score": 0.6},
+    ]
+    reranker = MagicMock()
+
+    def rerank_once(query, items, *, top_k):
+        return [{**item, "score": 1.0, "search_method": "cross_encoder"} for item in items[:top_k]]
+
+    reranker.rerank_sync.side_effect = rerank_once
+    monkeypatch.setattr("core.memory.retrieval.reranker.get_reranker", lambda _model: reranker)
+
+    results = _searcher(fake_rag).search_many(
+        ["alpha", "beta"],
+        scope="episodes",
+        limit=3,
+        trigger="chat",
+        rerank_after_merge=True,
+    )
+
+    reranker.rerank_sync.assert_called_once()
+    assert reranker.rerank_sync.call_args.args[0] == "alpha"
+    assert len(reranker.rerank_sync.call_args.args[1]) == 3
+    assert all(call["rerank_enabled"] is False for call in CapturingPipeline.calls)
     assert len(results) == 3
 
 

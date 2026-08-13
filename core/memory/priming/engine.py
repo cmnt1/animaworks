@@ -172,12 +172,25 @@ class PrimingEngine:
 
     async def _run_priming_channel(self, name: str, coro):
         self._load_config_budgets()
+        started = time.perf_counter()
         try:
-            return await asyncio.wait_for(coro, timeout=self._channel_timeout_seconds)
+            result = await asyncio.wait_for(coro, timeout=self._channel_timeout_seconds)
+            if isinstance(result, tuple):
+                result_chars = sum(len(part) for part in result if isinstance(part, str))
+            else:
+                result_chars = len(result) if isinstance(result, str) else 0
+            logger.info(
+                "Priming channel %s complete: elapsed=%.3fs chars=%d",
+                name,
+                time.perf_counter() - started,
+                result_chars,
+            )
+            return result
         except TimeoutError:
             logger.warning(
-                "Priming channel %s timed out after %.1fs; degrading channel only",
+                "Priming channel %s timed out: elapsed=%.3fs limit=%.1fs; degrading channel only",
                 name,
+                time.perf_counter() - started,
                 self._channel_timeout_seconds,
             )
             return ""
@@ -466,6 +479,11 @@ class PrimingEngine:
     async def _channel_g_graph_context(self, query: str, *, trigger: str = "chat") -> str:
         backend = self._get_memory_backend()
         if backend is None:
+            return ""
+        from core.memory.backend.legacy import LegacyRAGBackend
+
+        if isinstance(backend, LegacyRAGBackend):
+            logger.info("Priming channel G skipped for legacy backend")
             return ""
         return await _channel_g.collect_graph_context(
             backend,
