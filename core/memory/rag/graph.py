@@ -20,6 +20,7 @@ import json
 import logging
 import re
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +47,13 @@ MAX_HOPS = 2  # Maximum hops for spreading activation
 # Graph cache filename
 GRAPH_CACHE_FILE = "knowledge_graph.json"
 GRAPH_SCHEMA_VERSION = 2
+
+
+@lru_cache(maxsize=2048)
+def _read_node_file(path: Path, mtime_ns: int, size: int) -> str:
+    """Read graph node content once per file version."""
+    del mtime_ns, size
+    return path.read_text(encoding="utf-8")
 
 
 # ── KnowledgeGraph ──────────────────────────────────────────────────
@@ -79,6 +87,12 @@ class KnowledgeGraph:
         self.vector_store = vector_store
         self.indexer = indexer
         self.graph: nx.DiGraph | None = None
+        self._pagerank_cache: dict[tuple[int, frozenset[str], float], dict[str, float]] = {}
+        self._node_content_cache: dict[Path, str] = {}
+
+    def clear_search_cache(self) -> None:
+        """Clear file content reused only within one search request."""
+        self._node_content_cache.clear()
 
     # ── Graph construction ──────────────────────────────────────────
 
@@ -444,6 +458,11 @@ class KnowledgeGraph:
             logger.warning("No valid query nodes in graph")
             return {}
 
+        cache_key = (id(self.graph), frozenset(valid_query_nodes), alpha)
+        cached = self._pagerank_cache.get(cache_key)
+        if cached is not None:
+            return dict(cached)
+
         # Create personalization vector (uniform over query nodes)
         personalization = {node: 0.0 for node in self.graph.nodes()}
         weight = 1.0 / len(valid_query_nodes)
@@ -462,6 +481,10 @@ class KnowledgeGraph:
                 tol=PAGERANK_TOL,
                 weight="similarity",  # Use edge "similarity" as weight
             )
+
+            if len(self._pagerank_cache) >= 8:
+                self._pagerank_cache.pop(next(iter(self._pagerank_cache)))
+            self._pagerank_cache[cache_key] = dict(scores)
 
             logger.debug("PageRank computed for %d nodes", len(scores))
             return scores
@@ -661,10 +684,16 @@ class KnowledgeGraph:
         Returns:
             File content string
         """
-        if node_path.exists():
-            try:
-                return node_path.read_text(encoding="utf-8")
-            except Exception as e:
+        cached = self._node_content_cache.get(node_path)
+        if cached is not None:
+            return cached
+        try:
+            stat = node_path.stat()
+            content = _read_node_file(node_path, stat.st_mtime_ns, stat.st_size)
+            self._node_content_cache[node_path] = content
+            return content
+        except Exception as e:
+            if node_path.exists():
                 logger.warning("Failed to read file %s: %s", node_path, e)
 
         try:

@@ -359,9 +359,22 @@ class UnifiedMemorySearch:
             access_boost = access_boost_builder(settings)
 
         try:
-            rag._get_indexer()
+            indexer = rag._get_indexer()
         except Exception:
             logger.debug("Unified search indexer init failed", exc_info=True)
+            indexer = None
+
+        from core.memory.rag.retriever import AccessBatch
+
+        access_batch = AccessBatch()
+
+        embedding = None
+        generate_embeddings = getattr(indexer, "_generate_embeddings", None)
+        if callable(generate_embeddings):
+            try:
+                embedding = generate_embeddings([dense_query], purpose="query")[0]
+            except Exception:
+                logger.debug("Unified query embedding prefetch failed", exc_info=True)
 
         ranked_lists = self._collect_ranked_lists(
             rag,
@@ -370,7 +383,11 @@ class UnifiedMemorySearch:
             scopes=scopes,
             pool_k=pool_k,
             entity_boost=entity_boost,
+            embedding=embedding,
+            indexer=indexer,
+            access_batch=access_batch,
         )
+        access_batch.flush(getattr(indexer, "vector_store", None))
         ranked_lists = filter_ranked_lists_by_time_hint(
             ranked_lists,
             time_hint_start=time_hint_start,
@@ -798,35 +815,109 @@ class UnifiedMemorySearch:
         scopes: tuple[str, ...],
         pool_k: int,
         entity_boost: Any | None,
+        embedding: list[float] | None,
+        indexer: Any | None,
+        access_batch: Any,
     ) -> list[list[dict[str, Any]]]:
         # Vector and graph retrieval use the dense query; BM25-backed
         # activity_log and keyword fallbacks use the sparse query. See F19.
         ranked_lists: list[list[dict[str, Any]]] = []
         vector_scopes = [scope for scope in scopes if scope != "activity_log"]
-        for vector_scope in vector_scopes:
-            hits = self._vector_hits(rag, dense_query, vector_scope, pool_k, entity_boost=entity_boost)
-            if hits:
-                ranked_lists.append(hits)
+        remaining_vector_scopes = vector_scopes
+        if vector_scopes:
+            first_scope = vector_scopes[0]
+            first_hits = self._vector_hits(
+                rag,
+                dense_query,
+                first_scope,
+                pool_k,
+                entity_boost=entity_boost,
+                embedding=embedding,
+                access_batch=access_batch,
+            )
+            if first_hits:
+                ranked_lists.append(first_hits)
+            remaining_vector_scopes = vector_scopes[1:]
 
-        if "episodes" in scopes:
-            graph_hits = self._graph_hits(rag, dense_query, pool_k)
+        vector_groups: list[tuple[list[str], bool]] = []
+        grouped: set[str] = set()
+        for scope in remaining_vector_scopes:
+            if scope in grouped:
+                continue
+            group = [scope]
+            if scope == "knowledge" and "common_knowledge" in remaining_vector_scopes:
+                group.append("common_knowledge")
+            grouped.update(group)
+            vector_groups.append((group, "episodes" in group))
+        if "episodes" in scopes and "episodes" not in remaining_vector_scopes:
+            vector_groups.append(([], True))
+
+        def _run_vector_group(group: list[str], include_graph: bool):
+            hits = {
+                scope: self._vector_hits(
+                    rag,
+                    dense_query,
+                    scope,
+                    pool_k,
+                    entity_boost=entity_boost,
+                    embedding=embedding,
+                    access_batch=access_batch,
+                )
+                for scope in group
+            }
+            graph_hits = (
+                self._graph_hits(
+                    rag,
+                    dense_query,
+                    pool_k,
+                    embedding=embedding,
+                    indexer=indexer,
+                    access_batch=access_batch,
+                )
+                if include_graph
+                else []
+            )
+            return hits, graph_hits
+
+        with ThreadPoolExecutor(max_workers=len(vector_groups) + 2) as pool:
+            activity_future = (
+                pool.submit(search_activity_log, self._anima_dir, sparse_query, top_k=pool_k, offset=0)
+                if "activity_log" in scopes and search_activity_log is not None
+                else None
+            )
+            keyword_future = pool.submit(
+                self._keyword_hits,
+                rag,
+                sparse_query,
+                vector_scopes,
+                pool_k,
+                entity_boost=entity_boost,
+            )
+            vector_futures = [pool.submit(_run_vector_group, *group) for group in vector_groups]
+            vector_hits: dict[str, list[dict[str, Any]]] = {}
+            graph_hits: list[dict[str, Any]] = []
+            for future in vector_futures:
+                group_hits, group_graph_hits = future.result()
+                vector_hits.update(group_hits)
+                if group_graph_hits:
+                    graph_hits = group_graph_hits
+            for vector_scope in remaining_vector_scopes:
+                hits = vector_hits.get(vector_scope, [])
+                if hits:
+                    ranked_lists.append(hits)
+
             if graph_hits:
                 ranked_lists.append(graph_hits)
 
-        if "activity_log" in scopes and search_activity_log is not None:
-            try:
-                activity_hits = search_activity_log(
-                    self._anima_dir,
-                    sparse_query,
-                    top_k=pool_k,
-                    offset=0,
-                )
-                if activity_hits:
-                    ranked_lists.append(activity_hits)
-            except Exception:
-                logger.debug("Unified activity_log search failed", exc_info=True)
+            if activity_future is not None:
+                try:
+                    activity_hits = activity_future.result()
+                    if activity_hits:
+                        ranked_lists.append(activity_hits)
+                except Exception:
+                    logger.debug("Unified activity_log search failed", exc_info=True)
 
-        keyword_hits = self._keyword_hits(rag, sparse_query, vector_scopes, pool_k, entity_boost=entity_boost)
+            keyword_hits = keyword_future.result()
         if keyword_hits:
             ranked_lists.append(keyword_hits)
         return ranked_lists
@@ -839,6 +930,8 @@ class UnifiedMemorySearch:
         pool_k: int,
         *,
         entity_boost: Any | None,
+        embedding: list[float] | None,
+        access_batch: Any,
     ) -> list[dict[str, Any]]:
         try:
             return rag._vector_search_primary(
@@ -848,17 +941,31 @@ class UnifiedMemorySearch:
                 knowledge_dir=self._anima_dir / "knowledge",
                 result_limit=pool_k,
                 entity_boost=entity_boost,
+                embedding=embedding,
+                access_batch=access_batch,
             )
         except Exception:
             logger.debug("Unified vector search failed for scope=%s", scope, exc_info=True)
             return []
 
-    def _graph_hits(self, rag: Any, query: str, pool_k: int) -> list[dict[str, Any]]:
+    def _graph_hits(
+        self,
+        rag: Any,
+        query: str,
+        pool_k: int,
+        *,
+        embedding: list[float] | None,
+        indexer: Any | None,
+        access_batch: Any,
+    ) -> list[dict[str, Any]]:
         try:
             return rag._graph_episodes_search(
                 query,
                 pool_k,
                 self._anima_dir / "knowledge",
+                embedding=embedding,
+                indexer=indexer,
+                access_batch=access_batch,
             )
         except Exception:
             logger.debug("Unified graph episode search failed", exc_info=True)

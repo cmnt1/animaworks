@@ -8,6 +8,7 @@ import re
 import threading
 from collections import deque
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -146,6 +147,15 @@ def extract_entities(
     use_content_tokens: bool = True,
 ) -> set[str]:
     """Extract deterministic entity-like phrases without external NLP dependencies."""
+    return set(_extract_entities_cached(text, ignored_entities, use_content_tokens))
+
+
+@lru_cache(maxsize=4096)
+def _extract_entities_cached(
+    text: str,
+    ignored_entities: tuple[str, ...],
+    use_content_tokens: bool,
+) -> frozenset[str]:
     ignored = {_normalize_entity(value) for value in ignored_entities}
     ignored.discard("")
 
@@ -164,7 +174,7 @@ def extract_entities(
             for index in range(0, max(0, len(tokens) - size + 1)):
                 phrase = " ".join(tokens[index : index + size])
                 _add_entity(entities, phrase, ignored)
-    return entities
+    return frozenset(entities)
 
 
 def expand_alias_terms(

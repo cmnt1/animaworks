@@ -773,7 +773,28 @@ class ChromaVectorStore(VectorStore):
     ) -> bool:
         coll = self.client.get_collection(name=collection)
         serialized = [self._serialize_metadata(dict(m)) for m in metadatas]
-        coll.update(ids=ids, metadatas=cast(Any, serialized))
+        access_fields = {
+            "access_count",
+            "retrieved_count",
+            "used_count",
+            "last_accessed_at",
+            "last_retrieved_at",
+            "last_used_at",
+        }
+        access_only = all(all(key in access_fields or key.startswith("ac_") for key in metadata) for metadata in serialized)
+        if access_only:
+            coll._client._update(  # noqa: SLF001 - avoids irrelevant Chroma sparse-schema work
+                collection_id=coll.id,
+                ids=ids,
+                embeddings=None,
+                metadatas=cast(Any, serialized),
+                documents=None,
+                uris=None,
+                tenant=coll.tenant,
+                database=coll.database,
+            )
+        else:
+            coll.update(ids=ids, metadatas=cast(Any, serialized))
         logger.debug("Updated metadata for %d documents in '%s'", len(ids), collection)
         return True
 

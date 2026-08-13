@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.memory.rag.indexer import IndexDirectoryResult, MemoryIndexer
+from core.memory.rag.retriever import _load_skill_document_by_signature
 from core.memory.rag_search import RAGMemorySearch
 from core.skills.curator import SkillCurator
 
@@ -190,6 +191,61 @@ class TestColdCatchupIndexing:
 
 
 class TestSkillsKeywordFallback:
+    def test_vector_skill_filter_loads_each_source_once(
+        self,
+        anima_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import core.memory.rag.retriever as retriever_module
+        from core.memory.rag.retriever import MemoryRetriever
+
+        skill_path = _write_skill(anima_dir / "skills", "deploy-helper")
+        indexer = MagicMock(anima_dir=anima_dir)
+        retriever = MemoryRetriever(MagicMock(), indexer, anima_dir / "knowledge")
+        original = retriever_module._load_skill_document_cached
+        calls = 0
+
+        def tracked(path: Path):
+            nonlocal calls
+            calls += 1
+            return original(path)
+
+        monkeypatch.setattr(retriever_module, "_load_skill_document_cached", tracked)
+        metadata = {"source_file": str(skill_path.relative_to(anima_dir))}
+        results = [("first", "one", 0.8, metadata), ("second", "two", 0.7, metadata)]
+
+        filtered = retriever._filter_loadable_skill_vector_results(results)
+
+        assert [row[0] for row in filtered] == ["first", "second"]
+        assert calls == 1
+
+    def test_skill_document_cache_invalidates_on_file_change(
+        self,
+        rag: RAGMemorySearch,
+        anima_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        skill_path = _write_skill(anima_dir / "skills", "deploy-helper")
+        from core.skills import loader
+
+        _load_skill_document_by_signature.cache_clear()
+        calls = 0
+        original = loader.load_skill_document
+
+        def tracked(path: Path):
+            nonlocal calls
+            calls += 1
+            return original(path)
+
+        monkeypatch.setattr(loader, "load_skill_document", tracked)
+        rag._keyword_search_skills(["deploy"])
+        rag._keyword_search_skills(["deploy"])
+        assert calls == 1
+
+        skill_path.write_text(skill_path.read_text(encoding="utf-8") + "\nupdated\n", encoding="utf-8")
+        rag._keyword_search_skills(["deploy"])
+        assert calls == 2
+
     def test_skills_keyword_fallback_returns_matches_when_vector_unavailable(
         self,
         rag: RAGMemorySearch,

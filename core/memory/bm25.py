@@ -131,6 +131,12 @@ LONGTERM_BM25_REBUILD_LOCK_STALE_SECONDS = 1800.0
 LONGTERM_BM25_MEMORY_TYPES: tuple[str, ...] = ("knowledge", "episodes", "procedures")
 LONGTERM_BM25_SCHEMA_VERSION = 3
 _LONGTERM_BM25_CACHE: dict[Path, tuple[int, int, dict[str, Any]]] = {}
+_LONGTERM_SOURCE_CACHE: dict[tuple[str, str], tuple[int, int, frozenset[tuple[int, str]]]] = {}
+_LONGTERM_VALIDATION_WARMED: dict[tuple[Path, tuple[str, ...]], tuple[int, int]] = {}
+_LONGTERM_QUERY_CACHE: dict[
+    tuple[Path, int, int, tuple[str, ...]],
+    tuple[list[dict[str, Any]], tuple[tuple[int, float], ...]],
+] = {}
 
 
 @dataclass(frozen=True)
@@ -225,20 +231,20 @@ def _load_activity_entries(anima_dir: Path, days: int) -> list[tuple[str, dict[s
 # Keyed by anima dir + days; invalidated when any day file's (mtime, size) moves.
 _ACTIVITY_CORPUS_CACHE: dict[
     tuple[str, int],
-    tuple[tuple[tuple[str, int, int], ...], list[list[str]], list[tuple[str, dict[str, Any]]]],
+    tuple[tuple[tuple[str, int, int, int], ...], list[list[str]], list[tuple[str, dict[str, Any]]]],
 ] = {}
 
 
-def _activity_files_signature(anima_dir: Path, days: int) -> tuple[tuple[str, int, int], ...]:
+def _activity_files_signature(anima_dir: Path, days: int) -> tuple[tuple[str, int, int, int], ...]:
     base = anima_dir / "activity_log"
-    sig: list[tuple[str, int, int]] = []
+    sig: list[tuple[str, int, int, int]] = []
     for d in _activity_log_dates(days):
         path = base / f"{d.isoformat()}.jsonl"
         try:
             stat = path.stat()
         except OSError:
             continue
-        sig.append((d.isoformat(), stat.st_mtime_ns, stat.st_size))
+        sig.append((d.isoformat(), stat.st_mtime_ns, stat.st_size, stat.st_ino))
     return tuple(sig)
 
 
@@ -250,6 +256,40 @@ def _activity_corpus_cached(
     cached = _ACTIVITY_CORPUS_CACHE.get(key)
     if cached is not None and cached[0] == signature:
         return cached[1], cached[2]
+
+    if cached is not None:
+        previous = {date_str: (mtime, size, inode) for date_str, mtime, size, inode in cached[0]}
+        changed = [row for row in signature if previous.get(row[0]) != row[1:]]
+        if len(changed) == 1:
+            date_str, _mtime, size, inode = changed[0]
+            old = previous.get(date_str)
+            if old is not None and old[1] > 0 and old[2] == inode and size > old[1]:
+                path = anima_dir / "activity_log" / f"{date_str}.jsonl"
+                try:
+                    with path.open("rb") as f:
+                        f.seek(old[1] - 1)
+                        if f.read(1) == b"\n":
+                            appended = f.read(size - old[1]).decode("utf-8")
+                        else:
+                            appended = ""
+                except (OSError, UnicodeError):
+                    appended = ""
+                if appended:
+                    corpus_tokens = list(cached[1])
+                    kept = list(cached[2])
+                    for line in appended.splitlines():
+                        try:
+                            entry = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if not isinstance(entry, dict) or not _should_index_entry(entry):
+                            continue
+                        doc_tokens = tokenize(entry.get("content") or "")
+                        if doc_tokens:
+                            corpus_tokens.append(doc_tokens)
+                            kept.append((date_str, entry))
+                    _ACTIVITY_CORPUS_CACHE[key] = (signature, corpus_tokens, kept)
+                    return corpus_tokens, kept
 
     corpus_tokens: list[list[str]] = []
     kept: list[tuple[str, dict[str, Any]]] = []
@@ -471,31 +511,61 @@ def search_longterm_memory_bm25(
         return []
 
     wanted = set(memory_types)
-    docs = [
+    all_docs = [
         doc
         for doc in payload.get("documents", [])
-        if isinstance(doc, dict) and str(doc.get("memory_type", "")) in wanted and doc.get("tokens")
+        if isinstance(doc, dict) and doc.get("tokens")
     ]
+    docs = [doc for doc in all_docs if str(doc.get("memory_type", "")) in wanted]
     if not docs:
         return []
 
-    corpus_tokens = [list(map(str, doc.get("tokens", []))) for doc in docs]
-    scores = _longterm_bm25_scores(docs, corpus_tokens, query_tokens, payload)
-    query_set = set(query_tokens)
-    ranked: list[tuple[int, float]] = []
-    for idx, score in enumerate(scores):
-        doc_tokens = set(corpus_tokens[idx])
-        if score <= 0.0 and not (query_set & doc_tokens):
-            continue
-        ranked.append((idx, float(score)))
-    ranked.sort(key=lambda item: item[1], reverse=True)
+    index_path = longterm_bm25_index_path(anima_dir)
+    try:
+        stat = index_path.stat()
+        validation_key = (index_path, tuple(sorted(wanted)))
+        signature = (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        validation_key = None
+        signature = None
+    if validation_key is not None and _LONGTERM_VALIDATION_WARMED.get(validation_key) != signature:
+        source_cache: dict[str, tuple[int, int, set[tuple[int, str]]]] = {}
+        for doc in docs:
+            source_file = str(doc.get("source_file", "") or "")
+            if source_file not in source_cache:
+                _longterm_doc_matches_current_source(anima_dir, doc, source_cache)
+        _LONGTERM_VALIDATION_WARMED[validation_key] = signature
+
+    query_key = (
+        index_path,
+        signature[0] if signature is not None else 0,
+        signature[1] if signature is not None else 0,
+        tuple(query_tokens),
+    )
+    cached_query = _LONGTERM_QUERY_CACHE.get(query_key)
+    if cached_query is None:
+        corpus_tokens = [doc.get("tokens", []) for doc in all_docs]
+        scores = _longterm_bm25_scores(all_docs, corpus_tokens, query_tokens, payload)
+        ranked_list = [
+            (idx, float(score))
+            for idx, score in enumerate(scores)
+            if score > 0.0
+        ]
+        ranked_list.sort(key=lambda item: item[1], reverse=True)
+        cached_query = (all_docs, tuple(ranked_list))
+        if len(_LONGTERM_QUERY_CACHE) >= 64:
+            _LONGTERM_QUERY_CACHE.pop(next(iter(_LONGTERM_QUERY_CACHE)))
+        _LONGTERM_QUERY_CACHE[query_key] = cached_query
+    ranked_docs, ranked = cached_query
 
     search_method = "bm25"
     results: list[dict[str, Any]] = []
-    source_cache: dict[str, set[tuple[int, str]]] = {}
+    source_cache: dict[str, tuple[int, int, set[tuple[int, str]]]] = {}
     skipped_valid = 0
     for idx, score in ranked:
-        doc = docs[idx]
+        doc = ranked_docs[idx]
+        if str(doc.get("memory_type", "")) not in wanted:
+            continue
         if not _longterm_doc_matches_current_source(anima_dir, doc, source_cache):
             continue
         if skipped_valid < offset:
@@ -566,14 +636,10 @@ def _longterm_bm25_scores(
     for doc, tokens in zip(docs, corpus_tokens, strict=False):
         doc_len = float(doc.get("doc_len") or len(tokens) or 1)
         counts_raw = doc.get("token_counts")
-        token_counts = (
-            {str(k): float(v) for k, v in counts_raw.items()}
-            if isinstance(counts_raw, dict)
-            else {term: float(count) for term, count in Counter(tokens).items()}
-        )
+        token_counts = counts_raw if isinstance(counts_raw, dict) else Counter(tokens)
         score = 0.0
         for term in query_tokens:
-            tf = token_counts.get(term, 0.0)
+            tf = float(token_counts.get(term, 0.0) or 0.0)
             if tf <= 0.0:
                 continue
             df = max(0.0, float(document_frequency.get(term, 0.0) or 0.0))
@@ -658,41 +724,58 @@ def _bm25_docs_for_file(anima_dir: Path, path: Path, memory_type: str) -> list[d
 def _longterm_doc_matches_current_source(
     anima_dir: Path,
     doc: dict[str, Any],
-    cache: dict[str, set[tuple[int, str]]],
+    cache: dict[str, tuple[int, int, set[tuple[int, str]]]],
 ) -> bool:
     """Validate persisted index content against the current source file."""
     source_file = str(doc.get("source_file", "") or "")
     memory_type = str(doc.get("memory_type", "") or "")
     if memory_type not in LONGTERM_BM25_MEMORY_TYPES or not source_file.startswith(f"{memory_type}/"):
         return False
-    path = anima_dir / source_file
-    try:
-        resolved = path.resolve()
-        if not resolved.is_relative_to(anima_dir.resolve()) or not resolved.is_file():
-            return False
-        stat = resolved.stat()
-    except OSError:
-        return False
-
     try:
         indexed_mtime_ns = int(doc.get("source_mtime_ns") or -1)
         indexed_size = int(doc.get("source_size") or -1)
     except (TypeError, ValueError):
         indexed_mtime_ns = -1
         indexed_size = -1
-    if indexed_mtime_ns != stat.st_mtime_ns or indexed_size != stat.st_size:
-        return False
+    cached_source = cache.get(source_file)
+    if cached_source is None:
+        path = anima_dir / source_file
+        try:
+            resolved = path.resolve()
+            if not resolved.is_relative_to(anima_dir.resolve()) or not resolved.is_file():
+                return False
+            stat = resolved.stat()
+        except OSError:
+            return False
+        try:
+            from core.memory.rag.indexer import MemoryIndexer
 
-    if source_file not in cache:
-        rebuilt_docs = _bm25_docs_for_file(anima_dir, resolved, memory_type)
-        cache[source_file] = {
-            (int(rebuilt.get("chunk_index", 0) or 0), str(rebuilt.get("content", ""))) for rebuilt in rebuilt_docs
-        }
+            if MemoryIndexer.is_ragignored(resolved):
+                return False
+        except Exception:
+            logger.debug("Failed to evaluate .ragignore for BM25 file %s", resolved, exc_info=True)
+        source_key = (str(anima_dir), source_file)
+        process_cached = _LONGTERM_SOURCE_CACHE.get(source_key)
+        if process_cached is None or process_cached[:2] != (stat.st_mtime_ns, stat.st_size):
+            rebuilt_docs = _bm25_docs_for_file(anima_dir, resolved, memory_type)
+            process_cached = (
+                stat.st_mtime_ns,
+                stat.st_size,
+                frozenset(
+                    (int(rebuilt.get("chunk_index", 0) or 0), str(rebuilt.get("content", "")))
+                    for rebuilt in rebuilt_docs
+                ),
+            )
+            _LONGTERM_SOURCE_CACHE[source_key] = process_cached
+        cached_source = (process_cached[0], process_cached[1], set(process_cached[2]))
+        cache[source_file] = cached_source
+    if (indexed_mtime_ns, indexed_size) != cached_source[:2]:
+        return False
     try:
         chunk_index = int(doc.get("chunk_index", 0) or 0)
     except (TypeError, ValueError):
         return False
-    return (chunk_index, str(doc.get("content", ""))) in cache[source_file]
+    return (chunk_index, str(doc.get("content", ""))) in cached_source[2]
 
 
 def _split_frontmatter(raw: str) -> tuple[dict[str, Any], str]:

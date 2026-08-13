@@ -11,9 +11,43 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.memory.rag.retriever import RetrievalResult
-from core.memory.rag_search import RAGMemorySearch
+from core.memory.rag_search import (
+    RAGMemorySearch,
+    _keyword_token_matches,
+    _read_keyword_file,
+    _read_keyword_file_by_signature,
+)
 
 # ── Fixtures ─────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("token", "content", "expected"),
+    [
+        ("foobar", "foo release", True),
+        ("foobar", "xxfoo release", False),
+        ("foobar", "xxfoobarxx", True),
+        ("週次圧縮について", "週次圧縮", True),
+        ("foo", "fo release", False),
+    ],
+)
+def test_keyword_token_matches(token: str, content: str, expected: bool) -> None:
+    assert _keyword_token_matches(token, content) is expected
+
+
+def test_keyword_file_cache_invalidates_on_change(tmp_path: Path) -> None:
+    path = tmp_path / "memory.md"
+    path.write_text("first", encoding="utf-8")
+    _read_keyword_file_by_signature.cache_clear()
+
+    first, _ = _read_keyword_file(path)
+    second, _ = _read_keyword_file(path)
+    path.write_text("changed", encoding="utf-8")
+    changed, _ = _read_keyword_file(path)
+
+    assert first == second == "first"
+    assert changed == "changed"
+    assert _read_keyword_file_by_signature.cache_info().hits == 1
 
 
 @pytest.fixture
@@ -195,6 +229,31 @@ class TestGetIndexerDependencyMissing:
 
 
 class TestGraphEpisodesSearch:
+    def test_reuses_retriever(self, rag: RAGMemorySearch, knowledge_dir: Path) -> None:
+        class FakeIndexer:
+            vector_store = object()
+
+        indexer = FakeIndexer()
+        with patch("core.memory.rag.retriever.MemoryRetriever") as retriever_cls:
+            retriever_cls.return_value.indexer = indexer
+            retriever_cls.return_value.knowledge_dir = knowledge_dir
+            retriever_cls.return_value.search.return_value = []
+            rag._graph_episodes_search("first", 10, knowledge_dir, indexer=indexer)
+            rag._graph_episodes_search("second", 10, knowledge_dir, indexer=indexer)
+
+        retriever_cls.assert_called_once_with(indexer.vector_store, indexer, knowledge_dir)
+
+    def test_reuses_prepared_indexer(self, rag: RAGMemorySearch, knowledge_dir: Path) -> None:
+        class FakeIndexer:
+            vector_store = object()
+
+        with (
+            patch.object(rag, "_get_indexer", side_effect=AssertionError("must not recheck shared indexes")),
+            patch("core.memory.rag.retriever.MemoryRetriever") as retriever_cls,
+        ):
+            retriever_cls.return_value.search.return_value = []
+            assert rag._graph_episodes_search("locomo", 10, knowledge_dir, indexer=FakeIndexer()) == []
+
     def test_preserves_entity_aware_fact_metadata(
         self,
         rag: RAGMemorySearch,
