@@ -230,7 +230,7 @@ class TestGetIndexerDependencyMissing:
 
 
 class TestGraphEpisodesSearch:
-    def test_retriever_saves_raw_episode_seeds_before_primary_graph_expansion(self, tmp_path: Path) -> None:
+    def test_retriever_saves_expanded_episode_results_for_graph_ranker(self, tmp_path: Path) -> None:
         retriever = MemoryRetriever(MagicMock(), MagicMock(), tmp_path / "knowledge")
         seed = RetrievalResult(
             doc_id="episode-1",
@@ -269,9 +269,9 @@ class TestGraphEpisodesSearch:
 
         vector_search.assert_called_once()
         assert results == [seed, expanded]
-        assert batch.take_episode_seeds("query", 10) == [seed]
+        assert batch.take_episode_graph_results("query", 10) == ([seed, expanded], True)
 
-    def test_reuses_primary_episode_seeds_without_second_vector_search(
+    def test_reuses_primary_episode_graph_results_without_second_vector_search(
         self,
         rag: RAGMemorySearch,
         knowledge_dir: Path,
@@ -293,24 +293,20 @@ class TestGraphEpisodesSearch:
             metadata={"source_file": "episodes/2.md", "memory_type": "episodes"},
             source_scores={"pagerank": 0.6},
         )
-        graph_neighbor = RetrievalResult(
-            doc_id="episode-3",
-            content="graph neighbor",
-            score=0.5,
-            metadata={"source_file": "episodes/3.md", "memory_type": "episodes"},
-            source_scores={"pagerank": 0.5},
-        )
         retriever = MagicMock()
         batch = AccessBatch()
         rag._indexer = FakeIndexer()
 
         def primary_search(**kwargs):
-            batch.remember_episode_seeds(kwargs["query"], kwargs["top_k"], [seed])
+            batch.remember_episode_graph_results(
+                kwargs["query"],
+                kwargs["top_k"],
+                [seed, primary_neighbor],
+                expanded=True,
+            )
             return [seed, primary_neighbor]
 
         retriever.search.side_effect = primary_search
-        retriever.expand_search_results.return_value = [seed, graph_neighbor]
-
         with patch.object(rag, "_get_retriever", return_value=retriever):
             vector = rag._vector_search_primary(
                 "query",
@@ -329,9 +325,9 @@ class TestGraphEpisodesSearch:
             )
 
         retriever.search.assert_called_once()
-        retriever.expand_search_results.assert_called_once_with([seed], rag._anima_dir.name)
+        retriever.expand_search_results.assert_not_called()
         assert [item["doc_id"] for item in vector] == ["episode-1", "episode-2"]
-        assert [item["doc_id"] for item in graph] == ["episode-1", "episode-3"]
+        assert [item["doc_id"] for item in graph] == ["episode-1", "episode-2"]
         assert all(item["search_method"] == "vector" for item in vector)
         assert graph[0]["search_method"] == "vector_graph"
 

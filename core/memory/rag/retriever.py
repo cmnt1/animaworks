@@ -87,18 +87,30 @@ class AccessBatch:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._patches: dict[tuple[str, str], dict[str, str | int | float]] = {}
-        self._episode_seeds: dict[tuple[str, int], list[RetrievalResult]] = {}
+        self._increments: dict[tuple[str, str], dict[str, str | int | float]] = {}
+        self._episode_graph_results: dict[tuple[str, int], tuple[list[RetrievalResult], bool]] = {}
         self._records: list[tuple[list[RetrievalResult], str, str]] = []
 
-    def remember_episode_seeds(self, query: str, top_k: int, results: list[RetrievalResult]) -> None:
-        """Keep vector seeds for the graph ranker in this retrieval request."""
+    def remember_episode_graph_results(
+        self,
+        query: str,
+        top_k: int,
+        results: list[RetrievalResult],
+        *,
+        expanded: bool,
+    ) -> None:
+        """Keep episode results for the graph ranker in this retrieval request."""
         with self._lock:
-            self._episode_seeds[(query, top_k)] = results
+            self._episode_graph_results[(query, top_k)] = (results, expanded)
 
-    def take_episode_seeds(self, query: str, top_k: int) -> list[RetrievalResult] | None:
-        """Return and discard vector seeds saved for the graph ranker."""
+    def take_episode_graph_results(
+        self,
+        query: str,
+        top_k: int,
+    ) -> tuple[list[RetrievalResult], bool] | None:
+        """Return and discard episode results saved for the graph ranker."""
         with self._lock:
-            return self._episode_seeds.pop((query, top_k), None)
+            return self._episode_graph_results.pop((query, top_k), None)
 
     def overlay(self, collection: str, doc_id: str, metadata: dict) -> dict:
         with self._lock:
@@ -123,6 +135,21 @@ class AccessBatch:
                     timestamp,
                     per_anima_access_key=f"{_PER_ANIMA_AC_PREFIX}{anima_name}" if source == "shared" else None,
                 )
+                increment = self._increments.setdefault(
+                    key,
+                    {
+                        "access_delta": 0.0,
+                        "retrieved_delta": 0,
+                        "used_delta": 0,
+                        "last_accessed_at": timestamp,
+                    },
+                )
+                increment["access_delta"] = float(increment["access_delta"]) + weight
+                increment[f"{kind}_delta"] = int(increment[f"{kind}_delta"]) + 1
+                increment["last_accessed_at"] = timestamp
+                increment[f"last_{kind}_at"] = timestamp
+                if source == "shared":
+                    increment["per_anima_access_key"] = f"{_PER_ANIMA_AC_PREFIX}{anima_name}"
 
     def absorb(self, other: AccessBatch) -> None:
         """Replay another query's records without sharing its score overlays."""
@@ -137,8 +164,18 @@ class AccessBatch:
             pending = self._patches
             self._patches = {}
             self._records = []
+            increments = self._increments
+            self._increments = {}
         if not pending:
             return
+        enqueue = getattr(type(vector_store), "enqueue_access_updates", None)
+        if callable(enqueue):
+            operations = [
+                {"collection": collection, "doc_id": doc_id, **increment}
+                for (collection, doc_id), increment in increments.items()
+            ]
+            if enqueue(vector_store, operations):
+                return
         grouped: dict[str, list[tuple[str, dict[str, str | int | float]]]] = {}
         for (collection, doc_id), metadata in pending.items():
             grouped.setdefault(collection, []).append((doc_id, metadata))
@@ -340,9 +377,6 @@ class MemoryRetriever:
             len(initial_results),
             perf_counter() - vector_started,
         )
-        if memory_type == "episodes" and access_batch is not None:
-            access_batch.remember_episode_seeds(query, top_k, initial_results)
-
         # 5. Apply spreading activation if enabled
         if enable_spreading_activation and memory_type in spreading_types:
             spreading_started = perf_counter()
@@ -356,11 +390,17 @@ class MemoryRetriever:
                     len(expanded),
                     perf_counter() - spreading_started,
                 )
+                if memory_type == "episodes" and access_batch is not None:
+                    access_batch.remember_episode_graph_results(query, top_k, expanded, expanded=True)
                 return expanded
             except Exception as e:
                 logger.warning("Spreading activation failed, returning initial results: %s", e)
+                if memory_type == "episodes" and access_batch is not None:
+                    access_batch.remember_episode_graph_results(query, top_k, initial_results, expanded=False)
                 return initial_results
 
+        if memory_type == "episodes" and access_batch is not None:
+            access_batch.remember_episode_graph_results(query, top_k, initial_results, expanded=False)
         return initial_results
 
     def expand_search_results(

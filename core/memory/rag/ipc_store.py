@@ -140,6 +140,10 @@ class IpcVectorStore(HttpVectorStore):
             {"collection": collection, "ids": ids, "metadatas": metadatas},
         )
 
+    def enqueue_access_updates(self, operations: list[dict[str, Any]]) -> bool:
+        """Queue atomic access-counter deltas in the root memory service."""
+        return not operations or self._write("memory.apply_access_updates", {"operations": operations})
+
     def list_collections(self) -> list[str]:
         data = self._call("memory.list_collections_checked", {}, allow_retry=True)
         collections = data.get("collections") if data else None

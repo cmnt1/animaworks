@@ -680,9 +680,10 @@ class RAGMemorySearch:
         anima_name = self._anima_dir.name
         retriever = self._get_retriever(indexer, knowledge_dir)
         try:
-            seeds = access_batch.take_episode_seeds(query, pool_k) if access_batch is not None else None
-            if seeds is not None:
-                rag_results = retriever.expand_search_results(seeds, anima_name)
+            saved = access_batch.take_episode_graph_results(query, pool_k) if access_batch is not None else None
+            if saved is not None:
+                results, already_expanded = saved
+                rag_results = results if already_expanded else retriever.expand_search_results(results, anima_name)
             else:
                 rag_results = retriever.search(
                     query=query,

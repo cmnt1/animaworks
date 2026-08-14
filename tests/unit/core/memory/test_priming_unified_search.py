@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -9,7 +11,7 @@ import core.memory.priming.channel_c as channel_c_module
 import core.memory.priming.channel_f as channel_f_module
 from core.memory.priming.channel_c import channel_c_related_knowledge
 from core.memory.priming.channel_f import channel_f_episodes
-from core.memory.priming.utils import build_unified_searcher
+from core.memory.priming.utils import RetrieverCache, build_unified_searcher
 
 
 def _fake_unified_search(results: list[dict] | None = None, *, abstain: bool = False) -> MagicMock:
@@ -33,6 +35,41 @@ def test_build_unified_searcher_reuses_cached_retriever(tmp_path: Path) -> None:
     rag_search = unified_search_cls.call_args.kwargs["rag_search"]
     assert rag_search._indexer is retriever.indexer
     assert rag_search._retriever is retriever
+
+
+def test_retriever_cache_cold_start_is_single_flight(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    anima_dir = tmp_path / "animas" / "test"
+    knowledge_dir = anima_dir / "knowledge"
+    knowledge_dir.mkdir(parents=True)
+    entered = threading.Event()
+    release = threading.Event()
+    created: list[object] = []
+
+    class FakeIndexer:
+        def __init__(self, *_args) -> None:
+            created.append(self)
+            entered.set()
+            release.wait(timeout=2)
+
+    class FakeRetriever:
+        def __init__(self, _store, indexer, _knowledge_dir) -> None:
+            self.indexer = indexer
+
+    monkeypatch.setattr("core.memory.rag.indexer.MemoryIndexer", FakeIndexer)
+    monkeypatch.setattr("core.memory.rag.MemoryRetriever", FakeRetriever)
+    monkeypatch.setattr("core.memory.rag.singleton.get_vector_store", lambda _name: object())
+    cache = RetrieverCache()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(cache.get_or_create, anima_dir, knowledge_dir)
+        assert entered.wait(timeout=1)
+        second = pool.submit(cache.get_or_create, anima_dir, knowledge_dir)
+        release.set()
+        first_result = first.result(timeout=2)
+        second_result = second.result(timeout=2)
+
+    assert first_result is second_result
+    assert len(created) == 1
 
 
 @pytest.mark.asyncio
