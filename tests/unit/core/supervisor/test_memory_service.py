@@ -59,6 +59,19 @@ async def test_memory_service_checked_reads(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_memory_service_logs_queue_and_execution_times(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    service = MemoryService("sakura", tmp_path / "sakura", opener=_store)
+
+    with caplog.at_level("INFO", logger="core.supervisor.memory_service"):
+        await service.handle("memory.list_collections_checked", {})
+
+    assert "method=memory.list_collections_checked" in caplog.text
+    assert "queue_wait=" in caplog.text
+    assert "execute=" in caplog.text
+    await service.close()
+
+
+@pytest.mark.asyncio
 async def test_memory_service_rejects_invalid_request_as_protocol_error(tmp_path: Path) -> None:
     service = MemoryService("sakura", tmp_path / "sakura", opener=_store)
 

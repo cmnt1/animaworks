@@ -9,6 +9,7 @@ import core.memory.priming.channel_c as channel_c_module
 import core.memory.priming.channel_f as channel_f_module
 from core.memory.priming.channel_c import channel_c_related_knowledge
 from core.memory.priming.channel_f import channel_f_episodes
+from core.memory.priming.utils import build_unified_searcher
 
 
 def _fake_unified_search(results: list[dict] | None = None, *, abstain: bool = False) -> MagicMock:
@@ -19,6 +20,19 @@ def _fake_unified_search(results: list[dict] | None = None, *, abstain: bool = F
         "abstain_reason": "low_confidence" if abstain else "",
     }
     return searcher
+
+
+def test_build_unified_searcher_reuses_cached_retriever(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "test"
+    retriever = MagicMock()
+    retriever.indexer = MagicMock()
+    unified_search_cls = MagicMock()
+
+    build_unified_searcher(anima_dir, lambda: retriever, unified_search_cls)
+
+    rag_search = unified_search_cls.call_args.kwargs["rag_search"]
+    assert rag_search._indexer is retriever.indexer
+    assert rag_search._retriever is retriever
 
 
 @pytest.mark.asyncio

@@ -305,6 +305,8 @@ class UnifiedMemorySearch:
         reference_time: Any | None = None,
         _allow_iterative: bool = True,
         skip_bm25_validation: bool = False,
+        _access_batch: Any | None = None,
+        _flush_access_batch: bool = True,
     ) -> list[dict[str, Any]]:
         """Search Legacy memories through a trigger-aware shared policy."""
         search_started = perf_counter()
@@ -369,7 +371,7 @@ class UnifiedMemorySearch:
 
         from core.memory.rag.retriever import AccessBatch
 
-        access_batch = AccessBatch()
+        access_batch = _access_batch or AccessBatch()
 
         embedding = None
         embedding_started = perf_counter()
@@ -410,7 +412,14 @@ class UnifiedMemorySearch:
             len(ranked_lists),
             sum(len(items) for items in ranked_lists),
         )
-        access_batch.flush(getattr(indexer, "vector_store", None))
+        if _flush_access_batch:
+            flush_started = perf_counter()
+            access_batch.flush(getattr(indexer, "vector_store", None))
+            logger.info(
+                "Unified search access flush: scope=%s elapsed=%.3fs",
+                scope,
+                perf_counter() - flush_started,
+            )
         ranked_lists = filter_ranked_lists_by_time_hint(
             ranked_lists,
             time_hint_start=time_hint_start,
@@ -780,6 +789,8 @@ class UnifiedMemorySearch:
         skip_bm25_validation: bool = False,
     ) -> list[dict[str, Any]]:
         """Run multiple queries and merge by stable document identity."""
+        from core.memory.rag.retriever import AccessBatch
+
         search_many_started = perf_counter()
         merge_rerank_enabled = rerank_after_merge and len(queries) > 1
         merged_pipeline_settings = pipeline_settings
@@ -808,9 +819,15 @@ class UnifiedMemorySearch:
             "skip_bm25_validation": skip_bm25_validation,
         }
 
-        def _run_one(query: str) -> tuple[list[dict[str, Any]], dict[str, object]]:
+        def _run_one(query: str) -> tuple[list[dict[str, Any]], dict[str, object], AccessBatch]:
             started = perf_counter()
-            results = self.search(query, **search_kwargs)
+            query_access_batch = AccessBatch()
+            results = self.search(
+                query,
+                **search_kwargs,
+                _access_batch=query_access_batch,
+                _flush_access_batch=False,
+            )
             logger.info(
                 "Unified search_many query complete: scope=%s query_chars=%d elapsed=%.3fs results=%d",
                 scope,
@@ -818,7 +835,7 @@ class UnifiedMemorySearch:
                 perf_counter() - started,
                 len(results),
             )
-            return results, self.last_search_meta
+            return results, self.last_search_meta, query_access_batch
 
         if len(queries) <= 1:
             per_query = [_run_one(query) for query in queries]
@@ -827,10 +844,28 @@ class UnifiedMemorySearch:
             with ThreadPoolExecutor(max_workers=len(queries)) as pool:
                 per_query = list(pool.map(_run_one, queries))
 
+        if queries:
+            access_batch = AccessBatch()
+            for _results, _meta, query_access_batch in per_query:
+                access_batch.absorb(query_access_batch)
+            flush_started = perf_counter()
+            try:
+                indexer = self._ensure_rag_search()._get_indexer()
+            except Exception:
+                logger.debug("Unified search_many indexer init failed", exc_info=True)
+                indexer = None
+            access_batch.flush(getattr(indexer, "vector_store", None))
+            logger.info(
+                "Unified search_many access flush: scope=%s queries=%d elapsed=%.3fs",
+                scope,
+                len(queries),
+                perf_counter() - flush_started,
+            )
+
         best: dict[str, dict[str, Any]] = {}
         saw_abstain = False
         abstain_reason = ""
-        for results, meta in per_query:
+        for results, meta, _access_batch in per_query:
             if bool(meta.get("abstain", False)):
                 saw_abstain = True
                 abstain_reason = str(meta.get("abstain_reason", "") or abstain_reason)

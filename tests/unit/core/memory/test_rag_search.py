@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.rag.retriever import RetrievalResult
+from core.memory.rag.retriever import AccessBatch, MemoryRetriever, RetrievalResult
 from core.memory.rag_search import (
     RAGMemorySearch,
     _keyword_token_matches,
@@ -230,6 +230,111 @@ class TestGetIndexerDependencyMissing:
 
 
 class TestGraphEpisodesSearch:
+    def test_retriever_saves_raw_episode_seeds_before_primary_graph_expansion(self, tmp_path: Path) -> None:
+        retriever = MemoryRetriever(MagicMock(), MagicMock(), tmp_path / "knowledge")
+        seed = RetrievalResult(
+            doc_id="episode-1",
+            content="seed",
+            score=0.8,
+            metadata={"memory_type": "episodes"},
+            source_scores={"vector": 0.8},
+        )
+        expanded = RetrievalResult(
+            doc_id="episode-2",
+            content="expanded",
+            score=0.6,
+            metadata={"memory_type": "episodes"},
+            source_scores={"pagerank": 0.6},
+        )
+        batch = AccessBatch()
+
+        with (
+            patch.object(
+                retriever,
+                "_vector_search",
+                return_value=[("episode-1", "seed", 0.8, {"memory_type": "episodes"})],
+            ) as vector_search,
+            patch.object(retriever, "_apply_score_adjustments", return_value=[seed]),
+            patch.object(retriever, "_apply_spreading_activation", return_value=[seed, expanded]),
+            patch.object(retriever, "_get_spreading_memory_types", return_value=("episodes",)),
+        ):
+            results = retriever.search(
+                "query",
+                "alice",
+                memory_type="episodes",
+                top_k=10,
+                enable_spreading_activation=True,
+                access_batch=batch,
+            )
+
+        vector_search.assert_called_once()
+        assert results == [seed, expanded]
+        assert batch.take_episode_seeds("query", 10) == [seed]
+
+    def test_reuses_primary_episode_seeds_without_second_vector_search(
+        self,
+        rag: RAGMemorySearch,
+        knowledge_dir: Path,
+    ) -> None:
+        class FakeIndexer:
+            vector_store = object()
+
+        seed = RetrievalResult(
+            doc_id="episode-1",
+            content="seed",
+            score=0.8,
+            metadata={"source_file": "episodes/1.md", "memory_type": "episodes"},
+            source_scores={"vector": 0.8},
+        )
+        primary_neighbor = RetrievalResult(
+            doc_id="episode-2",
+            content="primary neighbor",
+            score=0.6,
+            metadata={"source_file": "episodes/2.md", "memory_type": "episodes"},
+            source_scores={"pagerank": 0.6},
+        )
+        graph_neighbor = RetrievalResult(
+            doc_id="episode-3",
+            content="graph neighbor",
+            score=0.5,
+            metadata={"source_file": "episodes/3.md", "memory_type": "episodes"},
+            source_scores={"pagerank": 0.5},
+        )
+        retriever = MagicMock()
+        batch = AccessBatch()
+        rag._indexer = FakeIndexer()
+
+        def primary_search(**kwargs):
+            batch.remember_episode_seeds(kwargs["query"], kwargs["top_k"], [seed])
+            return [seed, primary_neighbor]
+
+        retriever.search.side_effect = primary_search
+        retriever.expand_search_results.return_value = [seed, graph_neighbor]
+
+        with patch.object(rag, "_get_retriever", return_value=retriever):
+            vector = rag._vector_search_primary(
+                "query",
+                "episodes",
+                0,
+                knowledge_dir,
+                result_limit=10,
+                access_batch=batch,
+            )
+            graph = rag._graph_episodes_search(
+                "query",
+                10,
+                knowledge_dir,
+                indexer=rag._indexer,
+                access_batch=batch,
+            )
+
+        retriever.search.assert_called_once()
+        retriever.expand_search_results.assert_called_once_with([seed], rag._anima_dir.name)
+        assert [item["doc_id"] for item in vector] == ["episode-1", "episode-2"]
+        assert [item["doc_id"] for item in graph] == ["episode-1", "episode-3"]
+        assert all(item["search_method"] == "vector" for item in vector)
+        assert graph[0]["search_method"] == "vector_graph"
+
     def test_reuses_retriever(self, rag: RAGMemorySearch, knowledge_dir: Path) -> None:
         class FakeIndexer:
             vector_store = object()

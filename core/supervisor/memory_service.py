@@ -13,6 +13,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from core.memory.rag.store import Document, SearchResult, VectorStore
@@ -84,12 +85,14 @@ class MemoryService:
             raise MemoryServiceUnavailable("memory queue is full")
 
         self._pending += 1
+        queued_at = perf_counter()
         try:
             return await asyncio.get_running_loop().run_in_executor(
                 self._executor,
-                self._dispatch,
+                self._dispatch_timed,
                 method,
                 params,
+                queued_at,
             )
         except MemoryServiceUnavailable:
             raise
@@ -100,6 +103,19 @@ class MemoryService:
             raise MemoryServiceUnavailable(f"memory operation failed: {exc}") from exc
         finally:
             self._pending -= 1
+
+    def _dispatch_timed(self, method: str, params: dict[str, Any], queued_at: float) -> dict[str, Any]:
+        started = perf_counter()
+        try:
+            return self._dispatch(method, params)
+        finally:
+            logger.info(
+                "Root memory operation: anima=%s method=%s queue_wait=%.3fs execute=%.3fs",
+                self.anima_name,
+                method,
+                started - queued_at,
+                perf_counter() - started,
+            )
 
     async def repair(self, *, include_shared: bool) -> dict[str, Any]:
         """Rebuild, swap, reopen, and verify this root's sole vector store."""

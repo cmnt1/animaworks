@@ -729,6 +729,32 @@ def test_longterm_bm25_can_skip_source_validation(
     assert len(hits) == 1
 
 
+@pytest.mark.parametrize("validate_sources", [False, True])
+def test_longterm_bm25_source_sync_follows_validation_flag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    validate_sources: bool,
+) -> None:
+    anima_dir = tmp_path / "animas" / "alice"
+    _write_longterm_memory(anima_dir, "knowledge/a.md", "# A\n\nZephyrNova launchpad audit.")
+    rebuild_longterm_bm25_index(anima_dir)
+    sync_calls: list[Path] = []
+    monkeypatch.setattr(
+        bm25_module,
+        "_sync_longterm_bm25_sources",
+        lambda path, _payload: sync_calls.append(path),
+    )
+
+    search_longterm_memory_bm25(
+        anima_dir,
+        "ZephyrNova",
+        memory_types=("knowledge",),
+        validate_sources=validate_sources,
+    )
+
+    assert sync_calls == ([anima_dir] if validate_sources else [])
+
+
 def test_longterm_source_delta_is_fresh_without_full_rebuild(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     anima_dir = tmp_path / "animas" / "alice"
     source = anima_dir / "knowledge" / "memo.md"

@@ -120,7 +120,7 @@ def build_unified_searcher(
     get_retriever: Callable[[], MemoryRetriever | None],
     unified_search_cls: Any,
 ) -> Any:
-    """Build a UnifiedMemorySearch, reusing an injected retriever's indexer when available.
+    """Build a UnifiedMemorySearch, reusing an injected retriever and indexer when available.
 
     Shared by Channel C and Channel F so both reuse the runtime/test retriever
     cache instead of constructing a cold searcher on every priming run.  The
@@ -140,6 +140,7 @@ def build_unified_searcher(
                 get_common_skills_dir(),
             )
             rag_search._indexer = indexer
+            rag_search._retriever = retriever
             rag_search._indexer_initialized = True
             return unified_search_cls(anima_dir, rag_search=rag_search)
     except Exception:

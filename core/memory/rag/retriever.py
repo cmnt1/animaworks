@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
+from time import perf_counter
 
 from core.memory.rag.store import SearchResult
 from core.time_utils import ensure_aware, now_iso, now_local
@@ -48,6 +49,7 @@ def _load_skill_document_by_signature(path: Path, mtime_ns: int, size: int):
 def _load_skill_document_cached(path: Path):
     stat = path.stat()
     return _load_skill_document_by_signature(path, stat.st_mtime_ns, stat.st_size)
+
 
 # Hard cap for frequency boost to prevent unbounded score inflation.
 # log1p(19) ≈ 3.0, so access_count < 19 behaves identically to before.
@@ -85,6 +87,18 @@ class AccessBatch:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._patches: dict[tuple[str, str], dict[str, str | int | float]] = {}
+        self._episode_seeds: dict[tuple[str, int], list[RetrievalResult]] = {}
+        self._records: list[tuple[list[RetrievalResult], str, str]] = []
+
+    def remember_episode_seeds(self, query: str, top_k: int, results: list[RetrievalResult]) -> None:
+        """Keep vector seeds for the graph ranker in this retrieval request."""
+        with self._lock:
+            self._episode_seeds[(query, top_k)] = results
+
+    def take_episode_seeds(self, query: str, top_k: int) -> list[RetrievalResult] | None:
+        """Return and discard vector seeds saved for the graph ranker."""
+        with self._lock:
+            return self._episode_seeds.pop((query, top_k), None)
 
     def overlay(self, collection: str, doc_id: str, metadata: dict) -> dict:
         with self._lock:
@@ -95,6 +109,7 @@ class AccessBatch:
         weight = _ACCESS_WEIGHT_BY_KIND.get(kind, _ACCESS_WEIGHT_BY_KIND["used"])
         timestamp = now_iso()
         with self._lock:
+            self._records.append((list(results), anima_name, kind))
             for result in results:
                 memory_type = result.metadata.get("memory_type", "knowledge")
                 source = result.metadata.get("anima", anima_name)
@@ -109,10 +124,19 @@ class AccessBatch:
                     per_anima_access_key=f"{_PER_ANIMA_AC_PREFIX}{anima_name}" if source == "shared" else None,
                 )
 
+    def absorb(self, other: AccessBatch) -> None:
+        """Replay another query's records without sharing its score overlays."""
+        with other._lock:
+            records = other._records
+            other._records = []
+        for results, anima_name, kind in records:
+            self.record(results, anima_name, kind=kind)
+
     def flush(self, vector_store) -> None:
         with self._lock:
             pending = self._patches
             self._patches = {}
+            self._records = []
         if not pending:
             return
         grouped: dict[str, list[tuple[str, dict[str, str | int | float]]]] = {}
@@ -240,6 +264,8 @@ class MemoryRetriever:
         if not include_superseded and memory_type == "knowledge":
             filter_metadata = {"valid_until": ""}
 
+        vector_started = perf_counter()
+
         # 1. Dense Vector search (personal collection)
         fetch_multiplier = 4 if memory_type == "facts" and not include_superseded else 2
         vector_results = self._vector_search(
@@ -306,17 +332,57 @@ class MemoryRetriever:
         # 4. Sort & top_k
         results.sort(key=lambda r: r.score, reverse=True)
         initial_results = results[:top_k]
+        logger.info(
+            "Memory retrieval vector phase: anima=%s type=%s top_k=%d results=%d elapsed=%.3fs",
+            anima_name,
+            memory_type,
+            top_k,
+            len(initial_results),
+            perf_counter() - vector_started,
+        )
+        if memory_type == "episodes" and access_batch is not None:
+            access_batch.remember_episode_seeds(query, top_k, initial_results)
 
         # 5. Apply spreading activation if enabled
         if enable_spreading_activation and memory_type in spreading_types:
+            spreading_started = perf_counter()
             try:
                 expanded = self._apply_spreading_activation(initial_results, anima_name)
+                logger.info(
+                    "Memory retrieval graph phase: anima=%s type=%s seeds=%d results=%d elapsed=%.3fs",
+                    anima_name,
+                    memory_type,
+                    len(initial_results),
+                    len(expanded),
+                    perf_counter() - spreading_started,
+                )
                 return expanded
             except Exception as e:
                 logger.warning("Spreading activation failed, returning initial results: %s", e)
                 return initial_results
 
         return initial_results
+
+    def expand_search_results(
+        self,
+        initial_results: list[RetrievalResult],
+        anima_name: str,
+    ) -> list[RetrievalResult]:
+        """Apply graph spreading to already-fetched vector seeds."""
+        spreading_started = perf_counter()
+        try:
+            expanded = self._apply_spreading_activation(initial_results, anima_name)
+        except Exception as e:
+            logger.warning("Spreading activation failed, returning initial results: %s", e)
+            return initial_results
+        logger.info(
+            "Memory retrieval graph phase: anima=%s type=episodes seeds=%d results=%d elapsed=%.3fs reused_seeds=true",
+            anima_name,
+            len(initial_results),
+            len(expanded),
+            perf_counter() - spreading_started,
+        )
+        return expanded
 
     def get_important_chunks(
         self,
@@ -708,7 +774,9 @@ class MemoryRetriever:
 
         for collection, ids in personal_batches.items():
             try:
-                current = result_metadata[collection] if use_result_metadata else self._read_metadata_fields(collection, ids)
+                current = (
+                    result_metadata[collection] if use_result_metadata else self._read_metadata_fields(collection, ids)
+                )
                 metas = [
                     self._access_metadata_patch(current.get(doc_id, {}), kind, weight, now_iso_str) for doc_id in ids
                 ]
@@ -720,7 +788,9 @@ class MemoryRetriever:
         ac_key = f"{_PER_ANIMA_AC_PREFIX}{anima_name}"
         for collection, ids in shared_batches.items():
             try:
-                current = result_metadata[collection] if use_result_metadata else self._read_metadata_fields(collection, ids)
+                current = (
+                    result_metadata[collection] if use_result_metadata else self._read_metadata_fields(collection, ids)
+                )
                 metas = [
                     self._access_metadata_patch(
                         current.get(doc_id, {}),
