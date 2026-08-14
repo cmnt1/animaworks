@@ -660,9 +660,13 @@ class SkillsToolsMixin:
         elif status == "blocked":
             declaration_meta = {
                 "blocked_at": now_iso(),
-                "unblock_check": unblock_check,
                 "unblock_check_failures": 0,
             }
+            # Omit when absent or null so an existing unblock_check is preserved:
+            # losing it would strand the task permanently now that checkless tasks
+            # are never auto-reprobed. An explicit empty string still clears it.
+            if unblock_check is not None:
+                declaration_meta["unblock_check"] = unblock_check
 
         try:
             if declaration_meta:

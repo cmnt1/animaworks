@@ -784,6 +784,9 @@ class BackgroundTaskConfig(BaseModel):
     blocked_recovery_scan_minutes: float = Field(default=15.0, ge=1)
     blocked_max_reprobes: int = Field(default=4, ge=0)
     blocked_check_timeout_seconds: int = Field(default=60, ge=1)
+    # False (default) = fail closed: checkless blocked tasks are never auto-reprobed.
+    # True restores the pre-fail-closed time-based pending requeue behavior.
+    blocked_checkless_reprobe_enabled: bool = False
 
 
 def resolve_background_worker_pool_size(

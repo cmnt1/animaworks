@@ -93,7 +93,7 @@ def _record_check_failure(manager: TaskQueueManager, entry: TaskEntry) -> None:
     )
 
 
-def _alert_reprobe_exhausted(
+def _alert_manual_intervention_required(
     manager: TaskQueueManager,
     anima_dir: Path,
     anima_name: str,
@@ -113,13 +113,14 @@ def _alert_reprobe_exhausted(
         return
     _add_alert_task(
         supervisor_dir,
-        kind="blocked_task_reprobe_exhausted",
+        kind="blocked_task_manual_intervention_required",
         target_name=anima_name,
         delegated_task_id=entry.task_id,
         summary=f"Blocked task needs intervention: {anima_name}/{entry.task_id}",
         instruction=(
-            f"Task {entry.task_id} for {anima_name} remains blocked after automatic reprobes. "
-            f"Review the blocker and decide how to proceed.\n\n{entry.original_instruction}"
+            f"タスク {entry.task_id}（{anima_name}）は unblock_check を持たないため自動再開されない。"
+            f"人手で確認し、完了なら done/cancelled に、継続なら unblock_check を付けて "
+            f"blocked を宣言し直すこと。\n\n{entry.original_instruction}"
         ),
         extra_meta={"blocked_task_id": entry.task_id},
     )
@@ -210,12 +211,17 @@ def revalidate_blocked_tasks(anima_dir: Path, anima_name: str) -> list[str]:
                     continue
                 suffix = ""
             else:
-                reprobes = _count(entry.meta, "blocked_reprobe_count")
-                if reprobes >= config.blocked_max_reprobes:
-                    _alert_reprobe_exhausted(manager, anima_dir, anima_name, entry)
-                    continue
+                # checkless: fail closed by default (no automatic pending requeue).
                 age_hours = _age_hours(entry)
                 if age_hours is None or age_hours < config.blocked_reprobe_after_hours:
+                    continue
+                if not config.blocked_checkless_reprobe_enabled:
+                    _alert_manual_intervention_required(manager, anima_dir, anima_name, entry)
+                    continue
+                # Legacy time-based reprobe (opt-in via blocked_checkless_reprobe_enabled).
+                reprobes = _count(entry.meta, "blocked_reprobe_count")
+                if reprobes >= config.blocked_max_reprobes:
+                    _alert_manual_intervention_required(manager, anima_dir, anima_name, entry)
                     continue
                 manager.update_meta(entry.task_id, {"blocked_reprobe_count": reprobes + 1})
                 suffix = t("blocked_recovery.reprobe_instruction")
@@ -223,7 +229,7 @@ def revalidate_blocked_tasks(anima_dir: Path, anima_name: str) -> list[str]:
             pending = manager.update_status(
                 entry.task_id,
                 "pending",
-                summary="auto-unblocked: check passed" if has_check else "auto-unblocked: scheduled reprobe",
+                summary=("auto-unblocked: check passed" if has_check else "auto-unblocked: scheduled reprobe"),
             )
             if pending is None:
                 continue
@@ -237,8 +243,11 @@ def revalidate_blocked_tasks(anima_dir: Path, anima_name: str) -> list[str]:
 
             ActivityLogger(anima_dir).log(
                 "blocked_recovery",
-                summary="Unblock check passed" if has_check else "Scheduled blocked task reprobe",
-                meta={"task_id": entry.task_id, "method": "check" if has_check else "reprobe"},
+                summary=("Unblock check passed" if has_check else "Scheduled blocked task reprobe"),
+                meta={
+                    "task_id": entry.task_id,
+                    "method": "check" if has_check else "reprobe",
+                },
                 safe=True,
             )
         except Exception:
