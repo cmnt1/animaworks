@@ -198,9 +198,12 @@ class LifecycleMixin:
         cascade_suppressed_senders: set[str] | None = None,
     ) -> CycleResult:
         self._get_interrupt_event("_background").clear()
-        logger.info("[%s] run_heartbeat START", self.name)
+        # START is logged only after the background lock is held: "START" must mean
+        # "running", not "queued behind another background lane".
+        logger.info("[%s] run_heartbeat WAITING_LOCK", self.name)
         try:
             async with self._background_lock:
+                logger.info("[%s] run_heartbeat START", self.name)
                 self._mark_busy_start()
                 _keepalive = asyncio.create_task(self._keepalive_while_busy())
                 self._status_slots["background"] = "checking"
@@ -825,11 +828,12 @@ class LifecycleMixin:
             skills: Optional cron skill references from cron.md.
         """
         self._get_interrupt_event("_background").clear()
-        logger.info("[%s] run_cron_task START task=%s", self.name, task_name)
+        logger.info("[%s] run_cron_task WAITING_LOCK task=%s", self.name, task_name)
         from core.tooling.handler import active_session_type
 
         try:
             async with self._background_lock:
+                logger.info("[%s] run_cron_task START task=%s", self.name, task_name)
                 self._mark_busy_start()
                 _keepalive = asyncio.create_task(self._keepalive_while_busy())
                 self._cron_idle.clear()
@@ -1003,7 +1007,7 @@ class LifecycleMixin:
         Returns:
             Dictionary with execution results (exit_code, stdout, stderr, duration_ms)
         """
-        logger.info("[%s] run_cron_command START task=%s", self.name, task_name)
+        logger.info("[%s] run_cron_command WAITING_LOCK task=%s", self.name, task_name)
         start_ms = time.time_ns() // 1_000_000
 
         stdout = ""
@@ -1014,6 +1018,7 @@ class LifecycleMixin:
 
         try:
             async with self._background_lock:
+                logger.info("[%s] run_cron_command START task=%s", self.name, task_name)
                 self._mark_busy_start()
                 self._cron_idle.clear()
                 self._status_slots["background"] = "working"
