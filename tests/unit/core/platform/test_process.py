@@ -27,6 +27,24 @@ class TestSubprocessSessionKwargs:
             assert process.subprocess_session_kwargs() == {"start_new_session": True}
 
 
+class TestSubprocessDaemonKwargs:
+    def test_windows_detaches_from_parent_console(self):
+        with (
+            patch("core.platform.process.os.name", "nt"),
+            patch(
+                "core.platform.process.subprocess.CREATE_NEW_PROCESS_GROUP",
+                512,
+                create=True,
+            ),
+            patch("core.platform.process.subprocess.DETACHED_PROCESS", 8, create=True),
+        ):
+            assert process.subprocess_daemon_kwargs() == {"creationflags": 520}
+
+    def test_posix_returns_start_new_session(self):
+        with patch("core.platform.process.os.name", "posix"):
+            assert process.subprocess_daemon_kwargs() == {"start_new_session": True}
+
+
 class TestTerminatePid:
     def test_windows_terminate_pid_kills_children_without_killpg(self):
         child = MagicMock()

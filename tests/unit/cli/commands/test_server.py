@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.platform.process import subprocess_session_kwargs
+from core.platform.process import subprocess_daemon_kwargs
 
 # ── PID helpers ──────────────────────────────────────────
 
@@ -555,6 +556,10 @@ class TestCmdStart:
 
         mock_cleanup.assert_called_once_with(999, host="127.0.0.1", port=18500)
         mock_popen.assert_called_once()
+        call_kwargs = mock_popen.call_args.kwargs
+        assert call_kwargs["stdin"] is subprocess.DEVNULL
+        for key, value in subprocess_daemon_kwargs().items():
+            assert call_kwargs[key] == value
 
     @patch("cli.commands.server._is_port_listening", return_value=True)
     @patch("cli.commands.server._find_server_pid_by_process", return_value=777)
@@ -916,7 +921,8 @@ class TestSpawnRestartHelper:
 
         assert pid == 77777
         call_kwargs = mock_popen.call_args
-        for key, value in subprocess_session_kwargs().items():
+        assert call_kwargs.kwargs["stdin"] is subprocess.DEVNULL
+        for key, value in subprocess_daemon_kwargs().items():
             assert call_kwargs.kwargs[key] == value
         helper_code = mock_popen.call_args.args[0][2]
         assert "find_matching_pids" in helper_code

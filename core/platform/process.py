@@ -23,6 +23,22 @@ def subprocess_session_kwargs() -> dict[str, Any]:
     return {"start_new_session": True}
 
 
+def subprocess_daemon_kwargs() -> dict[str, Any]:
+    """Return Popen kwargs for a daemon that must outlive its parent console.
+
+    ``CREATE_NEW_PROCESS_GROUP`` alone does not detach a Windows child from
+    the parent's console.  When a VS Code task terminal is disposed, the
+    resulting console-close event can therefore terminate an otherwise
+    healthy background server.  ``DETACHED_PROCESS`` prevents the daemon
+    from being attached to that console in the first place.
+    """
+    if os.name == "nt":
+        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        creationflags |= getattr(subprocess, "DETACHED_PROCESS", 0)
+        return {"creationflags": creationflags}
+    return {"start_new_session": True}
+
+
 def is_process_alive(pid: int) -> bool:
     """Return True when ``pid`` exists and is not a zombie."""
     if pid <= 0:

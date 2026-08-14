@@ -22,7 +22,7 @@ import psutil
 from core.platform.process import (
     find_matching_pids,
     request_process_shutdown,
-    subprocess_session_kwargs,
+    subprocess_daemon_kwargs,
     terminate_matching_processes,
     terminate_pid,
 )
@@ -487,11 +487,12 @@ def _spawn_daemon(args: argparse.Namespace) -> None:
     daemon_env = {**os.environ, "PYTHONUTF8": "1"}
     proc = subprocess.Popen(
         cmd,
+        stdin=subprocess.DEVNULL,
         stdout=log_file,
         stderr=subprocess.STDOUT,
         cwd=Path(__file__).resolve().parent.parent.parent,
         env=daemon_env,
-        **subprocess_session_kwargs(),
+        **subprocess_daemon_kwargs(),
     )
     log_file.close()
 
@@ -1145,10 +1146,11 @@ sys.exit(1)
 
     proc = subprocess.Popen(
         [sys.executable, "-c", helper_code],
+        stdin=subprocess.DEVNULL,
         stdout=log_file,
         stderr=subprocess.STDOUT,
         cwd=project_root,
-        **subprocess_session_kwargs(),
+        **subprocess_daemon_kwargs(),
     )
     log_file.close()
     return proc.pid
