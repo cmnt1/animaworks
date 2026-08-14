@@ -174,6 +174,46 @@ async def test_memory_service_defers_and_atomically_applies_access_deltas(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_memory_service_close_drains_deferred_access_updates(tmp_path: Path) -> None:
+    store = _store()
+    metadata: dict[str, object] = {"access_count": 1.0, "last_accessed_at": "2026-08-14T01:00:00+00:00"}
+    entered = threading.Event()
+    release = threading.Event()
+
+    store._get_by_ids_once.return_value = [Document("doc-1", "hello", metadata=dict(metadata))]
+
+    def update_metadata(_collection: str, _ids: list[str], metadatas: list[dict]) -> bool:
+        entered.set()
+        release.wait(timeout=2)
+        metadata.update(metadatas[0])
+        return True
+
+    store._update_metadata_once.side_effect = update_metadata
+    service = MemoryService("sakura", tmp_path / "sakura", opener=lambda: store)
+    operation = {
+        "collection": "sakura_knowledge",
+        "doc_id": "doc-1",
+        "access_delta": 0.2,
+        "retrieved_delta": 1,
+        "used_delta": 0,
+        "last_accessed_at": "2026-08-14T00:00:00+00:00",
+    }
+
+    assert await service.handle("memory.apply_access_updates", {"operations": [operation]}) == {"ok": True}
+    assert await asyncio.to_thread(entered.wait, 1)
+    close_task = asyncio.create_task(service.close())
+    await asyncio.sleep(0)
+    assert not close_task.done()
+
+    release.set()
+    await close_task
+
+    assert metadata["access_count"] == pytest.approx(1.2)
+    assert metadata["last_accessed_at"] == "2026-08-14T01:00:00+00:00"
+    store.close.assert_called_once()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("fenced", [True, False])
 async def test_memory_service_unavailable_is_not_an_empty_success(tmp_path: Path, fenced: bool) -> None:
     opener = (lambda: _store()) if fenced else MagicMock(side_effect=RuntimeError("broken DB"))

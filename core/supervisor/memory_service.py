@@ -49,6 +49,7 @@ class MemoryService:
         self._open_error: Exception | None = None
         self._pending = 0
         self._started = False
+        self._closing = False
         self._repairing = False
         self._repair_lock = asyncio.Lock()
 
@@ -69,8 +70,12 @@ class MemoryService:
 
     async def handle(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         """Run one checked operation or raise an explicit unavailable error."""
+        if self._closing:
+            raise MemoryServiceUnavailable("memory service is closing")
         if not self._started:
             await self.start()
+        if self._closing:
+            raise MemoryServiceUnavailable("memory service is closing")
         if self._repairing:
             raise MemoryServiceUnavailable("RAG repair in progress")
         if self._store is None:
@@ -455,18 +460,22 @@ class MemoryService:
             for row in rows:
                 metadata = current.get(row["doc_id"], {})
                 access_count = MemoryService._metadata_number(metadata, "access_count")
+                last_accessed_at = max(
+                    str(metadata.get("last_accessed_at", "") or ""),
+                    str(row.get("last_accessed_at", "") or ""),
+                )
                 patch: dict[str, str | int | float] = {
                     "access_count": access_count + float(row.get("access_delta", 0)),
                     "retrieved_count": MemoryService._metadata_number(metadata, "retrieved_count")
                     + int(row.get("retrieved_delta", 0)),
                     "used_count": MemoryService._metadata_number(metadata, "used_count", default=access_count)
                     + int(row.get("used_delta", 0)),
-                    "last_accessed_at": str(row.get("last_accessed_at", "")),
+                    "last_accessed_at": last_accessed_at,
                 }
                 for kind in ("retrieved", "used"):
                     timestamp = row.get(f"last_{kind}_at")
                     if isinstance(timestamp, str):
-                        patch[f"last_{kind}_at"] = timestamp
+                        patch[f"last_{kind}_at"] = max(str(metadata.get(f"last_{kind}_at", "") or ""), timestamp)
                 per_anima_key = row.get("per_anima_access_key")
                 if isinstance(per_anima_key, str) and per_anima_key:
                     patch[per_anima_key] = MemoryService._metadata_number(metadata, per_anima_key) + float(
@@ -544,10 +553,14 @@ class MemoryService:
 
     async def close(self) -> None:
         """Close the sole native handle after queued operations drain."""
-        store, self._store = self._store, None
+        if self._closing:
+            return
+        self._closing = True
+        store = self._store
         if store is not None:
             try:
                 await asyncio.get_running_loop().run_in_executor(self._executor, store.close)
             except Exception:
                 logger.warning("Failed to close root memory store for %s", self.anima_name, exc_info=True)
+        self._store = None
         self._executor.shutdown(wait=False)
