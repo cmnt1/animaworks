@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -15,11 +16,10 @@ from core.tools.transcribe import (
     _load_prompt,
     _prompt_cache,
     get_tool_schemas,
+    process_audio,
     refine_with_llm,
     transcribe,
-    process_audio,
 )
-
 
 # ── _load_prompt ──────────────────────────────────────────────────
 
@@ -61,10 +61,15 @@ class TestLoadPrompt:
         """Language code 'en-US' should match 'en.json'."""
         prompts_dir = tmp_path / "prompts"
         prompts_dir.mkdir()
-        (prompts_dir / "en.json").write_text(json.dumps({
-            "system_prompt": "English prompt",
-            "user_template": "{text}",
-        }), encoding="utf-8")
+        (prompts_dir / "en.json").write_text(
+            json.dumps(
+                {
+                    "system_prompt": "English prompt",
+                    "user_template": "{text}",
+                }
+            ),
+            encoding="utf-8",
+        )
 
         with patch("core.tools.transcribe._PROMPTS_DIR", prompts_dir):
             result = _load_prompt("en-US")
@@ -76,9 +81,8 @@ class TestLoadPrompt:
 
 class TestTranscribe:
     def test_requires_faster_whisper(self):
-        with patch("core.tools.transcribe.WhisperModel", None):
-            with pytest.raises(ImportError, match="faster-whisper"):
-                transcribe("/fake/audio.wav")
+        with patch.dict(sys.modules, {"faster_whisper": None}), pytest.raises(ImportError, match="faster-whisper"):
+            transcribe("/fake/audio.wav")
 
     def test_transcribe_success(self):
         mock_segment = MagicMock()
@@ -95,8 +99,7 @@ class TestTranscribe:
         mock_model.transcribe.return_value = ([mock_segment], mock_info)
 
         with patch("core.tools.transcribe._get_whisper_model", return_value=mock_model):
-            with patch("core.tools.transcribe.WhisperModel", MagicMock()):
-                result = transcribe("/fake/audio.wav")
+            result = transcribe("/fake/audio.wav")
 
         assert result["raw_text"] == "Hello world"
         assert result["language"] == "en"
@@ -114,8 +117,7 @@ class TestTranscribe:
         mock_model.transcribe.return_value = ([], mock_info)
 
         with patch("core.tools.transcribe._get_whisper_model", return_value=mock_model):
-            with patch("core.tools.transcribe.WhisperModel", MagicMock()):
-                result = transcribe("/fake/silence.wav")
+            result = transcribe("/fake/silence.wav")
         assert result["raw_text"] == ""
         assert result["segments"] == []
 
@@ -210,9 +212,11 @@ class TestProcessAudio:
             "refine_time": 0.3,
         }
 
-        with patch("core.tools.transcribe.transcribe", return_value=mock_transcribe_result):
-            with patch("core.tools.transcribe.refine_with_llm", return_value=mock_refine_result):
-                result = process_audio("/fake.wav", quiet=True)
+        with (
+            patch("core.tools.transcribe.transcribe", return_value=mock_transcribe_result),
+            patch("core.tools.transcribe.refine_with_llm", return_value=mock_refine_result),
+        ):
+            result = process_audio("/fake.wav", quiet=True)
         assert result["refined_text"] == "polished text"
         assert result["refine_model"] == "test-model"
 

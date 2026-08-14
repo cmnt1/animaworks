@@ -22,11 +22,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-try:
-    from faster_whisper import WhisperModel
-except ImportError:
-    WhisperModel = None  # type: ignore[assignment, misc]
-
 logger = logging.getLogger(__name__)
 
 # ── Execution Profile ─────────────────────────────────────
@@ -101,10 +96,12 @@ def _get_whisper_model():
     """Get Whisper model singleton (loaded on first use)."""
     global _whisper_model
     if _whisper_model is None:
-        if WhisperModel is None:
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError as exc:
             raise ImportError(
                 "transcribe tool requires 'faster-whisper'. Install with: pip install animaworks[transcribe]"
-            )
+            ) from exc
         device = WHISPER_DEVICE
         if device == "auto":
             device = "cuda" if shutil.which("nvidia-smi") else "cpu"
@@ -135,9 +132,6 @@ def transcribe(
     Returns:
         Dict with raw_text, language, duration, timing info, and segments.
     """
-    if WhisperModel is None:
-        raise ImportError("transcribe tool requires 'faster-whisper'. Install with: pip install animaworks[transcribe]")
-
     t0 = time.time()
     model = _get_whisper_model()
     load_time = time.time() - t0
