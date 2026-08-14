@@ -377,6 +377,26 @@ def test_access_batch_combines_writes_and_overlays_counts(mock_vector_store):
     assert metadata["retrieved_count"] == 2
 
 
+def test_access_batch_absorb_combines_writes_without_cross_query_overlay(mock_vector_store):
+    first_batch = AccessBatch()
+    second_batch = AccessBatch()
+    first = _make_result(doc_id="doc1", access_count=1)
+    second = _make_result(doc_id="doc1", access_count=1)
+    first_batch.record([first], "test_anima", kind="retrieved")
+    second_batch.record([second], "test_anima", kind="retrieved")
+
+    assert second_batch.overlay("test_anima_knowledge", "doc1", dict(second.metadata))["access_count"] == 1.2
+
+    combined = AccessBatch()
+    combined.absorb(first_batch)
+    combined.absorb(second_batch)
+    combined.flush(mock_vector_store)
+
+    metadata = mock_vector_store.update_metadata.call_args.args[2][0]
+    assert metadata["access_count"] == pytest.approx(1.4)
+    assert metadata["retrieved_count"] == 2
+
+
 # ── Indexer Metadata Tests ──────────────────────────────────────────
 
 

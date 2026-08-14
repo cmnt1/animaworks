@@ -99,6 +99,15 @@ def test_write_does_not_retry_on_retryable_failure(monkeypatch) -> None:
     assert store.is_transient_write_failure("sakura_knowledge") is True
 
 
+def test_enqueue_access_updates_uses_deferred_root_method() -> None:
+    requester = MagicMock(return_value={"ok": True})
+    operations = [{"collection": "sakura_knowledge", "doc_id": "doc-1", "access_delta": 0.2}]
+
+    assert _store(requester).enqueue_access_updates(operations) is True
+
+    requester.assert_called_once_with("memory.apply_access_updates", {"operations": operations})
+
+
 def test_get_by_ids_retries_once(monkeypatch) -> None:
     monkeypatch.setattr("core.memory.rag.ipc_store.time.sleep", lambda _s: None)
     responses: list[Any] = [

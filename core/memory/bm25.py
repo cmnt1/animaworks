@@ -634,13 +634,23 @@ def search_longterm_memory_bm25(
         return []
     load_started = time.perf_counter()
     base_payload = _load_longterm_bm25_payload(anima_dir)
-    _sync_longterm_bm25_sources(anima_dir, base_payload)
+    load_elapsed = time.perf_counter() - load_started
+    sync_started = time.perf_counter()
+    if validate_sources:
+        _sync_longterm_bm25_sources(anima_dir, base_payload)
+    sync_elapsed = time.perf_counter() - sync_started
+    merge_started = time.perf_counter()
     payload = _merged_longterm_bm25_payload(anima_dir, base_payload)
+    merge_elapsed = time.perf_counter() - merge_started
     logger.info(
-        "Long-term BM25 load: anima=%s query_chars=%d elapsed=%.3fs available=%s",
+        "Long-term BM25 prepare: anima=%s query_chars=%d load=%.3fs sync=%.3fs merge=%.3fs "
+        "validate_sources=%s available=%s",
         anima_dir.name,
         len(query),
-        time.perf_counter() - load_started,
+        load_elapsed,
+        sync_elapsed,
+        merge_elapsed,
+        validate_sources,
         payload is not None,
     )
     if base_payload is not None and int(base_payload.get("schema_version") or 0) != LONGTERM_BM25_SCHEMA_VERSION:

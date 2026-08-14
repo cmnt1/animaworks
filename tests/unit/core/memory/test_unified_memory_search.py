@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
+from core.memory.rag.retriever import RetrievalResult
 from core.memory.retrieval.pipeline import PipelineResult
 from core.memory.retrieval.unified_search import UnifiedMemorySearch, build_iterative_queries
 
@@ -761,6 +763,46 @@ def test_search_many_merges_parallel_queries_by_best_score(
     assert results[0]["score"] == 0.9
     assert results[0]["content"] == "from beta"
     assert len(results) == 3
+
+
+def test_search_many_flushes_shared_access_batch_once_per_collection(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    vector_store = MagicMock()
+    indexer = SimpleNamespace(vector_store=vector_store)
+    monkeypatch.setattr(fake_rag, "_get_indexer", lambda: indexer)
+
+    def vector_search(query: str, scope: str, *args, access_batch, **kwargs) -> list[dict[str, Any]]:
+        score = 0.9 if query == "beta" else 0.6
+        result = RetrievalResult(
+            doc_id="shared",
+            content=query,
+            score=score,
+            metadata={"memory_type": scope, "anima": "test", "access_count": 0},
+            source_scores={},
+        )
+        access_batch.record([result], "test", kind="retrieved")
+        return [{"doc_id": result.doc_id, "content": result.content, "score": result.score}]
+
+    monkeypatch.setattr(fake_rag, "_vector_search_primary", vector_search)
+
+    results = _searcher(fake_rag).search_many(
+        ["alpha", "beta"],
+        scope="knowledge",
+        limit=1,
+        trigger="chat",
+    )
+
+    assert results == [{"doc_id": "shared", "content": "beta", "score": 0.9}]
+    vector_store.update_metadata.assert_called_once()
+    collection, doc_ids, metadata = vector_store.update_metadata.call_args.args
+    assert collection == "test_knowledge"
+    assert doc_ids == ["shared"]
+    assert metadata[0]["access_count"] == pytest.approx(0.4)
+    assert metadata[0]["retrieved_count"] == 2
 
 
 def test_search_many_can_rerank_once_after_query_merge(

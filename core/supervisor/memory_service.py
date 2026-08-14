@@ -13,6 +13,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from core.memory.rag.store import Document, SearchResult, VectorStore
@@ -48,6 +49,7 @@ class MemoryService:
         self._open_error: Exception | None = None
         self._pending = 0
         self._started = False
+        self._closing = False
         self._repairing = False
         self._repair_lock = asyncio.Lock()
 
@@ -68,8 +70,12 @@ class MemoryService:
 
     async def handle(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         """Run one checked operation or raise an explicit unavailable error."""
+        if self._closing:
+            raise MemoryServiceUnavailable("memory service is closing")
         if not self._started:
             await self.start()
+        if self._closing:
+            raise MemoryServiceUnavailable("memory service is closing")
         if self._repairing:
             raise MemoryServiceUnavailable("RAG repair in progress")
         if self._store is None:
@@ -82,14 +88,28 @@ class MemoryService:
             raise MemoryServiceUnavailable("RAG repair in progress")
         if self._pending >= self.queue_limit:
             raise MemoryServiceUnavailable("memory queue is full")
+        if method == "memory.apply_access_updates":
+            self._validate_access_updates(params)
 
         self._pending += 1
+        queued_at = perf_counter()
+        if method == "memory.apply_access_updates":
+            future = asyncio.get_running_loop().run_in_executor(
+                self._executor,
+                self._dispatch_timed,
+                method,
+                params,
+                queued_at,
+            )
+            future.add_done_callback(self._deferred_operation_done)
+            return {"ok": True}
         try:
             return await asyncio.get_running_loop().run_in_executor(
                 self._executor,
-                self._dispatch,
+                self._dispatch_timed,
                 method,
                 params,
+                queued_at,
             )
         except MemoryServiceUnavailable:
             raise
@@ -100,6 +120,27 @@ class MemoryService:
             raise MemoryServiceUnavailable(f"memory operation failed: {exc}") from exc
         finally:
             self._pending -= 1
+
+    def _deferred_operation_done(self, future: asyncio.Future) -> None:
+        self._pending -= 1
+        try:
+            future.result()
+        except Exception:
+            logger.warning("Deferred root memory operation failed for %s", self.anima_name, exc_info=True)
+
+    def _dispatch_timed(self, method: str, params: dict[str, Any], queued_at: float) -> dict[str, Any]:
+        started = perf_counter()
+        try:
+            return self._dispatch(method, params)
+        finally:
+            if method in {"memory.query", "memory.apply_access_updates"}:
+                logger.info(
+                    "Root memory operation: anima=%s method=%s queue_wait=%.3fs execute=%.3fs",
+                    self.anima_name,
+                    method,
+                    started - queued_at,
+                    perf_counter() - started,
+                )
 
     async def repair(self, *, include_shared: bool) -> dict[str, Any]:
         """Rebuild, swap, reopen, and verify this root's sole vector store."""
@@ -384,7 +425,73 @@ class MemoryService:
                 raise ValueError("ids and metadatas must have the same length")
             update = getattr(store, "_update_metadata_once", store.update_metadata)
             return {"ok": bool(update(collection, ids, metadatas))}
+        if method == "memory.apply_access_updates":
+            return {"ok": self._apply_access_updates(store, params["operations"])}
         raise ValueError(f"unsupported memory method: {method}")
+
+    @staticmethod
+    def _validate_access_updates(params: dict[str, Any]) -> None:
+        operations = params.get("operations")
+        if not isinstance(operations, list):
+            raise ValueError("operations must be a list")
+        for operation in operations:
+            if not isinstance(operation, dict):
+                raise ValueError("operations must contain objects")
+            if not isinstance(operation.get("collection"), str) or not operation["collection"]:
+                raise ValueError("collection must be a non-empty string")
+            if not isinstance(operation.get("doc_id"), str) or not operation["doc_id"]:
+                raise ValueError("doc_id must be a non-empty string")
+            for key in ("access_delta", "retrieved_delta", "used_delta"):
+                value = operation.get(key, 0)
+                if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+                    raise ValueError(f"{key} must be a non-negative number")
+
+    @staticmethod
+    def _apply_access_updates(store: VectorStore, operations: list[dict[str, Any]]) -> bool:
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for operation in operations:
+            grouped.setdefault(operation["collection"], []).append(operation)
+        get = getattr(store, "_get_by_ids_once", store.get_by_ids)
+        update = getattr(store, "_update_metadata_once", store.update_metadata)
+        for collection, rows in grouped.items():
+            ids = [row["doc_id"] for row in rows]
+            current = {document.id: dict(document.metadata) for document in get(collection, ids)}
+            metadatas: list[dict[str, str | int | float]] = []
+            for row in rows:
+                metadata = current.get(row["doc_id"], {})
+                access_count = MemoryService._metadata_number(metadata, "access_count")
+                last_accessed_at = max(
+                    str(metadata.get("last_accessed_at", "") or ""),
+                    str(row.get("last_accessed_at", "") or ""),
+                )
+                patch: dict[str, str | int | float] = {
+                    "access_count": access_count + float(row.get("access_delta", 0)),
+                    "retrieved_count": MemoryService._metadata_number(metadata, "retrieved_count")
+                    + int(row.get("retrieved_delta", 0)),
+                    "used_count": MemoryService._metadata_number(metadata, "used_count", default=access_count)
+                    + int(row.get("used_delta", 0)),
+                    "last_accessed_at": last_accessed_at,
+                }
+                for kind in ("retrieved", "used"):
+                    timestamp = row.get(f"last_{kind}_at")
+                    if isinstance(timestamp, str):
+                        patch[f"last_{kind}_at"] = max(str(metadata.get(f"last_{kind}_at", "") or ""), timestamp)
+                per_anima_key = row.get("per_anima_access_key")
+                if isinstance(per_anima_key, str) and per_anima_key:
+                    patch[per_anima_key] = MemoryService._metadata_number(metadata, per_anima_key) + float(
+                        row.get("access_delta", 0)
+                    )
+                metadatas.append(patch)
+            if not update(collection, ids, metadatas):
+                return False
+        return True
+
+    @staticmethod
+    def _metadata_number(metadata: dict[str, object], field: str, *, default: float = 0.0) -> float:
+        try:
+            return max(0.0, float(str(metadata.get(field, default))))
+        except (TypeError, ValueError):
+            return max(0.0, default)
 
     @staticmethod
     def _string(params: dict[str, Any], key: str) -> str:
@@ -446,10 +553,14 @@ class MemoryService:
 
     async def close(self) -> None:
         """Close the sole native handle after queued operations drain."""
-        store, self._store = self._store, None
+        if self._closing:
+            return
+        self._closing = True
+        store = self._store
         if store is not None:
             try:
                 await asyncio.get_running_loop().run_in_executor(self._executor, store.close)
             except Exception:
                 logger.warning("Failed to close root memory store for %s", self.anima_name, exc_info=True)
+        self._store = None
         self._executor.shutdown(wait=False)
