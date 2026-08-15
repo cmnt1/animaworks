@@ -10,6 +10,8 @@ import os
 from collections.abc import Iterable
 from pathlib import Path
 
+from core.i18n import t
+
 _ANIMA_MEMORY_ROOTS = frozenset(
     {
         "activity_log",
@@ -89,10 +91,7 @@ def effective_write_roots(
         if resolved.is_relative_to(data_dir) and not (
             company_shared is not None and resolved.is_relative_to(company_shared)
         ):
-            raise FileRootsConfigError(
-                f"file_roots のパスは data_dir 配下に置けません: {resolved}。"
-                "作業ディレクトリは data_dir 外に置くか companies/<社>/shared を使ってください。"
-            )
+            raise FileRootsConfigError(t("config.file_roots_inside_data_dir", path=resolved))
         roots.append(resolved)
 
     if task_cwd is not None:

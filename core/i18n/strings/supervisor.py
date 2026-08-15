@@ -148,6 +148,25 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "(指定なし)",
         "en": "(not specified)",
     },
+    "blocked_recovery.reprobe_instruction": {
+        "ja": (
+            "blockerが解消済みか確認し、解消なら続行、未解消ならblocked宣言し直すこと。"
+            "可能ならunblock_checkを添えること。"
+        ),
+        "en": (
+            "Check whether the blocker is resolved: continue if it is, otherwise declare blocked again. "
+            "Attach an unblock_check whenever possible."
+        ),
+        "ko": (
+            "blocker가 해소되었는지 확인하고, 해소되었으면 계속 진행하고 아니면 다시 blocked를 선언하세요. "
+            "가능하면 unblock_check를 함께 제시하세요."
+        ),
+    },
+    "pending_executor.descriptor_recovery_suffix": {
+        "ja": "descriptor消失からの自動復旧。タスクの実態を確認して続行すること。",
+        "en": "Automatic recovery from a lost descriptor. Verify the task's actual state before continuing.",
+        "ko": "descriptor 소실로부터의 자동 복구입니다. 작업의 실제 상태를 확인한 뒤 계속하세요.",
+    },
     "supervisor.zombie_reaped": {
         "ja": "zombie reaper: {count}個の子プロセスを回収しました",
         "en": "zombie reaper: reaped {count} child process(es)",

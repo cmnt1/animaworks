@@ -23,6 +23,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from core.i18n import t
+
 logger = logging.getLogger(__name__)
 
 # ── Execution Profile ─────────────────────────────────────
@@ -270,7 +272,7 @@ def get_tool_schemas() -> list[dict]:
         "description": "How input is interpreted: USER_ENTERED (default) or RAW",
         "enum": ["USER_ENTERED", "RAW"],
     }
-    write_caution = "上書きに注意。既存データ確認にはread_valuesを先に使う。"
+    write_caution = t("tooling_schema.sheets_write_caution")
     return [
         {
             "name": "google_sheets_tabs",

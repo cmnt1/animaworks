@@ -305,4 +305,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "共有ディレクトリ",
         "en": "Shared directory",
     },
+    "config.file_roots_inside_data_dir": {
+        "ja": (
+            "file_roots のパスは data_dir 配下に置けません: {path}。"
+            "作業ディレクトリは data_dir 外に置くか companies/<社>/shared を使ってください。"
+        ),
+        "en": (
+            "file_roots must not point inside data_dir: {path}. "
+            "Put the working directory outside data_dir, or use companies/<company>/shared."
+        ),
+        "ko": (
+            "file_roots 경로는 data_dir 아래에 둘 수 없습니다: {path}. "
+            "작업 디렉터리를 data_dir 밖에 두거나 companies/<회사>/shared를 사용하세요."
+        ),
+    },
 }

@@ -52,8 +52,13 @@ def fake_image_bytes() -> bytes:
 
 @pytest.fixture
 def pipeline(anima_dir: Path) -> ImageGenPipeline:
-    """Create an ImageGenPipeline pointing at the temp anima directory."""
-    return ImageGenPipeline(anima_dir, config=ImageGenConfig(image_style="anime"))
+    """Create an ImageGenPipeline pointing at the temp anima directory.
+
+    ``prefer_codex=False`` keeps the pipeline hermetic: with the default the
+    tests below shell out to the real codex CLI once per expression (~4s each)
+    before falling back to the mocked API clients, which blows the CI timeout.
+    """
+    return ImageGenPipeline(anima_dir, config=ImageGenConfig(image_style="anime", prefer_codex=False))
 
 
 # ── 1. _EXPRESSION_PROMPTS Tests ────────────────────────────────────

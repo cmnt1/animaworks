@@ -497,4 +497,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "変更理由（activity_log に記録される）",
         "en": "Reason for change (recorded in activity_log)",
     },
+    "tooling_schema.sheets_write_caution": {
+        "ja": "上書きに注意。既存データ確認にはread_valuesを先に使う。",
+        "en": "Overwrites existing content — call read_values first to inspect the current data.",
+        "ko": "덮어쓰기에 주의하세요. 기존 데이터를 먼저 read_values로 확인하세요.",
+    },
 }

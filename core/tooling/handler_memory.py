@@ -557,7 +557,7 @@ class MemoryToolsMixin:
             )
         if scope == "code":
             if not project:
-                return "code検索にはprojectが必要です"
+                return t("handler.code_search_requires_project")
             from core.memory.code_index import search_code
 
             code_results = search_code(self._anima_dir, project, query, limit=offset + 10)

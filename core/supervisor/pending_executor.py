@@ -845,7 +845,7 @@ class PendingTaskExecutor:
                     self._anima_dir,
                     self._anima_name,
                     entry,
-                    description_suffix="descriptor消失からの自動復旧。タスクの実態を確認して続行すること。",
+                    description_suffix=t("pending_executor.descriptor_recovery_suffix"),
                 )
             except Exception:
                 logger.warning(

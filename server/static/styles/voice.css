@@ -284,7 +284,8 @@
   z-index: 1;
 }
 
-.voice-popup-close:hover {
+.voice-popup-close:hover,
+.voice-popup-close:active {
   background: var(--aw-color-bg-hover, var(--bg-hover, #eee));
 }
 

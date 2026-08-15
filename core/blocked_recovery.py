@@ -13,16 +13,13 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from core.i18n import t
 from core.memory._io import atomic_write_text
 from core.memory.task_queue import TaskQueueManager
 from core.schemas import TaskEntry
 from core.time_utils import ensure_aware, now_iso, now_local
 
 logger = logging.getLogger("animaworks.blocked_recovery")
-
-_REPROBE_INSTRUCTION = (
-    "blockerが解消済みか確認し、解消なら続行、未解消ならblocked宣言し直すこと。可能ならunblock_checkを添えること。"
-)
 
 
 def regenerate_pending_json(
@@ -221,7 +218,7 @@ def revalidate_blocked_tasks(anima_dir: Path, anima_name: str) -> list[str]:
                 if age_hours is None or age_hours < config.blocked_reprobe_after_hours:
                     continue
                 manager.update_meta(entry.task_id, {"blocked_reprobe_count": reprobes + 1})
-                suffix = _REPROBE_INSTRUCTION
+                suffix = t("blocked_recovery.reprobe_instruction")
 
             pending = manager.update_status(
                 entry.task_id,

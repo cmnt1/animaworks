@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import types
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -105,6 +106,20 @@ class TestGenerateEmbeddingsLocal:
 # ── HTTP mode ────────────────────────────────────────────────────
 
 
+@contextmanager
+def _mock_embed_client(**post_kwargs):
+    """Patch the keep-alive client used by _generate_embeddings_http.
+
+    The implementation moved off ``httpx.post`` to a process-wide
+    ``httpx.Client`` (keep-alive); patching the module function no longer
+    intercepts anything and the tests hit the network for real.
+    """
+    client = MagicMock()
+    client.post = MagicMock(**post_kwargs)
+    with patch("core.memory.rag.singleton._shared_http_client", return_value=client):
+        yield client.post
+
+
 class TestGenerateEmbeddingsHTTP:
     def test_http_mode_calls_endpoint(self, monkeypatch):
         """When ANIMAWORKS_EMBED_URL is set, generate_embeddings calls HTTP endpoint."""
@@ -114,7 +129,7 @@ class TestGenerateEmbeddingsHTTP:
         mock_response.json.return_value = {"embeddings": [[0.1, 0.2], [0.3, 0.4]]}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("httpx.post", return_value=mock_response) as mock_post:
+        with _mock_embed_client(return_value=mock_response) as mock_post:
             from core.memory.rag.singleton import generate_embeddings
 
             result = generate_embeddings(["hello", "world"])
@@ -134,7 +149,7 @@ class TestGenerateEmbeddingsHTTP:
         mock_response.json.return_value = {"embeddings": [[0.1]]}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("httpx.post", return_value=mock_response) as mock_post:
+        with _mock_embed_client(return_value=mock_response) as mock_post:
             from core.memory.rag.singleton import generate_embeddings
 
             assert generate_embeddings(["bulk"], priority="bulk") == [[0.1]]
@@ -157,7 +172,7 @@ class TestGenerateEmbeddingsHTTP:
         batch2_resp.json.return_value = {"embeddings": [[1000], [1001]]}
         batch2_resp.raise_for_status = MagicMock()
 
-        with patch("httpx.post", side_effect=[batch1_resp, batch2_resp]) as mock_post:
+        with _mock_embed_client(side_effect=[batch1_resp, batch2_resp]) as mock_post:
             from core.memory.rag.singleton import generate_embeddings
 
             texts = [f"text_{i}" for i in range(1002)]
@@ -178,7 +193,7 @@ class TestGenerateEmbeddingsHTTP:
         )
 
         with (
-            patch("httpx.post", return_value=mock_response),
+            _mock_embed_client(return_value=mock_response),
             pytest.raises(httpx.HTTPStatusError),
         ):
             from core.memory.rag.singleton import generate_embeddings
@@ -189,7 +204,7 @@ class TestGenerateEmbeddingsHTTP:
         """Empty list should return immediately without HTTP call."""
         monkeypatch.setenv("ANIMAWORKS_EMBED_URL", "http://localhost/embed")
 
-        with patch("httpx.post") as mock_post:
+        with _mock_embed_client() as mock_post:
             from core.memory.rag.singleton import generate_embeddings
 
             result = generate_embeddings([])
