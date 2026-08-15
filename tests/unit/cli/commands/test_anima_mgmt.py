@@ -338,13 +338,16 @@ class TestCmdAnimaCodexYolo:
         for name, status in animas.items():
             anima_dir = animas_dir / name
             anima_dir.mkdir()
+            # file_roots must stay outside data_dir (write-root policy, 28ca1672).
+            workspace = tmp_path / "workspaces" / name
+            workspace.mkdir(parents=True)
             (anima_dir / "identity.md").write_text(f"# {name}", encoding="utf-8")
             (anima_dir / "status.json").write_text(json.dumps(status), encoding="utf-8")
             (anima_dir / "permissions.json").write_text(
                 json.dumps(
                     {
                         "version": 1,
-                        "file_roots": [str(anima_dir)],
+                        "file_roots": [str(workspace)],
                         "commands": {"allow_all": True, "allow": [], "deny": []},
                         "external_tools": {"allow_all": True, "allow": [], "deny": []},
                         "tool_creation": {"personal": True, "shared": False},
@@ -373,7 +376,7 @@ class TestCmdAnimaCodexYolo:
 
         anima_dir = data_dir / "animas" / "sakura"
         permissions = json.loads((anima_dir / "permissions.json").read_text(encoding="utf-8"))
-        assert permissions["file_roots"] == [str(anima_dir)]
+        assert permissions["file_roots"] == [str(tmp_path / "workspaces" / "sakura")]
 
         config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
         parsed = tomllib.loads(config_toml)
@@ -406,8 +409,8 @@ class TestCmdAnimaCodexYolo:
         mei_permissions = json.loads(
             (data_dir / "animas" / "mei" / "permissions.json").read_text(encoding="utf-8")
         )
-        assert sakura_permissions["file_roots"] == [str(data_dir / "animas" / "sakura")]
-        assert mei_permissions["file_roots"] == [str(data_dir / "animas" / "mei")]
+        assert sakura_permissions["file_roots"] == [str(tmp_path / "workspaces" / "sakura")]
+        assert mei_permissions["file_roots"] == [str(tmp_path / "workspaces" / "mei")]
         assert (data_dir / "animas" / "sakura" / ".codex_home" / "config.toml").is_file()
         assert not (data_dir / "animas" / "mei" / ".codex_home" / "config.toml").exists()
 
