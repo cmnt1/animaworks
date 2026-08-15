@@ -183,9 +183,7 @@ class LlmRateGuard:
         is_quota = reason == "quota_exhausted"
         uses_quota_window = is_quota or reason == "auth"
         clamp_s = (
-            min(cfg.quota_block_seconds, cfg.max_quota_block_seconds)
-            if uses_quota_window
-            else cfg.max_block_seconds
+            min(cfg.quota_block_seconds, cfg.max_quota_block_seconds) if uses_quota_window else cfg.max_block_seconds
         )
         block_s = min(block_s, float(clamp_s))
         now = time.time()

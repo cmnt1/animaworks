@@ -765,7 +765,7 @@ async def _warm_voice_greets(app: FastAPI) -> None:
     try:
         for status_path in sorted(get_animas_dir().glob("*/status.json")):
             try:
-                voice = (_json.loads(status_path.read_text(encoding="utf-8")).get("voice") or {})
+                voice = _json.loads(status_path.read_text(encoding="utf-8")).get("voice") or {}
             except (OSError, ValueError):
                 continue
             if isinstance(voice, dict) and voice.get("voice_id"):

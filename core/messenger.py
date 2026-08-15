@@ -32,6 +32,7 @@ def _server_base_url() -> str:
 
     return os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500").rstrip("/")
 
+
 logger = logging.getLogger("animaworks.messenger")
 
 _SAFE_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,30}$")
@@ -429,8 +430,7 @@ class Messenger:
             logger.info("Channel post via server fallback: %s -> #%s", poster, channel)
         except Exception as fb_exc:
             raise DeliveryError(
-                f"Channel post failed: local write ({cause}); server fallback ({fb_exc}) "
-                f"({poster} -> #{channel})"
+                f"Channel post failed: local write ({cause}); server fallback ({fb_exc}) ({poster} -> #{channel})"
             ) from fb_exc
 
     def last_post_by(self, anima_name: str, channel: str) -> dict | None:

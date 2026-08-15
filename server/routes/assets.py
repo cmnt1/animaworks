@@ -522,9 +522,7 @@ def create_assets_router() -> APIRouter:
         # thumbnail ETags even if a stale .thumbs file is still on disk.
         etag_src = f"{serve_path}:{stat.st_size}:{stat.st_mtime_ns}:{file_path.stat().st_mtime_ns}"
         etag = f'"{hashlib.md5(etag_src.encode()).hexdigest()}"'  # noqa: S324
-        cache_control = (
-            "public, max-age=0, must-revalidate" if size is not None else "public, max-age=3600"
-        )
+        cache_control = "public, max-age=0, must-revalidate" if size is not None else "public, max-age=3600"
 
         if_none_match = request.headers.get("if-none-match")
         if if_none_match == etag:

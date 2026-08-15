@@ -61,37 +61,38 @@ _RE_MD_HR = re.compile(r"^-{3,}$", re.MULTILINE)
 # Ranges must stay disjoint and must NOT swallow CJK (U+3000–U+9FFF).
 _RE_EMOJI = re.compile(
     "(?:"
-    "[\U0001F1E0-\U0001F1FF]"  # flags
-    "|[\U0001F300-\U0001F5FF]"  # symbols & pictographs
-    "|[\U0001F600-\U0001F64F]"  # emoticons
-    "|[\U0001F680-\U0001F6FF]"  # transport & map
-    "|[\U0001F700-\U0001F77F]"  # alchemical
-    "|[\U0001F780-\U0001F7FF]"  # geometric shapes extended
-    "|[\U0001F800-\U0001F8FF]"  # supplemental arrows-C
-    "|[\U0001F900-\U0001F9FF]"  # supplemental symbols
-    "|[\U0001FA00-\U0001FA6F]"  # chess symbols
-    "|[\U0001FA70-\U0001FAFF]"  # symbols and pictographs extended-A
-    "|[\U00002702-\U000027B0]"  # dingbats
-    "|[\U00002600-\U000026FF]"  # misc symbols (☀ etc.)
-    "|[\U0000231A-\U0000231B]"  # watch / hourglass
-    "|[\U000023E9-\U000023F3]"  # media controls
-    "|[\U000023F8-\U000023FA]"  # more media
-    "|[\U000025AA-\U000025AB]"  # small squares
-    "|[\U000025B6\U000025C0]"  # play/reverse
-    "|[\U000025FB-\U000025FE]"  # medium squares
-    "|[\U00002B05-\U00002B07]"  # arrows
-    "|[\U00002B1B-\U00002B1C]"  # black/white large square
-    "|[\U00002B50\U00002B55]"  # star / heavy circle
+    "[\U0001f1e0-\U0001f1ff]"  # flags
+    "|[\U0001f300-\U0001f5ff]"  # symbols & pictographs
+    "|[\U0001f600-\U0001f64f]"  # emoticons
+    "|[\U0001f680-\U0001f6ff]"  # transport & map
+    "|[\U0001f700-\U0001f77f]"  # alchemical
+    "|[\U0001f780-\U0001f7ff]"  # geometric shapes extended
+    "|[\U0001f800-\U0001f8ff]"  # supplemental arrows-C
+    "|[\U0001f900-\U0001f9ff]"  # supplemental symbols
+    "|[\U0001fa00-\U0001fa6f]"  # chess symbols
+    "|[\U0001fa70-\U0001faff]"  # symbols and pictographs extended-A
+    "|[\U00002702-\U000027b0]"  # dingbats
+    "|[\U00002600-\U000026ff]"  # misc symbols (☀ etc.)
+    "|[\U0000231a-\U0000231b]"  # watch / hourglass
+    "|[\U000023e9-\U000023f3]"  # media controls
+    "|[\U000023f8-\U000023fa]"  # more media
+    "|[\U000025aa-\U000025ab]"  # small squares
+    "|[\U000025b6\U000025c0]"  # play/reverse
+    "|[\U000025fb-\U000025fe]"  # medium squares
+    "|[\U00002b05-\U00002b07]"  # arrows
+    "|[\U00002b1b-\U00002b1c]"  # black/white large square
+    "|[\U00002b50\U00002b55]"  # star / heavy circle
     "|[\U00002934-\U00002935]"  # arrows
-    "|[\U00003030\U0000303D]"  # wavy dash / part alternation
+    "|[\U00003030\U0000303d]"  # wavy dash / part alternation
     "|[\U00003297\U00003299]"  # circled ideographs used as emoji
-    "|[\U000000A9\U000000AE\U00002122\U00002139\U00002194-\U00002199]"
-    "|[\U000021A9-\U000021AA]"
-    "|\U0000FE0F"  # variation selector-16
-    "|\U0000200D"  # zero-width joiner
-    "|\U000020E3"  # combining enclosing keycap
+    "|[\U000000a9\U000000ae\U00002122\U00002139\U00002194-\U00002199]"
+    "|[\U000021a9-\U000021aa]"
+    "|\U0000fe0f"  # variation selector-16
+    "|\U0000200d"  # zero-width joiner
+    "|\U000020e3"  # combining enclosing keycap
     ")+",
 )
+
 
 def sanitize_for_tts(text: str) -> str:
     """Strip Markdown, HTML comments, and emoji for TTS consumption."""
@@ -417,9 +418,7 @@ class VoiceSession:
                 except Exception:
                     # Keep the session alive; synthesis errors are handled inside
                     # _synthesize_and_send, this is a last-resort guard.
-                    logger.exception(
-                        "TTS worker unexpected error (%s)", self._anima_name
-                    )
+                    logger.exception("TTS worker unexpected error (%s)", self._anima_name)
                 finally:
                     queue.task_done()
         except asyncio.CancelledError:

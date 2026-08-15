@@ -205,16 +205,12 @@ class ExecutorFactoryMixin:
                 if fallback_model_config.model.startswith("openai/"):
                     import os
 
-                    has_openai_cred = bool(fallback_model_config.api_key) or bool(
-                        os.environ.get("OPENAI_API_KEY")
-                    )
+                    has_openai_cred = bool(fallback_model_config.api_key) or bool(os.environ.get("OPENAI_API_KEY"))
                     if not has_openai_cred:
                         from core.exceptions import ExecutorUnavailableError
                         from core.i18n import t
 
-                        raise ExecutorUnavailableError(
-                            t("executor.codex_unavailable_no_openai_cred")
-                        ) from None
+                        raise ExecutorUnavailableError(t("executor.codex_unavailable_no_openai_cred")) from None
 
                 from core.execution.fallback_activity import log_model_fallback
                 from core.memory.activity import ActivityLogger

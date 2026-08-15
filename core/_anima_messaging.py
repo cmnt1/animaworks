@@ -47,6 +47,7 @@ from core.time_utils import now_local, today_local
 
 logger = logging.getLogger("animaworks.anima")
 
+
 def _chat_fallback_reason_from_exception(exc: Exception) -> FailoverReason | None:
     """Return a chat-retry reason for a classified provider exception."""
     reason, hint = classify_llm_error(exc)

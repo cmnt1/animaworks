@@ -270,9 +270,7 @@ def get_tool_schemas() -> list[dict]:
         "description": "How input is interpreted: USER_ENTERED (default) or RAW",
         "enum": ["USER_ENTERED", "RAW"],
     }
-    write_caution = (
-        "上書きに注意。既存データ確認にはread_valuesを先に使う。"
-    )
+    write_caution = "上書きに注意。既存データ確認にはread_valuesを先に使う。"
     return [
         {
             "name": "google_sheets_tabs",
@@ -302,10 +300,7 @@ def get_tool_schemas() -> list[dict]:
         },
         {
             "name": "google_sheets_write_values",
-            "description": (
-                "Overwrite cell values in a spreadsheet range (write_values). "
-                + write_caution
-            ),
+            "description": ("Overwrite cell values in a spreadsheet range (write_values). " + write_caution),
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -320,8 +315,7 @@ def get_tool_schemas() -> list[dict]:
         {
             "name": "google_sheets_append_values",
             "description": (
-                "Append rows after the last data in a spreadsheet range/table "
-                "(append_values). " + write_caution
+                "Append rows after the last data in a spreadsheet range/table (append_values). " + write_caution
             ),
             "input_schema": {
                 "type": "object",

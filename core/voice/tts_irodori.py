@@ -33,11 +33,7 @@ class IrodoriTTS(BaseTTSProvider):
             voice_config: Config with irodori.base_url.
         """
         irodori = getattr(voice_config, "irodori", None) or {}
-        base = (
-            irodori.get("base_url")
-            if isinstance(irodori, dict)
-            else getattr(irodori, "base_url", None)
-        )
+        base = irodori.get("base_url") if isinstance(irodori, dict) else getattr(irodori, "base_url", None)
         self._base_url = (base or DEFAULT_BASE_URL).rstrip("/")
 
     async def synthesize(self, text: str, config: TTSConfig) -> AsyncIterator[bytes]:

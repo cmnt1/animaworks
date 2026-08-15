@@ -594,6 +594,7 @@ class InboxMixin:
                     active_config = bg_config or original_config
 
                     try:
+
                         async def _run(config):  # noqa: ANN001
                             nonlocal accumulated_text
                             if config is not agent.model_config:

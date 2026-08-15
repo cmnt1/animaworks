@@ -26,6 +26,7 @@ class CronLogger:
     """
 
     _LOG_DIR = "state/cron_logs"
+
     def __init__(self, anima_dir: Path) -> None:
         self._anima_dir = anima_dir
         self._last_cleanup_date = None

@@ -53,6 +53,7 @@ def reset_missing_collection_warnings() -> None:
     with _missing_collection_warned_lock:
         _missing_collection_warned.clear()
 
+
 # ── Data structures ────────────────────────────────────────────────
 
 
@@ -781,7 +782,9 @@ class ChromaVectorStore(VectorStore):
             "last_retrieved_at",
             "last_used_at",
         }
-        access_only = all(all(key in access_fields or key.startswith("ac_") for key in metadata) for metadata in serialized)
+        access_only = all(
+            all(key in access_fields or key.startswith("ac_") for key in metadata) for metadata in serialized
+        )
         if access_only:
             coll._client._update(  # noqa: SLF001 - avoids irrelevant Chroma sparse-schema work
                 collection_id=coll.id,

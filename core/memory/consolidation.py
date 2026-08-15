@@ -74,9 +74,7 @@ class ConsolidationEngine:
             rag_store: Optional shared RAG vector store instance.
                 When provided, avoids re-creating the singleton internally.
         """
-        if project is not None and (
-            not isinstance(project, str) or re.fullmatch(r"[A-Za-z0-9_-]+", project) is None
-        ):
+        if project is not None and (not isinstance(project, str) or re.fullmatch(r"[A-Za-z0-9_-]+", project) is None):
             raise ValueError("project must contain only letters, numbers, underscores, or hyphens")
         self.anima_dir = anima_dir
         self.anima_name = anima_name
