@@ -227,6 +227,9 @@ class TestResolveBackgroundConfig:
             patch(_PATCH_LOAD_CONFIG) as mock_config,
             patch("core.config.io.load_config") as mock_io_config,
             patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            # CI runners have no grok CLI; without this the x: candidate is
+            # skipped as unavailable and no fallback is selected.
+            patch("core.config.model_config.shutil.which", return_value="/usr/bin/grok"),
         ):
             from core.config.models import CredentialConfig
 
