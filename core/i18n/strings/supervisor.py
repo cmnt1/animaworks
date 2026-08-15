@@ -162,6 +162,23 @@ STRINGS: dict[str, dict[str, str]] = {
             "가능하면 unblock_check를 함께 제시하세요."
         ),
     },
+    "blocked_recovery.manual_intervention_instruction": {
+        "ja": (
+            "タスク {task_id}（{anima_name}）は unblock_check を持たないため自動再開されない。"
+            "人手で確認し、完了なら done/cancelled に、継続なら unblock_check を付けて "
+            "blocked を宣言し直すこと。\n\n{original_instruction}"
+        ),
+        "en": (
+            "Task {task_id} ({anima_name}) has no unblock_check, so it will not resume automatically. "
+            "Check it by hand: move it to done/cancelled if finished, or re-declare blocked with an "
+            "unblock_check attached if it continues.\n\n{original_instruction}"
+        ),
+        "ko": (
+            "작업 {task_id}({anima_name})은 unblock_check가 없어 자동으로 재개되지 않습니다. "
+            "직접 확인하여 완료되었으면 done/cancelled로 옮기고, 계속한다면 unblock_check를 붙여 "
+            "blocked를 다시 선언하세요.\n\n{original_instruction}"
+        ),
+    },
     "pending_executor.descriptor_recovery_suffix": {
         "ja": "descriptor消失からの自動復旧。タスクの実態を確認して続行すること。",
         "en": "Automatic recovery from a lost descriptor. Verify the task's actual state before continuing.",

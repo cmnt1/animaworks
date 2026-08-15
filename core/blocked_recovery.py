@@ -117,10 +117,11 @@ def _alert_manual_intervention_required(
         target_name=anima_name,
         delegated_task_id=entry.task_id,
         summary=f"Blocked task needs intervention: {anima_name}/{entry.task_id}",
-        instruction=(
-            f"タスク {entry.task_id}（{anima_name}）は unblock_check を持たないため自動再開されない。"
-            f"人手で確認し、完了なら done/cancelled に、継続なら unblock_check を付けて "
-            f"blocked を宣言し直すこと。\n\n{entry.original_instruction}"
+        instruction=t(
+            "blocked_recovery.manual_intervention_instruction",
+            task_id=entry.task_id,
+            anima_name=anima_name,
+            original_instruction=entry.original_instruction,
         ),
         extra_meta={"blocked_task_id": entry.task_id},
     )
