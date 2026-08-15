@@ -463,9 +463,7 @@ class GitHubWebhookManager:
             if review_id in review_tasks:
                 return
             bot_note = t(
-                "github_gateway.review_task_bot_note"
-                if bot_derived
-                else "github_gateway.review_task_human_note"
+                "github_gateway.review_task_bot_note" if bot_derived else "github_gateway.review_task_human_note"
             )
             dispatch_direct_task(
                 target=self._config.implementer_anima,
