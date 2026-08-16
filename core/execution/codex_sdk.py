@@ -1271,6 +1271,13 @@ class CodexSDKExecutor(BaseExecutor):
                 mcp_filesystem_rules[str(self._anima_dir.resolve())] = "write"
             for root in write_roots:
                 root_str = str(root)
+                # Charter: only companies/<own>/shared is writable under data_dir.
+                # Pin the company root itself as read so siblings (knowledge/,
+                # skills/, …) cannot inherit write from a looser parent rule.
+                if root.parent.name and root.name == "shared":
+                    company_root_str = str(root.parent)
+                    shell_filesystem_rules.setdefault(company_root_str, "read")
+                    mcp_filesystem_rules.setdefault(company_root_str, "read")
                 shell_filesystem_rules[root_str] = "write"
                 mcp_filesystem_rules[root_str] = "write"
                 for git_path in _git_metadata_write_paths(root, forbidden_ancestors=git_forbidden):
