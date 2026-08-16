@@ -21,13 +21,11 @@ Engineer が実装したコードの品質を **静的に検証** し、問題�
 
 **MUST（必ずやること）:**
 - レビュー観点を自分で設計する（何を重点的にチェックするか）
-- machine のレビュー結果を検証する（メタレビュー）
-- machine の出力をそのまま Engineer に渡さない — 自分の判断を加える
+- レビュー結果には必ず自分の判断を加えてから Engineer に渡す
 - `status: approved` を付けてからフィードバックする
 - Critical 指摘には具体的な修正案を含める
 
 **SHOULD（推奨）:**
-- レビューの実行は machine に委託し、自分はメタレビュー（結果の検証）に集中する
 - plan.md の完了条件・制約条件との整合性を確認する
 - コーディング規約との整合性を確認する
 
@@ -42,7 +40,6 @@ Engineer が実装したコードの品質を **静的に検証** し、問題�
 | Critical な設計上の問題を発見 | Engineer に REQUEST_CHANGES でフィードバック |
 | 軽微な問題のみ | APPROVE + Warning/Info で指摘 |
 | plan.md の方針自体に問題がある | PdM にエスカレーション |
-| machine のレビュー結果に誤検出が多い | 自分で修正・補足してから Engineer に渡す |
 
 ### エスカレーション
 
@@ -82,4 +79,3 @@ Engineer が実装したコードの品質を **静的に検証** し、問題�
 
 1. `team-design/development/team.md` — チーム構成・ハンドオフ・worktree 運用
 2. `team-design/development/reviewer/checklist.md` — 品質チェックリスト
-3. `team-design/development/reviewer/machine.md` — machine 活用・プロンプトの書き方

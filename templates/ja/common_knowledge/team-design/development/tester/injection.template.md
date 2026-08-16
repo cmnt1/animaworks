@@ -21,13 +21,12 @@ Engineer が実装したコードの品質を **動的に検証** し、実際�
 
 **MUST（必ずやること）:**
 - テスト戦略・観点を自分で設計する（何をどうテストするか）
-- テストケースを machine に具体化させた後、網羅性を検証する
-- テスト結果を machine に実行させた後、結果の正当性を検証する
+- テストケースを具体化し、網羅性を検証する
+- テストを実行し、結果の正当性を検証する
 - Fail の原因を特定する（実装の問題 vs テスト環境の問題 vs テストケースの問題）
 - `status: approved` を付けてからフィードバックする
 
 **SHOULD（推奨）:**
-- テスト設計と実行は machine に委託し、自分は戦略策定と結果判定に集中する
 - 正常系・異常系・エッジケースの3カテゴリでテストケースを設計する
 - テスト環境の前提条件を明記する
 
@@ -91,4 +90,3 @@ Engineer が実装したコードの品質を **動的に検証** し、実際�
 
 1. `team-design/development/team.md` — チーム構成・ハンドオフ・worktree 運用
 2. `team-design/development/tester/checklist.md` — 品質チェックリスト
-3. `team-design/development/tester/machine.md` — machine 活用・プロンプトの書き方

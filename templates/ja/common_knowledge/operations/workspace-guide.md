@@ -27,16 +27,6 @@ Animaは普段「自分の家」（`~/.animaworks/animas/{name}/`）にいる。
 
 ## ツールでの使用
 
-### machine_run（工作機械）
-
-`working_directory` にエイリアス、完全形、ハッシュ、または絶対パスを指定できる。
-
-```bash
-animaworks-tool machine run "コードをリファクタして" -d myproject
-animaworks-tool machine run "テストを実行して" -d myproject#3af4be6e
-animaworks-tool machine run "ビルドして" -d /home/user/dev/myproject
-```
-
 ### submit_tasks
 
 各タスクの `workspace` フィールドにエイリアスを指定すると、

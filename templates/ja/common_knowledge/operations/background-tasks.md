@@ -23,7 +23,6 @@ Anima 子プロセス内の **PendingTaskExecutor**（`core/supervisor/pending_e
 - `image_gen pipeline` / `fullbody` / `bustup` / `icon` / `chibi` / `3d` / `rigging` / `animations`
 - `local_llm generate` / `chat`
 - `transcribe audio`（サブコマンド名は `audio`）
-- 長時間になり得る `machine run` 等（ツールガイドの ⚠ に従う）
 
 各ツールの `EXECUTION_PROFILE` で `background_eligible: true` のものは、プロファイル経由で
 バックグラウンド実行の候補に登録される（例: `chatwork sync` / `download` など）。

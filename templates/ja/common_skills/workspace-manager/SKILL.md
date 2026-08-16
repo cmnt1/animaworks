@@ -71,7 +71,6 @@ Animaは普段「自分の家」（~/.animaworks/animas/{name}/）にいる。
 
 ## ツールでの使用
 
-- **machine_run**: `working_directory` にエイリアスまたは完全形を指定
 - **submit_tasks**: 各タスクの `workspace` フィールドにエイリアスを指定
 - **delegate_task**: `workspace` フィールドにエイリアスを指定
 

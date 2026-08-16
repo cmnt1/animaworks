@@ -12,11 +12,11 @@ AnimaWorks の全 Anima が共有するリファレンスドキュメントの�
 ## ⭐ まずここを読む
 
 AnimaWorks を初めて使う場合、または全体像を整理したい場合は、以下の1ファイルを最初に読むこと。
-Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要点が1枚にまとまっている。
+Heartbeat / Cron / チーム設計 / 記憶 / コスト最適化の要点が1枚にまとまっている。
 
 | ファイル | 内容 |
 |---------|------|
-| **`anatomy/essentials.md`** | **AnimaWorks エッセンシャルガイド** — 全体像・5つの実行パス・Heartbeat vs Cron・machine の使い方・チーム設計・タスクの流し方・記憶システム・コスト最適化を1枚で俯瞰 |
+| **`anatomy/essentials.md`** | **AnimaWorks エッセンシャルガイド** — 全体像・5つの実行パス・Heartbeat vs Cron・チーム設計・タスクの流し方・記憶システム・コスト最適化を1枚で俯瞰 |
 
 読了後、各トピックの詳細は下記の目次から辿る。
 
@@ -62,8 +62,6 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 | 困りごと | 参照先 |
 |---------|--------|
 | ツールの使い方・呼び出し方がわからない | `reference/operations/tool-usage-overview.md` |
-| machine ツールの使い方がわからない | `operations/machine/tool-usage.md` |
-| 自分のロールでの machine ワークフローが知りたい | `operations/machine/workflow-{pdm,engineer,reviewer,tester}.md` |
 | 目的別にチーム（ロール・ハンドオフ）を設計したい | `team-design/guide.md` |
 | 法務チーム（契約レビュー・監査・検証）を運用したい | `team-design/legal/team.md` |
 | 財務チーム（分析・検証・データ収集）を運用したい | `team-design/finance/team.md` |
@@ -117,7 +115,7 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 
 | ファイル | 概要 |
 |---------|------|
-| ⭐ `essentials.md` | **エッセンシャルガイド** — AnimaWorks の全体像を1枚で俯瞰（実行パス・Heartbeat vs Cron・machine・チーム設計・記憶・コスト最適化） |
+| ⭐ `essentials.md` | **エッセンシャルガイド** — AnimaWorks の全体像を1枚で俯瞰（実行パス・Heartbeat vs Cron・チーム設計・記憶・コスト最適化） |
 | `what-is-anima.md` | Animaとは何か（概念・設計思想・ライフサイクル・実行パス） |
 | `anima-anatomy.md` | → `reference/anatomy/anima-anatomy.md` に移動。構成ファイル完全ガイド |
 | `memory-system.md` | 記憶システムガイド（記憶の種類・Priming・Consolidation・Forgetting・ツール使い分け） |
@@ -159,16 +157,6 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 | `mode-s-auth-guide.md` | → `reference/operations/mode-s-auth-guide.md` に移動。Mode S 認証モード設定ガイド |
 | `voice-chat-guide.md` | → `reference/operations/voice-chat-guide.md` に移動。音声チャットガイド |
 
-### operations/machine/ — machine ツールワークフロー
-
-| ファイル | 概要 |
-|---------|------|
-| `tool-usage.md` | machine ツール利用ガイド（共通原則・メタパターン・ステータス管理・レート制限） |
-| `workflow-pdm.md` | machine ワークフロー — PdM（調査→計画書作成） |
-| `workflow-engineer.md` | machine ワークフロー — Engineer（実装詳細化→実装→検証） |
-| `workflow-reviewer.md` | machine ワークフロー — Reviewer（レビュー→メタレビュー） |
-| `workflow-tester.md` | machine ワークフロー — Tester（テスト設計→実行→結果検証） |
-
 ### team-design/ — チーム設計（目的別）
 
 | ファイル | 概要 |
@@ -186,7 +174,7 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 | `infrastructure/team.md` | インフラ/SRE 監視チーム — 2ロール（Infra Director・Monitor）・監視チームパターン（machine 不使用）・報告テンプレート3種・3段階エスカレーション・スケーリング |
 | `org-chart-template.md` | 組織図テンプレート — 推奨階層（スタッフ/ライン分離）・部門間ハンドオフマップ・段階的導入ガイド |
 
-ロール別テンプレート: `team-design/development/{pdm,engineer,reviewer,tester}/` — `injection.template.md`, `machine.md`, `checklist.md`
+ロール別テンプレート: `team-design/development/{pdm,engineer,reviewer,tester}/` — `injection.template.md`, `checklist.md`
 
 ロール別テンプレート: `team-design/legal/{director,verifier,researcher}/` — `injection.template.md`, `machine.md`（該当ロールのみ）, `checklist.md`
 
@@ -263,11 +251,6 @@ Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要
 | ツール, animaworks-tool, MCP, skill | `reference/operations/tool-usage-overview.md` |
 | 実行モード, S-mode, C-mode, D-mode, G-mode, A-mode, B-mode | `reference/operations/tool-usage-overview.md` |
 | バックグラウンド, submit, 長時間ツール | `operations/background-tasks.md` |
-| machine, machine run, 外部エージェント, 計画書 | `operations/machine/tool-usage.md` |
-| 調査, investigation, PdM, plan.md | `operations/machine/workflow-pdm.md` |
-| impl-plan, 具体化, 実装計画 | `operations/machine/workflow-engineer.md` |
-| レビュー, review, メタレビュー | `operations/machine/workflow-reviewer.md` |
-| テスト, test, E2E, テスター | `operations/machine/workflow-tester.md` |
 | チーム設計, 役割分離, 開発チーム, PdM, ハンドオフ | `team-design/guide.md`, `team-design/development/team.md` |
 | 法務, 契約, リスク, 監査, 検証, carry-forward, 楽観バイアス | `team-design/legal/team.md` |
 | 財務, 分析, 試算表, ポートフォリオ, 検算, variance tracker, data lineage | `team-design/finance/team.md` |

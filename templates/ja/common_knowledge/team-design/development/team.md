@@ -11,7 +11,7 @@
 
 1つの Anima に集約すると、コンテキスト肥大化・セルフレビューの盲点・直列実行ボトルネックが発生する。
 
-各ロールディレクトリに `injection.template.md`（injection.md 雛形）、`machine.md`（machine 活用パターン）、`checklist.md`（品質チェックリスト）がある。
+各ロールディレクトリに `injection.template.md`（injection.md 雛形）と `checklist.md`（品質チェックリスト）がある。
 
 > 基本原則の詳細: `team-design/guide.md`
 
@@ -37,9 +37,8 @@ PdM → investigation.md/plan.md (approved) → delegate_task
 
 ### 運用ルール
 
-- **Worktree**: Engineer が plan.md 受領後に作成（`{task-id}/{概要}`）。machine は `-d /path/to/worktree` で実行。完了後の マージ・削除は Engineer が実施
+- **Worktree**: Engineer が plan.md 受領後に作成（`{task-id}/{概要}`）。完了後の マージ・削除は Engineer が実施
 - **修正サイクル**: Critical → 全体再レビュー / Warning → 差分確認のみ / 3往復解消しない → PdM にエスカレーション
-- **machine 失敗時**: `current_state.md` に記録 → 次回 heartbeat で再評価
 
 ## スケーリング
 

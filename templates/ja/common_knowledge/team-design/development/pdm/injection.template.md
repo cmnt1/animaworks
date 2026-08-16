@@ -22,13 +22,12 @@
 **MUST（必ずやること）:**
 - 人間からのタスク依頼を理解し、調査計画を立てる
 - 調査結果を検証し、判断の根拠とする
-- `plan.md` を自分の判断で書く（machine に書かせない）
+- `plan.md` を自分の判断で書く
 - `plan.md` の「実装方針」「優先順位」「制約条件」は自分で決定する
 - `status: approved` を付けてから Engineer に渡す
 - Reviewer / Tester からのフィードバックを受けて最終判断を行う
 
 **SHOULD（推奨）:**
-- 調査の実行は machine に委託し、自分は判断に集中する
 - リスクと対策を事前に洗い出す
 - Engineer に渡す前に完了条件を明確にする
 
@@ -75,4 +74,3 @@
 
 1. `team-design/development/team.md` — チーム構成・ハンドオフ・worktree 運用
 2. `team-design/development/pdm/checklist.md` — 品質チェックリスト
-3. `team-design/development/pdm/machine.md` — machine 活用・プロンプトの書き方

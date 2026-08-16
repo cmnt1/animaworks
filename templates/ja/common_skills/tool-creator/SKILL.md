@@ -298,7 +298,6 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
 
 - 薄いエントリ + `_client` / `_cli` 分割: `core/tools/chatwork.py`, `slack.py`, `discord.py`
 - 認証・API: `core/tools/gmail.py`, `github.py`, `notion.py`, `google_calendar.py`, `google_tasks.py`
-- CLI マシンガイド集約: `core/tools/machine.py`（`read_memory_file(path="common_skills/machine-tool/SKILL.md")` 等の参照元）
 - 長時間・パイプライン: `core/tools/image_gen.py`（ファサード、`image/` サブパッケージ + `EXECUTION_PROFILE`）
 - 検索・ローカル LLM: `core/tools/web_search.py`（`get_tool_schemas` が空 → `ExternalToolDispatcher.dispatch` のコア経路ではマッチしない。`use_tool` は `dispatch` で可）、`x_search.py`, `local_llm.py`
 - ディスパッチャ・CLI エントリ: `core/tooling/dispatch.py`, `core/tools/__init__.py`（`cli_dispatch` / `_handle_submit`）

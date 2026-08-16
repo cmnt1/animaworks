@@ -28,7 +28,6 @@ PdM が作成した計画書を受け取り、技術的な具体化と実装を�
 - 実装完了を Reviewer / Tester に通知する
 
 **SHOULD（推奨）:**
-- `impl.plan.md` の具体化と実装は machine に委託し、自分は検証に集中する
 - 既存テストが全件パスすることを確認する
 - 実装前にロールバック計画を把握しておく
 
@@ -79,4 +78,3 @@ PdM が作成した計画書を受け取り、技術的な具体化と実装を�
 
 1. `team-design/development/team.md` — チーム構成・ハンドオフ・worktree 運用
 2. `team-design/development/engineer/checklist.md` — 品質チェックリスト
-3. `team-design/development/engineer/machine.md` — machine 活用・プロンプトの書き方
