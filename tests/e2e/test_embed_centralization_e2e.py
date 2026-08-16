@@ -82,13 +82,20 @@ class TestEmbedCentralizationE2E:
         mock_response.json.return_value = {"embeddings": [[1.0, 2.0, 3.0]]}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("httpx.post", return_value=mock_response):
+        # Implementation uses process-wide keep-alive client; patch that, not httpx.post.
+        mock_client = MagicMock()
+        mock_client.post = MagicMock(return_value=mock_response)
+        with patch(
+            "core.memory.rag.singleton._shared_http_client",
+            return_value=mock_client,
+        ):
             from core.memory.rag.singleton import generate_embeddings
 
             result = generate_embeddings(["test text"])
 
         assert len(result) == 1
         assert result[0] == pytest.approx([1.0, 2.0, 3.0])
+        mock_client.post.assert_called_once()
 
     @pytest.mark.anyio
     async def test_local_mode_fallback(self, tmp_path, monkeypatch):
@@ -128,7 +135,12 @@ class TestEmbedCentralizationE2E:
             resp.raise_for_status = MagicMock()
             return resp
 
-        with patch("httpx.post", side_effect=mock_post):
+        mock_client = MagicMock()
+        mock_client.post = MagicMock(side_effect=mock_post)
+        with patch(
+            "core.memory.rag.singleton._shared_http_client",
+            return_value=mock_client,
+        ):
             from core.memory.rag.singleton import generate_embeddings
 
             texts = [f"text_{i}" for i in range(1500)]

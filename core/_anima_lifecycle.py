@@ -205,67 +205,20 @@ class LifecycleMixin:
                 _keepalive = asyncio.create_task(self._keepalive_while_busy())
                 self._status_slots["background"] = "checking"
                 self._last_heartbeat = now_local()
-
-                # Activity log: heartbeat start
                 self._activity.log("heartbeat_start", summary=t("anima.heartbeat_start"))
 
                 try:
-                    # 1. Build prompt parts
                     parts = await self._build_heartbeat_prompt()
-
-                    # 2. Warn if unread messages exist (inbox handled by Path A)
                     if self.messenger.has_unread():
                         logger.warning(
                             "[%s] Unread messages found during heartbeat — "
                             "inbox processing is handled by Path A (process_inbox_message)",
                             self.name,
                         )
-
-                    # 3. Execute agent cycle (plan-only, no inbox)
-                    from core.config.models import load_config as _load_cfg
-                    from core.tooling.handler import active_session_type
-
-                    heartbeat_text = "\n\n".join(parts)
-                    prior_msgs = self._build_prior_messages(heartbeat_text)
-                    _hard_timeout = _load_cfg().heartbeat.hard_timeout_seconds
-                    agent = _agent_for_lane(self, "background")
-                    async with _agent_session_context(self, "background"):
-                        agent.set_interrupt_event(self._get_interrupt_event("_background"))
-                        _session_token = agent._tool_handler.set_active_session_type("heartbeat")
-                        agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
-                        try:
-                            _cycle = self._execute_heartbeat_cycle(
-                                heartbeat_text,
-                                [],
-                                0,
-                                prior_messages=prior_msgs,
-                            )
-                            # hard_timeout_seconds == 0 disables forced termination:
-                            # busy-hang detection (progress-based) remains the safety net.
-                            result = (
-                                await asyncio.wait_for(_cycle, timeout=float(_hard_timeout))
-                                if _hard_timeout
-                                else await _cycle
-                            )
-                        except TimeoutError:
-                            return self._handle_hard_timeout(_hard_timeout)
-                        except asyncio.CancelledError:
-                            current = asyncio.current_task()
-                            if current is not None and current.cancelling():
-                                raise
-                            logger.warning("[%s] run_heartbeat cancelled by request; runner remains alive", self.name)
-                            return CycleResult(
-                                trigger="heartbeat",
-                                action="cancelled",
-                                summary="Heartbeat cancelled",
-                                duration_ms=0,
-                            )
-                        finally:
-                            active_session_type.reset(_session_token)
-                            _keepalive.cancel()
-
-                    return result
-
+                    return await self._run_heartbeat_agent_session(
+                        "\n\n".join(parts),
+                        _keepalive,
+                    )
                 except Exception as exc:
                     _unread = 0
                     try:
@@ -277,20 +230,64 @@ class LifecycleMixin:
                 finally:
                     self._status_slots["background"] = "idle"
                     self._task_slots["background"] = ""
-                    # Session boundary: finalize pending conversation turns.
-                    # Must run here (not inside the cycle) so a hard timeout or
-                    # cancellation of _execute_heartbeat_cycle cannot skip it —
-                    # otherwise raw turns pile up until the 50-turn compression.
-                    try:
-                        from core.memory.conversation import ConversationMemory
-
-                        await ConversationMemory(self.anima_dir, self.model_config).finalize_if_session_ended()
-                    except Exception:
-                        logger.debug("[%s] finalize_if_session_ended failed", self.name, exc_info=True)
+                    await self._finalize_session_if_ended()
         finally:
             self._notify_lock_released()
-            # Signal pending task execution after heartbeat completes
             self._trigger_pending_task_execution()
+
+    async def _run_heartbeat_agent_session(
+        self,
+        heartbeat_text: str,
+        keepalive: asyncio.Task[None],
+    ) -> CycleResult:
+        """Run the heartbeat agent cycle under the background session lane."""
+        from core.config.models import load_config as _load_cfg
+        from core.tooling.handler import active_session_type
+
+        prior_msgs = self._build_prior_messages(heartbeat_text)
+        hard_timeout = _load_cfg().heartbeat.hard_timeout_seconds
+        agent = _agent_for_lane(self, "background")
+        async with _agent_session_context(self, "background"):
+            agent.set_interrupt_event(self._get_interrupt_event("_background"))
+            session_token = agent._tool_handler.set_active_session_type("heartbeat")
+            agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
+            try:
+                cycle = self._execute_heartbeat_cycle(
+                    heartbeat_text,
+                    [],
+                    0,
+                    prior_messages=prior_msgs,
+                )
+                # hard_timeout_seconds == 0 disables forced termination:
+                # busy-hang detection (progress-based) remains the safety net.
+                if hard_timeout:
+                    return await asyncio.wait_for(cycle, timeout=float(hard_timeout))
+                return await cycle
+            except TimeoutError:
+                return self._handle_hard_timeout(hard_timeout)
+            except asyncio.CancelledError:
+                current = asyncio.current_task()
+                if current is not None and current.cancelling():
+                    raise
+                logger.warning("[%s] run_heartbeat cancelled by request; runner remains alive", self.name)
+                return CycleResult(
+                    trigger="heartbeat",
+                    action="cancelled",
+                    summary="Heartbeat cancelled",
+                    duration_ms=0,
+                )
+            finally:
+                active_session_type.reset(session_token)
+                keepalive.cancel()
+
+    async def _finalize_session_if_ended(self) -> None:
+        """Session-boundary finalize; must not be skippable by cycle timeout/cancel."""
+        try:
+            from core.memory.conversation import ConversationMemory
+
+            await ConversationMemory(self.anima_dir, self.model_config).finalize_if_session_ended()
+        except Exception:
+            logger.debug("[%s] finalize_if_session_ended failed", self.name, exc_info=True)
 
     # ── Hard timeout helper ───────────────────────────────────
 
