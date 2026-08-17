@@ -167,6 +167,24 @@ class TestTaskToolHandler:
         )
         assert repeated["meta"]["unblock_check"] == "test -w ."
 
+        handler.handle(
+            "update_task",
+            {
+                "task_id": task["task_id"],
+                "status": "in_progress",
+            },
+        )
+        new_blocker = json.loads(
+            handler.handle(
+                "update_task",
+                {
+                    "task_id": task["task_id"],
+                    "status": "blocked",
+                },
+            )
+        )
+        assert new_blocker["meta"]["unblock_check"] is None
+
     def test_handle_update_nonexistent(self, handler):
         result = handler.handle(
             "update_task",
