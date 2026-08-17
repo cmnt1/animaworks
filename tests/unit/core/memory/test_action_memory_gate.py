@@ -210,6 +210,7 @@ def test_cli_argv_mapping() -> None:
     from core.memory.action_gate import action_tool_name_from_cli_argv
 
     assert action_tool_name_from_cli_argv(["gmail", "draft", "--to", "a@example.com"]) == "gmail_draft"
+    assert action_tool_name_from_cli_argv(["gmail", "draft-update", "draft-id"]) == "gmail_draft_update"
     assert action_tool_name_from_cli_argv(["gmail", "send", "--to", "a@example.com"]) == "gmail_send"
     assert action_tool_name_from_cli_argv(["chatwork", "send", "room", "body"]) == "chatwork_send"
     assert action_tool_name_from_cli_argv(["slack", "send", "#ops", "body"]) == "slack_send"
@@ -228,6 +229,7 @@ def test_handler_action_tool_names_are_current() -> None:
         "post_channel",
         "write_memory_file",
         "gmail_draft",
+        "gmail_draft_update",
         "gmail_send",
         "chatwork_send",
         "slack_send",
