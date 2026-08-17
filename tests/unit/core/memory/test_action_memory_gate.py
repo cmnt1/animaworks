@@ -228,6 +228,7 @@ def test_handler_action_tool_names_are_current() -> None:
         "post_channel",
         "write_memory_file",
         "gmail_draft",
+        "gmail_draft_update",
         "gmail_send",
         "chatwork_send",
         "slack_send",
