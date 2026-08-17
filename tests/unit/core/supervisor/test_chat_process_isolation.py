@@ -62,6 +62,39 @@ async def test_phase3_stream_relays_child_chunks_without_root_llm(tmp_path: Path
 
 
 @pytest.mark.asyncio
+async def test_closing_isolated_stream_cancels_producer_and_releases_lock(tmp_path: Path) -> None:
+    supervisor = TaskRunnerSupervisor("sakura", tmp_path / "animas" / "sakura", tmp_path / "shared")
+    producer_cancelled = asyncio.Event()
+
+    async def _run(**kwargs):
+        await kwargs["stream_events"][0].put({"chunk": "partial"})
+        try:
+            await asyncio.Event().wait()
+        finally:
+            producer_cancelled.set()
+
+    supervisor._run_isolated_job = AsyncMock(side_effect=_run)
+    handler = StreamingIPCHandler(
+        MagicMock(needs_bootstrap=False),
+        "sakura",
+        tmp_path,
+        task_runner_supervisor=supervisor,
+        chat_isolated=True,
+    )
+    stream = handler.handle_stream(
+        IPCRequest(id="req-close", method="process_message", params={"message": "hello", "stream": True})
+    )
+
+    assert (await anext(stream)).chunk == "partial"
+    assert supervisor._chat_lock.locked()
+
+    await stream.aclose()
+
+    assert producer_cancelled.is_set()
+    assert not supervisor._chat_lock.locked()
+
+
+@pytest.mark.asyncio
 async def test_chat_child_sigkill_becomes_stream_error_and_root_stays_usable(tmp_path: Path) -> None:
     anima = MagicMock(needs_bootstrap=False)
     handler = StreamingIPCHandler(
