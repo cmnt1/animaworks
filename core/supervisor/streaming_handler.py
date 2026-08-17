@@ -15,6 +15,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 from typing import TYPE_CHECKING, Any
 
 from core.supervisor.ipc import IPCRequest, IPCResponse
@@ -99,20 +100,21 @@ class StreamingIPCHandler:
                 )
                 return
             try:
-                async for item in self._task_runner_supervisor.run_chat_stream(request.params):
-                    if item.get("done"):
-                        yield IPCResponse(
-                            id=request.id,
-                            stream=True,
-                            done=True,
-                            result=item.get("result") or {},
-                        )
-                    elif isinstance(item.get("chunk"), str):
-                        yield IPCResponse(
-                            id=request.id,
-                            stream=True,
-                            chunk=item["chunk"],
-                        )
+                async with aclosing(self._task_runner_supervisor.run_chat_stream(request.params)) as stream:
+                    async for item in stream:
+                        if item.get("done"):
+                            yield IPCResponse(
+                                id=request.id,
+                                stream=True,
+                                done=True,
+                                result=item.get("result") or {},
+                            )
+                        elif isinstance(item.get("chunk"), str):
+                            yield IPCResponse(
+                                id=request.id,
+                                stream=True,
+                                chunk=item["chunk"],
+                            )
                 return
             except Exception as exc:
                 logger.exception("Isolated chat task runner failed: %s", exc)
