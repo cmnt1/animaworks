@@ -21,11 +21,14 @@ import mimetypes
 import os
 import sys
 from dataclasses import asdict, dataclass, field
-from email import encoders
+from email import encoders, policy
+from email.message import EmailMessage
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.parser import BytesParser
 from email.utils import parseaddr
+from html import escape
 from pathlib import Path
 from typing import Any, cast
 
@@ -65,7 +68,7 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
     "draft": {"expected_seconds": 10, "background_eligible": False},
     "drafts": {"expected_seconds": 20, "background_eligible": False},
     "draft-get": {"expected_seconds": 10, "background_eligible": False},
-    "draft-update": {"expected_seconds": 15, "background_eligible": False},
+    "draft-update": {"expected_seconds": 15, "background_eligible": False, "gated": True},
     "send": {"expected_seconds": 15, "background_eligible": False, "gated": True},
     "download": {"expected_seconds": 30, "background_eligible": False},
 }
@@ -542,6 +545,89 @@ class GmailClient:
                 error=str(e),
             )
 
+    def _get_raw_draft(self, draft_id: str) -> tuple[Draft, EmailMessage] | None:
+        """Fetch and parse a draft's complete RFC 2822 message."""
+        try:
+            resource = self.service.users().drafts().get(userId="me", id=draft_id, format="raw").execute()
+            message_data = resource.get("message", {})
+            raw = message_data.get("raw")
+            if not isinstance(raw, str):
+                raise ValueError(f"Draft has no raw message: {draft_id}")
+            message = BytesParser(policy=policy.default).parsebytes(
+                base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
+            )
+            body_part = message.get_body(preferencelist=("plain", "html"))
+            body = body_part.get_content() if body_part is not None else ""
+            attachment_names = [
+                filename for part in message.iter_attachments() if (filename := part.get_filename()) is not None
+            ]
+            return (
+                Draft(
+                    draft_id=resource["id"],
+                    message_id=message_data.get("id", ""),
+                    thread_id=message_data.get("threadId", ""),
+                    to=str(message.get("To", "")),
+                    subject=str(message.get("Subject", "")),
+                    body=body,
+                    attachment_names=attachment_names,
+                ),
+                message,
+            )
+        except Exception as e:
+            logger.error("Draft fetch error (%s): %s", draft_id, e)
+            return None
+
+    @staticmethod
+    def _set_message_header(message: EmailMessage, name: str, value: str) -> None:
+        if name in message:
+            message.replace_header(name, value)
+        else:
+            message[name] = value
+
+    @staticmethod
+    def _replace_message_body(message: EmailMessage, body: str) -> None:
+        parts = [
+            part
+            for part in message.walk()
+            if not part.is_multipart()
+            and part.get_content_maintype() == "text"
+            and part.get_content_subtype() in {"plain", "html"}
+            and part.get_content_disposition() != "attachment"
+        ]
+        if not parts:
+            raise ValueError("Draft has no editable text body")
+        for part in parts:
+            subtype = part.get_content_subtype()
+            content = f"<pre>{escape(body)}</pre>" if subtype == "html" else body
+            part.set_content(content, subtype=subtype, charset="utf-8")
+
+    @classmethod
+    def _remove_attachments(cls, message: EmailMessage) -> None:
+        if not message.is_multipart():
+            return
+        kept = []
+        for part in message.iter_parts():
+            if part.get_content_disposition() == "attachment" or part.get_filename():
+                continue
+            cls._remove_attachments(part)
+            kept.append(part)
+        message.set_payload(kept)
+
+    @classmethod
+    def _replace_attachments(cls, message: EmailMessage, attachments: list[Path]) -> None:
+        prepared: list[tuple[bytes, str, str, str]] = []
+        for file_path in attachments:
+            file_path = Path(file_path)
+            if not file_path.exists():
+                raise FileNotFoundError(f"Attachment not found: {file_path}")
+            content_type, _ = mimetypes.guess_type(str(file_path))
+            main_type, sub_type = (content_type or "application/octet-stream").split("/", 1)
+            prepared.append((file_path.read_bytes(), main_type, sub_type, file_path.name))
+
+        cls._remove_attachments(message)
+        for data, main_type, sub_type, filename in prepared:
+            message.add_attachment(data, maintype=main_type, subtype=sub_type, filename=filename)
+
     def list_drafts(self, max_results: int = 20) -> list[Draft]:
         """List existing drafts with their recipient, subject, and body.
 
@@ -569,26 +655,8 @@ class GmailClient:
         Returns:
             Draft object, or None if the draft could not be retrieved.
         """
-        try:
-            draft = self.service.users().drafts().get(userId="me", id=draft_id, format="full").execute()
-            message = draft.get("message", {})
-            payload = message.get("payload", {})
-            headers = {h["name"].lower(): h["value"] for h in payload.get("headers", [])}
-            attachment_names = [p["filename"] for p in self._collect_attachment_parts(payload.get("parts", []))]
-
-            return Draft(
-                draft_id=draft["id"],
-                message_id=message.get("id", ""),
-                thread_id=message.get("threadId", ""),
-                to=headers.get("to", ""),
-                subject=headers.get("subject", ""),
-                body=self._extract_body(payload),
-                attachment_names=attachment_names,
-            )
-
-        except Exception as e:
-            logger.error("Draft fetch error (%s): %s", draft_id, e)
-            return None
+        result = self._get_raw_draft(draft_id)
+        return result[0] if result is not None else None
 
     def update_draft(
         self,
@@ -603,12 +671,7 @@ class GmailClient:
         """Edit an existing draft in place, keeping its draft ID.
 
         Only the fields you pass are changed; anything left as None is carried
-        over from the current draft (recipient, subject, body, thread).
-
-        .. warning::
-           The Gmail API replaces the draft's entire MIME message, so existing
-           attachments are dropped unless they are supplied again via
-           ``attachments``. A warning is logged when this happens.
+        over from the current raw MIME message.
 
         Args:
             draft_id: Gmail draft ID to update (not the message ID).
@@ -618,38 +681,41 @@ class GmailClient:
             thread_id: Thread ID override, or None to keep the draft's thread.
             in_reply_to: Gmail message ID being replied to. The RFC
                 Message-ID header and threadId are resolved automatically.
-            attachments: Full list of attachments the updated draft should
-                carry. None or an empty list leaves the draft with none.
+            attachments: Replacement attachment list. None preserves existing
+                attachments; an empty list removes them.
 
         Returns:
             DraftResult with the update outcome.
         """
         try:
-            current = self.get_draft(draft_id)
-            if current is None:
+            fetched = self._get_raw_draft(draft_id)
+            if fetched is None:
                 raise ValueError(f"Draft not found: {draft_id}")
+            current, message = fetched
 
-            resolved_to = to if to is not None else current.to
-            resolved_subject = subject if subject is not None else current.subject
-            resolved_body = body if body is not None else current.body
             if not thread_id and not in_reply_to:
                 thread_id = current.thread_id or None
 
-            if current.attachment_names and not attachments:
-                logger.warning(
-                    "Draft %s: updating drops existing attachment(s) %s -- re-supply them to keep them",
-                    draft_id,
-                    current.attachment_names,
-                )
+            if to is not None:
+                _, email_addr = parseaddr(to)
+                self._set_message_header(message, "To", email_addr or to)
+            if subject is not None:
+                self._set_message_header(message, "Subject", subject)
+            if body is not None:
+                self._replace_message_body(message, body)
+            if in_reply_to:
+                rfc_message_id, resolved_thread_id, original_subject = self._resolve_reply_headers(in_reply_to)
+                if not thread_id:
+                    thread_id = resolved_thread_id
+                if not str(message.get("Subject", "")).lower().startswith("re:") and original_subject:
+                    self._set_message_header(message, "Subject", f"Re: {original_subject}")
+                if rfc_message_id:
+                    self._set_message_header(message, "In-Reply-To", rfc_message_id)
+                    self._set_message_header(message, "References", rfc_message_id)
+            if attachments is not None:
+                self._replace_attachments(message, attachments)
 
-            raw, thread_id = self._compose_raw_message(
-                to=resolved_to,
-                subject=resolved_subject,
-                body=resolved_body,
-                thread_id=thread_id,
-                in_reply_to=in_reply_to,
-                attachments=attachments,
-            )
+            raw = base64.urlsafe_b64encode(message.as_bytes(policy=policy.SMTP)).decode("ascii")
 
             draft_body: dict = {"message": {"raw": raw}}
             if thread_id:
@@ -657,7 +723,7 @@ class GmailClient:
 
             draft = self.service.users().drafts().update(userId="me", id=draft_id, body=draft_body).execute()
 
-            attached_names = [Path(p).name for p in attachments] if attachments else []
+            attached_names = current.attachment_names if attachments is None else [Path(p).name for p in attachments]
             logger.info("Draft updated: %s (attachments: %s)", draft["id"], attached_names)
 
             return DraftResult(
@@ -842,7 +908,7 @@ animaworks-tool gmail download <メッセージID> [--save-dir /path/to/dir]
 ```
 ⚠️ **send はメールを即時送信します。取り消しできません。**
 ✏️ **draft-update** は既存の下書きを下書きIDのまま上書きします。省略した項目（宛先・件名・本文）は現在の内容を引き継ぎます。
-⚠️ **draft-update で --attachment を指定しないと、既存の添付は消えます。**残したい添付は毎回指定し直してください。
+📎 **draft-update** は既存の添付を保持します。--attachment を指定した場合だけ添付一覧を置き換えます。
 💾 **download** は添付ファイルを指定ディレクトリに保存します（デフォルト: /tmp/gmail_attachments/）"""
 
 
@@ -949,7 +1015,7 @@ def cli_main(argv: list[str] | None = None) -> None:
         "--attachment",
         action="append",
         default=[],
-        help="Full attachment list for the updated draft (repeatable). Omitting this drops existing attachments.",
+        help="Replacement attachment list (repeatable). Omitting this keeps existing attachments.",
     )
 
     # download

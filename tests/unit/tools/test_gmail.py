@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import base64
 import importlib
-import logging
 import sys
+from email import policy
+from email.message import EmailMessage
+from email.parser import BytesParser
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -482,20 +484,34 @@ class TestGmailClient:
     # ── get_draft / list_drafts / update_draft ───────────────
 
     @staticmethod
-    def _draft_resource(draft_id="d1", body_text="Original body", parts=None):
-        payload = {
-            "headers": [
-                {"name": "To", "value": "r@test.com"},
-                {"name": "Subject", "value": "Original subject"},
-            ],
-            "body": {"data": base64.urlsafe_b64encode(body_text.encode()).decode()},
-        }
-        if parts is not None:
-            payload["parts"] = parts
+    def _draft_resource(draft_id="d1", body_text="Original body", parts=None, html=False):
+        mime = EmailMessage()
+        mime["To"] = "r@test.com"
+        mime["Subject"] = "Original subject"
+        mime.set_content(body_text)
+        if html:
+            mime.add_alternative(f"<b>{body_text}</b>", subtype="html")
+        for part in parts or []:
+            mime.add_attachment(
+                b"attachment-data",
+                maintype="application",
+                subtype="octet-stream",
+                filename=part["filename"],
+            )
         return {
             "id": draft_id,
-            "message": {"id": f"m-{draft_id}", "threadId": f"t-{draft_id}", "payload": payload},
+            "message": {
+                "id": f"m-{draft_id}",
+                "threadId": f"t-{draft_id}",
+                "raw": base64.urlsafe_b64encode(mime.as_bytes()).decode(),
+            },
         }
+
+    @staticmethod
+    def _updated_message(mock_service):
+        _, kwargs = mock_service.users().drafts().update.call_args
+        raw = kwargs["body"]["message"]["raw"]
+        return BytesParser(policy=policy.default).parsebytes(base64.urlsafe_b64decode(raw))
 
     def test_get_draft_success(self, client):
         c, mock_service = client
@@ -508,8 +524,9 @@ class TestGmailClient:
         assert draft.thread_id == "t-d1"
         assert draft.to == "r@test.com"
         assert draft.subject == "Original subject"
-        assert draft.body == "Original body"
+        assert draft.body.strip() == "Original body"
         assert draft.attachment_names == []
+        mock_service.users().drafts().get.assert_called_with(userId="me", id="d1", format="raw")
 
     def test_get_draft_collects_attachment_names(self, client):
         c, mock_service = client
@@ -586,7 +603,7 @@ class TestGmailClient:
         assert "New subject" in sent_raw
         assert "Original body" in sent_raw
 
-    def test_update_draft_warns_when_dropping_attachments(self, client, caplog):
+    def test_update_draft_preserves_attachments(self, client):
         c, mock_service = client
         parts = [{"filename": "spec.pdf", "body": {"attachmentId": "a1"}}]
         mock_service.users().drafts().get().execute.return_value = self._draft_resource(parts=parts)
@@ -595,11 +612,61 @@ class TestGmailClient:
             "message": {"id": "m-d1"},
         }
 
-        with caplog.at_level(logging.WARNING):
-            result = c.update_draft("d1", body="Edited")
+        result = c.update_draft("d1", body="Edited")
 
         assert result.success is True
-        assert "spec.pdf" in caplog.text
+        updated = self._updated_message(mock_service)
+        assert [part.get_filename() for part in updated.iter_attachments()] == ["spec.pdf"]
+        assert updated.get_body(preferencelist=("plain",)).get_content().strip() == "Edited"
+
+    def test_update_draft_preserves_html_mime(self, client):
+        c, mock_service = client
+        mock_service.users().drafts().get().execute.return_value = self._draft_resource(html=True)
+        mock_service.users().drafts().update().execute.return_value = {
+            "id": "d1",
+            "message": {"id": "m-d1"},
+        }
+
+        result = c.update_draft("d1", body="Edited <safely>")
+
+        assert result.success is True
+        updated = self._updated_message(mock_service)
+        assert updated.get_body(preferencelist=("plain",)).get_content().strip() == "Edited <safely>"
+        html = updated.get_body(preferencelist=("html",))
+        assert html is not None
+        assert "<pre>Edited &lt;safely&gt;</pre>" in html.get_content()
+
+    def test_update_draft_keeps_omitted_html_body(self, client):
+        c, mock_service = client
+        mock_service.users().drafts().get().execute.return_value = self._draft_resource(html=True)
+        mock_service.users().drafts().update().execute.return_value = {
+            "id": "d1",
+            "message": {"id": "m-d1"},
+        }
+
+        result = c.update_draft("d1", subject="Changed subject")
+
+        assert result.success is True
+        html = self._updated_message(mock_service).get_body(preferencelist=("html",))
+        assert html is not None
+        assert "<b>Original body</b>" in html.get_content()
+
+    def test_update_draft_replaces_attachments(self, client, tmp_path: Path):
+        c, mock_service = client
+        parts = [{"filename": "old.pdf", "body": {"attachmentId": "a1"}}]
+        mock_service.users().drafts().get().execute.return_value = self._draft_resource(parts=parts)
+        mock_service.users().drafts().update().execute.return_value = {
+            "id": "d1",
+            "message": {"id": "m-d1"},
+        }
+        replacement = tmp_path / "new.txt"
+        replacement.write_text("new attachment", encoding="utf-8")
+
+        result = c.update_draft("d1", attachments=[replacement])
+
+        assert result.success is True
+        updated = self._updated_message(mock_service)
+        assert [part.get_filename() for part in updated.iter_attachments()] == ["new.txt"]
 
     def test_update_draft_missing_draft(self, client):
         c, mock_service = client
@@ -953,14 +1020,17 @@ class TestExecutionProfile:
         gmail = _get_gmail()
         assert gmail.EXECUTION_PROFILE["send"]["gated"] is True
 
+    def test_draft_update_profile_has_gated_true(self):
+        gmail = _get_gmail()
+        assert gmail.EXECUTION_PROFILE["draft-update"]["gated"] is True
+
     def test_profile_values(self):
         gmail = _get_gmail()
         for key, profile in gmail.EXECUTION_PROFILE.items():
             assert "expected_seconds" in profile
             assert "background_eligible" in profile
             assert isinstance(profile["expected_seconds"], int)
-            # send has gated; others may or may not
-            if key == "send":
+            if key in {"send", "draft-update"}:
                 assert profile.get("gated") is True
 
 

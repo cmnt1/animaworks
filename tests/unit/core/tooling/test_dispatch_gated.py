@@ -57,6 +57,25 @@ class TestDispatchGatedBlocked:
         assert parsed.get("error_type") == "PermissionDenied"
         assert "gmail_send" in parsed.get("message", "") or "send" in parsed.get("message", "")
 
+    def test_gmail_draft_update_schema_is_blocked(self, dispatcher: ExternalToolDispatcher, anima_dir: Path) -> None:
+        (anima_dir / "permissions.json").write_text(
+            '{"external_tools": {"allow_all": true}}',
+            encoding="utf-8",
+        )
+
+        result = dispatcher.dispatch(
+            "gmail_draft_update",
+            {
+                "anima_dir": str(anima_dir),
+                "draft_id": "draft-id",
+                "body": "edited",
+            },
+        )
+
+        assert result is not None
+        parsed = json.loads(result)
+        assert parsed.get("error_type") == "PermissionDenied"
+
 
 # ── Gated action allowed ──────────────────────────────────────
 
