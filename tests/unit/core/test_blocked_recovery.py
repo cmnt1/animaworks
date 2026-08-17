@@ -23,6 +23,7 @@ def _config(**overrides):
         "blocked_reprobe_batch_limit": 3,
         "blocked_max_reprobes": 4,
         "blocked_check_timeout_seconds": 60,
+        "blocked_checkless_reprobe_enabled": False,
     }
     defaults.update(overrides)
     return SimpleNamespace(background_task=SimpleNamespace(**defaults))
@@ -284,7 +285,8 @@ def test_failed_check_stays_blocked_and_counts_failure(tmp_path: Path, failure: 
     assert not (anima_dir / "state" / "pending" / f"check-{failure}.json").exists()
 
 
-def test_checkless_task_reprobes_four_times_then_alerts_once(tmp_path: Path) -> None:
+def test_checkless_task_stays_blocked_and_alerts_once(tmp_path: Path) -> None:
+    """Fail closed: checkless tasks never auto-reprobe; alert once past threshold."""
     animas_dir = tmp_path / "animas"
     anima_dir = animas_dir / "worker"
     supervisor_dir = animas_dir / "boss"
@@ -301,41 +303,33 @@ def test_checkless_task_reprobes_four_times_then_alerts_once(tmp_path: Path) -> 
     )
 
     with patch("core.config.models.load_config", return_value=_config()):
-        for expected in range(1, 5):
-            assert revalidate_blocked_tasks(anima_dir, "worker") == ["no-check"]
-            current = manager.get_task_by_id("no-check")
-            assert current is not None
-            assert current.status == "pending"
-            assert current.meta["blocked_reprobe_count"] == expected
-            desc = json.loads((anima_dir / "state" / "pending" / "no-check.json").read_text(encoding="utf-8"))[
-                "description"
-            ]
-            assert "blockerが解消済みか確認" in desc
-
-            (anima_dir / "state" / "pending" / "no-check.json").unlink()
-            manager.update_status("no-check", "blocked")
-            manager.update_meta(
-                "no-check",
-                {"blocked_at": (now_local() - timedelta(hours=7)).isoformat()},
-            )
-
+        assert revalidate_blocked_tasks(anima_dir, "worker") == []
         assert revalidate_blocked_tasks(anima_dir, "worker") == []
         assert revalidate_blocked_tasks(anima_dir, "worker") == []
 
     current = manager.get_task_by_id("no-check")
     assert current is not None
     assert current.status == "blocked"
-    assert current.meta["blocked_recovery_alerted"] is True
+    assert current.meta.get("blocked_recovery_alerted") is True
+    assert "blocked_reprobe_count" not in current.meta
+    assert not (anima_dir / "state" / "pending" / "no-check.json").exists()
     alerts = [
         task
         for task in TaskQueueManager(supervisor_dir).list_tasks()
-        if task.meta.get("kind") == "blocked_task_reprobe_exhausted"
+        if task.meta.get("kind") == "blocked_task_manual_intervention_required"
     ]
     assert len(alerts) == 1
+    assert "unblock_check を持たない" in alerts[0].original_instruction
 
 
-def test_checkless_legacy_task_uses_updated_at(tmp_path: Path) -> None:
-    anima_dir = tmp_path / "animas" / "worker"
+def test_checkless_legacy_task_uses_updated_at_for_alert_only(tmp_path: Path) -> None:
+    """Legacy checkless (no blocked_at) falls back to updated_at; still fail closed."""
+    animas_dir = tmp_path / "animas"
+    anima_dir = animas_dir / "worker"
+    supervisor_dir = animas_dir / "boss"
+    supervisor_dir.mkdir(parents=True)
+    anima_dir.mkdir(parents=True)
+    (anima_dir / "status.json").write_text('{"supervisor": "boss"}', encoding="utf-8")
     manager = _blocked_task(
         anima_dir,
         task_id="legacy-blocked",
@@ -349,11 +343,78 @@ def test_checkless_legacy_task_uses_updated_at(tmp_path: Path) -> None:
         patch("core.config.models.load_config", return_value=_config()),
         patch("core.blocked_recovery.now_local", return_value=future),
     ):
-        assert revalidate_blocked_tasks(anima_dir, "worker") == ["legacy-blocked"]
+        assert revalidate_blocked_tasks(anima_dir, "worker") == []
 
     current = manager.get_task_by_id("legacy-blocked")
     assert current is not None
+    assert current.status == "blocked"
+    assert current.meta.get("blocked_recovery_alerted") is True
+    assert "blocked_reprobe_count" not in current.meta
+    assert not (anima_dir / "state" / "pending" / "legacy-blocked.json").exists()
+    alerts = [
+        task
+        for task in TaskQueueManager(supervisor_dir).list_tasks()
+        if task.meta.get("kind") == "blocked_task_manual_intervention_required"
+    ]
+    assert len(alerts) == 1
+
+
+def test_checkless_reprobe_enabled_restores_legacy_time_based_reprobe(
+    tmp_path: Path,
+) -> None:
+    """blocked_checkless_reprobe_enabled=True restores pre-fail-closed behavior."""
+    anima_dir = tmp_path / "animas" / "worker"
+    manager = _blocked_task(
+        anima_dir,
+        task_id="legacy-on",
+        meta={
+            "blocked_at": (now_local() - timedelta(hours=7)).isoformat(),
+            "task_desc": {"title": "finish", "description": "finish the task"},
+        },
+    )
+
+    with patch(
+        "core.config.models.load_config",
+        return_value=_config(blocked_checkless_reprobe_enabled=True),
+    ):
+        assert revalidate_blocked_tasks(anima_dir, "worker") == ["legacy-on"]
+
+    current = manager.get_task_by_id("legacy-on")
+    assert current is not None
+    assert current.status == "pending"
     assert current.meta["blocked_reprobe_count"] == 1
+    desc = json.loads((anima_dir / "state" / "pending" / "legacy-on.json").read_text(encoding="utf-8"))["description"]
+    assert "blockerが解消済みか確認" in desc
+
+
+def test_checkless_many_tasks_generate_zero_pending_json(tmp_path: Path) -> None:
+    """Many checkless blocked tasks must not produce any pending JSON under fail closed."""
+    anima_dir = tmp_path / "animas" / "worker"
+    for index in range(50):
+        _blocked_task(
+            anima_dir,
+            task_id=f"checkless-{index:02d}",
+            meta={
+                "blocked_at": (now_local() - timedelta(hours=24)).isoformat(),
+                "task_desc": {"title": f"finish-{index}"},
+            },
+        )
+
+    with patch("core.config.models.load_config", return_value=_config()):
+        assert revalidate_blocked_tasks(anima_dir, "worker") == []
+
+    pending_dir = anima_dir / "state" / "pending"
+    pending_files = list(pending_dir.glob("*.json")) if pending_dir.is_dir() else []
+    assert pending_files == []
+    manager = TaskQueueManager(anima_dir)
+    for index in range(50):
+        current = manager.get_task_by_id(f"checkless-{index:02d}")
+        assert current is not None
+        assert current.status == "blocked"
+
+
+def test_blocked_checkless_reprobe_enabled_default_is_false() -> None:
+    assert BackgroundTaskConfig().blocked_checkless_reprobe_enabled is False
 
 
 def test_recovery_can_be_disabled(tmp_path: Path) -> None:

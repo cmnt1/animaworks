@@ -660,9 +660,13 @@ class SkillsToolsMixin:
         elif status == "blocked":
             declaration_meta = {
                 "blocked_at": now_iso(),
-                "unblock_check": unblock_check,
                 "unblock_check_failures": 0,
             }
+            # Preserve an omitted check only when re-declaring the same blocked
+            # state. A new blocker must not inherit a stale release condition.
+            current = manager.get_task_by_id(task_id)
+            if unblock_check is not None or current is None or current.status != "blocked":
+                declaration_meta["unblock_check"] = unblock_check
 
         try:
             if declaration_meta:
