@@ -139,9 +139,3 @@ Refer to the workflow guide corresponding to your role:
 
 Role assignments can be found in `injection.md` or `specialty_prompt.md`.
 If you hold multiple roles, refer to all applicable guides.
-
-## When Using Team Design Templates
-
-If `injection.md` references `team-design/development/{role}/machine.md`, **that path takes precedence over this file**. Each role’s `machine.md` is self-contained, including base rules and how to write prompts.
-
-This file is the shared guide for standalone Anima that do not use the team-design templates.
