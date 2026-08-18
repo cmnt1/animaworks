@@ -90,10 +90,14 @@ class VoiceFrontLane:
         temperature: float = _DEFAULT_TEMPERATURE,
         timeout: float = 120.0,
         num_retries: int = 1,
+        api_key: str = "local",
         tool_executor: Callable[[str, dict[str, Any]], str] | None = None,
     ) -> None:
         self._model = model
         self._api_base = (api_base or "").rstrip("/")
+        # litellm's openai provider requires an api_key even for local
+        # llama.cpp endpoints; "local" is a harmless placeholder.
+        self._api_key = api_key
         self._system_prompt = system_prompt
         self._max_tokens = max_tokens
         self._temperature = temperature
@@ -187,6 +191,7 @@ class VoiceFrontLane:
         }
         if self._api_base:
             kwargs["api_base"] = self._api_base
+            kwargs["api_key"] = self._api_key
         if tools:
             kwargs["tools"] = tools
 
