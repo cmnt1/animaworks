@@ -114,6 +114,10 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "server/routes/room.py": 4,
     # LLM extraction + dedupe + invalidation + community prompt templates — intentionally Japanese for ja locale
     "core/memory/extraction/prompts/ja.py": 7,
+    # voice front lane — ask_anima tool schema wording fed to the front LLM
+    "core/voice/front.py": 2,
+    # voice front lane — spoken ACK/error phrases voiced to the user via TTS
+    "core/voice/session.py": 5,
 }
 
 
