@@ -117,7 +117,7 @@ class TestBuildVoiceFrontPrompt:
         assert "SPECIALTY_TEXT" in prompt
         assert "taro" in prompt
         assert "emotion" in prompt
-        assert "200" in prompt
+        assert "60 characters" in prompt
 
     def test_reads_specialty_prompt_file(self, tmp_path: Path) -> None:
         # Regression: the real anima file is ``specialty_prompt.md`` (no "i") —
