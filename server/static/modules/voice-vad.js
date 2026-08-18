@@ -38,6 +38,8 @@ export class VoiceVAD {
   constructor(options = {}) {
     this._onSpeechStart = options.onSpeechStart || (() => {});
     this._onSpeechEnd = options.onSpeechEnd || (() => {});
+    this._positiveSpeechThreshold = options.positiveSpeechThreshold;
+    this._minSpeechFrames = options.minSpeechFrames;
     this._myvad = null;
     this._active = false;
   }
@@ -57,7 +59,7 @@ export class VoiceVAD {
     }
 
     try {
-      this._myvad = await window.vad.MicVAD.new({
+      const vadOpts = {
         onnxWASMBasePath: _ORT_CDN,
         baseAssetPath: _VAD_CDN,
         onSpeechStart: () => {
@@ -66,7 +68,14 @@ export class VoiceVAD {
         onSpeechEnd: (audio) => {
           if (this._active) this._onSpeechEnd(audio);
         },
-      });
+      };
+      if (this._positiveSpeechThreshold != null) {
+        vadOpts.positiveSpeechThreshold = this._positiveSpeechThreshold;
+      }
+      if (this._minSpeechFrames != null) {
+        vadOpts.minSpeechFrames = this._minSpeechFrames;
+      }
+      this._myvad = await window.vad.MicVAD.new(vadOpts);
       this._myvad.start();
       this._active = true;
       return true;

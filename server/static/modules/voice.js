@@ -268,11 +268,14 @@ export class VoiceManager {
       return;
     }
     this._vad = new VoiceVAD({
-      // Half-duplex: the VAD hears the anima's own TTS from the speakers and
-      // would barge-in on it (AEC doesn't cover WebAudio output). Ignore
-      // speech while TTS audio is playing/queued plus a short echo tail.
-      // ponytail: voice barge-in disabled in vad mode; switch to PTT to interrupt.
+      // RTC loopback AEC lets VAD hear the user during TTS. Without it,
+      // ignore speech while output is playing/queued plus a short echo tail.
       onSpeechStart: () => {
+        if (this._playback.aecActive) {
+          if (this._outputActive()) this.interrupt();
+          this.startRecording();
+          return;
+        }
         if (this._outputActive()) return;
         this.startRecording();
       },
