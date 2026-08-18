@@ -350,6 +350,7 @@
   object-fit: contain;
   user-select: none;
   -webkit-user-drag: none;
+  cursor: pointer;
 }
 
 .voice-popup-captions {

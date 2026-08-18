@@ -108,6 +108,13 @@ export function openVoicePopup(animaName, opts = {}) {
   els.volume.addEventListener("input", () => {
     voiceManager.setVolume(parseInt(els.volume.value, 10) / 100);
   });
+  // Tap the bustup to barge-in: in VAD mode the mic ignores speech while the
+  // anima is talking (its own TTS would trigger the VAD), so a tap is the
+  // reliable interrupt. Gated on playback so an idle tap can't wipe an
+  // in-progress user utterance server-side.
+  els.bustup.addEventListener("click", () => {
+    if (voiceManager.isTTSPlaying) voiceManager.interrupt();
+  });
 
   document.addEventListener("keydown", _onKeyDown);
 
@@ -192,6 +199,12 @@ function _bindVoiceEvents() {
   _bind("playbackEnd", () => {
     if (!_session) return;
     els.tts.style.display = "none";
+  });
+  _bind("interrupted", () => {
+    if (!_session) return;
+    els.tts.style.display = "none";
+    els.subtitle.hidden = true;
+    els.status.textContent = t("voice.popup_connected");
   });
   _bind("caption", ({ text }) => {
     if (!_session) return;
