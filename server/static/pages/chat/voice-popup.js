@@ -206,6 +206,12 @@ function _bindVoiceEvents() {
     if (!_session || !text) return;
     els.transcript.textContent = text;
   });
+  // Live committed prefix while the user is still speaking (streaming STT).
+  // The final "transcript" event overwrites it, so display-only is enough.
+  _bind("transcriptPartial", ({ text }) => {
+    if (!_session || !text) return;
+    els.transcript.textContent = text + "…";
+  });
   _bind("responseStart", () => {
     if (!_session) return;
     _session.responseText = "";

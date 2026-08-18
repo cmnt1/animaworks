@@ -294,6 +294,9 @@ export class VoiceManager {
         case 'transcript':
           this._emit('transcript', { text: msg.text });
           break;
+        case 'transcript_partial':
+          this._emit('transcriptPartial', { text: msg.text });
+          break;
         case 'response_start':
           this._emit('responseStart');
           break;
