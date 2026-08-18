@@ -7,10 +7,10 @@
 Implements streaming transcription on top of the existing synchronous
 faster-whisper :func:`VoiceSTT.transcribe_buffer`. The decoder stays fully
 decoupled: this module only requires a plain callable
-``decoder(bytes) -> dict`` whose shape matches ``VoiceSTT.transcribe_buffer``
-(keys: ``raw_text``, ``language``, ``duration``, ``segments``). The
-LocalAgreement logic is a pure function so this module imports cleanly even
-when faster-whisper is not installed.
+``decoder(bytes, initial_prompt) -> dict`` whose shape matches
+``VoiceSTT.transcribe_buffer`` (keys: ``raw_text``, ``language``,
+``duration``, ``segments``). The LocalAgreement logic is a pure function so
+this module imports cleanly even when faster-whisper is not installed.
 
 LocalAgreement-2: a character is only *committed* once it has appeared in
 the common prefix of two consecutive decodes of the same (growing) audio
@@ -28,8 +28,14 @@ PCM16_BYTES_PER_SAMPLE = 2
 DEFAULT_MAX_BUFFER_SECONDS = 30.0
 DEFAULT_DECODE_MIN_SEC = 0.4
 DEFAULT_MIN_AUDIO_SECONDS = 0.35
+# Context fed to faster-whisper as ``initial_prompt`` when re-decoding after a
+# trim, so the model knows what was transcribed before the current buffer.
+MAX_INITIAL_PROMPT_CHARS = 200
+# Max chars of suffix-prefix overlap to collapse between committed text and a
+# freshly decoded tail (removes "確定確定" style re-recognition doubles).
+MAX_SUFFIX_PREFIX_OVERLAP = 200
 
-Decoder = Callable[[bytes], dict[str, Any]]
+Decoder = Callable[[bytes, str], dict[str, Any]]
 
 
 def common_prefix(left: str, right: str) -> str:
@@ -70,46 +76,58 @@ def local_agreement(previous: str, current: str, committed: str) -> str:
     return committed
 
 
-def _committed_duration_sec(segments: list[dict[str, Any]], committed: str) -> float:
-    """Approximate audio duration (seconds) covered by ``committed`` text.
-
-    Walks the segment timestamps and returns the point where the committed
-    text ends, scaling linearly inside the first segment that contains the
-    boundary. Used to trim committed audio from the rolling buffer.
-    """
-    if not committed:
-        return 0.0
-    target = len(committed)
-    acc = 0
-    for seg in segments:
-        seg_text = str(seg.get("text", "") or "")
-        try:
-            start = float(seg.get("start", 0.0))
-            end = float(seg.get("end", 0.0))
-        except (TypeError, ValueError):
-            start = end = 0.0
-        next_acc = acc + len(seg_text)
-        if next_acc >= target:
-            if next_acc == target:
-                return end
-            if not seg_text:
-                return start
-            frac = (target - acc) / len(seg_text)
-            return start + (end - start) * frac
-        acc = next_acc
-    return 0.0
-
-
 def _bytes_trimmed_for_prefix(
     segments: list[dict[str, Any]],
     prefix_text: str,
     *,
     bytes_per_sec: int,
 ) -> int:
-    """PCM byte count matching ``prefix_text`` using committed duration."""
+    """PCM byte count of audio fully covered by ``prefix_text``.
+
+    Trims only up to the end of the last segment that is *fully contained*
+    in ``prefix_text``. A segment only partially covered (the committed
+    boundary falls mid-word) is NOT trimmed, so the next decode starts at a
+    real word boundary instead of a cut-off fragment. Mid-word cuts caused
+    e.g. '文字起こし' → 'お腹おこし' in the real-audio E2E.
+    """
     if not prefix_text:
         return 0
-    return int(_committed_duration_sec(segments, prefix_text) * bytes_per_sec)
+    acc = 0
+    end = 0.0
+    for seg in segments:
+        seg_text = str(seg.get("text", "") or "")
+        next_acc = acc + len(seg_text)
+        if next_acc > len(prefix_text):
+            break  # this segment is only partially covered → stop before it
+        try:
+            seg_end = float(seg.get("end", 0.0))
+        except (TypeError, ValueError):
+            seg_end = 0.0
+        end = seg_end
+        acc = next_acc
+    raw = int(end * bytes_per_sec)
+    # Align to the PCM16 sample boundary; an odd trim would leave the buffer
+    # misaligned and break np.frombuffer(dtype=int16) on the next decode.
+    return raw - (raw % PCM16_BYTES_PER_SAMPLE)
+
+
+def _remove_suffix_prefix_overlap(
+    left: str,
+    right: str,
+    max_overlap: int = MAX_SUFFIX_PREFIX_OVERLAP,
+) -> str:
+    """Return ``left + right`` with the longest suffix-prefix overlap removed.
+
+    After a segment-boundary trim the next decode can begin by repeating the
+    tail of the committed text (re-recognition of already committed audio).
+    Collapsing that overlap ensures ``committed + new_tail`` does not contain
+    doubles (e.g. '確定確定').
+    """
+    limit = min(len(left), len(right), max_overlap)
+    for k in range(limit, 0, -1):
+        if left[-k:] == right[:k]:
+            return left + right[k:]
+    return left + right
 
 
 class StreamingTranscriber:
@@ -177,6 +195,11 @@ class StreamingTranscriber:
         with self._lock:
             return self._committed
 
+    @staticmethod
+    def _initial_prompt(committed: str) -> str:
+        """Committed tail used as decoder context after a trim."""
+        return committed[-MAX_INITIAL_PROMPT_CHARS:] if committed else ""
+
     # ── decode cycle ──────────────────────────────────────────
 
     def run_decode(self) -> str | None:
@@ -196,8 +219,10 @@ class StreamingTranscriber:
             base_committed = self._committed
             base_previous = self._previous
         # Decoder runs without holding the lock: an event-loop thread calling
-        # feed() can acquire the lock and keep flowing during decode.
-        result = self._decoder(snapshot) or {}
+        # feed() can acquire the lock and keep flowing during decode. The
+        # committed tail is passed as context for the post-trim re-decode.
+        initial_prompt = self._initial_prompt(base_committed)
+        result = self._decoder(snapshot, initial_prompt) or {}
         with self._lock:
             new_committed = self._merge_decode_result(
                 result,
@@ -220,18 +245,18 @@ class StreamingTranscriber:
 
         Commits the agreed stable prefix, trims the corresponding audio from
         the front of the buffer, and updates the comparison reference. Trimming
-        is from the front, so any audio appended by ``feed()`` while the
-        decoder was running (at the tail) is preserved.
+        is from the front at segment boundaries, so any audio appended by
+        ``feed()`` while the decoder was running (at the tail) is preserved.
         """
         segments = result.get("segments") or []
         new_full = str(result.get("raw_text", "") or "").strip()
         lang = result.get("language")
         if lang:
             self.last_language = str(lang)
-        # Reconstruct the aligned *full* transcript (committed prefix + tail)
-        # so LocalAgreement stays meaningful even after committed audio has
-        # been trimmed from the buffer.
-        candidate_total = base_committed + new_full
+        # Reconstruct the aligned *full* transcript (committed prefix + tail).
+        # Collapse any suffix-prefix overlap so the committed boundary is not
+        # reproduced twice on re-decode.
+        candidate_total = _remove_suffix_prefix_overlap(base_committed, new_full)
         new_committed = local_agreement(base_previous, candidate_total, base_committed)
         added = new_committed[len(base_committed):]
         if added:
@@ -249,7 +274,8 @@ class StreamingTranscriber:
 
         The final transcript is ``committed + tail``: prefixes already shown
         live via ``transcript_partial`` are appended to whatever remains in
-        the buffer. The decoder runs outside the lock; state is then reset.
+        the buffer (with any boundary overlap removed). The decoder runs
+        outside the lock; state is then reset.
         """
         with self._lock:
             snapshot = bytes(self._buffer)
@@ -257,7 +283,8 @@ class StreamingTranscriber:
         tail = ""
         lang = None
         if snapshot:
-            result = self._decoder(snapshot) or {}
+            initial_prompt = self._initial_prompt(committed)
+            result = self._decoder(snapshot, initial_prompt) or {}
             tail = str(result.get("raw_text", "") or "").strip()
             lang = result.get("language")
         with self._lock:
@@ -267,7 +294,7 @@ class StreamingTranscriber:
             self._committed = ""
             self._previous = ""
             self._bytes_since_feed = 0
-        return (committed + tail).strip()
+        return _remove_suffix_prefix_overlap(committed, tail).strip()
 
     def reset(self) -> None:
         """Drop buffered audio and state (used on barge-in / interrupt)."""

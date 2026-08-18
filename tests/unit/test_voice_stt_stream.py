@@ -16,7 +16,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.voice.stt_stream import StreamingTranscriber, common_prefix, local_agreement
+from core.voice.stt_stream import (
+    PCM16_BYTES_PER_SAMPLE,
+    PCM16_SAMPLE_RATE,
+    StreamingTranscriber,
+    _bytes_trimmed_for_prefix,
+    _remove_suffix_prefix_overlap,
+    common_prefix,
+    local_agreement,
+)
 
 
 class _ScriptedDecoder:
@@ -26,7 +34,7 @@ class _ScriptedDecoder:
         self.results = list(results)
         self.calls = 0
 
-    def __call__(self, audio: bytes) -> dict:
+    def __call__(self, audio: bytes, initial_prompt: str) -> dict:
         self.calls += 1
         text = self.results.pop(0) if self.results else ""
         return {"raw_text": text, "language": "ja", "segments": [], "duration": 0.0}
@@ -118,9 +126,12 @@ class TestStreamingTranscriber:
         assert tr.run_decode() is None
         tr.feed(_CHUNK)
         assert tr.run_decode() == "調べて"
+        # Tail becomes stable over two decodes → committed grows to the full
+        # stable prefix, still append-only (and never doubled).
         tr.feed(_CHUNK)
-        assert tr.run_decode() is None  # unstable tail → no rewrite
-        assert tr.committed == "調べて"
+        assert tr.run_decode() == "調べておいて"
+        assert tr.committed == "調べておいて"
+        assert "調べて調べて" not in tr.committed
 
     def test_finalize_matches_last_confirmed_decode(self) -> None:
         # First two decodes confirm "こんにちは"; finalize decodes the
@@ -150,6 +161,59 @@ class TestStreamingTranscriber:
         assert tr.committed == ""
         assert not tr.has_content()
 
+    def test_boundary_overlap_not_duplicated(self) -> None:
+        """committed must not reproduce an already-committed tail (no 'AA')."""
+        calls: list[str] = []
+
+        def dec(audio: bytes, initial_prompt: str) -> dict:
+            calls.append(initial_prompt)
+            text = "A" if len(calls) == 1 else "AB"
+            return {"raw_text": text, "language": "ja", "segments": [], "duration": 0.0}
+
+        tr = StreamingTranscriber(dec, decode_min_sec=0.2, min_audio_seconds=0.1)
+        tr.feed(_CHUNK)
+        tr.run_decode()
+        tr.feed(_CHUNK)
+        tr.run_decode()
+        tr.feed(_CHUNK)
+        tr.run_decode()
+        assert tr.committed == "AB"
+        assert "AA" not in tr.committed
+
+    def test_initial_prompt_passed_to_decoder(self) -> None:
+        """The committed tail is passed as decoder context for re-decodes."""
+        seen: list[str] = []
+
+        def dec(audio: bytes, initial_prompt: str) -> dict:
+            seen.append(initial_prompt)
+            return {"raw_text": "こんにちは", "language": "ja", "segments": [], "duration": 0.0}
+
+        tr = StreamingTranscriber(dec, decode_min_sec=0.2, min_audio_seconds=0.1)
+        tr.feed(_CHUNK)
+        tr.run_decode()  # committed "" → prompt ""
+        tr.feed(_CHUNK)
+        tr.run_decode()  # commits "こんにちは"
+        tr.feed(_CHUNK)
+        tr.run_decode()  # committed "こんにちは" → prompt is its tail
+        assert seen[0] == ""
+        assert seen[2] == "こんにちは"
+
+    def test_trim_only_at_completed_segment_boundary(self) -> None:
+        """Trim stops at the last fully-contained segment, not mid-word."""
+        bps = PCM16_SAMPLE_RATE * PCM16_BYTES_PER_SAMPLE
+        segments = [
+            {"start": 0.0, "end": 1.0, "text": "文字起こし"},  # fully committed
+            {"start": 1.0, "end": 2.0, "text": "をテスト"},  # boundary inside → no trim
+        ]
+        # prefix covers the 1st segment fully, boundary falls in the 2nd.
+        trimmed = _bytes_trimmed_for_prefix(segments, "文字起こしを", bytes_per_sec=bps)
+        assert trimmed == int(1.0 * bps)
+
+    def test_no_trim_when_prefix_inside_first_segment(self) -> None:
+        bps = PCM16_SAMPLE_RATE * PCM16_BYTES_PER_SAMPLE
+        segments = [{"start": 0.0, "end": 1.0, "text": "文字起こし"}]
+        assert _bytes_trimmed_for_prefix(segments, "文字", bytes_per_sec=bps) == 0
+
     def test_feed_not_blocked_during_decode(self) -> None:
         """A slow decode must not freeze feed() (runs on the event-loop thread).
 
@@ -159,7 +223,7 @@ class TestStreamingTranscriber:
         started = threading.Event()
         release = threading.Event()
 
-        def slow_decoder(audio: bytes) -> dict:
+        def slow_decoder(audio: bytes, initial_prompt: str) -> dict:
             started.set()
             release.wait(2.0)  # simulate a slow decode
             return {"raw_text": "こんにちは", "language": "ja", "segments": [], "duration": 0.0}
@@ -189,6 +253,29 @@ class TestStreamingTranscriber:
 
         assert hasattr(mod, "StreamingTranscriber")
         assert hasattr(mod, "local_agreement")
+
+
+# ── overlap removal (pure) ───────────────────────────────────
+
+
+class TestOverlapRemoval:
+    def test_no_overlap(self) -> None:
+        assert _remove_suffix_prefix_overlap("ABC", "DEF") == "ABCDEF"
+
+    def test_full_overlap(self) -> None:
+        assert (
+            _remove_suffix_prefix_overlap("こんにちは", "こんにちは世界")
+            == "こんにちは世界"
+        )
+
+    def test_partial_overlap(self) -> None:
+        assert (
+            _remove_suffix_prefix_overlap("おはようABC", "ABCです")
+            == "おはようABCです"
+        )
+
+    def test_respects_max_overlap(self) -> None:
+        assert _remove_suffix_prefix_overlap("A" * 50, "A" * 50, max_overlap=30) == "A" * 70
 
 
 # ── VoiceSession wiring ────────────────────────────────────────

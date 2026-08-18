@@ -172,7 +172,9 @@ class VoiceSession:
         # Streaming STT: rolling re-decode with LocalAgreement-2. Decode is
         # synchronous; it is sheduled through run_in_executor so the event loop
         # is never blocked and only one decode is in flight at a time.
-        self._streamer = StreamingTranscriber(lambda buf: stt.transcribe_buffer(buf))
+        self._streamer = StreamingTranscriber(
+            lambda buf, initial_prompt: stt.transcribe_buffer(buf, initial_prompt=initial_prompt)
+        )
         self._stream_task: asyncio.Task[None] | None = None
         self._streaming_busy = False
         self._finalizing = False
