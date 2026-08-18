@@ -913,9 +913,7 @@ def build_system_prompt(
     return BuildResult(system_prompt=prompt)
 
 
-_VOICE_FRONT_EMOTION_NAMES = (
-    "neutral/smile/laugh/troubled/surprised/thinking/embarrassed"
-)
+_VOICE_FRONT_EMOTION_NAMES = "neutral/smile/laugh/troubled/surprised/thinking/embarrassed"
 
 
 def _read_text_file(path: Path) -> str:
@@ -953,9 +951,7 @@ def build_voice_front_prompt(anima_dir: Path, *, anima_name: str | None = None) 
         parts.append(f"Speciality:\n{specialty}")
 
     parts.append(
-        "You are "
-        + name
-        + ", speaking to a person by voice. "
+        "You are " + name + ", speaking to a person by voice. "
         "Respond in natural, conversational spoken language.\n\n"
         "Rules:\n"
         "- Keep replies short, natural, and under 200 characters.\n"

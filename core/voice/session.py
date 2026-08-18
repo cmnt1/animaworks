@@ -334,9 +334,7 @@ class VoiceSession:
                 except Exception:
                     front_ok = False
                 if front_ok:
-                    response_done_sent = await self._run_front_turn(
-                        lane, text, from_person, tts_ok
-                    )
+                    response_done_sent = await self._run_front_turn(lane, text, from_person, tts_ok)
                     return
                 logger.warning(
                     "voice front unavailable (%s) — falling back to process_message",
@@ -567,9 +565,7 @@ class VoiceSession:
                     break
                 await self._enqueue_tts(sentence)
 
-    def _record_front_conversation(
-        self, user_text: str, response_text: str, from_person: str
-    ) -> None:
+    def _record_front_conversation(self, user_text: str, response_text: str, from_person: str) -> None:
         """Persist the front turn into the anima's default conversation.
 
         Reuses the existing ``ConversationMemory`` record path so the turn is
@@ -711,15 +707,11 @@ class VoiceSession:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # surface the failure so front can report it
-            logger.exception(
-                "ask_anima job %s failed (%s): %s", job, self._anima_name, exc
-            )
+            logger.exception("ask_anima job %s failed (%s): %s", job, self._anima_name, exc)
             result_text = "処理に失敗しました。詳細はログを確認してほしい"
         finally:
             self._delegation_jobs.pop(job, None)
-            message = (
-                f"[ask_anima完了 job {job}: {result_text[:ASK_ANIMA_MAX_RESULT_CHARS]}]"
-            )
+            message = f"[ask_anima完了 job {job}: {result_text[:ASK_ANIMA_MAX_RESULT_CHARS]}]"
             if self._delegation_results is not None:
                 await self._delegation_results.put(message)
             if self._delegation_done is not None:
@@ -767,13 +759,9 @@ class VoiceSession:
                 continue
             synthetic = f"{pref} この結果を自分の言葉で短く報告して"
             try:
-                await self._run_front_turn(
-                    lane, synthetic, "human", await self._check_tts_health()
-                )
+                await self._run_front_turn(lane, synthetic, "human", await self._check_tts_health())
             except Exception:
-                logger.exception(
-                    "ask_anima self-turn failed (%s)", self._anima_name
-                )
+                logger.exception("ask_anima self-turn failed (%s)", self._anima_name)
 
     async def close(self) -> None:
         """Cancel TTS worker on session teardown (WS disconnect).

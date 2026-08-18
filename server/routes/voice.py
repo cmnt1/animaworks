@@ -179,9 +179,7 @@ def create_voice_router() -> APIRouter:
             stt = _get_stt(voice_config)
             tts_config = _load_per_anima_voice(animas_dir, name, voice_config)
             tts = create_tts_provider(tts_config.provider, voice_config)
-            front_model, front_api_base = _load_per_anima_voice_front(
-                animas_dir, name, voice_config
-            )
+            front_model, front_api_base = _load_per_anima_voice_front(animas_dir, name, voice_config)
             logger.info(
                 "Voice session created: anima=%s provider=%s voice_id=%s speed=%.1f",
                 name,

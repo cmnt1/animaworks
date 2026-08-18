@@ -174,9 +174,7 @@ class VoiceFrontLane:
                 execution. Falls back to the value passed to ``__init__``.
         """
         executor = tool_executor or getattr(self, "_tool_executor", None)
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": self._system_prompt}
-        ]
+        messages: list[dict[str, Any]] = [{"role": "system", "content": self._system_prompt}]
         messages.extend(self._history)
         messages.append({"role": "user", "content": user_text})
 
@@ -221,9 +219,7 @@ class VoiceFrontLane:
                 finish_reason = getattr(choice, "finish_reason", None)
                 for tc in getattr(delta, "tool_calls", None) or []:
                     idx = int(getattr(tc, "index", 0) or 0)
-                    entry = tool_calls.setdefault(
-                        idx, {"id": "", "name": "", "arguments": ""}
-                    )
+                    entry = tool_calls.setdefault(idx, {"id": "", "name": "", "arguments": ""})
                     if getattr(tc, "id", None):
                         entry["id"] = tc.id
                     fn = getattr(tc, "function", None)
@@ -267,9 +263,7 @@ class VoiceFrontLane:
                         if not isinstance(result, str):
                             result = str(result)
                     except Exception as exc:  # keep the conversation going
-                        logger.exception(
-                            "tool_executor failed for %s", tcd["function"]["name"]
-                        )
+                        logger.exception("tool_executor failed for %s", tcd["function"]["name"])
                         result = f"error: {exc}"
                     messages.append(
                         {
