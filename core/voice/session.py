@@ -30,6 +30,15 @@ SILENCE_RMS_THRESHOLD = 0.008
 # buffer more text when synthesis is faster than realtime.
 TTS_QUEUE_MAXSIZE = 8
 
+# Concurrency cap for fire-and-forget ``ask_anima`` delegation. When this
+# many jobs are still running, further requests get a "please wait" ACK.
+MAX_ASK_ANIMA_CONCURRENT = 2
+# Truncation length for the result text surfaced back to the front lane.
+ASK_ANIMA_MAX_RESULT_CHARS = 1000
+# Marker prepended to the delegated request so the full-agent loop knows the
+# message came from the voice front lane.
+ASK_ANIMA_DELEGATION_NOTE = "\n\n[voice front からの委譲]"
+
 VOICE_MODE_SUFFIX = (
     "\n\n[voice-mode: 音声会話です。感情が伝わる話し言葉で200文字以内で簡潔に回答してください。"
     "絵文字を使ってよい（字幕表示用）。"
@@ -182,6 +191,15 @@ class VoiceSession:
         self._consecutive_tts_failures: int = 0
         self._tts_queue: asyncio.Queue[str] | None = None
         self._tts_worker: asyncio.Task[None] | None = None
+
+        # ask_anima delegation state (PR-3). Queues/task are created lazily
+        # on first use (inside the running event loop).
+        self._delegation_jobs: dict[int, asyncio.Task] = {}
+        self._delegation_job_counter: int = 0
+        self._delegation_results: asyncio.Queue[str] | None = None
+        self._delegation_done: asyncio.Queue[None] | None = None
+        self._delegation_watcher: asyncio.Task | None = None
+        self._closed = False
 
         if front_model is None:
             front_model = getattr(voice_config, "front_model", None) or None
@@ -579,12 +597,20 @@ class VoiceSession:
         On interrupt the turn stops immediately (no fallback); the caller's
         ``finally`` block emits the neutral terminal frames instead.
         """
-        from core.voice.front import extract_emotion
+        from core.voice.front import ASK_ANIMA_TOOL, extract_emotion
+
+        results = self._drain_delegation_results()
+        if results:
+            text = f"{results}\n\n{text}"
 
         lane.reset_turn()
         full: list[str] = []
         try:
-            async for delta in lane.stream(text):
+            async for delta in lane.stream(
+                text,
+                tools=[ASK_ANIMA_TOOL],
+                tool_executor=self._ask_anima,
+            ):
                 if self._interrupted:
                     return False
                 await self._emit_text_delta(delta, tts_ok)
@@ -604,8 +630,163 @@ class VoiceSession:
         await self._finish_tts_and_response_done(emotion)
         return True
 
+    # ── ask_anima async delegation (PR-3) ─────────────────────────
+
+    def _ensure_delegation_state(self) -> None:
+        """Create delegation queues and start the result watcher once."""
+        if self._delegation_results is None:
+            self._delegation_results = asyncio.Queue()
+            self._delegation_done = asyncio.Queue()
+        if self._delegation_watcher is None or self._delegation_watcher.done():
+            self._delegation_watcher = asyncio.create_task(
+                self._delegation_watcher_loop(),
+                name=f"ask-anima-watcher-{self._anima_name}",
+            )
+
+    def _ask_anima(self, request: str) -> str:
+        """Handle ``ask_anima`` from the front lane (synchronous tool).
+
+        Fires a fire-and-forget ``asyncio.Task`` that runs the request through
+        the full agent loop (``process_message``) and returns an ACK string
+        immediately so the front conversation is not blocked. At most
+        ``MAX_ASK_ANIMA_CONCURRENT`` jobs run at once.
+        """
+        request = (request or "").strip()
+        if not request:
+            request = "（依頼内容が指定されていません）"
+        if len(self._delegation_jobs) >= MAX_ASK_ANIMA_CONCURRENT:
+            return f"実行中の依頼が{MAX_ASK_ANIMA_CONCURRENT}件ある。完了を待ってほしい"
+        self._ensure_delegation_state()
+        self._delegation_job_counter += 1
+        job = self._delegation_job_counter
+        task = asyncio.create_task(
+            self._run_ask_anima_job(job, request),
+            name=f"ask-anima-{self._anima_name}-{job}",
+        )
+        self._delegation_jobs[job] = task
+        return f"受理しました (job {job})。完了したら知らせます"
+
+    async def _run_ask_anima_job(self, job: int, request: str) -> None:
+        """Consume the full-agent stream for one delegated request and surface
+        the result back to the front lane's reflow queue."""
+        result_text = ""
+        try:
+            async for resp in self._supervisor.send_request_stream(
+                anima_name=self._anima_name,
+                method="process_message",
+                params={
+                    "message": request + ASK_ANIMA_DELEGATION_NOTE,
+                    "from_person": "human",
+                    "intent": "",
+                    "stream": True,
+                    # Full-capability lane: the delegated job must NOT be
+                    # downgraded by voice_mode (voice_thinking_effort etc.).
+                    "voice_mode": False,
+                    "images": [],
+                    "attachment_paths": [],
+                },
+                timeout=IPC_STREAM_TIMEOUT,
+            ):
+                if getattr(resp, "done", False):
+                    result_data = getattr(resp, "result", None) or {}
+                    cycle_result = result_data.get("cycle_result", {}) or {}
+                    summary = str(cycle_result.get("summary", "") or "")
+                    if summary:
+                        result_text = summary
+                elif getattr(resp, "chunk", None):
+                    try:
+                        cd = json.loads(resp.chunk)
+                    except (json.JSONDecodeError, TypeError):
+                        cd = {}
+                    if cd.get("type") == "cycle_done":
+                        cycle_result = cd.get("cycle_result", {}) or {}
+                        summary = str(cycle_result.get("summary", "") or "")
+                        if summary:
+                            result_text = summary
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # surface the failure so front can report it
+            logger.exception(
+                "ask_anima job %s failed (%s): %s", job, self._anima_name, exc
+            )
+            result_text = "処理に失敗しました。詳細はログを確認してほしい"
+        finally:
+            self._delegation_jobs.pop(job, None)
+            message = (
+                f"[ask_anima完了 job {job}: {result_text[:ASK_ANIMA_MAX_RESULT_CHARS]}]"
+            )
+            if self._delegation_results is not None:
+                await self._delegation_results.put(message)
+            if self._delegation_done is not None:
+                await self._delegation_done.put(None)
+
+    def _drain_delegation_results(self) -> str:
+        """Collect all completed ask_anima results for injection into the next
+        user turn. Returns an empty string when nothing is pending."""
+        if self._delegation_results is None:
+            return ""
+        parts: list[str] = []
+        while True:
+            try:
+                parts.append(self._delegation_results.get_nowait())
+            except asyncio.QueueEmpty:
+                break
+        return "\n".join(parts)
+
+    async def _delegation_watcher_loop(self) -> None:
+        """Proactively run a self-turn when an ask_anima result completes while
+        no user turn / TTS playback is in progress, so the front reports the
+        outcome in its own words. If a user turn is active, results stay in
+        the queue for the next user turn instead (no double-reporting)."""
+        while not self._closed:
+            try:
+                await self._delegation_done.get()
+            except asyncio.CancelledError:
+                return
+            # Let a queued user turn (which also drains results) win if it is
+            # about to start, avoiding a self-turn in the same breath.
+            await asyncio.sleep(0.05)
+            if self._processing or self._tts_playing:
+                continue
+            if self._closed or self._front_lane is None or not self._front_model:
+                continue
+            pref = self._drain_delegation_results()
+            if not pref:
+                continue
+            lane = self._front_lane
+            try:
+                ok = await lane.check_health()
+            except Exception:
+                ok = False
+            if not ok:
+                continue
+            synthetic = f"{pref} この結果を自分の言葉で短く報告して"
+            try:
+                await self._run_front_turn(
+                    lane, synthetic, "human", await self._check_tts_health()
+                )
+            except Exception:
+                logger.exception(
+                    "ask_anima self-turn failed (%s)", self._anima_name
+                )
+
     async def close(self) -> None:
-        """Cancel TTS worker on session teardown (WS disconnect)."""
+        """Cancel TTS worker on session teardown (WS disconnect).
+
+        Running ask_anima delegation tasks are deliberately NOT cancelled —
+        they keep the full-agent loop going and the result is persisted in the
+        conversation by ``process_message`` itself. The watcher (self-turn)
+        is stopped because the WS is gone.
+        """
+        self._closed = True
+        watcher = self._delegation_watcher
+        self._delegation_watcher = None
+        if watcher is not None and not watcher.done():
+            watcher.cancel()
+            try:
+                await watcher
+            except (asyncio.CancelledError, Exception):
+                pass
         self._interrupted = True
         self._clear_tts_queue()
         await self._stop_tts_worker()

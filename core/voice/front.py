@@ -13,9 +13,10 @@ agent loop (large-model TTFT regression).  Tools are not used yet; the
 
 from __future__ import annotations
 
+import json
 import logging
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import litellm
@@ -25,6 +26,35 @@ logger = logging.getLogger(__name__)
 _DEFAULT_MAX_TOKENS = 2048
 _DEFAULT_TEMPERATURE = 0.7
 _HEALTH_TIMEOUT = 5.0
+
+# Maximum number of tool-return rounds before the stream stops retrying
+# (initial call + 2 tool rounds).
+_MAX_TOOL_ROUNDS = 2
+
+# OpenAI tool schema exposed to the front model. The front lane itself knows
+# nothing about the supervisor: executing the tool is delegated to an
+# injected ``tool_executor`` callback so PR-3's async delegation can stay
+# in ``core/voice/session.py``.
+ASK_ANIMA_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "ask_anima",
+        "description": (
+            "時間のかかる作業・ツール実行・記憶の検索保存・タスク化・調査・実装などを、"
+            "自分自身の本体（フルエージェント）に依頼する。会話で即答できないことはこれで依頼する"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "request": {
+                    "type": "string",
+                    "description": "本体に依頼する内容（自然言語）",
+                }
+            },
+            "required": ["request"],
+        },
+    },
+}
 
 # Matches the emotion tag the voice-mode rules require, e.g.
 # ``<!-- emotion: {"emotion": "smile"} -->``.
@@ -60,6 +90,7 @@ class VoiceFrontLane:
         temperature: float = _DEFAULT_TEMPERATURE,
         timeout: float = 120.0,
         num_retries: int = 1,
+        tool_executor: Callable[[str, dict[str, Any]], str] | None = None,
     ) -> None:
         self._model = model
         self._api_base = (api_base or "").rstrip("/")
@@ -68,6 +99,7 @@ class VoiceFrontLane:
         self._temperature = temperature
         self._timeout = timeout
         self._num_retries = num_retries
+        self._tool_executor = tool_executor
         self._history: list[dict[str, str]] = []
         self._last_full_text = ""
 
@@ -119,12 +151,25 @@ class VoiceFrontLane:
         user_text: str,
         *,
         tools: list[dict[str, Any]] | None = None,
+        tool_executor: Callable[[str, dict[str, Any]], str] | None = None,
     ) -> AsyncIterator[str]:
         """Send a user turn through the front lane and yield text deltas.
 
-        The assistant reply is appended to the in-session history so the
-        next turn keeps conversational context.
+        If the model emits a ``tool_calls`` finish (e.g. ``ask_anima``), the
+        injected ``tool_executor`` is invoked per tool call, the ``role:"tool"``
+        result is appended, and the completion is retried (up to
+        ``_MAX_TOOL_ROUNDS`` extra rounds) so the model can give its own
+        spoken answer. Text deltas are still yielded as they arrive, so the
+        caller's interface is unchanged. The final assistant reply is
+        appended to the in-session history.
+
+        Args:
+            user_text: The user's spoken turn.
+            tools: Optional OpenAI tool schemas to expose.
+            tool_executor: Callable ``(name, args) -> str`` for tool
+                execution. Falls back to the value passed to ``__init__``.
         """
+        executor = tool_executor or getattr(self, "_tool_executor", None)
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": self._system_prompt}
         ]
@@ -145,22 +190,93 @@ class VoiceFrontLane:
         if tools:
             kwargs["tools"] = tools
 
-        response = await litellm.acompletion(**kwargs)
+        emitted: list[str] = []
+        for _round in range(_MAX_TOOL_ROUNDS + 1):
+            kwargs["messages"] = messages
+            response = await litellm.acompletion(**kwargs)
 
-        chunks: list[str] = []
-        async for chunk in response:
-            if chunk is None:
-                continue
-            choices = getattr(chunk, "choices", None)
-            if not choices:
-                continue
-            delta = getattr(choices[0], "delta", None)
-            content = getattr(delta, "content", None) if delta is not None else None
-            if content:
-                chunks.append(content)
-                yield content
+            chunks: list[str] = []
+            tool_calls: dict[int, dict[str, str]] = {}
+            finish_reason: str | None = None
+            async for chunk in response:
+                if chunk is None:
+                    continue
+                choices = getattr(chunk, "choices", None)
+                if not choices:
+                    continue
+                choice = choices[0]
+                delta = getattr(choice, "delta", None)
+                if delta is None:
+                    continue
+                content = getattr(delta, "content", None)
+                if content:
+                    chunks.append(content)
+                    emitted.append(content)
+                    yield content
+                finish_reason = getattr(choice, "finish_reason", None)
+                for tc in getattr(delta, "tool_calls", None) or []:
+                    idx = int(getattr(tc, "index", 0) or 0)
+                    entry = tool_calls.setdefault(
+                        idx, {"id": "", "name": "", "arguments": ""}
+                    )
+                    if getattr(tc, "id", None):
+                        entry["id"] = tc.id
+                    fn = getattr(tc, "function", None)
+                    if fn is None:
+                        continue
+                    if getattr(fn, "name", None):
+                        entry["name"] += fn.name
+                    if getattr(fn, "arguments", None):
+                        entry["arguments"] += fn.arguments
 
-        full_text = "".join(chunks)
+            full_tool_text = "".join(chunks)
+            if finish_reason == "tool_calls" and tool_calls and executor:
+                tool_call_list: list[dict[str, Any]] = []
+                for idx in sorted(tool_calls):
+                    tcd = tool_calls[idx]
+                    tool_call_list.append(
+                        {
+                            "id": tcd["id"] or f"call_{idx}",
+                            "type": "function",
+                            "function": {
+                                "name": tcd["name"],
+                                "arguments": tcd["arguments"],
+                            },
+                        }
+                    )
+                assistant_msg: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": full_tool_text or None,
+                    "tool_calls": tool_call_list,
+                }
+                messages.append(assistant_msg)
+                for tcd in tool_call_list:
+                    try:
+                        args = json.loads(tcd["function"]["arguments"] or "{}")
+                        if not isinstance(args, dict):
+                            args = {}
+                    except json.JSONDecodeError:
+                        args = {}
+                    try:
+                        result = executor(tcd["function"]["name"], args)
+                        if not isinstance(result, str):
+                            result = str(result)
+                    except Exception as exc:  # keep the conversation going
+                        logger.exception(
+                            "tool_executor failed for %s", tcd["function"]["name"]
+                        )
+                        result = f"error: {exc}"
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tcd["id"],
+                            "content": result,
+                        }
+                    )
+                continue
+            break
+
+        full_text = "".join(emitted)
         self._history.append({"role": "user", "content": user_text})
         self._history.append({"role": "assistant", "content": full_text})
         self._last_full_text = full_text
