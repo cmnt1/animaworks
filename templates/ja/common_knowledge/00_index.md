@@ -62,17 +62,6 @@ Heartbeat / Cron / チーム設計 / 記憶 / コスト最適化の要点が1枚
 | 困りごと | 参照先 |
 |---------|--------|
 | ツールの使い方・呼び出し方がわからない | `reference/operations/tool-usage-overview.md` |
-| 目的別にチーム（ロール・ハンドオフ）を設計したい | `team-design/guide.md` |
-| 法務チーム（契約レビュー・監査・検証）を運用したい | `team-design/legal/team.md` |
-| 財務チーム（分析・検証・データ収集）を運用したい | `team-design/finance/team.md` |
-| トレーディングチーム（bot運用・P&L検証・リスク管理）を運用したい | `team-design/trading/team.md` |
-| 営業・マーケティングチーム（コンテンツ制作・リード開発・パイプライン管理）を運用したい | `team-design/sales-marketing/team.md` |
-| 秘書（情報トリアージ・代行送信・書類作成・スケジュール管理）を運用したい | `team-design/secretary/team.md` |
-| COO（事業統括: 委任判断・部門監視・KPI集計・経営報告・部門横断調整）を運用したい | `team-design/coo/team.md` |
-| CS（カスタマーサクセス）チーム（オンボーディング・ヘルス分析・リテンション・VoC集約）を運用したい | `team-design/customer-success/team.md` |
-| 経営企画チーム（戦略立案・事業分析・独立検証・KPI追跡）を運用したい | `team-design/corporate-planning/team.md` |
-| インフラ/SRE チーム（定期監視・異常検知・エスカレーション・集約報告）を運用したい | `team-design/infrastructure/team.md` |
-| 推奨組織図・部門配置・導入順序を知りたい | `team-design/org-chart-template.md` |
 | モデルの選び方・変更方法がわからない | `reference/operations/model-guide.md` ※技術リファレンス |
 | Mode S の認証方式を変えたい | `reference/operations/mode-s-auth-guide.md` ※技術リファレンス |
 | 音声チャットの設定・使い方がわからない | `reference/operations/voice-chat-guide.md` ※技術リファレンス |
@@ -157,43 +146,6 @@ Heartbeat / Cron / チーム設計 / 記憶 / コスト最適化の要点が1枚
 | `mode-s-auth-guide.md` | → `reference/operations/mode-s-auth-guide.md` に移動。Mode S 認証モード設定ガイド |
 | `voice-chat-guide.md` | → `reference/operations/voice-chat-guide.md` に移動。音声チャットガイド |
 
-### team-design/ — チーム設計（目的別）
-
-| ファイル | 概要 |
-|---------|------|
-| `guide.md` | Anima チーム設計の基本原則（役割分離・ハンドオフ・スケール・兼務） |
-| `development/team.md` | 開発フルチーム — 4ロール（PdM・Engineer・Reviewer・Tester）・ハンドオフ・スケーリング |
-| `legal/team.md` | 法務フルチーム — 3ロール（Director・Verifier・Researcher）・carry-forward tracker・スケーリング |
-| `finance/team.md` | 財務フルチーム — 4ロール（Director・Auditor・Analyst・Collector）・Variance Tracker・Data Lineage・スケーリング |
-| `trading/team.md` | トレーディングフルチーム — 4ロール（Director・Analyst・Engineer・Auditor）・Performance Tracker・Ops Issue Tracker・PDCA対応・スケーリング |
-| `sales-marketing/team.md` | 営業・マーケティングフルチーム — 4ロール（Director・Creator・SDR・Researcher）・Campaign Pipeline Tracker・Deal Pipeline Tracker・2実行モード・スケーリング |
-| `secretary/team.md` | 秘書チーム（人間直属）— 1ロール（Secretary）・情報トリアージ・代行送信・書類作成（machine）・スケーリング |
-| `coo/team.md` | COO（事業統括）チーム（人間直属）— 1ロール（COO）・委任判断・部門監視・KPI集計・経営報告（machine）・スケーリング |
-| `customer-success/team.md` | CS（カスタマーサクセス）フルチーム — 2ロール（CS Lead・Support）・Customer Health Score Tracker・VoC レポート・4フェーズ machine 活用・スケーリング |
-| `corporate-planning/team.md` | 経営企画フルチーム — 3ロール（Strategist・Analyst・Coordinator）・Strategic Initiative Tracker・独立検証（メタ検証）・スケーリング |
-| `infrastructure/team.md` | インフラ/SRE 監視チーム — 2ロール（Infra Director・Monitor）・監視チームパターン（machine 不使用）・報告テンプレート3種・3段階エスカレーション・スケーリング |
-| `org-chart-template.md` | 組織図テンプレート — 推奨階層（スタッフ/ライン分離）・部門間ハンドオフマップ・段階的導入ガイド |
-
-ロール別テンプレート: `team-design/development/{pdm,engineer,reviewer,tester}/` — `injection.template.md`, `checklist.md`
-
-ロール別テンプレート: `team-design/legal/{director,verifier,researcher}/` — `injection.template.md`, `machine.md`（該当ロールのみ）, `checklist.md`
-
-ロール別テンプレート: `team-design/finance/{director,auditor,analyst,collector}/` — `injection.template.md`, `machine.md`（該当ロールのみ）, `checklist.md`
-
-ロール別テンプレート: `team-design/trading/{director,analyst,engineer,auditor}/` — `injection.template.md`, `machine.md`, `checklist.md`
-
-ロール別テンプレート: `team-design/sales-marketing/{director,creator,sdr,researcher}/` — `injection.template.md`, `machine.md`（researcher 除く）, `checklist.md`
-
-ロール別テンプレート: `team-design/secretary/secretary/` — `injection.template.md`, `machine.md`, `checklist.md`
-
-ロール別テンプレート: `team-design/coo/coo/` — `injection.template.md`, `machine.md`, `checklist.md`
-
-ロール別テンプレート: `team-design/customer-success/{cs-lead,support}/` — `injection.template.md`, `machine.md`（CS Lead のみ）, `checklist.md`
-
-ロール別テンプレート: `team-design/corporate-planning/{strategist,analyst,coordinator}/` — `injection.template.md`, `machine.md`, `checklist.md`
-
-ロール別テンプレート: `team-design/infrastructure/{director,monitor}/` — `injection.template.md`, `checklist.md`（machine.md なし）
-
 ### security/ — セキュリティ
 
 | ファイル | 概要 |
@@ -251,17 +203,6 @@ Heartbeat / Cron / チーム設計 / 記憶 / コスト最適化の要点が1枚
 | ツール, animaworks-tool, MCP, skill | `reference/operations/tool-usage-overview.md` |
 | 実行モード, S-mode, C-mode, D-mode, G-mode, A-mode, B-mode | `reference/operations/tool-usage-overview.md` |
 | バックグラウンド, submit, 長時間ツール | `operations/background-tasks.md` |
-| チーム設計, 役割分離, 開発チーム, PdM, ハンドオフ | `team-design/guide.md`, `team-design/development/team.md` |
-| 法務, 契約, リスク, 監査, 検証, carry-forward, 楽観バイアス | `team-design/legal/team.md` |
-| 財務, 分析, 試算表, ポートフォリオ, 検算, variance tracker, data lineage | `team-design/finance/team.md` |
-| トレーディング, bot, P&L, ドローダウン, バックテスト, PDCA, performance tracker, ops issue tracker, リスク監査 | `team-design/trading/team.md` |
-| 営業, マーケティング, コンテンツ, リード, ナーチャリング, BANT, パイプライン, campaign tracker, deal tracker, SDR, Brand Voice | `team-design/sales-marketing/team.md` |
-| 秘書, secretary, トリアージ, 代行送信, 書類作成, スケジュール, 人間直属, call_human, 情報分配 | `team-design/secretary/team.md` |
-| COO, 事業統括, 委任判断, 部門監視, KPI, 経営報告, スパンオブコントロール, 部門横断調整, 組織分析 | `team-design/coo/team.md` |
-| CS, カスタマーサクセス, オンボーディング, ヘルススコア, チャーン, リテンション, VoC, NPS, CSAT, cs-handoff, Health Tracker | `team-design/customer-success/team.md` |
-| 経営企画, 戦略, OKR, KPI, 事業分析, イニシアチブ, Strategic Initiative Tracker, SWOT, PEST, 独立検証, メタ検証 | `team-design/corporate-planning/team.md` |
-| インフラ, SRE, 監視, モニタリング, NOC, 異常検知, エスカレーション, 集約報告, Infra Director, Monitor, 報告テンプレート, cron, heartbeat | `team-design/infrastructure/team.md` |
-| 組織図, org-chart, 部門配置, 導入順序, ハンドオフマップ, スタッフ, ライン, 段階的導入 | `team-design/org-chart-template.md` |
 | ワークスペース, workspace, 作業ディレクトリ, working_directory | `operations/workspace-guide.md` |
 | モデル, models.json, credential, set-model, コンテキストウィンドウ | `reference/operations/model-guide.md` |
 | background_model, バックグラウンドモデル, コスト最適化 | `reference/operations/model-guide.md` |

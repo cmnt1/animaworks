@@ -562,6 +562,48 @@ class TestMigrationSteps:
         assert stale.exists()
         assert any("Would remove stale" in d for d in result.details)
 
+    def test_step_remove_team_design_removes_deployed_trees(self, data_dir: Path) -> None:
+        from core.migrations.registry import StepResult
+        from core.migrations.steps import step_remove_team_design
+
+        top = data_dir / "common_knowledge" / "team-design" / "legal"
+        top.mkdir(parents=True)
+        (top / "team.md").write_text("legacy", encoding="utf-8")
+        per_anima = data_dir / "animas" / "mei" / "common_knowledge" / "team-design"
+        per_anima.mkdir(parents=True)
+        (per_anima / "guide.md").write_text("legacy", encoding="utf-8")
+        keep = data_dir / "animas" / "mei" / "common_knowledge" / "operations"
+        keep.mkdir(parents=True)
+        (keep / "keep.md").write_text("keep", encoding="utf-8")
+
+        with patch(
+            "core.migrations.steps.step_common_knowledge_resync",
+            return_value=StepResult(changed=0, skipped=0, details=[]),
+        ):
+            result = step_remove_team_design(data_dir, dry_run=False, verbose=True)
+
+        assert not top.parent.exists()
+        assert not per_anima.exists()
+        assert (keep / "keep.md").exists()
+        assert result.changed >= 2
+
+    def test_step_remove_team_design_dry_run_keeps_trees(self, data_dir: Path) -> None:
+        from core.migrations.registry import StepResult
+        from core.migrations.steps import step_remove_team_design
+
+        tree = data_dir / "common_knowledge" / "team-design"
+        tree.mkdir(parents=True)
+        (tree / "guide.md").write_text("legacy", encoding="utf-8")
+
+        with patch(
+            "core.migrations.steps.step_common_knowledge_resync",
+            return_value=StepResult(changed=0, skipped=0, details=[]),
+        ):
+            result = step_remove_team_design(data_dir, dry_run=True, verbose=True)
+
+        assert tree.exists()
+        assert any("Would remove" in d for d in result.details)
+
 
 # ── CLI tests ───────────────────────────────────────────────
 
