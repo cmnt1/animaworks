@@ -1519,11 +1519,7 @@ def step_remove_team_design(data_dir: Path, dry_run: bool, verbose: bool) -> Ste
     if result.error:
         errors.append(f"step_common_knowledge_resync: {result.error}")
 
-    targets = sorted(
-        p
-        for p in data_dir.rglob("team-design")
-        if p.is_dir() and p.parent.name == "common_knowledge"
-    )
+    targets = sorted(p for p in data_dir.rglob("team-design") if p.is_dir() and p.parent.name == "common_knowledge")
     for path in targets:
         rel = path.relative_to(data_dir)
         if dry_run:
