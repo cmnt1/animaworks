@@ -141,7 +141,7 @@ class TestFrontLaneToolCall:
             ]
 
         assert "".join(got) == "やっておくね"
-        executor.assert_called_once_with("ask_anima", {"request": "横浜の天気を調べて"})
+        executor.assert_called_once_with("横浜の天気を調べて")
         # second (follow-up) completion carries the tool result message
         assert mock_ac.await_count == 2
         second_messages = mock_ac.await_args_list[1].kwargs["messages"]

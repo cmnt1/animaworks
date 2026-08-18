@@ -91,7 +91,7 @@ class VoiceFrontLane:
         timeout: float = 120.0,
         num_retries: int = 1,
         api_key: str = "local",
-        tool_executor: Callable[[str, dict[str, Any]], str] | None = None,
+        tool_executor: Callable[[str], str] | None = None,
     ) -> None:
         self._model = model
         self._api_base = (api_base or "").rstrip("/")
@@ -155,7 +155,7 @@ class VoiceFrontLane:
         user_text: str,
         *,
         tools: list[dict[str, Any]] | None = None,
-        tool_executor: Callable[[str, dict[str, Any]], str] | None = None,
+        tool_executor: Callable[[str], str] | None = None,
     ) -> AsyncIterator[str]:
         """Send a user turn through the front lane and yield text deltas.
 
@@ -170,8 +170,10 @@ class VoiceFrontLane:
         Args:
             user_text: The user's spoken turn.
             tools: Optional OpenAI tool schemas to expose.
-            tool_executor: Callable ``(name, args) -> str`` for tool
-                execution. Falls back to the value passed to ``__init__``.
+            tool_executor: Callable ``(request_text) -> str`` receiving the
+                tool call's ``request`` argument (or the raw arguments string
+                when JSON parsing fails). Falls back to the value passed to
+                ``__init__``.
         """
         executor = tool_executor or getattr(self, "_tool_executor", None)
         messages: list[dict[str, Any]] = [{"role": "system", "content": self._system_prompt}]
@@ -252,14 +254,15 @@ class VoiceFrontLane:
                 }
                 messages.append(assistant_msg)
                 for tcd in tool_call_list:
+                    raw_args = tcd["function"]["arguments"] or ""
                     try:
-                        args = json.loads(tcd["function"]["arguments"] or "{}")
-                        if not isinstance(args, dict):
-                            args = {}
+                        args = json.loads(raw_args or "{}")
+                        request_text = args.get("request", "") if isinstance(args, dict) else ""
                     except json.JSONDecodeError:
-                        args = {}
+                        # small models sometimes emit free text instead of JSON
+                        request_text = raw_args
                     try:
-                        result = executor(tcd["function"]["name"], args)
+                        result = executor(str(request_text))
                         if not isinstance(result, str):
                             result = str(result)
                     except Exception as exc:  # keep the conversation going

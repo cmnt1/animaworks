@@ -723,6 +723,7 @@ class VoiceSession:
     def _ask_anima(self, request: str) -> str:
         """Handle ``ask_anima`` from the front lane (synchronous tool).
 
+        Matches the ``tool_executor`` interface ``(request_text) -> str``.
         Fires a fire-and-forget ``asyncio.Task`` that runs the request through
         the full agent loop (``process_message``) and returns an ACK string
         immediately so the front conversation is not blocked. At most
