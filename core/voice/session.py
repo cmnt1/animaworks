@@ -31,9 +31,18 @@ SILENCE_RMS_THRESHOLD = 0.008
 # buffer more text when synthesis is faster than realtime.
 TTS_QUEUE_MAXSIZE = 8
 
+# Concurrency cap for fire-and-forget ``ask_anima`` delegation. When this
+# many jobs are still running, further requests get a "please wait" ACK.
+MAX_ASK_ANIMA_CONCURRENT = 2
+# Truncation length for the result text surfaced back to the front lane.
+ASK_ANIMA_MAX_RESULT_CHARS = 1000
+# Marker prepended to the delegated request so the full-agent loop knows the
+# message came from the voice front lane.
+ASK_ANIMA_DELEGATION_NOTE = "\n\n[voice front からの委譲]"
+
 VOICE_MODE_SUFFIX = (
     "\n\n[voice-mode: 音声会話です。感情が伝わる話し言葉で200文字以内で簡潔に回答してください。"
-    "絵文字を使ってよい（字幕表示用）。"
+    "感情を表す絵文字を必ず入れてください（TTSの感情表現の精度が上がります）。"
     "Markdown記法（見出し・太字・リスト・コードブロック等）は使わないでください。"
     "調査・実装・資料作成など時間のかかる依頼はその場で実行せず、自分宛てにタスクを作成して、"
     "『タスクに積んでやっておきますね』のように短く返答してください。"
@@ -95,8 +104,12 @@ _RE_EMOJI = re.compile(
 )
 
 
-def sanitize_for_tts(text: str) -> str:
-    """Strip Markdown, HTML comments, and emoji for TTS consumption."""
+def sanitize_for_tts(text: str, *, keep_emoji: bool = False) -> str:
+    """Strip Markdown and HTML comments for TTS consumption.
+
+    Emoji are stripped by default; pass ``keep_emoji=True`` for engines
+    (Irodori) that read them as emotion cues and speak better with them.
+    """
     text = _RE_HTML_COMMENT.sub("", text)
     text = _RE_HTML_COMMENT_OPEN.sub("", text)
     text = _RE_MD_CODE_BLOCK.sub("", text)
@@ -109,7 +122,8 @@ def sanitize_for_tts(text: str) -> str:
     text = _RE_MD_LIST_NUMBERED.sub("", text)
     text = _RE_MD_TABLE_PIPE.sub("", text)
     text = _RE_MD_HR.sub("", text)
-    text = _RE_EMOJI.sub("", text)
+    if not keep_emoji:
+        text = _RE_EMOJI.sub("", text)
     return text.strip()
 
 
@@ -149,6 +163,8 @@ class VoiceSession:
         tts_config: TTSConfig,
         supervisor: Any,
         voice_config: Any,
+        front_model: str | None = None,
+        front_api_base: str | None = None,
     ) -> None:
         """Initialize voice session.
 
@@ -160,6 +176,10 @@ class VoiceSession:
             tts_config: Per-session TTS config.
             supervisor: ProcessSupervisor for IPC.
             voice_config: Voice configuration (stt_refine_enabled, etc.).
+            front_model: Optional voice front lane model name. Falls back to
+                ``front_model`` on *voice_config* (None → legacy path).
+            front_api_base: Optional OpenAI-compatible base URL for the front
+                lane. Falls back to ``front_api_base`` on *voice_config*.
         """
         self._anima_name = anima_name
         self._ws = ws
@@ -186,6 +206,23 @@ class VoiceSession:
         self._consecutive_tts_failures: int = 0
         self._tts_queue: asyncio.Queue[str] | None = None
         self._tts_worker: asyncio.Task[None] | None = None
+
+        # ask_anima delegation state (PR-3). Queues/task are created lazily
+        # on first use (inside the running event loop).
+        self._delegation_jobs: dict[int, asyncio.Task] = {}
+        self._delegation_job_counter: int = 0
+        self._delegation_results: asyncio.Queue[str] | None = None
+        self._delegation_done: asyncio.Queue[None] | None = None
+        self._delegation_watcher: asyncio.Task | None = None
+        self._closed = False
+
+        if front_model is None:
+            front_model = getattr(voice_config, "front_model", None) or None
+        if front_api_base is None:
+            front_api_base = getattr(voice_config, "front_api_base", None) or None
+        self._front_model = front_model or None
+        self._front_api_base = front_api_base or None
+        self._front_lane: Any | None = None
 
     async def handle_audio_chunk(self, data: bytes) -> None:
         """Receive audio chunk from browser, accumulate in buffer and feed the
@@ -364,6 +401,22 @@ class VoiceSession:
         if tts_ok:
             await self._start_tts_worker()
         try:
+            # Voice front lane: when configured and reachable, handle the turn
+            # here and skip the full agent loop (fallback on health failure).
+            if self._front_model:
+                lane = self._get_or_create_front_lane()
+                try:
+                    front_ok = await lane.check_health()
+                except Exception:
+                    front_ok = False
+                if front_ok:
+                    response_done_sent = await self._run_front_turn(lane, text, from_person, tts_ok)
+                    return
+                logger.warning(
+                    "voice front unavailable (%s) — falling back to process_message",
+                    self._front_model,
+                )
+
             async for ipc_response in self._supervisor.send_request_stream(
                 anima_name=self._anima_name,
                 method="process_message",
@@ -557,8 +610,252 @@ class VoiceSession:
         await self._ws.send_json({"type": "emotion", "emotion": emotion})
         await self._ws.send_json({"type": "response_done", "emotion": emotion})
 
+    # ── voice front lane ───────────────────────────────────────────
+
+    def _get_or_create_front_lane(self) -> Any:
+        """Lazily build and cache the single per-session voice front lane."""
+        if self._front_lane is None:
+            from core.paths import get_animas_dir
+            from core.prompt.builder import build_voice_front_prompt
+            from core.voice.front import VoiceFrontLane
+
+            anima_dir = get_animas_dir() / self._anima_name
+            system_prompt = build_voice_front_prompt(
+                anima_dir,
+                anima_name=self._anima_name,
+            )
+            self._front_lane = VoiceFrontLane(
+                model=self._front_model,
+                api_base=self._front_api_base or "",
+                system_prompt=system_prompt,
+            )
+        return self._front_lane
+
+    async def _emit_text_delta(self, delta: str, tts_ok: bool) -> None:
+        """Send a text delta to the client and feed the TTS sentence splitter."""
+        await self._ws.send_json({"type": "response_text", "text": delta, "done": False})
+        if tts_ok:
+            sentences = self._splitter.feed(delta)
+            for sentence in sentences:
+                if self._interrupted:
+                    break
+                await self._enqueue_tts(sentence)
+
+    def _record_front_conversation(self, user_text: str, response_text: str, from_person: str) -> None:
+        """Persist the front turn into the anima's default conversation.
+
+        Reuses the existing ``ConversationMemory`` record path so the turn is
+        visible from the text chat; failures are non-fatal (front chat must
+        stay available even if recording is unavailable).  The user turn uses
+        ``from_person`` as the role, matching the existing chat path.
+
+        Concurrency note: this runs in the *server* process and writes
+        ``state/conversation.json`` via read-modify-write, so it can race
+        with writes from the anima's own process (heartbeat etc.).  There is
+        currently no supervisor IPC method to append a conversation turn from
+        the server side, so the direct write is kept and the risk documented.
+        """
+        from core.memory.conversation import ConversationMemory
+
+        try:
+            from core.paths import get_animas_dir
+
+            conversation = ConversationMemory(get_animas_dir() / self._anima_name, None)
+            conversation.append_turn(from_person or "human", user_text)
+            conversation.append_turn("assistant", response_text)
+            conversation.save()
+        except Exception:
+            logger.debug("Failed to persist front conversation (%s)", self._anima_name, exc_info=True)
+
+    async def _run_front_turn(self, lane: Any, text: str, from_person: str, tts_ok: bool) -> bool:
+        """Stream one front-lane turn into TTS + WebSocket, then finish.
+
+        Returns ``True`` when the terminal response frames were emitted.
+        On interrupt the turn stops immediately (no fallback); the caller's
+        ``finally`` block emits the neutral terminal frames instead.
+        """
+        from core.voice.front import ASK_ANIMA_TOOL, extract_emotion
+
+        results = self._drain_delegation_results()
+        if results:
+            text = f"{results}\n\n{text}"
+
+        lane.reset_turn()
+        full: list[str] = []
+        try:
+            async for delta in lane.stream(
+                text,
+                tools=[ASK_ANIMA_TOOL],
+                tool_executor=self._ask_anima,
+            ):
+                if self._interrupted:
+                    return False
+                await self._emit_text_delta(delta, tts_ok)
+                full.append(delta)
+        except Exception as e:
+            logger.exception("Voice front stream error: %s", e)
+            await self._send_error(str(e))
+            return False
+        if self._interrupted:
+            return False
+        remaining = self._splitter.flush()
+        if remaining and tts_ok:
+            await self._enqueue_tts(remaining)
+        full_text = "".join(full)
+        self._record_front_conversation(text, full_text, from_person)
+        emotion = extract_emotion(full_text)
+        await self._finish_tts_and_response_done(emotion)
+        return True
+
+    # ── ask_anima async delegation (PR-3) ─────────────────────────
+
+    def _ensure_delegation_state(self) -> None:
+        """Create delegation queues and start the result watcher once."""
+        if self._delegation_results is None:
+            self._delegation_results = asyncio.Queue()
+            self._delegation_done = asyncio.Queue()
+        if self._delegation_watcher is None or self._delegation_watcher.done():
+            self._delegation_watcher = asyncio.create_task(
+                self._delegation_watcher_loop(),
+                name=f"ask-anima-watcher-{self._anima_name}",
+            )
+
+    def _ask_anima(self, request: str) -> str:
+        """Handle ``ask_anima`` from the front lane (synchronous tool).
+
+        Fires a fire-and-forget ``asyncio.Task`` that runs the request through
+        the full agent loop (``process_message``) and returns an ACK string
+        immediately so the front conversation is not blocked. At most
+        ``MAX_ASK_ANIMA_CONCURRENT`` jobs run at once.
+        """
+        request = (request or "").strip()
+        if not request:
+            request = "（依頼内容が指定されていません）"
+        if len(self._delegation_jobs) >= MAX_ASK_ANIMA_CONCURRENT:
+            return f"実行中の依頼が{MAX_ASK_ANIMA_CONCURRENT}件ある。完了を待ってほしい"
+        self._ensure_delegation_state()
+        self._delegation_job_counter += 1
+        job = self._delegation_job_counter
+        task = asyncio.create_task(
+            self._run_ask_anima_job(job, request),
+            name=f"ask-anima-{self._anima_name}-{job}",
+        )
+        self._delegation_jobs[job] = task
+        return f"受理しました (job {job})。完了したら知らせます"
+
+    async def _run_ask_anima_job(self, job: int, request: str) -> None:
+        """Consume the full-agent stream for one delegated request and surface
+        the result back to the front lane's reflow queue."""
+        result_text = ""
+        try:
+            async for resp in self._supervisor.send_request_stream(
+                anima_name=self._anima_name,
+                method="process_message",
+                params={
+                    "message": request + ASK_ANIMA_DELEGATION_NOTE,
+                    "from_person": "human",
+                    "intent": "",
+                    "stream": True,
+                    # Full-capability lane: the delegated job must NOT be
+                    # downgraded by voice_mode (voice_thinking_effort etc.).
+                    "voice_mode": False,
+                    "images": [],
+                    "attachment_paths": [],
+                },
+                timeout=IPC_STREAM_TIMEOUT,
+            ):
+                if getattr(resp, "done", False):
+                    result_data = getattr(resp, "result", None) or {}
+                    cycle_result = result_data.get("cycle_result", {}) or {}
+                    summary = str(cycle_result.get("summary", "") or "")
+                    if summary:
+                        result_text = summary
+                elif getattr(resp, "chunk", None):
+                    try:
+                        cd = json.loads(resp.chunk)
+                    except (json.JSONDecodeError, TypeError):
+                        cd = {}
+                    if cd.get("type") == "cycle_done":
+                        cycle_result = cd.get("cycle_result", {}) or {}
+                        summary = str(cycle_result.get("summary", "") or "")
+                        if summary:
+                            result_text = summary
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # surface the failure so front can report it
+            logger.exception("ask_anima job %s failed (%s): %s", job, self._anima_name, exc)
+            result_text = "処理に失敗しました。詳細はログを確認してほしい"
+        finally:
+            self._delegation_jobs.pop(job, None)
+            message = f"[ask_anima完了 job {job}: {result_text[:ASK_ANIMA_MAX_RESULT_CHARS]}]"
+            if self._delegation_results is not None:
+                await self._delegation_results.put(message)
+            if self._delegation_done is not None:
+                await self._delegation_done.put(None)
+
+    def _drain_delegation_results(self) -> str:
+        """Collect all completed ask_anima results for injection into the next
+        user turn. Returns an empty string when nothing is pending."""
+        if self._delegation_results is None:
+            return ""
+        parts: list[str] = []
+        while True:
+            try:
+                parts.append(self._delegation_results.get_nowait())
+            except asyncio.QueueEmpty:
+                break
+        return "\n".join(parts)
+
+    async def _delegation_watcher_loop(self) -> None:
+        """Proactively run a self-turn when an ask_anima result completes while
+        no user turn / TTS playback is in progress, so the front reports the
+        outcome in its own words. If a user turn is active, results stay in
+        the queue for the next user turn instead (no double-reporting)."""
+        while not self._closed:
+            try:
+                await self._delegation_done.get()
+            except asyncio.CancelledError:
+                return
+            # Let a queued user turn (which also drains results) win if it is
+            # about to start, avoiding a self-turn in the same breath.
+            await asyncio.sleep(0.05)
+            if self._processing or self._tts_playing:
+                continue
+            if self._closed or self._front_lane is None or not self._front_model:
+                continue
+            pref = self._drain_delegation_results()
+            if not pref:
+                continue
+            lane = self._front_lane
+            try:
+                ok = await lane.check_health()
+            except Exception:
+                ok = False
+            if not ok:
+                continue
+            synthetic = f"{pref} この結果を自分の言葉で短く報告して"
+            try:
+                await self._run_front_turn(lane, synthetic, "human", await self._check_tts_health())
+            except Exception:
+                logger.exception("ask_anima self-turn failed (%s)", self._anima_name)
+
     async def close(self) -> None:
-        """Cancel TTS worker on session teardown (WS disconnect)."""
+        """Cancel TTS worker on session teardown (WS disconnect).
+
+        Running ask_anima delegation tasks are deliberately NOT cancelled —
+        they keep the full-agent loop going and the result is persisted in the
+        conversation by ``process_message`` itself. The watcher (self-turn)
+        is stopped because the WS is gone.
+        """
+        self._closed = True
+        watcher = self._delegation_watcher
+        self._delegation_watcher = None
+        if watcher is not None and not watcher.done():
+            watcher.cancel()
+            try:
+                await watcher
+            except (asyncio.CancelledError, Exception):
+                pass
         self._interrupted = True
         self._clear_tts_queue()
         await self._stop_tts_worker()
@@ -573,7 +870,8 @@ class VoiceSession:
 
     async def _synthesize_and_send(self, text: str) -> None:
         """TTS synthesize a sentence and send audio to client."""
-        text = sanitize_for_tts(text)
+        keep_emoji = getattr(self._tts_config, "provider", "") == "irodori"
+        text = sanitize_for_tts(text, keep_emoji=keep_emoji)
         if not text:
             return
         try:

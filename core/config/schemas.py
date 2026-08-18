@@ -1026,6 +1026,10 @@ class VoiceConfig(BaseModel):
     stt_refine_enabled: bool = False
     default_tts_provider: str = "voicevox"
     audio_format: str = "wav"
+    front_model: str | None = None
+    """voice front lane model (e.g. ``openai/qwen3.6-35b-a3b``). None = legacy path."""
+    front_api_base: str | None = None
+    """OpenAI-compatible base URL for the voice front lane. None = legacy path."""
     voicevox: VoicevoxConfig = VoicevoxConfig()
     elevenlabs: ElevenLabsVoiceConfig = ElevenLabsVoiceConfig()
     style_bert_vits2: StyleBertVits2Config = StyleBertVits2Config()
