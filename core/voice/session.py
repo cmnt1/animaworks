@@ -148,6 +148,8 @@ class VoiceSession:
         tts_config: TTSConfig,
         supervisor: Any,
         voice_config: Any,
+        front_model: str | None = None,
+        front_api_base: str | None = None,
     ) -> None:
         """Initialize voice session.
 
@@ -159,6 +161,10 @@ class VoiceSession:
             tts_config: Per-session TTS config.
             supervisor: ProcessSupervisor for IPC.
             voice_config: Voice configuration (stt_refine_enabled, etc.).
+            front_model: Optional voice front lane model name. Falls back to
+                ``front_model`` on *voice_config* (None → legacy path).
+            front_api_base: Optional OpenAI-compatible base URL for the front
+                lane. Falls back to ``front_api_base`` on *voice_config*.
         """
         self._anima_name = anima_name
         self._ws = ws
@@ -176,6 +182,14 @@ class VoiceSession:
         self._consecutive_tts_failures: int = 0
         self._tts_queue: asyncio.Queue[str] | None = None
         self._tts_worker: asyncio.Task[None] | None = None
+
+        if front_model is None:
+            front_model = getattr(voice_config, "front_model", None) or None
+        if front_api_base is None:
+            front_api_base = getattr(voice_config, "front_api_base", None) or None
+        self._front_model = front_model or None
+        self._front_api_base = front_api_base or None
+        self._front_lane: Any | None = None
 
     async def handle_audio_chunk(self, data: bytes) -> None:
         """Receive audio chunk from browser, accumulate in buffer."""
@@ -288,6 +302,24 @@ class VoiceSession:
         if tts_ok:
             await self._start_tts_worker()
         try:
+            # Voice front lane: when configured and reachable, handle the turn
+            # here and skip the full agent loop (fallback on health failure).
+            if self._front_model:
+                lane = self._get_or_create_front_lane()
+                try:
+                    front_ok = await lane.check_health()
+                except Exception:
+                    front_ok = False
+                if front_ok:
+                    response_done_sent = await self._run_front_turn(
+                        lane, text, from_person, tts_ok
+                    )
+                    return
+                logger.warning(
+                    "voice front unavailable (%s) — falling back to process_message",
+                    self._front_model,
+                )
+
             async for ipc_response in self._supervisor.send_request_stream(
                 anima_name=self._anima_name,
                 method="process_message",
@@ -480,6 +512,97 @@ class VoiceSession:
             await self._drain_tts_queue()
         await self._ws.send_json({"type": "emotion", "emotion": emotion})
         await self._ws.send_json({"type": "response_done", "emotion": emotion})
+
+    # ── voice front lane ───────────────────────────────────────────
+
+    def _get_or_create_front_lane(self) -> Any:
+        """Lazily build and cache the single per-session voice front lane."""
+        if self._front_lane is None:
+            from core.paths import get_animas_dir
+            from core.prompt.builder import build_voice_front_prompt
+            from core.voice.front import VoiceFrontLane
+
+            anima_dir = get_animas_dir() / self._anima_name
+            system_prompt = build_voice_front_prompt(
+                anima_dir,
+                anima_name=self._anima_name,
+            )
+            self._front_lane = VoiceFrontLane(
+                model=self._front_model,
+                api_base=self._front_api_base or "",
+                system_prompt=system_prompt,
+            )
+        return self._front_lane
+
+    async def _emit_text_delta(self, delta: str, tts_ok: bool) -> None:
+        """Send a text delta to the client and feed the TTS sentence splitter."""
+        await self._ws.send_json({"type": "response_text", "text": delta, "done": False})
+        if tts_ok:
+            sentences = self._splitter.feed(delta)
+            for sentence in sentences:
+                if self._interrupted:
+                    break
+                await self._enqueue_tts(sentence)
+
+    def _record_front_conversation(
+        self, user_text: str, response_text: str, from_person: str
+    ) -> None:
+        """Persist the front turn into the anima's default conversation.
+
+        Reuses the existing ``ConversationMemory`` record path so the turn is
+        visible from the text chat; failures are non-fatal (front chat must
+        stay available even if recording is unavailable).  The user turn uses
+        ``from_person`` as the role, matching the existing chat path.
+
+        Concurrency note: this runs in the *server* process and writes
+        ``state/conversation.json`` via read-modify-write, so it can race
+        with writes from the anima's own process (heartbeat etc.).  There is
+        currently no supervisor IPC method to append a conversation turn from
+        the server side, so the direct write is kept and the risk documented.
+        """
+        from core.memory.conversation import ConversationMemory
+
+        try:
+            from core.paths import get_animas_dir
+
+            conversation = ConversationMemory(get_animas_dir() / self._anima_name, None)
+            conversation.append_turn(from_person or "human", user_text)
+            conversation.append_turn("assistant", response_text)
+            conversation.save()
+        except Exception:
+            logger.debug("Failed to persist front conversation (%s)", self._anima_name, exc_info=True)
+
+    async def _run_front_turn(self, lane: Any, text: str, from_person: str, tts_ok: bool) -> bool:
+        """Stream one front-lane turn into TTS + WebSocket, then finish.
+
+        Returns ``True`` when the terminal response frames were emitted.
+        On interrupt the turn stops immediately (no fallback); the caller's
+        ``finally`` block emits the neutral terminal frames instead.
+        """
+        from core.voice.front import extract_emotion
+
+        lane.reset_turn()
+        full: list[str] = []
+        try:
+            async for delta in lane.stream(text):
+                if self._interrupted:
+                    return False
+                await self._emit_text_delta(delta, tts_ok)
+                full.append(delta)
+        except Exception as e:
+            logger.exception("Voice front stream error: %s", e)
+            await self._send_error(str(e))
+            return False
+        if self._interrupted:
+            return False
+        remaining = self._splitter.flush()
+        if remaining and tts_ok:
+            await self._enqueue_tts(remaining)
+        full_text = "".join(full)
+        self._record_front_conversation(text, full_text, from_person)
+        emotion = extract_emotion(full_text)
+        await self._finish_tts_and_response_done(emotion)
+        return True
 
     async def close(self) -> None:
         """Cancel TTS worker on session teardown (WS disconnect)."""

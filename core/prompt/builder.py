@@ -913,6 +913,65 @@ def build_system_prompt(
     return BuildResult(system_prompt=prompt)
 
 
+_VOICE_FRONT_EMOTION_NAMES = (
+    "neutral/smile/laugh/troubled/surprised/thinking/embarrassed"
+)
+
+
+def _read_text_file(path: Path) -> str:
+    """Read a UTF-8 text file, returning empty string on any failure."""
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
+def build_voice_front_prompt(anima_dir: Path, *, anima_name: str | None = None) -> str:
+    """Build a minimal, *fixed* system prompt for the voice front lane.
+
+    The prompt is intentionally static for the whole voice session so the
+    front model's prefix cache stays valid (nothing per-turn like timestamps
+    or current state is injected).  Only persona / speciality material and
+    the fixed voice-mode speaking rules are included.
+
+    Args:
+        anima_dir: Directory of the target Anima.
+        anima_name: Canonical anima name (defaults to the directory name).
+
+    Returns:
+        The assembled system prompt string.
+    """
+    name = anima_name or (anima_dir.name if anima_dir else "anima")
+    parts: list[str] = []
+
+    identity = _read_text_file(anima_dir / "identity.md") if anima_dir else ""
+    if identity:
+        parts.append(identity)
+
+    specialty = _read_text_file(anima_dir / "specialty_prompt.md") if anima_dir else ""
+    if specialty:
+        parts.append(f"Speciality:\n{specialty}")
+
+    parts.append(
+        "You are "
+        + name
+        + ", speaking to a person by voice. "
+        "Respond in natural, conversational spoken language.\n\n"
+        "Rules:\n"
+        "- Keep replies short, natural, and under 200 characters.\n"
+        "- Convey emotion through your words; emojis are allowed (for captions).\n"
+        "- Do NOT use Markdown (headings, bold, lists, code blocks).\n"
+        "- Do not run long tasks inline; for time-consuming requests, reply briefly "
+        "with something like '設定ボードに積んでおくね' (queued).\n"
+        "- End every reply with exactly one emotion tag on its own final line:\n"
+        '  <!-- emotion: {"emotion": "<emotion>"} -->\n'
+        f"  (emotions: {_VOICE_FRONT_EMOTION_NAMES}; prefer a non-neutral one "
+        "unless neutral fits best)"
+    )
+
+    return "\n\n".join(p for p in parts if p)
+
+
 def inject_shortterm(
     base_prompt: str,
     shortterm: ShortTermMemory,

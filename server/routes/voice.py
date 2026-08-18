@@ -88,6 +88,35 @@ def _load_per_anima_voice(
     )
 
 
+def _load_per_anima_voice_front(
+    animas_dir: Path,
+    name: str,
+    voice_config: VoiceConfig,
+) -> tuple[str | None, str | None]:
+    """Load per-anima voice front lane settings from status.json's ``voice`` section.
+
+    Returns ``(front_model, front_api_base)`` falling back to the global
+    config; either may be ``None`` (→ legacy path).
+    """
+    front_model = getattr(voice_config, "front_model", None) or None
+    front_api_base = getattr(voice_config, "front_api_base", None) or None
+    status_path = animas_dir / name / "status.json"
+    if not status_path.is_file():
+        return front_model, front_api_base
+    try:
+        data = json.loads(status_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return front_model, front_api_base
+    voice_section = data.get("voice") or {}
+    if not isinstance(voice_section, dict):
+        voice_section = {}
+    if voice_section.get("front_model"):
+        front_model = voice_section["front_model"]
+    if voice_section.get("front_api_base"):
+        front_api_base = voice_section["front_api_base"]
+    return front_model, front_api_base
+
+
 # ── Helpers ──────────────────────────────────────────────────────
 
 
@@ -150,6 +179,9 @@ def create_voice_router() -> APIRouter:
             stt = _get_stt(voice_config)
             tts_config = _load_per_anima_voice(animas_dir, name, voice_config)
             tts = create_tts_provider(tts_config.provider, voice_config)
+            front_model, front_api_base = _load_per_anima_voice_front(
+                animas_dir, name, voice_config
+            )
             logger.info(
                 "Voice session created: anima=%s provider=%s voice_id=%s speed=%.1f",
                 name,
@@ -166,6 +198,8 @@ def create_voice_router() -> APIRouter:
                 tts_config=tts_config,
                 supervisor=supervisor,
                 voice_config=voice_config,
+                front_model=front_model,
+                front_api_base=front_api_base,
             )
 
             await ws.send_json({"type": "status", "state": "ready"})
