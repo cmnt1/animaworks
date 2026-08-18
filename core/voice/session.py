@@ -41,7 +41,7 @@ ASK_ANIMA_DELEGATION_NOTE = "\n\n[voice front からの委譲]"
 
 VOICE_MODE_SUFFIX = (
     "\n\n[voice-mode: 音声会話です。感情が伝わる話し言葉で200文字以内で簡潔に回答してください。"
-    "絵文字を使ってよい（字幕表示用）。"
+    "感情を表す絵文字を必ず入れてください（TTSの感情表現の精度が上がります）。"
     "Markdown記法（見出し・太字・リスト・コードブロック等）は使わないでください。"
     "調査・実装・資料作成など時間のかかる依頼はその場で実行せず、自分宛てにタスクを作成して、"
     "『タスクに積んでやっておきますね』のように短く返答してください。"
@@ -103,8 +103,12 @@ _RE_EMOJI = re.compile(
 )
 
 
-def sanitize_for_tts(text: str) -> str:
-    """Strip Markdown, HTML comments, and emoji for TTS consumption."""
+def sanitize_for_tts(text: str, *, keep_emoji: bool = False) -> str:
+    """Strip Markdown and HTML comments for TTS consumption.
+
+    Emoji are stripped by default; pass ``keep_emoji=True`` for engines
+    (Irodori) that read them as emotion cues and speak better with them.
+    """
     text = _RE_HTML_COMMENT.sub("", text)
     text = _RE_HTML_COMMENT_OPEN.sub("", text)
     text = _RE_MD_CODE_BLOCK.sub("", text)
@@ -117,7 +121,8 @@ def sanitize_for_tts(text: str) -> str:
     text = _RE_MD_LIST_NUMBERED.sub("", text)
     text = _RE_MD_TABLE_PIPE.sub("", text)
     text = _RE_MD_HR.sub("", text)
-    text = _RE_EMOJI.sub("", text)
+    if not keep_emoji:
+        text = _RE_EMOJI.sub("", text)
     return text.strip()
 
 
@@ -793,7 +798,8 @@ class VoiceSession:
 
     async def _synthesize_and_send(self, text: str) -> None:
         """TTS synthesize a sentence and send audio to client."""
-        text = sanitize_for_tts(text)
+        keep_emoji = getattr(self._tts_config, "provider", "") == "irodori"
+        text = sanitize_for_tts(text, keep_emoji=keep_emoji)
         if not text:
             return
         try:
