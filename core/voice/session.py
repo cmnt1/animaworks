@@ -15,6 +15,7 @@ from typing import Any
 from core.i18n import t
 from core.voice.sentence_splitter import StreamingSentenceSplitter
 from core.voice.stt import VoiceSTT
+from core.voice.stt_stream import StreamingTranscriber
 from core.voice.tts_base import BaseTTSProvider, TTSConfig, TTSSynthesisError
 
 logger = logging.getLogger(__name__)
@@ -168,6 +169,13 @@ class VoiceSession:
         self._supervisor = supervisor
         self._voice_config = voice_config
         self._audio_buffer: bytearray = bytearray()
+        # Streaming STT: rolling re-decode with LocalAgreement-2. Decode is
+        # synchronous; it is sheduled through run_in_executor so the event loop
+        # is never blocked and only one decode is in flight at a time.
+        self._streamer = StreamingTranscriber(lambda buf: stt.transcribe_buffer(buf))
+        self._stream_task: asyncio.Task[None] | None = None
+        self._streaming_busy = False
+        self._finalizing = False
         self._tts_playing = False
         self._interrupted = False
         self._processing = False
@@ -178,11 +186,57 @@ class VoiceSession:
         self._tts_worker: asyncio.Task[None] | None = None
 
     async def handle_audio_chunk(self, data: bytes) -> None:
-        """Receive audio chunk from browser, accumulate in buffer."""
+        """Receive audio chunk from browser, accumulate in buffer and feed the
+        streaming transcriber (which may emit committed partials)."""
         if len(self._audio_buffer) + len(data) > MAX_AUDIO_BUFFER_BYTES:
             self._audio_buffer.clear()
             logger.warning("Audio buffer overflow (%s), cleared", self._anima_name)
         self._audio_buffer.extend(data)
+        if self._streamer.feed(data):
+            self._maybe_start_streaming_stt()
+
+    def _maybe_start_streaming_stt(self) -> None:
+        """Start the streaming decode loop if a decode is due and none is running
+        already (prevents overlapping / double decodes)."""
+        if (
+            self._streaming_busy
+            or self._stream_task is not None
+            or self._processing
+            or self._finalizing
+        ):
+            return
+        if not self._streamer.ready():
+            return
+        self._streaming_busy = True
+        self._stream_task = asyncio.create_task(
+            self._stream_stt_loop(), name=f"stream-stt-{self._anima_name}"
+        )
+        self._stream_task.add_done_callback(self._stream_stt_done)
+
+    def _stream_stt_done(self, task: asyncio.Task) -> None:
+        self._stream_task = None
+        self._streaming_busy = False
+        if not task.cancelled():
+            try:
+                task.result()
+            except Exception:
+                logger.debug("Streaming STT task error (%s)", self._anima_name, exc_info=True)
+        # Catch up on audio that accumulated while we were busy.
+        if not self._finalizing and not self._processing:
+            self._maybe_start_streaming_stt()
+
+    async def _stream_stt_loop(self) -> None:
+        """Re-decode the rolling buffer off the event loop, emitting committed
+        partials. Exits when caught up, finalizing, or processing a reply."""
+        while True:
+            if self._finalizing or self._processing:
+                break
+            loop = asyncio.get_running_loop()
+            committed = await loop.run_in_executor(None, self._streamer.run_decode)
+            if committed:
+                await self._ws.send_json({"type": "transcript_partial", "text": committed})
+            if not self._streamer.ready():
+                break
 
     async def handle_speech_end(self, from_person: str = "human") -> None:
         """Process accumulated audio: STT -> optional refine -> Chat -> TTS."""
@@ -194,6 +248,8 @@ class VoiceSession:
             await self._do_speech_end(from_person)
         finally:
             self._processing = False
+            self._finalizing = False
+            self._streamer.reset()
 
     async def _check_tts_health(self) -> bool:
         """Check TTS availability. Only caches positive results; retries on failure."""
@@ -232,20 +288,45 @@ class VoiceSession:
             logger.debug("Ignore likely silence: rms=%.5f bytes=%s", rms, len(audio_data))
             return
 
+        # Stop live streaming so finalize sees a stable buffer.
+        self._finalizing = True
+        if self._stream_task is not None:
+            try:
+                await self._stream_task
+            except Exception:
+                pass
+
         # 1. STT
+        streaming_used = False
         try:
-            result = await self._stt.transcribe_buffer_async(audio_data)
+            if self._streamer.has_content():
+                # Streaming path: finalize the rolling decode. The committed
+                # prefix was shown live via transcript_partial; the remainder
+                # is decoded here. Decode runs off the event loop.
+                streaming_used = True
+                loop = asyncio.get_running_loop()
+                text = await loop.run_in_executor(None, self._streamer.finalize)
+                text = text.strip()
+                language = self._streamer.last_language or "ja"
+            else:
+                # No streaming decode happened yet (very short input, or tests
+                # pre-loading _audio_buffer directly). Keep the legacy full-
+                # buffer transcription so the final transcript event stays
+                # backward-compatible (existing tests pass unmodified).
+                result = await self._stt.transcribe_buffer_async(audio_data)
+                text = result.get("raw_text", "").strip()
+                language = result.get("language", "ja") or "ja"
         except Exception as e:
             logger.exception("STT failed: %s", e)
             await self._send_error(t("voice.stt_failed"))
             return
 
-        text = result.get("raw_text", "").strip()
         if not text:
             return
 
-        # 2. Optional LLM refine
-        if getattr(self._voice_config, "stt_refine_enabled", False):
+        # 2. Optional LLM refine (skipped on the streaming path so the
+        # LocalAgreement-committed transcript is used as-is, per plan PR-1).
+        if not streaming_used and getattr(self._voice_config, "stt_refine_enabled", False):
             try:
                 from core.tools.transcribe import refine_with_llm
 
@@ -254,7 +335,7 @@ class VoiceSession:
                     None,
                     lambda: refine_with_llm(
                         text,
-                        language=result.get("language", "ja") or "ja",
+                        language=language,
                     ),
                 )
                 text = refined.get("refined_text", text)
@@ -486,6 +567,14 @@ class VoiceSession:
         self._interrupted = True
         self._clear_tts_queue()
         await self._stop_tts_worker()
+        task = self._stream_task
+        self._stream_task = None
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
     async def _synthesize_and_send(self, text: str) -> None:
         """TTS synthesize a sentence and send audio to client."""
@@ -568,6 +657,7 @@ class VoiceSession:
         """Handle barge-in: stop TTS, drop queued sentences, prepare for new STT."""
         self._interrupted = True
         self._audio_buffer.clear()
+        self._streamer.reset()
         self._clear_tts_queue()
 
     async def _send_error(self, message: str) -> None:
