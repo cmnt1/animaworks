@@ -70,6 +70,7 @@ class VoiceSTT:
         sample_rate: int = 16000,
         language: str | None = None,
         vad_filter: bool = True,
+        initial_prompt: str | None = None,
     ) -> dict[str, Any]:
         """Transcribe in-memory PCM audio buffer.
 
@@ -78,6 +79,8 @@ class VoiceSTT:
             sample_rate: Sample rate (default 16kHz).
             language: Language code or None for auto-detect.
             vad_filter: Apply VAD filtering.
+            initial_prompt: Optional context text (e.g. committed tail) to help
+                streaming re-decodes after audio has been trimmed.
 
         Returns:
             Dict with raw_text, language, duration, segments.
@@ -96,6 +99,7 @@ class VoiceSTT:
             temperature=0.0,
             language=language,
             vad_filter=vad_filter,
+            initial_prompt=initial_prompt,
         )
         segments_list = list(segments)
         raw_text = " ".join(seg.text.strip() for seg in segments_list)

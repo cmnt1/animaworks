@@ -169,23 +169,6 @@ command: /usr/local/bin/health-check.sh
 - 「実装した本人がレビュー」になっている → Reviewer を分離
 - 並行作業可能なモジュールが多い → Engineer を増やす
 
-### 用意されているチームテンプレート
-
-| テンプレート | ロール数 | 概要 |
-|-------------|---------|------|
-| 開発（development） | 4 | PdM + Engineer + Reviewer + Tester |
-| 法務（legal） | 3 | Director + Verifier + Researcher |
-| 財務（finance） | 4 | Director + Auditor + Analyst + Collector |
-| トレーディング（trading） | 4 | Director + Analyst + Engineer + Auditor |
-| 営業・マーケティング（sales-marketing） | 4 | Director + Creator + SDR + Researcher |
-| CS（customer-success） | 2 | CS Lead + Support |
-| 経営企画（corporate-planning） | 3 | Strategist + Analyst + Coordinator |
-| インフラ/SRE（infrastructure） | 2 | Infra Director + Monitor |
-| 秘書（secretary） | 1 | Secretary（人間直属） |
-| COO（coo） | 1 | COO（人間直属） |
-
-→ 詳細: `team-design/guide.md`, 各 `team-design/{チーム名}/team.md`
-
 ---
 
 ## 記憶 — 5種類を使い分ける
