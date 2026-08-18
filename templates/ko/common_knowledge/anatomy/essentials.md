@@ -206,23 +206,6 @@ command: /usr/local/bin/health-check.sh
 - "구현한 본인이 리뷰" 상태 → Reviewer 분리
 - 병렬 작업 가능한 모듈이 많다 → Engineer 추가
 
-### 준비된 팀 템플릿
-
-| 템플릿 | 역할 수 | 개요 |
-|--------|---------|------|
-| 개발 (development) | 4 | PdM + Engineer + Reviewer + Tester |
-| 법무 (legal) | 3 | Director + Verifier + Researcher |
-| 재무 (finance) | 4 | Director + Auditor + Analyst + Collector |
-| 트레이딩 (trading) | 4 | Director + Analyst + Engineer + Auditor |
-| 영업·마케팅 (sales-marketing) | 4 | Director + Creator + SDR + Researcher |
-| CS (customer-success) | 2 | CS Lead + Support |
-| 경영기획 (corporate-planning) | 3 | Strategist + Analyst + Coordinator |
-| 인프라/SRE (infrastructure) | 2 | Infra Director + Monitor |
-| 비서 (secretary) | 1 | Secretary (사람 직속) |
-| COO (coo) | 1 | COO (사람 직속) |
-
-→ 상세: `team-design/guide.md`, 각 `team-design/{팀명}/team.md`
-
 ---
 
 ## 기억 — 5가지를 구분하여 사용
