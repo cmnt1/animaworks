@@ -200,19 +200,12 @@ class VoiceSession:
     def _maybe_start_streaming_stt(self) -> None:
         """Start the streaming decode loop if a decode is due and none is running
         already (prevents overlapping / double decodes)."""
-        if (
-            self._streaming_busy
-            or self._stream_task is not None
-            or self._processing
-            or self._finalizing
-        ):
+        if self._streaming_busy or self._stream_task is not None or self._processing or self._finalizing:
             return
         if not self._streamer.ready():
             return
         self._streaming_busy = True
-        self._stream_task = asyncio.create_task(
-            self._stream_stt_loop(), name=f"stream-stt-{self._anima_name}"
-        )
+        self._stream_task = asyncio.create_task(self._stream_stt_loop(), name=f"stream-stt-{self._anima_name}")
         self._stream_task.add_done_callback(self._stream_stt_done)
 
     def _stream_stt_done(self, task: asyncio.Task) -> None:

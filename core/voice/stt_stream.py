@@ -180,10 +180,7 @@ class StreamingTranscriber:
     def ready(self) -> bool:
         """Whether enough audio has accumulated to run a decode now."""
         with self._lock:
-            return (
-                self._bytes_since_feed >= self._decode_min_bytes
-                and len(self._buffer) >= self._min_audio_bytes
-            )
+            return self._bytes_since_feed >= self._decode_min_bytes and len(self._buffer) >= self._min_audio_bytes
 
     def has_content(self) -> bool:
         """Whether any uncommitted audio remains buffered."""
@@ -258,11 +255,9 @@ class StreamingTranscriber:
         # reproduced twice on re-decode.
         candidate_total = _remove_suffix_prefix_overlap(base_committed, new_full)
         new_committed = local_agreement(base_previous, candidate_total, base_committed)
-        added = new_committed[len(base_committed):]
+        added = new_committed[len(base_committed) :]
         if added:
-            trim = _bytes_trimmed_for_prefix(
-                segments, added, bytes_per_sec=self._bytes_per_sec
-            )
+            trim = _bytes_trimmed_for_prefix(segments, added, bytes_per_sec=self._bytes_per_sec)
             if trim > 0 and trim <= len(self._buffer):
                 del self._buffer[:trim]
         # Keep the reference aligned with the current full transcript.
