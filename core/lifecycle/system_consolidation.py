@@ -54,6 +54,17 @@ def has_recent_activity(anima_dir: Path, *, days: int = 7, now: datetime | None 
     for log_path in sorted(log_dir.glob("*.jsonl"), reverse=True):
         try:
             lines = log_path.read_text(encoding="utf-8").splitlines()
+        except UnicodeDecodeError:
+            logger.warning(
+                "Invalid UTF-8 in activity log %s; reading with replacement characters",
+                log_path,
+                exc_info=True,
+            )
+            try:
+                lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                logger.debug("Failed to inspect activity log %s after UTF-8 fallback", log_path, exc_info=True)
+                continue
         except OSError:
             logger.debug("Failed to inspect activity log %s", log_path, exc_info=True)
             continue

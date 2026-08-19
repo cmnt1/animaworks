@@ -64,6 +64,20 @@ def test_recent_activity_uses_entry_timestamp_not_file_mtime(tmp_path) -> None:
     assert has_recent_activity(tmp_path, days=7, now=now) is True
 
 
+def test_recent_activity_tolerates_invalid_utf8_line(tmp_path, caplog) -> None:
+    now = datetime(2026, 7, 12, tzinfo=UTC)
+    log_dir = tmp_path / "activity_log"
+    log_dir.mkdir()
+    log_file = log_dir / "2026-07-11.jsonl"
+    recent_entry = json.dumps({"ts": (now - timedelta(days=1)).isoformat()}).encode()
+    log_file.write_bytes(b"\xadincomplete line\n" + recent_entry + b"\n")
+
+    with caplog.at_level(logging.WARNING, logger="animaworks.lifecycle"):
+        assert has_recent_activity(tmp_path, days=7, now=now) is True
+
+    assert "Invalid UTF-8 in activity log" in caplog.text
+
+
 def test_activity_older_than_window_is_inactive(tmp_path) -> None:
     now = datetime(2026, 7, 12, tzinfo=UTC)
     log_dir = tmp_path / "activity_log"
