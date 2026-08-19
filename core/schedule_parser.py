@@ -119,7 +119,7 @@ def parse_heartbeat_config(content: str) -> tuple[int | None, int | None]:
 # ── Cron parsing ─────────────────────────────────────────
 
 
-def parse_cron_md(content: str) -> list[CronTask]:
+def parse_cron_md(content: str, *, warn: bool = True) -> list[CronTask]:
     """Parse cron.md to extract CronTask definitions.
 
     Expected format per section:
@@ -166,14 +166,14 @@ def parse_cron_md(content: str) -> list[CronTask]:
     for line in content.splitlines():
         if line.startswith("## "):
             if cur_name:
-                tasks.append(_parse_section(cur_name, cur_lines))
+                tasks.append(_parse_section(cur_name, cur_lines, warn=warn))
             cur_name = line[3:].strip()
             cur_lines = []
         elif cur_name:
             cur_lines.append(line)
 
     if cur_name:
-        tasks.append(_parse_section(cur_name, cur_lines))
+        tasks.append(_parse_section(cur_name, cur_lines, warn=warn))
     return tasks
 
 
@@ -224,7 +224,7 @@ def _normalize_string_list(raw_value: object) -> list[str]:
     return []
 
 
-def _parse_section(name: str, lines: list[str]) -> CronTask:
+def _parse_section(name: str, lines: list[str], *, warn: bool = True) -> CronTask:
     """Parse a single cron task section from its body lines.
 
     Extracts ``schedule:``, ``type:``, ``command:``, ``tool:``, ``args:``
@@ -261,12 +261,19 @@ def _parse_section(name: str, lines: list[str]) -> CronTask:
             if _CRON_EXPR_RE.match(candidate):
                 schedule = candidate
             else:
-                logger.warning(
-                    "Ignoring invalid schedule directive for task %s: %s",
-                    name,
-                    candidate,
-                )
-                description_lines.append(line)
+                # Preserve the first invalid value so the scheduler can report
+                # it, but do not let prose that resembles a directive replace
+                # an already valid schedule.
+                if not schedule:
+                    schedule = candidate
+                else:
+                    description_lines.append(line)
+                if warn:
+                    logger.warning(
+                        "Invalid schedule directive for task %s: %s",
+                        name,
+                        candidate,
+                    )
         elif stripped.startswith("type:"):
             task_type = _strip_inline_comment(stripped[5:].strip())
         elif stripped.startswith("command:"):
@@ -281,7 +288,8 @@ def _parse_section(name: str, lines: list[str]) -> CronTask:
                     re.compile(val)
                     skip_pattern = val
                 except re.error as e:
-                    logger.warning("Invalid skip_pattern for task %s: %s", name, e)
+                    if warn:
+                        logger.warning("Invalid skip_pattern for task %s: %s", name, e)
         elif stripped.startswith("success_path:"):
             val = _strip_inline_comment(stripped[len("success_path:") :].strip())
             val = _strip_outer_quotes(val)
@@ -303,7 +311,8 @@ def _parse_section(name: str, lines: list[str]) -> CronTask:
                 raw_paths = parsed.get("success_paths") if isinstance(parsed, dict) else None
                 success_paths.extend(_normalize_string_list(raw_paths))
             except yaml.YAMLError as e:
-                logger.warning("Failed to parse success_paths YAML for task %s: %s", name, e)
+                if warn:
+                    logger.warning("Failed to parse success_paths YAML for task %s: %s", name, e)
         elif stripped.startswith("trigger_heartbeat:"):
             val = _strip_inline_comment(stripped.split(":", 1)[1].strip()).lower()
             trigger_heartbeat = val not in ("false", "no", "0")
@@ -327,7 +336,8 @@ def _parse_section(name: str, lines: list[str]) -> CronTask:
                 if parsed and "args" in parsed:
                     args = parsed["args"]
             except yaml.YAMLError as e:
-                logger.warning("Failed to parse args YAML for task %s: %s", name, e)
+                if warn:
+                    logger.warning("Failed to parse args YAML for task %s: %s", name, e)
         elif stripped.startswith("skills:"):
             yaml_lines = [line]
             i += 1
@@ -344,7 +354,8 @@ def _parse_section(name: str, lines: list[str]) -> CronTask:
                 raw_skills = parsed.get("skills") if isinstance(parsed, dict) else None
                 skills = _normalize_skill_refs(raw_skills)
             except yaml.YAMLError as e:
-                logger.warning("Failed to parse skills YAML for task %s: %s", name, e)
+                if warn:
+                    logger.warning("Failed to parse skills YAML for task %s: %s", name, e)
         else:
             # Regular description line
             description_lines.append(line)
@@ -354,7 +365,7 @@ def _parse_section(name: str, lines: list[str]) -> CronTask:
     # Warn if type=llm but description contains code blocks
     # (likely should be type=command instead)
     description = "\n".join(description_lines).strip()
-    if task_type == "llm" and "```" in description:
+    if warn and task_type == "llm" and "```" in description:
         logger.warning(
             "Cron task '%s' is type=llm but contains a code block. "
             "If the command is deterministic, use type=command instead.",
@@ -482,7 +493,7 @@ def _posix_dow_to_apsched(dow: str) -> str:
     return ",".join(result_parts)
 
 
-def parse_schedule(schedule: str) -> CronTrigger | None:
+def parse_schedule(schedule: str, *, warn: bool = True) -> CronTrigger | None:
     """Parse a standard 5-field cron expression into an APScheduler CronTrigger.
 
     Args:
@@ -494,16 +505,19 @@ def parse_schedule(schedule: str) -> CronTrigger | None:
     """
     s = schedule.strip()
     if not s:
-        logger.warning("Empty schedule expression")
+        if warn:
+            logger.warning("Empty schedule expression")
         return None
 
     if not _CRON_EXPR_RE.match(s):
-        logger.warning("Invalid cron expression: '%s'", s)
+        if warn:
+            logger.warning("Invalid cron expression: '%s'", s)
         return None
 
     parts = s.split()
     if len(parts) != 5:
-        logger.warning("Cron expression must have exactly 5 fields: '%s'", s)
+        if warn:
+            logger.warning("Cron expression must have exactly 5 fields: '%s'", s)
         return None
 
     try:
@@ -519,5 +533,6 @@ def parse_schedule(schedule: str) -> CronTrigger | None:
             day_of_week=apsched_dow,
         )
     except Exception as e:
-        logger.warning("Failed to create CronTrigger from '%s': %s", s, e)
+        if warn:
+            logger.warning("Failed to create CronTrigger from '%s': %s", s, e)
         return None

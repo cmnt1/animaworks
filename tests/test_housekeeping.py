@@ -35,7 +35,7 @@ class TestHousekeepingConfig:
         assert cfg.anima_log_total_max_size_mb == 200
         assert cfg.frontend_log_backup_count == 7
         assert cfg.dm_log_archive_retention_days == 30
-        assert cfg.cron_log_retention_days == 30
+        assert cfg.cron_log_retention_days == 14
         assert cfg.shortterm_retention_days == 7
         assert cfg.shortterm_archive_retention_days == 30
         assert cfg.shortterm_thread_gc_days == 30
@@ -394,6 +394,20 @@ class TestCleanupCronLogs:
         assert result["deleted_files"] == 1
         assert not (cron_dir / f"{old_date}.jsonl").exists()
         assert (cron_dir / f"{today}.jsonl").exists()
+
+    def test_retention_never_exceeds_14_days(self, tmp_path: Path):
+        from core.memory.housekeeping import _cleanup_cron_logs
+
+        cron_dir = tmp_path / "alice" / "state" / "cron_logs"
+        cron_dir.mkdir(parents=True)
+        old_date = (today_local() - timedelta(days=20)).isoformat()
+        old_path = cron_dir / f"{old_date}.jsonl"
+        old_path.write_text("{}\n")
+
+        result = _cleanup_cron_logs(tmp_path, retention_days=30)
+
+        assert result["deleted_files"] == 1
+        assert not old_path.exists()
 
     def test_skips_anima_without_cron_logs(self, tmp_path: Path):
         from core.memory.housekeeping import _cleanup_cron_logs
@@ -782,7 +796,7 @@ class TestCleanupFactsLocks:
         assert result["skipped"] is True
         assert result["reason"] == "stale_hours_must_be_positive"
 
-    def test_fcntl_unavailable_fails_closed(self, tmp_path: Path):
+    def test_lock_acquisition_failure_fails_closed(self, tmp_path: Path):
         from unittest.mock import patch
 
         from core.memory.housekeeping import _cleanup_facts_locks
@@ -794,12 +808,19 @@ class TestCleanupFactsLocks:
         old_time = time.time() - (25 * 3600)
         os.utime(stale_lock, (old_time, old_time))
 
-        with patch.dict("sys.modules", {"fcntl": None}):
+        with patch(
+            "core.memory.housekeeping.acquire_file_lock",
+            side_effect=OSError(13, "lock is held"),
+        ):
             result = _cleanup_facts_locks(tmp_path, stale_hours=24)
 
         assert stale_lock.exists()
-        assert result["skipped"] is True
-        assert result["reason"] == "fcntl_unavailable"
+        assert result == {
+            "scanned_files": 1,
+            "deleted_files": 0,
+            "locked_files": 1,
+            "lock_failures": 0,
+        }
 
 
 # ── run_housekeeping integration test ──────────────────────────
@@ -1038,7 +1059,10 @@ class TestMemoryHygieneFallback:
         outside.mkdir()
         archive = knowledge / "archive"
         archive.mkdir()
-        (archive / "unmerged").symlink_to(outside, target_is_directory=True)
+        try:
+            (archive / "unmerged").symlink_to(outside, target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"directory symlinks are unavailable: {exc}")
         state = anima_dir / "state"
         state.mkdir()
         (state / "memory_hygiene.json").write_text(

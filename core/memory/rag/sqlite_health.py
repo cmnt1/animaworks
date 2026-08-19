@@ -112,13 +112,7 @@ def rebuild_chroma_fts5_indexes(
     *,
     timeout_seconds: float = DEFAULT_QUICK_CHECK_TIMEOUT_SECONDS,
 ) -> SQLiteHealthResult:
-    """Rebuild Chroma FTS5 indexes, then return a fresh health check.
-
-    SQLite can report ``malformed inverted index`` for an FTS5 virtual table
-    even when the ordinary table pages are readable. Rebuilding the FTS5
-    virtual table is the narrowest repair for that failure and avoids a full
-    destructive quarantine/reindex loop.
-    """
+    """Rebuild Chroma FTS5 indexes, then return a fresh health check."""
     db_path = chroma_sqlite_path(persist_dir)
     if not db_path.exists():
         return SQLiteHealthResult(db_path=db_path, ok=True, status="missing")
@@ -126,8 +120,7 @@ def rebuild_chroma_fts5_indexes(
     try:
         with _connect(db_path, timeout_seconds) as conn:
             conn.execute(f"PRAGMA busy_timeout = {int(timeout_seconds * 1000)}")
-            fts_tables = _fts5_table_names(conn)
-            for table in fts_tables:
+            for table in _fts5_table_names(conn):
                 quoted = _quote_identifier(table)
                 conn.execute(f"INSERT INTO {quoted}({quoted}) VALUES ('rebuild')")
             conn.commit()
@@ -145,6 +138,62 @@ def rebuild_chroma_fts5_indexes(
         return SQLiteHealthResult(db_path=db_path, ok=False, status="unreadable", error=str(exc))
 
     return quick_check_chroma_sqlite(persist_dir, timeout_seconds=timeout_seconds)
+
+
+def bootstrap_chroma_sqlite_wal(
+    persist_dir: Path,
+    *,
+    timeout_seconds: float = DEFAULT_QUICK_CHECK_TIMEOUT_SECONDS,
+) -> SQLiteHealthResult:
+    """Pre-create an empty Chroma SQLite file in WAL mode before client init.
+
+    Chroma's first PersistentClient open otherwise creates the DB in the
+    SQLite default ``delete`` journal mode.  WAL must be set *before* the
+    Rust client takes ownership: a post-init Python rw connection that sets
+    WAL and then closes will unlink -wal/-shm the live client just created
+    (2026-08-11 incident).  An empty pre-created file is accepted by Chroma
+    and keeps the durable journal mode for the whole lifetime of the store.
+    """
+    db_path = chroma_sqlite_path(persist_dir)
+    if db_path.exists():
+        return SQLiteHealthResult(db_path=db_path, ok=True, status="ok")
+
+    try:
+        persist_dir.mkdir(parents=True, exist_ok=True)
+        # URI mode=rw refuses to create a missing file; use plain connect for bootstrap.
+        with sqlite3.connect(db_path, timeout=timeout_seconds) as conn:
+            journal_mode = str(conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]).lower()
+            conn.execute(f"PRAGMA busy_timeout = {int(timeout_seconds * 1000)}")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            synchronous = str(conn.execute("PRAGMA synchronous").fetchone()[0])
+            conn.commit()
+    except sqlite3.OperationalError as exc:
+        if _sqlite_busy_or_locked(exc):
+            return SQLiteHealthResult(db_path=db_path, ok=False, status="busy", error=str(exc))
+        if _sqlite_unavailable(exc):
+            return SQLiteHealthResult(db_path=db_path, ok=False, status="unavailable", error=str(exc))
+        return SQLiteHealthResult(db_path=db_path, ok=False, status="corrupt", error=str(exc))
+    except sqlite3.DatabaseError as exc:
+        return SQLiteHealthResult(db_path=db_path, ok=False, status="corrupt", error=str(exc))
+    except OSError as exc:
+        if _sqlite_unavailable(exc):
+            return SQLiteHealthResult(db_path=db_path, ok=False, status="unavailable", error=str(exc))
+        return SQLiteHealthResult(db_path=db_path, ok=False, status="unreadable", error=str(exc))
+
+    if journal_mode != "wal":
+        return SQLiteHealthResult(
+            db_path=db_path,
+            ok=False,
+            status="pragma_failed",
+            details=(f"journal_mode={journal_mode}", f"synchronous={synchronous}"),
+        )
+    logger.info("Bootstrapped empty Chroma SQLite database in WAL mode: %s", db_path)
+    return SQLiteHealthResult(
+        db_path=db_path,
+        ok=True,
+        status="ok",
+        details=(f"journal_mode={journal_mode}", f"synchronous={synchronous}"),
+    )
 
 
 def configure_chroma_sqlite_pragmas(
@@ -231,11 +280,12 @@ def prepare_chroma_sqlite_for_startup(persist_dir: Path, *, anima_name: str | No
                 f"Chroma SQLite database corrupt before startup: {rechecked.db_path} "
                 f"status={rechecked.status} detail={rechecked.error or rechecked.details}"
             )
-    # A fresh Chroma store has no SQLite file yet. Create the empty database
-    # in WAL mode before PersistentClient starts so Chroma inherits WAL without
-    # requiring a maintenance connection after the live client is open.
-    pragma = configure_chroma_sqlite_pragmas(persist_dir, create_if_missing=True)
-    if not pragma.ok and pragma.status != "missing":
+    pragma = configure_chroma_sqlite_pragmas(persist_dir)
+    if pragma.status == "missing":
+        # First open: pre-create empty DB in WAL so Chroma does not inherit
+        # the SQLite default ``delete`` journal mode.
+        pragma = bootstrap_chroma_sqlite_wal(persist_dir)
+    if not pragma.ok:
         logger.warning(
             "Failed to configure Chroma SQLite pragmas at %s: status=%s detail=%s",
             pragma.db_path,

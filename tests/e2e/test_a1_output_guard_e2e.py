@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -8,9 +9,12 @@ Tests actual bash command execution with the output guard wrapper to verify
 file saving, truncation, and cleanup behavior.
 """
 
+import os
+import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
 
 from core.execution.agent_sdk import (
     _BASH_HEAD_BYTES,
@@ -24,6 +28,31 @@ from core.execution.agent_sdk import (
 )
 
 
+def _find_bash() -> str | None:
+    if os.name != "nt":
+        return shutil.which("bash")
+    git = shutil.which("git")
+    if git:
+        git_bash = Path(git).resolve().parent.parent / "bin" / "bash.exe"
+        if git_bash.is_file():
+            return str(git_bash)
+    return None
+
+
+def _run_bash(command: str) -> subprocess.CompletedProcess[str]:
+    bash = _find_bash()
+    if bash is None:
+        pytest.skip("A runnable Bash installation is required")
+    return subprocess.run(
+        [bash, "-c", command],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=10,
+    )
+
+
 class TestBashGuardE2E:
     """E2E tests for Bash command wrapping with actual shell execution."""
 
@@ -34,12 +63,7 @@ class TestBashGuardE2E:
         (anima_dir / "shortterm").mkdir()
 
         wrapped = _guard_bash({"command": "echo hello"}, anima_dir)
-        result = subprocess.run(
-            ["bash", "-c", wrapped["command"]],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        result = _run_bash(wrapped["command"])
 
         assert result.returncode == 0
         assert "hello" in result.stdout
@@ -59,12 +83,7 @@ class TestBashGuardE2E:
         # Generate 20KB of output (well above 10KB threshold)
         cmd = f"python3 -c \"print('A' * {_BASH_TRUNCATE_BYTES * 2})\""
         wrapped = _guard_bash({"command": cmd}, anima_dir)
-        result = subprocess.run(
-            ["bash", "-c", wrapped["command"]],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        result = _run_bash(wrapped["command"])
 
         assert result.returncode == 0
         assert "truncated:" in result.stdout
@@ -88,12 +107,7 @@ class TestBashGuardE2E:
         (anima_dir / "shortterm").mkdir()
 
         wrapped = _guard_bash({"command": "exit 42"}, anima_dir)
-        result = subprocess.run(
-            ["bash", "-c", wrapped["command"]],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        result = _run_bash(wrapped["command"])
 
         assert result.returncode == 42
 
@@ -105,12 +119,7 @@ class TestBashGuardE2E:
 
         cmd = f"python3 -c \"print('X' * {_BASH_TRUNCATE_BYTES * 2}); import sys; sys.exit(7)\""
         wrapped = _guard_bash({"command": cmd}, anima_dir)
-        result = subprocess.run(
-            ["bash", "-c", wrapped["command"]],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        result = _run_bash(wrapped["command"])
 
         assert result.returncode == 7
 
@@ -122,12 +131,7 @@ class TestBashGuardE2E:
 
         cmd = "echo stdout_msg && echo stderr_msg >&2"
         wrapped = _guard_bash({"command": cmd}, anima_dir)
-        result = subprocess.run(
-            ["bash", "-c", wrapped["command"]],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        result = _run_bash(wrapped["command"])
 
         # Both stdout and stderr should appear in stdout (due to 2>&1)
         assert "stdout_msg" in result.stdout
@@ -142,12 +146,7 @@ class TestBashGuardE2E:
         cmd = f"python3 -c \"print('B' * {_BASH_TRUNCATE_BYTES * 2})\""
         for _ in range(3):
             wrapped = _guard_bash({"command": cmd}, anima_dir)
-            subprocess.run(
-                ["bash", "-c", wrapped["command"]],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
+            _run_bash(wrapped["command"])
 
         out_dir = anima_dir / "shortterm" / "tool_outputs"
         files = list(out_dir.glob("bash_*.txt"))
@@ -162,12 +161,7 @@ class TestBashGuardE2E:
         # Create large output to generate a temp file
         cmd = f"python3 -c \"print('C' * {_BASH_TRUNCATE_BYTES * 2})\""
         wrapped = _guard_bash({"command": cmd}, anima_dir)
-        subprocess.run(
-            ["bash", "-c", wrapped["command"]],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        _run_bash(wrapped["command"])
 
         out_dir = anima_dir / "shortterm" / "tool_outputs"
         assert out_dir.exists()

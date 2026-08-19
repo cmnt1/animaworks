@@ -13,6 +13,7 @@ import asyncio
 import logging
 import os
 import threading
+import time
 from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
@@ -26,13 +27,25 @@ class CrossEncoderReranker:
     """Reranker using sentence-transformers cross-encoder."""
 
     def __init__(self, model_name: str = _DEFAULT_MODEL) -> None:
+        started = time.perf_counter()
         self._model_name = model_name
         self._model = None
         self._available = True
-        from core.gpu import is_component_degraded, resolve_device
+        self._rerank_url = os.environ.get("ANIMAWORKS_RERANK_URL")
+        if self._rerank_url:
+            self._device = "cpu"
+        else:
+            from core.gpu import is_component_degraded, resolve_device
 
-        self._device = "cpu" if is_component_degraded("reranker") else resolve_device("reranker")
+            self._device = "cpu" if is_component_degraded("reranker") else resolve_device("reranker")
         self._lock = threading.Lock()
+        logger.info(
+            "Cross-encoder client initialized: model=%s device=%s http=%s elapsed=%.3fs",
+            self._model_name,
+            self._device,
+            bool(self._rerank_url),
+            time.perf_counter() - started,
+        )
 
     def _ensure_model(self) -> bool:
         if not self._available:
@@ -40,50 +53,73 @@ class CrossEncoderReranker:
         if self._model is not None:
             return True
         with self._lock:
-            # Double-check under the lock: concurrent first-use callers used to
-            # each load their own CrossEncoder (observed as triple simultaneous
-            # "Loading weights" bursts per process), leaking the extra copies.
-            if not self._available:
-                return False
-            if self._model is not None:
-                return True
-            try:
-                from sentence_transformers import CrossEncoder
+            return self._load_model_locked()
 
-                self._model = CrossEncoder(self._model_name, device=self._device)
-                from core.gpu import record_component_device
+    def _load_model_locked(self) -> bool:
+        # Double-check under the lock: concurrent first-use callers used to
+        # each load their own CrossEncoder (observed as triple simultaneous
+        # "Loading weights" bursts per process), leaking the extra copies.
+        if not self._available:
+            return False
+        if self._model is not None:
+            return True
+        started = time.perf_counter()
+        try:
+            from sentence_transformers import CrossEncoder
 
-                record_component_device("reranker", self._device)
-                logger.info("Cross-encoder loaded: %s on %s", self._model_name, self._device)
-                return True
-            except Exception as exc:
-                if self._device == "cuda":
-                    from core.gpu import record_gpu_failure
+            self._model = CrossEncoder(self._model_name, device=self._device)
+            from core.gpu import record_component_device
 
-                    record_gpu_failure("reranker", exc)
-                    try:
-                        self._device = "cpu"
-                        self._model = CrossEncoder(self._model_name, device="cpu")
-                        from core.gpu import record_component_device
+            record_component_device("reranker", self._device)
+            logger.info(
+                "Cross-encoder loaded: model=%s device=%s elapsed=%.3fs",
+                self._model_name,
+                self._device,
+                time.perf_counter() - started,
+            )
+            return True
+        except Exception as exc:
+            if self._device == "cuda":
+                from core.gpu import record_gpu_failure
 
-                        record_component_device("reranker", "cpu")
-                        logger.warning("Cross-encoder GPU load failed; falling back to CPU: %s", exc)
-                        return True
-                    except Exception:
-                        logger.warning("Cross-encoder CPU fallback unavailable: %s", self._model_name, exc_info=True)
-                else:
-                    logger.warning("Cross-encoder unavailable: %s", self._model_name, exc_info=True)
-                self._available = False
-                return False
+                record_gpu_failure("reranker", exc)
+                try:
+                    self._device = "cpu"
+                    self._model = CrossEncoder(self._model_name, device="cpu")
+                    from core.gpu import record_component_device
+
+                    record_component_device("reranker", "cpu")
+                    logger.warning("Cross-encoder GPU load failed; falling back to CPU: %s", exc)
+                    return True
+                except Exception:
+                    logger.warning("Cross-encoder CPU fallback unavailable: %s", self._model_name, exc_info=True)
+            else:
+                logger.warning("Cross-encoder unavailable: %s", self._model_name, exc_info=True)
+            self._available = False
+            return False
 
     def _score_local(self, query: str, texts: list[str]) -> list[float] | None:
+        started = time.perf_counter()
         if not self._ensure_model():
             return None
         try:
             pairs = [[query, t] for t in texts]
+            lock_started = time.perf_counter()
             with self._lock:
+                lock_wait = time.perf_counter() - lock_started
+                predict_started = time.perf_counter()
                 scores = self._model.predict(pairs)
-            return [float(s) for s in scores]
+                predict_elapsed = time.perf_counter() - predict_started
+            result = [float(s) for s in scores]
+            logger.info(
+                "Cross-encoder local score: query_chars=%d documents=%d elapsed=%.3fs lock_wait=%.3fs predict=%.3fs",
+                len(query),
+                len(texts),
+                time.perf_counter() - started,
+                lock_wait,
+                predict_elapsed,
+            )
+            return result
         except Exception as exc:
             from core.gpu import is_cuda_failure, record_component_device, record_gpu_failure
 
@@ -107,13 +143,15 @@ class CrossEncoderReranker:
 
     def _score_http(self, query: str, texts: list[str], rerank_url: str) -> list[float] | None:
         """Score via server's /api/internal/rerank. On failure return None (skip)."""
-        import httpx
+        from core.memory.rag.singleton import _shared_http_client
 
+        started = time.perf_counter()
         all_scores: list[float] = []
         try:
             for i in range(0, len(texts), _BATCH_LIMIT):
                 batch = texts[i : i + _BATCH_LIMIT]
-                resp = httpx.post(
+                request_started = time.perf_counter()
+                resp = _shared_http_client().post(
                     rerank_url,
                     json={"query": query, "documents": batch},
                     timeout=_HTTP_TIMEOUT,
@@ -128,6 +166,12 @@ class CrossEncoderReranker:
                     )
                     return None
                 all_scores.extend(float(s) for s in scores)
+                logger.info(
+                    "Cross-encoder HTTP batch: query_chars=%d documents=%d elapsed=%.3fs",
+                    len(query),
+                    len(batch),
+                    time.perf_counter() - request_started,
+                )
         except Exception:
             logger.warning(
                 "HTTP rerank failed (url=%s); skipping rerank, keeping original order",
@@ -135,15 +179,20 @@ class CrossEncoderReranker:
                 exc_info=True,
             )
             return None
+        logger.info(
+            "Cross-encoder HTTP score: query_chars=%d documents=%d elapsed=%.3fs",
+            len(query),
+            len(texts),
+            time.perf_counter() - started,
+        )
         return all_scores
 
     def _score_sync(self, query: str, texts: list[str]) -> list[float] | None:
         """Score documents; HTTP-delegate when ANIMAWORKS_RERANK_URL is set."""
         if not texts:
             return []
-        rerank_url = os.environ.get("ANIMAWORKS_RERANK_URL")
-        if rerank_url:
-            return self._score_http(query, texts, rerank_url)
+        if self._rerank_url:
+            return self._score_http(query, texts, self._rerank_url)
         return self._score_local(query, texts)
 
     def score_sync(self, query: str, texts: list[str]) -> list[float] | None:

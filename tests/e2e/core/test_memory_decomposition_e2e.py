@@ -141,7 +141,7 @@ class TestFacadeDelegation:
     def test_skill_meta_static(self, tmp_path: Path) -> None:
         """_extract_skill_meta delegates to SkillMetadataService."""
         f = tmp_path / "test.md"
-        f.write_text("---\nname: test-skill\ndescription: テスト\n---\n\nBody.\n")
+        f.write_text("---\nname: test-skill\ndescription: テスト\n---\n\nBody.\n", encoding="utf-8")
         meta = MemoryManager._extract_skill_meta(f)
         assert meta.name == "test-skill"
         assert meta.description == "テスト"
@@ -149,7 +149,10 @@ class TestFacadeDelegation:
     def test_list_skill_metas(self, mm: MemoryManager) -> None:
         """list_skill_metas returns metas from the skills directory."""
         (mm.skills_dir / "a" / "SKILL.md").parent.mkdir(parents=True, exist_ok=True)
-        (mm.skills_dir / "a" / "SKILL.md").write_text("---\nname: alpha\ndescription: テスト\n---\n\n")
+        (mm.skills_dir / "a" / "SKILL.md").write_text(
+            "---\nname: alpha\ndescription: テスト\n---\n\n",
+            encoding="utf-8",
+        )
         result = mm.list_skill_metas()
         assert len(result) == 1
         assert result[0].name == "alpha"
@@ -176,7 +179,10 @@ class TestFacadeDelegation:
 
     def test_search_knowledge_keyword(self, mm: MemoryManager) -> None:
         """search_knowledge finds keyword matches."""
-        (mm.knowledge_dir / "test.md").write_text("# Python tips\nUse list comprehension.\n")
+        (mm.knowledge_dir / "test.md").write_text(
+            "# Python tips\nUse list comprehension.\n",
+            encoding="utf-8",
+        )
         results = mm.search_knowledge("comprehension")
         assert any("comprehension" in line for _, line in results)
 
@@ -185,8 +191,8 @@ class TestFacadeDelegation:
         # Force keyword fallback so the test works without a ChromaDB collection.
         mm._rag._indexer = None
         mm._rag._indexer_initialized = True
-        (mm.knowledge_dir / "k.md").write_text("knowledge content\n")
-        (mm.episodes_dir / "e.md").write_text("episode content\n")
+        (mm.knowledge_dir / "k.md").write_text("knowledge content\n", encoding="utf-8")
+        (mm.episodes_dir / "e.md").write_text("episode content\n", encoding="utf-8")
         results = mm.search_memory_text("content", scope="knowledge")
         files = [r["source_file"] for r in results]
         assert any("k.md" in f for f in files)
@@ -253,7 +259,10 @@ class TestNewBypassCompat:
         skills_dir = anima_dir / "skills"
         skills_dir.mkdir(parents=True)
         (skills_dir / "test" / "SKILL.md").parent.mkdir(parents=True, exist_ok=True)
-        (skills_dir / "test" / "SKILL.md").write_text("---\nname: t\ndescription: d\n---\n\n")
+        (skills_dir / "test" / "SKILL.md").write_text(
+            "---\nname: t\ndescription: d\n---\n\n",
+            encoding="utf-8",
+        )
 
         mm = MemoryManager.__new__(MemoryManager)
         mm.anima_dir = anima_dir

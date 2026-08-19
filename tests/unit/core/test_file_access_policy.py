@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -15,7 +16,9 @@ import pytest
 
 from core.execution._sdk_security import _check_a1_file_access
 from core.file_access_policy import (
+    FileRootsConfigError,
     company_shared_write_root,
+    effective_write_roots,
     find_denied_root,
     find_internal_cache_root,
     load_denied_roots,
@@ -225,6 +228,67 @@ def test_company_shared_write_root_rejects_symlink_redirects(tmp_path: Path) -> 
     own_company.rmdir()
     own_company.symlink_to(foreign_company, target_is_directory=True)
     assert company_shared_write_root(anima_dir) is None
+
+
+def test_effective_write_roots_combines_charter_roots(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = data_dir / "animas" / "agent"
+    anima_dir.mkdir(parents=True)
+    (anima_dir / "status.json").write_text(json.dumps({"company": "alpha"}), encoding="utf-8")
+    (data_dir / "companies" / "alpha").mkdir(parents=True)
+    external = tmp_path / "external"
+    task_cwd = tmp_path / "task"
+
+    roots = effective_write_roots(anima_dir, [str(external)], task_cwd)
+
+    assert roots == (
+        (data_dir / "companies" / "alpha" / "shared").resolve(),
+        external.resolve(),
+        task_cwd.resolve(),
+    )
+
+
+def test_effective_write_roots_rejects_data_dir_entries(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = data_dir / "animas" / "agent"
+    anima_dir.mkdir(parents=True)
+    violating = data_dir / "shared" / "worktrees"
+
+    with pytest.raises(FileRootsConfigError, match=re.escape(str(violating.resolve()))) as exc_info:
+        effective_write_roots(anima_dir, [str(violating)])
+
+    assert "data_dir 外" in str(exc_info.value)
+    assert "companies/<社>/shared" in str(exc_info.value)
+
+
+def test_effective_write_roots_allows_own_company_shared_entry(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = data_dir / "animas" / "agent"
+    anima_dir.mkdir(parents=True)
+    (anima_dir / "status.json").write_text(json.dumps({"company": "alpha"}), encoding="utf-8")
+    company_root = data_dir / "companies" / "alpha"
+    company_root.mkdir(parents=True)
+    shared_child = company_root / "shared" / "project"
+
+    assert effective_write_roots(anima_dir, [str(shared_child)]) == (
+        (company_root / "shared").resolve(),
+        shared_child.resolve(),
+    )
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlink creation requires elevated privilege on Windows")
+def test_effective_write_roots_rejects_symlinked_company_shared(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    anima_dir = data_dir / "animas" / "agent"
+    anima_dir.mkdir(parents=True)
+    (anima_dir / "status.json").write_text(json.dumps({"company": "alpha"}), encoding="utf-8")
+    company_root = data_dir / "companies" / "alpha"
+    company_root.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (company_root / "shared").symlink_to(outside, target_is_directory=True)
+
+    assert effective_write_roots(anima_dir, []) == ()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="symlink creation requires elevated privilege on Windows")

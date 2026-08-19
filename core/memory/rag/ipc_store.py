@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -18,6 +19,34 @@ logger = logging.getLogger(__name__)
 
 MemoryRequester = Callable[[str, dict[str, Any]], dict[str, Any]]
 
+# Cap matches plan: never sleep longer than 500ms on a single retry.
+_MAX_RETRY_AFTER_MS = 500
+_DEFAULT_RETRY_AFTER_MS = 250
+
+
+def _retry_after_ms(exc: BaseException) -> int | None:
+    """Return sleep ms when *exc* is an explicit retryable failure, else None."""
+    if getattr(exc, "retryable", None) is True:
+        raw = getattr(exc, "retry_after_ms", _DEFAULT_RETRY_AFTER_MS)
+        try:
+            ms = int(raw)
+        except (TypeError, ValueError):
+            ms = _DEFAULT_RETRY_AFTER_MS
+        return max(0, min(ms, _MAX_RETRY_AFTER_MS))
+
+    # Production path: _MemoryRpcClient raises RuntimeError("UNAVAILABLE: ...")
+    # after root returns retryable=True (retry_after_ms is stripped on the wire
+    # conversion). Match the known code prefix only.
+    message = str(exc)
+    if message.startswith("UNAVAILABLE:") or message.startswith("UNAVAILABLE "):
+        # Deterministic failures never heal within one retry window — waiting
+        # 250ms per query for a permanently missing collection just burns the
+        # priming budget (observed fleet-wide with {anima}_entities).
+        if "does not exist" in message or "already exists" in message:
+            return None
+        return _DEFAULT_RETRY_AFTER_MS
+    return None
+
 
 class IpcVectorStore(HttpVectorStore):
     """Root IPC backend for one phase3 anima's vector database."""
@@ -27,10 +56,31 @@ class IpcVectorStore(HttpVectorStore):
         self._requester = requester
         self._ipc_unavailable_writes: set[str] = set()
 
-    def _call(self, method: str, params: dict[str, Any]) -> dict[str, Any] | None:
+    def _call(self, method: str, params: dict[str, Any], *, allow_retry: bool = False) -> dict[str, Any] | None:
         try:
             return self._requester(method, params)
         except Exception as exc:
+            delay_ms = _retry_after_ms(exc) if allow_retry else None
+            if delay_ms is not None:
+                logger.warning(
+                    "IPC vector request retryable: method=%s anima=%s retry_after_ms=%s error=%s",
+                    method,
+                    self._anima_name,
+                    delay_ms,
+                    exc,
+                )
+                if delay_ms:
+                    time.sleep(delay_ms / 1000.0)
+                try:
+                    return self._requester(method, params)
+                except Exception as retry_exc:
+                    logger.warning(
+                        "IPC vector request failed after retry: method=%s anima=%s error=%s",
+                        method,
+                        self._anima_name,
+                        retry_exc,
+                    )
+                    return None
             logger.warning("IPC vector request failed: method=%s anima=%s error=%s", method, self._anima_name, exc)
             return None
 
@@ -90,8 +140,12 @@ class IpcVectorStore(HttpVectorStore):
             {"collection": collection, "ids": ids, "metadatas": metadatas},
         )
 
+    def enqueue_access_updates(self, operations: list[dict[str, Any]]) -> bool:
+        """Queue atomic access-counter deltas in the root memory service."""
+        return not operations or self._write("memory.apply_access_updates", {"operations": operations})
+
     def list_collections(self) -> list[str]:
-        data = self._call("memory.list_collections_checked", {})
+        data = self._call("memory.list_collections_checked", {}, allow_retry=True)
         collections = data.get("collections") if data else None
         return (
             list(collections)
@@ -100,7 +154,7 @@ class IpcVectorStore(HttpVectorStore):
         )
 
     def list_collections_checked(self) -> list[str] | None:
-        data = self._call("memory.list_collections_checked", {})
+        data = self._call("memory.list_collections_checked", {}, allow_retry=True)
         collections = data.get("collections") if data else None
         if not isinstance(collections, list) or not all(isinstance(name, str) for name in collections):
             return None
@@ -116,7 +170,7 @@ class IpcVectorStore(HttpVectorStore):
         params: dict[str, Any] = {"collection": collection, "embedding": embedding, "top_k": top_k}
         if filter_metadata:
             params["filter_metadata"] = filter_metadata
-        data = self._call("memory.query", params)
+        data = self._call("memory.query", params, allow_retry=True)
         return _parse_search_results(data["results"]) if data and isinstance(data.get("results"), list) else []
 
     def get_by_metadata(
@@ -128,11 +182,12 @@ class IpcVectorStore(HttpVectorStore):
         data = self._call(
             "memory.get_by_metadata",
             {"collection": collection, "where": where, "limit": limit},
+            allow_retry=True,
         )
         return _parse_search_results(data["results"]) if data and isinstance(data.get("results"), list) else []
 
     def get_by_ids(self, collection: str, ids: list[str]):
         if not ids:
             return []
-        data = self._call("memory.get_by_ids", {"collection": collection, "ids": ids})
+        data = self._call("memory.get_by_ids", {"collection": collection, "ids": ids}, allow_retry=True)
         return _parse_documents(data["documents"]) if data and isinstance(data.get("documents"), list) else []

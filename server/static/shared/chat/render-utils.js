@@ -334,6 +334,18 @@ function _bubbleActionsHtml(rawText) {
     + `</div>`;
 }
 
+const _URL_RE = /https?:\/\/[^\s<>"'`）」』】、。，]+/g;
+
+// Escape first, then turn bare URLs into new-tab links (for plain-text user bubbles).
+function _linkifyEscaped(escapeHtml, text) {
+  return escapeHtml(text).replace(_URL_RE, (url) => {
+    const label = url.length > 60
+      ? url.slice(0, 57).replace(/&[^;]*$/, "") + "…"
+      : url;
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer" title="${url}">${label}</a>`;
+  });
+}
+
 const _RE_VOICE_MODE_SUFFIX = /\n*\[voice-mode:[^\]]*\]/g;
 
 function _stripVoiceSuffix(text) {
@@ -429,7 +441,7 @@ function _renderHumanNotifyCard(msg, opts) {
     `<div class="chat-human-notify${priorityClass}" data-type="human_notify">` +
     `<div class="chat-human-notify-label">\u{1F4E3} ${escapeHtml(t("chat.human_notify_label"))}${priorityBadge}</div>` +
     (subject ? `<div class="chat-human-notify-subject">${escapeHtml(subject)}</div>` : "") +
-    `<div class="chat-human-notify-body">${escapeHtml(msg.content || "")}</div>` +
+    `<div class="chat-human-notify-body">${_linkifyEscaped(escapeHtml, msg.content || "")}</div>` +
     actionsHtml +
     tsHtml +
     `</div>`
@@ -448,7 +460,7 @@ function _renderHumanReplyBubble(msg, opts) {
   const fromLabel = fromName
     ? `<div class="chat-human-reply-from">${escapeHtml(fromName)}${viaBadge}</div>`
     : (viaBadge ? `<div class="chat-human-reply-from">${viaBadge}</div>` : "");
-  const contentHtml = `<div class="chat-text">${escapeHtml(msg.content || "")}</div>`;
+  const contentHtml = `<div class="chat-text">${_linkifyEscaped(escapeHtml, msg.content || "")}</div>`;
   const bubble = `<div class="chat-bubble user" data-type="human_reply">${fromLabel}${contentHtml}${tsHtml}</div>`;
   const avatarHtml = _renderAvatar(null, opts.avatarMap || null, opts.companyColors);
   return _wrapRow("user", bubble, avatarHtml);
@@ -502,7 +514,7 @@ export function renderHistoryMessage(msg, opts) {
   const userContent = _stripVoiceSuffix(msg.content || "");
   const contentHtml = isAnima
     ? renderMarkdown(userContent)
-    : `<div class="chat-text">${escapeHtml(userContent)}</div>`;
+    : `<div class="chat-text">${_linkifyEscaped(escapeHtml, userContent)}</div>`;
   const bubbleWs = isAnima ? ' style="white-space:normal"' : "";
   const bubble = `<div class="chat-bubble user"${bubbleWs}>${fromLabel}${contentHtml}${tsHtml}</div>`;
   const avatarHtml = _renderAvatar(isAnima ? msg.from_person : null, avatarMap, opts.companyColors);
@@ -1002,7 +1014,7 @@ export function renderLiveBubble(msg, opts) {
   if (msg.role === "user") {
     const imagesHtml = renderImages(msg.images, { animaName: opts.animaName });
     const userText = _stripVoiceSuffix(msg.text || "");
-    const textHtml = userText ? `<div class="chat-text">${escapeHtml(userText)}</div>` : "";
+    const textHtml = userText ? `<div class="chat-text">${_linkifyEscaped(escapeHtml, userText)}</div>` : "";
     const queuedHtml = msg.queued ? `<div class="chat-queued-label">送信待ち</div>` : "";
     const queuedClass = msg.queued ? " queued" : "";
     const bubble = `<div class="chat-bubble user${queuedClass}">${imagesHtml}${textHtml}${queuedHtml}${tsHtml}</div>`;

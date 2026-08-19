@@ -134,7 +134,9 @@ def temp_vector_store(temp_anima_dir):
     store = ChromaVectorStore(persist_dir=vectordb_dir)
     yield store
 
-    # Cleanup is handled by temp_anima_dir fixture
+    from tests.helpers.chroma import close_chroma_store
+
+    close_chroma_store(store)
 
 
 # ── ChromaDB Vector Store Tests ────────────────────────────────────

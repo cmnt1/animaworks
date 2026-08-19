@@ -46,9 +46,9 @@ def chunk_facts_jsonl(
     chunks: list[Any] = []
     stat = file_path.stat()
     try:
-        source_file = str(file_path.relative_to(anima_dir))
+        source_file = file_path.relative_to(anima_dir).as_posix()
     except ValueError:
-        source_file = str(file_path)
+        source_file = file_path.as_posix()
 
     for chunk_idx, (line_no, record) in enumerate(records):
         metadata: dict[str, str | int | float | bool | list[str]] = {

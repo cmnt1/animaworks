@@ -21,6 +21,7 @@ from typing import Any
 
 from core.config.opencode_go import OPENCODE_GO_API_KEY_ENV, OPENCODE_GO_PROVIDER, with_opencode_go_defaults
 from core.execution._sanitize import ORIGIN_SYSTEM
+from core.execution.fallback_activity import run_with_model_fallback
 from core.i18n import t
 from core.memory.hygiene import scan_memory_hygiene
 from core.paths import load_prompt
@@ -106,13 +107,23 @@ def _is_transient_cron_llm_error(exc: Exception) -> bool:
     return any(marker in text for marker in transient_markers)
 
 
-async def _run_cron_cycle_with_transient_retries(agent: Any, prompt: str, *, task_name: str) -> CycleResult:
+async def _run_cron_cycle_with_transient_retries(
+    agent: Any,
+    prompt: str,
+    *,
+    task_name: str,
+    model_config_override: Any = None,
+) -> CycleResult:
     last_exc: Exception | None = None
     for attempt, delay in enumerate((0, *_CRON_TRANSIENT_RETRY_DELAYS_SEC), start=1):
         if delay:
             await asyncio.sleep(delay)
         try:
-            return await agent.run_cycle(prompt, trigger=f"cron:{task_name}")
+            return await agent.run_cycle(
+                prompt,
+                trigger=f"cron:{task_name}",
+                model_config_override=model_config_override,
+            )
         except Exception as exc:
             last_exc = exc
             if attempt > len(_CRON_TRANSIENT_RETRY_DELAYS_SEC) or not _is_transient_cron_llm_error(exc):
@@ -305,79 +316,30 @@ class LifecycleMixin:
         cascade_suppressed_senders: set[str] | None = None,
     ) -> CycleResult:
         self._get_interrupt_event("_background").clear()
-        logger.info("[%s] run_heartbeat START", self.name)
+        # START is logged only after the background lock is held: "START" must mean
+        # "running", not "queued behind another background lane".
+        logger.info("[%s] run_heartbeat WAITING_LOCK", self.name)
         try:
             async with self._background_lock:
+                logger.info("[%s] run_heartbeat START", self.name)
                 self._mark_busy_start()
                 _keepalive = asyncio.create_task(self._keepalive_while_busy())
                 self._status_slots["background"] = "checking"
                 self._last_heartbeat = now_local()
-
-                # Activity log: heartbeat start
                 self._activity.log("heartbeat_start", summary=t("anima.heartbeat_start"))
 
                 try:
-                    # 1. Build prompt parts
                     parts = await self._build_heartbeat_prompt()
-
-                    # 2. Warn if unread messages exist (inbox handled by Path A)
                     if self.messenger.has_unread():
                         logger.warning(
                             "[%s] Unread messages found during heartbeat — "
                             "inbox processing is handled by Path A (process_inbox_message)",
                             self.name,
                         )
-
-                    # 3. Execute agent cycle (plan-only, no inbox)
-                    from core.config.models import load_config as _load_cfg
-                    from core.tooling.handler import active_session_type
-
-                    heartbeat_text = "\n\n".join(parts)
-                    self._sample_heartbeat_memory(
-                        "heartbeat_after_prompt",
-                        {"parts": len(parts), "prompt_chars": len(heartbeat_text)},
+                    return await self._run_heartbeat_agent_session(
+                        "\n\n".join(parts),
+                        _keepalive,
                     )
-                    prior_msgs = self._build_prior_messages(heartbeat_text)
-                    _hard_timeout = _load_cfg().heartbeat.hard_timeout_seconds
-                    agent = _agent_for_lane(self, "background")
-                    async with _agent_session_context(self, "background"):
-                        agent.set_interrupt_event(self._get_interrupt_event("_background"))
-                        _session_token = agent._tool_handler.set_active_session_type("heartbeat")
-                        agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
-                        try:
-                            result = await asyncio.wait_for(
-                                self._execute_heartbeat_cycle(
-                                    heartbeat_text,
-                                    [],
-                                    0,
-                                    prior_messages=prior_msgs,
-                                ),
-                                timeout=float(_hard_timeout),
-                            )
-                        except TimeoutError:
-                            return self._handle_hard_timeout(_hard_timeout)
-                        except asyncio.CancelledError:
-                            current = asyncio.current_task()
-                            if current is not None and current.cancelling():
-                                raise
-                            logger.warning("[%s] run_heartbeat cancelled by request; runner remains alive", self.name)
-                            return CycleResult(
-                                trigger="heartbeat",
-                                action="cancelled",
-                                summary="Heartbeat cancelled",
-                                duration_ms=0,
-                            )
-                        finally:
-                            active_session_type.reset(_session_token)
-                            _keepalive.cancel()
-
-                    self._sample_heartbeat_memory(
-                        "heartbeat_after_execute",
-                        {"summary_chars": len(result.summary or ""), "action": result.action},
-                    )
-
-                    return result
-
                 except Exception as exc:
                     _unread = 0
                     try:
@@ -393,9 +355,9 @@ class LifecycleMixin:
                 finally:
                     self._status_slots["background"] = "idle"
                     self._task_slots["background"] = ""
+                    await self._finalize_session_if_ended()
         finally:
             self._notify_lock_released()
-            # Signal pending task execution after heartbeat completes
             self._trigger_pending_task_execution()
 
     # ── Heartbeat helpers ─────────────────────────────────────
@@ -413,6 +375,70 @@ class LifecycleMixin:
             )
         except Exception:
             logger.debug("[%s] heartbeat memory sample failed (%s)", self.name, stage, exc_info=True)
+
+    async def _run_heartbeat_agent_session(
+        self,
+        heartbeat_text: str,
+        keepalive: asyncio.Task[None],
+    ) -> CycleResult:
+        """Run the heartbeat agent cycle under the background session lane."""
+        from core.config.models import load_config as _load_cfg
+        from core.tooling.handler import active_session_type
+
+        self._sample_heartbeat_memory(
+            "heartbeat_after_prompt",
+            {"prompt_chars": len(heartbeat_text)},
+        )
+        prior_msgs = self._build_prior_messages(heartbeat_text)
+        hard_timeout = _load_cfg().heartbeat.hard_timeout_seconds
+        agent = _agent_for_lane(self, "background")
+        async with _agent_session_context(self, "background"):
+            agent.set_interrupt_event(self._get_interrupt_event("_background"))
+            session_token = agent._tool_handler.set_active_session_type("heartbeat")
+            agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
+            try:
+                cycle = self._execute_heartbeat_cycle(
+                    heartbeat_text,
+                    [],
+                    0,
+                    prior_messages=prior_msgs,
+                )
+                # hard_timeout_seconds == 0 disables forced termination:
+                # busy-hang detection (progress-based) remains the safety net.
+                if hard_timeout:
+                    result = await asyncio.wait_for(cycle, timeout=float(hard_timeout))
+                else:
+                    result = await cycle
+                self._sample_heartbeat_memory(
+                    "heartbeat_after_execute",
+                    {"summary_chars": len(result.summary or ""), "action": result.action},
+                )
+                return result
+            except TimeoutError:
+                return self._handle_hard_timeout(hard_timeout)
+            except asyncio.CancelledError:
+                current = asyncio.current_task()
+                if current is not None and current.cancelling():
+                    raise
+                logger.warning("[%s] run_heartbeat cancelled by request; runner remains alive", self.name)
+                return CycleResult(
+                    trigger="heartbeat",
+                    action="cancelled",
+                    summary="Heartbeat cancelled",
+                    duration_ms=0,
+                )
+            finally:
+                active_session_type.reset(session_token)
+                keepalive.cancel()
+
+    async def _finalize_session_if_ended(self) -> None:
+        """Session-boundary finalize; must not be skippable by cycle timeout/cancel."""
+        try:
+            from core.memory.conversation import ConversationMemory
+
+            await ConversationMemory(self.anima_dir, self.model_config).finalize_if_session_ended()
+        except Exception:
+            logger.debug("[%s] finalize_if_session_ended failed", self.name, exc_info=True)
 
     # ── Hard timeout helper ───────────────────────────────────
 
@@ -499,6 +525,7 @@ class LifecycleMixin:
     async def run_consolidation(
         self,
         consolidation_type: str = "daily",
+        project: str | None = None,
     ) -> CycleResult:
         """Run memory consolidation as a 2-phase Anima-driven task.
 
@@ -518,6 +545,7 @@ class LifecycleMixin:
 
         Args:
             consolidation_type: "daily" or "weekly"
+            project: Optional project archive to consolidate without Phase A.
         """
         logger.info(
             "[%s] run_consolidation START type=%s",
@@ -534,6 +562,9 @@ class LifecycleMixin:
                 self._task_slots["background"] = f"Memory consolidation ({consolidation_type})"
                 agent = _agent_for_lane(self, "background")
                 _session_token = agent._tool_handler.set_active_session_type("heartbeat")
+                previous_default_project = getattr(agent._tool_handler, "_default_project", None)
+                if project is not None:
+                    agent._tool_handler._default_project = project
 
                 _consolidation_flag = self.anima_dir / "state" / ".consolidation_mode"
                 try:
@@ -544,7 +575,11 @@ class LifecycleMixin:
                 try:
                     from core.memory.consolidation import ConsolidationEngine
 
-                    engine = ConsolidationEngine(self.anima_dir, self.name)
+                    engine = (
+                        ConsolidationEngine(self.anima_dir, self.name, project=project)
+                        if project is not None
+                        else ConsolidationEngine(self.anima_dir, self.name)
+                    )
 
                     self._activity.log(
                         "consolidation_start",
@@ -589,6 +624,8 @@ class LifecycleMixin:
                     )
                     raise
                 finally:
+                    if project is not None:
+                        agent._tool_handler._default_project = previous_default_project
                     _keepalive.cancel()
                     _consolidation_flag.unlink(missing_ok=True)
                     active_session_type.reset(_session_token)
@@ -615,14 +652,19 @@ class LifecycleMixin:
         _llm_cred = getattr(cfg.consolidation, "llm_credential", None)
         consolidation_credential = _llm_cred if isinstance(_llm_cred, str) else ""
         start_mono = _time.monotonic()
+        project = getattr(engine, "project", None)
 
         # ── Phase A: Episode extraction ─────────────────────────
         target_date, window_start, window_end = engine.previous_local_day_window(now_local())
-        chunks = engine.collect_activity_chunks(
-            hours=24,
-            model=consolidation_model,
-            since=window_start,
-            until=window_end,
+        chunks = (
+            engine.collect_activity_chunks(
+                hours=24,
+                model=consolidation_model,
+                since=window_start,
+                until=window_end,
+            )
+            if project is None
+            else []
         )
         episode_parts: list[str] = []
 
@@ -732,10 +774,10 @@ class LifecycleMixin:
                 + reflections_text
             )
 
-        resolved = engine._collect_resolved_events(hours=24)
+        resolved = engine._collect_resolved_events(hours=24) if project is None else []
         resolved_text = "\n".join(f"- {r['ts'][:16]}: {r['content']}" for r in resolved) if resolved else ""
 
-        error_patterns = engine._collect_error_entries(hours=24)
+        error_patterns = engine._collect_error_entries(hours=24) if project is None else ""
         knowledge_files = engine._list_knowledge_files_with_meta()
         knowledge_list_text = _format_knowledge_list(knowledge_files)
 
@@ -756,6 +798,13 @@ class LifecycleMixin:
             merge_candidates=merge_candidates_text,
             error_patterns_summary=error_patterns,
         )
+        if project is not None:
+            prompt += (
+                "\n\n## Project archive boundary\n"
+                f"Read episodes only from `episodes/projects/{project}/`. "
+                f"Read and write knowledge only in `knowledge/projects/{project}/`. "
+                "Do not use or modify memory outside this project archive."
+            )
 
         base_model_config = self.memory.read_model_config()
         consolidation_model_config = _consolidation_model_config(
@@ -824,6 +873,7 @@ class LifecycleMixin:
         cfg = load_config()
         consolidation_model = cfg.consolidation.llm_model
         start_mono = _time.monotonic()
+        project = getattr(engine, "project", None)
 
         knowledge_files = engine._list_knowledge_files_with_meta()
         knowledge_list_text = _format_knowledge_list(knowledge_files)
@@ -836,11 +886,14 @@ class LifecycleMixin:
         merge_candidates_text = _format_merge_candidates(merge_candidates)
 
         try:
-            hygiene_report = scan_memory_hygiene(self.anima_dir)
-            hygiene_section = _format_hygiene_section(
-                hygiene_report,
-                locale=getattr(cfg, "locale", None),
-            )
+            if project is None:
+                hygiene_report = scan_memory_hygiene(self.anima_dir)
+                hygiene_section = _format_hygiene_section(
+                    hygiene_report,
+                    locale=getattr(cfg, "locale", None),
+                )
+            else:
+                hygiene_section = ""
         except Exception:
             logger.warning("[%s] memory hygiene scan failed", self.name, exc_info=True)
             hygiene_section = ""
@@ -853,6 +906,12 @@ class LifecycleMixin:
             total_knowledge_count=len(knowledge_files),
             hygiene_section=hygiene_section,
         )
+        if project is not None:
+            prompt += (
+                "\n\n## Project archive boundary\n"
+                f"Read and write knowledge only in `knowledge/projects/{project}/`. "
+                "Do not use or modify memory outside this project archive."
+            )
 
         base_model_config = self.memory.read_model_config()
         consolidation_model_config = _consolidation_model_config(
@@ -966,13 +1025,14 @@ class LifecycleMixin:
             skills: Optional cron skill references from cron.md.
         """
         self._get_interrupt_event("_background").clear()
-        logger.info("[%s] run_cron_task START task=%s", self.name, task_name)
+        logger.info("[%s] run_cron_task WAITING_LOCK task=%s", self.name, task_name)
         from core.tooling.handler import active_session_type
 
         cron_tq_id = self._cron_taskboard_start(task_name, description, cron_type="llm")
 
         try:
             async with self._background_lock:
+                logger.info("[%s] run_cron_task START task=%s", self.name, task_name)
                 self._mark_busy_start()
                 _keepalive = asyncio.create_task(self._keepalive_while_busy())
                 self._cron_idle.clear()
@@ -997,13 +1057,25 @@ class LifecycleMixin:
                         agent.set_interrupt_event(self._get_interrupt_event("_background"))
                         _session_token = agent._tool_handler.set_active_session_type("cron")
                         agent._tool_handler.set_session_origin(ORIGIN_SYSTEM)
-                        original_config = None
                         bg_config = self._resolve_background_config("cron")
-                        if bg_config is not None:
-                            original_config = agent.model_config
-                            agent.update_model_config(bg_config)
+                        active_config = bg_config or agent.model_config
+
+                        async def _run(config):  # noqa: ANN001
+                            return await _run_cron_cycle_with_transient_retries(
+                                agent,
+                                prompt,
+                                task_name=task_name,
+                                model_config_override=config,
+                            )
+
                         try:
-                            result = await _run_cron_cycle_with_transient_retries(agent, prompt, task_name=task_name)
+                            result = await run_with_model_fallback(
+                                _run,
+                                activity=self._activity,
+                                primary_config=active_config,
+                                active_config=active_config,
+                                channel="cron",
+                            )
                         except asyncio.CancelledError:
                             current = asyncio.current_task()
                             if current is not None and current.cancelling():
@@ -1020,8 +1092,6 @@ class LifecycleMixin:
                                 duration_ms=0,
                             )
                         finally:
-                            if original_config is not None:
-                                agent.update_model_config(original_config)
                             active_session_type.reset(_session_token)
                     self._last_activity = now_local()
 
@@ -1042,9 +1112,14 @@ class LifecycleMixin:
                     ]
                     result.cron_skill_rejections = rejection_dicts
                     result.cron_skill_warnings = warning_dicts
+                    cron_summary = (
+                        f"[ERROR:{result.reason or result.stop_kind}] {result.summary}"
+                        if result.action == "error"
+                        else result.summary
+                    )
                     self.memory.append_cron_log(
                         task_name,
-                        summary=result.summary,
+                        summary=cron_summary,
                         duration_ms=result.duration_ms,
                         skill_rejections=rejection_dicts,
                     )
@@ -1092,6 +1167,18 @@ class LifecycleMixin:
                         self.name,
                         task_name,
                     )
+                    try:
+                        self.memory.append_cron_log(
+                            task_name,
+                            summary=f"[ERROR:{type(exc).__name__}] {str(exc)}",
+                            duration_ms=0,
+                            skill_rejections=[
+                                {"ref": rejection.ref, "reason": rejection.reason}
+                                for rejection in cron_skill_rejections
+                            ],
+                        )
+                    except Exception:
+                        logger.warning("[%s] Failed to append cron error log", self.name, exc_info=True)
                     # Activity log: error (safe=True to prevent double-fault)
                     self._activity.log(
                         "error",
@@ -1137,7 +1224,7 @@ class LifecycleMixin:
         Returns:
             Dictionary with execution results (exit_code, stdout, stderr, duration_ms)
         """
-        logger.info("[%s] run_cron_command START task=%s", self.name, task_name)
+        logger.info("[%s] run_cron_command WAITING_LOCK task=%s", self.name, task_name)
         start_ms = time.time_ns() // 1_000_000
 
         cron_tq_id = self._cron_taskboard_start(
@@ -1154,6 +1241,7 @@ class LifecycleMixin:
 
         try:
             async with self._background_lock:
+                logger.info("[%s] run_cron_command START task=%s", self.name, task_name)
                 self._mark_busy_start()
                 self._cron_idle.clear()
                 self._status_slots["background"] = "working"

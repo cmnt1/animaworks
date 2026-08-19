@@ -8,11 +8,10 @@ exception passes remain in core/.
 """
 
 import importlib
-import subprocess
+import re
 from pathlib import Path
 
 import pytest
-
 
 # ── Hierarchy availability ───────────────────────────────────
 
@@ -32,13 +31,23 @@ class TestExceptionHierarchyAvailability:
     def test_base_catches_all_leaf_exceptions(self):
         """except AnimaWorksError catches every domain exception."""
         from core.exceptions import (
+            AnimaNotFoundError,
+            AnimaNotRunningError,
             AnimaWorksError,
-            LLMAPIError, LLMTimeoutError, StreamDisconnectedError,
-            ToolConfigError, ToolExecutionError, ToolNotFoundError,
-            MemoryReadError, MemoryWriteError, MemoryCorruptedError,
-            AnimaNotFoundError, AnimaNotRunningError, IPCConnectionError,
-            ConfigNotFoundError, ConfigValidationError,
-            RecipientNotFoundError, DeliveryError,
+            ConfigNotFoundError,
+            ConfigValidationError,
+            DeliveryError,
+            IPCConnectionError,
+            LLMAPIError,
+            LLMTimeoutError,
+            MemoryCorruptedError,
+            MemoryReadError,
+            MemoryWriteError,
+            RecipientNotFoundError,
+            StreamDisconnectedError,
+            ToolConfigError,
+            ToolExecutionError,
+            ToolNotFoundError,
         )
         leaves = [
             LLMAPIError, LLMTimeoutError, StreamDisconnectedError,
@@ -64,8 +73,8 @@ class TestReExportCompatibility:
 
     def test_stream_disconnected_error_re_export(self):
         """StreamDisconnectedError importable from core.execution.base."""
-        from core.execution.base import StreamDisconnectedError as FromBase
         from core.exceptions import StreamDisconnectedError as FromExceptions
+        from core.execution.base import StreamDisconnectedError as FromBase
         assert FromBase is FromExceptions
 
     def test_stream_disconnected_error_partial_text(self):
@@ -77,8 +86,8 @@ class TestReExportCompatibility:
 
     def test_tool_config_error_re_export(self):
         """ToolConfigError importable from core.tools._base."""
-        from core.tools._base import ToolConfigError as FromBase
         from core.exceptions import ToolConfigError as FromExceptions
+        from core.tools._base import ToolConfigError as FromBase
         assert FromBase is FromExceptions
 
 
@@ -162,15 +171,11 @@ class TestNoSilentPasses:
         core_dir = Path(__file__).resolve().parents[2] / "core"
         assert core_dir.is_dir(), f"core/ not found at {core_dir}"
 
-        # Use multiline grep (-Pz) to match except/pass across lines
-        result = subprocess.run(
-            ["grep", "-Przl", r"except\s+Exception\s*:\s*\n\s+pass\b", str(core_dir)],
-            capture_output=True, text=True,
-        )
+        pattern = re.compile(r"except\s+Exception\s*:\s*\n\s+pass\b")
         matched_files = [
-            Path(f).name
-            for f in result.stdout.strip().splitlines()
-            if f.strip()
+            path.name
+            for path in core_dir.rglob("*.py")
+            if pattern.search(path.read_text(encoding="utf-8"))
         ]
         unexpected = [f for f in matched_files if f not in self._ALLOWED_FILES]
         assert unexpected == [], (

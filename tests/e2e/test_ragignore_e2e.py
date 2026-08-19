@@ -59,7 +59,11 @@ def vector_store(anima_dir: Path):
     """Create ChromaDB vector store in temp directory."""
     from core.memory.rag.store import ChromaVectorStore
 
-    return ChromaVectorStore(persist_dir=anima_dir / "vectordb")
+    store = ChromaVectorStore(persist_dir=anima_dir / "vectordb")
+    yield store
+    from tests.helpers.chroma import close_chroma_store
+
+    close_chroma_store(store)
 
 
 @pytest.fixture

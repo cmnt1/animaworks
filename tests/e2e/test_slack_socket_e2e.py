@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, MagicMock
 
-
 from core.config.models import (
     AnimaWorksConfig,
     ExternalMessagingChannelConfig,
@@ -19,7 +18,6 @@ from core.config.models import (
     save_config,
 )
 from core.schemas import Message
-
 
 # ── Helpers ──────────────────────────────────────────────
 
@@ -54,6 +52,7 @@ def _make_socket_manager(data_dir, anima_mapping, monkeypatch):
     # Capture event handler registrations instead of connecting to Slack
     captured_handlers: dict[str, list] = {}
     mock_async_app = MagicMock()
+    mock_async_app.client.auth_test = AsyncMock(return_value={"user_id": "U_TEST_BOT"})
 
     def _capture_event(event_type):
         def decorator(func):
@@ -63,6 +62,11 @@ def _make_socket_manager(data_dir, anima_mapping, monkeypatch):
 
     mock_async_app.event = _capture_event
 
+    monkeypatch.setattr(
+        SlackSocketModeManager,
+        "_discover_per_anima_bots",
+        staticmethod(lambda: []),
+    )
     monkeypatch.setattr("server.slack_socket.AsyncApp", lambda **kw: mock_async_app)
     monkeypatch.setattr(
         "server.slack_socket.AsyncSocketModeHandler",
@@ -250,7 +254,7 @@ class TestSlackSocketModeE2E:
         make_anima("sakura")
         # Messenger.receive() filters messages when from_person not in config.animas.
         # Slack messages have from_person='slack:U_R'. Clear animas so filter is skipped.
-        from core.config.models import load_config, save_config, invalidate_cache
+        from core.config.models import invalidate_cache, load_config, save_config
         cfg = load_config()
         cfg.animas.clear()
         save_config(cfg, data_dir / "config.json")
@@ -301,7 +305,6 @@ class TestSocketModeConfigE2E:
 
         from server.slack_socket import SlackSocketModeManager
 
-        connect_called = False
         original_connect = AsyncMock()
 
         monkeypatch.setattr(

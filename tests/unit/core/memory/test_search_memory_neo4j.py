@@ -166,6 +166,31 @@ class TestCreateNeo4jBackend:
 
 
 class TestSearchViaNeo4j:
+    def test_project_filter_excludes_similar_archive_name(self, mock_memory) -> None:
+        handler, mock_backend = _make_handler_mixin(mock_memory)
+        mock_backend.retrieve = AsyncMock(
+            return_value=[
+                RetrievedMemory(
+                    content="foo result",
+                    score=0.9,
+                    source="episode:1",
+                    metadata={"source_file": "episodes/projects/foo/session.md"},
+                ),
+                RetrievedMemory(
+                    content="foobar result",
+                    score=0.8,
+                    source="episode:2",
+                    metadata={"source_file": "episodes/projects/foobar/session.md"},
+                ),
+            ]
+        )
+
+        result = handler._search_via_neo4j("query", "episodes", 0, project="foo")
+
+        assert result is not None
+        assert "foo result" in result
+        assert "foobar result" not in result
+
     def test_returns_formatted_results(self, mock_memory) -> None:
         handler, mock_backend = _make_handler_mixin(mock_memory)
         mock_backend.retrieve = AsyncMock(
@@ -407,6 +432,24 @@ class TestHandleSearchMemoryIntegration:
         assert "## Common Knowledge" in result
         assert "common result" in result
         assert "[2]" in result
+
+    def test_all_scope_forwards_time_range_to_legacy_scopes(self, mock_memory) -> None:
+        handler, _ = _make_handler_mixin(mock_memory)
+
+        handler._handle_search_memory(
+            {
+                "query": "test",
+                "scope": "all",
+                "time_range": {
+                    "after": "2026-08-13T00:00:00+09:00",
+                    "before": "2026-08-14T00:00:00+09:00",
+                },
+            }
+        )
+
+        for recorded in mock_memory.search_memory_text.call_args_list:
+            assert recorded.kwargs["time_start"] == "2026-08-13T00:00:00+09:00"
+            assert recorded.kwargs["time_end"] == "2026-08-14T00:00:00+09:00"
 
     def test_all_scope_falls_back_to_legacy_all_on_neo4j_failure(self, mock_memory) -> None:
         handler, mock_backend = _make_handler_mixin(mock_memory)

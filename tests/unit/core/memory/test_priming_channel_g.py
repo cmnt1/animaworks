@@ -205,6 +205,19 @@ class TestFormatPrimingSectionGraphContext:
 class TestPrimingEngineChannelG:
     """Tests for channel G integration in PrimingEngine."""
 
+    async def test_channel_g_skips_legacy_backend(self, tmp_path) -> None:
+        from core.memory.backend.legacy import LegacyRAGBackend
+        from core.memory.priming.engine import PrimingEngine
+
+        engine = PrimingEngine(tmp_path)
+        engine._memory_backend = LegacyRAGBackend(tmp_path)
+
+        with patch("core.memory.priming.engine._channel_g.collect_graph_context", new_callable=AsyncMock) as collect:
+            result = await engine._channel_g_graph_context("test message")
+
+        assert result == ""
+        collect.assert_not_awaited()
+
     async def test_channel_g_called_in_prime_memories(self, tmp_path) -> None:
         from core.memory.priming.engine import PrimingEngine
 

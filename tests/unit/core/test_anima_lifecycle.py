@@ -7,9 +7,58 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import date
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+
+@pytest.mark.asyncio
+async def test_project_daily_consolidation_skips_phase_a_and_scopes_prompt() -> None:
+    from core._anima_lifecycle import LifecycleMixin
+    from core.schemas import CycleResult, ModelConfig
+
+    owner = SimpleNamespace(
+        name="librarian",
+        memory=MagicMock(),
+        _agent_session_lock=asyncio.Lock(),
+        _run_autonomous_skill_learning=lambda: None,
+    )
+    owner.memory.read_model_config.return_value = ModelConfig(model="test-model")
+    agent = MagicMock()
+    agent.run_cycle = AsyncMock(return_value=CycleResult(trigger="consolidation:daily", action="completed"))
+    owner.agent = agent
+
+    engine = MagicMock()
+    engine.project = "foo"
+    engine.previous_local_day_window.return_value = (date(2026, 8, 12), MagicMock(), MagicMock())
+    engine._collect_recent_episodes.return_value = []
+    engine.load_phase_b_carryover.return_value = []
+    engine.format_phase_b_carryover.return_value = ""
+    engine._extract_reflections_from_episodes.return_value = ""
+    engine._list_knowledge_files_with_meta.return_value = []
+    engine._find_merge_candidates.return_value = []
+
+    cfg = SimpleNamespace(
+        consolidation=SimpleNamespace(llm_model="test-model", llm_credential=None),
+    )
+    with (
+        patch("core.config.load_config", return_value=cfg),
+        patch("core._anima_lifecycle.load_prompt", return_value="base prompt"),
+        patch(
+            "core._anima_lifecycle._consolidation_model_config",
+            return_value=ModelConfig(model="test-model"),
+        ),
+    ):
+        await LifecycleMixin._run_daily_consolidation(owner, engine)
+
+    engine.collect_activity_chunks.assert_not_called()
+    engine._collect_resolved_events.assert_not_called()
+    engine._collect_error_entries.assert_not_called()
+    prompt = agent.run_cycle.await_args.args[0]
+    assert "episodes/projects/foo/" in prompt
+    assert "knowledge/projects/foo/" in prompt
 
 
 class TestRunCronCommandZombieReap:

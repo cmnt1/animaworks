@@ -319,6 +319,76 @@ class SchedulerMixin:
         )
         return min(max_seconds, max(base, estimate))
 
+    async def _run_project_archive_consolidations(
+        self,
+        handle: object,
+        anima_name: str,
+        anima_dir: Path,
+        *,
+        consolidation_type: str,
+        timeout_s: float,
+    ) -> None:
+        """Run consolidation once for each non-empty project archive."""
+        from core.memory.consolidation import list_project_archives
+
+        projects: list[str] = []
+        for project in list_project_archives(anima_dir):
+            episodes_dir = anima_dir / "episodes" / "projects" / project
+            if not any(episodes_dir.glob("*.md")):
+                logger.info(
+                    "Project consolidation skipped for %s/%s: no episodes",
+                    anima_name,
+                    project,
+                )
+                continue
+            projects.append(project)
+        if not projects:
+            return
+
+        consolidating: set[str] = getattr(self, "_consolidating", set())
+        consolidating.add(anima_name)
+        timed_out = False
+        try:
+            for project in projects:
+                try:
+                    response = await handle.send_request(
+                        "run_consolidation",
+                        {"consolidation_type": consolidation_type, "project": project},
+                        timeout=timeout_s,
+                    )
+                except TimeoutError:
+                    timed_out = True
+                    logger.warning(
+                        "consolidation_timeout anima=%s project=%s phase=phase_b type=%s timeout_s=%.0f",
+                        anima_name,
+                        project,
+                        consolidation_type,
+                        timeout_s,
+                    )
+                    try:
+                        await handle.send_request("interrupt", {}, timeout=10.0)
+                    except Exception:
+                        logger.debug("Interrupt request after project consolidation timeout failed", exc_info=True)
+                    continue
+                except Exception:
+                    logger.exception("Project consolidation failed for %s/%s", anima_name, project)
+                    continue
+
+                if response.error:
+                    logger.error(
+                        "Project consolidation IPC error for %s/%s: %s",
+                        anima_name,
+                        project,
+                        response.error,
+                    )
+                else:
+                    logger.info("Project consolidation completed for %s/%s", anima_name, project)
+        finally:
+            if timed_out:
+                asyncio.get_running_loop().call_later(120, consolidating.discard, anima_name)
+            else:
+                consolidating.discard(anima_name)
+
     async def _run_daily_consolidation(self, scheduled: bool = False) -> None:
         """Run daily consolidation for all animas via IPC.
 
@@ -510,9 +580,21 @@ class SchedulerMixin:
 
         for anima_name, anima_dir in self._iter_consolidation_targets():
             summary["targets"] = int(summary["targets"]) + 1
-            if should_skip_inactive_consolidation(anima_dir, anima_name, consolidation_cfg):
-                continue
+            inactive = should_skip_inactive_consolidation(anima_dir, anima_name, consolidation_cfg)
             handle = self.processes.get(anima_name)
+            if inactive:
+                if handle and handle.state == ProcessState.RUNNING:
+                    await self._run_project_archive_consolidations(
+                        handle,
+                        anima_name,
+                        anima_dir,
+                        consolidation_type="daily",
+                        timeout_s=self._resolve_consolidation_ipc_timeout(
+                            consolidation_cfg,
+                            consolidation_type="daily",
+                        ),
+                    )
+                continue
             if not handle or handle.state != ProcessState.RUNNING:
                 summary["skipped_not_running"] = int(summary["skipped_not_running"]) + 1
                 logger.info(
@@ -537,6 +619,16 @@ class SchedulerMixin:
                     gate.episode_count,
                     gate.carryover_count,
                     gate.threshold,
+                )
+                await self._run_project_archive_consolidations(
+                    handle,
+                    anima_name,
+                    anima_dir,
+                    consolidation_type="daily",
+                    timeout_s=self._resolve_consolidation_ipc_timeout(
+                        consolidation_cfg,
+                        consolidation_type="daily",
+                    ),
                 )
                 continue
             summary["attempted"] = int(summary["attempted"]) + 1
@@ -565,6 +657,14 @@ class SchedulerMixin:
             )
             logger.warning("Daily consolidation did not run: %s", summary["failure_reason"])
             return summary
+
+            await self._run_project_archive_consolidations(
+                handle,
+                anima_name,
+                anima_dir,
+                consolidation_type="daily",
+                timeout_s=timeout_s,
+            )
 
         _write_marker(_marker_dir(self._get_data_dir()) / "last_daily_consolidation")
         summary["marker_written"] = True
@@ -646,9 +746,21 @@ class SchedulerMixin:
 
         eligible_targets = []
         for anima_name, anima_dir in self._iter_consolidation_targets():
-            if should_skip_inactive_consolidation(anima_dir, anima_name, consolidation_cfg):
-                continue
+            inactive = should_skip_inactive_consolidation(anima_dir, anima_name, consolidation_cfg)
             handle = self.processes.get(anima_name)
+            if inactive:
+                if handle and handle.state == ProcessState.RUNNING:
+                    await self._run_project_archive_consolidations(
+                        handle,
+                        anima_name,
+                        anima_dir,
+                        consolidation_type="weekly",
+                        timeout_s=self._resolve_consolidation_ipc_timeout(
+                            consolidation_cfg,
+                            consolidation_type="weekly",
+                        ),
+                    )
+                continue
             if not handle or handle.state != ProcessState.RUNNING:
                 logger.info(
                     "Weekly integration skipped for %s: process not running",
@@ -749,6 +861,14 @@ class SchedulerMixin:
                         "duration_ms": result.get("duration_ms", 0),
                     },
                 )
+
+            await self._run_project_archive_consolidations(
+                handle,
+                anima_name,
+                anima_dir,
+                consolidation_type="weekly",
+                timeout_s=timeout_s,
+            )
 
         _write_marker(_marker_dir(self._get_data_dir()) / "last_weekly_integration")
 

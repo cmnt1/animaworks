@@ -162,4 +162,6 @@ def test_fresh_vector_store_starts_in_wal_mode(tmp_path, monkeypatch):
         with sqlite3.connect(persist_dir / "chroma.sqlite3") as conn:
             assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     finally:
-        store.close()
+        from tests.helpers.chroma import close_chroma_store
+
+        close_chroma_store(store)

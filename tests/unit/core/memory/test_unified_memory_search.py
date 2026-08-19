@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
+from core.memory.rag.retriever import RetrievalResult
 from core.memory.retrieval.pipeline import PipelineResult
 from core.memory.retrieval.unified_search import UnifiedMemorySearch, build_iterative_queries
 
@@ -55,7 +58,7 @@ class FakeRAGSearch:
             return self.vector_query_returns[(query, scope)]
         return self.vector_returns.get(scope, [])
 
-    def _graph_episodes_search(self, query: str, pool_k: int, knowledge_dir: Path) -> list[dict[str, Any]]:
+    def _graph_episodes_search(self, query: str, pool_k: int, knowledge_dir: Path, **kwargs) -> list[dict[str, Any]]:
         self.graph_calls += 1
         return self.graph_returns
 
@@ -176,6 +179,120 @@ def test_tool_offset_applies_after_final_ranking(fake_rag: FakeRAGSearch, monkey
 
     assert tool_results[0]["doc_id"] == "b"
     assert chat_results[0]["doc_id"] == "a"
+
+
+def test_activity_time_range_is_forwarded_in_all_scope(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def activity(*args, **kwargs):
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", activity)
+
+    _searcher(fake_rag).search(
+        "meeting",
+        scope="all",
+        limit=3,
+        trigger="tool",
+        time_start="2026-07-01",
+        time_end="2026-07-02",
+    )
+
+    assert calls[0]["time_start"] == "2026-07-01"
+    assert calls[0]["time_end"] == "2026-07-02"
+
+
+def test_soft_source_collapse_precedes_offset_and_keeps_facts(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.vector_returns["knowledge"] = [{"doc_id": "seed", "content": "seed", "score": 0.1}]
+    CapturingPipeline.return_items = [
+        {
+            "doc_id": "a-1",
+            "source_file": "knowledge/a.md",
+            "memory_type": "knowledge",
+            "total_chunks": 2,
+            "score": 0.9,
+        },
+        {
+            "doc_id": "a-2",
+            "source_file": "knowledge/a.md",
+            "memory_type": "knowledge",
+            "total_chunks": 2,
+            "score": 0.8,
+        },
+        {
+            "doc_id": "b-1",
+            "source_file": "knowledge/b.md",
+            "memory_type": "knowledge",
+            "total_chunks": 2,
+            "score": 0.7,
+        },
+        {
+            "doc_id": "fact-1",
+            "source_file": "facts/facts.md",
+            "memory_type": "facts",
+            "total_chunks": 3,
+            "score": 0.6,
+        },
+        {
+            "doc_id": "activity-1",
+            "source_file": "activity_log/log.md",
+            "memory_type": "activity_log",
+            "total_chunks": 3,
+            "score": 0.5,
+        },
+    ]
+
+    results = _searcher(fake_rag).search("query", scope="knowledge", limit=3, trigger="tool", offset=1)
+
+    assert [item["doc_id"] for item in results] == ["b-1", "fact-1", "activity-1"]
+
+
+def test_keyword_only_soft_collapse_keeps_same_source_as_second_pass(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.keyword_returns["knowledge"] = [
+        {
+            "doc_id": "a-1",
+            "source_file": "knowledge/a.md",
+            "memory_type": "knowledge",
+            "total_chunks": 2,
+            "score": 0.9,
+            "search_method": "keyword_fallback",
+        },
+        {
+            "doc_id": "a-2",
+            "source_file": "knowledge/a.md",
+            "memory_type": "knowledge",
+            "total_chunks": 2,
+            "score": 0.8,
+            "search_method": "keyword_fallback",
+        },
+        {
+            "doc_id": "b-1",
+            "source_file": "knowledge/b.md",
+            "memory_type": "knowledge",
+            "total_chunks": 2,
+            "score": 0.7,
+            "search_method": "keyword_fallback",
+        },
+    ]
+
+    diverse = _searcher(fake_rag).search("query", scope="knowledge", limit=2, trigger="tool")
+    all_chunks = _searcher(fake_rag).search("query", scope="knowledge", limit=3, trigger="tool")
+
+    assert [item["doc_id"] for item in diverse] == ["a-1", "b-1"]
+    assert [item["doc_id"] for item in all_chunks] == ["a-1", "b-1", "a-2"]
 
 
 def test_abstain_propagates_last_search_meta(fake_rag: FakeRAGSearch, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -429,6 +546,42 @@ def test_min_score_applied_to_reranked_results(
     assert [item["doc_id"] for item in results] == ["ce-high"]
 
 
+def test_min_score_filters_before_soft_source_collapse(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.vector_returns["knowledge"] = [{"doc_id": "seed", "content": "seed", "score": 0.1}]
+    CapturingPipeline.return_items = [
+        {
+            "doc_id": "a-1",
+            "source_file": "knowledge/a.md",
+            "total_chunks": 2,
+            "score": 0.9,
+            "search_method": "cross_encoder",
+        },
+        {
+            "doc_id": "a-2",
+            "source_file": "knowledge/a.md",
+            "total_chunks": 2,
+            "score": 0.8,
+            "search_method": "cross_encoder",
+        },
+        {
+            "doc_id": "b-1",
+            "source_file": "knowledge/b.md",
+            "total_chunks": 2,
+            "score": 0.2,
+            "search_method": "cross_encoder",
+        },
+    ]
+
+    results = _searcher(fake_rag).search("query", scope="knowledge", limit=2, trigger="chat", min_score=0.5)
+
+    assert [item["doc_id"] for item in results] == ["a-1", "a-2"]
+
+
 def test_tool_and_priming_overlap_share_top_doc_ids(
     fake_rag: FakeRAGSearch,
     monkeypatch: pytest.MonkeyPatch,
@@ -604,3 +757,147 @@ def test_iterative_retrieval_merges_deduplicates_and_marks_round_two(
     ]
     assert all(item["retrieval_round"] == 2 for item in results)
     assert fake_rag.vector_queries == [query, *transformed]
+
+
+def test_search_many_merges_parallel_queries_by_best_score(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Multiple queries keep best score per doc and honor limit after parallel run."""
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.vector_query_returns[("alpha", "episodes")] = [
+        {"doc_id": "shared", "content": "from alpha", "score": 0.6, "source_file": "a.md"},
+        {"doc_id": "only-a", "content": "a", "score": 0.5, "source_file": "a2.md"},
+    ]
+    fake_rag.vector_query_returns[("beta", "episodes")] = [
+        {"doc_id": "shared", "content": "from beta", "score": 0.9, "source_file": "b.md"},
+        {"doc_id": "only-b", "content": "b", "score": 0.7, "source_file": "b2.md"},
+    ]
+    fake_rag.vector_query_returns[("gamma", "episodes")] = [
+        {"doc_id": "only-g", "content": "g", "score": 0.4, "source_file": "g.md"},
+    ]
+
+    results = _searcher(fake_rag).search_many(
+        ["alpha", "beta", "gamma"],
+        scope="episodes",
+        limit=3,
+        trigger="chat",
+    )
+
+    assert [item["doc_id"] for item in results] == ["shared", "only-b", "only-a"]
+    assert results[0]["score"] == 0.9
+    assert results[0]["content"] == "from beta"
+    assert len(results) == 3
+
+
+def test_search_many_flushes_shared_access_batch_once_per_collection(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    vector_store = MagicMock()
+    indexer = SimpleNamespace(vector_store=vector_store)
+    monkeypatch.setattr(fake_rag, "_get_indexer", lambda: indexer)
+
+    def vector_search(query: str, scope: str, *args, access_batch, **kwargs) -> list[dict[str, Any]]:
+        score = 0.9 if query == "beta" else 0.6
+        result = RetrievalResult(
+            doc_id="shared",
+            content=query,
+            score=score,
+            metadata={"memory_type": scope, "anima": "test", "access_count": 0},
+            source_scores={},
+        )
+        access_batch.record([result], "test", kind="retrieved")
+        return [{"doc_id": result.doc_id, "content": result.content, "score": result.score}]
+
+    monkeypatch.setattr(fake_rag, "_vector_search_primary", vector_search)
+
+    results = _searcher(fake_rag).search_many(
+        ["alpha", "beta"],
+        scope="knowledge",
+        limit=1,
+        trigger="chat",
+    )
+
+    assert results == [{"doc_id": "shared", "content": "beta", "score": 0.9}]
+    vector_store.update_metadata.assert_called_once()
+    collection, doc_ids, metadata = vector_store.update_metadata.call_args.args
+    assert collection == "test_knowledge"
+    assert doc_ids == ["shared"]
+    assert metadata[0]["access_count"] == pytest.approx(0.4)
+    assert metadata[0]["retrieved_count"] == 2
+
+
+def test_search_many_can_rerank_once_after_query_merge(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.vector_query_returns[("alpha", "episodes")] = [
+        {"doc_id": "a", "content": "a", "score": 0.8},
+        {"doc_id": "shared", "content": "shared", "score": 0.7},
+    ]
+    fake_rag.vector_query_returns[("beta", "episodes")] = [
+        {"doc_id": "b", "content": "b", "score": 0.9},
+        {"doc_id": "shared", "content": "shared", "score": 0.6},
+    ]
+    reranker = MagicMock()
+
+    def rerank_once(query, items, *, top_k):
+        return [{**item, "score": 1.0, "search_method": "cross_encoder"} for item in items[:top_k]]
+
+    reranker.rerank_sync.side_effect = rerank_once
+    monkeypatch.setattr("core.memory.retrieval.reranker.get_reranker", lambda _model: reranker)
+
+    results = _searcher(fake_rag).search_many(
+        ["alpha", "beta"],
+        scope="episodes",
+        limit=3,
+        trigger="chat",
+        rerank_after_merge=True,
+    )
+
+    reranker.rerank_sync.assert_called_once()
+    assert reranker.rerank_sync.call_args.args[0] == "alpha"
+    assert len(reranker.rerank_sync.call_args.args[1]) == 3
+    assert all(call["rerank_enabled"] is False for call in CapturingPipeline.calls)
+    assert len(results) == 3
+
+
+def test_search_many_parallel_matches_serial_order_and_count(
+    fake_rag: FakeRAGSearch,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Parallel merge must match the pre-parallel serial merge semantics."""
+    monkeypatch.setattr("core.memory.retrieval.pipeline.RetrievalPipeline", CapturingPipeline)
+    monkeypatch.setattr("core.memory.retrieval.unified_search.search_activity_log", lambda *args, **kwargs: [])
+    fake_rag.vector_query_returns[("q1", "knowledge")] = [
+        {"doc_id": "d1", "content": "one", "score": 0.8},
+        {"doc_id": "d2", "content": "two", "score": 0.5},
+    ]
+    fake_rag.vector_query_returns[("q2", "knowledge")] = [
+        {"doc_id": "d2", "content": "two-better", "score": 0.85},
+        {"doc_id": "d3", "content": "three", "score": 0.7},
+    ]
+
+    searcher = _searcher(fake_rag)
+    parallel = searcher.search_many(["q1", "q2"], scope="knowledge", limit=5, trigger="chat")
+
+    # Serial baseline: same merge rules applied manually.
+    serial_best: dict[str, dict[str, Any]] = {}
+    for query in ("q1", "q2"):
+        for item in searcher.search(query, scope="knowledge", limit=5, trigger="chat"):
+            key = str(item.get("doc_id", ""))
+            existing = serial_best.get(key)
+            if existing is None or float(item.get("score", 0.0) or 0.0) > float(existing.get("score", 0.0) or 0.0):
+                serial_best[key] = item
+    serial = sorted(serial_best.values(), key=lambda item: float(item.get("score", 0.0) or 0.0), reverse=True)[:5]
+
+    assert [(item["doc_id"], item["score"]) for item in parallel] == [
+        (item["doc_id"], item["score"]) for item in serial
+    ]
+    assert len(parallel) == 3

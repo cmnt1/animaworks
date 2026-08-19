@@ -170,7 +170,10 @@ def vector_store(temp_dirs):
 
     store = ChromaVectorStore(persist_dir=vectordb_dir)
     yield store
-    store.close()
+
+    from tests.helpers.chroma import close_chroma_store
+
+    close_chroma_store(store)
 
 
 # ── Test 1: Shared Knowledge Indexing and Retrieval ─────────────────

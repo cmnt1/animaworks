@@ -11,14 +11,17 @@ references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from core.execution.fallback_activity import run_with_model_fallback
 from core.i18n import t
 from core.memory.conversation import ConversationMemory
 from core.memory.streaming_journal import StreamingJournal
@@ -26,7 +29,7 @@ from core.messenger import InboxItem
 from core.paths import load_prompt
 from core.schemas import CycleResult
 from core.skills.cron_context import SkillContextRejection, SkillContextWarning
-from core.time_utils import now_iso, now_local
+from core.time_utils import ensure_aware, now_iso, now_local
 
 logger = logging.getLogger("animaworks.anima")
 
@@ -99,6 +102,80 @@ def _build_curator_review_part(anima_dir: Path, name: str) -> str | None:
         )
     except Exception:
         logger.debug("[%s] Failed to build curator review part", name, exc_info=True)
+        return None
+
+
+def _build_stale_task_scoreboard(anima_dir: Path, name: str) -> str | None:
+    """Build the oldest-first non-terminal task scoreboard for heartbeat."""
+    try:
+        from core.memory.task_queue import TaskQueueManager
+
+        now = now_local()
+        rows: list[tuple[float, str]] = []
+        for task in TaskQueueManager(anima_dir).get_all_active():
+            try:
+                elapsed_seconds = max(
+                    0.0,
+                    (now - ensure_aware(datetime.fromisoformat(task.updated_at or task.ts))).total_seconds(),
+                )
+            except (TypeError, ValueError):
+                elapsed_seconds = -1.0
+            marker = "⚠️ " if elapsed_seconds > 24 * 60 * 60 else ""
+            hours = max(0, int(elapsed_seconds // 3600))
+            summary = task.summary.replace("\n", " ")[:80]
+            rows.append(
+                (
+                    elapsed_seconds,
+                    f"- {marker}{task.task_id[:12]} | {task.status} | {hours}h | {summary}",
+                )
+            )
+
+        if not rows:
+            return None
+        rows.sort(key=lambda row: row[0], reverse=True)
+        overflow = len(rows) - 20
+        return load_prompt(
+            "fragments/stale_task_scoreboard",
+            tasks="\n".join(row for _, row in rows[:20]),
+            overflow=f"\n- {t('heartbeat.stale_task_overflow', count=overflow)}" if overflow > 0 else "",
+        )
+    except Exception:
+        logger.debug("[%s] Failed to build stale task scoreboard", name, exc_info=True)
+        return None
+
+
+def _build_cron_rejected_notice(anima_dir: Path, name: str) -> str | None:
+    """Return a notice once for each distinct rejected-cron list."""
+    registration_path = anima_dir / "state" / "cron_registration.json"
+    marker_path = anima_dir / "state" / "cron_rejected_notice.sha256"
+    try:
+        registration = json.loads(registration_path.read_text(encoding="utf-8"))
+        rejected = registration.get("rejected") if isinstance(registration, dict) else None
+        if not isinstance(rejected, list):
+            return None
+        digest = hashlib.sha256(
+            json.dumps(rejected, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        if marker_path.is_file() and marker_path.read_text(encoding="utf-8").strip() == digest:
+            return None
+        notice = None
+        if rejected:
+            jobs = "\n".join(
+                f"- {item.get('name', '(unnamed)')}: {item.get('reason', 'unknown reason')}"
+                for item in rejected
+                if isinstance(item, dict)
+            )
+            notice = load_prompt("fragments/cron_rejected_notice", rejected_jobs=jobs)
+        try:
+            from core.memory._io import atomic_write_text
+
+            marker_path.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write_text(marker_path, digest + "\n")
+        except Exception:
+            logger.warning("[%s] Failed to persist rejected cron notice marker", name, exc_info=True)
+        return notice
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        logger.debug("[%s] Failed to build rejected cron notice", name, exc_info=True)
         return None
 
 
@@ -530,11 +607,19 @@ class HeartbeatMixin:
         if cleanup:
             parts.append(cleanup)
 
+        cron_notice = _build_cron_rejected_notice(self.anima_dir, self.name)
+        if cron_notice:
+            parts.append(cron_notice)
+
         parts.extend(self._build_background_context_parts())
 
         preobserved_snapshot = self._build_preobserved_heartbeat_snapshot_part()
         if preobserved_snapshot:
             parts.append(preobserved_snapshot)
+
+        scoreboard = _build_stale_task_scoreboard(self.anima_dir, self.name)
+        if scoreboard:
+            parts.append(scoreboard)
 
         curator_part = _build_curator_review_part(self.anima_dir, self.name)
         if curator_part:
@@ -644,12 +729,10 @@ class HeartbeatMixin:
         journal.open(trigger="heartbeat")
         journal_finalized = False
 
-        # ── Background model swap ──
-        original_config = None
+        # ── Background model selection ──
+        original_config = agent.model_config
         bg_config = self._resolve_background_config("heartbeat")
-        if bg_config is not None:
-            original_config = agent.model_config
-            agent.update_model_config(bg_config)
+        active_config = bg_config or original_config
 
         try:
             from core.config.models import load_config as _load_config_fresh
@@ -662,66 +745,81 @@ class HeartbeatMixin:
             _soft_warned = False
             _hard_exceeded = False
 
-            stream = agent.run_cycle_streaming(
-                prompt,
-                trigger="heartbeat",
-                prior_messages=prior_messages,
-            )
-            try:
-                async for chunk in stream:
-                    # ── Timeout checks (Mode A: reminder_queue injection) ──
-                    _elapsed = time.monotonic() - _start
-                    if not _soft_warned and _elapsed > _soft_timeout:
-                        _soft_warned = True
-                        agent._executor.reminder_queue.push_sync(t("reminder.hb_time_limit"))
-                        logger.info(
-                            "[%s] Heartbeat soft timeout reached (%.0fs > %ds)",
-                            self.name,
-                            _elapsed,
-                            _soft_timeout,
-                        )
-                    if _elapsed > _hard_timeout:
-                        _hard_exceeded = True
-                        logger.warning(
-                            "[%s] Heartbeat hard timeout reached (%.0fs > %ds) — breaking",
-                            self.name,
-                            _elapsed,
-                            _hard_timeout,
-                        )
-                        break
-
-                    # Relay text_delta chunks to waiting user stream
-                    if chunk.get("type") == "text_delta":
-                        accumulated_text += chunk.get("text", "")
-                        journal.write_text(chunk.get("text", ""))
-
-                    if chunk.get("type") == "cycle_done":
-                        cycle_result = chunk.get("cycle_result", {})
-                        result = CycleResult(
-                            trigger=cycle_result.get("trigger", "heartbeat"),
-                            action=cycle_result.get("action", "responded"),
-                            summary=cycle_result.get("summary", ""),
-                            duration_ms=cycle_result.get("duration_ms", 0),
-                            context_usage_ratio=cycle_result.get("context_usage_ratio", 0.0),
-                            session_chained=cycle_result.get("session_chained", False),
-                            total_turns=cycle_result.get("total_turns", 0),
-                        )
-                        journal.finalize(summary=result.summary[:500])
-                        journal_finalized = True
-            finally:
+            async def _run(config):  # noqa: ANN001
+                nonlocal accumulated_text, _hard_exceeded, _soft_warned
+                if config is not agent.model_config:
+                    agent.update_model_config(config)
+                attempt_text = ""
+                attempt_result: CycleResult | None = None
+                stream = agent.run_cycle_streaming(
+                    prompt,
+                    trigger="heartbeat",
+                    prior_messages=prior_messages,
+                )
                 try:
-                    await asyncio.wait_for(stream.aclose(), timeout=10)
-                except TimeoutError:
-                    logger.warning(
-                        "[%s] Timed out closing heartbeat stream after 10 seconds",
-                        self.name,
-                    )
-                except Exception:
-                    logger.warning(
-                        "[%s] Failed to close heartbeat stream",
-                        self.name,
-                        exc_info=True,
-                    )
+                    async for chunk in stream:
+                        # ── Timeout checks (Mode A: reminder_queue injection) ──
+                        _elapsed = time.monotonic() - _start
+                        if not _soft_warned and _elapsed > _soft_timeout:
+                            _soft_warned = True
+                            agent._executor.reminder_queue.push_sync(t("reminder.hb_time_limit"))
+                            logger.info(
+                                "[%s] Heartbeat soft timeout reached (%.0fs > %ds)",
+                                self.name,
+                                _elapsed,
+                                _soft_timeout,
+                            )
+                        if _hard_timeout and _elapsed > _hard_timeout:
+                            _hard_exceeded = True
+                            logger.warning(
+                                "[%s] Heartbeat hard timeout reached (%.0fs > %ds) — breaking",
+                                self.name,
+                                _elapsed,
+                                _hard_timeout,
+                            )
+                            break
+
+                        if chunk.get("type") == "text_delta":
+                            text = chunk.get("text", "")
+                            attempt_text += text
+                            journal.write_text(text)
+                        if chunk.get("type") == "cycle_done":
+                            attempt_result = CycleResult.model_validate(
+                                {
+                                    "trigger": "heartbeat",
+                                    "action": "responded",
+                                    **chunk.get("cycle_result", {}),
+                                }
+                            )
+                finally:
+                    try:
+                        await asyncio.wait_for(stream.aclose(), timeout=10)
+                    except TimeoutError:
+                        logger.warning(
+                            "[%s] Timed out closing heartbeat stream after 10 seconds",
+                            self.name,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "[%s] Failed to close heartbeat stream",
+                            self.name,
+                            exc_info=True,
+                        )
+                accumulated_text = attempt_text
+                return attempt_result or CycleResult(
+                    trigger="heartbeat",
+                    action="responded",
+                    stop_kind="hard_timeout",
+                    summary=attempt_text or "(no result)",
+                )
+
+            result = await run_with_model_fallback(
+                _run,
+                activity=self._activity,
+                primary_config=active_config,
+                active_config=active_config,
+                channel="heartbeat",
+            )
 
             # ── Hard timeout: write recovery note ──
             if _hard_exceeded:
@@ -735,14 +833,6 @@ class HeartbeatMixin:
                 except Exception:
                     logger.debug("[%s] Failed to save hard timeout recovery note", self.name, exc_info=True)
 
-            if result is None:
-                result = CycleResult(
-                    trigger="heartbeat",
-                    action="responded",
-                    stop_kind="hard_timeout",
-                    summary=accumulated_text or "(no result)",
-                )
-
             if not journal_finalized:
                 journal.finalize(summary=result.summary[:500])
                 journal_finalized = True
@@ -751,18 +841,16 @@ class HeartbeatMixin:
 
             # Activity log: heartbeat end (with plan summary for plan-outcome tracking)
             _plan_summary = _extract_plan_summary(accumulated_text)
-            _hb_meta: dict[str, Any] | None = {"plan_summary": _plan_summary} if _plan_summary else None
+            _hb_meta: dict[str, Any] = {"plan_summary": _plan_summary} if _plan_summary else {}
+            if result.action == "error":
+                _hb_meta.update({"status": "failed", "reason": result.reason})
             self._activity.log("heartbeat_end", summary=result.summary, meta=_hb_meta)
 
-            # Session boundary: finalize pending conversation turns
-            try:
-                conv_mem = ConversationMemory(self.anima_dir, self.model_config)
-                await conv_mem.finalize_if_session_ended()
-            except Exception:
-                logger.debug("[%s] finalize_if_session_ended failed", self.name, exc_info=True)
+            # Session boundary finalization moved to run_heartbeat()'s finally block,
+            # so a hard timeout / cancellation cannot skip it.
 
             # A-3: Record important heartbeat actions to episodes
-            if result.summary and "HEARTBEAT_OK" not in result.summary:
+            if result.action != "error" and result.summary and "HEARTBEAT_OK" not in result.summary:
                 ts = now_local().strftime("%H:%M")
                 episode_entry = t(
                     "anima.heartbeat_episode",
@@ -794,10 +882,11 @@ class HeartbeatMixin:
                 unread_count,
             )
             # Heartbeat completed successfully — remove checkpoint
-            try:
-                checkpoint_path.unlink(missing_ok=True)
-            except Exception:
-                logger.debug("[%s] Failed to remove heartbeat checkpoint", self.name, exc_info=True)
+            if result.action != "error":
+                try:
+                    checkpoint_path.unlink(missing_ok=True)
+                except Exception:
+                    logger.debug("[%s] Failed to remove heartbeat checkpoint", self.name, exc_info=True)
 
             # Sync delegated tasks then compact task queue after heartbeat
             try:
@@ -836,7 +925,7 @@ class HeartbeatMixin:
             journal.discard()
             raise
         finally:
-            if original_config is not None:
+            if agent.model_config is not original_config:
                 agent.update_model_config(original_config)
             journal.close()
 

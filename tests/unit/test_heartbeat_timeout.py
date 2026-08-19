@@ -30,7 +30,7 @@ class TestHeartbeatConfigValidation:
     def test_defaults(self):
         cfg = HeartbeatConfig()
         assert cfg.soft_timeout_seconds == 300
-        assert cfg.hard_timeout_seconds == 600
+        assert cfg.hard_timeout_seconds == 0  # 0 = forced termination disabled
 
     def test_custom_values(self):
         cfg = HeartbeatConfig(
@@ -46,7 +46,11 @@ class TestHeartbeatConfigValidation:
 
     def test_hard_timeout_min(self):
         with pytest.raises(ValidationError):
-            HeartbeatConfig(hard_timeout_seconds=30)
+            HeartbeatConfig(hard_timeout_seconds=-1)
+
+    def test_hard_timeout_zero_disables_soft_lt_hard_check(self):
+        cfg = HeartbeatConfig(soft_timeout_seconds=300, hard_timeout_seconds=0)
+        assert cfg.hard_timeout_seconds == 0
 
     def test_soft_must_be_less_than_hard(self):
         with pytest.raises(ValidationError):
@@ -335,6 +339,79 @@ class TestHardTimeoutRecoveryNote:
 
         content = t("reminder.hb_hard_timeout_recovery", locale="en", timeout=600)
         assert "600" in content
+
+
+# ── Session finalization survives timeout/cancellation ──────────
+
+
+class TestFinalizeAlwaysRuns:
+    """run_heartbeat() must finalize conversation turns even when the cycle dies."""
+
+    def _make_anima(self, tmp_path, cycle):
+        from core._anima_lifecycle import LifecycleMixin
+
+        anima = LifecycleMixin()
+        anima.name = "alice"
+        anima.anima_dir = tmp_path
+        anima.model_config = SimpleNamespace()
+        anima.agent = SimpleNamespace(
+            set_interrupt_event=MagicMock(),
+            _tool_handler=SimpleNamespace(
+                set_active_session_type=MagicMock(return_value=None),
+                set_session_origin=MagicMock(),
+            ),
+        )
+        anima._background_lock = asyncio.Lock()
+        anima._get_interrupt_event = MagicMock(return_value=MagicMock())
+        anima._mark_busy_start = MagicMock()
+        anima._status_slots = {}
+        anima._task_slots = {}
+        anima._activity = MagicMock()
+        anima._build_heartbeat_prompt = AsyncMock(return_value=["hb"])
+        anima._build_prior_messages = MagicMock(return_value=None)
+        anima.messenger = SimpleNamespace(has_unread=lambda: False, unread_count=lambda: 0)
+        anima._notify_lock_released = MagicMock()
+        anima._trigger_pending_task_execution = MagicMock()
+        anima._execute_heartbeat_cycle = cycle
+        return anima
+
+    async def _run(self, anima, hard_timeout, tmp_path):
+        (tmp_path / "state").mkdir(exist_ok=True)
+        config = SimpleNamespace(heartbeat=SimpleNamespace(hard_timeout_seconds=hard_timeout))
+        finalize = AsyncMock()
+        with (
+            patch("core.config.models.load_config", return_value=config),
+            patch("core.memory.conversation.ConversationMemory") as conv,
+            patch("core.tooling.handler.active_session_type", SimpleNamespace(reset=MagicMock())),
+        ):
+            conv.return_value.finalize_if_session_ended = finalize
+            result = await anima.run_heartbeat()
+        return result, finalize
+
+    @pytest.mark.asyncio
+    async def test_finalize_runs_after_hard_timeout(self, tmp_path):
+        async def slow_cycle(*args, **kwargs):
+            await asyncio.sleep(5)
+
+        anima = self._make_anima(tmp_path, slow_cycle)
+        result, finalize = await self._run(anima, hard_timeout=1, tmp_path=tmp_path)
+
+        assert result.action == "timeout"
+        finalize.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_zero_hard_timeout_never_terminates(self, tmp_path):
+        from core.schemas import CycleResult
+
+        async def long_cycle(*args, **kwargs):
+            await asyncio.sleep(0.05)  # would exceed any nonzero timeout under test
+            return CycleResult(trigger="heartbeat", action="responded", summary="ok")
+
+        anima = self._make_anima(tmp_path, long_cycle)
+        result, finalize = await self._run(anima, hard_timeout=0, tmp_path=tmp_path)
+
+        assert result.action == "responded"
+        finalize.assert_awaited_once()
 
 
 # ── i18n strings exist ──────────────────────────────────────────

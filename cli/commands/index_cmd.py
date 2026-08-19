@@ -44,9 +44,9 @@ def _setup_server_delegation() -> bool:
         port = 18500
 
     base = f"http://127.0.0.1:{port}/api"
-    os.environ["ANIMAWORKS_VECTOR_URL"] = f"{base}/internal/vector"
-    os.environ["ANIMAWORKS_EMBED_URL"] = f"{base}/internal/embed"
-    os.environ["ANIMAWORKS_RERANK_URL"] = f"{base}/internal/rerank"
+    os.environ.setdefault("ANIMAWORKS_VECTOR_URL", f"{base}/internal/vector")
+    os.environ.setdefault("ANIMAWORKS_EMBED_URL", f"{base}/internal/embed")
+    os.environ.setdefault("ANIMAWORKS_RERANK_URL", f"{base}/internal/rerank")
     logger.info(
         "Server detected (pid=%d). Using HTTP delegation for safe ChromaDB access.",
         pid,
@@ -436,6 +436,14 @@ def index_command(args: argparse.Namespace) -> None:
                 logger.info("  Indexed %d chunks from conversation_summary", chunks)
 
         if not args.dry_run:
+            from core.memory.entity_index import rebuild_entity_collection
+
+            logger.info("Rebuilding entity collection...")
+            if rebuild_entity_collection(anima_dir, vector_store=vector_store):
+                logger.info("  Entity collection rebuild complete")
+            else:
+                logger.warning("  Failed to rebuild entity collection for %s", anima_name)
+
             bm25_result = rebuild_longterm_bm25_index(anima_dir)
             logger.info(
                 "  Rebuilt long-term BM25 index with %d documents",

@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
-from core.execution.base import ExecutionResult, ToolCallRecord
+from core.execution.base import ExecutionResult, TokenUsage, ToolCallRecord
 from core.execution.grok_cli import (
     _MAX_RESUME_TURNS,
     GrokCLIExecutor,
@@ -387,7 +387,7 @@ class TestSandboxConfiguration:
         anima_dir: Path,
         tmp_path: Path,
     ) -> None:
-        allowed = tmp_path / "allowed"
+        allowed = tmp_path.parent / f"{tmp_path.name}-allowed"
         denied = tmp_path / "denied"
         allowed.mkdir()
         denied.mkdir()
@@ -405,8 +405,8 @@ class TestSandboxConfiguration:
             "extends": "workspace",
             "read_write": [
                 str(anima_dir.resolve()),
-                str((tmp_path / "cache").resolve()),
                 str(allowed.resolve()),
+                str((tmp_path / "cache").resolve()),
             ],
             "deny": [str(denied.resolve())],
         }
@@ -444,8 +444,10 @@ class TestSandboxConfiguration:
         anima_dir: Path,
         tmp_path: Path,
     ) -> None:
-        allowed = tmp_path / "normal-root"
+        allowed = tmp_path.parent / f"{tmp_path.name}-normal-root"
         allowed.mkdir()
+        task_cwd = tmp_path.parent / f"{tmp_path.name}-task"
+        executor.set_task_cwd(task_cwd)
         (tmp_path / "companies" / "fs" / "shared").mkdir(parents=True)
         self._write_permissions(anima_dir, file_roots=[str(allowed)])
 
@@ -455,8 +457,9 @@ class TestSandboxConfiguration:
         ]["animaworks"]
         assert profile["read_write"] == [
             str(anima_dir.resolve()),
-            str((tmp_path / "cache").resolve()),
             str(allowed.resolve()),
+            str(task_cwd.resolve()),
+            str((tmp_path / "cache").resolve()),
         ]
         assert profile["deny"] == []
 
@@ -486,8 +489,8 @@ class TestSandboxConfiguration:
         ]["animaworks"]
         assert profile["read_write"] == [
             str(anima_dir.resolve()),
-            str((tmp_path / "cache").resolve()),
             str(own_shared.resolve()),
+            str((tmp_path / "cache").resolve()),
         ]
         assert profile["deny"] == [str(foreign_company.resolve())]
         for name in ("knowledge", "skills", "vision.md", "company.json", "credentials"):
@@ -519,7 +522,7 @@ class TestSandboxConfiguration:
         anima_dir: Path,
         tmp_path: Path,
     ) -> None:
-        unusual_root = tmp_path / 'quote"and\\backslash'
+        unusual_root = tmp_path.parent / f'{tmp_path.name}-quote"and\\backslash'
         unusual_root.mkdir()
         self._write_permissions(anima_dir, file_roots=[str(unusual_root)])
 
@@ -527,7 +530,7 @@ class TestSandboxConfiguration:
         profile = tomllib.loads((executor._workspace / ".grok" / "sandbox.toml").read_text(encoding="utf-8"))[
             "profiles"
         ]["animaworks"]
-        assert profile["read_write"][-1] == str(unusual_root.resolve())
+        assert str(unusual_root.resolve()) in profile["read_write"]
 
     def test_sandbox_event_logs_enforced_profile(
         self,
@@ -1068,6 +1071,27 @@ class TestSessions:
 
 class TestTerminalPaths:
     @pytest.mark.asyncio
+    async def test_blocking_execute_preserves_terminal_error_metadata(
+        self,
+        executor: GrokCLIExecutor,
+    ) -> None:
+        async def stream(*args, **kwargs):
+            yield {
+                "type": "error",
+                "message": "quota exhausted",
+                "terminal": True,
+                "reason": "quota_exhausted",
+            }
+            yield executor._done_event("", [], TokenUsage(), "", 0)
+
+        executor.execute_streaming = stream  # type: ignore[method-assign]
+        result = await executor.execute("hello", "system")
+
+        assert result.error is True
+        assert result.reason == "quota_exhausted"
+        assert result.text == "quota exhausted"
+
+    @pytest.mark.asyncio
     async def test_real_quota_error_precedes_legacy_text_and_done(
         self,
         executor: GrokCLIExecutor,
@@ -1094,14 +1118,13 @@ class TestTerminalPaths:
         ):
             events = await _stream(executor, proc)
 
-        error_index = next(i for i, event in enumerate(events) if event["type"] == "error")
-        text_index = next(i for i, event in enumerate(events) if event["type"] == "text_delta")
-        error = events[error_index]
-        assert error_index < text_index
+        error = next(event for event in events if event["type"] == "error")
+        assert not any(event["type"] == "text_delta" for event in events)
         assert error["message"] == f"[Grok CLI Error: {_REAL_GROK_QUOTA_ERROR}]"
         assert error["terminal"] is True
         assert error["reason"] == "quota_exhausted"
         assert events[-1]["type"] == "done"
+        assert events[-1]["full_text"] == ""
         guard.report_block.assert_called_once_with(
             "grok:grok",
             1800,
@@ -1147,14 +1170,15 @@ class TestTerminalPaths:
                 async for event in executor.execute_streaming("system", "hello", ContextTracker(model="grok/grok-4.5"))
             ]
         assert len([event for event in events if event["type"] == "done"]) == 1
-        assert "grok" in events[-1]["full_text"].lower()
+        assert "grok" in next(event for event in events if event["type"] == "error")["message"].lower()
 
     @pytest.mark.asyncio
     async def test_auth_error_from_stderr(self, executor: GrokCLIExecutor):
         proc = _FakeProc([], returncode=1, stderr=b"Unauthenticated: run grok login")
         events = await _stream(executor, proc)
         assert len([event for event in events if event["type"] == "done"]) == 1
-        assert "login" in events[-1]["full_text"].lower() or "認証" in events[-1]["full_text"]
+        message = next(event for event in events if event["type"] == "error")["message"]
+        assert "login" in message.lower() or "認証" in message
 
     @pytest.mark.asyncio
     async def test_idle_timeout_kills_stalled_stream(self, executor: GrokCLIExecutor):
@@ -1179,7 +1203,7 @@ class TestTerminalPaths:
         with patch("core.execution.grok_cli._IDLE_TIMEOUT_SECONDS", 0.01):
             events = await _stream(executor, proc)
         assert len([event for event in events if event["type"] == "done"]) == 1
-        assert "grok" in events[-1]["full_text"].lower()
+        assert "grok" in next(event for event in events if event["type"] == "error")["message"].lower()
         assert signal.SIGTERM in proc.sent_signals
 
     @pytest.mark.asyncio

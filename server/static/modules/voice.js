@@ -19,13 +19,17 @@ export class VoiceManager {
     this._mediaStream = null;
     this._playback = new VoicePlayback();
     this._playback.onPlaybackEnd = () => {
+      this._lastPlaybackEndMs = performance.now();
       if (this._ttsPlaying) {
         this._ttsPlaying = false;
         this._emit('playbackEnd');
       }
     };
+    this._playback.onCaption = (text) => this._emit('caption', { text });
+    this._pendingCaption = null;
     this._vad = null;
     this._ttsPlaying = false;
+    this._lastPlaybackEndMs = 0;
     this._listeners = {};
     this._reconnectTimer = null;
     this._reconnectAttempts = 0;
@@ -110,6 +114,8 @@ export class VoiceManager {
         this._emit('playbackEnd');
       }
     };
+    this._playback.onCaption = (text) => this._emit('caption', { text });
+    this._pendingCaption = null;
     if (this._vad) {
       this._vad.destroy();
       this._vad = null;
@@ -146,7 +152,11 @@ export class VoiceManager {
 
       this._audioContext = new AudioContext({ sampleRate: 48000 });
 
-      await this._audioContext.audioWorklet.addModule('/modules/voice-worklet.js');
+      // Resolve against this module's URL so the /app/ base path and version
+      // prefix are preserved (an absolute '/modules/...' 404s behind nginx).
+      await this._audioContext.audioWorklet.addModule(
+        new URL('./voice-worklet.js', import.meta.url),
+      );
 
       if (this._pendingStop) {
         this._audioContext.close();
@@ -215,7 +225,17 @@ export class VoiceManager {
     }
   }
 
+  _outputActive() {
+    return (
+      this._ttsPlaying ||
+      this._playback.isPlaying ||
+      this._playback.queueLength > 0 ||
+      performance.now() - this._lastPlaybackEndMs < 500
+    );
+  }
+
   interrupt() {
+    this._pendingCaption = null;
     this._playback.stop();
     this._ttsPlaying = false;
     if (this._ws && this._ws.readyState === WebSocket.OPEN) {
@@ -225,7 +245,11 @@ export class VoiceManager {
   }
 
   setMode(mode) {
-    if (mode === this._mode) return;
+    if (mode === this._mode) {
+      // After disconnect, mode stays but VAD instance is gone — restart if needed.
+      if (mode === 'vad' && !this._vad) this._startVAD();
+      return;
+    }
     this._mode = mode;
     if (mode === 'vad') {
       this._startVAD();
@@ -244,7 +268,17 @@ export class VoiceManager {
       return;
     }
     this._vad = new VoiceVAD({
-      onSpeechStart: () => this.startRecording(),
+      // RTC loopback AEC lets VAD hear the user during TTS. Without it,
+      // ignore speech while output is playing/queued plus a short echo tail.
+      onSpeechStart: () => {
+        if (this._playback.aecActive) {
+          if (this._outputActive()) this.interrupt();
+          this.startRecording();
+          return;
+        }
+        if (this._outputActive()) return;
+        this.startRecording();
+      },
       onSpeechEnd: () => this.stopRecording(),
     });
     await this._vad.start();
@@ -252,7 +286,9 @@ export class VoiceManager {
 
   _handleMessage(event) {
     if (event.data instanceof ArrayBuffer) {
-      this._playback.enqueue(event.data);
+      // First chunk after a tts_start carries that sentence's subtitle.
+      this._playback.enqueue(event.data, this._pendingCaption);
+      this._pendingCaption = null;
       return;
     }
     try {
@@ -260,6 +296,9 @@ export class VoiceManager {
       switch (msg.type) {
         case 'transcript':
           this._emit('transcript', { text: msg.text });
+          break;
+        case 'transcript_partial':
+          this._emit('transcriptPartial', { text: msg.text });
           break;
         case 'response_start':
           this._emit('responseStart');
@@ -270,8 +309,12 @@ export class VoiceManager {
         case 'response_done':
           this._emit('responseDone', { emotion: msg.emotion });
           break;
+        case 'emotion':
+          this._emit('emotion', { emotion: msg.emotion });
+          break;
         case 'tts_start':
           this._ttsPlaying = true;
+          this._pendingCaption = msg.text || null;
           this._emit('ttsStart');
           break;
         case 'tts_done':

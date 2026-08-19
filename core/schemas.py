@@ -98,6 +98,7 @@ class ModelConfig(BaseModel):
     background_model: str | None = None  # heartbeat/cron override model
     background_credential: str | None = None  # credential for background_model
     background_thinking_effort: str | None = None  # heartbeat/cron thinking effort override
+    voice_thinking_effort: str | None = None  # voice chat thinking effort override
     heartbeat_enabled: bool = True  # periodic heartbeat switch; message-triggered heartbeat and cron are unaffected
     token_budget_monthly: int | None = None  # None = monthly token usage is unlimited
     extra_keys: dict[str, str] = {}  # provider-specific credential keys (e.g. api_version, vertex_project)

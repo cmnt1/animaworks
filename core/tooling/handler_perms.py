@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from core.config.models import PermissionsConfig, load_permissions
 from core.file_access_policy import (
-    company_shared_write_root,
+    effective_write_roots,
     find_denied_root,
     find_internal_cache_root,
     resolve_effective_denied_roots,
@@ -232,12 +232,9 @@ class PermissionsMixin:
                     "permission_denied anima=%s path=%s reason=global_permissions_protected", self._anima_name, path
                 )
                 return gp_err
-
-        # The company's dedicated shared area is model-writable independent
-        # of file_roots, matching the sandboxed Mode C/X grant.
-        company_shared = company_shared_write_root(self._anima_dir)
-        if company_shared is not None and resolved.is_relative_to(company_shared):
-            return None
+            write_roots = effective_write_roots(self._anima_dir, effective_config.file_roots)
+        else:
+            write_roots = ()
 
         # Own anima_dir
         if resolved.is_relative_to(self._anima_dir.resolve()):
@@ -323,6 +320,16 @@ class PermissionsMixin:
         if effective_config.file_roots == ["/"]:
             return None
 
+        # Otherwise: check if path is under an effective writable root.
+        allowed_dirs = (
+            list(write_roots)
+            if write
+            else [Path(r).resolve() for r in effective_config.file_roots if Path(r).is_absolute()]
+        )
+        for allowed in allowed_dirs:
+            if resolved.is_relative_to(allowed):
+                return None
+
         # file_roots == []: only anima_dir + framework shared dirs (already handled above)
         if not effective_config.file_roots:
             logger.warning("permission_denied anima=%s path=%s reason=outside_allowed_dirs", self._anima_name, path)
@@ -331,12 +338,6 @@ class PermissionsMixin:
                 f"'{path}' is not under any allowed directory",
                 context={"allowed_dirs": []},
             )
-
-        # Otherwise: check if path is under any of the file_roots (read-write)
-        allowed_dirs = [Path(r).resolve() for r in effective_config.file_roots if Path(r).is_absolute()]
-        for allowed in allowed_dirs:
-            if resolved.is_relative_to(allowed):
-                return None
 
         # Check file_roots_readonly — read allowed, write denied
         readonly_dirs = [Path(r).resolve() for r in effective_config.file_roots_readonly if Path(r).is_absolute()]

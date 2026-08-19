@@ -64,6 +64,30 @@ def _contract(identity: IPCV2Identity) -> IPCV2Envelope:
     )
 
 
+@pytest.mark.asyncio
+async def test_parent_monitor_waits_while_root_process_is_alive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    liveness = iter((True, False))
+    checked_pids: list[int] = []
+    sleeps: list[float] = []
+
+    def fake_is_process_alive(pid: int) -> bool:
+        checked_pids.append(pid)
+        return next(liveness)
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(task_runner, "is_process_alive", fake_is_process_alive)
+    monkeypatch.setattr(task_runner.asyncio, "sleep", fake_sleep)
+
+    await task_runner._parent_monitor(12345)
+
+    assert checked_pids == [12345, 12345]
+    assert sleeps == [1.0]
+
+
 @pytest.fixture
 def identity() -> IPCV2Identity:
     return IPCV2Identity(

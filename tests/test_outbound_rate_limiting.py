@@ -33,7 +33,7 @@ def _make_handler(
     channels_dir = shared_dir / "channels"
     channels_dir.mkdir(exist_ok=True)
     # Pre-create common board channels (post_channel no longer auto-creates)
-    for name in ("general", "ops"):
+    for name in ("general", "ops", "team"):
         path = channels_dir / f"{name}.jsonl"
         if not path.exists():
             path.write_text("", encoding="utf-8")
@@ -117,7 +117,7 @@ class TestHeartbeatOkPostSuppression:
             active_session_type.reset(token)
 
         assert "Skipped routine HEARTBEAT_OK" in result
-        assert not (shared_dir / "channels" / "general.jsonl").exists()
+        assert (shared_dir / "channels" / "general.jsonl").read_text(encoding="utf-8") == ""
 
     def test_heartbeat_report_with_blocker_is_still_posted(self, tmp_path: Path) -> None:
         handler, _, _ = _make_handler(tmp_path)

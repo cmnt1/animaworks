@@ -767,6 +767,7 @@ class PendingTaskExecutor:
             self._background_isolated = False
         # attempt tracking: task_id -> last attempt written to a lease (same attempt re-claim ban)
         self._attempt_by_task_id: dict[str, int] = {}
+        self._next_recovery_scan_at = 0.0
 
     def _worker_pool_size(self) -> int:
         """Return a validated pool size while tolerating legacy test doubles."""
@@ -1411,6 +1412,98 @@ class PendingTaskExecutor:
             )
             return False
 
+    def _recovery_scan_interval_seconds(self) -> float:
+        """Return the configured blocked/orphan recovery scan interval."""
+        try:
+            from core.config.models import load_config
+
+            minutes = load_config().background_task.blocked_recovery_scan_minutes
+            return float(minutes) * 60
+        except Exception:
+            logger.warning("Failed to load recovery scan interval; using 15 minutes", exc_info=True)
+            return 15 * 60
+
+    def _recover_blocked_and_orphaned_tasks(self) -> None:
+        """Revalidate blocked tasks and restore missing pending descriptors."""
+        from core.blocked_recovery import regenerate_pending_json, revalidate_blocked_tasks
+        from core.memory.activity import ActivityLogger
+        from core.memory.task_queue import TaskQueueManager
+
+        try:
+            revalidate_blocked_tasks(self._anima_dir, self._anima_name)
+        except Exception:
+            logger.warning(
+                "[%s] Blocked task recovery scan failed",
+                self._anima_name,
+                exc_info=True,
+            )
+
+        pending_dir = self._anima_dir / "state" / "pending"
+        processing_dir = pending_dir / "processing"
+        try:
+            entries = TaskQueueManager(self._anima_dir).list_tasks(status="pending")
+        except Exception:
+            logger.warning(
+                "[%s] Failed to scan task queue for missing descriptors",
+                self._anima_name,
+                exc_info=True,
+            )
+            return
+
+        for entry in entries:
+            meta = entry.meta if isinstance(entry.meta, dict) else {}
+            if entry.status == "delegated" or meta.get("delegated_to") or meta.get("delegated_task_id"):
+                continue
+            task_file = f"{entry.task_id}.json"
+            if (pending_dir / task_file).exists() or (processing_dir / task_file).exists():
+                continue
+            logger.warning(
+                "[%s] Pending task descriptor missing; regenerating: %s",
+                self._anima_name,
+                entry.task_id,
+            )
+            try:
+                regenerate_pending_json(
+                    self._anima_dir,
+                    self._anima_name,
+                    entry,
+                    description_suffix=t("pending_executor.descriptor_recovery_suffix"),
+                )
+            except Exception:
+                logger.warning(
+                    "[%s] Failed to regenerate pending task descriptor: %s",
+                    self._anima_name,
+                    entry.task_id,
+                    exc_info=True,
+                )
+                continue
+            logger.info(
+                "[%s] Regenerated missing pending task descriptor: %s",
+                self._anima_name,
+                entry.task_id,
+            )
+            ActivityLogger(self._anima_dir).log(
+                "blocked_recovery",
+                summary="Regenerated missing pending task descriptor",
+                meta={"task_id": entry.task_id, "method": "descriptor_regeneration"},
+                safe=True,
+            )
+
+    async def _run_recovery_scan_if_due(self, now: float | None = None) -> None:
+        """Run recovery work in a thread no more often than configured."""
+        current = time.monotonic() if now is None else now
+        if current < self._next_recovery_scan_at:
+            return
+        self._next_recovery_scan_at = current + self._recovery_scan_interval_seconds()
+        try:
+            await asyncio.to_thread(self._recover_blocked_and_orphaned_tasks)
+        except Exception:
+            logger.warning(
+                "[%s] Pending task recovery worker failed",
+                self._anima_name,
+                exc_info=True,
+            )
+
     def _format_active_sibling_tasks(
         self,
         current_task_id: str,
@@ -1938,7 +2031,10 @@ class PendingTaskExecutor:
         finally:
             touch_task.cancel()
             await asyncio.gather(touch_task, return_exceptions=True)
-            _remove_processing_lease(processing_path)
+            # A replacement root must see a still-live isolated child; removing
+            # its lease here allowed restart recovery to dispatch the same task.
+            if not (self._shutdown_event.is_set() and processing_path.exists()):
+                _remove_processing_lease(processing_path)
             self._active_task_ids.discard(task_id)
             # A pre-leased slot is normally released by _execute_llm_task.  If
             # dispatch was cancelled before it entered that method, release it here.
@@ -2013,6 +2109,8 @@ class PendingTaskExecutor:
 
         while not self._shutdown_event.is_set():
             try:
+                await self._run_recovery_scan_if_due()
+
                 # Process command-type pending tasks
                 for path in sorted(pending_dir.glob("*.json")):
                     try:
@@ -3412,7 +3510,9 @@ class PendingTaskExecutor:
                 task_id,
                 exc,
             )
-            raise RuntimeError("INTERRUPTED: background task runner child exited without a result.") from exc
+            raise RuntimeError(
+                f"INTERRUPTED: background task runner child exited without a result. (cause: {exc})"
+            ) from exc
 
     async def _execute_llm_task(
         self,
@@ -3555,9 +3655,12 @@ class PendingTaskExecutor:
                 exc,
             )
             # Crash semantics: treat as interrupted / retryable for Layer2.
+            # Keep the original TaskRunnerError early in the summary (before the
+            # 200-char truncation) — flattening it cost a day of log archaeology
+            # on 2026-08-12.
             raise RuntimeError(
-                "INTERRUPTED: task runner child exited without a result and may have "
-                "PARTIALLY EXECUTED. Verify actual completion state before re-delegating."
+                f"INTERRUPTED: task runner child exited without a result (cause: {exc}). "
+                "May have PARTIALLY EXECUTED; verify actual completion state before re-delegating."
             ) from exc
 
         result = isolated.get("result")

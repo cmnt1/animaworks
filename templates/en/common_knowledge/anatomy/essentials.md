@@ -206,23 +206,6 @@ There are two ways to move a task into execution.
 - "The implementer reviews their own code" → Split out a Reviewer
 - Many modules can be worked in parallel → Add more Engineers
 
-### Available Team Templates
-
-| Template | Roles | Summary |
-|----------|-------|---------|
-| Development | 4 | PdM + Engineer + Reviewer + Tester |
-| Legal | 3 | Director + Verifier + Researcher |
-| Finance | 4 | Director + Auditor + Analyst + Collector |
-| Trading | 4 | Director + Analyst + Engineer + Auditor |
-| Sales & Marketing | 4 | Director + Creator + SDR + Researcher |
-| Customer Success | 2 | CS Lead + Support |
-| Corporate Planning | 3 | Strategist + Analyst + Coordinator |
-| Infrastructure/SRE | 2 | Infra Director + Monitor |
-| Secretary | 1 | Secretary (human-supervised) |
-| COO | 1 | COO (human-supervised) |
-
-→ Details: `team-design/guide.md`, each `team-design/{team-name}/team.md`
-
 ---
 
 ## Memory — 5 Types to Use

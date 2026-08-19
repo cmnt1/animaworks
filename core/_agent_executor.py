@@ -68,6 +68,36 @@ class ExecutorFactoryMixin:
         active_config = model_config or self.model_config
         mode = self._resolve_execution_mode(active_config)
 
+        def _configured_cli_fallback(realm: str):
+            if not active_config.fallback_models:
+                return None
+            from core.config.model_config import resolve_effective_model_config
+            from core.execution.error_classifier import guard_key, provider_family_of
+            from core.execution.fallback_activity import log_model_fallback
+            from core.execution.rate_guard import get_rate_guard
+            from core.memory.activity import ActivityLogger
+
+            guard = get_rate_guard()
+            guard.report_block(
+                guard_key(provider_family_of(active_config.model), realm),
+                guard.config.default_block_seconds,
+                "executor_unavailable",
+            )
+            fallback_config = resolve_effective_model_config(active_config)
+            if all(
+                getattr(fallback_config, field, None) == getattr(active_config, field, None)
+                for field in ("model", "execution_mode", "resolved_mode", "credential")
+            ):
+                return None
+            log_model_fallback(
+                ActivityLogger(self.anima_dir),
+                active_config,
+                fallback_config,
+                channel="executor",
+                phase="unavailable",
+            )
+            return self._create_executor(fallback_config)
+
         if mode == "s":
             # ── Try Agent SDK first ──────────────────────────
             try:
@@ -134,10 +164,12 @@ class ExecutorFactoryMixin:
                     codex_home=self._codex_home,
                 )
             except ImportError:
+                configured = _configured_cli_fallback("codex")
+                if configured is not None:
+                    return configured
                 logger.warning(
                     "CodexSDKExecutor unavailable for model=%s resolved_mode=%s "
-                    "(openai-codex not installed); falling back to LiteLLM (Mode A) "
-                    "without changing resolved_mode",
+                    "(openai-codex not installed); falling back to LiteLLM (Mode A)",
                     active_config.model,
                     active_config.resolved_mode,
                 )
@@ -165,6 +197,8 @@ class ExecutorFactoryMixin:
                         active_config.model,
                         fallback_model_config.model,
                     )
+                fallback_model_config.execution_mode = "A"
+                fallback_model_config.resolved_mode = "A"
 
                 # openai/* fallback without credentials cannot succeed — fail
                 # clearly instead of empty-response retry storms.
@@ -177,6 +211,16 @@ class ExecutorFactoryMixin:
                         from core.i18n import t
 
                         raise ExecutorUnavailableError(t("executor.codex_unavailable_no_openai_cred")) from None
+                from core.execution.fallback_activity import log_model_fallback
+                from core.memory.activity import ActivityLogger
+
+                log_model_fallback(
+                    ActivityLogger(self.anima_dir),
+                    active_config,
+                    fallback_model_config,
+                    channel="executor",
+                    phase="unavailable",
+                )
 
                 return LiteLLMExecutor(
                     model_config=fallback_model_config,
@@ -278,10 +322,12 @@ class ExecutorFactoryMixin:
                     interrupt_event=self._interrupt_event,
                 )
             except ImportError:
+                configured = _configured_cli_fallback("grok")
+                if configured is not None:
+                    return configured
                 logger.warning(
                     "GrokCLIExecutor unavailable for model=%s resolved_mode=%s "
-                    "(grok CLI not installed); falling back to LiteLLM (Mode A) "
-                    "without changing resolved_mode",
+                    "(grok CLI not installed); falling back to LiteLLM (Mode A)",
                     active_config.model,
                     active_config.resolved_mode,
                 )
@@ -295,6 +341,18 @@ class ExecutorFactoryMixin:
                         active_config.model,
                         fallback_model_config.model,
                     )
+                fallback_model_config.execution_mode = "A"
+                fallback_model_config.resolved_mode = "A"
+                from core.execution.fallback_activity import log_model_fallback
+                from core.memory.activity import ActivityLogger
+
+                log_model_fallback(
+                    ActivityLogger(self.anima_dir),
+                    active_config,
+                    fallback_model_config,
+                    channel="executor",
+                    phase="unavailable",
+                )
                 return LiteLLMExecutor(
                     model_config=fallback_model_config,
                     anima_dir=self.anima_dir,

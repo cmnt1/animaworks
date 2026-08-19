@@ -612,6 +612,17 @@ class MemoryManager:
 
     # ── Facade: CronLogger ────────────────────────────────
 
+    def append_cron_event(
+        self,
+        task_name: str,
+        event: str,
+        *,
+        reason: str = "",
+        schedule: str = "",
+    ) -> None:
+        """Facade: CronLogger.append_cron_event."""
+        self._cron.append_cron_event(task_name, event, reason=reason, schedule=schedule)
+
     def append_cron_log(
         self,
         task_name: str,

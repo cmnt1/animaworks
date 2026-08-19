@@ -107,11 +107,11 @@ async def test_phase3_returns_cron_command_and_chat_results(
                     name="phase3-command",
                     schedule="0 0 1 1 *",
                     type="command",
-                    command="printf command-result",
+                    command="echo command-result",
                     trigger_heartbeat=False,
                 )
             )
-            assert result["result"]["stdout"] == "command-result"
+            assert result["result"]["stdout"].strip() == "command-result"
         else:
             result = await supervisor.run_chat(
                 kind="message",

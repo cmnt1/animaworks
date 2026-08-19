@@ -270,7 +270,7 @@ class TestCompressedSummaryToRAGSearchPipeline:
         2. Use MemoryIndexer.index_conversation_summary
         3. Verify chunks are created in {prefix}_conversation_summary collection
         """
-        chromadb = pytest.importorskip(
+        pytest.importorskip(
             "chromadb",
             reason="ChromaDB not installed",
         )
@@ -350,6 +350,10 @@ class TestCompressedSummaryToRAGSearchPipeline:
             assert sr.document.metadata.get("memory_type") == "conversation_summary"
             assert sr.document.metadata.get("source") == "conversation_gist"
             assert sr.document.metadata.get("source_file") == "state/conversation.json"
+
+        from tests.helpers.chroma import close_chroma_store
+
+        close_chroma_store(vector_store)
 
 
 # ── Test 3: activity_log -> consolidation prompt ───────────────────

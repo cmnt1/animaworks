@@ -113,6 +113,8 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/tools/_slack_cli.py": 1,
     # mock task data with Japanese titles
     "server/routes/animas.py": 0,
+    # dummy Japanese text fed to the embedder/reranker at warmup (NLP input, never shown)
+    "server/app.py": 2,
     # meeting/room feature — Japanese meeting prompts and labels
     "server/room_manager.py": 12,
     "server/routes/room.py": 7,
@@ -140,6 +142,10 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "server/routes/taskboard.py": 26,
     # usage route OAuth / API-disabled messages + Claude token expiry message
     "server/routes/usage_routes.py": 4,
+    # voice front lane — ask_anima tool schema wording fed to the front LLM
+    "core/voice/front.py": 2,
+    # voice front lane — spoken ACK/error phrases voiced to the user via TTS
+    "core/voice/session.py": 5,
 }
 
 

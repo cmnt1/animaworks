@@ -120,6 +120,61 @@ def _log_session_token_usage(
 class CycleMixin:
     """Mixin: blocking and streaming execution cycles + session chaining."""
 
+    def _cycle_fallback_channel(self, trigger: str) -> str:
+        """Activity-log channel name derived from the cycle trigger."""
+        return (trigger or "cycle").split(":", 1)[0] or "cycle"
+
+    def _cycle_preflight_config(
+        self,
+        model_config_override: ModelConfig | None,
+        trigger: str,
+    ) -> tuple[ModelConfig, ModelConfig | None]:
+        """Apply the rate-guard fallback preflight for any cycle route.
+
+        Returns ``(primary_config, override_to_use)``.  ``override_to_use`` is
+        ``None`` when the caller passed no override and no fallback applied, so
+        the cached ``self._executor`` fast path is preserved.
+        """
+        primary = model_config_override or self.model_config
+        if not isinstance(primary, ModelConfig) or not primary.fallback_models:
+            return primary, model_config_override
+
+        from core.execution.fallback_activity import preflight_fallback_config
+
+        effective = preflight_fallback_config(
+            self.anima_dir,
+            primary,
+            channel=self._cycle_fallback_channel(trigger),
+        )
+        if effective is primary:
+            return primary, model_config_override
+        return primary, effective
+
+    def _cycle_runtime_fallback(
+        self,
+        result: CycleResult,
+        primary_config: ModelConfig,
+        active_override: ModelConfig | None,
+        trigger: str,
+    ) -> ModelConfig | None:
+        """Return a config to re-run a failed blocking cycle with, if any."""
+        if not isinstance(result, CycleResult) or not isinstance(primary_config, ModelConfig):
+            return None
+        if not primary_config.fallback_models:
+            return None
+        if result.action != "error" and not result.reason:
+            return None
+        from core.execution.fallback_activity import runtime_fallback_config
+
+        return runtime_fallback_config(
+            self.anima_dir,
+            primary_config,
+            active_override or primary_config,
+            error_text=result.summary or "",
+            reason=str(result.reason or ""),
+            channel=self._cycle_fallback_channel(trigger),
+        )
+
     def _check_monthly_token_budget(
         self,
         *,
@@ -324,6 +379,19 @@ class CycleMixin:
                 )
                 if budget_result is not None:
                     return budget_result
+                primary_config, active_override = self._cycle_preflight_config(model_config_override, trigger)
+                result = await self._run_cycle_inner(
+                    prompt,
+                    trigger,
+                    images=images,
+                    prior_messages=prior_messages,
+                    message_intent=message_intent,
+                    thread_id=thread_id,
+                    model_config_override=active_override,
+                )
+                retry_config = self._cycle_runtime_fallback(result, primary_config, active_override, trigger)
+                if retry_config is None:
+                    return result
                 return await self._run_cycle_inner(
                     prompt,
                     trigger,
@@ -331,7 +399,7 @@ class CycleMixin:
                     prior_messages=prior_messages,
                     message_intent=message_intent,
                     thread_id=thread_id,
-                    model_config_override=model_config_override,
+                    model_config_override=retry_config,
                     prompt_tier_override=prompt_tier_override,
                 )
         finally:
@@ -397,6 +465,9 @@ class CycleMixin:
         active_executor = (
             self._create_executor(active_model_config) if model_config_override is not None else self._executor
         )
+        executor_config = getattr(active_executor, "_model_config", None)
+        if isinstance(executor_config, ModelConfig):
+            active_model_config = executor_config
         mode = self._resolve_execution_mode(active_model_config)
         from core.provider_cooldown import (
             format_cooldown_message,
@@ -800,8 +871,10 @@ class CycleMixin:
             )
             return CycleResult(
                 trigger=trigger,
-                action="responded",
+                action="error" if result.error else "responded",
+                stop_kind="stream_error" if result.error else "normal",
                 summary=result.text,
+                reason=result.reason,
                 duration_ms=duration_ms,
                 context_usage_ratio=tracker.usage_ratio,
                 context_window=tracker.context_window,
@@ -1047,6 +1120,7 @@ class CycleMixin:
                         "cycle_result": budget_result.model_dump(mode="json"),
                     }
                     return
+                primary_config, active_override = self._cycle_preflight_config(model_config_override, trigger)
                 with runtime_session_scope(ctx):
                     self._tool_handler.bind_runtime_session(ctx)
                     token = self._tool_handler.set_active_session_type(session_type)
@@ -1058,8 +1132,9 @@ class CycleMixin:
                             prior_messages=prior_messages,
                             message_intent=message_intent,
                             thread_id=thread_id,
-                            model_config_override=model_config_override,
+                            model_config_override=active_override,
                             prompt_tier_override=prompt_tier_override,
+                            primary_config=primary_config,
                         ):
                             if chunk.get("type") == "cycle_done":
                                 cycle_result = chunk.get("cycle_result")
@@ -1090,13 +1165,19 @@ class CycleMixin:
         thread_id: str = "default",
         model_config_override: ModelConfig | None = None,
         prompt_tier_override: str | None = None,
+        primary_config: ModelConfig | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Streaming implementation scoped by ``run_cycle_streaming``."""
         start = time.monotonic()
         active_model_config = model_config_override or self.model_config
+        if primary_config is None:
+            primary_config = active_model_config
         active_executor = (
             self._create_executor(active_model_config) if model_config_override is not None else self._executor
         )
+        executor_config = getattr(active_executor, "_model_config", None)
+        if isinstance(executor_config, ModelConfig):
+            active_model_config = executor_config
         mode = self._resolve_execution_mode(active_model_config)
         from core.provider_cooldown import (
             format_cooldown_message,
@@ -1305,6 +1386,8 @@ class CycleMixin:
         }
         terminal_error_message = ""
         terminal_error_reason = ""
+        terminal_error_chunk: dict[str, Any] | None = None
+        fallback_swapped = False
         stream_stop_kind = "normal"
         stream_truncated = False
         current_prompt = prompt
@@ -1372,7 +1455,9 @@ class CycleMixin:
                         elif chunk["type"] == "error" and chunk.get("terminal") is True:
                             terminal_error_message = chunk.get("message", "[Terminal LLM error]")
                             terminal_error_reason = str(chunk.get("reason") or "")
-                            yield chunk
+                            # Held back until the fallback decision below: a
+                            # successful model swap must not surface an error.
+                            terminal_error_chunk = chunk
                         elif chunk["type"] == "tool_end" and checkpoint_enabled:
                             record = chunk.get("record")
                             summary = (getattr(record, "result_summary", "") if record else "") or chunk.get(
@@ -1419,7 +1504,7 @@ class CycleMixin:
 
                 is_stream_error = isinstance(e, StreamDisconnectedError)
                 if not is_stream_error:
-                    # Non-stream errors: log and break
+                    # Non-stream errors are not eligible for stream retries.
                     logger.exception("Agent SDK streaming error (non-retryable)")
                     terminal_error_message = f"[Agent SDK Error: {e}]"
                     yield {"type": "error", "message": terminal_error_message}
@@ -1581,9 +1666,61 @@ class CycleMixin:
                 await asyncio.sleep(actual_delay)
                 continue
 
+            if terminal_error_message and not fallback_swapped and getattr(primary_config, "fallback_models", None):
+                from core.execution.fallback_activity import runtime_fallback_config
+
+                swap_config = runtime_fallback_config(
+                    self.anima_dir,
+                    primary_config,
+                    active_model_config,
+                    error_text=terminal_error_message,
+                    reason=terminal_error_reason,
+                    channel=self._cycle_fallback_channel(trigger),
+                )
+                if swap_config is not None:
+                    logger.warning(
+                        "Terminal LLM error on %s → retrying with fallback %s",
+                        active_model_config.model,
+                        swap_config.model,
+                    )
+                    fallback_swapped = True
+                    active_model_config = swap_config
+                    active_executor = self._create_executor(swap_config)
+                    mode = self._resolve_execution_mode(active_model_config)
+                    provider_key = provider_key_for_model_config(active_model_config)
+                    terminal_error_message = ""
+                    terminal_error_reason = ""
+                    terminal_error_chunk = None
+                    current_prompt = prompt
+                    tracker.reset()
+                    current_system_prompt = build_system_prompt(
+                        self.memory,
+                        tool_registry=self._tool_registry,
+                        personal_tools=self._personal_tools,
+                        priming_section=priming_section,
+                        execution_mode=mode,
+                        message=prompt,
+                        retriever=self._get_retriever(),
+                        trigger=trigger,
+                        context_window=_ctx_window_s,
+                        pending_human_notifications=pending_human_notifications,
+                        thread_id=thread_id,
+                        prompt_tier=_prompt_tier_s,
+                        prompt_profile=_prompt_profile_s,
+                    ).system_prompt
+                    yield {
+                        "type": "retry_start",
+                        "retry": retry_count,
+                        "max_retries": max_retries,
+                        "fallback_model": swap_config.model,
+                    }
+                    continue
+
             if stream_succeeded or terminal_error_message:
                 # A structured terminal provider error is a completed failure,
                 # not a disconnected stream eligible for retry.
+                if terminal_error_chunk is not None:
+                    yield terminal_error_chunk
                 shortterm.clear_checkpoint()
                 break
 

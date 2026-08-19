@@ -34,7 +34,7 @@ from core.execution.error_classifier import (
     classify_llm_error,
     classify_llm_error_message,
 )
-from core.execution.fallback_activity import log_model_fallback
+from core.execution.fallback_activity import log_model_fallback, run_with_model_fallback
 from core.execution.session_types import resolve_runtime_session_type
 from core.i18n import t
 from core.image_artifacts import extract_image_artifacts_from_tool_records, resolve_local_image_paths
@@ -47,19 +47,11 @@ from core.time_utils import now_local, today_local
 
 logger = logging.getLogger("animaworks.anima")
 
-_CHAT_FALLBACK_REASONS = frozenset(
-    {
-        FailoverReason.QUOTA_EXHAUSTED,
-        FailoverReason.RATE_LIMIT,
-        FailoverReason.OVERLOADED,
-    }
-)
-
 
 def _chat_fallback_reason_from_exception(exc: Exception) -> FailoverReason | None:
     """Return a chat-retry reason for a classified provider exception."""
-    reason, _hint = classify_llm_error(exc)
-    return reason if reason in _CHAT_FALLBACK_REASONS else None
+    reason, hint = classify_llm_error(exc)
+    return reason if hint.fallback_ok else None
 
 
 def _chat_fallback_reason_from_result(result: CycleResult | dict[str, Any]) -> FailoverReason | None:
@@ -73,10 +65,13 @@ def _chat_fallback_reason_from_result(result: CycleResult | dict[str, Any]) -> F
             reason = FailoverReason(raw_reason)
         except ValueError:
             reason = None
-        if reason in _CHAT_FALLBACK_REASONS:
-            return reason
-    reason, _hint = classify_llm_error_message(str(data.get("summary") or ""))
-    return reason if reason in _CHAT_FALLBACK_REASONS else None
+        if reason is not None:
+            _classified, hint = classify_llm_error_message(
+                f"{reason.value.replace('_', ' ')} {data.get('summary') or ''}"
+            )
+            return reason if hint.fallback_ok else None
+    reason, hint = classify_llm_error_message(str(data.get("summary") or ""))
+    return reason if hint.fallback_ok else None
 
 
 def _same_effective_model(left: Any, right: Any) -> bool:
@@ -109,6 +104,20 @@ def _resolve_chat_model_config(
     return effective_config
 
 
+def _resolve_voice_model_config(model_config: Any, voice_mode: bool) -> Any:
+    """Override thinking effort for this voice message only."""
+    if not voice_mode or not isinstance(model_config, ModelConfig):
+        return model_config
+    effort = model_config.voice_thinking_effort or "low"
+    logger.info(
+        "Voice mode: thinking_effort %s -> %s (model=%s)",
+        model_config.thinking_effort,
+        effort,
+        model_config.model,
+    )
+    return model_config.model_copy(update={"thinking_effort": effort})
+
+
 def _resolve_chat_retry_config(
     owner: Any,
     primary_config: Any,
@@ -116,7 +125,7 @@ def _resolve_chat_retry_config(
     reason: FailoverReason | None,
 ) -> Any | None:
     """Re-evaluate fallback selection and return a different config once."""
-    if reason not in _CHAT_FALLBACK_REASONS or not isinstance(primary_config, ModelConfig):
+    if reason is None or not isinstance(primary_config, ModelConfig):
         return None
     retry_config = resolve_effective_model_config(primary_config)
     if _same_effective_model(retry_config, active_config):
@@ -158,28 +167,15 @@ async def _run_chat_cycle_with_fallback(
             prompt_tier_override=prompt_tier_override,
         )
 
-    try:
-        result = await _run(active_config)
-    except Exception as exc:
-        retry_config = _resolve_chat_retry_config(
-            owner,
-            primary_config,
-            active_config,
-            _chat_fallback_reason_from_exception(exc),
-        )
-        if retry_config is None:
-            raise
-        return await _run(retry_config)
-
-    retry_config = _resolve_chat_retry_config(
-        owner,
-        primary_config,
-        active_config,
-        _chat_fallback_reason_from_result(result),
+    if not isinstance(primary_config, ModelConfig) or not isinstance(active_config, ModelConfig):
+        return await _run(active_config)
+    return await run_with_model_fallback(
+        _run,
+        activity=owner._activity,
+        primary_config=primary_config,
+        active_config=active_config,
+        channel="chat",
     )
-    if retry_config is None:
-        return result
-    return await _run(retry_config)
 
 
 async def _run_chat_stream_with_fallback(
@@ -660,6 +656,7 @@ class MessagingMixin:
         source: str = "",
         meeting_room_id: str = "",
         meeting_participants: list[str] | None = None,
+        voice_mode: bool = False,
     ) -> str | dict[str, Any]:
         self._validate_thread_id(thread_id)
         # Auto-interrupt: if a session is already running on this thread,
@@ -717,7 +714,10 @@ class MessagingMixin:
 
                 # Human-facing chat must use the per-Anima status.json model,
                 # independent of any background/helper model in flight.
-                primary_model_config = self.memory.read_model_config()
+                primary_model_config = _resolve_voice_model_config(
+                    self.memory.read_model_config(),
+                    voice_mode,
+                )
                 base_model_config = _resolve_chat_model_config(
                     self,
                     primary_model_config,
@@ -966,6 +966,7 @@ class MessagingMixin:
         source: str = "",
         meeting_room_id: str = "",
         meeting_participants: list[str] | None = None,
+        voice_mode: bool = False,
     ) -> AsyncGenerator[dict, None]:
         """Streaming version of process_message.
 
@@ -1044,7 +1045,10 @@ class MessagingMixin:
 
                 # Human-facing chat must use the per-Anima status.json model,
                 # independent of any background/helper model in flight.
-                primary_model_config = self.memory.read_model_config()
+                primary_model_config = _resolve_voice_model_config(
+                    self.memory.read_model_config(),
+                    voice_mode,
+                )
                 base_model_config = _resolve_chat_model_config(
                     self,
                     primary_model_config,

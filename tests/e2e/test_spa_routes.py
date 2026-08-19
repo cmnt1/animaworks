@@ -11,7 +11,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-
 # ── Test App Factory ─────────────────────────────────────────────
 
 
@@ -147,11 +146,15 @@ class TestInitStatus:
 
     async def test_api_key_detection(self, tmp_path, monkeypatch):
         """API key presence should be reflected."""
+        from core.config.models import AnimaWorksConfig
+
         monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-123")
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.setattr("server.routes.config_routes.load_config", lambda: AnimaWorksConfig())
+        monkeypatch.setattr("server.routes.config_routes.is_codex_login_available", lambda: False)
 
         app = _create_test_app(tmp_path)
         async with _client(app) as c:

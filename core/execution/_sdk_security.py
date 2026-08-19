@@ -353,7 +353,7 @@ def _guard_bash(tool_input: dict[str, Any], anima_dir: Path) -> dict[str, Any]:
     if not command:
         return tool_input
 
-    out_dir = anima_dir / "shortterm" / "tool_outputs"
+    out_dir = (anima_dir / "shortterm" / "tool_outputs").as_posix()
 
     wrapped = (
         f'_OUTDIR="{out_dir}"\n'

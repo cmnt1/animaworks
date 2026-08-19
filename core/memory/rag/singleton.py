@@ -918,6 +918,25 @@ def generate_embeddings(
     return _generate_embeddings_local(texts, purpose=purpose, priority=priority)
 
 
+_HTTP_CLIENT = None
+_HTTP_CLIENT_PID = None
+
+
+def _shared_http_client():
+    """Process-wide keep-alive client — per-call httpx.post() reopens a TCP
+    connection each time (measured ~12 calls/search)."""
+    global _HTTP_CLIENT, _HTTP_CLIENT_PID
+    import os
+
+    import httpx
+
+    pid = os.getpid()
+    if _HTTP_CLIENT is None or pid != _HTTP_CLIENT_PID:
+        _HTTP_CLIENT = httpx.Client(timeout=180.0)
+        _HTTP_CLIENT_PID = pid
+    return _HTTP_CLIENT
+
+
 def _generate_embeddings_http(
     texts: list[str],
     embed_url: str,
@@ -926,12 +945,10 @@ def _generate_embeddings_http(
     priority: EmbeddingPriority = "interactive",
 ) -> list[list[float]]:
     """Call server's /api/internal/embed endpoint."""
-    import httpx
-
     all_embeddings: list[list[float]] = []
     for i in range(0, len(texts), _BATCH_LIMIT):
         batch = texts[i : i + _BATCH_LIMIT]
-        resp = httpx.post(
+        resp = _shared_http_client().post(
             embed_url,
             json={"texts": batch, "purpose": purpose, "priority": priority},
             # Bulk indexing batches can queue behind interactive embeds on a

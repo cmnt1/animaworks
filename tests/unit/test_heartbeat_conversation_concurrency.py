@@ -295,13 +295,21 @@ class TestConcurrentLockAcquisition:
         from core._anima_messaging import MessagingMixin
         from core.supervisor.pending_executor import PendingTaskExecutor
 
-        def guarded(obj) -> bool:
-            source = inspect.getsource(obj)
-            return "_agent_session_lock" in source or "_agent_session_context" in source
+        def guarded(obj, *helpers) -> bool:
+            sources = [inspect.getsource(obj)]
+            for helper in helpers:
+                if helper is not None:
+                    sources.append(inspect.getsource(helper))
+            combined = "\n".join(sources)
+            return "_agent_session_lock" in combined or "_agent_session_context" in combined
 
         assert guarded(MessagingMixin.process_message)
         assert guarded(MessagingMixin.process_message_stream)
-        assert guarded(LifecycleMixin.run_heartbeat)
+        # run_heartbeat routes the agent cycle through _run_heartbeat_agent_session
+        assert guarded(
+            LifecycleMixin.run_heartbeat,
+            getattr(LifecycleMixin, "_run_heartbeat_agent_session", None),
+        )
         assert guarded(LifecycleMixin._run_daily_consolidation)
         assert guarded(LifecycleMixin._run_weekly_consolidation)
         assert guarded(LifecycleMixin.run_cron_task)

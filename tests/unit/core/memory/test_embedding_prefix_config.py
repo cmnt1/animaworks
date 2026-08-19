@@ -49,7 +49,7 @@ def test_generate_embeddings_http_sends_embedding_purpose(monkeypatch) -> None:
     response = MagicMock()
     response.json.return_value = {"embeddings": [[1.0]]}
 
-    with patch("httpx.post", return_value=response) as post:
+    with patch("httpx.Client.post", return_value=response) as post:
         assert generate_embeddings(["hello"], purpose="query") == [[1.0]]
 
     response.raise_for_status.assert_called_once()

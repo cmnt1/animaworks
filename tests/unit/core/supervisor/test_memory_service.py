@@ -59,6 +59,22 @@ async def test_memory_service_checked_reads(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_memory_service_logs_queue_and_execution_times(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    service = MemoryService("sakura", tmp_path / "sakura", opener=_store)
+
+    with caplog.at_level("INFO", logger="core.supervisor.memory_service"):
+        await service.handle(
+            "memory.query",
+            {"collection": "sakura_knowledge", "embedding": [0.1], "top_k": 1},
+        )
+
+    assert "method=memory.query" in caplog.text
+    assert "queue_wait=" in caplog.text
+    assert "execute=" in caplog.text
+    await service.close()
+
+
+@pytest.mark.asyncio
 async def test_memory_service_rejects_invalid_request_as_protocol_error(tmp_path: Path) -> None:
     service = MemoryService("sakura", tmp_path / "sakura", opener=_store)
 
@@ -97,6 +113,104 @@ async def test_memory_service_supports_all_vector_store_writes(tmp_path: Path) -
     store._delete_documents_once.assert_called_once_with("sakura_knowledge", ["doc-1"])
     store._delete_collection_once.assert_called_once_with("sakura_knowledge")
     await service.close()
+
+
+@pytest.mark.asyncio
+async def test_memory_service_defers_and_atomically_applies_access_deltas(tmp_path: Path) -> None:
+    store = _store()
+    metadata: dict[str, object] = {
+        "access_count": 1.0,
+        "retrieved_count": 2,
+        "used_count": 3,
+    }
+    entered = threading.Event()
+    release = threading.Event()
+
+    def get_by_ids(_collection: str, _ids: list[str]) -> list[Document]:
+        return [Document("doc-1", "hello", metadata=dict(metadata))]
+
+    def update_metadata(_collection: str, _ids: list[str], metadatas: list[dict]) -> bool:
+        entered.set()
+        release.wait(timeout=2)
+        metadata.update(metadatas[0])
+        return True
+
+    store._get_by_ids_once.side_effect = get_by_ids
+    store._update_metadata_once.side_effect = update_metadata
+    service = MemoryService("sakura", tmp_path / "sakura", opener=lambda: store)
+    operation = {
+        "collection": "sakura_knowledge",
+        "doc_id": "doc-1",
+        "access_delta": 0.2,
+        "retrieved_delta": 1,
+        "used_delta": 0,
+        "last_accessed_at": "2026-08-14T00:00:00+00:00",
+        "last_retrieved_at": "2026-08-14T00:00:00+00:00",
+    }
+
+    assert await service.handle("memory.apply_access_updates", {"operations": [operation]}) == {"ok": True}
+    assert await asyncio.to_thread(entered.wait, 1)
+    assert service._pending == 1
+    release.set()
+    for _ in range(100):
+        if service._pending == 0:
+            break
+        await asyncio.sleep(0.01)
+
+    assert metadata["access_count"] == pytest.approx(1.2)
+    assert metadata["retrieved_count"] == 3
+    assert metadata["used_count"] == 3
+    assert service._pending == 0
+
+    assert await service.handle("memory.apply_access_updates", {"operations": [operation]}) == {"ok": True}
+    for _ in range(100):
+        if service._pending == 0:
+            break
+        await asyncio.sleep(0.01)
+
+    assert metadata["access_count"] == pytest.approx(1.4)
+    assert metadata["retrieved_count"] == 4
+    await service.close()
+
+
+@pytest.mark.asyncio
+async def test_memory_service_close_drains_deferred_access_updates(tmp_path: Path) -> None:
+    store = _store()
+    metadata: dict[str, object] = {"access_count": 1.0, "last_accessed_at": "2026-08-14T01:00:00+00:00"}
+    entered = threading.Event()
+    release = threading.Event()
+
+    store._get_by_ids_once.return_value = [Document("doc-1", "hello", metadata=dict(metadata))]
+
+    def update_metadata(_collection: str, _ids: list[str], metadatas: list[dict]) -> bool:
+        entered.set()
+        release.wait(timeout=2)
+        metadata.update(metadatas[0])
+        return True
+
+    store._update_metadata_once.side_effect = update_metadata
+    service = MemoryService("sakura", tmp_path / "sakura", opener=lambda: store)
+    operation = {
+        "collection": "sakura_knowledge",
+        "doc_id": "doc-1",
+        "access_delta": 0.2,
+        "retrieved_delta": 1,
+        "used_delta": 0,
+        "last_accessed_at": "2026-08-14T00:00:00+00:00",
+    }
+
+    assert await service.handle("memory.apply_access_updates", {"operations": [operation]}) == {"ok": True}
+    assert await asyncio.to_thread(entered.wait, 1)
+    close_task = asyncio.create_task(service.close())
+    await asyncio.sleep(0)
+    assert not close_task.done()
+
+    release.set()
+    await close_task
+
+    assert metadata["access_count"] == pytest.approx(1.2)
+    assert metadata["last_accessed_at"] == "2026-08-14T01:00:00+00:00"
+    store.close.assert_called_once()
 
 
 @pytest.mark.asyncio

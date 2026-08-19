@@ -333,39 +333,33 @@ class GrokCLIExecutor(BaseExecutor):
 
         from core.config.models import load_permissions
         from core.file_access_policy import (
-            company_shared_write_root,
+            effective_write_roots,
             resolve_effective_denied_roots,
             shared_tool_cache_write_root,
         )
 
         permissions_config = load_permissions(self._anima_dir)
+        write_roots = effective_write_roots(
+            self._anima_dir,
+            permissions_config.file_roots,
+            self._task_cwd,
+        )
         denied_roots = list(
             resolve_effective_denied_roots(
                 self._anima_dir,
                 getattr(permissions_config, "file_roots_denied", []),
             )
         )
-        company_shared = company_shared_write_root(self._anima_dir)
-        if company_shared is not None:
-            company_shared.mkdir(parents=True, exist_ok=True)
         if not denied_roots and "/" in permissions_config.file_roots:
             return False
 
-        read_write = [str(self._anima_dir.resolve())]
+        read_write = [str(self._anima_dir.resolve()), *(str(root) for root in write_roots)]
         # External-tool caches (Chatwork/Slack message DBs and the identity
         # map) sit outside the Anima directory; without write access even a
         # plain inbox read fails with EROFS.
         tool_cache_root = shared_tool_cache_write_root(self._anima_dir)
         if tool_cache_root is not None:
             read_write.append(str(tool_cache_root))
-        for root in permissions_config.file_roots:
-            resolved = str(Path(root).resolve())
-            if resolved != "/" and resolved not in read_write:
-                read_write.append(resolved)
-        if company_shared is not None:
-            shared_root = str(company_shared.resolve())
-            if shared_root not in read_write:
-                read_write.append(shared_root)
 
         deny = [str(Path(root).resolve()) for root in denied_roots]
 
@@ -1112,6 +1106,7 @@ class GrokCLIExecutor(BaseExecutor):
     ) -> ExecutionResult:
         """Run a Grok ACP turn and collect its streaming events."""
         done: dict[str, Any] | None = None
+        terminal_error: dict[str, Any] | None = None
         async for event in self.execute_streaming(
             system_prompt,
             prompt,
@@ -1123,6 +1118,8 @@ class GrokCLIExecutor(BaseExecutor):
         ):
             if event.get("type") == "done":
                 done = event
+            elif event.get("type") == "error" and event.get("terminal") is True:
+                terminal_error = event
 
         if done is None:
             done = self._done_event("", [], TokenUsage(), "", 0)
@@ -1130,12 +1127,14 @@ class GrokCLIExecutor(BaseExecutor):
         usage_dict = done["usage"]
         result_message = done["result_message"]
         return ExecutionResult(
-            text=done["full_text"],
+            text=str((terminal_error or {}).get("message") or done["full_text"]),
             result_message=result_message,
             tool_call_records=records,
             usage=TokenUsage(**usage_dict),
             session_rotated=bool(done.get("session_rotated", False)),
             session_rotation_pending=bool(done.get("session_rotation_pending", False)),
+            error=terminal_error is not None,
+            reason=str((terminal_error or {}).get("reason") or ""),
         )
 
     @staticmethod
@@ -1240,12 +1239,13 @@ class GrokCLIExecutor(BaseExecutor):
                     "message": state.error_text,
                     **error_metadata,
                 }
-            if state.full_text:
-                state.full_text += "\n\n" + state.error_text
-                yield {"type": "text_delta", "text": "\n\n" + state.error_text}
             else:
-                state.full_text = state.error_text
-                yield {"type": "text_delta", "text": state.error_text}
+                if state.full_text:
+                    state.full_text += "\n\n" + state.error_text
+                    yield {"type": "text_delta", "text": "\n\n" + state.error_text}
+                else:
+                    state.full_text = state.error_text
+                    yield {"type": "text_delta", "text": state.error_text}
 
         if state.completed and tracker is not None:
             # Context size priority:

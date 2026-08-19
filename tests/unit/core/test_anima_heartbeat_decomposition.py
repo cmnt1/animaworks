@@ -9,6 +9,7 @@ from dataclasses import fields
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from core._anima_heartbeat import _build_cron_rejected_notice
 from core.schemas import CycleResult, Message
 
 # ── Helpers ───────────────────────────────────────────────
@@ -136,6 +137,61 @@ class TestInboxResult:
 
 
 class TestBuildHeartbeatPrompt:
+    def test_cron_rejection_notice_only_when_content_changes(self, tmp_path):
+        state = tmp_path / "state"
+        state.mkdir()
+        registration = state / "cron_registration.json"
+        registration.write_text(
+            '{"rejected":[{"name":"Notes","reason":"Empty schedule expression"}]}',
+            encoding="utf-8",
+        )
+
+        with patch("core._anima_heartbeat.load_prompt", return_value="NOTICE") as load:
+            assert _build_cron_rejected_notice(tmp_path, "alice") == "NOTICE"
+            assert _build_cron_rejected_notice(tmp_path, "alice") is None
+            load.assert_called_once()
+
+            registration.write_text('{"rejected":[]}', encoding="utf-8")
+            assert _build_cron_rejected_notice(tmp_path, "alice") is None
+            registration.write_text(
+                '{"rejected":[{"name":"Notes","reason":"Empty schedule expression"}]}',
+                encoding="utf-8",
+            )
+            assert _build_cron_rejected_notice(tmp_path, "alice") == "NOTICE"
+
+    def test_cron_rejection_notice_survives_marker_write_failure(self, tmp_path):
+        state = tmp_path / "state"
+        state.mkdir()
+        (state / "cron_registration.json").write_text(
+            '{"rejected":[{"name":"Notes","reason":"Empty schedule expression"}]}',
+            encoding="utf-8",
+        )
+
+        with (
+            patch("core._anima_heartbeat.load_prompt", return_value="NOTICE"),
+            patch("core.memory._io.atomic_write_text", side_effect=OSError("read-only")),
+        ):
+            assert _build_cron_rejected_notice(tmp_path, "alice") == "NOTICE"
+
+    async def test_cron_rejection_notice_is_in_heartbeat_prompt(self, data_dir, make_anima):
+        anima_dir = make_anima("alice")
+        dp, mocks = _create_anima(anima_dir, data_dir / "shared")
+        try:
+            dp._load_heartbeat_history = MagicMock(return_value="")
+            dp.drain_background_notifications = MagicMock(return_value=[])
+            with (
+                patch("core._anima_heartbeat._build_cron_rejected_notice", return_value="NOTICE"),
+                patch("core._anima_heartbeat.ConversationMemory") as mock_conversation,
+                patch("core.config.models.load_config") as mock_config,
+            ):
+                mock_conversation.return_value.load.return_value = MagicMock(turns=[])
+                mock_config.return_value.animas = {}
+                parts = await dp._build_heartbeat_prompt()
+
+            assert "NOTICE" in parts
+        finally:
+            _stop_patches(mocks)
+
     async def test_basic_prompt_parts(self, data_dir, make_anima):
         """Basic call returns at least the heartbeat checklist prompt."""
         anima_dir = make_anima("alice")
@@ -802,6 +858,108 @@ class TestProcessInboxFastPath:
 
 
 class TestExecuteHeartbeatCycle:
+    async def test_heartbeat_retries_once_with_runtime_fallback(self, data_dir, make_anima):
+        anima_dir = make_anima("heartbeat_runtime_fallback")
+        shared_dir = data_dir / "shared"
+        dp, mocks = _create_anima(anima_dir, shared_dir)
+        try:
+            from core.schemas import ModelConfig
+
+            primary = ModelConfig(model="grok/grok-4.5", resolved_mode="X")
+            fallback = primary.model_copy(update={"model": "claude-sonnet-4-6", "resolved_mode": "S"})
+            dp.agent.model_config = primary
+            dp._resolve_background_config = MagicMock(return_value=primary)
+            dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.replied_to = set()
+            calls = 0
+
+            def update_config(config):
+                dp.agent.model_config = config
+
+            dp.agent.update_model_config = MagicMock(side_effect=update_config)
+
+            async def mock_stream(*args, **kwargs):
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    yield {
+                        "type": "cycle_done",
+                        "cycle_result": CycleResult(
+                            trigger="heartbeat",
+                            action="error",
+                            stop_kind="stream_error",
+                            summary="quota exhausted",
+                            reason="quota_exhausted",
+                        ).model_dump(mode="json"),
+                    }
+                    return
+                yield {"type": "text_delta", "text": "fallback ok"}
+                yield {
+                    "type": "cycle_done",
+                    "cycle_result": CycleResult(
+                        trigger="heartbeat",
+                        action="responded",
+                        summary="fallback ok",
+                    ).model_dump(mode="json"),
+                }
+
+            dp.agent.run_cycle_streaming = mock_stream
+            with (
+                patch("core._anima_heartbeat.StreamingJournal"),
+                patch("core._anima_heartbeat.ConversationMemory") as conversation,
+                patch("core.execution.fallback_activity.resolve_effective_model_config", return_value=fallback),
+                patch("core.execution.fallback_activity.log_model_fallback"),
+            ):
+                conversation.return_value.finalize_if_session_ended = AsyncMock()
+                result = await dp._execute_heartbeat_cycle("prompt", [], 0)
+
+            assert calls == 2
+            assert result.action == "responded"
+            assert result.summary == "fallback ok"
+            assert dp.agent.model_config is primary
+        finally:
+            _stop_patches(mocks)
+
+    async def test_heartbeat_preserves_error_reason_and_stop_kind(self, data_dir, make_anima):
+        anima_dir = make_anima("heartbeat_error_fields")
+        shared_dir = data_dir / "shared"
+        dp, mocks = _create_anima(anima_dir, shared_dir)
+        try:
+            from core.schemas import ModelConfig
+
+            primary = ModelConfig(model="grok/grok-4.5", resolved_mode="X")
+            dp.agent.model_config = primary
+            dp._resolve_background_config = MagicMock(return_value=primary)
+            dp.agent.reset_reply_tracking = MagicMock()
+            dp.agent.replied_to = set()
+
+            async def mock_stream(*args, **kwargs):
+                yield {
+                    "type": "cycle_done",
+                    "cycle_result": CycleResult(
+                        trigger="heartbeat",
+                        action="error",
+                        stop_kind="stream_error",
+                        summary="provider failed",
+                        reason="quota_exhausted",
+                    ).model_dump(mode="json"),
+                }
+
+            dp.agent.run_cycle_streaming = mock_stream
+            with (
+                patch("core._anima_heartbeat.StreamingJournal"),
+                patch("core._anima_heartbeat.ConversationMemory") as conversation,
+                patch("core.execution.fallback_activity.resolve_effective_model_config", return_value=primary),
+            ):
+                conversation.return_value.finalize_if_session_ended = AsyncMock()
+                result = await dp._execute_heartbeat_cycle("prompt", [], 0)
+
+            assert result.reason == "quota_exhausted"
+            assert result.stop_kind == "stream_error"
+            assert (anima_dir / "state" / "heartbeat_checkpoint.json").exists()
+        finally:
+            _stop_patches(mocks)
+
     async def test_normal_cycle_done(self, data_dir, make_anima):
         """Normal streaming cycle with cycle_done event returns CycleResult."""
         anima_dir = make_anima("alice")
@@ -1090,6 +1248,128 @@ class TestExecuteHeartbeatCycle:
 
 
 class TestProcessInboxMessage:
+    async def test_inbox_retries_once_then_keeps_message_on_fallback_error(self, data_dir, make_anima):
+        anima_dir = make_anima("inbox_runtime_fallback")
+        shared_dir = data_dir / "shared"
+        dp, mocks = _create_anima(anima_dir, shared_dir)
+        try:
+            from core.anima import InboxResult
+            from core.schemas import ModelConfig
+            from core.tooling.handler_base import active_session_type
+
+            item = _make_inbox_item("bob", "hello")
+            primary = ModelConfig(model="grok/grok-4.5", resolved_mode="X")
+            fallback = primary.model_copy(update={"model": "claude-sonnet-4-6", "resolved_mode": "S"})
+            dp.agent.model_config = primary
+            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+            dp._resolve_background_config = MagicMock(return_value=primary)
+            dp._process_inbox_messages = AsyncMock(
+                return_value=InboxResult(
+                    inbox_items=[item],
+                    messages=[item.msg],
+                    senders={"bob"},
+                    unread_count=1,
+                    prompt_parts=["hello"],
+                )
+            )
+            dp._activity = MagicMock()
+            dp._archive_processed_messages = AsyncMock()
+            dp.agent.replied_to = set()
+            calls = 0
+
+            def update_config(config):
+                dp.agent.model_config = config
+
+            dp.agent.update_model_config = MagicMock(side_effect=update_config)
+
+            async def mock_stream(*args, **kwargs):
+                nonlocal calls
+                calls += 1
+                reason = "quota_exhausted" if calls == 1 else "auth"
+                yield {
+                    "type": "cycle_done",
+                    "cycle_result": CycleResult(
+                        trigger="inbox:bob",
+                        action="error",
+                        stop_kind="stream_error",
+                        summary=f"{reason} failure",
+                        reason=reason,
+                    ).model_dump(mode="json"),
+                }
+
+            dp.agent.run_cycle_streaming = mock_stream
+            with (
+                patch("core._anima_inbox.StreamingJournal"),
+                patch("core.execution.fallback_activity.resolve_effective_model_config", return_value=fallback),
+                patch("core.execution.fallback_activity.log_model_fallback"),
+            ):
+                result = await dp.process_inbox_message()
+
+            assert calls == 2
+            assert result.action == "error"
+            assert result.reason == "auth"
+            assert result.stop_kind == "stream_error"
+            dp._archive_processed_messages.assert_not_awaited()
+            assert dp.agent.model_config is primary
+        finally:
+            _stop_patches(mocks)
+
+    async def test_inbox_error_is_not_posted_or_archived_and_keeps_fields(self, data_dir, make_anima):
+        anima_dir = make_anima("inbox_terminal_error")
+        shared_dir = data_dir / "shared"
+        dp, mocks = _create_anima(anima_dir, shared_dir)
+        try:
+            from core.anima import InboxResult
+            from core.schemas import ModelConfig
+
+            item = _make_inbox_item("bob", "hello")
+            primary = ModelConfig(model="grok/grok-4.5", resolved_mode="X")
+            dp.agent.model_config = primary
+            from core.tooling.handler_base import active_session_type
+
+            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+            dp._resolve_background_config = MagicMock(return_value=primary)
+            dp._process_inbox_messages = AsyncMock(
+                return_value=InboxResult(
+                    inbox_items=[item],
+                    messages=[item.msg],
+                    senders={"bob"},
+                    unread_count=1,
+                    prompt_parts=["hello"],
+                )
+            )
+            dp._activity = MagicMock()
+            dp._archive_processed_messages = AsyncMock()
+            dp.agent.replied_to = set()
+
+            async def mock_stream(*args, **kwargs):
+                yield {"type": "text_delta", "text": "provider error body"}
+                yield {
+                    "type": "cycle_done",
+                    "cycle_result": CycleResult(
+                        trigger="inbox:bob",
+                        action="error",
+                        stop_kind="stream_error",
+                        summary="provider error body",
+                        reason="quota_exhausted",
+                    ).model_dump(mode="json"),
+                }
+
+            dp.agent.run_cycle_streaming = mock_stream
+            with (
+                patch("core._anima_inbox.StreamingJournal"),
+                patch("core.execution.fallback_activity.resolve_effective_model_config", return_value=primary),
+            ):
+                result = await dp.process_inbox_message()
+
+            assert result.action == "error"
+            assert result.reason == "quota_exhausted"
+            assert result.stop_kind == "stream_error"
+            dp._archive_processed_messages.assert_not_awaited()
+            assert not any(call.args and call.args[0] == "response_sent" for call in dp._activity.log.call_args_list)
+        finally:
+            _stop_patches(mocks)
+
     async def test_archives_filtered_inbox_items_when_no_unread_remain(self, data_dir, make_anima):
         """Filtered/suppressed inbox items are archived even when unread_count becomes 0."""
         anima_dir = make_anima("alice")

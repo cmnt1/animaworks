@@ -26,14 +26,15 @@ def anima_dir(tmp_path: Path) -> Path:
     (tmp_path / "shared").mkdir()
 
     # Identity
-    (anima_dir / "identity.md").write_text("# Test Anima\nA test anima.")
+    (anima_dir / "identity.md").write_text("# Test Anima\nA test anima.", encoding="utf-8")
 
     # Heartbeat config
     (anima_dir / "heartbeat.md").write_text(
         "# Heartbeat: test-anima\n\n"
         "## 実行間隔\n10分ごと\n\n"
         "## 活動時間\n8:00 - 22:00（JST）\n\n"
-        "## チェックリスト\n- Inboxをチェック\n"
+        "## チェックリスト\n- Inboxをチェック\n",
+        encoding="utf-8",
     )
 
     # Cron config (schedule: must be a valid 5-field cron expression)
@@ -45,7 +46,8 @@ def anima_dir(tmp_path: Path) -> Path:
         "## 週次振り返り（毎週金曜 17:00 JST）\n"
         "schedule: 0 17 * * 5\n"
         "type: llm\n"
-        "今週のepisodesを振り返る。\n"
+        "今週のepisodesを振り返る。\n",
+        encoding="utf-8",
     )
 
     return anima_dir
@@ -72,8 +74,8 @@ class TestSchedulerManagerE2E:
         mock_anima.name = "test-anima"
 
         # Use real file reading for config
-        mock_anima.memory.read_heartbeat_config.return_value = (anima_dir / "heartbeat.md").read_text()
-        mock_anima.memory.read_cron_config.return_value = (anima_dir / "cron.md").read_text()
+        mock_anima.memory.read_heartbeat_config.return_value = (anima_dir / "heartbeat.md").read_text(encoding="utf-8")
+        mock_anima.memory.read_cron_config.return_value = (anima_dir / "cron.md").read_text(encoding="utf-8")
         mock_anima.set_on_schedule_changed = MagicMock()
 
         mgr = SchedulerManager(
@@ -108,8 +110,8 @@ class TestSchedulerManagerE2E:
         """After config change, reload_schedule should update jobs."""
         mock_anima = MagicMock()
         mock_anima.name = "test-anima"
-        mock_anima.memory.read_heartbeat_config.return_value = (anima_dir / "heartbeat.md").read_text()
-        mock_anima.memory.read_cron_config.return_value = (anima_dir / "cron.md").read_text()
+        mock_anima.memory.read_heartbeat_config.return_value = (anima_dir / "heartbeat.md").read_text(encoding="utf-8")
+        mock_anima.memory.read_cron_config.return_value = (anima_dir / "cron.md").read_text(encoding="utf-8")
         mock_anima.set_on_schedule_changed = MagicMock()
 
         mgr = SchedulerManager(
@@ -264,7 +266,10 @@ class TestSchedulerAPIE2E:
         app = FastAPI()
         animas_dir = tmp_path / "animas" / "alice"
         animas_dir.mkdir(parents=True)
-        (animas_dir / "cron.md").write_text("## Task（毎日 9:00 JST）\ntype: llm\nDo thing\n")
+        (animas_dir / "cron.md").write_text(
+            "## Task（毎日 9:00 JST）\ntype: llm\nDo thing\n",
+            encoding="utf-8",
+        )
         app.state.animas_dir = tmp_path / "animas"
         app.state.shared_dir = tmp_path / "shared"
         app.state.anima_names = ["alice"]

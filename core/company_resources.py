@@ -82,5 +82,5 @@ def company_resource_pointer(path: Path) -> str | None:
             continue
         if parts[index + 2] not in {"knowledge", "skills"}:
             continue
-        return str(Path(*parts[index:]))
+        return Path(*parts[index:]).as_posix()
     return None

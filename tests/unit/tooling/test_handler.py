@@ -182,6 +182,31 @@ class TestHandleRouting:
         assert "knowledge/k1.md" in result
         assert "some result" in result
 
+    def test_search_memory_routes_code_scope(self, handler: ToolHandler, anima_dir: Path) -> None:
+        code_result = {
+            "source_file": "code:demo/sample.py#L1-L2",
+            "content": "def LibrarianNeedle():\n    pass",
+            "score": 1.0,
+            "chunk_index": 0,
+            "total_chunks": 1,
+            "search_method": "bm25",
+            "last_scan": "2026-08-13T00:00:00+00:00",
+        }
+        with patch("core.memory.code_index.search_code", return_value=[code_result]) as search:
+            result = handler.handle(
+                "search_memory",
+                {"query": "LibrarianNeedle", "scope": "code", "project": "demo"},
+            )
+
+        search.assert_called_once_with(anima_dir, "demo", "LibrarianNeedle", limit=10)
+        assert "code:demo/sample.py#L1-L2" in result
+
+    def test_search_memory_code_scope_requires_project(self, handler: ToolHandler, memory: MagicMock) -> None:
+        result = handler.handle("search_memory", {"query": "needle", "scope": "code"})
+
+        assert "code検索にはprojectが必要" in result
+        memory.search_memory_text.assert_not_called()
+
     def test_search_memory_no_results(self, handler: ToolHandler, memory: MagicMock):
         memory.search_memory_text.return_value = []
         result = handler.handle("search_memory", {"query": "nothing"})
@@ -332,7 +357,7 @@ class TestHandleRouting:
         assert "File not found" in result
 
     def test_write_memory_file_overwrite(self, handler: ToolHandler, anima_dir: Path):
-        handler._mark_longterm_bm25_dirty = MagicMock()
+        handler._update_longterm_bm25_source = MagicMock()
         result = handler.handle(
             "write_memory_file",
             {"path": "knowledge/new.md", "content": "new content"},
@@ -341,7 +366,7 @@ class TestHandleRouting:
         written = (anima_dir / "knowledge" / "new.md").read_text(encoding="utf-8")
         assert "new content" in written
         assert written.startswith("---")  # auto-frontmatter
-        handler._mark_longterm_bm25_dirty.assert_called_once_with("knowledge/new.md")
+        handler._update_longterm_bm25_source.assert_called_once_with("knowledge/new.md")
 
     def test_write_memory_file_append(self, handler: ToolHandler, anima_dir: Path):
         (anima_dir / "knowledge").mkdir(exist_ok=True)
@@ -2279,14 +2304,14 @@ class TestWriteMemoryFileEpisodeWarning:
         handler: ToolHandler,
         anima_dir: Path,
     ):
-        handler._mark_longterm_bm25_dirty = MagicMock()
+        handler._update_longterm_bm25_source = MagicMock()
         result = handler.handle(
             "write_memory_file",
             {"path": "episodes/2026-02-17.md", "content": "## 10:00 — テスト\n"},
         )
         assert "Written to" in result
         assert "WARNING" not in result
-        handler._mark_longterm_bm25_dirty.assert_called_once_with("episodes/2026-02-17.md")
+        handler._update_longterm_bm25_source.assert_called_once_with("episodes/2026-02-17.md")
 
     def test_suffixed_episode_no_warning(
         self,

@@ -22,6 +22,8 @@ def test_activity_now_board_websocket_to_card_flow() -> None:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=30,
         check=False,
     )

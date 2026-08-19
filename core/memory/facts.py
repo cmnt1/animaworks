@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from core.memory._io import atomic_write_text
+from core.platform.locks import acquire_file_lock, release_file_lock
 from core.time_utils import ensure_aware, now_iso, now_local, today_local
 
 logger = logging.getLogger("animaworks.memory.facts")
@@ -244,20 +245,15 @@ def _locked_file(path: Path) -> Iterator[None]:
     thread_lock = _process_lock(lock_path)
     with thread_lock, open(lock_path, "a+", encoding="utf-8") as lock_file:
         try:
-            import fcntl
-
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        except (ImportError, OSError):
+            acquire_file_lock(lock_file, exclusive=True)
+        except OSError:
             logger.debug("OS file lock unavailable for %s", lock_path, exc_info=True)
-        try:
             yield
-        finally:
+        else:
             try:
-                import fcntl
-
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-            except (ImportError, OSError):
-                pass
+                yield
+            finally:
+                release_file_lock(lock_file)
 
 
 def read_fact_records(

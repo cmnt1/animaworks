@@ -10,6 +10,8 @@ import os
 from collections.abc import Iterable
 from pathlib import Path
 
+from core.i18n import t
+
 _ANIMA_MEMORY_ROOTS = frozenset(
     {
         "activity_log",
@@ -22,6 +24,10 @@ _ANIMA_MEMORY_ROOTS = frozenset(
         "state",
     }
 )
+
+
+class FileRootsConfigError(ValueError):
+    """Raised when ``file_roots`` violates the write-access charter."""
 
 
 def resolve_denied_roots(roots: Iterable[str | Path]) -> tuple[Path, ...]:
@@ -61,6 +67,36 @@ def company_shared_write_root(anima_dir: Path) -> Path | None:
     if shared_root.parent != company_root:
         return None
     return shared_root
+
+
+def effective_write_roots(
+    anima_dir: Path,
+    file_roots: list[str],
+    task_cwd: Path | None = None,
+) -> tuple[Path, ...]:
+    """Return canonical writable roots from the write-access charter.
+
+    See ``docs/specs/write-access-charter.ja.md``.
+    """
+    anima_dir = Path(anima_dir)
+    data_dir = anima_dir.resolve().parent.parent
+    company_shared = company_shared_write_root(anima_dir)
+    roots: list[Path] = []
+    if company_shared is not None:
+        company_shared.mkdir(parents=True, exist_ok=True)
+        roots.append(company_shared)
+
+    for root in file_roots:
+        resolved = Path(root).expanduser().resolve()
+        if resolved.is_relative_to(data_dir) and not (
+            company_shared is not None and resolved.is_relative_to(company_shared)
+        ):
+            raise FileRootsConfigError(t("config.file_roots_inside_data_dir", path=resolved))
+        roots.append(resolved)
+
+    if task_cwd is not None:
+        roots.append(Path(task_cwd).expanduser().resolve())
+    return tuple(dict.fromkeys(roots))
 
 
 def shared_tool_cache_write_root(anima_dir: Path) -> Path | None:

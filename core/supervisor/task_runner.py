@@ -19,6 +19,7 @@ from typing import Any
 from core.anima import DigitalAnima
 from core.i18n import t
 from core.paths import get_animas_dir, get_data_dir, get_shared_dir
+from core.platform.process import is_process_alive
 from core.schemas import CronTask
 from core.supervisor.ipc import IPCRequest
 from core.supervisor.ipc_v2 import (
@@ -233,7 +234,11 @@ async def execute_background_contract(
     """Execute a background-lane contract (consolidation or command tool)."""
     if kind == "consolidation":
         consolidation_type = str(payload.get("consolidation_type") or "daily")
-        result = await anima.run_consolidation(consolidation_type=consolidation_type)
+        project = payload.get("project")
+        kwargs = {"consolidation_type": consolidation_type}
+        if project is not None:
+            kwargs["project"] = project
+        result = await anima.run_consolidation(**kwargs)
         result_dict = result.model_dump(mode="json") if result is not None else {}
         return {
             "task_type": "consolidation",
@@ -319,6 +324,7 @@ async def execute_chat_contract(
             thread_id=str(payload.get("thread_id") or "default"),
             include_cycle_result=True,
             source=str(payload.get("source") or ""),
+            voice_mode=payload.get("voice_mode") is True,
             meeting_room_id=str(payload.get("meeting_room_id") or ""),
             meeting_participants=payload.get("meeting_participants") or None,
         )
@@ -350,7 +356,8 @@ def _fsync_chat_state(anima_dir: Path) -> None:
         if not path.is_file():
             continue
         try:
-            fd = os.open(path, os.O_RDONLY)
+            flags = os.O_RDWR if os.name == "nt" else os.O_RDONLY
+            fd = os.open(path, flags)
             try:
                 os.fsync(fd)
             finally:
@@ -409,8 +416,8 @@ async def _progress_loop(connection: IPCV2Connection, identity: IPCV2Identity) -
 
 
 async def _parent_monitor(expected_parent_pid: int) -> None:
-    """Return when the spawning anima root is no longer our parent."""
-    while os.getppid() == expected_parent_pid:
+    """Return when the spawning anima root process is no longer alive."""
+    while is_process_alive(expected_parent_pid):
         await asyncio.sleep(1.0)
 
 

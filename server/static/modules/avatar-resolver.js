@@ -10,6 +10,8 @@ import { basePath } from "/shared/base-path.js";
 
 /** @type {Map<string, string|null>} animaName -> resolved URL (or null) */
 const _headProbeCache = new Map();
+/** @type {Map<string, string>} animaName -> ETag/Last-Modified from HEAD */
+const _headValidatorCache = new Map();
 
 export function isRealisticMode() {
   return document.body.classList.contains("mode-realistic");
@@ -68,6 +70,8 @@ export async function resolveAvatar(animaName, candidates) {
       const resp = await fetch(url, { method: "HEAD" });
       if (resp.ok) {
         _headProbeCache.set(animaName, url);
+        const validator = resp.headers.get("etag") || resp.headers.get("last-modified") || "";
+        _headValidatorCache.set(animaName, validator);
         return url;
       }
     } catch {
@@ -90,7 +94,9 @@ export async function resolveCachedAvatar(animaName, candidates, size = "S") {
   const url = await resolveAvatar(animaName, candidates);
   if (!url) return null;
   const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}size=${size}`;
+  const validator = (_headValidatorCache.get(animaName) || "").replaceAll('"', "");
+  const bust = validator ? `&v=${encodeURIComponent(validator)}` : "";
+  return `${url}${sep}size=${size}${bust}`;
 }
 
 /**
@@ -101,6 +107,7 @@ export async function resolveCachedAvatar(animaName, candidates, size = "S") {
 export async function invalidateAvatarCache(animaName) {
   const oldUrl = _headProbeCache.get(animaName);
   _headProbeCache.delete(animaName);
+  _headValidatorCache.delete(animaName);
     if (oldUrl) {
       await invalidateCache(oldUrl);
   }

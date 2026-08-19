@@ -10,8 +10,10 @@
 from __future__ import annotations
 
 import fnmatch
+import importlib.util
 import json
 import logging
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -87,6 +89,7 @@ def load_model_config(anima_dir: Path) -> ModelConfig:
         thinking=resolved.thinking,
         thinking_effort=resolved.thinking_effort,
         background_thinking_effort=resolved.background_thinking_effort,
+        voice_thinking_effort=resolved.voice_thinking_effort,
         heartbeat_enabled=resolved.heartbeat_enabled,
         token_budget_monthly=resolved.token_budget_monthly,
         llm_timeout=resolved.llm_timeout,
@@ -167,6 +170,9 @@ def resolve_effective_model_config(model_config: ModelConfig) -> ModelConfig:
     primary_remaining = guard.blocked_remaining(primary_key)
     if primary_remaining <= 0:
         return model_config
+    earliest_config = model_config
+    earliest_until = guard.blocked_until(primary_key)
+    earliest_remaining = primary_remaining
 
     for entry in model_config.fallback_models:
         parsed = parse_fallback_entry(entry, config)
@@ -174,6 +180,18 @@ def resolve_effective_model_config(model_config: ModelConfig) -> ModelConfig:
             continue
         mode, model = parsed
         resolved_mode = mode.upper()
+
+        if resolved_mode == "X" and shutil.which("grok") is None:
+            logger.debug("Skipping fallback %s:%s: grok CLI is unavailable", mode, model)
+            continue
+        if resolved_mode == "C":
+            try:
+                codex_available = importlib.util.find_spec("openai_codex") is not None
+            except (ImportError, ValueError):
+                codex_available = False
+            if not codex_available:
+                logger.debug("Skipping fallback %s:%s: openai_codex is unavailable", mode, model)
+                continue
 
         if resolved_mode in {"C", "D", "G", "X"}:
             # CLI-auth engines (Codex/Cursor/Gemini/Grok) authenticate via their
@@ -224,7 +242,13 @@ def resolve_effective_model_config(model_config: ModelConfig) -> ModelConfig:
                 },
             )
         candidate_key = _guard_key_for_model_config(candidate, config)
-        if guard.blocked_remaining(candidate_key) > 0:
+        candidate_remaining = guard.blocked_remaining(candidate_key)
+        if candidate_remaining > 0:
+            candidate_until = guard.blocked_until(candidate_key)
+            if candidate_until < earliest_until:
+                earliest_config = candidate
+                earliest_until = candidate_until
+                earliest_remaining = candidate_remaining
             continue
 
         logger.warning(
@@ -236,7 +260,13 @@ def resolve_effective_model_config(model_config: ModelConfig) -> ModelConfig:
         )
         return candidate
 
-    return model_config
+    if earliest_config is not model_config:
+        logger.warning(
+            "all usable fallback candidates blocked; selecting earliest release %s (%.0fs)",
+            earliest_config.model,
+            earliest_remaining,
+        )
+    return earliest_config
 
 
 def fallback_event_meta(
@@ -258,11 +288,16 @@ def fallback_event_meta(
     from core.execution.rate_guard import get_rate_guard
 
     config = load_config()
-    remaining = get_rate_guard().blocked_remaining(_guard_key_for_model_config(primary, config))
+    guard = get_rate_guard()
+    primary_key = _guard_key_for_model_config(primary, config)
+    remaining = guard.blocked_remaining(primary_key)
+    reason = guard.block_reason(primary_key)
+    if not isinstance(reason, str) or not reason:
+        reason = "unknown"
     return {
         "primary": primary.model,
         "fallback": f"{effective_mode.lower()}:{effective.model}",
-        "reason": "rate_guard_blocked",
+        "reason": f"rate_guard_blocked:{reason}",
         "remaining": remaining,
     }
 

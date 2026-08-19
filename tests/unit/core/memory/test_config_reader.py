@@ -250,6 +250,7 @@ class TestReadModelConfig:
         mock_resolved.background_model = None
         mock_resolved.background_credential = None
         mock_resolved.background_thinking_effort = None
+        mock_resolved.voice_thinking_effort = None
         mock_resolved.heartbeat_enabled = True
         mock_resolved.token_budget_monthly = 100_000
         mock_resolved.mode_s_auth = None
@@ -326,6 +327,7 @@ class TestReadModelConfig:
         mock_resolved.background_model = None
         mock_resolved.background_credential = None
         mock_resolved.background_thinking_effort = None
+        mock_resolved.voice_thinking_effort = None
         mock_resolved.heartbeat_enabled = True
         mock_resolved.token_budget_monthly = None
         mock_resolved.mode_s_auth = None

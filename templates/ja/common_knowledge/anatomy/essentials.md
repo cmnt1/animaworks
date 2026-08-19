@@ -1,7 +1,7 @@
 # AnimaWorks エッセンシャルガイド
 
 [IMPORTANT] AnimaWorks の全体像を1枚で把握するための統合ガイド。
-Heartbeat / Cron / machine / チーム設計 / 記憶 / コスト最適化の要点を網羅。
+Heartbeat / Cron / チーム設計 / 記憶 / コスト最適化の要点を網羅。
 初めて読む場合や、概念の関係を整理したいときに最初に参照すること。
 各トピックの詳細は末尾のリンク先を参照。
 
@@ -118,43 +118,6 @@ command: /usr/local/bin/health-check.sh
 
 ---
 
-## machine（工作機械）とは
-
-`machine` は外部エージェントCLI（claude, cursor-agent, codex, gemini）を呼び出して、
-重い作業（コード実装・調査・レビュー・テスト等）を委託するツール。
-
-### Anima と machine の根本的な違い
-
-| 属性 | Anima（職人） | machine（工作機械） |
-|------|-------------|-------------------|
-| 記憶 | 蓄積する | 毎回リセット |
-| 自律性 | ある（Heartbeat, Cron） | ない（呼ばれたときだけ） |
-| 組織上の席 | ある | ない |
-| 判断 | 何をやるか/やらないか決める | 指示されたことだけ実行 |
-
-### 使い方の鉄則
-
-```
-① Anima が計画書（設計図）を書く     ← 必ず Anima が書く
-② machine に計画書を渡して実行させる
-③ machine の出力はドラフトとして扱う   ← 無検証で次工程に渡さない
-④ Anima が検証し、承認 or 修正する
-```
-
-### いつ machine を使うか
-
-| 場面 | machine を使う | 直接やる |
-|------|--------------|---------|
-| 大規模なコード実装 | ○ | |
-| ファイル数十個のリファクタ | ○ | |
-| 簡単な設定変更 | | ○ |
-| 記憶の整理・文章作成 | | ○ |
-| テストの実行と結果分析 | ○ | |
-| メッセージ送信・報告 | | ○（machine は通信できない） |
-
-→ 詳細: `anatomy/machine-tool-philosophy.md`, `operations/machine/tool-usage.md`
-
----
 
 ## タスクの流し方 — submit_tasks vs delegate_task
 
@@ -205,23 +168,6 @@ command: /usr/local/bin/health-check.sh
 - 失敗コストが高い → ロール分離を増やす
 - 「実装した本人がレビュー」になっている → Reviewer を分離
 - 並行作業可能なモジュールが多い → Engineer を増やす
-
-### 用意されているチームテンプレート
-
-| テンプレート | ロール数 | 概要 |
-|-------------|---------|------|
-| 開発（development） | 4 | PdM + Engineer + Reviewer + Tester |
-| 法務（legal） | 3 | Director + Verifier + Researcher |
-| 財務（finance） | 4 | Director + Auditor + Analyst + Collector |
-| トレーディング（trading） | 4 | Director + Analyst + Engineer + Auditor |
-| 営業・マーケティング（sales-marketing） | 4 | Director + Creator + SDR + Researcher |
-| CS（customer-success） | 2 | CS Lead + Support |
-| 経営企画（corporate-planning） | 3 | Strategist + Analyst + Coordinator |
-| インフラ/SRE（infrastructure） | 2 | Infra Director + Monitor |
-| 秘書（secretary） | 1 | Secretary（人間直属） |
-| COO（coo） | 1 | COO（人間直属） |
-
-→ 詳細: `team-design/guide.md`, 各 `team-design/{チーム名}/team.md`
 
 ---
 

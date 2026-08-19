@@ -10,6 +10,7 @@ from __future__ import annotations
 """Priming utilities: retriever cache, dual-query, search, keyword extraction."""
 
 import logging
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -40,6 +41,7 @@ class RetrieverCache:
 
     def __init__(self) -> None:
         self._retriever: MemoryRetriever | None = None
+        self._lock = threading.Lock()
         # Monotonic timestamp of the last failed init; ``None`` means never failed.
         self._failed_at: float | None = None
 
@@ -52,6 +54,13 @@ class RetrieverCache:
         A failed initialization is latched for ``_INIT_RETRY_TTL_SECONDS`` and then
         retried once, so a transient outage does not silently disable priming forever.
         """
+        if self._retriever is not None:
+            return self._retriever
+
+        with self._lock:
+            return self._get_or_create_locked(anima_dir, knowledge_dir)
+
+    def _get_or_create_locked(self, anima_dir: Path, knowledge_dir: Path) -> MemoryRetriever | None:
         if self._retriever is not None:
             return self._retriever
 
@@ -120,7 +129,7 @@ def build_unified_searcher(
     get_retriever: Callable[[], MemoryRetriever | None],
     unified_search_cls: Any,
 ) -> Any:
-    """Build a UnifiedMemorySearch, reusing an injected retriever's indexer when available.
+    """Build a UnifiedMemorySearch, reusing an injected retriever and indexer when available.
 
     Shared by Channel C and Channel F so both reuse the runtime/test retriever
     cache instead of constructing a cold searcher on every priming run.  The
@@ -140,6 +149,7 @@ def build_unified_searcher(
                 get_common_skills_dir(),
             )
             rag_search._indexer = indexer
+            rag_search._retriever = retriever
             rag_search._indexer_initialized = True
             return unified_search_cls(anima_dir, rag_search=rag_search)
     except Exception:

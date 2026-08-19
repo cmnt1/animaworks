@@ -26,6 +26,7 @@ import pytest
 
 from core.memory.rag.retriever import (
     WEIGHT_FREQUENCY,
+    AccessBatch,
     MemoryRetriever,
     RetrievalResult,
 )
@@ -283,6 +284,15 @@ class TestRecordAccess:
         assert metas_arg[0]["last_retrieved_at"] == fixed_now.isoformat()
         assert "last_used_at" not in metas_arg[0]
 
+    def test_record_access_can_reuse_fresh_result_metadata(self, retriever, mock_vector_store):
+        result = _make_result(doc_id="doc1", access_count=3)
+
+        retriever.record_access([result], "test_anima", use_result_metadata=True)
+
+        mock_vector_store.get_by_ids.assert_not_called()
+        metadata = mock_vector_store.update_metadata.call_args.args[2][0]
+        assert metadata["access_count"] == 4
+
     def test_record_access_groups_by_collection(self, retriever, mock_vector_store):
         """Test that record_access groups results by collection.
 
@@ -349,6 +359,42 @@ class TestRecordAccess:
         retriever.record_access([], "test_anima")
 
         mock_vector_store.update_metadata.assert_not_called()
+
+
+def test_access_batch_combines_writes_and_overlays_counts(mock_vector_store):
+    batch = AccessBatch()
+    first = _make_result(doc_id="doc1", access_count=1)
+    batch.record([first], "test_anima", kind="retrieved")
+    overlaid = batch.overlay("test_anima_knowledge", "doc1", dict(first.metadata))
+    second = _make_result(doc_id="doc1", **overlaid)
+    batch.record([second], "test_anima", kind="retrieved")
+
+    batch.flush(mock_vector_store)
+
+    mock_vector_store.update_metadata.assert_called_once()
+    metadata = mock_vector_store.update_metadata.call_args.args[2][0]
+    assert metadata["access_count"] == pytest.approx(1.4)
+    assert metadata["retrieved_count"] == 2
+
+
+def test_access_batch_absorb_combines_writes_without_cross_query_overlay(mock_vector_store):
+    first_batch = AccessBatch()
+    second_batch = AccessBatch()
+    first = _make_result(doc_id="doc1", access_count=1)
+    second = _make_result(doc_id="doc1", access_count=1)
+    first_batch.record([first], "test_anima", kind="retrieved")
+    second_batch.record([second], "test_anima", kind="retrieved")
+
+    assert second_batch.overlay("test_anima_knowledge", "doc1", dict(second.metadata))["access_count"] == 1.2
+
+    combined = AccessBatch()
+    combined.absorb(first_batch)
+    combined.absorb(second_batch)
+    combined.flush(mock_vector_store)
+
+    metadata = mock_vector_store.update_metadata.call_args.args[2][0]
+    assert metadata["access_count"] == pytest.approx(1.4)
+    assert metadata["retrieved_count"] == 2
 
 
 # ── Indexer Metadata Tests ──────────────────────────────────────────

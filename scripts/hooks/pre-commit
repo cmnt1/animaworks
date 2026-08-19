@@ -1,0 +1,4 @@
+#!/bin/sh
+# Block commits that carry unresolved merge-conflict markers into runtime source.
+# Install once per checkout: git config core.hooksPath scripts/hooks
+exec python3 scripts/check_conflict_markers.py

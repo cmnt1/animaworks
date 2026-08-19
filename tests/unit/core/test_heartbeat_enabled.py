@@ -43,6 +43,12 @@ def test_heartbeat_enabled_defaults_are_backward_compatible() -> None:
     assert AnimaModelConfig().heartbeat_enabled is None
 
 
+def test_heartbeat_enabled_is_preserved_by_bootstrap_repair() -> None:
+    from core.bootstrap_state import PRESERVED_STATUS_KEYS
+
+    assert "heartbeat_enabled" in PRESERVED_STATUS_KEYS
+
+
 @pytest.mark.parametrize("override", [False, True])
 def test_heartbeat_enabled_per_anima_override_wins(override: bool) -> None:
     config = AnimaWorksConfig(

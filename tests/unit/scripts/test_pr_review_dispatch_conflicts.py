@@ -90,35 +90,75 @@ def test_closed_pr_record_is_pruned(mod):
     assert state["conflict_notified"] == {}
 
 
+def _terminal_task(task_id: str, status: str) -> SimpleNamespace:
+    # updated_at far in the past so the redispatch cooldown does not interfere
+    return SimpleNamespace(task_id=task_id, status=status, updated_at="2026-08-01T00:00:00Z")
+
+
 def test_failed_dispatch_latches_reopen_twice_then_stop(mod, monkeypatch):
     ci_key = "o/r#1_aaaaaaaa"
     conflict_key = "o/r#2"
     state = mod.default_state()
     state["ci_notified"][ci_key] = "2026-08-11T00:00:00Z"
     state["conflict_notified"][conflict_key] = "bbbbbbbb"
-    monkeypatch.setattr(mod, "_direct_task", lambda task_id: SimpleNamespace(status="failed"))
+    monkeypatch.setattr(mod, "_direct_task", lambda task_id: _terminal_task(task_id, "failed"))
 
     for retry in (1, 2):
-        mod.reopen_failed_dispatches(state)
+        mod.reopen_stalled_dispatches(state)
         assert ci_key not in state["ci_notified"]
         assert conflict_key not in state["conflict_notified"]
         assert set(state["failed_task_retries"].values()) == {retry}
         state["ci_notified"][ci_key] = "2026-08-11T00:00:00Z"
         state["conflict_notified"][conflict_key] = "bbbbbbbb"
 
-    mod.reopen_failed_dispatches(state)
+    mod.reopen_stalled_dispatches(state)
     assert ci_key in state["ci_notified"]
     assert conflict_key in state["conflict_notified"]
     assert set(state["failed_task_retries"].values()) == {2}
 
 
-@pytest.mark.parametrize("status", ["pending", "in_progress", "waiting", "done"])
-def test_nonfailed_dispatch_keeps_latch(mod, monkeypatch, status):
+@pytest.mark.parametrize("status", ["pending", "in_progress", "waiting"])
+def test_active_dispatch_keeps_latch(mod, monkeypatch, status):
     state = mod.default_state()
     state["ci_notified"]["o/r#1_aaaaaaaa"] = "2026-08-11T00:00:00Z"
-    monkeypatch.setattr(mod, "_direct_task", lambda task_id: SimpleNamespace(status=status))
+    monkeypatch.setattr(mod, "_direct_task", lambda task_id: _terminal_task(task_id, status))
 
-    mod.reopen_failed_dispatches(state)
+    mod.reopen_stalled_dispatches(state)
+
+    assert "o/r#1_aaaaaaaa" in state["ci_notified"]
+    assert state["failed_task_retries"] == {}
+
+
+@pytest.mark.parametrize("status", ["done", "cancelled"])
+def test_done_and_cancelled_reopen_latch_with_context(mod, monkeypatch, status):
+    """done/cancelled でも問題が現存する限り再投入対象（done≠解決）。"""
+    state = mod.default_state()
+    state["ci_notified"]["o/r#1_aaaaaaaa"] = "2026-08-11T00:00:00Z"
+    monkeypatch.setattr(mod, "_direct_task", lambda task_id: _terminal_task(task_id, status))
+
+    mod.reopen_stalled_dispatches(state)
+
+    assert "o/r#1_aaaaaaaa" not in state["ci_notified"]
+    base_id = mod._ci_task_id("o/r", 1, "aaaaaaaa")
+    assert state["failed_task_retries"][base_id] == 1
+    assert state["retry_context"][base_id]["last_status"] == status
+    preamble = mod._whiff_preamble(base_id, state)
+    assert "空振り" in preamble
+    if status == "done":
+        assert "宣言と現実が食い違っている" in preamble
+
+
+def test_recent_terminal_task_waits_for_cooldown(mod, monkeypatch):
+    state = mod.default_state()
+    state["ci_notified"]["o/r#1_aaaaaaaa"] = "2026-08-11T00:00:00Z"
+    fresh = mod.iso(mod.now_utc())
+    monkeypatch.setattr(
+        mod,
+        "_direct_task",
+        lambda task_id: SimpleNamespace(task_id=task_id, status="done", updated_at=fresh),
+    )
+
+    mod.reopen_stalled_dispatches(state)
 
     assert "o/r#1_aaaaaaaa" in state["ci_notified"]
     assert state["failed_task_retries"] == {}

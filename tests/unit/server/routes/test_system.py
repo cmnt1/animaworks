@@ -966,6 +966,36 @@ class TestParseCronJobs:
         (animas_dir / "alice").mkdir(parents=True)
         assert _parse_cron_jobs(animas_dir, ["alice"]) == []
 
+    def test_display_parse_is_quiet(self, tmp_path, caplog):
+        animas_dir = tmp_path / "animas"
+        alice_dir = animas_dir / "alice"
+        alice_dir.mkdir(parents=True)
+        (alice_dir / "cron.md").write_text(
+            "## Notes\nNo schedule\n## Scripted\nschedule: 0 9 * * *\ntype: llm\n```sh\necho ok\n```\n",
+            encoding="utf-8",
+        )
+
+        assert len(_parse_cron_jobs(animas_dir, ["alice"])) == 2
+        assert caplog.records == []
+
+    def test_scheduled_audit_is_not_reported_as_last_run(self, tmp_path):
+        animas_dir = tmp_path / "animas"
+        alice_dir = animas_dir / "alice"
+        log_dir = alice_dir / "state" / "cron_logs"
+        log_dir.mkdir(parents=True)
+        (alice_dir / "cron.md").write_text(
+            "## Daily\nschedule: 0 9 * * *\ntype: llm\nWork\n",
+            encoding="utf-8",
+        )
+        (log_dir / "2026-08-14.jsonl").write_text(
+            '{"timestamp":"2026-08-14T08:00:00+09:00","task":"Daily","event":"scheduled"}\n',
+            encoding="utf-8",
+        )
+
+        jobs = _parse_cron_jobs(animas_dir, ["alice"])
+
+        assert jobs[0]["last_run"] is None
+
     def test_single_job(self, tmp_path):
         animas_dir = tmp_path / "animas"
         alice_dir = animas_dir / "alice"

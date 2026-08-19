@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+import core.memory.retrieval.entity as entity_module
+from core.memory.entity_index import normalize_entity_key
 from core.memory.retrieval.entity import (
     EntityBoostConfig,
     apply_entity_boost,
@@ -23,6 +25,20 @@ def _write_registry(anima_dir: Path, entities: dict) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def _legacy_match(text: str, index: entity_module.EntityAliasIndex) -> set[str]:
+    haystacks = {
+        normalize_entity_key(text),
+        entity_module._normalize_entity(text),
+        text.casefold(),
+    }
+    haystacks.discard("")
+    return {
+        key
+        for key, surfaces in index.synonyms.items()
+        if any(len(surface) >= 2 and surface in haystack for surface in surfaces for haystack in haystacks)
+    }
 
 
 @pytest.fixture(autouse=True)
@@ -60,6 +76,7 @@ def test_alias_resolves_query_form_to_canonical_content(tmp_path: Path) -> None:
     assert boosted[0]["content"] == "natsume の週次タスクを整理した"
     assert boosted[0]["entity_boost"] == pytest.approx(0.20)
     assert boosted[0]["score"] == pytest.approx(0.60)
+    assert "natsume" in boosted[0]["candidate_entities"]
 
 
 @pytest.mark.unit
@@ -219,3 +236,65 @@ def test_related_boost_defaults_to_half_primary(tmp_path: Path) -> None:
         EntityBoostConfig(enabled=True, category=None, anima_dir=anima_dir, boost=0.20, max_boost=0.80),
     )
     assert boosted[0]["entity_boost"] == pytest.approx(0.10)
+
+
+@pytest.mark.unit
+def test_automaton_matches_legacy_for_nested_cjk_casefold_and_shared_surfaces(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "alice"
+    _write_registry(
+        anima_dir,
+        {
+            "short-name": {"canonical": "三十三", "aliases": [], "source_fact_ids": []},
+            "bank-name": {"canonical": "三十三銀行", "aliases": [], "source_fact_ids": []},
+            "openai": {"canonical": "OpenAI", "aliases": [], "source_fact_ids": []},
+            "shared-a": {"canonical": "共有A", "aliases": ["共通名"], "source_fact_ids": []},
+            "shared-b": {"canonical": "共有B", "aliases": ["共通名"], "source_fact_ids": []},
+        },
+    )
+    index = load_entity_alias_index(anima_dir)
+    assert index is not None
+
+    cases = {
+        "三十三銀行の返済": {"short-name", "bank-name"},
+        "OPENAI releases": {"openai"},
+        "これは共通名です": {"shared-a", "shared-b"},
+        "該当なし": set(),
+    }
+    for text, expected in cases.items():
+        actual = entity_module._match_registry_keys_in_text(text, index)
+        assert actual == _legacy_match(text, index)
+        assert actual == expected
+
+
+@pytest.mark.unit
+def test_registered_query_defers_content_entity_extraction_until_match(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    anima_dir = tmp_path / "alice"
+    _write_registry(
+        anima_dir,
+        {"alpha": {"canonical": "alpha", "aliases": [], "source_fact_ids": []}},
+    )
+    extracted: list[str] = []
+    original_extract = entity_module.extract_entities
+
+    def track_extract(text: str, **kwargs: object) -> set[str]:
+        extracted.append(text)
+        return original_extract(text, **kwargs)
+
+    monkeypatch.setattr(entity_module, "extract_entities", track_extract)
+    boosted = apply_entity_boost(
+        "alpha",
+        [
+            {"content": "generic filler without a match", "score": 0.5},
+            {"content": "alpha release details", "score": 0.4},
+        ],
+        EntityBoostConfig(
+            enabled=True,
+            anima_dir=anima_dir,
+            query_entities=("alpha",),
+            require_query_entities=True,
+            prefer_candidate_metadata=False,
+        ),
+    )
+
+    assert extracted == ["alpha release details"]
+    assert "alpha" in boosted[0]["candidate_entities"]

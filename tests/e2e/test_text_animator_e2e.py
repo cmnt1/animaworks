@@ -30,6 +30,7 @@ _RENDER_UTILS = _PROJECT_ROOT / "server" / "static" / "shared" / "chat" / "rende
 def _make_test_app():
     """Create a test FastAPI app with mock supervisor."""
     from fastapi import FastAPI
+
     from server.routes.chat import create_chat_router
 
     app = FastAPI()
@@ -167,7 +168,7 @@ class TestTextAnimatorJSStructure:
 
     @pytest.fixture()
     def src(self) -> str:
-        return _RENDER_UTILS.read_text()
+        return _RENDER_UTILS.read_text(encoding="utf-8")
 
     def test_constructor_accepts_char_interval(self, src: str):
         assert "charIntervalMs" in src

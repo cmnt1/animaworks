@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -9,7 +10,6 @@ tools to prevent context bloat in Agent SDK sessions.
 """
 
 from pathlib import Path
-
 
 from core.execution.agent_sdk import (
     _BASH_HEAD_BYTES,
@@ -25,7 +25,6 @@ from core.execution.agent_sdk import (
     _guard_grep,
     _guard_read,
 )
-
 
 # ── _guard_bash tests ────────────────────────────────────────
 
@@ -67,7 +66,7 @@ class TestGuardBash:
     def test_output_dir_in_wrapped(self, tmp_path: Path) -> None:
         """Wrapped command uses anima_dir/shortterm/tool_outputs."""
         result = _guard_bash({"command": "echo test"}, tmp_path)
-        expected_dir = str(tmp_path / "shortterm" / "tool_outputs")
+        expected_dir = (tmp_path / "shortterm" / "tool_outputs").as_posix()
         assert expected_dir in result["command"]
 
     def test_truncation_thresholds(self, tmp_path: Path) -> None:

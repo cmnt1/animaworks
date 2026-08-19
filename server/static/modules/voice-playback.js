@@ -1,6 +1,10 @@
 /**
  * Audio playback queue for voice chat TTS output.
  * Decodes received audio chunks and plays them sequentially.
+ *
+ * Once RTC loopback AEC is up, output goes
+ * gain → MediaStreamDestination → RTCPeerConnection pair → <audio srcObject>,
+ * so Chrome-family AEC can use TTS as the echo reference.
  */
 export class VoicePlayback {
   constructor() {
@@ -12,10 +16,19 @@ export class VoicePlayback {
     this._volume = 1.0;
     this._onPlaybackStart = null;
     this._onPlaybackEnd = null;
+    this._onCaption = null;
+    this._aecActive = false;
+    this._aecFailed = false;
+    this._aecStarting = false;
+    this._msDest = null;
+    this._pc1 = null;
+    this._pc2 = null;
+    this._aecAudio = null;
   }
 
   _ensureContext() {
     if (this._ctx && this._ctx.state === 'closed') {
+      this._teardownAec();
       this._ctx = null;
       this._gainNode = null;
     }
@@ -24,21 +37,118 @@ export class VoicePlayback {
       this._gainNode = this._ctx.createGain();
       this._gainNode.gain.value = this._volume;
       this._gainNode.connect(this._ctx.destination);
+      this._startAecLoopback();
     }
     if (this._ctx.state === 'suspended') {
       this._ctx.resume();
     }
   }
 
-  async enqueue(audioData) {
-    // audioData is ArrayBuffer (wav or mp3)
+  get aecActive() {
+    return this._aecActive;
+  }
+
+  async _startAecLoopback() {
+    if (this._aecFailed || this._aecActive || this._aecStarting) return;
+    this._aecStarting = true;
+    const ctx = this._ctx;
+    const res = { pc1: null, pc2: null, msDest: null, audio: null };
+    try {
+      res.msDest = ctx.createMediaStreamDestination();
+      res.pc1 = new RTCPeerConnection();
+      res.pc2 = new RTCPeerConnection();
+      res.pc1.onicecandidate = (e) => {
+        if (e.candidate) res.pc2.addIceCandidate(e.candidate).catch(() => {});
+      };
+      res.pc2.onicecandidate = (e) => {
+        if (e.candidate) res.pc1.addIceCandidate(e.candidate).catch(() => {});
+      };
+
+      const gotTrack = new Promise((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error('ontrack timeout')), 5000);
+        res.pc2.ontrack = (e) => {
+          clearTimeout(t);
+          resolve(e.streams[0] || new MediaStream([e.track]));
+        };
+      });
+
+      for (const track of res.msDest.stream.getAudioTracks()) {
+        res.pc1.addTrack(track, res.msDest.stream);
+      }
+
+      const offer = await res.pc1.createOffer();
+      await res.pc1.setLocalDescription(offer);
+      await _waitIce(res.pc1);
+      if (this._ctx !== ctx) throw new Error('aborted');
+      await res.pc2.setRemoteDescription(res.pc1.localDescription);
+      const answer = await res.pc2.createAnswer();
+      await res.pc2.setLocalDescription(answer);
+      await _waitIce(res.pc2);
+      if (this._ctx !== ctx) throw new Error('aborted');
+      await res.pc1.setRemoteDescription(res.pc2.localDescription);
+
+      const remote = await gotTrack;
+      if (this._ctx !== ctx || !this._gainNode) throw new Error('aborted');
+
+      res.audio = document.createElement('audio');
+      res.audio.style.display = 'none';
+      res.audio.autoplay = true;
+      res.audio.srcObject = remote;
+      document.body.appendChild(res.audio);
+      await res.audio.play();
+
+      if (this._ctx !== ctx || !this._gainNode) throw new Error('aborted');
+
+      // Switch off the direct destination so we never double-play.
+      this._gainNode.disconnect();
+      this._gainNode.connect(res.msDest);
+      this._msDest = res.msDest;
+      this._pc1 = res.pc1;
+      this._pc2 = res.pc2;
+      this._aecAudio = res.audio;
+      this._aecActive = true;
+    } catch (err) {
+      _disposeAecResources(res);
+      if (this._ctx !== ctx) return;
+      this._aecFailed = true;
+      console.warn('[VoicePlayback] AEC loopback failed, falling back to direct output:', err);
+      if (this._gainNode && !this._aecActive) {
+        try {
+          this._gainNode.disconnect();
+          this._gainNode.connect(this._ctx.destination);
+        } catch (_) {
+          // Already wired to destination, or context gone.
+        }
+      }
+    } finally {
+      this._aecStarting = false;
+    }
+  }
+
+  _teardownAec() {
+    this._aecActive = false;
+    _disposeAecResources({
+      pc1: this._pc1,
+      pc2: this._pc2,
+      audio: this._aecAudio,
+      msDest: this._msDest,
+    });
+    this._pc1 = null;
+    this._pc2 = null;
+    this._aecAudio = null;
+    this._msDest = null;
+  }
+
+  async enqueue(audioData, caption = null) {
+    // audioData is ArrayBuffer (wav or mp3); caption is shown when this
+    // buffer actually starts playing (playback-synced subtitle).
     this._ensureContext();
     if (this._ctx.state === 'suspended') {
       await this._ctx.resume();
     }
     try {
       const buffer = await this._ctx.decodeAudioData(audioData.slice(0));
-      this._queue.push(buffer);
+      this._queue.push({ buffer, caption });
       if (!this._playing) this._playNext();
     } catch (err) {
       console.warn('[VoicePlayback] Failed to decode audio:', err);
@@ -48,6 +158,7 @@ export class VoicePlayback {
   _playNext() {
     if (this._queue.length === 0) {
       this._playing = false;
+      if (this._onCaption) this._onCaption(null);
       if (this._onPlaybackEnd) this._onPlaybackEnd();
       return;
     }
@@ -55,7 +166,8 @@ export class VoicePlayback {
     if (this._onPlaybackStart && this._queue.length === 1) {
       this._onPlaybackStart();
     }
-    const buffer = this._queue.shift();
+    const { buffer, caption } = this._queue.shift();
+    if (caption != null && this._onCaption) this._onCaption(caption);
     const source = this._ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(this._gainNode);
@@ -69,6 +181,7 @@ export class VoicePlayback {
 
   stop() {
     this._queue = [];
+    if (this._onCaption) this._onCaption(null);
     if (this._currentSource) {
       try {
         this._currentSource.stop();
@@ -99,12 +212,56 @@ export class VoicePlayback {
   set onPlaybackEnd(fn) {
     this._onPlaybackEnd = fn;
   }
+  set onCaption(fn) {
+    this._onCaption = fn;
+  }
 
   destroy() {
     this.stop();
+    this._teardownAec();
     if (this._ctx) {
       this._ctx.close();
       this._ctx = null;
     }
+    this._gainNode = null;
+  }
+}
+
+function _waitIce(pc) {
+  if (pc.iceGatheringState === 'complete') return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      pc.removeEventListener('icegatheringstatechange', onChange);
+      resolve();
+    };
+    const t = setTimeout(done, 2000);
+    const onChange = () => {
+      if (pc.iceGatheringState === 'complete') {
+        clearTimeout(t);
+        done();
+      }
+    };
+    pc.addEventListener('icegatheringstatechange', onChange);
+  });
+}
+
+function _disposeAecResources(res) {
+  if (!res) return;
+  if (res.pc1) {
+    try { res.pc1.close(); } catch (_) { /* already closed */ }
+  }
+  if (res.pc2) {
+    try { res.pc2.close(); } catch (_) { /* already closed */ }
+  }
+  if (res.audio) {
+    try {
+      res.audio.pause();
+      res.audio.srcObject = null;
+      res.audio.remove();
+    } catch (_) { /* already removed */ }
+  }
+  if (res.msDest) {
+    try { res.msDest.disconnect(); } catch (_) { /* already disconnected */ }
+    try { res.msDest.stream.getTracks().forEach((t) => t.stop()); } catch (_) { /* no tracks */ }
   }
 }

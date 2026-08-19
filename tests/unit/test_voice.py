@@ -6,11 +6,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import numpy as np
 import pytest
 
 from core.config.models import AnimaWorksConfig, VoiceConfig
@@ -18,6 +20,7 @@ from core.voice.sentence_splitter import StreamingSentenceSplitter, split_senten
 from core.voice.tts_base import TTSConfig
 from core.voice.tts_elevenlabs import ElevenLabsTTS
 from core.voice.tts_factory import create_tts_provider
+from core.voice.tts_irodori import IrodoriTTS
 from core.voice.tts_sbv2 import StyleBertVits2TTS
 from core.voice.tts_voicevox import VoicevoxTTS
 
@@ -78,6 +81,25 @@ class TestStreamingSentenceSplitter:
         s = StreamingSentenceSplitter()
         assert s.flush() is None
 
+    def test_emotion_tag_not_split_and_sanitized(self) -> None:
+        # Regression: "!" in "<!--" must not split the comment, or
+        # sanitize_for_tts can't strip it and TTS reads it aloud.
+        from core.voice.session import sanitize_for_tts
+
+        tag = ' <!-- emotion: {"emotion": "smile"} -->'
+        s = StreamingSentenceSplitter()
+        sentences = s.feed("こんにちは！元気です。" + tag)
+        remaining = s.flush()
+        if remaining:
+            sentences.append(remaining)
+        spoken = [t for t in (sanitize_for_tts(x) for x in sentences) if t]
+        assert spoken == ["こんにちは！", "元気です。"]
+
+    def test_unterminated_comment_sanitized(self) -> None:
+        from core.voice.session import sanitize_for_tts
+
+        assert sanitize_for_tts('本文です。<!-- emotion: {"emo') == "本文です。"
+
 
 # ── TestTTSConfig ────────────────────────────────────────────────
 
@@ -111,6 +133,10 @@ class TestTTSFactory:
     def test_sbv2(self) -> None:
         provider = create_tts_provider("style_bert_vits2", VoiceConfig())
         assert isinstance(provider, StyleBertVits2TTS)
+
+    def test_irodori(self) -> None:
+        provider = create_tts_provider("irodori", VoiceConfig())
+        assert isinstance(provider, IrodoriTTS)
 
     def test_unknown_raises(self) -> None:
         with pytest.raises(ValueError, match="Unknown TTS provider"):
@@ -296,6 +322,19 @@ class TestSanitizeForTTS:
         text = '了解しました。\n<!-- emothion: {"emotion": "smile"} -->'
         assert sanitize_for_tts(text) == "了解しました。"
 
+    def test_strip_emoji(self) -> None:
+        from core.voice.session import sanitize_for_tts
+
+        assert sanitize_for_tts("こんにちは😊") == "こんにちは"
+        assert sanitize_for_tts("嬉しい🎉です👍") == "嬉しいです"
+        assert sanitize_for_tts("普通のテキスト") == "普通のテキスト"
+
+    def test_strip_emoji_and_emotion_comment(self) -> None:
+        from core.voice.session import sanitize_for_tts
+
+        text = 'やったね✨\n<!-- emotion: {"emotion": "laugh"} -->'
+        assert sanitize_for_tts(text) == "やったね"
+
 
 # ── TestVoiceModeSuffix ──────────────────────────────────────────
 
@@ -307,6 +346,41 @@ class TestVoiceModeSuffix:
         assert "voice-mode" in VOICE_MODE_SUFFIX
         assert "200文字以内" in VOICE_MODE_SUFFIX
         assert "Markdown" in VOICE_MODE_SUFFIX
+
+    def test_suffix_requires_emotion_tag(self) -> None:
+        from core.voice.session import VOICE_MODE_SUFFIX
+
+        assert "emotion" in VOICE_MODE_SUFFIX
+        assert "<!-- emotion:" in VOICE_MODE_SUFFIX
+        assert "smile" in VOICE_MODE_SUFFIX
+        assert "絵文字" in VOICE_MODE_SUFFIX
+
+    def test_suffix_defers_long_running_requests_to_task(self) -> None:
+        from core.voice.session import VOICE_MODE_SUFFIX
+
+        assert "自分宛てにタスクを作成" in VOICE_MODE_SUFFIX
+        assert "タスクに積んでやっておきますね" in VOICE_MODE_SUFFIX
+
+
+class TestVoiceThinkingEffortConfig:
+    def test_schema_defaults_and_override(self) -> None:
+        from core.config.schemas import AnimaDefaults
+        from core.schemas import ModelConfig
+
+        assert ModelConfig().voice_thinking_effort is None
+        assert AnimaDefaults(voice_thinking_effort="medium").voice_thinking_effort == "medium"
+
+    def test_voice_effort_loaded_from_status(self, tmp_path: Path) -> None:
+        from core.config.resolver import _load_status_json
+
+        anima_dir = tmp_path / "animas" / "voice"
+        anima_dir.mkdir(parents=True)
+        (anima_dir / "status.json").write_text(
+            json.dumps({"voice_thinking_effort": "medium"}),
+            encoding="utf-8",
+        )
+
+        assert _load_status_json(anima_dir)["voice_thinking_effort"] == "medium"
 
 
 # ── TestVoiceSession ────────────────────────────────────────────
@@ -487,6 +561,7 @@ class TestVoiceConfig:
         assert vc.voicevox.base_url == "http://localhost:50021"
         assert vc.elevenlabs.api_key_env == "ELEVENLABS_API_KEY"
         assert vc.style_bert_vits2.base_url == "http://localhost:5000"
+        assert vc.irodori.base_url == "http://xserverng2:7861"
 
     def test_animaworks_config_has_voice(self) -> None:
         config = AnimaWorksConfig()
@@ -595,6 +670,23 @@ class TestTTSSynthesisError:
                 await provider.synthesize_full("hello", config)
 
     @pytest.mark.asyncio
+    async def test_irodori_raises_on_http_error(self) -> None:
+        provider = IrodoriTTS(VoiceConfig())
+        config = TTSConfig(provider="irodori", voice_id="default")
+
+        from core.voice.tts_base import TTSSynthesisError
+
+        with patch("core.voice.tts_irodori.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(side_effect=httpx.ConnectError("connection refused"))
+            mock_cls.return_value = mock_client
+
+            with pytest.raises(TTSSynthesisError, match="Irodori-TTS synthesis failed"):
+                await provider.synthesize_full("hello", config)
+
+    @pytest.mark.asyncio
     async def test_elevenlabs_raises_on_no_api_key(self) -> None:
         from core.voice.tts_base import TTSSynthesisError
 
@@ -605,6 +697,132 @@ class TestTTSSynthesisError:
             chunks = []
             async for chunk in provider.synthesize("hello", config):
                 chunks.append(chunk)
+
+
+# ── TestIrodoriTTS ────────────────────────────────────────────────
+
+
+class TestIrodoriTTS:
+    def test_default_base_url(self) -> None:
+        provider = IrodoriTTS(VoiceConfig())
+        assert provider._base_url == "http://xserverng2:7861"
+
+    def test_custom_base_url_from_config(self) -> None:
+        vc = VoiceConfig(irodori={"base_url": "http://localhost:9999/"})
+        provider = IrodoriTTS(vc)
+        assert provider._base_url == "http://localhost:9999"
+
+    def test_custom_base_url_from_dict_attr(self) -> None:
+        vc = MagicMock()
+        vc.irodori = {"base_url": "http://example:7861"}
+        provider = IrodoriTTS(vc)
+        assert provider._base_url == "http://example:7861"
+
+    @pytest.mark.asyncio
+    async def test_synthesize_posts_json_payload(self) -> None:
+        provider = IrodoriTTS(VoiceConfig())
+        config = TTSConfig(provider="irodori", voice_id="v1", speed=1.2)
+        wav = b"RIFF....WAVEfmt "
+
+        with patch("core.voice.tts_irodori.httpx.AsyncClient") as mock_cls:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.content = wav
+            mock_resp.raise_for_status = MagicMock()
+
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_resp)
+            mock_cls.return_value = mock_client
+
+            result = await provider.synthesize_full("こんにちは", config)
+
+        assert result == wav
+        mock_client.post.assert_awaited_once()
+        call_args = mock_client.post.call_args
+        assert call_args.args[0] == "http://xserverng2:7861/voice"
+        assert call_args.kwargs["json"] == {
+            "text": "こんにちは",
+            "voice_id": "v1",
+            "speed": 1.2,
+        }
+
+    @pytest.mark.asyncio
+    async def test_synthesize_null_voice_id_and_speed(self) -> None:
+        provider = IrodoriTTS(VoiceConfig())
+        config = TTSConfig(provider="irodori", voice_id="", speed=0.0)
+        wav = b"audio"
+
+        with patch("core.voice.tts_irodori.httpx.AsyncClient") as mock_cls:
+            mock_resp = MagicMock()
+            mock_resp.content = wav
+            mock_resp.raise_for_status = MagicMock()
+
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_resp)
+            mock_cls.return_value = mock_client
+
+            await provider.synthesize_full("hi", config)
+
+        assert mock_client.post.call_args.kwargs["json"] == {
+            "text": "hi",
+            "voice_id": None,
+            "speed": None,
+        }
+
+    @pytest.mark.asyncio
+    async def test_synthesize_empty_response_raises(self) -> None:
+        from core.voice.tts_base import TTSSynthesisError
+
+        provider = IrodoriTTS(VoiceConfig())
+        config = TTSConfig(provider="irodori")
+
+        with patch("core.voice.tts_irodori.httpx.AsyncClient") as mock_cls:
+            mock_resp = MagicMock()
+            mock_resp.content = b""
+            mock_resp.raise_for_status = MagicMock()
+
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_resp)
+            mock_cls.return_value = mock_client
+
+            with pytest.raises(TTSSynthesisError, match="empty audio"):
+                await provider.synthesize_full("hi", config)
+
+    @pytest.mark.asyncio
+    async def test_health_check_ok(self) -> None:
+        provider = IrodoriTTS(VoiceConfig())
+
+        with patch("core.voice.tts_irodori.httpx.AsyncClient") as mock_cls:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(return_value=mock_resp)
+            mock_cls.return_value = mock_client
+
+            assert await provider.health_check() is True
+            mock_client.get.assert_awaited_once_with("http://xserverng2:7861/health")
+
+    @pytest.mark.asyncio
+    async def test_health_check_connection_error(self) -> None:
+        provider = IrodoriTTS(VoiceConfig())
+
+        with patch("core.voice.tts_irodori.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
+            mock_cls.return_value = mock_client
+
+            assert await provider.health_check() is False
 
 
 # ── TestConsecutiveTTSFailures ───────────────────────────────────
@@ -797,7 +1015,10 @@ class TestResponseDoneGuarantee:
         supervisor = MagicMock()
         voice_config = MagicMock(stt_refine_enabled=False)
 
+        requests = []
+
         async def mock_stream(*args, **kwargs):
+            requests.append(kwargs)
             yield IPCResponse(id="m1", done=False, chunk='{"type":"text_delta","text":"hello"}', result=None)
             yield IPCResponse(id="m2", done=False, chunk='{"type":"text_delta","text":" world."}', result=None)
 
@@ -815,3 +1036,394 @@ class TestResponseDoneGuarantee:
             if c.args and isinstance(c.args[0], dict) and c.args[0].get("type") == "response_done"
         ]
         assert len(response_done_calls) == 1
+        assert requests[0]["params"]["voice_mode"] is True
+
+
+# ── TestTTSPrefetchPipeline ───────────────────────────────────────
+
+
+def _pcm_speech(seconds: float = 1.0) -> bytes:
+    """Non-silent PCM16 mono @16kHz for speech_end gate checks."""
+    n = int(16_000 * seconds)
+    return np.random.randint(-3000, 3000, n, dtype=np.int16).tobytes()
+
+
+def _make_session(*, ws=None, stt=None, tts=None, supervisor=None):
+    from core.voice.session import VoiceSession
+
+    ws = ws or AsyncMock()
+    stt = stt or MagicMock()
+    tts = tts or AsyncMock()
+    tts_config = TTSConfig(provider="voicevox")
+    supervisor = supervisor or MagicMock()
+    voice_config = MagicMock(stt_refine_enabled=False)
+    return VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+
+
+class TestTTSPrefetchPipeline:
+    """Sentence TTS producer/consumer queue (prefetch pipeline)."""
+
+    @pytest.mark.asyncio
+    async def test_sentences_synthesized_in_order(self) -> None:
+        """Multiple sentences are synthesized and sent in enqueue order."""
+        from core.supervisor.ipc import IPCResponse
+
+        ws = AsyncMock()
+        stt = MagicMock()
+        stt.transcribe_buffer_async = AsyncMock(
+            return_value={"raw_text": "hello there", "language": "en"}
+        )
+        tts = AsyncMock()
+        tts.health_check = AsyncMock(return_value=True)
+        synth_order: list[str] = []
+        started = asyncio.Event()
+
+        async def mock_synthesize(text, config):
+            synth_order.append(text)
+            if len(synth_order) == 1:
+                started.set()
+            await asyncio.sleep(0.02)
+            yield b"\x00\x01"
+
+        tts.synthesize = mock_synthesize
+        supervisor = MagicMock()
+
+        async def mock_stream(*args, **kwargs):
+            yield IPCResponse(
+                id="1",
+                done=False,
+                chunk=json.dumps({"type": "text_delta", "text": "第一文。"}),
+                result=None,
+            )
+            yield IPCResponse(
+                id="2",
+                done=False,
+                chunk=json.dumps({"type": "text_delta", "text": "第二文。"}),
+                result=None,
+            )
+            yield IPCResponse(
+                id="3",
+                done=False,
+                chunk=json.dumps({"type": "text_delta", "text": "第三文。"}),
+                result=None,
+            )
+            yield IPCResponse(
+                id="4",
+                done=False,
+                chunk=json.dumps(
+                    {"type": "cycle_done", "cycle_result": {"emotion": "smile"}}
+                ),
+                result=None,
+            )
+
+        supervisor.send_request_stream = mock_stream
+        session = _make_session(ws=ws, stt=stt, tts=tts, supervisor=supervisor)
+        session._audio_buffer.extend(_pcm_speech())
+        await session._do_speech_end("human")
+
+        assert synth_order == ["第一文。", "第二文。", "第三文。"]
+        types = [
+            c.args[0].get("type")
+            for c in ws.send_json.call_args_list
+            if c.args and isinstance(c.args[0], dict)
+        ]
+        assert types.index("response_done") > types.index("tts_done")
+        # last tts_done before response_done
+        last_tts_done = max(i for i, t in enumerate(types) if t == "tts_done")
+        response_done_idx = types.index("response_done")
+        assert last_tts_done < response_done_idx
+
+    @pytest.mark.asyncio
+    async def test_producer_does_not_wait_for_synthesis(self) -> None:
+        """IPC consumer enqueues sentences while first synthesis is still running."""
+        from core.supervisor.ipc import IPCResponse
+
+        ws = AsyncMock()
+        stt = MagicMock()
+        stt.transcribe_buffer_async = AsyncMock(
+            return_value={"raw_text": "hello there", "language": "en"}
+        )
+        tts = AsyncMock()
+        tts.health_check = AsyncMock(return_value=True)
+        first_entered = asyncio.Event()
+        release_first = asyncio.Event()
+        enqueue_progress: list[str] = []
+
+        async def mock_synthesize(text, config):
+            if text == "第一文。":
+                first_entered.set()
+                await release_first.wait()
+            yield b"\x00\x01"
+
+        tts.synthesize = mock_synthesize
+        supervisor = MagicMock()
+
+        async def mock_stream(*args, **kwargs):
+            yield IPCResponse(
+                id="1",
+                done=False,
+                chunk=json.dumps({"type": "text_delta", "text": "第一文。"}),
+                result=None,
+            )
+            # Wait until consumer has started first synthesis, then feed more
+            # while the first synth is still held (proves producer is decoupled).
+            await first_entered.wait()
+            yield IPCResponse(
+                id="2",
+                done=False,
+                chunk=json.dumps({"type": "text_delta", "text": "第二文。"}),
+                result=None,
+            )
+            enqueue_progress.append("second_fed")
+            yield IPCResponse(
+                id="3",
+                done=False,
+                chunk=json.dumps({"type": "text_delta", "text": "第三文。"}),
+                result=None,
+            )
+            enqueue_progress.append("third_fed")
+            # Release held synth before cycle_done so drain cannot deadlock the
+            # test harness; producer already advanced past synthesis.
+            release_first.set()
+            yield IPCResponse(
+                id="4",
+                done=False,
+                chunk=json.dumps(
+                    {"type": "cycle_done", "cycle_result": {"emotion": "neutral"}}
+                ),
+                result=None,
+            )
+
+        supervisor.send_request_stream = mock_stream
+        session = _make_session(ws=ws, stt=stt, tts=tts, supervisor=supervisor)
+        session._audio_buffer.extend(_pcm_speech())
+        await session._do_speech_end("human")
+
+        # Producer fed 2nd/3rd while 1st synth was still held → not sequential.
+        assert enqueue_progress == ["second_fed", "third_fed"]
+
+    @pytest.mark.asyncio
+    async def test_interrupt_discards_queued_sentences(self) -> None:
+        """Barge-in clears the queue; later sentences must not be synthesized."""
+        from core.supervisor.ipc import IPCResponse
+
+        ws = AsyncMock()
+        stt = MagicMock()
+        stt.transcribe_buffer_async = AsyncMock(
+            return_value={"raw_text": "hello there", "language": "en"}
+        )
+        tts = AsyncMock()
+        tts.health_check = AsyncMock(return_value=True)
+        synth_order: list[str] = []
+        first_started = asyncio.Event()
+        hold_first = asyncio.Event()
+
+        async def mock_synthesize(text, config):
+            synth_order.append(text)
+            if text == "第一文。":
+                first_started.set()
+                await hold_first.wait()
+            yield b"\x00\x01"
+
+        tts.synthesize = mock_synthesize
+        supervisor = MagicMock()
+
+        async def mock_stream(*args, **kwargs):
+            yield IPCResponse(
+                id="1",
+                done=False,
+                chunk=json.dumps({"type": "text_delta", "text": "第一文。"}),
+                result=None,
+            )
+            yield IPCResponse(
+                id="2",
+                done=False,
+                chunk=json.dumps({"type": "text_delta", "text": "第二文。"}),
+                result=None,
+            )
+            yield IPCResponse(
+                id="3",
+                done=False,
+                chunk=json.dumps({"type": "text_delta", "text": "第三文。"}),
+                result=None,
+            )
+            await first_started.wait()
+            # Simulate client barge-in while first sentence is still synthesizing.
+            await session.handle_interrupt()
+            # Unblock in-flight synth so the worker can observe _interrupted and exit.
+            hold_first.set()
+            # After interrupt the speech loop breaks; further yields are unused.
+            yield IPCResponse(
+                id="4",
+                done=False,
+                chunk=json.dumps(
+                    {"type": "cycle_done", "cycle_result": {"emotion": "neutral"}}
+                ),
+                result=None,
+            )
+
+        supervisor.send_request_stream = mock_stream
+        session = _make_session(ws=ws, stt=stt, tts=tts, supervisor=supervisor)
+        session._audio_buffer.extend(_pcm_speech())
+        await session._do_speech_end("human")
+
+        assert "第二文。" not in synth_order
+        assert "第三文。" not in synth_order
+        # At most the in-flight first sentence was started.
+        assert synth_order == ["第一文。"] or synth_order == []
+
+    @pytest.mark.asyncio
+    async def test_response_done_after_all_tts(self) -> None:
+        """response_done is emitted only after the TTS queue is fully drained."""
+        from core.supervisor.ipc import IPCResponse
+
+        ws = AsyncMock()
+        stt = MagicMock()
+        stt.transcribe_buffer_async = AsyncMock(
+            return_value={"raw_text": "hello there", "language": "en"}
+        )
+        tts = AsyncMock()
+        tts.health_check = AsyncMock(return_value=True)
+        timeline: list[str] = []
+
+        async def mock_synthesize(text, config):
+            timeline.append(f"synth:{text}")
+            await asyncio.sleep(0.01)
+            timeline.append(f"synth_done:{text}")
+            yield b"\x00\x01"
+
+        tts.synthesize = mock_synthesize
+
+        original_send_json = AsyncMock()
+
+        async def tracking_send_json(payload):
+            if isinstance(payload, dict) and payload.get("type") == "response_done":
+                timeline.append("response_done")
+            await original_send_json(payload)
+
+        ws.send_json = tracking_send_json
+        supervisor = MagicMock()
+
+        async def mock_stream(*args, **kwargs):
+            yield IPCResponse(
+                id="1",
+                done=False,
+                chunk=json.dumps({"type": "text_delta", "text": "A。"}),
+                result=None,
+            )
+            yield IPCResponse(
+                id="2",
+                done=False,
+                chunk=json.dumps({"type": "text_delta", "text": "B。"}),
+                result=None,
+            )
+            yield IPCResponse(
+                id="3",
+                done=False,
+                chunk=json.dumps(
+                    {"type": "cycle_done", "cycle_result": {"emotion": "laugh"}}
+                ),
+                result=None,
+            )
+
+        supervisor.send_request_stream = mock_stream
+        session = _make_session(ws=ws, stt=stt, tts=tts, supervisor=supervisor)
+        session._audio_buffer.extend(_pcm_speech())
+        await session._do_speech_end("human")
+
+        assert "response_done" in timeline
+        done_idx = timeline.index("response_done")
+        assert timeline.index("synth_done:A。") < done_idx
+        assert timeline.index("synth_done:B。") < done_idx
+
+    @pytest.mark.asyncio
+    async def test_greet_uses_tts_worker_queue(self) -> None:
+        """greet_and_speak routes sentences through the same worker queue."""
+        ws = AsyncMock()
+        tts = AsyncMock()
+        tts.health_check = AsyncMock(return_value=True)
+        synth_order: list[str] = []
+
+        async def mock_synthesize(text, config):
+            synth_order.append(text)
+            await asyncio.sleep(0.01)
+            yield b"\x00\x01"
+
+        tts.synthesize = mock_synthesize
+        supervisor = MagicMock()
+        supervisor.send_request = AsyncMock(
+            return_value={
+                "response": "こんにちは。元気ですか？",
+                "emotion": "smile",
+            }
+        )
+        session = _make_session(ws=ws, tts=tts, supervisor=supervisor)
+        await session.greet_and_speak()
+
+        assert synth_order == ["こんにちは。", "元気ですか？"]
+        types = [
+            c.args[0].get("type")
+            for c in ws.send_json.call_args_list
+            if c.args and isinstance(c.args[0], dict)
+        ]
+        assert "response_done" in types
+        assert session._tts_worker is None
+        assert session._tts_queue is None
+
+    @pytest.mark.asyncio
+    async def test_close_cancels_worker(self) -> None:
+        """close() cancels the consumer task and drops the queue."""
+        session = _make_session()
+        await session._start_tts_worker()
+        assert session._tts_worker is not None
+        assert not session._tts_worker.done()
+        await session.close()
+        assert session._tts_worker is None
+        assert session._tts_queue is None
+
+    @pytest.mark.asyncio
+    async def test_pipeline_tts_failure_counter(self) -> None:
+        """Failure counter / health invalidation still work via the worker path."""
+        from core.supervisor.ipc import IPCResponse
+        from core.voice.tts_base import TTSSynthesisError
+
+        ws = AsyncMock()
+        stt = MagicMock()
+        stt.transcribe_buffer_async = AsyncMock(
+            return_value={"raw_text": "hello there", "language": "en"}
+        )
+        tts = AsyncMock()
+        tts.health_check = AsyncMock(return_value=True)
+
+        async def mock_synthesize_fail(text, config):
+            raise TTSSynthesisError("provider down")
+            yield  # noqa
+
+        tts.synthesize = mock_synthesize_fail
+        supervisor = MagicMock()
+
+        async def mock_stream(*args, **kwargs):
+            for i, sentence in enumerate(["一。", "二。", "三。"], start=1):
+                yield IPCResponse(
+                    id=str(i),
+                    done=False,
+                    chunk=json.dumps({"type": "text_delta", "text": sentence}),
+                    result=None,
+                )
+            yield IPCResponse(
+                id="done",
+                done=False,
+                chunk=json.dumps(
+                    {"type": "cycle_done", "cycle_result": {"emotion": "neutral"}}
+                ),
+                result=None,
+            )
+
+        supervisor.send_request_stream = mock_stream
+        session = _make_session(ws=ws, stt=stt, tts=tts, supervisor=supervisor)
+        session._tts_available = True
+        session._audio_buffer.extend(_pcm_speech())
+        await session._do_speech_end("human")
+
+        assert session._consecutive_tts_failures == 3
+        assert session._tts_available is None

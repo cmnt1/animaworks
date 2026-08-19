@@ -193,6 +193,29 @@ class AnimaRunner:
         pid_path.write_text(str(os.getpid()))
         logger.info("Process lock acquired: %s (pid=%d)", self.anima_name, os.getpid())
 
+    def _repair_interrupted_heartbeat(self) -> None:
+        """Close a heartbeat left open by the previous process."""
+        if self.anima is None:
+            return
+        try:
+            page = self.anima._activity.recent_page(
+                hours=24,
+                limit=1,
+                types=["heartbeat_start", "heartbeat_end"],
+            )
+            if page.entries and page.entries[0].type == "heartbeat_start":
+                self.anima._activity.log(
+                    "heartbeat_end",
+                    summary="Heartbeat interrupted",
+                    meta={
+                        "status": "interrupted",
+                        "reason": "no terminal event (restart?)",
+                    },
+                    safe=True,
+                )
+        except Exception:
+            logger.debug("Failed to repair interrupted heartbeat", exc_info=True)
+
     async def run(self) -> None:
         """
         Run the anima process.
@@ -224,6 +247,7 @@ class AnimaRunner:
 
             # Initialize DigitalAnima (heavy: RAG indexer, model loading)
             self.anima = DigitalAnima(anima_dir=self._anima_dir, shared_dir=self.shared_dir)
+            self._repair_interrupted_heartbeat()
 
             # Create delegate instances
             self._scheduler_mgr = SchedulerManager(
@@ -883,6 +907,7 @@ class AnimaRunner:
         attachment_paths = params.get("attachment_paths") or None
         thread_id = params.get("thread_id", "default")
         source = params.get("source", "")
+        voice_mode = params.get("voice_mode") is True
         meeting_room_id = params.get("meeting_room_id", "")
         meeting_participants = params.get("meeting_participants") or None
 
@@ -895,6 +920,7 @@ class AnimaRunner:
             thread_id=thread_id,
             include_cycle_result=True,
             source=source,
+            voice_mode=voice_mode,
             meeting_room_id=meeting_room_id,
             meeting_participants=meeting_participants,
         )
@@ -999,6 +1025,7 @@ class AnimaRunner:
             raise AnimaNotRunningError("Anima not initialized")
 
         consolidation_type = params.get("consolidation_type", "daily")
+        project = params.get("project")
 
         # background lane isolation: run consolidation inside a task-runner child.
         supervisor = self._scheduler_mgr._task_runner_supervisor if self._scheduler_mgr is not None else None
@@ -1006,9 +1033,12 @@ class AnimaRunner:
             self._scheduler_mgr is not None and getattr(self._scheduler_mgr, "_background_isolated", False)
         )
         if background_isolated and supervisor is not None:
+            payload = {"consolidation_type": consolidation_type}
+            if project is not None:
+                payload["project"] = project
             isolated = await supervisor.run_background(
                 kind="consolidation",
-                payload={"consolidation_type": consolidation_type},
+                payload=payload,
                 display_lane="background",
             )
             return {
@@ -1017,7 +1047,10 @@ class AnimaRunner:
                 "duration_ms": int(isolated.get("duration_ms") or 0),
             }
 
-        result = await self.anima.run_consolidation(consolidation_type=consolidation_type)
+        kwargs = {"consolidation_type": consolidation_type}
+        if project is not None:
+            kwargs["project"] = project
+        result = await self.anima.run_consolidation(**kwargs)
 
         return {
             "status": "completed",

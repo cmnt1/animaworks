@@ -1470,12 +1470,17 @@ class CodexSDKExecutor(BaseExecutor):
 
         from core.config.models import load_permissions
         from core.file_access_policy import (
-            company_shared_write_root,
+            effective_write_roots,
             resolve_effective_denied_roots,
             shared_tool_cache_write_root,
         )
 
         permissions_config = load_permissions(self._anima_dir)
+        write_roots = effective_write_roots(
+            self._anima_dir,
+            permissions_config.file_roots,
+            self._task_cwd,
+        )
         tool_cache_root = shared_tool_cache_write_root(self._anima_dir)
 
         denied_roots = list(
@@ -1488,14 +1493,11 @@ class CodexSDKExecutor(BaseExecutor):
             from core.file_access_policy import shell_internal_deny_paths
 
             # Permission profiles and the legacy sandbox settings are mutually
-            # exclusive.  Start with broad read access, retain the legacy
+            # exclusive.  Start with broad read access, retain the charter
             # writable roots (including temp for workspace-write parity), and
             # carve denied subtrees out with more-specific ``deny`` rules.
             root_is_writable = "/" in permissions_config.file_roots
             data_dir = self._anima_dir.resolve().parent.parent
-            explicit_write_roots = [Path(root).resolve() for root in permissions_config.file_roots]
-            if self._task_cwd:
-                explicit_write_roots.append(self._task_cwd.resolve())
 
             # The model-facing shell must not be able to replace trusted
             # runtime inputs with symlinks that a later host-side prompt
@@ -1507,14 +1509,8 @@ class CodexSDKExecutor(BaseExecutor):
                 ":slash_tmp": "write",
             }
             git_forbidden = [data_dir, *(Path(r) for r in denied_roots)]
-            for root in explicit_write_roots:
-                if root == Path("/") or root.is_relative_to(data_dir) or data_dir.is_relative_to(root):
-                    continue
-                shell_filesystem_rules[str(root)] = "write"
-                for git_path in _git_metadata_write_paths(root, forbidden_ancestors=git_forbidden):
-                    shell_filesystem_rules[str(git_path)] = "write"
 
-            # The MCP server needs the legacy writable roots for constrained
+            # The MCP server needs the same writable roots for constrained
             # memory and messaging tools.  It uses a separate profile and
             # does not expose arbitrary machine execution while deny is on.
             mcp_filesystem_rules: dict[str, str] = {
@@ -1524,25 +1520,26 @@ class CodexSDKExecutor(BaseExecutor):
                 mcp_filesystem_rules[":tmpdir"] = "write"
                 mcp_filesystem_rules[":slash_tmp"] = "write"
                 mcp_filesystem_rules[str(self._anima_dir.resolve())] = "write"
-                for root in explicit_write_roots:
-                    mcp_filesystem_rules[str(root)] = "write"
-                    for git_path in _git_metadata_write_paths(root, forbidden_ancestors=git_forbidden):
-                        mcp_filesystem_rules[str(git_path)] = "write"
+            for root in write_roots:
+                root_str = str(root)
+                # Charter: only companies/<own>/shared is writable under data_dir.
+                # Pin the company root itself as read so siblings (knowledge/,
+                # skills/, …) cannot inherit write from a looser parent rule.
+                if root.parent.name and root.name == "shared":
+                    company_root_str = str(root.parent)
+                    shell_filesystem_rules.setdefault(company_root_str, "read")
+                    mcp_filesystem_rules.setdefault(company_root_str, "read")
+                shell_filesystem_rules[root_str] = "write"
+                mcp_filesystem_rules[root_str] = "write"
+                for git_path in _git_metadata_write_paths(root, forbidden_ancestors=git_forbidden):
+                    git_path_str = str(git_path)
+                    shell_filesystem_rules[git_path_str] = "write"
+                    mcp_filesystem_rules[git_path_str] = "write"
 
             for root in denied_roots:
                 resolved_root = str(Path(root).resolve())
                 shell_filesystem_rules[resolved_root] = "deny"
                 mcp_filesystem_rules[resolved_root] = "deny"
-
-            # Company-owned shared files are deliberately model-managed.  Add
-            # this narrow grant after the broader company deny rules so the
-            # permission profile can select the more-specific path.
-            company_shared = company_shared_write_root(self._anima_dir)
-            if company_shared is not None:
-                company_shared.mkdir(parents=True, exist_ok=True)
-                shared_root = str(company_shared.resolve())
-                shell_filesystem_rules[shared_root] = "write"
-                mcp_filesystem_rules[shared_root] = "write"
 
             # External-tool caches (Chatwork/Slack message DBs and the
             # identity map) live outside the Anima directory.  Without write
@@ -1590,17 +1587,9 @@ class CodexSDKExecutor(BaseExecutor):
         elif "/" in permissions_config.file_roots:
             sandbox_lines = 'sandbox_mode = "danger-full-access"\napproval_policy = "never"\n'
         else:
-            writable_roots = [str(self._anima_dir)]
+            writable_roots = [str(self._anima_dir), *(str(root) for root in write_roots)]
             if tool_cache_root is not None:
                 writable_roots.append(str(tool_cache_root))
-            for root in permissions_config.file_roots:
-                resolved = str(Path(root).resolve())
-                if resolved not in writable_roots:
-                    writable_roots.append(resolved)
-            if self._task_cwd:
-                cwd_str = str(self._task_cwd)
-                if cwd_str not in writable_roots:
-                    writable_roots.append(cwd_str)
             # Standalone entries for git metadata escape Codex's built-in
             # read-only remount of each writable root's ``.git``.
             data_dir = self._anima_dir.resolve().parent.parent

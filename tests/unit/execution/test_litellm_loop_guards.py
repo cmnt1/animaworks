@@ -44,6 +44,7 @@ def _mock_rate_guard():
     guard = MagicMock()
     guard.blocked_remaining.return_value = 0.0
     guard.config.default_block_seconds = 60
+    guard.config.quota_block_seconds = 1800
     with patch("core.execution.litellm_loop.get_rate_guard", return_value=guard):
         yield guard
 
@@ -126,11 +127,27 @@ class TestInLoopRetry:
         assert "Final answer" in result.text
         assert len(result.tool_call_records) == 1
 
-    async def test_auth_error_raises_immediately(self, executor):
+    async def test_auth_error_raises_immediately(self, executor, _mock_rate_guard):
         mock = AsyncMock(side_effect=_AuthError("invalid api key"))
         with patch("litellm.acompletion", mock), pytest.raises(LLMAPIError):
             await executor.execute("test", system_prompt="sys")
         assert mock.call_count == 1
+        _mock_rate_guard.report_block.assert_called_once_with("openai:api", 1800, "auth")
+
+    async def test_streaming_reporter_blocks_quota_and_auth(self):
+        from core.execution._litellm_streaming import _make_rate_guard_reporter
+        from core.execution.error_classifier import classify_llm_error_message
+
+        guard = MagicMock()
+        guard.config.quota_block_seconds = 1800
+        reporter = _make_rate_guard_reporter(guard, "openai:api", "A stream")
+
+        for message in ("usageLimitExceeded", "Missing credentials"):
+            reason, hint = classify_llm_error_message(message)
+            reporter(reason, hint, RuntimeError(message), 0)
+
+        assert guard.report_block.call_args_list[0].args == ("openai:api", 1800, "quota_exhausted")
+        assert guard.report_block.call_args_list[1].args == ("openai:api", 1800, "auth")
 
     async def test_rate_error_reports_to_guard(self, executor, _mock_rate_guard):
         resp_final = make_litellm_response(content="ok", tool_calls=None)

@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.supervisor.scheduler_manager import SchedulerManager
 from core.supervisor.inbox_rate_limiter import InboxRateLimiter
+from core.supervisor.scheduler_manager import SchedulerManager
 
 
 def _legacy_anima_dir(tmp_path):
@@ -150,6 +150,12 @@ class TestCronGuard:
 
         # The task's LLM call should NOT be started
         mgr._anima.run_cron_task.assert_not_called()
+        mgr._anima.memory.append_cron_event.assert_called_once_with(
+            "daily_report",
+            "skipped",
+            reason="already running",
+            schedule="0 9 * * *",
+        )
 
     @pytest.mark.asyncio
     async def test_cron_tick_runs_when_not_already_running(self, tmp_path):
@@ -167,6 +173,30 @@ class TestCronGuard:
 
         # Give the background task a moment to start
         await asyncio.sleep(0.05)
+        mgr._anima.memory.append_cron_event.assert_any_call(
+            "weekly_review",
+            "fired",
+            reason="",
+            schedule="0 9 * * 1",
+        )
+
+    @pytest.mark.asyncio
+    async def test_concurrent_ticks_claim_name_before_dispatch(self, tmp_path):
+        from core.schemas import CronTask
+
+        mgr = _make_scheduler_mgr(tmp_path)
+        result = MagicMock(action="completed", usage={})
+        result.model_dump.return_value = {}
+        mgr._anima.run_cron_task = AsyncMock(return_value=result)
+        task = CronTask(name="daily", schedule="0 9 * * *", description="test", type="llm")
+
+        await mgr.cron_tick(task)
+        await mgr.cron_tick(task)
+        await asyncio.sleep(0.05)
+
+        events = [call.args[1] for call in mgr._anima.memory.append_cron_event.call_args_list]
+        assert events.count("fired") == 1
+        assert events.count("skipped") == 1
 
     @pytest.mark.asyncio
     async def test_cron_running_tracks_task_name(self, tmp_path):
@@ -210,6 +240,12 @@ class TestCronGuard:
 
         # Must be cleaned up despite error
         assert "daily_report" not in mgr._cron_running
+        mgr._anima.memory.append_cron_event.assert_called_with(
+            "daily_report",
+            "failed",
+            reason="execution failed",
+            schedule="0 9 * * *",
+        )
 
 
 class TestMessageTriggeredHeartbeatGuard:

@@ -151,6 +151,10 @@ def _task_tools() -> list[dict[str, Any]]:
                         "type": "string",
                         "description": _t("schema.update_task.result"),
                     },
+                    "unblock_check": {
+                        "type": "string",
+                        "description": _t("schema.update_task.unblock_check"),
+                    },
                 },
                 "required": ["task_id", "status"],
             },

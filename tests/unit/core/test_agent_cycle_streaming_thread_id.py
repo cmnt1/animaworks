@@ -5,6 +5,8 @@ import types
 
 import pytest
 
+from core._agent_cycle import CycleMixin as _CycleBase
+
 
 class _DummyToolHandler:
     def bind_runtime_session(self, ctx):  # noqa: D401 - test stub
@@ -14,7 +16,7 @@ class _DummyToolHandler:
         return None
 
 
-class _DummyAgent:
+class _DummyAgent(_CycleBase):
     """Minimal stand-in exposing only what run_cycle_streaming touches."""
 
     def __init__(self, inner_chunks):

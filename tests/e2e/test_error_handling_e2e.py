@@ -10,7 +10,6 @@ ProcessSupervisor, verifying that errors surface correctly in HTTP/SSE responses
 from __future__ import annotations
 
 import json
-import stat
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -22,7 +21,6 @@ from core.config import invalidate_cache
 from core.supervisor.ipc import IPCResponse
 from server.app import create_app
 from tests.helpers.filesystem import create_anima_dir, create_test_data_dir
-
 
 # ── Fixtures ───────────────────────────────────────────────────────────
 
@@ -167,6 +165,7 @@ async def test_non_streaming_chat_timeout_returns_504(
 async def test_memory_episode_io_error_returns_500(
     client: httpx.AsyncClient,
     e2e_anima_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """When an episode file has no read permission, GET episodes/{date}
     should return HTTP 500."""
@@ -177,17 +176,19 @@ async def test_memory_episode_io_error_returns_500(
     episode_file = episodes_dir / "2026-01-01.md"
     episode_file.write_text("# Episode content", encoding="utf-8")
 
-    # Remove read permission
-    episode_file.chmod(0o000)
+    original_read_text = Path.read_text
 
-    try:
-        resp = await client.get("/api/animas/alice/episodes/2026-01-01")
-        assert resp.status_code == 500
-        data = resp.json()
-        assert "detail" in data or "error" in data
-    finally:
-        # Restore permissions for cleanup
-        episode_file.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    def fail_episode_read(path: Path, *args: Any, **kwargs: Any) -> str:
+        if path == episode_file:
+            raise OSError("simulated read failure")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fail_episode_read)
+
+    resp = await client.get("/api/animas/alice/episodes/2026-01-01")
+    assert resp.status_code == 500
+    data = resp.json()
+    assert "detail" in data or "error" in data
 
 
 # ── Test 4: Global exception handler catches unhandled exceptions ──────

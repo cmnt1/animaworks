@@ -360,7 +360,7 @@ class TestAssetThumbnail:
 
         assert resp.status_code == 200
         assert "image/webp" in resp.headers.get("content-type", "")
-        assert "max-age=3600" in resp.headers.get("cache-control", "")
+        assert "must-revalidate" in resp.headers.get("cache-control", "")
         assert "etag" in {k.lower() for k in resp.headers}
 
         from io import BytesIO

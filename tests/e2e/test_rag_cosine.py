@@ -34,6 +34,9 @@ def temp_vectordb():
 
     store = ChromaVectorStore(persist_dir=vectordb_dir)
     yield store
+    from tests.helpers.chroma import close_chroma_store
+
+    close_chroma_store(store)
     shutil.rmtree(tmpdir)
 
 

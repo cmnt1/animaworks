@@ -42,6 +42,12 @@ def test_company_resources_resolve_only_safe_assigned_company(tmp_path: Path) ->
     assert get_company_resources(anima_dir) is None
 
 
+def test_company_resource_pointer_uses_canonical_separators(tmp_path: Path) -> None:
+    path = tmp_path / "companies" / "alpha" / "knowledge" / "guide.md"
+
+    assert company_resource_pointer(path) == "companies/alpha/knowledge/guide.md"
+
+
 @pytest.mark.skipif(os.name == "nt", reason="company management creates symlinks; needs privilege on Windows")
 def test_skill_index_adds_own_company_and_refreshes_assignment(tmp_path: Path) -> None:
     anima_dir = tmp_path / "animas" / "alice"

@@ -90,13 +90,15 @@ class TestChannelFEpisodes:
         searcher.search_many.assert_called_once()
         assert searcher.search_many.call_args.kwargs["scope"] == "episodes"
         assert searcher.search_many.call_args.kwargs["limit"] == 5
+        assert searcher.search_many.call_args.kwargs["pipeline_settings"] == {"rerank_candidate_pool": 10}
+        assert searcher.search_many.call_args.kwargs["skip_bm25_validation"] is True
 
     @pytest.mark.asyncio
     async def test_channel_f_query_includes_message(
         self,
         temp_anima_dir: Path,
     ) -> None:
-        """Channel F dual query: first is message-context, second is keyword-only."""
+        """Channel F uses only the message query on the priming fast path."""
         engine = PrimingEngine(temp_anima_dir)
 
         msg = "デプロイでエラーが出た"
@@ -105,11 +107,7 @@ class TestChannelFEpisodes:
             await engine._channel_f_episodes(["deploy"], message=msg)
 
         queries = searcher.search_many.call_args.args[0]
-        assert len(queries) == 2
-        q1 = queries[0]
-        q2 = queries[1]
-        assert q1.startswith(msg[:200])
-        assert q2 == "deploy"
+        assert queries == [msg]
 
     @pytest.mark.asyncio
     async def test_channel_f_fallback_to_message_when_no_keywords(

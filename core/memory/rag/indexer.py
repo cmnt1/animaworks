@@ -417,7 +417,7 @@ class MemoryIndexer:
         try:
             file_key = file_path.relative_to(self.anima_dir).as_posix()
         except ValueError:
-            file_key = str(file_path)
+            file_key = file_path.as_posix()
 
         if self._is_upsert_quarantined(file_key):
             logger.debug("Skipping quarantined RAG source: %s", file_path)
@@ -711,9 +711,9 @@ class MemoryIndexer:
     @staticmethod
     def _directory_source(file_path: Path, directory: Path) -> str:
         try:
-            return str(file_path.relative_to(directory))
+            return file_path.relative_to(directory).as_posix()
         except ValueError:
-            return str(file_path)
+            return file_path.as_posix()
 
     @staticmethod
     def _log_index_directory_summary(collection_name: str, result: IndexDirectoryResult) -> None:
@@ -1240,7 +1240,7 @@ class MemoryIndexer:
         metadata: dict[str, str | int | float | bool | list[str]] = {
             "anima": self.collection_prefix,
             "memory_type": memory_type,
-            "source_file": str(file_path.relative_to(self.anima_dir)),
+            "source_file": file_path.relative_to(self.anima_dir).as_posix(),
             "chunk_index": chunk_index,
             "total_chunks": total_chunks,
         }

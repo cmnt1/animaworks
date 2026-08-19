@@ -15,6 +15,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 from typing import TYPE_CHECKING, Any
 
 from core.supervisor.ipc import IPCRequest, IPCResponse
@@ -99,20 +100,21 @@ class StreamingIPCHandler:
                 )
                 return
             try:
-                async for item in self._task_runner_supervisor.run_chat_stream(request.params):
-                    if item.get("done"):
-                        yield IPCResponse(
-                            id=request.id,
-                            stream=True,
-                            done=True,
-                            result=item.get("result") or {},
-                        )
-                    elif isinstance(item.get("chunk"), str):
-                        yield IPCResponse(
-                            id=request.id,
-                            stream=True,
-                            chunk=item["chunk"],
-                        )
+                async with aclosing(self._task_runner_supervisor.run_chat_stream(request.params)) as stream:
+                    async for item in stream:
+                        if item.get("done"):
+                            yield IPCResponse(
+                                id=request.id,
+                                stream=True,
+                                done=True,
+                                result=item.get("result") or {},
+                            )
+                        elif isinstance(item.get("chunk"), str):
+                            yield IPCResponse(
+                                id=request.id,
+                                stream=True,
+                                chunk=item["chunk"],
+                            )
                 return
             except Exception as exc:
                 logger.exception("Isolated chat task runner failed: %s", exc)
@@ -138,6 +140,7 @@ class StreamingIPCHandler:
         attachment_paths = request.params.get("attachment_paths") or None
         thread_id = request.params.get("thread_id", "default")
         source = request.params.get("source", "")
+        voice_mode = request.params.get("voice_mode") is True
         meeting_room_id = request.params.get("meeting_room_id", "")
         meeting_participants = request.params.get("meeting_participants") or None
         full_response = ""
@@ -182,6 +185,7 @@ class StreamingIPCHandler:
                     attachment_paths=attachment_paths,
                     thread_id=thread_id,
                     source=source,
+                    voice_mode=voice_mode,
                     meeting_room_id=meeting_room_id,
                     meeting_participants=meeting_participants,
                 ):

@@ -108,7 +108,11 @@ def vector_store(temp_dirs):
 
     vectordb_dir = anima_dir.parent.parent / "vectordb"
     vectordb_dir.mkdir(parents=True, exist_ok=True)
-    return ChromaVectorStore(persist_dir=vectordb_dir)
+    store = ChromaVectorStore(persist_dir=vectordb_dir)
+    yield store
+    from tests.helpers.chroma import close_chroma_store
+
+    close_chroma_store(store)
 
 
 # ── Test: Subdirectory files are indexed and searchable ─────────

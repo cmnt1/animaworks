@@ -47,6 +47,12 @@ class TestReportAndQuery:
         assert state["anthropic"]["reason"] == "overloaded"
         assert state["anthropic"]["updated_by"] == "aoi"
 
+    def test_blocked_until_and_reason_are_queryable(self, tmp_path: Path) -> None:
+        guard = _guard(tmp_path)
+        guard.report_block("anthropic", 30, "overloaded")
+        assert time.time() < guard.blocked_until("anthropic") <= time.time() + 30
+        assert guard.block_reason("anthropic") == "overloaded"
+
 
 class TestClamp:
     def test_huge_block_clamped_to_max(self, tmp_path: Path) -> None:
@@ -69,6 +75,66 @@ class TestClamp:
         guard.report_block("openai:codex", 1800, "quota_exhausted")
         remaining = guard.blocked_remaining("openai:codex")
         assert 1700 < remaining <= 1800
+
+    def test_auth_block_uses_quota_window(self, tmp_path: Path) -> None:
+        guard = _guard(
+            tmp_path,
+            max_block_seconds=600,
+            quota_block_seconds=1800,
+        )
+        guard.report_block("openai:api", 1800, "auth")
+        remaining = guard.blocked_remaining("openai:api")
+        assert 1700 < remaining <= 1800
+
+
+class TestQuotaEscalation:
+    def test_repeated_quota_blocks_double_to_configured_cap(self, tmp_path: Path, monkeypatch) -> None:
+        now = 1_000.0
+        monkeypatch.setattr(rate_guard.time, "time", lambda: now)
+        guard = _guard(
+            tmp_path,
+            quota_block_seconds=1800,
+            max_quota_block_seconds=7200,
+        )
+
+        expected = [(1800, 1), (3600, 2), (7200, 3), (7200, 4)]
+        for seconds, consecutive in expected:
+            guard.report_block("openai:codex", 1800, "quota_exhausted")
+            entry = json.loads((tmp_path / "llm_rate_guard.json").read_text())["openai:codex"]
+            assert entry["seconds"] == seconds
+            assert entry["consecutive"] == consecutive
+            now += 1
+
+    def test_quota_escalation_resets_after_expiry_grace(self, tmp_path: Path, monkeypatch) -> None:
+        now = 1_000.0
+        monkeypatch.setattr(rate_guard.time, "time", lambda: now)
+        guard = _guard(tmp_path, quota_block_seconds=1800, max_quota_block_seconds=14400)
+        guard.report_block("openai:codex", 1800, "quota_exhausted")
+
+        now = 3_401.0
+        guard.report_block("openai:codex", 1800, "quota_exhausted")
+
+        entry = json.loads((tmp_path / "llm_rate_guard.json").read_text())["openai:codex"]
+        assert entry["seconds"] == 1800
+        assert entry["consecutive"] == 1
+
+    def test_each_update_is_appended_to_history(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setenv("ANIMAWORKS_ANIMA_NAME", "aoi")
+        guard = _guard(tmp_path)
+        guard.report_block("anthropic:api", 30, "rate_limit")
+        guard.report_block("anthropic:api", 60, "overloaded")
+
+        history = [json.loads(line) for line in (tmp_path / "llm_rate_guard_history.jsonl").read_text().splitlines()]
+        assert len(history) == 2
+        assert history[-1].keys() == {"ts", "provider", "reason", "seconds", "updated_by", "consecutive"}
+        assert history[-1] == {
+            "ts": history[-1]["ts"],
+            "provider": "anthropic:api",
+            "reason": "overloaded",
+            "seconds": 60.0,
+            "updated_by": "aoi",
+            "consecutive": 1,
+        }
 
 
 class TestFailOpen:

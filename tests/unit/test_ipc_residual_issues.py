@@ -225,7 +225,9 @@ class TestCallersSendAnimaName:
 
         from core.memory.priming.utils import RetrieverCache
 
-        source = inspect.getsource(RetrieverCache.get_or_create)
+        # get_or_create only takes the lock; the store lookup moved into
+        # _get_or_create_locked.
+        source = inspect.getsource(RetrieverCache._get_or_create_locked)
         assert "get_vector_store(anima_name)" in source
 
     def test_distillation_passes_anima_name(self):

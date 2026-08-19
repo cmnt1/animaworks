@@ -201,6 +201,17 @@ class _TrackedHandle:
         return IPCResponse(id="fake", result={"duration_ms": 1})
 
 
+class _RecordingHandle:
+    state = ProcessState.RUNNING
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+
+    async def send_request(self, method: str, params: dict, timeout: float = 60.0) -> IPCResponse:
+        self.calls.append((method, params))
+        return IPCResponse(id="fake", result={})
+
+
 class _RecentEpisodesEngine:
     """Minimal consolidation engine stub with work to do."""
 
@@ -513,3 +524,37 @@ async def test_scheduler_skips_inactive_anima_before_ipc(
 
     assert handle.calls == []
     assert "no activity_log entries in the last 7 days" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method_name", "consolidation_type"),
+    [
+        ("_run_daily_consolidation", "daily"),
+        ("_run_weekly_integration", "weekly"),
+    ],
+)
+async def test_project_archives_bypass_inactivity_and_skip_empty_archive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    method_name: str,
+    consolidation_type: str,
+) -> None:
+    sup = _make_supervisor(tmp_path)
+    anima_dir = _create_anima_dir(sup.animas_dir, "librarian")
+    (anima_dir / "episodes" / "projects" / "empty").mkdir(parents=True)
+    active_dir = anima_dir / "episodes" / "projects" / "active"
+    active_dir.mkdir(parents=True)
+    (active_dir / "2026-08-13_sessions.md").write_text("episode", encoding="utf-8")
+    handle = _RecordingHandle()
+    sup.processes["librarian"] = handle
+    monkeypatch.setattr("core.lifecycle.system_consolidation.should_skip_inactive_consolidation", lambda *_args: True)
+
+    await getattr(sup, method_name)()
+
+    assert handle.calls == [
+        (
+            "run_consolidation",
+            {"consolidation_type": consolidation_type, "project": "active"},
+        )
+    ]

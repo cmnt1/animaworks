@@ -194,6 +194,8 @@ TOOL_TRUST_LEVELS: dict[str, str] = {
     "chatwork_rooms": "untrusted",
     "gmail_unread": "untrusted",
     "gmail_read_body": "untrusted",
+    "gmail_drafts": "untrusted",
+    "gmail_draft_get": "untrusted",
     "google_tasks_list_tasklists": "untrusted",
     "google_tasks_list_tasks": "untrusted",
     "google_tasks_insert_task": "untrusted",

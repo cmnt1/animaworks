@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from core.i18n import t
+from core.platform.locks import acquire_file_lock, release_file_lock
 from core.time_utils import now_local, today_local
 
 logger = logging.getLogger("animaworks.housekeeping")
@@ -45,7 +46,7 @@ async def run_housekeeping(
     anima_log_total_max_size_mb: int = 200,
     frontend_log_backup_count: int = 7,
     dm_log_archive_retention_days: int = 30,
-    cron_log_retention_days: int = 30,
+    cron_log_retention_days: int = 14,
     shortterm_retention_days: int = 7,
     shortterm_archive_retention_days: int = 30,
     shortterm_thread_gc_days: int = 30,
@@ -1068,7 +1069,7 @@ def _cleanup_cron_logs(
     if not animas_dir.exists():
         return {"skipped": True}
 
-    cutoff = (today_local() - timedelta(days=retention_days)).isoformat()
+    cutoff = (today_local() - timedelta(days=min(retention_days, 14))).isoformat()
     total_deleted = 0
 
     for anima_dir in sorted(animas_dir.iterdir()):
@@ -1349,17 +1350,6 @@ def _cleanup_facts_locks(animas_dir: Path, stale_hours: int) -> dict[str, Any]:
             "deleted_files": 0,
         }
 
-    try:
-        import fcntl
-    except ImportError:
-        logger.info("Facts lock cleanup skipped: fcntl unavailable")
-        return {
-            "skipped": True,
-            "reason": "fcntl_unavailable",
-            "scanned_files": 0,
-            "deleted_files": 0,
-        }
-
     cutoff_ts = (now_local() - timedelta(hours=stale_hours)).timestamp()
     deleted_files = 0
     scanned_files = 0
@@ -1376,10 +1366,11 @@ def _cleanup_facts_locks(animas_dir: Path, stale_hours: int) -> dict[str, Any]:
             if not lock_file.is_file():
                 continue
             scanned_files += 1
+            delete_after_close = False
             try:
-                with lock_file.open("r+b") as lock_handle:
+                with lock_file.open("r+", encoding="utf-8") as lock_handle:
                     try:
-                        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        acquire_file_lock(lock_handle, exclusive=True, blocking=False)
                     except OSError as exc:
                         if exc.errno in (errno.EACCES, errno.EAGAIN):
                             locked_files += 1
@@ -1388,15 +1379,24 @@ def _cleanup_facts_locks(animas_dir: Path, stale_hours: int) -> dict[str, Any]:
                             logger.warning("Failed to acquire facts lock file: %s", lock_file)
                         continue
 
-                    stat = os.fstat(lock_handle.fileno())
-                    path_stat = lock_file.stat()
-                    if (stat.st_dev, stat.st_ino) != (path_stat.st_dev, path_stat.st_ino):
-                        lock_failures += 1
-                        continue
-                    if stat.st_size != 0 or stat.st_mtime >= cutoff_ts:
-                        continue
-                    # Keep LOCK_EX held until after unlink; closing the handle
-                    # at the end of this block releases the lock safely.
+                    try:
+                        stat = os.fstat(lock_handle.fileno())
+                        path_stat = lock_file.stat()
+                        if (stat.st_dev, stat.st_ino) != (path_stat.st_dev, path_stat.st_ino):
+                            lock_failures += 1
+                            continue
+                        if stat.st_size != 0 or stat.st_mtime >= cutoff_ts:
+                            continue
+                        if os.name == "nt":
+                            delete_after_close = True
+                        else:
+                            # POSIX permits unlink while the advisory lock is held.
+                            lock_file.unlink()
+                            deleted_files += 1
+                    finally:
+                        release_file_lock(lock_handle)
+                if delete_after_close:
+                    # Windows does not permit deleting an open file.
                     lock_file.unlink()
                     deleted_files += 1
             except OSError:

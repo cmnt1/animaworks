@@ -37,7 +37,14 @@ def _fallback_meta() -> dict[str, object]:
 
 
 @pytest.mark.asyncio
-async def test_blocking_terminal_error_retries_once_with_fallback() -> None:
+@pytest.mark.parametrize(
+    ("summary", "reason"),
+    [
+        ("usage balance exhausted", "quota_exhausted"),
+        ("authentication failed", "auth"),
+    ],
+)
+async def test_blocking_terminal_error_retries_once_with_fallback(summary: str, reason: str) -> None:
     primary, fallback = _configs()
     owner = MagicMock()
     owner.agent.run_cycle = AsyncMock(
@@ -45,8 +52,8 @@ async def test_blocking_terminal_error_retries_once_with_fallback() -> None:
             CycleResult(
                 trigger="message:human",
                 action="error",
-                summary="[Grok CLI Error: Internal error]",
-                reason="quota_exhausted",
+                summary=summary,
+                reason=reason,
             ),
             CycleResult(
                 trigger="message:human",
@@ -58,7 +65,7 @@ async def test_blocking_terminal_error_retries_once_with_fallback() -> None:
 
     with (
         patch(
-            "core._anima_messaging.resolve_effective_model_config",
+            "core.execution.fallback_activity.resolve_effective_model_config",
             return_value=fallback,
         ),
         patch(
@@ -88,6 +95,39 @@ async def test_blocking_terminal_error_retries_once_with_fallback() -> None:
 
 
 @pytest.mark.asyncio
+async def test_blocking_content_policy_error_does_not_fallback() -> None:
+    primary, fallback = _configs()
+    owner = MagicMock()
+    refusal = CycleResult(
+        trigger="message:human",
+        action="error",
+        summary="This request violates our usage policies",
+        reason="content_policy",
+    )
+    owner.agent.run_cycle = AsyncMock(return_value=refusal)
+
+    with patch(
+        "core.execution.fallback_activity.resolve_effective_model_config",
+        return_value=fallback,
+    ) as resolve:
+        result = await _run_chat_cycle_with_fallback(
+            owner,
+            prompt="hello",
+            trigger="message:human",
+            message_intent="",
+            images=None,
+            prior_messages=None,
+            thread_id="default",
+            primary_config=primary,
+            active_config=primary,
+        )
+
+    assert result is refusal
+    owner.agent.run_cycle.assert_awaited_once()
+    resolve.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_blocking_retry_failure_uses_normal_error_path_without_third_attempt() -> None:
     primary, fallback = _configs()
     owner = MagicMock()
@@ -100,7 +140,7 @@ async def test_blocking_retry_failure_uses_normal_error_path_without_third_attem
 
     with (
         patch(
-            "core._anima_messaging.resolve_effective_model_config",
+            "core.execution.fallback_activity.resolve_effective_model_config",
             return_value=fallback,
         ),
         patch(

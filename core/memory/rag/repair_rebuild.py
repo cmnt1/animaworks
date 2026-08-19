@@ -288,6 +288,11 @@ def _reindex_into_store(
     if (state_dir / "conversation.json").is_file():
         total_chunks += indexer.index_conversation_summary(state_dir, anima_name, force=True)
 
+    from core.memory.entity_index import rebuild_entity_collection
+
+    if not rebuild_entity_collection(anima_dir, vector_store=vector_store):
+        logger.warning("Failed to rebuild entity collection for %s", anima_name)
+
     if rebuild_bm25:
         bm25_result = rebuild_longterm_bm25_index(anima_dir)
         logger.info("Rebuilt long-term BM25 index for %s: documents=%d", anima_name, bm25_result.documents)

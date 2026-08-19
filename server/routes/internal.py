@@ -8,7 +8,9 @@ import concurrent.futures
 import json
 import logging
 import os
+import re
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Literal
 
 from fastapi import APIRouter, Request
@@ -145,6 +147,18 @@ class DelegateTaskPersistRequest(BaseModel):
     persist_sub: bool = True  # write to subordinate queue
     persist_tracking: bool = True  # write delegated entry on delegator queue
     persist_pending: bool = True  # create state/pending/<id>.json
+
+
+class InternalSendMessageRequest(BaseModel):
+    message: dict[str, Any]  # full core.schemas.Message dump from the sandboxed sender
+
+
+class InternalPostChannelRequest(BaseModel):
+    from_anima: str
+    channel: str
+    text: str
+    source: str = "anima"
+    from_name: str | None = None
 
 
 class UpdateTaskPersistRequest(BaseModel):
@@ -334,11 +348,23 @@ def create_internal_router() -> APIRouter:
 
         from core.memory.retrieval.reranker import get_reranker
 
+        started = perf_counter()
+        init_started = perf_counter()
         reranker = get_reranker()
+        init_elapsed = perf_counter() - init_started
         loop = asyncio.get_running_loop()
+        score_started = perf_counter()
         scores = await loop.run_in_executor(
             _native_executor,
             partial(reranker.score_sync, body.query, body.documents),
+        )
+        logger.info(
+            "Internal rerank complete: query_chars=%d documents=%d elapsed=%.3fs init=%.3fs score=%.3fs",
+            len(body.query),
+            len(body.documents),
+            perf_counter() - started,
+            init_elapsed,
+            perf_counter() - score_started,
         )
         if scores is None:
             # Explicit failure — never collapse to empty success (caller must
@@ -564,6 +590,56 @@ def create_internal_router() -> APIRouter:
             return JSONResponse(status_code=500, content={"detail": str(exc)})
 
         return {"status": "ok", "anima_dir": str(anima_dir)}
+
+    @router.post("/internal/send-message")
+    async def internal_send_message(body: InternalSendMessageRequest):
+        """Persist a DM outside sandbox EROFS constraints.
+
+        Sandboxed Messenger.send cannot write shared/inbox (write-access
+        charter: only company shared + work dirs are writable), so it falls
+        back here and the host writes the exact message file.
+        """
+        from core.anima_factory import validate_anima_name
+        from core.paths import get_shared_dir
+        from core.schemas import Message
+
+        try:
+            msg = Message(**body.message)
+        except Exception as exc:
+            return JSONResponse(status_code=400, content={"detail": f"Invalid message: {exc}"})
+        if validate_anima_name(msg.from_person) or not re.fullmatch(r"[A-Za-z0-9_-]+", msg.to_person):
+            return JSONResponse(status_code=400, content={"detail": "Invalid sender/recipient name"})
+
+        target_dir = get_shared_dir() / "inbox" / msg.to_person
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / f"{msg.id}.json").write_text(msg.model_dump_json(indent=2), encoding="utf-8")
+        logger.info("internal send-message: %s -> %s (%s)", msg.from_person, msg.to_person, msg.id)
+        return {"ok": True, "message_id": msg.id, "thread_id": msg.thread_id}
+
+    @router.post("/internal/post-channel")
+    async def internal_post_channel(body: InternalPostChannelRequest):
+        """Append a channel post outside sandbox EROFS constraints."""
+        from core.anima_factory import validate_anima_name
+        from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
+        from core.messenger import Messenger
+        from core.paths import get_shared_dir
+
+        if validate_anima_name(body.from_anima):
+            return JSONResponse(status_code=400, content={"detail": "Invalid anima name"})
+        messenger = Messenger(get_shared_dir(), body.from_anima)
+        try:
+            messenger.post_channel(
+                body.channel,
+                body.text,
+                source=body.source,
+                from_name=body.from_name,
+            )
+        except ChannelNotFoundError as exc:
+            return JSONResponse(status_code=404, content={"detail": str(exc)})
+        except ChannelAccessDeniedError as exc:
+            return JSONResponse(status_code=403, content={"detail": str(exc)})
+        logger.info("internal post-channel: %s -> #%s", body.from_anima, body.channel)
+        return {"ok": True}
 
     @router.post("/internal/delegate-task")
     async def internal_delegate_task(body: DelegateTaskPersistRequest):

@@ -24,7 +24,8 @@ def e2e_app(tmp_path):
     assets_dir = anima_dir / "assets"
     assets_dir.mkdir(parents=True)
     (anima_dir / "identity.md").write_text(
-        "# サクラ\nイメージカラー: #FF69B4\n"
+        "# サクラ\nイメージカラー: #FF69B4\n",
+        encoding="utf-8",
     )
 
     # Create realistic test assets
@@ -129,7 +130,7 @@ class TestAssetThumbnailE2E:
         r1 = client.get("/api/animas/sakura/assets/icon.png?size=S")
         assert r1.status_code == 200
         assert "image/webp" in r1.headers["content-type"]
-        assert "max-age=3600" in r1.headers["cache-control"]
+        assert "must-revalidate" in r1.headers["cache-control"]
 
         from io import BytesIO
 

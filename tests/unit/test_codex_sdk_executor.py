@@ -673,13 +673,14 @@ class TestConfigWriting:
         assert parsed["mcp_servers"]["aw"]["command"] == sys.executable
         assert parsed["mcp_servers"]["aw"]["args"] == ["-m", "core.mcp.server"]
 
-    def test_write_codex_config_restricted_sandbox(self, model_config, anima_dir):
+    def test_write_codex_config_restricted_sandbox(self, model_config, anima_dir, tmp_path):
         """Restricted file_roots produces workspace-write with writable_roots."""
         import json
 
+        writable_root = tmp_path.parent / f"{tmp_path.name}-external"
         perms = {
             "version": 1,
-            "file_roots": [str(anima_dir)],
+            "file_roots": [str(writable_root)],
             "commands": {"allow_all": True, "allow": [], "deny": []},
             "external_tools": {"allow_all": True, "allow": [], "deny": []},
             "tool_creation": {"personal": True, "shared": False},
@@ -693,6 +694,8 @@ class TestConfigWriting:
         parsed = tomllib.loads(config_toml)
         assert parsed["approval_policy"] == "never"
         assert parsed["sandbox_workspace_write"]["network_access"] is True
+        assert str(anima_dir) in parsed["sandbox_workspace_write"]["writable_roots"]
+        assert str(writable_root.resolve()) in parsed["sandbox_workspace_write"]["writable_roots"]
         tool_cache = anima_dir.parent.parent / "cache"
         assert str(tool_cache.resolve()) in parsed["sandbox_workspace_write"]["writable_roots"]
 
@@ -788,7 +791,7 @@ class TestConfigWriting:
             (own_company / name).write_text("{}", encoding="utf-8")
         (anima_dir / "status.json").write_text(json.dumps({"company": "fs"}), encoding="utf-8")
         permissions = SimpleNamespace(
-            file_roots=[str(anima_dir)],
+            file_roots=[],
             file_roots_denied=[],
         )
         exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)
@@ -848,7 +851,7 @@ class TestConfigWriting:
         assert ":slash_tmp" not in mcp_filesystem
 
     def test_write_codex_config_deny_overrides_same_writable_root(self, model_config, anima_dir, tmp_path):
-        denied_root = tmp_path / "shared-private"
+        denied_root = tmp_path.parent / f"{tmp_path.name}-shared-private"
         permissions = SimpleNamespace(
             file_roots=[str(denied_root)],
             file_roots_denied=[str(denied_root)],
@@ -866,8 +869,9 @@ class TestConfigWriting:
         assert filesystem[str(denied_root.resolve())] == "deny"
 
     def test_write_codex_config_denied_roots_require_codex_for_mcp_wrapper(self, model_config, anima_dir, tmp_path):
+        writable_root = tmp_path.parent / f"{tmp_path.name}-external"
         permissions = SimpleNamespace(
-            file_roots=[str(anima_dir)],
+            file_roots=[str(writable_root)],
             file_roots_denied=[str(tmp_path / "private")],
         )
         exc = CodexSDKExecutor(model_config=model_config, anima_dir=anima_dir)

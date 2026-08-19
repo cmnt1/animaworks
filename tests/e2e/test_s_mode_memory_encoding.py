@@ -24,6 +24,7 @@ import pytest
 from core.memory.consolidation import ConsolidationEngine
 from core.memory.conversation import ConversationMemory, ToolRecord
 from core.time_utils import now_local as now_jst
+from tests.helpers.chroma import close_chroma_store
 
 # =====================================================================
 # Fix 1: S mode append_turn
@@ -197,6 +198,7 @@ class TestConversationSummaryChunking:
         # Clean up
         import shutil
 
+        close_chroma_store(store)
         shutil.rmtree(tmpdir)
 
     def test_conversation_summary_empty_skip(self) -> None:
@@ -239,6 +241,7 @@ class TestConversationSummaryChunking:
         # Clean up
         import shutil
 
+        close_chroma_store(store)
         shutil.rmtree(tmpdir)
 
     def test_conversation_summary_short_skip(self) -> None:
@@ -280,6 +283,7 @@ class TestConversationSummaryChunking:
         # Clean up
         import shutil
 
+        close_chroma_store(store)
         shutil.rmtree(tmpdir)
 
     def test_chunk_markdown_text_no_headings_fallback(self) -> None:
@@ -315,6 +319,7 @@ class TestConversationSummaryChunking:
         # Clean up
         import shutil
 
+        close_chroma_store(store)
         shutil.rmtree(tmpdir)
 
 

@@ -294,7 +294,7 @@ def test_prepare_startup_continues_when_corruption_clears_on_recheck(
         prepare_chroma_sqlite_for_startup(tmp_path, anima_name="sora")
 
     repair.assert_called_once()
-    configure.assert_called_once_with(tmp_path, create_if_missing=True)
+    configure.assert_called_once_with(tmp_path)
     assert "transient corruption signal cleared on re-check" in caplog.text
 
 

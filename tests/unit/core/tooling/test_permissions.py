@@ -46,6 +46,13 @@ def test_is_action_gated_true_when_gated_and_not_allowed() -> None:
         assert is_action_gated("gmail", "send", {"gmail"}) is True
 
 
+def test_gmail_draft_update_is_gated_by_real_profile() -> None:
+    assert is_action_gated("gmail", "draft-update", {"gmail"}) is True
+    assert is_action_gated("gmail", "draft-update", {"gmail", "gmail_draft-update"}) is False
+    assert is_action_gated("gmail", "draft_update", {"gmail"}) is True
+    assert is_action_gated("gmail", "draft_update", {"gmail", "gmail_draft-update"}) is False
+
+
 def test_is_action_gated_false_when_gated_and_allowed() -> None:
     """is_action_gated returns False for gated action in permitted."""
     with patch(

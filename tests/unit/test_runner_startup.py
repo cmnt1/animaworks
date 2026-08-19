@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.memory.activity import ActivityLogger
 from core.supervisor.ipc import IPCClient, IPCRequest
 
 
@@ -90,6 +91,23 @@ class TestAnimaRunnerPingReadiness:
         runner = self._make_runner(tmp_path)
 
         assert runner._expects_startup_ack is True
+
+    def test_startup_closes_only_unmatched_heartbeat(self, tmp_path):
+        runner = self._make_runner(tmp_path)
+        activity = ActivityLogger(runner._anima_dir)
+        runner.anima = MagicMock()
+        runner.anima._activity = activity
+        activity.log("heartbeat_start", summary="start")
+
+        runner._repair_interrupted_heartbeat()
+        runner._repair_interrupted_heartbeat()
+
+        events = activity.recent(days=1, types=["heartbeat_start", "heartbeat_end"])
+        assert [event.type for event in events] == ["heartbeat_start", "heartbeat_end"]
+        assert events[-1].meta == {
+            "status": "interrupted",
+            "reason": "no terminal event (restart?)",
+        }
 
     @pytest.mark.asyncio
     async def test_startup_ack_handler_allows_autonomous_start(self, tmp_path):

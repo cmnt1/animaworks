@@ -120,6 +120,7 @@ class AnimaDefaults(BaseModel):
     background_model: str | None = None
     background_credential: str | None = None
     background_thinking_effort: str | None = None  # heartbeat/cron thinking effort override
+    voice_thinking_effort: str | None = None  # voice chat thinking effort override
     max_tokens: int = 8192
     credential: str = "anthropic"
     context_threshold: float = 0.50
@@ -766,6 +767,7 @@ class LlmRateGuardConfig(BaseModel):
     default_block_seconds: int = Field(default=60, ge=0)
     max_block_seconds: int = Field(default=600, ge=0)
     quota_block_seconds: int = Field(default=1800, ge=0)
+    max_quota_block_seconds: int = Field(default=14400, ge=0)
 
 
 class BackgroundToolConfig(BaseModel):
@@ -797,6 +799,15 @@ class BackgroundTaskConfig(BaseModel):
     max_completed_tasks_in_memory: int = Field(default=200, ge=0)
     max_parallel_llm_tasks: int = Field(default=3, ge=1, le=10)
     worker_pool_size: int = Field(default=1, ge=1, le=10)
+    blocked_recovery_enabled: bool = True
+    blocked_reprobe_after_hours: float = Field(default=6.0, ge=0)
+    blocked_reprobe_batch_limit: int = Field(default=3, ge=1)
+    blocked_recovery_scan_minutes: float = Field(default=15.0, ge=1)
+    blocked_max_reprobes: int = Field(default=4, ge=0)
+    blocked_check_timeout_seconds: int = Field(default=60, ge=1)
+    # False (default) = fail closed: checkless blocked tasks are never auto-reprobed.
+    # True restores the pre-fail-closed time-based pending requeue behavior.
+    blocked_checkless_reprobe_enabled: bool = False
 
 
 def resolve_background_worker_pool_size(
@@ -894,7 +905,7 @@ class HousekeepingConfig(BaseModel):
     anima_log_total_max_size_mb: int = Field(default=200, ge=1)
     frontend_log_backup_count: int = 7
     dm_log_archive_retention_days: int = 30
-    cron_log_retention_days: int = 30
+    cron_log_retention_days: int = 14
     shortterm_retention_days: int = 7
     shortterm_archive_retention_days: int = Field(default=30, ge=1)
     shortterm_thread_gc_days: int = Field(default=30, ge=1)
@@ -947,15 +958,15 @@ class HeartbeatConfig(BaseModel):
         description="Seconds before injecting a wrap-up system-reminder into the HB session",
     )
     hard_timeout_seconds: int = Field(
-        default=600,
-        ge=60,
+        default=0,
+        ge=0,
         le=7200,
-        description="Seconds before forcefully terminating the HB session",
+        description="Seconds before forcefully terminating the HB session; 0 = disabled",
     )
 
     @model_validator(mode="after")
     def _validate_soft_lt_hard(self) -> HeartbeatConfig:
-        if self.soft_timeout_seconds >= self.hard_timeout_seconds:
+        if self.hard_timeout_seconds and self.soft_timeout_seconds >= self.hard_timeout_seconds:
             raise ValueError(
                 f"soft_timeout_seconds ({self.soft_timeout_seconds}) must be "
                 f"less than hard_timeout_seconds ({self.hard_timeout_seconds})"
@@ -1021,6 +1032,12 @@ class StyleBertVits2Config(BaseModel):
     base_url: str = "http://localhost:5000"
 
 
+class IrodoriConfig(BaseModel):
+    """Irodori-TTS HTTP API connection settings."""
+
+    base_url: str = "http://xserverng2:7861"
+
+
 class VoiceConfig(BaseModel):
     """Voice chat configuration."""
 
@@ -1031,9 +1048,14 @@ class VoiceConfig(BaseModel):
     stt_refine_enabled: bool = False
     default_tts_provider: str = "voicevox"
     audio_format: str = "wav"
+    front_model: str | None = None
+    """voice front lane model (e.g. ``openai/qwen3.6-35b-a3b``). None = legacy path."""
+    front_api_base: str | None = None
+    """OpenAI-compatible base URL for the voice front lane. None = legacy path."""
     voicevox: VoicevoxConfig = VoicevoxConfig()
     elevenlabs: ElevenLabsVoiceConfig = ElevenLabsVoiceConfig()
     style_bert_vits2: StyleBertVits2Config = StyleBertVits2Config()
+    irodori: IrodoriConfig = IrodoriConfig()
 
 
 # ── UI Config ────────────────────────────────────────────────────────────────
@@ -1393,6 +1415,7 @@ __all__ = [
     "ImageGenConfig",
     "InboxConfig",
     "InteractionConfig",
+    "IrodoriConfig",
     "LlmRateGuardConfig",
     "LocalLLMConfig",
     "LoggingConfig",

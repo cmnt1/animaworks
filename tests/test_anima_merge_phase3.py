@@ -37,7 +37,10 @@ def test_anima_merge_rewrite_refs_updates_all_external_surfaces(
         for path in source.rglob("*")
         if path.is_file()
     }
+    source_before.pop("status.json")
+    source_after_status = json.loads(source_after.pop("status.json"))
     assert source_after == source_before
+    assert source_after_status == {"enabled": False, "memory_backend": "legacy", "role": "general"}
 
     worker_status = json.loads((data_dir / "animas" / "worker" / "status.json").read_text(encoding="utf-8"))
     assert worker_status["supervisor"] == "target"

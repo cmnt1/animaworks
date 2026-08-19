@@ -721,6 +721,71 @@ async def _run_startup_initialization(app: FastAPI) -> None:
         logger.exception("Startup initialization failed")
 
 
+async def _run_model_warmup() -> None:
+    """Pre-load embed/rerank/STT models in the background so the first real
+    request (e.g. a voice utterance right after restart) doesn't pay the
+    20-30s cold-load penalty."""
+
+    def _warm_native() -> None:
+        from core.memory.rag.singleton import thread_safe_encode
+        from core.memory.retrieval.reranker import get_reranker
+
+        thread_safe_encode(["ウォームアップ"], purpose="query")
+        get_reranker().score_sync("ウォームアップ", ["テスト"])
+
+    try:
+        await asyncio.to_thread(_warm_native)
+        logger.info("Model warmup complete: embed+rerank")
+    except Exception:
+        logger.exception("Model warmup failed: embed/rerank")
+
+    try:
+        from core.config import load_config
+        from server.routes.voice import _get_stt
+
+        stt = _get_stt(load_config().voice)
+        # 1s of 16kHz mono PCM16 silence — enough to force the model load.
+        await stt.transcribe_buffer_async(b"\x00\x00" * 16000)
+        logger.info("Model warmup complete: stt")
+    except Exception:
+        logger.exception("Model warmup failed: stt")
+
+
+async def _warm_voice_greets(app: FastAPI) -> None:
+    """Pre-populate the greet cache for voice-enabled animas (those with a
+    per-anima voice_id) so the popup greeting is instant after a restart."""
+    import json as _json
+
+    from core.paths import get_animas_dir
+
+    voiced: list[str] = []
+    try:
+        for status_path in sorted(get_animas_dir().glob("*/status.json")):
+            try:
+                voice = _json.loads(status_path.read_text(encoding="utf-8")).get("voice") or {}
+            except (OSError, ValueError):
+                continue
+            if isinstance(voice, dict) and voice.get("voice_id"):
+                voiced.append(status_path.parent.name)
+    except OSError:
+        return
+    if not voiced:
+        return
+
+    supervisor = app.state.supervisor
+    for name in voiced:
+        # Wait for the anima process to come up (startup spawns them async).
+        for _ in range(60):
+            if supervisor.get_process_status(name).get("status") == "running":
+                break
+            await asyncio.sleep(5)
+        try:
+            await supervisor.send_request(anima_name=name, method="greet", params={}, timeout=120.0)
+            logger.info("Voice greet cache warmed: %s", name)
+        except Exception as e:
+            logger.info("Voice greet warmup skipped (%s): %s", name, e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Only start anima processes when setup is complete
@@ -922,6 +987,8 @@ async def lifespan(app: FastAPI):
         app.state._anima_startup_task = asyncio.create_task(
             _run_startup_initialization(app),
         )
+        app.state._model_warmup_task = asyncio.create_task(_run_model_warmup())
+        app.state._voice_greet_warmup_task = asyncio.create_task(_warm_voice_greets(app))
 
         logger.info("Server started (startup initialization running in background)")
     else:

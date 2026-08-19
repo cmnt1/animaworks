@@ -330,7 +330,12 @@ class TestHeartbeatFailureWritesRecoveryNote:
     async def test_inbox_failure_crash_archives_messages(
         self, data_dir, make_anima,
     ):
-        """On inbox processing failure, messages are crash-archived to prevent re-processing."""
+        """On LLM cycle failure, inbox messages are kept for retry (not archived).
+
+        Stream errors are converted to CycleResult(action="error") rather than
+        re-raised, so the next inbox cycle can retry until max retries.  Outer
+        crash-archive only runs for unexpected exceptions outside the cycle.
+        """
         alice_dir = make_anima("alice")
         make_anima("mio")  # Must be in config for Messenger to accept
         shared_dir = data_dir / "shared"
@@ -359,13 +364,13 @@ class TestHeartbeatFailureWritesRecoveryNote:
             dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
             _attach_failing_stream(dp, RuntimeError("Agent crash"))
 
-            with pytest.raises(RuntimeError):
-                await dp.process_inbox_message()
+            result = await dp.process_inbox_message()
 
+        assert result.action == "error"
         remaining = list(inbox_dir.glob("*.json"))
-        assert len(remaining) == 0, (
-            "Inbox should be crash-archived on failure to prevent "
-            "re-processing storms"
+        assert len(remaining) == 1, (
+            "Inbox messages must remain after LLM cycle failure so the next "
+            "cycle can retry (not crash-archived, not treated as success)"
         )
 
     async def test_heartbeat_failure_does_not_touch_inbox(
@@ -601,14 +606,19 @@ class TestPrivateMethodsExist:
             )
 
     def test_heartbeat_calls_heartbeat_methods(self):
-        """run_heartbeat source references heartbeat-specific private methods."""
+        """run_heartbeat call graph reaches heartbeat-specific private methods."""
         from core.anima import DigitalAnima
 
-        source = inspect.getsource(DigitalAnima.run_heartbeat)
+        # Orchestrator may route through thin helpers; walk one level of callees.
+        sources = [inspect.getsource(DigitalAnima.run_heartbeat)]
+        for helper in ("_run_heartbeat_agent_session", "_finalize_session_if_ended"):
+            if hasattr(DigitalAnima, helper):
+                sources.append(inspect.getsource(getattr(DigitalAnima, helper)))
+        combined = "\n".join(sources)
 
         for method_name in self.HEARTBEAT_METHODS:
-            assert f"self.{method_name}" in source, (
-                f"run_heartbeat() should call self.{method_name}"
+            assert f"self.{method_name}" in combined, (
+                f"run_heartbeat() call graph should reach self.{method_name}"
             )
 
     def test_inbox_calls_inbox_methods(self):

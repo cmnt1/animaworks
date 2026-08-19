@@ -111,13 +111,6 @@ animaworks-tool machine run --background \
 - GitHub API 조작(diff 조회·코멘트 등)은 Anima 측에서 수행하고 결과를 계획서에 포함
 - 장시간 작업은 `--background` 사용
 
-## 팀 설계 템플릿을 쓰는 경우
-
-`injection.md`에 `team-design/development/{role}/machine.md`가 지정되어 있으면
-**본 파일보다 그쪽이 우선한다**. 각 역할의 machine.md는 기본 규칙·프롬프트 작성법을 포함해 자급자족한다.
-
-본 파일은 팀 설계 템플릿을 쓰지 않는 단독 Anima용 공통 가이다.
-
 ## 로별 워크플로 가이드
 
 자신의 역할에 해당하는 가이드를 참고한다:

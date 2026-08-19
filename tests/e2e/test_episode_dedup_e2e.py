@@ -58,24 +58,43 @@ class TestFireAndForgetRemoved:
         )
 
     def test_heartbeat_calls_finalize_if_session_ended(self):
-        """run_heartbeat() should call finalize_if_session_ended()."""
-        # Check both facade and lifecycle mixin where run_heartbeat lives
+        """run_heartbeat() must trigger session-boundary finalization.
+
+        Finalize lives in run_heartbeat()'s post-cycle finally (via
+        ``_finalize_session_if_ended``) so a hard timeout / cancellation of
+        the agent cycle cannot skip it.
+        """
         core_dir = Path(__file__).resolve().parents[2] / "core"
-        content = ""
-        for fname in ("anima.py", "_anima_lifecycle.py", "_anima_heartbeat.py"):
-            p = core_dir / fname
-            if p.exists():
-                content += p.read_text(encoding="utf-8")
+        lifecycle = (core_dir / "_anima_lifecycle.py").read_text(encoding="utf-8")
 
-        assert "finalize_if_session_ended" in content, "finalize_if_session_ended() not found in anima.py"
+        assert "finalize_if_session_ended" in lifecycle, "finalize_if_session_ended() not found in _anima_lifecycle.py"
 
-        # Verify it's in the heartbeat section (between heartbeat_end and episode recording)
-        heartbeat_section = content[content.find("heartbeat_end") :]
-        episode_section_idx = heartbeat_section.find("Record important heartbeat actions")
-        if episode_section_idx > 0:
-            between = heartbeat_section[:episode_section_idx]
-            assert "finalize_if_session_ended" in between, (
-                "finalize_if_session_ended() not in the correct location (between heartbeat_end and episode recording)"
+        run_hb_idx = lifecycle.find("async def run_heartbeat")
+        assert run_hb_idx >= 0, "run_heartbeat() not found"
+        next_def = lifecycle.find("\n    def ", run_hb_idx + 1)
+        next_async = lifecycle.find("\n    async def ", run_hb_idx + 1)
+        candidates = [i for i in (next_def, next_async) if i > run_hb_idx]
+        body_end = min(candidates) if candidates else len(lifecycle)
+        run_hb_body = lifecycle[run_hb_idx:body_end]
+        # Direct call or private helper that itself calls finalize_if_session_ended.
+        asserts_finalize = "finalize_if_session_ended" in run_hb_body or "_finalize_session_if_ended" in run_hb_body
+        assert asserts_finalize, (
+            "run_heartbeat() must invoke session-boundary finalize "
+            "(finalize_if_session_ended or _finalize_session_if_ended)"
+        )
+        helper_idx = lifecycle.find("async def _finalize_session_if_ended")
+        if helper_idx >= 0:
+            helper_end_candidates = [
+                i
+                for i in (
+                    lifecycle.find("\n    def ", helper_idx + 1),
+                    lifecycle.find("\n    async def ", helper_idx + 1),
+                )
+                if i > helper_idx
+            ]
+            helper_end = min(helper_end_candidates) if helper_end_candidates else len(lifecycle)
+            assert "finalize_if_session_ended" in lifecycle[helper_idx:helper_end], (
+                "_finalize_session_if_ended must call ConversationMemory.finalize_if_session_ended"
             )
 
 

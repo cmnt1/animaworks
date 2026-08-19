@@ -24,7 +24,7 @@ description: >-
 
 **重要**: Mode C（`codex/*`）、Mode D（`cursor/*`）、Mode G（`gemini/*`）の Anima は、フレームワークが各エンジンを直接実行する。この場合、自分で `codex exec`（Mode C）や `cursor-agent -p`（Mode D）、Gemini CLI（Mode G）を Bash から呼ぶ必要はない。別の CLI（cursor-agent / claude -p / codex exec 等）を明示的に使いたい場合のみ、このスキルの該当セクションを参照する。
 
-**Windows例外**: ネイティブWindows環境で shell 実行が `policy blocked` になった場合、または `codex exec exited with code 1` が繰り返し発生する場合は、ローカル `codex exec` の再試行をやめること。shell 必須タスクは `machine` を標準フォールバックとし、`engine=claude` と明示的な `working_directory` を使う。
+**Windows例外**: ネイティブWindows環境で shell 実行が `policy blocked` になった場合、または `codex exec exited with code 1` が繰り返し発生する場合は、ローカル `codex exec` の再試行をやめること。shell 必須タスクは taka へエスカレーションする。
 
 ## ツール選択の優先順位
 
@@ -36,7 +36,7 @@ description: >-
 | 2 | `cursor-agent -p` | 安い（Cursor） | コード生成・編集・マルチファイル |
 | 3 | `claude -p` | 高い（Claude API） | 最終手段。上2つで解決しない場合のみ |
 
-**原則**: 非Windowsまたは shell 実行が健全な環境では `codex exec` を最初に試す。ネイティブWindowsで shell 実行が blocked / unstable な場合は `codex exec` を飛ばし、`machine`（`engine=claude`）を標準経路にする。その他の失敗時や不得意なタスクのみ cursor-agent → claude の順にフォールバック。
+**原則**: 非Windowsまたは shell 実行が健全な環境では `codex exec` を最初に試す。ネイティブWindowsで shell 実行が blocked / unstable な場合は `codex exec` を飛ばし、taka へエスカレーションする。その他の失敗時や不得意なタスクのみ cursor-agent → claude の順にフォールバック。
 
 ## 使うべきタイミング
 

@@ -23,7 +23,7 @@ import pytest
 # ── Skip if playwright not available ─────────────────────────
 
 try:
-    from playwright.sync_api import sync_playwright, Browser, Page
+    from playwright.sync_api import Browser, Page, sync_playwright
     HAS_PLAYWRIGHT = True
 except ImportError:
     HAS_PLAYWRIGHT = False
@@ -55,7 +55,8 @@ def _create_static_app():
     Serves the entire server/static/ directory including workspace/.
     """
     try:
-        from fastapi import FastAPI
+        from fastapi import FastAPI, HTTPException
+        from fastapi.responses import FileResponse, HTMLResponse
         from fastapi.staticfiles import StaticFiles
 
         project_root = Path(__file__).resolve().parents[2]
@@ -65,17 +66,30 @@ def _create_static_app():
             return None
 
         app = FastAPI()
+        version = "test"
 
-        # Mount workspace first (nested path must come before root)
-        workspace_dir = static_dir / "workspace"
-        if workspace_dir.exists():
-            app.mount(
-                "/workspace",
-                StaticFiles(directory=str(workspace_dir), html=True),
-                name="workspace",
-            )
+        def inject_html(path: Path) -> str:
+            return path.read_text(encoding="utf-8").replace("__AW_VERSION__", version).replace("__AW_BASE__", "")
 
-        # Mount root static directory — serves index.html, styles/, modules/
+        @app.get("/")
+        async def serve_index():
+            return HTMLResponse(inject_html(static_dir / "index.html"))
+
+        @app.get("/workspace/")
+        async def serve_workspace():
+            return HTMLResponse(inject_html(static_dir / "workspace" / "index.html"))
+
+        @app.get("/_v/{asset_version}/{path:path}")
+        async def serve_versioned_asset(asset_version: str, path: str):
+            del asset_version
+            candidate = (static_dir / path).resolve()
+            if not candidate.is_relative_to(static_dir.resolve()):
+                raise HTTPException(status_code=400, detail="Invalid path")
+            if not candidate.is_file():
+                raise HTTPException(status_code=404)
+            return FileResponse(candidate)
+
+        # Fallback for assets that intentionally use non-versioned paths.
         app.mount(
             "/",
             StaticFiles(directory=str(static_dir), html=True),
@@ -122,6 +136,7 @@ def static_server():
         return
 
     import threading
+
     import uvicorn
 
     server = uvicorn.Server(

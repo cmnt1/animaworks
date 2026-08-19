@@ -200,9 +200,14 @@ class IPCServer:
 
                     # Check if result is an async iterator (streaming)
                     if isinstance(handler_result, AsyncIterator):
-                        async for response in handler_result:
-                            response_data = (response.to_json() + "\n").encode("utf-8")
-                            await self._chunked_write(writer, response_data)
+                        try:
+                            async for response in handler_result:
+                                response_data = (response.to_json() + "\n").encode("utf-8")
+                                await self._chunked_write(writer, response_data)
+                        finally:
+                            aclose = getattr(handler_result, "aclose", None)
+                            if callable(aclose):
+                                await aclose()
                     else:
                         response_data = (handler_result.to_json() + "\n").encode("utf-8")
                         await self._chunked_write(writer, response_data)

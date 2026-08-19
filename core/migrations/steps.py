@@ -1406,11 +1406,12 @@ _STALE_MACHINE_DOC_PATHS: tuple[str, ...] = (
 
 
 def step_common_knowledge_team_design_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Deploy team-design templates, machine/ layout, and updated 00_index.
+    """Resync common_knowledge and drop the obsolete flat machine-*.md docs.
 
-    Re-runs common_knowledge template sync so new paths (team-design/, etc.)
-    appear in ~/.animaworks/common_knowledge/. Removes obsolete flat
+    Re-runs the common_knowledge template sync, then removes the obsolete flat
     machine-*.md files under operations/ left from older template layouts.
+    (The step name is kept for migration-state compatibility; the team-design
+    templates it originally deployed were retired — see step_remove_team_design.)
     """
     details: list[str] = []
     total = 0
@@ -1529,6 +1530,46 @@ def step_remove_precompletion_guide(data_dir: Path, dry_run: bool, verbose: bool
             details.append("Removed stale common_knowledge/operations/completion-gate-guide.md")
         total += 1
     else:
+        skipped += 1
+
+    error = "; ".join(errors) if errors else None
+    return StepResult(changed=total, skipped=skipped, details=details, error=error)
+
+
+def step_remove_team_design(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Remove retired common_knowledge/team-design/ trees.
+
+    The team-design templates were retired; resync alone does not delete
+    directories that were already deployed, so every ``common_knowledge/
+    team-design/`` under the data dir (top level, per-Anima, and runtime
+    copies) is removed here.
+    """
+    details: list[str] = []
+    total = 0
+    skipped = 0
+    errors: list[str] = []
+
+    result = step_common_knowledge_resync(data_dir, dry_run, verbose)
+    total += result.changed
+    skipped += result.skipped
+    details.extend(result.details)
+    if result.error:
+        errors.append(f"step_common_knowledge_resync: {result.error}")
+
+    targets = sorted(p for p in data_dir.rglob("team-design") if p.is_dir() and p.parent.name == "common_knowledge")
+    for path in targets:
+        rel = path.relative_to(data_dir)
+        if dry_run:
+            details.append(f"Would remove {rel}")
+        else:
+            try:
+                shutil.rmtree(path)
+            except OSError as exc:
+                errors.append(f"{rel}: {exc}")
+                continue
+            details.append(f"Removed {rel}")
+        total += 1
+    if not targets:
         skipped += 1
 
     error = "; ".join(errors) if errors else None
@@ -1740,6 +1781,12 @@ def register_all_steps(runner: Any) -> None:
             "Write legacy tool prompt DB to Markdown templates",
             "db_sync",
             step_tool_prompts_db_to_md,
+        ),
+        MigrationStep(
+            "remove_team_design",
+            "Remove retired common_knowledge/team-design/ trees",
+            "template_sync",
+            step_remove_team_design,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

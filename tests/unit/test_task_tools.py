@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 import pytest
 
@@ -31,11 +32,17 @@ class TestTaskToolSchemas:
         assert "task_id" in required
         assert "status" in required
         assert update_task["parameters"]["properties"]["result"]["type"] == "string"
+        assert update_task["parameters"]["properties"]["unblock_check"]["type"] == "string"
+        assert "exit 0" in update_task["parameters"]["properties"]["unblock_check"]["description"]
+        assert "読み取り検証専用" in update_task["parameters"]["properties"]["unblock_check"]["description"]
+        assert "unblock_check" not in required
 
     def test_list_tasks_schema(self):
         task_tools = _task_tools()
         list_tasks = next(t for t in task_tools if t["name"] == "list_tasks")
-        assert "required" not in list_tasks["parameters"] or "status" not in list_tasks["parameters"].get("required", [])
+        assert "required" not in list_tasks["parameters"] or "status" not in list_tasks["parameters"].get(
+            "required", []
+        )
 
     def test_build_tool_list_includes_task_tools(self):
         tools = build_tool_list(include_task_tools=True)
@@ -63,13 +70,16 @@ class TestTaskToolHandler:
         return ToolHandler(anima_dir, memory)
 
     def test_handle_backlog_task(self, handler):
-        result = handler.handle("backlog_task", {
-            "source": "human",
-            "original_instruction": "Test instruction",
-            "assignee": "rin",
-            "summary": "Test summary",
-            "deadline": "1h",
-        })
+        result = handler.handle(
+            "backlog_task",
+            {
+                "source": "human",
+                "original_instruction": "Test instruction",
+                "assignee": "rin",
+                "summary": "Test summary",
+                "deadline": "1h",
+            },
+        )
         data = json.loads(result)
         assert data["source"] == "human"
         assert data["assignee"] == "rin"
@@ -77,78 +87,168 @@ class TestTaskToolHandler:
         assert "task_id" in data
 
     def test_handle_backlog_task_missing_instruction(self, handler):
-        result = handler.handle("backlog_task", {
-            "source": "human",
-            "assignee": "rin",
-            "summary": "s",
-            "deadline": "1h",
-        })
+        result = handler.handle(
+            "backlog_task",
+            {
+                "source": "human",
+                "assignee": "rin",
+                "summary": "s",
+                "deadline": "1h",
+            },
+        )
         data = json.loads(result)
         assert data["status"] == "error"
 
     def test_handle_update_task(self, handler):
         # First add a task
-        add_result = json.loads(handler.handle("backlog_task", {
-            "source": "human",
-            "original_instruction": "test",
-            "assignee": "rin",
-            "summary": "s",
-            "deadline": "1h",
-        }))
+        add_result = json.loads(
+            handler.handle(
+                "backlog_task",
+                {
+                    "source": "human",
+                    "original_instruction": "test",
+                    "assignee": "rin",
+                    "summary": "s",
+                    "deadline": "1h",
+                },
+            )
+        )
         task_id = add_result["task_id"]
 
         # Update it
-        result = handler.handle("update_task", {
-            "task_id": task_id,
-            "status": "in_progress",
-        })
+        result = handler.handle(
+            "update_task",
+            {
+                "task_id": task_id,
+                "status": "in_progress",
+            },
+        )
         data = json.loads(result)
         assert data["status"] == "in_progress"
 
+    def test_handle_update_task_blocked_saves_unblock_check(self, handler):
+        task = json.loads(
+            handler.handle(
+                "backlog_task",
+                {
+                    "source": "human",
+                    "original_instruction": "test",
+                    "assignee": "rin",
+                    "summary": "s",
+                    "deadline": "1h",
+                },
+            )
+        )
+
+        result = json.loads(
+            handler.handle(
+                "update_task",
+                {
+                    "task_id": task["task_id"],
+                    "status": "blocked",
+                    "unblock_check": "test -w .",
+                },
+            )
+        )
+
+        assert result["status"] == "blocked"
+        assert result["meta"]["unblock_check"] == "test -w ."
+        datetime.fromisoformat(result["meta"]["blocked_at"])
+
+        # Omitting unblock_check must preserve the existing value (not null it out).
+        repeated = json.loads(
+            handler.handle(
+                "update_task",
+                {
+                    "task_id": task["task_id"],
+                    "status": "blocked",
+                },
+            )
+        )
+        assert repeated["meta"]["unblock_check"] == "test -w ."
+
+        handler.handle(
+            "update_task",
+            {
+                "task_id": task["task_id"],
+                "status": "in_progress",
+            },
+        )
+        new_blocker = json.loads(
+            handler.handle(
+                "update_task",
+                {
+                    "task_id": task["task_id"],
+                    "status": "blocked",
+                },
+            )
+        )
+        assert new_blocker["meta"]["unblock_check"] is None
+
     def test_handle_update_nonexistent(self, handler):
-        result = handler.handle("update_task", {
-            "task_id": "nonexistent",
-            "status": "done",
-        })
+        result = handler.handle(
+            "update_task",
+            {
+                "task_id": "nonexistent",
+                "status": "done",
+            },
+        )
         data = json.loads(result)
         assert data["status"] == "error"
 
     def test_handle_list_tasks(self, handler):
-        handler.handle("backlog_task", {
-            "source": "human",
-            "original_instruction": "t1",
-            "assignee": "a",
-            "summary": "s1",
-            "deadline": "1h",
-        })
-        handler.handle("backlog_task", {
-            "source": "anima",
-            "original_instruction": "t2",
-            "assignee": "b",
-            "summary": "s2",
-            "deadline": "2h",
-        })
+        handler.handle(
+            "backlog_task",
+            {
+                "source": "human",
+                "original_instruction": "t1",
+                "assignee": "a",
+                "summary": "s1",
+                "deadline": "1h",
+            },
+        )
+        handler.handle(
+            "backlog_task",
+            {
+                "source": "anima",
+                "original_instruction": "t2",
+                "assignee": "b",
+                "summary": "s2",
+                "deadline": "2h",
+            },
+        )
         result = json.loads(handler.handle("list_tasks", {}))
         assert len(result) == 2
 
     def test_handle_list_tasks_with_filter(self, handler):
-        add_result = json.loads(handler.handle("backlog_task", {
-            "source": "human",
-            "original_instruction": "t1",
-            "assignee": "a",
-            "summary": "s1",
-            "deadline": "1h",
-        }))
-        handler.handle("update_task", {
-            "task_id": add_result["task_id"],
-            "status": "done",
-        })
-        handler.handle("backlog_task", {
-            "source": "human",
-            "original_instruction": "t2",
-            "assignee": "b",
-            "summary": "s2",
-            "deadline": "2h",
-        })
+        add_result = json.loads(
+            handler.handle(
+                "backlog_task",
+                {
+                    "source": "human",
+                    "original_instruction": "t1",
+                    "assignee": "a",
+                    "summary": "s1",
+                    "deadline": "1h",
+                },
+            )
+        )
+        handler.handle(
+            "update_task",
+            {
+                "task_id": add_result["task_id"],
+                "status": "done",
+            },
+        )
+        handler.handle(
+            "backlog_task",
+            {
+                "source": "human",
+                "original_instruction": "t2",
+                "assignee": "b",
+                "summary": "s2",
+                "deadline": "2h",
+            },
+        )
         result = json.loads(handler.handle("list_tasks", {"status": "pending"}))
         assert len(result) == 1

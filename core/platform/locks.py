@@ -18,15 +18,9 @@ else:
 
 
 def _prepare_windows_lock(file_obj: IO[str]) -> None:
-    if not file_obj.writable():
-        file_obj.seek(0)
-        return
-    current = file_obj.tell()
-    file_obj.seek(0, os.SEEK_END)
-    if file_obj.tell() == 0:
-        file_obj.write(" ")
-        file_obj.flush()
-    file_obj.seek(current)
+    # msvcrt.locking() can lock a byte range beyond EOF.  Keep empty lock
+    # files empty so stale-lock cleanup can identify them safely.
+    file_obj.seek(0)
 
 
 def acquire_file_lock(

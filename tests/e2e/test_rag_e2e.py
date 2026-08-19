@@ -71,7 +71,10 @@ def vector_store(anima_dir):
     from core.memory.rag.store import ChromaVectorStore
 
     store = ChromaVectorStore(persist_dir=anima_dir / "vectordb")
-    return store
+    yield store
+    from tests.helpers.chroma import close_chroma_store
+
+    close_chroma_store(store)
 
 
 @pytest.fixture

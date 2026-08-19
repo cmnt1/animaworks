@@ -48,6 +48,7 @@ _HANDLER_ACTION_TOOLS: frozenset[str] = frozenset(
         "call_human",
         "write_memory_file",
         "gmail_draft",
+        "gmail_draft_update",
         "gmail_send",
         "chatwork_send",
         "slack_send",
@@ -57,6 +58,7 @@ _HANDLER_ACTION_TOOLS: frozenset[str] = frozenset(
 
 _CLI_ACTION_MAP: dict[tuple[str, str], str] = {
     ("gmail", "draft"): "gmail_draft",
+    ("gmail", "draft-update"): "gmail_draft_update",
     ("gmail", "send"): "gmail_send",
     ("chatwork", "send"): "chatwork_send",
     ("slack", "send"): "slack_send",

@@ -54,9 +54,14 @@ def primary_config() -> ModelConfig:
     )
 
 
-def _guard_with_blocks(blocks: dict[str, float]) -> MagicMock:
+def _guard_with_blocks(
+    blocks: dict[str, float],
+    reasons: dict[str, str] | None = None,
+) -> MagicMock:
     guard = MagicMock()
     guard.blocked_remaining.side_effect = lambda key: blocks.get(key, 0.0)
+    guard.blocked_until.side_effect = lambda key: blocks.get(key, 0.0)
+    guard.block_reason.side_effect = lambda key: (reasons or {}).get(key)
     return guard
 
 
@@ -248,6 +253,7 @@ class TestResolveEffectiveModelConfig:
         with (
             patch("core.config.io.load_config", return_value=fallback_config),
             patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.config.model_config.shutil.which", return_value="/usr/bin/grok"),
         ):
             result = resolve_effective_model_config(primary_config)
 
@@ -259,7 +265,7 @@ class TestResolveEffectiveModelConfig:
         assert result.api_key is None
         assert guard.blocked_remaining.call_args_list[-1].args == ("grok:grok",)
 
-    def test_all_candidates_blocked_keeps_primary(
+    def test_all_candidates_blocked_selects_earliest_release(
         self,
         fallback_config: AnimaWorksConfig,
         primary_config: ModelConfig,
@@ -274,10 +280,76 @@ class TestResolveEffectiveModelConfig:
         with (
             patch("core.config.io.load_config", return_value=fallback_config),
             patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.config.model_config.shutil.which", return_value="/usr/bin/grok"),
+        ):
+            result = resolve_effective_model_config(primary_config)
+
+        assert result.model == "grok/grok-4.5"
+        assert result.resolved_mode == "X"
+
+    def test_all_candidates_blocked_keeps_primary_when_it_releases_first(
+        self,
+        fallback_config: AnimaWorksConfig,
+        primary_config: ModelConfig,
+    ) -> None:
+        guard = _guard_with_blocks(
+            {
+                "openai:codex": 30.0,
+                "openai:api": 60.0,
+                "grok:grok": 90.0,
+            },
+        )
+        with (
+            patch("core.config.io.load_config", return_value=fallback_config),
+            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.config.model_config.shutil.which", return_value="/usr/bin/grok"),
         ):
             result = resolve_effective_model_config(primary_config)
 
         assert result is primary_config
+
+    def test_unavailable_grok_cli_candidate_is_skipped(
+        self,
+        fallback_config: AnimaWorksConfig,
+        primary_config: ModelConfig,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        primary = primary_config.model_copy(
+            update={"fallback_models": ["x:grok/grok-4.5", "a:openai/gpt-4.1"]}
+        )
+        guard = _guard_with_blocks({"openai:codex": 120.0})
+        with (
+            patch("core.config.io.load_config", return_value=fallback_config),
+            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.config.model_config.shutil.which", return_value=None),
+            caplog.at_level(logging.DEBUG, logger="animaworks.config"),
+        ):
+            result = resolve_effective_model_config(primary)
+
+        assert result.model == "openai/gpt-4.1"
+        assert "grok CLI is unavailable" in caplog.text
+
+    def test_unavailable_codex_sdk_candidate_is_skipped(
+        self,
+        fallback_config: AnimaWorksConfig,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        primary = ModelConfig(
+            model="grok/grok-4.5",
+            resolved_mode="X",
+            fallback_models=["c:codex/gpt-5.4", "a:openai/gpt-4.1"],
+        )
+        guard = _guard_with_blocks({"grok:grok": 120.0})
+        with (
+            patch("core.config.io.load_config", return_value=fallback_config),
+            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            patch("core.config.model_config.importlib.util.find_spec", return_value=None),
+            caplog.at_level(logging.DEBUG, logger="animaworks.config"),
+        ):
+            result = resolve_effective_model_config(primary)
+
+        assert result.model == "openai/gpt-4.1"
+        assert "openai_codex is unavailable" in caplog.text
 
     def test_empty_fallback_list_is_noop(self) -> None:
         primary = ModelConfig(
@@ -345,7 +417,10 @@ class TestResolveEffectiveModelConfig:
                 "resolved_mode": "A",
             },
         )
-        guard = _guard_with_blocks({"openai:codex": 42.0})
+        guard = _guard_with_blocks(
+            {"openai:codex": 42.0},
+            {"openai:codex": "quota_exhausted"},
+        )
         with (
             patch("core.config.io.load_config", return_value=fallback_config),
             patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
@@ -355,7 +430,7 @@ class TestResolveEffectiveModelConfig:
         assert meta == {
             "primary": "codex/gpt-5.4",
             "fallback": "a:openai/gpt-4.1",
-            "reason": "rate_guard_blocked",
+            "reason": "rate_guard_blocked:quota_exhausted",
             "remaining": 42.0,
         }
         assert fallback_event_meta(primary_config, primary_config) is None

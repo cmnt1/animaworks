@@ -16,13 +16,13 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from core.exceptions import ToolExecutionError
+from core.memory.task_queue import TaskQueueManager
 from core.supervisor.pending_executor import PendingTaskExecutor
-
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -189,6 +189,87 @@ class TestPendingTaskWatcherLoop:
 
         with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=cancel_wait):
             await executor.watcher_loop()
+
+
+class TestPendingTaskRecoveryScan:
+    async def test_scan_is_throttled_and_runs_in_thread(self, tmp_path: Path) -> None:
+        executor = _make_executor(tmp_path)
+
+        with (
+            patch.object(executor, "_recovery_scan_interval_seconds", return_value=900),
+            patch("core.supervisor.pending_executor.asyncio.to_thread", new=AsyncMock()) as to_thread,
+        ):
+            await executor._run_recovery_scan_if_due(now=100)
+            await executor._run_recovery_scan_if_due(now=999)
+            await executor._run_recovery_scan_if_due(now=1000)
+
+        assert to_thread.call_count == 2
+        assert all(call.args == (executor._recover_blocked_and_orphaned_tasks,) for call in to_thread.call_args_list)
+
+    def test_regenerates_orphan_but_skips_delegation_tracking_parent(self, tmp_path: Path) -> None:
+        executor = _make_executor(tmp_path)
+        queue = TaskQueueManager(executor._anima_dir)
+        orphan = queue.add_task(
+            source="anima",
+            original_instruction="finish orphan",
+            assignee="test-anima",
+            summary="orphan",
+            status="pending",
+            task_id="orphan-task",
+        )
+        tracking = queue.add_task(
+            source="anima",
+            original_instruction="track child",
+            assignee="worker",
+            summary="tracking",
+            status="pending",
+            task_id="tracking-parent",
+            meta={"delegated_to": "worker", "delegated_task_id": "child-task"},
+        )
+
+        with (
+            patch("core.blocked_recovery.revalidate_blocked_tasks"),
+            patch("core.blocked_recovery.regenerate_pending_json", return_value=True) as regenerate,
+        ):
+            executor._recover_blocked_and_orphaned_tasks()
+
+        regenerate.assert_called_once()
+        assert regenerate.call_args.args == (executor._anima_dir, "test-anima", orphan)
+        assert "descriptor消失" in regenerate.call_args.kwargs["description_suffix"]
+        assert tracking.task_id != regenerate.call_args.args[2].task_id
+        events = [
+            json.loads(line)
+            for path in (executor._anima_dir / "activity_log").glob("*.jsonl")
+            for line in path.read_text(encoding="utf-8").splitlines()
+        ]
+        assert any(
+            event["type"] == "blocked_recovery"
+            and event["meta"] == {"task_id": orphan.task_id, "method": "descriptor_regeneration"}
+            for event in events
+        )
+
+    def test_existing_processing_descriptor_is_not_regenerated(self, tmp_path: Path) -> None:
+        executor = _make_executor(tmp_path)
+        queue = TaskQueueManager(executor._anima_dir)
+        entry = queue.add_task(
+            source="anima",
+            original_instruction="already claimed",
+            assignee="test-anima",
+            summary="running",
+            status="pending",
+            task_id="already-claimed",
+        )
+        processing_dir = executor._anima_dir / "state" / "pending" / "processing"
+        processing_dir.mkdir(parents=True)
+        (processing_dir / f"{entry.task_id}.json").write_text("{}", encoding="utf-8")
+
+        with (
+            patch("core.blocked_recovery.revalidate_blocked_tasks"),
+            patch("core.blocked_recovery.regenerate_pending_json") as regenerate,
+        ):
+            executor._recover_blocked_and_orphaned_tasks()
+
+        regenerate.assert_not_called()
 
 
 # ── TestExecutePendingTask ───────────────────────────────────
@@ -506,16 +587,18 @@ class TestDispatchFn:
         mock_result.stdout = ""
         mock_result.stderr = "Something went wrong"
 
-        with patch("subprocess.run", return_value=mock_result):
-            with pytest.raises(ToolExecutionError, match="Tool image_gen failed"):
-                dispatch_fn(
-                    "image_gen",
-                    {
-                        "subcommand": "3d",
-                        "raw_args": ["3d", "test.png"],
-                        "anima_dir": str(tmp_path),
-                    },
-                )
+        with (
+            patch("subprocess.run", return_value=mock_result),
+            pytest.raises(ToolExecutionError, match="Tool image_gen failed"),
+        ):
+            dispatch_fn(
+                "image_gen",
+                {
+                    "subcommand": "3d",
+                    "raw_args": ["3d", "test.png"],
+                    "anima_dir": str(tmp_path),
+                },
+            )
 
     async def test_dispatch_fn_returns_stdout(self, tmp_path: Path) -> None:
         """_dispatch_fn returns stripped stdout on success."""

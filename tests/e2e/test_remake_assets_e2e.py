@@ -257,8 +257,13 @@ class TestRemakePreview:
         assert resp.status_code == 404
         assert "nonexistent" in resp.json()["detail"]
 
-    async def test_remake_preview_missing_fullbody(self, tmp_path):
-        """Returns 404 when style-from anima has no fullbody for default style (realistic)."""
+    @patch("core.config.models.load_config")
+    async def test_remake_preview_missing_fullbody(self, mock_load_config, tmp_path):
+        """Returns 404 when style-from anima has no fullbody for the resolved style."""
+        # Request omits image_style → falls back to config. Isolate from host config.json.
+        mock_load_config.return_value = MagicMock(
+            image_gen=ImageGenConfig(backend="diffusers", image_style="realistic"),
+        )
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
         _setup_anima_with_assets(animas_dir, "target")
@@ -276,7 +281,7 @@ class TestRemakePreview:
             )
 
         assert resp.status_code == 404
-        # Implementation defaults to realistic style, so looks for avatar_fullbody_realistic.png
+        # Resolved style is realistic → expects the realistic fullbody variant
         assert "avatar_fullbody_realistic.png" in resp.json()["detail"]
 
     async def test_remake_preview_target_not_found(self, tmp_path):

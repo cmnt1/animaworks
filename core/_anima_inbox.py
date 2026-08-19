@@ -27,6 +27,8 @@ from core.execution._sanitize import (
     resolve_trust,
     wrap_inbox_message,
 )
+from core.execution.error_classifier import classify_llm_error
+from core.execution.fallback_activity import run_with_model_fallback
 from core.i18n import t
 from core.memory.streaming_journal import StreamingJournal
 from core.messenger import InboxItem
@@ -644,7 +646,7 @@ class InboxMixin:
                     accumulated_text = ""
                     result: CycleResult | None = None
 
-                    original_config = None
+                    original_config = agent.model_config
                     bg_config = self._resolve_background_config("inbox")
                     # Preemptive model routing (B-3a): when the background
                     # model has weak tool_use and the request looks like it
@@ -679,41 +681,60 @@ class InboxMixin:
                             body=messages_text,
                             trigger=trigger,
                         )
-                    if routed_config is not None and routed_config is not agent.model_config:
-                        original_config = agent.model_config
-                        agent.update_model_config(routed_config)
+                    active_config = routed_config or original_config
 
                     try:
-                        async for chunk in agent.run_cycle_streaming(
-                            prompt,
-                            trigger=trigger,
-                            thread_id=_INBOX_THREAD_ID,
-                        ):
-                            if chunk.get("type") == "text_delta":
-                                accumulated_text += chunk.get("text", "")
-                                journal.write_text(chunk.get("text", ""))
 
-                            if chunk.get("type") == "cycle_done":
-                                cycle_result = chunk.get("cycle_result", {})
-                                result = CycleResult(
-                                    trigger=trigger,
-                                    action=cycle_result.get("action", "responded"),
-                                    summary=cycle_result.get("summary", ""),
-                                    duration_ms=cycle_result.get("duration_ms", 0),
-                                    context_usage_ratio=cycle_result.get("context_usage_ratio", 0.0),
-                                    session_chained=cycle_result.get("session_chained", False),
-                                    total_turns=cycle_result.get("total_turns", 0),
-                                )
-                                journal.finalize(summary=result.summary[:500])
-
-                        if result is None:
-                            result = CycleResult(
+                        async def _run(config):  # noqa: ANN001
+                            nonlocal accumulated_text
+                            if config is not agent.model_config:
+                                agent.update_model_config(config)
+                            attempt_text = ""
+                            attempt_result: CycleResult | None = None
+                            async for chunk in agent.run_cycle_streaming(
+                                prompt,
+                                trigger=trigger,
+                                thread_id=_INBOX_THREAD_ID,
+                            ):
+                                if chunk.get("type") == "text_delta":
+                                    text = chunk.get("text", "")
+                                    attempt_text += text
+                                    journal.write_text(text)
+                                if chunk.get("type") == "cycle_done":
+                                    attempt_result = CycleResult.model_validate(
+                                        {
+                                            "trigger": trigger,
+                                            "action": "responded",
+                                            **chunk.get("cycle_result", {}),
+                                        }
+                                    )
+                            accumulated_text = attempt_text
+                            return attempt_result or CycleResult(
                                 trigger=trigger,
                                 action="responded",
-                                summary=accumulated_text[:500] or "(no result)",
+                                summary=attempt_text[:500] or "(no result)",
                             )
+
+                        try:
+                            result = await run_with_model_fallback(
+                                _run,
+                                activity=self._activity,
+                                primary_config=active_config,
+                                active_config=active_config,
+                                channel="inbox",
+                            )
+                        except Exception as exc:
+                            reason, _hint = classify_llm_error(exc)
+                            result = CycleResult(
+                                trigger=trigger,
+                                action="error",
+                                stop_kind="stream_error",
+                                summary=str(exc),
+                                reason=reason.value,
+                            )
+                        journal.finalize(summary=result.summary[:500])
                     finally:
-                        if original_config is not None:
+                        if agent.model_config is not original_config:
                             agent.update_model_config(original_config)
                         if urgent_task_id is not None:
                             remove_urgent(agent.anima_dir, urgent_task_id)
@@ -729,9 +750,10 @@ class InboxMixin:
                             agent_session_acquired = False
 
                     self._last_activity = now_local()
+                    cycle_failed = result.action == "error" or bool(result.reason)
 
                     # Record inbox response separately from the default chat thread.
-                    if accumulated_text.strip():
+                    if not cycle_failed and accumulated_text.strip():
                         self._activity.log(
                             "response_sent",
                             content=accumulated_text[:2000],
@@ -767,7 +789,7 @@ class InboxMixin:
                     #         )
 
                     # ── Discord auto-response: post LLM reply back to Discord ──
-                    if accumulated_text.strip() and _is_auto_response_enabled_discord():
+                    if not cycle_failed and accumulated_text.strip() and _is_auto_response_enabled_discord():
                         try:
                             from core.outbound_auto import DiscordAutoResponder
 
@@ -790,15 +812,18 @@ class InboxMixin:
                     # returned nothing (e.g. SDK empty response due to API
                     # outage / rate limit).  Keeping them lets the next
                     # inbox cycle retry — up to _MAX_INBOX_RETRIES.
-                    # Terminal errors (action="error") are archived to prevent
-                    # infinite retry loops, except transient stream-retry
-                    # exhaustion with no text: those should use the inbox
-                    # retry counter instead of being silently marked processed.
+                    # Terminal errors are archived to prevent infinite retry
+                    # loops. Transient stream failures remain retryable.
                     _is_retryable_empty_error = not accumulated_text.strip() and _is_retryable_empty_cycle_error(result)
                     _is_terminal_error = (
-                        result is not None and result.action == "error" and not _is_retryable_empty_error
+                        result is not None
+                        and result.action == "error"
+                        and not result.reason
+                        and result.stop_kind != "stream_error"
+                        and not _is_retryable_empty_error
                     )
-                    if accumulated_text.strip() or agent.replied_to or _is_terminal_error:
+                    _has_successful_response = not cycle_failed and bool(accumulated_text.strip() or agent.replied_to)
+                    if _has_successful_response or _is_terminal_error:
                         await self._archive_processed_messages(
                             inbox_result.inbox_items,
                             inbox_result.senders,

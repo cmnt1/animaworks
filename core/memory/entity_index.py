@@ -243,6 +243,28 @@ def sync_entity_collection(
         return False
 
 
+def rebuild_entity_collection(
+    anima_dir: Path,
+    *,
+    registry: dict[str, Any] | None = None,
+    vector_store: Any | None = None,
+    embedding_fn: Any | None = None,
+) -> bool:
+    """Full rebuild of ``{anima}_entities`` from the JSON registry.
+
+    Used by ``animaworks index --full``, repair-rag reindex, and consolidation
+    rebuild. Empty or missing registries are a no-op success (new anima).
+    Reuses :func:`sync_entity_collection` without an entity-key filter.
+    """
+    return sync_entity_collection(
+        anima_dir,
+        registry=registry,
+        entity_keys=None,
+        vector_store=vector_store,
+        embedding_fn=embedding_fn,
+    )
+
+
 def entity_keys_for_records(registry: dict[str, Any], records: list[FactRecord]) -> set[str]:
     """Resolve record-carried entity names to canonical registry keys."""
     entities = registry.get("entities", {})

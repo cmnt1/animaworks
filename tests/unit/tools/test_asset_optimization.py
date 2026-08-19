@@ -69,7 +69,7 @@ class TestEnsureFbx2gltf:
             return MagicMock(returncode=0)
 
         try:
-            with patch("shutil.which", return_value=None):
+            with patch("shutil.which", side_effect=[None, "/usr/bin/npm"]):
                 with patch("core.paths.get_data_dir", return_value=tmp_path):
                     with patch("subprocess.run", side_effect=fake_npm_install) as mock_run:
                         result = _ensure_fbx2gltf()
@@ -77,7 +77,7 @@ class TestEnsureFbx2gltf:
                         assert result == candidate
                         mock_run.assert_called_once()
                         cmd = mock_run.call_args.args[0]
-                        assert "npm" in cmd
+                        assert cmd[0] == "/usr/bin/npm"
                         assert "install" in cmd
                         assert "fbx2gltf" in cmd
         finally:
@@ -630,8 +630,8 @@ class TestSimplifyGlb:
         with patch("shutil.which", return_value="/usr/bin/npx"):
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock(returncode=0)
-                # Mock rename and stat
-                with patch.object(Path, "rename") as mock_rename:
+                # Mock replacement and stat
+                with patch.object(Path, "replace"):
                     with patch.object(Path, "stat") as mock_stat:
                         mock_stat.return_value.st_size = 5000
                         with patch.object(Path, "unlink"):
@@ -663,7 +663,7 @@ class TestSimplifyGlb:
         with patch("shutil.which", return_value="/usr/bin/npx"):
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock(returncode=0)
-                with patch.object(Path, "rename"):
+                with patch.object(Path, "replace"):
                     with patch.object(Path, "stat") as mock_stat:
                         mock_stat.return_value.st_size = 3000
                         with patch.object(Path, "unlink"):
@@ -697,7 +697,7 @@ class TestCompressTextures:
                 with patch.object(Path, "unlink"):
                     with patch.object(Path, "stat") as mock_stat:
                         mock_stat.return_value.st_size = 2000
-                        with patch.object(Path, "rename"):
+                        with patch.object(Path, "replace"):
                             result = compress_textures(Path("/tmp/test.glb"), resolution=1024)
 
                             assert result is True
@@ -726,7 +726,7 @@ class TestCompressTextures:
 
         with patch("shutil.which", return_value="/usr/bin/npx"):
             with patch("subprocess.run", side_effect=side_effect):
-                with patch.object(Path, "rename") as mock_rename:
+                with patch.object(Path, "replace"):
                     with patch.object(Path, "unlink"):
                         result = compress_textures(Path("/tmp/test.glb"))
                         # Should still return True (resize worked)

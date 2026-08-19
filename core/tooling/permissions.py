@@ -174,12 +174,13 @@ def is_action_gated(tool_name: str, action: str, permitted: set[str]) -> bool:
     if profile is None:
         return False
 
-    action_info = profile.get(action)
+    profile_action = action if action in profile else action.replace("_", "-")
+    action_info = profile.get(profile_action)
     if action_info is None:
         return False
 
     if action_info.get("gated") is not True:
         return False
 
-    action_key = f"{tool_name}_{action}"
+    action_key = f"{tool_name}_{profile_action}"
     return action_key not in permitted

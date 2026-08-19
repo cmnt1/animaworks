@@ -27,6 +27,13 @@ from core.i18n import t
 from core.schemas import EXTERNAL_PLATFORM_SOURCES, Message
 from core.time_utils import ensure_aware, now_iso, now_local
 
+
+def _server_base_url() -> str:
+    import os
+
+    return os.environ.get("ANIMAWORKS_SERVER_URL", "http://localhost:18500").rstrip("/")
+
+
 logger = logging.getLogger("animaworks.messenger")
 
 _SAFE_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,30}$")
@@ -270,12 +277,19 @@ class Messenger:
         if new_thread:
             msg.thread_id = msg.id
         target_dir = self.shared_dir / "inbox" / to
-        target_dir.mkdir(parents=True, exist_ok=True)
-        filepath = _unique_message_path(target_dir, msg, new_thread=new_thread)
-        filepath.write_text(msg.model_dump_json(indent=2), encoding="utf-8")
-
-        if not filepath.exists():
-            raise DeliveryError(f"Message delivery failed: file not created at {filepath} ({self.anima_name} -> {to})")
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            filepath = _unique_message_path(target_dir, msg, new_thread=new_thread)
+            filepath.write_text(msg.model_dump_json(indent=2), encoding="utf-8")
+            if not filepath.exists():
+                raise DeliveryError(
+                    f"Message delivery failed: file not created at {filepath} ({self.anima_name} -> {to})"
+                )
+        except OSError as exc:
+            # Sandboxed processes cannot write shared/inbox (write-access
+            # charter: only company shared + work dirs are writable).
+            # Deliver via the host server instead, like delegate_task.
+            self._deliver_via_server(msg, exc)
 
         autocreated_task_id = ""
         if is_internal and animas_dir is not None:
@@ -435,9 +449,56 @@ class Messenger:
                 f.write(entry + "\n")
             logger.info("Channel post: %s -> #%s", poster, channel)
             return True
-        except OSError:
-            logger.warning("Failed to post to channel: %s", channel)
-            return False
+        except OSError as exc:
+            # Sandbox EROFS: append via the host server (write-access charter).
+            self._post_channel_via_server(channel, text, source, poster, exc)
+            return True
+
+    def _deliver_via_server(self, msg: Message, cause: OSError) -> None:
+        """Persist *msg* through the internal server API (sandbox EROFS path)."""
+        try:
+            import httpx
+
+            resp = httpx.post(
+                f"{_server_base_url()}/api/internal/send-message",
+                json={"message": msg.model_dump(mode="json")},
+                timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
+            )
+            resp.raise_for_status()
+            logger.info(
+                "Message sent via server fallback: %s -> %s (%s)",
+                self.anima_name,
+                msg.to_person,
+                msg.id,
+            )
+        except Exception as fb_exc:
+            raise DeliveryError(
+                f"Message delivery failed: local write ({cause}); server fallback ({fb_exc}) "
+                f"({self.anima_name} -> {msg.to_person})"
+            ) from fb_exc
+
+    def _post_channel_via_server(self, channel: str, text: str, source: str, poster: str, cause: OSError) -> None:
+        """Append a channel post through the internal server API (sandbox EROFS path)."""
+        try:
+            import httpx
+
+            resp = httpx.post(
+                f"{_server_base_url()}/api/internal/post-channel",
+                json={
+                    "from_anima": self.anima_name,
+                    "channel": channel,
+                    "text": text,
+                    "source": source,
+                    "from_name": poster,
+                },
+                timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
+            )
+            resp.raise_for_status()
+            logger.info("Channel post via server fallback: %s -> #%s", poster, channel)
+        except Exception as fb_exc:
+            raise DeliveryError(
+                f"Channel post failed: local write ({cause}); server fallback ({fb_exc}) ({poster} -> #{channel})"
+            ) from fb_exc
 
     def last_post_by(self, anima_name: str, channel: str) -> dict | None:
         """Return the last post by *anima_name* in *channel*, or None.

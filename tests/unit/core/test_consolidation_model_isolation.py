@@ -598,13 +598,31 @@ class _FakeSessionCompactor:
 
 
 @pytest.mark.asyncio
-async def test_process_message_stream_uses_status_config_for_human_chat(tmp_path):
+@pytest.mark.parametrize(
+    ("voice_mode", "voice_effort", "expected_effort"),
+    [
+        (True, "medium", "medium"),
+        (True, None, "low"),
+        (False, "medium", "high"),
+    ],
+)
+async def test_process_message_stream_uses_message_specific_voice_effort(
+    tmp_path,
+    voice_mode,
+    voice_effort,
+    expected_effort,
+):
     from core._anima_messaging import MessagingMixin
 
     class FakeAnima(MessagingMixin):
         pass
 
-    status_config = ModelConfig(model="claude-opus-4-6", resolved_mode="S")
+    status_config = ModelConfig(
+        model="claude-opus-4-6",
+        resolved_mode="S",
+        thinking_effort="high",
+        voice_thinking_effort=voice_effort,
+    )
     poisoned_runtime_config = ModelConfig(model="openai/deepseek-v4-flash", resolved_mode="A")
     agent = _FakeMessagingAgent()
 
@@ -641,11 +659,12 @@ async def test_process_message_stream_uses_status_config_for_human_chat(tmp_path
             "hello",
             from_person="taka",
             thread_id="default",
+            voice_mode=voice_mode,
         )
     ]
 
     assert chunks[-1]["type"] == "cycle_done"
-    assert agent.resolved_mode_config is status_config
-    assert agent.streaming_config is status_config
     assert agent.streaming_config.model == "claude-opus-4-6"
+    assert agent.streaming_config.thinking_effort == expected_effort
+    assert (agent.streaming_config is status_config) is not voice_mode
     assert anima.model_config.model == "openai/deepseek-v4-flash"
