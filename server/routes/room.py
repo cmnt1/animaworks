@@ -17,7 +17,7 @@ from pydantic import BaseModel, field_validator
 from core.config import load_config
 from core.exceptions import AnimaNotFoundError
 from core.exceptions import IPCConnectionError as IPCConnError
-from core.execution.base import strip_thinking_tags
+from core.execution.base import resolve_streamed_leaked_thinking
 from core.paths import get_common_knowledge_dir
 from server.room_manager import MeetingRoom, RoomManager
 from server.routes.chat_chunk_handler import _chunk_to_event, _format_sse
@@ -275,7 +275,7 @@ async def _meeting_stream(
 
         # Clean response for storage
         clean_text, _ = extract_emotion(full_response)
-        leaked, clean_text = strip_thinking_tags(clean_text)
+        leaked, clean_text = resolve_streamed_leaked_thinking(clean_text)
         if leaked:
             clean_text = clean_text.strip()
 

@@ -14,7 +14,6 @@ import asyncio
 import contextvars
 import json
 import logging
-import re
 import time
 from collections.abc import AsyncGenerator
 from contextlib import nullcontext
@@ -37,12 +36,13 @@ from core.execution.error_classifier import (
 from core.execution.fallback_activity import log_model_fallback, run_with_model_fallback
 from core.execution.session_types import resolve_runtime_session_type
 from core.i18n import t
+from core.emotion_tag import extract_emotion as _extract_emotion_from_tag
 from core.image_artifacts import extract_image_artifacts_from_tool_records, resolve_local_image_paths
 from core.memory.conversation import ConversationMemory, ToolRecord
 from core.memory.streaming_journal import StreamingJournal
 from core.paths import load_prompt
 from core.response_normalize import normalize_user_facing_response_text
-from core.schemas import EXTERNAL_PLATFORM_SOURCES, VALID_EMOTIONS, CycleResult, ImageData, ModelConfig
+from core.schemas import EXTERNAL_PLATFORM_SOURCES, CycleResult, ImageData, ModelConfig
 from core.time_utils import now_local, today_local
 
 logger = logging.getLogger("animaworks.anima")
@@ -1419,21 +1419,8 @@ class MessagingMixin:
                     )
                 self._last_activity = now_local()
 
-                # Extract emotion from response
-                _em_pat = re.compile(r"<!--\s*emotion:\s*(\{.*?\})\s*-->", re.DOTALL)
-                _em_match = _em_pat.search(result.summary)
-                if _em_match:
-                    clean_text = _em_pat.sub("", result.summary).rstrip()
-                    try:
-                        _meta = json.loads(_em_match.group(1))
-                        emotion = _meta.get("emotion", "neutral")
-                        if emotion not in VALID_EMOTIONS:
-                            emotion = "neutral"
-                    except (json.JSONDecodeError, AttributeError):
-                        emotion = "neutral"
-                else:
-                    clean_text = result.summary
-                    emotion = "neutral"
+                # Extract emotion from response (shared lenient parser)
+                clean_text, emotion = _extract_emotion_from_tag(result.summary)
 
                 # Record assistant turn in conversation memory
                 conv_memory.append_turn("assistant", clean_text)

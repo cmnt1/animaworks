@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import Request
 
-from core.execution.base import strip_thinking_tags
+from core.execution.base import resolve_streamed_leaked_thinking
 from core.i18n import t
 from server.events import emit, emit_notification
 from server.routes.chat_emotion import extract_emotion
@@ -168,7 +168,7 @@ def _handle_chunk(
         clean_text, emotion = extract_emotion(response_text)
         # Defensive strip: catch any residual <think> tags the streaming
         # filter / safety net missed (e.g. across-chunk missing-<think>).
-        leaked, clean_text = strip_thinking_tags(clean_text)
+        leaked, clean_text = resolve_streamed_leaked_thinking(clean_text)
         thinking_raw = cycle_result.pop("thinking_text", "") or ""
         if leaked and not thinking_raw:
             thinking_raw = leaked
@@ -258,7 +258,7 @@ def _chunk_to_event(chunk: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
         cycle_result = chunk.get("cycle_result", {})
         response_text = cycle_result.get("summary", "")
         clean_text, emotion = extract_emotion(response_text)
-        leaked, clean_text = strip_thinking_tags(clean_text)
+        leaked, clean_text = resolve_streamed_leaked_thinking(clean_text)
         thinking_raw = cycle_result.pop("thinking_text", "") or ""
         if leaked and not thinking_raw:
             thinking_raw = leaked

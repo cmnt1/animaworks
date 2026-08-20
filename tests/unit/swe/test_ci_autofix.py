@@ -480,3 +480,41 @@ def test_cli_main_dirty_exit_code(monkeypatch: pytest.MonkeyPatch, capsys: pytes
 
     assert code == 2
     assert "status: dirty_worktree" in capsys.readouterr().out
+
+
+class TestReviewVerdictStrictness:
+    """_review_verdict must match the verdict line as a whole line,
+    not as a substring, so an explanation sentence containing the word
+    APPROVE is not mistaken for an approval."""
+
+    def test_exact_approve_line_is_accepted(self) -> None:
+        out = "Some review notes here.\nAPPROVE\nthanks"
+        assert CIAutofixLoop._review_verdict(out) == "APPROVE"
+
+    def test_whitespace_only_allowed(self) -> None:
+        out = "  APPROVE  \n"
+        assert CIAutofixLoop._review_verdict(out) == "APPROVE"
+
+    def test_lowercase_whole_line_accepted(self) -> None:
+        out = "needs_changes\n"
+        assert CIAutofixLoop._review_verdict(out) == "NEEDS_CHANGES"
+
+    def test_reason_containing_approve_is_not_accepted(self) -> None:
+        # This is the regression: "I would APPROVE this if..." must NOT be APP.
+        out = "I would APPROVE this if the tests pass.\n"
+        assert CIAutofixLoop._review_verdict(out) == ""
+
+    def test_reason_containing_needs_change_phrase_is_not_accepted(self) -> None:
+        out = "This needs changes before merge.\n"
+        assert CIAutofixLoop._review_verdict(out) == ""
+
+    def test_request_changes_exact_accepted(self) -> None:
+        out = "REQUEST_CHANGES\n"
+        assert CIAutofixLoop._review_verdict(out) == "REQUEST_CHANGES"
+
+    def test_multiple_lines_with_verdict_midway(self) -> None:
+        out = "explanation line\nREQUEST_CHANGES\ndetails\n"
+        assert CIAutofixLoop._review_verdict(out) == "REQUEST_CHANGES"
+
+    def test_no_verdict_returns_empty(self) -> None:
+        assert CIAutofixLoop._review_verdict("no verdict here\n") == ""
