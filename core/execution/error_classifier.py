@@ -184,6 +184,11 @@ _QUOTA_EXHAUSTED_PATTERNS = (
     "usage balance exhausted",
     "weekly limit",
     "usage_limit_reached",
+    # Quota-capability exhaustion belongs on the long-lived quota side: the
+    # recovery is a 30-minute block plus failover, not a transient retry.
+    "quota exceeded",
+    "insufficient_quota",
+    "exceeded your current quota",
 )
 
 # Safety-filter refusals — deterministic per prompt, must run before status
@@ -223,20 +228,17 @@ _RATE_LIMIT_PATTERNS = (
     "tokens per minute",
     "requests per day",
     "resource_exhausted",
-    "quota exceeded",
     "please retry after",
     "try again in",
 )
 
 _BILLING_PATTERNS = (
     "insufficient credits",
-    "insufficient_quota",
     "insufficient balance",
     "credit balance",
     "credits exhausted",
     "payment required",
     "billing hard limit",
-    "exceeded your current quota",
     "account is deactivated",
     "out of funds",
     "balance_depleted",
@@ -323,6 +325,22 @@ _TRANSPORT_ERROR_TYPES = frozenset(
 )
 
 
+# Provider error codes are the most reliable disambiguator: a code is a
+# verbatim contract between client and provider, while free-text messages are
+# rewritten and can drift.  When ``body.error.code`` (or ``type``) is
+# present, it is matched here by exact equality — first — so a familiar code
+# wins over any message heuristic, and the message table below only runs as a
+# fallback for codes we have not seen before (or absent codes).
+_CODE_REASON_TABLE: dict[str, FailoverReason] = {
+    "usagelimitexceeded": FailoverReason.QUOTA_EXHAUSTED,
+    "insufficient_quota": FailoverReason.QUOTA_EXHAUSTED,
+    "rate_limit_exceeded": FailoverReason.RATE_LIMIT,
+    "context_length_exceeded": FailoverReason.CONTEXT_OVERFLOW,
+    "invalid_api_key": FailoverReason.AUTH,
+    "content_filter": FailoverReason.CONTENT_POLICY,
+}
+
+
 # ── Classification pipeline ─────────────────────────────────────────────────
 
 
@@ -385,6 +403,12 @@ def _classify(error: Exception, provider_family: str) -> tuple[FailoverReason, R
     # 1. Content policy — deterministic safety refusal, before status routing.
     if any(p in msg for p in _CONTENT_POLICY_PATTERNS):
         return FailoverReason.CONTENT_POLICY, _hint_for(FailoverReason.CONTENT_POLICY)
+
+    # 1b. error.code first-key — an exact code match is authoritative and
+    # wins over every message heuristic below, regardless of wording.
+    code_reason = _classify_by_code(error)
+    if code_reason is not None:
+        return code_reason, _hint_for(code_reason)
 
     # 2. Long-lived subscription quota, before HTTP status routing so a 429
     # carrying a quota message is not downgraded to a transient rate limit.
@@ -490,6 +514,20 @@ def _classify_400(msg: str) -> tuple[FailoverReason, RecoveryHint]:
     return FailoverReason.INVALID_REQUEST, _hint_for(FailoverReason.INVALID_REQUEST)
 
 
+def _classify_by_code(error: Exception) -> FailoverReason | None:
+    """Match ``body.error.code``/``type`` exactly against the known table.
+
+    Returns ``None`` when no code is present or it is not in the table, so
+    the caller falls through to the message heuristics.  Walks the cause
+    chain the same way the status extractors do.
+    """
+    for code in _iter_error_codes(error):
+        reason = _CODE_REASON_TABLE.get(code.lower())
+        if reason is not None:
+            return reason
+    return None
+
+
 def _classify_by_message(
     msg: str,
     retry_after: float | None,
@@ -516,6 +554,31 @@ def _classify_by_message(
 
 
 # ── Extraction helpers ──────────────────────────────────────────────────────
+
+
+def _iter_error_codes(error: Exception) -> list[str]:
+    """Extract ``error.code``/``error.type`` values from the body chain.
+
+    Provider SDKs surface a structured error object (``body.error``) separate
+    from free-text fields; the code there is the most stable classifier key.
+    """
+    codes: list[str] = []
+    current: BaseException | None = error
+    for _ in range(5):
+        if current is None:
+            break
+        body = getattr(current, "body", None)
+        if isinstance(body, dict):
+            err_obj = body.get("error")
+            if isinstance(err_obj, dict):
+                code = err_obj.get("code") or err_obj.get("type")
+                if isinstance(code, str) and code.strip():
+                    codes.append(code.strip())
+        nxt = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
+        if nxt is None or nxt is current:
+            break
+        current = nxt
+    return codes
 
 
 def _extract_status_code(error: Exception) -> int | None:

@@ -19,6 +19,7 @@ from core.execution.base import ExecutionResult
 from core.execution.cursor_agent import (
     _MAX_RESUME_TURNS,
     _RESUMABLE_TRIGGERS,
+    _cursor_error_metadata,
     CursorAgentExecutor,
     _chat_id_path,
     _clear_chat_id,
@@ -1127,3 +1128,36 @@ class TestModeDResolution:
             pytest.skip("config not available in test environment")
         mode = resolve_execution_mode(config, "cursor/claude-4-sonnet")
         assert mode.upper() == "D"
+
+
+# ── Rate-guard wiring ────────────────────────────────────────
+
+
+class TestCursorErrorMetadata:
+    def test_quota_error_records_real_guard_block(self, tmp_path: Path) -> None:
+        from core.config.schemas import LlmRateGuardConfig
+        from core.execution.rate_guard import LlmRateGuard
+
+        guard_path = tmp_path / "llm_rate_guard.json"
+        guard = LlmRateGuard(config=LlmRateGuardConfig(quota_block_seconds=1800), path=guard_path)
+
+        with patch("core.execution.cursor_agent.get_rate_guard", return_value=guard):
+            metadata = _cursor_error_metadata("quota exceeded", "cursor/claude-4-sonnet")
+
+        state = json.loads(guard_path.read_text(encoding="utf-8"))
+        assert metadata == {"terminal": True, "reason": "quota_exhausted"}
+        assert state["anthropic:cursor"]["reason"] == "quota_exhausted"
+        assert guard.blocked_remaining("anthropic:cursor") > 1700
+
+    def test_unknown_error_does_not_register_block(self, tmp_path: Path) -> None:
+        from core.config.schemas import LlmRateGuardConfig
+        from core.execution.rate_guard import LlmRateGuard
+
+        guard_path = tmp_path / "llm_rate_guard.json"
+        guard = LlmRateGuard(config=LlmRateGuardConfig(), path=guard_path)
+
+        with patch("core.execution.cursor_agent.get_rate_guard", return_value=guard):
+            metadata = _cursor_error_metadata("some random internal thing", "cursor/claude-4-sonnet")
+
+        assert metadata == {"terminal": True, "reason": "unknown"}
+        assert not guard_path.exists() or json.loads(guard_path.read_text(encoding="utf-8")) == {}
