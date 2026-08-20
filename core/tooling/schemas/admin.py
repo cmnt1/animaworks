@@ -90,7 +90,7 @@ CC_TOOLS: list[dict[str, Any]] = [
                 "command": {"type": "string", "description": "Shell command to run"},
                 "timeout": {
                     "type": "integer",
-                    "description": ("Timeout in seconds. Default: 30 (foreground), 1800 (background)."),
+                    "description": ("Timeout in seconds. Default: 120 (foreground), 1800 (background)."),
                 },
                 "background": {
                     "type": "boolean",
