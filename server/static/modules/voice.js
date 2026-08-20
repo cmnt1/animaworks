@@ -364,6 +364,11 @@ export class VoiceManager {
   get mode() {
     return this._mode;
   }
+
+  /** TTS再生時の正規化RMS(0..1)。`_playback` はdisconnectで再生成されるためgetterで都度参照。 */
+  get ttsRMS() {
+    return this._playback.rms;
+  }
 }
 
 export const voiceManager = new VoiceManager();
