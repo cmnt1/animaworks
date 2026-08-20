@@ -220,6 +220,7 @@ class CycleResult(BaseModel):
     meeting_redirects: list[dict[str, str]] = Field(default_factory=list)
     cron_skill_rejections: list[dict[str, str]] = Field(default_factory=list)
     cron_skill_warnings: list[dict[str, str]] = Field(default_factory=list)
+    error_category: str | None = None
     usage: dict[str, int] | None = None
 
 
