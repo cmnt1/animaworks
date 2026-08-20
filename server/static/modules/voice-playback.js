@@ -24,6 +24,7 @@ export class VoicePlayback {
     this._pc1 = null;
     this._pc2 = null;
     this._aecAudio = null;
+    this._analyser = null;
   }
 
   _ensureContext() {
@@ -36,6 +37,11 @@ export class VoicePlayback {
       this._ctx = new AudioContext();
       this._gainNode = this._ctx.createGain();
       this._gainNode.gain.value = this._volume;
+      // RMS tap for lip-sync: gain -> analyser (+ destination downstream).
+      this._analyser = this._ctx.createAnalyser();
+      this._analyser.fftSize = 512;
+      this._analyser.smoothingTimeConstant = 0.5;
+      this._gainNode.connect(this._analyser);
       this._gainNode.connect(this._ctx.destination);
       this._startAecLoopback();
     }
@@ -100,7 +106,9 @@ export class VoicePlayback {
       if (this._ctx !== ctx || !this._gainNode) throw new Error('aborted');
 
       // Switch off the direct destination so we never double-play.
+      // disconnect() severs ALL connections — restore the analyser tap too.
       this._gainNode.disconnect();
+      if (this._analyser) this._gainNode.connect(this._analyser);
       this._gainNode.connect(res.msDest);
       this._msDest = res.msDest;
       this._pc1 = res.pc1;
@@ -115,6 +123,7 @@ export class VoicePlayback {
       if (this._gainNode && !this._aecActive) {
         try {
           this._gainNode.disconnect();
+          if (this._analyser) this._gainNode.connect(this._analyser);
           this._gainNode.connect(this._ctx.destination);
         } catch (_) {
           // Already wired to destination, or context gone.
@@ -202,6 +211,21 @@ export class VoicePlayback {
     return this._playing;
   }
 
+  /**
+   * 正規化RMS(0..1) of the currently playing TTS output.
+   * Returns 0 when the audio context is not available.
+   */
+  get rms() {
+    if (!this._ctx || !this._analyser || this._ctx.state !== "running") return 0;
+    const data = new Float32Array(this._analyser.fftSize);
+    this._analyser.getFloatTimeDomainData(data);
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+    const raw = Math.sqrt(sum / data.length);
+    // Scale so loud speech (raw RMS ~0.15-0.3) reaches the mouth thresholds.
+    return Math.min(1, raw * 3);
+  }
+
   get queueLength() {
     return this._queue.length;
   }
@@ -224,6 +248,7 @@ export class VoicePlayback {
       this._ctx = null;
     }
     this._gainNode = null;
+    this._analyser = null;
   }
 }
 

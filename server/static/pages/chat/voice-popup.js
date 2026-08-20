@@ -4,7 +4,7 @@
  */
 import { voiceManager } from "../../modules/voice.js";
 import { destroyVoiceUI } from "../../modules/voice-ui.js";
-import { assetUrl, bustupExpressionCandidates } from "../../modules/avatar-resolver.js";
+import { BustupAnimator } from "./bustup-animator.js";
 import { escapeHtml } from "../../modules/state.js";
 import { t } from "/shared/i18n.js";
 
@@ -20,6 +20,7 @@ const VALID_EXPRESSIONS = new Set([
  *   listeners: Array<[string, Function]>,
  *   neutralTimer: ReturnType<typeof setTimeout> | null,
  *   els: Record<string, HTMLElement>,
+ *   animator: BustupAnimator | null,
  *   responseText: string,
  *   closed: boolean,
  * }} */
@@ -47,7 +48,7 @@ export function openVoicePopup(animaName, opts = {}) {
         <span class="voice-popup-status" data-vp="status">${escapeHtml(t("voice.popup_connecting"))}</span>
       </div>
       <div class="voice-popup-bustup-wrap">
-        <img class="voice-popup-bustup" data-vp="bustup" alt="${escapeHtml(animaName)}" draggable="false">
+        <div class="voice-popup-bustup-rig" data-vp="rig"></div>
         <div class="voice-popup-subtitle" data-vp="subtitle" hidden></div>
       </div>
       <div class="voice-popup-captions">
@@ -72,7 +73,7 @@ export function openVoicePopup(animaName, opts = {}) {
   const q = (sel) => overlay.querySelector(`[data-vp="${sel}"]`);
   const els = {
     status: q("status"),
-    bustup: q("bustup"),
+    rig: q("rig"),
     transcript: q("transcript"),
     subtitle: q("subtitle"),
     response: q("response"),
@@ -85,6 +86,9 @@ export function openVoicePopup(animaName, opts = {}) {
     closeBtn: overlay.querySelector(".voice-popup-close"),
   };
 
+  // 疑似Live2D: 静止画フレーム + CSS/JS。フレームが無い表情は静的bustupへフォールバック。
+  const animator = new BustupAnimator(els.rig, animaName);
+
   _session = {
     overlay,
     animaName,
@@ -92,6 +96,7 @@ export function openVoicePopup(animaName, opts = {}) {
     listeners: [],
     neutralTimer: null,
     els,
+    animator,
     responseText: "",
     closed: false,
   };
@@ -112,13 +117,13 @@ export function openVoicePopup(animaName, opts = {}) {
   // anima is talking (its own TTS would trigger the VAD), so a tap is the
   // reliable interrupt. Gated on playback so an idle tap can't wipe an
   // in-progress user utterance server-side.
-  els.bustup.addEventListener("click", () => {
+  els.rig.addEventListener("click", () => {
     if (voiceManager.isTTSPlaying) voiceManager.interrupt();
   });
 
   document.addEventListener("keydown", _onKeyDown);
 
-  _setBustupExpression(animaName, "neutral");
+  animator.setExpression("neutral");
   _bindVoiceEvents();
   _startSession(animaName);
 }
@@ -127,7 +132,9 @@ export function closeVoicePopup() {
   if (!_session || _session.closed) return;
   _session.closed = true;
 
-  const { overlay, listeners, neutralTimer, onClose } = _session;
+  const { overlay, listeners, neutralTimer, onClose, animator } = _session;
+
+  if (animator) animator.destroy();
 
   for (const [event, handler] of listeners) {
     voiceManager.off(event, handler);
@@ -177,6 +184,7 @@ function _bindVoiceEvents() {
     els.rec.style.display = "none";
     els.tts.style.display = "none";
     els.thinking.style.display = "none";
+    if (_session.animator) _session.animator.stopLipsync();
   });
   _bind("recordingStart", () => {
     if (!_session) return;
@@ -191,6 +199,9 @@ function _bindVoiceEvents() {
     if (!_session) return;
     els.tts.style.display = "";
     els.status.textContent = t("voice.popup_speaking");
+    if (_session.animator) {
+      _session.animator.startLipsync(() => voiceManager.ttsRMS);
+    }
   });
   _bind("ttsDone", () => {
     if (!_session) return;
@@ -199,12 +210,14 @@ function _bindVoiceEvents() {
   _bind("playbackEnd", () => {
     if (!_session) return;
     els.tts.style.display = "none";
+    if (_session.animator) _session.animator.stopLipsync();
   });
   _bind("interrupted", () => {
     if (!_session) return;
     els.tts.style.display = "none";
     els.subtitle.hidden = true;
     els.status.textContent = t("voice.popup_connected");
+    if (_session.animator) _session.animator.stopLipsync();
   });
   _bind("caption", ({ text }) => {
     if (!_session) return;
@@ -334,7 +347,7 @@ function _applyEmotion(emotion) {
   if (!_session || !emotion) return;
   const expr = String(emotion).toLowerCase();
   if (!VALID_EXPRESSIONS.has(expr)) return;
-  _setBustupExpression(_session.animaName, expr);
+  _session.animator?.setExpression(expr);
 }
 
 function _scheduleNeutralReset() {
@@ -342,43 +355,7 @@ function _scheduleNeutralReset() {
   if (_session.neutralTimer) clearTimeout(_session.neutralTimer);
   _session.neutralTimer = setTimeout(() => {
     if (!_session) return;
-    _setBustupExpression(_session.animaName, "neutral");
+    _session.animator?.setExpression("neutral");
     _session.neutralTimer = null;
   }, NEUTRAL_RESET_MS);
-}
-
-/**
- * Resolve bustup URL for expression; on 404 try next candidate, then neutral.
- * @param {string} animaName
- * @param {string} expression
- */
-function _setBustupExpression(animaName, expression) {
-  if (!_session) return;
-  const img = _session.els.bustup;
-  const expr = VALID_EXPRESSIONS.has(expression) ? expression : "neutral";
-  const candidates = [
-    ...bustupExpressionCandidates(expr),
-    ...(expr !== "neutral" ? bustupExpressionCandidates("neutral") : []),
-  ];
-  let idx = 0;
-
-  const tryNext = () => {
-    if (!_session || img !== _session.els.bustup) return;
-    if (idx >= candidates.length) {
-      img.removeAttribute("src");
-      img.alt = animaName;
-      return;
-    }
-    const filename = candidates[idx++];
-    // Original image, not ?size=L: the L thumbnail is a center-square crop
-    // that beheads portrait bustups.
-    const url = assetUrl(animaName, filename);
-    img.onerror = tryNext;
-    img.onload = () => {
-      img.onerror = null;
-      img.onload = null;
-    };
-    img.src = url;
-  };
-  tryNext();
 }
