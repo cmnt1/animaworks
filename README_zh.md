@@ -35,20 +35,30 @@
 
 ---
 
-## :rocket: 立即体验 — Docker 演示
+## :rocket: 立即体验
 
-60 秒即可上手。只需 API 密钥和 Docker。
+60 秒即可上手 — **如果你已登录 Claude Code 或 Codex，就无需 API 密钥。**
+
+首先，用一行命令完成克隆和安装：
 
 ```bash
-git clone https://github.com/xuiltul/animaworks.git
-cd animaworks/demo
-cp .env.example .env          # 粘贴你的 ANTHROPIC_API_KEY
-docker compose up              # 打开 http://localhost:18501
+curl -sSL https://raw.githubusercontent.com/xuiltul/animaworks/main/scripts/setup.sh | bash
+cd animaworks
 ```
 
-一个 3 人团队（经理 + 工程师 + 协调员）立即开始工作，并预加载了 3 天的活动历史。[了解更多演示详情 →](demo/README.md)
+然后立即启动 3 人团队演示：
 
-> 切换语言/风格：`PRESET=ja-anime docker compose up` — [查看所有预设](demo/README.md#presets)
+```bash
+uv run animaworks demo
+```
+
+打开 **http://localhost:18501** 即可开始。一个 3 人团队（经理 + 工程师 + 协调员）立即开始工作，并预加载了 3 天的活动历史。[了解更多演示详情 →](demo/README.md)
+
+**无需 API 密钥** — 如果你已登录 **Claude Code** 或 **Codex**，系统会自动检测认证。若两者都没有，请导出 `ANTHROPIC_API_KEY`，或先运行 `codex login`。
+
+> 切换语言/风格：`uv run animaworks demo --preset ja-anime` — [查看所有预设](demo/README.md#presets)
+
+准备好创建自己的组织时，请运行 `uv run animaworks start` — 下面的设置向导会引导你创建第一个团队。
 
 ---
 

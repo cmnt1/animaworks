@@ -35,20 +35,30 @@ AIエージェントを単発の「ツール」ではなく、記憶を持って
 
 ---
 
-## :rocket: 今すぐ試す — Dockerデモ
+## :rocket: 今すぐ試す
 
-60秒で動きます。APIキーとDockerだけあれば大丈夫です。
+60秒で動きます。**Claude Code / Codex にログイン済みならAPIキーは不要**です。
+
+まず、ワンライナーでクローンとインストールを実行:
 
 ```bash
-git clone https://github.com/xuiltul/animaworks.git
-cd animaworks/demo
-cp .env.example .env          # ANTHROPIC_API_KEY を貼り付け
-docker compose up              # http://localhost:18501 を開く
+curl -sSL https://raw.githubusercontent.com/xuiltul/animaworks/main/scripts/setup.sh | bash
+cd animaworks
 ```
 
-3人のチーム（マネージャー＋エンジニア＋コーディネーター）がすぐに動き出します。3日分のアクティビティ履歴付きです。[デモの詳細はこちら →](demo/README.ja.md)
+次に、3人チームのデモをすぐに起動:
 
-> 言語・スタイルの切替: `PRESET=ja-anime docker compose up` — [全プリセット一覧](demo/README.ja.md#プリセット)
+```bash
+uv run animaworks demo
+```
+
+**http://localhost:18501** を開けば準備完了。3人のチーム（マネージャー＋エンジニア＋コーディネーター）がすぐに動き出します。3日分のアクティビティ履歴付きです。[デモの詳細はこちら →](demo/README.ja.md)
+
+**APIキーは不要** — **Claude Code** か **Codex** にログイン済みなら認証は自動検出されます。どちらも無ければ `ANTHROPIC_API_KEY` をexportするか、先に `codex login` を実行してください。
+
+> 言語・スタイルの切替: `uv run animaworks demo --preset ja-anime` — [全プリセット一覧](demo/README.ja.md#プリセット)
+
+自分の組織を作りたいときは `uv run animaworks start` を実行 — 下のセットアップウィザードが最初のチーム作成を案内します。
 
 ---
 
