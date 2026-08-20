@@ -27,7 +27,9 @@ from core.time_utils import now_iso
 logger = logging.getLogger(__name__)
 
 _VALID_ENTITY_TYPES: frozenset[str] = frozenset(get_args(ENTITY_TYPES))
-_CODE_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)```", re.DOTALL)
+# Language-agnostic fence (json / markdown / any tag / bare) so `` ```json``
+# wrapped LLM output is extracted on every path.
+_CODE_FENCE_RE = re.compile(r"```[a-zA-Z0-9_\-]*\s*\n(.*?)```", re.DOTALL)
 
 
 # ── FactExtractor ──────────────────────────────────────────
@@ -211,6 +213,13 @@ class FactExtractor:
         resolved_model = llm_kwargs.pop("model", self._model)
         effective_timeout = llm_kwargs.pop("timeout", self._timeout)
 
+        # Structured output is only requested for API-family models; local/
+        # self-hosted models keep multi-stage parsing (no response_format).
+        from core.memory._llm_utils import supports_structured_output
+
+        if supports_structured_output(resolved_model):
+            llm_kwargs.setdefault("response_format", {"type": "json_object"})
+
         messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -273,16 +282,23 @@ class FactExtractor:
             body = fence_match.group(1)
 
         first_exc: Exception | None = None
-        try:
-            data = json.loads(body)
-            return model_cls.model_validate(data)
-        except (json.JSONDecodeError, ValueError) as exc:
-            first_exc = exc
+        for candidate in (body, text):
+            try:
+                data = json.loads(candidate)
+                return model_cls.model_validate(data)
+            except (json.JSONDecodeError, ValueError) as exc:
+                if first_exc is None:
+                    first_exc = exc
 
+        # json_repair fallback for broken-looking JSON (trailing commas, …).
         try:
-            data = json.loads(text)
-            return model_cls.model_validate(data)
-        except (json.JSONDecodeError, ValueError) as exc:
+            from json_repair import repair_json
+
+            repaired = repair_json(body)
+            if repaired is not None:
+                data = json.loads(str(repaired))
+                return model_cls.model_validate(data)
+        except Exception as exc:
             if first_exc is None:
                 first_exc = exc
 

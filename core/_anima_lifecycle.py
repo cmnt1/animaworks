@@ -551,6 +551,33 @@ class LifecycleMixin:
                     credential=consolidation_credential,
                     max_tokens=8192,
                 )
+
+                # Retry once when the chunk came back empty / None so a
+                # transient LLM hiccup doesn't silently drop a time window's
+                # activity from the episode. On a second failure, warn (was
+                # debug) so the gap is traceable.
+                if not raw:
+                    logger.warning(
+                        "[%s] Phase A chunk %d/%d returned empty; retrying once",
+                        self.name,
+                        i + 1,
+                        len(chunks),
+                    )
+                    raw = await one_shot_completion(
+                        ep_prompt,
+                        model=consolidation_model,
+                        credential=consolidation_credential,
+                        max_tokens=8192,
+                    )
+                    if not raw:
+                        logger.warning(
+                            "[%s] Phase A chunk %d/%d still empty after retry; "
+                            "activity for this window will be missing from the episode",
+                            self.name,
+                            i + 1,
+                            len(chunks),
+                        )
+
                 if raw:
                     episode_parts.append(engine._sanitize_llm_output(raw))
                     logger.debug(
