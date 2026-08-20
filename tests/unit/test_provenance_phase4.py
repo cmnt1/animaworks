@@ -42,15 +42,14 @@ class TestIndexerOriginMetadata:
         from core.memory.rag.indexer import MemoryIndexer
 
         mock_store = MagicMock()
-        mock_model = MagicMock()
-        mock_model.encode = MagicMock(return_value=[
-            MagicMock(tolist=MagicMock(return_value=[0.1] * 384))
-        ])
-
-        return MemoryIndexer(
-            mock_store, "test-anima", anima_dir,
-            embedding_model=mock_model,
+        indexer = MemoryIndexer(
+            mock_store,
+            "test-anima",
+            anima_dir,
+            embedding_model=MagicMock(),
         )
+        indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **_kwargs: [[0.1] * 384 for _ in texts])
+        return indexer
 
     def test_extract_metadata_without_origin(self, indexer, anima_dir: Path) -> None:
         """When origin is empty, metadata should not contain 'origin' key."""
@@ -58,7 +57,11 @@ class TestIndexerOriginMetadata:
         test_file.write_text("# Test\n\nSome content here.", encoding="utf-8")
 
         metadata = indexer._extract_metadata(
-            test_file, "Some content", "knowledge", 0, 1,
+            test_file,
+            "Some content",
+            "knowledge",
+            0,
+            1,
         )
         assert "origin" not in metadata
 
@@ -68,7 +71,11 @@ class TestIndexerOriginMetadata:
         test_file.write_text("# Test\n\nSome content here.", encoding="utf-8")
 
         metadata = indexer._extract_metadata(
-            test_file, "Some content", "knowledge", 0, 1,
+            test_file,
+            "Some content",
+            "knowledge",
+            0,
+            1,
             origin="consolidation",
         )
         assert metadata["origin"] == "consolidation"
@@ -78,7 +85,11 @@ class TestIndexerOriginMetadata:
         test_file.write_text("# Episodes\n\nSome episode.", encoding="utf-8")
 
         metadata = indexer._extract_metadata(
-            test_file, "Some episode content", "episodes", 0, 1,
+            test_file,
+            "Some episode content",
+            "episodes",
+            0,
+            1,
             origin="external_platform",
         )
         assert metadata["origin"] == "external_platform"
@@ -124,15 +135,14 @@ class TestIndexerOriginMetadata:
     def test_chunk_by_time_headings_with_origin(self, indexer, anima_dir: Path) -> None:
         """Episode chunking by time headings preserves origin."""
         test_file = anima_dir / "episodes" / "2026-02-28.md"
-        content = (
-            "# 2026-02-28\n\n"
-            "## 10:00 — Morning\n\nDid some work.\n\n"
-            "## 14:00 — Afternoon\n\nMore work.\n"
-        )
+        content = "# 2026-02-28\n\n## 10:00 — Morning\n\nDid some work.\n\n## 14:00 — Afternoon\n\nMore work.\n"
         test_file.write_text(content, encoding="utf-8")
 
         chunks = indexer._chunk_by_time_headings(
-            test_file, content, "episodes", origin="external_platform",
+            test_file,
+            content,
+            "episodes",
+            origin="external_platform",
         )
         for chunk in chunks:
             assert chunk.metadata.get("origin") == "external_platform"
@@ -144,7 +154,10 @@ class TestIndexerOriginMetadata:
         test_file.write_text(content, encoding="utf-8")
 
         chunks = indexer._chunk_whole_file(
-            test_file, content, "procedures", origin="system",
+            test_file,
+            content,
+            "procedures",
+            origin="system",
         )
         assert len(chunks) == 1
         assert chunks[0].metadata.get("origin") == "system"
@@ -225,7 +238,10 @@ class TestRAGSearchOriginProxy:
 
         rag.index_file(test_file, "episodes", origin="external_platform")
         mock_indexer.index_file.assert_called_once_with(
-            test_file, "episodes", force=False, origin="external_platform",
+            test_file,
+            "episodes",
+            force=False,
+            origin="external_platform",
         )
 
     def test_index_file_no_origin(self, tmp_path: Path) -> None:
@@ -241,7 +257,10 @@ class TestRAGSearchOriginProxy:
 
         rag.index_file(test_file, "knowledge")
         mock_indexer.index_file.assert_called_once_with(
-            test_file, "knowledge", force=False, origin="",
+            test_file,
+            "knowledge",
+            force=False,
+            origin="",
         )
 
 
@@ -368,7 +387,9 @@ class TestConsolidationOrigin:
         assert call_kwargs[1]["origin"] == "consolidation"
 
     def test_rebuild_rag_index_knowledge_has_consolidation_origin(
-        self, engine, tmp_path: Path,
+        self,
+        engine,
+        tmp_path: Path,
     ) -> None:
         """_rebuild_rag_index passes origin='consolidation' for knowledge files."""
         test_file = engine.knowledge_dir / "test.md"
@@ -383,7 +404,8 @@ class TestConsolidationOrigin:
 
         # Find the knowledge index_file call
         knowledge_calls = [
-            c for c in mock_indexer.index_file.call_args_list
+            c
+            for c in mock_indexer.index_file.call_args_list
             if c[1].get("memory_type") == "knowledge" or (len(c[0]) > 1 and c[0][1] == "knowledge")
         ]
         assert len(knowledge_calls) >= 1
@@ -426,6 +448,7 @@ class TestInboxEpisodeOrigin:
 
     def test_source_to_origin_mapping_exists(self) -> None:
         from core._anima_inbox import _SOURCE_TO_ORIGIN
+
         assert _SOURCE_TO_ORIGIN["slack"] == ORIGIN_EXTERNAL_PLATFORM
         assert _SOURCE_TO_ORIGIN["chatwork"] == ORIGIN_EXTERNAL_PLATFORM
         assert _SOURCE_TO_ORIGIN["human"] == ORIGIN_HUMAN

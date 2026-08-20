@@ -15,7 +15,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 import pytest
 
 pytest.importorskip("scipy")
@@ -44,18 +43,12 @@ def temp_anima_dir():
 
         org_dir = ckdir / "organization"
         org_dir.mkdir()
-        (org_dir / "structure.md").write_text(
-            "# Organization Structure\n\n## Hierarchy\nFlat org.\n"
-        )
-        (org_dir / "roles.md").write_text(
-            "# Roles\n\n## Engineer\nWrites code.\n"
-        )
+        (org_dir / "structure.md").write_text("# Organization Structure\n\n## Hierarchy\nFlat org.\n")
+        (org_dir / "roles.md").write_text("# Roles\n\n## Engineer\nWrites code.\n")
 
         comm_dir = ckdir / "communication"
         comm_dir.mkdir()
-        (comm_dir / "messaging-guide.md").write_text(
-            "# Messaging Guide\n\n## DM Rules\nMax 2 per run.\n"
-        )
+        (comm_dir / "messaging-guide.md").write_text("# Messaging Guide\n\n## DM Rules\nMax 2 per run.\n")
 
         # skills — nested SKILL.md + extra files that should NOT be indexed
         sdir = anima_dir / "skills"
@@ -120,10 +113,7 @@ def test_index_directory_finds_subdirectory_files(temp_anima_dir):
             "shared",
             temp_anima_dir["base"],
         )
-        indexer.embedding_model = MagicMock()
-        indexer.embedding_model.encode = MagicMock(
-            side_effect=lambda texts, **kw: np.array([[0.1] * 384] * len(texts))
-        )
+        indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
 
         chunks = indexer.index_directory(ckdir, "common_knowledge").chunks_indexed
 
@@ -154,10 +144,7 @@ def test_index_directory_excludes_archive_subtree(temp_anima_dir):
         from core.memory.rag.indexer import MemoryIndexer
 
         indexer = MemoryIndexer(mock_store, "test", temp_anima_dir["anima_dir"])
-        indexer.embedding_model = MagicMock()
-        indexer.embedding_model.encode = MagicMock(
-            side_effect=lambda texts, **kw: np.array([[0.1] * 384] * len(texts))
-        )
+        indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
         index_file = MagicMock(side_effect=indexer.index_file)
         indexer.index_file = index_file
         result = indexer.index_directory(knowledge_dir, "knowledge")
@@ -185,10 +172,7 @@ def test_index_directory_skills_only_skill_md(temp_anima_dir):
             "test",
             temp_anima_dir["anima_dir"],
         )
-        indexer.embedding_model = MagicMock()
-        indexer.embedding_model.encode = MagicMock(
-            side_effect=lambda texts, **kw: np.array([[0.1] * 384] * len(texts))
-        )
+        indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
 
         chunks = indexer.index_directory(sdir, "skills").chunks_indexed
 
@@ -221,10 +205,7 @@ def test_index_directory_common_skills_excludes_templates(temp_anima_dir):
             "shared",
             temp_anima_dir["base"],
         )
-        indexer.embedding_model = MagicMock()
-        indexer.embedding_model.encode = MagicMock(
-            side_effect=lambda texts, **kw: np.array([[0.1] * 384] * len(texts))
-        )
+        indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
 
         chunks = indexer.index_directory(csdir, "common_skills").chunks_indexed
 
@@ -237,9 +218,7 @@ def test_index_directory_common_skills_excludes_templates(temp_anima_dir):
 
     for doc in all_docs:
         sf = doc.metadata.get("source_file", "")
-        assert "template" not in sf.lower(), (
-            f"Template files should not be indexed, got: {sf}"
-        )
+        assert "template" not in sf.lower(), f"Template files should not be indexed, got: {sf}"
 
 
 # ── Test: shared_users indexing ─────────────────────────────────
@@ -262,10 +241,7 @@ def test_index_directory_shared_users_finds_nested(temp_anima_dir):
             "shared",
             shared_base,
         )
-        indexer.embedding_model = MagicMock()
-        indexer.embedding_model.encode = MagicMock(
-            side_effect=lambda texts, **kw: np.array([[0.1] * 384] * len(texts))
-        )
+        indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **kw: [[0.1] * 384 for _ in texts])
 
         chunks = indexer.index_directory(users_dir, "shared_users").chunks_indexed
 
@@ -293,13 +269,13 @@ def test_graph_build_with_subdirectories():
 
         mock_indexer = MagicMock()
         mock_indexer.anima_name = "test"
-        mock_indexer._generate_embeddings = MagicMock(
-            return_value=[[0.1] * 384]
-        )
+        mock_indexer._generate_embeddings = MagicMock(return_value=[[0.1] * 384])
 
         graph_builder = KnowledgeGraph(mock_store, mock_indexer)
         graph = graph_builder.build_graph(
-            "test", kdir, implicit_link_threshold=999.0,
+            "test",
+            kdir,
+            implicit_link_threshold=999.0,
         )
 
         # Both files should be nodes with distinct IDs
@@ -387,7 +363,4 @@ def test_make_node_id_with_subdirectory():
     assert KnowledgeGraph._make_node_id("topic", "knowledge") == "topic"
     assert KnowledgeGraph._make_node_id("org/topic", "knowledge") == "org/topic"
     assert KnowledgeGraph._make_node_id("2026-03-01", "episodes") == "episodes:2026-03-01"
-    assert (
-        KnowledgeGraph._make_node_id("sub/item", "common_knowledge")
-        == "common_knowledge:sub/item"
-    )
+    assert KnowledgeGraph._make_node_id("sub/item", "common_knowledge") == "common_knowledge:sub/item"

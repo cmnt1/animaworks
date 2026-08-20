@@ -5,9 +5,9 @@
 
 from __future__ import annotations
 
+import signal
 from pathlib import Path
-from unittest.mock import patch
-
+from unittest.mock import MagicMock, patch
 
 
 class TestKillOrphanRunners:
@@ -19,25 +19,17 @@ class TestKillOrphanRunners:
 
         data_dir = str(tmp_path / ".animaworks")
         fake_pid = "99999"
-        fake_cmdline = (
-            f"python\x00-m\x00core.supervisor.runner\x00"
-            f"--animas-dir\x00{data_dir}/animas"
-        )
+        fake_cmdline = f"python\x00-m\x00core.supervisor.runner\x00--animas-dir\x00{data_dir}/animas"
 
-        # Create a fake /proc entry
-        proc_dir = tmp_path / "proc" / fake_pid
-        proc_dir.mkdir(parents=True)
-        (proc_dir / "cmdline").write_text(fake_cmdline)
+        with (
+            patch("tests.conftest.subprocess.run", return_value=MagicMock(stdout=fake_pid)),
+            patch.object(Path, "exists", return_value=True),
+            patch.object(Path, "read_text", return_value=fake_cmdline),
+            patch("tests.conftest.os.kill") as mock_kill,
+        ):
+            _kill_orphan_runners(data_dir)
 
-        with patch("tests.conftest.Path", wraps=Path) as mock_path:
-            # Override /proc check to use our fake dir
-            with patch("tests.conftest.os.kill") as mock_kill:
-                # Directly test with real /proc (won't match our fake PID)
-                # Instead test the logic by calling the function
-                _kill_orphan_runners("nonexistent-dir-that-wont-match")
-
-                # Should not have killed anything
-                mock_kill.assert_not_called()
+        mock_kill.assert_called_once_with(int(fake_pid), signal.SIGTERM)
 
     def test_does_not_kill_unrelated_processes(self, tmp_path: Path):
         """Should not touch processes that don't reference our data dir."""

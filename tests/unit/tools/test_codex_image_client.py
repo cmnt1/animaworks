@@ -236,7 +236,8 @@ class TestClientBuilders:
     def test_diffusers_backend_ignores_codex(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("core.tools.image_gen.codex_available", lambda: True)
         cfg = ImageGenConfig(backend="diffusers", prefer_codex=True)
-        from core.tools.image.diffusers_local import LocalDiffusersClient
 
-        assert isinstance(_build_fullbody_client(cfg), LocalDiffusersClient)
-        assert isinstance(_build_reference_client(cfg), LocalDiffusersClient)
+        with patch("core.tools.image_gen.LocalDiffusersClient") as client:
+            assert _build_fullbody_client(cfg) is client.return_value
+            assert _build_reference_client(cfg) is client.return_value
+        assert client.call_count == 2

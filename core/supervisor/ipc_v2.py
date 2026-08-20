@@ -388,6 +388,8 @@ async def read_ipc_v2_envelope(reader: asyncio.StreamReader) -> IPCV2Envelope:
     """Read one bounded JSON Lines envelope and detect EOF explicitly."""
     try:
         payload = await reader.readline()
+    except ConnectionError as exc:
+        raise IPCV2ConnectionError(f"peer disconnected: {exc}") from exc
     except (ValueError, asyncio.LimitOverrunError) as exc:
         raise IPCV2PayloadTooLarge("IPC v2 frame exceeded the reader limit") from exc
     if not payload:
