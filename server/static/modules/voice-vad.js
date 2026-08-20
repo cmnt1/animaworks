@@ -38,6 +38,10 @@ export class VoiceVAD {
   constructor(options = {}) {
     this._onSpeechStart = options.onSpeechStart || (() => {});
     this._onSpeechEnd = options.onSpeechEnd || (() => {});
+    // vad-web fires onVADMisfire *instead of* onSpeechEnd when the utterance
+    // was shorter than minSpeechFrames — without it a noise blip leaves the
+    // caller's recording running forever.
+    this._onMisfire = options.onMisfire || (() => {});
     this._positiveSpeechThreshold = options.positiveSpeechThreshold;
     this._minSpeechFrames = options.minSpeechFrames;
     this._myvad = null;
@@ -67,6 +71,9 @@ export class VoiceVAD {
         },
         onSpeechEnd: (audio) => {
           if (this._active) this._onSpeechEnd(audio);
+        },
+        onVADMisfire: () => {
+          if (this._active) this._onMisfire();
         },
       };
       if (this._positiveSpeechThreshold != null) {

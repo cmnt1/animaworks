@@ -5,6 +5,9 @@ import { VoicePlayback } from './voice-playback.js';
 import { VoiceVAD } from './voice-vad.js';
 import { basePath } from '/shared/base-path.js';
 
+// Hard cap on one continuous recording — matches the server's audio buffer.
+const MAX_RECORD_MS = 60_000;
+
 export class VoiceManager {
   constructor() {
     this._ws = null;
@@ -17,6 +20,7 @@ export class VoiceManager {
     this._audioContext = null;
     this._workletNode = null;
     this._mediaStream = null;
+    this._maxRecordTimer = null;
     this._playback = new VoicePlayback();
     this._playback.onPlaybackEnd = () => {
       this._lastPlaybackEndMs = performance.now();
@@ -187,6 +191,9 @@ export class VoiceManager {
 
       this._recording = true;
       this._startingRecording = false;
+      // Safety net for any missed stop event: the server only keeps 60s of
+      // audio anyway, so force the turn instead of streaming the mic forever.
+      this._maxRecordTimer = setTimeout(() => this.stopRecording(), MAX_RECORD_MS);
       this._emit('recordingStart');
     } catch (err) {
       this._startingRecording = false;
@@ -209,8 +216,31 @@ export class VoiceManager {
     this._emit('recordingStop');
   }
 
+  /**
+   * Abort a recording that a VAD misfire started (blip too short to be speech).
+   * Unlike stopRecording() no speech_end is sent — the server drops the
+   * buffered noise instead of running a turn on it.
+   */
+  discardRecording() {
+    if (this._startingRecording) {
+      this._pendingStop = true;
+      this._emit('recordingStop');
+      return;
+    }
+    if (!this._recording) return;
+    this._stopRecordingInternal();
+    if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+      this._ws.send(JSON.stringify({ type: 'interrupt' }));
+    }
+    this._emit('recordingStop');
+  }
+
   _stopRecordingInternal() {
     this._recording = false;
+    if (this._maxRecordTimer) {
+      clearTimeout(this._maxRecordTimer);
+      this._maxRecordTimer = null;
+    }
     if (this._workletNode) {
       this._workletNode.disconnect();
       this._workletNode = null;
@@ -280,6 +310,7 @@ export class VoiceManager {
         this.startRecording();
       },
       onSpeechEnd: () => this.stopRecording(),
+      onMisfire: () => this.discardRecording(),
     });
     await this._vad.start();
   }
