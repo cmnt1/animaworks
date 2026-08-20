@@ -208,11 +208,20 @@ class TestProactiveGuards:
         assert sess._should_proactive() is False
 
     @pytest.mark.asyncio
-    async def test_incoming_audio_blocks(self) -> None:
+    async def test_recognized_speech_blocks(self) -> None:
+        sess = _make_session(proactive=True)
+        _ready_to_fire(sess)
+        sess._streamer._committed = "こんにちは"
+        assert sess._should_proactive() is False
+
+    @pytest.mark.asyncio
+    async def test_buffered_silence_does_not_block(self) -> None:
+        """An open hands-free mic always has buffered audio — that alone must
+        not veto a self-turn (otherwise proactive speech never fires)."""
         sess = _make_session(proactive=True)
         _ready_to_fire(sess)
         sess._audio_buffer.extend(b"\x00\x01")
-        assert sess._should_proactive() is False
+        assert sess._should_proactive() is True
 
     @pytest.mark.asyncio
     async def test_delegation_jobs_block(self) -> None:
@@ -265,9 +274,14 @@ class TestProactiveEscalation:
         assert sess._should_proactive() is True
 
     @pytest.mark.asyncio
-    async def test_audio_chunk_refreshes_activity(self) -> None:
+    async def test_audio_chunk_refreshes_activity_only_when_speech(self) -> None:
         sess = _make_session(proactive=True)
+        # silence-only chunks (idle hands-free mic) must NOT rewind the timer
         sess._last_activity = time.monotonic() - 1000
+        await sess.handle_audio_chunk(b"\x00\x01")
+        assert time.monotonic() - sess._last_activity > 900
+        # once the streamer has committed recognized speech, they do
+        sess._streamer._committed = "こんにちは"
         await sess.handle_audio_chunk(b"\x00\x01")
         assert time.monotonic() - sess._last_activity < 1.0
 

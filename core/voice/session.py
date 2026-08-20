@@ -415,8 +415,11 @@ class VoiceSession:
             self._audio_buffer.clear()
             logger.warning("Audio buffer overflow (%s), cleared", self._anima_name)
         self._audio_buffer.extend(data)
-        # Any incoming user audio counts as activity — resets the idle timer.
-        self._last_activity = time.monotonic()
+        # Only *recognized speech* counts as activity. A hands-free (VAD) mic
+        # streams silence continuously, so resetting on every raw chunk kept
+        # the idle timer pinned at zero and made proactive speech unreachable.
+        if self._streamer.committed:
+            self._last_activity = time.monotonic()
         if self._streamer.feed(data):
             self._maybe_start_streaming_stt()
 
@@ -859,7 +862,9 @@ class VoiceSession:
             return False
         if self._tts_playing:
             return False
-        if self._streamer.ready() or self._audio_buffer:
+        # Buffered raw audio is *not* a blocker: an open hands-free mic always
+        # has some. Only a pending decode or already-recognized speech is.
+        if self._streamer.ready() or self._streamer.committed or self._streaming_busy:
             return False
         if self._delegation_jobs:
             return False
