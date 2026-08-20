@@ -85,9 +85,7 @@ class SkillIndex:
         self._common_skills_dir = common_skills_dir
         self._procedures_dir = procedures_dir
         self._anima_dir = anima_dir
-        self._external_roots = (
-            list(external_roots) if external_roots is not None else _default_external_roots()
-        )
+        self._external_roots = list(external_roots) if external_roots is not None else _default_external_roots()
         self._enabled_ext: list = []  # list of (ExternalSkillRoot, resolved Path)
         self._external_root_origin: dict[str, int] = {}
         self._cached_index: list[SkillMetadata] | None = None
@@ -274,7 +272,6 @@ class SkillIndex:
                 )
                 _add_metadata(meta)
 
-
         if self._procedures_dir is not None and self._procedures_dir.exists():
             for proc_path in sorted(self._procedures_dir.glob("*.md")):
                 try:
@@ -348,9 +345,7 @@ class SkillIndex:
 
     def _external_priority(self, meta: SkillMetadata) -> int:
         """Return the external-root precedence index for *meta* (larger = lower)."""
-        origin = (meta.source and meta.source.origin) or (
-            str(meta.path.parent) if meta.path is not None else ""
-        )
+        origin = (meta.source and meta.source.origin) or (str(meta.path.parent) if meta.path is not None else "")
         if not origin:
             return len(self._enabled_ext)
         for i, (_root_obj, rdir) in enumerate(self._enabled_ext):
