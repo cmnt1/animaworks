@@ -125,34 +125,97 @@ _RE_EMOJI = re.compile(
 # this list is not an annotation and only garbles the reading, so when
 # keep_emoji=True we keep only these.
 IRODORI_STYLE_EMOJI = (
-    "⏩", "⏱️", "⏸️", "🌬️", "🍭", "🎛️", "🎭", "🎵", "🐢", "🐱", "👂", "👃",
-    "👅", "👌", "👏", "💋", "💥", "💦", "💪", "📄", "📞", "📢", "📣", "📖",
-    "😆", "😊", "😌", "😎", "😏", "😒", "😖", "😟", "😠", "😪", "😭", "😮",
-    "😮‍💨", "😰", "😱", "😲", "😴", "🙄", "🙏", "🤐", "🤔", "🤢", "🤧", "🤭",
-    "🥤", "🥱", "🥴", "🥵", "🥹", "🥺", "🫣", "🫶",
+    "⏩",
+    "⏱️",
+    "⏸️",
+    "🌬️",
+    "🍭",
+    "🎛️",
+    "🎭",
+    "🎵",
+    "🐢",
+    "🐱",
+    "👂",
+    "👃",
+    "👅",
+    "👌",
+    "👏",
+    "💋",
+    "💥",
+    "💦",
+    "💪",
+    "📄",
+    "📞",
+    "📢",
+    "📣",
+    "📖",
+    "😆",
+    "😊",
+    "😌",
+    "😎",
+    "😏",
+    "😒",
+    "😖",
+    "😟",
+    "😠",
+    "😪",
+    "😭",
+    "😮",
+    "😮‍💨",
+    "😰",
+    "😱",
+    "😲",
+    "😴",
+    "🙄",
+    "🙏",
+    "🤐",
+    "🤔",
+    "🤢",
+    "🤧",
+    "🤭",
+    "🥤",
+    "🥱",
+    "🥴",
+    "🥵",
+    "🥹",
+    "🥺",
+    "🫣",
+    "🫶",
 )
-_RE_STYLE_EMOJI = re.compile(
-    "|".join(sorted((re.escape(e) for e in IRODORI_STYLE_EMOJI), key=len, reverse=True))
-)
+_RE_STYLE_EMOJI = re.compile("|".join(sorted((re.escape(e) for e in IRODORI_STYLE_EMOJI), key=len, reverse=True)))
 
 _ONES = ["", "いち", "に", "さん", "よん", "ご", "ろく", "なな", "はち", "きゅう"]
-_HUND = ["", "ひゃく", "にひゃく", "さんびゃく", "よんひゃく", "ごひゃく",
-         "ろっぴゃく", "ななひゃく", "はっぴゃく", "きゅうひゃく"]
-_THOU = ["", "せん", "にせん", "さんぜん", "よんせん", "ごせん",
-         "ろくせん", "ななせん", "はっせん", "きゅうせん"]
+_HUND = [
+    "",
+    "ひゃく",
+    "にひゃく",
+    "さんびゃく",
+    "よんひゃく",
+    "ごひゃく",
+    "ろっぴゃく",
+    "ななひゃく",
+    "はっぴゃく",
+    "きゅうひゃく",
+]
+_THOU = ["", "せん", "にせん", "さんぜん", "よんせん", "ごせん", "ろくせん", "ななせん", "はっせん", "きゅうせん"]
 _KANSUJI = {c: i for i, c in enumerate("〇一二三四五六七八九")}
 
 
 def _year_kana(n: int) -> str:
     """年号を読み仮名に。2003 → にせんさんねん（「二〇〇三年」は誤読するため）"""
     tens = n // 10 % 10
-    return (_THOU[n // 1000] + _HUND[n // 100 % 10]
-            + ("じゅう" if tens == 1 else _ONES[tens] + "じゅう" if tens else "")
-            + _ONES[n % 10] + "ねん")
+    return (
+        _THOU[n // 1000]
+        + _HUND[n // 100 % 10]
+        + ("じゅう" if tens == 1 else _ONES[tens] + "じゅう" if tens else "")
+        + _ONES[n % 10]
+        + "ねん"
+    )
 
 
 def read_years(text: str) -> str:
     """4桁年号をかな化し、漢数字間の「・」を「てん」に変換する。"""
+
     def repl(m: re.Match) -> str:
         raw = m.group(1)
         digits = "".join(str(_KANSUJI[c]) if c in _KANSUJI else c for c in raw)
