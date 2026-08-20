@@ -1,21 +1,16 @@
-/**
- * VoiceManager — Orchestrates voice chat (WebSocket + AudioWorklet + VAD + Playback).
- */
 import { VoicePlayback } from './voice-playback.js';
 import { VoiceVAD } from './voice-vad.js';
+import { acquireVoiceStream } from './voice-mic.js';
 import { basePath } from '/shared/base-path.js';
 
-// Hard cap on one continuous recording — matches the server's audio buffer.
 const MAX_RECORD_MS = 60_000;
-// Speakers keep echoing after the last sample (device latency + room tail);
-// keep the mic shut that long past playback end.
 const ECHO_TAIL_MS = 1200;
 
 export class VoiceManager {
   constructor() {
     this._ws = null;
     this._animaName = null;
-    this._mode = 'ptt'; // 'ptt' or 'vad'
+    this._mode = 'ptt';
     this._recording = false;
     this._connected = false;
     this._startingRecording = false;
@@ -23,6 +18,11 @@ export class VoiceManager {
     this._audioContext = null;
     this._workletNode = null;
     this._mediaStream = null;
+    this._mediaStreamPromise = null;
+    this._aecAll = false;
+    this._heldPcm = [];
+    this._holdPcm = false;
+    this._streamGeneration = 0;
     this._maxRecordTimer = null;
     this._playback = new VoicePlayback();
     this._playback.onPlaybackEnd = () => {
@@ -41,7 +41,7 @@ export class VoiceManager {
     this._reconnectTimer = null;
     this._reconnectAttempts = 0;
     this._maxReconnectAttempts = 5;
-    this._connGen = 0; // connection generation to ignore stale WS events
+    this._connGen = 0;
   }
 
   on(event, fn) {
@@ -102,6 +102,9 @@ export class VoiceManager {
   }
 
   disconnect() {
+    this._streamGeneration++;
+    this._mediaStreamPromise = null;
+    this._pendingStop = true;
     this._stopRecordingInternal();
     if (this._ws) {
       this._ws.close();
@@ -116,6 +119,7 @@ export class VoiceManager {
     this._playback.destroy();
     this._playback = new VoicePlayback();
     this._playback.onPlaybackEnd = () => {
+      this._lastPlaybackEndMs = performance.now();
       if (this._ttsPlaying) {
         this._ttsPlaying = false;
         this._emit('playbackEnd');
@@ -127,12 +131,57 @@ export class VoiceManager {
       this._vad.destroy();
       this._vad = null;
     }
+    this._clearHeldPcm();
+    this._releaseMediaStream();
+  }
+
+  async _ensureMediaStream() {
+    if (this._mediaStream && this._mediaStream.active !== false) return this._mediaStream;
+    const generation = this._streamGeneration;
+    if (!this._mediaStreamPromise) {
+      this._mediaStreamPromise = acquireVoiceStream();
+    }
+    const streamPromise = this._mediaStreamPromise;
+    try {
+      const { stream, aecAll } = await streamPromise;
+      if (generation !== this._streamGeneration || !this._connected) {
+        stream.getTracks().forEach((t) => t.stop());
+        throw new Error('Voice disconnected');
+      }
+      this._aecAll = aecAll;
+      this._mediaStream = stream;
+      return stream;
+    } finally {
+      if (this._mediaStreamPromise === streamPromise) this._mediaStreamPromise = null;
+    }
+  }
+
+  _releaseMediaStream() {
+    if (this._mediaStream) {
+      this._mediaStream.getTracks().forEach((t) => t.stop());
+      this._mediaStream = null;
+    }
+    this._aecAll = false;
+  }
+
+  _clearHeldPcm() {
+    this._heldPcm = [];
+    this._holdPcm = false;
+  }
+
+  _flushHeldPcm() {
+    const chunks = this._heldPcm;
+    this._heldPcm = [];
+    if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+      chunks.forEach((chunk) => this._ws.send(chunk));
+    }
+    this._holdPcm = false;
   }
 
   async startRecording() {
     if (this._recording || this._startingRecording || !this._connected) return;
 
-    if (this._ttsPlaying) {
+    if (this._ttsPlaying && !this._holdPcm) {
       this.interrupt();
     }
 
@@ -140,18 +189,10 @@ export class VoiceManager {
     this._pendingStop = false;
 
     try {
-      this._mediaStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          sampleRate: 48000,
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-        },
-      });
+      const mediaStream = await this._ensureMediaStream();
 
-      if (this._pendingStop) {
-        this._mediaStream.getTracks().forEach((t) => t.stop());
-        this._mediaStream = null;
+      if (this._pendingStop || !this._connected) {
+        if (this._mode !== 'vad') this._releaseMediaStream();
         this._startingRecording = false;
         this._pendingStop = false;
         return;
@@ -168,22 +209,20 @@ export class VoiceManager {
       if (this._pendingStop) {
         this._audioContext.close();
         this._audioContext = null;
-        this._mediaStream.getTracks().forEach((t) => t.stop());
-        this._mediaStream = null;
+        if (this._mode !== 'vad') this._releaseMediaStream();
         this._startingRecording = false;
         this._pendingStop = false;
         return;
       }
 
-      const source = this._audioContext.createMediaStreamSource(this._mediaStream);
+      const source = this._audioContext.createMediaStreamSource(mediaStream);
       this._workletNode = new AudioWorkletNode(this._audioContext, 'voice-pcm-processor', {
         processorOptions: { sampleRate: this._audioContext.sampleRate },
       });
 
       this._workletNode.port.onmessage = (e) => {
-        if (this._ws && this._ws.readyState === WebSocket.OPEN) {
-          this._ws.send(e.data);
-        }
+        if (this._holdPcm) this._heldPcm.push(e.data);
+        else if (this._ws && this._ws.readyState === WebSocket.OPEN) this._ws.send(e.data);
       };
 
       const silentGain = this._audioContext.createGain();
@@ -194,45 +233,51 @@ export class VoiceManager {
 
       this._recording = true;
       this._startingRecording = false;
-      // Safety net for any missed stop event: the server only keeps 60s of
-      // audio anyway, so force the turn instead of streaming the mic forever.
       this._maxRecordTimer = setTimeout(() => this.stopRecording(), MAX_RECORD_MS);
       this._emit('recordingStart');
     } catch (err) {
       this._startingRecording = false;
       this._pendingStop = false;
-      this._emit('error', { message: `Microphone error: ${err.message}` });
+      this._clearHeldPcm();
+      if (this._connected) {
+        this._emit('error', { message: `Microphone error: ${err.message}` });
+      }
     }
   }
 
   stopRecording() {
     if (this._startingRecording) {
       this._pendingStop = true;
+      this._clearHeldPcm();
       this._emit('recordingStop');
       return;
     }
-    if (!this._recording) return;
+    if (!this._recording) {
+      this._clearHeldPcm();
+      return;
+    }
     this._stopRecordingInternal();
+    if (this._mode !== 'vad') this._releaseMediaStream();
     if (this._ws && this._ws.readyState === WebSocket.OPEN) {
       this._ws.send(JSON.stringify({ type: 'speech_end' }));
     }
     this._emit('recordingStop');
   }
 
-  /**
-   * Abort a recording that a VAD misfire started (blip too short to be speech).
-   * Sends neither speech_end (no turn on noise) nor interrupt (that is
-   * barge-in and would kill a reply the anima is streaming) — just tells the
-   * server to drop the buffered noise.
-   */
+  // Abort a VAD noise blip without interrupting the current reply.
   discardRecording() {
     if (this._startingRecording) {
       this._pendingStop = true;
+      this._clearHeldPcm();
       this._emit('recordingStop');
       return;
     }
-    if (!this._recording) return;
+    if (!this._recording) {
+      this._clearHeldPcm();
+      return;
+    }
     this._stopRecordingInternal();
+    if (this._mode !== 'vad') this._releaseMediaStream();
     if (this._ws && this._ws.readyState === WebSocket.OPEN) {
       this._ws.send(JSON.stringify({ type: 'discard_audio' }));
     }
@@ -253,19 +298,15 @@ export class VoiceManager {
       this._audioContext.close();
       this._audioContext = null;
     }
-    if (this._mediaStream) {
-      this._mediaStream.getTracks().forEach((t) => t.stop());
-      this._mediaStream = null;
-    }
+    this._clearHeldPcm();
   }
 
   _outputActive() {
-    return (
-      this._ttsPlaying ||
-      this._playback.isPlaying ||
-      this._playback.queueLength > 0 ||
-      performance.now() - this._lastPlaybackEndMs < ECHO_TAIL_MS
-    );
+    return this._playbackActive() || performance.now() - this._lastPlaybackEndMs < ECHO_TAIL_MS;
+  }
+
+  _playbackActive() {
+    return this._ttsPlaying || this._playback.isPlaying || this._playback.queueLength > 0;
   }
 
   interrupt() {
@@ -289,6 +330,7 @@ export class VoiceManager {
       this._startVAD();
     } else {
       if (this._vad) this._vad.stop();
+      if (!this._recording && !this._startingRecording) this._releaseMediaStream();
     }
     if (this._ws && this._ws.readyState === WebSocket.OPEN) {
       this._ws.send(JSON.stringify({ type: 'config', vad_mode: mode }));
@@ -298,22 +340,73 @@ export class VoiceManager {
 
   async _startVAD() {
     if (this._vad) {
-      await this._vad.start();
+      const vad = this._vad;
+      let started = false;
+      try {
+        started = await vad.start();
+      } catch (err) {
+        if (this._connected && this._mode === 'vad') {
+          this._emit('error', { message: `VAD error: ${err.message}` });
+        }
+      }
+      if (!started && this._vad === vad) {
+        vad.destroy();
+        this._vad = null;
+        if (!this._recording && !this._startingRecording) this._releaseMediaStream();
+      } else if (started && this._vad !== vad) {
+        vad.destroy();
+      } else if (started && (this._mode !== 'vad' || !this._connected)) {
+        vad.stop();
+        if (!this._recording && !this._startingRecording) this._releaseMediaStream();
+      }
       return;
     }
-    this._vad = new VoiceVAD({
-      // Never open the mic while the anima is talking. Even with RTC loopback
-      // AEC the speaker path leaks enough for her own TTS to trip the VAD, so
-      // she interrupts herself and transcribes her own voice. Tap the bustup
-      // to barge in instead (voice-popup binds that to interrupt()).
+    try {
+      await this._ensureMediaStream();
+    } catch (err) {
+      if (this._connected && this._mode === 'vad') {
+        this._emit('error', { message: `Microphone error: ${err.message}` });
+      }
+      return;
+    }
+    if (this._mode !== 'vad') {
+      if (!this._recording && !this._startingRecording) this._releaseMediaStream();
+      return;
+    }
+    const vad = new VoiceVAD({
+      getStream: () => this._ensureMediaStream(),
+      pauseStream: async () => {},
+      resumeStream: () => this._ensureMediaStream(),
       onSpeechStart: () => {
-        if (this._outputActive()) return;
+        if (this._outputActive() && !this._aecAll) return;
+        this._holdPcm = this._playbackActive();
+        this._heldPcm = [];
         this.startRecording();
+      },
+      onSpeechRealStart: () => {
+        if (!this._holdPcm) return;
+        this.interrupt();
+        this._flushHeldPcm();
       },
       onSpeechEnd: () => this.stopRecording(),
       onMisfire: () => this.discardRecording(),
     });
-    await this._vad.start();
+    this._vad = vad;
+    let started = false;
+    try {
+      started = await vad.start();
+    } catch (err) {
+      if (this._connected && this._mode === 'vad') {
+        this._emit('error', { message: `VAD error: ${err.message}` });
+      }
+    }
+    if (!started || this._vad !== vad || this._mode !== 'vad' || !this._connected) {
+      vad.destroy();
+      if (this._vad === vad) {
+        this._vad = null;
+        if (!this._recording && !this._startingRecording) this._releaseMediaStream();
+      }
+    }
   }
 
   _handleMessage(event) {
