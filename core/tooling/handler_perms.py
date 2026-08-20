@@ -305,6 +305,19 @@ class PermissionsMixin:
             ):
                 if shared_dir.exists() and resolved.is_relative_to(shared_dir.resolve()):
                     return None
+            # External skill roots (host ~/.claude/skills etc.) — read-only,
+            # surfaced via the external/<engine>/<name>/SKILL.md pointer.
+            try:
+                from core.config.models import load_config
+
+                for root in load_config().skills.external_roots:
+                    if not getattr(root, "enabled", True):
+                        continue
+                    rdir = Path(root.path).expanduser().resolve()
+                    if rdir.exists() and resolved.is_relative_to(rdir):
+                        return None
+            except Exception:
+                logger.debug("external_roots check skipped", exc_info=True)
 
         # Inter-anima boundary: block access to other anima's directories
         # that were not already allowed by subordinate/descendant/peer rules.
