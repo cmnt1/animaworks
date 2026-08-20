@@ -77,6 +77,42 @@ def _get_blocked_patterns() -> list[tuple[re.Pattern[str], str]]:
     return cache.blocked_patterns if cache.loaded else []
 
 
+def _get_injection_mode() -> str:
+    """Return the active injection mode shared with Mode S.
+
+    Reads ``sdk_bash_injection.mode`` from the ``GlobalPermissionsCache`` so
+    ToolHandler (Mode A/B) and SDK hooks (Mode S) reference the **same**
+    config key (no second ledger).  Defaults to ``log`` when the cache is not
+    loaded to match Mode S's default.
+    """
+    from core.config.global_permissions import GlobalPermissionsCache
+
+    cache = GlobalPermissionsCache.get()
+    if cache.loaded and cache.config is not None:
+        return cache.config.sdk_bash_injection.mode
+    return "log"
+
+
+def _get_injection_pattern_name(command: str) -> str:
+    """Return the name of the first configured injection pattern matching *command*.
+
+    Mirrors ``core.execution._sdk_security._matching_injection_pattern`` so both
+    paths report the same pattern identity.  Returns ``"unknown"`` when no
+    pattern name can be resolved.
+    """
+    from core.config.global_permissions import GlobalPermissionsCache
+
+    cache = GlobalPermissionsCache.get()
+    if cache.loaded and cache.config is not None:
+        for item in cache.config.injection_patterns:
+            try:
+                if re.search(item.pattern, command):
+                    return item.name or item.pattern
+            except re.error:
+                continue
+    return "unknown"
+
+
 _NEEDS_SHELL_RE = re.compile(r"\||\&\&|\|\||>>?|<<?")
 
 _PROTECTED_FILES = frozenset(
