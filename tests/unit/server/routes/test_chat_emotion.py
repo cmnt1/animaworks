@@ -171,3 +171,45 @@ class TestHandleChunkEmotion:
         chunk = {"type": "tool_start", "tool_name": "web", "tool_id": "t1"}
         frame, _ = _handle_chunk(chunk)
         assert "tool_start" in frame
+
+
+# ── 3-route unification (expected same result across all paths) ────
+
+
+class TestEmotionParsingUnified:
+    """The shared parser must be used by all three former implementations so that
+    the missing-close-tag, newline-JSON and normal cases agree across the
+    chat-, messaging- and voice-paths."""
+
+    def _all_emotions(self, text: str) -> list[str]:
+        from core._anima_messaging import _extract_emotion_from_tag
+        from core.voice.front import extract_emotion as voice_extract
+
+        chat_emotion = extract_emotion(text)[1]  # server chat route
+        msg_emotion = _extract_emotion_from_tag(text)[1]  # messaging route
+        voice_emotion = voice_extract(text)  # voice front route
+        return [chat_emotion, msg_emotion, voice_emotion]
+
+    def test_normal_case_consistent(self):
+        vals = self._all_emotions('Hey!\n<!-- emotion: {"emotion": "smile"} -->')
+        assert vals == ["smile", "smile", "smile"]
+
+    def test_missing_close_tag_consistent(self):
+        # No closing '-->' — chat previously failed, voice previously matched.
+        vals = self._all_emotions('Hey!\n<!-- emotion: {"emotion": "laugh"}')
+        assert vals == ["laugh", "laugh", "laugh"]
+
+    def test_newline_json_consistent(self):
+        vals = self._all_emotions(
+            "Hey!\n<!-- emotion: {\n  \"emotion\": \"surprised\"\n} -->"
+        )
+        assert vals == ["surprised", "surprised", "surprised"]
+
+    def test_clean_text_consistent_across_full_parsers(self):
+        from core._anima_messaging import _extract_emotion_from_tag
+
+        text = "Body\n<!-- emotion: { \"emotion\": \"thinking\" } -->"
+        chat_clean, chat_emo = extract_emotion(text)
+        msg_clean, msg_emo = _extract_emotion_from_tag(text)
+        assert chat_clean == msg_clean == "Body"
+        assert chat_emo == msg_emo == "thinking"

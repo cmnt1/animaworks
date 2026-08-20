@@ -16,10 +16,10 @@
 
 ## Output Format
 
-Use the following Markdown format. Separate sections by time period using `## HH:MM-HH:MM Title` headers, with bullet points for events.
+Use the following Markdown format. Separate sections by time period using `## HH:MM — Title` headers, with bullet points for events.
 
 ```
-## HH:MM-HH:MM Section Title
+## HH:MM — Section Title
 
 - HH:MM Event summary
   - Details, results, related information

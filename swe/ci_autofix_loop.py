@@ -368,13 +368,16 @@ Patch:
 
     @staticmethod
     def _review_verdict(output: str) -> str:
+        # Strict full-line match (leading/trailing whitespace only tolerated)
+        # so that a reason sentence containing e.g. "I would APPROVE this if..."
+        # is not misread as an approval verdict.
         for line in output.splitlines():
             verdict = line.strip().upper()
-            if verdict.startswith("APPROVE"):
+            if verdict == "APPROVE":
                 return "APPROVE"
-            if verdict.startswith("NEEDS_CHANGES"):
+            if verdict == "NEEDS_CHANGES":
                 return "NEEDS_CHANGES"
-            if verdict.startswith("REQUEST_CHANGES"):
+            if verdict == "REQUEST_CHANGES":
                 return "REQUEST_CHANGES"
         return ""
 

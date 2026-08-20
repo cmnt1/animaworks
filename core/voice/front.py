@@ -56,21 +56,11 @@ ASK_ANIMA_TOOL: dict[str, Any] = {
     },
 }
 
-# Matches the emotion tag the voice-mode rules require, e.g.
-# ``<!-- emotion: {"emotion": "smile"} -->``.
-_EMOTION_RE = re.compile(r"<!--\s*emotion:\s*\{.*?\"emotion\"\s*:\s*\"([^\"]+)\"")
-
-
 def extract_emotion(full_text: str) -> str:
     """Parse the emotion tag from a front response; default to ``neutral``."""
-    match = _EMOTION_RE.search(full_text or "")
-    if match:
-        from core.schemas import VALID_EMOTIONS
+    from core.emotion_tag import parse_emotion_value
 
-        emotion = match.group(1)
-        if emotion in VALID_EMOTIONS:
-            return emotion
-    return "neutral"
+    return parse_emotion_value(full_text)
 
 
 class VoiceFrontLane:
