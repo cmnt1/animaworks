@@ -53,6 +53,11 @@ PROACTIVE_SYNTHETIC_PROMPT = (
 VOICE_MODE_SUFFIX = (
     "\n\n[voice-mode: 音声会話です。感情が伝わる話し言葉で200文字以内で簡潔に回答してください。"
     "感情を表す絵文字を必ず入れてください（TTSの感情表現の精度が上がります）。"
+    "絵文字はTTSが演技指示として解釈する次の中から選ぶこと: "
+    "😊😆🫶😌🤭😏😎🤔😲😮😟😠🙄😪🥱😖😰😱😭🥺🫣🙏💪💥⏸️🐢⏩👂📢📖。"
+    "これ以外（😃😀😅❤️✨等）は読みを乱すので使わない。"
+    "感情を乗せたい短い文の先頭に同じ絵文字を2〜3個重ねると効果的です。"
+    "大きい数字・年号は読み上げられる形（「三千八百億」等）で書いてください。"
     "Markdown記法（見出し・太字・リスト・コードブロック等）は使わないでください。"
     "調査・実装・資料作成など時間のかかる依頼はその場で実行せず、自分宛てにタスクを作成して、"
     "『タスクに積んでやっておきますね』のように短く返答してください。"
@@ -113,12 +118,94 @@ _RE_EMOJI = re.compile(
     ")+",
 )
 
+# ── Irodori-specific text rules (ported from podcast-note skill) ──
+
+# Emojis Irodori-TTS v4.1-Small interprets as style annotations
+# (irodori_tts/duration.py: ALLOWED_ANNOTATION_EMOJIS). Anything outside
+# this list is not an annotation and only garbles the reading, so when
+# keep_emoji=True we keep only these.
+IRODORI_STYLE_EMOJI = (
+    "⏩", "⏱️", "⏸️", "🌬️", "🍭", "🎛️", "🎭", "🎵", "🐢", "🐱", "👂", "👃",
+    "👅", "👌", "👏", "💋", "💥", "💦", "💪", "📄", "📞", "📢", "📣", "📖",
+    "😆", "😊", "😌", "😎", "😏", "😒", "😖", "😟", "😠", "😪", "😭", "😮",
+    "😮‍💨", "😰", "😱", "😲", "😴", "🙄", "🙏", "🤐", "🤔", "🤢", "🤧", "🤭",
+    "🥤", "🥱", "🥴", "🥵", "🥹", "🥺", "🫣", "🫶",
+)
+_RE_STYLE_EMOJI = re.compile(
+    "|".join(sorted((re.escape(e) for e in IRODORI_STYLE_EMOJI), key=len, reverse=True))
+)
+
+_ONES = ["", "いち", "に", "さん", "よん", "ご", "ろく", "なな", "はち", "きゅう"]
+_HUND = ["", "ひゃく", "にひゃく", "さんびゃく", "よんひゃく", "ごひゃく",
+         "ろっぴゃく", "ななひゃく", "はっぴゃく", "きゅうひゃく"]
+_THOU = ["", "せん", "にせん", "さんぜん", "よんせん", "ごせん",
+         "ろくせん", "ななせん", "はっせん", "きゅうせん"]
+_KANSUJI = {c: i for i, c in enumerate("〇一二三四五六七八九")}
+
+
+def _year_kana(n: int) -> str:
+    """年号を読み仮名に。2003 → にせんさんねん（「二〇〇三年」は誤読するため）"""
+    tens = n // 10 % 10
+    return (_THOU[n // 1000] + _HUND[n // 100 % 10]
+            + ("じゅう" if tens == 1 else _ONES[tens] + "じゅう" if tens else "")
+            + _ONES[n % 10] + "ねん")
+
+
+def read_years(text: str) -> str:
+    """4桁年号をかな化し、漢数字間の「・」を「てん」に変換する。"""
+    def repl(m: re.Match) -> str:
+        raw = m.group(1)
+        digits = "".join(str(_KANSUJI[c]) if c in _KANSUJI else c for c in raw)
+        return _year_kana(int(digits)) if digits.isdigit() else m.group(0)
+
+    text = re.sub(r"([0-9〇一二三四五六七八九]{4})年", repl, text)
+    return re.sub(r"(?<=[〇一二三四五六七八九十百千])・(?=[〇一二三四五六七八九])", "てん", text)
+
+
+# Fleet-global pronunciation dictionary (TSV: 表記<TAB>読み), applied
+# longest-first right before synthesis. Irodori has no furigana input, so
+# this is the only lever against misread proper nouns.
+_YOMI_FILENAME = "voice_yomi.tsv"
+_yomi_cache: list[tuple[str, str]] | None = None
+_yomi_mtime: float = 0.0
+
+
+def load_yomi() -> list[tuple[str, str]]:
+    """Load the yomi dictionary from the data dir, mtime-cached."""
+    global _yomi_cache, _yomi_mtime
+
+    from core.paths import get_data_dir
+
+    path = get_data_dir() / _YOMI_FILENAME
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return []
+    if _yomi_cache is not None and mtime == _yomi_mtime:
+        return _yomi_cache
+    pairs: list[tuple[str, str]] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("#") or "\t" not in line:
+                continue
+            src, dst = line.split("\t", 1)
+            if src.strip():
+                pairs.append((src.strip(), dst.strip()))
+    except OSError:
+        return []
+    _yomi_cache = sorted(pairs, key=lambda p: -len(p[0]))
+    _yomi_mtime = mtime
+    return _yomi_cache
+
 
 def sanitize_for_tts(text: str, *, keep_emoji: bool = False) -> str:
     """Strip Markdown and HTML comments for TTS consumption.
 
     Emoji are stripped by default; pass ``keep_emoji=True`` for engines
-    (Irodori) that read them as emotion cues and speak better with them.
+    (Irodori) that read them as emotion cues and speak better with them
+    (non-allowlist emoji are still removed).  Reading substitutions
+    (yomi dict / year kana) are NOT applied here — the result is fit for
+    subtitle display; run ``apply_reading_rules`` on the TTS-bound copy.
     """
     text = _RE_HTML_COMMENT.sub("", text)
     text = _RE_HTML_COMMENT_OPEN.sub("", text)
@@ -132,9 +219,24 @@ def sanitize_for_tts(text: str, *, keep_emoji: bool = False) -> str:
     text = _RE_MD_LIST_NUMBERED.sub("", text)
     text = _RE_MD_TABLE_PIPE.sub("", text)
     text = _RE_MD_HR.sub("", text)
-    if not keep_emoji:
+    if keep_emoji:
+        # Keep only annotation emojis; anything else garbles the reading.
+        text = _RE_EMOJI.sub(lambda m: "".join(_RE_STYLE_EMOJI.findall(m.group(0))), text)
+    else:
         text = _RE_EMOJI.sub("", text)
     return text.strip()
+
+
+def apply_reading_rules(text: str) -> str:
+    """Apply pronunciation substitutions for Irodori synthesis input.
+
+    Yomi-dict replacement and year kana conversion turn kanji into kana,
+    which reads correctly but looks bad in subtitles — apply this only to
+    the string sent to the TTS engine, never to the display copy.
+    """
+    for src, dst in load_yomi():
+        text = text.replace(src, dst)
+    return read_years(text)
 
 
 def _normalized_rms_from_pcm16(audio_data: bytes) -> float:
@@ -1074,10 +1176,13 @@ class VoiceSession:
         text = sanitize_for_tts(text, keep_emoji=keep_emoji)
         if not text:
             return
+        # Subtitle keeps the original kanji; only the TTS input gets
+        # yomi/kana substitutions (kana-heavy text is hard to read).
+        spoken = apply_reading_rules(text) if keep_emoji else text
         try:
             # text rides along so the client can show a playback-synced subtitle
             await self._ws.send_json({"type": "tts_start", "text": text})
-            async for audio_chunk in self._tts.synthesize(text, self._tts_config):
+            async for audio_chunk in self._tts.synthesize(spoken, self._tts_config):
                 if self._interrupted:
                     break
                 await self._ws.send_bytes(audio_chunk)

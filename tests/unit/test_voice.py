@@ -24,7 +24,6 @@ from core.voice.tts_irodori import IrodoriTTS
 from core.voice.tts_sbv2 import StyleBertVits2TTS
 from core.voice.tts_voicevox import VoicevoxTTS
 
-
 # ── TestSplitSentences ──────────────────────────────────────────
 
 
@@ -297,6 +296,48 @@ class TestSanitizeForTTS:
         text = "普通のテキストです。変わりません。"
         assert sanitize_for_tts(text) == text
 
+    def test_keep_emoji_filters_to_allowlist(self) -> None:
+        from core.voice.session import sanitize_for_tts
+
+        # 😊 is an Irodori annotation emoji, 😃 is not.
+        assert sanitize_for_tts("😊😃こんにちは", keep_emoji=True) == "😊こんにちは"
+        # ZWJ sequence in the allowlist survives intact.
+        assert sanitize_for_tts("😮‍💨ふう", keep_emoji=True) == "😮‍💨ふう"
+
+    def test_keep_emoji_false_strips_all(self) -> None:
+        from core.voice.session import sanitize_for_tts
+
+        assert sanitize_for_tts("😊😃こんにちは") == "こんにちは"
+
+    def test_year_kana_conversion(self) -> None:
+        from core.voice.session import apply_reading_rules, sanitize_for_tts
+
+        assert apply_reading_rules("2003年です") == "にせんさんねんです"
+        assert apply_reading_rules("二〇二六年") == "にせんにじゅうろくねん"
+        # sanitize keeps the display copy readable — no kana conversion.
+        assert sanitize_for_tts("2003年です", keep_emoji=True) == "2003年です"
+
+    def test_yomi_dict_substitution(self, tmp_path, monkeypatch) -> None:
+        import core.voice.session as vs
+
+        (tmp_path / "voice_yomi.tsv").write_text(
+            "# comment\n小鳥遊\tたかなし\nRAG\tラグ\n", encoding="utf-8"
+        )
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        monkeypatch.setattr(vs, "_yomi_cache", None)
+        monkeypatch.setattr(vs, "_yomi_mtime", 0.0)
+        assert vs.apply_reading_rules("小鳥遊さんとRAGの話") == "たかなしさんとラグの話"
+        # Display copy stays untouched.
+        assert vs.sanitize_for_tts("小鳥遊さんとRAGの話", keep_emoji=True) == "小鳥遊さんとRAGの話"
+
+    def test_yomi_dict_missing_is_noop(self, tmp_path, monkeypatch) -> None:
+        import core.voice.session as vs
+
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        monkeypatch.setattr(vs, "_yomi_cache", None)
+        monkeypatch.setattr(vs, "_yomi_mtime", 0.0)
+        assert vs.apply_reading_rules("そのまま") == "そのまま"
+
     def test_combined(self) -> None:
         from core.voice.session import sanitize_for_tts
 
@@ -561,7 +602,7 @@ class TestVoiceConfig:
         assert vc.voicevox.base_url == "http://localhost:50021"
         assert vc.elevenlabs.api_key_env == "ELEVENLABS_API_KEY"
         assert vc.style_bert_vits2.base_url == "http://localhost:5000"
-        assert vc.irodori.base_url == "http://xserverng2:7861"
+        assert vc.irodori.base_url == "http://localhost:7861"
 
     def test_animaworks_config_has_voice(self) -> None:
         config = AnimaWorksConfig()
@@ -705,7 +746,7 @@ class TestTTSSynthesisError:
 class TestIrodoriTTS:
     def test_default_base_url(self) -> None:
         provider = IrodoriTTS(VoiceConfig())
-        assert provider._base_url == "http://xserverng2:7861"
+        assert provider._base_url == "http://localhost:7861"
 
     def test_custom_base_url_from_config(self) -> None:
         vc = VoiceConfig(irodori={"base_url": "http://localhost:9999/"})
@@ -741,7 +782,7 @@ class TestIrodoriTTS:
         assert result == wav
         mock_client.post.assert_awaited_once()
         call_args = mock_client.post.call_args
-        assert call_args.args[0] == "http://xserverng2:7861/voice"
+        assert call_args.args[0] == "http://localhost:7861/voice"
         assert call_args.kwargs["json"] == {
             "text": "こんにちは",
             "voice_id": "v1",
@@ -809,7 +850,7 @@ class TestIrodoriTTS:
             mock_cls.return_value = mock_client
 
             assert await provider.health_check() is True
-            mock_client.get.assert_awaited_once_with("http://xserverng2:7861/health")
+            mock_client.get.assert_awaited_once_with("http://localhost:7861/health")
 
     @pytest.mark.asyncio
     async def test_health_check_connection_error(self) -> None:

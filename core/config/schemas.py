@@ -1013,7 +1013,7 @@ class StyleBertVits2Config(BaseModel):
 class IrodoriConfig(BaseModel):
     """Irodori-TTS HTTP API connection settings."""
 
-    base_url: str = "http://xserverng2:7861"
+    base_url: str = "http://localhost:7861"
 
 
 class VoiceConfig(BaseModel):
