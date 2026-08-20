@@ -166,6 +166,9 @@ def _lookup_shared_credentials(key: str) -> str | None:
     except (json.JSONDecodeError, OSError) as exc:
         logger.warning("Failed to read %s: %s", cred_file, exc)
         return None
+    if not isinstance(data, dict):
+        logger.warning("Failed to read %s: expected a JSON object", cred_file)
+        return None
     val = data.get(key)
     return val if val else None
 

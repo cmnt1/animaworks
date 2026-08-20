@@ -213,6 +213,21 @@ class TestSharedCredentialsJson:
         result = get_credential("chatwork", "chatwork", env_var="CHATWORK_API_TOKEN")
         assert result == "cwt-from-env"
 
+    @pytest.mark.parametrize("content", ["null", "[]", '"token"'])
+    def test_falls_through_when_legacy_json_is_not_object(
+        self, config_dir, monkeypatch, caplog, content
+    ):
+        shared_dir = config_dir / "shared"
+        shared_dir.mkdir(parents=True, exist_ok=True)
+        (shared_dir / "credentials.json").write_text(content, encoding="utf-8")
+        _write_config(config_dir, {})
+        monkeypatch.setenv("CHATWORK_API_TOKEN", "cwt-from-env")
+
+        result = get_credential("chatwork", "chatwork", env_var="CHATWORK_API_TOKEN")
+
+        assert result == "cwt-from-env"
+        assert "expected a JSON object" in caplog.text
+
     def test_no_env_var_skips_shared_lookup(self, config_dir):
         """When env_var is None, shared/credentials.json is not consulted."""
         _write_config(config_dir, {})
