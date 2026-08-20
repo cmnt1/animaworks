@@ -9,7 +9,8 @@ from __future__ import annotations
 
 """AnimaWorks Google Calendar tool -- direct Calendar API access.
 
-Provides calendar event listing and event creation via Google Calendar API.
+Provides calendar event listing, creation, retrieval, update (move/edit) and
+deletion via Google Calendar API.
 Uses the same OAuth2 credential pattern as the Gmail tool.
 """
 
@@ -29,9 +30,12 @@ logger = logging.getLogger(__name__)
 EXECUTION_PROFILE: dict[str, dict[str, object]] = {
     "list": {"expected_seconds": 10, "background_eligible": False},
     "add": {"expected_seconds": 10, "background_eligible": False},
+    "get": {"expected_seconds": 10, "background_eligible": False},
+    "update": {"expected_seconds": 10, "background_eligible": False},
+    "delete": {"expected_seconds": 10, "background_eligible": False},
 }
 
-TOOL_DESCRIPTION = "Google Calendar event listing and creation"
+TOOL_DESCRIPTION = "Google Calendar event listing, creation, update and deletion"
 
 # Calendar API scopes
 SCOPES = [
@@ -216,6 +220,134 @@ class GoogleCalendarClient:
             "status": created.get("status", ""),
         }
 
+    def get_event(self, *, event_id: str, calendar_id: str = "primary") -> dict[str, Any]:
+        """Fetch a single event with the fields needed before editing/deleting it."""
+        service = self._build_service()
+        item = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+        return {
+            "id": item.get("id", ""),
+            "summary": item.get("summary", ""),
+            "start": item.get("start", {}),
+            "end": item.get("end", {}),
+            "location": item.get("location", ""),
+            "description": (item.get("description") or "")[:500],
+            "status": item.get("status", ""),
+            "htmlLink": item.get("htmlLink", ""),
+            "organizer": item.get("organizer", {}),
+            "creator": item.get("creator", {}),
+            "attendees": item.get("attendees", []),
+            "recurringEventId": item.get("recurringEventId", ""),
+            "recurrence": item.get("recurrence", []),
+            "eventType": item.get("eventType", ""),
+        }
+
+    def update_event(
+        self,
+        *,
+        event_id: str,
+        calendar_id: str = "primary",
+        summary: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+        description: str | None = None,
+        location: str | None = None,
+        send_updates: str = "none",
+    ) -> dict[str, Any]:
+        """Patch an existing event (move dates/times, rename, edit fields).
+
+        Only the supplied fields are changed. `start`/`end` accept ISO8601
+        datetimes or YYYY-MM-DD for all-day events; when one of them is given
+        the other must be given too, so the event never ends before it starts.
+
+        Args:
+            event_id: Target event ID (from `list`).
+            calendar_id: Calendar ID holding the event.
+            summary: New title.
+            start: New start (ISO8601 or YYYY-MM-DD).
+            end: New end (ISO8601 or YYYY-MM-DD).
+            description: New description.
+            location: New location.
+            send_updates: "none" | "all" | "externalOnly" -- guest notification.
+        """
+        if not event_id:
+            raise ValueError("event_id is required")
+        if (start is None) != (end is None):
+            raise ValueError("start and end must be supplied together")
+
+        service = self._build_service()
+        body: dict[str, Any] = {}
+
+        if summary is not None:
+            body["summary"] = summary
+        if description is not None:
+            body["description"] = description
+        if location is not None:
+            body["location"] = location
+        if start is not None and end is not None:
+            body["start"] = {"date": start} if len(start) <= 10 else {"dateTime": start}
+            body["end"] = {"date": end} if len(end) <= 10 else {"dateTime": end}
+
+        if not body:
+            raise ValueError("nothing to update: supply at least one field")
+
+        updated = (
+            service.events()
+            .patch(
+                calendarId=calendar_id,
+                eventId=event_id,
+                body=body,
+                sendUpdates=send_updates,
+            )
+            .execute()
+        )
+
+        return {
+            "id": updated.get("id", ""),
+            "summary": updated.get("summary", ""),
+            "htmlLink": updated.get("htmlLink", ""),
+            "start": updated.get("start", {}),
+            "end": updated.get("end", {}),
+            "status": updated.get("status", ""),
+        }
+
+    def delete_event(
+        self,
+        *,
+        event_id: str,
+        calendar_id: str = "primary",
+        send_updates: str = "none",
+    ) -> dict[str, Any]:
+        """Delete an event. Irreversible from this tool -- confirm before calling.
+
+        For a single occurrence of a recurring series, pass the instance ID
+        returned by `list` (`<eventId>_<UTC timestamp>`).
+        """
+        if not event_id:
+            raise ValueError("event_id is required")
+
+        service = self._build_service()
+
+        # Capture identifying data first so the caller has an audit trail.
+        try:
+            snapshot = self.get_event(event_id=event_id, calendar_id=calendar_id)
+        except Exception:  # pragma: no cover - best effort audit only
+            snapshot = {"id": event_id}
+
+        service.events().delete(
+            calendarId=calendar_id,
+            eventId=event_id,
+            sendUpdates=send_updates,
+        ).execute()
+
+        return {
+            "deleted": True,
+            "id": event_id,
+            "calendar_id": calendar_id,
+            "summary": snapshot.get("summary", ""),
+            "start": snapshot.get("start", {}),
+            "end": snapshot.get("end", {}),
+        }
+
 
 # ── Tool schemas (empty — use skill-based documentation) ──
 
@@ -261,6 +393,48 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
             attendees=raw_attendees,
         )
 
+    if name == "google_calendar_get":
+        event_id = _args.get("event_id", "")
+        if not event_id:
+            return {"error": "event_id is required"}
+        return client.get_event(
+            event_id=event_id,
+            calendar_id=_args.get("calendar_id", "primary"),
+        )
+
+    if name == "google_calendar_update":
+        event_id = _args.get("event_id", "")
+        if not event_id:
+            return {"error": "event_id is required"}
+        try:
+            return client.update_event(
+                event_id=event_id,
+                calendar_id=_args.get("calendar_id", "primary"),
+                summary=_args.get("summary"),
+                start=_args.get("start"),
+                end=_args.get("end"),
+                description=_args.get("description"),
+                location=_args.get("location"),
+                send_updates=_args.get("send_updates", "none"),
+            )
+        except ValueError as e:
+            return {"error": str(e)}
+
+    if name == "google_calendar_delete":
+        event_id = _args.get("event_id", "")
+        if not event_id:
+            return {"error": "event_id is required"}
+        if not _args.get("confirm"):
+            return {"error": "delete requires confirm=true"}
+        try:
+            return client.delete_event(
+                event_id=event_id,
+                calendar_id=_args.get("calendar_id", "primary"),
+                send_updates=_args.get("send_updates", "none"),
+            )
+        except ValueError as e:
+            return {"error": str(e)}
+
     return {"error": f"Unknown action: {name}"}
 
 
@@ -292,6 +466,46 @@ def cli_main(argv: list[str] | None = None) -> None:
     p_add.add_argument("--calendar-id", default="primary", help="Calendar ID")
     p_add.add_argument("--attendees", nargs="*", help="Attendee email addresses")
     p_add.add_argument("-j", "--json", action="store_true", help="JSON output")
+
+    # get
+    p_get = subparsers.add_parser("get", help="Show one event in detail")
+    p_get.add_argument("event_id", help="Event ID (from list)")
+    p_get.add_argument("--calendar-id", default="primary", help="Calendar ID")
+    p_get.add_argument("-j", "--json", action="store_true", help="JSON output")
+
+    # update
+    p_upd = subparsers.add_parser("update", help="Update (move/edit) an existing event")
+    p_upd.add_argument("event_id", help="Event ID (from list)")
+    p_upd.add_argument("--calendar-id", default="primary", help="Calendar ID")
+    p_upd.add_argument("--summary", default=None, help="New title")
+    p_upd.add_argument("--start", default=None, help="New start (ISO8601 or YYYY-MM-DD)")
+    p_upd.add_argument("--end", default=None, help="New end (ISO8601 or YYYY-MM-DD)")
+    p_upd.add_argument("--description", default=None, help="New description")
+    p_upd.add_argument("--location", default=None, help="New location")
+    p_upd.add_argument(
+        "--send-updates",
+        default="none",
+        choices=["none", "all", "externalOnly"],
+        help="Notify guests (default: none)",
+    )
+    p_upd.add_argument("-j", "--json", action="store_true", help="JSON output")
+
+    # delete
+    p_del = subparsers.add_parser("delete", help="Delete an event (irreversible)")
+    p_del.add_argument("event_id", help="Event ID (from list)")
+    p_del.add_argument("--calendar-id", default="primary", help="Calendar ID")
+    p_del.add_argument(
+        "--yes",
+        action="store_true",
+        help="Required confirmation flag; without it nothing is deleted",
+    )
+    p_del.add_argument(
+        "--send-updates",
+        default="none",
+        choices=["none", "all", "externalOnly"],
+        help="Notify guests (default: none)",
+    )
+    p_del.add_argument("-j", "--json", action="store_true", help="JSON output")
 
     args = parser.parse_args(argv)
     client = GoogleCalendarClient()
@@ -330,6 +544,72 @@ def cli_main(argv: list[str] | None = None) -> None:
                 print(json.dumps(result, ensure_ascii=False, indent=2))
             else:
                 print(f"Created: {result.get('summary', '')} ({result.get('htmlLink', '')})")
+
+        elif args.command == "get":
+            result = client.get_event(
+                event_id=args.event_id,
+                calendar_id=args.calendar_id,
+            )
+            if getattr(args, "json", False):
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                start = result.get("start", {})
+                end = result.get("end", {})
+                print(f"{result.get('summary', '')}")
+                print(f"  id       : {result.get('id', '')}")
+                print(f"  start    : {start.get('dateTime') or start.get('date', '')}")
+                print(f"  end      : {end.get('dateTime') or end.get('date', '')}")
+                print(f"  status   : {result.get('status', '')}")
+                print(f"  organizer: {result.get('organizer', {}).get('email', '')}")
+                if result.get("recurringEventId"):
+                    print(f"  series   : {result.get('recurringEventId')}")
+                if result.get("attendees"):
+                    for a in result["attendees"]:
+                        print(f"  attendee : {a.get('email', '')} ({a.get('responseStatus', '')})")
+
+        elif args.command == "update":
+            result = client.update_event(
+                event_id=args.event_id,
+                calendar_id=args.calendar_id,
+                summary=args.summary,
+                start=args.start,
+                end=args.end,
+                description=args.description,
+                location=args.location,
+                send_updates=args.send_updates,
+            )
+            if getattr(args, "json", False):
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                start = result.get("start", {})
+                end = result.get("end", {})
+                print(
+                    f"Updated: {result.get('summary', '')} "
+                    f"{start.get('dateTime') or start.get('date', '')} -> "
+                    f"{end.get('dateTime') or end.get('date', '')}"
+                )
+
+        elif args.command == "delete":
+            if not args.yes:
+                print(
+                    "Refused: deletion is irreversible. Re-run with --yes to confirm.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+            result = client.delete_event(
+                event_id=args.event_id,
+                calendar_id=args.calendar_id,
+                send_updates=args.send_updates,
+            )
+            if getattr(args, "json", False):
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                start = result.get("start", {})
+                print(
+                    f"Deleted: {result.get('summary', '')} "
+                    f"({start.get('dateTime') or start.get('date', '')}) "
+                    f"id={result.get('id', '')}"
+                )
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
