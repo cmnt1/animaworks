@@ -23,14 +23,39 @@ class VoicePlayback {
 const vadStub = `
 class VoiceVAD {
   constructor(options) { this.options = options; }
-  async start() { return true; }
+  async start() { return globalThis.__vadStartResult ?? true; }
   stop() {}
   destroy() {}
+}`;
+
+const micStub = `
+async function acquireVoiceStream() {
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: { exact: 'all' } },
+    });
+  } catch (err) {
+    if (err?.name !== 'OverconstrainedError') throw err;
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true },
+    });
+    return { stream, aecAll: false };
+  }
+  if (stream.getAudioTracks()[0]?.getSettings().echoCancellation === 'all') {
+    return { stream, aecAll: true };
+  }
+  stream.getTracks().forEach((track) => track.stop());
+  stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true },
+  });
+  return { stream, aecAll: false };
 }`;
 
 const moduleSource = voiceSource
   .replace("import { VoicePlayback } from './voice-playback.js';", playbackStub)
   .replace("import { VoiceVAD } from './voice-vad.js';", vadStub)
+  .replace("import { acquireVoiceStream } from './voice-mic.js';", micStub)
   .replace("import { basePath } from '/shared/base-path.js';", "const basePath = '';")
   .replace("new URL('./voice-worklet.js', import.meta.url)", "'voice-worklet.js'");
 
@@ -133,6 +158,7 @@ function newManager() {
 }
 
 beforeEach(() => {
+  setGlobal('__vadStartResult', true);
   FakeAudioContext.instances = [];
   setGlobal('AudioContext', FakeAudioContext);
   setGlobal('AudioWorkletNode', FakeAudioWorkletNode);
@@ -212,7 +238,26 @@ describe('VoiceManager native AEC', () => {
     assert.equal(FakeAudioContext.instances.at(-1).sources[0], stream);
   });
 
-  it('allows barge-in with all AEC and keeps fallback mode half-duplex', async () => {
+  it('shares one pending microphone request between concurrent callers', async () => {
+    const stream = new FakeStream({ echoCancellation: 'all' });
+    let resolveRequest;
+    let calls = 0;
+    const pending = new Promise((resolve) => { resolveRequest = resolve; });
+    navigator.mediaDevices.getUserMedia = async () => {
+      calls += 1;
+      await pending;
+      return stream;
+    };
+    const manager = newManager();
+
+    const first = manager._ensureMediaStream();
+    const second = manager._ensureMediaStream();
+    assert.equal(calls, 1);
+    resolveRequest();
+    assert.deepEqual(await Promise.all([first, second]), [stream, stream]);
+  });
+
+  it('holds TTS-time PCM until real speech, then interrupts before flushing it', async () => {
     const allStream = new FakeStream({ echoCancellation: 'all' });
     navigator.mediaDevices.getUserMedia = async () => allStream;
     const allManager = newManager();
@@ -221,9 +266,32 @@ describe('VoiceManager native AEC', () => {
     allManager._ttsPlaying = true;
     allManager._vad.options.onSpeechStart();
     await new Promise((resolve) => setImmediate(resolve));
-    assert.deepEqual(allManager._ws.sent, [JSON.stringify({ type: 'interrupt' })]);
+    const pcm = new ArrayBuffer(4);
+    allManager._workletNode.port.onmessage({ data: pcm });
+    assert.deepEqual(allManager._ws.sent, []);
     assert.equal(allManager.isRecording, true);
+    allManager._vad.options.onSpeechRealStart();
+    assert.deepEqual(allManager._ws.sent, [JSON.stringify({ type: 'interrupt' }), pcm]);
+    assert.equal(allManager._holdPcm, false);
+  });
 
+  it('discards TTS-time PCM on VAD misfire without interrupting', async () => {
+    const stream = new FakeStream({ echoCancellation: 'all' });
+    navigator.mediaDevices.getUserMedia = async () => stream;
+    const manager = newManager();
+    manager._mode = 'vad';
+    await manager._startVAD();
+    manager._ttsPlaying = true;
+    manager._vad.options.onSpeechStart();
+    await new Promise((resolve) => setImmediate(resolve));
+    manager._workletNode.port.onmessage({ data: new ArrayBuffer(2) });
+    manager._vad.options.onMisfire();
+    assert.deepEqual(manager._ws.sent, [JSON.stringify({ type: 'discard_audio' })]);
+    assert.equal(manager._heldPcm.length, 0);
+    assert.equal(manager._holdPcm, false);
+  });
+
+  it('keeps fallback mode half-duplex', async () => {
     const fallbackStream = new FakeStream({ echoCancellation: true });
     navigator.mediaDevices.getUserMedia = async () => fallbackStream;
     const fallbackManager = newManager();
@@ -234,6 +302,19 @@ describe('VoiceManager native AEC', () => {
     await new Promise((resolve) => setImmediate(resolve));
     assert.deepEqual(fallbackManager._ws.sent, []);
     assert.equal(fallbackManager.isRecording, false);
+  });
+
+  it('releases the stream when VAD initialization returns false', async () => {
+    const stream = new FakeStream({ echoCancellation: 'all' });
+    navigator.mediaDevices.getUserMedia = async () => stream;
+    setGlobal('__vadStartResult', false);
+    const manager = newManager();
+    manager._mode = 'vad';
+    await manager._startVAD();
+
+    assert.equal(manager._vad, null);
+    assert.equal(manager._mediaStream, null);
+    assert.equal(stream.track.stopped, true);
   });
 
   it('releases the microphone track when push-to-talk recording ends', async () => {

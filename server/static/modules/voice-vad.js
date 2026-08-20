@@ -37,6 +37,7 @@ async function _ensureScripts() {
 export class VoiceVAD {
   constructor(options = {}) {
     this._onSpeechStart = options.onSpeechStart || (() => {});
+    this._onSpeechRealStart = options.onSpeechRealStart || (() => {});
     this._onSpeechEnd = options.onSpeechEnd || (() => {});
     // vad-web fires onVADMisfire *instead of* onSpeechEnd when the utterance
     // was shorter than minSpeechFrames — without it a noise blip leaves the
@@ -71,6 +72,9 @@ export class VoiceVAD {
         baseAssetPath: _VAD_CDN,
         onSpeechStart: () => {
           if (this._active) this._onSpeechStart();
+        },
+        onSpeechRealStart: () => {
+          if (this._active) this._onSpeechRealStart();
         },
         onSpeechEnd: (audio) => {
           if (this._active) this._onSpeechEnd(audio);

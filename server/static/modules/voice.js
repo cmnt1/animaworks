@@ -1,21 +1,16 @@
-/**
- * VoiceManager — Orchestrates voice chat (WebSocket + AudioWorklet + VAD + Playback).
- */
 import { VoicePlayback } from './voice-playback.js';
 import { VoiceVAD } from './voice-vad.js';
+import { acquireVoiceStream } from './voice-mic.js';
 import { basePath } from '/shared/base-path.js';
 
-// Hard cap on one continuous recording — matches the server's audio buffer.
 const MAX_RECORD_MS = 60_000;
-// Speakers keep echoing after the last sample (device latency + room tail);
-// In the boolean-AEC fallback, keep VAD shut that long past playback end.
 const ECHO_TAIL_MS = 1200;
 
 export class VoiceManager {
   constructor() {
     this._ws = null;
     this._animaName = null;
-    this._mode = 'ptt'; // 'ptt' or 'vad'
+    this._mode = 'ptt';
     this._recording = false;
     this._connected = false;
     this._startingRecording = false;
@@ -23,7 +18,11 @@ export class VoiceManager {
     this._audioContext = null;
     this._workletNode = null;
     this._mediaStream = null;
+    this._mediaStreamPromise = null;
     this._aecAll = false;
+    this._heldPcm = [];
+    this._holdPcm = false;
+    this._streamGeneration = 0;
     this._maxRecordTimer = null;
     this._playback = new VoicePlayback();
     this._playback.onPlaybackEnd = () => {
@@ -42,7 +41,7 @@ export class VoiceManager {
     this._reconnectTimer = null;
     this._reconnectAttempts = 0;
     this._maxReconnectAttempts = 5;
-    this._connGen = 0; // connection generation to ignore stale WS events
+    this._connGen = 0;
   }
 
   on(event, fn) {
@@ -103,6 +102,8 @@ export class VoiceManager {
   }
 
   disconnect() {
+    this._streamGeneration++;
+    this._mediaStreamPromise = null;
     this._pendingStop = true;
     this._stopRecordingInternal();
     if (this._ws) {
@@ -118,6 +119,7 @@ export class VoiceManager {
     this._playback.destroy();
     this._playback = new VoicePlayback();
     this._playback.onPlaybackEnd = () => {
+      this._lastPlaybackEndMs = performance.now();
       if (this._ttsPlaying) {
         this._ttsPlaying = false;
         this._emit('playbackEnd');
@@ -129,62 +131,29 @@ export class VoiceManager {
       this._vad.destroy();
       this._vad = null;
     }
+    this._clearHeldPcm();
     this._releaseMediaStream();
-  }
-
-  _isEchoAllUnsupported(err) {
-    return (
-      (err?.name === 'OverconstrainedError' &&
-        (!err.constraint || err.constraint === 'echoCancellation')) ||
-      (err?.name === 'TypeError' && /echoCancellation|constraint/i.test(err?.message || ''))
-    );
-  }
-
-  async _acquireMediaStream() {
-    const common = {
-      sampleRate: 48000,
-      channelCount: 1,
-      noiseSuppression: true,
-      autoGainControl: true,
-    };
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { ...common, echoCancellation: { exact: 'all' } },
-      });
-    } catch (err) {
-      if (!this._isEchoAllUnsupported(err)) throw err;
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { ...common, echoCancellation: true },
-      });
-      this._aecAll = false;
-      return stream;
-    }
-
-    const track = stream.getAudioTracks()[0];
-    if (track?.getSettings().echoCancellation === 'all') {
-      this._aecAll = true;
-      return stream;
-    }
-
-    stream.getTracks().forEach((t) => t.stop());
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { ...common, echoCancellation: true },
-    });
-    this._aecAll = false;
-    return stream;
   }
 
   async _ensureMediaStream() {
     if (this._mediaStream && this._mediaStream.active !== false) return this._mediaStream;
-    const generation = this._connGen;
-    const stream = await this._acquireMediaStream();
-    if (generation !== this._connGen || !this._connected) {
-      stream.getTracks().forEach((t) => t.stop());
-      throw new Error('Voice disconnected');
+    const generation = this._streamGeneration;
+    if (!this._mediaStreamPromise) {
+      this._mediaStreamPromise = acquireVoiceStream();
     }
-    this._mediaStream = stream;
-    return stream;
+    const streamPromise = this._mediaStreamPromise;
+    try {
+      const { stream, aecAll } = await streamPromise;
+      if (generation !== this._streamGeneration || !this._connected) {
+        stream.getTracks().forEach((t) => t.stop());
+        throw new Error('Voice disconnected');
+      }
+      this._aecAll = aecAll;
+      this._mediaStream = stream;
+      return stream;
+    } finally {
+      if (this._mediaStreamPromise === streamPromise) this._mediaStreamPromise = null;
+    }
   }
 
   _releaseMediaStream() {
@@ -195,10 +164,24 @@ export class VoiceManager {
     this._aecAll = false;
   }
 
+  _clearHeldPcm() {
+    this._heldPcm = [];
+    this._holdPcm = false;
+  }
+
+  _flushHeldPcm() {
+    const chunks = this._heldPcm;
+    this._heldPcm = [];
+    if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+      chunks.forEach((chunk) => this._ws.send(chunk));
+    }
+    this._holdPcm = false;
+  }
+
   async startRecording() {
     if (this._recording || this._startingRecording || !this._connected) return;
 
-    if (this._ttsPlaying) {
+    if (this._ttsPlaying && !this._holdPcm) {
       this.interrupt();
     }
 
@@ -238,9 +221,8 @@ export class VoiceManager {
       });
 
       this._workletNode.port.onmessage = (e) => {
-        if (this._ws && this._ws.readyState === WebSocket.OPEN) {
-          this._ws.send(e.data);
-        }
+        if (this._holdPcm) this._heldPcm.push(e.data);
+        else if (this._ws && this._ws.readyState === WebSocket.OPEN) this._ws.send(e.data);
       };
 
       const silentGain = this._audioContext.createGain();
@@ -251,13 +233,12 @@ export class VoiceManager {
 
       this._recording = true;
       this._startingRecording = false;
-      // Safety net for any missed stop event: the server only keeps 60s of
-      // audio anyway, so force the turn instead of streaming the mic forever.
       this._maxRecordTimer = setTimeout(() => this.stopRecording(), MAX_RECORD_MS);
       this._emit('recordingStart');
     } catch (err) {
       this._startingRecording = false;
       this._pendingStop = false;
+      this._clearHeldPcm();
       if (this._connected) {
         this._emit('error', { message: `Microphone error: ${err.message}` });
       }
@@ -267,10 +248,14 @@ export class VoiceManager {
   stopRecording() {
     if (this._startingRecording) {
       this._pendingStop = true;
+      this._clearHeldPcm();
       this._emit('recordingStop');
       return;
     }
-    if (!this._recording) return;
+    if (!this._recording) {
+      this._clearHeldPcm();
+      return;
+    }
     this._stopRecordingInternal();
     if (this._mode !== 'vad') this._releaseMediaStream();
     if (this._ws && this._ws.readyState === WebSocket.OPEN) {
@@ -288,10 +273,14 @@ export class VoiceManager {
   discardRecording() {
     if (this._startingRecording) {
       this._pendingStop = true;
+      this._clearHeldPcm();
       this._emit('recordingStop');
       return;
     }
-    if (!this._recording) return;
+    if (!this._recording) {
+      this._clearHeldPcm();
+      return;
+    }
     this._stopRecordingInternal();
     if (this._mode !== 'vad') this._releaseMediaStream();
     if (this._ws && this._ws.readyState === WebSocket.OPEN) {
@@ -314,15 +303,15 @@ export class VoiceManager {
       this._audioContext.close();
       this._audioContext = null;
     }
+    this._clearHeldPcm();
   }
 
   _outputActive() {
-    return (
-      this._ttsPlaying ||
-      this._playback.isPlaying ||
-      this._playback.queueLength > 0 ||
-      performance.now() - this._lastPlaybackEndMs < ECHO_TAIL_MS
-    );
+    return this._playbackActive() || performance.now() - this._lastPlaybackEndMs < ECHO_TAIL_MS;
+  }
+
+  _playbackActive() {
+    return this._ttsPlaying || this._playback.isPlaying || this._playback.queueLength > 0;
   }
 
   interrupt() {
@@ -356,7 +345,20 @@ export class VoiceManager {
 
   async _startVAD() {
     if (this._vad) {
-      await this._vad.start();
+      const vad = this._vad;
+      let started = false;
+      try {
+        started = await vad.start();
+      } catch (err) {
+        if (this._connected && this._mode === 'vad') {
+          this._emit('error', { message: `VAD error: ${err.message}` });
+        }
+      }
+      if (!started && this._vad === vad) {
+        vad.destroy();
+        this._vad = null;
+        if (!this._recording && !this._startingRecording) this._releaseMediaStream();
+      }
       return;
     }
     try {
@@ -377,18 +379,33 @@ export class VoiceManager {
       resumeStream: () => this._ensureMediaStream(),
       onSpeechStart: () => {
         if (this._outputActive() && !this._aecAll) return;
-        if (this._outputActive()) this.interrupt();
+        this._holdPcm = this._playbackActive();
+        this._heldPcm = [];
         this.startRecording();
+      },
+      onSpeechRealStart: () => {
+        if (!this._holdPcm) return;
+        this.interrupt();
+        this._flushHeldPcm();
       },
       onSpeechEnd: () => this.stopRecording(),
       onMisfire: () => this.discardRecording(),
     });
     this._vad = vad;
-    await vad.start();
-    if (this._vad !== vad || this._mode !== 'vad' || !this._connected) {
+    let started = false;
+    try {
+      started = await vad.start();
+    } catch (err) {
+      if (this._connected && this._mode === 'vad') {
+        this._emit('error', { message: `VAD error: ${err.message}` });
+      }
+    }
+    if (!started || this._vad !== vad || this._mode !== 'vad' || !this._connected) {
       vad.destroy();
-      if (this._vad === vad) this._vad = null;
-      this._releaseMediaStream();
+      if (this._vad === vad) {
+        this._vad = null;
+        if (!this._recording && !this._startingRecording) this._releaseMediaStream();
+      }
     }
   }
 

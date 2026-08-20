@@ -179,11 +179,16 @@ const vadSource = stripImports(
   readFileSync(resolve(ROOT, "server/static/modules/voice-vad.js"), "utf8"),
 );
 const vadUrl = toDataUrl(vadSource, "voice-vad-e2e");
+const micSource = stripImports(
+  readFileSync(resolve(ROOT, "server/static/modules/voice-mic.js"), "utf8"),
+);
+const micUrl = toDataUrl(micSource, "voice-mic-e2e");
 const voiceSource = stripImports(
   readFileSync(resolve(ROOT, "server/static/modules/voice.js"), "utf8"),
 );
 const voiceUrl = toDataUrl(
   `import { VoiceVAD } from "${vadUrl}";
+import { acquireVoiceStream } from "${micUrl}";
 const basePath = "";
 const VoicePlayback = globalThis.__VoicePlayback;
 ${voiceSource}`,
@@ -258,12 +263,18 @@ describe("voice AEC integration", () => {
 
     assert.deepEqual(
       socket.sent.map((value) => JSON.parse(value)),
+      [{ type: "config", vad_mode: "vad" }],
+    );
+    assert.strictEqual(globalThis.__aecAudioSources[0], stream);
+
+    options.onSpeechRealStart();
+    assert.deepEqual(
+      socket.sent.map((value) => JSON.parse(value)),
       [
         { type: "config", vad_mode: "vad" },
         { type: "interrupt" },
       ],
     );
-    assert.strictEqual(globalThis.__aecAudioSources[0], stream);
 
     manager.disconnect();
     assert.equal(stream.track.stopped, true);
@@ -280,6 +291,7 @@ describe("voice AEC integration", () => {
     assert.equal(manager._aecAll, false);
     manager._handleMessage({ data: JSON.stringify({ type: "tts_start" }) });
     options.onSpeechStart();
+    options.onSpeechRealStart();
     await new Promise((resolve) => setImmediate(resolve));
 
     assert.equal(manager.isRecording, false);
