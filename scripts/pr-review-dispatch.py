@@ -15,7 +15,7 @@ import re
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -51,7 +51,8 @@ STALE_ESCALATE_HOURS = float(os.environ.get("PR_STALE_ESCALATE_HOURS", "1"))
 # When set (1/true/yes), send() logs instead of delivering DMs.
 DRY_RUN = os.environ.get("PR_DISPATCH_DRY_RUN", "").strip().lower() in ("1", "true", "yes")
 
-# Non-bot issue/review comments matching this are treated as fix requests.
+# Auxiliary body match for mention-gated comments.  A mention without these
+# words (e.g. "LGTMです @reviewer") is not a fix request.
 FIX_REQUEST_PATTERN = re.compile(
     r"修正|直して|対応して|お願いします|fix|please|change|address|required",
     re.IGNORECASE,
@@ -87,6 +88,72 @@ def is_our_bot(login: str) -> bool:
     if not login:
         return False
     return (bool(BOT_LOGIN) and login == BOT_LOGIN) or (bool(REVIEWER_LOGIN) and login == REVIEWER_LOGIN)
+
+
+def collect_mention_logins(*values: str | None) -> tuple[str, ...]:
+    """Deduplicate mention handles.  Leading @ is stripped; blanks are skipped."""
+    seen: set[str] = set()
+    logins: list[str] = []
+    for raw in values:
+        login = (raw or "").strip().lstrip("@")
+        if not login:
+            continue
+        key = login.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        logins.append(login)
+    return tuple(logins)
+
+
+def _github_webhook_mention_logins() -> tuple[str, ...]:
+    """bot_login / reviewer_login / implementer_anima from github_webhook config."""
+    try:
+        from core.config.models import load_config
+
+        cfg = load_config().github_webhook
+    except Exception:
+        return ()
+    return collect_mention_logins(
+        getattr(cfg, "bot_login", None),
+        getattr(cfg, "reviewer_login", None),
+        getattr(cfg, "implementer_anima", None),
+    )
+
+
+def configured_mention_logins() -> tuple[str, ...]:
+    """Handles that count as a directed mention (env PR_DISPATCH_* + github_webhook)."""
+    return collect_mention_logins(
+        BOT_LOGIN,
+        REVIEWER_LOGIN,
+        FIXER,
+        *_github_webhook_mention_logins(),
+    )
+
+
+def body_mentions_any(body: str, logins: Iterable[str]) -> bool:
+    """True when *body* contains ``@login`` for any configured handle (case-insensitive)."""
+    text = body.casefold()
+    return any(f"@{login.lstrip('@')}".casefold() in text for login in logins if login and login.strip())
+
+
+def is_fix_request(
+    *,
+    body: str = "",
+    review_state: str | None = None,
+    mention_logins: Iterable[str] = (),
+) -> bool:
+    """True when an item should be tracked as a stale-watch fix request.
+
+    OR of:
+    1. review state is CHANGES_REQUESTED (structured; body ignored)
+    2. body mentions a configured bot/implementer handle AND matches FIX_REQUEST_PATTERN
+    """
+    if str(review_state or "").upper() == "CHANGES_REQUESTED":
+        return True
+    if not body_mentions_any(body, mention_logins):
+        return False
+    return bool(FIX_REQUEST_PATTERN.search(body))
 
 
 def now_utc() -> datetime:
@@ -614,6 +681,7 @@ def _collect_pr_stale_items(
         (((graphql.get("data") or {}).get("repository") or {}).get("pullRequest") or {}).get("reviewThreads") or {}
     ).get("nodes") or []
 
+    mention_logins = configured_mention_logins()
     all_comment_like: list[dict[str, Any]] = list(issue_comments) + list(review_comments)
     for review in reviews:
         if review.get("body"):
@@ -630,7 +698,8 @@ def _collect_pr_stale_items(
         state_upper = str(review.get("state", "")).upper()
         if state_upper == "DISMISSED":
             continue
-        if state_upper != "CHANGES_REQUESTED":
+        # Reviews qualify only via structured state; body mention gating is for comments.
+        if not is_fix_request(review_state=state_upper):
             continue
         author = (review.get("user") or {}).get("login", "")
         created = parse_gh_time(review.get("submitted_at"))
@@ -699,7 +768,7 @@ def _collect_pr_stale_items(
         if is_our_bot(author):
             continue
         body = comment.get("body") or ""
-        if not FIX_REQUEST_PATTERN.search(body):
+        if not is_fix_request(body=body, mention_logins=mention_logins):
             continue
         created = parse_gh_time(comment.get("created_at"))
         if created is None:
