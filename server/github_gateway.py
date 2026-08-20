@@ -209,6 +209,24 @@ class GitHubWebhookManager:
             await asyncio.to_thread(self._remove_pr_state, key)
             return
 
+        if pr.get("mergeable") is False or str(pr.get("mergeable_state") or "").lower() in {
+            "conflicting",
+            "dirty",
+        }:
+            await asyncio.to_thread(
+                self._send,
+                self._config.dispatcher_anima,
+                t(
+                    "github_gateway.conflict",
+                    repo=repo,
+                    number=number,
+                    sha=str((pr.get("head") or {}).get("sha") or ""),
+                    url=str(pr.get("html_url") or f"https://github.com/{repo}/pull/{number}"),
+                ),
+                "conflict",
+                f"conflict:{key}",
+            )
+
         if action not in {"opened", "synchronize", "reopened", "ready_for_review"}:
             return
         if bool(pr.get("draft")) and action != "ready_for_review":
@@ -322,17 +340,6 @@ class GitHubWebhookManager:
             str(review.get("html_url") or ""),
             f"{emphasis}review {state}".strip(),
         )
-        if state == "CHANGES_REQUESTED":
-            await asyncio.to_thread(
-                self._dispatch_review_task_once,
-                repo,
-                number,
-                str(review_id),
-                author,
-                str(review.get("body") or ""),
-                str(review.get("html_url") or ""),
-                False,
-            )
 
     async def _handle_comment(self, event: str, repo: str, payload: dict[str, Any]) -> None:
         if payload.get("action") != "created":
@@ -397,13 +404,30 @@ class GitHubWebhookManager:
                 )
                 seen[dedupe_key] = _now_iso()
                 return
-            summary = body.replace("\n", " ")[:140]
+            dispatch_direct_task(
+                target=self._config.implementer_anima,
+                task_id=f"gh-comment-{dedupe_key.replace(':', '-')}",
+                summary=t("github_gateway.command_summary", repo=repo, number=number),
+                instruction=t(
+                    "github_gateway.command_task",
+                    repo=repo,
+                    number=number,
+                    body=body,
+                    url=url,
+                ),
+                meta={
+                    "repo": repo,
+                    "number": number,
+                    "url": url,
+                    "kind": kind,
+                    "author": author,
+                },
+            )
             content = (
                 "【外部レビューコメント検知】\n\n"
-                f"- [{kind}] {repo}#{number} {author}: {summary}\n  {url}\n\n"
-                "bot以外による新規コメントです。ACTION_REQUIRED判定と"
-                "natsumeへの修正ディスパッチを procedures/pr-event-detection-patrol.md "
-                "に従って実施してください。"
+                f"- [{kind}] {repo}#{number} {author}\n\n{body}\n\nURL: {url}\n\n"
+                "全文をnatsumeへ直接投入済みです。Rinも全文を独立判断し、"
+                "必要な追跡を procedures/pr-event-detection-patrol.md に従って実施してください。"
             )
             self._send(self._config.dispatcher_anima, content, "comment", dedupe_key)
             seen[dedupe_key] = _now_iso()
@@ -435,7 +459,6 @@ class GitHubWebhookManager:
                     verdict = "PASS"
                 else:
                     verdict = t("github_gateway.unknown_verdict")
-            summary = body.replace("\n", " ")[:200]
             content = t(
                 "github_gateway.frc_result",
                 verdict=verdict,
@@ -443,7 +466,7 @@ class GitHubWebhookManager:
                 number=number,
                 head_sha=head_sha,
                 url=url,
-                summary=summary,
+                summary=body,
             )
             self._send(self._config.dispatcher_anima, content, "frc-result", dedupe_key)
             seen[dedupe_key] = _now_iso()
@@ -476,7 +499,7 @@ class GitHubWebhookManager:
                     url=url or f"https://github.com/{repo}/pull/{number}",
                     author=author or "unknown",
                     bot_note=bot_note,
-                    body=body[:500],
+                    body=body,
                 ),
                 meta={
                     "repo": repo,

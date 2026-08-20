@@ -1230,10 +1230,11 @@ def check_ci(state: dict) -> None:
 
 
 def check_conflicts(state: dict) -> None:
-    """Dispatch merge conflicts once per PR head; renotify after re-conflict."""
+    """Dispatch once per head and loudly remind Rin on every conflicting scan."""
     notified = state.setdefault("conflict_notified", {})
     open_keys: set[str] = set()
     dispatched = 0
+    conflict_lines: list[str] = []
     for repo in REPOS:
         prs = json.loads(
             gh(
@@ -1265,10 +1266,11 @@ def check_conflicts(state: dict) -> None:
                 # UNKNOWN はGitHub側の算出待ち。次回巡回で確定値を見る。
                 continue
             sha = pr["headRefOid"][:8]
+            url = str(pr.get("url") or f"https://github.com/{repo}/pull/{pr['number']}")
+            conflict_lines.append(f"- {key} {sha}: {url}")
             if notified.get(key) == sha:
                 continue
             notified[key] = sha
-            url = str(pr.get("url") or f"https://github.com/{repo}/pull/{pr['number']}")
             base_id = _conflict_task_id(repo, pr["number"], sha)
             attempts = int(state.get("failed_task_retries", {}).get(base_id, 0))
             dispatch_task(
@@ -1291,6 +1293,15 @@ def check_conflicts(state: dict) -> None:
     state["conflict_notified"] = {key: value for key, value in notified.items() if key in open_keys}
     if dispatched:
         log(f"conflict task dispatch -> {FIXER}: {dispatched} PR(s)")
+    if conflict_lines:
+        send(
+            DISPATCHER,
+            "【要対応・マージコンフリクト継続検知】\n\n"
+            + "\n".join(conflict_lines)
+            + "\n\n同じ通知が繰り返されても無視しないこと。"
+            f"{FIXER}のcanonical laneが解消pushを完了し、mergeable=MERGEABLEになるまで追跡せよ。",
+        )
+        log(f"conflict reminder -> {DISPATCHER}: {len(conflict_lines)} PR(s)")
 
 
 def check_human_waits(state: dict) -> None:

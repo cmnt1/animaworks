@@ -31,6 +31,8 @@ def _pr_payload(
     sha: str = SHA_1,
     draft: bool = False,
     title: str = "Webhook dispatch",
+    mergeable: bool | None = None,
+    mergeable_state: str = "unknown",
 ) -> dict[str, Any]:
     return {
         "action": action,
@@ -41,6 +43,9 @@ def _pr_payload(
             "draft": draft,
             "title": title,
             "head": {"sha": sha},
+            "mergeable": mergeable,
+            "mergeable_state": mergeable_state,
+            "html_url": f"https://github.test/pulls/{number}",
         },
     }
 
@@ -201,6 +206,17 @@ class TestConfigurationAndGating:
 
 
 class TestPullRequestDebounce:
+    async def test_conflict_notifies_rin_on_every_webhook_without_deduping(self, gateway) -> None:
+        manager, sends, _state_file = gateway
+        payload = _pr_payload(action="edited", mergeable=False, mergeable_state="dirty")
+
+        await manager.handle_event("pull_request", payload)
+        await manager.handle_event("pull_request", payload)
+
+        assert len(sends) == 2
+        assert all(item["to"] == "rin" and item["kind"] == "conflict" for item in sends)
+        assert all("マージコンフリクト継続検知" in item["content"] for item in sends)
+
     async def test_draft_is_ignored_until_ready_for_review(self, gateway) -> None:
         manager, _, state_file = gateway
         await manager.handle_event("pull_request", _pr_payload(draft=True))
@@ -311,11 +327,10 @@ class TestReviewAndCommentDispatch:
             "_send",
             lambda to, content, kind, key: sends.append({"to": to, "kind": kind}),
         )
+        monkeypatch.setattr(github_gateway, "dispatch_direct_task", MagicMock(return_value=True))
         await manager.start()
         try:
-            await manager.handle_event(
-                "issue_comment", _comment_payload(event="issue_comment", author=BOT_LOGIN)
-            )
+            await manager.handle_event("issue_comment", _comment_payload(event="issue_comment", author=BOT_LOGIN))
         finally:
             await manager.stop()
         assert len(sends) == 1
@@ -365,7 +380,12 @@ class TestReviewAndCommentDispatch:
         assert len(sends) == 1
         assert sends[0]["to"] == "rin"
         assert sends[0]["key"] == dedupe_key
-        assert "Please fix this edge case." in sends[0]["content"]
+        assert "Please fix this\nedge case." in sends[0]["content"]
+        task = github_gateway.dispatch_direct_task
+        task.assert_called_once()
+        assert task.call_args.kwargs["target"] == "natsume"
+        assert task.call_args.kwargs["task_id"] == f"gh-comment-{dedupe_key.replace(':', '-')}"
+        assert "Please fix this\nedge case." in task.call_args.kwargs["instruction"]
         state = json.loads(state_file.read_text(encoding="utf-8"))
         assert dedupe_key in state["seen_comments"]
 
@@ -388,9 +408,9 @@ class TestReviewAndCommentDispatch:
         assert f"{REPO}#17" in kwargs["instruction"]
         assert "force-push禁止" in kwargs["instruction"]
         state = json.loads(state_file.read_text(encoding="utf-8"))
-        assert f"{'review' if event == 'pull_request_review_comment' else 'issue'}-comment:101" in state[
-            "seen_comments"
-        ]
+        assert (
+            f"{'review' if event == 'pull_request_review_comment' else 'issue'}-comment:101" in state["seen_comments"]
+        )
 
     async def test_updated_comment_is_ignored(self, gateway) -> None:
         manager, sends, state_file = gateway
@@ -401,23 +421,26 @@ class TestReviewAndCommentDispatch:
         assert sends == []
         assert not state_file.exists()
 
-    async def test_review_is_deduped_and_changes_requested_is_emphasized(self, gateway) -> None:
+    @pytest.mark.parametrize("review_state", ["commented", "approved", "changes_requested"])
+    async def test_every_external_review_is_deduped_and_sent_in_full(self, gateway, review_state: str) -> None:
         manager, sends, state_file = gateway
-        payload = _review_payload()
+        body = "Start\n" + "x" * 800 + "\nRequired fix at the end."
+        payload = _review_payload(state=review_state, body=body)
         await manager.handle_event("pull_request_review", payload)
         await manager.handle_event("pull_request_review", payload)
         assert len(sends) == 1
         assert sends[0]["key"] == "review:202"
-        assert "【CHANGES_REQUESTED】" in sends[0]["content"]
+        assert "Required fix at the end." in sends[0]["content"]
+        if review_state == "changes_requested":
+            assert "【CHANGES_REQUESTED】" in sends[0]["content"]
         direct_task = github_gateway.dispatch_direct_task
         direct_task.assert_called_once()
         task = direct_task.call_args.kwargs
-        assert task["task_id"] == "gh-review-example-org-example-repo#17-202"
-        assert "レビュアーが人間の場合" in task["instruction"]
-        assert task["meta"]["bot_derived"] is False
+        assert task["task_id"] == "gh-comment-review-202"
+        assert body in task["instruction"]
         state = json.loads(state_file.read_text(encoding="utf-8"))
         assert "review:202" in state["seen_comments"]
-        assert "202" in state["review_tasks"]
+        assert "202" not in state["review_tasks"]
 
     async def test_non_submitted_review_is_ignored(self, gateway) -> None:
         manager, sends, state_file = gateway
@@ -428,9 +451,7 @@ class TestReviewAndCommentDispatch:
         assert sends == []
         assert not state_file.exists()
 
-    async def test_reviewer_login_comments_are_ignored(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_reviewer_login_comments_are_ignored(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         shared_dir = tmp_path / "shared"
         state_file = shared_dir / github_gateway.STATE_FILENAME
         manager = GitHubWebhookManager(
@@ -447,9 +468,7 @@ class TestReviewAndCommentDispatch:
         monkeypatch.setattr(
             manager,
             "_send",
-            lambda to, content, kind, key: sends.append(
-                {"to": to, "content": content, "kind": kind, "key": key}
-            ),
+            lambda to, content, kind, key: sends.append({"to": to, "content": content, "kind": kind, "key": key}),
         )
         await manager.start()
         try:
@@ -498,9 +517,7 @@ class TestReviewAndCommentDispatch:
         monkeypatch.setattr(
             manager,
             "_send",
-            lambda to, content, kind, key: sends.append(
-                {"to": to, "content": content, "kind": kind, "key": key}
-            ),
+            lambda to, content, kind, key: sends.append({"to": to, "content": content, "kind": kind, "key": key}),
         )
         await manager.start()
         try:
@@ -526,9 +543,7 @@ class TestReviewAndCommentDispatch:
         else:
             direct_task.assert_not_called()
 
-    async def test_empty_reviewer_login_preserves_legacy_bot_only_behavior(
-        self, gateway
-    ) -> None:
+    async def test_empty_reviewer_login_preserves_legacy_bot_only_behavior(self, gateway) -> None:
         """reviewer_login empty: only bot_login reviews take FRC path."""
         manager, sends, _state_file = gateway
         # Non-bot review with APPROVED must NOT become FRC just from state.
@@ -678,9 +693,7 @@ class TestSharedStateLocking:
                 )
             fields = args[args.index("--json") + 1]
             if fields == "number,title,headRefOid,isDraft":
-                return json.dumps(
-                    [{"number": 17, "title": "PR", "headRefOid": SHA_1, "isDraft": False}]
-                )
+                return json.dumps([{"number": 17, "title": "PR", "headRefOid": SHA_1, "isDraft": False}])
             return json.dumps(
                 [
                     {

@@ -255,19 +255,33 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "github_gateway.minutes": {"ja": "{value}分", "en": "{value} minutes"},
     "github_gateway.seconds": {"ja": "{value}秒", "en": "{value} seconds"},
+    "github_gateway.conflict": {
+        "ja": (
+            "【要対応・マージコンフリクト継続検知】\n\n"
+            "- PR: {repo}#{number}\n- HEAD: {sha}\n- URL: {url}\n\n"
+            "baseブランチとのコンフリクトが残っています。重複通知でも無視せず、"
+            "natsumeのcanonical laneが実際に解消pushを完了するまで追跡してください。"
+        ),
+        "en": (
+            "[ACTION REQUIRED: merge conflict still present]\n\n"
+            "- PR: {repo}#{number}\n- HEAD: {sha}\n- URL: {url}\n\n"
+            "The base-branch conflict remains. Even if this notification repeats, track the canonical "
+            "natsume lane until the conflict-resolution push is actually complete."
+        ),
+    },
     "github_gateway.unknown_verdict": {"ja": "判定不明", "en": "Unknown verdict"},
     "github_gateway.frc_result": {
         "ja": (
             "【FRC結果検知】\n\n"
             "- 判定: {verdict}\n- PR: {repo}#{number}\n- HEAD: {head_sha}\n"
-            "- URL: {url}\n- 本文冒頭: {summary}\n\n"
+            "- URL: {url}\n- 本文全文:\n{summary}\n\n"
             "HOLDの場合は procedures/pr-event-detection-patrol.md に従って"
             "natsumeへの修正ディスパッチを実施してください。"
         ),
         "en": (
             "[FRC result detected]\n\n"
             "- Verdict: {verdict}\n- PR: {repo}#{number}\n- HEAD: {head_sha}\n"
-            "- URL: {url}\n- Body excerpt: {summary}\n\n"
+            "- URL: {url}\n- Full body:\n{summary}\n\n"
             "For HOLD, follow procedures/pr-event-detection-patrol.md and dispatch the fix to natsume."
         ),
     },
