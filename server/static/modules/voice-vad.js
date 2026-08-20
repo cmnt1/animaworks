@@ -44,6 +44,9 @@ export class VoiceVAD {
     this._onMisfire = options.onMisfire || (() => {});
     this._positiveSpeechThreshold = options.positiveSpeechThreshold;
     this._minSpeechFrames = options.minSpeechFrames;
+    this._getStream = options.getStream;
+    this._pauseStream = options.pauseStream;
+    this._resumeStream = options.resumeStream;
     this._myvad = null;
     this._active = false;
   }
@@ -51,7 +54,7 @@ export class VoiceVAD {
   async start() {
     if (this._myvad) {
       this._active = true;
-      this._myvad.start();
+      await this._myvad.start();
       return true;
     }
 
@@ -82,6 +85,9 @@ export class VoiceVAD {
       if (this._minSpeechFrames != null) {
         vadOpts.minSpeechFrames = this._minSpeechFrames;
       }
+      if (this._getStream) vadOpts.getStream = this._getStream;
+      if (this._pauseStream) vadOpts.pauseStream = this._pauseStream;
+      if (this._resumeStream) vadOpts.resumeStream = this._resumeStream;
       this._myvad = await window.vad.MicVAD.new(vadOpts);
       this._myvad.start();
       this._active = true;
