@@ -19,6 +19,7 @@ class FakePlayback {
     this.isPlaying = false;
     this.queueLength = 0;
     this.rms = 0;
+    this.aecActive = false;
     this._onPlaybackEnd = null;
     this._onCaption = null;
   }
@@ -286,6 +287,7 @@ describe("voice AEC integration", () => {
     const { manager, socket, options } = await connectedVadManager([stream]);
 
     assert.equal(manager._aecAll, true);
+    manager._playback.aecActive = true;
     assert.equal(globalThis.__aecStreamEvents[0][0], "getStream");
     assert.strictEqual(globalThis.__aecStreamEvents[0][1], stream);
     assert.deepEqual(
@@ -307,6 +309,44 @@ describe("voice AEC integration", () => {
       [{ type: "config", vad_mode: "vad" }],
     );
     assert.strictEqual(globalThis.__aecAudioSources[0], stream);
+
+    options.onSpeechRealStart();
+    assert.deepEqual(
+      socket.sent.map((value) => JSON.parse(value)),
+      [
+        { type: "config", vad_mode: "vad" },
+        { type: "interrupt" },
+      ],
+    );
+
+    manager.disconnect();
+    assert.equal(stream.track.stopped, true);
+  });
+
+  it("keeps the first TTS half-duplex until playback AEC is ready", async () => {
+    const stream = makeStream({ echoCancellation: "all" });
+    const { manager, socket, options } = await connectedVadManager([stream]);
+
+    assert.equal(manager._aecAll, true);
+    manager._playback.aecActive = false;
+    manager._handleMessage({ data: JSON.stringify({ type: "tts_start" }) });
+    options.onSpeechStart();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(manager.isRecording, false);
+    assert.equal(globalThis.__aecAudioSources.length, 0);
+    assert.deepEqual(
+      socket.sent.map((value) => JSON.parse(value)),
+      [{ type: "config", vad_mode: "vad" }],
+    );
+
+    manager._playback.aecActive = true;
+    options.onSpeechStart();
+    await waitFor(() => manager.isRecording);
+    assert.deepEqual(
+      socket.sent.map((value) => JSON.parse(value)),
+      [{ type: "config", vad_mode: "vad" }],
+    );
 
     options.onSpeechRealStart();
     assert.deepEqual(

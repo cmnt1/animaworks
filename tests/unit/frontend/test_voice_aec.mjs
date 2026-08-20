@@ -12,6 +12,7 @@ class VoicePlayback {
   constructor() {
     this.isPlaying = false;
     this.queueLength = 0;
+    this.aecActive = true;
     this.rms = 0;
   }
   destroy() {}
@@ -330,6 +331,25 @@ describe('VoiceManager native AEC', () => {
     allManager._vad.options.onSpeechRealStart();
     assert.deepEqual(allManager._ws.sent, [JSON.stringify({ type: 'interrupt' }), pcm]);
     assert.equal(allManager._holdPcm, false);
+  });
+
+  it('keeps TTS half-duplex until playback AEC is active', async () => {
+    const stream = new FakeStream({ echoCancellation: 'all' });
+    navigator.mediaDevices.getUserMedia = async () => stream;
+    const manager = newManager();
+    manager._mode = 'vad';
+    await manager._startVAD();
+    manager._ttsPlaying = true;
+    manager._playback.aecActive = false;
+    manager._vad.options.onSpeechStart();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(manager.isRecording, false);
+    assert.deepEqual(manager._ws.sent, []);
+
+    manager._playback.aecActive = true;
+    manager._vad.options.onSpeechStart();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(manager.isRecording, true);
   });
 
   it('discards TTS-time PCM on VAD misfire without interrupting', async () => {
