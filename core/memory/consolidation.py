@@ -1199,11 +1199,11 @@ class ConsolidationEngine:
             text: Raw LLM output
 
         Returns:
-            Cleaned text with wrapper code fences removed
+            Cleaned text with wrapper code fences removed.
         """
-        text = re.sub(r"^```(?:markdown|md)?\s*\n", "", text, flags=re.MULTILINE)
-        text = re.sub(r"\n```\s*$", "", text, flags=re.MULTILINE)
-        return text.strip()
+        from core.memory._llm_parse import strip_code_fence
+
+        return strip_code_fence(text)
 
     @staticmethod
     def _is_archive_dir(rel: Path) -> bool:

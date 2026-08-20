@@ -25,6 +25,14 @@ import re
 from pathlib import Path
 
 from core.i18n import t
+from core.memory._llm_parse import (
+    KNOWLEDGE_FIELDS,
+    PROCEDURE_FIELDS,
+    _section_pattern,
+    is_none_marker,
+    load_json,
+    strip_code_fence,
+)
 from core.paths import load_prompt
 from core.time_utils import now_iso, now_local
 
@@ -225,7 +233,9 @@ class ProceduralDistiller:
         try:
             from core.memory._llm_utils import one_shot_completion
 
-            text = await one_shot_completion(prompt, model=model, max_tokens=2048)
+            text = await one_shot_completion(
+                prompt, model=model, max_tokens=2048, structured_output=True
+            )
             if text is None:
                 raise RuntimeError("LLM failed")
             text = text or "[]"
@@ -434,8 +444,9 @@ class ProceduralDistiller:
     def _parse_knowledge_items(self, text: str) -> list[dict]:
         """Parse knowledge items from LLM classification output.
 
-        Looks for the ``## knowledge抽出`` section and extracts items
-        with ``ファイル名:`` and ``内容:`` fields.
+        Looks for the ``## knowledge抽出`` / ``## knowledge extraction``
+        (locale-aware) section and extracts items with ``ファイル名:`` /
+        ``Filename:`` and ``内容:`` / ``Content:`` fields.
 
         Args:
             text: Raw LLM output (sanitized).
@@ -443,24 +454,27 @@ class ProceduralDistiller:
         Returns:
             List of dicts with ``filename`` and ``content``.
         """
-        section = re.search(
-            r"##\s*knowledge抽出(.+?)(?=##\s*procedure抽出|\Z)",
-            text,
+        section_re = re.compile(
+            rf"##\s*{_section_pattern('knowledge')}(.+?)(?=##\s*{_section_pattern('procedure')}|\Z)",
             re.DOTALL | re.IGNORECASE,
         )
+        section = section_re.search(text)
         if not section:
             return []
 
         section_text = section.group(1)
-        if t("distillation.none") in section_text:
+        if t("distillation.none") in section_text or is_none_marker(section_text):
             return []
 
-        items: list[dict] = []
-        for match in re.finditer(
-            r"-\s*ファイル名:\s*(.+?)\s+内容:\s*(.+?)(?=-\s*ファイル名:|\Z)",
-            section_text,
+        filename_field = KNOWLEDGE_FIELDS["filename"]
+        content_field = KNOWLEDGE_FIELDS["content"]
+        item_re = re.compile(
+            rf"-\s*{filename_field}:\s*(.+?)\s+{content_field}:\s*(.+?)(?=-\s*{filename_field}:|\Z)",
             re.DOTALL,
-        ):
+        )
+
+        items: list[dict] = []
+        for match in item_re.finditer(section_text):
             filename = match.group(1).strip()
             content = match.group(2).strip()
             if filename and content:
@@ -471,8 +485,9 @@ class ProceduralDistiller:
     def _parse_procedure_items(self, text: str) -> list[dict]:
         """Parse procedure items from LLM classification output.
 
-        Looks for the ``## procedure抽出`` section and extracts items
-        with ``ファイル名:``, ``description:``, ``tags:``, ``内容:`` fields.
+        Looks for the ``## procedure抽出`` / ``## procedure extraction``
+        (locale-aware) section and extracts items with ``ファイル名:`` /
+        ``Filename:``, ``description:``, ``tags:``, ``内容:`` / ``Content:``.
 
         Args:
             text: Raw LLM output (sanitized).
@@ -481,27 +496,32 @@ class ProceduralDistiller:
             List of dicts with ``filename``, ``description``, ``tags``,
             and ``content``.
         """
-        section = re.search(
-            r"##\s*procedure抽出(.+)",
-            text,
+        section_re = re.compile(
+            rf"##\s*{_section_pattern('procedure')}(.+)",
             re.DOTALL | re.IGNORECASE,
         )
+        section = section_re.search(text)
         if not section:
             return []
 
         section_text = section.group(1)
-        if t("distillation.none") in section_text:
+        if t("distillation.none") in section_text or is_none_marker(section_text):
             return []
 
-        items: list[dict] = []
-        for match in re.finditer(
-            r"-\s*ファイル名:\s*(.+?)\s+"
-            r"description:\s*(.+?)\s+"
-            r"tags:\s*(.+?)\s+"
-            r"内容:\s*(.+?)(?=-\s*ファイル名:|\Z)",
-            section_text,
+        filename_field = PROCEDURE_FIELDS["filename"]
+        desc_field = PROCEDURE_FIELDS["description"]
+        tags_field = PROCEDURE_FIELDS["tags"]
+        content_field = PROCEDURE_FIELDS["content"]
+        item_re = re.compile(
+            rf"-\s*{filename_field}:\s*(.+?)\s*"
+            rf"{desc_field}:\s*(.+?)\s*"
+            rf"{tags_field}:\s*(.+?)\s*"
+            rf"{content_field}:\s*(.+?)(?=-\s*{filename_field}:|\Z)",
             re.DOTALL,
-        ):
+        )
+
+        items: list[dict] = []
+        for match in item_re.finditer(section_text):
             filename = match.group(1).strip()
             description = match.group(2).strip()
             tags_str = match.group(3).strip()
@@ -525,8 +545,9 @@ class ProceduralDistiller:
     def _parse_procedures(self, text: str) -> list[dict]:
         """Parse an LLM JSON response into a list of procedure dicts.
 
-        Strips code fences before parsing.  Each valid item must have
-        at least ``title`` and ``content`` keys.
+        Uses the multi-stage JSON parser (fence strip → json.loads →
+        json_repair) and logs a warning (never silent) when it can't parse.
+        Each valid item must have at least ``title`` and ``content`` keys.
 
         Args:
             text: Raw LLM output (potentially fenced JSON).
@@ -535,26 +556,18 @@ class ProceduralDistiller:
             List of procedure dicts with ``title``, ``content``, and
             optionally ``description`` and ``tags``.
         """
-        text = self._strip_code_fence(text)
-
-        try:
-            items = json.loads(text)
-            if isinstance(items, list):
-                return [i for i in items if isinstance(i, dict) and "title" in i and "content" in i]
-        except json.JSONDecodeError:
-            logger.warning(
-                "Failed to parse LLM procedure output for anima=%s",
-                self.anima_name,
-            )
-
+        items = load_json(text, context="LLM procedure output")
+        if isinstance(items, list):
+            return [i for i in items if isinstance(i, dict) and "title" in i and "content" in i]
         return []
 
     @staticmethod
     def _strip_code_fence(text: str) -> str:
         """Remove Markdown code fences wrapping the entire text.
 
-        Handles any language tag (``json``, ``markdown``, etc.) and
-        preserves interior content.
+        Delegates to the shared language-agnostic strip (handles ``json``,
+        ``markdown``, any tag, or a bare fence) and preserves interior
+        content.
 
         Args:
             text: Raw text potentially wrapped in code fences.
@@ -562,9 +575,7 @@ class ProceduralDistiller:
         Returns:
             Text with outer code fences removed.
         """
-        text = re.sub(r"^```\w*\s*\n", "", text.strip(), count=1)
-        text = re.sub(r"\n```\s*$", "", text)
-        return text.strip()
+        return strip_code_fence(text)
 
     # ── Procedure I/O ──────────────────────────────────────────
 

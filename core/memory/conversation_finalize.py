@@ -18,6 +18,10 @@ from pathlib import Path
 from typing import Any
 
 from core.i18n import t
+from core.memory._llm_parse import (
+    SESSION_HEADINGS,
+    SESSION_NONE_VALUES,
+)
 from core.memory.conversation_compression import (
     _call_llm,
     _format_turns_for_compression,
@@ -188,9 +192,20 @@ def _schedule_session_fact_extraction(
 
 
 def _parse_session_summary(raw: str) -> ParsedSessionSummary:
-    """Parse Markdown-formatted LLM output into structured data."""
+    """Parse Markdown-formatted LLM output into structured data.
+
+    Section / sub-section headings are locale-aware (ja + en template
+    headings), driven by the shared constant table in ``_llm_parse`` so a
+    template change on one side can't silently drift the parser.
+    """
+    episode_heading = SESSION_HEADINGS["episode"]
+    state_heading = SESSION_HEADINGS["state_change"]
+    resolved_heading = SESSION_HEADINGS["resolved"]
+    tasks_heading = SESSION_HEADINGS["new_tasks"]
+    status_heading = SESSION_HEADINGS["current_state"]
+
     episode_match = re.search(
-        r"##\s*(?:エピソード要約|Episode Summary)\s*\n(.+?)(?=##\s*(?:ステート変更|State Changes)|\Z)",
+        rf"##\s*(?:{episode_heading})\s*\n(.+?)(?=##\s*(?:{state_heading})|\Z)",
         raw,
         re.DOTALL,
     )
@@ -201,7 +216,7 @@ def _parse_session_summary(raw: str) -> ParsedSessionSummary:
     body = "\n".join(lines[1:]).strip() if len(lines) > 1 else episode_body
 
     state_match = re.search(
-        r"##\s*(?:ステート変更|State Changes)\s*\n(.+)",
+        rf"##\s*(?:{state_heading})\s*\n(.+)",
         raw,
         re.DOTALL,
     )
@@ -210,33 +225,30 @@ def _parse_session_summary(raw: str) -> ParsedSessionSummary:
     new_tasks: list[str] = []
     current_status = ""
 
+    def _collect_list(pattern: str, text: str) -> list[str]:
+        m = re.search(pattern, text, re.DOTALL)
+        if not m:
+            return []
+        items: list[str] = []
+        for line in m.group(1).strip().splitlines():
+            item = line.strip().lstrip("- ").strip()
+            if item and item not in SESSION_NONE_VALUES:
+                items.append(item)
+        return items
+
     if state_match:
         state_text = state_match.group(1)
 
-        resolved_match = re.search(
-            r"###\s*(?:解決済み|Resolved)\s*\n(.+?)(?=###|\Z)",
+        resolved_items = _collect_list(
+            rf"###\s*(?:{resolved_heading})\s*\n(.+?)(?=###|\Z)",
             state_text,
-            re.DOTALL,
         )
-        if resolved_match:
-            for line in resolved_match.group(1).strip().splitlines():
-                item = line.strip().lstrip("- ").strip()
-                if item and item not in ("なし", "None", "none"):
-                    resolved_items.append(item)
-
-        tasks_match = re.search(
-            r"###\s*(?:新規タスク|New Tasks)\s*\n(.+?)(?=###|\Z)",
+        new_tasks = _collect_list(
+            rf"###\s*(?:{tasks_heading})\s*\n(.+?)(?=###|\Z)",
             state_text,
-            re.DOTALL,
         )
-        if tasks_match:
-            for line in tasks_match.group(1).strip().splitlines():
-                item = line.strip().lstrip("- ").strip()
-                if item and item not in ("なし", "None", "none"):
-                    new_tasks.append(item)
-
         status_match = re.search(
-            r"###\s*(?:現在の状態|Current State)\s*\n(.+?)(?=###|\Z)",
+            rf"###\s*(?:{status_heading})\s*\n(.+?)(?=###|\Z)",
             state_text,
             re.DOTALL,
         )

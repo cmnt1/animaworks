@@ -274,6 +274,27 @@ def _is_anthropic_model(model: str) -> bool:
     return bool(_ANTHROPIC_MODEL_RE.match(model))
 
 
+def supports_structured_output(model: str) -> bool:
+    """Return True for API-family models that support structured JSON output.
+
+    Local / self-hosted models (Ollama, bare DeepSeek, Qwen, etc.) have
+    patchy ``response_format`` support, so schema forcing is only enabled for
+    the Anthropic / OpenAI API families.  This mirrors the provider-family
+    discrimination used across the memory pipeline so the local-model path
+    keeps the multi-stage (fence → json.loads → json_repair) parsing.
+
+    ``openai/deepseek-*`` reads as the OpenAI family but is served by a local
+    gateway, so it is excluded here using the same predicate that routes its
+    credential in ``core.config.model_config``.
+    """
+    from core.execution.error_classifier import provider_family_of
+
+    family = provider_family_of(model)
+    if family == "openai" and model.split("/", 1)[-1].startswith("deepseek-"):
+        return False
+    return family in {"anthropic", "openai"}
+
+
 def _is_codex_model(model: str) -> bool:
     """Return True if *model* is a Codex model routed via the Codex CLI."""
     return model.startswith("codex/") or model.startswith("openai-codex/")
@@ -658,6 +679,7 @@ async def one_shot_completion(
     model: str = "",
     credential: str = "",
     max_tokens: int = 2048,
+    structured_output: bool = False,
 ) -> str | None:
     """Execute a one-shot LLM completion with automatic backend selection.
 
@@ -672,12 +694,19 @@ async def one_shot_completion(
         model: LLM model identifier. Defaults to config.consolidation.llm_model.
         credential: Optional credential name to use for the LiteLLM call.
         max_tokens: Maximum tokens for the response.
+        structured_output: When True and the resolved model is an API-family
+            model (structured-output capable), request JSON output via
+            ``response_format``. Local / self-hosted models are left on the
+            multi-stage (fence → json.loads → json_repair) parsing path.
 
     Returns:
         Generated text, or None if all backends fail.
     """
     llm_kwargs = get_llm_kwargs_for_model(model, credential=credential)
     resolved_model = llm_kwargs["model"]
+
+    if structured_output and supports_structured_output(resolved_model):
+        llm_kwargs.setdefault("response_format", {"type": "json_object"})
 
     from core.execution.error_classifier import guard_key, litellm_realm_of, provider_family_of
     from core.execution.rate_guard import get_rate_guard
@@ -756,10 +785,14 @@ async def one_shot_completion_with_model_config(
     system_prompt: str = "",
     model_config: Any,
     max_tokens: int = 2048,
+    structured_output: bool = False,
 ) -> str | None:
     """Execute one-shot completion with the active Anima model configuration."""
     llm_kwargs = get_llm_kwargs_for_model_config(model_config)
     resolved_model = llm_kwargs["model"]
+
+    if structured_output and supports_structured_output(resolved_model):
+        llm_kwargs.setdefault("response_format", {"type": "json_object"})
 
     from core.execution.error_classifier import guard_key, litellm_realm_of, provider_family_of
     from core.execution.rate_guard import get_rate_guard
