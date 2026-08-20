@@ -267,6 +267,12 @@ class LiteLLMExecutor(
                     next_backoff=decorrelated_jitter,
                     interrupt_check=self._check_interrupted,
                     on_classified_error=_on_llm_error,
+                    on_context_overflow=partial(
+                        self._try_compact_messages,
+                        iteration_messages,
+                        llm_kwargs,
+                        litellm,
+                    ),
                 )
             except LlmCallInterrupted:
                 logger.info(

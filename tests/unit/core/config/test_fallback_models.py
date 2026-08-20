@@ -385,6 +385,69 @@ class TestResolveEffectiveModelConfig:
         assert result.model == "openai/gpt-4.1"
         assert "no credential configured" in caplog.text
 
+    def test_deepseek_mode_a_fallback_uses_gateway_credential(
+        self,
+    ) -> None:
+        cfg = AnimaWorksConfig(
+            credentials={
+                "openai": CredentialConfig(type="codex_login"),
+                "vllm-lb": CredentialConfig(
+                    type="openai",
+                    base_url="http://localhost:4000/v1",
+                    api_key="sk-vllm",
+                ),
+            },
+            anima_defaults=AnimaDefaults(background_credential="vllm-lb"),
+        )
+        primary = ModelConfig(
+            model="codex/gpt-5.4",
+            execution_mode="C",
+            resolved_mode="C",
+            credential="openai",
+            fallback_models=["a:openai/deepseek-v4-flash-0731"],
+        )
+        guard = _guard_with_blocks({"openai:codex": 120.0})
+        with (
+            patch("core.config.io.load_config", return_value=cfg),
+            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+        ):
+            result = resolve_effective_model_config(primary)
+
+        assert result is not primary
+        assert result.model == "openai/deepseek-v4-flash-0731"
+        assert result.execution_mode == "A"
+        assert result.resolved_mode == "A"
+        assert result.credential == "vllm-lb"
+        assert result.credential_type == "openai"
+        assert result.api_base_url == "http://localhost:4000/v1"
+        assert result.api_key == "sk-vllm"
+
+    def test_deepseek_fallback_skipped_without_gateway_credential(
+        self,
+        fallback_config: AnimaWorksConfig,
+        primary_config: ModelConfig,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # No deepseek/vllm gateway credential available -> candidate skipped.
+        primary = primary_config.model_copy(
+            update={
+                "fallback_models": [
+                    "a:openai/deepseek-v4-flash-0731",
+                    "a:openai/gpt-4.1",
+                ],
+            },
+        )
+        guard = _guard_with_blocks({"openai:codex": 120.0})
+        with (
+            patch("core.config.io.load_config", return_value=fallback_config),
+            patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
+            caplog.at_level(logging.WARNING, logger="animaworks.config"),
+        ):
+            result = resolve_effective_model_config(primary)
+
+        assert result.model == "openai/gpt-4.1"
+        assert "no credential configured" in caplog.text
+
     def test_mode_s_uses_auth_realm(
         self,
         fallback_config: AnimaWorksConfig,

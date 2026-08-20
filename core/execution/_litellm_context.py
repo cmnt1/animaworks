@@ -26,6 +26,9 @@ _COMPACT_MSG_TRUNCATE_CHARS = 2000
 _COMPACT_TOOL_ARGS_TRUNCATE_CHARS = 200
 _COMPACT_MIN_CONTEXT_WINDOW = 16_000
 _COMPACT_MAX_SUMMARY_TOKENS = 4096
+# Recent messages kept verbatim through compaction so the model retains
+# working context (pi-style keepRecent).
+_COMPACT_KEEP_RECENT_MSGS = 6
 
 
 def _extract_tool_uses_from_messages(messages: list[dict]) -> list[dict]:
@@ -49,6 +52,35 @@ def _extract_tool_uses_from_messages(messages: list[dict]) -> list[dict]:
 
 class ContextMixin:
     """Mixin providing LLM kwargs, message building, and context clamping."""
+
+    def _thinking_format(self) -> str | None:
+        """models.json ``thinking_format`` for this model (e.g. ``"deepseek"``)."""
+        from core.config.model_mode import _match_models_json
+
+        entry = _match_models_json(self._model_config.model)
+        if not entry:
+            return None
+        fmt = entry.get("thinking_format")
+        return fmt if isinstance(fmt, str) else None
+
+    def _apply_deepseek_thinking(self, kwargs: dict[str, Any], enabled: bool) -> None:
+        """DeepSeek-format thinking control (pi-equivalent wiring).
+
+        Sends ``thinking: {type: enabled|disabled}`` plus the vLLM chat
+        template toggle, and ``reasoning_effort`` when enabled.
+        """
+        from core.execution.base import resolve_thinking_effort
+
+        eb = kwargs.setdefault("extra_body", {})
+        eb["thinking"] = {"type": "enabled" if enabled else "disabled"}
+        eb.setdefault("chat_template_kwargs", {})["thinking"] = enabled
+        if enabled:
+            # In extra_body: LiteLLM's openai route rejects top-level
+            # reasoning_effort for unknown models (UnsupportedParamsError).
+            eb["reasoning_effort"] = resolve_thinking_effort(
+                self._model_config.model,
+                self._model_config.thinking_effort,
+            )
 
     def _build_llm_kwargs(self) -> dict[str, Any]:
         """Credential + model kwargs for ``litellm.acompletion``."""
@@ -124,17 +156,24 @@ class ContextMixin:
                         kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
                     kwargs["temperature"] = 1
             elif model.startswith("openai/"):
-                kwargs.setdefault("extra_body", {})
-                kwargs["extra_body"]["enable_thinking"] = self._model_config.thinking
-                kwargs["extra_body"].setdefault("chat_template_kwargs", {})
-                kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] = self._model_config.thinking
+                if self._thinking_format() == "deepseek":
+                    self._apply_deepseek_thinking(kwargs, self._model_config.thinking)
+                else:
+                    kwargs.setdefault("extra_body", {})
+                    kwargs["extra_body"]["enable_thinking"] = self._model_config.thinking
+                    kwargs["extra_body"].setdefault("chat_template_kwargs", {})
+                    kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] = self._model_config.thinking
             else:
                 kwargs["think"] = self._model_config.thinking
         elif self._model_config.model.startswith("openai/"):
-            kwargs.setdefault("extra_body", {})
-            kwargs["extra_body"]["enable_thinking"] = True
-            kwargs["extra_body"].setdefault("chat_template_kwargs", {})
-            kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] = True
+            if self._thinking_format() == "deepseek":
+                # DeepSeek-format models default to thinking on (effort high).
+                self._apply_deepseek_thinking(kwargs, True)
+            else:
+                kwargs.setdefault("extra_body", {})
+                kwargs["extra_body"]["enable_thinking"] = True
+                kwargs["extra_body"].setdefault("chat_template_kwargs", {})
+                kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] = True
         elif self._model_config.model.startswith("ollama/"):
             kwargs["think"] = False
         # Ollama num_ctx: explicitly set context window to prevent silent truncation
@@ -234,6 +273,37 @@ class ContextMixin:
             msgs.append({"role": "user", "content": prompt})
         return msgs
 
+    def _estimate_input_tokens(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        litellm: types.ModuleType,
+    ) -> int:
+        try:
+            return litellm.token_counter(
+                model=self._model_config.model,
+                messages=messages,
+                tools=tools,
+            )
+        except Exception:
+            logger.debug("Token counter fallback to char estimate", exc_info=True)
+            msg_chars = sum(len(str(m.get("content", ""))) for m in messages)
+            tool_chars = len(_json.dumps(tools)) if tools else 0
+            return (msg_chars + tool_chars) // 2
+
+    def _resolve_compaction_threshold(self) -> int | None:
+        """models.json ``compaction_threshold_tokens`` for this model, if set."""
+        from core.config.model_mode import _match_models_json
+
+        entry = _match_models_json(self._model_config.model)
+        if not entry:
+            return None
+        val = entry.get("compaction_threshold_tokens")
+        try:
+            return int(val) if val else None
+        except (TypeError, ValueError):
+            return None
+
     def _preflight_clamp(
         self,
         llm_kwargs: dict[str, Any],
@@ -252,17 +322,7 @@ class ContextMixin:
         ctx_window = self._resolve_cw()
 
         def _estimate_tokens() -> int:
-            try:
-                return litellm.token_counter(
-                    model=self._model_config.model,
-                    messages=messages,
-                    tools=tools,
-                )
-            except Exception:
-                logger.debug("Token counter fallback to char estimate", exc_info=True)
-                msg_chars = sum(len(str(m.get("content", ""))) for m in messages)
-                tool_chars = len(_json.dumps(tools)) if tools else 0
-                return (msg_chars + tool_chars) // 2
+            return self._estimate_input_tokens(messages, tools, litellm)
 
         est_input = _estimate_tokens()
         available = ctx_window - est_input
@@ -324,7 +384,22 @@ class ContextMixin:
 
         Tries normal _preflight_clamp first. If it returns None (too large),
         attempts LLM one-shot compaction and retries.
+
+        When the model declares ``compaction_threshold_tokens`` (models.json),
+        compaction also runs proactively once the estimated prompt exceeds it —
+        long-context models degrade well before their hard window limit.
         """
+        soft_cap = self._resolve_compaction_threshold()
+        if soft_cap and len(messages) > 3:
+            est = self._estimate_input_tokens(messages, tools, litellm)
+            if est > soft_cap:
+                logger.info(
+                    "Soft context cap exceeded (est ~%d > %d); compacting proactively",
+                    est,
+                    soft_cap,
+                )
+                await self._try_compact_messages(messages, llm_kwargs, litellm)
+
         result = self._preflight_clamp(llm_kwargs, messages, tools, litellm)
         if result is not None:
             return result
@@ -351,9 +426,21 @@ class ContextMixin:
         if ctx_window < _COMPACT_MIN_CONTEXT_WINDOW:
             return False
 
+        # Keep the most recent messages verbatim; a tool result must not be
+        # orphaned from its assistant tool_calls message, so advance the split
+        # past any leading tool messages.
+        tail_start = max(2, len(messages) - _COMPACT_KEEP_RECENT_MSGS)
+        while tail_start < len(messages) and messages[tail_start].get("role") == "tool":
+            tail_start += 1
+        if tail_start - 2 < 2:
+            # History too short to both keep a tail and summarize — a few huge
+            # messages can still overflow, so fall back to full summarization.
+            tail_start = len(messages)
+        tail = messages[tail_start:]
+
         # Format conversation history for summarization
         history_parts: list[str] = []
-        for msg in messages[2:]:  # Skip system + original user
+        for msg in messages[2:tail_start]:  # Skip system + original user
             role = msg.get("role", "unknown")
             content = msg.get("content", "")
             if role == "assistant" and msg.get("tool_calls"):
@@ -391,7 +478,7 @@ class ContextMixin:
             compact_kwargs.pop(key, None)
         if "extra_body" in compact_kwargs:
             eb = dict(compact_kwargs["extra_body"])
-            for key in ("enable_thinking", "chat_template_kwargs"):
+            for key in ("enable_thinking", "chat_template_kwargs", "thinking", "reasoning_effort"):
                 eb.pop(key, None)
             if not eb:
                 del compact_kwargs["extra_body"]
@@ -409,18 +496,21 @@ class ContextMixin:
             return False
 
         # Log compaction
-        old_count = len(messages) - 2
+        old_count = tail_start - 2
         logger.info(
-            "Compacted %d messages into summary (%d chars)",
+            "Compacted %d messages into summary (%d chars); kept %d recent",
             old_count,
             len(summary),
+            len(tail),
         )
 
-        # Reset messages: keep system + original user, replace rest with summary
+        # Reset messages: keep system + original user, replace the summarized
+        # span with the summary, and re-append the recent tail verbatim.
         messages[2:] = [
             {
                 "role": "user",
                 "content": t("litellm_context.compact_summary_prefix") + "\n" + summary,
-            }
+            },
+            *tail,
         ]
         return True

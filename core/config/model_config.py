@@ -132,10 +132,28 @@ def _guard_key_for_model_config(model_config: ModelConfig, config: AnimaWorksCon
 
 
 def _fallback_credential_name(model: str) -> str | None:
-    """Resolve the configured credential name for a fallback model family."""
+    """Resolve the configured credential name for a fallback model family.
+
+    DeepSeek GPT-format models (``openai/deepseek-*``) are served behind an
+    OpenAI-compatible gateway (e.g. a vLLM host), not the ``openai`` cloud
+    endpoint.  Route them to the DeepSeek gateway credential instead: a
+    dedicated ``deepseek`` credential when present, else the configured
+    ``background_credential`` gateway that hosts these models.
+    """
     from core.execution.error_classifier import provider_family_of
 
     model_family = _model_family(model)
+    if model_family == "openai" and model.split("/", 1)[-1].startswith("deepseek-"):
+        dedicated = _FAMILY_CREDENTIAL_MAP.get("deepseek")
+        if dedicated:
+            return dedicated
+        from core.config.io import load_config
+
+        cfg = load_config()
+        bg_cred = getattr(getattr(cfg, "anima_defaults", None), "background_credential", None)
+        if isinstance(bg_cred, str) and bg_cred:
+            return bg_cred
+        return None
     return _FAMILY_CREDENTIAL_MAP.get(model_family) or _FAMILY_CREDENTIAL_MAP.get(provider_family_of(model))
 
 
