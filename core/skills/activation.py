@@ -178,7 +178,7 @@ def list_skill_catalog(anima_dir: Path, *, thread_id: str = "default") -> list[d
     for meta in index.all_skills:
         if meta.path is None:
             continue
-        pointer = _pointer_for_path(anima_dir, common_skills_dir, meta.path)
+        pointer = _pointer_for_meta(anima_dir, common_skills_dir, meta)
         item = ActiveSkillItem.from_metadata(pointer, pointer, meta, active=pointer in active_paths)
         result.append(item.to_dict())
     return result
@@ -298,7 +298,7 @@ def _resolve_refs(
             continue
 
         allowed, reason = _active_access_decision(meta, anima_dir, confirm_risk=confirm_risk)
-        pointer = _pointer_for_path(anima_dir, common_skills_dir, meta.path)
+        pointer = _pointer_for_meta(anima_dir, common_skills_dir, meta)
         if not allowed:
             rejections.append(ActiveSkillRejection(ref, reason))
             continue
@@ -410,6 +410,15 @@ def _build_index(anima_dir: Path, common_skills_dir: Path) -> SkillIndex:
         anima_dir / "procedures",
         anima_dir=anima_dir,
     )
+
+
+def _pointer_for_meta(anima_dir: Path, common_skills_dir: Path, meta) -> str:
+    """Pointer for *meta*: external skills use the router's external/ pointer."""
+    if getattr(meta, "is_external", False):
+        from core.skills.router import _pointer_path
+
+        return _pointer_path(meta)
+    return _pointer_for_path(anima_dir, common_skills_dir, meta.path)
 
 
 def _pointer_for_path(anima_dir: Path, common_skills_dir: Path, path: Path) -> str:

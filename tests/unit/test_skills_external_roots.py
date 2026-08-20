@@ -257,3 +257,29 @@ def test_missing_root_ignored(tmp_path: Path):
     idx = _index(skills=skills, common=common, roots=[root])
     results = idx.build_index()  # must not raise
     assert not any(m.is_external for m in results)
+
+
+def test_external_pointer_roundtrip(tmp_path, monkeypatch):
+    """external/<engine>/<name>/SKILL.md refs resolve via SkillIndex and list_skill_catalog."""
+    from core.config.schemas import ExternalSkillRoot
+    from core.skills import activation
+    from core.skills.index import SkillIndex
+
+    root = tmp_path / "claude_skills"
+    (root / "foo").mkdir(parents=True)
+    (root / "foo" / "SKILL.md").write_text("---\nname: foo\ndescription: d\n---\nbody\n", encoding="utf-8")
+    anima = tmp_path / "anima"
+    (anima / "skills").mkdir(parents=True)
+    (anima / "state").mkdir()
+    roots = [ExternalSkillRoot(path=str(root), engine="claude")]
+    idx = SkillIndex(anima / "skills", tmp_path / "common_skills", anima_dir=anima, external_roots=roots)
+    meta = idx.resolve_skill_reference("external/claude/foo/SKILL.md")
+    assert meta is not None and meta.is_external and meta.name == "foo"
+    assert idx.resolve_skill_reference("external/claude/../foo/SKILL.md") is None
+    assert idx.resolve_skill_reference("external/claude/.hidden/SKILL.md") is None
+
+    monkeypatch.setattr(activation, "_build_index", lambda ad, cs: idx)
+    monkeypatch.setattr(activation, "_get_common_skills_dir", lambda: tmp_path / "common_skills")
+    items = activation.list_skill_catalog(anima, thread_id="default")
+    ext = [i for i in items if i["name"] == "foo"]
+    assert ext and ext[0]["ref"] == "external/claude/foo/SKILL.md" and ext[0]["path"] == "external/claude/foo/SKILL.md"

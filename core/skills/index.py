@@ -509,6 +509,8 @@ class SkillIndex:
         path = Path(ref)
         if path.is_absolute() or ".." in path.parts:
             return False
+        if ref.startswith("external/"):
+            return len(path.parts) == 4 and path.name == "SKILL.md" and not path.parts[2].startswith(".")
         if ref.startswith(("skills/", "common_skills/", "companies/")):
             return len(path.parts) >= 3 and path.name == "SKILL.md"
         return "/" not in ref
@@ -527,6 +529,15 @@ class SkillIndex:
             if path.parts[:3] != expected_prefix:
                 return None
             return self._safe_child_path(resources.root.parent.parent, path)
+        if ref.startswith("external/"):
+            # external/<engine>/<name>/SKILL.md -> <root>/<name>/SKILL.md (symlink resolved)
+            _engine, name = path.parts[1], path.parts[2]
+            for root_obj, rdir in self._resolve_enabled_external_roots():
+                if getattr(root_obj, "engine", "") != _engine:
+                    continue
+                candidate = (rdir / name).resolve(strict=False) / "SKILL.md"
+                return candidate if candidate.is_file() else None
+            return None
         return None
 
     @staticmethod
