@@ -64,7 +64,7 @@ def get_credential(
     key_name: str = "api_key",
     env_var: str | None = None,
 ) -> str:
-    """Resolve a credential via config.json → shared/credentials.json → env cascade.
+    """Resolve a credential via config → vault → legacy file → local/env cascade.
 
     Args:
         credential_name: Key in config.json ``credentials`` dict
@@ -78,8 +78,7 @@ def get_credential(
         The resolved credential string.
 
     Raises:
-        ToolConfigError: If neither config.json, shared/credentials.json,
-            nor the environment variable provides a value.
+        ToolConfigError: If no configured source provides a value.
     """
     from core.config.models import load_config
 
@@ -160,9 +159,15 @@ def _lookup_shared_credentials(key: str) -> str | None:
     if not cred_file.is_file():
         return None
     try:
-        data = json.loads(cred_file.read_text(encoding="utf-8"))
+        raw = cred_file.read_text(encoding="utf-8")
+        if not raw.strip():
+            return None
+        data = json.loads(raw)
     except (json.JSONDecodeError, OSError) as exc:
         logger.warning("Failed to read %s: %s", cred_file, exc)
+        return None
+    if not isinstance(data, dict):
+        logger.warning("Failed to read %s: expected a JSON object", cred_file)
         return None
     val = data.get(key)
     return val if val else None

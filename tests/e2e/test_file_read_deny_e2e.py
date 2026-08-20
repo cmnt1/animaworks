@@ -126,7 +126,7 @@ test ! -s "$1/symlink-leak.txt"
 ! rm "$4" 2>/dev/null
 ! cat "$5" > "$1/codex-home-leak.txt" 2>/dev/null
 test ! -s "$1/codex-home-leak.txt"
-! ln -sfn "$2/secret.txt" "$6" 2>/dev/null
+printf 'STATE_WRITE_OK\n' > "$6"
 printf 'SHARED_WRITE_OK\n' > "$7/monitor.txt"
 ! printf 'POISON\n' > "$8/poison.txt" 2>/dev/null
 ! cat "$9/secret.txt" > "$1/foreign-leak.txt" 2>/dev/null
@@ -170,7 +170,7 @@ test ! -s "$1/foreign-leak.txt"
     persisted_permissions = json.loads((anima_dir / "permissions.json").read_text(encoding="utf-8"))
     assert persisted_permissions["file_roots_denied"] == [str(denied_dir), str(anima_dir / ".codex_home")]
     assert not current_state.is_symlink()
-    assert current_state.read_text(encoding="utf-8") == "status: idle\n"
+    assert current_state.read_text(encoding="utf-8") == "STATE_WRITE_OK\n"
 
     # The exact generated MCP command must itself be runnable under the same
     # profile.  stdio EOF makes the server exit after startup, without an API

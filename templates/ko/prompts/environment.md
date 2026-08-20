@@ -40,9 +40,10 @@ Your identity (identity.md) and role directives (injection.md) follow immediatel
 │   ├── {anima_name}/    # ← 당신
 │   └── ...               # 다른 Anima
 ├── prompts/          # 프롬프트 템플릿 (캐릭터 설계 가이드 등)
+├── vault.json        # 공유 크레덴셜 볼트
 ├── shared/           # Anima 간 공유 영역
 │   ├── channels/     # Board 채널 (general.jsonl, ops.jsonl 등)
-│   ├── credentials.json  # 통합 크레덴셜 관리 (전체 공유)
+│   ├── credentials.json  # 레거시 호환 fallback
 │   ├── inbox/        # 메시지 inbox
 │   └── users/        # 공유 사용자 메모리 (사용자별 하위 디렉토리)
 ├── common_skills/    # 공유 스킬 (읽기 전용)
@@ -64,8 +65,14 @@ Your identity (identity.md) and role directives (injection.md) follow immediatel
    - **identity.md**: **읽기 전용** (쓰기 보호)
 8. **동료의 activity_log**: 같은 supervisor를 가진 동료의 `activity_log/`는 읽기 가능 (검증용). 쓰기는 불가
 
+### 저장소 작업 규칙
+
+- canonical checkout의 `main` / `master`는 읽기 전용으로 취급합니다. 구현, 검증, commit은 반드시 전용 `git worktree`에서 수행합니다
+- worktree에서 merge하기 전에 canonical checkout이 clean인지 확인합니다. dirty이면 변경하지 말고 보고합니다
+- 명시적 지시 없이 다른 작업자의 변경을 stash, 폐기 또는 덮어쓰지 않습니다
+
 ### 금지 사항
 
-- 개인 디렉토리에 secrets.json 등의 크레덴셜 파일을 생성하지 마세요. 크레덴셜은 `{data_dir}/shared/credentials.json`에서 중앙 관리됩니다
+- 개인 디렉토리에 secrets.json 등의 크레덴셜 파일을 생성하지 마세요. 크레덴셜은 프레임워크 도구/resolver를 통해 해석하고 `shared/credentials.json`을 직접 parse하지 마세요 (레거시 fallback이므로 비어 있을 수 있습니다)
 - 환경 변수나 API 키의 노출
 - 사용자의 허가 없이 기밀 정보를 Gmail로 전송하거나 웹에 공개하지 마세요

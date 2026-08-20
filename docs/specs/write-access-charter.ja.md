@@ -4,16 +4,17 @@
 サンドボックスプロファイル・permissions.json・procedures・指示書は全て本書に従う。
 本書と実装が食い違う場合、それはバグであり実装側を直す。
 
-## 原理原則（3行ルール）
+## 原理原則
 
-anima が書き込めるのは次の**2種類の場所だけ**である。例外リストを育てない。
+anima が書き込めるのは次の**3種類の場所だけ**である。例外リストを育てない。
 
-1. **`companies/<自社>/shared/`** — 無条件・常に読み書き可。全エンジン（codexシェル・MCP・grok・ネイティブfileツール）で同一。
-2. **作業ディレクトリ** — `permissions.json` の `file_roots` に列挙された **data_dir 外**のパス（例: `~/dev/AI-Schreiber`）。`.git` を含め全権限。宣言＝実効を常に一致させる。
+1. **自分のAnimaディレクトリ** — 業務データは無条件・常に読み書き可。`.codex_home` と `permissions.json` は制御面として保護する。
+2. **`companies/<自社>/shared/`** — 無条件・常に読み書き可。全エンジン（codexシェル・MCP・grok・ネイティブfileツール）で同一。
+3. **作業ディレクトリ** — `permissions.json` の `file_roots` に列挙された **data_dir 外**のパス（例: `~/dev/AI-Schreiber`）。`.git` を含め全権限。宣言＝実効を常に一致させる。
 
 そして配置規則:
 
-3. **worktree は必ず `companies/<自社>/shared/worktrees/` に作る。** それ以外の場所への worktree 作成は禁止。
+4. **worktree は必ず `companies/<自社>/shared/worktrees/` に作る。** それ以外の場所への worktree 作成は禁止。
 
 ## 派生規則
 
@@ -33,4 +34,4 @@ anima が書き込めるのは次の**2種類の場所だけ**である。例外
 
 ## 背景
 
-2026-07-17 の FS 分離以降、「data_dir 配下の write root を一律無効化し、必要箇所を carve-out で個別復活」という方式が EROFS 障害を7回以上再発させた（notification_map / delegate_task / company shared / .git / cache / shared/worktrees / dev直下worktree）。原因は宣言（file_roots）と実効権限の二重帳簿。本定款はこれを「書ける場所は2種類だけ」に畳むことで根絶する。
+2026-07-17 の FS 分離以降、「data_dir 配下の write root を一律無効化し、必要箇所を carve-out で個別復活」という方式が EROFS 障害を7回以上再発させた（notification_map / delegate_task / company shared / .git / cache / shared/worktrees / dev直下worktree）。原因は宣言（file_roots）と実効権限の二重帳簿。本定款はこれを「書ける場所は3種類だけ」に畳むことで根絶する。
