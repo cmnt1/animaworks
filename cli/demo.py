@@ -95,9 +95,7 @@ def available_presets(repo_root: Path) -> list[str]:
     preset_dir = repo_root / "demo" / "presets"
     if not preset_dir.is_dir():
         return []
-    return sorted(
-        p.name for p in preset_dir.iterdir() if p.is_dir() and p.name != "commands"
-    )
+    return sorted(p.name for p in preset_dir.iterdir() if p.is_dir() and p.name != "commands")
 
 
 def _resolve_preset_dir(repo_root: Path, preset: str) -> Path:
