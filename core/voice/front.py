@@ -188,6 +188,10 @@ class VoiceFrontLane:
             "temperature": self._temperature,
             "timeout": self._timeout,
             "num_retries": self._num_retries,
+            # The front lane is the low-latency lane: a thinking model burns
+            # the whole max_tokens budget on reasoning and streams *no*
+            # content (silent turn). Servers that don't know the kwarg ignore it.
+            "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
         }
         if self._api_base:
             kwargs["api_base"] = self._api_base

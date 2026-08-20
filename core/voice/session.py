@@ -1046,6 +1046,12 @@ class VoiceSession:
             if remaining and tts_ok:
                 await self._enqueue_tts(remaining)
             full_text = "".join(full)
+            if not full_text.strip():
+                # Nothing was said (e.g. a thinking model spent the whole token
+                # budget reasoning). Don't persist an empty turn or let a
+                # proactive turn count it as a spoken one.
+                logger.warning("Voice front turn produced no text (%s)", self._anima_name)
+                return False
             self._record_front_conversation(text, full_text, from_person, record_user=record_user)
             self._last_activity = time.monotonic()
             emotion = extract_emotion(full_text)
@@ -1330,6 +1336,16 @@ class VoiceSession:
         self._audio_buffer.clear()
         self._streamer.reset()
         self._clear_tts_queue()
+
+    async def handle_discard_audio(self) -> None:
+        """Drop buffered mic input without touching the current turn.
+
+        Sent when a VAD misfire aborted a recording: the noise must not leak
+        into the next utterance, but an in-flight reply must keep streaming
+        (that is what ``handle_interrupt`` is for).
+        """
+        self._audio_buffer.clear()
+        self._streamer.reset()
 
     async def _send_error(self, message: str) -> None:
         """Send error message to client."""

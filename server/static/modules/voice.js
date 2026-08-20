@@ -218,8 +218,9 @@ export class VoiceManager {
 
   /**
    * Abort a recording that a VAD misfire started (blip too short to be speech).
-   * Unlike stopRecording() no speech_end is sent — the server drops the
-   * buffered noise instead of running a turn on it.
+   * Sends neither speech_end (no turn on noise) nor interrupt (that is
+   * barge-in and would kill a reply the anima is streaming) — just tells the
+   * server to drop the buffered noise.
    */
   discardRecording() {
     if (this._startingRecording) {
@@ -230,7 +231,7 @@ export class VoiceManager {
     if (!this._recording) return;
     this._stopRecordingInternal();
     if (this._ws && this._ws.readyState === WebSocket.OPEN) {
-      this._ws.send(JSON.stringify({ type: 'interrupt' }));
+      this._ws.send(JSON.stringify({ type: 'discard_audio' }));
     }
     this._emit('recordingStop');
   }

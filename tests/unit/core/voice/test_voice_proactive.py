@@ -528,6 +528,43 @@ class TestProactiveConcurrency:
         assert "response_done" in types
 
 
+# ── Empty replies / discarded noise ──────────────────────────
+
+
+class TestEmptyTurnAndDiscard:
+    @pytest.mark.asyncio
+    async def test_empty_reply_is_not_recorded(self) -> None:
+        """A thinking model can burn its budget and stream no text — that must
+        not persist an empty turn nor count as a spoken self-turn."""
+        sess = _make_session(proactive=True)
+        lane = AsyncMock()
+        lane.check_health = AsyncMock(return_value=True)
+        lane.reset_turn = MagicMock()
+
+        async def _empty(user_text: str, **kwargs):  # type: ignore[no-untyped-def]
+            if False:
+                yield ""
+
+        lane.stream = _empty
+        sess._front_lane = lane
+        mock_conv = MagicMock()
+        with patch("core.memory.conversation.ConversationMemory", return_value=mock_conv):
+            ok = await sess._run_front_turn(lane, PROACTIVE_SYNTHETIC_PROMPT, "human", True, record_user=False)
+        assert ok is False
+        assert mock_conv.append_turn.call_args_list == []
+
+    @pytest.mark.asyncio
+    async def test_discard_audio_keeps_turn_alive(self) -> None:
+        """A VAD misfire drops buffered noise but must never abort the reply
+        the anima is streaming (that is barge-in / handle_interrupt)."""
+        sess = _make_session(proactive=True)
+        sess._audio_buffer.extend(_audio_frames())
+        sess._interrupted = False
+        await sess.handle_discard_audio()
+        assert not sess._audio_buffer
+        assert sess._interrupted is False
+
+
 # ── Teardown ─────────────────────────────────────────────────
 
 
