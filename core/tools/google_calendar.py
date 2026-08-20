@@ -565,10 +565,7 @@ def cli_main(argv: list[str] | None = None) -> None:
                     print(f"  series   : {result.get('recurringEventId')}")
                 if result.get("attendees"):
                     for a in result["attendees"]:
-                        print(
-                            f"  attendee : {a.get('email', '')} "
-                            f"({a.get('responseStatus', '')})"
-                        )
+                        print(f"  attendee : {a.get('email', '')} ({a.get('responseStatus', '')})")
 
         elif args.command == "update":
             result = client.update_event(
