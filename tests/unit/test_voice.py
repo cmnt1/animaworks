@@ -24,7 +24,6 @@ from core.voice.tts_irodori import IrodoriTTS
 from core.voice.tts_sbv2 import StyleBertVits2TTS
 from core.voice.tts_voicevox import VoicevoxTTS
 
-
 # ── TestSplitSentences ──────────────────────────────────────────
 
 
@@ -296,6 +295,48 @@ class TestSanitizeForTTS:
 
         text = "普通のテキストです。変わりません。"
         assert sanitize_for_tts(text) == text
+
+    def test_keep_emoji_filters_to_allowlist(self) -> None:
+        from core.voice.session import sanitize_for_tts
+
+        # 😊 is an Irodori annotation emoji, 😃 is not.
+        assert sanitize_for_tts("😊😃こんにちは", keep_emoji=True) == "😊こんにちは"
+        # ZWJ sequence in the allowlist survives intact.
+        assert sanitize_for_tts("😮‍💨ふう", keep_emoji=True) == "😮‍💨ふう"
+
+    def test_keep_emoji_false_strips_all(self) -> None:
+        from core.voice.session import sanitize_for_tts
+
+        assert sanitize_for_tts("😊😃こんにちは") == "こんにちは"
+
+    def test_year_kana_conversion(self) -> None:
+        from core.voice.session import apply_reading_rules, sanitize_for_tts
+
+        assert apply_reading_rules("2003年です") == "にせんさんねんです"
+        assert apply_reading_rules("二〇二六年") == "にせんにじゅうろくねん"
+        # sanitize keeps the display copy readable — no kana conversion.
+        assert sanitize_for_tts("2003年です", keep_emoji=True) == "2003年です"
+
+    def test_yomi_dict_substitution(self, tmp_path, monkeypatch) -> None:
+        import core.voice.session as vs
+
+        (tmp_path / "voice_yomi.tsv").write_text(
+            "# comment\n小鳥遊\tたかなし\nRAG\tラグ\n", encoding="utf-8"
+        )
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        monkeypatch.setattr(vs, "_yomi_cache", None)
+        monkeypatch.setattr(vs, "_yomi_mtime", 0.0)
+        assert vs.apply_reading_rules("小鳥遊さんとRAGの話") == "たかなしさんとラグの話"
+        # Display copy stays untouched.
+        assert vs.sanitize_for_tts("小鳥遊さんとRAGの話", keep_emoji=True) == "小鳥遊さんとRAGの話"
+
+    def test_yomi_dict_missing_is_noop(self, tmp_path, monkeypatch) -> None:
+        import core.voice.session as vs
+
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        monkeypatch.setattr(vs, "_yomi_cache", None)
+        monkeypatch.setattr(vs, "_yomi_mtime", 0.0)
+        assert vs.apply_reading_rules("そのまま") == "そのまま"
 
     def test_combined(self) -> None:
         from core.voice.session import sanitize_for_tts
