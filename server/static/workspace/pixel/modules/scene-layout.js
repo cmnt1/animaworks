@@ -13,7 +13,7 @@ export function resolveBasePath() {
 
 function normalizedAnimas(animas) {
   return (Array.isArray(animas) ? animas : [])
-    .filter((entry) => entry?.name && !entry.is_human)
+    .filter((entry) => entry?.name && !entry.is_human && entry.name.toLowerCase() !== "librarian")
     .map((entry, index) => ({
       ...entry,
       id: String(entry.name).trim().toLowerCase(),
