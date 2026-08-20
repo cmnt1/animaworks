@@ -5,7 +5,7 @@
 """Unit tests for proactive (silence-triggered) self-speech.
 
 Covers:
-  - disabled by default → the idle watcher task is never started
+  - enabled by default (opt-out); disabled → the idle watcher task is never started
   - silence threshold + all guards clear → one self-turn runs (delay doubles)
   - each fire-guard blocks the self-turn
   - cap of 2 consecutive self-turns (needs a user turn to reset)
@@ -107,7 +107,11 @@ async def _run_ticks(sess: VoiceSession, n: int = 1) -> None:
 
 
 class TestProactiveEnablement:
-    def test_disabled_by_default_does_not_start_loop(self) -> None:
+    def test_enabled_by_default(self) -> None:
+        # Proactive speech is opt-out: the config default must stay True.
+        assert VoiceConfig().proactive_enabled is True
+
+    def test_disabled_does_not_start_loop(self) -> None:
         sess = _make_session(proactive=False)
         sess._ensure_idle_watcher()
         assert sess._idle_watcher is None

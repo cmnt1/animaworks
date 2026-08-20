@@ -1030,8 +1030,8 @@ class VoiceConfig(BaseModel):
     """voice front lane model (e.g. ``openai/qwen3.6-35b-a3b``). None = legacy path."""
     front_api_base: str | None = None
     """OpenAI-compatible base URL for the voice front lane. None = legacy path."""
-    proactive_enabled: bool = False
-    """Proactively speak up after sustained silence (requires front lane)."""
+    proactive_enabled: bool = True
+    """Proactively speak up after sustained silence (requires front lane). Opt-out."""
     proactive_initial_delay_sec: float = 50.0
     """Silence seconds before the first proactive speech; doubles per utterance."""
     voicevox: VoicevoxConfig = VoicevoxConfig()

@@ -80,6 +80,11 @@ evaluation = [
     "seaborn>=0.13.0",
 ]
 
+[tool.uv]
+# mcp 2.x (pulled transitively via claude-agent-sdk) removed Server.list_tools
+# and breaks core/mcp integration + test_mcp_server; pin until migrated.
+constraint-dependencies = ["mcp<2"]
+
 [tool.setuptools]
 py-modules = ["main"]
 
