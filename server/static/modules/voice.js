@@ -264,12 +264,7 @@ export class VoiceManager {
     this._emit('recordingStop');
   }
 
-  /**
-   * Abort a recording that a VAD misfire started (blip too short to be speech).
-   * Sends neither speech_end (no turn on noise) nor interrupt (that is
-   * barge-in and would kill a reply the anima is streaming) — just tells the
-   * server to drop the buffered noise.
-   */
+  // Abort a VAD noise blip without interrupting the current reply.
   discardRecording() {
     if (this._startingRecording) {
       this._pendingStop = true;
@@ -357,6 +352,11 @@ export class VoiceManager {
       if (!started && this._vad === vad) {
         vad.destroy();
         this._vad = null;
+        if (!this._recording && !this._startingRecording) this._releaseMediaStream();
+      } else if (started && this._vad !== vad) {
+        vad.destroy();
+      } else if (started && (this._mode !== 'vad' || !this._connected)) {
+        vad.stop();
         if (!this._recording && !this._startingRecording) this._releaseMediaStream();
       }
       return;

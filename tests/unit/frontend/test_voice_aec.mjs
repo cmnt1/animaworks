@@ -281,6 +281,39 @@ describe('VoiceManager native AEC', () => {
     assert.strictEqual(FakeAudioContext.instances.at(-1).sources[0], stream);
   });
 
+  it('stops an in-flight VAD resume when switching to PTT', async () => {
+    const stream = new FakeStream({ echoCancellation: 'all' });
+    let resolveRequest;
+    const pending = new Promise((resolve) => { resolveRequest = resolve; });
+    navigator.mediaDevices.getUserMedia = async () => {
+      await pending;
+      return stream;
+    };
+    const manager = newManager();
+    manager._mode = 'vad';
+    const existingVad = {
+      running: false,
+      start: async () => {
+        await manager._ensureMediaStream();
+        existingVad.running = true;
+        return true;
+      },
+      stop() { this.running = false; },
+      destroy() { this.running = false; },
+    };
+    manager._vad = existingVad;
+
+    const resume = manager._startVAD();
+    await new Promise((resolve) => setImmediate(resolve));
+    manager.setMode('ptt');
+    resolveRequest();
+    await resume;
+
+    assert.equal(existingVad.running, false);
+    assert.equal(stream.track.stopped, true);
+    assert.equal(manager._mediaStream, null);
+  });
+
   it('holds TTS-time PCM until real speech, then interrupts before flushing it', async () => {
     const allStream = new FakeStream({ echoCancellation: 'all' });
     navigator.mediaDevices.getUserMedia = async () => allStream;
