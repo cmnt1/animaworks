@@ -370,7 +370,7 @@ export class VoiceManager {
       return;
     }
     if (this._mode !== 'vad') {
-      this._releaseMediaStream();
+      if (!this._recording && !this._startingRecording) this._releaseMediaStream();
       return;
     }
     const vad = new VoiceVAD({

@@ -197,6 +197,7 @@ ${voiceSource}`,
 
 globalThis.__VoicePlayback = FakePlayback;
 const { VoiceManager } = await import(voiceUrl);
+const { VoiceVAD } = await import(vadUrl);
 
 async function waitFor(predicate) {
   for (let i = 0; i < 50; i += 1) {
@@ -238,6 +239,46 @@ describe("voice AEC integration", () => {
     globalThis.__aecAudioSources = [];
     globalThis.__aecVadOptions = [];
     globalThis.__aecStreamEvents = [];
+  });
+
+  it("shares one delayed MicVAD creation across concurrent starts", async () => {
+    const originalNew = window.vad.MicVAD.new;
+    let release;
+    let resolveCalled;
+    let newCalls = 0;
+    const creationStarted = new Promise((resolve) => {
+      resolveCalled = resolve;
+    });
+    const creationGate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const fakeVad = {
+      async start() {},
+      pause() {},
+      destroy() {},
+    };
+
+    window.vad.MicVAD.new = async () => {
+      newCalls += 1;
+      resolveCalled();
+      await creationGate;
+      return fakeVad;
+    };
+
+    const vad = new VoiceVAD();
+    try {
+      const first = vad.start();
+      const second = vad.start();
+      await creationStarted;
+      assert.equal(newCalls, 1);
+
+      release();
+      assert.deepEqual(await Promise.all([first, second]), [true, true]);
+      assert.equal(newCalls, 1);
+    } finally {
+      vad.destroy();
+      window.vad.MicVAD.new = originalNew;
+    }
   });
 
   it("shares one AEC stream, interrupts TTS, starts recording, and stops its track", async () => {

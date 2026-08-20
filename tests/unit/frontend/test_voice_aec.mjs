@@ -257,6 +257,30 @@ describe('VoiceManager native AEC', () => {
     assert.deepEqual(await Promise.all([first, second]), [stream, stream]);
   });
 
+  it('keeps a pending AUTO stream alive when switching to PTT', async () => {
+    const stream = new FakeStream({ echoCancellation: 'all' });
+    let resolveRequest;
+    let calls = 0;
+    const pending = new Promise((resolve) => { resolveRequest = resolve; });
+    navigator.mediaDevices.getUserMedia = async () => {
+      calls += 1;
+      await pending;
+      return stream;
+    };
+    const manager = newManager();
+    manager._mode = 'vad';
+
+    const autoAcquisition = manager._ensureMediaStream();
+    manager.setMode('ptt');
+    const recording = manager.startRecording();
+    resolveRequest();
+    await Promise.all([autoAcquisition, recording]);
+
+    assert.equal(calls, 1);
+    assert.equal(stream.track.stopped, false);
+    assert.strictEqual(FakeAudioContext.instances.at(-1).sources[0], stream);
+  });
+
   it('holds TTS-time PCM until real speech, then interrupts before flushing it', async () => {
     const allStream = new FakeStream({ echoCancellation: 'all' });
     navigator.mediaDevices.getUserMedia = async () => allStream;

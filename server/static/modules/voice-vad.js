@@ -49,10 +49,19 @@ export class VoiceVAD {
     this._pauseStream = options.pauseStream;
     this._resumeStream = options.resumeStream;
     this._myvad = null;
+    this._startPromise = null;
     this._active = false;
   }
 
   async start() {
+    if (this._startPromise) return this._startPromise;
+    this._startPromise = this._start().finally(() => {
+      this._startPromise = null;
+    });
+    return this._startPromise;
+  }
+
+  async _start() {
     if (this._myvad) {
       this._active = true;
       await this._myvad.start();
@@ -93,10 +102,11 @@ export class VoiceVAD {
       if (this._pauseStream) vadOpts.pauseStream = this._pauseStream;
       if (this._resumeStream) vadOpts.resumeStream = this._resumeStream;
       this._myvad = await window.vad.MicVAD.new(vadOpts);
-      this._myvad.start();
       this._active = true;
+      await this._myvad.start();
       return true;
     } catch (err) {
+      this._active = false;
       console.warn('[VoiceVAD] Failed to initialize:', err);
       return false;
     }
