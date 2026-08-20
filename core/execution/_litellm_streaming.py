@@ -1067,7 +1067,9 @@ class StreamingMixin:
                             _exc,
                             provider_family=provider_family_of(self._model_config.model),
                         )
-                        if getattr(_reason_ol, "value", None) == "context_overflow" and await self._try_compact_messages(
+                        if getattr(
+                            _reason_ol, "value", None
+                        ) == "context_overflow" and await self._try_compact_messages(
                             iteration_messages_ol, llm_kwargs, litellm
                         ):
                             logger.warning(
