@@ -46,6 +46,10 @@ dependencies = [
     "psutil>=5.9.0",
     "rank-bm25>=0.2",
     "datasketch>=1.1.3",
+    # mcp 2.x (pulled transitively via claude-agent-sdk) removed Server.list_tools
+    # and breaks core/mcp integration + test_mcp_server; pin until migrated.
+    # [tool.uv].constraint-dependencies is uv-only; this direct dep also constrains pip.
+    "mcp>=1,<2",
 ]
 
 [project.urls]
