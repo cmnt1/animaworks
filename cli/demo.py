@@ -6,7 +6,7 @@
 
 Runs the 3-agent demo team directly on the host using an already-installed
 Claude Code / Codex CLI login (or an ANTHROPIC_API_KEY), so no extra API key
-is required.  This is the Python port of ``demo/entrypoint.sh``.
+is required.  This replaces the former Docker demo (``demo/entrypoint.sh``).
 """
 
 from __future__ import annotations
