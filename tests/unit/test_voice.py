@@ -561,7 +561,7 @@ class TestVoiceConfig:
         assert vc.voicevox.base_url == "http://localhost:50021"
         assert vc.elevenlabs.api_key_env == "ELEVENLABS_API_KEY"
         assert vc.style_bert_vits2.base_url == "http://localhost:5000"
-        assert vc.irodori.base_url == "http://xserverng2:7861"
+        assert vc.irodori.base_url == "http://localhost:7861"
 
     def test_animaworks_config_has_voice(self) -> None:
         config = AnimaWorksConfig()
@@ -705,7 +705,7 @@ class TestTTSSynthesisError:
 class TestIrodoriTTS:
     def test_default_base_url(self) -> None:
         provider = IrodoriTTS(VoiceConfig())
-        assert provider._base_url == "http://xserverng2:7861"
+        assert provider._base_url == "http://localhost:7861"
 
     def test_custom_base_url_from_config(self) -> None:
         vc = VoiceConfig(irodori={"base_url": "http://localhost:9999/"})
@@ -741,7 +741,7 @@ class TestIrodoriTTS:
         assert result == wav
         mock_client.post.assert_awaited_once()
         call_args = mock_client.post.call_args
-        assert call_args.args[0] == "http://xserverng2:7861/voice"
+        assert call_args.args[0] == "http://localhost:7861/voice"
         assert call_args.kwargs["json"] == {
             "text": "こんにちは",
             "voice_id": "v1",
@@ -809,7 +809,7 @@ class TestIrodoriTTS:
             mock_cls.return_value = mock_client
 
             assert await provider.health_check() is True
-            mock_client.get.assert_awaited_once_with("http://xserverng2:7861/health")
+            mock_client.get.assert_awaited_once_with("http://localhost:7861/health")
 
     @pytest.mark.asyncio
     async def test_health_check_connection_error(self) -> None:
