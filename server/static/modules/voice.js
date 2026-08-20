@@ -378,7 +378,7 @@ export class VoiceManager {
       pauseStream: async () => {},
       resumeStream: () => this._ensureMediaStream(),
       onSpeechStart: () => {
-        if (this._outputActive() && !this._aecAll) return;
+        if (this._outputActive() && (!this._aecAll || !this._playback.aecActive)) return;
         this._holdPcm = this._playbackActive();
         this._heldPcm = [];
         this.startRecording();
