@@ -38,6 +38,13 @@ from core.execution.base import (
     ToolCallRecord,
     _truncate_for_record,
 )
+from core.execution.error_classifier import (
+    FailoverReason,
+    classify_llm_error_message,
+    guard_key,
+    provider_family_of,
+)
+from core.execution.rate_guard import get_rate_guard
 from core.i18n import t
 from core.memory.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
@@ -52,6 +59,44 @@ __all__ = ["GeminiCLIExecutor", "is_gemini_cli_available"]
 _GEMINI_BINARY_NAMES = ("gemini",)
 _DEFAULT_TIMEOUT_SECONDS = 600
 _GRACEFUL_KILL_WAIT = 3.0
+
+
+# ── Rate-guard wiring ───────────────────────────────────────
+
+# Realm for Gemini's credential pool — mirrors the ``codex`` / ``grok`` /
+# ``cursor`` realm split so a quota hit blocks the gemini realm specifically
+# while the shared fleet guard prefers other realms.
+_GEMINI_REALM = "gemini"
+
+
+def _gemini_error_metadata(message: str, model: str) -> dict[str, Any]:
+    """Classify a Gemini CLI failure, report fleet blocks, and return metadata.
+
+    Mirrors ``codex._codex_error_metadata`` / ``grok._grok_error_metadata``:
+    RATE / OVERLOAD / QUOTA failures are registered against the shared rate
+    guard so the fleet handler can begin a backoff / failover for the realm.
+    """
+    reason, _hint = classify_llm_error_message(message)
+    guarded_reasons = {
+        FailoverReason.RATE_LIMIT,
+        FailoverReason.OVERLOADED,
+        FailoverReason.QUOTA_EXHAUSTED,
+    }
+    if reason in guarded_reasons:
+        try:
+            guard = get_rate_guard()
+            cfg = guard.config
+            block_seconds = (
+                cfg.quota_block_seconds if reason is FailoverReason.QUOTA_EXHAUSTED else cfg.default_block_seconds
+            )
+            guard.report_block(
+                guard_key(provider_family_of(model), _GEMINI_REALM),
+                block_seconds,
+                reason.value,
+            )
+        except Exception:
+            logger.debug("Failed to report gemini error to rate guard", exc_info=True)
+    return {"terminal": True, "reason": reason.value}
 
 
 # ── Binary discovery ───────────────────────────────────────────
@@ -401,6 +446,9 @@ class GeminiCLIExecutor(BaseExecutor):
                                 err = event.get("error", {})
                                 err_msg = err.get("message", "") if isinstance(err, dict) else str(err)
                                 if err_msg and not accumulated_text:
+                                    _gemini_error_metadata(
+                                        err_msg, _resolve_gemini_model(self._model_config.model)
+                                    )
                                     accumulated_text = f"[Gemini CLI Error: {err_msg}]"
 
                         elif etype == "error":
@@ -431,6 +479,7 @@ class GeminiCLIExecutor(BaseExecutor):
                     proc.returncode,
                     stderr_text[:500],
                 )
+                _gemini_error_metadata(stderr_text, _resolve_gemini_model(self._model_config.model))
                 if any(kw in stderr_text.lower() for kw in ("auth", "login", "unauthorized", "unauthenticated")):
                     return ExecutionResult(text=t("gemini_cli.not_authenticated"))
                 if not accumulated_text:
@@ -440,6 +489,7 @@ class GeminiCLIExecutor(BaseExecutor):
             return ExecutionResult(text=t("gemini_cli.not_installed"))
         except Exception as e:
             logger.exception("Gemini CLI execution error")
+            _gemini_error_metadata(str(e), _resolve_gemini_model(self._model_config.model))
             return ExecutionResult(text=f"[Gemini CLI Error: {e}]")
         finally:
             # Ensure the subprocess is killed on CancelledError or any
@@ -598,6 +648,7 @@ class GeminiCLIExecutor(BaseExecutor):
             if proc.returncode != 0:
                 stderr_text = stderr_bytes.decode("utf-8", errors="replace")
                 logger.warning("Gemini CLI exited with code %d: %s", proc.returncode, stderr_text[:500])
+                _gemini_error_metadata(stderr_text, _resolve_gemini_model(self._model_config.model))
                 if any(kw in stderr_text.lower() for kw in ("auth", "login", "unauthorized", "unauthenticated")):
                     err_text = t("gemini_cli.not_authenticated")
                     if not accumulated_text:
@@ -610,6 +661,7 @@ class GeminiCLIExecutor(BaseExecutor):
             accumulated_text = text
         except Exception as e:
             logger.exception("Gemini CLI streaming error")
+            _gemini_error_metadata(str(e), _resolve_gemini_model(self._model_config.model))
             err = f"[Gemini CLI Error: {e}]"
             yield {"type": "text_delta", "text": err}
             accumulated_text = err

@@ -30,6 +30,13 @@ from core.execution.base import (
     _truncate_for_record,
     join_answer_parts,
 )
+from core.execution.error_classifier import (
+    FailoverReason,
+    classify_llm_error_message,
+    guard_key,
+    provider_family_of,
+)
+from core.execution.rate_guard import get_rate_guard
 from core.i18n import t
 from core.memory.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
@@ -56,6 +63,44 @@ _DEFAULT_TIMEOUT_SECONDS = 600
 _GRACEFUL_KILL_WAIT = 3.0
 _RESUMABLE_TRIGGERS = frozenset({"chat"})
 _MAX_RESUME_TURNS = 10
+
+
+# ── Rate-guard wiring ───────────────────────────────────────
+
+# Realm for Cursor's credential pool — mirrors the ``codex`` / ``grok``
+# realm split so a quota hit on Cursor blocks cursor calls (and frees the
+# shared fleet guard to prefer other realms) without touching other engines.
+_CURSOR_REALM = "cursor"
+
+
+def _cursor_error_metadata(message: str, model: str) -> dict[str, Any]:
+    """Classify a Cursor failure, report fleet blocks, and return chunk metadata.
+
+    Mirrors ``codex._codex_error_metadata`` / ``grok._grok_error_metadata``:
+    RATE / OVERLOAD / QUOTA failures are registered against the shared rate
+    guard so the fleet handler can begin a backoff / failover for the realm.
+    """
+    reason, _hint = classify_llm_error_message(message)
+    guarded_reasons = {
+        FailoverReason.RATE_LIMIT,
+        FailoverReason.OVERLOADED,
+        FailoverReason.QUOTA_EXHAUSTED,
+    }
+    if reason in guarded_reasons:
+        try:
+            guard = get_rate_guard()
+            cfg = guard.config
+            block_seconds = (
+                cfg.quota_block_seconds if reason is FailoverReason.QUOTA_EXHAUSTED else cfg.default_block_seconds
+            )
+            guard.report_block(
+                guard_key(provider_family_of(model), _CURSOR_REALM),
+                block_seconds,
+                reason.value,
+            )
+        except Exception:
+            logger.debug("Failed to report cursor error to rate guard", exc_info=True)
+    return {"terminal": True, "reason": reason.value}
 
 # ── Binary discovery ───────────────────────────────────────────
 
@@ -623,6 +668,7 @@ class CursorAgentExecutor(BaseExecutor):
                     proc.returncode,
                     stderr_text[:500],
                 )
+                _cursor_error_metadata(stderr_text, self._model_config.model)
                 if (
                     "auth" in stderr_text.lower()
                     or "login" in stderr_text.lower()
@@ -636,6 +682,7 @@ class CursorAgentExecutor(BaseExecutor):
             return (ExecutionResult(text=t("cursor_agent.not_installed")), None, True)
         except Exception as e:
             logger.exception("Cursor agent execution error")
+            _cursor_error_metadata(str(e), self._model_config.model)
             return (ExecutionResult(text=f"[Cursor Agent Error: {e}]"), None, True)
         finally:
             # Ensure the subprocess is killed on CancelledError or any

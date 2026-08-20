@@ -153,30 +153,13 @@ def _task_activity_identity(task_desc: dict[str, Any]) -> tuple[str, str, str]:
     return task_id, title or task_id, description
 
 
-def _detect_task_auth_failure(result: str) -> str | None:
-    """Return an auth-failure summary when the result is a terminal auth error."""
-    text = (result or "").strip()
-    if not text:
-        return None
-
-    folded = text.casefold()
-    auth_markers = (
-        "failed to authenticate",
-        "invalid authentication credentials",
-        "authentication_error",
-        "not authenticated",
-    )
-    if not any(marker in folded for marker in auth_markers):
-        return None
-    if not any(marker in folded for marker in ("401", "api error", "unauthorized", "auth")):
-        return None
-    return text[:200]
-
-
 def _classify_task_result(result: str) -> tuple[str, str]:
     """Map _run_llm_task return value to (queue_status, summary).
 
-    Uses only statuses defined in ``task_queue._VALID_STATUSES``.
+    Uses only statuses defined in ``task_queue._VALID_STATUSES``.  Terminal
+    engine failures (e.g. AUTH) are surfaced by ``_run_llm_task`` raising
+    ``TaskExecError`` via the structured ``cycle_result.error_category``;
+    the result body text is never inspected for failure markers anymore.
     """
     if result == _SENTINEL_CANCELLED:
         return "cancelled", "cancelled before execution"
@@ -192,9 +175,6 @@ def _classify_task_result(result: str) -> tuple[str, str]:
         return "pending", "execution skipped because token budget is unavailable"
     if result == _SENTINEL_BLOCKED:
         return "blocked", "agent declared blocked; waiting on an external blocker"
-    auth_failure = _detect_task_auth_failure(result)
-    if auth_failure:
-        return "failed", f"FAILED: {auth_failure}"
     return "done", (result or "")[:200]
 
 
@@ -2188,6 +2168,7 @@ class PendingTaskExecutor:
         had_error = False
         error_message = ""
         stop_kind = "normal"
+        cycle_error_category = ""
         try:
             if worker_slot is not None:
                 session_context = worker_slot.session_lock
@@ -2248,6 +2229,7 @@ class PendingTaskExecutor:
                                 accumulated_text[:500],
                             )
                             stop_kind = str(cycle_result.get("stop_kind") or "normal")
+                            cycle_error_category = str(cycle_result.get("error_category") or "")
                             if cycle_result.get("action") == "error" or stop_kind == "stream_error":
                                 task_failed_reason = result_summary or "task execution failed"
                             journal.finalize(summary=result_summary[:500])
@@ -2298,9 +2280,10 @@ class PendingTaskExecutor:
         if not result_summary:
             result_summary = accumulated_text[:500] or t("pending_executor.task_completed")
 
-        auth_failure = _detect_task_auth_failure(result_summary or accumulated_text)
-        if auth_failure:
-            raise TaskExecError(auth_failure)
+        if cycle_error_category == "auth":
+            raise TaskExecError(
+                "task execution failed due to a terminal authentication error (credential problem)"
+            )
 
         if stop_kind in {"interrupted", "runaway_halt", "empty_response", "hard_timeout"}:
             continuation_count = task_desc.get("continuation_count", 0)

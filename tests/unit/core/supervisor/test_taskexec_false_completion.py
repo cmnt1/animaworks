@@ -115,12 +115,13 @@ class TestClassifyTaskResult:
         assert status == "done"
         assert len(summary) == 200
 
-    def test_auth_failure_result_maps_to_failed(self):
+    def test_auth_keyword_body_maps_to_done(self):
+        """Body text merely quoting an auth error must not fail the task (structured check now)."""
         status, summary = _classify_task_result(
-            'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}'
+            '401 unauthorized の対処を文書化しました: Failed to authenticate. API Error: 401'
         )
-        assert status == "failed"
-        assert summary.startswith("FAILED: Failed to authenticate.")
+        assert status == "done"
+        assert summary == '401 unauthorized の対処を文書化しました: Failed to authenticate. API Error: 401'
 
 
 # ── Bug B: error chunk detection ──────────────────────────
@@ -215,8 +216,9 @@ class TestRunLlmTaskErrorDetection:
             assert result == "all good"
 
     @pytest.mark.asyncio
-    async def test_auth_failure_summary_raises_taskexec_error(self, tmp_path):
-        """Auth failure text in cycle summary should be treated as a failed task."""
+    async def test_auth_keyword_in_summary_is_normal_completion(self, tmp_path):
+        """Auth keywords in the task output body must NOT fail the task —
+        detection now uses structured cycle_result.error_category instead."""
         executor = _make_executor(tmp_path)
         task = _make_task_desc()
 
@@ -224,7 +226,7 @@ class TestRunLlmTaskErrorDetection:
             {
                 "type": "cycle_done",
                 "cycle_result": {
-                    "summary": 'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}',
+                    "summary": '401 unauthorized の対処を文書化しました',
                 },
             },
         ]
@@ -243,7 +245,41 @@ class TestRunLlmTaskErrorDetection:
             patch("core.paths.load_prompt", return_value="prompt"),
             patch("core.memory.activity.ActivityLogger"),
             patch("core.memory.streaming_journal.StreamingJournal"),
-            pytest.raises(TaskExecError, match="Failed to authenticate"),
+        ):
+            result = await executor._run_llm_task(task)
+            assert result == '401 unauthorized の対処を文書化しました'
+
+    @pytest.mark.asyncio
+    async def test_error_category_auth_raises_taskexec_error(self, tmp_path):
+        """cycle_result.error_category == 'auth' → terminal failure (TaskExecError)."""
+        executor = _make_executor(tmp_path)
+        task = _make_task_desc()
+
+        chunks = [
+            {
+                "type": "cycle_done",
+                "cycle_result": {
+                    "summary": 'just some text',
+                    "error_category": "auth",
+                },
+            },
+        ]
+
+        async def fake_stream(prompt, trigger, **kw):
+            for c in chunks:
+                yield c
+
+        executor._anima.agent.run_cycle_streaming = fake_stream
+        executor._anima.agent.reset_reply_tracking = MagicMock()
+        executor._anima.agent.reset_read_paths = MagicMock()
+        executor._anima.agent.set_task_cwd = MagicMock()
+        executor._anima.agent.set_interrupt_event = MagicMock()
+
+        with (
+            patch("core.paths.load_prompt", return_value="prompt"),
+            patch("core.memory.activity.ActivityLogger"),
+            patch("core.memory.streaming_journal.StreamingJournal"),
+            pytest.raises(TaskExecError, match="authentication"),
         ):
             await executor._run_llm_task(task)
 
@@ -289,19 +325,25 @@ class TestExecuteLlmTaskStatusMapping:
             )
 
     @pytest.mark.asyncio
-    async def test_auth_failure_result_maps_to_failed(self, tmp_path):
+    async def test_engine_auth_failure_maps_to_failed_and_returns(self, tmp_path):
+        """Engine AUTH terminal (error_category) → TaskExecError → failed + delegation return.
+
+        ``_run_llm_task`` raises ``TaskExecError`` when the cycle reports
+        ``error_category == 'auth'``.  ``_execute_llm_task`` must mark the
+        task failed and send the failure/return notification to the delegator.
+        """
         executor = _make_executor(tmp_path)
-        task = _make_task_desc()
-        auth_text = (
-            'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}'
+        task = _make_task_desc(
+            reply_to={"name": "test-anima"},
         )
 
-        with patch.object(executor, "_run_llm_task", return_value=auth_text), \
-             patch.object(executor, "_sync_task_queue") as mock_sync:
+        with patch.object(
+            executor, "_run_llm_task", side_effect=TaskExecError("authentication error"),
+        ), patch.object(executor, "_sync_task_queue") as mock_sync, \
+             patch.object(executor, "_write_failed_result"):
             await executor._execute_llm_task(task)
             mock_sync.assert_called_once()
             assert mock_sync.call_args[0][1] == "failed"
-            assert mock_sync.call_args.kwargs["summary"].startswith("FAILED: Failed to authenticate.")
             assert executor._anima.messenger.send.call_args.kwargs["to"] == "test-anima"
 
     @pytest.mark.asyncio
