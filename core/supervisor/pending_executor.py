@@ -2281,9 +2281,7 @@ class PendingTaskExecutor:
             result_summary = accumulated_text[:500] or t("pending_executor.task_completed")
 
         if cycle_error_category == "auth":
-            raise TaskExecError(
-                "task execution failed due to a terminal authentication error (credential problem)"
-            )
+            raise TaskExecError("task execution failed due to a terminal authentication error (credential problem)")
 
         if stop_kind in {"interrupted", "runaway_halt", "empty_response", "hard_timeout"}:
             continuation_count = task_desc.get("continuation_count", 0)

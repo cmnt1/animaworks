@@ -446,9 +446,7 @@ class GeminiCLIExecutor(BaseExecutor):
                                 err = event.get("error", {})
                                 err_msg = err.get("message", "") if isinstance(err, dict) else str(err)
                                 if err_msg and not accumulated_text:
-                                    _gemini_error_metadata(
-                                        err_msg, _resolve_gemini_model(self._model_config.model)
-                                    )
+                                    _gemini_error_metadata(err_msg, _resolve_gemini_model(self._model_config.model))
                                     accumulated_text = f"[Gemini CLI Error: {err_msg}]"
 
                         elif etype == "error":

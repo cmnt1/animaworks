@@ -21,6 +21,7 @@ from hashlib import sha256
 from typing import Any
 
 from core.config.model_config import resolve_effective_model_config
+from core.emotion_tag import extract_emotion as _extract_emotion_from_tag
 from core.exceptions import (
     ExecutionError,
     LLMAPIError,
@@ -36,7 +37,6 @@ from core.execution.error_classifier import (
 from core.execution.fallback_activity import log_model_fallback, run_with_model_fallback
 from core.execution.session_types import resolve_runtime_session_type
 from core.i18n import t
-from core.emotion_tag import extract_emotion as _extract_emotion_from_tag
 from core.image_artifacts import extract_image_artifacts_from_tool_records, resolve_local_image_paths
 from core.memory.conversation import ConversationMemory, ToolRecord
 from core.memory.streaming_journal import StreamingJournal

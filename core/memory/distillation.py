@@ -233,9 +233,7 @@ class ProceduralDistiller:
         try:
             from core.memory._llm_utils import one_shot_completion
 
-            text = await one_shot_completion(
-                prompt, model=model, max_tokens=2048, structured_output=True
-            )
+            text = await one_shot_completion(prompt, model=model, max_tokens=2048, structured_output=True)
             if text is None:
                 raise RuntimeError("LLM failed")
             text = text or "[]"

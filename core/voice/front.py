@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
@@ -55,6 +54,7 @@ ASK_ANIMA_TOOL: dict[str, Any] = {
         },
     },
 }
+
 
 def extract_emotion(full_text: str) -> str:
     """Parse the emotion tag from a front response; default to ``neutral``."""

@@ -102,6 +102,7 @@ def _cursor_error_metadata(message: str, model: str) -> dict[str, Any]:
             logger.debug("Failed to report cursor error to rate guard", exc_info=True)
     return {"terminal": True, "reason": reason.value}
 
+
 # ── Binary discovery ───────────────────────────────────────────
 
 
