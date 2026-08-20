@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from typing import Any
 
 from core.i18n import t
@@ -39,6 +40,15 @@ ASK_ANIMA_MAX_RESULT_CHARS = 1000
 # Marker prepended to the delegated request so the full-agent loop knows the
 # message came from the voice front lane.
 ASK_ANIMA_DELEGATION_NOTE = "\n\n[voice front からの委譲]"
+
+# Synthetic instruction used for proactive (silence-triggered) self-turns.
+# It is NOT recorded as a human turn in the conversation — only the assistant
+# reply is appended (see ``record_user`` on ``_run_front_turn``).
+PROACTIVE_SYNTHETIC_PROMPT = (
+    "（システム: ユーザーがしばらく黙っている。これまでの会話の流れを踏まえて、"
+    "続きを促すか、関連する軽い一言を短く1文だけ話しかけて。新しい重い話題は振らない。"
+    "会話がまだ無ければ時間帯に合った軽い挨拶をして。引き止めや罪悪感を誘う言い方は禁止）"
+)
 
 VOICE_MODE_SUFFIX = (
     "\n\n[voice-mode: 音声会話です。感情が伝わる話し言葉で200文字以内で簡潔に回答してください。"
@@ -214,6 +224,15 @@ class VoiceSession:
         self._delegation_results: asyncio.Queue[str] | None = None
         self._delegation_done: asyncio.Queue[None] | None = None
         self._delegation_watcher: asyncio.Task | None = None
+
+        # Proactive (silence-triggered) self-speech state. ``_last_activity``
+        # tracks the newest user / session activity via ``time.monotonic()``;
+        # when it ages past ``_proactive_delay`` the idle watcher may speak.
+        self._last_activity: float = time.monotonic()
+        self._proactive_count: int = 0
+        self._proactive_delay: float = float(getattr(voice_config, "proactive_initial_delay_sec", 50.0))
+        self._idle_watcher: asyncio.Task | None = None
+        self._idle_tick_sec: float = 5.0
         self._closed = False
 
         if front_model is None:
@@ -231,6 +250,8 @@ class VoiceSession:
             self._audio_buffer.clear()
             logger.warning("Audio buffer overflow (%s), cleared", self._anima_name)
         self._audio_buffer.extend(data)
+        # Any incoming user audio counts as activity — resets the idle timer.
+        self._last_activity = time.monotonic()
         if self._streamer.feed(data):
             self._maybe_start_streaming_stt()
 
@@ -275,6 +296,10 @@ class VoiceSession:
         if self._processing:
             logger.debug("speech_end ignored — already processing (%s)", self._anima_name)
             return
+        # A real user turn resets the proactive escalation state so the next
+        # round starts from the initial delay and up to 2 self-turns again.
+        self._proactive_count = 0
+        self._proactive_delay = float(getattr(self._voice_config, "proactive_initial_delay_sec", 50.0))
         self._processing = True
         try:
             await self._do_speech_end(from_person)
@@ -282,6 +307,7 @@ class VoiceSession:
             self._processing = False
             self._finalizing = False
             self._streamer.reset()
+            self._last_activity = time.monotonic()
 
     async def _check_tts_health(self) -> bool:
         """Check TTS availability. Only caches positive results; retries on failure."""
@@ -631,6 +657,109 @@ class VoiceSession:
             )
         return self._front_lane
 
+    # ── proactive silence-triggered self-speech ───────────────────
+
+    def _ensure_idle_watcher(self) -> None:
+        """Start the idle watcher task once proactive speech is enabled.
+
+        Requires ``proactive_enabled`` and a configured front lane; otherwise
+        the task is never created.
+        """
+        if not getattr(self._voice_config, "proactive_enabled", False):
+            return
+        if not self._front_model:
+            return
+        if self._idle_watcher is None or self._idle_watcher.done():
+            self._idle_watcher = asyncio.create_task(
+                self._idle_watcher_loop(),
+                name=f"idle-watcher-{self._anima_name}",
+            )
+
+    def _should_proactive(self, *, processing: bool | None = None) -> bool:
+        """True when the idle watcher may run a proactive self-turn right now.
+
+        Every fire-guard is re-checked so a self-turn never steps on an in-
+        progress user turn, TTS playback, incoming speech, or delegation.
+        ``processing`` lets the loop re-evaluate the other guards *after* it
+        has already taken the processing lock itself (pass ``False`` then, so
+        the lock it holds is not treated as a blocker).
+        """
+        if not getattr(self._voice_config, "proactive_enabled", False):
+            return False
+        if not self._front_model:
+            return False
+        if self._proactive_count >= 2:
+            return False
+        if time.monotonic() - self._last_activity < self._proactive_delay:
+            return False
+        if self._tts_playing:
+            return False
+        if self._streamer.ready() or self._audio_buffer:
+            return False
+        if self._delegation_jobs:
+            return False
+        # Pending ask_anima results are surfaced by a dedicated delegation
+        # self-turn / the next user turn, not by a silence turn (M2).
+        if self._delegation_results is not None and not self._delegation_results.empty():
+            return False
+        busy = self._processing if processing is None else processing
+        return not busy
+
+    async def _idle_watcher_loop(self) -> None:
+        """Poll for sustained silence and run a proactive self-turn when due.
+
+        Escalates the delay (doubles per self-turn) and stops after two
+        consecutive self-turns until the user responds (resets the state).
+        """
+        while not self._closed:
+            await asyncio.sleep(self._idle_tick_sec)
+            if not self._should_proactive():
+                continue
+            if self._closed:
+                break
+            # A proactive turn takes the processing lock so it can never share
+            # the front lane / TTS worker with a greet or concurrent user
+            # turn (C2), and release it via try/finally.
+            self._processing = True
+            try:
+                lane = self._get_or_create_front_lane()
+                try:
+                    ok = await lane.check_health()
+                except Exception:
+                    ok = False
+                if not ok:
+                    # Back off a full delay window instead of poking a down
+                    # lane on every tick (M3).
+                    self._last_activity = time.monotonic()
+                    continue
+                # Re-check the remaining fire-guards after the (slow) health
+                # probe; the processing lock is already held here.
+                if not self._should_proactive(processing=False):
+                    continue
+                try:
+                    turn_ok = await self._run_front_turn(
+                        lane,
+                        PROACTIVE_SYNTHETIC_PROMPT,
+                        "human",
+                        await self._check_tts_health(),
+                        record_user=False,
+                        tools=[],
+                        drain_results=False,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("Proactive self-turn failed (%s)", self._anima_name)
+                    turn_ok = False
+                if turn_ok:
+                    self._proactive_count += 1
+                    self._proactive_delay *= 2
+                # Always rewind the idle timer — success spoke just now, and a
+                # failure or down-lane must back off a full delay window.
+                self._last_activity = time.monotonic()
+            finally:
+                self._processing = False
+
     async def _emit_text_delta(self, delta: str, tts_ok: bool) -> None:
         """Send a text delta to the client and feed the TTS sentence splitter."""
         await self._ws.send_json({"type": "response_text", "text": delta, "done": False})
@@ -641,8 +770,18 @@ class VoiceSession:
                     break
                 await self._enqueue_tts(sentence)
 
-    def _record_front_conversation(self, user_text: str, response_text: str, from_person: str) -> None:
+    def _record_front_conversation(
+        self,
+        user_text: str,
+        response_text: str,
+        from_person: str,
+        *,
+        record_user: bool = True,
+    ) -> None:
         """Persist the front turn into the anima's default conversation.
+
+        ``record_user=False`` (used by proactive self-turns) records only the
+        assistant reply so the synthetic instruction never pollutes the history.
 
         Reuses the existing ``ConversationMemory`` record path so the turn is
         visible from the text chat; failures are non-fatal (front chat must
@@ -661,51 +800,103 @@ class VoiceSession:
             from core.paths import get_animas_dir
 
             conversation = ConversationMemory(get_animas_dir() / self._anima_name, None)
-            conversation.append_turn(from_person or "human", user_text)
+            if record_user:
+                conversation.append_turn(from_person or "human", user_text)
             conversation.append_turn("assistant", response_text)
             conversation.save()
         except Exception:
             logger.debug("Failed to persist front conversation (%s)", self._anima_name, exc_info=True)
 
-    async def _run_front_turn(self, lane: Any, text: str, from_person: str, tts_ok: bool) -> bool:
+    async def _run_front_turn(
+        self,
+        lane: Any,
+        text: str,
+        from_person: str,
+        tts_ok: bool,
+        *,
+        record_user: bool = True,
+        tools: list | None = None,
+        drain_results: bool = True,
+    ) -> bool:
         """Stream one front-lane turn into TTS + WebSocket, then finish.
 
+        ``record_user=False`` (proactive self-turn) skips recording the synthetic
+        instruction as a human conversation turn — only the assistant reply is
+        persisted.  ``tools=[]`` with ``drain_results=False`` (proactive) keeps
+        a silence turn from starting its own ask_anima jobs or snatching
+        pending delegation results (M2).
+
+        Self-turns (proactive / delegation watcher) reach here without a live
+        TTS worker; they own the full terminal-frame contract here (a leading
+        ``response_start`` plus a guaranteed trailing ``response_done``), so the
+        client never hangs and the subtitle starts a fresh bubble (H1/H2).
+        User turns keep the worker and terminal frames that ``_do_speech_end``
+        already owns.
+
         Returns ``True`` when the terminal response frames were emitted.
-        On interrupt the turn stops immediately (no fallback); the caller's
-        ``finally`` block emits the neutral terminal frames instead.
         """
         from core.voice.front import ASK_ANIMA_TOOL, extract_emotion
 
-        results = self._drain_delegation_results()
-        if results:
-            text = f"{results}\n\n{text}"
+        if drain_results:
+            results = self._drain_delegation_results()
+            if results:
+                text = f"{results}\n\n{text}"
+
+        # Self-turns call this without a live TTS worker — without one
+        # _enqueue_tts drops every sentence silently. Own the worker
+        # lifecycle and the response_start/terminal frames here in that case;
+        # user turns keep the worker (and frames) _do_speech_end started.
+        owns_tts_worker = tts_ok and self._tts_queue is None
+        if owns_tts_worker:
+            await self._ws.send_json({"type": "response_start"})
+            self._interrupted = False
+            await self._start_tts_worker()
+            self._tts_playing = True
+
+        if tools is None:
+            tools = [ASK_ANIMA_TOOL]
 
         lane.reset_turn()
         full: list[str] = []
+        response_done_sent = False
         try:
-            async for delta in lane.stream(
-                text,
-                tools=[ASK_ANIMA_TOOL],
-                tool_executor=self._ask_anima,
-            ):
-                if self._interrupted:
-                    return False
-                await self._emit_text_delta(delta, tts_ok)
-                full.append(delta)
-        except Exception as e:
-            logger.exception("Voice front stream error: %s", e)
-            await self._send_error(str(e))
-            return False
-        if self._interrupted:
-            return False
-        remaining = self._splitter.flush()
-        if remaining and tts_ok:
-            await self._enqueue_tts(remaining)
-        full_text = "".join(full)
-        self._record_front_conversation(text, full_text, from_person)
-        emotion = extract_emotion(full_text)
-        await self._finish_tts_and_response_done(emotion)
-        return True
+            try:
+                async for delta in lane.stream(text, tools=tools, tool_executor=self._ask_anima):
+                    if self._interrupted:
+                        return False
+                    await self._emit_text_delta(delta, tts_ok)
+                    full.append(delta)
+            except Exception as e:
+                logger.exception("Voice front stream error: %s", e)
+                await self._send_error(str(e))
+                return False
+            if self._interrupted:
+                return False
+            remaining = self._splitter.flush()
+            if remaining and tts_ok:
+                await self._enqueue_tts(remaining)
+            full_text = "".join(full)
+            self._record_front_conversation(text, full_text, from_person, record_user=record_user)
+            self._last_activity = time.monotonic()
+            emotion = extract_emotion(full_text)
+            await self._finish_tts_and_response_done(emotion)
+            response_done_sent = True
+            return True
+        finally:
+            if owns_tts_worker:
+                if not response_done_sent:
+                    # A self-turn must always terminate cleanly (barge-in / a
+                    # stream failure): drop any partial splitter content and
+                    # emit neutral terminal frames so the client state never
+                    # hangs on a half-spoken turn.
+                    self._splitter.flush()
+                    try:
+                        await self._ws.send_json({"type": "emotion", "emotion": "neutral"})
+                        await self._ws.send_json({"type": "response_done", "emotion": "neutral"})
+                    except Exception:
+                        pass
+                await self._stop_tts_worker()
+                self._tts_playing = False
 
     # ── ask_anima async delegation (PR-3) ─────────────────────────
 
@@ -857,6 +1048,14 @@ class VoiceSession:
                 await watcher
             except (asyncio.CancelledError, Exception):
                 pass
+        idle = self._idle_watcher
+        self._idle_watcher = None
+        if idle is not None and not idle.done():
+            idle.cancel()
+            try:
+                await idle
+            except (asyncio.CancelledError, Exception):
+                pass
         self._interrupted = True
         self._clear_tts_queue()
         await self._stop_tts_worker()
@@ -946,6 +1145,11 @@ class VoiceSession:
         finally:
             await self._stop_tts_worker()
             self._tts_playing = False
+            self._last_activity = time.monotonic()
+            # Start the idle watcher only after the greet is finished, so a
+            # cold greet (potentially ~90s) can never race a proactive turn
+            # for the front lane / TTS worker (C2).
+            self._ensure_idle_watcher()
 
     async def handle_interrupt(self) -> None:
         """Handle barge-in: stop TTS, drop queued sentences, prepare for new STT."""

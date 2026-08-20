@@ -271,6 +271,34 @@ class TestVoiceWebSocket:
                 ws1.receive_json()  # ready
                 assert "test_anima" in _active_sessions
 
+    def test_ws_disconnect_calls_session_close(self, test_data_dir: Path) -> None:
+        """On WS disconnect the route must call VoiceSession.close() so the
+        proactive idle watcher is cancelled (C1) — no post-close LLM polling."""
+        from server.routes.voice import create_voice_router
+
+        app = FastAPI()
+        app.include_router(create_voice_router())
+        app.state.supervisor = MagicMock()
+        app.state.animas_dir = test_data_dir / "animas"
+
+        with patch("server.routes.voice.load_auth") as mock_auth, patch(
+            "server.routes.voice._get_stt"
+        ) as mock_stt, patch(
+            "server.routes.voice.create_tts_provider"
+        ) as mock_tts_factory, patch(
+            "server.routes.voice.VoiceSession.close", new_callable=AsyncMock
+        ) as mock_close:
+            mock_auth.return_value = MagicMock(auth_mode="local_trust")
+            mock_stt.return_value = MagicMock()
+            mock_tts_factory.return_value = AsyncMock()
+
+            client = TestClient(app)
+            with client.websocket_connect("/ws/voice/test_anima") as ws:
+                ws.receive_json()  # loading
+                ws.receive_json()  # ready
+            # session.close() was awaited as part of teardown
+            mock_close.assert_awaited()
+
 
 # ── TestVoiceConfigSerialization ─────────────────────────────────────
 
