@@ -7,6 +7,9 @@ import { basePath } from '/shared/base-path.js';
 
 // Hard cap on one continuous recording — matches the server's audio buffer.
 const MAX_RECORD_MS = 60_000;
+// Speakers keep echoing after the last sample (device latency + room tail);
+// keep the mic shut that long past playback end.
+const ECHO_TAIL_MS = 1200;
 
 export class VoiceManager {
   constructor() {
@@ -261,7 +264,7 @@ export class VoiceManager {
       this._ttsPlaying ||
       this._playback.isPlaying ||
       this._playback.queueLength > 0 ||
-      performance.now() - this._lastPlaybackEndMs < 500
+      performance.now() - this._lastPlaybackEndMs < ECHO_TAIL_MS
     );
   }
 
@@ -299,14 +302,11 @@ export class VoiceManager {
       return;
     }
     this._vad = new VoiceVAD({
-      // RTC loopback AEC lets VAD hear the user during TTS. Without it,
-      // ignore speech while output is playing/queued plus a short echo tail.
+      // Never open the mic while the anima is talking. Even with RTC loopback
+      // AEC the speaker path leaks enough for her own TTS to trip the VAD, so
+      // she interrupts herself and transcribes her own voice. Tap the bustup
+      // to barge in instead (voice-popup binds that to interrupt()).
       onSpeechStart: () => {
-        if (this._playback.aecActive) {
-          if (this._outputActive()) this.interrupt();
-          this.startRecording();
-          return;
-        }
         if (this._outputActive()) return;
         this.startRecording();
       },

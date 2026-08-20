@@ -411,6 +411,11 @@ class VoiceSession:
     async def handle_audio_chunk(self, data: bytes) -> None:
         """Receive audio chunk from browser, accumulate in buffer and feed the
         streaming transcriber (which may emit committed partials)."""
+        # We are talking: whatever the mic hears is our own TTS leaking through
+        # the speakers. The client suppresses it too, but its playback flag can
+        # lag a frame or two — dropping here makes self-transcription impossible.
+        if self._tts_playing:
+            return
         if len(self._audio_buffer) + len(data) > MAX_AUDIO_BUFFER_BYTES:
             self._audio_buffer.clear()
             logger.warning("Audio buffer overflow (%s), cleared", self._anima_name)
@@ -1333,6 +1338,9 @@ class VoiceSession:
     async def handle_interrupt(self) -> None:
         """Handle barge-in: stop TTS, drop queued sentences, prepare for new STT."""
         self._interrupted = True
+        # Reopen the mic immediately — handle_audio_chunk drops input while we
+        # are talking, and the turn's own finally may be a beat behind.
+        self._tts_playing = False
         self._audio_buffer.clear()
         self._streamer.reset()
         self._clear_tts_queue()

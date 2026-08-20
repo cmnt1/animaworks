@@ -554,6 +554,20 @@ class TestEmptyTurnAndDiscard:
         assert mock_conv.append_turn.call_args_list == []
 
     @pytest.mark.asyncio
+    async def test_audio_dropped_while_speaking(self) -> None:
+        """Mic input arriving while we talk is our own TTS echo — drop it so it
+        can never be transcribed back as a user turn."""
+        sess = _make_session(proactive=True)
+        sess._tts_playing = True
+        await sess.handle_audio_chunk(_audio_frames())
+        assert not sess._audio_buffer
+        # barge-in reopens the mic immediately
+        await sess.handle_interrupt()
+        assert sess._tts_playing is False
+        await sess.handle_audio_chunk(_audio_frames())
+        assert sess._audio_buffer
+
+    @pytest.mark.asyncio
     async def test_discard_audio_keeps_turn_alive(self) -> None:
         """A VAD misfire drops buffered noise but must never abort the reply
         the anima is streaming (that is barge-in / handle_interrupt)."""
