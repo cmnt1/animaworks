@@ -110,7 +110,7 @@ Agents can execute shell commands. Five independent layers prevent abuse:
 
 #### Layer 1: Shell Injection Detection
 
-**ToolHandler path (Mode A/B, etc.)**: A regex built from `injection_patterns` in `permissions.global.json` (`GlobalPermissionsCache.injection_re`) detects command chaining and metacharacters. The default template includes examples such as semicolons and newlines. ToolHandler **shares the same** `sdk_bash_injection.mode` setting as Mode S (`off`, default `log`, or `enforce`): the default `log` only records a structured detection event and lets the command pass, while `enforce` returns `PermissionDenied`.
+**ToolHandler path (Mode A/B, etc.)**: A regex built from `injection_patterns` in `permissions.global.json` (`GlobalPermissionsCache.injection_re`) blocks command chaining and metacharacters. The default template includes examples such as semicolons and newlines.
 
 **Mode S (Agent SDK / native Claude Code Bash)**: Mode S also matches `injection_patterns`, with a staged rollout controlled by `sdk_bash_injection.mode` in `permissions.global.json`: `off`, `log` (default), or `enforce`. `log` records structured detection events without denying the command; `enforce` denies matches in the `PreToolUse` hook. The default pattern is intentionally limited to semicolons and embedded newlines so legitimate `$VAR`, `$(...)`, backticks, pipes, `&&`, and `||` continue to work. See **§10 Mode S** for details.
 

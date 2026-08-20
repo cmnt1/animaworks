@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.config.models import PermissionsConfig, load_permissions
-from core.execution._sdk_security import _log_sdk_bash_injection_hit
 from core.file_access_policy import (
     effective_write_roots,
     find_denied_root,
@@ -25,8 +24,6 @@ from core.i18n import t
 from core.tooling.handler_base import (
     _error_result,
     _get_blocked_patterns,
-    _get_injection_mode,
-    _get_injection_pattern_name,
     _get_injection_re,
     _is_global_permissions_write_blocked,
     _is_protected_write,
@@ -374,38 +371,18 @@ class PermissionsMixin:
             logger.warning("permission_denied anima=%s command=<empty>", self._anima_name)
             return _error_result("PermissionDenied", "Empty command")
 
-        # Layer 1: Injection detection (mode-aware; shares the sdk_bash_injection
-        # config with Mode S so A/S behave identically).  Default ``log`` collects
-        # false-positive evidence and lets the command pass; only ``enforce``
-        # rejects, matching Mode S's staged rollout.
+        # Layer 1: Reject injection vectors
         inj_re = _get_injection_re()
-        injection_mode = _get_injection_mode()
-        injection_match = inj_re.search(command) if inj_re and injection_mode != "off" else None
-        if injection_match is not None:
-            pattern_name = _get_injection_pattern_name(command)
-            if injection_mode == "enforce":
-                logger.warning(
-                    "permission_denied anima=%s command=%s reason=injection_pattern pattern=%s",
-                    self._anima_name,
-                    command[:80],
-                    pattern_name,
-                )
-                return _error_result(
-                    "PermissionDenied",
-                    f"Command contains injection pattern: {pattern_name}",
-                    suggestion=(
-                        "Use pipes (|) or logical operators (&&) instead of "
-                        "semicolons. Avoid variable expansion and newlines."
-                    ),
-                )
-            # log mode (default): record a structured false-positive event (same
-            # format as Mode S) and pass the command through.
-            _log_sdk_bash_injection_hit(
-                command,
-                self._anima_dir,
-                pattern_name=pattern_name,
-                trigger="toolhandler",
-                mode=injection_mode,
+        if inj_re and inj_re.search(command):
+            logger.warning(
+                "permission_denied anima=%s command=%s reason=injection_pattern",
+                self._anima_name,
+                command[:80],
+            )
+            return _error_result(
+                "PermissionDenied",
+                "Command contains injection patterns (;  \\n  `  $()  $VAR)",
+                suggestion="Use pipes (|) or logical operators (&&) instead of semicolons. Avoid variable expansion and newlines.",
             )
 
         # Layer 2: Dangerous command patterns
