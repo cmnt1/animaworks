@@ -960,7 +960,7 @@ class TestFilePermissions:
             parsed = json.loads(handler.handle("check_permissions", {}))
         assert parsed["file_access"]["denied"] == [str(denied.resolve())]
 
-    def test_deny_enabled_hides_internal_cache_canary(
+    def test_deny_enabled_only_hides_runtime_credentials(
         self,
         handler: ToolHandler,
         anima_dir: Path,
@@ -977,14 +977,14 @@ class TestFilePermissions:
             directory.mkdir(parents=True, exist_ok=True)
         bm25 = state / "bm25_longterm_index.json"
         bm25_tmp = state / ".bm25_longterm_index.json.random.tmp"
-        protected_files = [
+        accessible_files = [
             bm25,
             bm25_tmp,
             archive / "chroma.sqlite3",
             vectordb / "chroma.sqlite3",
-            codex_home / "auth.json",
         ]
-        for path in protected_files:
+        protected_file = codex_home / "auth.json"
+        for path in [*accessible_files, protected_file]:
             path.write_text(canary, encoding="utf-8")
 
         config = PermissionsConfig(
@@ -992,19 +992,20 @@ class TestFilePermissions:
             file_roots_denied=[str(tmp_path / "unrelated-explicit-deny")],
         )
         with patch("core.tooling.handler_perms.load_permissions", return_value=config):
-            for path in protected_files:
-                read_result = json.loads(handler.handle("read_file", {"path": str(path)}))
-                assert read_result["error_type"] == "PermissionDenied"
-                assert canary not in json.dumps(read_result)
-                write_result = handler._check_file_permission(str(path), write=True)
-                assert json.loads(write_result)["error_type"] == "PermissionDenied"
+            for path in accessible_files:
+                assert canary in handler.handle("read_file", {"path": str(path)})
+
+            read_result = json.loads(handler.handle("read_file", {"path": str(protected_file)}))
+            assert read_result["error_type"] == "PermissionDenied"
+            assert canary not in json.dumps(read_result)
+            write_result = handler._check_file_permission(str(protected_file), write=True)
+            assert json.loads(write_result)["error_type"] == "PermissionDenied"
 
             search_result = handler.handle("search_code", {"pattern": "CACHE_CANARY", "path": str(anima_dir)})
             list_result = handler.handle("list_directory", {"path": str(state)})
 
-        assert canary not in search_result
-        assert "bm25_longterm_index" not in list_result
-        assert "vectordb" not in search_result
+        assert canary in search_result
+        assert "bm25_longterm_index" in list_result
 
     def test_internal_cache_remains_readable_without_explicit_deny(
         self,

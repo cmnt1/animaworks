@@ -23,6 +23,17 @@ _TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 _EN_DIR = _TEMPLATES_DIR / "en"
 _KO_DIR = _TEMPLATES_DIR / "ko"
 
+
+@pytest.mark.parametrize("locale", ["ja", "en", "ko"])
+def test_environment_enforces_worktree_and_credential_resolver(locale: str) -> None:
+    content = (_TEMPLATES_DIR / locale / "prompts" / "environment.md").read_text(encoding="utf-8")
+
+    assert "git worktree" in content
+    assert "main" in content and "clean" in content
+    assert "shared/credentials.json" in content
+    assert "parse" in content
+
+
 # All expected files (sorted; must match templates/ko/ exactly)
 _EXPECTED_FILES = [
     "anima_templates/_blank/cron.md",

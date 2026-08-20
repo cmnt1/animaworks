@@ -191,6 +191,19 @@ class TestSharedCredentialsJson:
         result = get_credential("chatwork", "chatwork", env_var="CHATWORK_API_TOKEN")
         assert result == "cwt-from-env"
 
+    @pytest.mark.parametrize("content", ["", " \n\t"])
+    def test_blank_legacy_file_is_silent_empty_store(self, config_dir, monkeypatch, caplog, content):
+        shared_dir = config_dir / "shared"
+        shared_dir.mkdir(parents=True, exist_ok=True)
+        (shared_dir / "credentials.json").write_text(content, encoding="utf-8")
+        _write_config(config_dir, {})
+        monkeypatch.setenv("CHATWORK_API_TOKEN", "cwt-from-env")
+
+        result = get_credential("chatwork", "chatwork", env_var="CHATWORK_API_TOKEN")
+
+        assert result == "cwt-from-env"
+        assert "Failed to read" not in caplog.text
+
     def test_falls_through_when_file_invalid_json(self, config_dir, monkeypatch):
         shared_dir = config_dir / "shared"
         shared_dir.mkdir(parents=True, exist_ok=True)

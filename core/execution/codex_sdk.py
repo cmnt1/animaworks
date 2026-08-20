@@ -1256,6 +1256,7 @@ class CodexSDKExecutor(BaseExecutor):
                 ":root": "read",
                 ":tmpdir": "write",
                 ":slash_tmp": "write",
+                str(self._anima_dir.resolve()): "write",
             }
             git_forbidden = [data_dir, *(Path(r) for r in denied_roots)]
 
@@ -1309,6 +1310,7 @@ class CodexSDKExecutor(BaseExecutor):
             # A file-specific read rule is more specific than the writable
             # Anima root (and remains read-only even when ``:root`` is write).
             permissions_path = str((self._anima_dir / "permissions.json").resolve())
+            shell_filesystem_rules[permissions_path] = "read"
             mcp_filesystem_rules[permissions_path] = "read"
 
             shell_filesystem_lines = "\n".join(

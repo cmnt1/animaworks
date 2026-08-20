@@ -40,9 +40,10 @@ Your identity (identity.md) and role directives (injection.md) follow immediatel
 │   ├── {anima_name}/    # ← あなた自身
 │   └── ...               # 他の社員
 ├── prompts/          # プロンプトテンプレート（キャラクター設計ガイド等）
+├── vault.json        # 共有クレデンシャル保管庫
 ├── shared/           # 社員間の共有領域
 │   ├── channels/     # Board共有チャネル（general.jsonl, ops.jsonl 等）
-│   ├── credentials.json  # クレデンシャル一元管理（全社員共通）
+│   ├── credentials.json  # レガシー互換用フォールバック
 │   ├── inbox/        # メッセージ受信箱
 │   └── users/        # 共有ユーザー記憶（ユーザーごとのサブディレクトリ）
 ├── common_skills/    # 全社員共通スキル（読み取り専用）
@@ -64,8 +65,14 @@ Your identity (identity.md) and role directives (injection.md) follow immediatel
    - **identity.md**: **読み取りのみ**（書き込み保護）
 8. **同僚のactivity_log**: 同じsupervisorを持つ同僚の `activity_log/` は読み取り可能（検証用）。書き込みは不可
 
+### リポジトリ作業ルール
+
+- canonical checkout の `main` / `master` は参照専用。実装・検証・commitは必ず専用の `git worktree` で行う
+- worktreeからのmergeは、canonical checkoutがcleanであることを確認してから行う。dirtyなら変更せず報告する
+- 他者の変更を独断でstash・破棄・上書きしない
+
 ### 禁止事項
 
-- 個人ディレクトリに secrets.json 等のクレデンシャルファイルを作成してはならない。クレデンシャルは `{data_dir}/shared/credentials.json` に一元管理されている
+- 個人ディレクトリに secrets.json 等のクレデンシャルファイルを作成してはならない。クレデンシャルはフレームワークのツール／resolver経由で解決し、`shared/credentials.json` を直接parseしない（これはレガシーfallbackであり空の場合がある）
 - 環境変数やAPIキーの出力・共有
 - 機密情報のGmailへの外部送信・ウェブ公開はユーザーの許可なしに絶対に行わない

@@ -699,21 +699,17 @@ class TestConfigWriting:
         assert filesystem[":root"] == "read"
         assert filesystem[":tmpdir"] == "write"
         assert filesystem[":slash_tmp"] == "write"
-        assert str(anima_dir.resolve()) not in filesystem
+        assert filesystem[str(anima_dir.resolve())] == "write"
         assert filesystem[str(writable_root.resolve())] == "write"
         assert filesystem[str(task_cwd.resolve())] == "write"
         assert str(unassigned_company_shared.resolve()) not in filesystem
         assert filesystem[str((tmp_path / "cache").resolve())] == "write"
         assert filesystem[str(denied_root.resolve())] == "deny"
         assert filesystem[str((anima_dir / ".codex_home").resolve())] == "deny"
-        assert filesystem[str((anima_dir / "state").resolve())] == "deny"
-        assert filesystem[str((anima_dir / "archive").resolve())] == "deny"
-        assert filesystem[str((anima_dir / "vectordb").resolve())] == "deny"
-        assert filesystem[str(anima_dir.resolve() / "vectordb-*")] == "deny"
-        assert filesystem[str(anima_dir.resolve() / "vectordb.*")] == "deny"
-        assert filesystem[str(anima_dir.resolve() / "vectordb_*")] == "deny"
-        assert filesystem[str((anima_dir / "vectordb.staging-123").resolve())] == "deny"
-        assert filesystem[str((anima_dir / "vectordb-corrupt-old").resolve())] == "deny"
+        assert filesystem[str((anima_dir / "permissions.json").resolve())] == "read"
+        assert str((anima_dir / "state").resolve()) not in filesystem
+        assert str((anima_dir / "archive").resolve()) not in filesystem
+        assert str((anima_dir / "vectordb").resolve()) not in filesystem
         assert profile["network"]["enabled"] is True
         mcp_profile = parsed["permissions"]["animaworks_mcp"]
         mcp_filesystem = mcp_profile["filesystem"]
