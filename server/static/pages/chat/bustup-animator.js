@@ -15,6 +15,7 @@
 import {
   assetUrl,
   bustupExpressionCandidates,
+  isRealisticMode,
 } from "../../modules/avatar-resolver.js";
 
 const VALID_EXPRESSIONS = new Set([
@@ -108,6 +109,8 @@ function frameSetCacheKey(animaName, expr) {
  * @returns {Promise<boolean>}
  */
 async function hasFrameSet(animaName, expr) {
+  // フレームはアニメ調のみ。realistic表示モードでは静的bustupに任せる
+  if (isRealisticMode()) return false;
   const key = frameSetCacheKey(animaName, expr);
   if (_frameSetCache.has(key)) return _frameSetCache.get(key);
 
@@ -197,7 +200,7 @@ export class BustupAnimator {
     this._xfadeTimer = null;
     this._raf = null;
 
-    this._startLoop();
+    this._raf = requestAnimationFrame(this._loop);
     this._scheduleBlink();
   }
 
