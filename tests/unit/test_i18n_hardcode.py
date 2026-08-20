@@ -117,7 +117,8 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # voice front lane — ask_anima tool schema wording fed to the front LLM
     "core/voice/front.py": 2,
     # voice front lane — spoken ACK/error phrases voiced to the user via TTS
-    "core/voice/session.py": 5,
+    # plus the proactive silence-turn system prompt fed to the front LLM
+    "core/voice/session.py": 6,
 }
 
 

@@ -169,6 +169,7 @@ def create_voice_router() -> APIRouter:
                     pass
         _active_sessions[name] = ws
 
+        session = None
         try:
             config = load_config()
             voice_config = config.voice
@@ -239,6 +240,13 @@ def create_voice_router() -> APIRouter:
             for t in running_tasks:
                 if not t.done():
                     t.cancel()
+            # Cancel the proactive idle watcher / TTS worker so a closed popup
+            # stops polling the front LLM every couple of seconds (C1).
+            if session is not None:
+                try:
+                    await session.close()
+                except Exception:
+                    pass
             if _active_sessions.get(name) == ws:
                 _active_sessions.pop(name, None)
 
