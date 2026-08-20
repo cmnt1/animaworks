@@ -282,6 +282,12 @@ class StreamingMixin:
                                     _guard_key_s,
                                     "A stream",
                                 ),
+                                on_context_overflow=partial(
+                                    self._try_compact_messages,
+                                    iteration_messages,
+                                    llm_kwargs,
+                                    litellm,
+                                ),
                             ),
                         )
                     except LlmCallInterrupted:
@@ -296,7 +302,23 @@ class StreamingMixin:
                         }
                         return
                 else:
-                    response = cast(Any, await litellm.acompletion(**call_kwargs))
+                    try:
+                        response = cast(Any, await litellm.acompletion(**call_kwargs))
+                    except Exception as _exc:
+                        _reason_s, _ = classify_llm_error(
+                            _exc,
+                            provider_family=provider_family_of(self._model_config.model),
+                        )
+                        if getattr(_reason_s, "value", None) == "context_overflow" and await self._try_compact_messages(
+                            iteration_messages, llm_kwargs, litellm
+                        ):
+                            logger.warning(
+                                "A stream: context overflow at iteration=%d; compacted, retrying once",
+                                iteration,
+                            )
+                            response = cast(Any, await litellm.acompletion(**call_kwargs))
+                        else:
+                            raise
 
                 # Accumulate streamed chunks
                 iter_text_parts: list[str] = []
@@ -1038,7 +1060,23 @@ class StreamingMixin:
                         }
                         return
                 else:
-                    response = cast(Any, await litellm.acompletion(**call_kwargs))
+                    try:
+                        response = cast(Any, await litellm.acompletion(**call_kwargs))
+                    except Exception as _exc:
+                        _reason_ol, _ = classify_llm_error(
+                            _exc,
+                            provider_family=provider_family_of(self._model_config.model),
+                        )
+                        if getattr(_reason_ol, "value", None) == "context_overflow" and await self._try_compact_messages(
+                            iteration_messages_ol, llm_kwargs, litellm
+                        ):
+                            logger.warning(
+                                "A ollama stream: context overflow at iteration=%d; compacted, retrying once",
+                                iteration,
+                            )
+                            response = cast(Any, await litellm.acompletion(**call_kwargs))
+                        else:
+                            raise
 
                 choice = response.choices[0]
                 message = choice.message

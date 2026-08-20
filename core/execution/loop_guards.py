@@ -63,6 +63,7 @@ async def call_llm_with_retry(
     next_backoff: Callable[[float], float],
     interrupt_check: Callable[[], bool] | None = None,
     on_classified_error: Callable[[Any, Any, Exception, int], None] | None = None,
+    on_context_overflow: Callable[[], Awaitable[bool]] | None = None,
     max_retries: int = MAX_LLM_RETRIES,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> Any:
@@ -89,6 +90,10 @@ async def call_llm_with_retry(
             attempt (rate-guard reporting, auth logging).  Exceptions from
             the callback are swallowed — reporting must never mask the call
             outcome.
+        on_context_overflow: Recovery callback for CONTEXT_OVERFLOW errors.
+            Called at most once; must mutate the messages the call_factory
+            closure references (e.g. compaction) and return True when the
+            call should be re-attempted immediately.
         max_retries: Maximum number of *re*-invocations after the first.
         sleep: Injectable for tests.
 
@@ -111,6 +116,24 @@ async def call_llm_with_retry(
                     on_classified_error(reason, hint, exc, attempt)
                 except Exception:
                     logger.debug("on_classified_error callback failed", exc_info=True)
+            if (
+                on_context_overflow is not None
+                and getattr(reason, "value", None) == "context_overflow"
+                and attempt < max_retries
+            ):
+                _overflow_cb = on_context_overflow
+                on_context_overflow = None  # one recovery attempt only
+                try:
+                    compacted = await _overflow_cb()
+                except Exception:
+                    logger.warning("on_context_overflow callback failed", exc_info=True)
+                    compacted = False
+                if compacted:
+                    logger.warning(
+                        "Context overflow on attempt %d; compacted messages, retrying",
+                        attempt,
+                    )
+                    continue
             if not getattr(hint, "retryable", False) or attempt >= max_retries:
                 raise
             if interrupt_check is not None and interrupt_check():
