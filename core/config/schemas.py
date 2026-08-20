@@ -1286,9 +1286,40 @@ class SkillCronConfig(BaseModel):
     allow_external_send: bool = False
 
 
+class ExternalSkillRoot(BaseModel):
+    """A read-only, engine-owned skill root scanned directly by SkillIndex.
+
+    External roots are scanned in place (no copy/sync) and are read-only
+    from animaworks' perspective. List ordering equals the precedence when
+    same-name skills collide.
+    """
+
+    path: str  # may contain ``~``; expanded before use
+    engine: str  # matches ^[a-z][a-z0-9-]*$
+    trust_level: str = "trusted"
+    enabled: bool = True
+
+    @field_validator("engine")
+    @classmethod
+    def _validate_engine(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise ValueError("engine must be a string")
+        if not re.fullmatch(r"[a-z][a-z0-9-]*", value):
+            raise ValueError(f"engine {value!r} must match ^[a-z][a-z0-9-]*$")
+        return value
+
+
 class SkillsConfig(BaseModel):
     promotion: SkillPromotionConfig = SkillPromotionConfig()
     cron: SkillCronConfig = SkillCronConfig()
+    external_roots: list[ExternalSkillRoot] = Field(
+        default_factory=lambda: [
+            ExternalSkillRoot(path="~/.claude/skills", engine="claude"),
+            ExternalSkillRoot(path="~/.codex/skills", engine="codex"),
+            ExternalSkillRoot(path="~/.grok/skills", engine="grok"),
+            ExternalSkillRoot(path="~/.agents/skills", engine="agents"),
+        ]
+    )
 
 
 class ChatworkToolConfig(BaseModel):

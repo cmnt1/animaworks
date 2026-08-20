@@ -816,6 +816,11 @@ class GrokCLIExecutor(BaseExecutor):
             env["GROK_SANDBOX"] = "animaworks"
         else:
             env.pop("GROK_SANDBOX", None)
+        # Stop the Grok engine from scanning host ~/.claude/skills as native
+        # skills — skill presentation is unified under animaworks' own skill
+        # catalog (core/skills/index.py external roots).  ~/.grok/skills has
+        # no off switch; keep that host dir empty.  Applies in both sandbox paths.
+        env["GROK_CLAUDE_SKILLS_ENABLED"] = "false"
 
         proc: asyncio.subprocess.Process | None = None
         stderr_task: asyncio.Task[str] | None = None

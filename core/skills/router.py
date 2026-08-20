@@ -471,6 +471,11 @@ def _router_visible(meta: SkillMetadata) -> bool:
 
 def _pointer_path(meta: SkillMetadata) -> str:
     path = meta.path
+    if meta.is_external:
+        # Host-side skill: read-only external/<engine>/<name>/SKILL.md pointer.
+        engine = (meta.source.engine if meta.source is not None else None) or ""
+        name = path.parent.name if path is not None else meta.name
+        return f"external/{engine}/{name}/SKILL.md"
     if path is None:
         if meta.is_procedure:
             return f"procedures/{meta.name}.md"

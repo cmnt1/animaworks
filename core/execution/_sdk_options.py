@@ -483,6 +483,15 @@ class SDKOptionsMixin:
                 else {}
             ),
         )
+        # Suppress the engine's own native skill loading (host ~/.claude/skills).
+        # The SDK treats ClaudeAgentOptions.skills=None as "no SDK auto-configuration" —
+        # the CLI's own defaults still apply, so None is *not* "skills off".  Passing
+        # an empty list explicitly suppresses every skill from the engine's listing,
+        # keeping skill presentation unified under animaworks' own skill catalog.
+        # Guard against SDK versions that predate the ``skills`` field.
+        if hasattr(ClaudeAgentOptions, "skills"):
+            kwargs["skills"] = []
+
         if self._model_config.thinking:
             from core.execution.base import is_adaptive_model, resolve_thinking_effort
 

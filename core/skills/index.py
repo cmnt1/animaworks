@@ -6,19 +6,54 @@ from __future__ import annotations
 
 """Metadata index over personal skills, common skills, and procedures."""
 
+import hashlib
 import logging
+import os
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from core.company_resources import get_company_resources
 from core.skills.loader import load_skill_metadata
-from core.skills.models import SkillMetadata, SkillScanVerdict, SkillTrustLevel
+from core.skills.models import SkillMetadata, SkillScanVerdict, SkillSource, SkillTrustLevel
 
 logger = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────
 
 _EXCLUDED_TRUST_LEVELS: frozenset[SkillTrustLevel] = frozenset({SkillTrustLevel.blocked, SkillTrustLevel.quarantine})
+
+
+@dataclass
+class ShadowedSkill:
+    """Record of an external skill dropped due to name collision."""
+
+    dropped: SkillMetadata
+    kept: SkillMetadata
+    reason: str
+
+
+def _default_external_roots() -> list:
+    """Return external skill roots configured in animaworks config."""
+    try:
+        from core.config.models import load_config
+
+        return list(load_config().skills.external_roots)
+    except Exception:
+        return []
+
+
+def _normalize_name_key(name: str) -> str:
+    """Normalize a skill name for collision detection."""
+    return name.casefold().replace("_", "-")
+
+
+def _content_sha256(path: Path) -> str:
+    """Return the sha256 of a SKILL.md file's content, or '' when unreadable."""
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return ""
 
 
 # ── SkillIndex ────────────────────────────────────────────
@@ -34,6 +69,7 @@ class SkillIndex:
         procedures_dir: Path | None = None,
         *,
         anima_dir: Path | None = None,
+        external_roots: list | None = None,
     ) -> None:
         """Initialize index roots.
 
@@ -42,15 +78,52 @@ class SkillIndex:
             common_skills_dir: Directory containing shared skill folders (flat or nested).
             procedures_dir: Optional directory of procedure ``*.md`` files; ``None`` skips.
             anima_dir: Optional anima directory for usage stats integration.
+            external_roots: Optional list of ``ExternalSkillRoot``. ``None`` reads
+                from config (default). List order equals same-name precedence.
         """
         self._skills_dir = skills_dir
         self._common_skills_dir = common_skills_dir
         self._procedures_dir = procedures_dir
         self._anima_dir = anima_dir
+        self._external_roots = (
+            list(external_roots) if external_roots is not None else _default_external_roots()
+        )
+        self._enabled_ext: list = []  # list of (ExternalSkillRoot, resolved Path)
+        self._external_root_origin: dict[str, int] = {}
         self._cached_index: list[SkillMetadata] | None = None
         self._cached_all_entries: list[SkillMetadata] | None = None
-        self._curator_state_marker: tuple[int, int] | None = None
+        self._curator_state_marker: tuple | None = None
         self._company_marker: str | None = None
+        self.shadowed: list[ShadowedSkill] = []
+        self.excluded: dict[str, str] = {}
+
+    def _resolve_enabled_external_roots(self) -> list[tuple]:
+        """Return (ExternalSkillRoot, resolved Path) for each enabled external root."""
+        resolved: list[tuple] = []
+        self._external_root_origin = {}
+        self._enabled_ext = []
+        for i, root in enumerate(self._external_roots):
+            if not getattr(root, "enabled", True):
+                continue
+            try:
+                rdir = Path(os.path.expanduser(root.path)).resolve()
+            except OSError:
+                continue
+            resolved.append((root, rdir))
+            self._external_root_origin[str(rdir)] = i
+        self._enabled_ext = resolved
+        return resolved
+
+    def _denied_external_origins(self) -> list:
+        """Return resolved deny roots from permissions.json for this anima (if any)."""
+        if self._anima_dir is None:
+            return []
+        try:
+            from core.config.schemas import load_permissions
+
+            return list(load_permissions(self._anima_dir).file_roots_denied)
+        except Exception:
+            return []
 
     # ── Cache ───────────────────────────────────────────────
 
@@ -60,6 +133,8 @@ class SkillIndex:
         self._cached_all_entries = None
         self._curator_state_marker = None
         self._company_marker = None
+        self.shadowed = []
+        self.excluded = {}
 
     @property
     def all_skills(self) -> list[SkillMetadata]:
@@ -82,6 +157,8 @@ class SkillIndex:
         """
         entries: list[SkillMetadata] = []
         seen_paths: set[Path] = set()
+        self.shadowed = []
+        self.excluded = {}
         curator_state_marker = self._read_curator_state_marker()
 
         def _add_metadata(meta: SkillMetadata) -> None:
@@ -149,6 +226,55 @@ class SkillIndex:
                         exc,
                     )
 
+        # ── 5th system: external engine roots (read-only, direct scan) ──────
+        denied_roots = self._denied_external_origins()
+        for root_obj, root in self._resolve_enabled_external_roots():
+            if not root.is_dir():
+                continue
+            for child in sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")):
+                resolved_dir = child.resolve() if child.is_symlink() else child
+                origin = str(resolved_dir)
+                if denied_roots and any(origin.startswith(str(d)) for d in denied_roots):
+                    self.excluded.setdefault(origin, "denied")
+                    continue
+                skill_path = resolved_dir / "SKILL.md"
+                if not skill_path.is_file():
+                    continue
+                try:
+                    meta = load_skill_metadata(skill_path)
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to load external skill metadata from %s: %s",
+                        skill_path,
+                        exc,
+                    )
+                    continue
+                # No SkillScanner here: external roots are the host user's own
+                # skill dirs and their trust_level (default trusted) is the gate.
+                # The regex scanner false-positives on ordinary host skills
+                # (e.g. a SKILL.md that *forbids* `mkfs`) and costs ~8s/46 skills.
+                root_trust = getattr(root_obj, "trust_level", "trusted")
+                try:
+                    trust = SkillTrustLevel(root_trust)
+                except ValueError:
+                    trust = SkillTrustLevel.trusted
+                meta = meta.model_copy(
+                    update={
+                        "is_external": True,
+                        "is_common": False,
+                        "is_procedure": False,
+                        "trust_level": trust,
+                        "source": SkillSource(
+                            type="external",
+                            engine=getattr(root_obj, "engine", ""),
+                            origin=origin,
+                        ),
+                        "path": skill_path.resolve(),
+                    }
+                )
+                _add_metadata(meta)
+
+
         if self._procedures_dir is not None and self._procedures_dir.exists():
             for proc_path in sorted(self._procedures_dir.glob("*.md")):
                 try:
@@ -163,6 +289,7 @@ class SkillIndex:
                     )
 
         sorted_all = sorted(entries, key=self._sort_key)
+        sorted_all = self._dedup_external(sorted_all)
 
         # Merge usage stats from SkillUsageTracker if anima_dir is available.
         #
@@ -219,21 +346,87 @@ class SkillIndex:
         self._cached_index = filtered
         return list(filtered)
 
-    def _read_curator_state_marker(self) -> tuple[int, int] | None:
-        if self._anima_dir is None:
-            return None
-        state_path = self._anima_dir / "state" / "skill_curator.jsonl"
-        try:
-            stat = state_path.stat()
-        except OSError:
-            return None
-        return stat.st_mtime_ns, stat.st_size
+    def _external_priority(self, meta: SkillMetadata) -> int:
+        """Return the external-root precedence index for *meta* (larger = lower)."""
+        origin = (meta.source and meta.source.origin) or (
+            str(meta.path.parent) if meta.path is not None else ""
+        )
+        if not origin:
+            return len(self._enabled_ext)
+        for i, (_root_obj, rdir) in enumerate(self._enabled_ext):
+            try:
+                if Path(origin).is_relative_to(rdir):
+                    return i
+            except (OSError, ValueError):
+                continue
+        return len(self._enabled_ext)
+
+    def _dedup_external(self, entries: list[SkillMetadata]) -> list[SkillMetadata]:
+        """Resolve name collisions across native and external entries.
+
+        Rules (see plan): native shadows same-key externals; identical external
+        copies keep the highest-priority root; differing same-key externals win
+        by root priority. Native-vs-native coexistence is unchanged.
+        """
+        final: list[SkillMetadata] = []
+        native_by_key: dict[str, SkillMetadata] = {}
+        external_groups: dict[str, list[SkillMetadata]] = {}
+        for meta in entries:
+            key = _normalize_name_key(meta.name)
+            if not meta.is_external:
+                native_by_key.setdefault(key, meta)
+                final.append(meta)
+            else:
+                external_groups.setdefault(key, []).append(meta)
+
+        for key, ext_list in external_groups.items():
+            native_kept = native_by_key.get(key)
+            if native_kept is not None:
+                for e in ext_list:
+                    self.shadowed.append(ShadowedSkill(dropped=e, kept=native_kept, reason="shadowed_by_native"))
+                continue
+            ordered = sorted(ext_list, key=self._external_priority)
+            kept = ordered[0]
+            final.append(kept)
+            kept_hash = _content_sha256(kept.path) if kept.path is not None else ""
+            for e in ordered[1:]:
+                e_hash = _content_sha256(e.path) if e.path is not None else ""
+                reason = "duplicate_identical" if e_hash == kept_hash else "shadowed_by_priority"
+                self.shadowed.append(ShadowedSkill(dropped=e, kept=kept, reason=reason))
+
+        return sorted(final, key=self._sort_key)
+
+    def _read_curator_state_marker(self) -> tuple | None:
+        parts: list[tuple] = []
+        if self._anima_dir is not None:
+            state_path = self._anima_dir / "state" / "skill_curator.jsonl"
+            try:
+                stat = state_path.stat()
+                parts.append(("anima", stat.st_mtime_ns, stat.st_size))
+            except OSError:
+                parts.append(("anima", 0, 0))
+        for _root_obj, rdir in self._resolve_enabled_external_roots():
+            # Root dir mtime only changes on add/remove; also fold in each
+            # SKILL.md mtime so in-place edits invalidate the cache (~50 stats).
+            try:
+                mt = rdir.stat().st_mtime_ns
+                for skill_md in rdir.glob("*/SKILL.md"):
+                    try:
+                        mt = max(mt, skill_md.stat().st_mtime_ns)
+                    except OSError:
+                        continue
+            except OSError:
+                mt = 0
+            parts.append(("ext", str(rdir), mt))
+        return tuple(parts)
 
     def _invalidate_if_curator_state_changed(self) -> None:
-        if self._anima_dir is None or self._cached_all_entries is None:
+        if self._cached_all_entries is None:
             return
-        company_resources = get_company_resources(self._anima_dir)
-        company_marker = company_resources.name if company_resources is not None else None
+        company_marker: str | None = None
+        if self._anima_dir is not None:
+            company_resources = get_company_resources(self._anima_dir)
+            company_marker = company_resources.name if company_resources is not None else None
         if self._read_curator_state_marker() != self._curator_state_marker or company_marker != self._company_marker:
             self.invalidate()
 
@@ -252,11 +445,13 @@ class SkillIndex:
 
     @staticmethod
     def _sort_key(meta: SkillMetadata) -> tuple[int, str, str]:
-        """Personal (0), common (1), procedures (2); then name and path."""
+        """Personal (0), common (1), external (2), procedures (3); then name, path."""
         if meta.is_procedure:
-            tier = 2
+            tier = 3
         elif meta.is_common:
             tier = 1
+        elif meta.is_external:
+            tier = 2
         else:
             tier = 0
         path_s = str(meta.path) if meta.path is not None else ""

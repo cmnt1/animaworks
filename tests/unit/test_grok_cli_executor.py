@@ -683,7 +683,41 @@ class TestACPProtocol:
         assert "pass_fds" not in kwargs
 
     @pytest.mark.asyncio
-    async def test_permission_request_is_approved(self, executor: GrokCLIExecutor):
+    async def test_skills_enabled_flag_set_when_sandbox_enabled(
+        self,
+        executor: GrokCLIExecutor,
+    ) -> None:
+        """Env must set GROK_CLAUDE_SKILLS_ENABLED=false to stop Grok loading native skills."""
+        proc = _FakeProc(_success_events())
+        with (
+            patch("core.execution.grok_cli._find_grok_binary", return_value="/usr/bin/grok"),
+            patch.object(executor, "_write_sandbox_config", return_value=True),
+            patch("core.execution.grok_cli.os.close"),
+            patch("pty.openpty", return_value=(101, 102)),
+            patch("asyncio.create_subprocess_exec", return_value=proc) as create,
+        ):
+            await executor.execute("hello", "system", trigger="heartbeat")
+
+        kwargs = create.call_args.kwargs
+        assert kwargs["env"]["GROK_CLAUDE_SKILLS_ENABLED"] == "false"
+
+    @pytest.mark.asyncio
+    async def test_skills_enabled_flag_set_when_sandbox_disabled(
+        self,
+        executor: GrokCLIExecutor,
+    ) -> None:
+        """GROK_CLAUDE_SKILLS_ENABLED=false must be set even when sandbox is off."""
+        proc = _FakeProc(_success_events())
+        with (
+            patch("core.execution.grok_cli._find_grok_binary", return_value="/usr/bin/grok"),
+            patch.object(executor, "_write_sandbox_config", return_value=False),
+            patch("asyncio.create_subprocess_exec", return_value=proc) as create,
+        ):
+            await executor.execute("hello", "system", trigger="heartbeat")
+
+        kwargs = create.call_args.kwargs
+        assert kwargs["env"]["GROK_CLAUDE_SKILLS_ENABLED"] == "false"
+
         events = _success_events()
         events.insert(
             0,

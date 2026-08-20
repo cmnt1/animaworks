@@ -100,7 +100,7 @@ def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
 
     # Prefix-qualified paths with .. must NOT be normalized here — they must
     # go through the downstream prefix-specific traversal checks unchanged.
-    _PREFIX_DIRS = ("common_knowledge/", "reference/", "common_skills/", "companies/")
+    _PREFIX_DIRS = ("common_knowledge/", "reference/", "common_skills/", "companies/", "external/")
     if any(raw.startswith(p) for p in _PREFIX_DIRS) and ".." in raw:
         return _PathNormResult(rel=raw)
 
@@ -740,6 +740,8 @@ class MemoryToolsMixin:
             return True
         if rel.startswith("companies/") and "/skills/" in rel and rel.endswith("/SKILL.md"):
             return True
+        if rel.startswith("external/") and "SKILL.md" in rel:
+            return True
         return rel.startswith("procedures/") and rel.endswith(".md")
 
     @staticmethod
@@ -747,14 +749,58 @@ class MemoryToolsMixin:
         parts = Path(rel).parts
         return len(parts) == 2 and parts[0] == "skills" and parts[1].endswith(".md")
 
+    @staticmethod
+    def _resolve_external(rel: str):
+        """Resolve ``external/<engine>/<name>/<rest...>`` to a real file.
+
+        Returns ``(D, real_path)`` where *D* is the resolved real skill dir and
+        *real_path* is the resolved file within *D* (guaranteed to be a
+        descendant of *D*). Returns the string ``"traversal"`` when the path
+        escapes *D*. Returns ``None`` when the engine is unknown, the named
+        skill dir doesn't exist, the name is a dot-entry, or there is no
+        trailing path.
+        """
+        parts = rel.split("/")
+        if len(parts) < 4:
+            return None
+        engine, name = parts[1], parts[2]
+        rest = "/".join(parts[3:])
+        if not name or name.startswith(".") or not rest:
+            return None
+        try:
+            from core.config.models import load_config
+
+            roots = list(load_config().skills.external_roots)
+        except Exception:
+            return None
+        D: Path | None = None
+        for root in roots:
+            if not getattr(root, "enabled", True):
+                continue
+            if getattr(root, "engine", "") != engine:
+                continue
+            try:
+                rdir = Path(root.path).expanduser().resolve()
+            except OSError:
+                continue
+            D = (rdir / name).resolve()
+            break
+        if D is None or not D.is_dir():
+            return None
+        real = (D / rest).resolve()
+        if not real.is_relative_to(D):
+            return "traversal"
+        return (D, real)
+
     def _record_skill_view_if_applicable(self, rel: str) -> None:
         """Record a 'view' event if the path looks like a skill or procedure."""
         is_flat_personal_skill = self._is_flat_personal_skill_path(rel)
         is_skill = is_flat_personal_skill or (rel.startswith("skills/") and "SKILL.md" in rel)
         is_common_skill = rel.startswith("common_skills/") and "SKILL.md" in rel
+        is_external_skill = rel.startswith("external/") and "SKILL.md" in rel
         is_procedure = rel.startswith("procedures/") and rel.endswith(".md")
 
-        if not (is_skill or is_common_skill or is_procedure):
+        if not (is_skill or is_common_skill or is_procedure or is_external_skill):
             return
 
         try:
@@ -771,6 +817,9 @@ class MemoryToolsMixin:
             elif is_common_skill:
                 parts = rel.split("/")
                 skill_name = parts[-2] if len(parts) >= 3 else parts[-1].replace(".md", "")
+            elif is_external_skill:
+                parts = rel.split("/")
+                skill_name = parts[-2] if len(parts) >= 4 else parts[-1].replace(".md", "")
             else:
                 skill_name = Path(rel).stem
 
@@ -798,6 +847,7 @@ class MemoryToolsMixin:
             rel = args["path"] = "state/current_state.md"
 
         # Support common_knowledge/ prefix — resolve to shared dir
+        ext_origin: Path | None = None
         if rel.startswith("common_knowledge/"):
             from core.paths import get_common_knowledge_dir
 
@@ -841,6 +891,20 @@ class MemoryToolsMixin:
                     "PermissionDenied",
                     "Company resource access is limited to your assigned company.",
                 )
+        elif rel.startswith("external/"):
+            ext = self._resolve_external(rel)
+            if ext == "traversal":
+                return _error_result(
+                    "PermissionDenied",
+                    "Path traversal detected — access denied.",
+                )
+            if ext is None:
+                path = self._anima_dir / rel
+                resolved = path.resolve()
+            else:
+                path = ext[1]
+                resolved = path
+                ext_origin = ext[0]
         else:
             path = self._anima_dir / rel
             resolved = path.resolve()
@@ -915,6 +979,8 @@ class MemoryToolsMixin:
             self._record_memory_file_used(rel)
 
             content = path.read_text(encoding="utf-8")
+            if ext_origin is not None and rel.endswith("SKILL.md"):
+                content = f"> Real directory: {ext_origin}\n{content}"
             lines = content.splitlines(keepends=True)
             MAX_LINES = 2000
             if len(lines) > MAX_LINES:
@@ -960,6 +1026,11 @@ class MemoryToolsMixin:
             return _error_result(
                 "PermissionDenied",
                 "Company knowledge and skills are read-only.",
+            )
+        if rel.startswith("external/"):
+            return _error_result(
+                "PermissionDenied",
+                "external/ is read-only. Create new skills under skills/ or common_skills/.",
             )
 
         # Support common_knowledge/ prefix — resolve to shared dir

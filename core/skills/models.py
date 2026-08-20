@@ -124,6 +124,7 @@ class SkillSource(BaseModel):
     identifier: str | None = None
     owner_anima: str | None = None
     origin: str | None = None
+    engine: str | None = None
 
 
 class ThreatPattern(BaseModel):
@@ -327,6 +328,7 @@ class SkillMetadata(BaseModel):
     path: Path | None = None
     is_common: bool = False
     is_procedure: bool = False
+    is_external: bool = False
 
     @field_validator(
         "tags",

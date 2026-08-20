@@ -134,6 +134,21 @@ def _reset_app_timezone():
 
 
 @pytest.fixture(autouse=True)
+def _empty_external_roots(monkeypatch: pytest.MonkeyPatch):
+    """Ensure SkillIndex does not pick up real host engine skill dirs during tests.
+
+    The default config points ``external_roots`` at ``~/.claude/skills`` etc.,
+    so without this fixture unit tests would unexpectedly load the host's real
+    skills. Tests that need external roots pass them explicitly or set up their
+    own fake roots, which are unaffected by this patch (they override the
+    default before SkillIndex is constructed).
+    """
+    import core.skills.index as skills_index
+
+    monkeypatch.setattr(skills_index, "_default_external_roots", lambda: [])
+
+
+@pytest.fixture(autouse=True)
 def _allow_direct_chroma_for_tests(monkeypatch: pytest.MonkeyPatch):
     """Allow low-level Chroma tests to instantiate the guarded store explicitly."""
     monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")

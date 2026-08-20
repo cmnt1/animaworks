@@ -459,32 +459,10 @@ def _load_skill_catalog_router_settings() -> _SkillCatalogRouterSettings:
 
 
 def _skill_catalog_pointer(meta: Any) -> str:
-    path = getattr(meta, "path", None)
-    name = getattr(meta, "name", "")
-    is_procedure = bool(getattr(meta, "is_procedure", False))
-    is_common = bool(getattr(meta, "is_common", False))
-    if path is not None:
-        from core.company_resources import company_resource_pointer
+    """Catalog pointer for *meta* — single source of truth is the router."""
+    from core.skills.router import _pointer_path
 
-        company_pointer = company_resource_pointer(Path(path))
-        if company_pointer is not None:
-            return company_pointer
-        parts = list(Path(path).parts)
-        for marker in ("common_skills", "skills", "procedures"):
-            if marker in parts:
-                idx = parts.index(marker)
-                return str(Path(*parts[idx:]))
-        if is_procedure:
-            return f"procedures/{Path(path).name}"
-        if is_common:
-            return f"common_skills/{Path(path).parent.name}/SKILL.md"
-        if Path(path).name == "SKILL.md":
-            return f"skills/{Path(path).parent.name}/SKILL.md"
-    if is_procedure:
-        return f"procedures/{name}.md"
-    if is_common:
-        return f"common_skills/{name}/SKILL.md"
-    return f"skills/{name}/SKILL.md"
+    return _pointer_path(meta)
 
 
 def _format_skill_catalog_line(
@@ -509,7 +487,14 @@ def _format_skill_catalog_line(
     if match_confidence:
         labels.append(f"match={match_confidence}")
     label_text = f" ({', '.join(labels)})" if labels else ""
-    return f"- {path}{label_text}{_format_trust_tag(meta)}: {desc}"
+    ext_tag = ""
+    if bool(getattr(meta, "is_external", False)):
+        engine = ""
+        source = getattr(meta, "source", None)
+        if source is not None:
+            engine = getattr(source, "engine", None) or ""
+        ext_tag = f" [ext:{engine}]"
+    return f"- {path}{label_text}{_format_trust_tag(meta)}{ext_tag}: {desc}"
 
 
 def _requires_human_approval(meta: Any) -> bool:
