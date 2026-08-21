@@ -144,6 +144,8 @@ class _SkillCatalogRouterSettings:
     top_k: int = 5
     min_score: float = 1.15
     include_body: bool = True
+    dense_enabled: bool = True
+    dense_weight: float = 8.0
 
 
 # ── Per-group section builders ────────────────────────────────
@@ -452,6 +454,8 @@ def _load_skill_catalog_router_settings() -> _SkillCatalogRouterSettings:
             top_k=max(1, int(getattr(prompt_cfg, "skill_catalog_router_top_k", 5))),
             min_score=max(0.0, float(getattr(prompt_cfg, "skill_catalog_router_min_score", 1.15))),
             include_body=bool(getattr(prompt_cfg, "skill_catalog_router_include_body", True)),
+            dense_enabled=bool(getattr(prompt_cfg, "skill_catalog_router_dense_enabled", True)),
+            dense_weight=max(0.0, float(getattr(prompt_cfg, "skill_catalog_router_dense_weight", 8.0))),
         )
     except Exception:
         logger.debug("Failed to load skill catalog router settings", exc_info=True)
@@ -630,10 +634,25 @@ def _build_group4(
         if settings.enabled and message.strip():
             from core.skills.router import SkillRouter
 
+            dense_scores = None
+            if settings.dense_enabled:
+                import time
+
+                from core.skills.dense import skill_dense_scores
+
+                t0 = time.monotonic()
+                dense_scores = skill_dense_scores(message, all_skills)
+                logger.debug(
+                    "skill dense scoring took %.3fs (skills=%d)",
+                    time.monotonic() - t0,
+                    len(all_skills),
+                )
+
             candidates = SkillRouter(
                 min_score=settings.min_score,
                 include_body=settings.include_body,
-            ).route(message, all_skills, top_k=settings.top_k)
+                dense_weight=settings.dense_weight,
+            ).route(message, all_skills, top_k=settings.top_k, dense_scores=dense_scores)
             metas_by_pointer = {_skill_catalog_pointer(meta): meta for meta in all_skills}
             for candidate in candidates:
                 meta = metas_by_pointer.get(candidate.path)
