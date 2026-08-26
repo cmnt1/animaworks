@@ -180,13 +180,8 @@ def find_denied_root(path: str | Path, denied_roots: tuple[Path, ...]) -> Path |
     return next((root for root in denied_roots if resolved.is_relative_to(root)), None)
 
 
-def _is_vectordb_variant(name: str) -> bool:
-    """Return whether a top-level Anima path is a live/staged vector cache."""
-    return name == "vectordb" or name.startswith(("vectordb-", "vectordb.", "vectordb_"))
-
-
 def find_internal_cache_root(path: str | Path, anima_dir: Path) -> Path | None:
-    """Return the protected internal cache containing *path*, if any.
+    """Return the protected credential/runtime-control root containing *path*.
 
     Both the symlink-resolved target and lexical absolute path are checked:
     an allowed symlink into a cache and a cache symlink pointing outward must
@@ -203,40 +198,15 @@ def find_internal_cache_root(path: str | Path, anima_dir: Path) -> Path | None:
         if not relative.parts:
             continue
 
-        top = relative.parts[0]
-        if top in {".codex_home", "archive"}:
-            return anima_root / top
-        if _is_vectordb_variant(top):
-            return anima_root / top
-        if top == "state" and len(relative.parts) >= 2:
-            name = relative.parts[1]
-            if name.startswith("bm25_longterm_index.") or name.startswith(".bm25_longterm_index."):
-                return anima_root / "state" / name
+        if relative.parts[0] == ".codex_home":
+            return anima_root / ".codex_home"
     return None
 
 
 def shell_internal_deny_paths(anima_dir: Path) -> tuple[Path, ...]:
-    """Return runtime paths hidden from a deny-enabled model shell.
-
-    The whole state/archive trees are brokered through host/MCP services.
-    Existing vector cache variants are included alongside the stable live
-    path; archive quarantines are covered by the archive root.
-    """
+    """Return credential/runtime-control paths hidden from the model shell."""
     anima_root = anima_dir.resolve()
-    paths = {
-        (anima_root / "state").resolve(),
-        (anima_root / "archive").resolve(),
-        (anima_root / ".codex_home").resolve(),
-        (anima_root / "vectordb").resolve(),
-        anima_root / "vectordb-*",
-        anima_root / "vectordb.*",
-        anima_root / "vectordb_*",
-    }
-    try:
-        paths.update(child.resolve() for child in anima_root.iterdir() if _is_vectordb_variant(child.name))
-    except OSError:
-        pass
-    return tuple(sorted(paths, key=str))
+    return ((anima_root / ".codex_home").resolve(),)
 
 
 def resolve_memory_source_path(anima_dir: Path, source: str) -> Path | None:

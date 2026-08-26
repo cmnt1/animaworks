@@ -94,6 +94,7 @@ class SkillRouter:
         rrf_k: int = 60,
         rrf_weight: float = 8.0,
         include_body: bool = True,
+        dense_weight: float = 8.0,
     ) -> None:
         self.min_score = min_score
         self.lexical_only_min_score = lexical_only_min_score
@@ -102,6 +103,7 @@ class SkillRouter:
         self.rrf_k = rrf_k
         self.rrf_weight = rrf_weight
         self.include_body = include_body
+        self.dense_weight = dense_weight
 
     def route(
         self,
@@ -290,8 +292,8 @@ class SkillRouter:
                 record.reasons.append(f"lexical:{','.join(matched[:6])}")
         return scores
 
-    @staticmethod
     def _dense_scores(
+        self,
         dense_scores: Mapping[str, float],
         records: list[_SkillRecord],
     ) -> dict[str, float]:
@@ -305,13 +307,14 @@ class SkillRouter:
             lookup[record.pointer_path] = record
             if record.meta.path is not None:
                 lookup[str(record.meta.path)] = record
+                lookup[record.meta.path.as_posix()] = record
 
         out: dict[str, float] = {}
         for raw_key, raw_score in dense_scores.items():
             record = lookup.get(raw_key)
             if record is None:
                 continue
-            score = max(float(raw_score), 0.0)
+            score = max(float(raw_score), 0.0) * self.dense_weight
             if score > 0:
                 out[record.key] = score
                 record.reasons.append(f"dense:{score:.3f}")
@@ -471,6 +474,11 @@ def _router_visible(meta: SkillMetadata) -> bool:
 
 def _pointer_path(meta: SkillMetadata) -> str:
     path = meta.path
+    if meta.is_external:
+        # Host-side skill: read-only external/<engine>/<name>/SKILL.md pointer.
+        engine = (meta.source.engine if meta.source is not None else None) or ""
+        name = path.parent.name if path is not None else meta.name
+        return f"external/{engine}/{name}/SKILL.md"
     if path is None:
         if meta.is_procedure:
             return f"procedures/{meta.name}.md"

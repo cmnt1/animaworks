@@ -12,14 +12,13 @@ from __future__ import annotations
 
 import json
 import time
-from core.time_utils import now_jst
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
 
 from core.memory.activity import ActivityLogger
-
+from core.time_utils import now_jst
 
 # ── Helpers ────────────────────────────────────────────────────
 
@@ -27,6 +26,7 @@ from core.memory.activity import ActivityLogger
 def _create_app(shared_dir: Path):
     """Create a test FastAPI app with channels router and real filesystem."""
     from fastapi import FastAPI
+
     from server.routes.channels import create_channels_router
 
     app = FastAPI()
@@ -146,8 +146,6 @@ class TestDMApiReturnsMessagesFromActivityLog:
         bob_dir = _make_anima_dir(animas_dir, "bob")
 
         # Log a conversation via ActivityLogger
-        ts_base = now_jst().isoformat()
-
         alice_activity = ActivityLogger(alice_dir)
         alice_activity.log(
             "dm_sent",
@@ -269,7 +267,7 @@ class TestDMApiMergesLegacyAndActivityLog:
         _data_dir, shared_dir, animas_dir = _setup_data_dir(tmp_path)
 
         alice_dir = _make_anima_dir(animas_dir, "alice")
-        bob_dir = _make_anima_dir(animas_dir, "bob")
+        _make_anima_dir(animas_dir, "bob")
 
         # Legacy messages (old dm_logs/ format)
         legacy_entries = [
@@ -459,7 +457,7 @@ class TestRunnerEmitsInteractionEvent:
 
         # Emit multiple events
         for i in range(5):
-            filename = f"{time.time_ns()}.json"
+            filename = f"{time.time_ns()}-{i}.json"
             event = {
                 "event": "anima.interaction",
                 "data": {"index": i},

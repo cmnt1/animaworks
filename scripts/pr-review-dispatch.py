@@ -13,8 +13,7 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -36,6 +35,12 @@ BOT_LOGIN = os.environ.get("PR_DISPATCH_BOT_LOGIN", "")
 # Dedicated review-bot login (e.g. animaworks-reviewer); treated like BOT_LOGIN.
 REVIEWER_LOGIN = os.environ.get("PR_DISPATCH_REVIEWER_LOGIN", "")
 REVIEWER = os.environ.get("PR_DISPATCH_REVIEWER", "sumire")
+# Multi-pass FRC review: comma-separated "mode:model" list emitted as one review
+# pass per entry.  Unset/empty keeps the historic single (model-less) dispatch.
+PR_DISPATCH_REVIEW_MODELS = [e.strip() for e in os.environ.get("PR_DISPATCH_REVIEW_MODELS", "").split(",") if e.strip()]
+# Model used for the final synthesis pass; ``None`` falls back to the reviewer
+# default model.
+PR_DISPATCH_SYNTH_MODEL = os.environ.get("PR_DISPATCH_SYNTH_MODEL", "").strip() or None
 DISPATCHER = os.environ.get("PR_DISPATCH_DISPATCHER", "rin")
 FIXER = os.environ.get("PR_DISPATCH_FIXER", "natsume")
 ESCALATION_TARGET = os.environ.get("PR_DISPATCH_ESCALATION", "sakura")
@@ -50,7 +55,8 @@ STALE_ESCALATE_HOURS = float(os.environ.get("PR_STALE_ESCALATE_HOURS", "1"))
 # When set (1/true/yes), send() logs instead of delivering DMs.
 DRY_RUN = os.environ.get("PR_DISPATCH_DRY_RUN", "").strip().lower() in ("1", "true", "yes")
 
-# Non-bot issue/review comments matching this are treated as fix requests.
+# Auxiliary body match for mention-gated comments.  A mention without these
+# words (e.g. "LGTMです @reviewer") is not a fix request.
 FIX_REQUEST_PATTERN = re.compile(
     r"修正|直して|対応して|お願いします|fix|please|change|address|required",
     re.IGNORECASE,
@@ -61,6 +67,7 @@ sys.path.insert(
     os.environ.get("ANIMAWORKS_REPO_ROOT", str(Path(__file__).resolve().parents[1])),
 )
 
+import core.review_multipass as review_multipass
 from core.memory.task_queue import TaskQueueManager
 from core.paths import get_animas_dir
 from core.tasks_dispatch import FAILING_CI_CONCLUSIONS, dispatch_direct_task
@@ -86,6 +93,72 @@ def is_our_bot(login: str) -> bool:
     if not login:
         return False
     return (bool(BOT_LOGIN) and login == BOT_LOGIN) or (bool(REVIEWER_LOGIN) and login == REVIEWER_LOGIN)
+
+
+def collect_mention_logins(*values: str | None) -> tuple[str, ...]:
+    """Deduplicate mention handles.  Leading @ is stripped; blanks are skipped."""
+    seen: set[str] = set()
+    logins: list[str] = []
+    for raw in values:
+        login = (raw or "").strip().lstrip("@")
+        if not login:
+            continue
+        key = login.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        logins.append(login)
+    return tuple(logins)
+
+
+def _github_webhook_mention_logins() -> tuple[str, ...]:
+    """bot_login / reviewer_login / implementer_anima from github_webhook config."""
+    try:
+        from core.config.models import load_config
+
+        cfg = load_config().github_webhook
+    except Exception:
+        return ()
+    return collect_mention_logins(
+        getattr(cfg, "bot_login", None),
+        getattr(cfg, "reviewer_login", None),
+        getattr(cfg, "implementer_anima", None),
+    )
+
+
+def configured_mention_logins() -> tuple[str, ...]:
+    """Handles that count as a directed mention (env PR_DISPATCH_* + github_webhook)."""
+    return collect_mention_logins(
+        BOT_LOGIN,
+        REVIEWER_LOGIN,
+        FIXER,
+        *_github_webhook_mention_logins(),
+    )
+
+
+def body_mentions_any(body: str, logins: Iterable[str]) -> bool:
+    """True when *body* contains ``@login`` for any configured handle (case-insensitive)."""
+    text = body.casefold()
+    return any(f"@{login.lstrip('@')}".casefold() in text for login in logins if login and login.strip())
+
+
+def is_fix_request(
+    *,
+    body: str = "",
+    review_state: str | None = None,
+    mention_logins: Iterable[str] = (),
+) -> bool:
+    """True when an item should be tracked as a stale-watch fix request.
+
+    OR of:
+    1. review state is CHANGES_REQUESTED (structured; body ignored)
+    2. body mentions a configured bot/implementer handle AND matches FIX_REQUEST_PATTERN
+    """
+    if str(review_state or "").upper() == "CHANGES_REQUESTED":
+        return True
+    if not body_mentions_any(body, mention_logins):
+        return False
+    return bool(FIX_REQUEST_PATTERN.search(body))
 
 
 def now_utc() -> datetime:
@@ -140,37 +213,11 @@ def dispatch_task(**kwargs: Any) -> bool:
 
 
 def default_state() -> dict:
-    return {
-        "prs": {},
-        "last_comment_check": iso(now_utc()),
-        "seen_comments": {},
-        "ci_notified": {},
-        "ci_failure_signatures": {},
-        "conflict_notified": {},
-        "failed_task_retries": {},
-        "review_tasks": {},
-        "stale_watch": {},
-        "consecutive_failures": 0,
-    }
+    return review_multipass.default_state()
 
 
 def load_state() -> dict:
-    if STATE_FILE.exists():
-        try:
-            state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-            if isinstance(state, dict):
-                state.setdefault("prs", {})
-                state.setdefault("seen_comments", {})
-                state.setdefault("ci_notified", {})
-                state.setdefault("ci_failure_signatures", {})
-                state.setdefault("conflict_notified", {})
-                state.setdefault("failed_task_retries", {})
-                state.setdefault("review_tasks", {})
-                state.setdefault("stale_watch", {})
-                return state
-        except (json.JSONDecodeError, OSError):
-            log("state file unreadable; starting fresh")
-    return default_state()
+    return review_multipass.load_state(STATE_FILE)
 
 
 def parse_gh_time(value: str | None) -> datetime | None:
@@ -613,6 +660,7 @@ def _collect_pr_stale_items(
         (((graphql.get("data") or {}).get("repository") or {}).get("pullRequest") or {}).get("reviewThreads") or {}
     ).get("nodes") or []
 
+    mention_logins = configured_mention_logins()
     all_comment_like: list[dict[str, Any]] = list(issue_comments) + list(review_comments)
     for review in reviews:
         if review.get("body"):
@@ -629,7 +677,8 @@ def _collect_pr_stale_items(
         state_upper = str(review.get("state", "")).upper()
         if state_upper == "DISMISSED":
             continue
-        if state_upper != "CHANGES_REQUESTED":
+        # Reviews qualify only via structured state; body mention gating is for comments.
+        if not is_fix_request(review_state=state_upper):
             continue
         author = (review.get("user") or {}).get("login", "")
         created = parse_gh_time(review.get("submitted_at"))
@@ -698,7 +747,7 @@ def _collect_pr_stale_items(
         if is_our_bot(author):
             continue
         body = comment.get("body") or ""
-        if not FIX_REQUEST_PATTERN.search(body):
+        if not is_fix_request(body=body, mention_logins=mention_logins):
             continue
         created = parse_gh_time(comment.get("created_at"))
         if created is None:
@@ -961,24 +1010,7 @@ def check_unaddressed(state: dict) -> None:
 
 
 def save_state(state: dict) -> None:
-    temp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=STATE_FILE.parent,
-            prefix=f".{STATE_FILE.name}.",
-            delete=False,
-        ) as handle:
-            json.dump(state, handle, indent=1, ensure_ascii=False)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-            temp_path = Path(handle.name)
-        temp_path.replace(STATE_FILE)
-    finally:
-        if temp_path is not None and temp_path.exists():
-            temp_path.unlink()
+    review_multipass.save_state(STATE_FILE, state)
 
 
 @contextmanager
@@ -997,10 +1029,35 @@ def locked_state() -> Iterator[dict]:
             release_file_lock(lock_handle)
 
 
+def _review_models() -> list[str]:
+    """Effective multipass model list: env override, else config (SSoT)."""
+    if PR_DISPATCH_REVIEW_MODELS:
+        return PR_DISPATCH_REVIEW_MODELS
+    try:
+        from core.config.models import load_config
+
+        return list(getattr(load_config().github_webhook, "review_multipass_models", None) or [])
+    except Exception:
+        return []
+
+
+def _synth_model() -> str | None:
+    """Effective synthesis model: env override, else config (SSoT)."""
+    if PR_DISPATCH_SYNTH_MODEL:
+        return PR_DISPATCH_SYNTH_MODEL
+    try:
+        from core.config.models import load_config
+
+        return getattr(load_config().github_webhook, "review_synth_model", None)
+    except Exception:
+        return None
+
+
 def check_commits(state: dict) -> None:
     """Detect a stable PR head and dispatch it once to the reviewer."""
     now = now_utc()
-    ready: list[str] = []
+    ready: list[dict] = []
+    ready_lines: list[str] = []
     open_keys: set[str] = set()
 
     for repo in REPOS:
@@ -1039,26 +1096,32 @@ def check_commits(state: dict) -> None:
                 continue
             seen_at = datetime.strptime(entry["sha_seen_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
             if now - seen_at >= timedelta(seconds=QUIET_SECONDS):
-                ready.append(f"- {key} {sha[:8]}: {entry.get('title', '')}")
+                ready.append({"repo": repo, "number": pr["number"], "sha": sha, "title": entry.get("title", "")})
+                ready_lines.append(f"- {key} {sha[:8]}: {entry.get('title', '')}")
                 entry["notified_sha"] = sha
 
     state["prs"] = {key: value for key, value in state["prs"].items() if key in open_keys}
     if ready:
-        send(
-            REVIEWER,
-            "【PR新規コミット検出（push静穏確認済み）】\n\n"
-            + "\n".join(ready)
-            + "\n\n"
-            + f"最終pushから{QUIET_SECONDS // 60}分以上静穏を確認済みです。"
-            "上記PRの current HEAD に対する差分レビュー/FRCを直ちに実施してください。"
-            "過去HEADへのレビューは新push時点で無効です。"
-            "2回目以降のレビューは収束ルール（heartbeat.md記載・2026-07-15 taka指示）に従い、"
-            "前回blocking findingsの解消確認と新push差分に限定してください。"
-            "full PRの再レビューをやり直さないこと。"
-            "同一PRのHOLDが通算3回に達している場合は自動レビューを停止し、rinへエスカレーションしてください。"
-            "複数件ある場合はbackgroundタスクとして並列に処理して構いません。",
-        )
-        log(f"review dispatch -> {REVIEWER}: {len(ready)} PR(s)")
+        models = _review_models()
+        if models:
+            review_multipass.dispatch_multipass_reviews(
+                state,
+                ready,
+                reviewer=REVIEWER,
+                models=models,
+                quiet_seconds=QUIET_SECONDS,
+                dispatch=dispatch_task,
+                logger=log,
+            )
+        else:
+            send(
+                REVIEWER,
+                "【PR新規コミット検出（push静穏確認済み）】\n\n"
+                + "\n".join(ready_lines)
+                + "\n\n"
+                + review_multipass.review_instruction_base(QUIET_SECONDS),
+            )
+            log(f"review dispatch -> {REVIEWER}: {len(ready)} PR(s)")
 
 
 def check_comments(state: dict) -> None:
@@ -1231,10 +1294,11 @@ def check_ci(state: dict) -> None:
 
 
 def check_conflicts(state: dict) -> None:
-    """Dispatch merge conflicts once per PR head; renotify after re-conflict."""
+    """Dispatch once per head and loudly remind Rin on every conflicting scan."""
     notified = state.setdefault("conflict_notified", {})
     open_keys: set[str] = set()
     dispatched = 0
+    conflict_lines: list[str] = []
     for repo in REPOS:
         prs = json.loads(
             gh(
@@ -1266,10 +1330,11 @@ def check_conflicts(state: dict) -> None:
                 # UNKNOWN はGitHub側の算出待ち。次回巡回で確定値を見る。
                 continue
             sha = pr["headRefOid"][:8]
+            url = str(pr.get("url") or f"https://github.com/{repo}/pull/{pr['number']}")
+            conflict_lines.append(f"- {key} {sha}: {url}")
             if notified.get(key) == sha:
                 continue
             notified[key] = sha
-            url = str(pr.get("url") or f"https://github.com/{repo}/pull/{pr['number']}")
             base_id = _conflict_task_id(repo, pr["number"], sha)
             attempts = int(state.get("failed_task_retries", {}).get(base_id, 0))
             dispatch_task(
@@ -1292,6 +1357,15 @@ def check_conflicts(state: dict) -> None:
     state["conflict_notified"] = {key: value for key, value in notified.items() if key in open_keys}
     if dispatched:
         log(f"conflict task dispatch -> {FIXER}: {dispatched} PR(s)")
+    if conflict_lines:
+        send(
+            DISPATCHER,
+            "【要対応・マージコンフリクト継続検知】\n\n"
+            + "\n".join(conflict_lines)
+            + "\n\n同じ通知が繰り返されても無視しないこと。"
+            f"{FIXER}のcanonical laneが解消pushを完了し、mergeable=MERGEABLEになるまで追跡せよ。",
+        )
+        log(f"conflict reminder -> {DISPATCHER}: {len(conflict_lines)} PR(s)")
 
 
 def check_human_waits(state: dict) -> None:
@@ -1392,6 +1466,14 @@ def main() -> int:
         try:
             reopen_stalled_dispatches(state)
             check_commits(state)
+            review_multipass.check_multipass_synth(
+                state,
+                reviewer=REVIEWER,
+                synth_model=_synth_model(),
+                quiet_seconds=QUIET_SECONDS,
+                dispatch=dispatch_task,
+                logger=log,
+            )
             check_comments(state)
             check_ci(state)
             check_conflicts(state)

@@ -253,7 +253,10 @@ export class ChatSessionManager extends EventTarget {
    * @returns {Promise<{ streamingMsg, success, queued, error }>}
    */
   async sendChat(anima, thread, text, options = {}) {
-    const { images = [], displayImages = [], callbacks = {}, onFinally, skipUserEcho = false } = options;
+    const {
+      images = [], displayImages = [], callbacks = {}, onFinally,
+      skipUserEcho = false, model,
+    } = options;
 
     const session = this.getSession(anima, thread);
     if (session.isStreaming) {
@@ -288,6 +291,7 @@ export class ChatSessionManager extends EventTarget {
     try {
       const bodyObj = { message: text || "", from_person: user, thread_id: thread };
       if (images.length > 0) bodyObj.images = images;
+      if (model) bodyObj.model = model;
 
       await this.#config.streamChat(
         anima, JSON.stringify(bodyObj), session._abortController.signal, callbacks,

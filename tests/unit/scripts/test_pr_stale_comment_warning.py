@@ -528,6 +528,190 @@ def test_fix_request_pattern(mod, body, expect):
     assert matched is expect
 
 
+REVIEWER_LOGIN = "animaworks-reviewer"
+
+
+def test_plain_required_field_is_not_fix_request(mod):
+    assert not mod.is_fix_request(
+        body="住所は required フィールドです",
+        mention_logins=[REVIEWER_LOGIN],
+    )
+
+
+def test_mentioned_please_fix_is_fix_request(mod):
+    assert mod.is_fix_request(
+        body="@animaworks-reviewer ここ直してください",
+        mention_logins=[REVIEWER_LOGIN],
+    )
+
+
+def test_changes_requested_is_fix_request_regardless_of_body(mod):
+    assert mod.is_fix_request(body="", review_state="CHANGES_REQUESTED", mention_logins=[])
+    assert mod.is_fix_request(body="LGTM", review_state="changes_requested", mention_logins=[])
+    assert mod.is_fix_request(
+        body="住所は required フィールドです",
+        review_state="CHANGES_REQUESTED",
+        mention_logins=[],
+    )
+
+
+def test_mention_without_pattern_is_not_fix_request(mod):
+    assert not mod.is_fix_request(
+        body="LGTMです @animaworks-reviewer",
+        mention_logins=[REVIEWER_LOGIN],
+    )
+
+
+def test_mention_match_is_case_insensitive(mod):
+    assert mod.is_fix_request(
+        body="@AnimaWorks-Reviewer please fix this",
+        mention_logins=[REVIEWER_LOGIN],
+    )
+
+
+def test_collect_mention_logins_strips_and_dedupes(mod):
+    assert mod.collect_mention_logins(
+        "@animaworks-reviewer",
+        "animaworks-reviewer",
+        "",
+        None,
+        " natsume ",
+        "Natsume",
+    ) == ("animaworks-reviewer", "natsume")
+
+
+def test_configured_mention_logins_from_env_and_config(mod, monkeypatch):
+    mod.BOT_LOGIN = "animaworks-dev-team"
+    mod.REVIEWER_LOGIN = "animaworks-reviewer"
+    mod.FIXER = "natsume"
+    monkeypatch.setattr(mod, "_github_webhook_mention_logins", lambda: ("cfg-bot", "mio"))
+    assert set(mod.configured_mention_logins()) == {
+        "animaworks-dev-team",
+        "animaworks-reviewer",
+        "natsume",
+        "cfg-bot",
+        "mio",
+    }
+
+
+def test_configured_mention_logins_not_hardcoded(mod, monkeypatch):
+    mod.BOT_LOGIN = ""
+    mod.REVIEWER_LOGIN = ""
+    mod.FIXER = ""
+    monkeypatch.setattr(mod, "_github_webhook_mention_logins", lambda: ())
+    assert mod.configured_mention_logins() == ()
+
+
+def test_github_webhook_mention_logins_reads_config_fields(mod, monkeypatch):
+    webhook = SimpleNamespace(
+        bot_login="cfg-bot",
+        reviewer_login="cfg-reviewer",
+        implementer_anima="mio",
+    )
+    monkeypatch.setattr(
+        "core.config.models.load_config",
+        lambda: SimpleNamespace(github_webhook=webhook),
+    )
+    assert set(mod._github_webhook_mention_logins()) == {"cfg-bot", "cfg-reviewer", "mio"}
+
+
+def _collect_stale(mod, monkeypatch, *, reviews=None, issue_comments=None, review_comments=None):
+    reviews = reviews or []
+    issue_comments = issue_comments or []
+    review_comments = review_comments or []
+
+    def fake_gh(args: list[str]) -> str:
+        endpoint = args[1] if len(args) > 1 else ""
+        if endpoint == "graphql":
+            return json.dumps({"data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": []}}}}})
+        if endpoint.endswith("/reviews"):
+            return json.dumps(reviews)
+        if "/issues/" in endpoint and "/comments" in endpoint:
+            return json.dumps(issue_comments)
+        if "/pulls/" in endpoint and "/comments" in endpoint:
+            return json.dumps(review_comments)
+        if "/commits" in endpoint:
+            return json.dumps([])
+        raise AssertionError(f"unexpected gh args: {args}")
+
+    monkeypatch.setattr(mod, "gh", fake_gh)
+    monkeypatch.setattr(mod, "_github_webhook_mention_logins", lambda: ())
+    mod.BOT_LOGIN = "animaworks-dev-team"
+    mod.REVIEWER_LOGIN = "animaworks-reviewer"
+    mod.FIXER = "natsume"
+    return mod._collect_pr_stale_items("o/r", 1, pr_meta={})
+
+
+def test_collect_plain_required_comment_is_not_stale_item(mod, monkeypatch):
+    items = _collect_stale(
+        mod,
+        monkeypatch,
+        issue_comments=[
+            {
+                "id": 11,
+                "user": {"login": "human"},
+                "body": "住所は required フィールドです",
+                "created_at": "2026-06-01T00:00:00Z",
+                "html_url": "https://gh.test/c/11",
+            }
+        ],
+    )
+    assert items == []
+
+
+def test_collect_mentioned_fix_comment_is_stale_item(mod, monkeypatch):
+    items = _collect_stale(
+        mod,
+        monkeypatch,
+        issue_comments=[
+            {
+                "id": 12,
+                "user": {"login": "human"},
+                "body": "@animaworks-reviewer ここ直してください",
+                "created_at": "2026-06-01T00:00:00Z",
+                "html_url": "https://gh.test/c/12",
+            }
+        ],
+    )
+    assert [item["item_id"] for item in items] == ["comment:12"]
+
+
+def test_collect_changes_requested_review_is_stale_item(mod, monkeypatch):
+    items = _collect_stale(
+        mod,
+        monkeypatch,
+        reviews=[
+            {
+                "id": 99,
+                "state": "CHANGES_REQUESTED",
+                "user": {"login": "human-reviewer"},
+                "body": "looks fine overall",
+                "submitted_at": "2026-06-01T00:00:00Z",
+                "html_url": "https://gh.test/r/99",
+            }
+        ],
+    )
+    assert [item["item_id"] for item in items] == ["review:99"]
+
+
+def test_collect_commented_review_with_mention_is_not_stale_item(mod, monkeypatch):
+    items = _collect_stale(
+        mod,
+        monkeypatch,
+        reviews=[
+            {
+                "id": 88,
+                "state": "COMMENTED",
+                "user": {"login": "human-reviewer"},
+                "body": "@animaworks-reviewer please fix this",
+                "submitted_at": "2026-06-01T00:00:00Z",
+                "html_url": "https://gh.test/r/88",
+            }
+        ],
+    )
+    assert items == []
+
+
 # ---------------------------------------------------------------------------
 # dry-run send
 # ---------------------------------------------------------------------------

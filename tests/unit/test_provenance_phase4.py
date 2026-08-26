@@ -42,15 +42,14 @@ class TestIndexerOriginMetadata:
         from core.memory.rag.indexer import MemoryIndexer
 
         mock_store = MagicMock()
-        mock_model = MagicMock()
-        mock_model.encode = MagicMock(return_value=[MagicMock(tolist=MagicMock(return_value=[0.1] * 384))])
-
-        return MemoryIndexer(
+        indexer = MemoryIndexer(
             mock_store,
             "test-anima",
             anima_dir,
-            embedding_model=mock_model,
+            embedding_model=MagicMock(),
         )
+        indexer._generate_embeddings = MagicMock(side_effect=lambda texts, **_kwargs: [[0.1] * 384 for _ in texts])
+        return indexer
 
     def test_extract_metadata_without_origin(self, indexer, anima_dir: Path) -> None:
         """When origin is empty, metadata should not contain 'origin' key."""
@@ -239,7 +238,10 @@ class TestRAGSearchOriginProxy:
 
         rag.index_file(test_file, "episodes", origin="external_platform")
         mock_indexer.index_file.assert_called_once_with(
-            test_file, "episodes", force=False, origin="external_platform",
+            test_file,
+            "episodes",
+            force=False,
+            origin="external_platform",
         )
 
     def test_index_file_no_origin(self, tmp_path: Path) -> None:
@@ -255,7 +257,10 @@ class TestRAGSearchOriginProxy:
 
         rag.index_file(test_file, "knowledge")
         mock_indexer.index_file.assert_called_once_with(
-            test_file, "knowledge", force=False, origin="",
+            test_file,
+            "knowledge",
+            force=False,
+            origin="",
         )
 
 

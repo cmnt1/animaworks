@@ -45,6 +45,11 @@ def cli_main() -> None:
     )
     sub = parser.add_subparsers(dest="command")
 
+    # ── Demo ───────────────────────────────────────────────
+    from cli.demo import setup_demo_command
+
+    setup_demo_command(sub)
+
     # ── Init ──────────────────────────────────────────────
     p_init = sub.add_parser("init", help="Initialize runtime directory from templates")
     init_mode = p_init.add_mutually_exclusive_group()

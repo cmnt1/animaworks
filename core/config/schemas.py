@@ -464,6 +464,8 @@ class PromptConfig(BaseModel):
     skill_catalog_router_top_k: int = Field(default=5, ge=1)
     skill_catalog_router_min_score: float = Field(default=1.15, ge=0.0)
     skill_catalog_router_include_body: bool = True
+    skill_catalog_router_dense_enabled: bool = True
+    skill_catalog_router_dense_weight: float = Field(default=8.0, ge=0.0)
 
 
 class PrimingConfig(BaseModel):
@@ -643,6 +645,12 @@ class GitHubWebhookConfig(BaseModel):
     # Treated like bot_login for comment exclusion and FRC review dispatch.
     reviewer_login: str = ""
     quiet_seconds: float = Field(default=180, ge=0)
+    # Multi-pass FRC review: "mode:model" entries, one review pass each.  Empty
+    # preserves the historic single (model-less) dispatch.  Squares with the
+    # cron fallback env override PR_DISPATCH_REVIEW_MODELS.
+    review_multipass_models: list[str] = Field(default_factory=list)
+    # Model used for the final synthesis pass; None uses the reviewer default.
+    review_synth_model: str | None = None
 
 
 class EventExportConfig(BaseModel):
@@ -1035,7 +1043,7 @@ class StyleBertVits2Config(BaseModel):
 class IrodoriConfig(BaseModel):
     """Irodori-TTS HTTP API connection settings."""
 
-    base_url: str = "http://xserverng2:7861"
+    base_url: str = "http://localhost:7861"
 
 
 class VoiceConfig(BaseModel):
@@ -1052,6 +1060,13 @@ class VoiceConfig(BaseModel):
     """voice front lane model (e.g. ``openai/qwen3.6-35b-a3b``). None = legacy path."""
     front_api_base: str | None = None
     """OpenAI-compatible base URL for the voice front lane. None = legacy path."""
+    proactive_enabled: bool = True
+    """Proactively speak up after sustained silence (requires front lane). Opt-out."""
+    proactive_initial_delay_sec: float = 10.0
+    """Silence seconds between proactive utterances."""
+    proactive_lead_sec: float = 5.0
+    """Start the next monologue this many seconds before the current playback ends
+    (so speech is continuous but never more than one utterance is queued)."""
     voicevox: VoicevoxConfig = VoicevoxConfig()
     elevenlabs: ElevenLabsVoiceConfig = ElevenLabsVoiceConfig()
     style_bert_vits2: StyleBertVits2Config = StyleBertVits2Config()
@@ -1304,9 +1319,40 @@ class SkillCronConfig(BaseModel):
     allow_external_send: bool = False
 
 
+class ExternalSkillRoot(BaseModel):
+    """A read-only, engine-owned skill root scanned directly by SkillIndex.
+
+    External roots are scanned in place (no copy/sync) and are read-only
+    from animaworks' perspective. List ordering equals the precedence when
+    same-name skills collide.
+    """
+
+    path: str  # may contain ``~``; expanded before use
+    engine: str  # matches ^[a-z][a-z0-9-]*$
+    trust_level: str = "trusted"
+    enabled: bool = True
+
+    @field_validator("engine")
+    @classmethod
+    def _validate_engine(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise ValueError("engine must be a string")
+        if not re.fullmatch(r"[a-z][a-z0-9-]*", value):
+            raise ValueError(f"engine {value!r} must match ^[a-z][a-z0-9-]*$")
+        return value
+
+
 class SkillsConfig(BaseModel):
     promotion: SkillPromotionConfig = SkillPromotionConfig()
     cron: SkillCronConfig = SkillCronConfig()
+    external_roots: list[ExternalSkillRoot] = Field(
+        default_factory=lambda: [
+            ExternalSkillRoot(path="~/.claude/skills", engine="claude"),
+            ExternalSkillRoot(path="~/.codex/skills", engine="codex"),
+            ExternalSkillRoot(path="~/.grok/skills", engine="grok"),
+            ExternalSkillRoot(path="~/.agents/skills", engine="agents"),
+        ]
+    )
 
 
 class ChatworkToolConfig(BaseModel):

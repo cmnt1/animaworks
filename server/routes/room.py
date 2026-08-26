@@ -21,7 +21,7 @@ from pydantic import BaseModel, field_validator
 from core.config import load_config
 from core.exceptions import AnimaNotFoundError
 from core.exceptions import IPCConnectionError as IPCConnError
-from core.execution.base import strip_thinking_tags
+from core.execution.base import resolve_streamed_leaked_thinking
 from core.paths import get_common_knowledge_dir, get_shared_dir
 from server.project_tasks import grouped_project_tasks
 from server.room_manager import MeetingRoom, RoomManager
@@ -665,8 +665,9 @@ async def _meeting_stream(
                 _timeout,
                 idle_timeout=MEETING_IDLE_SKIP_TIMEOUT,
             ):
-                if ipc_response.error:
-                    err = ipc_response.error
+                error = getattr(ipc_response, "error", None)
+                if error:
+                    err = error
                     speaker_failed = True
                     yield _format_sse(
                         "error",
@@ -678,8 +679,8 @@ async def _meeting_stream(
                     )
                     break
 
-                if ipc_response.done:
-                    result = ipc_response.result or {}
+                if getattr(ipc_response, "done", False):
+                    result = getattr(ipc_response, "result", None) or {}
                     done_response = result.get("response", "")
                     cycle_result = result.get("cycle_result", {})
                     if cycle_result and not done_response:
@@ -688,9 +689,10 @@ async def _meeting_stream(
                         full_response = done_response
                     break
 
-                if ipc_response.chunk:
+                chunk = getattr(ipc_response, "chunk", None)
+                if chunk:
                     try:
-                        chunk_data = json.loads(ipc_response.chunk)
+                        chunk_data = json.loads(chunk)
                         if chunk_data.get("type") == "keepalive":
                             continue
                         result = _chunk_to_event(chunk_data)
@@ -778,7 +780,7 @@ async def _meeting_stream(
 
         # Clean response for storage
         clean_text, _ = extract_emotion(full_response)
-        leaked, clean_text = strip_thinking_tags(clean_text)
+        leaked, clean_text = resolve_streamed_leaked_thinking(clean_text)
         if leaked:
             clean_text = clean_text.strip()
         clean_text = clean_text.strip()

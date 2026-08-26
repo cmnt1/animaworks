@@ -978,5 +978,7 @@
   "taskboard.related_peer": "상대: {name}",
   "taskboard.related_responds_to": "반응 대상",
   "meeting.make_chair": "의장으로 지정",
-  "assets.generation_model": "생성 모델"
+  "assets.generation_model": "생성 모델",
+  "chat.model_default": "아니마 기본",
+  "chat.model_selector": "이 메시지의 모델"
 }

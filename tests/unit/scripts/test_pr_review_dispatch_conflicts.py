@@ -37,6 +37,8 @@ def mod(tmp_path, monkeypatch):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     module.REPOS = ["o/r"]
+    module.sent_messages = []
+    module.send = lambda target, content: module.sent_messages.append((target, content))
     return module
 
 
@@ -57,6 +59,17 @@ def test_conflicting_pr_notifies_once(mod):
     assert "procedures/pr-conflict-resolution.md" in sent[0]["instruction"]
     # 同一headのままの再巡回では再通知しない
     assert _run(mod, state, [_pr(1, "CONFLICTING")]) == []
+
+
+def test_conflicting_pr_reminds_rin_on_every_scan(mod):
+    state = mod.default_state()
+
+    _run(mod, state, [_pr(1, "CONFLICTING")])
+    _run(mod, state, [_pr(1, "CONFLICTING")])
+
+    assert len(mod.sent_messages) == 2
+    assert all(target == "rin" for target, _content in mod.sent_messages)
+    assert all("マージコンフリクト継続検知" in content for _target, content in mod.sent_messages)
 
 
 def test_new_head_still_conflicting_renotifies(mod):

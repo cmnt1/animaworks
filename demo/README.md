@@ -2,35 +2,27 @@
 
 **[日本語版はこちら](README.ja.md)**
 
-Spin up a fully working AI office with 3 autonomous agents — no setup wizard, no configuration. Just an API key and Docker.
+Spin up a fully working AI office with 3 autonomous agents — no setup wizard, no configuration. Just the repository and an authenticated CLI.
 
 The demo comes pre-loaded with 3 days of activity history, so you'll see a living organization from the moment you open the dashboard.
 
 ## Quick Start
 
-### 1. Clone
+Run this from the **repository root** (after cloning with `scripts/setup.sh`, or `git clone` + `uv sync --all-extras`):
 
 ```bash
-git clone https://github.com/xuiltul/animaworks.git
-cd animaworks/demo
-```
-
-### 2. Set your API key
-
-```bash
-cp .env.example .env
-# Edit .env and paste your Anthropic API key
-```
-
-Get one at [console.anthropic.com](https://console.anthropic.com/) if you don't have one yet.
-
-### 3. Launch
-
-```bash
-docker compose up
+uv run animaworks demo
 ```
 
 Open **http://localhost:18501** and you're in.
+
+> **No API key needed** if you're already logged into **Claude Code** or **Codex** — authentication is detected automatically, in this order:
+>
+> 1. `ANTHROPIC_API_KEY` (export it if you have one)
+> 2. **Claude Code** login (just log in with `claude`)
+> 3. **Codex** login (run `codex login`)
+>
+> If none are available, the command prints a helpful guide and exits.
 
 ---
 
@@ -78,61 +70,44 @@ Four presets are available, combining language and personality style:
 | `ja-business` | Japanese | Realistic professional | Kaito, Sora, Hina |
 | `ja-anime` | Japanese | Anime-style casual | Kaito, Sora, Hina |
 
-Switch presets with the `PRESET` environment variable:
+Switch presets with the `--preset` flag:
 
 ```bash
-PRESET=ja-anime docker compose up
+uv run animaworks demo --preset ja-anime
 ```
 
-> **Note:** The preset is applied on first run only. To switch presets, remove the Docker volume first:
+> **Note:** The preset is applied on first run only. To switch presets, stop the server and re-run with `--reset`:
 >
 > ```bash
-> docker compose down -v
-> PRESET=ja-business docker compose up
+> uv run animaworks demo --reset --preset ja-business
 > ```
 
 ---
 
-## Configuration
+## Data & Reset
 
-### Environment Variables
+Demo data lives in **`~/.animaworks-demo`** — separate from your production `~/.animaworks`, so it never interferes with a real install. It uses port **18501** (one above the default 18500).
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | (required) | Your Anthropic API key |
-| `PRESET` | `en-business` | Which preset to use |
-| `TZ` | `Asia/Tokyo` | Container timezone |
-
-All variables can be set in the `.env` file or passed directly:
+To start completely fresh, pass `--reset` — it wipes the demo data directory and re-initializes:
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-... PRESET=en-business docker compose up
-```
-
-### Ports
-
-The demo server runs on port **18501** (one above the default 18500, so it won't conflict with a native install). If that's taken:
-
-```bash
-# In docker-compose.yml, change the port mapping:
-ports:
-  - "9000:18501"   # access via http://localhost:9000
+uv run animaworks demo --reset
 ```
 
 ---
 
 ## How the Demo Works
 
-On first launch, the entrypoint script:
+On first launch, the `animaworks demo` command:
 
 1. Initializes the AnimaWorks runtime
 2. Creates 3 agents from the selected preset's character sheets
-3. Applies preset-specific configuration (heartbeat interval, etc.)
+3. Applies preset-specific configuration (heartbeat interval, locale, etc.)
 4. Copies pre-built character assets (avatars)
 5. Loads 3 days of example activity data with auto-adjusted timestamps
-6. Starts the server
+6. Detects your authentication and starts the server
 
-Subsequent launches skip initialization and use the existing data in the Docker volume.
+Subsequent launches skip initialization and reuse the existing data in `~/.animaworks-demo`.
 
 ### Autonomous Behavior
 
@@ -147,61 +122,34 @@ You don't need to do anything — just watch. Or jump in and give them new instr
 
 ---
 
-## Data Persistence
-
-Agent data is stored in a Docker volume (`animaworks-demo-data`). Your conversations, agent memories, and activity logs survive container restarts.
-
-To start completely fresh:
-
-```bash
-docker compose down -v    # removes the volume
-docker compose up         # fresh initialization
-```
-
----
-
 ## Troubleshooting
 
-### "Animas will not be able to respond"
+### No authentication found
 
-Your `ANTHROPIC_API_KEY` is missing or invalid. Check your `.env` file:
+You need one of `ANTHROPIC_API_KEY`, a **Claude Code** login, or a **Codex** login. Log in with `codex login` (or `claude`), or export your key:
 
 ```bash
-cat .env   # should show ANTHROPIC_API_KEY=sk-ant-api03-...
+export ANTHROPIC_API_KEY=sk-ant-...
+uv run animaworks demo
 ```
 
 ### Port 18501 already in use
 
-Another service is using that port. Either stop it or change the mapping:
+Another service is using that port. Stop it, or pass `--port` to use a different one:
 
 ```bash
-# Check what's using the port
-lsof -i :18501
-
-# Or change the port in docker-compose.yml
-ports:
-  - "9000:18501"
+uv run animaworks demo --port 9000   # access via http://localhost:9000
 ```
 
 ### Agents aren't responding
 
-- Verify your API key is valid (test it at [console.anthropic.com](https://console.anthropic.com/))
-- Check container logs: `docker compose logs -f`
-- Ensure you have API credits available
-
-### Container build fails
-
-```bash
-# Rebuild from scratch
-docker compose build --no-cache
-docker compose up
-```
+- Verify your authentication is valid (test your key at [console.anthropic.com](https://console.anthropic.com/), or re-run `codex login`)
+- Check that your account has API credits available
 
 ### Want to reset everything
 
 ```bash
-docker compose down -v
-docker compose up
+uv run animaworks demo --reset
 ```
 
 ---
@@ -210,7 +158,7 @@ docker compose up
 
 Ready to build your own AI organization?
 
-- **Full install** — See the [main README](../README.md) for native installation
+- **Full install** — Run `uv run animaworks start` from the repository root to launch the setup wizard for your own team
 - **Create your own agents** — Write a character sheet in Markdown and the framework does the rest
 - **Add more LLMs** — AnimaWorks supports Claude, GPT, Gemini, local models, and more
 - **Explore the docs** — [Design Philosophy](../docs/vision.md) · [Memory System](../docs/memory.md) · [Security](../docs/security.md)

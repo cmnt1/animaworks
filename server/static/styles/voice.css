@@ -353,6 +353,92 @@
   cursor: pointer;
 }
 
+/* ── Bustup animator (pseudo-Live2D) ──────── */
+/* 通常フローで自ら高さを持つ（旧 .voice-popup-bustup と同等のサイズ感）。 */
+.voice-popup-bustup-rig {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  max-height: 46vh;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.bustup-animator-stage {
+  position: absolute;
+  inset: 0;
+  perspective: 900px;
+  overflow: hidden;
+  border-radius: 12px;
+  pointer-events: none; /* let clicks bubble to .voice-popup-bustup-rig */
+}
+
+.bustup-animator-rig {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+
+.bustup-animator-set {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.bustup-animator-set.active {
+  opacity: 1;
+}
+.bustup-animator-rig.xfade .bustup-animator-set {
+  transition: opacity 300ms ease;
+}
+
+.bustup-animator-breather {
+  position: absolute;
+  inset: 0;
+  animation: bustup-breathe 4.2s ease-in-out infinite, bustup-sway 7.3s ease-in-out infinite;
+  transform-origin: 50% 92%;
+}
+
+@keyframes bustup-breathe {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  50%      { transform: translateY(3.5px) scale(1.004, 0.992); }
+}
+@keyframes bustup-sway {
+  0%, 100% { rotate: 0.35deg; }
+  50%      { rotate: -0.35deg; }
+}
+
+.bustup-animator-frame,
+.bustup-animator-fallback {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.bustup-animator-frame.on {
+  opacity: 1;
+}
+.bustup-animator-set.static .bustup-animator-frame {
+  display: none;
+}
+.bustup-animator-set.static .bustup-animator-fallback {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bustup-animator-breather {
+    animation: none;
+  }
+}
+
 .voice-popup-captions {
   display: flex;
   flex-direction: column;
@@ -401,6 +487,9 @@
     max-height: 40vh;
   }
   .voice-popup-bustup {
+    max-height: 40vh;
+  }
+  .voice-popup-bustup-rig {
     max-height: 40vh;
   }
 }

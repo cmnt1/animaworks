@@ -152,6 +152,8 @@ class _SkillCatalogRouterSettings:
     top_k: int = 5
     min_score: float = 1.15
     include_body: bool = True
+    dense_enabled: bool = True
+    dense_weight: float = 8.0
 
 
 # ── Per-group section builders ────────────────────────────────
@@ -461,6 +463,8 @@ def _load_skill_catalog_router_settings() -> _SkillCatalogRouterSettings:
             top_k=max(1, int(getattr(prompt_cfg, "skill_catalog_router_top_k", 5))),
             min_score=max(0.0, float(getattr(prompt_cfg, "skill_catalog_router_min_score", 1.15))),
             include_body=bool(getattr(prompt_cfg, "skill_catalog_router_include_body", True)),
+            dense_enabled=bool(getattr(prompt_cfg, "skill_catalog_router_dense_enabled", True)),
+            dense_weight=max(0.0, float(getattr(prompt_cfg, "skill_catalog_router_dense_weight", 8.0))),
         )
     except Exception:
         logger.debug("Failed to load skill catalog router settings", exc_info=True)
@@ -468,32 +472,10 @@ def _load_skill_catalog_router_settings() -> _SkillCatalogRouterSettings:
 
 
 def _skill_catalog_pointer(meta: Any) -> str:
-    path = getattr(meta, "path", None)
-    name = getattr(meta, "name", "")
-    is_procedure = bool(getattr(meta, "is_procedure", False))
-    is_common = bool(getattr(meta, "is_common", False))
-    if path is not None:
-        from core.company_resources import company_resource_pointer
+    """Catalog pointer for *meta* — single source of truth is the router."""
+    from core.skills.router import _pointer_path
 
-        company_pointer = company_resource_pointer(Path(path))
-        if company_pointer is not None:
-            return company_pointer
-        parts = list(Path(path).parts)
-        for marker in ("common_skills", "skills", "procedures"):
-            if marker in parts:
-                idx = parts.index(marker)
-                return Path(*parts[idx:]).as_posix()
-        if is_procedure:
-            return f"procedures/{Path(path).name}"
-        if is_common:
-            return f"common_skills/{Path(path).parent.name}/SKILL.md"
-        if Path(path).name == "SKILL.md":
-            return f"skills/{Path(path).parent.name}/SKILL.md"
-    if is_procedure:
-        return f"procedures/{name}.md"
-    if is_common:
-        return f"common_skills/{name}/SKILL.md"
-    return f"skills/{name}/SKILL.md"
+    return _pointer_path(meta)
 
 
 def _format_skill_catalog_line(
@@ -518,7 +500,14 @@ def _format_skill_catalog_line(
     if match_confidence:
         labels.append(f"match={match_confidence}")
     label_text = f" ({', '.join(labels)})" if labels else ""
-    return f"- {path}{label_text}{_format_trust_tag(meta)}: {desc}"
+    ext_tag = ""
+    if bool(getattr(meta, "is_external", False)):
+        engine = ""
+        source = getattr(meta, "source", None)
+        if source is not None:
+            engine = getattr(source, "engine", None) or ""
+        ext_tag = f" [ext:{engine}]"
+    return f"- {path}{label_text}{_format_trust_tag(meta)}{ext_tag}: {desc}"
 
 
 def _requires_human_approval(meta: Any) -> bool:
@@ -654,10 +643,25 @@ def _build_group4(
         if settings.enabled and message.strip():
             from core.skills.router import SkillRouter
 
+            dense_scores = None
+            if settings.dense_enabled:
+                import time
+
+                from core.skills.dense import skill_dense_scores
+
+                t0 = time.monotonic()
+                dense_scores = skill_dense_scores(message, all_skills)
+                logger.debug(
+                    "skill dense scoring took %.3fs (skills=%d)",
+                    time.monotonic() - t0,
+                    len(all_skills),
+                )
+
             candidates = SkillRouter(
                 min_score=settings.min_score,
                 include_body=settings.include_body,
-            ).route(message, all_skills, top_k=settings.top_k)
+                dense_weight=settings.dense_weight,
+            ).route(message, all_skills, top_k=settings.top_k, dense_scores=dense_scores)
             metas_by_pointer = {_skill_catalog_pointer(meta): meta for meta in all_skills}
             for candidate in candidates:
                 meta = metas_by_pointer.get(candidate.path)
@@ -1024,19 +1028,44 @@ def build_voice_front_prompt(anima_dir: Path, *, anima_name: str | None = None) 
     parts.append(
         "You are " + name + ", speaking to a person by voice. "
         "Respond in natural, conversational spoken language.\n\n"
+        "MOST IMPORTANT — the ask_anima tool:\n"
+        "- You cannot look anything up, check anything, or do any work "
+        "yourself; only the ask_anima tool does work. Whenever the person asks "
+        "for something to be done or looked into (調べる・確認する・チェックする・"
+        "探す・やっておく・対応する・調査・実装・記憶の検索や保存・タスク化), "
+        "call ask_anima in that same turn with the full request, then reply "
+        "briefly like 'やっておくね'. Saying 「調べておくね」「確認しておきますね」 "
+        "in words alone does NOTHING — the person will wait forever.\n"
+        "- Do NOT call ask_anima when nothing was asked to be done: greetings "
+        "(おはよう), thanks (ありがとう), small talk, feelings, opinions, or "
+        "questions you can answer from what you already know. Just talk.\n"
+        "- When several things are asked, call ask_anima once per item. When a "
+        "result prefixed with [ask_anima完了] arrives, report it in your own "
+        "words.\n"
+        "- read_memory is read-only and safe to call any time you want to recall "
+        "something (recent events, notes, procedures).\n\n"
         "Rules:\n"
         "- Reply in one or two short spoken sentences — aim for 60 characters, "
         "never exceed 120. This is a voice conversation: one thing per turn, "
         "no lists, no long explanations unless explicitly asked.\n"
         "- Always include emotion-conveying emojis in every reply; they are "
-        "fed to the TTS engine and markedly improve its emotional accuracy.\n"
+        "fed to the TTS engine and markedly improve its emotional accuracy. "
+        "Use ONLY emojis the TTS understands as style cues: "
+        "😊😆🫶😌🤭😏😎🤔😲😮😟😠🙄😪🥱😖😰😱😭🥺🫣🙏💪💥🥴 "
+        "⏸️🐢⏩👂📢📖😮‍💨👌🤧. Others (😃😀😅❤️✨ etc.) garble the reading. "
+        "One emoji barely registers — put 2-3 of the same emoji at the START "
+        "of a short sentence to convey emotion.\n"
+        "- Write large numbers and years in speakable form "
+        "(「三千八百億」「にせんさんねん」), not raw digits.\n"
+        "- Every alphabet-spelled term — English words, acronyms, product/"
+        "service names, people, command names — MUST be followed by its "
+        "katakana reading in full-width parentheses, no exceptions: "
+        "GitHub（ギットハブ）, API（エーピーアイ）, PR（ピーアール）, "
+        "Claude Code（クロードコード）. The reading feeds only the TTS; "
+        "subtitles show the original spelling.\n"
         "- Do NOT use Markdown (headings, bold, lists, code blocks).\n"
-        "- Do not run long tasks inline; for time-consuming requests "
-        "(調査・実装・ツール実行・記憶の検索保存・タスク化など), call ask_anima "
-        "to delegate to your main self and reply briefly like 'やっておくね'. "
-        "Never say 'やっておく' (will do) without calling ask_anima.\n"
-        "- When ask_anima's result, prefixed with [ask_anima完了], arrives, "
-        "report it in your own words.\n"
+        "- Never promise work (やっておく／調べておく／確認しておく) without "
+        "having called ask_anima in the same turn.\n"
         "- End every reply with exactly one emotion tag on its own final line:\n"
         '  <!-- emotion: {"emotion": "<emotion>"} -->\n'
         f"  (emotions: {_VOICE_FRONT_EMOTION_NAMES}; prefer a non-neutral one "

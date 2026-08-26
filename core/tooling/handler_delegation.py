@@ -9,6 +9,7 @@ from __future__ import annotations
 import json as _json
 import logging
 import os
+import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,6 +20,15 @@ from core.i18n import t
 from core.memory._io import atomic_write_text
 from core.tooling.handler_base import _error_result, build_outgoing_origin_chain
 from core.tooling.org_helpers import OrgHelpersMixin
+
+_PR_REF = re.compile(r"(?:#|/pull/)(\d{2,7})\b")
+
+
+def _pr_key_from_text(text: str) -> str:
+    """Fallback ``pr-NNNN`` exclusion key from a PR reference in the task text."""
+    match = _PR_REF.search(text)
+    return f"pr-{match.group(1)}" if match else ""
+
 
 if TYPE_CHECKING:
     from core.memory.activity import ActivityLogger
@@ -91,6 +101,7 @@ class DelegationMixin(OrgHelpersMixin):
         persist_sub: bool,
         persist_tracking: bool,
         persist_pending: bool,
+        model: str = "",
     ) -> str | None:
         """Persist delegation via /api/internal/delegate-task when local FS is read-only.
 
@@ -115,6 +126,7 @@ class DelegationMixin(OrgHelpersMixin):
             "persist_sub": persist_sub,
             "persist_tracking": persist_tracking,
             "persist_pending": persist_pending,
+            "model": model,
         }
         timeout = httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0)
         url = f"{_server_base_url()}/api/internal/delegate-task"
@@ -159,7 +171,7 @@ class DelegationMixin(OrgHelpersMixin):
         instruction = args.get("instruction", "")
         summary = args.get("summary", "") or instruction[:100]
         deadline = args.get("deadline", "")
-        exclusive_key = args.get("exclusive_key", "")
+        exclusive_key = args.get("exclusive_key", "") or _pr_key_from_text(f"{summary}\n{instruction}")
         raw_criteria = args.get("acceptance_criteria")
         acceptance_criteria: list[str] = (
             [c for c in raw_criteria if isinstance(c, str)] if isinstance(raw_criteria, list) else []
@@ -179,6 +191,11 @@ class DelegationMixin(OrgHelpersMixin):
                     suggestion=str(e),
                 )
 
+        model = args.get("model")
+        if model is not None and not isinstance(model, str):
+            return _error_result("InvalidArguments", "model must be a string")
+        model = model.strip() if isinstance(model, str) else ""
+
         if not target_name:
             return _error_result("InvalidArguments", "name is required")
         if not instruction:
@@ -192,6 +209,16 @@ class DelegationMixin(OrgHelpersMixin):
         err = self._check_subordinate(target_name)
         if err:
             return err
+
+        if model:
+            from core.config.model_catalog import validate_model_override
+
+            model_err = validate_model_override(target_name, model)
+            if model_err:
+                return _error_result(
+                    "InvalidArguments",
+                    t("tooling.model_list_hint", error=model_err),
+                )
 
         from core.company import check_company_boundary
         from core.memory.task_queue import TaskQueueManager
@@ -269,9 +296,15 @@ class DelegationMixin(OrgHelpersMixin):
                 relay_chain=[self._anima_name],
                 priority=cascade_priority,
                 task_id=sub_task_id,
+                meta=(
+                    {
+                        **({"model": model} if model else {}),
+                        **({"exclusive_key": exclusive_key} if exclusive_key else {}),
+                    }
+                    or None
+                ),
             )
             persisted_sub = True
-
             # Register urgent mode before publishing the pending descriptor so
             # the subordinate scheduler sees the bypass immediately.
             if delegator_urgent:
@@ -288,7 +321,6 @@ class DelegationMixin(OrgHelpersMixin):
                         target_name,
                         exc_info=True,
                     )
-
             task_desc = {
                 "task_type": "llm",
                 "task_id": sub_task_id,
@@ -306,6 +338,7 @@ class DelegationMixin(OrgHelpersMixin):
                 "working_directory": resolved_wd,
                 "priority": cascade_priority,
                 "exclusive_key": exclusive_key,
+                "model": model,
             }
             sub_tqm.update_meta(sub_task_id, {"task_desc": task_desc})
 
@@ -358,6 +391,7 @@ class DelegationMixin(OrgHelpersMixin):
                 persist_sub=not persisted_sub,
                 persist_tracking=not persisted_tracking,
                 persist_pending=not persisted_pending,
+                model=model,
             )
             if fb_err is not None:
                 logger.error(

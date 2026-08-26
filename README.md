@@ -35,20 +35,30 @@ Humans can talk to a leader or responsible member, while task breakdown, delegat
 
 ---
 
-## :rocket: Try It Now — Docker Demo
+## :rocket: Try It Now
 
-Up and running in about 60 seconds. You only need an API key and Docker.
+Up and running in about 60 seconds — **no API key needed** if you're already logged into Claude Code or Codex.
+
+First, clone and install with the one-liner:
 
 ```bash
-git clone https://github.com/xuiltul/animaworks.git
-cd animaworks/demo
-cp .env.example .env          # paste your ANTHROPIC_API_KEY
-docker compose up              # open http://localhost:18501
+curl -sSL https://raw.githubusercontent.com/xuiltul/animaworks/main/scripts/setup.sh | bash
+cd animaworks
 ```
 
-A three-person team (manager + engineer + coordinator) starts immediately, with three days of activity history. [Demo details →](demo/README.md)
+Then launch the 3-agent team immediately:
 
-> Switch language / style: `PRESET=ja-anime docker compose up` — [full preset list](demo/README.md#presets)
+```bash
+uv run animaworks demo
+```
+
+Open **http://localhost:18501**. A three-person team (manager + engineer + coordinator) starts right away, pre-loaded with three days of activity history. [Demo details →](demo/README.md)
+
+**No API key required** — authentication is detected automatically if you're logged into **Claude Code** or **Codex**. Otherwise, export an `ANTHROPIC_API_KEY`, or run `codex login` first.
+
+> Switch language / style: `uv run animaworks demo --preset ja-anime` — [full preset list](demo/README.md#presets)
+
+When you're ready to build your **own** organization, run `uv run animaworks start` — the setup wizard below walks you through creating your first team.
 
 ---
 

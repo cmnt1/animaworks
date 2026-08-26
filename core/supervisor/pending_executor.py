@@ -65,6 +65,8 @@ _SENTINEL_BUDGET_SKIPPED = "(budget_skipped)"
 _SENTINEL_BLOCKED = "(blocked)"
 _MAX_TASK_CONTINUATIONS = 3
 _MAX_WAITING_REENQUEUES = 12
+# ponytail: grace so a runner that just finished (descriptor unlinked, status not yet flipped) is not re-pended
+_IN_PROGRESS_ORPHAN_GRACE_SECONDS = 120
 _WAITING_REENQUEUE_DELAY_SECONDS = 300.0
 # Delay before each continuation may be claimed, keyed by continuation_count.
 # A task stuck on an obstacle otherwise burns all continuations in minutes.
@@ -333,26 +335,6 @@ def _task_activity_identity(task_desc: dict[str, Any]) -> tuple[str, str, str]:
     return task_id, title or task_id, description
 
 
-def _detect_task_auth_failure(result: str) -> str | None:
-    """Return an auth-failure summary when the result is a terminal auth error."""
-    text = (result or "").strip()
-    if not text:
-        return None
-
-    folded = text.casefold()
-    auth_markers = (
-        "failed to authenticate",
-        "invalid authentication credentials",
-        "authentication_error",
-        "not authenticated",
-    )
-    if not any(marker in folded for marker in auth_markers):
-        return None
-    if not any(marker in folded for marker in ("401", "api error", "unauthorized", "auth")):
-        return None
-    return text[:200]
-
-
 def _detect_synthesized_tool_failure(result: str) -> str | None:
     """Return a failure summary for SDK fallback text with tool errors only."""
     text = (result or "").strip()
@@ -570,7 +552,12 @@ def _detect_non_final_prerequisite_report(result: str) -> str | None:
 def _classify_task_result(result: str) -> tuple[str, str]:
     """Map _run_llm_task return value to (queue_status, summary).
 
-    Uses only statuses defined in ``task_queue._VALID_STATUSES``.
+    Uses only statuses defined in ``task_queue._VALID_STATUSES``.  Terminal
+    engine failures (e.g. AUTH) are primarily surfaced by ``_run_llm_task``
+    raising ``TaskExecError`` via the structured ``cycle_result.error_category``.
+    Text inspection remains for non-final/tool-only reports from executors
+    without structured status, but authentication failures require the
+    structured category to avoid false positives in ordinary prose.
     """
     if result == _SENTINEL_CANCELLED:
         return "cancelled", "cancelled before execution"
@@ -588,9 +575,6 @@ def _classify_task_result(result: str) -> tuple[str, str]:
         return "pending", "execution skipped because token budget is unavailable"
     if result == _SENTINEL_BLOCKED:
         return "blocked", "agent declared blocked; waiting on an external blocker"
-    auth_failure = _detect_task_auth_failure(result)
-    if auth_failure:
-        return "failed", f"FAILED: {auth_failure}"
     synthesized_failure = _detect_synthesized_tool_failure(result)
     if synthesized_failure:
         return "failed", f"FAILED: {synthesized_failure}"
@@ -1440,8 +1424,13 @@ class PendingTaskExecutor:
 
         pending_dir = self._anima_dir / "state" / "pending"
         processing_dir = pending_dir / "processing"
+        queue = TaskQueueManager(self._anima_dir)
         try:
-            entries = TaskQueueManager(self._anima_dir).list_tasks(status="pending")
+            # in_progress is included because update_task(in_progress) can be
+            # called from any session (e.g. an inbox cycle) without a runner
+            # behind it; such entries have no descriptor and nothing would
+            # ever pick them up again.
+            entries = queue.list_tasks(status="pending") + queue.list_tasks(status="in_progress")
         except Exception:
             logger.warning(
                 "[%s] Failed to scan task queue for missing descriptors",
@@ -1457,6 +1446,23 @@ class PendingTaskExecutor:
             task_file = f"{entry.task_id}.json"
             if (pending_dir / task_file).exists() or (processing_dir / task_file).exists():
                 continue
+            if entry.status == "in_progress":
+                if entry.task_id in self._active_task_ids:
+                    continue
+                try:
+                    age = (datetime.now(UTC) - datetime.fromisoformat(entry.updated_at)).total_seconds()
+                except (TypeError, ValueError):
+                    age = _IN_PROGRESS_ORPHAN_GRACE_SECONDS
+                if age < _IN_PROGRESS_ORPHAN_GRACE_SECONDS:
+                    continue
+                pended = queue.update_status(
+                    entry.task_id,
+                    "pending",
+                    summary="auto-recovered: in_progress without a runner",
+                )
+                if pended is None:
+                    continue
+                entry = pended
             logger.warning(
                 "[%s] Pending task descriptor missing; regenerating: %s",
                 self._anima_name,
@@ -2726,6 +2732,81 @@ class PendingTaskExecutor:
         )
         return result
 
+    def _task_model_config_override(self, task_desc: dict[str, Any]) -> Any:
+        """Build a per-task ModelConfig override when the task specifies a model.
+
+        When ``task_desc["model"]`` is set and valid, an override is built on
+        top of the anima's current model config (model / execution_mode
+        replaced, credential and fallback_models inherited from the base), so
+        the new model can fall back when rate-guarded.  Invalid or unparseable
+        values are logged and ignored — the task continues with the anima
+        default and is never failed.  Returns ``None`` when no override
+        applies.
+        """
+        from core.memory.activity import ActivityLogger
+
+        requested = task_desc.get("model")
+        if not isinstance(requested, str) or not requested.strip():
+            return None
+        requested = requested.strip()
+
+        anima = getattr(self, "_anima", None)
+        base = getattr(anima, "model_config", None)
+        if base is None:
+            return None
+
+        try:
+            from core.config import load_config
+            from core.config.model_config import build_model_override_config
+            from core.config.model_mode import parse_fallback_entry
+
+            cfg = load_config()
+        except Exception as exc:
+            logger.warning(
+                "[%s] Could not load config for per-task model override; using default: %s",
+                self._anima_name,
+                exc,
+            )
+            return None
+
+        parsed = parse_fallback_entry(requested, cfg)
+        if parsed is None:
+            logger.warning(
+                "[%s] Ignoring invalid per-task model override %r; using anima default",
+                self._anima_name,
+                requested,
+            )
+            return None
+        mode, model = parsed
+
+        override = build_model_override_config(base, mode, model, cfg)
+        if override is None:
+            logger.warning(
+                "[%s] No credential for per-task model override %r; using anima default",
+                self._anima_name,
+                requested,
+            )
+            return None
+        try:
+            ActivityLogger(self._anima_dir).log(
+                "model_override",
+                summary=t(
+                    "pending_executor.model_override",
+                    requested=requested,
+                    resolved=model,
+                ),
+                ctx=f"task:{task_desc.get('task_id', 'unknown')}",
+                meta={
+                    "task_id": task_desc.get("task_id", "unknown"),
+                    "requested_model": requested,
+                    "resolved_model": override.model,
+                    "resolved_mode": override.resolved_mode,
+                },
+            )
+        except Exception:
+            logger.debug("pending_executor: failed to log model_override activity", exc_info=True)
+        return override
+
     async def _run_llm_task_under_agent_session_context(
         self,
         task_desc: dict[str, Any],
@@ -2885,6 +2966,8 @@ class PendingTaskExecutor:
         journal = StreamingJournal(self._anima_dir, session_type="task", thread_id=task_id)
         journal.open(trigger=trigger)
 
+        model_config_override = self._task_model_config_override(task_desc)
+
         accumulated_text = ""
         result_summary = ""
         tool_call_records: list[dict[str, Any]] = []
@@ -2892,7 +2975,7 @@ class PendingTaskExecutor:
         had_error = False
         error_message = ""
         stop_kind = "normal"
-
+        cycle_error_category = ""
         # Urgent-mode activation (Phase C-3): if this task is flagged urgent
         # (by Inbox prefix detection, delegate_task cascade, or CLI
         # urgent-submit), register the task_id in urgent_active.json so rate
@@ -2950,6 +3033,7 @@ class PendingTaskExecutor:
                         prompt,
                         trigger=trigger,
                         thread_id=task_id,
+                        model_config_override=model_config_override,
                     ):
                         chunk_type = chunk.get("type")
                         if chunk_type == "text_delta":
@@ -2988,6 +3072,7 @@ class PendingTaskExecutor:
                                 accumulated_text,
                             )
                             stop_kind = str(cycle_result.get("stop_kind") or "normal")
+                            cycle_error_category = str(cycle_result.get("error_category") or "")
                             if cycle_result.get("action") == "error" or stop_kind == "stream_error":
                                 task_failed_reason = result_summary or "task execution failed"
                             journal.finalize(summary=result_summary[:500])
@@ -3063,9 +3148,8 @@ class PendingTaskExecutor:
         if not result_summary:
             result_summary = accumulated_text or t("pending_executor.task_completed")
 
-        auth_failure = _detect_task_auth_failure(result_summary or accumulated_text)
-        if auth_failure:
-            raise TaskExecError(auth_failure)
+        if cycle_error_category == "auth":
+            raise TaskExecError("task execution failed due to a terminal authentication error (credential problem)")
 
         if stop_kind in {"interrupted", "runaway_halt", "empty_response", "hard_timeout"}:
             continuation_count = task_desc.get("continuation_count", 0)
@@ -3113,6 +3197,7 @@ class PendingTaskExecutor:
                                 t("pending_executor.declaration_probe", task_id=task_id),
                                 trigger=trigger,
                                 thread_id=task_id,
+                                model_config_override=model_config_override,
                             ):
                                 chunk_type = chunk.get("type")
                                 if chunk_type == "error":

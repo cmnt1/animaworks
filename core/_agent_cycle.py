@@ -83,6 +83,28 @@ def _merge_stream_usage(acc: dict[str, int], chunk_usage: dict[str, int] | None)
         acc[k] = acc.get(k, 0) + (chunk_usage.get(k, 0) or 0)
 
 
+def _resolve_error_category(reason: str, message: str) -> str | None:
+    """Derive a stable ``error_category`` for a terminal execution error.
+
+    Prefers the executor-provided ``FailoverReason`` value (set when an
+    executor classifies the underlying exception with ``classify_llm_error*``),
+    falling back to classifying the terminal error message through the same
+    shared classifier.  Returns ``None`` for non-error terminals.
+    """
+    if reason:
+        return reason
+    if not message:
+        return None
+    try:
+        from core.execution.error_classifier import classify_llm_error_message
+
+        classified, _hint = classify_llm_error_message(message)
+        return getattr(classified, "value", None)
+    except Exception:
+        logger.debug("failed to classify terminal error message", exc_info=True)
+        return None
+
+
 def _log_session_token_usage(
     anima_dir: Path,
     *,
@@ -869,19 +891,22 @@ class CycleMixin:
                 usage=_x_usage,
                 duration_ms=duration_ms,
             )
+            is_error = result.error is True
+            error_reason = result.reason if isinstance(result.reason, str) else ""
             return CycleResult(
                 trigger=trigger,
-                action="error" if result.error else "responded",
-                stop_kind="stream_error" if result.error else "normal",
+                action="error" if is_error else "responded",
+                stop_kind="stream_error" if is_error else "normal",
                 summary=result.text,
-                reason=result.reason,
+                reason=error_reason,
+                error_category=(_resolve_error_category(error_reason, result.text) if is_error else None),
                 duration_ms=duration_ms,
                 context_usage_ratio=tracker.usage_ratio,
                 context_window=tracker.context_window,
                 context_threshold=tracker.threshold,
                 tool_call_records=_tool_records_to_dicts(result),
                 usage=_x_usage,
-                truncated=result.truncated,
+                truncated=result.truncated is True,
             )
 
         # ── Mode A: LiteLLM tool_use loop ─────────────────
@@ -1060,11 +1085,16 @@ class CycleMixin:
             turns=total_turns,
             chains=chain_count if session_chained else 0,
         )
-        _s_nb_action = "error" if accumulated_text.startswith("[Agent SDK Error:") else "responded"
+        is_error = result.error is True or accumulated_text.startswith("[Agent SDK Error:")
+        error_reason = result.reason if isinstance(result.reason, str) else ""
+        error_category = _resolve_error_category(error_reason, accumulated_text) if is_error else None
         return CycleResult(
             trigger=trigger,
-            action=_s_nb_action,
+            action="error" if is_error else "responded",
+            stop_kind="stream_error" if is_error else "normal",
             summary=accumulated_text,
+            reason=error_category or "unknown" if is_error else "",
+            error_category=error_category,
             duration_ms=duration_ms,
             context_usage_ratio=tracker.usage_ratio,
             context_window=tracker.context_window,
@@ -1073,7 +1103,7 @@ class CycleMixin:
             total_turns=total_turns,
             tool_call_records=accumulated_tool_records,
             usage=_cycle_usage,
-            truncated=result.truncated,
+            truncated=result.truncated is True,
         )
 
     # ── Streaming ──────────────────────────────────────────
@@ -1900,6 +1930,7 @@ class CycleMixin:
                 stop_kind="stream_error" if terminal_error_message else stream_stop_kind,
                 summary=final_summary,
                 reason=terminal_error_reason,
+                error_category=_resolve_error_category(terminal_error_reason, terminal_error_message),
                 thread_id=thread_id,
                 thinking_text=thinking_text[:10000],
                 duration_ms=duration_ms,

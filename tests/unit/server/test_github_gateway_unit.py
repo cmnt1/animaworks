@@ -31,6 +31,8 @@ def _pr_payload(
     sha: str = SHA_1,
     draft: bool = False,
     title: str = "Webhook dispatch",
+    mergeable: bool | None = None,
+    mergeable_state: str = "unknown",
 ) -> dict[str, Any]:
     return {
         "action": action,
@@ -41,6 +43,9 @@ def _pr_payload(
             "draft": draft,
             "title": title,
             "head": {"sha": sha},
+            "mergeable": mergeable,
+            "mergeable_state": mergeable_state,
+            "html_url": f"https://github.test/pulls/{number}",
         },
     }
 
@@ -201,6 +206,17 @@ class TestConfigurationAndGating:
 
 
 class TestPullRequestDebounce:
+    async def test_conflict_notifies_rin_on_every_webhook_without_deduping(self, gateway) -> None:
+        manager, sends, _state_file = gateway
+        payload = _pr_payload(action="edited", mergeable=False, mergeable_state="dirty")
+
+        await manager.handle_event("pull_request", payload)
+        await manager.handle_event("pull_request", payload)
+
+        assert len(sends) == 2
+        assert all(item["to"] == "rin" and item["kind"] == "conflict" for item in sends)
+        assert all("マージコンフリクト継続検知" in item["content"] for item in sends)
+
     async def test_draft_is_ignored_until_ready_for_review(self, gateway) -> None:
         manager, _, state_file = gateway
         await manager.handle_event("pull_request", _pr_payload(draft=True))
@@ -311,6 +327,7 @@ class TestReviewAndCommentDispatch:
             "_send",
             lambda to, content, kind, key: sends.append({"to": to, "kind": kind}),
         )
+        monkeypatch.setattr(github_gateway, "dispatch_direct_task", MagicMock(return_value=True))
         await manager.start()
         try:
             await manager.handle_event("issue_comment", _comment_payload(event="issue_comment", author=BOT_LOGIN))
@@ -363,7 +380,12 @@ class TestReviewAndCommentDispatch:
         assert len(sends) == 1
         assert sends[0]["to"] == "rin"
         assert sends[0]["key"] == dedupe_key
-        assert "Please fix this edge case." in sends[0]["content"]
+        assert "Please fix this\nedge case." in sends[0]["content"]
+        task = github_gateway.dispatch_direct_task
+        task.assert_called_once()
+        assert task.call_args.kwargs["target"] == "natsume"
+        assert task.call_args.kwargs["task_id"] == f"gh-comment-{dedupe_key.replace(':', '-')}"
+        assert "Please fix this\nedge case." in task.call_args.kwargs["instruction"]
         state = json.loads(state_file.read_text(encoding="utf-8"))
         assert dedupe_key in state["seen_comments"]
 
@@ -399,23 +421,26 @@ class TestReviewAndCommentDispatch:
         assert sends == []
         assert not state_file.exists()
 
-    async def test_review_is_deduped_and_changes_requested_is_emphasized(self, gateway) -> None:
+    @pytest.mark.parametrize("review_state", ["commented", "approved", "changes_requested"])
+    async def test_every_external_review_is_deduped_and_sent_in_full(self, gateway, review_state: str) -> None:
         manager, sends, state_file = gateway
-        payload = _review_payload()
+        body = "Start\n" + "x" * 800 + "\nRequired fix at the end."
+        payload = _review_payload(state=review_state, body=body)
         await manager.handle_event("pull_request_review", payload)
         await manager.handle_event("pull_request_review", payload)
         assert len(sends) == 1
         assert sends[0]["key"] == "review:202"
-        assert "【CHANGES_REQUESTED】" in sends[0]["content"]
+        assert "Required fix at the end." in sends[0]["content"]
+        if review_state == "changes_requested":
+            assert "【CHANGES_REQUESTED】" in sends[0]["content"]
         direct_task = github_gateway.dispatch_direct_task
         direct_task.assert_called_once()
         task = direct_task.call_args.kwargs
-        assert task["task_id"] == "gh-review-example-org-example-repo#17-202"
-        assert "レビュアーが人間の場合" in task["instruction"]
-        assert task["meta"]["bot_derived"] is False
+        assert task["task_id"] == "gh-comment-review-202"
+        assert body in task["instruction"]
         state = json.loads(state_file.read_text(encoding="utf-8"))
         assert "review:202" in state["seen_comments"]
-        assert "202" in state["review_tasks"]
+        assert "202" not in state["review_tasks"]
 
     async def test_non_submitted_review_is_ignored(self, gateway) -> None:
         manager, sends, state_file = gateway
@@ -707,8 +732,8 @@ class TestSharedStateLocking:
         }
         state_file.write_text(json.dumps(original), encoding="utf-8")
         calls: list[str] = []
-        real_acquire = github_gateway.acquire_file_lock
-        real_release = github_gateway.release_file_lock
+        real_acquire = github_gateway.review_multipass.acquire_file_lock
+        real_release = github_gateway.review_multipass.release_file_lock
 
         def recording_acquire(file_obj: Any, **kwargs: Any) -> None:
             calls.append("acquire")
@@ -718,8 +743,8 @@ class TestSharedStateLocking:
             calls.append("release")
             real_release(file_obj)
 
-        monkeypatch.setattr(github_gateway, "acquire_file_lock", recording_acquire)
-        monkeypatch.setattr(github_gateway, "release_file_lock", recording_release)
+        monkeypatch.setattr(github_gateway.review_multipass, "acquire_file_lock", recording_acquire)
+        monkeypatch.setattr(github_gateway.review_multipass, "release_file_lock", recording_release)
         with locked_dispatch_state(state_file) as state:
             state["seen_comments"]["issue-comment:9"] = "2026-07-14T02:00:00Z"
 
@@ -745,3 +770,44 @@ class TestSharedStateLocking:
         restored = json.loads(state_file.read_text(encoding="utf-8"))
         assert set(("prs", "seen_comments", "ci_notified")) <= restored.keys()
         assert restored["seen_comments"]["review:1"] == "now"
+
+
+def test_multipass_branch_suppresses_single_dm_and_dispatches_tasks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """H-4: 設定時に webhook 正本経路がマルチパス発行し、単発通知は抑止される。"""
+    shared_dir = tmp_path / "shared"
+    state_file = shared_dir / github_gateway.STATE_FILENAME
+    config = GitHubWebhookConfig(
+        enabled=True,
+        repos=[REPO],
+        reviewer_anima="sumire",
+        dispatcher_anima="rin",
+        review_multipass_models=["c:gpt-5.6-sol", "s:gpt-5.6-sol"],
+        review_synth_model="c:gpt-5.6-sol",
+    )
+    manager = GitHubWebhookManager(config=config, shared_dir=shared_dir, state_file=state_file)
+    sends: list[str] = []
+    direct_task = MagicMock(return_value=True)
+    monkeypatch.setattr(manager, "_send", lambda to, content, kind, key: sends.append(kind))
+    monkeypatch.setattr(github_gateway, "dispatch_direct_task", direct_task)
+
+    key = f"{REPO}#17"
+    with locked_dispatch_state(state_file) as state:
+        state["prs"][key] = {
+            "sha": SHA_1,
+            "sha_seen_at": "2026-07-14T00:00:00Z",
+            "notified_sha": "",
+            "title": "t",
+        }
+
+    manager._dispatch_review_if_current(key, SHA_1, "t")
+
+    assert sends == []  # 単発DMは送られない
+    assert direct_task.call_count == 2
+    base = f"gh-ci-example-org-example-repo#17-{SHA_1[:8]}"
+    ids = {c.kwargs["task_id"] for c in direct_task.call_args_list}
+    assert ids == {f"{base}-m-c-gpt-5-6-sol", f"{base}-m-s-gpt-5-6-sol"}
+    state = json.loads(state_file.read_text(encoding="utf-8"))
+    assert state["prs"][key]["notified_sha"] == SHA_1
+    assert state["multi_model_passes"][base]["attempt"] == 1

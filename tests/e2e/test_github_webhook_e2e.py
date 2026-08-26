@@ -125,12 +125,12 @@ def test_signed_pr_webhook_dispatches_to_real_inbox(data_dir, monkeypatch):
             # JSON is atomically replaced, so wait for the state flush too.
             try:
                 state = json.loads(state_file.read_text(encoding="utf-8"))
-            except (FileNotFoundError, json.JSONDecodeError):
+            except (FileNotFoundError, PermissionError, json.JSONDecodeError):
                 return False
             entry = state.get("prs", {}).get("example-org/example-repo#42", {})
             return entry.get("notified_sha") == sha
 
-        _wait_until(_state_notified)
+        _wait_until(_state_notified, timeout=10.0)
 
         files = list(inbox_dir.glob("*.json"))
         message = Message.model_validate_json(files[0].read_text(encoding="utf-8"))

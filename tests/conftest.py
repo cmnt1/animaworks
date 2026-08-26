@@ -238,6 +238,21 @@ def _reset_app_timezone():
 
 
 @pytest.fixture(autouse=True)
+def _empty_external_roots(monkeypatch: pytest.MonkeyPatch):
+    """Ensure SkillIndex does not pick up real host engine skill dirs during tests.
+
+    The default config points ``external_roots`` at ``~/.claude/skills`` etc.,
+    so without this fixture unit tests would unexpectedly load the host's real
+    skills. Tests that need external roots pass them explicitly or set up their
+    own fake roots, which are unaffected by this patch (they override the
+    default before SkillIndex is constructed).
+    """
+    import core.skills.index as skills_index
+
+    monkeypatch.setattr(skills_index, "_default_external_roots", lambda: [])
+
+
+@pytest.fixture(autouse=True)
 def _allow_direct_chroma_for_tests(monkeypatch: pytest.MonkeyPatch):
     """Allow low-level Chroma tests to instantiate the guarded store explicitly."""
     monkeypatch.setenv("ANIMAWORKS_ALLOW_DIRECT_CHROMA", "1")
@@ -344,31 +359,13 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def _kill_orphan_runners(data_dir_str: str) -> None:
     """Terminate supervisor.runner processes whose cmdline references *data_dir_str*.
 
-    Scans ``/proc`` on Linux to find child processes; falls back to
-    ``pgrep`` if ``/proc`` is unavailable.
+    Uses ``pgrep`` to avoid scanning every process for every fixture teardown.
     """
-    proc_dir = Path("/proc")
-    if not proc_dir.exists():
-        # Fallback for non-Linux: use pgrep
-        _kill_orphan_runners_pgrep(data_dir_str)
-        return
-
-    for pid_dir in proc_dir.iterdir():
-        if not pid_dir.name.isdigit():
-            continue
-        cmdline_file = pid_dir / "cmdline"
-        try:
-            cmdline = cmdline_file.read_text().replace("\x00", " ")
-            if "core.supervisor.runner" in cmdline and data_dir_str in cmdline:
-                pid = int(pid_dir.name)
-                logger.info("Killing orphan runner process PID=%s", pid)
-                os.kill(pid, signal.SIGTERM)
-        except (OSError, ValueError, PermissionError):
-            pass
+    _kill_orphan_runners_pgrep(data_dir_str)
 
 
 def _kill_orphan_runners_pgrep(data_dir_str: str) -> None:
-    """Fallback: use pgrep + kill for non-Linux platforms."""
+    """Use pgrep + kill for matching runner processes."""
     try:
         result = subprocess.run(
             ["pgrep", "-f", "core.supervisor.runner"],

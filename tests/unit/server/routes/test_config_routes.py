@@ -93,20 +93,18 @@ class TestMaskSecrets:
         assert result["model"] == "gpt-4o"
 
     def test_nested_dicts(self):
-        result = _mask_secrets({
-            "providers": {
-                "anthropic": {"api_key": "sk-ant-1234567890"}
-            }
-        })
+        result = _mask_secrets({"providers": {"anthropic": {"api_key": "sk-ant-1234567890"}}})
         assert result["providers"]["anthropic"]["api_key"] == "sk-...7890"
 
     def test_nested_lists(self):
-        result = _mask_secrets({
-            "items": [
-                {"api_key": "abcdefghij", "name": "test"},
-                {"token": "xyz"},
-            ]
-        })
+        result = _mask_secrets(
+            {
+                "items": [
+                    {"api_key": "abcdefghij", "name": "test"},
+                    {"token": "xyz"},
+                ]
+            }
+        )
         assert result["items"][0]["api_key"] == "abc...ghij"
         assert result["items"][0]["name"] == "test"
         assert result["items"][1]["token"] == "***"
@@ -140,13 +138,9 @@ class TestGetConfig:
         config_dir.mkdir()
         config = {
             "model": "claude-sonnet-4-6",
-            "providers": {
-                "anthropic": {"api_key": "sk-ant-1234567890"}
-            },
+            "providers": {"anthropic": {"api_key": "sk-ant-1234567890"}},
         }
-        (config_dir / "config.json").write_text(
-            json.dumps(config), encoding="utf-8"
-        )
+        (config_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
 
         app = _make_test_app()
         transport = ASGITransport(app=app)
@@ -163,9 +157,7 @@ class TestGetConfig:
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         config_dir = tmp_path / ".animaworks"
         config_dir.mkdir()
-        (config_dir / "config.json").write_text(
-            "not valid json {{{", encoding="utf-8"
-        )
+        (config_dir / "config.json").write_text("not valid json {{{", encoding="utf-8")
 
         app = _make_test_app()
         transport = ASGITransport(app=app)
@@ -327,7 +319,7 @@ class TestOpenAIAuthSettings:
 
         with (
             patch("server.routes.config_routes.load_config", return_value=config),
-            patch("server.routes.config_routes.is_codex_login_available", return_value=True),
+            patch("core.config.model_catalog.is_codex_login_available", return_value=True),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.get("/api/system/available-models")

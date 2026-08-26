@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -95,3 +96,11 @@ async def test_eof_is_an_explicit_disconnect() -> None:
     with pytest.raises(IPCV2ConnectionError, match="disconnected"):
         await read_ipc_v2_envelope(reader)
 
+
+@pytest.mark.asyncio
+async def test_connection_reset_is_an_explicit_disconnect() -> None:
+    reader = asyncio.StreamReader()
+    reader.readline = AsyncMock(side_effect=ConnectionResetError("reset"))
+
+    with pytest.raises(IPCV2ConnectionError, match="disconnected"):
+        await read_ipc_v2_envelope(reader)

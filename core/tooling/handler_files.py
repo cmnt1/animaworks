@@ -107,6 +107,7 @@ def _build_fuzzy_cjk_latin_pattern(old: str) -> re.Pattern[str] | None:
 # ── Background command execution ──────────────────────────
 
 _BG_CMD_TIMEOUT_DEFAULT = 1800  # 30 minutes
+_FG_CMD_TIMEOUT_DEFAULT = 120
 _BG_CMD_OUTPUT_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 _PIPE_THREAD_JOIN_TIMEOUT = 5.0
 _PIPE_THREAD_REJOIN_TIMEOUT = 1.0
@@ -686,7 +687,7 @@ class FileToolsMixin:
                 ensure_ascii=False,
             )
 
-        timeout = args.get("timeout", 30)
+        timeout = args.get("timeout", _FG_CMD_TIMEOUT_DEFAULT)
 
         try:
             try:

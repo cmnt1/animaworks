@@ -7,23 +7,20 @@ from __future__ import annotations
 """GitHub webhook gateway for PR review and dispatcher notifications."""
 
 import asyncio
-import json
 import logging
-import os
-import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import core.review_multipass as review_multipass
 from core.config.models import load_config
 from core.config.schemas import GitHubWebhookConfig
 from core.i18n import t
 from core.memory.task_queue import TaskQueueManager
 from core.messenger import Messenger
 from core.paths import get_animas_dir, get_shared_dir
-from core.platform.locks import acquire_file_lock, release_file_lock
 from core.tasks_dispatch import FAILING_CI_CONCLUSIONS, dispatch_direct_task
 
 logger = logging.getLogger("animaworks.github_gateway")
@@ -37,18 +34,7 @@ def _now_iso() -> str:
 
 
 def _default_state() -> dict[str, Any]:
-    return {
-        "prs": {},
-        "last_comment_check": _now_iso(),
-        "seen_comments": {},
-        "ci_notified": {},
-        "ci_failure_signatures": {},
-        "conflict_notified": {},
-        "failed_task_retries": {},
-        "review_tasks": {},
-        "stale_watch": {},
-        "consecutive_failures": 0,
-    }
+    return review_multipass.default_state()
 
 
 @contextmanager
@@ -56,54 +42,11 @@ def locked_dispatch_state(state_file: Path) -> Iterator[dict[str, Any]]:
     """Read, mutate, and persist dispatcher state under an exclusive flock.
 
     A stable sidecar inode is locked while the JSON is atomically replaced.
-    The fallback cron uses the same sidecar, so neither process can overwrite
-    state loaded by the other.
+    The fallback cron uses the same sidecar (via ``core.review_multipass``),
+    so neither process can overwrite state loaded by the other.
     """
-    state_file.parent.mkdir(parents=True, exist_ok=True)
-    lock_file = state_file.with_suffix(".lock")
-    with lock_file.open("a+", encoding="utf-8") as lock_handle:
-        acquire_file_lock(lock_handle, exclusive=True)
-        try:
-            try:
-                raw = state_file.read_text(encoding="utf-8")
-            except FileNotFoundError:
-                raw = ""
-            try:
-                state = json.loads(raw) if raw.strip() else _default_state()
-            except json.JSONDecodeError:
-                logger.warning("GitHub dispatcher state is invalid JSON; starting fresh")
-                state = _default_state()
-            if not isinstance(state, dict):
-                state = _default_state()
-            state.setdefault("prs", {})
-            state.setdefault("seen_comments", {})
-            state.setdefault("ci_notified", {})
-            state.setdefault("ci_failure_signatures", {})
-            state.setdefault("conflict_notified", {})
-            state.setdefault("failed_task_retries", {})
-            state.setdefault("review_tasks", {})
-            state.setdefault("stale_watch", {})
-            yield state
-            temp_path: Path | None = None
-            try:
-                with tempfile.NamedTemporaryFile(
-                    mode="w",
-                    encoding="utf-8",
-                    dir=state_file.parent,
-                    prefix=f".{state_file.name}.",
-                    delete=False,
-                ) as temp_handle:
-                    json.dump(state, temp_handle, indent=1, ensure_ascii=False)
-                    temp_handle.write("\n")
-                    temp_handle.flush()
-                    os.fsync(temp_handle.fileno())
-                    temp_path = Path(temp_handle.name)
-                temp_path.replace(state_file)
-            finally:
-                if temp_path is not None and temp_path.exists():
-                    temp_path.unlink()
-        finally:
-            release_file_lock(lock_handle)
+    with review_multipass.locked_state(state_file) as state:
+        yield state
 
 
 class GitHubWebhookManager:
@@ -209,6 +152,24 @@ class GitHubWebhookManager:
             await asyncio.to_thread(self._remove_pr_state, key)
             return
 
+        if pr.get("mergeable") is False or str(pr.get("mergeable_state") or "").lower() in {
+            "conflicting",
+            "dirty",
+        }:
+            await asyncio.to_thread(
+                self._send,
+                self._config.dispatcher_anima,
+                t(
+                    "github_gateway.conflict",
+                    repo=repo,
+                    number=number,
+                    sha=str((pr.get("head") or {}).get("sha") or ""),
+                    url=str(pr.get("html_url") or f"https://github.com/{repo}/pull/{number}"),
+                ),
+                "conflict",
+                f"conflict:{key}",
+            )
+
         if action not in {"opened", "synchronize", "reopened", "ready_for_review"}:
             return
         if bool(pr.get("draft")) and action != "ready_for_review":
@@ -254,19 +215,31 @@ class GitHubWebhookManager:
                 self._debounce_tasks.pop(key, None)
 
     def _dispatch_review_if_current(self, key: str, sha: str, title: str) -> None:
+        models = list(getattr(self._config, "review_multipass_models", None) or [])
         with locked_dispatch_state(self._require_state_file()) as state:
             entry = state["prs"].get(key)
             if not entry or entry.get("sha") != sha or entry.get("notified_sha") == sha:
                 return
-            quiet = self._format_quiet_period()
-            content = t(
-                "github_gateway.review_dispatch",
-                pr_key=key,
-                sha=sha[:8],
-                title=title,
-                quiet=quiet,
-            )
-            self._send(self._config.reviewer_anima, content, "review", key)
+            if models:
+                repo, _, number = key.partition("#")
+                review_multipass.dispatch_multipass_reviews(
+                    state,
+                    [{"repo": repo, "number": int(number or 0), "sha": sha, "title": title}],
+                    reviewer=self._config.reviewer_anima,
+                    models=models,
+                    quiet_seconds=self._config.quiet_seconds,
+                    dispatch=dispatch_direct_task,
+                )
+            else:
+                quiet = self._format_quiet_period()
+                content = t(
+                    "github_gateway.review_dispatch",
+                    pr_key=key,
+                    sha=sha[:8],
+                    title=title,
+                    quiet=quiet,
+                )
+                self._send(self._config.reviewer_anima, content, "review", key)
             entry["notified_sha"] = sha
 
     def _format_quiet_period(self) -> str:
@@ -322,17 +295,6 @@ class GitHubWebhookManager:
             str(review.get("html_url") or ""),
             f"{emphasis}review {state}".strip(),
         )
-        if state == "CHANGES_REQUESTED":
-            await asyncio.to_thread(
-                self._dispatch_review_task_once,
-                repo,
-                number,
-                str(review_id),
-                author,
-                str(review.get("body") or ""),
-                str(review.get("html_url") or ""),
-                False,
-            )
 
     async def _handle_comment(self, event: str, repo: str, payload: dict[str, Any]) -> None:
         if payload.get("action") != "created":
@@ -397,13 +359,30 @@ class GitHubWebhookManager:
                 )
                 seen[dedupe_key] = _now_iso()
                 return
-            summary = body.replace("\n", " ")[:140]
+            dispatch_direct_task(
+                target=self._config.implementer_anima,
+                task_id=f"gh-comment-{dedupe_key.replace(':', '-')}",
+                summary=t("github_gateway.command_summary", repo=repo, number=number),
+                instruction=t(
+                    "github_gateway.command_task",
+                    repo=repo,
+                    number=number,
+                    body=body,
+                    url=url,
+                ),
+                meta={
+                    "repo": repo,
+                    "number": number,
+                    "url": url,
+                    "kind": kind,
+                    "author": author,
+                },
+            )
             content = (
                 "【外部レビューコメント検知】\n\n"
-                f"- [{kind}] {repo}#{number} {author}: {summary}\n  {url}\n\n"
-                "bot以外による新規コメントです。ACTION_REQUIRED判定と"
-                "natsumeへの修正ディスパッチを procedures/pr-event-detection-patrol.md "
-                "に従って実施してください。"
+                f"- [{kind}] {repo}#{number} {author}\n\n{body}\n\nURL: {url}\n\n"
+                "全文をnatsumeへ直接投入済みです。Rinも全文を独立判断し、"
+                "必要な追跡を procedures/pr-event-detection-patrol.md に従って実施してください。"
             )
             self._send(self._config.dispatcher_anima, content, "comment", dedupe_key)
             seen[dedupe_key] = _now_iso()
@@ -435,7 +414,6 @@ class GitHubWebhookManager:
                     verdict = "PASS"
                 else:
                     verdict = t("github_gateway.unknown_verdict")
-            summary = body.replace("\n", " ")[:200]
             content = t(
                 "github_gateway.frc_result",
                 verdict=verdict,
@@ -443,7 +421,7 @@ class GitHubWebhookManager:
                 number=number,
                 head_sha=head_sha,
                 url=url,
-                summary=summary,
+                summary=body,
             )
             self._send(self._config.dispatcher_anima, content, "frc-result", dedupe_key)
             seen[dedupe_key] = _now_iso()
@@ -476,7 +454,7 @@ class GitHubWebhookManager:
                     url=url or f"https://github.com/{repo}/pull/{number}",
                     author=author or "unknown",
                     bot_note=bot_note,
-                    body=body[:500],
+                    body=body,
                 ),
                 meta={
                     "repo": repo,

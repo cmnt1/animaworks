@@ -88,6 +88,9 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/config/migrate.py": 9,
     # model catalog "note" descriptions (最高性能・推奨, etc.)
     "core/config/model_mode.py": 45,
+    # multi-pass FRC review instruction/task templates (operational instructions,
+    # relocated from scripts/pr-review-dispatch.py which is outside the scan)
+    "core/review_multipass.py": 10,
     # cron instruction prompt to Anima
     "core/prompt/messaging.py": 2,
     "core/prompt/org_context.py": 3,
@@ -145,7 +148,8 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # voice front lane — ask_anima tool schema wording fed to the front LLM
     "core/voice/front.py": 2,
     # voice front lane — spoken ACK/error phrases voiced to the user via TTS
-    "core/voice/session.py": 5,
+    # plus the proactive silence-turn system prompt fed to the front LLM
+    "core/voice/session.py": 8,
 }
 
 

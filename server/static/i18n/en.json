@@ -1130,5 +1130,7 @@
   "tb.deploy_success": "Deploy complete!",
   "tb.deploy_error": "Deploy failed",
   "tb.deploy_done": "Deployed!",
-  "tb.deploy_go_animas": "Go to Anima Management"
+  "tb.deploy_go_animas": "Go to Anima Management",
+  "chat.model_default": "Anima default",
+  "chat.model_selector": "Model for this message"
 }

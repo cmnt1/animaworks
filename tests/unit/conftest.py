@@ -61,6 +61,26 @@ def _reset_config_caches_for_unit_tests(
 
 
 @pytest.fixture(autouse=True)
+def _disable_skill_dense_embeddings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bypass the real embedding model in unit tests.
+
+    ``core.skills.dense`` normally invokes the local HTTP embedding model;
+    unit tests replace it so no real model is ever loaded.  Individual tests
+    (e.g. test_skill_dense.py) override ``generate_embeddings`` themselves.
+    """
+    import core.skills.dense as skill_dense
+
+    monkeypatch.setattr(skill_dense, "generate_embeddings", lambda *a, **k: [])
+    skill_dense._PROCESS_CACHE.clear()
+    skill_dense._QUERY_LRU.clear()
+    yield
+    skill_dense._PROCESS_CACHE.clear()
+    skill_dense._QUERY_LRU.clear()
+
+
+@pytest.fixture(autouse=True)
 def _global_permissions_for_unit_tests(tmp_path: Path) -> None:
     """Load ``permissions.global.json`` template so command block patterns match production.
 

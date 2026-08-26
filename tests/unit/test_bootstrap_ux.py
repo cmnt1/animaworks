@@ -6,11 +6,8 @@ import json
 from pathlib import Path
 
 import pytest
-import yaml
 
 STATIC_DIR = Path(__file__).resolve().parents[2] / "server" / "static"
-DEMO_DIR = Path(__file__).resolve().parents[2] / "demo"
-REPO_DIR = Path(__file__).resolve().parents[2]
 
 BOOTSTRAP_I18N_KEYS = [
     "chat.anima_starting",
@@ -74,50 +71,6 @@ class TestBootstrapI18n:
         for key in BOOTSTRAP_I18N_KEYS + WS_BOOTSTRAP_KEYS:
             assert key in ja, f"Missing in ja.json: {key}"
             assert key in en, f"Missing in en.json: {key}"
-
-
-class TestDockerComposeDev:
-    """Docker compose dev override is valid and correctly structured."""
-
-    @pytest.fixture()
-    def dev_compose(self):
-        path = DEMO_DIR / "docker-compose.dev.yml"
-        with open(path) as f:
-            return yaml.safe_load(f)
-
-    def test_file_exists(self):
-        assert (DEMO_DIR / "docker-compose.dev.yml").exists()
-
-    def test_valid_yaml(self, dev_compose):
-        assert isinstance(dev_compose, dict)
-
-    def test_has_services_section(self, dev_compose):
-        assert "services" in dev_compose
-
-    def test_has_animaworks_demo_service(self, dev_compose):
-        assert "animaworks-demo" in dev_compose["services"]
-
-    def test_volumes_include_static_mount(self, dev_compose):
-        svc = dev_compose["services"]["animaworks-demo"]
-        assert "volumes" in svc
-        volumes = svc["volumes"]
-        static_mount = [v for v in volumes if "server/static" in str(v)]
-        assert len(static_mount) >= 1, "Missing ../server/static volume mount"
-
-    def test_volumes_include_data_volume(self, dev_compose):
-        svc = dev_compose["services"]["animaworks-demo"]
-        volumes = svc["volumes"]
-        data_mount = [v for v in volumes if "animaworks-demo-data" in str(v)]
-        assert len(data_mount) >= 1, "Missing animaworks-demo-data volume"
-
-
-class TestRootDockerBuild:
-    """Root Docker context preserves runtime bootstrap templates."""
-
-    def test_dockerignore_includes_markdown_templates(self):
-        dockerignore = (REPO_DIR / ".dockerignore").read_text(encoding="utf-8")
-
-        assert "!templates/**/*.md" in dockerignore.splitlines()
 
 
 class TestBootstrapCssClasses:

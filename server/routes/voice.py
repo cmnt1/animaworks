@@ -169,6 +169,7 @@ def create_voice_router() -> APIRouter:
                     pass
         _active_sessions[name] = ws
 
+        session = None
         try:
             config = load_config()
             voice_config = config.voice
@@ -224,6 +225,10 @@ def create_voice_router() -> APIRouter:
                                 running_tasks.append(task)
                             elif msg_type == "interrupt":
                                 await session.handle_interrupt()
+                            elif msg_type == "barge_probe":
+                                await session.handle_barge_probe()
+                            elif msg_type == "discard_audio":
+                                await session.handle_discard_audio()
                         except json.JSONDecodeError:
                             logger.warning("Invalid JSON in voice WebSocket: %s", msg["text"][:100])
 
@@ -239,6 +244,13 @@ def create_voice_router() -> APIRouter:
             for t in running_tasks:
                 if not t.done():
                     t.cancel()
+            # Cancel the proactive idle watcher / TTS worker so a closed popup
+            # stops polling the front LLM every couple of seconds (C1).
+            if session is not None:
+                try:
+                    await session.close()
+                except Exception:
+                    pass
             if _active_sessions.get(name) == ws:
                 _active_sessions.pop(name, None)
 

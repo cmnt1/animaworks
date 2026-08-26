@@ -40,9 +40,10 @@ All runtime data is stored under `{data_dir}/`.
 │   ├── {anima_name}/    # ← You
 │   └── ...               # Other Anima
 ├── prompts/          # Prompt templates (character design guide, etc.)
+├── vault.json        # Shared credential vault
 ├── shared/           # Shared area across Anima
 │   ├── channels/     # Board channels (general.jsonl, ops.jsonl, etc.)
-│   ├── credentials.json  # Unified credential management (shared by all)
+│   ├── credentials.json  # Legacy compatibility fallback
 │   ├── inbox/        # Message inbox
 │   └── users/        # Shared user memory (per-user subdirectories)
 ├── common_skills/    # Shared skills (read-only)
@@ -64,8 +65,14 @@ All runtime data is stored under `{data_dir}/`.
    - **identity.md**: **read-only** (write-protected)
 8. **Peers' activity_log**: You may read `activity_log/` of peers who share the same supervisor (for verification). Writing is not allowed
 
+### Repository Work Rules
+
+- Treat the canonical `main` / `master` checkout as read-only. Implement, verify, and commit only in a dedicated `git worktree`
+- Merge from a worktree only after confirming that the canonical checkout is clean. If it is dirty, make no changes and report it
+- Never stash, discard, or overwrite another actor's changes without explicit instruction
+
 ### Prohibited
 
-- Do not create credential files such as secrets.json in your personal directory. Credentials are managed centrally in `{data_dir}/shared/credentials.json`
+- Do not create credential files such as secrets.json in your personal directory. Resolve credentials through framework tools/resolvers; never parse `shared/credentials.json` directly (it is a legacy fallback and may be empty)
 - Exposing environment variables or API keys
 - Never send confidential information via Gmail or publish it on the web without user permission

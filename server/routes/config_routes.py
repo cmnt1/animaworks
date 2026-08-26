@@ -20,6 +20,12 @@ from core.config.local_llm import (
     normalize_ollama_base_url,
     normalize_ollama_model_name,
 )
+from core.config.model_catalog import (  # noqa: F401
+    _build_static_model_catalog,
+    available_model_id_set,
+    validate_chat_model,
+    validate_model_override,
+)
 from core.config.models import (
     DEFAULT_LOCAL_LLM_BASE_URL,
     DEFAULT_LOCAL_LLM_PRESETS,
@@ -56,7 +62,7 @@ ABCONFIG_KEYS = {
     "opencode_api",
 }
 MODEL_CATALOG_CACHE_FILE = "model_catalog_cache.json"
-MODEL_CATALOG_PROVIDERS = ("claude_code", "codex", "nanogpt", "google")
+MODEL_CATALOG_PROVIDERS = ("claude_code", "codex", "opencode_go", "nanogpt", "google")
 
 
 def _known_codex_models() -> list[str]:
@@ -289,7 +295,7 @@ def _list_nanogpt_models(base_url: str, api_key: str) -> list[str]:
     response = httpx.get(
         f"{base_url}/models",
         headers={"Authorization": f"Bearer {api_key}"},
-        timeout=httpx.Timeout(10.0, connect=5.0),
+        timeout=httpx.Timeout(5.0, connect=5.0),
     )
     response.raise_for_status()
     data = response.json()
@@ -299,7 +305,7 @@ def _list_nanogpt_models(base_url: str, api_key: str) -> list[str]:
 def _list_ollama_models(base_url: str) -> list[str]:
     response = httpx.get(
         f"{base_url}/api/tags",
-        timeout=httpx.Timeout(10.0, connect=5.0),
+        timeout=httpx.Timeout(5.0, connect=5.0),
     )
     response.raise_for_status()
     data = response.json()
@@ -869,8 +875,13 @@ def create_config_router() -> APIRouter:
         return _serialize_local_llm()
 
     @router.get("/system/available-models")
-    async def get_available_models(request: Request):
-        """Return all available models (cloud + local) for UI dropdowns."""
+    def get_available_models(request: Request):
+        """Return all available models (cloud + local) for UI dropdowns.
+
+        Sync (non-async) so FastAPI runs it in a threadpool: the nanoGPT/Ollama
+        reachability probes below use blocking ``httpx`` calls that would otherwise
+        stall the whole event loop for up to the (shortened) 5 s timeout.
+        """
         config = load_config()
         return {"models": _available_models_payload(config)}
 

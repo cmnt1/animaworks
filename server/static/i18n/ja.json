@@ -882,7 +882,7 @@
   "voice.popup_disconnected": "切断されました",
   "voice.popup_listening": "聞いています…",
   "voice.popup_mic_denied": "マイクの使用が拒否されました。PTTに切り替えるか閉じてください。",
-  "voice.popup_mic_insecure": "このURLではマイクAPIが使えません。https（trserveru.a1str.net/app）でアクセスしてください。",
+  "voice.popup_mic_insecure": "このURLではマイクAPIが使えません。httpsでアクセスしてください。",
   "voice.popup_speaking": "話しています…",
   "voice.popup_title": "音声会話",
   "websocket.assets_updated": "アセット更新:",
@@ -1090,5 +1090,7 @@
   "tb.deploy_success": "デプロイ完了!",
   "tb.deploy_error": "デプロイに失敗しました",
   "tb.deploy_done": "デプロイ済み!",
-  "tb.deploy_go_animas": "Anima管理へ"
+  "tb.deploy_go_animas": "Anima管理へ",
+  "chat.model_default": "anima既定",
+  "chat.model_selector": "このメッセージのモデル"
 }

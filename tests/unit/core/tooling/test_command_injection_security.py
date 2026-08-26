@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core.config.global_permissions import GlobalPermissionsCache
 from core.tooling.handler import (
     ToolHandler,
     _get_blocked_patterns,
@@ -106,19 +107,25 @@ class TestRtkRewrite:
 class TestNewlineInjection:
     """Global injection regex must detect newline characters."""
 
-    @pytest.mark.parametrize("cmd", [
-        "echo hello\nrm -rf /",
-        "ls\ncat /etc/passwd",
-        "echo ok\n\necho secret",
-    ])
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "echo hello\nrm -rf /",
+            "ls\ncat /etc/passwd",
+            "echo ok\n\necho secret",
+        ],
+    )
     def test_newline_detected_by_injection_re(self, cmd: str):
         inj = _get_injection_re()
         assert inj is not None
         assert inj.search(cmd), f"Newline not detected in: {cmd!r}"
 
     def test_newline_command_rejected_by_permission_check(
-        self, handler: ToolHandler, memory: MagicMock,
+        self,
+        handler: ToolHandler,
+        memory: MagicMock,
     ):
+        GlobalPermissionsCache.get().config.sdk_bash_injection.mode = "enforce"
         memory.read_permissions.return_value = "## コマンド実行\n- echo: OK\n- cat: OK"
         result = handler._check_command_permission("echo hello\ncat /etc/passwd")
         parsed = json.loads(result)
@@ -126,11 +133,15 @@ class TestNewlineInjection:
         assert "injection" in parsed["message"].lower()
 
     def test_newline_command_rejected_via_execute_command(
-        self, handler: ToolHandler, memory: MagicMock,
+        self,
+        handler: ToolHandler,
+        memory: MagicMock,
     ):
+        GlobalPermissionsCache.get().config.sdk_bash_injection.mode = "enforce"
         memory.read_permissions.return_value = "## コマンド実行\n- echo: OK"
         result = handler.handle(
-            "execute_command", {"command": "echo safe\necho evil"},
+            "execute_command",
+            {"command": "echo safe\necho evil"},
         )
         parsed = json.loads(result)
         assert parsed["error_type"] == "PermissionDenied"
@@ -142,26 +153,35 @@ class TestNewlineInjection:
 class TestPipeToShellBlocking:
     """Generic ``| sh`` and ``| bash`` must be blocked regardless of source command."""
 
-    @pytest.mark.parametrize("cmd", [
-        "echo 'rm -rf /' | sh",
-        "cat /tmp/script.sh | bash",
-        "printf '%s' 'malicious' | sh",
-        "echo payload | bash",
-        "echo test |  sh",
-        "echo test |sh",
-        "head -1 file.txt | bash",
-    ])
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "echo 'rm -rf /' | sh",
+            "cat /tmp/script.sh | bash",
+            "printf '%s' 'malicious' | sh",
+            "echo payload | bash",
+            "echo test |  sh",
+            "echo test |sh",
+            "head -1 file.txt | bash",
+        ],
+    )
     def test_generic_pipe_to_shell_blocked(self, cmd: str):
         matched = any(p.search(cmd) for p, _ in _get_blocked_patterns())
         assert matched, f"Not blocked: {cmd!r}"
 
-    @pytest.mark.parametrize("cmd", [
-        "echo 'hello world' | sh",
-        "cat /tmp/script.sh | bash",
-        "printf '%s' 'payload' | sh",
-    ])
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "echo 'hello world' | sh",
+            "cat /tmp/script.sh | bash",
+            "printf '%s' 'payload' | sh",
+        ],
+    )
     def test_pipe_to_shell_blocked_by_permission_check(
-        self, handler: ToolHandler, memory: MagicMock, cmd: str,
+        self,
+        handler: ToolHandler,
+        memory: MagicMock,
+        cmd: str,
     ):
         memory.read_permissions.return_value = (
             "## コマンド実行\n- echo: OK\n- cat: OK\n- printf: OK\n- sh: OK\n- bash: OK"
@@ -191,26 +211,35 @@ class TestPipeToShellBlocking:
 class TestPipeToInterpreterBlocking:
     """Piping to python/perl/ruby/node must be blocked."""
 
-    @pytest.mark.parametrize("cmd", [
-        "echo 'import os; os.system(\"rm -rf /\")' | python",
-        "echo 'import os' | python3",
-        "echo 'import os' | python2",
-        "echo 'system(\"rm -rf /\")' | perl",
-        "echo 'system(\"rm -rf /\")' | ruby",
-        "echo 'require(\"child_process\")' | node",
-    ])
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "echo 'import os; os.system(\"rm -rf /\")' | python",
+            "echo 'import os' | python3",
+            "echo 'import os' | python2",
+            "echo 'system(\"rm -rf /\")' | perl",
+            "echo 'system(\"rm -rf /\")' | ruby",
+            "echo 'require(\"child_process\")' | node",
+        ],
+    )
     def test_pipe_to_interpreter_blocked_by_pattern(self, cmd: str):
         matched = any(p.search(cmd) for p, _ in _get_blocked_patterns())
         assert matched, f"Not blocked: {cmd!r}"
 
-    @pytest.mark.parametrize("cmd", [
-        "echo 'print(1)' | python",
-        "echo 'exec' | perl",
-        "echo 'puts 1' | ruby",
-        "echo 'console.log(1)' | node",
-    ])
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "echo 'print(1)' | python",
+            "echo 'exec' | perl",
+            "echo 'puts 1' | ruby",
+            "echo 'console.log(1)' | node",
+        ],
+    )
     def test_pipe_to_interpreter_blocked_by_permission_check(
-        self, handler: ToolHandler, memory: MagicMock, cmd: str,
+        self,
+        handler: ToolHandler,
+        memory: MagicMock,
+        cmd: str,
     ):
         memory.read_permissions.return_value = "## コマンド実行\n全般的なコマンド"
         result = handler._check_command_permission(cmd)
@@ -225,32 +254,41 @@ class TestPipeToInterpreterBlocking:
 class TestLegitimateCommandsStillAllowed:
     """Normal pipes and commands must not be falsely blocked."""
 
-    @pytest.mark.parametrize("cmd", [
-        "ls | grep foo",
-        "ps aux | grep python",
-        "cat file.txt | head -5",
-        "df -h | tail -3",
-        "echo hello && echo world",
-        "git status --short",
-        "echo 'hello world'",
-        "python script.py",
-        "bash script.sh",
-        "node app.js",
-        "perl script.pl",
-        "ruby script.rb",
-        "python3 -c 'print(1)'",
-    ])
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "ls | grep foo",
+            "ps aux | grep python",
+            "cat file.txt | head -5",
+            "df -h | tail -3",
+            "echo hello && echo world",
+            "git status --short",
+            "echo 'hello world'",
+            "python script.py",
+            "bash script.sh",
+            "node app.js",
+            "perl script.pl",
+            "ruby script.rb",
+            "python3 -c 'print(1)'",
+        ],
+    )
     def test_legitimate_not_blocked_by_patterns(self, cmd: str):
         matched = any(p.search(cmd) for p, _ in _get_blocked_patterns())
         assert not matched, f"Falsely blocked: {cmd!r}"
 
-    @pytest.mark.parametrize("cmd", [
-        "ls | grep foo",
-        "ps aux | grep python",
-        "echo hello && echo world",
-    ])
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "ls | grep foo",
+            "ps aux | grep python",
+            "echo hello && echo world",
+        ],
+    )
     def test_legitimate_pipes_allowed_by_permission_check(
-        self, handler: ToolHandler, memory: MagicMock, cmd: str,
+        self,
+        handler: ToolHandler,
+        memory: MagicMock,
+        cmd: str,
     ):
         memory.read_permissions.return_value = "## コマンド実行\n全般的なコマンド"
         result = handler._check_command_permission(cmd)
@@ -285,7 +323,8 @@ class TestExecuteCommandIntegration:
     def test_echo_pipe_sh_blocked(self, handler: ToolHandler, memory: MagicMock):
         memory.read_permissions.return_value = "## コマンド実行\n- echo: OK\n- sh: OK"
         result = handler.handle(
-            "execute_command", {"command": "echo 'payload' | sh"},
+            "execute_command",
+            {"command": "echo 'payload' | sh"},
         )
         parsed = json.loads(result)
         assert parsed["error_type"] == "PermissionDenied"
@@ -293,7 +332,8 @@ class TestExecuteCommandIntegration:
     def test_cat_pipe_bash_blocked(self, handler: ToolHandler, memory: MagicMock):
         memory.read_permissions.return_value = "## コマンド実行\n- cat: OK\n- bash: OK"
         result = handler.handle(
-            "execute_command", {"command": "cat /tmp/script.sh | bash"},
+            "execute_command",
+            {"command": "cat /tmp/script.sh | bash"},
         )
         parsed = json.loads(result)
         assert parsed["error_type"] == "PermissionDenied"
@@ -306,9 +346,11 @@ class TestExecuteCommandIntegration:
         assert "PermissionDenied" not in result
 
     def test_newline_in_command_blocked(self, handler: ToolHandler, memory: MagicMock):
+        GlobalPermissionsCache.get().config.sdk_bash_injection.mode = "enforce"
         memory.read_permissions.return_value = "## コマンド実行\n- echo: OK"
         result = handler.handle(
-            "execute_command", {"command": "echo safe\necho malicious"},
+            "execute_command",
+            {"command": "echo safe\necho malicious"},
         )
         parsed = json.loads(result)
         assert parsed["error_type"] == "PermissionDenied"
@@ -316,7 +358,8 @@ class TestExecuteCommandIntegration:
     def test_pipe_to_python_blocked(self, handler: ToolHandler, memory: MagicMock):
         memory.read_permissions.return_value = "## コマンド実行\n全般的なコマンド"
         result = handler.handle(
-            "execute_command", {"command": "echo 'import os' | python3"},
+            "execute_command",
+            {"command": "echo 'import os' | python3"},
         )
         parsed = json.loads(result)
         assert parsed["error_type"] == "PermissionDenied"

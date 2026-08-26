@@ -16,7 +16,7 @@ from core.voice.tts_base import BaseTTSProvider, TTSConfig, TTSSynthesisError
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_BASE_URL = "http://xserverng2:7861"
+DEFAULT_BASE_URL = "http://localhost:7861"
 HTTP_TIMEOUT = 60.0
 
 

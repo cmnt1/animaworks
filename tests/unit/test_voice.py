@@ -24,7 +24,6 @@ from core.voice.tts_irodori import IrodoriTTS
 from core.voice.tts_sbv2 import StyleBertVits2TTS
 from core.voice.tts_voicevox import VoicevoxTTS
 
-
 # ── TestSplitSentences ──────────────────────────────────────────
 
 
@@ -297,6 +296,60 @@ class TestSanitizeForTTS:
         text = "普通のテキストです。変わりません。"
         assert sanitize_for_tts(text) == text
 
+    def test_keep_emoji_filters_to_allowlist(self) -> None:
+        from core.voice.session import sanitize_for_tts
+
+        # 😊 is an Irodori annotation emoji, 😃 is not.
+        assert sanitize_for_tts("😊😃こんにちは", keep_emoji=True) == "😊こんにちは"
+        # ZWJ sequence in the allowlist survives intact.
+        assert sanitize_for_tts("😮‍💨ふう", keep_emoji=True) == "😮‍💨ふう"
+
+    def test_keep_emoji_false_strips_all(self) -> None:
+        from core.voice.session import sanitize_for_tts
+
+        assert sanitize_for_tts("😊😃こんにちは") == "こんにちは"
+
+    def test_year_kana_conversion(self) -> None:
+        from core.voice.session import apply_reading_rules, sanitize_for_tts
+
+        assert apply_reading_rules("2003年です") == "にせんさんねんです"
+        assert apply_reading_rules("二〇二六年") == "にせんにじゅうろくねん"
+        # sanitize keeps the display copy readable — no kana conversion.
+        assert sanitize_for_tts("2003年です", keep_emoji=True) == "2003年です"
+
+    def test_ruby_reading_for_alphabet_terms(self) -> None:
+        from core.voice.session import apply_reading_rules, resolve_ruby, strip_ruby
+
+        text = "GitHub（ギットハブ）のPR(ピーアール)とClaude Code（クロード コード）を見た"
+        assert resolve_ruby(text) == "ギットハブのピーアールとクロード コードを見た"
+        assert strip_ruby(text) == "GitHubのPRとClaude Codeを見た"
+        # Ruby feeds the TTS copy through apply_reading_rules too.
+        assert apply_reading_rules("API（エーピーアイ）です") == "エーピーアイです"
+        # Japanese parentheticals are not ruby.
+        assert resolve_ruby("東京（とうきょう）") == "東京（とうきょう）"
+        assert strip_ruby("GitHub（設定）") == "GitHub（設定）"
+
+    def test_yomi_dict_substitution(self, tmp_path, monkeypatch) -> None:
+        import core.voice.session as vs
+
+        (tmp_path / "voice_yomi.tsv").write_text(
+            "# comment\n小鳥遊\tたかなし\nRAG\tラグ\n", encoding="utf-8"
+        )
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        monkeypatch.setattr(vs, "_yomi_cache", None)
+        monkeypatch.setattr(vs, "_yomi_mtime", 0.0)
+        assert vs.apply_reading_rules("小鳥遊さんとRAGの話") == "たかなしさんとラグの話"
+        # Display copy stays untouched.
+        assert vs.sanitize_for_tts("小鳥遊さんとRAGの話", keep_emoji=True) == "小鳥遊さんとRAGの話"
+
+    def test_yomi_dict_missing_is_noop(self, tmp_path, monkeypatch) -> None:
+        import core.voice.session as vs
+
+        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
+        monkeypatch.setattr(vs, "_yomi_cache", None)
+        monkeypatch.setattr(vs, "_yomi_mtime", 0.0)
+        assert vs.apply_reading_rules("そのまま") == "そのまま"
+
     def test_combined(self) -> None:
         from core.voice.session import sanitize_for_tts
 
@@ -561,7 +614,7 @@ class TestVoiceConfig:
         assert vc.voicevox.base_url == "http://localhost:50021"
         assert vc.elevenlabs.api_key_env == "ELEVENLABS_API_KEY"
         assert vc.style_bert_vits2.base_url == "http://localhost:5000"
-        assert vc.irodori.base_url == "http://xserverng2:7861"
+        assert vc.irodori.base_url == "http://localhost:7861"
 
     def test_animaworks_config_has_voice(self) -> None:
         config = AnimaWorksConfig()
@@ -705,7 +758,7 @@ class TestTTSSynthesisError:
 class TestIrodoriTTS:
     def test_default_base_url(self) -> None:
         provider = IrodoriTTS(VoiceConfig())
-        assert provider._base_url == "http://xserverng2:7861"
+        assert provider._base_url == "http://localhost:7861"
 
     def test_custom_base_url_from_config(self) -> None:
         vc = VoiceConfig(irodori={"base_url": "http://localhost:9999/"})
@@ -741,7 +794,7 @@ class TestIrodoriTTS:
         assert result == wav
         mock_client.post.assert_awaited_once()
         call_args = mock_client.post.call_args
-        assert call_args.args[0] == "http://xserverng2:7861/voice"
+        assert call_args.args[0] == "http://localhost:7861/voice"
         assert call_args.kwargs["json"] == {
             "text": "こんにちは",
             "voice_id": "v1",
@@ -809,7 +862,7 @@ class TestIrodoriTTS:
             mock_cls.return_value = mock_client
 
             assert await provider.health_check() is True
-            mock_client.get.assert_awaited_once_with("http://xserverng2:7861/health")
+            mock_client.get.assert_awaited_once_with("http://localhost:7861/health")
 
     @pytest.mark.asyncio
     async def test_health_check_connection_error(self) -> None:
@@ -1058,6 +1111,99 @@ def _make_session(*, ws=None, stt=None, tts=None, supervisor=None):
     supervisor = supervisor or MagicMock()
     voice_config = MagicMock(stt_refine_enabled=False)
     return VoiceSession("test", ws, stt, tts, tts_config, supervisor, voice_config)
+
+
+class TestBargeProbe:
+    def test_self_echo_containment(self) -> None:
+        from core.voice.session import _is_self_echo
+
+        recent = ["今日はいい天気ですね。散歩に行きませんか"]
+        assert _is_self_echo("こんにちは、今日はいい天気ですね", recent) is True
+        assert _is_self_echo("ちょっと待って", recent) is False
+        assert _is_self_echo("今日はいい天気ですね", []) is False
+
+    def test_self_echo_short_text(self) -> None:
+        from core.voice.session import _is_self_echo
+
+        assert _is_self_echo("天気", ["今日はいい天気です"]) is True
+        assert _is_self_echo("待て", ["今日はいい天気です"]) is False
+        assert _is_self_echo("", ["今日はいい天気です"]) is False
+
+    @pytest.mark.asyncio
+    async def test_probe_accepts_audio_while_tts_playing(self) -> None:
+        session = _make_session()
+        session._tts_playing = True
+        session._processing = True
+
+        await session.handle_barge_probe()
+        await session.handle_audio_chunk(b"\x00\x01\x02\x03")
+
+        assert bytes(session._audio_buffer) == b"\x00\x01\x02\x03"
+        await session.close()
+
+    @pytest.mark.asyncio
+    async def test_false_probe_verdict_discards_audio(self) -> None:
+        ws = AsyncMock()
+        session = _make_session(ws=ws)
+        await session.handle_barge_probe()
+        session._recent_tts_text.append("今日はいい天気ですね。散歩に行きませんか")
+        session._audio_buffer.extend(b"probe audio")
+
+        interrupted = await session._judge_probe("こんにちは、今日はいい天気ですね")
+
+        assert interrupted is False
+        ws.send_json.assert_awaited_with({"type": "barge_verdict", "interrupt": False})
+        assert session._audio_buffer == bytearray()
+        assert session._interrupted is False
+
+    @pytest.mark.asyncio
+    async def test_true_probe_verdict_preserves_audio(self) -> None:
+        ws = AsyncMock()
+        session = _make_session(ws=ws)
+        await session.handle_barge_probe()
+        session._recent_tts_text.append("今日はいい天気ですね。散歩に行きませんか")
+        session._audio_buffer.extend(b"probe audio")
+
+        interrupted = await session._judge_probe("ちょっと待って")
+
+        assert interrupted is True
+        ws.send_json.assert_awaited_with({"type": "barge_verdict", "interrupt": True})
+        assert session._interrupted is True
+        assert bytes(session._audio_buffer) == b"probe audio"
+
+    @pytest.mark.asyncio
+    async def test_short_partial_keeps_probe_open(self) -> None:
+        ws = AsyncMock()
+        session = _make_session(ws=ws)
+        session._tts_playing = True
+        session._processing = True
+        session._recent_tts_text.append("今日はいい天気ですね")
+
+        await session.handle_barge_probe()
+        # "うん" alone can't be judged — the probe must stay open for more text.
+        assert await session._judge_probe("うん", final=False) is False
+        assert session._probe_active is True
+        ws.send_json.assert_not_called()
+        # Enough non-echo text on a later partial confirms the interruption.
+        assert await session._judge_probe("うん、ちょっと待って", final=False) is True
+        assert session._probe_active is False
+        ws.send_json.assert_called_with({"type": "barge_verdict", "interrupt": True})
+        await session.close()
+
+    @pytest.mark.asyncio
+    async def test_probe_timeout_resumes_tts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import core.voice.session as voice_session
+
+        monkeypatch.setattr(voice_session, "PROBE_TIMEOUT_SEC", 0.01)
+        ws = AsyncMock()
+        session = _make_session(ws=ws)
+
+        await session.handle_barge_probe()
+        await asyncio.sleep(0.03)
+
+        ws.send_json.assert_awaited_with({"type": "barge_verdict", "interrupt": False})
+        assert session._probe_active is False
+        assert session._interrupted is False
 
 
 class TestTTSPrefetchPipeline:

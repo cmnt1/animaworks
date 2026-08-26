@@ -19,6 +19,7 @@ from core.execution.base import ExecutionResult
 from core.execution.gemini_cli import (
     GeminiCLIExecutor,
     _find_gemini_binary,
+    _gemini_error_metadata,
     _resolve_gemini_model,
     is_gemini_cli_available,
 )
@@ -587,3 +588,37 @@ class TestMCPModes:
         from core.prompt.org_context import _MCP_MODES
 
         assert "g" in _MCP_MODES
+
+
+# ── Rate-guard wiring ────────────────────────────────────────
+
+
+class TestGeminiErrorMetadata:
+    def test_quota_error_records_real_guard_block(self, tmp_path: Path) -> None:
+        from core.config.schemas import LlmRateGuardConfig
+        from core.execution.rate_guard import LlmRateGuard
+
+        guard_path = tmp_path / "llm_rate_guard.json"
+        guard = LlmRateGuard(config=LlmRateGuardConfig(quota_block_seconds=1800), path=guard_path)
+
+        with patch("core.execution.gemini_cli.get_rate_guard", return_value=guard):
+            metadata = _gemini_error_metadata("quota exceeded", "gemini-2.5-pro")
+
+        state = json.loads(guard_path.read_text(encoding="utf-8"))
+        assert metadata == {"terminal": True, "reason": "quota_exhausted"}
+        assert state["google:gemini"]["reason"] == "quota_exhausted"
+        assert guard.blocked_remaining("google:gemini") > 1700
+
+    def test_rate_limit_error_records_short_block(self, tmp_path: Path) -> None:
+        from core.config.schemas import LlmRateGuardConfig
+        from core.execution.rate_guard import LlmRateGuard
+
+        guard_path = tmp_path / "llm_rate_guard.json"
+        guard = LlmRateGuard(config=LlmRateGuardConfig(), path=guard_path)
+
+        with patch("core.execution.gemini_cli.get_rate_guard", return_value=guard):
+            metadata = _gemini_error_metadata("rate limit exceeded", "gemini-2.5-pro")
+
+        state = json.loads(guard_path.read_text(encoding="utf-8"))
+        assert metadata == {"terminal": True, "reason": "rate_limit"}
+        assert state["google:gemini"]["reason"] == "rate_limit"

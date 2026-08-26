@@ -305,6 +305,19 @@ class PermissionsMixin:
             ):
                 if shared_dir.exists() and resolved.is_relative_to(shared_dir.resolve()):
                     return None
+            # External skill roots (host ~/.claude/skills etc.) — read-only,
+            # surfaced via the external/<engine>/<name>/SKILL.md pointer.
+            try:
+                from core.config.models import load_config
+
+                for root in load_config().skills.external_roots:
+                    if not getattr(root, "enabled", True):
+                        continue
+                    rdir = Path(root.path).expanduser().resolve()
+                    if rdir.exists() and resolved.is_relative_to(rdir):
+                        return None
+            except Exception:
+                logger.debug("external_roots check skipped", exc_info=True)
 
         # Inter-anima boundary: block access to other anima's directories
         # that were not already allowed by subordinate/descendant/peer rules.
@@ -371,19 +384,34 @@ class PermissionsMixin:
             logger.warning("permission_denied anima=%s command=<empty>", self._anima_name)
             return _error_result("PermissionDenied", "Empty command")
 
-        # Layer 1: Reject injection vectors
+        # Layer 1: Injection vectors — same rollout switch as the SDK path
+        # (sdk_bash_injection.mode: off / log / enforce, default log).
+        from core.config.global_permissions import GlobalPermissionsCache
+        from core.execution._sdk_security import _log_sdk_bash_injection_hit, _matching_injection_pattern
+
+        cache = GlobalPermissionsCache.get()
+        injection_mode = cache.config.sdk_bash_injection.mode if cache.loaded and cache.config else "log"
         inj_re = _get_injection_re()
-        if inj_re and inj_re.search(command):
-            logger.warning(
-                "permission_denied anima=%s command=%s reason=injection_pattern",
-                self._anima_name,
-                command[:80],
+        if inj_re and injection_mode != "off" and inj_re.search(command):
+            pattern_name = _matching_injection_pattern(command, cache.config)
+            _log_sdk_bash_injection_hit(
+                command,
+                self._anima_dir,
+                pattern_name=pattern_name,
+                trigger=getattr(self, "_trigger", ""),
+                mode=injection_mode,
             )
-            return _error_result(
-                "PermissionDenied",
-                "Command contains injection patterns (;  \\n  `  $()  $VAR)",
-                suggestion="Use pipes (|) or logical operators (&&) instead of semicolons. Avoid variable expansion and newlines.",
-            )
+            if injection_mode == "enforce":
+                logger.warning(
+                    "permission_denied anima=%s command=%s reason=injection_pattern",
+                    self._anima_name,
+                    command[:80],
+                )
+                return _error_result(
+                    "PermissionDenied",
+                    f"Command contains injection pattern: {pattern_name}",
+                    suggestion="Use pipes (|) or logical operators (&&) instead of semicolons. Avoid embedded newlines.",
+                )
 
         # Layer 2: Dangerous command patterns
         for pattern, reason in _get_blocked_patterns():

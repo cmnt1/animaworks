@@ -33,11 +33,11 @@ class TestInternalCompanyBoundary:
         app = _make_test_app()
         transport = ASGITransport(app=app)
         with (
+            patch("core.company.get_company_display_name", return_value="Beta Corporation"),
             patch(
                 "core.config.models.read_anima_company_checked",
                 side_effect=[(True, "alpha"), (True, "beta")],
             ),
-            patch("core.company.get_company_display_name", return_value="Beta Corporation"),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.get(

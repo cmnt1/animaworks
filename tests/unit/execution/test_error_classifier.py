@@ -140,6 +140,9 @@ class TestClassificationMatrix:
             "API error (status 402 Payment Required): Grok Build usage balance exhausted",
             "You have reached your weekly limit",
             "code=usage_limit_reached",
+            "quota exceeded",
+            "insufficient_quota",
+            "exceeded your current quota",
         ],
     )
     def test_quota_exhausted_messages(self, message: str) -> None:
@@ -237,6 +240,54 @@ class TestClassificationMatrix:
 
 
 # ── disambiguation rules ─────────────────────────────────────────────────────
+
+
+class TestErrorCodeTable:
+    """error.code exact-match must win regardless of the free-text message."""
+
+    @pytest.mark.parametrize(
+        ("code", "expected"),
+        [
+            ("usageLimitExceeded", FailoverReason.QUOTA_EXHAUSTED),
+            ("insufficient_quota", FailoverReason.QUOTA_EXHAUSTED),
+            ("rate_limit_exceeded", FailoverReason.RATE_LIMIT),
+            ("context_length_exceeded", FailoverReason.CONTEXT_OVERFLOW),
+            ("invalid_api_key", FailoverReason.AUTH),
+            ("content_filter", FailoverReason.CONTENT_POLICY),
+        ],
+    )
+    def test_known_code_wins_over_message(self, code: str, expected: FailoverReason) -> None:
+        # Innocuous / unrelated message text — the code alone must classify.
+        reason, _ = classify_llm_error(
+            _ApiError(
+                "something generic went sideways",
+                status_code=400,
+                body={"error": {"code": code, "message": "unrelated verbiage"}},
+            )
+        )
+        assert reason is expected
+
+    def test_usage_limit_exceeded_code_independent_of_message(self) -> None:
+        # Acceptance: error.code usageLimitExceeded → QUOTA with any message.
+        reason, hint = classify_llm_error(
+            _ApiError(
+                "all good in the hood, nothing about quota here",
+                status_code=429,
+                body={"error": {"code": "usageLimitExceeded"}},
+            )
+        )
+        assert reason is FailoverReason.QUOTA_EXHAUSTED
+        assert hint.backoff_s == 1800.0
+
+    def test_unknown_code_falls_through_to_message_heuristics(self) -> None:
+        reason, _ = classify_llm_error(
+            _ApiError(
+                "insufficient balance",
+                status_code=400,
+                body={"error": {"code": "brand_new_code_xyz"}},
+            )
+        )
+        assert reason is FailoverReason.BILLING
 
 
 class TestDisambiguation:
