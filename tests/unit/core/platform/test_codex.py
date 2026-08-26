@@ -80,6 +80,7 @@ class TestCodexLoginAvailability:
         with (
             patch("shutil.which", return_value=None),
             patch("core.platform.codex.default_home_dir", return_value=str(tmp_path)),
+            patch("core.platform.codex._iter_pinned_codex_candidates", return_value=[]),
             patch("core.platform.codex._is_usable_codex_executable", return_value=True),
         ):
             assert codex.get_codex_executable() == str(exe)
@@ -95,6 +96,7 @@ class TestCodexLoginAvailability:
         with (
             patch("shutil.which", return_value=None),
             patch("core.platform.codex.default_home_dir", return_value=str(tmp_path)),
+            patch("core.platform.codex._iter_pinned_codex_candidates", return_value=[]),
             patch("core.platform.codex._is_usable_codex_executable", return_value=True),
         ):
             assert codex.get_codex_executable() == str(exe)
@@ -112,9 +114,44 @@ class TestCodexLoginAvailability:
         with (
             patch("shutil.which", return_value=r"C:\Program Files\WindowsApps\OpenAI.Codex\codex.exe"),
             patch("core.platform.codex.default_home_dir", return_value=str(tmp_path)),
+            patch("core.platform.codex._iter_pinned_codex_candidates", return_value=[]),
             patch("core.platform.codex._is_usable_codex_executable", side_effect=_usable),
         ):
             assert codex.get_codex_executable() == str(exe)
+
+    def test_prefers_newest_discovered_codex_version(self):
+        codex.get_codex_executable.cache_clear()
+        candidates = ["desktop-codex.exe", "path-codex.cmd", "sdk-codex.exe"]
+        versions = {
+            "desktop-codex.exe": (0, 128, 0, 0, "alpha.1"),
+            "path-codex.cmd": (0, 144, 6, 1, ""),
+            "sdk-codex.exe": (0, 137, 0, 0, "a4"),
+        }
+
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch("core.platform.codex._iter_codex_candidates", return_value=candidates),
+            patch("core.platform.codex._codex_executable_version", side_effect=versions.get),
+        ):
+            assert codex.get_codex_executable() == "path-codex.cmd"
+
+    def test_explicit_codex_path_overrides_newer_discovered_version(self):
+        codex.get_codex_executable.cache_clear()
+        configured = "configured-codex.exe"
+
+        with (
+            patch.dict("os.environ", {"ANIMAWORKS_CODEX_PATH": configured}, clear=True),
+            patch(
+                "core.platform.codex._iter_codex_candidates",
+                return_value=[configured, "newer-codex.exe"],
+            ),
+            patch("core.platform.codex._is_usable_codex_executable", return_value=True),
+            patch(
+                "core.platform.codex._codex_executable_version",
+                return_value=(99, 0, 0, 1, ""),
+            ),
+        ):
+            assert codex.get_codex_executable() == configured
 
     def test_login_available_via_cli_status(self, tmp_path: Path):
         codex.get_codex_executable.cache_clear()

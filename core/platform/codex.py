@@ -17,6 +17,10 @@ from pathlib import Path
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
 _DEVICE_URL_RE = re.compile(r"https://auth\.openai\.com/codex/device", re.IGNORECASE)
 _DEVICE_CODE_RE = re.compile(r"\b([A-Z0-9]{4}-[A-Z0-9]{5})\b")
+_CODEX_VERSION_RE = re.compile(
+    r"\bcodex-cli\s+(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?\b",
+    re.IGNORECASE,
+)
 
 
 def default_home_dir() -> str:
@@ -77,6 +81,20 @@ def _iter_embedded_codex_candidates() -> list[Path]:
     return [path for path in candidates if path.is_file()]
 
 
+def _iter_pinned_codex_candidates() -> list[Path]:
+    """Return the Codex runtime bundled with the optional Python SDK."""
+    try:
+        from codex_cli_bin import bundled_codex_path
+    except (ImportError, AttributeError):
+        return []
+
+    try:
+        path = Path(bundled_codex_path())
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return []
+    return [path] if path.is_file() else []
+
+
 def _iter_codex_candidates() -> list[str]:
     seen: set[str] = set()
     candidates: list[str] = []
@@ -106,7 +124,7 @@ def _iter_codex_candidates() -> list[str]:
         seen.add(direct)
         candidates.append(direct)
 
-    for path in _iter_embedded_codex_candidates():
+    for path in _iter_pinned_codex_candidates():
         value = str(path)
         if value not in seen:
             seen.add(value)
@@ -129,13 +147,59 @@ def _is_usable_codex_executable(candidate: str) -> bool:
     return result.returncode == 0
 
 
+def _codex_executable_version(candidate: str) -> tuple[int, int, int, int, str] | None:
+    """Return a sortable Codex CLI version, preferring stable builds on ties."""
+    try:
+        result = subprocess.run(
+            [candidate, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+            env=_status_env(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+
+    match = _CODEX_VERSION_RE.search(f"{result.stdout}\n{result.stderr}")
+    if match is None:
+        return None
+    major, minor, patch = (int(match.group(i)) for i in range(1, 4))
+    prerelease = match.group(4) or ""
+    return major, minor, patch, int(not prerelease), prerelease
+
+
 @lru_cache(maxsize=1)
 def get_codex_executable() -> str | None:
-    """Return the best available Codex executable path."""
-    for candidate in _iter_codex_candidates():
-        if _is_usable_codex_executable(candidate):
+    """Return the newest available Codex executable path.
+
+    An explicit environment override remains authoritative.  Automatically
+    discovered desktop caches, PATH installs, and SDK runtimes are compared by
+    their reported version so a stale app cache cannot shadow a newer CLI.
+    """
+    candidates = _iter_codex_candidates()
+    configured = {
+        str(Path(value).expanduser())
+        for name in ("ANIMAWORKS_CODEX_PATH", "CODEX_PATH")
+        if (value := os.environ.get(name))
+    }
+    for candidate in candidates:
+        if candidate in configured and _is_usable_codex_executable(candidate):
             return candidate
-    return None
+
+    best: tuple[tuple[int, int, int, int, str], str] | None = None
+    fallback: str | None = None
+    for candidate in candidates:
+        if candidate in configured:
+            continue
+        version = _codex_executable_version(candidate)
+        if version is not None:
+            if best is None or version > best[0]:
+                best = (version, candidate)
+        elif fallback is None and _is_usable_codex_executable(candidate):
+            fallback = candidate
+    return best[1] if best is not None else fallback
 
 
 def _status_env() -> dict[str, str]:
