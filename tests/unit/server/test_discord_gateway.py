@@ -18,7 +18,6 @@ from server.discord_gateway import (
     _is_duplicate_id,
 )
 
-
 # ── _build_discord_annotation ────────────────────────────
 
 
@@ -58,6 +57,7 @@ class TestDiscordGatewayManagerRouting:
         mock_cfg = MagicMock()
         mock_cfg.animas = {
             "sakura": MagicMock(aliases=["さくら"]),
+            "hikaru": MagicMock(aliases=["ひかる"]),
             "ria": MagicMock(aliases=["りあ", "リア"]),
             "kotoha": MagicMock(aliases=[]),
         }
@@ -67,7 +67,9 @@ class TestDiscordGatewayManagerRouting:
             "dm-sakura": ["sakura"],
             "ops-ch": ["sakura", "kotoha"],
             "finance-ch": ["sakura", "kotoha"],
+            "property-ch": ["sakura", "hikaru"],
         }
+        mock_cfg.external_messaging.discord.anima_mapping = {"property-ch": "hikaru"}
         mock_cfg.external_messaging.discord.default_anima = "sakura"
         mock_cfg.external_messaging.discord.board_mapping = {"ops-ch": "ops", "finance-ch": "finance"}
         mock_cfg.external_messaging.discord.system_agents = {}
@@ -227,6 +229,42 @@ class TestDiscordGatewayManagerRouting:
         ):
             await manager._handle_message(message)
 
+        MockMessenger.return_value.receive_external.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_channel_anima_mapping_routes_implicit_work_to_department_lead(
+        self,
+        manager: DiscordGatewayManager,
+        tmp_path,
+    ):
+        anima_dir = tmp_path / "animas" / "hikaru"
+        anima_dir.mkdir(parents=True)
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+
+        message = MagicMock()
+        message.id = "property-lead-001"
+        message.author.id = "human-1"
+        message.author.display_name = "Human"
+        message.author.name = "human"
+        message.webhook_id = None
+        message.mentions = []
+        message.content = "この物件を分析してください"
+        message.channel.id = "property-ch"
+        message.channel.parent_id = None
+        message.channel.name = "property"
+        message.guild = object()
+        message.reference = None
+
+        with (
+            patch("server.discord_gateway._route_to_board"),
+            patch("server.discord_gateway.get_data_dir", return_value=tmp_path),
+            patch("server.discord_gateway.get_shared_dir", return_value=shared_dir),
+            patch("server.discord_gateway.Messenger") as MockMessenger,
+        ):
+            await manager._handle_message(message)
+
+        MockMessenger.assert_called_once_with(shared_dir, "hikaru")
         MockMessenger.return_value.receive_external.assert_called_once()
 
     def test_detect_anima_by_japanese_alias(self, manager: DiscordGatewayManager, _mock_config):

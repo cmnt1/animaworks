@@ -351,14 +351,12 @@ class TestHelpers:
         monkeypatch.setenv("ANIMAWORKS_CODEX_FORCE_CLI_EXEC", "1")
         assert _should_prefer_cli_exec("task:demo")
 
-    def test_should_prefer_cli_exec_for_windows_background_desktop_bundle(self, monkeypatch):
+    def test_should_prefer_cli_exec_for_windows_background(self, monkeypatch):
         monkeypatch.delenv("ANIMAWORKS_CODEX_FORCE_CLI_EXEC", raising=False)
         monkeypatch.setattr("core.execution.codex_sdk.sys.platform", "win32")
         monkeypatch.setattr(
             "core.execution.codex_sdk.get_codex_executable",
-            lambda: (
-                r"C:\Users\cmnt\.antigravity\extensions\openai.chatgpt-26.313.41514-win32-x64\bin\windows-x86_64\codex.exe"
-            ),
+            lambda: r"C:\Users\cmnt\AppData\Roaming\npm\codex.CMD",
         )
         assert _should_prefer_cli_exec("inbox")
         assert _should_prefer_cli_exec("task:demo")

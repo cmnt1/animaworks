@@ -51,7 +51,7 @@ server = Server("aw")
 #
 # The tools to expose, drawn from canonical schema lists in
 # ``core/tooling/schemas.py``.  We pick them by name to build a
-# stable, curated subset suitable for Mode S.
+# stable, curated subset suitable for Mode S/C.
 
 _EXPOSED_TOOL_NAMES: frozenset[str] = frozenset(
     {
@@ -88,6 +88,16 @@ _EXPOSED_TOOL_NAMES: frozenset[str] = frozenset(
         "set_skill_lifecycle",
         # Admin: hire subordinate (gated by newstaff skill at list/call time)
         "create_anima",
+        # Permission-checked file operations.  Mode C normally has Codex native
+        # file/shell tools, but on Windows a workspace-write command can require
+        # approval and is then rejected by the mandatory never/deny-all policy.
+        # Exposing the host-side handlers gives Mode S/C a deterministic path
+        # that still enforces each Anima's permissions.json boundaries.
+        "read_file",
+        "write_file",
+        "edit_file",
+        "search_code",
+        "list_directory",
         # Mode S: native server-side command execution.
         # The Claude Code CLI's own Bash tool spawns Git Bash, whose cygwin
         # fork() is intermittently broken on some Windows hosts (snapshot
@@ -203,6 +213,7 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
         KNOWLEDGE_TOOLS,
         MEMORY_TOOLS,
         PROCEDURE_TOOLS,
+        SEARCH_TOOLS,
         _background_task_tools,
         _channel_tools,
         _check_permissions_tools,
@@ -219,10 +230,10 @@ def _build_mcp_tools() -> tuple[list[Tool], frozenset[str]]:
 
     all_schemas: list[dict[str, Any]] = [
         *MEMORY_TOOLS,
-        # FILE_TOOLS is included only so its execute_command schema is
-        # available; the exposed-name filter drops the other file tools
-        # (read_file/write_file/edit_file) which Mode S covers natively.
+        # Permission-checked file and command tools are exposed through MCP so
+        # Mode S/C do not depend exclusively on platform-native shell access.
         *FILE_TOOLS,
+        *SEARCH_TOOLS,
         *_channel_tools(),
         *WORKSPACE_TOOLS,
         *_task_tools(),

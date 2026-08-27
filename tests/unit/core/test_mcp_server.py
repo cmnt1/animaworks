@@ -67,19 +67,20 @@ class TestMcpToolSchemas:
         actual_names = {t.name for t in MCP_TOOLS}
         assert "discover_tools" not in actual_names
 
-    def test_execute_command_exposed_without_file_tool_leak(self) -> None:
-        """execute_command is exposed for Mode S, but other FILE_TOOLS are not.
-
-        FILE_TOOLS is aggregated only to surface execute_command's schema;
-        the exposed-name filter must drop read_file/write_file/edit_file etc.
-        which Mode S already covers via the native Claude Code tools.
-        """
+    def test_permission_checked_file_tools_are_exposed(self) -> None:
+        """Mode S/C can use host-side file tools when native shell access fails."""
         from core.mcp.server import MCP_TOOLS
 
         actual_names = {t.name for t in MCP_TOOLS}
-        assert "execute_command" in actual_names
-        for leaked in ("read_file", "write_file", "edit_file", "search_code", "list_directory"):
-            assert leaked not in actual_names, f"file tool '{leaked}' leaked into MCP tools"
+        expected = {
+            "read_file",
+            "write_file",
+            "edit_file",
+            "execute_command",
+            "search_code",
+            "list_directory",
+        }
+        assert actual_names >= expected
 
     def test_each_tool_has_nonempty_description(self) -> None:
         """Every tool has a non-empty description string."""

@@ -526,7 +526,14 @@ def _is_desktop_extension_codex(executable: str | None) -> bool:
 
 
 def _should_prefer_cli_exec(trigger: str) -> bool:
-    """Prefer direct ``codex exec`` for unstable desktop-bundled background sessions."""
+    """Prefer direct ``codex exec`` for Windows background sessions.
+
+    Codex app-server can start a background turn without loading locally
+    configured MCP servers on Windows.  The turn then still has shell tools,
+    but AnimaWorks' permission-checked tools (including ``read_file``) are
+    absent.  ``codex exec`` loads the same per-Anima config deterministically,
+    so use that path for unattended work where an approval retry is impossible.
+    """
     forced = os.environ.get("ANIMAWORKS_CODEX_FORCE_CLI_EXEC", "").strip().lower()
     if forced in {"1", "true", "yes", "on"}:
         return True
@@ -539,7 +546,7 @@ def _should_prefer_cli_exec(trigger: str) -> bool:
     )
     if not is_background or sys.platform != "win32":
         return False
-    return _is_desktop_extension_codex(get_codex_executable())
+    return True
 
 
 def _close_stream_transport(stream: Any, stream_name: str) -> None:

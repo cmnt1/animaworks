@@ -816,7 +816,16 @@ class DiscordGatewayManager:
         if not target_animas:
             target_animas = self._detect_all_target_animas(cleaned_text)
 
-        # 4. Single-member channel fallback (non-DM). Broadcast-only boards
+        # 4. Explicit channel lead.  ``anima_mapping`` is the stable routing
+        # contract for department channels; member ordering is only an ACL and
+        # must not silently decide who owns work.
+        if not target_animas and not suppress_implicit_routing:
+            mapped_anima = discord_cfg.anima_mapping.get(routing_channel_id)
+            if mapped_anima:
+                target_animas = [mapped_anima]
+                routed_as_lead = True
+
+        # 5. Single-member channel fallback (non-DM). Broadcast-only boards
         # such as #ops are mirrored for visibility but should not create work
         # unless a specific Anima is named or a thread reply is already mapped.
         if not target_animas and not suppress_implicit_routing:
@@ -824,7 +833,7 @@ class DiscordGatewayManager:
             if len(members) == 1:
                 target_animas = [members[0]]
 
-        # 5. No name detected: bot-mention / channel-lead fallback
+        # 6. No name detected: bot-mention / channel-lead fallback
         if not target_animas and not is_dm and not suppress_implicit_routing:
             if bot_mentioned and discord_cfg.default_anima:
                 target_animas = [discord_cfg.default_anima]
