@@ -272,27 +272,27 @@ _ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 _ANTHROPIC_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 _ANTHROPIC_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"  # Claude Code public client
 
-_TOKEN_TLS_CONTEXT: ssl.SSLContext | None = None
+_OUTBOUND_TLS_CONTEXT: ssl.SSLContext | None = None
 
 
-def _token_tls_context() -> ssl.SSLContext | None:
-    """SSL context backed by certifi for the token endpoint.
+def _outbound_tls_context() -> ssl.SSLContext | None:
+    """Return a certifi-backed context for provider HTTPS requests.
 
     OpenSSL's path building against the Windows cert store picks an expired
-    cross-sign for platform.claude.com's Let's Encrypt chain (YE1, issued
-    2026-06) and fails with "certificate has expired"; certifi's bundle
-    validates it.  None falls back to the interpreter default.
+    cross-sign for some Let's Encrypt chains and fails with "certificate has
+    expired" even when the server-provided chain is valid.  certifi's bundle
+    validates those chains.  None falls back to the interpreter default.
     """
-    global _TOKEN_TLS_CONTEXT
-    if _TOKEN_TLS_CONTEXT is None:
+    global _OUTBOUND_TLS_CONTEXT
+    if _OUTBOUND_TLS_CONTEXT is None:
         try:
             import certifi
 
-            _TOKEN_TLS_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+            _OUTBOUND_TLS_CONTEXT = ssl.create_default_context(cafile=certifi.where())
         except Exception:
-            logger.warning("certifi unavailable; token refresh uses default TLS trust", exc_info=True)
+            logger.warning("certifi unavailable; provider requests use default TLS trust", exc_info=True)
             return None
-    return _TOKEN_TLS_CONTEXT
+    return _OUTBOUND_TLS_CONTEXT
 
 
 def _refresh_claude_token(
@@ -325,7 +325,7 @@ def _refresh_claude_token(
             },
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=10, context=_token_tls_context()) as resp:
+        with urllib.request.urlopen(req, timeout=10, context=_outbound_tls_context()) as resp:
             data = json.loads(resp.read().decode("utf-8"))
 
         new_access = data.get("access_token")
@@ -819,7 +819,7 @@ def _refresh_codex_token(auth_path: Path, auth_data: dict[str, Any]) -> tuple[st
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with urllib.request.urlopen(req, timeout=8, context=_outbound_tls_context()) as resp:
             raw = json.loads(resp.read().decode("utf-8"))
     except Exception:
         logger.warning("Failed to refresh Codex token", exc_info=True)
@@ -922,7 +922,7 @@ def _fetch_openai_usage(skip_cache: bool = False, allow_refresh: bool = True) ->
 
     try:
         req = urllib.request.Request(_CHATGPT_USAGE_URL, headers=headers)
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with urllib.request.urlopen(req, timeout=8, context=_outbound_tls_context()) as resp:
             raw = json.loads(resp.read().decode("utf-8"))
 
         result: dict[str, Any] = {"provider": "openai"}
@@ -974,7 +974,12 @@ def _fetch_openai_usage(skip_cache: bool = False, allow_refresh: bool = True) ->
         return result
     except Exception as e:
         logger.warning("OpenAI usage fetch failed: %s", e)
-        return {"error": "fetch_failed", "message": str(e)[:200]}
+        result = {"error": "fetch_failed", "message": str(e)[:200]}
+        # Cache transport failures like HTTP errors.  Without this, every
+        # dashboard/governor caller immediately retries the same TLS or DNS
+        # failure and can generate thousands of duplicate log entries.
+        _set_cache("openai", result)
+        return result
 
 
 # ── nanoGPT (subscription usage) ────────────────────────────────────────────

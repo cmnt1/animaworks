@@ -159,6 +159,57 @@ def test_fetch_openai_usage_refreshes_after_401(monkeypatch):
     assert len(calls) == 2
 
 
+def test_fetch_openai_usage_uses_certifi_tls_context(monkeypatch):
+    tls_context = object()
+    observed_contexts: list[object | None] = []
+
+    monkeypatch.setattr(usage_routes, "_CACHE", {})
+    monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {})
+    monkeypatch.setattr(
+        usage_routes,
+        "get_openai_subscription_auth_headers",
+        lambda **kwargs: {"Authorization": "Bearer token"},
+    )
+    monkeypatch.setattr(usage_routes, "_outbound_tls_context", lambda: tls_context)
+
+    def fake_urlopen(req, timeout=0, context=None):
+        observed_contexts.append(context)
+        return _FakeResponse({"rate_limit": {}})
+
+    monkeypatch.setattr(usage_routes.urllib.request, "urlopen", fake_urlopen)
+
+    result = usage_routes._fetch_openai_usage(skip_cache=True)
+
+    assert result == {"provider": "openai"}
+    assert observed_contexts == [tls_context]
+
+
+def test_fetch_openai_usage_caches_transport_failure(monkeypatch):
+    calls = 0
+
+    monkeypatch.setattr(usage_routes, "_CACHE", {})
+    monkeypatch.setattr(usage_routes, "_RATE_LIMIT_UNTIL", {})
+    monkeypatch.setattr(
+        usage_routes,
+        "get_openai_subscription_auth_headers",
+        lambda **kwargs: {"Authorization": "Bearer token"},
+    )
+
+    def fake_urlopen(req, timeout=0, context=None):
+        nonlocal calls
+        calls += 1
+        raise urllib.error.URLError("TLS failed")
+
+    monkeypatch.setattr(usage_routes.urllib.request, "urlopen", fake_urlopen)
+
+    first = usage_routes._fetch_openai_usage()
+    second = usage_routes._fetch_openai_usage()
+
+    assert first["error"] == "fetch_failed"
+    assert second == first
+    assert calls == 1
+
+
 def test_openai_subscription_codex_home_uses_usage_governor_auth_path(tmp_path: Path, monkeypatch):
     auth_path = tmp_path / "codex-home" / "auth.json"
     auth_path.parent.mkdir()
