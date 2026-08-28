@@ -130,7 +130,7 @@ class TestGetAllDescendants:
             tmp_path,
             {
                 "sakura": {},
-                "mio": {"supervisor": "taka"},
+                "mio": {"supervisor": "owner"},
             },
         )
         with patch("core.config.models.load_config", return_value=mock_cfg):
@@ -161,7 +161,7 @@ class TestCheckDescendant:
             tmp_path,
             {
                 "sakura": {},
-                "mio": {"supervisor": "taka"},
+                "mio": {"supervisor": "owner"},
             },
         )
         with patch("core.config.models.load_config", return_value=mock_cfg):
@@ -254,7 +254,7 @@ class TestPingSubordinate:
             tmp_path,
             {
                 "sakura": {},
-                "mio": {"supervisor": "taka"},
+                "mio": {"supervisor": "owner"},
             },
         )
 
@@ -462,7 +462,7 @@ class TestDelegateTask:
             tmp_path,
             {
                 "sakura": {},
-                "mio": {"supervisor": "taka"},
+                "mio": {"supervisor": "owner"},
             },
         )
 
@@ -901,14 +901,14 @@ class TestDescendantOrgToolPermission:
     def test_non_descendant_still_blocked(self, tmp_path):
         """Org tools should still block non-descendant targets."""
         handler, animas_dir = _make_handler_with_hierarchy(tmp_path)
-        _setup_subordinate(tmp_path, "mio", supervisor="taka")
+        _setup_subordinate(tmp_path, "mio", supervisor="owner")
         mock_cfg = _mock_config(
             tmp_path,
             {
                 "sakura": {},
                 "hinata": {"supervisor": "sakura"},
                 "natsume": {"supervisor": "hinata"},
-                "mio": {"supervisor": "taka"},
+                "mio": {"supervisor": "owner"},
             },
         )
         with patch("core.config.models.load_config", return_value=mock_cfg):

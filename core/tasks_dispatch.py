@@ -68,12 +68,17 @@ def _post_pr_comment(target_dir: Path, repo: str, number: str, body: str) -> boo
 
 
 def _find_holder_task(manager: TaskQueueManager, exclusive_key: str, task_id: str) -> str | None:
-    """Return the oldest active task holding the same exclusive key (excluding *task_id*)."""
+    """Return the oldest active task holding the same exclusive key (excluding *task_id*).
+
+    ``blocked`` tasks are not holders: they wait on an external condition and may
+    never complete, so announcing one as the predecessor promises a start that
+    never comes.
+    """
     candidates = [
         task
         for task in manager.list_tasks()
         if task.task_id != task_id
-        and task.status in ("pending", "in_progress", "blocked")
+        and task.status in ("pending", "in_progress")
         and (task.meta or {}).get("exclusive_key") == exclusive_key
     ]
     if not candidates:
@@ -95,6 +100,15 @@ def _maybe_post_queue_ack(target_dir: Path, task_id: str, meta: dict) -> None:
     manager = TaskQueueManager(target_dir)
     holder_task_id = _find_holder_task(manager, meta["exclusive_key"], task_id)
     if holder_task_id is None:
+        return
+    # One ack per PR backlog: skip if another queued task on this key already acked.
+    if any(
+        task.task_id != task_id
+        and task.status in ("pending", "in_progress", "blocked")
+        and (task.meta or {}).get("exclusive_key") == meta["exclusive_key"]
+        and (task.meta or {}).get("queue_ack_posted")
+        for task in manager.list_tasks()
+    ):
         return
     from core.i18n import t
 

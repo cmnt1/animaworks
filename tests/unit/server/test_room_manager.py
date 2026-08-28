@@ -27,7 +27,7 @@ def sample_room(room_manager: RoomManager) -> MeetingRoom:
     return room_manager.create_room(
         participants=["sakura", "rin", "ritsu"],
         chair="sakura",
-        created_by="taka",
+        created_by="owner",
         title="週次レビュー",
     )
 
@@ -42,14 +42,14 @@ class TestCreateRoom:
         room = room_manager.create_room(
             participants=["sakura", "rin"],
             chair="sakura",
-            created_by="taka",
+            created_by="owner",
             title="テスト会議",
         )
         assert room.room_id
         assert len(room.room_id) == 12
         assert room.participants == ["sakura", "rin"]
         assert room.chair == "sakura"
-        assert room.created_by == "taka"
+        assert room.created_by == "owner"
         assert room.title == "テスト会議"
         assert room.closed is False
         assert room.conversation == []
@@ -75,7 +75,7 @@ class TestCreateRoom:
         room = room_manager.create_room(
             participants=participants,
             chair="a",
-            created_by="taka",
+            created_by="owner",
         )
         assert len(room.participants) == 5
 
@@ -85,7 +85,7 @@ class TestCreateRoom:
             room_manager.create_room(
                 participants=participants,
                 chair="a",
-                created_by="taka",
+                created_by="owner",
             )
         assert "5" in str(exc_info.value) or "participants" in str(exc_info.value).lower()
 
@@ -94,7 +94,7 @@ class TestCreateRoom:
             room_manager.create_room(
                 participants=["sakura", "rin"],
                 chair="ritsu",
-                created_by="taka",
+                created_by="owner",
             )
 
     def test_create_room_empty_participants(self, room_manager: RoomManager):
@@ -102,7 +102,7 @@ class TestCreateRoom:
             room_manager.create_room(
                 participants=[],
                 chair="sakura",
-                created_by="taka",
+                created_by="owner",
             )
 
 
@@ -218,7 +218,7 @@ class TestAddParticipant:
         room = room_manager.create_room(
             participants=["a", "b", "c", "d", "e"],
             chair="a",
-            created_by="taka",
+            created_by="owner",
         )
         with pytest.raises(ValueError) as exc_info:
             room_manager.add_participant(room.room_id, "f")
@@ -332,7 +332,7 @@ class TestConversation:
     def test_get_conversation_context_format(self, room_manager: RoomManager, sample_room: MeetingRoom):
         room_manager.append_message(
             sample_room.room_id,
-            speaker="taka",
+            speaker="owner",
             role="human",
             text="よろしく",
         )
@@ -349,7 +349,7 @@ class TestConversation:
             text="技術面からの意見",
         )
         ctx = room_manager.get_conversation_context(sample_room.room_id)
-        assert "[human(taka)] よろしく" in ctx
+        assert "[human(owner)] よろしく" in ctx
         assert "[sakura(議長)] 承知しました" in ctx
         assert "[rin] 技術面からの意見" in ctx
 
@@ -431,12 +431,12 @@ class TestPersistence:
         room1 = room_manager.create_room(
             participants=["a", "b", "c"],
             chair="a",
-            created_by="taka",
+            created_by="owner",
         )
         room2 = room_manager.create_room(
             participants=["x", "y"],
             chair="x",
-            created_by="taka",
+            created_by="owner",
         )
         data_dir = tmp_path / "meetings"
         manager2 = RoomManager(data_dir)
