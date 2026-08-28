@@ -32,7 +32,7 @@ from core.time_utils import now_jst
 
 
 @pytest.fixture
-async def full_anima_environment(tmp_path: Path):
+async def full_anima_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Create a complete anima environment with all components.
 
     Returns:
@@ -43,6 +43,26 @@ async def full_anima_environment(tmp_path: Path):
         - consolidation: ConsolidationEngine instance
         - anima_name: Name of the anima
     """
+    # Isolate ANIMAWORKS_DATA_DIR per test (matches the ``data_dir`` fixture
+    # pattern in tests/conftest.py). Without this, RAG code that resolves the
+    # vector store path from anima_name alone (core.paths.get_anima_vectordb_dir)
+    # falls back to the session-wide temp dir set once in pytest_configure, so
+    # every test using anima_name "alice" shares ONE chroma.sqlite3 across the
+    # whole suite run. That file then absorbs opens/closes/resets from every
+    # unrelated "alice" test for the ~20min run, which is a plausible cause of
+    # the on-disk corruption ("database disk image is malformed") seen in CI.
+    from core.config import invalidate_cache
+    from core.paths import _prompt_cache
+
+    isolated_data_dir = tmp_path / ".animaworks"
+    isolated_data_dir.mkdir()
+    monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(isolated_data_dir))
+    monkeypatch.delenv("ANIMAWORKS_VECTOR_URL", raising=False)
+    monkeypatch.delenv("ANIMAWORKS_EMBED_URL", raising=False)
+    monkeypatch.delenv("ANIMAWORKS_RERANK_URL", raising=False)
+    invalidate_cache()
+    _prompt_cache.clear()
+
     anima_dir = tmp_path / "alice"
     anima_dir.mkdir()
 
@@ -126,6 +146,9 @@ AI Assistant for software development team.
             "anima_name": "alice",
             "shared_dir": tmp_path / "shared",
         }
+
+    invalidate_cache()
+    _prompt_cache.clear()
 
 
 @pytest.fixture
