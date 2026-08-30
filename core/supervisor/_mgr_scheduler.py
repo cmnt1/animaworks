@@ -741,8 +741,14 @@ class SchedulerMixin:
 
         defaults = _CC()
         model = defaults.llm_model
+        max_concurrency = defaults.weekly_max_concurrency
         if consolidation_cfg:
             model = getattr(consolidation_cfg, "llm_model", model)
+            max_concurrency = getattr(consolidation_cfg, "weekly_max_concurrency", max_concurrency)
+        try:
+            max_concurrency = max(1, min(8, int(max_concurrency)))
+        except (TypeError, ValueError):
+            max_concurrency = defaults.weekly_max_concurrency
 
         eligible_targets = []
         for anima_name, anima_dir in self._iter_consolidation_targets():
@@ -770,105 +776,125 @@ class SchedulerMixin:
             eligible_targets.append((anima_name, anima_dir, handle))
 
         total_targets = len(eligible_targets)
-        for current, (anima_name, anima_dir, handle) in enumerate(eligible_targets, start=1):
+        semaphore = asyncio.Semaphore(max_concurrency)
+        progress_lock = asyncio.Lock()
+        target_tasks: list[asyncio.Task[None]] = []
+        started_count = 0
+        last_reported_progress = 0
+
+        async def _publish_progress(current: int, anima_name: str, phase: str) -> None:
+            nonlocal last_reported_progress
+            last_reported_progress = max(last_reported_progress, current)
             mark_progress(
                 "weekly",
-                current=current,
+                current=last_reported_progress,
                 total=total_targets,
                 target=anima_name,
-                phase="consolidation",
+                phase=phase,
             )
             try:
                 await self._broadcast_event("system.consolidation_status", build_status_payload())
             except Exception:
                 logger.debug("Failed to broadcast weekly consolidation progress", exc_info=True)
 
-            timeout_s = self._resolve_consolidation_ipc_timeout(
-                consolidation_cfg,
-                consolidation_type="weekly",
-            )
+        async def _run_target(anima_name, anima_dir, handle) -> None:
+            nonlocal started_count
+            async with semaphore:
+                async with progress_lock:
+                    started_count += 1
+                    current = started_count
+                    await _publish_progress(current, anima_name, "consolidation")
 
-            result: dict = {}
-            try:
-                _consolidating_w: set[str] = getattr(self, "_consolidating", set())
-                _consolidating_w.add(anima_name)
-                _timed_out_w = False
-                try:
-                    response = await handle.send_request(
-                        "run_consolidation",
-                        {"consolidation_type": "weekly"},
-                        timeout=timeout_s,
-                    )
-                except TimeoutError:
-                    _timed_out_w = True
-                    logger.warning(
-                        "consolidation_timeout anima=%s phase=phase_b type=weekly timeout_s=%.0f",
-                        anima_name,
-                        timeout_s,
-                    )
-                    try:
-                        await handle.send_request("interrupt", {}, timeout=10.0)
-                    except Exception:
-                        logger.debug("Interrupt request after weekly consolidation timeout failed", exc_info=True)
-                finally:
-                    if _timed_out_w:
-                        _name_capture_w = anima_name
-                        asyncio.get_running_loop().call_later(120, self._consolidating.discard, _name_capture_w)
-                    else:
-                        _consolidating_w.discard(anima_name)
-
-                if not _timed_out_w and response.error:
-                    logger.error(
-                        "Weekly integration IPC error for %s: %s",
-                        anima_name,
-                        response.error,
-                    )
-                elif not _timed_out_w:
-                    result = response.result or {}
-                    logger.info(
-                        "Weekly integration for %s: duration_ms=%d",
-                        anima_name,
-                        result.get("duration_ms", 0),
-                    )
-            except Exception:
-                logger.exception("Weekly integration failed for %s", anima_name)
-            finally:
-                mark_progress(
-                    "weekly",
-                    current=current,
-                    total=total_targets,
-                    target=anima_name,
-                    phase="post_processing",
+                timeout_s = self._resolve_consolidation_ipc_timeout(
+                    consolidation_cfg,
+                    consolidation_type="weekly",
                 )
-                try:
-                    await self._broadcast_event("system.consolidation_status", build_status_payload())
-                except Exception:
-                    logger.debug("Failed to broadcast weekly post-processing progress", exc_info=True)
 
-                await run_weekly_integration_post_processing(
+                result: dict = {}
+                try:
+                    consolidating: set[str] = getattr(self, "_consolidating", set())
+                    consolidating.add(anima_name)
+                    timed_out = False
+                    try:
+                        response = await handle.send_request(
+                            "run_consolidation",
+                            {"consolidation_type": "weekly"},
+                            timeout=timeout_s,
+                        )
+                    except TimeoutError:
+                        timed_out = True
+                        logger.warning(
+                            "consolidation_timeout anima=%s phase=phase_b type=weekly timeout_s=%.0f",
+                            anima_name,
+                            timeout_s,
+                        )
+                        try:
+                            await handle.send_request("interrupt", {}, timeout=10.0)
+                        except Exception:
+                            logger.debug("Interrupt request after weekly consolidation timeout failed", exc_info=True)
+                    finally:
+                        if timed_out:
+                            asyncio.get_running_loop().call_later(120, self._consolidating.discard, anima_name)
+                        else:
+                            consolidating.discard(anima_name)
+
+                    if not timed_out and response.error:
+                        logger.error(
+                            "Weekly integration IPC error for %s: %s",
+                            anima_name,
+                            response.error,
+                        )
+                    elif not timed_out:
+                        result = response.result or {}
+                        logger.info(
+                            "Weekly integration for %s: duration_ms=%d",
+                            anima_name,
+                            result.get("duration_ms", 0),
+                        )
+                except Exception:
+                    logger.exception("Weekly integration failed for %s", anima_name)
+                finally:
+                    async with progress_lock:
+                        await _publish_progress(current, anima_name, "post_processing")
+
+                    await run_weekly_integration_post_processing(
+                        anima_name,
+                        anima_dir,
+                        consolidation_cfg=consolidation_cfg,
+                        model=model,
+                    )
+
+                    await self._broadcast_event(
+                        "system.consolidation",
+                        {
+                            "anima": anima_name,
+                            "type": "weekly",
+                            "summary": result.get("summary", ""),
+                            "duration_ms": result.get("duration_ms", 0),
+                        },
+                    )
+
+                await self._run_project_archive_consolidations(
+                    handle,
                     anima_name,
                     anima_dir,
-                    consolidation_cfg=consolidation_cfg,
-                    model=model,
+                    consolidation_type="weekly",
+                    timeout_s=timeout_s,
                 )
 
-                await self._broadcast_event(
-                    "system.consolidation",
-                    {
-                        "anima": anima_name,
-                        "type": "weekly",
-                        "summary": result.get("summary", ""),
-                        "duration_ms": result.get("duration_ms", 0),
-                    },
-                )
+        for anima_name, anima_dir, handle in eligible_targets:
+            target_tasks.append(asyncio.create_task(_run_target(anima_name, anima_dir, handle)))
 
-            await self._run_project_archive_consolidations(
-                handle,
-                anima_name,
-                anima_dir,
-                consolidation_type="weekly",
-                timeout_s=timeout_s,
+        if target_tasks:
+            logger.info(
+                "Weekly integration dispatching %d target(s) with max_concurrency=%d",
+                len(target_tasks),
+                max_concurrency,
             )
+            outcomes = await asyncio.gather(*target_tasks, return_exceptions=True)
+            failures = [outcome for outcome in outcomes if isinstance(outcome, BaseException)]
+            if failures:
+                raise RuntimeError(f"weekly integration worker failures: {len(failures)}") from failures[0]
 
         _write_marker(_marker_dir(self._get_data_dir()) / "last_weekly_integration")
 

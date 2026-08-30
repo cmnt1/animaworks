@@ -363,7 +363,14 @@ async def test_weekly_consolidation_reports_target_progress(
         _create_anima_dir(sup.animas_dir, name)
         sup.processes[name] = _SuccessHandle()
 
+    config = SimpleNamespace(
+        consolidation=SimpleNamespace(
+            weekly_max_concurrency=1,
+            llm_model="codex/test",
+        )
+    )
     progress: list[dict] = []
+    monkeypatch.setattr("core.config.load_config", lambda: config)
     monkeypatch.setattr(
         "core.lifecycle.system_status.mark_progress",
         lambda job_type, **kwargs: progress.append({"job_type": job_type, **kwargs}),
@@ -411,6 +418,49 @@ async def test_weekly_consolidation_reports_target_progress(
             "phase": "post_processing",
         },
     ]
+
+
+@pytest.mark.asyncio
+async def test_weekly_consolidation_uses_bounded_parallelism_and_monotonic_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sup = _make_supervisor(tmp_path)
+    tracker = {"active": 0, "maximum": 0}
+    for name in ("a", "b", "c", "d", "e"):
+        _create_anima_dir(sup.animas_dir, name)
+        sup.processes[name] = _TrackedHandle(tracker)
+
+    config = SimpleNamespace(
+        consolidation=SimpleNamespace(
+            weekly_max_concurrency=2,
+            llm_model="codex/test",
+        )
+    )
+    progress: list[dict] = []
+    monkeypatch.setattr("core.config.load_config", lambda: config)
+    monkeypatch.setattr(
+        "core.lifecycle.system_consolidation.run_weekly_integration_post_processing",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        "core.lifecycle.system_consolidation.should_skip_inactive_consolidation",
+        lambda *_args: False,
+    )
+    monkeypatch.setattr(
+        "core.lifecycle.system_status.mark_progress",
+        lambda job_type, **kwargs: progress.append({"job_type": job_type, **kwargs}),
+    )
+    monkeypatch.setattr("core.lifecycle.system_status.build_status_payload", lambda: {})
+    sup._broadcast_event = AsyncMock()
+
+    await sup._run_weekly_integration_inner()
+
+    assert tracker["maximum"] == 2
+    currents = [entry["current"] for entry in progress]
+    assert currents == sorted(currents)
+    assert currents[-1] == 5
+    assert all(entry["total"] == 5 for entry in progress)
 
 
 @pytest.mark.asyncio

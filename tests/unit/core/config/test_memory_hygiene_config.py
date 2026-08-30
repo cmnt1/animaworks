@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from core.config.schemas import HousekeepingConfig
+from core.config.schemas import ConsolidationConfig, HousekeepingConfig
 
 
 def test_memory_hygiene_config_defaults() -> None:
@@ -27,3 +27,13 @@ def test_memory_hygiene_config_defaults() -> None:
 def test_housekeeping_memory_hygiene_fields_require_positive_values(field: str, value: int) -> None:
     with pytest.raises(ValidationError):
         HousekeepingConfig(**{field: value})
+
+
+def test_weekly_consolidation_parallelism_defaults_to_three() -> None:
+    assert ConsolidationConfig().weekly_max_concurrency == 3
+
+
+@pytest.mark.parametrize("value", [0, 9])
+def test_weekly_consolidation_parallelism_requires_bounded_value(value: int) -> None:
+    with pytest.raises(ValidationError):
+        ConsolidationConfig(weekly_max_concurrency=value)
