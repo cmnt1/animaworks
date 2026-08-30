@@ -496,6 +496,12 @@ class TaskQueueManager:
         if task is None:
             logger.warning("Task not found: %s", task_id)
             return None
+        # A cancel must stick: a runner that was still executing when the
+        # cancel landed must not flip the task to done/blocked afterwards.
+        # Only an explicit re-queue (pending) may leave cancelled.
+        if task.status == "cancelled" and status not in ("cancelled", "pending"):
+            logger.warning("Task %s is cancelled; refusing status=%s", task_id, status)
+            return None
 
         clean_summary = summary
         if _is_observation_log_summary(summary):

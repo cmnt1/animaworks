@@ -90,6 +90,7 @@ class ConversationDepthLimiter:
         self._max_depth = max_depth if max_depth is not None else cfg.heartbeat.max_depth
         self._max_per_hour_override = max_per_hour
         self._max_per_day_override = max_per_day
+        self._outbound_limit_enabled = bool(getattr(cfg.heartbeat, "outbound_limit_enabled", True))
 
     def check_global_outbound(
         self,
@@ -107,6 +108,9 @@ class ConversationDepthLimiter:
 
         Returns True if allowed, or a descriptive error string if blocked.
         """
+        if not self._outbound_limit_enabled:
+            return True
+
         from core.config.models import resolve_outbound_limits
         from core.urgent import is_urgent_active
 

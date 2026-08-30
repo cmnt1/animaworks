@@ -73,6 +73,7 @@ _WAITING_REENQUEUE_DELAY_SECONDS = 300.0
 _CONTINUATION_BACKOFF_SECONDS = {1: 0.0, 2: 180.0, 3: 600.0}
 
 _QUEUE_TERMINAL_STATUSES = {"done", "cancelled", "failed"}
+_CANCEL_POLL_SECONDS = 5.0
 _QUEUE_ACTIVE_STATUSES = {"pending", "in_progress", "blocked", "delegated"}
 _TASKBOARD_QUEUE_CANCEL_REASONS = {"expired", "archived", "tombstoned"}
 _RUNNER_START_SUFFIX = "-runner-start"
@@ -1144,6 +1145,24 @@ class PendingTaskExecutor:
         from core.execution._sanitize import ORIGIN_ANIMA
 
         task_id, title, _description = _task_activity_identity(task_desc)
+        # If the queue entry was already externally cancelled (e.g. superseded by
+        # a newer PR exact), the runner was killed by the supervisor watcher and
+        # nobody is waiting on this task: skip the failure notification and
+        # failed-result marker (cancelled is sticky and won't become failed).
+        try:
+            from core.memory.task_queue import TaskQueueManager
+
+            queued = TaskQueueManager(self._anima_dir).get_task_by_id(task_id)
+            if queued is not None and queued.status == "cancelled":
+                return
+        except Exception:
+            logger.warning(
+                "[%s] Could not check whether failed task %s was already cancelled; "
+                "continuing with the default failure path",
+                self._anima_name,
+                task_id,
+                exc_info=True,
+            )
         self._sync_task_queue(task_id, "failed", summary=reason)
         self._write_failed_result(task_id, reason)
 
@@ -1207,6 +1226,8 @@ class PendingTaskExecutor:
 
             manager = TaskQueueManager(self._anima_dir)
             entry = manager.get_task_by_id(task_id)
+            if entry and status == "in_progress" and entry.status == "blocked":
+                return
             if entry and entry.status in _QUEUE_TERMINAL_STATUSES:
                 meta = entry.meta if isinstance(entry.meta, dict) else {}
                 declared_done = entry.status == "done" and meta.get("completed_by") == "agent_declaration"
@@ -2207,6 +2228,16 @@ class PendingTaskExecutor:
                         )
                         path.unlink(missing_ok=True)
                         continue
+                    if not isinstance(task_desc, dict):
+                        # Not a task descriptor (e.g. an anima's scratch JSON
+                        # dropped into pending/); park it instead of crashing
+                        # the watcher loop on every tick (sumire, 2026-08-30).
+                        logger.warning(
+                            "Non-object JSON in LLM pending task file, moving to failed: %s",
+                            path.name,
+                        )
+                        path.rename(llm_failed_dir / path.name)
+                        continue
 
                     if not self._handle_llm_attention_gate(
                         path,
@@ -2683,7 +2714,6 @@ class PendingTaskExecutor:
             ctx=trigger,
             meta=task_meta,
         )
-
         try:
             result = await self._run_llm_task_under_agent_session_context(
                 task_desc,
@@ -2886,6 +2916,11 @@ class PendingTaskExecutor:
             except (ValueError, TypeError):
                 pass
 
+        # Mirror the start only after the final cancellation, attention, and
+        # expiry gates, so a deferred task remains pending for its later
+        # wake-up. A blocked declaration that already landed stays authoritative.
+        self._sync_task_queue(task_id, "in_progress")
+
         # Build dependency context for batch tasks
         dep_context = ""
         if completed_results:
@@ -3029,12 +3064,24 @@ class PendingTaskExecutor:
                 try:
                     agent.reset_reply_tracking(session_type="task")
                     agent.reset_read_paths()
+                    next_cancel_poll = time.monotonic() + _CANCEL_POLL_SECONDS
                     async for chunk in agent.run_cycle_streaming(
                         prompt,
                         trigger=trigger,
                         thread_id=task_id,
                         model_config_override=model_config_override,
                     ):
+                        # A cancel written to task_queue by another process
+                        # (supervisor, TaskBoard, server) only reaches the
+                        # running stream through the interrupt event.
+                        if interrupt_event is not None and time.monotonic() >= next_cancel_poll:
+                            next_cancel_poll = time.monotonic() + _CANCEL_POLL_SECONDS
+                            _q = self._get_task_queue_entry(task_id)
+                            if _q is not None and _q.status == "cancelled":
+                                logger.info(
+                                    "[%s] Task %s cancelled in task_queue; interrupting", self._anima_name, task_id
+                                )
+                                interrupt_event.set()
                         chunk_type = chunk.get("type")
                         if chunk_type == "text_delta":
                             accumulated_text += chunk.get("text", "")
@@ -3150,6 +3197,11 @@ class PendingTaskExecutor:
 
         if cycle_error_category == "auth":
             raise TaskExecError("task execution failed due to a terminal authentication error (credential problem)")
+
+        if stop_kind == "interrupted":
+            _q = self._get_task_queue_entry(task_id)
+            if _q is not None and _q.status == "cancelled":
+                return _SENTINEL_CANCELLED
 
         if stop_kind in {"interrupted", "runaway_halt", "empty_response", "hard_timeout"}:
             continuation_count = task_desc.get("continuation_count", 0)

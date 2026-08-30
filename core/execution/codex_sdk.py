@@ -1497,7 +1497,7 @@ class CodexSDKExecutor(BaseExecutor):
             )
         )
         if denied_roots:
-            from core.file_access_policy import shell_internal_deny_paths
+            from core.file_access_policy import foreign_owned_ssh_config_dirs, shell_internal_deny_paths
 
             # Permission profiles and the legacy sandbox settings are mutually
             # exclusive.  Start with broad read access, retain the charter
@@ -1562,6 +1562,13 @@ class CodexSDKExecutor(BaseExecutor):
             # cache access for trusted, source-filtered search services.
             for internal_path in shell_internal_deny_paths(self._anima_dir):
                 shell_filesystem_rules[str(internal_path)] = "deny"
+
+            # bwrap's user namespace maps root to nobody, so ssh rejects every
+            # root-owned drop-in that /etc/ssh/ssh_config includes ("Bad owner
+            # or permissions on /etc/ssh/ssh_config.d/…", exit 255).  Hiding
+            # the directory makes the Include glob match nothing.
+            for ssh_dropin_dir in foreign_owned_ssh_config_dirs():
+                shell_filesystem_rules[ssh_dropin_dir] = "deny"
 
             # The sandboxed Anima must not be able to remove or weaken the
             # policy that will be used to build its next session's profile.

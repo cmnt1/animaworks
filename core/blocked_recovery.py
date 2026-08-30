@@ -200,6 +200,8 @@ def revalidate_blocked_tasks(anima_dir: Path, anima_name: str) -> list[str]:
             check = entry.meta.get("unblock_check")
             has_check = isinstance(check, str) and bool(check.strip())
             if has_check:
+                from core.file_access_policy import foreign_owned_ssh_config_dirs
+
                 env = {
                     "PATH": os.environ.get("PATH", ""),
                     "HOME": os.environ.get("HOME", ""),
@@ -221,9 +223,16 @@ def revalidate_blocked_tasks(anima_dir: Path, anima_name: str) -> list[str]:
                             "/proc",
                             "--tmpfs",
                             "/tmp",
+                            # Root maps to nobody inside bwrap, so ssh rejects
+                            # root-owned Include drop-ins; hide them (see
+                            # foreign_owned_ssh_config_dirs).
+                            *(a for d in foreign_owned_ssh_config_dirs() for a in ("--tmpfs", d)),
                             "--die-with-parent",
                             "--",
-                            "/bin/sh",
+                            # bash, not sh: agents write checks with here-strings
+                            # (`<<<`), `[[ ]]` and `set -o pipefail`, which dash
+                            # rejects with a syntax error before any condition runs.
+                            "/bin/bash",
                             "-c",
                             check,
                         ],

@@ -182,6 +182,51 @@ def review_task(reviewer: str, task_id: str, animas_dir: Path | None = None):
     return SimpleNamespace(task_id=task_id, status=archived_status)
 
 
+def supersede_stale_review_tasks(
+    reviewer: str,
+    repo: str,
+    number: int,
+    sha: str,
+    *,
+    animas_dir: Path | None = None,
+) -> list[str]:
+    """Cancel queued review tasks for older exacts of the same PR.
+
+    A review is only meaningful against the current HEAD, so once a newer push
+    arrives the queued passes for the previous exact are dead work.  Leaving
+    them queued is actively harmful: they hold the ``pr-<N>`` exclusion key, so
+    the review of the commit that actually matters waits behind a review of a
+    commit nobody will merge.
+
+    Passes that are queued-but-not-started (``pending``/``blocked``) *and* passes
+    that are already running (``in_progress``) are all cancelled.  ``cancelled``
+    is sticky in ``TaskQueueManager.update_status``, so the queue stays
+    terminal-cancelled and the task-runner watcher (see
+    ``core.supervisor.task_runner_supervisor``) notices the cancelled entry and
+    kills the child process group.
+    """
+    target_dir = (animas_dir or get_animas_dir()) / reviewer
+    if not target_dir.is_dir():
+        return []
+    manager = TaskQueueManager(target_dir)
+    cancelled: list[str] = []
+    for task in manager.list_tasks():
+        meta = task.meta or {}
+        if not meta.get("multipass") or task.status not in ("pending", "blocked", "in_progress"):
+            continue
+        if meta.get("repo") != repo or str(meta.get("number")) != str(number):
+            continue
+        if str(meta.get("sha")) == sha:
+            continue
+        manager.update_status(
+            task.task_id,
+            "cancelled",
+            summary=f"superseded: exact {meta.get('sha')} は新しい exact {sha} に追い越された",
+        )
+        cancelled.append(task.task_id)
+    return cancelled
+
+
 # ── Review instruction templates ────────────────────────────────────
 
 
@@ -235,6 +280,20 @@ def dispatch_multipass_reviews(
         sha = str(it["sha"])
         number = int(it["number"])
         repo = str(it["repo"])
+        # Drop any older-exact entries for the same PR so a superseded head's
+        # synth dispatch / ``-r2`` re-issue is not triggered by stale state.
+        for other_id in list(multipass):
+            other = multipass[other_id]
+            if (
+                str(other.get("repo")) == repo
+                and str(other.get("number")) == str(number)
+                and str(other.get("sha")) != sha
+            ):
+                log(f"multi-pass older exact {other_id} superseded by exact {sha[:8]}; dropped entry")
+                multipass.pop(other_id, None)
+        superseded = supersede_stale_review_tasks(reviewer, repo, number, sha, animas_dir=animas_dir)
+        for stale_id in superseded:
+            log(f"superseded stale review task {stale_id} (newer exact {sha[:8]})")
         model_tasks = [f"{base_id}-m-{model_slug(entry)}" for entry in models]
         # Entry-first persistence: record before dispatching any task.
         multipass[base_id] = {
@@ -338,6 +397,16 @@ def check_multipass_synth(
             except Exception as exc:  # noqa: BLE001
                 log(f"multi-pass synth dispatch error {synth_id}: {exc}")
             # Drop the entry so state stays bounded to in-flight PRs.
+            multipass.pop(base_id, None)
+            continue
+
+        # All passes terminal but none done: if every pass was superseded
+        # (cancelled) rather than failed, drop the entry without re-issuing.
+        if all(rec.status == "cancelled" for rec in records.values()):
+            log(
+                f"multi-pass all passes superseded (cancelled) for {repo}#{number}: "
+                f"tasks={','.join(info['task_ids'])}; dropping entry without -r2"
+            )
             multipass.pop(base_id, None)
             continue
 
