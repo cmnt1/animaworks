@@ -434,13 +434,13 @@ def _build_discord_annotation(
 _THREAD_CTX_SUMMARY_LIMIT = 150
 
 
-async def _fetch_thread_context(
+async def _fetch_reply_context(
     channel: Any,
     reference: Any,
-) -> str:
-    """Fetch Discord thread context for a reply message."""
+) -> tuple[str, str]:
+    """Fetch reply context and the referenced webhook author, if any."""
     if reference.message_id is None:
-        return ""
+        return "", ""
     try:
         parent = await channel.fetch_message(reference.message_id)
         parent_user = parent.author.display_name or str(parent.author)
@@ -452,10 +452,20 @@ async def _fetch_thread_context(
             "[/Thread context]",
             "",
         ]
-        return "\n".join(lines)
+        webhook_author = parent_user if getattr(parent, "webhook_id", None) else ""
+        return "\n".join(lines), webhook_author
     except Exception:
         logger.warning("Failed to fetch Discord thread context", exc_info=True)
-        return ""
+        return "", ""
+
+
+async def _fetch_thread_context(
+    channel: Any,
+    reference: Any,
+) -> str:
+    """Fetch Discord thread context for a reply message."""
+    context, _ = await _fetch_reply_context(channel, reference)
+    return context
 
 
 # ── Gateway Manager ──────────────────────────────────────────
@@ -750,9 +760,14 @@ class DiscordGatewayManager:
         # Thread context
         thread_ctx = ""
         reference_id: str | None = None
+        reference_anima = ""
         if message.reference and message.reference.message_id:
             reference_id = str(message.reference.message_id)
-            thread_ctx = await _fetch_thread_context(message.channel, message.reference)
+            thread_ctx, reference_author = await _fetch_reply_context(
+                message.channel,
+                message.reference,
+            )
+            reference_anima = self._resolve_canonical_name(reference_author) or ""
 
         # Load config once per message for routing decisions
         try:
@@ -802,6 +817,13 @@ class DiscordGatewayManager:
                     target_animas = [thread_anima]
             except Exception:
                 logger.debug("Thread map lookup failed", exc_info=True)
+
+        # 1b. An external notifier may post through the shared Anima webhook
+        # manager from another process. Its persisted thread map is not
+        # necessarily in this process's live cache, so use the referenced
+        # Anima webhook author as a safe routing fallback.
+        if not target_animas and reference_anima:
+            target_animas = [reference_anima]
 
         # 2. DM single-member precedence — a DM channel bound to exactly one
         # Anima is always for that Anima, regardless of text. Anima aliases

@@ -58,6 +58,7 @@ class TestDiscordGatewayManagerRouting:
         mock_cfg.animas = {
             "sakura": MagicMock(aliases=["さくら"]),
             "hikaru": MagicMock(aliases=["ひかる"]),
+            "ayane": MagicMock(aliases=["あやね"]),
             "ria": MagicMock(aliases=["りあ", "リア"]),
             "kotoha": MagicMock(aliases=[]),
         }
@@ -66,7 +67,7 @@ class TestDiscordGatewayManagerRouting:
             "ch2": ["kotoha"],
             "dm-sakura": ["sakura"],
             "ops-ch": ["sakura", "kotoha"],
-            "finance-ch": ["sakura", "kotoha"],
+            "finance-ch": ["sakura", "ayane", "kotoha"],
             "property-ch": ["sakura", "hikaru"],
         }
         mock_cfg.external_messaging.discord.anima_mapping = {"property-ch": "hikaru"}
@@ -265,6 +266,56 @@ class TestDiscordGatewayManagerRouting:
             await manager._handle_message(message)
 
         MockMessenger.assert_called_once_with(shared_dir, "hikaru")
+        MockMessenger.return_value.receive_external.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_reply_to_anima_webhook_routes_to_referenced_anima(
+        self,
+        manager: DiscordGatewayManager,
+        tmp_path,
+    ):
+        anima_dir = tmp_path / "animas" / "ayane"
+        anima_dir.mkdir(parents=True)
+        shared_dir = tmp_path / "shared"
+        shared_dir.mkdir()
+
+        parent = MagicMock()
+        parent.author.display_name = "ayane"
+        parent.content = "Gmail intake completed"
+        parent.webhook_id = "anima-webhook-1"
+
+        message = MagicMock()
+        message.id = "gmail-intake-reply-001"
+        message.author.id = "human-1"
+        message.author.display_name = "Human"
+        message.author.name = "human"
+        message.webhook_id = None
+        message.mentions = []
+        message.content = "この見積をもう一度確認してください"
+        message.channel.id = "finance-ch"
+        message.channel.parent_id = None
+        message.channel.name = "finance"
+        message.guild = object()
+        message.reference.message_id = "gmail-intake-parent-001"
+
+        async def fetch_message(_message_id):
+            return parent
+
+        message.channel.fetch_message = fetch_message
+
+        with (
+            patch("server.discord_gateway._route_to_board"),
+            patch("server.discord_gateway.get_data_dir", return_value=tmp_path),
+            patch("server.discord_gateway.get_shared_dir", return_value=shared_dir),
+            patch("server.discord_gateway.Messenger") as MockMessenger,
+            patch(
+                "core.discord_webhooks.DiscordWebhookManager.lookup_thread_anima",
+                return_value=None,
+            ),
+        ):
+            await manager._handle_message(message)
+
+        MockMessenger.assert_called_once_with(shared_dir, "ayane")
         MockMessenger.return_value.receive_external.assert_called_once()
 
     def test_detect_anima_by_japanese_alias(self, manager: DiscordGatewayManager, _mock_config):
