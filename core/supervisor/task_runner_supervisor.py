@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import psutil
+
 from core.i18n import t
 from core.platform.process import subprocess_session_kwargs
 from core.schemas import CronTask
@@ -33,6 +35,7 @@ from core.supervisor.transport import cleanup_ipc_endpoint, start_ipc_server
 logger = logging.getLogger(__name__)
 
 _TASK_RUNNER_CONNECT_TIMEOUT = 10.0
+_RECEIVE_POLL_TIMEOUT_SEC = 15.0
 # Post-result exit wait. Under load the child's interpreter shutdown (CLI
 # grandchild reaping, thread joins, MCP cleanup) can exceed several seconds;
 # a laggy exit must not turn a delivered result into a failure (2026-08-12).
@@ -589,7 +592,16 @@ class TaskRunnerSupervisor:
                     )
             result = self._terminal_result(terminal)
             if not slow_exit and process.returncode != 0:
-                raise TaskRunnerError(f"task runner exited with status {process.returncode}")
+                # The result was already delivered before the child exited; a
+                # nonzero exit (e.g. a laggy EPIPE during shutdown) must not
+                # discard an executed task's result.
+                logger.warning(
+                    "result kept despite nonzero exit anima=%s job=%s task_id=%s returncode=%s",
+                    self.anima_name,
+                    job_id,
+                    (job.params.get("task_desc") or {}).get("task_id"),
+                    process.returncode,
+                )
             return result
         except asyncio.CancelledError:
             self._terminate_job_group(job)
@@ -611,7 +623,7 @@ class TaskRunnerSupervisor:
                     waiter.set_result({"accepted": False, "error": "chat job ended"})
             self._clear_busy_if_idle()
             # A-07: recover orphan streaming journals after every task ends.
-            self._recover_task_journals((lane,))
+            await self._recover_task_journals((lane,))
 
     async def _watch_job(self, job: TaskRunnerJob) -> None:
         """Kill only this task-runner group after progress stops.
@@ -732,83 +744,106 @@ class TaskRunnerSupervisor:
         if callable(callback):
             callback()
 
-    def _recover_task_journals(
+    async def _recover_task_journals(
         self,
         session_types: tuple[str, ...] = ("task", "heartbeat", "chat", "cron"),
     ) -> None:
-        """Best-effort orphan StreamingJournal recovery after a child exits."""
-        try:
-            from core.memory.streaming_journal import StreamingJournal
-        except Exception:
-            return
-        for session_type in session_types:
-            try:
-                if not StreamingJournal.has_orphan(self.anima_dir, session_type=session_type):
-                    continue
-                thread_ids = StreamingJournal.list_orphan_thread_ids(self.anima_dir, session_type)
-                for thread_id in thread_ids or ("default",):
-                    recovery = StreamingJournal.recover(
-                        self.anima_dir,
-                        session_type,
-                        thread_id=thread_id,
-                    )
-                    if recovery is None:
-                        continue
-                    if session_type in {"task", "task_exec"} and (
-                        recovery.recovered_text.strip() or recovery.tool_calls
-                    ):
-                        owner = self._busy_status_owner
-                        pending_executor = getattr(owner, "_pending_executor", None)
-                        if pending_executor is not None:
-                            pending_executor.add_recovered_task_checkpoint(
-                                thread_id,
-                                recovery.recovered_text,
-                                recovery.tool_calls,
-                            )
-                    if session_type == "chat" and recovery.recovered_text:
-                        from core.memory.conversation import ConversationMemory
+        """Best-effort orphan StreamingJournal recovery after a child exits.
 
-                        owner = self._busy_status_owner
-                        model_config = getattr(owner, "model_config", None)
-                        if model_config is None:
-                            logger.error("Cannot persist recovered chat journal without root model config")
-                            continue
-                        conversation = ConversationMemory(
+        All disk work runs in a thread so a saturated disk can never stall the
+        root event loop (which would delay every child's ack).  In-memory
+        checkpoints on event-loop-owned objects are applied on the loop after
+        the disk pass returns.
+        """
+        # Snapshot event-loop-owned inputs before handing disk work to a thread.
+        owner = self._busy_status_owner
+        model_config = getattr(owner, "model_config", None)
+        pending_executor = getattr(owner, "_pending_executor", None)
+
+        def _disk_recovery() -> list[dict[str, Any]]:
+            outcomes: list[dict[str, Any]] = []
+            try:
+                from core.memory.conversation import ConversationMemory
+                from core.memory.streaming_journal import StreamingJournal
+            except Exception:
+                return outcomes
+            for session_type in session_types:
+                try:
+                    if not StreamingJournal.has_orphan(self.anima_dir, session_type=session_type):
+                        continue
+                    thread_ids = StreamingJournal.list_orphan_thread_ids(self.anima_dir, session_type)
+                    for thread_id in thread_ids or ("default",):
+                        recovery = StreamingJournal.recover(
                             self.anima_dir,
-                            model_config,
+                            session_type,
                             thread_id=thread_id,
                         )
-                        marker = t("anima.response_interrupted")
-                        saved_text = recovery.recovered_text + "\n" + marker
-                        last_assistant = next(
-                            (turn for turn in reversed(conversation.load().turns) if turn.role == "assistant"),
-                            None,
+                        if recovery is None:
+                            continue
+                        if session_type == "chat" and recovery.recovered_text:
+                            if model_config is None:
+                                logger.error("Cannot persist recovered chat journal without root model config")
+                            else:
+                                conversation = ConversationMemory(
+                                    self.anima_dir,
+                                    model_config,
+                                    thread_id=thread_id,
+                                )
+                                marker = t("anima.response_interrupted")
+                                saved_text = recovery.recovered_text + "\n" + marker
+                                last_assistant = next(
+                                    (turn for turn in reversed(conversation.load().turns) if turn.role == "assistant"),
+                                    None,
+                                )
+                                already_saved = last_assistant is not None and (
+                                    last_assistant.content == saved_text
+                                    or recovery.recovered_text.strip()
+                                    in last_assistant.content.replace(marker, "").strip()
+                                )
+                                if not already_saved:
+                                    conversation.append_turn("assistant", saved_text)
+                                    conversation.save()
+                        StreamingJournal.confirm_recovery(
+                            self.anima_dir,
+                            session_type,
+                            thread_id=thread_id,
                         )
-                        already_saved = last_assistant is not None and (
-                            last_assistant.content == saved_text
-                            or recovery.recovered_text.strip() in last_assistant.content.replace(marker, "").strip()
+                        logger.info(
+                            "Recovered orphan journal after task exit: anima=%s session=%s thread=%s",
+                            self.anima_name,
+                            session_type,
+                            thread_id,
                         )
-                        if not already_saved:
-                            conversation.append_turn("assistant", saved_text)
-                            conversation.save()
-                    StreamingJournal.confirm_recovery(
-                        self.anima_dir,
-                        session_type,
-                        thread_id=thread_id,
-                    )
-                    logger.info(
-                        "Recovered orphan journal after task exit: anima=%s session=%s thread=%s",
+                        outcomes.append(
+                            {
+                                "session_type": session_type,
+                                "thread_id": thread_id,
+                                "recovered_text": recovery.recovered_text,
+                                "tool_calls": recovery.tool_calls,
+                            }
+                        )
+                except Exception:
+                    logger.debug(
+                        "Orphan journal recovery failed for %s/%s",
                         self.anima_name,
                         session_type,
-                        thread_id,
+                        exc_info=True,
                     )
-            except Exception:
-                logger.debug(
-                    "Orphan journal recovery failed for %s/%s",
-                    self.anima_name,
-                    session_type,
-                    exc_info=True,
-                )
+            return outcomes
+
+        outcomes = await asyncio.to_thread(_disk_recovery)
+
+        # Apply in-memory checkpoints on the event loop (not inside the thread).
+        if pending_executor is not None:
+            for outcome in outcomes:
+                if outcome["session_type"] in {"task", "task_exec"} and (
+                    outcome["recovered_text"].strip() or outcome["tool_calls"]
+                ):
+                    pending_executor.add_recovered_task_checkpoint(
+                        outcome["thread_id"],
+                        outcome["recovered_text"],
+                        outcome["tool_calls"],
+                    )
 
     async def _handle_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         connection: IPCV2Connection | None = None
@@ -857,7 +892,17 @@ class TaskRunnerSupervisor:
                 await connection.send_event("interrupt", {"thread_id": job.interrupt_thread_id})
 
             while True:
-                envelope = await asyncio.wait_for(connection.receive(), timeout=15.0)
+                try:
+                    envelope = await asyncio.wait_for(connection.receive(), timeout=_RECEIVE_POLL_TIMEOUT_SEC)
+                except TimeoutError:
+                    # A quiet interval is not an error: runner liveness is judged
+                    # by the hang watchdog (busy_hang_threshold), not this socket.
+                    # Severing here used to permanently mute healthy runners and
+                    # produce mass false hang-kills after root event-loop stalls.
+                    current = self._jobs.get(job.identity.job_id)
+                    if current is None or current.connection is not connection:
+                        break  # superseded by a reconnect, or the job is gone
+                    continue
                 if envelope.kind == "request":
                     await self._handle_memory_request(connection, envelope)
                     continue
@@ -1009,33 +1054,51 @@ class TaskRunnerSupervisor:
         if self._memory_service is not None:
             await self._memory_service.close()
         cleanup_ipc_endpoint(self.socket_path)
-        self._recover_task_journals()
+        await self._recover_task_journals()
+
+    @staticmethod
+    def _descendant_processes(job: TaskRunnerJob) -> list[psutil.Process]:
+        """Every descendant of the runner, including ones outside its process group.
+
+        Codex's ``codex-linux-sandbox`` starts each shell tool in its own session,
+        so ``killpg`` alone leaves its ``grep -R``/``find`` children alive as
+        orphans (2026-08-30: 84 orphan sessions saturated disk IO and hang-killed
+        every TaskExec in a loop).  Collect them *before* the parent dies, because
+        orphans are reparented and become untraceable.
+        """
+        if not job.pid:
+            return []
+        try:
+            return psutil.Process(job.pid).children(recursive=True)
+        except psutil.Error:
+            return []
+
+    @staticmethod
+    def _signal_job_group(job: TaskRunnerJob, sig: int) -> None:
+        process = job.process
+        if process is None:
+            return
+        descendants = TaskRunnerSupervisor._descendant_processes(job)
+        try:
+            if os.name == "posix" and job.pgid:
+                os.killpg(job.pgid, sig)
+            elif process.returncode is None:
+                process.send_signal(sig)
+        except ProcessLookupError:
+            pass
+        for child in descendants:
+            try:
+                child.send_signal(sig)
+            except psutil.Error:
+                continue
 
     @staticmethod
     def _terminate_job_group(job: TaskRunnerJob) -> None:
-        process = job.process
-        if process is None:
-            return
-        try:
-            if os.name == "posix" and job.pgid:
-                os.killpg(job.pgid, signal.SIGTERM)
-            elif process.returncode is None:
-                process.terminate()
-        except ProcessLookupError:
-            return
+        TaskRunnerSupervisor._signal_job_group(job, signal.SIGTERM)
 
     @staticmethod
     def _kill_job_group(job: TaskRunnerJob) -> None:
-        process = job.process
-        if process is None:
-            return
-        try:
-            if os.name == "posix" and job.pgid:
-                os.killpg(job.pgid, signal.SIGKILL)
-            elif process.returncode is None:
-                process.kill()
-        except ProcessLookupError:
-            return
+        TaskRunnerSupervisor._signal_job_group(job, signal.SIGKILL)
 
 
 __all__ = ["TaskRunnerError", "TaskRunnerJob", "TaskRunnerSupervisor"]

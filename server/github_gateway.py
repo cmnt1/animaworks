@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -21,16 +23,49 @@ from core.i18n import t
 from core.memory.task_queue import TaskQueueManager
 from core.messenger import Messenger
 from core.paths import get_animas_dir, get_shared_dir
+from core.supervisor.dead_command_reaper import reap_dead_commands
 from core.tasks_dispatch import FAILING_CI_CONCLUSIONS, dispatch_direct_task
 
 logger = logging.getLogger("animaworks.github_gateway")
 
 STATE_FILENAME = "pr-review-dispatch-state.json"
 MAX_FAILED_REDISPATCHES = 2
+# Sweep interval for re-dispatching failed gh-ci tasks without a new push.
+CI_RETRY_INTERVAL_SEC = 600.0
+SYNTH_SWEEP_INTERVAL_SEC = 120.0
+_SLOW_SWEEP_EVERY_TICKS = int(CI_RETRY_INTERVAL_SEC / SYNTH_SWEEP_INTERVAL_SEC)
+REVIEW_SLO_THRESHOLD = timedelta(minutes=45)
+REVIEW_SLO_STATE_KEY = "review_slo_alerted"
 
 
 def _now_iso() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _iso_to_utc(value: str | None) -> datetime | None:
+    """Parse an ISO-8601 UTC timestamp (with or without trailing Z) to a UTC datetime."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+" + "00:00")).astimezone(UTC)
+    except (ValueError, TypeError):
+        return None
+
+
+def gh(args: list[str]) -> str:
+    """Run the GitHub CLI; returns stdout (empty string on failure)."""
+    env = dict(os.environ)
+    proc = subprocess.run(
+        ["gh", *args],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=env,
+    )
+    if proc.returncode != 0:
+        logger.warning("gh %s failed: %s", " ".join(args[:3]), proc.stderr.strip()[:300])
+        return ""
+    return proc.stdout
 
 
 def _default_state() -> dict[str, Any]:
@@ -66,6 +101,7 @@ class GitHubWebhookManager:
         self._started = False
         self._debounce_tasks: dict[str, asyncio.Task[None]] = {}
         self._event_tasks: set[asyncio.Task[None]] = set()
+        self._ci_retry_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         """Load configuration and enable webhook processing when configured."""
@@ -82,12 +118,16 @@ class GitHubWebhookManager:
                 len(self._config.repos),
                 self._config.quiet_seconds,
             )
+            self._ci_retry_task = asyncio.create_task(self._ci_retry_loop())
         else:
             logger.info("GitHub webhook gateway is disabled")
 
     async def stop(self) -> None:
         """Cancel pending event and debounce tasks."""
         tasks = [*self._event_tasks, *self._debounce_tasks.values()]
+        if self._ci_retry_task is not None:
+            tasks.append(self._ci_retry_task)
+            self._ci_retry_task = None
         for task in tasks:
             task.cancel()
         if tasks:
@@ -355,7 +395,13 @@ class GitHubWebhookManager:
                     task_id=f"gh-cmd-{comment_id}",
                     summary=t("github_gateway.command_summary", repo=repo, number=number),
                     instruction=instruction,
-                    meta={"repo": repo, "number": number, "url": url, "kind": kind},
+                    meta={
+                        "repo": repo,
+                        "number": number,
+                        "url": url,
+                        "kind": kind,
+                        "priority_class": "directive",
+                    },
                 )
                 seen[dedupe_key] = _now_iso()
                 return
@@ -376,6 +422,7 @@ class GitHubWebhookManager:
                     "url": url,
                     "kind": kind,
                     "author": author,
+                    "priority_class": "directive",
                 },
             )
             content = (
@@ -494,17 +541,217 @@ class GitHubWebhookManager:
             str(workflow.get("html_url") or ""),
         )
 
+    async def _ci_retry_loop(self) -> None:
+        # Synth dispatch runs every tick (2 min) so a finished model-pass pair
+        # waits minutes, not up to 10; the heavier sweeps keep the 10-min cadence.
+        tick = 0
+        while True:
+            try:
+                await asyncio.to_thread(self.sweep_multipass_synth)
+            except Exception:
+                logger.exception("GitHub webhook multipass synth sweep failed")
+            if tick % _SLOW_SWEEP_EVERY_TICKS == 0:
+                try:
+                    await asyncio.to_thread(self.retry_failed_ci_tasks)
+                except Exception:
+                    logger.exception("GitHub webhook CI retry sweep failed")
+                try:
+                    await asyncio.to_thread(self.check_review_slo)
+                except Exception:
+                    logger.exception("GitHub webhook review SLO sweep failed")
+                try:
+                    await asyncio.to_thread(reap_dead_commands)
+                except Exception:
+                    logger.exception("dead command reaper sweep failed")
+            tick += 1
+            await asyncio.sleep(SYNTH_SWEEP_INTERVAL_SEC)
+
+    def sweep_multipass_synth(self) -> None:
+        """Dispatch pending synthesis passes for completed multipass reviews.
+
+        ``check_multipass_synth`` used to run only from the fallback cron
+        (``scripts/pr-review-dispatch.py``); with that cron disabled the
+        final GitHub-posting synth task was never issued (2026-08-31).
+        """
+        if not self._require_state_file().is_file():
+            return
+        with locked_dispatch_state(self._require_state_file()) as state:
+            review_multipass.check_multipass_synth(
+                state,
+                reviewer=self._config.reviewer_anima,
+                synth_model=self._config.review_synth_model,
+                quiet_seconds=self._config.quiet_seconds,
+                dispatch=dispatch_direct_task,
+                logger=logger.info,
+            )
+
+    def _slo_candidate_green_key(self, key: str, sha: str) -> str | None:
+        return f"{key}_{sha[:8]}"
+
+    def check_review_slo(self) -> list[dict[str, Any]]:
+        """Escalate PRs reviewed (CI green) more than REVIEW_SLO_THRESHOLD ago.
+
+        A PR passed the review beacon (``ci_green_notified``) but the reviewer
+        has still not posted on the current head within the SLO window.  For
+        each such PR we (a) re-dispatch the multipass review if no pass is in
+        flight for that head and (b) dispatch an investigation task to the
+        dispatcher anima.  GitHub API calls are limited to PRs that are green-
+        notified, past the window, and not yet alerted (no per-sweep sweep of
+        every open PR).  Alerts are deduplicated per PR+sha via the state key
+        ``review_slo_alerted``.
+        """
+        if not self._require_state_file().is_file():
+            return []
+        now = datetime.now(UTC)
+        alerted: list[dict[str, Any]] = []
+        with locked_dispatch_state(self._require_state_file()) as state:
+            prs = state.setdefault("prs", {})
+            green = state.setdefault("ci_green_notified", {})
+            slo_alerts = state.setdefault(REVIEW_SLO_STATE_KEY, {})
+            candidates: list[tuple[str, str]] = []
+            for key, entry in prs.items():
+                sha = str(entry.get("sha") or "")
+                notified_sha = str(entry.get("notified_sha") or "")
+                if not sha or notified_sha != sha:
+                    continue
+                green_key = self._slo_candidate_green_key(key, sha)
+                green_at = _iso_to_utc(green.get(green_key))
+                if green_at is None or (now - green_at) < REVIEW_SLO_THRESHOLD:
+                    continue
+                if slo_alerts.get(green_key):
+                    continue  # already alerted for this head; don't loop
+                candidates.append((key, sha))
+            # Only now (crime still possible within the window) hit GitHub.
+            for key, sha in candidates:
+                repo, _, number = key.partition("#")
+                if not repo or not number.isdigit():
+                    continue
+                current_sha = self._gh_current_head(repo, int(number))
+                if not current_sha or current_sha != sha:
+                    continue  # PR moved on; a fresher beacon will take over
+                if self._gh_has_review(repo, int(number), sha):
+                    continue  # reviewer already posted on this head
+                self._slo_dispatch(state, key, repo, int(number), sha)
+                slo_alerts[self._slo_candidate_green_key(key, sha)] = _now_iso()
+                logger.info("review SLO exceeded: %s sha=%s", key, sha[:8])
+                alerted.append({"key": key, "sha": sha})
+        return alerted
+
+    def _gh_current_head(self, repo: str, number: int) -> str:
+        """Return the current head SHA of an open PR, or '' (empty) on error."""
+        out = gh(
+            [
+                "pr",
+                "view",
+                str(number),
+                "--repo",
+                repo,
+                "--json",
+                "headRefOid,state",
+                "--jq",
+                'select(.state == "OPEN") | .headRefOid',
+            ]
+        )
+        return (out or "").strip()
+
+    def _gh_has_review(self, repo: str, number: int, sha: str) -> bool:
+        """True when animaworks-reviewer has posted a review on this head."""
+        out = gh(
+            [
+                "api",
+                f"repos/{repo}/pulls/{number}/reviews",
+                "--paginate",
+                "--jq",
+                (
+                    '.[] | select(.user.login == "'
+                    f"{self._config.reviewer_login}"
+                    '" and .commit_id == "'
+                    f"{sha}"
+                    '")'
+                    ' | select(.state != "PENDING")'
+                ),
+            ]
+        )
+        return bool(out and out.strip())
+
+    def _slo_dispatch(self, state: dict, key: str, repo: str, number: int, sha: str) -> None:
+        """Re-dispatch the multipass review (if absent) and alert the dispatcher."""
+        models = list(getattr(self._config, "review_multipass_models", None) or [])
+        if models:
+            base_id = f"gh-ci-{repo.replace('/', '-')}#{number}-{sha[:8]}"
+            multipass = state.setdefault("multi_model_passes", {})
+            if base_id not in multipass:
+                entry = state["prs"].get(key) or {}
+                review_multipass.dispatch_multipass_reviews(
+                    state,
+                    [
+                        {
+                            "repo": repo,
+                            "number": number,
+                            "sha": sha,
+                            "title": str(entry.get("title") or f"PR #{number}"),
+                        }
+                    ],
+                    reviewer=self._config.reviewer_anima,
+                    models=models,
+                    quiet_seconds=self._config.quiet_seconds,
+                    dispatch=dispatch_direct_task,
+                )
+        dispatch_direct_task(
+            target=self._config.dispatcher_anima,
+            task_id=f"gh-slo-{repo.replace('/', '-')}#{number}-{sha[:8]}",
+            summary=t("github_gateway.review_slo_summary", repo=repo, number=number),
+            instruction=t(
+                "github_gateway.review_slo_task",
+                repo=repo,
+                number=number,
+                sha=sha,
+                url=f"https://github.com/{repo}/pull/{number}",
+            ),
+            meta={"repo": repo, "number": number, "sha": sha, "kind": "review-slo"},
+        )
+
+    def retry_failed_ci_tasks(self) -> int:
+        """Re-dispatch failed gh-ci tasks for PRs still sitting on the failing head.
+
+        The webhook path only retries when GitHub sends another ``workflow_run``,
+        i.e. after a new push.  A task killed mid-way (2026-08-30 hang storm)
+        was therefore never retried.  ``_dispatch_ci_once`` owns the retry
+        budget (``MAX_FAILED_REDISPATCHES``), so this only feeds it candidates.
+        """
+        candidates: list[tuple[str, int, str, str, str]] = []
+        if not self._require_state_file().is_file():
+            return 0  # nothing was ever dispatched; don't materialise state on a sweep
+        with locked_dispatch_state(self._require_state_file()) as state:
+            urls = state.get("ci_workflow_urls") or {}
+            for key in list(state["ci_notified"]):
+                repo, _, rest = key.rpartition("#")
+                number, _, sha8 = rest.partition("_")
+                sha = str((state["prs"].get(f"{repo}#{number}") or {}).get("sha") or "")
+                if not number.isdigit() or not sha8 or not sha.startswith(sha8):
+                    continue
+                workflow_name = str(state["ci_failure_signatures"].get(key) or "CI")
+                candidates.append((repo, int(number), sha, workflow_name, str(urls.get(key) or "")))
+        dispatched = 0
+        for repo, number, sha, workflow_name, url in candidates:
+            dispatched += self._dispatch_ci_once(repo, [(number, sha)], workflow_name, url)
+        if dispatched:
+            logger.info("GitHub webhook CI retry sweep re-dispatched %d task(s)", dispatched)
+        return dispatched
+
     def _dispatch_ci_once(
         self,
         repo: str,
         items: list[tuple[int, str]],
         workflow_name: str,
         url: str,
-    ) -> None:
+    ) -> int:
+        """Dispatch CI-fix tasks for *items*; returns how many were (re)dispatched."""
         with locked_dispatch_state(self._require_state_file()) as state:
             notified = state["ci_notified"]
             failure_signatures = state["ci_failure_signatures"]
             retries = state["failed_task_retries"]
+            urls = state.setdefault("ci_workflow_urls", {})
             target_dir = get_animas_dir() / self._config.implementer_anima
             for number, sha in items:
                 key = f"{repo}#{number}_{sha[:8]}"
@@ -529,7 +776,7 @@ class GitHubWebhookManager:
                 if f"{repo}#{number}_{sha[:8]}" not in notified
             ]
             if not fresh:
-                return
+                return 0
             now = _now_iso()
             for number, sha, key in fresh:
                 pr_url = f"https://github.com/{repo}/pull/{number}"
@@ -550,6 +797,8 @@ class GitHubWebhookManager:
                 )
                 notified[key] = now
                 failure_signatures[key] = workflow_name
+                urls[key] = url
+            return len(fresh)
 
     def _is_bot(self, author: str) -> bool:
         """True when the author is bot_login or reviewer_login."""
