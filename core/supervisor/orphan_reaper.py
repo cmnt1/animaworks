@@ -44,6 +44,54 @@ _GRACE_ENV = "ANIMAWORKS_ORPHAN_GRACE_SECONDS"
 _NOTIFY_MAX_ENTRIES = 20
 
 
+def resolve_orphan_grace_seconds(anima_dir: Path, *, config=None) -> int:
+    """Resolve the orphan grace period for ``anima_dir``.
+
+    Priority:
+
+    1. ``ANIMAWORKS_ORPHAN_GRACE_SECONDS`` env var (legacy / test override).
+    2. The anima's heartbeat interval (status.json → global config), multiplied
+       by ``heartbeat.orphan_grace_multiplier`` and floored at
+       ``heartbeat.orphan_grace_min_seconds``.
+
+    The grace must always exceed the anima's heartbeat so a run that ended
+    without a completion declaration can be re-submitted by the anima's own
+    heartbeat before it gets reaped. On any failure (e.g. ``load_config``
+    raising) it falls back to ``_ORPHAN_GRACE_SECONDS`` on the safe side.
+    """
+    raw = os.environ.get(_GRACE_ENV)
+    if raw is not None:
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            logger.warning(
+                "Invalid %s=%r; using computed value",
+                _GRACE_ENV,
+                raw,
+            )
+    try:
+        if config is None:
+            from core.config import models as config_models
+
+            config = config_models.load_config()
+        heartbeat = config.heartbeat
+        multiplier = float(heartbeat.orphan_grace_multiplier or 3.0)
+        min_seconds = int(heartbeat.orphan_grace_min_seconds or 1800)
+
+        from core.supervisor.scheduler_manager import read_per_anima_heartbeat_interval
+
+        interval_minutes = read_per_anima_heartbeat_interval(anima_dir, config)
+        return max(min_seconds, int(interval_minutes * 60 * multiplier))
+    except Exception:
+        logger.warning(
+            "Failed to resolve orphan grace for %s; using default %d",
+            anima_dir,
+            _ORPHAN_GRACE_SECONDS,
+            exc_info=True,
+        )
+        return _ORPHAN_GRACE_SECONDS
+
+
 def _effective_grace_seconds(grace_seconds: int | None) -> int:
     """Resolve the grace period, honoring the env override.
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -19,6 +20,7 @@ from core.supervisor.orphan_reaper import (
     find_orphan_tasks,
     notify_reaped,
     reap_orphan_tasks,
+    resolve_orphan_grace_seconds,
 )
 from core.time_utils import now_local
 
@@ -106,9 +108,7 @@ class TestReapOrphanTasks:
     def test_does_not_reap_row_with_descriptor_in_pending(self, tmp_path):
         anima_dir = tmp_path / "aoi"
         manager = _manager(anima_dir)
-        entry = manager.add_task(
-            source="anima", original_instruction="x", assignee="aoi", summary="s"
-        )
+        entry = manager.add_task(source="anima", original_instruction="x", assignee="aoi", summary="s")
         _write_descriptor(anima_dir, entry.task_id)
         _age_ledger(anima_dir, entry.task_id, hours=3)
 
@@ -118,9 +118,7 @@ class TestReapOrphanTasks:
     def test_does_not_reap_row_with_descriptor_in_processing(self, tmp_path):
         anima_dir = tmp_path / "aoi"
         manager = _manager(anima_dir)
-        entry = manager.add_task(
-            source="anima", original_instruction="x", assignee="aoi", summary="s"
-        )
+        entry = manager.add_task(source="anima", original_instruction="x", assignee="aoi", summary="s")
         _write_descriptor(anima_dir, entry.task_id, subdir="processing")
         _age_ledger(anima_dir, entry.task_id, hours=3)
 
@@ -130,9 +128,7 @@ class TestReapOrphanTasks:
     def test_does_not_reap_recent_row(self, tmp_path):
         anima_dir = tmp_path / "aoi"
         manager = _manager(anima_dir)
-        entry = manager.add_task(
-            source="anima", original_instruction="x", assignee="aoi", summary="s"
-        )
+        entry = manager.add_task(source="anima", original_instruction="x", assignee="aoi", summary="s")
         _age_ledger(anima_dir, entry.task_id, hours=5 / 60)  # 5 min ago
 
         assert reap_orphan_tasks(anima_dir, active_task_ids=set()) == []
@@ -141,9 +137,7 @@ class TestReapOrphanTasks:
     def test_does_not_reap_active_task_ids(self, tmp_path):
         anima_dir = tmp_path / "aoi"
         manager = _manager(anima_dir)
-        entry = manager.add_task(
-            source="anima", original_instruction="x", assignee="aoi", summary="s"
-        )
+        entry = manager.add_task(source="anima", original_instruction="x", assignee="aoi", summary="s")
         _age_ledger(anima_dir, entry.task_id, hours=3)
 
         reaped = reap_orphan_tasks(anima_dir, active_task_ids={entry.task_id})
@@ -176,9 +170,7 @@ class TestReapOrphanTasks:
     def test_grace_seconds_env_override(self, tmp_path, monkeypatch):
         anima_dir = tmp_path / "aoi"
         manager = _manager(anima_dir)
-        entry = manager.add_task(
-            source="anima", original_instruction="x", assignee="aoi", summary="s"
-        )
+        entry = manager.add_task(source="anima", original_instruction="x", assignee="aoi", summary="s")
         _age_ledger(anima_dir, entry.task_id, hours=5 / 60)  # 5 min ago
         monkeypatch.setenv("ANIMAWORKS_ORPHAN_GRACE_SECONDS", "60")
 
@@ -192,12 +184,8 @@ class TestFindOrphanTasks:
     def test_returns_oldest_first(self, tmp_path):
         anima_dir = tmp_path / "aoi"
         manager = _manager(anima_dir)
-        old = manager.add_task(
-            source="anima", original_instruction="x", assignee="aoi", summary="old"
-        )
-        newer = manager.add_task(
-            source="anima", original_instruction="x", assignee="aoi", summary="newer"
-        )
+        old = manager.add_task(source="anima", original_instruction="x", assignee="aoi", summary="old")
+        newer = manager.add_task(source="anima", original_instruction="x", assignee="aoi", summary="newer")
         _age_ledger(anima_dir, old.task_id, hours=5)
         _age_ledger(anima_dir, newer.task_id, hours=2)
 
@@ -216,13 +204,9 @@ class TestFindOrphanTasks:
         anima_dir = tmp_path / "aoi"
         manager = _manager(anima_dir)
         for i in range(4):
-            e = manager.add_task(
-                source="anima", original_instruction="x", assignee="aoi", summary=f"s{i}"
-            )
+            e = manager.add_task(source="anima", original_instruction="x", assignee="aoi", summary=f"s{i}")
             _age_ledger(anima_dir, e.task_id, hours=3)
-        real = manager.add_task(
-            source="anima", original_instruction="r", assignee="aoi", summary="real"
-        )
+        real = manager.add_task(source="anima", original_instruction="r", assignee="aoi", summary="real")
         _write_descriptor(anima_dir, real.task_id)
         _age_ledger(anima_dir, real.task_id, hours=3)
 
@@ -290,6 +274,79 @@ class TestNotifyReaped:
         assert "ほか 5 件" in content
 
 
+class TestResolveOrphanGraceSeconds:
+    @staticmethod
+    def _cfg(**kw) -> object:
+        """Build a minimal config object carrying a HeartbeatConfig."""
+        from core.config.schemas import HeartbeatConfig
+
+        return SimpleNamespace(heartbeat=HeartbeatConfig(**kw))
+
+    @staticmethod
+    def _anima_dir(tmp_path, heartbeat_minutes=None) -> Path:
+        anima_dir = tmp_path / "animas" / "aoi"
+        anima_dir.mkdir(parents=True, exist_ok=True)
+        if heartbeat_minutes is not None:
+            status = {
+                "heartbeat_interval_minutes": heartbeat_minutes,
+            }
+            (anima_dir / "status.json").write_text(json.dumps(status), encoding="utf-8")
+        return anima_dir
+
+    def test_status_interval_times_default_multiplier(self, tmp_path):
+        # status 60 min * multiplier 3.0 -> 10800
+        anima_dir = self._anima_dir(tmp_path, heartbeat_minutes=60)
+        assert resolve_orphan_grace_seconds(anima_dir, config=self._cfg()) == 10800
+
+    def test_no_status_falls_back_to_config_interval(self, tmp_path):
+        # no status.json, config interval 30 min -> 5400
+        anima_dir = self._anima_dir(tmp_path)
+        cfg = self._cfg(interval_minutes=30)
+        assert resolve_orphan_grace_seconds(anima_dir, config=cfg) == 5400
+
+    @pytest.mark.parametrize("bad", ["sixty", 0, 2000])
+    def test_broken_status_falls_back_to_config_interval(self, tmp_path, bad):
+        anima_dir = self._anima_dir(tmp_path, heartbeat_minutes=bad)
+        cfg = self._cfg(interval_minutes=30)
+        assert resolve_orphan_grace_seconds(anima_dir, config=cfg) == 5400
+
+    def test_multiplier_one_applies_minimum(self, tmp_path):
+        # multiplier 1.0 * 10 min = 600 < min 1800 -> 1800
+        anima_dir = self._anima_dir(tmp_path, heartbeat_minutes=10)
+        cfg = self._cfg(orphan_grace_multiplier=1.0, orphan_grace_min_seconds=1800)
+        assert resolve_orphan_grace_seconds(anima_dir, config=cfg) == 1800
+
+    def test_env_takes_priority_over_config(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("ANIMAWORKS_ORPHAN_GRACE_SECONDS", "60")
+        anima_dir = self._anima_dir(tmp_path, heartbeat_minutes=60)
+        assert resolve_orphan_grace_seconds(anima_dir, config=self._cfg()) == 60
+
+    def test_sweep_passes_resolved_grace_to_reap(self, tmp_path, monkeypatch):
+        from core.supervisor import orphan_reaper as orm
+        from core.supervisor.pending_executor import PendingTaskExecutor
+
+        anima_dir = tmp_path / "animas" / "test-anima"
+        anima_dir.mkdir(parents=True, exist_ok=True)
+        executor = PendingTaskExecutor(
+            anima=MagicMock(),
+            anima_name="test-anima",
+            anima_dir=anima_dir,
+            shutdown_event=MagicMock(),
+        )
+
+        captured: dict = {}
+        monkeypatch.setattr(orm, "resolve_orphan_grace_seconds", lambda d: 1234)
+
+        def fake_reap(anima_dir, *, active_task_ids, grace_seconds=None, **kw):
+            captured["grace"] = grace_seconds
+            return []
+
+        monkeypatch.setattr(orm, "reap_orphan_tasks", fake_reap)
+
+        assert executor._run_orphan_sweep() == 0
+        assert captured.get("grace") == 1234
+
+
 @pytest.mark.asyncio
 async def test_watcher_loop_sweep_is_throttled(tmp_path, monkeypatch):
     """A sweep within the throttle interval must not re-run reap."""
@@ -321,8 +378,6 @@ async def test_watcher_loop_sweep_is_throttled(tmp_path, monkeypatch):
     assert calls["n"] == 1
 
     # Rewinding the clock allows the next sweep.
-    import time as time_mod
-
     executor._last_orphan_sweep = 0.0
     await executor._maybe_run_orphan_sweep()
     assert calls["n"] == 2

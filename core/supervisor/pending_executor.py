@@ -862,12 +862,18 @@ class PendingTaskExecutor:
         ``reap_orphan_tasks``) and any unexpected error here is contained to a
         warning so the watcher loop keeps running.
         """
-        from core.supervisor.orphan_reaper import notify_reaped, reap_orphan_tasks
+        from core.supervisor.orphan_reaper import (
+            notify_reaped,
+            reap_orphan_tasks,
+            resolve_orphan_grace_seconds,
+        )
 
         try:
+            grace_seconds = resolve_orphan_grace_seconds(self._anima_dir)
             reaped = reap_orphan_tasks(
                 self._anima_dir,
                 active_task_ids=set(self._active_task_ids),
+                grace_seconds=grace_seconds,
             )
         except Exception:
             logger.warning(
@@ -887,7 +893,12 @@ class PendingTaskExecutor:
                 len(reaped),
                 exc_info=True,
             )
-        logger.info("Orphan sweep: anima=%s reaped=%d", self._anima_name, len(reaped))
+        logger.info(
+            "Orphan sweep: anima=%s reaped=%d grace=%ds",
+            self._anima_name,
+            len(reaped),
+            grace_seconds,
+        )
         return len(reaped)
 
     async def _maybe_run_orphan_sweep(self) -> None:

@@ -7,6 +7,10 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Orphan reaper grace is now derived from each anima's heartbeat interval (`heartbeat.orphan_grace_multiplier` / `heartbeat.orphan_grace_min_seconds`) instead of a fixed 30 minutes, so runs that end without a completion declaration can be re-submitted by the anima's next heartbeat before being reaped.
+
 ## [0.13.0] - 2026-09-05
 
 ### Added

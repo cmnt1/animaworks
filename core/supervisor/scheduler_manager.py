@@ -57,6 +57,24 @@ def _active_hour_spec(active_start: int | None, active_end: int | None) -> str:
     return f"{active_start}-23,0-{active_end - 1}"
 
 
+def read_per_anima_heartbeat_interval(anima_dir: Path, app_config: Any) -> int:
+    """Read heartbeat_interval_minutes from status.json, fallback to global config.
+
+    Only int/float values in [1, 1440] are accepted; anything else (missing,
+    malformed, or out of range) falls back to ``app_config.heartbeat.interval_minutes``.
+    """
+    try:
+        status_path = anima_dir / "status.json"
+        if status_path.is_file():
+            data = json.loads(status_path.read_text(encoding="utf-8"))
+            val = data.get("heartbeat_interval_minutes")
+            if isinstance(val, (int, float)) and 1 <= val <= 1440:
+                return int(val)
+    except (json.JSONDecodeError, OSError, ValueError):
+        logger.debug("Failed to read heartbeat_interval_minutes from %s", anima_dir)
+    return app_config.heartbeat.interval_minutes
+
+
 class SchedulerManager:
     """APScheduler management: heartbeat/cron registration, execution, reload."""
 
@@ -161,16 +179,7 @@ class SchedulerManager:
 
     def _read_per_anima_interval(self, app_config: Any) -> int:
         """Read heartbeat_interval_minutes from status.json, fallback to global config."""
-        try:
-            status_path = self._anima_dir / "status.json"
-            if status_path.is_file():
-                data = json.loads(status_path.read_text(encoding="utf-8"))
-                val = data.get("heartbeat_interval_minutes")
-                if isinstance(val, (int, float)) and 1 <= val <= 1440:
-                    return int(val)
-        except (json.JSONDecodeError, OSError, ValueError):
-            logger.debug("Failed to read heartbeat_interval_minutes from %s", self._anima_dir)
-        return app_config.heartbeat.interval_minutes
+        return read_per_anima_heartbeat_interval(self._anima_dir, app_config)
 
     def _setup_heartbeat(self) -> None:
         """Register heartbeat job from heartbeat.md + config.json + activity_level."""

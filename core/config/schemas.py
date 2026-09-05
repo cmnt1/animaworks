@@ -908,6 +908,22 @@ class HeartbeatConfig(BaseModel):
     interval_minutes: int = Field(
         default=30, ge=1, le=1440
     )  # heartbeat interval (config-driven, not parsed from heartbeat.md)
+    # Orphan reaper: grace period before a descriptor-less pending row is
+    # cancelled. Must always be longer than this anima's heartbeat so a run
+    # that ended without a completion declaration can be re-submitted by the
+    # anima's own heartbeat before it gets reaped. grace = heartbeat interval
+    # (minutes) * orphan_grace_multiplier, floored at orphan_grace_min_seconds.
+    orphan_grace_multiplier: float = Field(
+        default=3.0,
+        ge=1.0,
+        le=24.0,
+        description="Orphan reaper grace = heartbeat interval (min) * this multiplier",
+    )
+    orphan_grace_min_seconds: int = Field(
+        default=1800,
+        ge=60,
+        description="Lower bound for the orphan reaper grace, in seconds",
+    )
     current_state_max_chars: int = Field(
         default=8000,
         ge=0,
