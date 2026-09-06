@@ -120,13 +120,65 @@ class TestParserCommands:
         sub = parser.add_subparsers(dest="command")
         p_chat = sub.add_parser("chat")
         p_chat.add_argument("anima")
-        p_chat.add_argument("message")
+        p_chat.add_argument("message", nargs="?", default=None)
         p_chat.add_argument("--local", action="store_true")
-        p_chat.add_argument("--from", dest="from_person", default="human")
+        p_chat.add_argument("--from", "--as", dest="from_person", default="human")
+        p_chat.add_argument("--thread", dest="thread_id", default="default")
+        p_chat.add_argument("--no-tui", action="store_true")
 
         args = parser.parse_args(["chat", "alice", "Hi", "--local", "--from", "bob"])
         assert args.local is True
         assert args.from_person == "bob"
+
+    def test_chat_message_optional(self):
+        parser = argparse.ArgumentParser()
+        sub = parser.add_subparsers(dest="command")
+        p_chat = sub.add_parser("chat")
+        p_chat.add_argument("anima")
+        p_chat.add_argument("message", nargs="?", default=None)
+        p_chat.add_argument("--from", "--as", dest="from_person", default="human")
+        p_chat.add_argument("--thread", dest="thread_id", default="default")
+        p_chat.add_argument("--no-tui", action="store_true")
+
+        args = parser.parse_args(["chat", "sora"])
+        assert args.anima == "sora"
+        assert args.message is None
+
+    def test_chat_thread_flag(self):
+        parser = argparse.ArgumentParser()
+        sub = parser.add_subparsers(dest="command")
+        p_chat = sub.add_parser("chat")
+        p_chat.add_argument("anima")
+        p_chat.add_argument("message", nargs="?", default=None)
+        p_chat.add_argument("--from", "--as", dest="from_person", default="human")
+        p_chat.add_argument("--thread", dest="thread_id", default="default")
+        p_chat.add_argument("--no-tui", action="store_true")
+
+        args = parser.parse_args(["chat", "sora", "hi", "--thread", "t1"])
+        assert args.thread_id == "t1"
+
+    def test_chat_as_alias(self):
+        parser = argparse.ArgumentParser()
+        sub = parser.add_subparsers(dest="command")
+        p_chat = sub.add_parser("chat")
+        p_chat.add_argument("anima")
+        p_chat.add_argument("message", nargs="?", default=None)
+        p_chat.add_argument("--from", "--as", dest="from_person", default="human")
+
+        args = parser.parse_args(["chat", "sora", "hi", "--as", "me"])
+        assert args.from_person == "me"
+
+    def test_chat_no_tui_flag(self):
+        parser = argparse.ArgumentParser()
+        sub = parser.add_subparsers(dest="command")
+        p_chat = sub.add_parser("chat")
+        p_chat.add_argument("anima")
+        p_chat.add_argument("message", nargs="?", default=None)
+        p_chat.add_argument("--no-tui", action="store_true")
+
+        args = parser.parse_args(["chat", "sora", "--no-tui"])
+        assert args.message is None
+        assert args.no_tui is True
 
     def test_send_command(self):
         parser = argparse.ArgumentParser()
