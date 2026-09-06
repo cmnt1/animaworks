@@ -58,6 +58,80 @@ def test_tool_end_clears_tool():
     assert state.animas["rin"].active_tool is None
 
 
+# ── activity-log shapes (no `event` key) ─────────────────
+
+
+def test_tool_activity_log_without_event_kind_tool_use():
+    state = _state_with()
+    eff = apply_ws_event(
+        state,
+        _event(
+            "anima.tool_activity",
+            {"name": "rin", "type": "task_processing_start", "kind": "tool_use", "tool": "Bash", "summary": "x"},
+        ),
+    )
+    assert state.animas["rin"].active_tool == "Bash"
+    assert eff.feed and eff.feed[0].text == "Bash"
+
+
+def test_tool_activity_log_without_event_kind_tool_result():
+    state = _state_with()
+    apply_ws_event(
+        state,
+        _event("anima.tool_activity", {"name": "rin", "type": "t", "kind": "tool_use", "tool": "Bash"}),
+    )
+    state.animas["rin"].active_tool = "Bash"
+    eff = apply_ws_event(
+        state,
+        _event("anima.tool_activity", {"name": "rin", "type": "t", "kind": "tool_result", "tool": "Bash"}),
+    )
+    assert state.animas["rin"].active_tool is None
+    assert eff.feed == []
+
+
+def test_tool_activity_log_without_event_kind_tool_result_error():
+    state = _state_with()
+    eff = apply_ws_event(
+        state,
+        _event(
+            "anima.tool_activity",
+            {"name": "rin", "type": "t", "kind": "tool_result", "tool": "Bash", "is_error": True},
+        ),
+    )
+    assert state.animas["rin"].active_tool is None
+    assert eff.feed and "✗" in eff.feed[0].text
+
+
+def test_tool_activity_log_without_event_other_type_uses_summary():
+    state = _state_with()
+    long = "x" * 200
+    eff = apply_ws_event(
+        state,
+        _event(
+            "anima.tool_activity",
+            {"name": "rin", "type": "inbox_processing_end", "kind": "", "summary": long},
+        ),
+    )
+    assert eff.feed and eff.feed[0].text.startswith("inbox_processing_end ")
+    assert len(eff.feed[0].text) == len("inbox_processing_end ") + 60
+
+
+def test_activity_log_sets_busy_on_start_idle_on_end():
+    state = _state_with()
+    apply_ws_event(
+        state,
+        _event("anima.tool_activity", {"name": "rin", "type": "inbox_processing_start", "kind": ""}),
+    )
+    assert state.animas["rin"].status == "busy"
+    assert state.animas["rin"].busy is True
+    apply_ws_event(
+        state,
+        _event("anima.tool_activity", {"name": "rin", "type": "inbox_processing_end", "kind": ""}),
+    )
+    assert state.animas["rin"].status == "idle"
+    assert state.animas["rin"].busy is False
+
+
 def test_unknown_anima_ignored():
     state = _state_with()
     eff = apply_ws_event(state, _event("anima.status", {"name": "nobody", "status": "thinking"}))

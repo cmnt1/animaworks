@@ -124,6 +124,31 @@ def apply_ws_event(state: AppState, event: dict) -> WsEffect:
         elif evt == "tool_detail":
             # High volume — only update the side bar's current-tool column.
             row.active_tool = tool
+        elif evt is None and data.get("type"):
+            # Activity-log shape (no ``event`` key): type/kind/tool/summary.
+            atype = data.get("type") or ""
+            kind = data.get("kind") or ""
+            summary = data.get("summary") or ""
+            if kind == "tool_use":
+                row.active_tool = tool
+                if data.get("tool"):
+                    eff.feed.append(ActivityEntry(name, "tool", str(data.get("tool"))))
+            elif kind == "tool_result":
+                row.active_tool = None
+                mark = "" if not bool(data.get("is_error")) else " ✗"
+                if mark:
+                    eff.feed.append(ActivityEntry(name, "tool", f"{tool}{mark}"))
+            else:
+                text = atype if not summary else f"{atype} {str(summary)[:60]}"
+                eff.feed.append(ActivityEntry(name, atype, text))
+            # Mirror start/end phases into the row state when no anima.status
+            # is pushed (background lanes).
+            if atype.endswith("_start"):
+                row.status = "busy"
+                row.busy = True
+            elif atype.endswith("_end"):
+                row.status = "idle"
+                row.busy = False
         elif evt:
             eff.feed.append(ActivityEntry(name, "tool", str(data.get("summary") or evt)))
 

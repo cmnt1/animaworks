@@ -89,6 +89,8 @@ class AnimaList(VerticalScroll):
             return
         color = _STATUS_COLORS.get(info.status, "default")
         parts: list = []
+        # Current chat partner marker: ▶ for the selected anima, blank otherwise.
+        parts.append(Text("▶ " if row.anima_name == self._current else "  ", style="bold"))
         if info.busy or info.status in ("busy", "thinking", "streaming"):
             parts.append(Text("● ", style=color))
         else:
@@ -101,8 +103,34 @@ class AnimaList(VerticalScroll):
         row.update(Text.assemble(*parts))
 
 
+# Max visible text width for a single feed line (sidebar is ~32 cols).
+_MAX_FEED_TEXT = 34
+
+
+class _FeedLine(Static):
+    """A single, non-wrapping activity feed row (truncated with `…`)."""
+
+    DEFAULT_CSS = """
+    _FeedLine {
+        height: 1;
+        width: 100%;
+    }
+    """
+
+
+def _truncate(text: str, width: int = _MAX_FEED_TEXT) -> str:
+    """Truncate ``text`` to ``width`` chars, appending `…` when cut."""
+    if len(text) <= width:
+        return text
+    return text[: width - 1] + "…"
+
+
 class ActivityFeed(VerticalScroll):
-    """The lower portion of the sidebar: rolling activity feed."""
+    """The lower portion of the sidebar: rolling activity feed.
+
+    Each row is fixed at height 1 and never wraps; the feed itself
+    scrolls internally so it can never overflow the sidebar.
+    """
 
     def update_state(self, state: AppState) -> None:
         self.remove_children()
@@ -121,10 +149,10 @@ class ActivityFeed(VerticalScroll):
                 text_parts.append(Text(entry.kind, style="cyan"))
                 if entry.text:
                     text_parts.append(Text(f" {entry.text}", style="dim"))
-            line = Static(Text.assemble(*text_parts))
-            line.styles.height = "auto"
-            line.styles.width = "100%"
+            line = _FeedLine(_truncate(str(Text.assemble(*text_parts))))
             self.mount(line)
+        if state.activity:
+            self.scroll_end(animate=False)
 
 
 class Sidebar(Vertical):
@@ -150,6 +178,9 @@ class Sidebar(Vertical):
     AnimaList {
         height: 1fr;
         width: 100%;
+    }
+    AnimaList > _AnimaRow.current {
+        text-style: reverse;
     }
     ActivityFeed {
         height: 1fr;
