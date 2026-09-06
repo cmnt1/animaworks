@@ -21,6 +21,7 @@ from cli.tui.widgets import (
     ToolCard,
     Transcript,
 )
+from cli.tui.widgets.thinking import ThinkingBlock
 from cli.tui.widgets.transcript import AssistantBlock
 
 
@@ -39,8 +40,6 @@ class AnimaChatApp(App):
     }
     #input-container {
         height: auto;
-        max-height: 6;
-        dock: bottom;
         background: $panel;
     }
     #input-container .input-prompt {
@@ -49,11 +48,12 @@ class AnimaChatApp(App):
     }
     #input {
         height: auto;
-        max-height: 6;
+        border: none;
         padding: 0 1;
     }
     #status {
         height: 1;
+        dock: bottom;
         background: $boost;
         color: $text;
         padding: 0 1;
@@ -66,6 +66,7 @@ class AnimaChatApp(App):
         padding: 0 2;
     }
     #transcript .transient {
+        height: auto;
         width: 100%;
         padding: 0 2;
     }
@@ -106,12 +107,13 @@ class AnimaChatApp(App):
         self.transcript = self.query_one("#transcript", Transcript)
         self.input_container = self.query_one("#input-container", ChatInputContainer)
         self.status_bar = self.query_one("#status", StatusBar)
-        self._focus_timer = self.set_interval(1.0, self._focus_input)
+
+        self.call_after_refresh(self.focus_input)
 
         self.run_worker(self._bootstrap(), group="init", exit_on_error=False)
 
-    def _focus_input(self) -> None:
-        if not self.input_container.input.has_focus:
+    def focus_input(self) -> None:
+        if self.input_container.input.has_focus is not True:
             self.input_container.focus_input()
 
     async def _bootstrap(self) -> None:
@@ -130,11 +132,16 @@ class AnimaChatApp(App):
             self.show_transient(f"Anima '{self.anima_name}' not found.")
             self.set_timer(0.5, lambda: self.exit(return_code=1))
             return
-        status = next(
-            (a.get("status") for a in animas if a.get("name") == self.anima_name),
-            "idle",
+        entry = next(
+            (a for a in animas if a.get("name") == self.anima_name),
+            None,
         )
-        self.status_bar.set_state(status=status or "idle")
+        busy = (entry or {}).get("busy")
+        if isinstance(busy, dict) and busy.get("is_busy"):
+            status = "busy"
+        else:
+            status = "idle"
+        self.status_bar.set_state(status=status)
         self.run_worker(self._load_history(), group="init", exit_on_error=False)
         self.run_worker(self._ws_loop(), group="ws", exit_on_error=False)
 
@@ -164,9 +171,7 @@ class AnimaChatApp(App):
                     block = self.transcript.new_assistant(self.anima_name)
                     block.set_final(str(content))
                     await self.transcript.mount_assistant(block)
-                # system role messages are rendered as transient detail
-                else:
-                    self.show_transient(str(content))
+                # any other role (e.g. system) is skipped as noise
         self.current = None
 
     async def reload_history(self, limit: int = 20) -> None:
@@ -195,10 +200,10 @@ class AnimaChatApp(App):
             self.status_bar.set_state(connected=bool(data.get("connected")))
         elif event_type == "anima.status":
             if data.get("name") == self.anima_name:
+                # Anima-level process/lane status. Do not touch ``busy``:
+                # it would race with our own streaming lane.
                 status = data.get("status") or "idle"
                 self.status_bar.set_state(status=status)
-                if status in ("idle",):
-                    self.busy = False
         elif event_type == "anima.tool_activity":
             if data.get("name") == self.anima_name:
                 evt = data.get("event")
@@ -251,6 +256,10 @@ class AnimaChatApp(App):
                 await self.handle_sse(sse)
         except AnimaWorksClientError as exc:
             await self._show_error(str(exc))
+        finally:
+            self.busy = False
+            self.status_bar.set_state(active_tool=None)
+            self.call_after_refresh(self.focus_input)
 
     async def handle_sse(self, sse: SseEvent) -> None:
         name = sse.event
@@ -261,11 +270,13 @@ class AnimaChatApp(App):
             if self.current is not None:
                 self.current.append_text(data.get("text", ""))
         elif name == "thinking_start":
-            if self.show_thinking:
-                self.current.ensure_thinking().set_visible(True)
+            if self.current is not None:
+                self.current.ensure_thinking().set_visible(self.show_thinking)
         elif name == "thinking_delta":
-            if self.show_thinking:
-                self.current.ensure_thinking().add_delta(data.get("text", ""))
+            if self.current is not None:
+                block = self.current.ensure_thinking()
+                block.set_visible(self.show_thinking)
+                block.add_delta(data.get("text", ""))
         elif name == "thinking_end":
             pass
         elif name == "tool_start":
@@ -274,7 +285,8 @@ class AnimaChatApp(App):
             if data.get("input_summary"):
                 card.add_detail(str(data.get("input_summary")))
             self.tool_cards[tool_id] = card
-            await self.current.add_tool(card)
+            if self.current is not None:
+                await self.current.add_tool(card)
         elif name == "tool_detail":
             card = self.tool_cards.get(data.get("tool_id", ""))
             if card is not None:
@@ -323,6 +335,7 @@ class AnimaChatApp(App):
             self.show_transient(f"Unknown command: /{name}   (try /help)")
             return
         cmd.handler(args, self)
+        self.call_after_refresh(self.focus_input)
 
     def show_transient(self, text: str) -> None:
         self.run_worker(self._show_transient_async(text), group="ui", exit_on_error=False)
@@ -339,6 +352,8 @@ class AnimaChatApp(App):
 
     def toggle_thinking(self) -> None:
         self.show_thinking = not self.show_thinking
+        for block in self.query(ThinkingBlock):
+            block.set_visible(self.show_thinking)
         self.show_transient(f"Thinking display: {'on' if self.show_thinking else 'off'}")
 
     def request_interrupt(self) -> None:
