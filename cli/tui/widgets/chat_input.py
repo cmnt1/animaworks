@@ -18,6 +18,14 @@ class ChatSubmitted(Message):
         self.text = text
 
 
+class ChatInputChanged(Message):
+    """Posted whenever the input buffer changes (used to drive the palette)."""
+
+    def __init__(self, text: str) -> None:
+        super().__init__()
+        self.text = text
+
+
 class ChatInput(TextArea):
     """A multi-line chat input.
 
@@ -25,15 +33,31 @@ class ChatInput(TextArea):
     inserts a newline. Submissions are posted as a :class:`ChatSubmitted`
     message. Grows up to ``max_lines`` rows as content is added and
     returns to a single row after submission.
+
+    A ``controller`` (the running app) may be attached so that arrow /
+    tab keys can drive the open slash-command :class:`~cli.tui.widgets.palette.Palette`
+    while the input keeps focus.
     """
 
     max_lines = 6
+
+    def __init__(self, placeholder: str = "Say something…", *, controller=None, **kwargs) -> None:
+        super().__init__(placeholder=placeholder, **kwargs)
+        self._controller = controller
+
+    def set_controller(self, controller) -> None:
+        self._controller = controller
+
+    def _palette_open(self) -> bool:
+        return bool(self._controller is not None and self._controller.palette_is_open())
 
     def on_mount(self) -> None:
         self._update_height()
 
     def on_text_area_changed(self, _event) -> None:
         self._update_height()
+        if self._controller is not None:
+            self._controller.on_input_text_changed(self.text)
 
     def _update_height(self) -> None:
         lines = max(self.document.line_count, 1)
@@ -41,6 +65,11 @@ class ChatInput(TextArea):
 
     async def _on_key(self, event: events.Key) -> None:
         if event.key == "enter":
+            if self._palette_open():
+                event.stop()
+                event.prevent_default()
+                self._controller.palette_confirm()
+                return
             event.stop()
             event.prevent_default()
             text = self.text
@@ -48,6 +77,21 @@ class ChatInput(TextArea):
                 self.post_message(ChatSubmitted(text))
             self.clear()
             self._update_height()
+            return
+        if event.key == "tab" and self._palette_open():
+            event.stop()
+            event.prevent_default()
+            self._controller.palette_confirm()
+            return
+        if event.key == "escape" and self._palette_open():
+            event.stop()
+            event.prevent_default()
+            self._controller.palette_close()
+            return
+        if event.key in ("up", "down", "pageup", "pagedown", "home", "end") and self._palette_open():
+            event.stop()
+            event.prevent_default()
+            self._controller.palette_move(event.key)
             return
         if event.key == "shift+enter":
             event.stop()
