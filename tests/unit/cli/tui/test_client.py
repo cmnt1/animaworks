@@ -256,3 +256,110 @@ async def test_resolve_interaction_409_raises():
     client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
     with pytest.raises(AnimaWorksClientError):
         await client.resolve_interaction("sora", "cb1", "approve")
+
+
+# ── Phase 3 ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_active_stream_passes_thread():
+    captured = {}
+
+    def handler(request):
+        captured["params"] = request.url.params
+        captured["path"] = request.url.path
+        return httpx.Response(200, json={"active": False})
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    res = await client.get_active_stream("sora", thread_id="t1")
+    assert res == {"active": False}
+    assert captured["path"] == "/api/animas/sora/stream/active"
+    assert captured["params"]["thread_id"] == "t1"
+
+
+@pytest.mark.asyncio
+async def test_get_stream_progress_404_returns_none():
+    client = AnimaWorksClient(
+        "http://localhost:18500",
+        transport=httpx.MockTransport(lambda req: httpx.Response(404)),
+    )
+    assert await client.get_stream_progress("sora", "r1") is None
+
+
+@pytest.mark.asyncio
+async def test_get_history_before_param():
+    captured = {}
+
+    def handler(request):
+        captured["params"] = request.url.params
+        return httpx.Response(200, json={"sessions": [], "has_more": True, "next_before": "c1"})
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    await client.get_history("sora", thread_id="t1", limit=50, before="cur")
+    assert captured["params"]["before"] == "cur"
+
+
+@pytest.mark.asyncio
+async def test_auth_me_401_returns_none():
+    client = AnimaWorksClient(
+        "http://localhost:18500",
+        transport=httpx.MockTransport(lambda req: httpx.Response(401, json={"detail": "nope"})),
+    )
+    assert await client.auth_me() is None
+
+
+@pytest.mark.asyncio
+async def test_auth_me_200_returns_user():
+    client = AnimaWorksClient(
+        "http://localhost:18500",
+        transport=httpx.MockTransport(lambda req: httpx.Response(200, json={"username": "taka"})),
+    )
+    assert (await client.auth_me()) == {"username": "taka"}
+
+
+@pytest.mark.asyncio
+async def test_login_stores_cookie_and_ws_header():
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={"username": "taka"},
+            headers={"Set-Cookie": "session_token=abc123; Path=/; HttpOnly"},
+        )
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    await client.login("taka", "secret")
+    header = client.ws_cookie_header()
+    assert header == {"Cookie": "session_token=abc123"}
+
+
+@pytest.mark.asyncio
+async def test_login_400_raises_auth_not_enabled():
+    def handler(request):
+        return httpx.Response(400, json={"error": "Authentication is not enabled"})
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    with pytest.raises(AnimaWorksClientError, match="not enabled"):
+        await client.login("taka", "secret")
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_resume_body_has_resume_and_empty_message():
+    import json as _json
+
+    captured = {}
+
+    def handler(request):
+        captured["body"] = _json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            content=SSE_BODY.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    async for _ in client.chat_stream("sora", "", thread_id="t1", resume="r1", last_event_id="r1:5"):
+        pass
+    body = captured["body"]
+    assert body["message"] == ""
+    assert body["resume"] == "r1"
+    assert body["last_event_id"] == "r1:5"

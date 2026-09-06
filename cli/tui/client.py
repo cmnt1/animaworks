@@ -89,7 +89,7 @@ class AnimaWorksClient:
         self.base_url = base_url.rstrip("/")
         self.from_person = from_person
         self.timeout = timeout
-        self._http = httpx.AsyncClient(timeout=timeout, transport=transport)
+        self._http = httpx.AsyncClient(timeout=timeout, transport=transport, cookies=httpx.Cookies())
 
     async def aclose(self) -> None:
         await self._http.aclose()
@@ -104,12 +104,85 @@ class AnimaWorksClient:
         *,
         thread_id: str = "default",
         limit: int = 50,
+        before: str | None = None,
     ) -> dict:
+        params: dict[str, Any] = {"limit": limit, "thread_id": thread_id}
+        if before:
+            params["before"] = before
         resp = await self._get(
             f"{self.base_url}/api/animas/{anima}/conversation/history",
-            params={"limit": limit, "thread_id": thread_id},
+            params=params,
         )
         return resp
+
+    async def get_active_stream(
+        self,
+        anima: str,
+        *,
+        thread_id: str = "default",
+    ) -> dict:
+        """Query the server for an in-flight / most-recent stream."""
+        resp = await self._get(
+            f"{self.base_url}/api/animas/{anima}/stream/active",
+            params={"thread_id": thread_id},
+        )
+        return resp
+
+    async def get_stream_progress(
+        self,
+        anima: str,
+        response_id: str,
+    ) -> dict | None:
+        """Fetch progress for a specific stream (404 → ``None``)."""
+        url = f"{self.base_url}/api/animas/{anima}/stream/{response_id}/progress"
+        try:
+            resp = await self._http.get(url)
+            if resp.status_code == 404:
+                return None
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPError as exc:
+            raise AnimaWorksClientError(str(exc)) from exc
+
+    async def auth_me(self) -> dict | None:
+        """Return the current user (or ``None`` when not authenticated).
+
+        Authentication may be disabled entirely (200 with no payload) — any
+        non-auth response is treated as ``None``.
+        """
+        try:
+            resp = await self._http.get(f"{self.base_url}/api/auth/me")
+        except httpx.HTTPError as exc:
+            raise AnimaWorksClientError(str(exc)) from exc
+        if resp.status_code in (401, 403):
+            return None
+        resp.raise_for_status()
+        try:
+            return resp.json()
+        except Exception:
+            return {}
+
+    async def login(self, username: str, password: str) -> dict:
+        """Authenticate and store the session cookie in the jar."""
+        try:
+            resp = await self._http.post(
+                f"{self.base_url}/api/auth/login",
+                json={"username": username, "password": password},
+            )
+            if resp.status_code == 400:
+                body = resp.json()
+                raise AnimaWorksClientError(body.get("error") or "Authentication is not enabled")
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPError as exc:
+            raise AnimaWorksClientError(str(exc)) from exc
+
+    def ws_cookie_header(self) -> dict[str, str] | None:
+        """Return a ``Cookie`` header (for the WS handshake) if we have one."""
+        for cookie in self._http.cookies.jar:
+            if getattr(cookie, "name", None) == "session_token" and getattr(cookie, "value", None):
+                return {"Cookie": f"session_token={cookie.value}"}
+        return None
 
     async def chat_stream(
         self,
@@ -250,9 +323,10 @@ class AnimaWorksClient:
         """
         url = _ws_url(self.base_url)
         delay = _INITIAL_RECONNECT_DELAY
+        extra_headers = self.ws_cookie_header()
         while True:
             try:
-                async with websockets.connect(url) as ws:
+                async with websockets.connect(url, additional_headers=extra_headers) as ws:
                     delay = _INITIAL_RECONNECT_DELAY
                     yield {"type": "_ws_status", "data": {"connected": True}}
                     async for raw in ws:
