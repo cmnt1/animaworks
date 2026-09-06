@@ -129,7 +129,12 @@ class TranscriptScrolledToTop(Message):
 class Transcript(VerticalScroll):
     """The vertical scroll of all chat turns."""
 
-    def watch_scroll_y(self, _old: float, new: float) -> None:
+    def watch_scroll_y(self, old: float, new: float) -> None:
+        # The base implementation moves the scrollbar thumb, keeps the
+        # bottom anchor and — crucially — repaints. Skipping it made the
+        # transcript scroll internally without ever redrawing, which is
+        # what "the UI froze when I scrolled" actually was.
+        super().watch_scroll_y(old, new)
         if new <= 0 and self.max_scroll_y > 0:
             self.post_message(TranscriptScrolledToTop())
 

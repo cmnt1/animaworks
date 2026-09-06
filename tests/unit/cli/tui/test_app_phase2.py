@@ -324,6 +324,32 @@ async def test_transcript_turn_spacing_is_at_most_one_line():
             assert gap <= 1, f"too much blank space between turns: {gap} rows"
 
 
+# ── scrolling the transcript drives the scrollbar and repaints ──
+@pytest.mark.asyncio
+async def test_transcript_scroll_moves_scrollbar_and_refreshes():
+    """`Transcript.watch_scroll_y` must not swallow the base behaviour.
+
+    Overriding it without calling ``super()`` left the scrollbar thumb
+    frozen at the top (so it could not be dragged) and skipped the
+    repaint, which looked exactly like a hung UI.
+    """
+    client = FakeClient()
+    app = _app(client)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _pump()
+        for index in range(40):
+            await app.transcript.add_human("You", f"line {index}")
+        await pilot.pause()
+        assert app.transcript.max_scroll_y > 0
+        app.transcript.scroll_to(y=0, animate=False, force=True)
+        await pilot.pause()
+        assert app.transcript.vertical_scrollbar.position == 0
+        target = app.transcript.max_scroll_y
+        app.transcript.scroll_to(y=target, animate=False, force=True)
+        await pilot.pause()
+        assert app.transcript.vertical_scrollbar.position == pytest.approx(target)
+
+
 # ── (k) palette Enter runs an exact command; partials only complete ──
 @pytest.mark.asyncio
 async def test_palette_enter_runs_exact_command():
