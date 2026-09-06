@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import re
+
 from rich.text import Text
 from textual.containers import Vertical, VerticalScroll
 from textual.widgets import Static
@@ -11,9 +13,28 @@ from textual.widgets import Static
 from cli.tui.widgets.thinking import ThinkingBlock
 from cli.tui.widgets.tool_card import ToolCard
 
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->")
+
+
+def _strip_html_comments(text: str) -> str:
+    """Remove complete HTML comments and any trailing unclosed one."""
+    text = _HTML_COMMENT_RE.sub("", text)
+    # Remove a trailing unclosed comment opener (e.g. `<!-- emotion: {...}`)
+    idx = text.find("<!--")
+    if idx != -1:
+        text = text[:idx]
+    return text
+
 
 class HumanTurn(Vertical):
     """A single user message in the transcript."""
+
+    DEFAULT_CSS = """
+    HumanTurn {
+        height: auto;
+        width: 100%;
+    }
+    """
 
     def __init__(self, label: str, text: str, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -38,6 +59,17 @@ class AssistantBlock(Vertical):
     cards.
     """
 
+    DEFAULT_CSS = """
+    AssistantBlock {
+        height: auto;
+        width: 100%;
+    }
+    AssistantBlock > .tools {
+        height: auto;
+        width: 100%;
+    }
+    """
+
     def __init__(self, label: str, **kwargs) -> None:
         super().__init__(**kwargs)
         self._label = label
@@ -53,7 +85,11 @@ class AssistantBlock(Vertical):
         yield self.tools
 
     def on_mount(self) -> None:
-        self.text.update(Text(f"{self._label}: ", style="bold"))
+        # Render whatever body was set before mounting (e.g. history entries).
+        self._refresh_text()
+
+    def _refresh_text(self) -> None:
+        self.text.update(Text.assemble(Text(f"{self._label}: ", style="bold"), self._display_body()))
 
     def ensure_thinking(self) -> ThinkingBlock:
         if self.thinking is None:
@@ -61,13 +97,16 @@ class AssistantBlock(Vertical):
             self.mount(self.thinking, before=self.tools)
         return self.thinking
 
+    def _display_body(self) -> str:
+        return _strip_html_comments(self._body)
+
     def append_text(self, text: str) -> None:
         self._body += text
-        self.text.update(Text.assemble(Text(f"{self._label}: ", style="bold"), self._body))
+        self._refresh_text()
 
     def set_final(self, summary: str) -> None:
-        self._body = summary
-        self.text.update(Text.assemble(Text(f"{self._label}: ", style="bold"), summary))
+        self._body = summary.rstrip()
+        self._refresh_text()
 
     async def add_tool(self, tool: ToolCard) -> None:
         await self.tools.mount(tool)

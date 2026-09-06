@@ -10,16 +10,23 @@ from textual.widgets import Static
 
 
 class ThinkingBlock(Vertical):
-    """A collapsible block showing ``thinking`` deltas in dim style.
+    """A block showing ``thinking`` deltas in dim style.
 
-    Collapsed by default. The body accumulates ``thinking_delta`` text
-    and can be toggled via :meth:`toggle` or :meth:`set_visible`.
+    The body always buffers whatever is streamed. Whether it is shown is
+    controlled via :meth:`set_visible`, which just toggles the block's
+    ``display`` (show/hide) — content is never discarded.
+    """
+
+    DEFAULT_CSS = """
+    ThinkingBlock {
+        height: auto;
+        width: 100%;
+    }
     """
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._body = ""
-        self.expanded = False
         self.header = Static("", classes="thinking-header")
         self.body = Static("", classes="thinking-body")
 
@@ -27,19 +34,14 @@ class ThinkingBlock(Vertical):
         yield self.header
         yield self.body
 
-    def _render(self) -> None:
-        marker = "▾" if self.expanded else "▸"
-        self.header.update(Text(f"{marker} thinking ", style="dim bold"))
+    def _refresh(self) -> None:
+        self.header.update(Text("▸ thinking ", style="dim bold"))
         self.body.update(Text(self._body, style="dim"))
 
     def add_delta(self, text: str) -> None:
         self._body += text
-        self._render()
+        self._refresh()
 
     def set_visible(self, visible: bool) -> None:
-        self.expanded = visible
-        self.body.display = visible
-        self._render()
-
-    def toggle(self) -> None:
-        self.set_visible(not self.expanded)
+        self.display = visible
+        self._refresh()

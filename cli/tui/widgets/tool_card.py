@@ -16,6 +16,13 @@ class ToolCard(Vertical):
     streamed via ``tool_detail`` can be expanded by toggling.
     """
 
+    DEFAULT_CSS = """
+    ToolCard {
+        height: auto;
+        width: 100%;
+    }
+    """
+
     def __init__(self, tool_name: str, tool_id: str, **kwargs) -> None:
         super().__init__(**kwargs)
         self.tool_name = tool_name
@@ -43,15 +50,15 @@ class ToolCard(Vertical):
         self.detail.display = self.expanded
         if self.expanded:
             self.detail.update(Text(self._detail, style="dim"))
-        self._render()
+        self._refresh()
 
     def finish(self, result_summary: str | None = None, is_error: bool = False) -> None:
         self._finished = True
         self._is_error = self._is_error or is_error
         self._result_summary = result_summary or self._result_summary
-        self._render()
+        self._refresh()
 
-    def _render(self) -> None:
+    def _refresh(self) -> None:
         if self._is_error:
             marker = Text("✗", style="red bold")
             tail = " error"
