@@ -9,20 +9,40 @@ import time
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.containers import Horizontal, Vertical
 from textual.widgets import Static
 
 from cli.tui.client import AnimaWorksClient, AnimaWorksClientError
-from cli.tui.commands import get_command, is_command
+from cli.tui.commands import get_command, is_command, iter_commands
 from cli.tui.sse import SseEvent
+from cli.tui.state import AppState, PaletteItem, apply_ws_event, filter_palette
 from cli.tui.widgets import (
+    CallHumanOption,
     ChatInputContainer,
     ChatSubmitted,
+    InteractionCard,
+    Palette,
+    Sidebar,
     StatusBar,
     ToolCard,
     Transcript,
 )
+from cli.tui.widgets.sidebar import AnimaChosen
 from cli.tui.widgets.thinking import ThinkingBlock
-from cli.tui.widgets.transcript import AssistantBlock
+from cli.tui.widgets.transcript import AssistantBlock, strip_html_comments
+
+# WS event types that are fed into the shared sidebar state.
+_WS_STATE_TYPES = {
+    "anima.status",
+    "anima.tool_activity",
+    "anima.heartbeat",
+    "anima.cron",
+    "anima.bootstrap",
+    "anima.proactive_message",
+    "anima.notification",
+    "anima.interaction",
+    "board.post",
+}
 
 
 class AnimaChatApp(App):
@@ -32,11 +52,28 @@ class AnimaChatApp(App):
     Screen {
         layout: vertical;
     }
+    #body {
+        height: 1fr;
+        layout: horizontal;
+    }
+    Sidebar {
+        width: 32;
+    }
+    #right {
+        width: 1fr;
+        height: 1fr;
+        layout: vertical;
+    }
     #transcript {
         height: 1fr;
         border: round $primary;
         background: $surface;
         padding: 0 1;
+    }
+    #palette {
+        height: auto;
+        max-height: 12;
+        display: none;
     }
     #input-container {
         height: auto;
@@ -76,6 +113,7 @@ class AnimaChatApp(App):
         Binding("escape", "maybe_interrupt", "Interrupt"),
         Binding("ctrl+c", "quit_or_confirm", "Quit"),
         Binding("ctrl+d", "quit_now", "Quit"),
+        Binding("ctrl+b", "toggle_sidebar", "Toggle sidebar", show=False),
     ]
 
     def __init__(
@@ -95,18 +133,39 @@ class AnimaChatApp(App):
         self.show_thinking = False
         self._last_ctrlc = 0.0
 
+        self.state = AppState()
+        self.state.current = anima_name
+        self._skills: list[dict] = []
+        self._pending_cards: dict[str, dict] = {}
+        self._suppress_palette = False
+        self._sidebar_open = True
+
     # ── Lifecycle ──────────────────────────────────────────
     def compose(self) -> ComposeResult:
-        yield Transcript(id="transcript")
-        yield ChatInputContainer(id="input-container")
+        with Horizontal(id="body"):
+            yield Sidebar(id="sidebar")
+            with Vertical(id="right"):
+                yield Transcript(id="transcript")
+                yield Palette(id="palette")
+                yield ChatInputContainer(id="input-container")
         yield StatusBar(self.anima_name, self.thread_id, id="status")
 
     def on_mount(self) -> None:
         self.title = f"AnimaWorks — {self.anima_name}"
 
+        self.body = self.query_one("#body", Horizontal)
+        self.sidebar = self.query_one("#sidebar", Sidebar)
         self.transcript = self.query_one("#transcript", Transcript)
         self.input_container = self.query_one("#input-container", ChatInputContainer)
         self.status_bar = self.query_one("#status", StatusBar)
+        self.palette = self.query_one("#palette", Palette)
+        self.input_container.input.set_controller(self)
+
+        # Default the sidebar closed on narrow terminals.
+        width = getattr(self, "size", None)
+        term_w = getattr(width, "width", None) if width else None
+        if term_w is not None and term_w < 100:
+            self._set_sidebar_open(False)
 
         self.call_after_refresh(self.focus_input)
 
@@ -116,6 +175,9 @@ class AnimaChatApp(App):
         if self.input_container.input.has_focus is not True:
             self.input_container.focus_input()
 
+    def focus_sidebar(self) -> None:
+        self.sidebar.animas.focus()
+
     async def _bootstrap(self) -> None:
         try:
             animas = await self.client.list_animas()
@@ -123,6 +185,8 @@ class AnimaChatApp(App):
             self.status_bar.set_state(status="error", right_hint=f"connection error: {exc}")
             self.show_transient(f"Connection error: {exc}")
             return
+        self.state.set_animas(animas)
+        self.sidebar.update_state(self.state)
         names = {a.get("name") for a in animas}
         if self.anima_name not in names:
             self.status_bar.set_state(
@@ -143,6 +207,7 @@ class AnimaChatApp(App):
             status = "idle"
         self.status_bar.set_state(status=status)
         self.run_worker(self._load_history(), group="init", exit_on_error=False)
+        self.run_worker(self._load_skills(), group="init", exit_on_error=False)
         self.run_worker(self._ws_loop(), group="ws", exit_on_error=False)
 
     # ── History ───────────────────────────────────────────
@@ -188,6 +253,26 @@ class AnimaChatApp(App):
         self.current = None
         await self.render_history(history)
 
+    # ── Skills ───────────────────────────────────────────
+    async def _load_skills(self) -> None:
+        list_skills = getattr(self.client, "list_skills", None)
+        if list_skills is None:
+            self._skills = []
+            self._update_skill_count()
+            return
+        try:
+            resp = await list_skills(self.anima_name, self.thread_id)
+        except Exception:
+            self._skills = []
+            self._update_skill_count()
+            return
+        self._skills = resp.get("skills") or []
+        self._update_skill_count()
+
+    def _update_skill_count(self) -> None:
+        count = sum(1 for s in self._skills if s.get("active"))
+        self.status_bar.set_state(skill_count=count)
+
     # ── WebSocket ─────────────────────────────────────────
     async def _ws_loop(self) -> None:
         async for msg in self.client.ws_events():
@@ -198,20 +283,147 @@ class AnimaChatApp(App):
         data = msg.get("data") or {}
         if event_type == "_ws_status":
             self.status_bar.set_state(connected=bool(data.get("connected")))
-        elif event_type == "anima.status":
-            if data.get("name") == self.anima_name:
-                # Anima-level process/lane status. Do not touch ``busy``:
-                # it would race with our own streaming lane.
-                status = data.get("status") or "idle"
-                self.status_bar.set_state(status=status)
-        elif event_type == "anima.tool_activity":
-            if data.get("name") == self.anima_name:
-                evt = data.get("event")
-                tool_name = data.get("tool_name")
-                if evt == "tool_start":
-                    self.status_bar.set_state(active_tool=tool_name)
-                elif evt == "tool_end":
-                    self.status_bar.set_state(active_tool=None)
+            return
+
+        if event_type in _WS_STATE_TYPES:
+            eff = apply_ws_event(self.state, msg)
+            self._apply_ws_effect(eff, data)
+            self.sidebar.update_state(self.state)
+
+        # Per-anima (self) status bar handling stays unchanged.
+        if event_type == "anima.status" and data.get("name") == self.anima_name:
+            status = data.get("status") or "idle"
+            self.status_bar.set_state(status=status)
+        elif event_type == "anima.tool_activity" and data.get("name") == self.anima_name:
+            evt = data.get("event")
+            tool_name = data.get("tool_name")
+            if evt == "tool_start":
+                self.status_bar.set_state(active_tool=tool_name)
+            elif evt == "tool_end":
+                self.status_bar.set_state(active_tool=None)
+
+    def _apply_ws_effect(self, eff, data: dict) -> None:
+        for _title, _body in eff.toasts:
+            self.notify(_body or _title, timeout=6)
+        for pmsg in eff.proactive:
+            name = pmsg.get("anima") or pmsg.get("name")
+            if name == self.anima_name:
+                self._thread_proactive(pmsg)
+        for card_data in eff.cards:
+            self._thread_interaction_card(card_data)
+
+    def _thread_proactive(self, data: dict) -> None:
+        subject = data.get("subject") or ""
+        body = strip_html_comments(data.get("body") or "")
+        text = (f"**{subject}**\n{body}" if subject else body).replace("**", "")
+        block = self.transcript.new_assistant(self.anima_name)
+        block.set_final(text)
+        self.run_worker(self.transcript.mount_assistant(block), group="ui", exit_on_error=False)
+
+    def _thread_interaction_card(self, data: dict) -> None:
+        name = data.get("anima") or data.get("name") or self.anima_name
+        card = InteractionCard(name, data)
+        self._pending_cards[card.callback_id] = {"anima": name, "options": card.options}
+        self.run_worker(self.transcript.mount(card), group="ui", exit_on_error=False)
+
+    # ── Input / palette (called by ChatInput) ────────────
+    def palette_is_open(self) -> bool:
+        return self.palette.is_open
+
+    def on_input_text_changed(self, text: str) -> None:
+        if self._suppress_palette:
+            self._suppress_palette = False
+            return
+        if text.startswith("/") and not self.busy:
+            items = filter_palette(self._palette_items(), text)
+            if items:
+                self.palette.set_items(items)
+            else:
+                self.palette.close()
+        else:
+            self.palette.close()
+
+    def _clear_input(self) -> None:
+        self._suppress_palette = True
+        self.input_container.input.text = ""
+        self.palette.close()
+
+    def palette_move(self, direction: str) -> None:
+        if self.palette.is_open:
+            self.palette.move(direction)
+
+    def palette_close(self) -> None:
+        self.palette.close()
+
+    def palette_confirm(self) -> None:
+        if not self.palette.is_open:
+            return
+        item = self.palette.selected()
+        self.palette.close()
+        if item is None:
+            return
+        if item.on_confirm is not None:
+            self._clear_input()
+            item.on_confirm(self)
+        else:
+            # Command still needs arguments → insert and keep typing.
+            self._suppress_palette = True
+            self.input_container.input.text = item.value
+            self.palette.close()
+            self.focus_input()
+
+    def _palette_items(self) -> list[PaletteItem]:
+        items: list[PaletteItem] = []
+        for cmd in iter_commands():
+            if cmd.takes_args:
+                items.append(
+                    PaletteItem(
+                        value=f"/{cmd.name} ",
+                        label=Text.assemble(
+                            Text(f"/{cmd.name}", style="bold"), Text(f"  {cmd.description}", style="dim")
+                        ),
+                        takes_args=True,
+                        search=f"/{cmd.name}",
+                    )
+                )
+            else:
+                items.append(
+                    PaletteItem(
+                        value=f"/{cmd.name}",
+                        label=Text.assemble(
+                            Text(f"/{cmd.name}", style="bold"), Text(f"  {cmd.description}", style="dim")
+                        ),
+                        takes_args=False,
+                        search=f"/{cmd.name}",
+                        on_confirm=_make_runner(cmd.handler),
+                    )
+                )
+        for skill in self._skills:
+            name = skill.get("name") or ""
+            if not name:
+                continue
+            desc = (skill.get("description") or "")[:60]
+            marks = []
+            if skill.get("active"):
+                marks.append("● ")
+            if skill.get("is_common"):
+                marks.append("(common) ")
+            if skill.get("is_procedure"):
+                marks.append("(procedure) ")
+            label = Text.assemble(
+                Text(f"/skill {name}", style="bold"),
+                Text(f"  {''.join(marks)}{desc}", style="dim"),
+            )
+            low = name.lower()
+            items.append(
+                PaletteItem(
+                    value=f"/skill {name}",
+                    label=label,
+                    takes_args=True,
+                    search=f"/skill {low} /{low} {low}",
+                )
+            )
+        return items
 
     # ── Input ────────────────────────────────────────────
     def on_chat_submitted(self, message: ChatSubmitted) -> None:
@@ -359,6 +571,276 @@ class AnimaChatApp(App):
     def request_interrupt(self) -> None:
         self.action_maybe_interrupt()
 
+    # ── Anima switching / sidebar ───────────────────────
+    def switch_anima(self, name: str) -> None:
+        self.run_worker(
+            self._switch_anima_worker(name),
+            group="switch",
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    async def _switch_anima_worker(self, name: str) -> None:
+        if name == self.anima_name:
+            return
+        if self.busy:
+            self.show_transient("Finish or Esc-interrupt the current response before switching.")
+            return
+        if name not in self.state.animas:
+            self.show_transient(f"Unknown anima: {name}")
+            return
+        self.anima_name = name
+        self.state.current = name
+        self.state.clear_unread(name)
+        self.title = f"AnimaWorks — {name}"
+        self.status_bar.set_anima(name, self.thread_id)
+        self.busy = False
+        self.clear_transcript()
+        self.sidebar.update_state(self.state)
+        self.show_transient(f"Switched to {name}")
+        await self.reload_history(limit=50)
+        await self._load_skills()
+
+    def _set_sidebar_open(self, open_state: bool) -> None:
+        self._sidebar_open = open_state
+        self.sidebar.display = "block" if open_state else "none"
+
+    def toggle_sidebar(self) -> None:
+        self._set_sidebar_open(not self._sidebar_open)
+
+    def on_anima_chosen(self, message: AnimaChosen) -> None:
+        self.switch_anima(message.name)
+
+    def action_toggle_sidebar(self) -> None:
+        self.toggle_sidebar()
+
+    # ── Command implementations (called by commands.py) ─
+    def show_animas(self) -> None:
+        lines = ["Animas:"]
+        for name, row in sorted(self.state.animas.items()):
+            mark = "●" if row.busy or row.status in ("busy", "thinking", "streaming") else "○"
+            tool = f"  {row.active_tool}" if row.active_tool else ""
+            unread = f"  ({row.unread})" if row.unread else ""
+            lines.append(f"{mark} {name}  {row.status}{tool}{unread}")
+        self.show_transient("\n".join(lines))
+
+    def show_skills(self) -> None:
+        self.run_worker(self._show_skills_worker(), group="skills", exit_on_error=False)
+
+    async def _show_skills_worker(self) -> None:
+        await self.reload_skills_catalog()
+        lines = [f"Skills for {self.anima_name} (thread {self.thread_id}):"]
+        for skill in self._skills:
+            name = skill.get("name") or skill.get("ref") or "?"
+            active = "●" if skill.get("active") else "○"
+            marks = []
+            if skill.get("is_common"):
+                marks.append("common")
+            if skill.get("is_procedure"):
+                marks.append("procedure")
+            mark_s = f" ({', '.join(marks)})" if marks else ""
+            desc = (skill.get("description") or "")[:60]
+            lines.append(f"{active} {name}{mark_s}: {desc}")
+        if not self._skills:
+            lines.append("(no skills listed)")
+        self.show_transient("\n".join(lines))
+
+    async def reload_skills_catalog(self) -> None:
+        """Re-fetch the current anima's skill catalog from the server."""
+        list_skills = getattr(self.client, "list_skills", None)
+        if list_skills is None:
+            return
+        try:
+            resp = await list_skills(self.anima_name, self.thread_id)
+        except Exception:
+            return
+        self._skills = resp.get("skills") or []
+        self._update_skill_count()
+
+    def activate_skill(self, args: list[str]) -> None:
+        self.run_worker(
+            self._activate_skill_worker(args),
+            group="skill",
+            exit_on_error=False,
+        )
+
+    async def _activate_skill_worker(self, args: list[str]) -> None:
+        confirm = "--confirm" in args
+        off = "--off" in args
+        wanted = next((a for a in args if not a.startswith("--")), "")
+        if not wanted:
+            self.show_transient("usage: /skill <name> [--confirm] [--off]")
+            return
+        ref = self._find_skill_ref(wanted)
+        if ref is None:
+            self.show_transient(f"Unknown skill: {wanted}")
+            return
+        try:
+            active = await self.client.get_active_skills(self.anima_name, thread_id=self.thread_id)
+            current_refs = [item.get("ref") for item in active.get("accepted", [])]
+        except (AnimaWorksClientError, AttributeError) as exc:
+            self.show_transient(f"Could not read active skills: {exc}")
+            return
+        new_refs = list(current_refs)
+        if off:
+            if ref in new_refs:
+                new_refs.remove(ref)
+            else:
+                self.show_transient(f"Skill not active: {wanted}")
+                return
+        else:
+            if ref in new_refs:
+                self.show_transient(f"Skill already active: {wanted}")
+                return
+            new_refs.append(ref)
+        try:
+            result = await self.client.set_active_skills(self.anima_name, self.thread_id, new_refs, confirm)
+        except (AnimaWorksClientError, AttributeError) as exc:
+            self.show_transient(f"Activation failed: {exc}")
+            return
+        self._render_skill_result(result, off)
+        await self._load_skills()
+
+    def _find_skill_ref(self, name: str) -> str | None:
+        for skill in self._skills:
+            if skill.get("name") == name or skill.get("ref") == name:
+                return skill.get("ref")
+        return None
+
+    def _render_skill_result(self, result: dict, off: bool) -> None:
+        accepted = result.get("accepted") or []
+        rejections = result.get("rejections") or []
+        warnings = result.get("warnings") or []
+        lines: list[str] = []
+        if accepted:
+            names = ", ".join(i.get("name") or i.get("ref") or "?" for i in accepted)
+            lines.append(f"Accepted: {names}")
+        for rej in rejections:
+            reason = rej.get("reason") or ""
+            hint = " (add --confirm to override)" if "confirm" in reason.lower() else ""
+            lines.append(f"Rejected: {rej.get('ref')}: {reason}{hint}")
+        for warn in warnings:
+            lines.append(f"Warning: {warn.get('name')}: {warn.get('reason')}")
+        if not lines:
+            lines = ["Skill request processed (no changes)."]
+        self.show_transient("\n".join(lines))
+
+    def show_board(self, args: list[str]) -> None:
+        self.run_worker(self._board_worker(args), group="board", exit_on_error=False)
+
+    async def _board_worker(self, args: list[str]) -> None:
+        if not args:
+            try:
+                channels = await self.client.list_channels()
+            except (AnimaWorksClientError, AttributeError) as exc:
+                self.show_transient(f"Could not list channels: {exc}")
+                return
+            if not channels:
+                self.show_transient("No channels.")
+                return
+            lines = ["Channels:"]
+            for ch in channels:
+                lines.append(f"  #{ch.get('name')}  ({ch.get('message_count', 0)} messages)")
+            self.show_transient("\n".join(lines))
+            return
+        channel = args[0]
+        limit = 20
+        if len(args) > 1:
+            try:
+                limit = int(args[1])
+            except ValueError:
+                limit = 20
+        try:
+            resp = await self.client.read_channel(channel, limit=limit)
+        except (AnimaWorksClientError, AttributeError) as exc:
+            self.show_transient(f"Could not read #{channel}: {exc}")
+            return
+        messages = resp.get("messages") or []
+        if not messages:
+            self.show_transient(f"#{channel}: no messages.")
+            return
+        lines = [f"#{channel} (last {len(messages)}):"]
+        for msg in reversed(messages):
+            frm = msg.get("from") or "?"
+            ts = (msg.get("ts") or "")[11:16]
+            text = (msg.get("text") or "")[:120]
+            lines.append(f"  {ts} {frm}: {text}")
+        self.show_transient("\n".join(lines))
+
+    def post_to_channel(self, args: list[str]) -> None:
+        if len(args) < 2:
+            self.show_transient("usage: /post <channel> <text>")
+            return
+        channel = args[0]
+        text = " ".join(args[1:])
+        self.run_worker(self._post_worker(channel, text), group="post", exit_on_error=False)
+
+    async def _post_worker(self, channel: str, text: str) -> None:
+        try:
+            await self.client.post_channel(channel, text)
+        except (AnimaWorksClientError, AttributeError) as exc:
+            self.show_transient(f"Post failed: {exc}")
+            return
+        self.show_transient(f"Posted to #{channel}.")
+
+    def show_tasks(self, args: list[str]) -> None:
+        assignee = args[0] if args else self.anima_name
+        self.run_worker(self._tasks_worker(assignee), group="tasks", exit_on_error=False)
+
+    async def _tasks_worker(self, assignee: str) -> None:
+        try:
+            resp = await self.client.list_tasks(assignee=assignee)
+        except (AnimaWorksClientError, AttributeError) as exc:
+            self.show_transient(f"Could not load tasks: {exc}")
+            return
+        tasks = resp.get("tasks") or []
+        if not tasks:
+            self.show_transient(f"No tasks for {assignee}.")
+            return
+        lines = [f"Tasks ({assignee}):"]
+        for task in tasks:
+            title = task.get("title") or task.get("summary") or "?"
+            status = task.get("status") or task.get("column") or "?"
+            lines.append(f"  [{status}] {title}")
+        self.show_transient("\n".join(lines))
+
+    def resolve_interaction(self, args: list[str]) -> None:
+        if not args:
+            self.show_transient("usage: /approve <callback_id> [option]")
+            return
+        callback_id = args[0]
+        option = args[1] if len(args) > 1 else None
+        meta = self._pending_cards.get(callback_id)
+        if option is None:
+            options = (meta or {}).get("options") or []
+            if "approve" in options:
+                option = "approve"
+            elif options:
+                option = options[0]
+            else:
+                option = "approve"
+        anima = meta.get("anima", self.anima_name) if meta else self.anima_name
+        self.run_worker(
+            self._resolve_worker(anima, callback_id, option),
+            group="interact",
+            exit_on_error=False,
+        )
+
+    async def _resolve_worker(self, anima: str, callback_id: str, option: str) -> None:
+        try:
+            await self.client.resolve_interaction(anima, callback_id, option)
+        except AnimaWorksClientError as exc:
+            if "resolved" in str(exc).lower():
+                self.show_transient("Already resolved or expired.")
+            else:
+                self.show_transient(f"Resolve failed: {exc}")
+            return
+        self._pending_cards.pop(callback_id, None)
+        self.show_transient(f"Resolved {callback_id} → {option}.")
+
+    def on_call_human_option(self, message: CallHumanOption) -> None:
+        self.resolve_interaction([message.callback_id, message.option])
+
     # ── Actions ──────────────────────────────────────────
     def action_maybe_interrupt(self) -> None:
         if self.busy:
@@ -388,3 +870,10 @@ class AnimaChatApp(App):
 
     def action_quit_now(self) -> None:
         self.exit()
+
+
+def _make_runner(handler):
+    def run(app) -> None:
+        handler([], app)
+
+    return run

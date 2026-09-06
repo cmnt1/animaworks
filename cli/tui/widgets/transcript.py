@@ -26,6 +26,11 @@ def _strip_html_comments(text: str) -> str:
     return text
 
 
+def strip_html_comments(text: str) -> str:
+    """Public helper to strip HTML comments from display text."""
+    return _strip_html_comments(text)
+
+
 class HumanTurn(Vertical):
     """A single user message in the transcript."""
 

@@ -26,6 +26,13 @@ class StatusBar(Widget):
         self.active_tool: str | None = None
         self.connected = False
         self.right_hint = "Esc: interrupt"
+        self.skill_count = 0
+
+    def set_anima(self, anima_name: str, thread_id: str | None = None) -> None:
+        self.anima_name = anima_name
+        if thread_id is not None:
+            self.thread_id = thread_id
+        self.refresh()
 
     def set_state(
         self,
@@ -34,6 +41,7 @@ class StatusBar(Widget):
         active_tool: str | None = None,
         connected: bool | None = None,
         right_hint: str | None = None,
+        skill_count: int | None = None,
     ) -> None:
         if status is not None:
             self.status = status
@@ -43,6 +51,8 @@ class StatusBar(Widget):
             self.connected = connected
         if right_hint is not None:
             self.right_hint = right_hint
+        if skill_count is not None:
+            self.skill_count = skill_count
         self.refresh()
 
     def render(self) -> Text:
@@ -64,6 +74,9 @@ class StatusBar(Widget):
 
         if self.active_tool:
             parts.append(Text(f" | {self.active_tool}", style="bold"))
+
+        if self.skill_count:
+            parts.append(Text(f" | skills:{self.skill_count}", style="dim"))
 
         parts.append(
             Text(
