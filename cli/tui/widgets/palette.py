@@ -26,8 +26,8 @@ class Palette(OptionList):
         height: auto;
         max-height: 12;
         display: none;
-        border: round $accent;
-        background: $surface;
+        border: round ansi_default;
+        background: transparent;
     }
     """
 

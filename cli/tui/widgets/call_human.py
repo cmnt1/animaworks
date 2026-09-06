@@ -35,7 +35,7 @@ class InteractionCard(Vertical):
     InteractionCard {
         height: auto;
         width: 100%;
-        border: round $accent;
+        border: round ansi_default;
         margin: 1 0;
         padding: 0 1;
     }
@@ -62,7 +62,7 @@ class InteractionCard(Vertical):
         children = self.children
         children[0].update(
             Text.assemble(
-                Text("■ ", style="yellow"),
+                Text("■ ", style="bold"),
                 Text(f"{self.anima_name}: ", style="bold"),
                 Text(self._subject, style="bold"),
             )
@@ -72,7 +72,7 @@ class InteractionCard(Vertical):
             widget.update(
                 Text.assemble(
                     Text("  [", style="dim"),
-                    Text(option, style="bold cyan"),
+                    Text(option, style="bold"),
                     Text("]", style="dim"),
                 )
             )

@@ -21,18 +21,6 @@ from textual.widgets import Static
 
 from cli.tui.state import AppState
 
-_STATUS_COLORS = {
-    "idle": "green",
-    "running": "green",
-    "busy": "yellow",
-    "thinking": "yellow",
-    "streaming": "yellow",
-    "starting": "yellow",
-    "bootstrapping": "yellow",
-    "error": "red",
-    "disconnected": "red",
-}
-
 
 class AnimaChosen(Message):
     """Posted when the user picks an anima from the sidebar."""
@@ -214,13 +202,12 @@ class Sidebar(Vertical):
     Sidebar {
         width: 32;
         height: 1fr;
-        background: $panel;
-        border-right: round $primary;
+        background: transparent;
+        border-right: round ansi_default;
         padding: 0 1;
     }
     Sidebar > .sidebar-header {
         text-style: bold;
-        color: $accent;
         margin-top: 1;
     }
     AnimaList {
@@ -233,7 +220,7 @@ class Sidebar(Vertical):
     ActivityFeed {
         height: 1fr;
         width: 100%;
-        border-top: round $primary;
+        border-top: round ansi_default;
         margin-top: 1;
     }
     """

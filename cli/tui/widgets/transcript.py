@@ -54,7 +54,7 @@ class HumanTurn(Vertical):
         yield self.message
 
     def on_mount(self) -> None:
-        self.label_widget.update(Text(f"{self._label}:", style="bold cyan"))
+        self.label_widget.update(Text(f"{self._label}:", style="bold"))
         self.message.update(self._text)
 
 

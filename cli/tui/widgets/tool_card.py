@@ -60,13 +60,13 @@ class ToolCard(Vertical):
 
     def _refresh(self) -> None:
         if self._is_error:
-            marker = Text("✗", style="red bold")
+            marker = Text("✗", style="bold")
             tail = " error"
         elif self._finished:
-            marker = Text("✓", style="green bold")
+            marker = Text("✓", style="bold")
             tail = f"  {self._result_summary}" if self._result_summary else ""
         else:
-            marker = Text("…", style="yellow bold")
+            marker = Text("…", style="bold")
             tail = ""
 
         line = Text.assemble(

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from pathlib import Path
 
@@ -52,9 +53,25 @@ _WS_STATE_TYPES = {
 class AnimaChatApp(App):
     """The interactive terminal chat UI for talking to an anima."""
 
+    # No colours are picked anywhere in the UI: backgrounds stay
+    # transparent and text/borders use `ansi_default`, so everything is
+    # drawn with the terminal's own background and foreground colours.
     CSS = """
     Screen {
         layout: vertical;
+        background: transparent;
+    }
+    /* Scrollbars: the track stays transparent. The thumb has to differ
+       from the background to be visible at all, so it uses the
+       terminal's own grey (ansi_bright_black) rather than a theme hue. */
+    Screen, Screen * {
+        scrollbar-color: ansi_bright_black;
+        scrollbar-color-hover: ansi_bright_black;
+        scrollbar-color-active: ansi_bright_black;
+        scrollbar-background: ansi_default;
+        scrollbar-background-hover: ansi_default;
+        scrollbar-background-active: ansi_default;
+        scrollbar-corner-color: ansi_default;
     }
     #body {
         height: 1fr;
@@ -70,8 +87,8 @@ class AnimaChatApp(App):
     }
     #transcript {
         height: 1fr;
-        border: round $primary;
-        background: $surface;
+        border: round ansi_default;
+        background: transparent;
         padding: 0 1;
     }
     #palette {
@@ -81,22 +98,25 @@ class AnimaChatApp(App):
     }
     #input-container {
         height: auto;
-        background: $panel;
+        background: transparent;
+        padding-top: 1;
     }
+    /* The blank line above belongs to the container: padding it onto the
+       label alone pushed `>` one row below the text being typed. */
     #input-container .input-prompt {
-        padding: 1 0 0 1;
+        padding: 0 0 0 1;
         text-style: bold;
     }
-    #input {
+    ChatInput {
         height: auto;
         border: none;
         padding: 0 1;
+        background: transparent;
     }
     #status {
         height: 1;
         dock: bottom;
-        background: $boost;
-        color: $text;
+        background: transparent;
         padding: 0 1;
     }
     #transcript .human-label {
@@ -191,6 +211,7 @@ class AnimaChatApp(App):
 
     def on_mount(self) -> None:
         self.title = f"AnimaWorks — {self.anima_name}"
+        self._apply_theme()
         try:
             self._bindings.apply_keymap(app_keymap(self._keymap))
         except Exception:
@@ -213,6 +234,20 @@ class AnimaChatApp(App):
         self.call_after_refresh(self.focus_input)
 
         self.run_worker(self._bootstrap(), group="init", exit_on_error=False)
+
+    def _apply_theme(self) -> None:
+        """Use the terminal's own colours instead of a painted theme.
+
+        The ``ansi-*`` themes map every colour variable to the terminal
+        palette (background and foreground become ``ansi_default``), so
+        the UI inherits whatever the user's terminal is set to. Override
+        with ``ANIMAWORKS_TUI_THEME`` (any built-in Textual theme name).
+        """
+        wanted = os.environ.get("ANIMAWORKS_TUI_THEME") or "ansi-light"
+        try:
+            self.theme = wanted
+        except Exception:
+            self.theme = "ansi-light"
 
     def focus_input(self) -> None:
         if self.input_container.input.has_focus is not True:

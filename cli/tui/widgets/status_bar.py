@@ -56,19 +56,11 @@ class StatusBar(Widget):
         self.refresh()
 
     def render(self) -> Text:
-        status_color = {
-            "idle": "green",
-            "starting": "yellow",
-            "thinking": "yellow",
-            "streaming": "yellow",
-            "error": "red",
-            "disconnected": "red",
-        }.get(self.status, "default")
-
         parts = [
             Text(self.anima_name),
             Text(" "),
-            Text("●", style=status_color),
+            # The status word follows the dot, so no colour is needed.
+            Text("●", style="bold"),
             Text(f" {self.status}"),
         ]
 
