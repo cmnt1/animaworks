@@ -81,7 +81,7 @@ class ChatInput(TextArea):
         if event.key == "tab" and self._palette_open():
             event.stop()
             event.prevent_default()
-            self._controller.palette_confirm()
+            self._controller.palette_complete()
             return
         if event.key == "escape" and self._palette_open():
             event.stop()

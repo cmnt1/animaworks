@@ -103,7 +103,8 @@ class AssistantBlock(Vertical):
         return self.thinking
 
     def _display_body(self) -> str:
-        return _strip_html_comments(self._body)
+        # Strip emotion comments first, then trailing blank lines they leave behind.
+        return _strip_html_comments(self._body).rstrip()
 
     def append_text(self, text: str) -> None:
         self._body += text

@@ -9,6 +9,7 @@ import asyncio
 import pytest
 
 from cli.tui.app import AnimaChatApp
+from cli.tui.widgets.sidebar import Sidebar
 
 
 class FakeClient:
@@ -260,3 +261,134 @@ async def test_proactive_current_anima_renders_in_transcript():
         blocks = list(app.query(AssistantBlock))
         assert blocks, "no assistant block rendered"
         assert any("hello there" in b._body for b in blocks)
+
+
+# ── (h) activity feed rows are single-line and stay inside the sidebar ──
+@pytest.mark.asyncio
+async def test_activity_feed_rows_single_line_and_inside_sidebar():
+    from cli.tui.widgets.sidebar import _FeedLine
+
+    client = FakeClient()
+    app = _app(client)
+    async with app.run_test(size=(120, 40)) as _:
+        await _pump()
+        long = "x" * 300
+        for _ in range(10):
+            client.push_ws("anima.heartbeat", {"name": "rin", "result": {"summary": long}})
+        await _pump()
+        await _pump()
+        feed = app.query_one("#sidebar", Sidebar).feed
+        lines = list(feed.query(_FeedLine))
+        assert lines, "no feed lines rendered"
+        for line in lines:
+            assert line.region.height == 1, f"feed row wrapped ({line.region.height} lines)"
+            assert app.sidebar.region.contains_region(line.region)
+
+
+# ── (i) current chat partner is highlighted in the sidebar ──
+@pytest.mark.asyncio
+async def test_current_anima_row_is_highlighted():
+    client = FakeClient()
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        animas = app.sidebar.animas
+        assert animas._rows["sora"].has_class("current")
+        await app._handle_message("/anima rin")
+        await _pump()
+        assert animas._rows["rin"].has_class("current")
+        assert not animas._rows["sora"].has_class("current")
+
+
+# ── (j) one blank line (max) between transcript turns ──
+@pytest.mark.asyncio
+async def test_transcript_turn_spacing_is_at_most_one_line():
+    client = FakeClient()
+    app = _app(client)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _pump()
+        await app.transcript.add_human("You", "hello")
+        block = app.transcript.new_assistant("sora")
+        block.set_final("hi there")
+        await app.transcript.mount_assistant(block)
+        await app.transcript.add_human("You", "second")
+        await pilot.pause()
+        await pilot.pause()
+        blocks = list(app.transcript.children)
+        for prev, nxt in zip(blocks, blocks[1:], strict=False):
+            gap = nxt.region.y - (prev.region.y + prev.region.height)
+            assert gap <= 1, f"too much blank space between turns: {gap} rows"
+
+
+# ── (k) palette Enter runs an exact command; partials only complete ──
+@pytest.mark.asyncio
+async def test_palette_enter_runs_exact_command():
+    client = FakeClient()
+    app = _app(client)
+    async with app.run_test() as pilot:
+        await _pump()
+        app.input_container.focus_input()
+        await pilot.press(*"/tasks")
+        await _pump()
+        assert app.palette.is_open
+        await pilot.press("enter")
+        await _pump()
+        assert client.tasks_calls, "list_tasks was not called"
+
+
+@pytest.mark.asyncio
+async def test_palette_enter_partial_completes_without_running():
+    client = FakeClient()
+    app = _app(client)
+    async with app.run_test() as pilot:
+        await _pump()
+        app.input_container.focus_input()
+        await pilot.press("/", "t", "a")
+        await _pump()
+        assert app.palette.is_open
+        await pilot.press("enter")
+        await _pump()
+        assert app.input_container.input.text == "/tasks "
+        assert client.tasks_calls == []
+
+
+@pytest.mark.asyncio
+async def test_palette_enter_skill_completes_first_candidate():
+    skills = [
+        {
+            "ref": "pr",
+            "name": "pr-review",
+            "description": "review a PR",
+            "active": False,
+            "is_common": False,
+            "is_procedure": False,
+        },
+    ]
+    client = FakeClient(skills=skills)
+    app = _app(client)
+    async with app.run_test() as pilot:
+        await _pump()
+        app.input_container.focus_input()
+        # `/pr` uniquely narrows to the skill candidate (bare-name token).
+        await pilot.press("/", "p", "r")
+        await _pump()
+        assert app.palette.is_open
+        # the skill candidate is the top (prefix-ranked) result
+        assert app.palette._items and app.palette._items[0].value == "/skill pr-review"
+        await pilot.press("enter")
+        await _pump()
+        assert app.input_container.input.text == "/skill pr-review"
+
+
+# ── (l) switching to an anima with empty history shows a hint ──
+@pytest.mark.asyncio
+async def test_switch_to_empty_history_shows_hint():
+    client = FakeClient()
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        await app._handle_message("/anima rin")
+        await _pump()
+        await _pump()
+        transients = [t for t in app.query("Static.transient") if "no conversation history yet" in str(t.content)]
+        assert transients, "expected a 'no conversation history yet' hint"

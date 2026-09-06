@@ -355,8 +355,37 @@ class AnimaChatApp(App):
     def palette_close(self) -> None:
         self.palette.close()
 
-    def palette_confirm(self) -> None:
+    def palette_complete(self) -> None:
+        """Tab: complete with the selected candidate only (never execute)."""
         if not self.palette.is_open:
+            return
+        item = self.palette.selected()
+        self.palette.close()
+        if item is None:
+            return
+        self._suppress_palette = True
+        self.input_container.input.text = item.value
+        self.focus_input()
+
+    def palette_confirm(self) -> None:
+        """Enter: run a fully-typed command, otherwise complete (running where
+        the candidate needs no further input).
+
+        Mirrors Claude Code: an input that is exactly a registered command
+        name runs immediately; a partial input completes with the selected
+        candidate (running it if it takes no arguments, otherwise keeping the
+        user in the input to continue).
+        """
+        if not self.palette.is_open:
+            return
+        raw = self.input_container.input.text
+        if self._matches_exact_command(raw):
+            self._clear_input()
+            self.run_worker(
+                self._handle_message(raw.strip()),
+                group="submit",
+                exit_on_error=False,
+            )
             return
         item = self.palette.selected()
         self.palette.close()
@@ -365,12 +394,30 @@ class AnimaChatApp(App):
         if item.on_confirm is not None:
             self._clear_input()
             item.on_confirm(self)
+            return
+        self._suppress_palette = True
+        self.input_container.input.text = item.value
+        self.palette.close()
+        if not item.takes_args:
+            self._clear_input()
+            self.run_worker(
+                self._handle_message(item.value.strip()),
+                group="submit",
+                exit_on_error=False,
+            )
         else:
-            # Command still needs arguments → insert and keep typing.
-            self._suppress_palette = True
-            self.input_container.input.text = item.value
-            self.palette.close()
             self.focus_input()
+
+    def _matches_exact_command(self, text: str) -> bool:
+        """True when ``text`` is exactly ``/name`` (no extra whitespace or
+        arguments) and ``name`` is a registered command."""
+        stripped = text.strip()
+        if not stripped.startswith("/"):
+            return False
+        name = stripped[1:].strip()
+        if not name or " " in name:
+            return False
+        return get_command(name) is not None
 
     def _palette_items(self) -> list[PaletteItem]:
         items: list[PaletteItem] = []
@@ -597,8 +644,10 @@ class AnimaChatApp(App):
         self.busy = False
         self.clear_transcript()
         self.sidebar.update_state(self.state)
-        self.show_transient(f"Switched to {name}")
         await self.reload_history(limit=50)
+        self.show_transient(f"-- switched to {name} --")
+        if len(self.transcript.children) == 0:
+            self.show_transient("no conversation history yet")
         await self._load_skills()
 
     def _set_sidebar_open(self, open_state: bool) -> None:
