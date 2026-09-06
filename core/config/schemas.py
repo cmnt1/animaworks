@@ -962,6 +962,13 @@ class HeartbeatConfig(BaseModel):
         False  # Send read-receipt ACK to message senders (disabled by default to prevent gratitude loops)
     )
     channel_post_cooldown_s: int = 300  # Min seconds between board posts per Anima (0 = no limit)
+    delegation_dm_enabled: bool = Field(
+        default=True,
+        description=(
+            "delegate_task already writes the pending descriptor for the target; "
+            "the DM only wakes an extra inbox run. Set false to skip it."
+        ),
+    )
     outbound_limit_enabled: bool = True  # False disables the global hourly/daily outbound message caps
     max_messages_per_hour: int = 30  # Deprecated: use ROLE_OUTBOUND_DEFAULTS + status.json override
     max_messages_per_day: int = 100  # Deprecated: use ROLE_OUTBOUND_DEFAULTS + status.json override

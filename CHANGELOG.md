@@ -9,6 +9,9 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Reduced tool-result token growth for task runs: `list_tasks` now returns a compact summary by default (`detail=True` for the full view), and `search_memory` caps results at 8K tokens / 600 lines (~a third of the previous limit).
+- Record Codex `cached_input_tokens` as `cache_read_tokens` so cache read cost shows in token-usage accounting.
+- `heartbeat.delegation_dm_enabled` (default `true`) lets delegate_task skip the wake-up DM, since the pending descriptor already reaches the assignee.
 - Orphan reaper grace is now derived from each anima's heartbeat interval (`heartbeat.orphan_grace_multiplier` / `heartbeat.orphan_grace_min_seconds`) instead of a fixed 30 minutes, so runs that end without a completion declaration can be re-submitted by the anima's next heartbeat before being reaped.
 
 ## [0.13.0] - 2026-09-05

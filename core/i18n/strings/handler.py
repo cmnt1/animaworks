@@ -309,6 +309,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": ("[タスク委譲]\n{instruction}\n\nタスクID: {task_id}"),
         "en": ("[Task delegation]\n{instruction}\n\nTask ID: {task_id}"),
     },
+    "handler.delegation_dm_skipped": {
+        "ja": "DM は送っていません（descriptor で相手に届きます）",
+        "en": "DM skipped (the pending descriptor reaches the assignee)",
+    },
     "handler.delegation_intent_deprecated": {
         "ja": (
             "Error: intent='delegation' は廃止されました。タスクを委任するには delegate_task ツールを使用してください。send_message は report / question のみ対応しています。"

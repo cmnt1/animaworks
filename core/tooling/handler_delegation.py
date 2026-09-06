@@ -345,22 +345,33 @@ class DelegationMixin(OrgHelpersMixin):
 
         dm_result = ""
         if self._messenger:
+            dm_enabled = True
             try:
-                self._messenger.send(
-                    to=target_name,
-                    content=t(
-                        "handler.delegation_dm_content",
-                        instruction=instruction,
-                        task_id=sub_task_id,
-                    ),
-                    intent="delegation",
-                    origin_chain=outgoing_chain,
-                    meta={"task_id": sub_task_id},
-                )
-                dm_result = t("handler.dm_sent")
+                from core.config.models import load_config
+
+                dm_enabled = load_config().heartbeat.delegation_dm_enabled
             except Exception as e:
-                dm_result = t("handler.dm_send_failed", e=e)
-                logger.warning("delegate_task DM failed: %s -> %s: %s", self._anima_name, target_name, e)
+                dm_enabled = True
+                logger.warning("Could not read delegation_dm_enabled config: %s", e)
+            if not dm_enabled:
+                dm_result = t("handler.delegation_dm_skipped")
+            else:
+                try:
+                    self._messenger.send(
+                        to=target_name,
+                        content=t(
+                            "handler.delegation_dm_content",
+                            instruction=instruction,
+                            task_id=sub_task_id,
+                        ),
+                        intent="delegation",
+                        origin_chain=outgoing_chain,
+                        meta={"task_id": sub_task_id},
+                    )
+                    dm_result = t("handler.dm_sent")
+                except Exception as e:
+                    dm_result = t("handler.dm_send_failed", e=e)
+                    logger.warning("delegate_task DM failed: %s -> %s: %s", self._anima_name, target_name, e)
         else:
             dm_result = t("handler.messenger_not_set")
 

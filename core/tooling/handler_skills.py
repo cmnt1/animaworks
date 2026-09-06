@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("animaworks.tool_handler")
 
-_INSTRUCTION_TRUNCATE_LEN = 200
+_INSTRUCTION_TRUNCATE_LEN = 120
 
 
 class SkillsToolsMixin:
@@ -692,10 +692,35 @@ class SkillsToolsMixin:
         tasks = manager.list_tasks(status=status_filter)
         result = [t.model_dump() for t in tasks]
         if not detail:
+            _META_SUMMARY_KEYS = {
+                "last_run_stop_kind",
+                "last_run_note",
+                "depends_on",
+                "batch_id",
+            }
+            projected: list[dict[str, Any]] = []
             for item in result:
-                instr = item.get("original_instruction", "")
-                if len(instr) > _INSTRUCTION_TRUNCATE_LEN:
-                    item["original_instruction"] = instr[:_INSTRUCTION_TRUNCATE_LEN] + "..."
+                meta = item.get("meta") or {}
+                meta_subset = {k: v for k, v in meta.items() if k in _META_SUMMARY_KEYS}
+
+                def _truncate(value: str) -> str:
+                    if len(value) > _INSTRUCTION_TRUNCATE_LEN:
+                        return value[:_INSTRUCTION_TRUNCATE_LEN] + "..."
+                    return value
+
+                truncated = {
+                    "task_id": item.get("task_id", ""),
+                    "status": item.get("status", ""),
+                    "summary": _truncate(item.get("summary", "")),
+                    "original_instruction": _truncate(item.get("original_instruction", "")),
+                    "assignee": item.get("assignee", ""),
+                    "source": item.get("source", ""),
+                    "updated_at": item.get("updated_at", ""),
+                }
+                if meta_subset:
+                    truncated["meta"] = meta_subset
+                projected.append(truncated)
+            result = projected
         mark_executability(result, self._anima_dir)
         return _json.dumps(result, ensure_ascii=False)
 

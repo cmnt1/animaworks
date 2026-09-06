@@ -2279,3 +2279,32 @@ class TestModeResolution:
         mock_config.model_modes = {}
         mode = resolve_execution_mode(mock_config, "openai/gpt-4.1")
         assert mode == "A"
+
+
+# ── CLI exec usage cache recording ───────────────────────────
+
+
+class TestCliExecUsageCache:
+    @pytest.mark.asyncio
+    async def test_cache_read_tokens_recorded_from_cli_exec(self, executor):
+        async def fake_stream(system_prompt, prompt, tracker, trigger=""):
+            yield {
+                "type": "done",
+                "full_text": "ok",
+                "result_message": None,
+                "replied_to_from_transcript": set(),
+                "tool_call_records": [],
+                "usage": {
+                    "input_tokens": 100,
+                    "output_tokens": 20,
+                    "cached_input_tokens": 77,
+                },
+            }
+
+        with patch.object(executor, "_execute_streaming_via_cli_exec", fake_stream):
+            result = await executor._execute_via_cli_exec(prompt="p", system_prompt="s")
+
+        assert result.usage is not None
+        assert result.usage.input_tokens == 100
+        assert result.usage.output_tokens == 20
+        assert result.usage.cache_read_tokens == 77

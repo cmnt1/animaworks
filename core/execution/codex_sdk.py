@@ -1700,6 +1700,7 @@ class CodexSDKExecutor(BaseExecutor):
                     usage_acc = TokenUsage(
                         input_tokens=usage_dict.get("input_tokens", 0) or usage_dict.get("prompt_tokens", 0) or 0,
                         output_tokens=usage_dict.get("output_tokens", 0) or usage_dict.get("completion_tokens", 0) or 0,
+                        cache_read_tokens=usage_dict.get("cached_input_tokens", 0) or 0,
                     )
                     continue
 
@@ -1759,6 +1760,7 @@ class CodexSDKExecutor(BaseExecutor):
             usage_acc = TokenUsage(
                 input_tokens=usage_raw.get("input_tokens", 0) or usage_raw.get("prompt_tokens", 0) or 0,
                 output_tokens=usage_raw.get("output_tokens", 0) or usage_raw.get("completion_tokens", 0) or 0,
+                cache_read_tokens=usage_raw.get("cached_input_tokens", 0) or 0,
             )
         return ExecutionResult(
             text=str(final_event.get("full_text", "")),
@@ -1922,6 +1924,7 @@ class CodexSDKExecutor(BaseExecutor):
                 usage_acc = TokenUsage(
                     input_tokens=ud.get("input_tokens", 0) or ud.get("prompt_tokens", 0) or 0,
                     output_tokens=ud.get("output_tokens", 0) or ud.get("completion_tokens", 0) or 0,
+                    cache_read_tokens=ud.get("cached_input_tokens", 0) or 0,
                 )
 
             replied_to = self._read_replied_to_file()
