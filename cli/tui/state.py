@@ -53,6 +53,9 @@ class AppState:
     def __init__(self) -> None:
         self.animas: dict[str, AnimaRow] = {}
         self.activity: list[ActivityEntry] = []
+        # Total number of entries ever added; lets the feed widget render
+        # only what is new instead of rebuilding every row per event.
+        self.activity_seq = 0
         self.current: str | None = None
 
     def set_animas(self, animas: list[dict]) -> None:
@@ -77,6 +80,7 @@ class AppState:
         if entry is None:
             return
         self.activity.append(entry)
+        self.activity_seq += 1
         if len(self.activity) > MAX_ACTIVITY:
             del self.activity[: len(self.activity) - MAX_ACTIVITY]
 

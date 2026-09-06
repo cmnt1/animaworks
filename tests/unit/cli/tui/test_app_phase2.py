@@ -280,6 +280,7 @@ async def test_activity_feed_rows_single_line_and_inside_sidebar():
         for _ in range(10):
             client.push_ws("anima.heartbeat", {"name": "rin", "result": {"summary": long}})
         await _pump()
+        await asyncio.sleep(0.2)  # let the incremental mounts be laid out
         await _pump()
         feed = app.query_one("#sidebar", Sidebar).feed
         lines = list(feed.query(_FeedLine))
@@ -287,6 +288,40 @@ async def test_activity_feed_rows_single_line_and_inside_sidebar():
         for line in lines:
             assert line.region.height == 1, f"feed row wrapped ({line.region.height} lines)"
             assert app.sidebar.region.contains_region(line.region)
+
+
+# ── (h2) activity feed updates incrementally (no full rebuild per event) ──
+@pytest.mark.asyncio
+async def test_activity_feed_updates_incrementally():
+    from cli.tui.widgets.sidebar import _FeedLine
+
+    client = FakeClient()
+    app = _app(client)
+    async with app.run_test(size=(120, 40)) as _:
+        await _pump()
+        feed = app.query_one("#sidebar", Sidebar).feed
+        for i in range(3):
+            client.push_ws("anima.heartbeat", {"name": "rin", "result": {"summary": f"hb{i}"}})
+        await _pump()
+        await _pump()
+        first = list(feed.query(_FeedLine))
+        assert len(first) == 3
+        client.push_ws("anima.heartbeat", {"name": "rin", "result": {"summary": "hb3"}})
+        await _pump()
+        await _pump()
+        after = list(feed.query(_FeedLine))
+        assert len(after) == 4
+        # Existing rows are reused, not rebuilt.
+        assert [id(w) for w in after[:3]] == [id(w) for w in first]
+        assert "hb3" in str(after[-1].content)
+        for i in range(70):
+            client.push_ws("anima.heartbeat", {"name": "rin", "result": {"summary": f"x{i}"}})
+        await _pump()
+        await asyncio.sleep(0.2)
+        await _pump()
+        rows = list(feed.query(_FeedLine))
+        assert len(rows) <= feed.MAX_ROWS
+        assert "x69" in str(rows[-1].content)
 
 
 # ── (i) current chat partner is highlighted in the sidebar ──
