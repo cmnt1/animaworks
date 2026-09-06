@@ -150,6 +150,97 @@ class AnimaWorksClient:
         resp.raise_for_status()
         return resp.json()
 
+    # ── Skills ───────────────────────────────────────────
+    async def list_skills(self, anima: str, thread_id: str = "default") -> dict:
+        resp = await self._get(
+            f"{self.base_url}/api/animas/{anima}/skills",
+            params={"thread_id": thread_id},
+        )
+        return resp
+
+    async def get_active_skills(self, anima: str, thread_id: str = "default") -> dict:
+        resp = await self._get(
+            f"{self.base_url}/api/animas/{anima}/skills/active",
+            params={"thread_id": thread_id},
+        )
+        return resp
+
+    async def set_active_skills(
+        self,
+        anima: str,
+        thread_id: str = "default",
+        refs: list[str] | None = None,
+        confirm_risk: bool = False,
+    ) -> dict:
+        try:
+            resp = await self._http.put(
+                f"{self.base_url}/api/animas/{anima}/skills/active",
+                json={
+                    "thread_id": thread_id,
+                    "refs": refs or [],
+                    "confirm_risk": confirm_risk,
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPError as exc:
+            raise AnimaWorksClientError(str(exc)) from exc
+
+    # ── Board / channels ────────────────────────────────
+    async def list_channels(self) -> list[dict]:
+        resp = await self._get(f"{self.base_url}/api/channels")
+        return resp
+
+    async def read_channel(self, name: str, limit: int = 50) -> dict:
+        try:
+            resp = await self._http.get(
+                f"{self.base_url}/api/channels/{name}",
+                params={"limit": limit},
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPError as exc:
+            raise AnimaWorksClientError(str(exc)) from exc
+
+    async def post_channel(self, name: str, text: str) -> dict:
+        try:
+            resp = await self._http.post(
+                f"{self.base_url}/api/channels/{name}",
+                json={"text": text, "from_name": self.from_person},
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPError as exc:
+            raise AnimaWorksClientError(str(exc)) from exc
+
+    # ── Task board ──────────────────────────────────────
+    async def list_tasks(self, assignee: str | None = None) -> dict:
+        params = {}
+        if assignee:
+            params["assignee"] = assignee
+        resp = await self._get(f"{self.base_url}/api/task-board", params=params)
+        return resp
+
+    # ── Interaction resolve ─────────────────────────────
+    async def resolve_interaction(
+        self,
+        anima: str,
+        callback_id: str,
+        decision: str,
+        comment: str = "",
+    ) -> dict:
+        try:
+            resp = await self._http.post(
+                f"{self.base_url}/api/animas/{anima}/interactions/{callback_id}/resolve",
+                json={"decision": decision, "comment": comment},
+            )
+            if resp.status_code == 409:
+                raise AnimaWorksClientError("already resolved or expired")
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPError as exc:
+            raise AnimaWorksClientError(str(exc)) from exc
+
     async def ws_events(self) -> AsyncIterator[dict]:
         """Yield normalized websocket events, reconnecting with backoff.
 

@@ -126,3 +126,133 @@ async def test_chat_stream_http_error_raises_client_error():
     with pytest.raises(AnimaWorksClientError):
         async for _ in client.chat_stream("sora", "hi"):
             pass
+
+
+@pytest.mark.asyncio
+async def test_list_skills():
+    captured = {}
+
+    def handler(request):
+        captured["params"] = request.url.params
+        return httpx.Response(
+            200,
+            json={"anima": "sora", "thread_id": "default", "skills": [{"ref": "r1", "name": "foo"}]},
+        )
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    res = await client.list_skills("sora", thread_id="t1")
+    assert res["skills"][0]["name"] == "foo"
+    assert captured["params"]["thread_id"] == "t1"
+
+
+@pytest.mark.asyncio
+async def test_get_active_skills():
+    def handler(request):
+        return httpx.Response(200, json={"anima": "sora", "accepted": [{"ref": "r1"}], "rejections": []})
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    res = await client.get_active_skills("sora", thread_id="default")
+    assert res["accepted"][0]["ref"] == "r1"
+
+
+@pytest.mark.asyncio
+async def test_set_active_skills_replace():
+    captured = {}
+
+    def handler(request):
+        captured.update({"body": request.content.decode(), "path": request.url.path})
+        return httpx.Response(200, json={"accepted": [{"ref": "r1"}], "rejections": [], "warnings": []})
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    await client.set_active_skills("sora", "t1", ["r1", "r2"], confirm_risk=True)
+    assert captured["path"] == "/api/animas/sora/skills/active"
+    import json
+
+    body = json.loads(captured["body"])
+    assert body["refs"] == ["r1", "r2"]
+    assert body["thread_id"] == "t1"
+    assert body["confirm_risk"] is True
+
+
+@pytest.mark.asyncio
+async def test_list_channels():
+    client = AnimaWorksClient(
+        "http://localhost:18500",
+        transport=httpx.MockTransport(lambda req: httpx.Response(200, json=[{"name": "dev"}])),
+    )
+    assert await client.list_channels() == [{"name": "dev"}]
+
+
+@pytest.mark.asyncio
+async def test_read_channel():
+    captured = {}
+
+    def handler(request):
+        captured["params"] = request.url.params
+        captured["path"] = request.url.path
+        return httpx.Response(200, json={"channel": "dev", "messages": []})
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    await client.read_channel("dev", limit=10)
+    assert captured["path"] == "/api/channels/dev"
+    assert captured["params"]["limit"] == "10"
+
+
+@pytest.mark.asyncio
+async def test_post_channel():
+    captured = {}
+
+    def handler(request):
+        captured.update({"body": request.content.decode(), "path": request.url.path})
+        return httpx.Response(200, json={"status": "ok", "channel": "dev"})
+
+    client = AnimaWorksClient(
+        "http://localhost:18500",
+        from_person="me",
+        transport=httpx.MockTransport(handler),
+    )
+    res = await client.post_channel("dev", "hello")
+    assert res["status"] == "ok"
+    import json
+
+    assert json.loads(captured["body"])["text"] == "hello"
+    assert json.loads(captured["body"])["from_name"] == "me"
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_assignee_param():
+    captured = {}
+
+    def handler(request):
+        captured["params"] = request.url.params
+        return httpx.Response(200, json={"tasks": []})
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    await client.list_tasks(assignee="sora")
+    assert captured["params"]["assignee"] == "sora"
+
+
+@pytest.mark.asyncio
+async def test_resolve_interaction_posts_decision():
+    captured = {}
+
+    def handler(request):
+        captured.update({"body": request.content.decode(), "path": request.url.path})
+        return httpx.Response(200, json={"status": "ok", "decision": "approve"})
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    await client.resolve_interaction("sora", "cb1", "approve", comment="")
+    assert captured["path"] == "/api/animas/sora/interactions/cb1/resolve"
+    import json
+
+    assert json.loads(captured["body"])["decision"] == "approve"
+
+
+@pytest.mark.asyncio
+async def test_resolve_interaction_409_raises():
+    def handler(request):
+        return httpx.Response(409, json={"detail": "Already resolved"})
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    with pytest.raises(AnimaWorksClientError):
+        await client.resolve_interaction("sora", "cb1", "approve")
