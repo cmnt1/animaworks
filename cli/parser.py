@@ -188,7 +188,7 @@ def cli_main() -> None:
 
     # ── Chat ──────────────────────────────────────────────
     p_chat = sub.add_parser("chat", help="Chat with an anima")
-    p_chat.add_argument("anima", help="Anima name")
+    p_chat.add_argument("anima", nargs="?", default=None, help="Anima name")
     p_chat.add_argument(
         "message",
         nargs="?",
@@ -213,6 +213,26 @@ def cli_main() -> None:
         "--no-tui",
         action="store_true",
         help="Do not open the TUI when no message is given; read stdin instead",
+    )
+    p_chat.add_argument(
+        "--resume",
+        nargs="?",
+        const="latest",
+        default=None,
+        metavar="SESSION_ID",
+        help="Resume a previous TUI session (optional SESSION_ID; default latest)",
+    )
+    p_chat.add_argument(
+        "--sessions",
+        action="store_true",
+        help="List saved TUI sessions and exit",
+    )
+    p_chat.add_argument("--user", default=None, help="Username for authenticated gateways")
+    p_chat.add_argument("--password", default=None, help="Password for authenticated gateways (visible in process list)")
+    p_chat.add_argument(
+        "--no-reattach",
+        action="store_true",
+        help="Do not re-attach to an in-flight stream on startup",
     )
     p_chat.set_defaults(func=_lazy_chat)
 

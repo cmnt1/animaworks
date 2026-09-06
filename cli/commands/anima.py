@@ -72,6 +72,30 @@ def cmd_create_anima(args: argparse.Namespace) -> None:
 def cmd_chat(args: argparse.Namespace) -> None:
     """Chat with an anima (via gateway or direct)."""
     thread_id = getattr(args, "thread_id", "default") or "default"
+    resume = getattr(args, "resume", None)
+
+    if getattr(args, "sessions", False):
+        # List saved TUI sessions and exit without opening the TUI.
+        from cli.tui.session import list_sessions, sessions_table
+
+        infos = list_sessions()
+        if not infos:
+            print("no sessions")
+            return
+        print(sessions_table(infos))
+        return
+
+    if args.anima is None and resume is None:
+        print("an anima name or --resume is required", file=sys.stderr)
+        sys.exit(2)
+
+    if resume and not args.local:
+        from cli.tui.session import latest_session, load_session
+
+        sid = None if resume == "latest" else resume
+        if (latest_session() if sid is None else load_session(sid)) is None:
+            print("no session to resume", file=sys.stderr)
+            sys.exit(1)
 
     if args.local:
         import warnings
