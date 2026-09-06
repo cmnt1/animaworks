@@ -1,13 +1,13 @@
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for pending task failure safety — file move lifecycle and failure notifications.
+"""Tests for pending task failure safety — descriptor lifecycle and notifications.
 
 Validates:
-- File lifecycle: pending/ → processing/ → success: delete | fail: failed/
-- _execute_llm_task writes FAILED result and sends reply_to notification on error
-- Orphaned command processing/ files are recovered to failed/ on startup
-- Orphaned LLM processing/ files are returned to pending/ on startup
+- File lifecycle: pending/ → processing/ → the descriptor is deleted either way
+- _execute_llm_task writes a result marker, returns the task to pending and
+  notifies reply_to on error
+- Orphaned processing/ descriptors return their tasks to pending on startup
 - i18n template for task_fail_notify
 """
 
@@ -16,31 +16,18 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.memory.task_queue import TaskQueueManager
 from core.messenger import Messenger
 from core.platform.processing_lease import (
     is_processing_lease_live,
     processing_lease_path,
     write_processing_lease,
 )
-from core.schemas import ModelConfig
 from core.supervisor.pending_executor import PendingTaskExecutor
-from core.taskboard.models import AttentionDecision
-
-
-@pytest.fixture(autouse=True)
-def _legacy_completion_semantics():
-    with patch(
-        "core.supervisor.pending_executor._completion_declaration_required",
-        return_value=False,
-    ):
-        yield
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -52,7 +39,6 @@ def _make_executor(tmp_path: Path) -> PendingTaskExecutor:
 
     mock_anima = MagicMock()
     mock_anima.agent.background_manager = MagicMock()
-    mock_anima.agent.model_config = ModelConfig(model="openai/gpt-5.4")
     mock_anima._background_lock = asyncio.Lock()
     mock_anima._status_slots = {"background": "idle"}
     mock_anima._task_slots = {"background": ""}
@@ -81,7 +67,7 @@ def _stop_after_first(executor: PendingTaskExecutor):
 
 
 class TestCommandPendingFileLifecycle:
-    """Command-type pending tasks use processing/ → failed/ lifecycle."""
+    """Command-type pending tasks use the pending/ → processing/ → gone lifecycle."""
 
     @pytest.mark.asyncio
     async def test_success_removes_processing_file(self, tmp_path: Path) -> None:
@@ -101,8 +87,8 @@ class TestCommandPendingFileLifecycle:
         assert not (processing_dir / "cmd-1.json").exists()
 
     @pytest.mark.asyncio
-    async def test_failure_moves_to_failed(self, tmp_path: Path) -> None:
-        """On execution failure, file is moved from processing/ to failed/."""
+    async def test_failure_drops_the_descriptor(self, tmp_path: Path) -> None:
+        """On execution failure, the descriptor is deleted, not quarantined."""
         executor = _make_executor(tmp_path)
         pending_dir = executor._anima_dir / "state" / "background_tasks" / "pending"
         pending_dir.mkdir(parents=True, exist_ok=True)
@@ -118,9 +104,9 @@ class TestCommandPendingFileLifecycle:
         with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)):
             await executor.watcher_loop()
 
-        failed_dir = pending_dir / "failed"
-        assert (failed_dir / "cmd-fail.json").exists()
         assert not (pending_dir / "cmd-fail.json").exists()
+        assert not (pending_dir / "processing" / "cmd-fail.json").exists()
+        assert not (pending_dir / "failed").exists()
 
     @pytest.mark.asyncio
     async def test_invalid_json_still_deleted(self, tmp_path: Path) -> None:
@@ -141,7 +127,7 @@ class TestCommandPendingFileLifecycle:
 
 
 class TestLLMPendingFileLifecycle:
-    """LLM-type pending tasks use processing/ → failed/ lifecycle."""
+    """LLM-type pending tasks use the pending/ → processing/ → gone lifecycle."""
 
     @pytest.mark.asyncio
     async def test_success_removes_processing_file(self, tmp_path: Path) -> None:
@@ -163,8 +149,8 @@ class TestLLMPendingFileLifecycle:
         assert not (llm_dir / "processing" / "llm-1.json").exists()
 
     @pytest.mark.asyncio
-    async def test_failure_moves_to_failed(self, tmp_path: Path) -> None:
-        """On LLM execution failure, file moves to failed/."""
+    async def test_failure_drops_the_descriptor(self, tmp_path: Path) -> None:
+        """On LLM execution failure, the descriptor is deleted, not quarantined."""
         executor = _make_executor(tmp_path)
         llm_dir = executor._anima_dir / "state" / "pending"
         llm_dir.mkdir(parents=True, exist_ok=True)
@@ -172,7 +158,7 @@ class TestLLMPendingFileLifecycle:
         task = {"task_type": "llm", "task_id": "llm-fail", "description": "failing task"}
         (llm_dir / "llm-fail.json").write_text(json.dumps(task))
 
-        async def failing_execute(task_desc):
+        async def failing_execute(task_desc, **_kwargs):
             raise RuntimeError("LLM failure")
 
         executor.execute_pending_task = failing_execute  # type: ignore[assignment]
@@ -180,55 +166,30 @@ class TestLLMPendingFileLifecycle:
         with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)):
             await executor.watcher_loop()
 
-        failed_dir = llm_dir / "failed"
-        assert (failed_dir / "llm-fail.json").exists()
         assert not (llm_dir / "llm-fail.json").exists()
+        assert not (llm_dir / "processing" / "llm-fail.json").exists()
+        assert not (llm_dir / "failed").exists()
 
 
 # ── TestRecoverProcessing ────────────────────────────────────
 
 
 class TestRecoverProcessing:
-    """Orphaned files in processing/ are moved to a recovery directory on startup."""
+    """Orphaned descriptors in processing/ return their tasks to pending."""
 
     def test_recovers_orphaned_files(self, tmp_path: Path) -> None:
         processing_dir = tmp_path / "processing"
         processing_dir.mkdir()
-        failed_dir = tmp_path / "failed"
-        failed_dir.mkdir()
 
         (processing_dir / "orphan1.json").write_text('{"task_id":"o1"}')
         (processing_dir / "orphan2.json").write_text('{"task_id":"o2"}')
 
-        recovered = PendingTaskExecutor._recover_processing(processing_dir, failed_dir)
+        PendingTaskExecutor._recover_processing(processing_dir)
 
         assert not list(processing_dir.glob("*.json"))
-        assert (failed_dir / "orphan1.json").exists()
-        assert (failed_dir / "orphan2.json").exists()
-        assert recovered == ["o1", "o2"]
-
-    def test_recovers_orphaned_file_when_failed_target_exists(self, tmp_path: Path) -> None:
-        processing_dir = tmp_path / "processing"
-        processing_dir.mkdir()
-        failed_dir = tmp_path / "failed"
-        failed_dir.mkdir()
-
-        (processing_dir / "orphan.json").write_text('{"task_id":"new"}')
-        (failed_dir / "orphan.json").write_text('{"task_id":"old"}')
-
-        PendingTaskExecutor._recover_processing(processing_dir, failed_dir)
-
-        assert not (processing_dir / "orphan.json").exists()
-        assert (failed_dir / "orphan.json").read_text() == '{"task_id":"old"}'
-        recovered = list(failed_dir.glob("orphan.orphan-*.json"))
-        assert len(recovered) == 1
-        assert recovered[0].read_text() == '{"task_id":"new"}'
 
     def test_no_op_when_processing_dir_missing(self, tmp_path: Path) -> None:
-        processing_dir = tmp_path / "processing"
-        failed_dir = tmp_path / "failed"
-        failed_dir.mkdir()
-        PendingTaskExecutor._recover_processing(processing_dir, failed_dir)
+        PendingTaskExecutor._recover_processing(tmp_path / "processing")
 
     def test_live_lease_skips_recovery(self, tmp_path: Path) -> None:
         from core.memory.task_queue import TaskQueueManager
@@ -246,8 +207,6 @@ class TestRecoverProcessing:
         )
         processing_dir = tmp_path / "processing"
         processing_dir.mkdir()
-        failed_dir = tmp_path / "failed"
-        failed_dir.mkdir()
         orphan = processing_dir / "live.json"
         orphan.write_text('{"task_id":"live"}', encoding="utf-8")
         lease = write_processing_lease(
@@ -261,17 +220,12 @@ class TestRecoverProcessing:
             "core.platform.processing_lease._read_proc_cmdline",
             return_value="python -m core.supervisor.runner --anima-name test-anima",
         ):
-            PendingTaskExecutor._recover_processing(processing_dir, failed_dir, anima_dir)
+            PendingTaskExecutor._recover_processing(processing_dir, anima_dir)
 
         assert orphan.exists()
         assert lease.exists()
-        assert not list(failed_dir.iterdir())
         assert queue.get_task_by_id("live").status == "in_progress"
 
-    @pytest.mark.skipif(
-        sys.platform == "win32",
-        reason="cmdline check requires /proc; leases are conservatively live without it",
-    )
     def test_live_lease_rejects_reused_pid_with_wrong_cmdline(self, tmp_path: Path) -> None:
         descriptor = tmp_path / "reused.json"
         descriptor.write_text('{"task_id":"reused"}', encoding="utf-8")
@@ -325,9 +279,9 @@ class TestRecoverProcessing:
 
         assert not is_processing_lease_live(descriptor, expected_anima="test-anima")
 
-    def test_syncs_layer2_task_queue_to_failed(self, tmp_path: Path) -> None:
-        # F7: recovering an orphaned processing file also transitions the
-        # matching Layer2 task_queue entry from in_progress to failed.
+    def test_crash_returns_layer2_task_to_pending(self, tmp_path: Path) -> None:
+        # A descriptor left in processing/ means the run died without declaring:
+        # the ledger entry goes back to pending with a crash stamp.
         from core.memory.task_queue import TaskQueueManager
 
         anima_dir = tmp_path / "anima"
@@ -343,19 +297,18 @@ class TestRecoverProcessing:
 
         processing_dir = tmp_path / "processing"
         processing_dir.mkdir()
-        failed_dir = tmp_path / "failed"
-        failed_dir.mkdir()
         (processing_dir / f"{entry.task_id}.json").write_text(f'{{"task_id":"{entry.task_id}"}}')
 
-        PendingTaskExecutor._recover_processing(processing_dir, failed_dir, anima_dir)
+        PendingTaskExecutor._recover_processing(processing_dir, anima_dir)
 
-        assert (failed_dir / f"{entry.task_id}.json").exists()
+        assert not list(processing_dir.glob("*.json"))
+        # No descriptor is regenerated: the owner picks it up from its pending list.
+        assert not list(tmp_path.glob("*.json"))
         recovered = tqm.get_task_by_id(entry.task_id)
-        assert recovered.status == "failed"
-        assert recovered.summary == (
-            "INTERRUPTED: task was interrupted by a restart and may have PARTIALLY EXECUTED "
-            "(commits/messages may already exist). Verify actual completion state before re-delegating."
-        )
+        assert recovered.status == "pending"
+        assert recovered.summary.startswith("INTERRUPTED:")
+        assert recovered.meta["last_run_stop_kind"] == "crash"
+        assert recovered.meta["last_run_ended_at"]
 
     def test_layer2_sync_leaves_terminal_tasks_untouched(self, tmp_path: Path) -> None:
         # A task that already reached a terminal state must not be flipped.
@@ -375,11 +328,9 @@ class TestRecoverProcessing:
 
         processing_dir = tmp_path / "processing"
         processing_dir.mkdir()
-        failed_dir = tmp_path / "failed"
-        failed_dir.mkdir()
         (processing_dir / f"{entry.task_id}.json").write_text(f'{{"task_id":"{entry.task_id}"}}')
 
-        PendingTaskExecutor._recover_processing(processing_dir, failed_dir, anima_dir)
+        PendingTaskExecutor._recover_processing(processing_dir, anima_dir)
 
         assert tqm.get_task_by_id(entry.task_id).status == "done"
 
@@ -390,34 +341,17 @@ class TestRecoverProcessing:
 
         cmd_processing = executor._anima_dir / "state" / "background_tasks" / "pending" / "processing"
         cmd_processing.mkdir(parents=True)
-        cmd_failed = executor._anima_dir / "state" / "background_tasks" / "pending" / "failed"
-        cmd_failed.mkdir(parents=True)
         (cmd_processing / "orphan-cmd.json").write_text('{"task_id":"oc"}')
 
         llm_processing = executor._anima_dir / "state" / "pending" / "processing"
         llm_processing.mkdir(parents=True)
-        llm_failed = executor._anima_dir / "state" / "pending" / "failed"
-        llm_failed.mkdir(parents=True)
         (llm_processing / "orphan-llm.json").write_text('{"task_id":"ol"}')
-        queue = TaskQueueManager(executor._anima_dir)
-        queue.add_task(
-            source="anima",
-            original_instruction="orphaned llm",
-            assignee="test-anima",
-            summary="orphaned llm",
-            task_id="ol",
-            status="in_progress",
-        )
 
-        executor._shutdown_event.set()
-        await executor.watcher_loop()
+        with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)):
+            await executor.watcher_loop()
 
-        assert (cmd_failed / "orphan-cmd.json").exists()
-        assert (llm_processing.parent / "orphan-llm.json").exists()
-        assert not (llm_failed / "orphan-llm.json").exists()
         assert not list(cmd_processing.glob("*.json"))
         assert not list(llm_processing.glob("*.json"))
-        assert queue.get_task_by_id("ol").status == "pending"
 
 
 @pytest.mark.asyncio
@@ -443,11 +377,11 @@ async def test_processing_descriptor_touch_loop_updates_mtime(tmp_path: Path) ->
 
 
 class TestExecuteLLMTaskFailureHandling:
-    """_execute_llm_task writes FAILED result and notifies reply_to on error."""
+    """_execute_llm_task writes a result marker and notifies reply_to on error."""
 
     @pytest.mark.asyncio
-    async def test_writes_failed_result(self, tmp_path: Path) -> None:
-        """_execute_llm_task calls _write_failed_result on exception."""
+    async def test_writes_result_marker(self, tmp_path: Path) -> None:
+        """_execute_llm_task records the error as the task result on exception."""
         executor = _make_executor(tmp_path)
 
         with patch.object(executor, "_run_llm_task", side_effect=RuntimeError("boom")):
@@ -456,9 +390,34 @@ class TestExecuteLLMTaskFailureHandling:
 
         result_path = executor._anima_dir / "state" / "task_results" / "fail-1.md"
         assert result_path.exists()
-        content = result_path.read_text()
-        assert content.startswith("FAILED:")
-        assert "RuntimeError" in content
+        assert "RuntimeError" in result_path.read_text()
+
+    @pytest.mark.asyncio
+    async def test_crash_returns_queue_entry_to_pending(self, tmp_path: Path) -> None:
+        """A crashed run puts the ledger entry back to pending with a crash stamp."""
+        from core.memory.task_queue import TaskQueueManager
+
+        executor = _make_executor(tmp_path)
+        (executor._anima_dir / "state").mkdir(parents=True, exist_ok=True)
+        queue = TaskQueueManager(executor._anima_dir)
+        queue.add_task(
+            source="anima",
+            original_instruction="work",
+            assignee="test-anima",
+            summary="work",
+            status="in_progress",
+            task_id="crash-1",
+        )
+
+        with patch.object(executor, "_run_llm_task", side_effect=RuntimeError("boom")):
+            await executor._execute_llm_task({"task_id": "crash-1", "description": "test task"})
+
+        entry = queue.get_task_by_id("crash-1")
+        assert entry.status == "pending"
+        assert entry.meta["last_run_stop_kind"] == "crash"
+        assert entry.meta["last_run_ended_at"]
+        # Nothing is re-enqueued for the harness to pick up again.
+        assert not list((executor._anima_dir / "state" / "pending").glob("*.json"))
 
     @pytest.mark.asyncio
     async def test_sends_reply_to_notification_dict(self, tmp_path: Path) -> None:
@@ -524,9 +483,7 @@ class TestExecuteLLMTaskFailureHandling:
             "reply_to": "manager-anima",
         }
         processing = executor._anima_dir / "state" / "pending" / "processing"
-        failed = executor._anima_dir / "state" / "pending" / "failed"
         processing.mkdir(parents=True)
-        failed.mkdir()
         processing_path = processing / "cancelled.json"
         processing_path.write_text(json.dumps(task_desc), encoding="utf-8")
 
@@ -544,11 +501,10 @@ class TestExecuteLLMTaskFailureHandling:
         executor.execute_pending_task = AsyncMock(side_effect=asyncio.CancelledError)
 
         with pytest.raises(asyncio.CancelledError):
-            await executor._execute_claimed_llm_task(task_desc, processing_path, failed, None)
+            await executor._execute_claimed_llm_task(task_desc, processing_path, None)
 
         assert not processing_path.exists()
-        assert (failed / "cancelled.json").exists()
-        assert queue.get_task_by_id("cancelled").status == "failed"
+        assert queue.get_task_by_id("cancelled").status == "pending"
         assert executor._anima.messenger.send.call_args.kwargs["to"] == "manager-anima"
 
     @pytest.mark.asyncio
@@ -562,9 +518,7 @@ class TestExecuteLLMTaskFailureHandling:
         }
         pending = executor._anima_dir / "state" / "pending"
         processing = pending / "processing"
-        failed = pending / "failed"
         processing.mkdir(parents=True)
-        failed.mkdir()
         processing_path = processing / "shutdown.json"
         processing_path.write_text(json.dumps(task_desc), encoding="utf-8")
         write_processing_lease(
@@ -588,93 +542,27 @@ class TestExecuteLLMTaskFailureHandling:
         executor._shutdown_event.set()
 
         with pytest.raises(asyncio.CancelledError):
-            await executor._execute_claimed_llm_task(task_desc, processing_path, failed, None)
+            await executor._execute_claimed_llm_task(task_desc, processing_path, None)
 
         assert processing_path.exists()
         assert processing_lease_path(processing_path).exists()
-        assert not list(failed.glob("*.json"))
         assert queue.get_task_by_id("shutdown").status == "in_progress"
         executor._anima.messenger.send.assert_not_called()
 
-        with (
-            patch(
-                "core.supervisor.pending_executor._completion_declaration_required",
-                return_value=True,
-            ),
-            patch("core.supervisor.pending_executor.is_processing_lease_live", return_value=True),
-        ):
-            PendingTaskExecutor._recover_processing(
-                processing,
-                failed,
-                executor._anima_dir,
-                executor._fail_task_terminal,
-            )
+        with patch("core.supervisor.pending_executor.is_processing_lease_live", return_value=True):
+            PendingTaskExecutor._recover_processing(processing, executor._anima_dir)
 
         assert processing_path.exists()
+
+        with patch("core.supervisor.pending_executor.is_processing_lease_live", return_value=False):
+            PendingTaskExecutor._recover_processing(processing, executor._anima_dir)
+
+        assert not processing_path.exists()
+        # No descriptor is regenerated; the entry simply becomes pending again.
         assert not (pending / "shutdown.json").exists()
-
-        with (
-            patch(
-                "core.supervisor.pending_executor._completion_declaration_required",
-                return_value=True,
-            ),
-            patch("core.supervisor.pending_executor.is_processing_lease_live", return_value=False),
-        ):
-            PendingTaskExecutor._recover_processing(
-                processing,
-                failed,
-                executor._anima_dir,
-                executor._fail_task_terminal,
-            )
-
-        recovered = json.loads((pending / "shutdown.json").read_text(encoding="utf-8"))
-        assert recovered["continuation_count"] == 1
-        assert "continuation_not_before" not in recovered
-        assert "プロセス異常終了" in recovered["context"]
-        assert queue.get_task_by_id("shutdown").status == "in_progress"
-        executor._anima.messenger.send.assert_not_called()
-
-    def test_recovery_at_continuation_limit_notifies_reply_to(self, tmp_path: Path) -> None:
-        executor = _make_executor(tmp_path)
-        task_desc = {
-            "task_type": "llm",
-            "task_id": "exhausted",
-            "title": "Exhausted task",
-            "reply_to": "manager-anima",
-            "continuation_count": 3,
-        }
-        processing = executor._anima_dir / "state" / "pending" / "processing"
-        failed = executor._anima_dir / "state" / "pending" / "failed"
-        processing.mkdir(parents=True)
-        failed.mkdir()
-        (processing / "exhausted.json").write_text(json.dumps(task_desc), encoding="utf-8")
-
-        from core.memory.task_queue import TaskQueueManager
-
-        queue = TaskQueueManager(executor._anima_dir)
-        queue.add_task(
-            source="anima",
-            original_instruction="work",
-            assignee="test-anima",
-            summary="work",
-            status="in_progress",
-            task_id="exhausted",
-        )
-
-        with patch(
-            "core.supervisor.pending_executor._completion_declaration_required",
-            return_value=True,
-        ):
-            PendingTaskExecutor._recover_processing(
-                processing,
-                failed,
-                executor._anima_dir,
-                executor._fail_task_terminal,
-            )
-
-        assert (failed / "exhausted.json").exists()
-        assert queue.get_task_by_id("exhausted").status == "failed"
-        assert executor._anima.messenger.send.call_args.kwargs["to"] == "manager-anima"
+        recovered = queue.get_task_by_id("shutdown")
+        assert recovered.status == "pending"
+        assert recovered.meta["last_run_stop_kind"] == "crash"
 
     @pytest.mark.asyncio
     async def test_notification_failure_does_not_propagate(self, tmp_path: Path) -> None:
@@ -709,34 +597,8 @@ class TestExecuteLLMTaskFailureHandling:
         assert executor._anima._task_slots["background"] == ""
 
     @pytest.mark.asyncio
-    async def test_model_granularity_guard_fails_broad_task_before_execution(self, tmp_path: Path) -> None:
-        """Medium-profile models fail broad multi-phase tasks before spending an execution loop."""
-        executor = _make_executor(tmp_path)
-        executor._anima.agent.model_config = ModelConfig(model="qwen3-coder-30b")
-
-        with patch.object(
-            executor, "_attention_decision_for_task_desc", return_value=AttentionDecision(reason="active")
-        ):
-            task_desc = {
-                "task_id": "broad-task",
-                "title": "Image recovery",
-                "description": "Repair DB records -> sync -> deploy -> verify public URL -> report status",
-            }
-            await executor._execute_llm_task(task_desc)
-
-        result_path = executor._anima_dir / "state" / "task_results" / "broad-task.md"
-        content = result_path.read_text()
-        assert "FAILED:" in content
-        assert "task_too_broad_for_model" in content
-
-    @pytest.mark.asyncio
-    async def test_completion_notification_skipped_when_self_addressed(self, tmp_path: Path) -> None:
-        """A self-directed completion notification is suppressed.
-
-        When an Anima submits a task for itself, a completion DM back to self is
-        pure noise (and the body often carries human-directed content that gets
-        misrouted), so _run_llm_task drops the reply_to and sends nothing.
-        """
+    async def test_completion_notification_can_be_self_addressed(self, tmp_path: Path) -> None:
+        """Task completion notifications may target the submitting anima itself."""
         executor = _make_executor(tmp_path)
         shared_dir = tmp_path / "shared"
         executor._anima.messenger = Messenger(shared_dir, "test-anima")
@@ -758,9 +620,12 @@ class TestExecuteLLMTaskFailureHandling:
         result = await executor._run_llm_task(task_desc)
 
         assert result == "task finished"
-        inbox_dir = shared_dir / "inbox" / "test-anima"
-        inbox_files = list(inbox_dir.glob("*.json")) if inbox_dir.exists() else []
-        assert inbox_files == []
+        inbox_files = list((shared_dir / "inbox" / "test-anima").glob("*.json"))
+        assert len(inbox_files) == 1
+        delivered = json.loads(inbox_files[0].read_text(encoding="utf-8"))
+        assert delivered["from_person"] == "test-anima"
+        assert delivered["to_person"] == "test-anima"
+        assert "self-complete" in delivered["content"]
 
 
 # ── TestI18nTemplate ─────────────────────────────────────────

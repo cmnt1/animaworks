@@ -167,26 +167,9 @@ def _supervisor_tools() -> list[dict[str, Any]]:
                         "type": "string",
                         "description": _t("schema.delegate_task.summary"),
                     },
-                    "deadline": {
-                        "type": "string",
-                        "description": _t("schema.delegate_task.deadline"),
-                    },
                     "workspace": {
                         "type": "string",
                         "description": _t("schema.delegate_task.workspace"),
-                    },
-                    "allow_multistage": {
-                        "type": "boolean",
-                        "description": (
-                            "Override model-based task granularity guardrails. "
-                            "Use only when the target model is explicitly trusted for this multi-step task. "
-                            "Ignored for lightweight/medium subordinate models; split those into one concrete phase per task."
-                        ),
-                        "default": False,
-                    },
-                    "exclusive_key": {
-                        "type": "string",
-                        "description": _t("schema.delegate_task.exclusive_key"),
                     },
                     "acceptance_criteria": {
                         "type": "array",
@@ -199,7 +182,7 @@ def _supervisor_tools() -> list[dict[str, Any]]:
                         "description": _t("schema.delegate_task.model"),
                     },
                 },
-                "required": ["name", "instruction", "deadline"],
+                "required": ["name", "instruction"],
             },
         },
         {

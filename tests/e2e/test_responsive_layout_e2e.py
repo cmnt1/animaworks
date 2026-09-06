@@ -12,11 +12,11 @@ Requires:
 
 Run with: python -m pytest tests/e2e/test_responsive_layout_e2e.py -v
 """
+
 from __future__ import annotations
 
 import os
 import time
-from pathlib import Path
 
 import pytest
 
@@ -24,6 +24,7 @@ import pytest
 
 try:
     from playwright.sync_api import Browser, Page, sync_playwright
+
     HAS_PLAYWRIGHT = True
 except ImportError:
     HAS_PLAYWRIGHT = False
@@ -48,57 +49,11 @@ BASE_URL = f"{SERVER_HOST}:{SERVER_PORT}"
 
 # ── Test App (ASGI) approach for static file serving ─────────
 
+
 def _create_static_app():
-    """Create a minimal ASGI app that serves static files only.
+    from tests.e2e._static_app import create_static_app
 
-    This avoids needing the full AnimaWorks server with ProcessSupervisor.
-    Serves the entire server/static/ directory including workspace/.
-    """
-    try:
-        from fastapi import FastAPI, HTTPException
-        from fastapi.responses import FileResponse, HTMLResponse
-        from fastapi.staticfiles import StaticFiles
-
-        project_root = Path(__file__).resolve().parents[2]
-        static_dir = project_root / "server" / "static"
-
-        if not static_dir.exists():
-            return None
-
-        app = FastAPI()
-        version = "test"
-
-        def inject_html(path: Path) -> str:
-            return path.read_text(encoding="utf-8").replace("__AW_VERSION__", version).replace("__AW_BASE__", "")
-
-        @app.get("/")
-        async def serve_index():
-            return HTMLResponse(inject_html(static_dir / "index.html"))
-
-        @app.get("/workspace/")
-        async def serve_workspace():
-            return HTMLResponse(inject_html(static_dir / "workspace" / "index.html"))
-
-        @app.get("/_v/{asset_version}/{path:path}")
-        async def serve_versioned_asset(asset_version: str, path: str):
-            del asset_version
-            candidate = (static_dir / path).resolve()
-            if not candidate.is_relative_to(static_dir.resolve()):
-                raise HTTPException(status_code=400, detail="Invalid path")
-            if not candidate.is_file():
-                raise HTTPException(status_code=404)
-            return FileResponse(candidate)
-
-        # Fallback for assets that intentionally use non-versioned paths.
-        app.mount(
-            "/",
-            StaticFiles(directory=str(static_dir), html=True),
-            name="static",
-        )
-
-        return app
-    except ImportError:
-        return None
+    return create_static_app()
 
 
 # ── Fixtures ─────────────────────────────────────────────────
@@ -139,9 +94,7 @@ def static_server():
 
     import uvicorn
 
-    server = uvicorn.Server(
-        uvicorn.Config(app, host="127.0.0.1", port=SERVER_PORT, log_level="error")
-    )
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=SERVER_PORT, log_level="error"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
 
@@ -237,9 +190,7 @@ class TestDashboardMobile:
         # Check computed display rather than is_visible() since the element
         # might be behind other overlays or have zero-size bounding box.
         display = hamburger.evaluate("el => getComputedStyle(el).display")
-        assert display != "none", (
-            f"Hamburger should be display: flex on mobile, got {display}"
-        )
+        assert display != "none", f"Hamburger should be display: flex on mobile, got {display}"
 
     def test_sidebar_hidden_mobile(self, mobile_page: Page, static_server: str) -> None:
         """Sidebar nav should be hidden (off-screen) on mobile by default."""
@@ -273,9 +224,7 @@ class TestDashboardMobile:
         assert box is not None, "Sidebar should be on-screen after hamburger click"
         assert box["x"] >= 0, "Sidebar x should be >= 0 after opening"
 
-    def test_mobile_nav_backdrop_visible_when_open(
-        self, mobile_page: Page, static_server: str
-    ) -> None:
+    def test_mobile_nav_backdrop_visible_when_open(self, mobile_page: Page, static_server: str) -> None:
         """Backdrop should appear when mobile nav is open."""
         mobile_page.goto(f"{static_server}/")
         mobile_page.wait_for_load_state("domcontentloaded")
@@ -289,9 +238,7 @@ class TestDashboardMobile:
         display = backdrop.evaluate("el => getComputedStyle(el).display")
         assert display != "none", "Backdrop should be visible when nav is open"
 
-    def test_chat_send_button_tap_target(
-        self, mobile_page: Page, static_server: str
-    ) -> None:
+    def test_chat_send_button_tap_target(self, mobile_page: Page, static_server: str) -> None:
         """Chat send button should have at least 44px min-height on mobile."""
         mobile_page.goto(f"{static_server}/")
         mobile_page.wait_for_load_state("domcontentloaded")
@@ -300,9 +247,7 @@ class TestDashboardMobile:
         # The send button is in the chat page; check CSS computed style
         send_btn = mobile_page.locator(".chat-send-btn").first
         if send_btn.count() > 0:
-            min_height = send_btn.evaluate(
-                "el => getComputedStyle(el).minHeight"
-            )
+            min_height = send_btn.evaluate("el => getComputedStyle(el).minHeight")
             assert min_height == "44px", f"Expected 44px min-height, got {min_height}"
 
 
@@ -312,9 +257,7 @@ class TestDashboardMobile:
 class TestWorkspaceMobile:
     """Workspace responsive behavior on mobile viewports."""
 
-    def test_workspace_sidebar_hidden_mobile(
-        self, mobile_page: Page, static_server: str
-    ) -> None:
+    def test_workspace_sidebar_hidden_mobile(self, mobile_page: Page, static_server: str) -> None:
         """Workspace sidebar should be hidden initially on mobile."""
         mobile_page.goto(f"{static_server}/workspace/")
         mobile_page.wait_for_load_state("domcontentloaded")
@@ -326,9 +269,7 @@ class TestWorkspaceMobile:
                 # Should be off-screen (translateX(-100%))
                 assert box["x"] < 0, "Workspace sidebar should be off-screen"
 
-    def test_workspace_mobile_sidebar_toggle_visible(
-        self, mobile_page: Page, static_server: str
-    ) -> None:
+    def test_workspace_mobile_sidebar_toggle_visible(self, mobile_page: Page, static_server: str) -> None:
         """Mobile sidebar toggle should be visible on mobile viewport."""
         mobile_page.goto(f"{static_server}/workspace/")
         mobile_page.wait_for_load_state("domcontentloaded")
@@ -338,23 +279,17 @@ class TestWorkspaceMobile:
             display = toggle.evaluate("el => getComputedStyle(el).display")
             assert display != "none", "Mobile sidebar toggle should be visible"
 
-    def test_workspace_chat_send_tap_target(
-        self, mobile_page: Page, static_server: str
-    ) -> None:
+    def test_workspace_chat_send_tap_target(self, mobile_page: Page, static_server: str) -> None:
         """Workspace chat send button should have at least 44px min-height."""
         mobile_page.goto(f"{static_server}/workspace/")
         mobile_page.wait_for_load_state("domcontentloaded")
 
         send_btn = mobile_page.locator(".ws-conv-send").first
         if send_btn.count() > 0:
-            min_height = send_btn.evaluate(
-                "el => getComputedStyle(el).minHeight"
-            )
+            min_height = send_btn.evaluate("el => getComputedStyle(el).minHeight")
             assert min_height == "44px", f"Expected 44px min-height, got {min_height}"
 
-    def test_workspace_chat_bubbles_no_overflow(
-        self, mobile_page: Page, static_server: str
-    ) -> None:
+    def test_workspace_chat_bubbles_no_overflow(self, mobile_page: Page, static_server: str) -> None:
         """Chat bubbles should not cause horizontal overflow on mobile."""
         mobile_page.goto(f"{static_server}/workspace/")
         mobile_page.wait_for_load_state("domcontentloaded")
@@ -363,8 +298,7 @@ class TestWorkspaceMobile:
         scroll_width = mobile_page.evaluate("document.body.scrollWidth")
         client_width = mobile_page.evaluate("document.body.clientWidth")
         assert scroll_width <= client_width + 1, (
-            f"Horizontal overflow detected: scrollWidth={scroll_width}, "
-            f"clientWidth={client_width}"
+            f"Horizontal overflow detected: scrollWidth={scroll_width}, clientWidth={client_width}"
         )
 
 
@@ -374,9 +308,7 @@ class TestWorkspaceMobile:
 class TestDashboardTablet:
     """Dashboard responsive behavior on tablet viewports."""
 
-    def test_dashboard_layout_adjusts_tablet(
-        self, tablet_page: Page, static_server: str
-    ) -> None:
+    def test_dashboard_layout_adjusts_tablet(self, tablet_page: Page, static_server: str) -> None:
         """Dashboard layout should adjust at tablet breakpoint."""
         tablet_page.goto(f"{static_server}/")
         tablet_page.wait_for_load_state("domcontentloaded")
@@ -393,9 +325,7 @@ class TestDashboardTablet:
 class TestDashboardDesktopRegression:
     """Verify desktop layout is preserved after responsive changes."""
 
-    def test_sidebar_visible_desktop(
-        self, desktop_page: Page, static_server: str
-    ) -> None:
+    def test_sidebar_visible_desktop(self, desktop_page: Page, static_server: str) -> None:
         """Sidebar nav should be fully visible on desktop."""
         desktop_page.goto(f"{static_server}/")
         desktop_page.wait_for_load_state("domcontentloaded")
@@ -407,9 +337,7 @@ class TestDashboardDesktopRegression:
         assert box["x"] >= 0, "Sidebar should be on-screen"
         assert box["width"] >= 200, "Sidebar should have reasonable width"
 
-    def test_hamburger_hidden_desktop(
-        self, desktop_page: Page, static_server: str
-    ) -> None:
+    def test_hamburger_hidden_desktop(self, desktop_page: Page, static_server: str) -> None:
         """Hamburger button should be hidden on desktop."""
         desktop_page.goto(f"{static_server}/")
         desktop_page.wait_for_load_state("domcontentloaded")
@@ -418,9 +346,7 @@ class TestDashboardDesktopRegression:
         display = hamburger.evaluate("el => getComputedStyle(el).display")
         assert display == "none", f"Hamburger should be hidden on desktop, got {display}"
 
-    def test_desktop_no_horizontal_scroll(
-        self, desktop_page: Page, static_server: str
-    ) -> None:
+    def test_desktop_no_horizontal_scroll(self, desktop_page: Page, static_server: str) -> None:
         """Desktop layout should not have horizontal scroll."""
         desktop_page.goto(f"{static_server}/")
         desktop_page.wait_for_load_state("domcontentloaded")
@@ -436,9 +362,7 @@ class TestDashboardDesktopRegression:
 class TestWorkspaceDesktopRegression:
     """Verify workspace desktop layout is preserved."""
 
-    def test_workspace_sidebars_visible_desktop(
-        self, desktop_page: Page, static_server: str
-    ) -> None:
+    def test_workspace_sidebars_visible_desktop(self, desktop_page: Page, static_server: str) -> None:
         """Workspace sidebars should be visible at correct widths on desktop."""
         desktop_page.goto(f"{static_server}/workspace/")
         desktop_page.wait_for_load_state("domcontentloaded")
@@ -449,9 +373,7 @@ class TestWorkspaceDesktopRegression:
             display = toggle.evaluate("el => getComputedStyle(el).display")
             assert display == "none", "Mobile toggle should be hidden on desktop"
 
-    def test_workspace_no_horizontal_scroll(
-        self, desktop_page: Page, static_server: str
-    ) -> None:
+    def test_workspace_no_horizontal_scroll(self, desktop_page: Page, static_server: str) -> None:
         """Workspace should not have horizontal scroll on desktop."""
         desktop_page.goto(f"{static_server}/workspace/")
         desktop_page.wait_for_load_state("domcontentloaded")

@@ -165,11 +165,7 @@ class TestSend:
         alice_dir.mkdir(parents=True)
         bob_dir.mkdir(parents=True)
 
-        content = (
-            "正式証跡4点を再提出してください。\n"
-            "期限: 2026-05-26 17:35 JST\n"
-            "1. 実装差分\n2. 検証コマンド"
-        )
+        content = "正式証跡4点を再提出してください。\n期限: 2026-05-26 17:35 JST\n1. 実装差分\n2. 検証コマンド"
         with patch("core.paths.get_animas_dir", return_value=animas_dir):
             msg = Messenger(shared, "alice").send("bob", content, intent="question")
 
@@ -178,7 +174,6 @@ class TestSend:
         tasks = TaskQueueManager(bob_dir).list_tasks()
         assert len(tasks) == 1
         assert tasks[0].assignee == "bob"
-        assert tasks[0].deadline == "2026-05-26T17:35:00+09:00"
         assert tasks[0].meta["source_message_id"] == msg.id
         assert msg.meta["autocreated_task_id"] == tasks[0].task_id
 
@@ -298,9 +293,7 @@ def test_send_message_tool_rejects_self_addressed_dm(shared_dir: Path) -> None:
     assert result == t("handler.dm_self_addressed_error")
     assert not list((shared_dir / "inbox" / "alice").glob("*.json"))
 
-
-# ── reply ─────────────────────────────────────────────────
-
+    # ── reply ─────────────────────────────────────────────────
 
     def test_task_completion_notice_does_not_create_recipient_task(self, tmp_path: Path):
         shared = tmp_path / "shared"

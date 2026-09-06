@@ -4,12 +4,12 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Machine verification of task completion criteria.
+"""Utilities for observing machine-checkable task completion evidence.
 
 Milestone tasks may carry ``meta.completion_criteria`` — a list of
-machine-checkable conditions.  ``TaskQueueManager.update_status`` refuses
-the transition to ``done`` while any criterion is unmet, so a task cannot
-be closed by conversation alone ("報告済み" != done).
+machine-checkable conditions. Callers such as reports and audits may inspect
+these criteria explicitly. Task queue state transitions do not enforce them;
+the owning Anima remains responsible for deciding when a task is done.
 
 Criterion schema (each item is a dict with a ``type`` key):
 
@@ -34,8 +34,8 @@ Criterion schema (each item is a dict with a ``type`` key):
   ``cmdline_pattern``. Guards against "some server answers on the port but
   it is the wrong app" (a bare http_ok cannot tell the difference).
 
-Verification is fail-closed: malformed criteria, unknown types, and
-checker errors all count as unmet.
+When these utilities are invoked, verification is fail-closed: malformed
+criteria, unknown types, and checker errors all count as unmet.
 """
 
 import logging

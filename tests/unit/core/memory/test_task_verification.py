@@ -4,7 +4,7 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for core.memory.task_verification and the done-gate in TaskQueueManager."""
+"""Unit tests for completion-evidence utilities and ungated task completion."""
 
 import subprocess
 from pathlib import Path
@@ -83,9 +83,7 @@ def test_openspec_tasks_checked(tmp_path: Path) -> None:
     assert failures and "unchecked" in failures[0]
     # All matching boxes checked -> pass
     assert (
-        verify_completion_criteria(
-            [{"type": "openspec_tasks_checked", "tasks_md": str(tasks_md), "pattern": r"^1\.1"}]
-        )
+        verify_completion_criteria([{"type": "openspec_tasks_checked", "tasks_md": str(tasks_md), "pattern": r"^1\.1"}])
         == []
     )
     # No matching boxes -> failure (fail-closed)
@@ -126,7 +124,9 @@ def test_channel_post_criterion(tmp_path: Path, monkeypatch) -> None:
     channels = tmp_path / "shared" / "channels"
     channels.mkdir(parents=True)
     (channels / "finance.jsonl").write_text(
-        json.dumps({"ts": "2026-07-18T18:00:00+09:00", "from": "airi", "text": "FIN-047 進捗: 一致検証OK"}, ensure_ascii=False)
+        json.dumps(
+            {"ts": "2026-07-18T18:00:00+09:00", "from": "airi", "text": "FIN-047 進捗: 一致検証OK"}, ensure_ascii=False
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -187,7 +187,7 @@ def test_port_process_criterion(monkeypatch) -> None:
 # ── done-gate in TaskQueueManager.update_status ────────────────────────
 
 
-def test_done_rejected_while_criteria_unmet(tmp_path: Path) -> None:
+def test_done_is_not_gated_by_completion_criteria(tmp_path: Path) -> None:
     tqm = _make_manager(tmp_path)
     artifact = tmp_path / "deliverable.txt"
     entry = _add_task(
@@ -197,20 +197,14 @@ def test_done_rejected_while_criteria_unmet(tmp_path: Path) -> None:
 
     result = tqm.update_status(entry.task_id, "done", summary="done!")
     assert result is not None
-    assert result.status == "pending"  # unchanged
-    notes = result.meta.get("status_notes")
-    assert notes and "completion criteria unmet" in notes[-1]["note"]
-    rejection = result.meta.get("completion_rejection")
-    assert rejection and rejection["failures"]
+    assert result.status == "done"
 
-    # Persisted state also unchanged
     reloaded = tqm.get_task_by_id(entry.task_id)
     assert reloaded is not None
-    assert reloaded.status == "pending"
+    assert reloaded.status == "done"
 
 
-def test_repeat_identical_rejection_not_reappended(tmp_path: Path) -> None:
-    """Retry loops must not grow the queue log with identical rejections."""
+def test_repeated_done_updates_are_allowed_without_completion_gate(tmp_path: Path) -> None:
     tqm = _make_manager(tmp_path)
     entry = _add_task(
         tqm,
@@ -221,12 +215,11 @@ def test_repeat_identical_rejection_not_reappended(tmp_path: Path) -> None:
     size_after_first = tqm.queue_path.stat().st_size
     tqm.update_status(entry.task_id, "done")
     tqm.update_status(entry.task_id, "done")
-    assert tqm.queue_path.stat().st_size == size_after_first
+    assert tqm.queue_path.stat().st_size > size_after_first
 
     reloaded = tqm.get_task_by_id(entry.task_id)
     assert reloaded is not None
-    notes = reloaded.meta.get("status_notes") or []
-    assert len([n for n in notes if "completion criteria unmet" in n["note"]]) == 1
+    assert reloaded.status == "done"
 
 
 def test_done_allowed_once_criteria_met(tmp_path: Path) -> None:

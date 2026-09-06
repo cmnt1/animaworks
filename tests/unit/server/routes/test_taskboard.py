@@ -167,7 +167,7 @@ class TestTaskBoardList:
         )
         queue.update_status(
             task.task_id,
-            "blocked",
+            "pending",
             summary="BLOCKED: Task reported an explicit follow-up/start step, not final evidence",
         )
 
@@ -356,7 +356,7 @@ class TestTaskBoardPatch:
         events = _store(app).list_events(anima_name="alice", task_id=task.task_id)
         assert events[-1]["event_type"] == "archived"
 
-    async def test_archiving_failed_task_cancels_queue_entry(self, tmp_path: Path) -> None:
+    async def test_archiving_requeued_task_cancels_queue_entry(self, tmp_path: Path) -> None:
         app = _make_app(tmp_path, ["alice"])
         queue = _queue(app, "alice")
         task = queue.add_task(
@@ -366,7 +366,7 @@ class TestTaskBoardPatch:
             summary="failed cron",
             task_id="task-failed",
         )
-        queue.update_status(task.task_id, "failed", summary="cron failed")
+        queue.update_status(task.task_id, "pending", summary="cron failed; queued for retry")
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -502,7 +502,7 @@ class TestTaskSummaryCompatibility:
             summary="needs review",
             task_id="task-review",
         )
-        queue.update_status(review.task_id, "blocked")
+        queue.update_status(review.task_id, "pending")
         _store(app).upsert_metadata(
             anima_name="alice",
             task_id=review.task_id,
@@ -542,7 +542,7 @@ class TestTaskSummaryCompatibility:
         assert missing_resp.json()["counts"]["active"] == 0
         assert missing_resp.json()["tasks"] == []
 
-    async def test_summary_counts_blocked_child_parent_as_tracking_not_blocked(self, tmp_path: Path) -> None:
+    async def test_summary_counts_requeued_child_and_delegated_parent(self, tmp_path: Path) -> None:
         app = _make_app(tmp_path, ["sakura", "hikaru"])
         hikaru = _queue(app, "hikaru")
         child = hikaru.add_task(
@@ -552,13 +552,12 @@ class TestTaskSummaryCompatibility:
             summary="produce final evidence",
             task_id="child-blocked",
         )
-        hikaru.update_status(child.task_id, "blocked", summary="BLOCKED: missing evidence")
+        hikaru.update_status(child.task_id, "pending", summary="retry queued: missing evidence")
         sakura = _queue(app, "sakura")
         sakura.add_delegated_task(
             original_instruction="track delegated evidence",
             assignee="hikaru",
             summary="track delegated evidence",
-            deadline="1h",
             meta={"delegated_to": "hikaru", "delegated_task_id": child.task_id},
         )
 
@@ -567,6 +566,6 @@ class TestTaskSummaryCompatibility:
             board_resp = await client.get("/api/task-board/summary")
 
         board_data = board_resp.json()
-        assert board_data["blocked"] == 1
-        assert board_data["tracking"] == 1
+        assert board_data["pending"] == 1
+        assert board_data["delegated"] == 1
         assert board_data["total_active"] == 2

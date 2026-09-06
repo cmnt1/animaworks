@@ -9,7 +9,6 @@ from __future__ import annotations
 import json as _json
 import logging
 import os
-import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,15 +19,6 @@ from core.i18n import t
 from core.memory._io import atomic_write_text
 from core.tooling.handler_base import _error_result, build_outgoing_origin_chain
 from core.tooling.org_helpers import OrgHelpersMixin
-
-_PR_REF = re.compile(r"(?:#|/pull/)(\d{2,7})\b")
-
-
-def _pr_key_from_text(text: str) -> str:
-    """Fallback ``pr-NNNN`` exclusion key from a PR reference in the task text."""
-    match = _PR_REF.search(text)
-    return f"pr-{match.group(1)}" if match else ""
-
 
 if TYPE_CHECKING:
     from core.memory.activity import ActivityLogger
@@ -84,7 +74,6 @@ class DelegationMixin(OrgHelpersMixin):
     _messenger: Messenger | None
     _session_origin: str
     _session_origin_chain: list[str]
-    _current_discord_origin: dict[str, str]
 
     def _persist_delegation_via_server(
         self,
@@ -92,11 +81,9 @@ class DelegationMixin(OrgHelpersMixin):
         target_name: str,
         instruction: str,
         summary: str,
-        deadline: str,
         sub_task_id: str,
         tracking_task_id: str,
         workspace: str,
-        exclusive_key: str,
         acceptance_criteria: list[str],
         persist_sub: bool,
         persist_tracking: bool,
@@ -117,11 +104,9 @@ class DelegationMixin(OrgHelpersMixin):
             "target": target_name,
             "instruction": instruction,
             "summary": summary,
-            "deadline": deadline,
             "sub_task_id": sub_task_id,
             "tracking_task_id": tracking_task_id,
             "workspace": workspace,
-            "exclusive_key": exclusive_key,
             "acceptance_criteria": acceptance_criteria,
             "persist_sub": persist_sub,
             "persist_tracking": persist_tracking,
@@ -170,8 +155,6 @@ class DelegationMixin(OrgHelpersMixin):
         target_name = resolve_anima_name(args.get("name", ""))
         instruction = args.get("instruction", "")
         summary = args.get("summary", "") or instruction[:100]
-        deadline = args.get("deadline", "")
-        exclusive_key = args.get("exclusive_key", "") or _pr_key_from_text(f"{summary}\n{instruction}")
         raw_criteria = args.get("acceptance_criteria")
         acceptance_criteria: list[str] = (
             [c for c in raw_criteria if isinstance(c, str)] if isinstance(raw_criteria, list) else []
@@ -200,11 +183,6 @@ class DelegationMixin(OrgHelpersMixin):
             return _error_result("InvalidArguments", "name is required")
         if not instruction:
             return _error_result("InvalidArguments", "instruction is required")
-        if not deadline:
-            return _error_result(
-                "InvalidArguments",
-                "deadline is required. Use relative format ('30m', '2h', '1d') or ISO8601.",
-            )
 
         err = self._check_subordinate(target_name)
         if err:
@@ -223,7 +201,6 @@ class DelegationMixin(OrgHelpersMixin):
         from core.company import check_company_boundary
         from core.memory.task_queue import TaskQueueManager
         from core.paths import get_animas_dir
-        from core.urgent import add_urgent, is_urgent_active
 
         animas_dir = get_animas_dir()
         boundary = check_company_boundary(
@@ -241,44 +218,6 @@ class DelegationMixin(OrgHelpersMixin):
 
         target_dir = animas_dir / target_name
 
-        try:
-            from core.config.model_config import load_model_config
-            from core.task_granularity import assess_task_granularity, capability_for_model
-
-            target_config = load_model_config(target_dir)
-            target_model = target_config.background_model or target_config.model
-            target_capability = capability_for_model(target_model)
-            lightweight_subtask_limit = 1 if target_capability != "high" else None
-            decision = assess_task_granularity(
-                model_name=target_model,
-                title=summary,
-                description=instruction,
-                allow_multistage=bool(args.get("allow_multistage")),
-                honor_allow_multistage=target_capability == "high",
-                max_phases=lightweight_subtask_limit,
-            )
-            if not decision.allowed:
-                return _error_result(
-                    "TaskTooBroadForModel",
-                    (
-                        f"{decision.guidance} "
-                        "For lightweight or medium subordinate models, delegate one concrete phase at a time. "
-                        f"Target={target_name}, model={decision.model_name}, capability={decision.capability}."
-                    ),
-                )
-        except Exception:
-            logger.debug(
-                "delegate_task granularity preflight skipped for %s",
-                target_name,
-                exc_info=True,
-            )
-
-        # Urgent-mode cascade (Phase C-4): if the delegator is currently in
-        # urgent mode, propagate priority=urgent to the subordinate so all
-        # throttles bypass there too.  This recurses via further delegation.
-        delegator_urgent = is_urgent_active(self._anima_dir)
-        cascade_priority = "urgent" if delegator_urgent else "normal"
-
         sub_task_id = uuid.uuid4().hex[:12]
         tracking_task_id = uuid.uuid4().hex[:12]
         sub_tqm = TaskQueueManager(target_dir)
@@ -292,35 +231,25 @@ class DelegationMixin(OrgHelpersMixin):
                 original_instruction=instruction,
                 assignee=target_name,
                 summary=summary,
-                deadline=deadline,
                 relay_chain=[self._anima_name],
-                priority=cascade_priority,
                 task_id=sub_task_id,
-                meta=(
-                    {
-                        **({"model": model} if model else {}),
-                        **({"exclusive_key": exclusive_key} if exclusive_key else {}),
-                    }
-                    or None
-                ),
+                meta=({"model": model} if model else None),
             )
             persisted_sub = True
-            # Register urgent mode before publishing the pending descriptor so
-            # the subordinate scheduler sees the bypass immediately.
-            if delegator_urgent:
-                try:
-                    add_urgent(
-                        target_dir,
-                        sub_task_id,
-                        note=f"delegated from {self._anima_name}",
-                    )
-                except Exception:  # noqa: BLE001
-                    logger.warning(
-                        "urgent cascade registration failed for %s -> %s",
-                        self._anima_name,
-                        target_name,
-                        exc_info=True,
-                    )
+            own_tqm.add_delegated_task(
+                original_instruction=instruction,
+                assignee=target_name,
+                summary=t("handler.delegation_summary", summary=summary),
+                relay_chain=[self._anima_name, target_name],
+                task_id=tracking_task_id,
+                meta={
+                    "delegated_to": target_name,
+                    "delegated_task_id": sub_task_id,
+                    **({"model": model} if model else {}),
+                },
+            )
+            persisted_tracking = True
+            # Write pending task JSON so PendingTaskExecutor picks it up
             task_desc = {
                 "task_type": "llm",
                 "task_id": sub_task_id,
@@ -330,40 +259,13 @@ class DelegationMixin(OrgHelpersMixin):
                 "acceptance_criteria": acceptance_criteria,
                 "constraints": [],
                 "file_paths": [],
-                "allow_multistage": bool(args.get("allow_multistage")),
                 "submitted_by": self._anima_name,
                 "submitted_at": datetime.now(UTC).isoformat(),
                 "reply_to": self._anima_name,
                 "source": "delegation",
                 "working_directory": resolved_wd,
-                "priority": cascade_priority,
-                "exclusive_key": exclusive_key,
                 "model": model,
             }
-            sub_tqm.update_meta(sub_task_id, {"task_desc": task_desc})
-
-            tracking_meta: dict[str, Any] = {
-                "delegated_to": target_name,
-                "delegated_task_id": sub_task_id,
-            }
-            discord_origin = getattr(self, "_current_discord_origin", {}) or {}
-            if discord_origin.get("channel_id"):
-                tracking_meta["discord_origin_channel_id"] = discord_origin["channel_id"]
-                tracking_meta["discord_origin_thread_ts"] = discord_origin.get("thread_ts", "")
-                tracking_meta["discord_origin_user_id"] = discord_origin.get("user_id", "")
-
-            own_tqm.add_delegated_task(
-                original_instruction=instruction,
-                assignee=target_name,
-                summary=t("handler.delegation_summary", summary=summary),
-                deadline=deadline,
-                relay_chain=[self._anima_name, target_name],
-                task_id=tracking_task_id,
-                meta=tracking_meta,
-                priority=cascade_priority,
-            )
-            persisted_tracking = True
-
             pending_dir = target_dir / "state" / "pending"
             pending_dir.mkdir(parents=True, exist_ok=True)
             atomic_write_text(
@@ -382,11 +284,9 @@ class DelegationMixin(OrgHelpersMixin):
                 target_name=target_name,
                 instruction=instruction,
                 summary=summary,
-                deadline=deadline,
                 sub_task_id=sub_task_id,
                 tracking_task_id=tracking_task_id,
                 workspace=resolved_wd,
-                exclusive_key=exclusive_key,
                 acceptance_criteria=acceptance_criteria,
                 persist_sub=not persisted_sub,
                 persist_tracking=not persisted_tracking,
@@ -451,7 +351,6 @@ class DelegationMixin(OrgHelpersMixin):
                     content=t(
                         "handler.delegation_dm_content",
                         instruction=instruction,
-                        deadline=deadline,
                         task_id=sub_task_id,
                     ),
                     intent="delegation",
@@ -525,7 +424,6 @@ class DelegationMixin(OrgHelpersMixin):
                 "delegated_to": delegated_to,
                 "summary": task.summary,
                 "delegated_at": task.ts,
-                "deadline": task.deadline or "",
                 "subordinate_status": "unknown",
                 "last_updated": "",
             }
@@ -542,7 +440,7 @@ class DelegationMixin(OrgHelpersMixin):
                     entry["subordinate_status"] = "unknown"
 
             sub_status = entry["subordinate_status"]
-            _terminal = {"done", "cancelled", "failed"}
+            _terminal = {"done", "cancelled"}
             if status_filter == "active" and sub_status in _terminal:
                 continue
             if status_filter == "completed" and sub_status not in _terminal:

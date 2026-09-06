@@ -2,13 +2,13 @@
 
 ### How to Delegate Tasks
 
-> **Note**: Agent/Task tools (sub-agent spawning) are **disabled**. For task delegation, use `delegate_task`. `submit_tasks` is not shown in normal chat/Heartbeat/Inbox/TaskExec; use it only in explicit background execution workflows.
+> **Note**: Agent/Task tools (sub-agent spawning) are **disabled**. For task delegation, use `delegate_task`. `submit_tasks` is available in Heartbeat and explicit background execution (not shown in normal chat/Inbox/TaskExec). In Heartbeat, use it to re-submit your own pending tasks.
 
 **With subordinates** → Use `delegate_task` to delegate to a subordinate
 - Include a subordinate's name to assign them directly
 - If no name is given, the least-loaded subordinate with the best role match is auto-selected
 
-**Without subordinates** → Usually execute directly in this session. Use `submit_tasks` only when an explicit background execution workflow is enabled
+**Without subordinates** → In normal chat, execute directly in this session. In Heartbeat or an explicit background execution workflow, submit to your own TaskExec with `submit_tasks`
 - Written to state/pending/ and automatically executed by TaskExec in a separate session
 - The executor shares your identity, injection, behavior rules, memory guide, and org context
 - A task_id is returned. You will receive a DM notification when it completes
@@ -18,7 +18,7 @@
 
 | Tool | Purpose | Execution Queue (Layer 1) | Tracking (Layer 2) | When to use |
 |------|---------|--------------------------|--------------------|----|
-| `submit_tasks` | Submit tasks for execution and registration | Creates in `state/pending/` | Registers in `task_queue.jsonl` | Explicit background execution workflow, handed to your own TaskExec |
+| `submit_tasks` | Submit tasks for execution and registration | Creates in `state/pending/` | Registers in `task_queue.jsonl` | Re-submitting your own pending tasks in Heartbeat; explicit background execution handed to your own TaskExec |
 | `delegate_task` | Delegate to subordinates | Creates in subordinate's `state/pending/` | Registers in both `task_queue.jsonl` | When assigning to subordinates |
 
 **Important**: Do not use `submit_tasks` in normal chat after receiving human instructions. Execute directly here, and when follow-up tracking is needed, record it with `update_task`, `state/current_state.md`, or an explicit background execution workflow.
@@ -27,7 +27,7 @@
 
 ## submit_tasks in Explicit Background Execution
 
-Do not use `submit_tasks` in normal sessions. Use it only when the user or a skill explicitly requests background execution and `submit_tasks` is visible in the tool list. Even for one task, submit a tasks array with one item.
+Do not use `submit_tasks` in normal chat. In Heartbeat, use it to re-submit your own pending tasks (including ones whose previous TaskExec ended without a completion declaration) with the same task_id; a pending task runs when you submit it. Otherwise use it only when the user or a skill explicitly requests background execution and `submit_tasks` is visible in the tool list. Even for one task, submit a tasks array with one item.
 
 ### About the Executor (TaskExec)
 
@@ -139,3 +139,10 @@ Runs automatically after each Heartbeat. Detects the following state changes in 
 - Archived tasks are also searched (`task_queue_archive.jsonl`)
 
 There is no need to manually call `task_tracker`, but it remains useful for immediate checks between Heartbeats.
+
+## Read before write, read after write (MUST)
+
+- **Read before write**: right before `delegate_task` / `submit_tasks` / `backlog_task`, read `list_tasks(status="delegated")` and `list_tasks(status="in_progress")` (plus pending for your own tasks) and check for an open task on the same PR / Issue / target. If one exists, do not create another: `send_message` the assignee with the existing task_id and the extra instruction.
+- **Read after write**: read the returned task_id back with `list_tasks` and confirm the summary is prefixed with `[PR #N]` / `[Issue #N]` / the target name.
+- **On duplicates**: keep the newer task and set the older one to `update_task(status="cancelled", summary="merged into <new id>")`. Assignees follow the same rule.
+- Write only the target, URL, what to do and the completion target in a delegation. Do not bind the assignee with ledger state words or procedural conditions.

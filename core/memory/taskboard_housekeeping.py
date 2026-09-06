@@ -110,7 +110,7 @@ def _cleanup_pending_processing(
                 synced = False
                 missing = False
                 if task_id and not is_terminal_orphan:
-                    synced = _mark_queue_task_failed(anima_dir, task_id)
+                    synced = _requeue_stale_processing_task(anima_dir, task_id)
                     missing = not synced
                     if synced:
                         queue_synced += 1
@@ -605,7 +605,7 @@ def _move_with_collision(path: Path, target_dir: Path, *, collision_label: str) 
     return target
 
 
-def _mark_queue_task_failed(anima_dir: Path, task_id: str) -> bool:
+def _requeue_stale_processing_task(anima_dir: Path, task_id: str) -> bool:
     try:
         from core.memory.task_queue import TaskQueueManager
 
@@ -613,8 +613,8 @@ def _mark_queue_task_failed(anima_dir: Path, task_id: str) -> bool:
         return (
             manager.update_status(
                 task_id,
-                "failed",
-                summary="FAILED: stale processing task recovered by housekeeping",
+                "pending",
+                summary="auto-recovered: stale processing task requeued by housekeeping",
             )
             is not None
         )
@@ -625,7 +625,7 @@ def _mark_queue_task_failed(anima_dir: Path, task_id: str) -> bool:
 
 def _is_terminal_processing_orphan(anima_dir: Path, task_id: str) -> bool:
     """Return True when a processing file only mirrors terminal queue state."""
-    terminal_statuses = {"done", "cancelled", "failed"}
+    terminal_statuses = {"done", "cancelled"}
     try:
         from core.memory.task_queue import TaskQueueManager
 

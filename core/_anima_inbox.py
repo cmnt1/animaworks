@@ -60,7 +60,7 @@ _THREAD_CTX_BUDGET = 300
 _MSG_BODY_BUDGET = 2000
 _MAX_INBOX_RETRIES = 3
 _INBOX_THREAD_ID = "inbox"
-_RESCUE_QUEUE_ACTIVE_STATUSES = {"pending", "in_progress", "blocked", "delegated"}
+_RESCUE_QUEUE_ACTIVE_STATUSES = {"pending", "in_progress", "delegated"}
 _RESCUE_QUEUE_CANCEL_REASONS = {"expired", "archived", "tombstoned"}
 _RETRYABLE_EMPTY_ERROR_MARKERS = (
     "stream disconnected",
@@ -273,7 +273,10 @@ def _check_task_state(anima_dir: Path, task_id: str) -> str:
 
         tqm = TaskQueueManager(anima_dir)
         entry = tqm.get_task_by_id(task_id)
-        if entry and entry.status in ("done", "failed", "cancelled"):
+        # "failed" was retired (A1 task-model teardown): a legacy failed row
+        # now reads back as "pending" via TaskQueueManager, so it is no
+        # longer terminal here either.
+        if entry and entry.status in ("done", "cancelled"):
             return "terminal"
     except Exception:
         logger.debug("Failed to check task_queue for %s", task_id, exc_info=True)
@@ -357,16 +360,15 @@ def _rescue_regenerate_pending(anima_dir: Path, task_id: str, msg: Any) -> None:
         "source": "delegation_rescue",
     }
 
-    target_dir = pending_dir / "deferred" if decision.reason == "snoozed" else pending_dir
-    target_dir.mkdir(parents=True, exist_ok=True)
-    path = target_dir / f"{task_id}.json"
+    # Always land in pending/: nothing restores state/pending/deferred any more,
+    # so a descriptor parked there would never be picked up again.
+    path = pending_dir / f"{task_id}.json"
     path.write_text(
         json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     logger.info(
-        "Rescue: regenerated %s file for task %s from delegation DM",
-        target_dir.name,
+        "Rescue: regenerated pending file for task %s from delegation DM",
         task_id,
     )
 

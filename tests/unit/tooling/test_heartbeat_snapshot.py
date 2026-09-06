@@ -4,12 +4,10 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 import json
-from datetime import timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
 
 from core.memory.task_queue import TaskQueueManager
-from core.time_utils import now_local
 from core.tooling.handler import ToolHandler
 from core.tooling.heartbeat_snapshot import build_heartbeat_observe_snapshot
 
@@ -47,22 +45,19 @@ def test_heartbeat_observe_snapshot_returns_fixed_health_sections(data_dir: Path
     (hikaru / "state" / "task_results").mkdir()
     (hikaru / "state" / "task_results" / "done.md").write_text("Task result preview", encoding="utf-8")
 
-    deadline = (now_local() - timedelta(minutes=5)).isoformat()
     manager = TaskQueueManager(hikaru)
     task = manager.add_task(
         source="human",
         original_instruction="Check report",
         assignee="hikaru",
         summary="Owner check",
-        deadline=deadline,
     )
-    manager.update_status(task.task_id, "blocked", summary="Waiting for evidence")
+    manager.update_status(task.task_id, "pending", summary="Waiting for evidence; retry queued")
 
     activity_dir = kanna / "activity_log"
     activity_dir.mkdir()
     (activity_dir / "2026-05-23.jsonl").write_text(
-        json.dumps({"ts": "2026-05-23T05:00:00+09:00", "type": "heartbeat_end", "summary": "OK"})
-        + "\n",
+        json.dumps({"ts": "2026-05-23T05:00:00+09:00", "type": "heartbeat_end", "summary": "OK"}) + "\n",
         encoding="utf-8",
     )
 
@@ -103,8 +98,8 @@ def test_heartbeat_observe_snapshot_returns_fixed_health_sections(data_dir: Path
     assert snapshot["task_results"]["count"] == 1
     assert snapshot["task_results"]["samples"][0]["content_preview"] == "Task result preview"
     assert snapshot["task_queue"]["active_count"] == 1
-    assert snapshot["task_queue"]["active_by_status"] == {"blocked": 1}
-    assert snapshot["task_queue"]["overdue_count"] == 1
+    assert snapshot["task_queue"]["active_by_status"] == {"pending": 1}
+    assert snapshot["task_queue"]["overdue_count"] == 0
     assert set(snapshot["peer_activity"]["peers"]) == {"kanna"}
     assert snapshot["peer_activity"]["peers"]["kanna"]["latest_event"]["type"] == "heartbeat_end"
 

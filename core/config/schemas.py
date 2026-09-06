@@ -634,24 +634,24 @@ class ZoomRTMSConfig(BaseModel):
 
 
 class GitHubWebhookConfig(BaseModel):
-    """Configuration for GitHub webhook-driven PR dispatch."""
+    """Configuration for GitHub webhook-driven PR dispatch.
+
+    2026-09 teardown: the gateway only sends one notification per PR event to
+    ``dispatcher_anima`` and no longer creates tasks or posts to GitHub.  The
+    old reviewer/implementer routing and multi-model review-pass fields were
+    dropped from this model; this class has no ``extra="forbid"``, so an
+    existing ``config.json`` still carrying those keys loads fine (pydantic
+    silently ignores unknown keys by default).
+    """
 
     enabled: bool = False
     repos: list[str] = Field(default_factory=list)
-    reviewer_anima: str = "sumire"
     dispatcher_anima: str = "rin"
-    implementer_anima: str = "natsume"
     bot_login: str = ""
     # Dedicated review-bot GitHub login (e.g. animaworks-reviewer).
-    # Treated like bot_login for comment exclusion and FRC review dispatch.
+    # Treated like bot_login for comment exclusion.
     reviewer_login: str = ""
     quiet_seconds: float = Field(default=180, ge=0)
-    # Multi-pass FRC review: "mode:model" entries, one review pass each.  Empty
-    # preserves the historic single (model-less) dispatch.  Squares with the
-    # cron fallback env override PR_DISPATCH_REVIEW_MODELS.
-    review_multipass_models: list[str] = Field(default_factory=list)
-    # Model used for the final synthesis pass; None uses the reviewer default.
-    review_synth_model: str | None = None
 
 
 class EventExportConfig(BaseModel):
@@ -789,7 +789,6 @@ class BackgroundTaskConfig(BaseModel):
     """Configuration for background tool execution."""
 
     enabled: bool = True
-    completion_declaration_required: bool = True
     shutdown_drain_seconds: float = Field(default=600.0, ge=0)
     eligible_tools: dict[str, BackgroundToolConfig] = {
         "generate_character_assets": BackgroundToolConfig(threshold_s=30),
@@ -808,16 +807,9 @@ class BackgroundTaskConfig(BaseModel):
     max_completed_tasks_in_memory: int = Field(default=200, ge=0)
     max_parallel_llm_tasks: int = Field(default=3, ge=1, le=10)
     worker_pool_size: int = Field(default=1, ge=1, le=10)
-    blocked_recovery_enabled: bool = True
-    blocked_reprobe_after_hours: float = Field(default=6.0, ge=0)
-    blocked_reprobe_batch_limit: int = Field(default=3, ge=1)
-    blocked_recovery_scan_minutes: float = Field(default=15.0, ge=1)
-    blocked_max_reprobes: int = Field(default=4, ge=0)
-    blocked_check_timeout_seconds: int = Field(default=60, ge=1)
-    # True (default) = a checkless blocked task is handed back to the anima to
-    # re-judge its own blocker, up to blocked_max_reprobes times, before the
-    # supervisor is alerted. False fails closed and alerts without any self review.
-    blocked_checkless_reprobe_enabled: bool = True
+    # The task-control keys retired with the teardown are deliberately absent.
+    # This model ignores unknown keys, so an older config.json that still
+    # carries them loads without error.
 
 
 def resolve_background_worker_pool_size(
@@ -883,23 +875,6 @@ class LoggingConfig(BaseModel):
     """Configuration for the logging subsystem."""
 
     redaction_enabled: bool = True  # Mask secrets in log output; disable for raw-log debugging.
-
-
-class MachineConfig(BaseModel):
-    """Configuration for machine tool (external agent CLI)."""
-
-    engine_priority: list[str] = Field(
-        default_factory=list,
-        description="Engine priority order. First = recommended. Empty = use default.",
-    )
-    default_models: dict[str, str] = Field(
-        default_factory=dict,
-        description=(
-            "Per-engine default model override. When machine_run is called without "
-            "an explicit model, this value is used instead of the engine's own default. "
-            "e.g. {'cursor-agent': 'claude-4.6-opus-high-thinking'}"
-        ),
-    )
 
 
 class HousekeepingConfig(BaseModel):
@@ -1416,7 +1391,6 @@ class AnimaWorksConfig(BaseModel):
     voice: VoiceConfig = VoiceConfig()
     housekeeping: HousekeepingConfig = HousekeepingConfig()
     inbox: InboxConfig = InboxConfig()
-    machine: MachineConfig = MachineConfig()
     local_llm: LocalLLMConfig = LocalLLMConfig()
     workspaces: dict[str, str] = {}  # alias → absolute path
     # company slug → GitHub account name (e.g. {"fs": "animaworks-dev-team"})
@@ -1485,7 +1459,6 @@ __all__ = [
     "LlmRateGuardConfig",
     "LocalLLMConfig",
     "LoggingConfig",
-    "MachineConfig",
     "MediaProxyConfig",
     "MemoryConfig",
     "Neo4jConfig",

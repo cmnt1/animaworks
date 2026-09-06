@@ -15,11 +15,10 @@ from core.time_utils import ensure_aware, now_local
 
 logger = logging.getLogger("animaworks.taskboard.attention")
 
-FAILED_REVIEW_WINDOW = timedelta(days=7)
 PROMPT_REINJECTION_WINDOW = timedelta(hours=24)
 
 _TERMINAL_STATUSES = {"done", "cancelled"}
-_EXECUTION_TERMINAL_STATUSES = {"done", "cancelled", "failed"}
+_EXECUTION_TERMINAL_STATUSES = {"done", "cancelled"}
 _SUPPRESSED_VISIBILITIES = {
     AttentionVisibility.EXPIRED,
     AttentionVisibility.ARCHIVED,
@@ -63,12 +62,6 @@ class AttentionResolver:
 
         if board_task.queue_status in _TERMINAL_STATUSES:
             return _hidden("terminal")
-
-        if board_task.queue_status == "failed":
-            updated_at = _parse_datetime(board_task.queue_updated_at)
-            if updated_at is not None and resolved_now - updated_at <= FAILED_REVIEW_WINDOW:
-                return _visible("failed_review_window")
-            return _hidden("failed_stale")
 
         return _visible("active")
 

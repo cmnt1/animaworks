@@ -103,8 +103,6 @@ class TestDelegateTaskWritesPending:
                     "name": "alice",
                     "instruction": "Implement the login form",
                     "summary": "Login form implementation",
-                    "deadline": "1d",
-                    "exclusive_key": "pr-3999",
                 },
             )
 
@@ -119,7 +117,7 @@ class TestDelegateTaskWritesPending:
         assert task_data["submitted_by"] == "boss"
         assert task_data["reply_to"] == "boss"
         assert task_data["source"] == "delegation"
-        assert task_data["exclusive_key"] == "pr-3999"
+        assert "exclusive_key" not in task_data
         assert "task_id" in task_data
         assert "submitted_at" in task_data
 
@@ -138,7 +136,6 @@ class TestDelegateTaskWritesPending:
                     "name": "alice",
                     "instruction": "Do something",
                     "summary": "Task summary",
-                    "deadline": "2h",
                 },
             )
 
@@ -150,28 +147,31 @@ class TestDelegateTaskWritesPending:
         assert len(tasks) >= 1
         assert tasks[0].task_id == pending_task["task_id"]
 
-    def test_delegated_task_persists_task_desc_for_retry(self, handler_with_sub):
+    def test_delegated_task_uses_pending_descriptor_as_source_of_truth(self, handler_with_sub):
         handler, animas_dir, cfg = handler_with_sub
         alice_dir = animas_dir / "alice"
 
-        with patch("core.paths.get_animas_dir", return_value=animas_dir), \
-             patch("core.config.models.load_config", return_value=cfg), \
-             patch("core.tooling.handler_delegation.build_outgoing_origin_chain", return_value=["anima"]):
-            handler.handle("delegate_task", {
-                "name": "alice",
-                "instruction": "Fix the blocked Obsidian reflection",
-                "summary": "Obsidian reflection retry",
-                "deadline": "2h",
-            })
+        with (
+            patch("core.paths.get_animas_dir", return_value=animas_dir),
+            patch("core.config.models.load_config", return_value=cfg),
+            patch("core.tooling.handler_delegation.build_outgoing_origin_chain", return_value=["anima"]),
+        ):
+            handler.handle(
+                "delegate_task",
+                {
+                    "name": "alice",
+                    "instruction": "Fix the blocked Obsidian reflection",
+                    "summary": "Obsidian reflection retry",
+                    "deadline": "2h",
+                },
+            )
 
-        pending_task = json.loads(
-            next((alice_dir / "state" / "pending").glob("*.json")).read_text(encoding="utf-8")
-        )
+        pending_task = json.loads(next((alice_dir / "state" / "pending").glob("*.json")).read_text(encoding="utf-8"))
         task = TaskQueueManager(alice_dir).get_task_by_id(pending_task["task_id"])
         assert task is not None
-        assert task.meta["task_desc"]["task_id"] == pending_task["task_id"]
-        assert task.meta["task_desc"]["description"] == "Fix the blocked Obsidian reflection"
-        assert task.meta["task_desc"]["working_directory"] == pending_task.get("working_directory", "")
+        assert "task_desc" not in task.meta
+        assert pending_task["description"] == "Fix the blocked Obsidian reflection"
+        assert pending_task["working_directory"] == ""
 
     def test_pending_file_has_required_fields(self, handler_with_sub):
         """All fields required by PendingTaskExecutor are present."""
@@ -189,7 +189,6 @@ class TestDelegateTaskWritesPending:
                     "name": "alice",
                     "instruction": "Test instruction",
                     "summary": "Test summary",
-                    "deadline": "30m",
                 },
             )
 
@@ -226,7 +225,6 @@ class TestDelegateTaskWritesPending:
                     "name": "alice",
                     "instruction": "Ship the fix",
                     "summary": "Ship fix",
-                    "deadline": "1h",
                     "acceptance_criteria": criteria,
                 },
             )
@@ -252,7 +250,6 @@ class TestDelegateTaskWritesPending:
                     "name": "alice",
                     "instruction": "Do something",
                     "summary": "Task",
-                    "deadline": "1h",
                 },
             )
 
@@ -278,7 +275,6 @@ class TestPendingExecutorCancelledCheck:
             original_instruction="test task",
             assignee="anima",
             summary="test",
-            deadline="1d",
         )
         tqm.update_status(entry.task_id, status="cancelled")
 

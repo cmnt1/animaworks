@@ -12,9 +12,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-
 from core.tooling.handler import ToolHandler
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -423,14 +421,17 @@ class TestDelegateTask:
         assert own_task["status"] == "delegated"
         assert own_task["meta"]["delegated_to"] == "hinata"
 
-    def test_delegate_to_lightweight_subordinate_rejects_broad_multistage_task(self, tmp_path):
+    def test_delegate_to_lightweight_subordinate_allows_anima_judgment(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        mock_cfg = _mock_config(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        mock_cfg = _mock_config(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
 
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
@@ -443,18 +444,20 @@ class TestDelegateTask:
                 ),
             ),
         ):
-            result = handler.handle("delegate_task", {
-                "name": "hinata",
-                "instruction": "Repair DB records -> sync -> deploy -> verify public URL -> report status",
-                "summary": "AFF-003 full repair",
-                "deadline": "2h",
-                "allow_multistage": True,
-            })
+            result = handler.handle(
+                "delegate_task",
+                {
+                    "name": "hinata",
+                    "instruction": "Repair DB records -> sync -> deploy -> verify public URL -> report status",
+                    "summary": "AFF-003 full repair",
+                    "deadline": "2h",
+                    "allow_multistage": True,
+                },
+            )
 
-        assert "TaskTooBroadForModel" in result
-        assert "delegate one concrete phase at a time" in result
+        assert "委譲しました" in result
         sub_queue = tmp_path / "animas" / "hinata" / "state" / "task_queue.jsonl"
-        assert not sub_queue.exists()
+        assert sub_queue.exists()
 
     def test_delegate_to_non_descendant(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
@@ -513,7 +516,8 @@ class TestDelegateTask:
         sub_queue = tmp_path / "animas" / "hinata" / "state" / "task_queue.jsonl"
         assert sub_queue.exists()
 
-    def test_disable_subordinate_surfaces_open_delegation(self, tmp_path):
+    def test_disable_subordinate_no_longer_reassigns_open_delegations(self, tmp_path):
+        """Disabling a subordinate is a plain state change; nothing is re-filed."""
         messenger = MagicMock()
         msg_mock = MagicMock()
         msg_mock.id = "msg1"
@@ -541,15 +545,14 @@ class TestDelegateTask:
                     "name": "hinata",
                     "instruction": "Prepare the monthly report",
                     "summary": "Monthly report",
-                    "deadline": "2h",
                 },
             )
             result = handler.handle("disable_subordinate", {"name": "hinata", "reason": "maintenance"})
 
-        assert "再割当" in result or "reassignment" in result
+        assert "maintenance" in result
         own_queue = tmp_path / "animas" / "sakura" / "state" / "task_queue.jsonl"
         records = [json.loads(line) for line in own_queue.read_text(encoding="utf-8").splitlines()]
-        assert any(record.get("meta", {}).get("kind") == "disabled_delegation_reassignment" for record in records)
+        assert not any(record.get("meta", {}).get("kind") == "disabled_delegation_reassignment" for record in records)
 
 
 # ── task_tracker tests ─────────────────────────────────────

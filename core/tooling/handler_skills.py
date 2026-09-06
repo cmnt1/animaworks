@@ -22,21 +22,11 @@ from core.tooling.handler_base import _error_result
 if TYPE_CHECKING:
     from core.memory import MemoryManager
     from core.memory.activity import ActivityLogger
-    from core.schemas import TaskEntry
     from core.tooling.dispatch import ExternalToolDispatcher
 
 logger = logging.getLogger("animaworks.tool_handler")
 
 _INSTRUCTION_TRUNCATE_LEN = 200
-
-
-class TaskSuppressedError(RuntimeError):
-    """Raised when TaskBoard attention policy blocks task regeneration."""
-
-    def __init__(self, task_id: str, reason: str) -> None:
-        self.task_id = task_id
-        self.reason = reason
-        super().__init__(f"Task {task_id} is suppressed by TaskBoard: {reason}")
 
 
 class SkillsToolsMixin:
@@ -538,18 +528,12 @@ class SkillsToolsMixin:
         instruction = args.get("original_instruction", "")
         assignee = args.get("assignee", "")
         summary = args.get("summary", "") or instruction[:100]
-        deadline = args.get("deadline")
         relay_chain = args.get("relay_chain", [])
 
         if not instruction:
             return _error_result("InvalidArguments", "original_instruction is required")
         if not assignee:
             return _error_result("InvalidArguments", "assignee is required")
-        if not deadline:
-            return _error_result(
-                "InvalidArguments",
-                "deadline is required. Use relative format ('30m', '2h', '1d') or ISO8601.",
-            )
 
         try:
             entry = manager.add_task(
@@ -557,7 +541,6 @@ class SkillsToolsMixin:
                 original_instruction=instruction,
                 assignee=assignee,
                 summary=summary,
-                deadline=deadline,
                 relay_chain=relay_chain,
             )
         except ValueError as e:
@@ -622,32 +605,33 @@ class SkillsToolsMixin:
         status = args.get("status", "")
         summary = args.get("summary")
         result = args.get("result")
-        unblock_check = args.get("unblock_check")
 
         if not task_id:
             return _error_result("InvalidArguments", "task_id is required")
         if not status:
             return _error_result("InvalidArguments", "status is required")
+        if status in ("blocked", "failed"):
+            return _error_result(
+                "InvalidArguments",
+                f"status={status!r} was retired. Use status='cancelled' and message the requester with the reason.",
+            )
+        if status == "in_progress":
+            return _error_result(
+                "InvalidArguments",
+                "status 'in_progress' is written only by the running TaskExec. "
+                "To (re)start a task, submit it with the submit_tasks tool. "
+                "To close it, use --status done or cancelled.",
+            )
         if result is not None and not isinstance(result, str):
             return _error_result("InvalidArguments", "result must be a string")
-        if unblock_check is not None and not isinstance(unblock_check, str):
-            return _error_result("InvalidArguments", "unblock_check must be a string")
         if result is not None:
             summary = result
 
-        if status == "pending":
-            current = manager.get_task_by_id(task_id)
-            if current is None:
-                return _error_result(
-                    "TaskNotFound",
-                    f"Task not found or invalid status: {task_id}",
-                )
-            decision = self._retry_attention_decision(task_id, queue_status="pending")
-            if not decision.executable:
-                return _error_result(
-                    "TaskSuppressed",
-                    f"Task {task_id} is suppressed by TaskBoard: {decision.reason}",
-                )
+        if status == "pending" and manager.get_task_by_id(task_id) is None:
+            return _error_result(
+                "TaskNotFound",
+                f"Task not found or invalid status: {task_id}",
+            )
 
         declaration_meta: dict[str, Any] = {}
         if status == "done":
@@ -657,16 +641,6 @@ class SkillsToolsMixin:
             }
             if result is not None:
                 declaration_meta["result_note"] = result
-        elif status == "blocked":
-            declaration_meta = {
-                "blocked_at": now_iso(),
-                "unblock_check_failures": 0,
-            }
-            # Preserve an omitted check only when re-declaring the same blocked
-            # state. A new blocker must not inherit a stale release condition.
-            current = manager.get_task_by_id(task_id)
-            if unblock_check is not None or current is None or current.status != "blocked":
-                declaration_meta["unblock_check"] = unblock_check
 
         try:
             if declaration_meta:
@@ -717,97 +691,10 @@ class SkillsToolsMixin:
             meta={"task_id": task_id, "status": status},
         )
 
-        # Retry flow: if status changed to "pending" and task has task_desc in meta,
-        # regenerate Layer 1 JSON and re-submit to PendingTaskExecutor
-        if status == "pending" and entry and entry.meta.get("task_desc"):
-            try:
-                regenerated = self._regenerate_pending_json(entry)
-                if regenerated:
-                    # Immediately set to in_progress since TaskExec will pick it up
-                    entry = manager.update_status(task_id, "in_progress") or entry
-            except TaskSuppressedError as e:
-                return _error_result("TaskSuppressed", str(e))
-            except Exception:
-                logger.warning(
-                    "Failed to regenerate pending JSON for retry: %s",
-                    task_id,
-                    exc_info=True,
-                )
-
         return _json.dumps(entry.model_dump(), ensure_ascii=False, indent=2)
 
-    _MAX_TASK_RETRY = 3
-
-    def _retry_attention_decision(self, task_id: str, *, queue_status: str | None = None):
-        try:
-            from core.taskboard.attention_resolver import resolver_for_anima_dir
-            from core.taskboard.models import AttentionDecision
-
-            return resolver_for_anima_dir(self._anima_dir).should_execute(
-                self._anima_name,
-                task_id,
-                queue_status=queue_status,
-            )
-        except Exception:
-            logger.warning(
-                "TaskBoard retry gate unavailable for task %s; failing open",
-                task_id,
-                exc_info=True,
-            )
-            from core.taskboard.models import AttentionDecision
-
-            return AttentionDecision(reason="active")
-
-    def _regenerate_pending_json(self, entry: TaskEntry) -> bool:
-        """Regenerate Layer 1 JSON from task_queue entry for retry execution."""
-        pending_dir = self._anima_dir / "state" / "pending"
-        processing_dir = pending_dir / "processing"
-        task_file = f"{entry.task_id}.json"
-
-        if (pending_dir / task_file).exists() or (processing_dir / task_file).exists():
-            logger.warning("Task %s already in pipeline, skip regeneration", entry.task_id)
-            return True
-
-        decision = self._retry_attention_decision(entry.task_id, queue_status="pending")
-        if not decision.executable:
-            raise TaskSuppressedError(entry.task_id, decision.reason)
-
-        retry_count = entry.meta.get("retry_count", 0)
-        if retry_count >= self._MAX_TASK_RETRY:
-            logger.warning(
-                "Task %s exceeded max retries (%d), skip",
-                entry.task_id,
-                self._MAX_TASK_RETRY,
-            )
-            return False
-
-        next_retry_count = retry_count + 1
-        entry.meta["retry_count"] = next_retry_count
-        try:
-            from core.memory.task_queue import TaskQueueManager
-
-            updated = TaskQueueManager(self._anima_dir).update_meta(
-                entry.task_id,
-                {"retry_count": next_retry_count},
-            )
-            if updated is not None:
-                entry.meta = updated.meta
-        except Exception:
-            logger.warning("Failed to persist retry_count for task %s", entry.task_id, exc_info=True)
-
-        from core.blocked_recovery import regenerate_pending_json
-
-        regenerate_pending_json(self._anima_dir, self._anima_name, entry)
-
-        # Wake the pending executor
-        if hasattr(self, "_pending_executor_wake") and self._pending_executor_wake:
-            self._pending_executor_wake()
-
-        logger.info("Regenerated pending JSON for retry: %s", entry.task_id)
-        return True
-
     def _handle_list_tasks(self, args: dict[str, Any]) -> str:
-        from core.memory.task_queue import TaskQueueManager
+        from core.memory.task_queue import TaskQueueManager, mark_executability
 
         manager = TaskQueueManager(self._anima_dir)
         status_filter = args.get("status")
@@ -819,6 +706,7 @@ class SkillsToolsMixin:
                 instr = item.get("original_instruction", "")
                 if len(instr) > _INSTRUCTION_TRUNCATE_LEN:
                     item["original_instruction"] = instr[:_INSTRUCTION_TRUNCATE_LEN] + "..."
+        mark_executability(result, self._anima_dir)
         return _json.dumps(result, ensure_ascii=False)
 
     # ── submit_tasks handler (DAG batch submission) ────────────

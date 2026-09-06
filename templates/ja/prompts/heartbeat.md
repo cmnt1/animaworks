@@ -16,8 +16,8 @@
 
 **【MUST】対応が必要な事項を発見したら、必ずタスクとして具体化すること。「認識したが何もしない」は禁止。**
 以下のいずれかの手段で必ずアクション化する:
-- 部下に任せる → `delegate_task`
-- 自分で対応する → `state/current_state.md` に次アクションを記録し、通常Heartbeat内では実作業に入らない
+- 部下に任せる → `delegate_task`（**書く前に読む**: 直前に `list_tasks(status="delegated")` / `list_tasks(status="in_progress")` を読み、同じ PR / Issue / 対象の未完タスクがあれば新規作成せず、既存 task_id を添えて担当者へ `send_message` で追加指示する。**書いた後に読む**: 投入後に `list_tasks` で登録を読み戻す）
+- 自分で対応する → `submit_tasks` で自分の TaskExec に投入する
 - 即座にフォローアップ → `send_message` / `call_human`
 
 ### チェック項目
@@ -28,10 +28,11 @@
 - ブロッカーがある場合: 報告のみ行う（send_message / call_human）
 - 上記すべてで対応事項がない場合のみ: HEARTBEAT_OK
 
-**重要: このフェーズで実際の作業（コード変更、ファイル編集、調査等）を行わないでください。**
-**タスクの実行は別セッションで自動的に行われます。**
+**このフェーズは観察・計画・投入に使います。実作業は `submit_tasks` で投入した TaskExec が別セッションで行います。**
 
-**委譲ガイドライン**: `delegate_task` 使用時は `read_memory_file(path="common_knowledge/operations/task-delegation-guide.md")` の記述原則・禁止パターンに従うこと（MUST）。通常Heartbeatでは `submit_tasks` を使わない。
+**pending タスクの再投入（MUST）**: 台帳の `pending` は、あなたが `submit_tasks` で投入したときに動きます。`list_tasks(status="pending")` を読み、続けるものは同じ `task_id`・元の指示（original_instruction）・必要な `workspace` で `submit_tasks` に投入します。複数あれば 1 回の `submit_tasks` にまとめ、別の PR / 対象は `parallel: true` にします。やめるものは `update_task(status="cancelled")` にして依頼者へ理由を送ります。`in_progress` は実行中の TaskExec が書きます。
+
+**委譲ガイドライン**: `delegate_task` 使用時は `read_memory_file(path="common_knowledge/operations/task-delegation-guide.md")` の記述原則・禁止パターンに従うこと（MUST）。`submit_tasks` は自分の pending の再投入と、自分でやる作業の投入に使う。
 
 ## Reflect（振り返り）
 上記の観察・計画をすべて終えた後、気づいたことや洞察があれば以下の形式で述べてください。

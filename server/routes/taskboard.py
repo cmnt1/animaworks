@@ -19,7 +19,7 @@ from core.time_utils import now_iso
 
 logger = logging.getLogger("animaworks.routes.taskboard")
 
-_CANCELLABLE_QUEUE_STATUSES = {"pending", "in_progress", "blocked", "delegated", "failed"}
+_CANCELLABLE_QUEUE_STATUSES = {"pending", "in_progress", "delegated"}
 _SUPPRESSED_VISIBILITIES = {
     AttentionVisibility.EXPIRED,
     AttentionVisibility.ARCHIVED,
@@ -563,7 +563,7 @@ def _cron_failure_diagnostic_summary(task: BoardTask) -> str | None:
 
 
 def _has_cron_failure_metadata(task: BoardTask) -> bool:
-    if not task.is_from_cron or task.queue_status not in {"blocked", "failed"}:
+    if not task.is_from_cron or task.queue_status != "pending":
         return False
     meta = task.meta or {}
     return any(key in meta for key in ("cron_exit_code", "cron_error_excerpt", "cron_stderr_preview"))

@@ -147,22 +147,15 @@ def test_terminal_and_missing_tasks_are_hidden() -> None:
     assert resolver.resolve_task(_task(queue_missing=True), NOW).reason == "queue_missing"
 
 
-def test_failed_task_review_window() -> None:
+def test_old_pending_task_remains_visible() -> None:
     resolver = AttentionResolver()
 
-    recent = resolver.resolve_task(
-        _task(queue_status="failed", queue_updated_at=(NOW - timedelta(days=6, hours=23)).isoformat()),
-        NOW,
-    )
     old = resolver.resolve_task(
-        _task(queue_status="failed", queue_updated_at=(NOW - timedelta(days=8)).isoformat()),
-        NOW,
+        _task(queue_status="pending", queue_updated_at=(NOW - timedelta(days=8)).isoformat()), NOW
     )
 
-    assert recent.visible_in_prompt is True
-    assert recent.reason == "failed_review_window"
-    assert old.visible_in_prompt is False
-    assert old.reason == "failed_stale"
+    assert old.visible_in_prompt is True
+    assert old.reason == "active"
 
 
 def test_invalid_datetime_metadata_is_treated_as_active() -> None:

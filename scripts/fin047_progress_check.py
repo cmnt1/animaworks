@@ -16,9 +16,9 @@ heartbeat の自発性に依存した進捗報告は減衰する (安城1K の�
 判定つきレポートを Discord #finance に投稿する。LLM は経由しない。
 
 さらに、オーナー (室町/cmnt) が Discord #finance に書いた FIN-047 への方向修正指示を
-検知し、ayane に「計画反映タスク」(completion_criteria 付き) を自動投入する。
-反映タスクは tasks.md の変更履歴に `反映済み: <指示ID>` を記録・コミットしない限り
-done にできないため、指示が会話で流れて消えることを構造的に防ぐ。
+検知し、ayane に「計画反映タスク」を自動投入する。
+反映タスクには tasks.md の変更履歴へ `反映済み: <指示ID>` を記録・コミットする
+完了条件を明記し、指示が会話で流れて消えることを防ぐ。
 
 Usage:
     python scripts/fin047_progress_check.py [--dry-run]          # 日次フルレポート
@@ -352,7 +352,7 @@ def seed_reflection_task(directive: dict) -> str | None:
     marker = reflection_marker(directive["id"])
     summary = f"[FIN-047] オーナー指示を計画へ反映する ({directive['id']})"
     excerpt = directive["text"][:800]
-    instruction = f"""オーナー (室町) が Discord #finance で FIN-047 について以下の指示を出した ({directive['ts']}):
+    instruction = f"""オーナー (室町) が Discord #finance で FIN-047 について以下の指示を出した ({directive["ts"]}):
 
 ---
 {excerpt}
@@ -363,26 +363,22 @@ def seed_reflection_task(directive: dict) -> str | None:
 1. OpenSpec {OPENSPEC_TASKS_MD} を指示に沿って更新する
    (タスクの追加・修正・削除、担当変更、優先順位変更など)。
 2. tasks.md 末尾の「## 変更履歴」に次の1行を追記する (これが機械検証マーカー):
-   `- {directive['ts'][:10]} {marker} — <反映内容の要旨>`
+   `- {directive["ts"][:10]} {marker} — <反映内容の要旨>`
 3. 変更を Finance リポジトリにコミットする (メッセージに fin047 を含める)。
 4. 関係アニマの task_queue のマイルストーンタスクに影響がある場合は調整し、
    反映内容を #finance の FIN-047 スレッドへ返信する (オーナーが確認できるように)。
 
-指示の解釈に迷う場合は勝手に進めず、#finance で確認質問をした上で
-このタスクを blocked にすること。"""
+指示の解釈に迷う場合は勝手に進めず、#finance で確認質問をした上で、
+判断できなければこのタスクを cancelled にすること。"""
     entry = TaskQueueManager(anima_dir).add_task_if_absent(
         lambda t, s=summary: t.summary == s,
         source="human",
         original_instruction=instruction,
         assignee=DIRECTIVE_ASSIGNEE,
         summary=summary,
-        deadline="1d",
         meta={
             "project": "FIN-047",
             "directive_id": directive["id"],
-            "completion_criteria": [
-                {"type": "file_contains", "path": str(OPENSPEC_TASKS_MD), "pattern": re.escape(marker)},
-            ],
         },
     )
     return entry.task_id if entry is not None else None
@@ -444,13 +440,12 @@ def _daily_report_summary(anima: str, date_str: str) -> str:
 def seed_daily_report_tasks(now: datetime, *, dry_run: bool) -> list[str]:
     """各担当アニマに「本日の FIN-047 日次報告」タスクを冪等投入する.
 
-    完了条件は channel_post 機械検証 (投入時刻以降に #finance へ FIN-047 言及の
-    投稿があること)。前日以前の未消化日次報告タスクは自動キャンセルして堆積を防ぐ。
+    完了確認は投入時刻以降に #finance へ FIN-047 言及の投稿があること。
+    前日以前の未消化日次報告タスクは自動キャンセルして堆積を防ぐ。
     """
     from core.memory.task_queue import TaskQueueManager
 
     date_str = now.strftime("%Y-%m-%d")
-    deadline = now.replace(hour=REPORT_HOUR, minute=REPORT_MINUTE, second=0, microsecond=0)
     since_ts = now.isoformat()
     seeded: list[str] = []
     for anima in ASSIGNEES:
@@ -468,7 +463,9 @@ def seed_daily_report_tasks(now: datetime, *, dry_run: bool) -> list[str]:
                     and task.summary != summary
                     and (task.meta or {}).get("fin047_daily_report")
                 ):
-                    tqm.update_status(task.task_id, "cancelled", note="日次報告期限超過のため失効 (未報告として記録済み)")
+                    tqm.update_status(
+                        task.task_id, "cancelled", note="日次報告期限超過のため失効 (未報告として記録済み)"
+                    )
 
         instruction = f"""FIN-047 の本日分 ({date_str}) の状況を、{REPORT_DEADLINE_STR} までに #finance チャンネルへ報告してください
 (投稿は自動で FIN-047 専用 Discord スレッドにルーティングされます)。
@@ -487,7 +484,7 @@ def seed_daily_report_tasks(now: datetime, *, dry_run: bool) -> list[str]:
 「◯◯のファイルにまとめました」だけの報告は不可 — オーナーがリンクで成果物に辿れること。
 (ブランチへの fin047 コミットは自動でノートにリンクされるので追記不要)
 
-このタスクは、{since_ts} 以降に #finance へ FIN-047 に言及する投稿を行うと done にできます (機械検証)。"""
+このタスクは、{since_ts} 以降に #finance へ FIN-047 に言及する投稿を確認してから done にしてください。"""
 
         if dry_run:
             seeded.append(f"{anima} (dry-run)")
@@ -498,19 +495,9 @@ def seed_daily_report_tasks(now: datetime, *, dry_run: bool) -> list[str]:
             original_instruction=instruction,
             assignee=anima,
             summary=summary,
-            deadline=deadline.isoformat(),
             meta={
                 "project": "FIN-047",
                 "fin047_daily_report": date_str,
-                "completion_criteria": [
-                    {
-                        "type": "channel_post",
-                        "channel": "finance",
-                        "sender": anima,
-                        "pattern": FIN047_PATTERN,
-                        "since_ts": since_ts,
-                    }
-                ],
             },
         )
         if entry is not None:
@@ -561,9 +548,8 @@ def build_report(now: datetime) -> tuple[str, dict]:
     prev = load_snapshot()
     ahead_now = git.get("ahead") if isinstance(git.get("ahead"), int) else -1
     checked_now = spec.get("checked", -1)
-    progressed = (
-        (isinstance(prev.get("ahead"), int) and ahead_now > prev["ahead"])
-        or (isinstance(prev.get("checked"), int) and checked_now > prev["checked"])
+    progressed = (isinstance(prev.get("ahead"), int) and ahead_now > prev["ahead"]) or (
+        isinstance(prev.get("checked"), int) and checked_now > prev["checked"]
     )
     stall_days = 0 if progressed or not prev else int(prev.get("stall_days", 0)) + 1
 
@@ -639,7 +625,9 @@ def directive_lines(fresh: list[dict], pending: list[dict]) -> list[str]:
         )
     if pending:
         ids = ", ".join(d["id"] for d in pending)
-        lines.append(f"- ⚠️ **計画未反映のオーナー指示 {len(pending)} 件** (id: {ids}) — tasks.md 変更履歴に反映マーカーなし")
+        lines.append(
+            f"- ⚠️ **計画未反映のオーナー指示 {len(pending)} 件** (id: {ids}) — tasks.md 変更履歴に反映マーカーなし"
+        )
     return lines
 
 
@@ -716,9 +704,7 @@ def main() -> int:
         if not fresh:
             print("NOOP_NO_NEW_DIRECTIVES: no new owner directives in #finance")
             return 0
-        ack = "\n".join(
-            [f"**FIN-047 指示受理** {now.strftime('%m/%d %H:%M')}"] + directive_lines(fresh, pending)
-        )
+        ack = "\n".join([f"**FIN-047 指示受理** {now.strftime('%m/%d %H:%M')}"] + directive_lines(fresh, pending))
         print(ack)
         if not args.dry_run:
             msg_id = post_to_discord(ack)

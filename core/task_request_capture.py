@@ -172,14 +172,12 @@ def capture_task_request_from_message(
             if task_meta.get("source_message_id") == message_id:
                 return task.task_id
 
-        deadline = extract_deadline(content)
         summary = summarize_task_request(content, to_person)
         entry = manager.add_task(
             source="anima",
             original_instruction=content,
             assignee=to_person,
             summary=summary,
-            deadline=deadline,
             relay_chain=[from_person],
             meta={
                 "source": "message_request_capture",

@@ -2,7 +2,7 @@
 
 ### タスク委譲の方法
 
-> **注意**: Agent/Task ツール（サブエージェント起動）は**無効化**されている。タスクの委譲には `delegate_task` を使う。`submit_tasks` は通常チャット/Heartbeat/Inbox/TaskExec には表示されず、明示的なバックグラウンド実行ワークフローでのみ使う。
+> **注意**: Agent/Task ツール（サブエージェント起動）は**無効化**されている。タスクの委譲には `delegate_task` を使う。`submit_tasks` は Heartbeat と明示的なバックグラウンド実行で使える（通常チャット/Inbox/TaskExec には表示されない）。Heartbeat では自分の pending タスクの再投入に使う。
 
 **部下がいる場合** → `delegate_task` で部下に委任する
 - description に部下名を含めると、その部下に指名委任される
@@ -11,7 +11,7 @@
 - 名前がなければ workload 最小 + role マッチで自動選択される
 - 全部下が無効の場合は state/pending/ にフォールバック
 
-**部下がいない場合** → 通常はこのセッションで直接実行する。明示的なバックグラウンド実行ワークフローが有効な場合のみ `submit_tasks` で投入する
+**部下がいない場合** → 通常チャットではこのセッションで直接実行する。Heartbeat または明示的なバックグラウンド実行ワークフローでは `submit_tasks` で自分の TaskExec に投入する
 - state/pending/ に書き出され、TaskExec が別セッションで自動実行する
 - 実行者はあなたと同じ identity・行動指針・記憶ディレクトリ・組織情報を持つ
 - task_id が返却される。完了時にDMで通知される
@@ -21,7 +21,7 @@
 
 | 手段 | 目的 | 実行キュー (Layer 1) | 追跡 (Layer 2) | いつ使うか |
 |------|------|---------------------|----------------|-----------|
-| `submit_tasks` | タスクの実行投入・登録 | `state/pending/` に作成 | `task_queue.jsonl` に登録 | 明示的なバックグラウンド実行ワークフローで、自分のTaskExecに渡すとき |
+| `submit_tasks` | タスクの実行投入・登録 | `state/pending/` に作成 | `task_queue.jsonl` に登録 | Heartbeat で自分の pending を再投入するとき、明示的なバックグラウンド実行で自分のTaskExecに渡すとき |
 | `delegate_task` | 部下へのタスク委譲 | 部下の `state/pending/` に作成 | 両者の `task_queue.jsonl` に登録 | 部下に任せるとき |
 
 **重要**: 人間からの指示を受けた通常チャットでは `submit_tasks` を使わない。直接実行し、後続管理が必要な場合は `update_task`、`state/current_state.md`、または明示的なバックグラウンド実行ワークフローで記録する。
@@ -30,7 +30,7 @@
 
 ## 明示的バックグラウンド実行での submit_tasks
 
-`submit_tasks` は通常セッションでは使わない。ユーザーまたはスキルが「バックグラウンドで」と明示し、ツール一覧に `submit_tasks` が表示されている場合だけ使う。単一タスクでも tasks 配列1件で投入する。
+`submit_tasks` は通常チャットでは使わない。Heartbeat では自分の pending（前回の TaskExec が完了宣言なしで終わったものを含む）を同じ task_id で再投入するために使う。pending は Heartbeat で自分が投入したときに動く。その他は、ユーザーまたはスキルが「バックグラウンドで」と明示し、ツール一覧に `submit_tasks` が表示されている場合だけ使う。単一タスクでも tasks 配列1件で投入する。
 
 ### 実行者（TaskExec）について
 
@@ -143,3 +143,10 @@ Heartbeat 完了後に自動実行される。部下のタスクキューで以�
 - アーカイブ済みタスクも検索対象（`task_queue_archive.jsonl`）
 
 手動で `task_tracker` を呼ぶ必要はないが、Heartbeat 間の即時確認には引き続き `task_tracker` が有用。
+
+## 投入前の照合と投入後の読み戻し（MUST）
+
+- **書く前に読む**: `delegate_task` / `submit_tasks` / `backlog_task` を呼ぶ直前に `list_tasks(status="delegated")` と `list_tasks(status="in_progress")`（自分宛なら pending も）を読み、同じ PR / Issue / 対象の未完タスクが無いか確認する。あれば新しいタスクを作らず、既存の task_id を添えて担当者へ `send_message` で追加指示する。
+- **書いた後に読む**: 返ってきた task_id を `list_tasks` で読み戻し、summary の先頭に `[PR #N]` / `[Issue #N]` / 対象名が付いて登録されていることを確認する。
+- **重複を見つけたら**: 新しい方を残し、古い方を `update_task(status="cancelled", summary="<新ID>に統合")` にする。担当者側も同じ規則で動く。
+- 委譲文には対象・URL・やってほしいこと・完了の目安だけを書く。台帳の状態語や手順条件で縛らない。

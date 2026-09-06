@@ -14,12 +14,11 @@ The current state is reconstructed by replaying the log (latest status wins).
 import json
 import logging
 import os
-import re
 import threading
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -30,17 +29,18 @@ from core.time_utils import ensure_aware, now_iso, now_local
 
 logger = logging.getLogger("animaworks.task_queue")
 
-# Valid task statuses
-_VALID_STATUSES = frozenset({"pending", "in_progress", "done", "cancelled", "blocked", "delegated", "failed"})
-_TERMINAL_STATUSES = frozenset({"done", "cancelled", "failed"})
-# TaskBoard cards are only archived for statuses that cannot be retried.
-# "failed" is deliberately excluded: attention_resolver keeps failed tasks
-# visible for FAILED_REVIEW_WINDOW, and a failed task re-queued to pending
-# must not be strangled by a stale archived card (Issue #5143 deadlock).
+# Valid task statuses. "blocked" and "unblock_check" were retired: an anima
+# that cannot proceed uses "cancelled" and messages the requester with the
+# reason instead of parking itself. "failed" was retired: process-exit
+# failures are re-queued to "pending" so the task stays visible to its owner.
+_VALID_STATUSES = frozenset({"pending", "in_progress", "delegated", "done", "cancelled"})
+# Statuses that can no longer be set, but may still appear in old jsonl rows
+# written before this teardown. _load_all() remaps them to "pending" on read.
+_RETIRED_STATUSES = frozenset({"blocked", "failed"})
+_TERMINAL_STATUSES = frozenset({"done", "cancelled"})
 _ARCHIVE_SYNC_STATUSES = frozenset({"done", "cancelled"})
 _REACTIVATE_SYNC_STATUSES = frozenset({"pending", "in_progress"})
-_ACTIVE_STATUSES = frozenset({"pending", "in_progress", "blocked", "delegated"})
-_DELEGATION_TRACKING_STATUSES = frozenset({"delegated", "blocked"})
+_ACTIVE_STATUSES = frozenset({"pending", "in_progress", "delegated"})
 
 # Valid task sources
 _VALID_SOURCES = frozenset({"human", "anima"})
@@ -48,105 +48,6 @@ _VALID_SOURCES = frozenset({"human", "anima"})
 _MAX_INSTRUCTION_CHARS = 10_000
 # Stale task threshold: 30 minutes (one heartbeat cycle)
 _STALE_TASK_THRESHOLD_SEC = 1800
-# Relative deadline pattern: digits + unit (m=minutes, h=hours, d=days)
-_RELATIVE_DEADLINE_RE = re.compile(r"^(\d+)([mhd])$")
-_HEARTBEAT_OBSERVATION_PREFIX_RE = re.compile(
-    r"^\s*(?:\d{1,2}\s*:\s*\d{2}\s*(?:jst)?\s*)?(?:hb|heartbeat)(?:\s*:|確認\s*:)",
-    re.I,
-)
-_TIMED_OBSERVATION_PREFIX_RE = re.compile(r"^\s*\d{1,2}:\d{2}\s*jst\b", re.I)
-_STATUS_REPORT_SUMMARY_MAX_CHARS = 120
-_STATUS_REPORT_MARKERS = (
-    "原因",
-    "修正済み",
-    "実装",
-    "テスト済み",
-    "登録済み",
-    "記録済み",
-    "対応済み",
-    "確認済み",
-    "再起動済み",
-    "恒久対応",
-    "検証済み",
-    "root cause",
-    "fixed",
-    "implemented",
-    "verified",
-)
-_OBSERVATION_LOG_MARKERS = (
-    "active",
-    "blocked",
-    "overdue",
-    "stale",
-    "inbox",
-    "未読",
-    "governor",
-    "pending",
-    "background",
-    "通知",
-    "直近活動",
-    "新規未着",
-    "重複通知",
-    "検収待機",
-    "待機",
-    "件",
-)
-
-
-def _is_observation_log_summary(summary: str | None) -> bool:
-    """Return True when a TaskBoard summary is a heartbeat-style observation log."""
-    if not summary:
-        return False
-    text = summary.strip()
-    lowered = text.lower()
-    if _HEARTBEAT_OBSERVATION_PREFIX_RE.search(text):
-        return True
-    if ("heartbeat" in lowered or " hb:" in lowered) and any(marker in lowered for marker in _OBSERVATION_LOG_MARKERS):
-        return True
-    return bool(_TIMED_OBSERVATION_PREFIX_RE.search(text)) and any(
-        marker in lowered for marker in _OBSERVATION_LOG_MARKERS
-    )
-
-
-def _reject_observation_log_summary(summary: str) -> None:
-    if _is_observation_log_summary(summary):
-        raise ValueError(
-            "Task summary must describe actionable work, not a heartbeat observation log. "
-            "Put observations in context, task_results, or activity_log."
-        )
-
-
-def _is_status_report_summary(summary: str | None) -> bool:
-    """Return True when an update summary is report text, not a task title."""
-    if not summary:
-        return False
-    text = summary.strip()
-    if len(text) <= _STATUS_REPORT_SUMMARY_MAX_CHARS:
-        return False
-    lowered = text.lower()
-    marker_count = sum(1 for marker in _STATUS_REPORT_MARKERS if marker.lower() in lowered)
-    sentence_count = sum(text.count(sep) for sep in ("。", ".", "\n", "；", ";"))
-    return marker_count >= 2 or (marker_count >= 1 and sentence_count >= 2)
-
-
-def _append_status_note(meta: dict[str, Any], *, note: str, status: str, ts: str) -> dict[str, Any]:
-    """Return metadata with a bounded status_notes history appended."""
-    if not note:
-        return meta
-    merged = dict(meta)
-    notes_raw = merged.get("status_notes")
-    notes = list(notes_raw) if isinstance(notes_raw, list) else []
-    notes.append(
-        {
-            "ts": ts,
-            "status": status,
-            "note": note,
-        }
-    )
-    merged["status_notes"] = notes[-20:]
-    return merged
-
-
 _QUEUE_LOCKS: dict[Path, threading.RLock] = {}
 _QUEUE_LOCKS_GUARD = threading.Lock()
 
@@ -157,38 +58,6 @@ def _process_lock(path: Path) -> threading.RLock:
         if resolved not in _QUEUE_LOCKS:
             _QUEUE_LOCKS[resolved] = threading.RLock()
         return _QUEUE_LOCKS[resolved]
-
-
-def _parse_deadline(value: str) -> str:
-    """Parse deadline string into ISO8601 format.
-
-    Accepts relative formats ("30m", "2h", "1d") or ISO8601 absolute format.
-    Relative formats are resolved to absolute ISO8601 from current time.
-
-    Raises:
-        ValueError: If the format is not recognized.
-    """
-    value = value.strip()
-    m = _RELATIVE_DEADLINE_RE.match(value)
-    if m:
-        amount = int(m.group(1))
-        unit = m.group(2)
-        if unit == "m":
-            delta = timedelta(minutes=amount)
-        elif unit == "h":
-            delta = timedelta(hours=amount)
-        else:  # "d"
-            delta = timedelta(days=amount)
-        return (now_local() + delta).isoformat()
-
-    # Try parsing as ISO8601
-    try:
-        datetime.fromisoformat(value)
-        return value
-    except (ValueError, TypeError):
-        raise ValueError(
-            f"Invalid deadline format: {value!r}. Use relative format ('30m', '2h', '1d') or ISO8601."
-        ) from None
 
 
 def _elapsed_seconds(updated_at: str, now: datetime) -> float | None:
@@ -218,24 +87,68 @@ def _format_elapsed_from_sec(elapsed_sec: float | None) -> str:
     return t("task_queue.elapsed_hours", hours=hours)
 
 
-def _format_deadline_display(deadline: str, now: datetime) -> str:
-    """Format deadline for display. Returns OVERDUE marker if past."""
-    try:
-        dl = ensure_aware(datetime.fromisoformat(deadline))
-    except (ValueError, TypeError):
-        return ""
-    if now >= dl:
-        return t("task_queue.overdue", time=dl.strftime("%H:%M"))
-    return t("task_queue.deadline_by", time=dl.strftime("%H:%M"))
+def _compat_status(status: str, task_id: str) -> str:
+    """Remap a retired status (blocked/failed) read from old jsonl rows to pending."""
+    if status in _RETIRED_STATUSES:
+        logger.warning("Task %s has retired status %r in jsonl; reading as pending", task_id, status)
+        return "pending"
+    return status
 
 
-def _is_overdue(deadline: str, now: datetime) -> bool:
-    """Return True if the deadline has passed."""
-    try:
-        dl = ensure_aware(datetime.fromisoformat(deadline))
-        return now >= dl
-    except (ValueError, TypeError):
-        return False
+def _descriptor_ids(anima_dir: Path) -> set[str]:
+    """Return the set of task_ids that have a pending descriptor file.
+
+    Performs a single recursive scan of ``state/pending/`` so callers can do
+    O(1) membership checks without re-walking the tree per task. Returns an
+    empty set when the directory does not exist.
+    """
+    pending_dir = anima_dir / "state" / "pending"
+    if not pending_dir.is_dir():
+        return set()
+    return {p.stem for p in pending_dir.rglob("*.json")}
+
+
+def descriptor_exists(anima_dir: Path, task_id: str) -> bool:
+    """Return True when a pending descriptor file exists for ``task_id``.
+
+    The descriptor is the executable file under ``state/pending/`` that
+    PendingTaskExecutor actually runs. A task that is only present in the
+    JSONL ledger (no descriptor) will never execute. Search is recursive so
+    that descriptors living in ``pending/processing/``, ``pending/deferred/``,
+    ``pending/suppressed/``, or ``pending/failed/`` still count as present.
+    Only ``pending`` and ``in_progress`` tasks are expected to carry a
+    descriptor; ``delegated`` tracking rows legitimately have none.
+    """
+    return task_id in _descriptor_ids(anima_dir)
+
+
+_NOT_EXECUTABLE_NOTE = (
+    "No pending descriptor exists for this task, so it will never run. "
+    "Re-submit it with submit_tasks (same task_id) if you still need it."
+)
+
+
+def mark_executability(items: list[dict[str, Any]], anima_dir: Path) -> None:
+    """Mark each pending/in_progress task dict with its descriptor executability.
+
+    Adds ``executable`` (and ``executable_note`` when False) to ``pending`` /
+    ``in_progress`` rows, which are the only statuses expected to carry a
+    descriptor. ``delegated`` tracking rows legitimately have no descriptor,
+    so they are left untouched along with ``done`` / ``cancelled``.
+
+    The pending directory is scanned exactly once (via ``_descriptor_ids``);
+    each row is then an O(1) set membership check, not a fresh tree walk.
+    """
+    descriptor_set = _descriptor_ids(anima_dir)
+    for item in items:
+        if item.get("status") not in ("pending", "in_progress"):
+            continue
+        tid = item.get("task_id", "")
+        if tid in descriptor_set:
+            item["executable"] = True
+        else:
+            item["executable"] = False
+            item["executable_note"] = _NOT_EXECUTABLE_NOTE
 
 
 def _metadata_expired(expires_at: str | None) -> bool:
@@ -246,26 +159,6 @@ def _metadata_expired(expires_at: str | None) -> bool:
         return now_local() >= ensure_aware(datetime.fromisoformat(expires_at))
     except (ValueError, TypeError):
         return False
-
-
-def _delegated_child_ids(meta: dict[str, Any]) -> list[str]:
-    """Return delegated child task ids from single-id and multi-id metadata."""
-    child_ids = meta.get("delegated_task_ids")
-    if isinstance(child_ids, list):
-        result: list[str] = []
-        for item in child_ids:
-            if isinstance(item, str) and item:
-                result.append(item)
-            elif isinstance(item, dict):
-                child_id = item.get("task_id")
-                if isinstance(child_id, str) and child_id:
-                    result.append(child_id)
-        if result:
-            return result
-    child_id = meta.get("delegated_task_id")
-    if isinstance(child_id, str) and child_id:
-        return [child_id]
-    return []
 
 
 class TaskQueueManager:
@@ -295,23 +188,15 @@ class TaskQueueManager:
         original_instruction: str,
         assignee: str,
         summary: str,
-        deadline: str | None = None,
         relay_chain: list[str] | None = None,
         task_id: str | None = None,
         meta: dict[str, Any] | None = None,
         status: str = "pending",
-        priority: Literal["normal", "urgent"] = "normal",
     ) -> TaskEntry:
         if source not in _VALID_SOURCES:
             raise ValueError(f"Invalid source: {source!r} (must be 'human' or 'anima')")
         if status not in ("pending", "in_progress"):
             raise ValueError(f"Invalid status: {status!r} (must be 'pending' or 'in_progress')")
-        if deadline is not None and deadline != "":
-            parsed_deadline: str | None = _parse_deadline(deadline)
-        elif deadline == "":
-            raise ValueError("deadline is required when provided. Use relative format ('30m', '2h', '1d') or ISO8601.")
-        else:
-            parsed_deadline = None
         if len(original_instruction) > _MAX_INSTRUCTION_CHARS:
             original_instruction = original_instruction[:_MAX_INSTRUCTION_CHARS]
             logger.warning("original_instruction truncated to %d chars", _MAX_INSTRUCTION_CHARS)
@@ -324,10 +209,8 @@ class TaskQueueManager:
             assignee=assignee,
             status=status,
             summary=summary,
-            deadline=parsed_deadline,
             relay_chain=relay_chain or [],
             updated_at=now,
-            priority=priority,
             meta=meta or {},
         )
 
@@ -338,12 +221,10 @@ class TaskQueueManager:
         original_instruction: str,
         assignee: str,
         summary: str,
-        deadline: str | None = None,
         relay_chain: list[str] | None = None,
         task_id: str | None = None,
         meta: dict[str, Any] | None = None,
         status: str = "pending",
-        priority: Literal["normal", "urgent"] = "normal",
     ) -> TaskEntry:
         """Add a new task to the queue.
 
@@ -354,8 +235,6 @@ class TaskQueueManager:
             original_instruction: Full instruction text.
             assignee: Anima name responsible for the task.
             summary: One-line summary.
-            deadline: Optional. Relative ('30m', '2h', '1d') or ISO8601.
-                None for tasks without deadline (e.g. submit_tasks).
             relay_chain: Optional delegation path.
             task_id: Optional. Use LLM-specified ID (e.g. from submit_tasks).
                 If None, a UUID-based ID is generated.
@@ -367,21 +246,17 @@ class TaskQueueManager:
             The created TaskEntry.
 
         Raises:
-            ValueError: If source is invalid or deadline format is invalid
-                when deadline is explicitly provided (non-empty).
+            ValueError: If source is invalid.
         """
-        _reject_observation_log_summary(summary)
         entry = self._build_task_entry(
             source=source,
             original_instruction=original_instruction,
             assignee=assignee,
             summary=summary,
-            deadline=deadline,
             relay_chain=relay_chain,
             meta=meta,
             task_id=task_id,
             status=status,
-            priority=priority,
         )
         self._append(entry.model_dump())
         logger.info(
@@ -401,7 +276,6 @@ class TaskQueueManager:
         original_instruction: str,
         assignee: str,
         summary: str,
-        deadline: str | None = None,
         relay_chain: list[str] | None = None,
         task_id: str | None = None,
         meta: dict[str, Any] | None = None,
@@ -417,7 +291,6 @@ class TaskQueueManager:
                 original_instruction=original_instruction,
                 assignee=assignee,
                 summary=summary,
-                deadline=deadline,
                 relay_chain=relay_chain,
                 task_id=task_id,
                 meta=meta,
@@ -439,10 +312,8 @@ class TaskQueueManager:
         original_instruction: str,
         assignee: str,
         summary: str,
-        deadline: str,
         relay_chain: list[str] | None = None,
         meta: dict[str, Any] | None = None,
-        priority: Literal["normal", "urgent"] = "normal",
         task_id: str | None = None,
     ) -> TaskEntry:
         """Add a task with 'delegated' status for tracking delegation.
@@ -450,10 +321,6 @@ class TaskQueueManager:
         Used by the delegating supervisor to record that a task was sent
         to a subordinate. The meta field stores delegated_to and delegated_task_id.
         """
-        if not deadline:
-            raise ValueError("deadline is required")
-        _reject_observation_log_summary(summary)
-        parsed_deadline = _parse_deadline(deadline)
         if len(original_instruction) > _MAX_INSTRUCTION_CHARS:
             original_instruction = original_instruction[:_MAX_INSTRUCTION_CHARS]
         now = now_iso()
@@ -465,10 +332,8 @@ class TaskQueueManager:
             assignee=assignee,
             status="delegated",
             summary=summary,
-            deadline=parsed_deadline,
             relay_chain=relay_chain or [],
             updated_at=now,
-            priority=priority,
             meta=meta or {},
         )
         self._append(entry.model_dump())
@@ -486,13 +351,16 @@ class TaskQueueManager:
         status: str,
         *,
         summary: str | None = None,
-        note: str | None = None,
     ) -> TaskEntry | None:
         """Update the status of an existing task.
 
         Appends an update event to the JSONL log.
         Returns the updated task or None if not found.
         """
+        if status in _RETIRED_STATUSES:
+            raise ValueError(
+                f"Status {status!r} was retired: use 'cancelled' and message the requester with the reason."
+            )
         if status not in _VALID_STATUSES:
             logger.warning("Invalid task status: %s", status)
             return None
@@ -509,46 +377,22 @@ class TaskQueueManager:
             logger.warning("Task %s is cancelled; refusing status=%s", task_id, status)
             return None
 
-        clean_summary = summary
-        if _is_observation_log_summary(summary):
-            clean_summary = None
-            logger.warning("Ignoring heartbeat observation log summary for task %s", task_id)
-        elif _is_status_report_summary(summary):
-            clean_summary = None
-            note = summary if not note else f"{note}\n{summary}"
-            logger.warning("Storing report-like update summary as status note for task %s", task_id)
-
-        if status == "done":
-            rejected = self._reject_unmet_completion_criteria(task)
-            if rejected is not None:
-                return rejected
-
         now = now_iso()
-        merged_meta: dict[str, Any] | None = None
-        if note:
-            merged_meta = _append_status_note(task.meta or {}, note=note, status=status, ts=now)
         update: dict[str, Any] = {
             "task_id": task_id,
             "status": status,
             "updated_at": now,
             "_event": "update",
         }
-        if clean_summary is not None:
-            update["summary"] = clean_summary
-        if merged_meta is not None:
-            update["meta"] = merged_meta
+        if summary is not None:
+            update["summary"] = summary
         self._append(update)
-
-        if status == "cancelled":
-            self._cancel_delegated_child(task, summary=clean_summary)
 
         # Return reconstructed entry
         task.status = status
         task.updated_at = now
-        if clean_summary is not None:
-            task.summary = clean_summary
-        if merged_meta is not None:
-            task.meta = merged_meta
+        if summary is not None:
+            task.summary = summary
         logger.info("Task updated: id=%s status=%s", task_id, status)
 
         if status in _ARCHIVE_SYNC_STATUSES:
@@ -557,88 +401,6 @@ class TaskQueueManager:
             self._sync_taskboard_reactivated(task_id)
 
         return task
-
-    def _reject_unmet_completion_criteria(self, task: TaskEntry) -> TaskEntry | None:
-        """Gate the transition to ``done`` behind machine-verified criteria.
-
-        Returns the task unchanged (status preserved, failures recorded in
-        ``meta.completion_rejection`` and as a status note) when
-        ``meta.completion_criteria`` is present and unmet, or None when the
-        transition may proceed. Repeat rejections with identical failures are
-        not re-appended, so retry loops (e.g. delegated-task sync on every
-        heartbeat) do not grow the queue log.
-        """
-        from core.memory.task_verification import extract_criteria, verify_completion_criteria
-
-        criteria = extract_criteria(task.meta)
-        if not criteria:
-            return None
-        failures = verify_completion_criteria(criteria)
-        if not failures:
-            return None
-
-        prev_rejection = (task.meta or {}).get("completion_rejection") or {}
-        if prev_rejection.get("failures") == failures:
-            logger.info("Task %s: done rejected again with identical failures (not re-recorded)", task.task_id)
-            return task
-
-        now = now_iso()
-        rejection_note = "done rejected — completion criteria unmet:\n" + "\n".join(f"- {f}" for f in failures)
-        merged_meta = _append_status_note(task.meta or {}, note=rejection_note, status=task.status, ts=now)
-        merged_meta["completion_rejection"] = {"ts": now, "failures": failures}
-        self._append(
-            {
-                "task_id": task.task_id,
-                "status": task.status,
-                "updated_at": now,
-                "meta": merged_meta,
-                "_event": "update",
-            }
-        )
-        task.updated_at = now
-        task.meta = merged_meta
-        logger.warning(
-            "Task %s: done rejected, %d completion criteria unmet",
-            task.task_id,
-            len(failures),
-        )
-        return task
-
-    def _cancel_delegated_child(self, task: TaskEntry, *, summary: str | None = None) -> bool:
-        """Cancel the active subordinate task for a cancelled delegated entry."""
-        meta = task.meta or {}
-        target = meta.get("delegated_to")
-        child_ids = _delegated_child_ids(meta)
-        if not isinstance(target, str) or not target:
-            return False
-        if not child_ids:
-            return False
-
-        target_dir = self.anima_dir.parent / target
-        if not target_dir.is_dir():
-            logger.debug("cancel_delegated_child: target dir missing for %s", target)
-            return False
-
-        cancelled = False
-        try:
-            child_manager = TaskQueueManager(target_dir)
-            for child_id in child_ids:
-                child = child_manager.get_task_by_id(child_id)
-                if child is None or child.status in _TERMINAL_STATUSES:
-                    continue
-                child_summary = summary or f"Cancelled because upstream delegated task {task.task_id} was cancelled"
-                cancelled = (
-                    child_manager.update_status(child_id, "cancelled", summary=child_summary) is not None or cancelled
-                )
-            return cancelled
-        except Exception:
-            logger.debug(
-                "cancel_delegated_child: failed to cancel subordinate task(s) %s/%s",
-                target,
-                ",".join(child_ids),
-                exc_info=True,
-            )
-            return False
 
     def _sync_taskboard_archived(self, task_id: str) -> None:
         """Best-effort: close TaskBoard metadata when a task reaches terminal status.
@@ -720,11 +482,6 @@ class TaskQueueManager:
             logger.warning("Task not found: %s", task_id)
             return None
 
-        clean_summary = summary
-        if _is_observation_log_summary(summary):
-            clean_summary = None
-            logger.warning("Ignoring heartbeat observation log summary for task metadata update %s", task_id)
-
         now = now_iso()
         merged_meta = dict(task.meta or {})
         merged_meta.update(meta_patch)
@@ -734,14 +491,14 @@ class TaskQueueManager:
             "updated_at": now,
             "_event": "update",
         }
-        if clean_summary is not None:
-            update["summary"] = clean_summary
+        if summary is not None:
+            update["summary"] = summary
         self._append(update)
 
         task.meta = merged_meta
         task.updated_at = now
-        if clean_summary is not None:
-            task.summary = clean_summary
+        if summary is not None:
+            task.summary = summary
         logger.info("Task metadata updated: id=%s keys=%s", task_id, sorted(meta_patch))
         return task
 
@@ -764,12 +521,7 @@ class TaskQueueManager:
         if not self._queue_path.exists():
             return tasks
 
-        # Tolerate stray non-UTF-8 bytes (e.g. CP932 lines accidentally appended
-        # by external scripts). With errors="replace", bad bytes become U+FFFD
-        # and the offending line fails json.loads → skipped below, so a single
-        # corrupted line cannot take down the whole queue read.
-        raw_text = self._queue_path.read_bytes().decode("utf-8", errors="replace")
-        for line in raw_text.splitlines():
+        for line in self._queue_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -788,7 +540,7 @@ class TaskQueueManager:
                 existing = tasks.get(task_id)
                 if existing:
                     if "status" in raw:
-                        existing.status = raw["status"]
+                        existing.status = _compat_status(raw["status"], task_id)
                     if "summary" in raw:
                         existing.summary = raw["summary"]
                     if "updated_at" in raw:
@@ -796,8 +548,12 @@ class TaskQueueManager:
                     if "meta" in raw and isinstance(raw["meta"], dict):
                         existing.meta = raw["meta"]
             else:
-                # Task creation event — strip internal fields
+                # Task creation event — strip internal fields. Unknown legacy
+                # keys (deadline, unblock_check, ...) are silently dropped by
+                # TaskEntry's default extra="ignore" behavior.
                 raw.pop("_event", None)
+                if "status" in raw:
+                    raw["status"] = _compat_status(raw["status"], task_id)
                 try:
                     tasks[task_id] = TaskEntry(**raw)
                 except Exception:
@@ -816,15 +572,15 @@ class TaskQueueManager:
         return [t for t in self.get_pending() if t.source == "human"]
 
     def get_all_active(self) -> list[TaskEntry]:
-        """Return all non-terminal tasks (pending, in_progress, blocked)."""
+        """Return all non-terminal tasks (pending, in_progress)."""
         tasks = self._load_all()
-        return [t for t in tasks.values() if t.status in ("pending", "in_progress", "blocked")]
+        return [t for t in tasks.values() if t.status in ("pending", "in_progress")]
 
     def list_tasks(self, status: str | None = None) -> list[TaskEntry]:
         """List tasks, optionally filtered by status.
 
         When status is omitted, returns only active tasks
-        (pending, in_progress, blocked, delegated).
+        (pending, in_progress, delegated).
         """
         tasks = self._load_all()
         if status:
@@ -835,26 +591,6 @@ class TaskQueueManager:
         """Return tasks with status 'delegated'."""
         tasks = self._load_all()
         return [t for t in tasks.values() if t.status == "delegated"]
-
-    def get_delegation_tracking_tasks(self) -> list[TaskEntry]:
-        """Return active parent tasks that track a delegated child."""
-        tasks = self._load_all()
-        result: list[TaskEntry] = []
-        for task in tasks.values():
-            if task.status not in _DELEGATION_TRACKING_STATUSES:
-                continue
-            meta = task.meta or {}
-            if meta.get("delegated_to") and _delegated_child_ids(meta):
-                result.append(task)
-        return result
-
-    def get_failed_taskexec(self) -> list[TaskEntry]:
-        """Return failed tasks executed by TaskExec (meta.executor == 'taskexec').
-
-        Used for format_for_priming to show tasks that need human attention.
-        """
-        tasks = self._load_all()
-        return [t for t in tasks.values() if t.status == "failed" and t.meta.get("executor") == "taskexec"]
 
     def get_task_by_id(self, task_id: str) -> TaskEntry | None:
         """Look up a single task by its ID."""
@@ -909,12 +645,7 @@ class TaskQueueManager:
     # ── Formatting ───────────────────────────────────────────
 
     def format_for_priming(self, budget_tokens: int = 400) -> str:
-        """Format pending tasks for system prompt injection.
-
-        Active (non-OVERDUE) tasks are shown first with full detail.
-        OVERDUE tasks are aggregated into a compact summary line.
-        Failed TaskExec tasks are shown in a separate section.
-        """
+        """Format pending tasks for system prompt injection."""
         tasks = self.get_pending()
         now = now_local()
         chars_per_token = 4
@@ -923,15 +654,8 @@ class TaskQueueManager:
         total = 0
 
         if tasks:
-            active: list[TaskEntry] = []
-            overdue: list[TaskEntry] = []
-            for task in tasks:
-                if task.deadline and _is_overdue(task.deadline, now):
-                    overdue.append(task)
-                else:
-                    active.append(task)
-
-            active.sort(
+            active = sorted(
+                tasks,
                 key=lambda t: (
                     0 if t.source == "human" else 1,
                     t.updated_at or t.ts,
@@ -956,45 +680,10 @@ class TaskQueueManager:
                 if elapsed_sec is not None and elapsed_sec >= _STALE_TASK_THRESHOLD_SEC:
                     line += " ⚠️ STALE"
 
-                if task.deadline:
-                    deadline_str = _format_deadline_display(task.deadline, now)
-                    if deadline_str:
-                        line += f" {deadline_str}"
-
                 if total + len(line) > max_chars:
                     break
                 lines.append(line)
                 total += len(line) + 1
-
-            if overdue:
-                summaries_str = ", ".join(f"[{task.task_id[:8]}] {task.summary[:20]}" for task in overdue)
-                aggregate_line = t(
-                    "task_queue.overdue_aggregate",
-                    count=len(overdue),
-                    summaries=summaries_str,
-                )
-                if total + len(aggregate_line) + 1 <= max_chars:
-                    lines.append(aggregate_line)
-                    total += len(aggregate_line) + 1
-
-        # Failed TaskExec tasks (within remaining budget)
-        failed = self.get_failed_taskexec()
-        if failed and total < max_chars:
-            header = t("task_queue.failed_section_header")
-            if total + len(header) <= max_chars:
-                lines.append(header)
-                total += len(header) + 1
-            for task in failed:
-                if total >= max_chars:
-                    break
-                line = t(
-                    "task_queue.failed_line",
-                    task_id=task.task_id[:8],
-                    summary=task.summary,
-                )
-                if total + len(line) <= max_chars:
-                    lines.append(line)
-                    total += len(line) + 1
 
         # Delegated tasks (within remaining budget)
         delegated = self.get_delegated_tasks()
@@ -1032,154 +721,94 @@ class TaskQueueManager:
           → own entry ``done``
         - subordinate done without declaration meta → own entry ``done``
           with ``meta.acceptance = "legacy_unverified"`` (compat)
-        - subordinate cancelled → own entry ``blocked`` for explicit closure
-        - subordinate failed → own entry ``failed``
+        - subordinate cancelled → own entry ``cancelled``
+        - legacy subordinate failed → own entry ``cancelled``
 
         Returns the number of tasks synced.
         """
-        delegated = self.get_delegation_tracking_tasks()
+        delegated = self.get_delegated_tasks()
         synced = 0
         for task in delegated:
             meta = task.meta or {}
             target = meta.get("delegated_to", "")
-            child_ids = _delegated_child_ids(meta)
-            if not target or not child_ids:
+            child_id = meta.get("delegated_task_id", "")
+            if not target or not child_id:
                 continue
             target_dir = animas_dir / target
             if not target_dir.is_dir():
                 logger.debug("sync_delegated: target dir missing for %s", target)
                 continue
-            child_outcomes = {
-                child_id: self._resolve_subordinate_outcome(target_dir, child_id, include_active=True)
-                for child_id in child_ids
-            }
-            if any(outcome is None for outcome in child_outcomes.values()):
+            outcome = self._resolve_subordinate_outcome(target_dir, child_id)
+            if outcome is None:
                 continue
-            child_statuses = {
-                child_id: outcome[0] for child_id, outcome in child_outcomes.items() if outcome is not None
-            }
-            resolved_statuses = list(child_statuses.values())
-            if any(status in _ACTIVE_STATUSES for status in resolved_statuses):
-                if task.status == "blocked":
-                    active_children = ", ".join(
-                        f"{target}:{child_id}={status}"
-                        for child_id, status in child_statuses.items()
-                        if status in _ACTIVE_STATUSES
-                    )
-                    self.update_status(
-                        task.task_id,
-                        "delegated",
-                        summary=f"Delegated child task(s) active: {active_children}; tracking continues",
-                    )
-                    synced += 1
-                continue
-            if all(status == "done" for status in resolved_statuses):
+            sub_status, sub_meta, sub_summary = outcome
+            if sub_status == "done":
                 done_summary = t(
                     "task_queue.sync_done",
                     orig=task.summary,
                     target=target,
                 )
-                summaries = [
-                    outcome[2].strip()
-                    for outcome in child_outcomes.values()
-                    if outcome is not None and outcome[2].strip()
-                ]
-                snip = " ".join(summaries)[:200]
+                snip = (sub_summary or "")[:200]
                 if snip:
                     done_summary = f"{done_summary} {snip}"
-                self.update_status(
-                    task.task_id,
-                    "done",
-                    summary=done_summary,
-                )
-                legacy_children = [
-                    child_id
-                    for child_id, outcome in child_outcomes.items()
-                    if outcome is not None and outcome[1].get("completed_by") != "agent_declaration"
-                ]
-                if legacy_children:
+                if sub_meta.get("completed_by") == "agent_declaration":
+                    self.update_status(
+                        task.task_id,
+                        "done",
+                        summary=done_summary,
+                    )
+                else:
+                    self.update_status(
+                        task.task_id,
+                        "done",
+                        summary=done_summary,
+                    )
                     self.update_meta(
                         task.task_id,
                         {"acceptance": "legacy_unverified"},
                     )
                     logger.warning(
-                        "sync_delegated: legacy unverified completion task_id=%s target=%s child_ids=%s",
+                        "sync_delegated: legacy unverified completion task_id=%s target=%s child_id=%s",
                         task.task_id,
                         target,
-                        ",".join(legacy_children),
+                        child_id,
                     )
-                _post_delegation_completion_to_discord(
-                    task,
-                    self.anima_dir,
-                    target,
-                    ",".join(child_ids),
-                    animas_dir,
-                    status="done",
-                )
                 synced += 1
-            elif any(status == "cancelled" for status in resolved_statuses):
-                cancelled_children = ", ".join(
-                    f"{target}:{child_id}" for child_id, status in child_statuses.items() if status == "cancelled"
-                )
+            elif sub_status == "cancelled":
+                # "failed" was retired: a cancelled subordinate task closes
+                # the delegator's tracking entry as cancelled too.
                 self.update_status(
                     task.task_id,
-                    "blocked",
-                    summary=(
-                        f"BLOCKED: delegated child task(s) {cancelled_children} were cancelled; "
-                        "re-delegation or explicit closure required"
+                    "cancelled",
+                    summary=t(
+                        "task_queue.sync_cancelled",
+                        orig=task.summary,
+                        target=target,
                     ),
-                )
-                _post_delegation_completion_to_discord(
-                    task,
-                    self.anima_dir,
-                    target,
-                    ",".join(child_ids),
-                    animas_dir,
-                    status="cancelled",
-                )
-                synced += 1
-            elif any(status == "failed" for status in resolved_statuses):
-                self.update_status(
-                    task.task_id,
-                    "failed",
-                    summary=t("task_queue.sync_failed", orig=task.summary, target=target),
-                )
-                _post_delegation_completion_to_discord(
-                    task,
-                    self.anima_dir,
-                    target,
-                    ",".join(child_ids),
-                    animas_dir,
-                    status="failed",
                 )
                 synced += 1
         return synced
 
-    def _resolve_subordinate_status(
-        self, target_dir: Path, child_id: str, *, include_active: bool = False
-    ) -> str | None:
+    def _resolve_subordinate_status(self, target_dir: Path, child_id: str) -> str | None:
         """Look up subordinate task status, falling back to archive."""
-        outcome = self._resolve_subordinate_outcome(target_dir, child_id, include_active=include_active)
+        outcome = self._resolve_subordinate_outcome(target_dir, child_id)
         return outcome[0] if outcome is not None else None
 
     def _resolve_subordinate_outcome(
         self,
         target_dir: Path,
         child_id: str,
-        *,
-        include_active: bool = False,
     ) -> tuple[str, dict[str, Any], str] | None:
-        """Look up subordinate status with meta and summary.
+        """Look up subordinate terminal status with meta and summary.
 
-        Returns ``(status, meta, summary)`` or None when not terminal / missing,
-        unless ``include_active`` is true.
+        Returns ``(status, meta, summary)`` or None when not terminal / missing.
         Archive fallback returns empty meta/summary (legacy path).
         """
         try:
             sub_tqm = TaskQueueManager(target_dir)
             sub_task = sub_tqm.get_task_by_id(child_id)
             if sub_task:
-                if sub_task.status not in _TERMINAL_STATUSES and not include_active:
+                if sub_task.status not in _TERMINAL_STATUSES:
                     return None
                 return (
                     sub_task.status,
@@ -1216,11 +845,7 @@ class TaskQueueManager:
             logger.debug("sync_delegated: archive unreadable at %s", archive, exc_info=True)
         return None
 
-    def format_delegated_for_priming(
-        self,
-        animas_dir: Path,
-        budget_chars: int = 400,
-    ) -> str:
+    def format_delegated_for_priming(self, animas_dir: Path, budget_chars: int = 400) -> str:
         """Format delegated tasks with subordinate status for Priming display."""
         delegated = self.get_delegated_tasks()
         if not delegated:
@@ -1228,7 +853,7 @@ class TaskQueueManager:
         now = now_local()
         lines: list[str] = []
         total = 0
-        _status_icons = {"done": "✅", "failed": "❌", "cancelled": "🚫"}
+        _status_icons = {"done": "✅", "cancelled": "🚫"}
         unknown_label = t("task_queue.delegated_unknown")
         for task in delegated[:5]:
             meta = task.meta or {}
@@ -1274,7 +899,7 @@ class TaskQueueManager:
     def compact(self) -> int:
         """Rewrite JSONL file with only active (non-terminal) tasks.
 
-        Terminal statuses (done, cancelled, failed) are archived first,
+        Terminal statuses (done, cancelled) are archived first,
         then removed from the queue.
         Returns the number of tasks removed.
         """
@@ -1357,88 +982,3 @@ class TaskQueueManager:
         except OSError as exc:
             logger.exception("Failed to append to task queue")
             raise TaskPersistenceError(str(exc)) from exc
-
-
-def _post_delegation_completion_to_discord(
-    task: Any,
-    delegator_dir: Path,
-    target: str,
-    child_id: str,
-    animas_dir: Path,
-    *,
-    status: str,
-) -> None:
-    """Auto-post completion of a delegated task to its originating Discord thread.
-
-    Looks up the subordinate's completion summary (if available) and the
-    origin channel/thread recorded on the delegated task's meta, then
-    fires a webhook post as the delegating Anima.  Silently no-ops if
-    Discord origin info is absent or the webhook manager is unavailable.
-    """
-    meta = task.meta or {}
-    channel_id = meta.get("discord_origin_channel_id", "")
-    if not channel_id:
-        return
-    thread_ts = meta.get("discord_origin_thread_ts", "") or None
-    user_id = meta.get("discord_origin_user_id", "")
-
-    # Delegator name = parent dir of the delegator's anima_dir
-    delegator = delegator_dir.name
-
-    # Fetch subordinate's completion summary for a richer message
-    sub_summary = ""
-    try:
-        target_dir = animas_dir / target
-        sub_tqm = TaskQueueManager(target_dir)
-        sub_task = sub_tqm.get_task_by_id(child_id)
-        if sub_task:
-            sub_summary = sub_task.summary or ""
-    except Exception:
-        logger.debug(
-            "delegation-completion-to-discord: failed to read subordinate task %s/%s",
-            target,
-            child_id,
-            exc_info=True,
-        )
-
-    mention = f"<@{user_id}> " if user_id else ""
-    status_icon = "✅" if status == "done" else "❌"
-    status_label = "完了" if status == "done" else "失敗"
-    orig_summary = task.summary or "(no summary)"
-    body = f"{mention}{status_icon} 委任タスク{status_label}報告\n\n依頼内容: {orig_summary}\n担当: {target}\n"
-    if sub_summary:
-        body += f"\n【{target}からの完了報告】\n{sub_summary}"
-
-    try:
-        from core.discord_webhooks import get_webhook_manager
-
-        wm = get_webhook_manager()
-        wm.send_as_anima(channel_id, delegator, body, thread_id=thread_ts)
-        logger.info(
-            "delegation-completion-to-discord: posted completion for %s → #%s thread=%s",
-            child_id,
-            channel_id,
-            thread_ts or "(none)",
-        )
-    except Exception:
-        logger.warning(
-            "delegation-completion-to-discord: failed to post for %s",
-            child_id,
-            exc_info=True,
-        )
-        return
-
-    # Mirror to the AnimaWorks board so the full completion text is
-    # recorded even if Discord presentation truncates it.  Without this
-    # mirror the body only lives on Discord, and any truncation or
-    # webhook failure means the content is lost.
-    try:
-        from core.outbound_auto import DiscordAutoResponder
-
-        DiscordAutoResponder._mirror_to_board(channel_id, body, delegator)
-    except Exception:
-        logger.debug(
-            "delegation-completion-to-discord: board mirror failed for %s",
-            child_id,
-            exc_info=True,
-        )

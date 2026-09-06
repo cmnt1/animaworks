@@ -132,7 +132,7 @@ class TestPendingExecutorDefaultWorkspaceFallback:
         with patch("core.workspace.resolve_workspace", return_value=Path("/abs/path/proj")):
             resolved = _resolve_default_workspace(anima_dir)
 
-        assert resolved == "/abs/path/proj"
+        assert resolved == str(Path("/abs/path/proj"))
 
     def test_empty_when_default_workspace_unset(self, data_dir):
         """_resolve_default_workspace returns empty when not set."""

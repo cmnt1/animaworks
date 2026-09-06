@@ -19,25 +19,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.task_queue import TaskQueueManager
 from core.supervisor.pending_executor import (
     _SENTINEL_CANCELLED,
     _SENTINEL_EXPIRED,
     PendingTaskExecutor,
     TaskExecError,
     _classify_task_result,
-    _classify_task_result_for_desc,
 )
-
-
-@pytest.fixture(autouse=True)
-def _legacy_completion_semantics():
-    with patch(
-        "core.supervisor.pending_executor._completion_declaration_required",
-        return_value=False,
-    ):
-        yield
-
 
 # ── Helpers ──────────────────────────────────────────────
 
@@ -125,419 +113,8 @@ class TestClassifyTaskResult:
         assert status == "done"
         assert summary == "401 unauthorized の対処を文書化しました: Failed to authenticate. API Error: 401"
 
-    def test_synthesized_tool_errors_map_to_failed(self):
-        status, summary = _classify_task_result("(completed 27 tool call(s): Read, Bash, Grep...; errors=11)")
-        assert status == "failed"
-        assert summary == "FAILED: Task produced no final response and reported 11 tool error(s)"
 
-    def test_synthesized_tool_summary_without_errors_stays_done(self):
-        status, summary = _classify_task_result("(completed 3 tool call(s): Read, Bash, Grep)")
-        assert status == "done"
-        assert summary == "(completed 3 tool call(s): Read, Bash, Grep)"
-
-    def test_machine_handoff_start_log_maps_to_blocked(self):
-        status, summary = _classify_task_result(
-            "状況を把握しました。複数の修正が必要です。machineエージェントに委託して修正を進めます。まず関連ファイルを確認開始します。"
-        )
-        assert status == "blocked"
-        assert summary.startswith("BLOCKED: Task reported only a machine handoff/start log")
-
-    def test_unresolved_aff003_blocker_report_maps_to_blocked(self):
-        status, summary = _classify_task_result(
-            "Multiple unresolved problems remain:\n"
-            "1. **108500/108502**: generated JSON body contains 4AXJKD+4BF3MA+5316\n"
-            "2. **108501**: image URL 404 for IMG_20260530110659_011.jpg\n"
-            "3. **108502**: public article images missing"
-        )
-        assert status == "blocked"
-        assert "AFF-003 blockers" in summary
-
-    def test_policy_blocked_partial_completion_maps_to_blocked(self):
-        status, summary = _classify_task_result(
-            "Review judgment is complete. Remaining work is Obsidian reflection only, "
-            "but the filesystem sandbox is read-only and Remove-Item was rejected: blocked by policy. "
-            "The file operation remains not applied."
-        )
-        assert status == "blocked"
-        assert summary.startswith("BLOCKED: Task reported unresolved blockers")
-
-    # ── Bug B: error chunk detection ──────────────────────────
-
-    def test_completion_gate_reminder_maps_to_blocked_without_task_desc(self):
-        status, summary = _classify_task_result(
-            "タスクの完了条件を満たす前に、completion_gate を呼び出す必要があるという通知を受け取った。"
-        )
-        assert status == "blocked"
-        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
-
-    def test_requirement_only_progress_maps_to_blocked_without_task_desc(self):
-        status, summary = _classify_task_result("cron.md を読み、関連する cron 定義を確認する必要がある。")
-        assert status == "blocked"
-        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
-
-    def test_multistage_intermediate_result_maps_to_blocked(self):
-        status, summary = _classify_task_result_for_desc(
-            "Situation cleanup complete. Mira artifact is missing, so I will proceed with "
-            "option 2 and create an instruction file for the machine retry.",
-            {"allow_multistage": True},
-        )
-        assert status == "blocked"
-        assert summary.startswith("BLOCKED: Multi-stage task reported")
-
-    def test_non_multistage_intermediate_result_keeps_default_done(self):
-        status, summary = _classify_task_result_for_desc(
-            "Situation cleanup complete. Follow-up is available if needed.",
-            {"allow_multistage": False},
-        )
-        assert status == "done"
-        assert summary.startswith("Situation cleanup complete")
-
-    def test_explicit_followup_result_maps_to_blocked_without_multistage_flag(self):
-        status, summary = _classify_task_result_for_desc(
-            "全エンジンがexit 255。machineが使えないため、直接実行経路（PowerShell/Python）で対応します。"
-            "Smoke test通過。次にID_Articles=111655の現在値を確認します。",
-            {"allow_multistage": False},
-        )
-        assert status == "blocked"
-        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
-
-    def test_english_fix_script_start_result_maps_to_blocked_without_multistage_flag(self):
-        status, summary = _classify_task_result_for_desc(
-            "Now I understand the exact issues. Let me write the fix script:",
-            {"allow_multistage": False},
-        )
-        assert status == "blocked"
-        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
-
-    def test_english_full_picture_start_result_maps_to_blocked(self):
-        status, summary = _classify_task_result_for_desc(
-            "Now I have the full picture. Let me check the generated JSON to understand "
-            "the 4AXJKD issue in 108502, then run a comprehensive pipeline.",
-            {"allow_multistage": True},
-        )
-        assert status == "blocked"
-        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
-
-    def test_english_investigation_progress_result_maps_to_blocked(self):
-        status, summary = _classify_task_result_for_desc(
-            "Smoke test passed. Now let me investigate the DB state for articles 108496 and 108504.",
-            {"allow_multistage": False},
-        )
-        assert status == "blocked"
-        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
-
-    def test_completion_gate_reminder_result_maps_to_blocked(self):
-        status, summary = _classify_task_result_for_desc(
-            "タスクの完了条件を満たす前に、completion_gate を呼び出す必要があるという通知を受け取った。",
-            {"allow_multistage": False},
-        )
-        assert status == "blocked"
-        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
-
-    def test_requirement_only_result_maps_to_blocked(self):
-        status, summary = _classify_task_result_for_desc(
-            "sqlalchemyでtext()を使ってクエリを実行する必要がある。",
-            {"allow_multistage": False},
-        )
-        assert status == "blocked"
-        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
-
-    def test_japanese_evidence_collection_start_result_maps_to_blocked(self):
-        status, summary = _classify_task_result_for_desc(
-            "状況を確認しました。miyuが22:08 JSTにタスク実行開始したところです。"
-            "まずDB現状確認と公開URL確認を実施し、証跡を収集します。",
-            {"allow_multistage": False},
-        )
-        assert status == "blocked"
-        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
-
-    def test_japanese_schema_then_fix_script_result_maps_to_blocked(self):
-        status, summary = _classify_task_result_for_desc(
-            "スキーマが確認できました。列名の正確な情報が得られたので、修正版スクリプトを作成します。",
-            {"allow_multistage": True},
-        )
-        assert status == "blocked"
-        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
-
-    def test_db_connection_only_result_maps_to_blocked(self):
-        status, summary = _classify_task_result_for_desc(
-            "DB接続できた。stdin pipeを使う。",
-            {"allow_multistage": False},
-        )
-        assert status == "blocked"
-        assert summary.startswith("BLOCKED: Task reported an explicit follow-up")
-
-
-def test_tool_call_only_result_maps_to_blocked_with_task_context():
-    status, summary = _classify_task_result_for_desc(
-        "(completed 22 tool call(s): Read, Bash, Grep)",
-        {"allow_multistage": False},
-    )
-    assert status == "blocked"
-    assert summary.startswith("BLOCKED: Task produced only a tool-call summary")
-
-
-def test_placeholder_completion_maps_to_blocked_when_evidence_required():
-    status, summary = _classify_task_result_for_desc(
-        "(タスク完了)",
-        {
-            "title": "AFF-003 final evidence",
-            "description": "全ゲート証跡付きで報告。G1 DB read-after, G3 sync/deploy, G4 public URLを提出。",
-            "allow_multistage": False,
-        },
-    )
-
-    assert status == "blocked"
-    assert summary == "BLOCKED: Task produced only a placeholder completion, not final evidence"
-
-
-def test_placeholder_completion_without_evidence_requirement_stays_done():
-    status, summary = _classify_task_result_for_desc(
-        "(タスク完了)",
-        {"title": "Simple task", "description": "短い確認を行う", "allow_multistage": False},
-    )
-
-    assert status == "done"
-    assert summary == "(タスク完了)"
-
-
-def test_acceptance_criteria_task_requires_closure_contract():
-    status, summary = _classify_task_result_for_desc(
-        "実装と検証を完了しました。",
-        {"acceptance_criteria": ["pytestを通す"], "allow_multistage": False},
-    )
-
-    assert status == "blocked"
-    assert summary == "BLOCKED: Task did not provide a task_closure contract"
-
-
-def test_acceptance_criteria_task_accepts_passing_closure_contract():
-    result = (
-        "実装と検証を完了しました。\n"
-        'TASK_CLOSURE: {"latest_user_request":"修正する","changed_files":["a.py"],'
-        '"acceptance_checks":[{"name":"pytest","status":"passed","evidence":"6 passed"}],'
-        '"remaining_blockers":[],"can_submit":true}'
-    )
-
-    status, summary = _classify_task_result_for_desc(
-        result,
-        {"acceptance_criteria": ["pytestを通す"], "allow_multistage": False},
-    )
-
-    assert status == "done"
-    assert summary.startswith("実装と検証を完了しました。")
-
-
-def test_acceptance_criteria_task_blocks_failing_closure_contract():
-    result = (
-        "途中まで確認しました。\n"
-        'TASK_CLOSURE: {"acceptance_checks":[{"name":"pytest","status":"failed","evidence":"1 failed"}],'
-        '"remaining_blockers":["pytest failure"],"can_submit":false}'
-    )
-
-    status, summary = _classify_task_result_for_desc(
-        result,
-        {"acceptance_criteria": ["pytestを通す"], "allow_multistage": False},
-    )
-
-    assert status == "blocked"
-    assert summary == "BLOCKED: Task closure reports remaining blockers: pytest failure"
-
-
-def test_max_iterations_result_maps_to_blocked_for_retry():
-    status, summary = _classify_task_result_for_desc(
-        "(max iterations reached)",
-        {
-            "title": "AFF-003 final evidence",
-            "description": "対象ID別6ゲート証跡を提出する。",
-            "allow_multistage": True,
-        },
-    )
-
-    assert status == "blocked"
-    assert summary == "BLOCKED: Task hit the iteration limit before final evidence"
-
-
-class TestBlockedAutoRetry:
-    def test_multistage_blocked_task_is_requeued(self, tmp_path: Path):
-        executor = _make_executor(tmp_path)
-        manager = TaskQueueManager(executor._anima_dir)
-        entry = manager.add_task(
-            source="anima",
-            original_instruction="Finish verifier",
-            assignee="test-anima",
-            summary="Verifier",
-            task_id="retry-blocked",
-            meta={
-                "task_desc": {
-                    "task_type": "llm",
-                    "title": "Finish verifier",
-                    "description": "Produce final evidence",
-                    "allow_multistage": True,
-                    "reply_to": "sakura",
-                }
-            },
-        )
-        manager.update_status(entry.task_id, "blocked", summary="BLOCKED: missing final evidence")
-
-        retried = executor._auto_retry_blocked_llm_task(
-            {
-                "task_id": entry.task_id,
-                "task_type": "llm",
-                "allow_multistage": True,
-                "submitted_by": "sakura",
-            }
-        )
-
-        updated = manager.get_task_by_id(entry.task_id)
-        assert retried is True
-        assert updated is not None
-        assert updated.status == "in_progress"
-        assert updated.meta["retry_count"] == 1
-        assert (executor._anima_dir / "state" / "pending" / f"{entry.task_id}.json").exists()
-
-    def test_blocked_task_without_multistage_flag_is_not_requeued(self, tmp_path: Path):
-        executor = _make_executor(tmp_path)
-        manager = TaskQueueManager(executor._anima_dir)
-        entry = manager.add_task(
-            source="anima",
-            original_instruction="Ask a human",
-            assignee="test-anima",
-            summary="Human blocked",
-            task_id="human-blocked",
-        )
-        manager.update_status(entry.task_id, "blocked", summary="BLOCKED: waiting for user")
-
-        retried = executor._auto_retry_blocked_llm_task({"task_id": entry.task_id, "task_type": "llm"})
-
-        assert retried is False
-        assert manager.get_task_by_id(entry.task_id).status == "blocked"
-        assert not (executor._anima_dir / "state" / "pending" / f"{entry.task_id}.json").exists()
-
-    def test_explicit_followup_blocked_task_is_requeued_without_multistage_flag(self, tmp_path: Path):
-        executor = _make_executor(tmp_path)
-        manager = TaskQueueManager(executor._anima_dir)
-        entry = manager.add_task(
-            source="anima",
-            original_instruction="Finish verifier",
-            assignee="test-anima",
-            summary="Verifier",
-            task_id="retry-followup",
-            meta={
-                "task_desc": {
-                    "task_type": "llm",
-                    "title": "Finish verifier",
-                    "description": "Produce final evidence",
-                    "allow_multistage": False,
-                    "reply_to": "sakura",
-                }
-            },
-        )
-        manager.update_status(
-            entry.task_id,
-            "blocked",
-            summary="BLOCKED: Task reported an explicit follow-up/start step, not final evidence",
-        )
-
-        retried = executor._auto_retry_blocked_llm_task(
-            {
-                "task_id": entry.task_id,
-                "task_type": "llm",
-                "allow_multistage": False,
-                "submitted_by": "sakura",
-            }
-        )
-
-        updated = manager.get_task_by_id(entry.task_id)
-        assert retried is True
-        assert updated is not None
-        assert updated.status == "in_progress"
-        assert updated.meta["retry_count"] == 1
-        assert (executor._anima_dir / "state" / "pending" / f"{entry.task_id}.json").exists()
-
-    def test_explicit_followup_blocked_task_uses_extended_retry_limit(self, tmp_path: Path):
-        executor = _make_executor(tmp_path)
-        manager = TaskQueueManager(executor._anima_dir)
-        entry = manager.add_task(
-            source="anima",
-            original_instruction="Finish verifier",
-            assignee="test-anima",
-            summary="Verifier",
-            task_id="retry-followup-high-count",
-            meta={
-                "retry_count": 6,
-                "task_desc": {
-                    "task_type": "llm",
-                    "title": "Finish verifier",
-                    "description": "Produce final evidence",
-                    "allow_multistage": False,
-                    "reply_to": "sakura",
-                },
-            },
-        )
-        manager.update_status(
-            entry.task_id,
-            "blocked",
-            summary="BLOCKED: Task reported an explicit follow-up/start step, not final evidence",
-        )
-
-        retried = executor._auto_retry_blocked_llm_task(
-            {
-                "task_id": entry.task_id,
-                "task_type": "llm",
-                "allow_multistage": False,
-                "submitted_by": "sakura",
-            }
-        )
-
-        updated = manager.get_task_by_id(entry.task_id)
-        assert retried is True
-        assert updated is not None
-        assert updated.status == "in_progress"
-        assert updated.meta["retry_count"] == 7
-        assert (executor._anima_dir / "state" / "pending" / f"{entry.task_id}.json").exists()
-
-    def test_unresolved_nonfinal_blocked_task_uses_extended_retry_limit(self, tmp_path: Path):
-        executor = _make_executor(tmp_path)
-        manager = TaskQueueManager(executor._anima_dir)
-        entry = manager.add_task(
-            source="anima",
-            original_instruction="Finish six-gate evidence",
-            assignee="test-anima",
-            summary="Verifier",
-            task_id="retry-unresolved-high-count",
-            meta={
-                "retry_count": 6,
-                "task_desc": {
-                    "task_type": "llm",
-                    "title": "Finish six-gate evidence",
-                    "description": "Produce final evidence or a saved BLOCKED table",
-                    "allow_multistage": True,
-                    "reply_to": "sakura",
-                },
-            },
-        )
-        manager.update_status(
-            entry.task_id,
-            "blocked",
-            summary="BLOCKED: Task reported unresolved blockers instead of final evidence",
-        )
-
-        retried = executor._auto_retry_blocked_llm_task(
-            {
-                "task_id": entry.task_id,
-                "task_type": "llm",
-                "allow_multistage": True,
-                "submitted_by": "sakura",
-            }
-        )
-
-        updated = manager.get_task_by_id(entry.task_id)
-        assert retried is True
-        assert updated is not None
-        assert updated.status == "in_progress"
-        assert updated.meta["retry_count"] == 7
-        assert (executor._anima_dir / "state" / "pending" / f"{entry.task_id}.json").exists()
+# ── Bug B: error chunk detection ──────────────────────────
 
 
 class TestRunLlmTaskErrorDetection:
@@ -715,9 +292,7 @@ class TestExecuteLlmTaskStatusMapping:
             patch.object(executor, "_sync_task_queue") as mock_sync,
         ):
             await executor._execute_llm_task(task)
-            assert mock_sync.call_args_list[0].args == ("test-task-1", "in_progress")
-            assert mock_sync.call_args_list[-1].args == ("test-task-1", "cancelled")
-            assert mock_sync.call_args_list[-1].kwargs["summary"] == "cancelled before execution"
+            mock_sync.assert_called_once_with("test-task-1", "cancelled", summary="cancelled before execution")
 
     @pytest.mark.asyncio
     async def test_expired_maps_to_cancelled_status(self, tmp_path):
@@ -729,9 +304,7 @@ class TestExecuteLlmTaskStatusMapping:
             patch.object(executor, "_sync_task_queue") as mock_sync,
         ):
             await executor._execute_llm_task(task)
-            assert mock_sync.call_args_list[0].args == ("test-task-1", "in_progress")
-            assert mock_sync.call_args_list[-1].args == ("test-task-1", "cancelled")
-            assert mock_sync.call_args_list[-1].kwargs["summary"] == "expired (TTL exceeded)"
+            mock_sync.assert_called_once_with("test-task-1", "cancelled", summary="expired (TTL exceeded)")
 
     @pytest.mark.asyncio
     async def test_normal_result_maps_to_done(self, tmp_path):
@@ -743,17 +316,15 @@ class TestExecuteLlmTaskStatusMapping:
             patch.object(executor, "_sync_task_queue") as mock_sync,
         ):
             await executor._execute_llm_task(task)
-            assert mock_sync.call_args_list[0].args == ("test-task-1", "in_progress")
-            assert mock_sync.call_args_list[-1].args == ("test-task-1", "done")
-            assert mock_sync.call_args_list[-1].kwargs["summary"] == "success"
+            mock_sync.assert_called_once_with("test-task-1", "done", summary="success")
 
     @pytest.mark.asyncio
-    async def test_engine_auth_failure_maps_to_failed_and_returns(self, tmp_path):
-        """Engine AUTH terminal (error_category) → TaskExecError → failed + delegation return.
+    async def test_engine_auth_failure_returns_to_pending_and_notifies(self, tmp_path):
+        """Engine AUTH terminal (error_category) → TaskExecError → pending + notification.
 
         ``_run_llm_task`` raises ``TaskExecError`` when the cycle reports
-        ``error_category == 'auth'``.  ``_execute_llm_task`` must mark the
-        task failed and send the failure/return notification to the delegator.
+        ``error_category == 'auth'``.  ``_execute_llm_task`` must hand the task
+        back to its owner as pending and tell the delegator once.
         """
         executor = _make_executor(tmp_path)
         task = _make_task_desc(
@@ -767,36 +338,33 @@ class TestExecuteLlmTaskStatusMapping:
                 side_effect=TaskExecError("authentication error"),
             ),
             patch.object(executor, "_sync_task_queue") as mock_sync,
-            patch.object(executor, "_write_failed_result"),
         ):
             await executor._execute_llm_task(task)
-            assert mock_sync.call_args_list[0].args == ("test-task-1", "in_progress")
-            assert mock_sync.call_args_list[-1].args[1] == "failed"
-            assert mock_sync.call_args_list[-1].kwargs["summary"] == "FAILED: TaskExecError: authentication error"
+            mock_sync.assert_called_once()
+            assert mock_sync.call_args[0][1] == "pending"
             assert executor._anima.messenger.send.call_args.kwargs["to"] == "test-anima"
 
     @pytest.mark.asyncio
-    async def test_error_exception_maps_to_failed(self, tmp_path):
+    async def test_error_exception_returns_to_pending(self, tmp_path):
         executor = _make_executor(tmp_path)
         task = _make_task_desc()
 
         with (
             patch.object(executor, "_run_llm_task", side_effect=TaskExecError("boom")),
             patch.object(executor, "_sync_task_queue") as mock_sync,
-            patch.object(executor, "_write_failed_result"),
         ):
             await executor._execute_llm_task(task)
-            assert mock_sync.call_args_list[0].args == ("test-task-1", "in_progress")
-            assert mock_sync.call_args_list[-1].args[1] == "failed"
+            mock_sync.assert_called_once()
+            assert mock_sync.call_args[0][1] == "pending"
 
 
-# ── Bug C: serial batch failed_dependency queue sync ────────
+# ── Bug C: serial batch unfinished dependency queue sync ────
 
 
-class TestSerialBatchFailedDependency:
+class TestSerialBatchUnfinishedDependency:
     @pytest.mark.asyncio
-    async def test_failed_dependency_syncs_to_queue(self, tmp_path):
-        """Serial batch failed_dependency should call _sync_task_queue with 'failed'."""
+    async def test_unfinished_dependency_syncs_to_queue(self, tmp_path):
+        """A serial batch whose dependency never finished returns both to pending."""
         executor = _make_executor(tmp_path)
 
         tasks = [
@@ -807,13 +375,10 @@ class TestSerialBatchFailedDependency:
         with (
             patch.object(executor, "_run_llm_task", side_effect=RuntimeError("dep failed")),
             patch.object(executor, "_sync_task_queue") as mock_sync,
-            patch.object(executor, "_write_failed_result"),
             patch.object(executor, "_get_semaphore", return_value=asyncio.Lock()),
         ):
             await executor._dispatch_batch("test-batch", tasks)
 
             sync_calls = {call[0][0]: call[0][1] for call in mock_sync.call_args_list}
-            assert "dep1" in sync_calls
-            assert sync_calls["dep1"] == "failed"
-            assert "child1" in sync_calls
-            assert sync_calls["child1"] == "failed"
+            assert sync_calls["dep1"] == "pending"
+            assert sync_calls["child1"] == "pending"

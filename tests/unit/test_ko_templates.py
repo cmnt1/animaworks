@@ -46,7 +46,6 @@ _EXPECTED_FILES = [
     "bootstrap.md",
     "common_knowledge/00_index.md",
     "common_knowledge/anatomy/essentials.md",
-    "common_knowledge/anatomy/machine-tool-philosophy.md",
     "common_knowledge/anatomy/task-architecture.md",
     "common_knowledge/anatomy/what-is-anima.md",
     "common_knowledge/communication/board-guide.md",
@@ -55,11 +54,6 @@ _EXPECTED_FILES = [
     "common_knowledge/operations/action-rules-guide.md",
     "common_knowledge/operations/background-tasks.md",
     "common_knowledge/operations/heartbeat-observe-guide.md",
-    "common_knowledge/operations/machine/tool-usage.md",
-    "common_knowledge/operations/machine/workflow-engineer.md",
-    "common_knowledge/operations/machine/workflow-pdm.md",
-    "common_knowledge/operations/machine/workflow-reviewer.md",
-    "common_knowledge/operations/machine/workflow-tester.md",
     "common_knowledge/operations/report-formats.md",
     "common_knowledge/operations/task-board-guide.md",
     "common_knowledge/operations/task-delegation-guide.md",
@@ -78,7 +72,6 @@ _EXPECTED_FILES = [
     "common_skills/image-gen-tool/SKILL.md",
     "common_skills/image-posting/SKILL.md",
     "common_skills/local-llm-tool/SKILL.md",
-    "common_skills/machine-tool/SKILL.md",
     "common_skills/notion-tool/SKILL.md",
     "common_skills/skill-creator/SKILL.md",
     "common_skills/skill-creator/references/description_guide.md",
@@ -361,9 +354,7 @@ class TestKoTemplateHeadings:
         [
             f
             for f in _EXPECTED_FILES
-            if f not in _HEADING_EXEMPT
-            and not f.startswith("prompts/tool_descriptions/")
-            and f.endswith(".md")
+            if f not in _HEADING_EXEMPT and not f.startswith("prompts/tool_descriptions/") and f.endswith(".md")
         ],
     )
     def test_file_has_headings(self, rel_path: str):

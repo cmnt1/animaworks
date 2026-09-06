@@ -260,7 +260,6 @@ def surface_pending_reviews(
             original_instruction=instruction,
             assignee=reviewer,
             summary=f"レビュー督促: {code} {item['title']}",
-            deadline="2h",
             relay_chain=[],
             meta={
                 "kind": REVIEW_KIND,

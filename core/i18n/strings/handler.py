@@ -306,8 +306,8 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
     },
     "handler.delegation_dm_content": {
-        "ja": ("[タスク委譲]\n{instruction}\n\n期限: {deadline}\nタスクID: {task_id}"),
-        "en": ("[Task delegation]\n{instruction}\n\nDeadline: {deadline}\nTask ID: {task_id}"),
+        "ja": ("[タスク委譲]\n{instruction}\n\nタスクID: {task_id}"),
+        "en": ("[Task delegation]\n{instruction}\n\nTask ID: {task_id}"),
     },
     "handler.delegation_intent_deprecated": {
         "ja": (
@@ -332,10 +332,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "handler.descendant_state": {
         "ja": "配下のstatus.json, identity.md, injection.md, state/, task_queue.jsonl",
         "en": "Descendant status.json, identity.md, injection.md, state/, task_queue.jsonl",
-    },
-    "handler.disabled_open_delegations_alerted": {
-        "ja": "未完了の委譲タスク {count} 件を再割当が必要なタスクとして上司側に記録しました。",
-        "en": "Recorded {count} open delegated task(s) as needing reassignment for the supervisor.",
     },
     "handler.description_field_required": {
         "ja": "`description` フィールドが必要です。",

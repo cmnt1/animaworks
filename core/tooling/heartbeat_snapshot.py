@@ -19,7 +19,7 @@ from core.time_utils import get_app_timezone, now_local
 
 _SAFE_ANIMA_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _RECENT_EXCLUDED_DIRS = {".claude", "activity_log", "run", "shortterm", "vectordb", "__pycache__"}
-_ACTIVE_STATUSES = {"pending", "in_progress", "blocked", "delegated"}
+_ACTIVE_STATUSES = {"pending", "in_progress", "delegated"}
 _INBOX_PREVIEW_CHARS = 500
 
 
@@ -239,13 +239,9 @@ def _snapshot_task_queue(anima_dir: Path, *, observed_at: datetime, max_items: i
     result["active_by_status"] = dict(sorted(status_counts.items()))
 
     samples: list[dict[str, Any]] = []
-    overdue_count = 0
     stale_count = 0
     for task in sorted(active.values(), key=lambda t: t.updated_at or t.ts)[:max_items]:
-        overdue = _deadline_overdue(task.deadline, observed_at)
         stale_minutes = _age_minutes(task.updated_at or task.ts, observed_at)
-        if overdue:
-            overdue_count += 1
         if stale_minutes is not None and stale_minutes >= 30:
             stale_count += 1
         samples.append(
@@ -253,21 +249,19 @@ def _snapshot_task_queue(anima_dir: Path, *, observed_at: datetime, max_items: i
                 "task_id": task.task_id,
                 "status": task.status,
                 "summary": _trim(task.summary, 120),
-                "deadline": task.deadline,
+                "deadline": None,
                 "updated_at": task.updated_at,
-                "overdue": overdue,
+                "overdue": False,
                 "stale_minutes": stale_minutes,
             }
         )
 
     for task in list(active.values())[max_items:]:
-        if _deadline_overdue(task.deadline, observed_at):
-            overdue_count += 1
         stale_minutes = _age_minutes(task.updated_at or task.ts, observed_at)
         if stale_minutes is not None and stale_minutes >= 30:
             stale_count += 1
 
-    result["overdue_count"] = overdue_count
+    result["overdue_count"] = 0
     result["stale_count"] = stale_count
     result["active_samples"] = samples
     result["active_statuses"] = sorted(_ACTIVE_STATUSES)
@@ -457,18 +451,6 @@ def _read_latest_jsonl_events(path: Path, *, max_items: int) -> list[dict[str, A
         if len(events) >= max_items:
             break
     return events
-
-
-def _deadline_overdue(deadline: str | None, observed_at: datetime) -> bool:
-    if not deadline:
-        return False
-    try:
-        dt = datetime.fromisoformat(deadline)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=get_app_timezone())
-        return dt <= observed_at
-    except (TypeError, ValueError):
-        return False
 
 
 def _age_minutes(ts: str | None, observed_at: datetime) -> int | None:

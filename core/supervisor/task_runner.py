@@ -207,10 +207,7 @@ async def execute_task_contract(anima: DigitalAnima, task_desc: dict[str, Any]) 
     produces the result string (and related metadata) for the root to apply.
     """
     from core.supervisor.pending_executor import (
-        _SENTINEL_CANCELLED,
-        _SENTINEL_CONTINUED,
-        _SENTINEL_DEFERRED,
-        _SENTINEL_EXPIRED,
+        _NON_COMPLETING_SENTINELS,
         PendingTaskExecutor,
     )
 
@@ -228,7 +225,7 @@ async def execute_task_contract(anima: DigitalAnima, task_desc: dict[str, Any]) 
     return {
         "task_type": "llm",
         "result": result,
-        "success": result not in {_SENTINEL_CANCELLED, _SENTINEL_CONTINUED, _SENTINEL_EXPIRED, _SENTINEL_DEFERRED},
+        "success": result not in _NON_COMPLETING_SENTINELS,
     }
 
 

@@ -55,8 +55,8 @@ _COMPACT_COMM_TOOLS: frozenset[str] = frozenset(
         "Glob",
         "search_memory",
         "read_memory_file",
-        "heartbeat_observe_snapshot",
         "write_memory_file",
+        "heartbeat_observe_snapshot",
         "send_message",
         "post_channel",
     }
@@ -67,16 +67,11 @@ _SUBMIT_TASKS_ALLOWED_PREFIXES: tuple[str, ...] = ("background:", "submit_tasks:
 
 
 def submit_tasks_enabled_for_trigger(trigger: str | None) -> bool:
-    """Return True for sessions that may durably enqueue executable work.
+    """Return True for background task-authoring, inbox, and heartbeat sessions.
 
-    Besides the explicit background task-authoring sessions, ``heartbeat`` and
-    ``inbox:*`` are allowed: both are ephemeral, non-executing paths (heartbeat
-    only Observe→Plan; inbox is short-lived light replies). When they identify
-    heavy multi-step work the anima must do *itself*, the only durable autonomous
-    execution path is a ``state/pending/*.json`` self-task that the
-    PendingTaskExecutor (TaskExec) runs — and ``submit_tasks`` is what writes it.
-    Without this, heavy work attempted inline in those sessions is lost when the
-    session ends.
+    Heartbeat is included because the harness never re-executes a ledger
+    ``pending`` task on the anima's behalf: the anima re-submits its own
+    pending work via ``submit_tasks`` during heartbeat (2026-09-03).
     """
     normalized = (trigger or "").strip()
     return normalized in _SUBMIT_TASKS_ALLOWED_TRIGGERS or normalized.startswith(_SUBMIT_TASKS_ALLOWED_PREFIXES)
@@ -238,7 +233,8 @@ def build_unified_tool_list(
                 tools.append(t)
 
     # AW-essential: task management. submit_tasks is withheld from normal
-    # chat/heartbeat/cron/task sessions to avoid duplicate self-execution.
+    # chat/cron/task sessions to avoid duplicate self-execution; heartbeat
+    # gets it so the anima can re-submit its own pending tasks.
     if not is_consolidation:
         if submit_tasks_enabled_for_trigger(trigger):
             tools.extend(_submit_tasks_tools())

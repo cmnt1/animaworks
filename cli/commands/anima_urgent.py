@@ -81,7 +81,6 @@ def cmd_anima_urgent_submit(args: argparse.Namespace) -> None:
             summary=summary,
             task_id=task_id,
             status="in_progress",
-            deadline=args.deadline,
             priority="urgent",
             meta={
                 "executor": "taskexec",

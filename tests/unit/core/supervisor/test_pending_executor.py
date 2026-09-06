@@ -8,22 +8,11 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.i18n import t
-from core.memory.task_queue import TaskQueueManager
 from core.supervisor.pending_executor import PendingTaskExecutor
-
-
-@pytest.fixture(autouse=True)
-def _legacy_completion_semantics():
-    with patch(
-        "core.supervisor.pending_executor._completion_declaration_required",
-        return_value=False,
-    ):
-        yield
 
 
 def _make_executor(tmp_path: Path) -> PendingTaskExecutor:
@@ -91,48 +80,6 @@ class TestPendingTaskExecutorInit:
             shutdown_event=asyncio.Event(),
         )
         assert executor._anima_name == "standalone"
-
-    def test_sync_task_queue_does_not_resurrect_terminal_task(self, tmp_path):
-        executor = _make_executor(tmp_path)
-        manager = TaskQueueManager(executor._anima_dir)
-        entry = manager.add_task(
-            source="anima",
-            original_instruction="Cancelled while TaskExec was still running",
-            assignee="test-anima",
-            summary="Cancelled task",
-            deadline="1h",
-        )
-        manager.update_status(entry.task_id, "cancelled", summary="superseded")
-
-        executor._sync_task_queue(entry.task_id, "blocked", summary="BLOCKED: stale result")
-
-        updated = manager.get_task_by_id(entry.task_id)
-        assert updated is not None
-        assert updated.status == "cancelled"
-        assert updated.summary == "superseded"
-
-    def test_sync_task_queue_keeps_internal_retry_note_out_of_summary(self, tmp_path):
-        executor = _make_executor(tmp_path)
-        manager = TaskQueueManager(executor._anima_dir)
-        entry = manager.add_task(
-            source="anima",
-            original_instruction="Submit final public evidence",
-            assignee="test-anima",
-            summary="AFF-003 final public evidence",
-            deadline="1h",
-        )
-
-        executor._sync_task_queue(
-            entry.task_id,
-            "pending",
-            note="Recovered orphaned processing task; retry queued.",
-        )
-
-        updated = manager.get_task_by_id(entry.task_id)
-        assert updated is not None
-        assert updated.status == "pending"
-        assert updated.summary == "AFF-003 final public evidence"
-        assert updated.meta["status_notes"][-1]["note"] == "Recovered orphaned processing task; retry queued."
 
 
 class TestTaskExecLaneIsolation:
@@ -332,61 +279,6 @@ class TestWatcherLoop:
         assert not (pending_dir / "bad.json").exists()
 
 
-class TestMachineDirectiveInjection:
-    """Test machine tool directive injection into TaskExec prompt."""
-
-    def test_directive_appended_when_machine_in_description(self):
-        """Prompt should have machine directive when description mentions machine."""
-        description = "machineツールで実装し、検証してpushする"
-        assert "machine" in description.lower()
-        directive = t("pending_executor.machine_directive")
-        assert "MUST" in directive
-
-    def test_directive_not_appended_without_machine(self):
-        """No directive when description does not mention machine."""
-        description = "git pushして結果を報告する"
-        assert "machine" not in description.lower()
-
-    def test_case_insensitive_detection(self):
-        """Detection should be case-insensitive."""
-        for desc in ["Machineで実装", "MACHINE RUN", "use machine tool"]:
-            assert "machine" in desc.lower()
-
-    def test_directive_i18n_ja(self):
-        directive = t("pending_executor.machine_directive", lang="ja")
-        assert "MUST" in directive
-        assert "animaworks-tool machine run" in directive
-
-    def test_directive_i18n_en(self):
-        directive = t("pending_executor.machine_directive", lang="en")
-        assert "MUST" in directive
-        assert "animaworks-tool machine run" in directive
-
-    def test_integration_prompt_with_machine(self):
-        """Simulate the prompt construction logic: machine → directive appended."""
-        base_prompt = "あなたはタスク実行エージェントです。\n## 作業内容\nmachineで実装し検証する"
-        description = "machineで実装し検証する"
-        directive = t("pending_executor.machine_directive")
-
-        prompt = base_prompt
-        if "machine" in description.lower():
-            prompt += "\n\n" + directive
-
-        assert prompt.endswith(directive)
-        assert "MUST" in prompt
-
-    def test_integration_prompt_without_machine(self):
-        """Prompt stays unchanged when no machine mention."""
-        base_prompt = "あなたはタスク実行エージェントです。\n## 作業内容\nCI結果を確認する"
-        description = "CI結果を確認してレポートを作成する"
-
-        prompt = base_prompt
-        if "machine" in description.lower():
-            prompt += "\n\n" + t("pending_executor.machine_directive")
-
-        assert prompt == base_prompt
-
-
 class TestStreamErrorSuppression:
     """Test that stream errors are suppressed only after an agent declaration."""
 
@@ -426,18 +318,12 @@ class TestStreamErrorSuppression:
         mock_entry.summary = "Task completed successfully"
         mock_entry.meta = {"completed_by": "agent_declaration"}
 
-        from core.taskboard.models import AttentionDecision
-
         with (
             patch("core.paths.load_prompt", return_value="test prompt"),
             patch("core.memory.activity.ActivityLogger") as mock_activity,
             patch("core.supervisor.pending_executor._resolve_default_workspace", return_value=""),
             patch("core.memory.task_queue.TaskQueueManager") as mock_tqm,
-            patch(
-                "core.supervisor.pending_executor.resolver_for_anima_dir",
-            ) as mock_resolver,
         ):
-            mock_resolver.return_value.should_execute.return_value = AttentionDecision(reason="active")
             mock_activity.return_value.log = MagicMock()
             mock_tqm.return_value.get_task_by_id.return_value = mock_entry
 
@@ -518,79 +404,6 @@ class TestStreamErrorSuppression:
 
             with pytest.raises(TaskExecError, match="streaming error"):
                 await executor._run_llm_task(task_desc)
-
-    @pytest.mark.asyncio
-    async def test_rate_limit_error_is_deferred_not_wrapped_as_streaming_error(self, tmp_path):
-        """Rate limit terminal errors should defer the task instead of failing it."""
-        executor = _make_executor(tmp_path)
-        bg_event = asyncio.Event()
-        executor._anima._get_interrupt_event = lambda _name: bg_event
-
-        async def _stream_with_rate_limit(*args, **kwargs):
-            yield {
-                "type": "error",
-                "message": "RATE_LIMIT_DEFERRED: provider gemini is cooling down for 60s after HTTP 429/RATE_LIMIT_EXCEEDED",
-            }
-
-        executor._anima.agent.run_cycle_streaming = _stream_with_rate_limit
-        executor._anima.agent.reset_reply_tracking = MagicMock()
-        executor._anima.agent.reset_read_paths = MagicMock()
-        executor._anima.agent.set_task_cwd = MagicMock()
-        executor._anima.messenger = MagicMock()
-
-        task_desc = {
-            "task_id": "task-rate-limit-1",
-            "title": "Rate limited task",
-            "description": "Task that exhausted provider quota",
-        }
-
-        mock_entry = MagicMock()
-        mock_entry.status = "in_progress"
-
-        with (
-            patch("core.paths.load_prompt", return_value="test prompt"),
-            patch("core.memory.activity.ActivityLogger") as mock_activity,
-            patch("core.supervisor.pending_executor._resolve_default_workspace", return_value=""),
-            patch("core.memory.task_queue.TaskQueueManager") as mock_tqm,
-        ):
-            mock_activity.return_value.log = MagicMock()
-            mock_tqm.return_value.get_task_by_id.return_value = mock_entry
-
-            result = await executor._run_llm_task(task_desc)
-
-        assert result == "(provider_rate_limit_deferred)"
-        deferred_path = executor._anima_dir / "state" / "pending" / "deferred" / "task-rate-limit-1.json"
-        assert deferred_path.exists()
-        deferred = json.loads(deferred_path.read_text(encoding="utf-8"))
-        assert "HTTP 429/RATE_LIMIT_EXCEEDED" in deferred["_provider_rate_limit_error"]
-        assert deferred["_provider_cooldown_until"]
-
-    def test_provider_rate_limit_deferred_task_is_not_restored_before_until(self, tmp_path):
-        """Provider cooldown-deferred tasks should stay deferred until their cooldown elapses."""
-        from datetime import UTC, datetime, timedelta
-
-        executor = _make_executor(tmp_path)
-        deferred_dir = executor._anima_dir / "state" / "pending" / "deferred"
-        pending_dir = executor._anima_dir / "state" / "pending"
-        suppressed_dir = pending_dir / "suppressed"
-        failed_dir = pending_dir / "failed"
-        deferred_dir.mkdir(parents=True)
-        task_path = deferred_dir / "task-rate-limit-2.json"
-        task_path.write_text(
-            json.dumps(
-                {
-                    "task_id": "task-rate-limit-2",
-                    "title": "Rate limited task",
-                    "_provider_cooldown_until": (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        executor._restore_deferred_tasks(deferred_dir, pending_dir, suppressed_dir, failed_dir)
-
-        assert task_path.exists()
-        assert not (pending_dir / task_path.name).exists()
 
     @pytest.mark.asyncio
     async def test_raises_when_task_not_in_queue(self, tmp_path):
@@ -705,147 +518,6 @@ class TestLlmTaskFailurePropagation:
         assert start_call.args == ("task_exec_start",)
         assert end_call.args == ("task_exec_end",)
         assert end_call.kwargs["ctx"] == "task:llm-fail-1"
-        assert end_call.kwargs["meta"]["status"] == "failed"
+        assert end_call.kwargs["meta"]["status"] == "error"
         assert end_call.kwargs["meta"]["error"] == "stream retry exhausted"
         assert end_call.kwargs["meta"]["error_type"] == "RuntimeError"
-
-
-class TestLlmTaskStreamErrorRetry:
-    @pytest.mark.asyncio
-    async def test_requeues_transient_stream_error_before_terminal_failure(self, tmp_path):
-        from core.supervisor.pending_executor import TaskExecError
-
-        executor = _make_executor(tmp_path)
-        executor._anima._background_lock = asyncio.Lock()
-        executor._anima._mark_busy_start = MagicMock()
-        executor._anima._status_slots = {"background": "idle"}
-        executor._anima._task_slots = {"background": ""}
-        executor._anima.messenger.send = MagicMock()
-        executor._run_llm_task = AsyncMock(
-            side_effect=TaskExecError(
-                "Task stream-retry encountered streaming error: stream disconnected"
-            )
-        )
-
-        manager = TaskQueueManager(executor._anima_dir)
-        manager.add_task(
-            task_id="stream-retry",
-            source="anima",
-            original_instruction="Finish the task despite a transient stream failure",
-            assignee="test-anima",
-            summary="Stream retry task",
-            deadline="1h",
-            meta={"executor": "taskexec"},
-        )
-        task_desc = {
-            "task_type": "llm",
-            "task_id": "stream-retry",
-            "title": "Retry stream",
-            "description": "Finish work",
-        }
-
-        await executor.execute_pending_task(task_desc)
-
-        updated = manager.get_task_by_id("stream-retry")
-        assert updated is not None
-        assert updated.status == "pending"
-        assert updated.summary == "Stream error retry queued"
-        assert updated.meta["stream_error_retry_count"] == 1
-        assert (executor._anima_dir / "state" / "pending" / "stream-retry.json").exists()
-        assert not (executor._anima_dir / "state" / "task_results" / "stream-retry.md").exists()
-
-    @pytest.mark.asyncio
-    async def test_stream_error_becomes_failed_after_retry_limit(self, tmp_path):
-        from core.supervisor.pending_executor import TaskExecError
-
-        executor = _make_executor(tmp_path)
-        executor._anima._background_lock = asyncio.Lock()
-        executor._anima._mark_busy_start = MagicMock()
-        executor._anima._status_slots = {"background": "idle"}
-        executor._anima._task_slots = {"background": ""}
-        executor._anima.messenger.send = MagicMock()
-        executor._run_llm_task = AsyncMock(
-            side_effect=TaskExecError(
-                "Task stream-fail encountered streaming error: stream disconnected"
-            )
-        )
-
-        manager = TaskQueueManager(executor._anima_dir)
-        manager.add_task(
-            task_id="stream-fail",
-            source="anima",
-            original_instruction="Fail after retry limit",
-            assignee="test-anima",
-            summary="Stream fail task",
-            deadline="1h",
-            meta={"executor": "taskexec", "stream_error_retry_count": 2},
-        )
-        task_desc = {
-            "task_type": "llm",
-            "task_id": "stream-fail",
-            "title": "Retry stream",
-            "description": "Finish work",
-        }
-
-        await executor.execute_pending_task(task_desc)
-
-        updated = manager.get_task_by_id("stream-fail")
-        assert updated is not None
-        assert updated.status == "failed"
-        assert updated.summary.startswith("FAILED: TaskExecError:")
-        assert (executor._anima_dir / "state" / "task_results" / "stream-fail.md").exists()
-
-
-class TestBlockedTaskAutoRetrySweep:
-    def test_sweep_requeues_retryable_stale_blocked_task(self, tmp_path):
-        executor = _make_executor(tmp_path)
-        manager = TaskQueueManager(executor._anima_dir)
-        entry = manager.add_task(
-            task_id="blocked-retry",
-            source="anima",
-            original_instruction="Finish the multi-stage task",
-            assignee="test-anima",
-            summary="Start work",
-            deadline="1h",
-            meta={"executor": "taskexec"},
-        )
-        manager.update_status(
-            entry.task_id,
-            "blocked",
-            summary="BLOCKED: Task reported an explicit follow-up/start step, not final evidence",
-        )
-
-        retried = executor._sweep_auto_retryable_blocked_llm_tasks()
-
-        updated = manager.get_task_by_id(entry.task_id)
-        assert retried == 1
-        assert updated is not None
-        assert updated.status == "in_progress"
-        assert updated.meta["retry_count"] == 1
-        assert (executor._anima_dir / "state" / "pending" / "blocked-retry.json").exists()
-
-    def test_sweep_leaves_human_blocker_stopped(self, tmp_path):
-        executor = _make_executor(tmp_path)
-        manager = TaskQueueManager(executor._anima_dir)
-        entry = manager.add_task(
-            task_id="blocked-human",
-            source="anima",
-            original_instruction="Wait for owner input",
-            assignee="test-anima",
-            summary="Start work",
-            deadline="1h",
-            meta={"executor": "taskexec", "needs_human": True},
-        )
-        manager.update_status(
-            entry.task_id,
-            "blocked",
-            summary="BLOCKED: Task reported unresolved blockers instead of final evidence",
-        )
-
-        retried = executor._sweep_auto_retryable_blocked_llm_tasks()
-
-        updated = manager.get_task_by_id(entry.task_id)
-        assert retried == 0
-        assert updated is not None
-        assert updated.status == "blocked"
-        assert not (executor._anima_dir / "state" / "pending" / "blocked-human.json").exists()

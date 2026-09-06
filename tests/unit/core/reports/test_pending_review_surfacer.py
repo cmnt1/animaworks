@@ -105,15 +105,11 @@ def test_surface_pending_reviews_enqueues_once(tmp_path: Path) -> None:
     (animas / "sakura" / "state").mkdir(parents=True)
     _write_product(products, "P-00148", code="P-00148")
 
-    surfaced = surface_pending_reviews(
-        products, animas, older_than_minutes=30, now=_now(), write_pending=False
-    )
+    surfaced = surface_pending_reviews(products, animas, older_than_minutes=30, now=_now(), write_pending=False)
     assert [s["code"] for s in surfaced] == ["P-00148"]
 
     tqm = TaskQueueManager(animas / "sakura")
-    review_tasks = [
-        t for t in tqm.list_tasks() if (t.meta or {}).get("kind") == REVIEW_KIND
-    ]
+    review_tasks = [t for t in tqm.list_tasks() if (t.meta or {}).get("kind") == REVIEW_KIND]
     assert len(review_tasks) == 1
     assert review_tasks[0].meta["product_code"] == "P-00148"
     task_desc = review_tasks[0].meta["task_desc"]
@@ -122,11 +118,7 @@ def test_surface_pending_reviews_enqueues_once(tmp_path: Path) -> None:
     assert any("task_closure" in criterion for criterion in task_desc["acceptance_criteria"])
 
     # Idempotent: running again does not create a duplicate.
-    again = surface_pending_reviews(
-        products, animas, older_than_minutes=30, now=_now(), write_pending=False
-    )
+    again = surface_pending_reviews(products, animas, older_than_minutes=30, now=_now(), write_pending=False)
     assert again == []
-    review_tasks_after = [
-        t for t in tqm.list_tasks() if (t.meta or {}).get("kind") == REVIEW_KIND
-    ]
+    review_tasks_after = [t for t in tqm.list_tasks() if (t.meta or {}).get("kind") == REVIEW_KIND]
     assert len(review_tasks_after) == 1

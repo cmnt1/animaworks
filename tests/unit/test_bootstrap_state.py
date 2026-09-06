@@ -324,3 +324,22 @@ def test_migration_step_heals_stale_bootstrap_artifacts(tmp_path: Path) -> None:
     assert get_bootstrap_status(done)["state"] == STATE_COMPLETED
     assert (incomplete / "bootstrap.md.failed").exists()
     assert get_bootstrap_status(incomplete)["state"] == STATE_NEEDS_REPAIR
+
+
+def test_interactive_profile_remains_resumable_during_incremental_writes(tmp_path: Path) -> None:
+    from core.bootstrap_state import initialize_bootstrap_state
+
+    anima_dir = _make_anima_dir(tmp_path)
+    initialize_bootstrap_state(anima_dir)
+    (anima_dir / "identity.md").write_text("# Identity\nA calm manager.", encoding="utf-8")
+    status = get_bootstrap_status(anima_dir)
+    assert status["state"] == STATE_PENDING_USER_INPUT
+    assert not status["needs_repair"]
+    (anima_dir / "injection.md").write_text("# Role\nCoordinate work.", encoding="utf-8")
+    # Graphics may still be running, or the Anima may ask a follow-up question.
+    status = get_bootstrap_status(anima_dir)
+    assert status["mode"] == "interactive"
+    assert status["needs_user_input"]
+    assert not status["needs_repair"]
+    (anima_dir / "bootstrap.md").unlink()
+    assert get_bootstrap_status(anima_dir)["state"] == STATE_COMPLETED

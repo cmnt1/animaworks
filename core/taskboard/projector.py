@@ -22,9 +22,7 @@ from core.time_utils import now_local
 QUEUE_STATUS_TO_COLUMN: dict[str, BoardColumn] = {
     "pending": BoardColumn.TODO,
     "in_progress": BoardColumn.RUNNING,
-    "blocked": BoardColumn.BLOCKED,
     "delegated": BoardColumn.WAITING,
-    "failed": BoardColumn.BLOCKED,
     "done": BoardColumn.DONE,
     "cancelled": BoardColumn.DONE,
 }
@@ -36,7 +34,7 @@ ARCHIVED_QUEUE_STATUSES = {"done", "cancelled"}
 _COLUMN_ORDER = {column: index for index, column in enumerate(BoardColumn)}
 
 # A task is "needs_human" when progress is gated on a human action.
-_TERMINAL_QUEUE_STATUSES = {"done", "cancelled", "failed"}
+_TERMINAL_QUEUE_STATUSES = {"done", "cancelled"}
 _HUMAN_BLOCKER_VALUES = {"human", "user", "owner"}
 _HUMAN_BLOCKER_KEYS = ("blocker", "blocked_on", "waiting_for", "waiting_on")
 _TASK_ID_RE = re.compile(r"\b[0-9a-f]{8,16}\b", re.IGNORECASE)
@@ -120,11 +118,10 @@ def compute_needs_human(
     if meta:
         if bool(meta.get("needs_human")):
             return True, "meta_flag"
-        if queue_status == "blocked":
-            for key in _HUMAN_BLOCKER_KEYS:
-                value = meta.get(key)
-                if isinstance(value, str) and value.strip().lower() in _HUMAN_BLOCKER_VALUES:
-                    return True, "meta_blocker"
+        for key in _HUMAN_BLOCKER_KEYS:
+            value = meta.get(key)
+            if isinstance(value, str) and value.strip().lower() in _HUMAN_BLOCKER_VALUES:
+                return True, "meta_blocker"
 
     return False, None
 
@@ -329,9 +326,7 @@ def _attach_related_tasks(
                 peer_name=target,
             )
             if related_child is not None and task.queue_status not in _TERMINAL_QUEUE_STATUSES:
-                if related_child.queue_status == "blocked" or related_child.queue_status == "failed":
-                    task.column = BoardColumn.TRACKING
-                elif related_child.queue_status in _TERMINAL_QUEUE_STATUSES:
+                if related_child.queue_status in _TERMINAL_QUEUE_STATUSES:
                     if _delegated_child_needs_followup(related_child):
                         task.column = BoardColumn.BLOCKED
                     elif task.column != BoardColumn.BLOCKED:
@@ -350,7 +345,7 @@ def _attach_related_tasks(
                 fallback_task_id=parent.task_id,
                 peer_name=parent.anima_name,
             )
-            if task.queue_status in {"blocked", "failed"} and _is_terminal_or_tombstoned_parent(parent):
+            if task.queue_status == "cancelled" and _is_terminal_or_tombstoned_parent(parent):
                 task.visibility = AttentionVisibility.ARCHIVED
                 task.column = BoardColumn.SUPPRESSED
                 task.replaced_by = f"{parent.anima_name}:{parent.task_id}"
@@ -380,7 +375,7 @@ def _attach_related_tasks(
 def _suppress_duplicate_delegated_parents(tasks: list[BoardTask]) -> None:
     groups: dict[tuple[str, str, str], list[BoardTask]] = {}
     for task in tasks:
-        if task.visibility != AttentionVisibility.ACTIVE or task.queue_status not in {"delegated", "blocked"}:
+        if task.visibility != AttentionVisibility.ACTIVE or task.queue_status != "delegated":
             continue
         meta = task.meta or {}
         target = meta.get("delegated_to")
@@ -473,9 +468,10 @@ def _suppress_duplicate_failed_crons(tasks: list[BoardTask]) -> None:
     for task in tasks:
         if (
             task.visibility != AttentionVisibility.ACTIVE
-            or task.queue_status != "failed"
+            or task.queue_status != "pending"
             or not task.is_from_cron
             or not task.cron_task_name
+            or not _has_cron_failure_metadata(task)
         ):
             continue
         groups.setdefault((task.anima_name, task.cron_task_name), []).append(task)
@@ -498,7 +494,7 @@ def _suppress_superseded_cron_runs(tasks: list[BoardTask]) -> None:
     for task in tasks:
         if not task.is_from_cron or not task.cron_task_name:
             continue
-        if task.queue_status not in {"pending", "in_progress", "blocked", "failed", "delegated"}:
+        if task.queue_status not in {"pending", "in_progress", "delegated"}:
             continue
         groups.setdefault((task.anima_name, task.cron_task_name), []).append(task)
 
@@ -522,7 +518,7 @@ def _is_terminal_or_tombstoned_parent(parent: BoardTask) -> bool:
 
 
 def _delegated_child_needs_followup(child: BoardTask) -> bool:
-    if child.queue_status in {"failed", "cancelled"}:
+    if child.queue_status == "cancelled":
         return True
     if child.queue_status != "done":
         return False
@@ -659,7 +655,7 @@ def _cron_failure_display_title(task: BoardTask) -> str | None:
 
 
 def _has_cron_failure_metadata(task: BoardTask) -> bool:
-    if not task.is_from_cron or task.queue_status not in {"blocked", "failed"}:
+    if not task.is_from_cron or task.queue_status != "pending":
         return False
     return any(key in (task.meta or {}) for key in ("cron_exit_code", "cron_error_excerpt", "cron_stderr_preview"))
 
@@ -712,10 +708,6 @@ def _project_queue_task(
     task_meta = task.meta or {}
     is_from_cron = bool(task_meta.get("from_cron"))
     cron_task_name = task_meta.get("cron_task_name") if is_from_cron else None
-    if task.status in {"blocked", "failed"} and column in {BoardColumn.TODO, BoardColumn.RUNNING, BoardColumn.WAITING}:
-        # Durable execution state should not be shown as fresh work just
-        # because an older board column override still says "todo" or "waiting".
-        column = BoardColumn.BLOCKED
     if task.status == "pending" and column == BoardColumn.TODO and _is_stale_queue_task(task):
         # Stale active work needs triage, but it is not the same thing as a
         # queue task explicitly marked blocked.
@@ -742,7 +734,6 @@ def _project_queue_task(
         assignee=task.assignee,
         queue_status=task.status,
         summary=task.summary,
-        deadline=task.deadline,
         relay_chain=task.relay_chain,
         meta=task.meta,
         queue_updated_at=task.updated_at,
@@ -857,7 +848,7 @@ def _needed_for_cron_suppression(task: BoardTask) -> bool:
         task.is_from_cron
         and bool(task.cron_task_name)
         and task.visibility in {AttentionVisibility.ARCHIVED, AttentionVisibility.TOMBSTONED}
-        and task.queue_status in {"pending", "in_progress", "blocked", "failed", "delegated"}
+        and task.queue_status in {"pending", "in_progress", "delegated"}
     )
 
 

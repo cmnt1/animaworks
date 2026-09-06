@@ -88,14 +88,13 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/config/migrate.py": 9,
     # model catalog "note" descriptions (最高性能・推奨, etc.)
     "core/config/model_mode.py": 45,
-    # multi-pass FRC review instruction/task templates (operational instructions,
-    # relocated from scripts/pr-review-dispatch.py which is outside the scan)
-    "core/review_multipass.py": 11,
     # cron instruction prompt to Anima
     "core/prompt/messaging.py": 2,
     "core/prompt/org_context.py": 3,
     "core/response_normalize.py": 15,
     "core/supervisor/scheduler_manager.py": 1,
+    # orphan reaper — Japanese notification body sent to the owning anima (plan-specified wording)
+    "core/supervisor/orphan_reaper.py": 3,
     # label "個人ツール"
     "core/tooling/handler_memory.py": 1,
     # tool descriptions — already have ja/en dict structure
@@ -127,8 +126,6 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/memory/extraction/prompts/ja.py": 7,
     # auth-failure / token-expiry messages surfaced to the dashboard
     "core/execution/agent_sdk.py": 2,
-    # delegated-task report template + status labels
-    "core/memory/task_queue.py": 4,
     # Governor notification suppression messages
     "core/notification/notifier.py": 2,
     # outbound auto-routing prefix label
@@ -137,8 +134,6 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/project_threads.py": 5,
     # Codex login window prompts
     "core/platform/codex.py": 2,
-    # auto-retry status label
-    "core/supervisor/task_retry.py": 1,
     # cron-failure title label
     "core/taskboard/projector.py": 1,
     # taskboard route stop/blocker labels + cron-failure diagnostic messages
