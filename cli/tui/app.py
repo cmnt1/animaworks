@@ -267,6 +267,8 @@ class AnimaChatApp(App):
         if not history.get("has_more"):
             self._history_end = True
         await self.render_history(history)
+        # Open on the latest message, not the oldest of the first page.
+        self.call_after_refresh(self.transcript.scroll_end, animate=False)
 
     async def _get_history(self, *, before: str | None = None) -> dict | None:
         try:
@@ -343,6 +345,7 @@ class AnimaChatApp(App):
     async def render_history_at_top(self, history: dict) -> None:
         """Render older history above the current transcript, keeping scroll position."""
         prev_scroll = self.transcript.scroll_y
+        old_height = self.transcript.virtual_size.height
         old_first = self.transcript.children[0] if self.transcript.children else None
         added = 0
         for session in history.get("sessions", []):
@@ -359,13 +362,17 @@ class AnimaChatApp(App):
                     block = self.transcript.new_assistant(self.anima_name)
                     block.set_final(str(content))
                     await self.transcript.mount(block, before=old_first)
-        # Approximate the inserted height (a turn is ~2 rows) to keep the
-        # current view stable after prepending older content.
-        if added and prev_scroll > 0:
-            try:
-                self.transcript.scroll_y = prev_scroll + added * 2
-            except Exception:
-                pass
+        if not added:
+            return
+
+        def _keep_view() -> None:
+            # Once the new rows are laid out, shift the viewport by exactly the
+            # height they added so the reader stays on the same line. This also
+            # moves scroll_y off 0 so scrolling up again can load the next page.
+            delta = self.transcript.virtual_size.height - old_height
+            self.transcript.scroll_to(y=prev_scroll + max(delta, 0), animate=False, force=True)
+
+        self.call_after_refresh(_keep_view)
 
     def load_more_history(self) -> None:
         """Slash-command handler: load 50 more (older) messages."""
