@@ -137,14 +137,24 @@ animaworks chat alice "Hello"
 animaworks chat alice "How's the task going?" --from admin
 ```
 
+Omitting the message opens an interactive terminal chat UI (TUI) that streams the
+response, shows tools/thinking in real time, and lets you interrupt with `Esc`.
+
+```bash
+animaworks chat alice            # interactive TUI
+animaworks chat alice --no-tui   # read the message from stdin, one-shot reply
+```
+
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
 | `anima` | positional | Required | Anima name |
-| `message` | positional | Required | Message to send |
+| `message` | positional | Optional | Message to send (omit to open the TUI) |
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--from` | string | "human" | Sender name |
+| `--from` (alias `--as`) | string | "human" | Sender name |
+| `--thread` | string | "default" | Thread ID |
+| `--no-tui` | flag | - | Do not open the TUI; read the message from stdin |
 
 ---
 

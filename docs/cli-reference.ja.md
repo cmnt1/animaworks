@@ -141,14 +141,24 @@ animaworks chat alice "こんにちは"
 animaworks chat alice "タスクの進捗を教えて" --from admin
 ```
 
+メッセージを省略すると、応答をストリーミング表示し、ツール呼び出し・思考・状態を
+リアルタイムに確認できる対話型ターミナル UI（TUI）が起動します。`Esc` で中断できます。
+
+```bash
+animaworks chat alice            # 対話型 TUI
+animaworks chat alice --no-tui   # stdin から本文を読んで一回返答
+```
+
 | 引数 | 型 | 必須 | 説明 |
 |------|-----|------|------|
 | `anima` | positional | 必須 | Anima名 |
-| `message` | positional | 必須 | 送信メッセージ |
+| `message` | positional | 任意 | 送信メッセージ（省略すると TUI が起動） |
 
 | オプション | 型 | デフォルト | 説明 |
 |-----------|-----|-----------|------|
-| `--from` | string | "human" | 送信者名 |
+| `--from`（別名 `--as`） | string | "human" | 送信者名 |
+| `--thread` | string | "default" | スレッド ID |
+| `--no-tui` | flag | - | TUI を開かず stdin から本文を読む |
 
 ---
 
