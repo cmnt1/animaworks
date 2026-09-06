@@ -146,9 +146,13 @@ class ActivityFeed(VerticalScroll):
                 text_parts.append(Text(entry.text, style="italic"))
             else:
                 text_parts.append(Text(f"{now} {label} ", style="dim"))
-                text_parts.append(Text(entry.kind, style="cyan"))
-                if entry.text:
-                    text_parts.append(Text(f" {entry.text}", style="dim"))
+                if entry.kind == "tool":
+                    # Tool rows: keep the width for the tool name itself.
+                    text_parts.append(Text(entry.text or "tool", style="cyan"))
+                else:
+                    text_parts.append(Text(entry.kind, style="cyan"))
+                    if entry.text:
+                        text_parts.append(Text(f" {entry.text}", style="dim"))
             line = _FeedLine(_truncate(str(Text.assemble(*text_parts))))
             self.mount(line)
         if state.activity:

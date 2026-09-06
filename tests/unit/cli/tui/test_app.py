@@ -23,14 +23,19 @@ class FakeClient:
         self._ws_events = ws_events or []
         self.interrupt_calls = 0
         self.messages = []
+        self.active_stream = {"active": False}
         self.chat_error: AnimaWorksClientError | None = None
         self.chat_queue: asyncio.Queue = asyncio.Queue()
+        self.reattach_calls: list = []
 
     async def list_animas(self):
         return self.animas
 
-    async def get_history(self, anima, *, thread_id="default", limit=50):
+    async def get_history(self, anima, *, thread_id="default", limit=50, before=None):
         return self.history
+
+    async def get_active_stream(self, anima, *, thread_id="default"):
+        return self.active_stream
 
     async def interrupt(self, anima, *, thread_id):
         self.interrupt_calls += 1
@@ -38,6 +43,7 @@ class FakeClient:
 
     async def chat_stream(self, anima, message, *, thread_id="default", resume=None, last_event_id=None):
         self.messages.append(message)
+        self.reattach_calls.append((resume, last_event_id))
         if self.chat_error is not None:
             raise self.chat_error
         while True:

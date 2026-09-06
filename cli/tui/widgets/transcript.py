@@ -8,6 +8,7 @@ import re
 
 from rich.text import Text
 from textual.containers import Vertical, VerticalScroll
+from textual.message import Message
 from textual.widgets import Static
 
 from cli.tui.widgets.thinking import ThinkingBlock
@@ -118,8 +119,19 @@ class AssistantBlock(Vertical):
         await self.tools.mount(tool)
 
 
+class TranscriptScrolledToTop(Message):
+    """Posted when the user scrolls the transcript to its very top.
+
+    Used to lazy-load older history.
+    """
+
+
 class Transcript(VerticalScroll):
     """The vertical scroll of all chat turns."""
+
+    def watch_scroll_y(self, _old: float, new: float) -> None:
+        if new <= 0 and self.max_scroll_y > 0:
+            self.post_message(TranscriptScrolledToTop())
 
     async def add_human(self, label: str, text: str) -> None:
         turn = HumanTurn(label, text)

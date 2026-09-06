@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
+from pathlib import Path
 
 from rich.text import Text
 from textual.app import App, ComposeResult
@@ -14,6 +16,8 @@ from textual.widgets import Static
 
 from cli.tui.client import AnimaWorksClient, AnimaWorksClientError
 from cli.tui.commands import get_command, is_command, iter_commands
+from cli.tui.keybindings import app_keymap, load_keybindings
+from cli.tui.session import SessionInfo, new_session, save_session
 from cli.tui.sse import SseEvent
 from cli.tui.state import AppState, PaletteItem, apply_ws_event, filter_palette
 from cli.tui.widgets import (
@@ -29,7 +33,7 @@ from cli.tui.widgets import (
 )
 from cli.tui.widgets.sidebar import AnimaChosen
 from cli.tui.widgets.thinking import ThinkingBlock
-from cli.tui.widgets.transcript import AssistantBlock, strip_html_comments
+from cli.tui.widgets.transcript import AssistantBlock, HumanTurn, strip_html_comments
 
 # WS event types that are fed into the shared sidebar state.
 _WS_STATE_TYPES = {
@@ -110,10 +114,14 @@ class AnimaChatApp(App):
     """
 
     BINDINGS = [
-        Binding("escape", "maybe_interrupt", "Interrupt"),
+        Binding("escape", "maybe_interrupt", "Interrupt", id="interrupt"),
         Binding("ctrl+c", "quit_or_confirm", "Quit"),
-        Binding("ctrl+d", "quit_now", "Quit"),
-        Binding("ctrl+b", "toggle_sidebar", "Toggle sidebar", show=False),
+        Binding("ctrl+d", "quit_now", "Quit", id="quit", priority=True),
+        Binding("ctrl+b", "toggle_sidebar", "Toggle sidebar", show=False, id="toggle_sidebar"),
+        Binding("ctrl+t", "toggle_thinking", "Toggle thinking", show=False, id="toggle_thinking"),
+        Binding("ctrl+l", "focus_input", "Focus input", show=False, id="focus_input"),
+        Binding("pageup", "scroll_up", "Scroll up", show=False, id="scroll_up"),
+        Binding("pagedown", "scroll_down", "Scroll down", show=False, id="scroll_down"),
     ]
 
     def __init__(
@@ -121,6 +129,11 @@ class AnimaChatApp(App):
         client: AnimaWorksClient,
         anima_name: str,
         thread_id: str = "default",
+        *,
+        session: SessionInfo | None = None,
+        session_dir: Path | None = None,
+        no_reattach: bool = False,
+        keymap: dict[str, str] | None = None,
     ) -> None:
         super().__init__()
         self.client = client
@@ -140,6 +153,32 @@ class AnimaChatApp(App):
         self._suppress_palette = False
         self._sidebar_open = True
 
+        # Phase 3: session + resume + keybindings.
+        self.session_dir = session_dir
+        if session is None:
+            session = new_session(
+                anima=anima_name,
+                thread_id=thread_id,
+                gateway_url=getattr(client, "base_url", "") or "http://localhost:18500",
+                from_person=getattr(client, "from_person", "human") or "human",
+            )
+        self.session: SessionInfo = session
+        self.no_reattach = no_reattach
+        self._keymap, self._key_warnings = (keymap, []) if keymap is not None else load_keybindings()
+        self._key_warnings = list(self._key_warnings)
+
+        # History lazy-loading cursor state.
+        self._history_cursor: str | None = None
+        self._history_end = False
+        self._history_loading = False
+
+        # Stream reconnect state.
+        self._last_event_id: str | None = None
+        self._last_response_id: str | None = None
+
+        # Session save throttling.
+        self._session_save_pending = False
+
     # ── Lifecycle ──────────────────────────────────────────
     def compose(self) -> ComposeResult:
         with Horizontal(id="body"):
@@ -152,6 +191,10 @@ class AnimaChatApp(App):
 
     def on_mount(self) -> None:
         self.title = f"AnimaWorks — {self.anima_name}"
+        try:
+            self._bindings.apply_keymap(app_keymap(self._keymap))
+        except Exception:
+            pass
 
         self.body = self.query_one("#body", Horizontal)
         self.sidebar = self.query_one("#sidebar", Sidebar)
@@ -206,52 +249,142 @@ class AnimaChatApp(App):
         else:
             status = "idle"
         self.status_bar.set_state(status=status)
-        self.run_worker(self._load_history(), group="init", exit_on_error=False)
+        self.run_worker(self._load_history_then_reattach(), group="init", exit_on_error=False)
         self.run_worker(self._load_skills(), group="init", exit_on_error=False)
         self.run_worker(self._ws_loop(), group="ws", exit_on_error=False)
 
+    async def _load_history_then_reattach(self) -> None:
+        # History first so a resumed in-flight response is appended after it.
+        await self._load_history()
+        await self._check_reattach()
+
     # ── History ───────────────────────────────────────────
     async def _load_history(self) -> None:
+        history = await self._get_history()
+        if history is None:
+            return
+        self._history_cursor = history.get("next_before")
+        if not history.get("has_more"):
+            self._history_end = True
+        await self.render_history(history)
+
+    async def _get_history(self, *, before: str | None = None) -> dict | None:
         try:
-            history = await self.client.get_history(
+            return await self.client.get_history(
                 self.anima_name,
                 thread_id=self.thread_id,
                 limit=50,
+                before=before,
             )
         except AnimaWorksClientError:
             self.status_bar.set_state(right_hint="history unavailable")
-            return
-        await self.render_history(history)
+            return None
+
+    def _clear_history_cursor(self) -> None:
+        self._history_cursor = None
+        self._history_end = False
+        self._history_loading = False
 
     async def render_history(self, history: dict) -> None:
+        for session in history.get("sessions", []):
+            for msg in session.get("messages", []):
+                await self._render_history_msg(msg, prepend=False)
+        self.current = None
+
+    async def _render_history_msg(self, msg: dict, *, prepend: bool) -> None:
+        role = msg.get("role")
+        content = msg.get("content")
+        if not content:
+            return
+        if role == "human":
+            turn = HumanTurn("You", str(content))
+            await self.transcript.mount(turn, before=0 if prepend else None)
+        elif role == "assistant":
+            block = self.transcript.new_assistant(self.anima_name)
+            block.set_final(str(content))
+            await self.transcript.mount(block, before=0 if prepend else None)
+        # any other role (e.g. system) is skipped as noise
+
+    async def _show_beginning_marker(self) -> None:
+        if any(
+            isinstance(c, Static) and getattr(c, "classes", None) and "beginning" in c.classes
+            for c in self.transcript.children
+        ):
+            return
+        marker = Static("— beginning of history —", classes="beginning")
+        await self.transcript.mount(marker, before=0)
+
+    async def load_older_history(self) -> None:
+        """Load and prepend older history; called when the user scrolls to the top."""
+        if self._history_loading:
+            return
+        if self._history_end:
+            await self._show_beginning_marker()
+            return
+        if not self._history_cursor:
+            self._history_end = True
+            await self._show_beginning_marker()
+            return
+        self._history_loading = True
+        history = None
+        try:
+            history = await self._get_history(before=self._history_cursor)
+        finally:
+            self._history_loading = False
+        if history is None:
+            return
+        self._history_cursor = history.get("next_before")
+        if not history.get("has_more"):
+            self._history_end = True
+        await self.render_history_at_top(history)
+        if self._history_end:
+            await self._show_beginning_marker()
+
+    async def render_history_at_top(self, history: dict) -> None:
+        """Render older history above the current transcript, keeping scroll position."""
+        prev_scroll = self.transcript.scroll_y
+        old_first = self.transcript.children[0] if self.transcript.children else None
+        added = 0
         for session in history.get("sessions", []):
             for msg in session.get("messages", []):
                 role = msg.get("role")
                 content = msg.get("content")
                 if not content:
                     continue
+                added += 1
                 if role == "human":
-                    await self.transcript.add_human("You", str(content))
+                    turn = HumanTurn("You", str(content))
+                    await self.transcript.mount(turn, before=old_first)
                 elif role == "assistant":
                     block = self.transcript.new_assistant(self.anima_name)
                     block.set_final(str(content))
-                    await self.transcript.mount_assistant(block)
-                # any other role (e.g. system) is skipped as noise
-        self.current = None
+                    await self.transcript.mount(block, before=old_first)
+        # Approximate the inserted height (a turn is ~2 rows) to keep the
+        # current view stable after prepending older content.
+        if added and prev_scroll > 0:
+            try:
+                self.transcript.scroll_y = prev_scroll + added * 2
+            except Exception:
+                pass
 
-    async def reload_history(self, limit: int = 20) -> None:
-        try:
-            history = await self.client.get_history(
-                self.anima_name,
-                thread_id=self.thread_id,
-                limit=limit,
-            )
-        except AnimaWorksClientError as exc:
-            self.show_transient(f"Failed to reload history: {exc}")
+    def load_more_history(self) -> None:
+        """Slash-command handler: load 50 more (older) messages."""
+        self.run_worker(self.load_older_history(), group="history", exit_on_error=False)
+
+    async def reload_history(self, limit: int = 50) -> None:
+        self._clear_history_cursor()
+        history = await self._get_history()
+        if history is None:
             return
         self.transcript.clear_all()
         self.current = None
+        self._history_cursor = history.get("next_before")
+        if not history.get("has_more"):
+            self._history_end = True
         await self.render_history(history)
+
+    def on_transcript_scrolled_to_top(self, _message) -> None:
+        self.run_worker(self.load_older_history(), group="history", exit_on_error=False)
 
     # ── Skills ───────────────────────────────────────────
     async def _load_skills(self) -> None:
@@ -296,10 +429,13 @@ class AnimaChatApp(App):
             self.status_bar.set_state(status=status)
         elif event_type == "anima.tool_activity" and data.get("name") == self.anima_name:
             evt = data.get("event")
-            tool_name = data.get("tool_name")
-            if evt == "tool_start":
+            kind = data.get("kind")
+            tool_name = data.get("tool_name") or data.get("tool")
+            if (evt == "tool_start" or kind == "tool_use") and self.busy:
+                # Only while a response is in flight: a late tool_start after
+                # ``done`` must not leave a stale tool name in the status bar.
                 self.status_bar.set_state(active_tool=tool_name)
-            elif evt == "tool_end":
+            elif evt == "tool_end" or kind == "tool_result":
                 self.status_bar.set_state(active_tool=None)
 
     def _apply_ws_effect(self, eff, data: dict) -> None:
@@ -498,6 +634,11 @@ class AnimaChatApp(App):
         self.current = self.transcript.new_assistant(self.anima_name)
         await self.transcript.mount_assistant(self.current)
         self.tool_cards = {}
+        self._last_response_id = None
+        self._last_event_id = None
+        self.session.in_flight = True
+        self.session.last_response_id = None
+        self.session.last_event_id = None
         self.run_worker(
             self._chat_worker(text),
             group="chat",
@@ -505,20 +646,84 @@ class AnimaChatApp(App):
             exit_on_error=False,
         )
 
-    async def _chat_worker(self, text: str) -> None:
+    def _handle_stream_event_state(self, sse: SseEvent) -> bool:
+        """Track resume state from an event.
+
+        Returns True when an ``error`` event with ``STREAM_NOT_FOUND`` is
+        seen (the caller should stop reconnecting).
+        """
+        if sse.event == "stream_start":
+            rid = sse.data.get("response_id")
+            if rid:
+                self._last_response_id = rid
+                self.session.last_response_id = rid
+                self.session.in_flight = True
+                self._schedule_session_save(force=True)
+        if sse.id:
+            self._last_event_id = sse.id
+            self.session.last_event_id = sse.id
+            self._schedule_session_save()
+        return sse.event == "error" and sse.data.get("code") == "STREAM_NOT_FOUND"
+
+    async def _chat_worker(
+        self,
+        text: str,
+        *,
+        resume: str | None = None,
+        last_event_id: str | None = None,
+    ) -> None:
+        delay = 1.0
+        attempts = 0
+        while True:
+            try:
+                async for sse in self.client.chat_stream(
+                    self.anima_name,
+                    text,
+                    thread_id=self.thread_id,
+                    resume=resume,
+                    last_event_id=last_event_id,
+                ):
+                    self._handle_stream_event_state(sse)
+                    await self.handle_sse(sse)
+                break
+            except AnimaWorksClientError as exc:
+                if self._last_response_id is None:
+                    await self._show_error(str(exc))
+                    break
+                if attempts >= 3:
+                    self.show_transient("stream lost")
+                    break
+                attempts += 1
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 4.0)
+                resume = self._last_response_id
+                last_event_id = self._last_event_id
+        self.busy = False
+        self.session.in_flight = False
+        self._schedule_session_save(force=True)
+        self.status_bar.set_state(active_tool=None)
+        self.call_after_refresh(self.focus_input)
+
+    def _schedule_session_save(self, *, force: bool = False) -> None:
+        if force:
+            self._write_session()
+            self._session_save_pending = False
+            return
+        if not self._session_save_pending:
+            self._session_save_pending = True
+            self.set_timer(1.0, self._flush_session_save)
+
+    def _flush_session_save(self) -> None:
+        if not self._session_save_pending:
+            return
+        self._session_save_pending = False
+        self._write_session()
+
+    def _write_session(self) -> None:
         try:
-            async for sse in self.client.chat_stream(
-                self.anima_name,
-                text,
-                thread_id=self.thread_id,
-            ):
-                await self.handle_sse(sse)
-        except AnimaWorksClientError as exc:
-            await self._show_error(str(exc))
-        finally:
-            self.busy = False
-            self.status_bar.set_state(active_tool=None)
-            self.call_after_refresh(self.focus_input)
+            save_session(self.session, base_dir=self.session_dir)
+        except Exception:
+            pass
 
     async def handle_sse(self, sse: SseEvent) -> None:
         name = sse.event
@@ -566,10 +771,14 @@ class AnimaChatApp(App):
             if self.current is not None:
                 self.current.set_final(summary)
             self.busy = False
-            self.status_bar.set_state(status="idle", right_hint="Esc: interrupt")
+            self.session.in_flight = False
+            self._schedule_session_save(force=True)
+            self.status_bar.set_state(status="idle", active_tool=None, right_hint="Esc: interrupt")
         elif name == "error":
             await self._show_error(data.get("message", "Stream error"))
             self.busy = False
+            self.session.in_flight = False
+            self._schedule_session_save(force=True)
             self.status_bar.set_state(status="error", right_hint="Esc: interrupt")
         elif name == "bootstrap":
             self.show_transient(f"bootstrap: {data.get('status')} {data.get('message') or ''}")
@@ -611,6 +820,8 @@ class AnimaChatApp(App):
 
     def toggle_thinking(self) -> None:
         self.show_thinking = not self.show_thinking
+        self.session.show_thinking = self.show_thinking
+        self._write_session()
         for block in self.query(ThinkingBlock):
             block.set_visible(self.show_thinking)
         self.show_transient(f"Thinking display: {'on' if self.show_thinking else 'off'}")
@@ -649,6 +860,10 @@ class AnimaChatApp(App):
         if len(self.transcript.children) == 0:
             self.show_transient("no conversation history yet")
         await self._load_skills()
+        if name not in self.session.recent_animas:
+            self.session.recent_animas.append(name)
+        self.session.anima = name
+        self._write_session()
 
     def _set_sidebar_open(self, open_state: bool) -> None:
         self._sidebar_open = open_state
@@ -656,6 +871,8 @@ class AnimaChatApp(App):
 
     def toggle_sidebar(self) -> None:
         self._set_sidebar_open(not self._sidebar_open)
+        self.session.sidebar_open = self._sidebar_open
+        self._write_session()
 
     def on_anima_chosen(self, message: AnimaChosen) -> None:
         self.switch_anima(message.name)
@@ -663,7 +880,94 @@ class AnimaChatApp(App):
     def action_toggle_sidebar(self) -> None:
         self.toggle_sidebar()
 
+    # ── Reattach (Phase 3) ──────────────────────────────
+    async def _check_reattach(self) -> None:
+        if self.no_reattach:
+            return
+        active = None
+        try:
+            active = await self.client.get_active_stream(
+                self.anima_name,
+                thread_id=self.thread_id,
+            )
+        except AnimaWorksClientError:
+            return
+        action = decide_reattach(active, self.session.in_flight)
+        if action == "reattach":
+            await self._render_reattach(active)
+        elif action == "render_final":
+            await self._render_final(active)
+            self.session.in_flight = False
+            self._write_session()
+        elif action == "lost":
+            self.show_transient("The previous response could not be resumed. Use /history to review the conversation.")
+
+    async def _render_reattach(self, active: dict) -> None:
+        if self.current is not None and self.current._body:
+            # Already rendering part of this response; only resume the tail.
+            pass
+        else:
+            self.current = self.transcript.new_assistant(self.anima_name)
+            full = active.get("full_text") or ""
+            self.current.set_final(full)
+            await self.transcript.mount_assistant(self.current)
+            for tool in active.get("tool_history") or []:
+                try:
+                    card = ToolCard(tool.get("tool_name", "tool"), tool.get("tool_id", ""))
+                    if tool.get("input_summary"):
+                        card.add_detail(str(tool.get("input_summary")))
+                    if tool.get("result_summary"):
+                        card.finish(
+                            result_summary=tool.get("result_summary"),
+                            is_error=bool(tool.get("is_error")),
+                        )
+                    self.tool_cards[tool.get("tool_id", "")] = card
+                    await self.current.add_tool(card)
+                except Exception:
+                    continue
+        self.busy = True
+        self.session.in_flight = True
+        self.status_bar.set_state(status="streaming", right_hint="resuming stream…")
+        self.run_worker(
+            self._chat_worker(
+                "",
+                resume=active.get("response_id"),
+                last_event_id=active.get("last_event_id"),
+            ),
+            group="chat",
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    async def _render_final(self, active: dict) -> None:
+        self.current = self.transcript.new_assistant(self.anima_name)
+        self.current.set_final(active.get("full_text") or "")
+        await self.transcript.mount_assistant(self.current)
+
     # ── Command implementations (called by commands.py) ─
+    def show_sessions(self) -> None:
+        from cli.tui.session import list_sessions
+
+        infos = list_sessions(base_dir=self.session_dir)
+        if not infos:
+            self.show_transient("No saved sessions.")
+            return
+        lines = [f"Sessions ({self.session_dir or 'default'}):"]
+        for s in infos:
+            ts = (s.updated_at or "")[:16].replace("T", " ")
+            in_flight = " *" if s.in_flight else ""
+            lines.append(f"  {s.session_id}  {ts}  {s.anima}/{s.thread_id}{in_flight}")
+        self.show_transient("\n".join(lines))
+
+    def show_keys(self) -> None:
+        lines = ["Key bindings:"]
+        for key, value in self._keymap.items():
+            lines.append(f"  {key:<16} {value}")
+        if self._key_warnings:
+            for w in self._key_warnings:
+                lines.append(f"  (warn) {w}")
+        self.show_transient("\n".join(lines))
+
     def show_animas(self) -> None:
         lines = ["Animas:"]
         for name, row in sorted(self.state.animas.items()):
@@ -902,6 +1206,8 @@ class AnimaChatApp(App):
             self.show_transient(f"Interrupt failed: {exc}")
             return
         self.busy = False
+        self.session.in_flight = False
+        self._write_session()
         self.status_bar.set_state(
             status="idle",
             active_tool=None,
@@ -909,16 +1215,48 @@ class AnimaChatApp(App):
         )
         self.show_transient("Interrupted.")
 
+    def _save_on_exit(self) -> None:
+        self.session.updated_at = ""
+        self._write_session()
+
     def action_quit_or_confirm(self) -> None:
         now = time.monotonic()
         if now - self._last_ctrlc < 2.0:
+            self._save_on_exit()
             self.exit()
         else:
             self._last_ctrlc = now
             self.status_bar.set_state(right_hint="Press Ctrl+C again to quit")
 
     def action_quit_now(self) -> None:
+        self._save_on_exit()
         self.exit()
+
+    def action_scroll_up(self) -> None:
+        self.transcript.scroll_up()
+
+    def action_scroll_down(self) -> None:
+        self.transcript.scroll_down()
+
+
+def decide_reattach(active: dict | None, session_in_flight: bool) -> str:
+    """Decide how to handle a possibly in-flight stream (pure function).
+
+    ``active`` is the ``/stream/active`` response (``None`` or
+    ``{"active": false}`` when there is nothing). Returns one of:
+
+    - ``reattach``      there is an actively streaming response → resume the tail
+    - ``render_final``  the stream is complete but we never saw it finish → render once
+    - ``lost``          the session says in-flight but the server has nothing
+    - ``nothing``       nothing to do
+    """
+    if not active or not active.get("active"):
+        return "lost" if session_in_flight else "nothing"
+    status = active.get("status")
+    if status == "streaming":
+        return "reattach"
+    # complete / finished etc.
+    return "render_final" if session_in_flight else "nothing"
 
 
 def _make_runner(handler):

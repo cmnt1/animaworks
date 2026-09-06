@@ -64,12 +64,9 @@ def _cmd_interrupt(_args: list[str], app: Any) -> None:
     app.request_interrupt()
 
 
-def _cmd_history(args: list[str], app: Any) -> None:
-    try:
-        limit = int(args[0]) if args else 20
-    except ValueError:
-        limit = 20
-    app.reload_history(limit=limit)
+def _cmd_history(_args: list[str], app: Any) -> None:
+    # Phase 3: load 50 more (older) messages instead of reloading everything.
+    app.load_more_history()
 
 
 # ── Phase 2 commands ─────────────────────────────────────
@@ -113,6 +110,14 @@ def _cmd_sidebar(_args: list[str], app: Any) -> None:
 
 def _cmd_approve(args: list[str], app: Any) -> None:
     app.resolve_interaction(args)
+
+
+def _cmd_sessions(_args: list[str], app: Any) -> None:
+    app.show_sessions()
+
+
+def _cmd_keys(_args: list[str], app: Any) -> None:
+    app.show_keys()
 
 
 def _cmd_reject(args: list[str], app: Any) -> None:
@@ -168,6 +173,10 @@ def _default_commands() -> list[SlashCommand]:
             usage="[anima]",
         ),
         SlashCommand("sidebar", "Toggle the sidebar", _cmd_sidebar),
+        SlashCommand("sessions", "List saved TUI sessions", _cmd_sessions),
+        SlashCommand("keys", "Show current key bindings", _cmd_keys),
+        SlashCommand("sessions", "List saved TUI sessions", _cmd_sessions),
+        SlashCommand("keys", "Show current key bindings", _cmd_keys),
         SlashCommand(
             "approve",
             "Resolve a call_human card from the keyboard",

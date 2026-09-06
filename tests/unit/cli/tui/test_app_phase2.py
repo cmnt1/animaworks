@@ -42,6 +42,7 @@ class FakeClient:
         self.post_calls: list = []
         self.board_calls: list = []
         self.tasks_calls: list = []
+        self.active_stream = {"active": False}
 
     def push_ws(self, event_type: str, data: dict) -> None:
         self._ws_queue.put_nowait({"type": event_type, "data": data})
@@ -49,9 +50,12 @@ class FakeClient:
     async def list_animas(self):
         return self.animas
 
-    async def get_history(self, anima, *, thread_id="default", limit=50):
+    async def get_history(self, anima, *, thread_id="default", limit=50, before=None):
         self.history_calls.append(anima)
         return self.history
+
+    async def get_active_stream(self, anima, *, thread_id="default"):
+        return self.active_stream
 
     async def interrupt(self, anima, *, thread_id):
         return {"status": "interrupted"}
