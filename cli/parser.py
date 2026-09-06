@@ -228,7 +228,9 @@ def cli_main() -> None:
         help="List saved TUI sessions and exit",
     )
     p_chat.add_argument("--user", default=None, help="Username for authenticated gateways")
-    p_chat.add_argument("--password", default=None, help="Password for authenticated gateways (visible in process list)")
+    p_chat.add_argument(
+        "--password", default=None, help="Password for authenticated gateways (visible in process list)"
+    )
     p_chat.add_argument(
         "--no-reattach",
         action="store_true",
