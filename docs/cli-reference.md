@@ -159,11 +159,19 @@ Run `/help` inside the TUI for the full command list.
 ```bash
 animaworks chat alice            # interactive TUI
 animaworks chat alice --no-tui   # read the message from stdin, one-shot reply
+animaworks chat --resume         # resume the most recent TUI session
+animaworks chat --resume <id>    # resume a specific TUI session
+animaworks chat --sessions       # list saved TUI sessions and exit
 ```
+
+Sessions are persisted under `$ANIMAWORKS_TUI_DIR/sessions` (default
+`~/.animaworks/tui/sessions`). On startup the TUI re-attaches to any
+in-flight stream (`--no-reattach` disables this), and scrolling to the top of
+the transcript lazily loads older history.
 
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
-| `anima` | positional | Required | Anima name |
+| `anima` | positional | Optional | Anima name (optional when `--resume` is given) |
 | `message` | positional | Optional | Message to send (omit to open the TUI) |
 
 | Option | Type | Default | Description |
@@ -171,6 +179,14 @@ animaworks chat alice --no-tui   # read the message from stdin, one-shot reply
 | `--from` (alias `--as`) | string | "human" | Sender name |
 | `--thread` | string | "default" | Thread ID |
 | `--no-tui` | flag | - | Do not open the TUI; read the message from stdin |
+| `--resume` | string | - | Resume a previous session (optional SESSION_ID, default latest) |
+| `--sessions` | flag | - | List saved TUI sessions and exit |
+| `--user` | string | - | Username for authenticated gateways |
+| `--password` | string | - | Password for authenticated gateways (visible in process list) |
+| `--no-reattach` | flag | - | Do not re-attach to an in-flight stream on startup |
+
+Keybindings can be customized in `$ANIMAWORKS_TUI_DIR/keybindings.json` (default
+`~/.animaworks/tui/keybindings.json`). Show the active bindings with `/keys`.
 
 ---
 
