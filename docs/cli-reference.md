@@ -140,6 +140,22 @@ animaworks chat alice "How's the task going?" --from admin
 Omitting the message opens an interactive terminal chat UI (TUI) that streams the
 response, shows tools/thinking in real time, and lets you interrupt with `Esc`.
 
+The TUI also provides an organization overview and operation shortcuts:
+
+- A **sidebar** (toggle with `Ctrl+B`) lists every anima, its live status and a
+  rolling activity feed (tool usage, heartbeats, board posts, notifications).
+- Typing `/` opens a **command palette** that completes built-in slash commands
+  and the current anima's skills. Selecting a skill (e.g. `/skill <name>`)
+  activates it for the current thread.
+- Switch animas with `/anima <name>`; view animas with `/animas`; manage
+  skills with `/skills` / `/skill <name> [--confirm] [--off]`.
+- Browse channels with `/board [channel] [n]`, post with `/post <channel> <text>`,
+  and list tasks with `/tasks [anima]`.
+- `call_human` requests arrive as notification cards with clickable options, or
+  resolve them from the keyboard with `/approve <callback_id> [option]`.
+
+Run `/help` inside the TUI for the full command list.
+
 ```bash
 animaworks chat alice            # interactive TUI
 animaworks chat alice --no-tui   # read the message from stdin, one-shot reply
