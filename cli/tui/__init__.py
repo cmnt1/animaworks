@@ -74,7 +74,82 @@ def run_tui(args: argparse.Namespace) -> None:
         session=session,
         no_reattach=getattr(args, "no_reattach", False),
     )
+    _install_stack_dump(app)
     app.run()
+
+
+def _install_stack_dump(app=None) -> None:
+    """Diagnostics for a frozen UI, triggered from another terminal.
+
+    - ``kill -USR1 <pid>``: dump all thread stacks (faulthandler, works even
+      when the event loop is stuck).
+    - ``kill -USR2 <pid>``: dump app internals (scroll position, focus,
+      message-queue sizes, asyncio tasks); needs a live event loop.
+
+    Both append to ``~/.animaworks/tui/stackdump.log``.
+    """
+    import faulthandler
+    import signal
+
+    from cli.tui.session import tui_base_dir
+
+    try:
+        path = tui_base_dir() / "stackdump.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fh = open(path, "a")  # noqa: SIM115 - kept open for the process lifetime
+        faulthandler.register(signal.SIGUSR1, file=fh, all_threads=True, chain=False)
+    except Exception:  # pragma: no cover - best effort diagnostics
+        return
+
+    def _dump_app(_signum, _frame) -> None:  # pragma: no cover - manual diagnostics
+        import asyncio
+        import datetime as _dt
+
+        lines = [f"=== app dump {_dt.datetime.now().isoformat(timespec='seconds')}"]
+        try:
+            if app is not None:
+                tr = getattr(app, "transcript", None)
+                if tr is not None:
+                    lines.append(
+                        f"transcript: scroll_y={tr.scroll_y} max={tr.max_scroll_y} "
+                        f"children={len(tr.children)} size={tr.size}"
+                    )
+                    sb = getattr(tr, "vertical_scrollbar", None)
+                    if sb is not None:
+                        lines.append(
+                            f"transcript scrollbar: region={sb.region} display={sb.display} "
+                            f"position={sb.position} window={sb.window_size}/{sb.window_virtual_size}"
+                        )
+                lines.append(f"focused={app.focused!r} busy={getattr(app, 'busy', None)}")
+                mouse = getattr(app, "mouse_position", None)
+                lines.append(f"mouse={mouse} over={getattr(app, 'mouse_over', None)!r} captured={app.mouse_captured!r}")
+                lines.append(f"queues: app={app._message_queue.qsize()} screen={app.screen._message_queue.qsize()}")
+                lines.append(
+                    f"history: loading={getattr(app, '_history_loading', None)} "
+                    f"end={getattr(app, '_history_end', None)} "
+                    f"cursor={getattr(app, '_history_cursor', None)}"
+                )
+            try:
+                tasks = asyncio.all_tasks()
+            except RuntimeError:
+                tasks = set()
+            lines.append(f"asyncio tasks={len(tasks)}")
+            for t in tasks:
+                name = t.get_coro().__qualname__
+                if name.startswith("MessagePump"):
+                    continue
+                fr = t.get_stack(limit=1)
+                where = f"{fr[0].f_code.co_filename.rsplit('/', 1)[-1]}:{fr[0].f_lineno}" if fr else "?"
+                lines.append(f"  task {name} @ {where}")
+        except Exception as exc:
+            lines.append(f"dump error: {exc!r}")
+        fh.write("\n".join(lines) + "\n")
+        fh.flush()
+
+    try:
+        signal.signal(signal.SIGUSR2, _dump_app)
+    except Exception:  # pragma: no cover
+        pass
 
 
 def _maybe_login(client, args) -> bool:
