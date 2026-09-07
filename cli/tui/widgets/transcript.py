@@ -104,8 +104,8 @@ class SystemNote(Vertical):
 class AssistantBlock(Vertical):
     """Container for a single assistant response.
 
-    Holds an accumulating text body plus optional thinking block and tool
-    cards.
+    Holds an accumulating response as an ordered timeline of text and tool
+    cards, plus an optional thinking block.
     """
 
     DEFAULT_CSS = """
@@ -113,7 +113,7 @@ class AssistantBlock(Vertical):
         height: auto;
         width: 100%;
     }
-    AssistantBlock > .tools {
+    AssistantBlock > .assistant-timeline {
         height: auto;
         width: 100%;
     }
@@ -128,28 +128,31 @@ class AssistantBlock(Vertical):
         # scanning the transcript could not tell who was talking.
         self.label_widget = Static("", classes="assistant-label")
         self.text = Static("", classes="assistant-text")
+        self._text_segments: list[Static] = [self.text]
+        self._segment_bodies: list[str] = [""]
+        self._active_text_segment: int | None = 0
         self.thinking: ThinkingBlock | None = None
-        self.tools = Vertical(classes="tools")
+        self.timeline = Vertical(self.text, classes="assistant-timeline")
 
     def compose(self):
         yield self.label_widget
-        yield self.text
         if self.thinking is not None:
             yield self.thinking
-        yield self.tools
+        yield self.timeline
 
     def on_mount(self) -> None:
         self.label_widget.update(Text(f"{self._label}:", style="bold"))
         # Render whatever body was set before mounting (e.g. history entries).
         self._refresh_text()
 
-    def _refresh_text(self) -> None:
-        self.text.update(render_markdown(self._display_body()))
+    def _refresh_text(self, index: int = 0) -> None:
+        body = _strip_html_comments(self._segment_bodies[index]).rstrip()
+        self._text_segments[index].update(render_markdown(body))
 
     def ensure_thinking(self) -> ThinkingBlock:
         if self.thinking is None:
             self.thinking = ThinkingBlock()
-            self.mount(self.thinking, before=self.tools)
+            self.mount(self.thinking, before=self.timeline)
         return self.thinking
 
     def _display_body(self) -> str:
@@ -158,11 +161,37 @@ class AssistantBlock(Vertical):
 
     def append_text(self, text: str) -> None:
         self._body += text
-        self._refresh_text()
+        if self._active_text_segment is None:
+            segment = Static("", classes="assistant-text")
+            self._text_segments.append(segment)
+            self._segment_bodies.append("")
+            self._active_text_segment = len(self._text_segments) - 1
+            self.timeline.mount(segment)
+        index = self._active_text_segment
+        self._segment_bodies[index] += text
+        self._refresh_text(index)
 
     def set_final(self, summary: str) -> None:
-        self._body = summary.rstrip()
-        self._refresh_text()
+        summary = summary.rstrip()
+        # The server removes display-only HTML comments (such as emotion
+        # metadata) before sending the final summary.
+        streamed = self._display_body()
+        self._body = summary
+
+        # Usually ``done.summary`` is the exact concatenation of the streamed
+        # text. Keep the existing segment boundaries so every tool remains at
+        # the point where it was called. If the server replaces the summary
+        # (for example after recovery), there is no reliable mapping back to
+        # the old segments, so render the authoritative text in the first one.
+        if summary == streamed:
+            for index in range(len(self._text_segments)):
+                self._refresh_text(index)
+            return
+        self._segment_bodies[0] = summary
+        self._refresh_text(0)
+        for index in range(1, len(self._text_segments)):
+            self._segment_bodies[index] = ""
+            self._refresh_text(index)
 
     async def add_error(self, message: str) -> None:
         """Show a stream error under the body.
@@ -171,10 +200,14 @@ class AssistantBlock(Vertical):
         console markup poked into it would be shown literally.
         """
         widget = Static(Text(f"Error: {message}", style="bold red"), classes="assistant-error")
-        await self.mount(widget, before=self.tools)
+        await self.timeline.mount(widget)
+        self._active_text_segment = None
 
     async def add_tool(self, tool: ToolCard) -> None:
-        await self.tools.mount(tool)
+        await self.timeline.mount(tool)
+        # The next text delta belongs after this tool rather than in the text
+        # block that preceded it.
+        self._active_text_segment = None
 
 
 class TranscriptScrolledToTop(Message):

@@ -112,6 +112,34 @@ async def test_streaming_renders_text_and_tool_card():
 
 
 @pytest.mark.asyncio
+async def test_tool_card_stays_between_surrounding_text():
+    client = FakeClient()
+    app = AnimaChatApp(client=client, anima_name="sora")
+    async with app.run_test() as pilot:
+        await _pump()
+        app.input_container.focus_input()
+        await pilot.press("h", "i", "enter")
+        await _pump()
+
+        await client.chat_queue.put(SseEvent("text_delta", {"text": "before"}))
+        await client.chat_queue.put(SseEvent("tool_start", {"tool_name": "Read", "tool_id": "t1"}))
+        await client.chat_queue.put(SseEvent("tool_end", {"tool_id": "t1", "tool_name": "Read"}))
+        await client.chat_queue.put(SseEvent("text_delta", {"text": "after"}))
+        await client.chat_queue.put(SseEvent("done", {"summary": "beforeafter"}))
+        await client.chat_queue.put(None)
+        await _pump()
+
+        assert app.current is not None
+        children = list(app.current.timeline.children)
+        assert len(children) == 3
+        assert children[0].has_class("assistant-text")
+        assert isinstance(children[1], ToolCard)
+        assert children[2].has_class("assistant-text")
+        assert children[0].content.plain == "before"
+        assert children[2].content.plain == "after"
+
+
+@pytest.mark.asyncio
 async def test_escape_calls_interrupt_when_busy():
     client = FakeClient()
     app = AnimaChatApp(client=client, anima_name="sora")
