@@ -28,6 +28,9 @@ class StatusBar(Widget):
         self.right_hint = "Esc: interrupt"
         self.skill_count = 0
         self.model: str | None = None
+        self.context_usage_ratio: float | None = None
+        self.context_input_tokens: int | None = None
+        self.context_window: int | None = None
 
     def set_anima(self, anima_name: str, thread_id: str | None = None) -> None:
         self.anima_name = anima_name
@@ -61,6 +64,19 @@ class StatusBar(Widget):
         self.model = model or None
         self.refresh()
 
+    def set_context_usage(
+        self,
+        ratio: float | int | str | None,
+        *,
+        input_tokens: int | str | None = None,
+        context_window: int | str | None = None,
+    ) -> None:
+        """Persist the current conversation's context position."""
+        self.context_usage_ratio = None if ratio is None else min(max(float(ratio), 0.0), 1.0)
+        self.context_input_tokens = int(input_tokens) if input_tokens else None
+        self.context_window = int(context_window) if context_window else None
+        self.refresh()
+
     def render(self) -> Text:
         parts = [
             Text(self.anima_name),
@@ -75,6 +91,10 @@ class StatusBar(Widget):
 
         if self.skill_count:
             parts.append(Text(f" | skills:{self.skill_count}", style="dim"))
+
+        if self.context_usage_ratio is not None:
+            percent = round(self.context_usage_ratio * 100)
+            parts.append(Text(f" | ctx:{percent}%", style="dim"))
 
         parts.append(
             Text(

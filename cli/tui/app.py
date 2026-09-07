@@ -40,6 +40,7 @@ from cli.tui.widgets import (
     ToolCard,
     Transcript,
 )
+from cli.tui.widgets.response_status import ResponseStatus
 from cli.tui.widgets.sidebar import AnimaChosen
 from cli.tui.widgets.thinking import ThinkingBlock
 from cli.tui.widgets.transcript import AssistantBlock, HumanTurn, SystemNote, strip_html_comments
@@ -125,7 +126,14 @@ class AnimaChatApp(App):
     #input-container {
         height: auto;
         background: transparent;
-        padding-top: 1;
+        border-top: solid ansi_default;
+        padding-top: 0;
+    }
+    #response-status {
+        display: none;
+        height: 1;
+        background: transparent;
+        padding: 0 1;
     }
     /* The blank line above belongs to the container: padding it onto the
        label alone pushed `>` one row below the text being typed. */
@@ -168,18 +176,18 @@ class AnimaChatApp(App):
     }
     #transcript .system-message {
         width: 100%;
-        padding: 0 2;
+        padding: 0 1;
     }
     #transcript .assistant-text, #transcript .assistant-error, #transcript .human-message {
         width: 100%;
     }
     #transcript .assistant-text, #transcript .assistant-error {
-        padding: 0 2;
+        padding: 0 1;
     }
     #transcript .transient {
         height: auto;
         width: 100%;
-        padding: 0 2;
+        padding: 0 1;
     }
     """
 
@@ -262,6 +270,7 @@ class AnimaChatApp(App):
             with Vertical(id="right"):
                 yield Transcript(id="transcript")
                 yield Palette(id="palette")
+                yield ResponseStatus(id="response-status")
                 yield ChatInputContainer(id="input-container")
         yield StatusBar(self.anima_name, self.thread_id, id="status")
 
@@ -279,6 +288,7 @@ class AnimaChatApp(App):
         self.input_container = self.query_one("#input-container", ChatInputContainer)
         self.status_bar = self.query_one("#status", StatusBar)
         self.palette = self.query_one("#palette", Palette)
+        self.response_status = self.query_one("#response-status", ResponseStatus)
         self.input_container.input.set_controller(self)
         # Show the model restored from the saved session, if any.
         self.status_bar.set_model(self.chat_model or None)
@@ -796,6 +806,7 @@ class AnimaChatApp(App):
     # ── Sending / streaming ──────────────────────────────
     async def send_message(self, text: str) -> None:
         self.busy = True
+        self.response_status.start()
         self.status_bar.set_state(status="thinking", right_hint="responding…")
         await self.transcript.add_human("You", text)
         self.current = self.transcript.new_assistant(self.anima_name)
@@ -867,6 +878,7 @@ class AnimaChatApp(App):
                 resume = self._last_response_id
                 last_event_id = self._last_event_id
         self._stop_thinking_blink()
+        self.response_status.stop()
         self.busy = False
         self.session.in_flight = False
         self._schedule_session_save(force=True)
@@ -941,6 +953,7 @@ class AnimaChatApp(App):
         elif name == "done":
             summary = data.get("summary") or ""
             self._stop_thinking_blink()
+            self.response_status.stop()
             if self.current is not None:
                 self.current.set_final(summary)
             self.busy = False
@@ -949,6 +962,7 @@ class AnimaChatApp(App):
             self.status_bar.set_state(status="idle", active_tool=None, right_hint="Esc: interrupt")
         elif name == "error":
             self._stop_thinking_blink()
+            self.response_status.stop()
             await self._show_error(data.get("message", "Stream error"))
             self.busy = False
             self.session.in_flight = False
@@ -959,7 +973,11 @@ class AnimaChatApp(App):
         elif name == "context_update":
             ratio = data.get("context_usage_ratio")
             if ratio is not None:
-                self.status_bar.set_state(right_hint=f"context: {int(float(ratio) * 100)}% | Esc: interrupt")
+                self.status_bar.set_context_usage(
+                    ratio,
+                    input_tokens=data.get("input_tokens"),
+                    context_window=data.get("context_window"),
+                )
         elif name == "heartbeat_relay":
             pass
 
@@ -1313,6 +1331,7 @@ class AnimaChatApp(App):
                     continue
         self.busy = True
         self.session.in_flight = True
+        self.response_status.start()
         self.status_bar.set_state(status="streaming", right_hint="resuming stream…")
         self.run_worker(
             self._chat_worker(
