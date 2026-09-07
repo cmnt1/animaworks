@@ -37,8 +37,8 @@ class FakeClient:
     async def list_skills(self, anima, thread_id="default"):
         return {"anima": anima, "skills": []}
 
-    async def chat_stream(self, anima, message, *, thread_id="default", resume=None, last_event_id=None):
-        self.stream_calls.append((message, resume, last_event_id))
+    async def chat_stream(self, anima, message, *, thread_id="default", resume=None, last_event_id=None, model=None):
+        self.stream_calls.append((message, resume, last_event_id, model))
         while True:
             ev = await self.chat_queue.get()
             if ev is None:
@@ -57,8 +57,8 @@ class FailingThenOkClient(FakeClient):
         super().__init__(*a, **kw)
         self.first_call = True
 
-    async def chat_stream(self, anima, message, *, thread_id="default", resume=None, last_event_id=None):
-        self.stream_calls.append((message, resume, last_event_id))
+    async def chat_stream(self, anima, message, *, thread_id="default", resume=None, last_event_id=None, model=None):
+        self.stream_calls.append((message, resume, last_event_id, model))
         if self.first_call:
             self.first_call = False
             raise AnimaWorksClientError("boom")
@@ -125,7 +125,7 @@ async def test_reattach_renders_full_and_resumes_stream():
         await _pump()
 
         # stream worker should have been started with resume info
-        assert any((msg, r, le) == ("", "r1", "r1:5") for msg, r, le in client.stream_calls), client.stream_calls
+        assert any((msg, r, le) == ("", "r1", "r1:5") for msg, r, le, _m in client.stream_calls), client.stream_calls
         assert app.current is not None
         assert "partial reply" in app.current._body
 
@@ -219,8 +219,8 @@ async def test_stream_reconnects_after_error_and_keeps_last_event_id():
         await task
     # first call (failed) + one reconnect using the saved resume info
     assert len(client.stream_calls) == 2, client.stream_calls
-    assert client.stream_calls[0][1:] == (None, None)
-    assert client.stream_calls[1][1:] == ("r1", "r1:3")
+    assert client.stream_calls[0][1:3] == (None, None)
+    assert client.stream_calls[1][1:3] == ("r1", "r1:3")
 
 
 # ── /keys command ──────────────────────────────────────

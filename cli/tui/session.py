@@ -70,6 +70,7 @@ class SessionInfo:
     last_response_id: str | None = None
     last_event_id: str | None = None
     in_flight: bool = False
+    model: str = ""
     recent_animas: list[str] = field(default_factory=list)
 
     @classmethod
@@ -100,6 +101,7 @@ class SessionInfo:
                 last_response_id=data.get("last_response_id"),
                 last_event_id=data.get("last_event_id"),
                 in_flight=bool(data.get("in_flight", False)),
+                model=str(data.get("model", "")),
                 recent_animas=list(data.get("recent_animas") or []),
             )
 

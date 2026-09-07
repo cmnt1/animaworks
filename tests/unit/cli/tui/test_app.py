@@ -41,7 +41,7 @@ class FakeClient:
         self.interrupt_calls += 1
         return {"status": "interrupted"}
 
-    async def chat_stream(self, anima, message, *, thread_id="default", resume=None, last_event_id=None):
+    async def chat_stream(self, anima, message, *, thread_id="default", resume=None, last_event_id=None, model=None):
         self.messages.append(message)
         self.reattach_calls.append((resume, last_event_id))
         if self.chat_error is not None:
