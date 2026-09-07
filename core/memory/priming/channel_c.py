@@ -14,14 +14,17 @@ import json
 import logging
 import re
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from core.file_access_policy import load_denied_roots, memory_source_is_allowed
-from core.memory.priming.constants import _BUDGET_IMPORTANT_KNOWLEDGE, _CHARS_PER_TOKEN
+from core.memory.priming.constants import _BUDGET_IMPORTANT_KNOWLEDGE
+from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items, select_within_budget
 from core.memory.priming.utils import build_queries, build_unified_searcher, normalize_trigger
 from core.memory.retrieval.unified_search import UnifiedMemorySearch
 from core.memory.search_metadata import format_result_metadata_line
+from core.prompt.tokens import estimate_tokens
 
 if TYPE_CHECKING:
     from core.memory.rag.retriever import MemoryRetriever
@@ -70,6 +73,26 @@ def extract_summary(content: str, metadata: dict) -> tuple[str, str]:
             title = Path(source).stem.replace("-", " ").replace("_", " ")
 
     return (title, body)
+
+
+def _usable_summary_body(body: str) -> str:
+    """Reject structural Markdown lines that do not summarize a document."""
+    stripped = body.strip()
+    if stripped.startswith("|") or re.fullmatch(r"[-|:\s]+", stripped):
+        return ""
+    if re.fullmatch(r"#+", stripped):
+        return ""
+    return stripped
+
+
+def _timestamp_rank(value: str) -> float:
+    """Convert an ISO timestamp into a sortable numeric rank."""
+    if not value:
+        return 0.0
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except (ValueError, TypeError):
+        return 0.0
 
 
 def _path_from_doc_id(doc_id: str, memory_type: str = "knowledge") -> str:
@@ -160,8 +183,7 @@ async def channel_c0_important_knowledge(
         )
         if not results:
             return ""
-        budget_chars = _BUDGET_IMPORTANT_KNOWLEDGE * _CHARS_PER_TOKEN
-        lines: list[tuple[int, str]] = []
+        newest_by_path: dict[str, MemoryItem] = {}
         for r in results:
             meta = r.document.metadata
             doc_id = str(getattr(r.document, "id", "") or getattr(r, "doc_id", "") or "")
@@ -170,6 +192,7 @@ async def channel_c0_important_knowledge(
                 continue
             content = r.document.content
             title, body = extract_summary(content, meta)
+            body = _usable_summary_body(body)
             if body:
                 metadata_line = format_result_metadata_line(
                     {**meta, "source_file": meta.get("source_file") or rel_path}
@@ -187,24 +210,30 @@ async def channel_c0_important_knowledge(
                     line = f"📌 {_single_line(title)}\n  {metadata_line}\n  → read_memory_file(path={_quote_path(rel_path)})"
                 else:
                     line = f"📌 {_single_line(title)} → read_memory_file(path={_quote_path(rel_path)})"
-            lines.append((len(line), line))
-        lines.sort(key=lambda x: x[0])
-        out: list[str] = []
-        used = 0
+            updated = str(meta.get("updated_at") or meta.get("updated") or meta.get("created_at") or "")
+            item = MemoryItem(
+                source="important_knowledge",
+                key=rel_path,
+                text=line,
+                ref=rel_path,
+                updated=updated,
+                rank=_timestamp_rank(updated),
+            )
+            previous = newest_by_path.get(rel_path)
+            if previous is None or item.updated > previous.updated:
+                newest_by_path[rel_path] = item
+
         header = "### [IMPORTANT] Knowledge (summary pointers)"
-        header_len = len(header) + 1
-        if header_len > budget_chars:
+        available = _BUDGET_IMPORTANT_KNOWLEDGE - estimate_tokens(header)
+        if available <= 0:
             return ""
-        out.append(header)
-        used += header_len
-        for _, line in lines:
-            if used + len(line) + 1 > budget_chars:
-                break
-            out.append(line)
-            used += len(line) + 1
-        if len(out) <= 1:
+        # Freshness, not line length, determines which important pointers survive.
+        selected = select_within_budget(newest_by_path.values(), available)
+        while selected and estimate_tokens(render_items(selected, header)) > _BUDGET_IMPORTANT_KNOWLEDGE:
+            selected.pop()
+        if not selected:
             return ""
-        return "\n".join(out)
+        return ItemizedMemory(render_items(selected, header), selected)
     except Exception as e:
         logger.debug("Channel C0: get_important_chunks failed: %s", e)
         return ""

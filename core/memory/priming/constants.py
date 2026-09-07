@@ -29,9 +29,6 @@ _BUDGET_PENDING_TASKS = 500
 _BUDGET_RELATED_EPISODES = 800
 _BUDGET_GRAPH_CONTEXT = 500
 
-# Rough characters-per-token for Japanese/English mixed text
-_CHARS_PER_TOKEN = 4
-
 # Pre-compiled regex pattern for language-agnostic keyword extraction
 _RE_UNICODE_WORDS = re.compile(r"[\w]+", re.UNICODE)
 # Maximum message length to process for keyword extraction
