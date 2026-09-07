@@ -9,7 +9,7 @@ from cli.tui.widgets.sidebar import AnimaChosen, Sidebar
 from cli.tui.widgets.status_bar import StatusBar
 from cli.tui.widgets.thinking import ThinkingBlock
 from cli.tui.widgets.tool_card import ToolCard
-from cli.tui.widgets.transcript import AssistantBlock, HumanTurn, Transcript
+from cli.tui.widgets.transcript import AssistantBlock, HumanTurn, SystemNote, Transcript
 
 __all__ = [
     "ChatInput",
@@ -26,5 +26,6 @@ __all__ = [
     "ToolCard",
     "AssistantBlock",
     "HumanTurn",
+    "SystemNote",
     "Transcript",
 ]

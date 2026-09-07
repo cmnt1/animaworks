@@ -13,6 +13,7 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.widget import Widget
 from textual.widgets import Static
 
 from cli.tui.client import AnimaWorksClient, AnimaWorksClientError
@@ -34,7 +35,16 @@ from cli.tui.widgets import (
 )
 from cli.tui.widgets.sidebar import AnimaChosen
 from cli.tui.widgets.thinking import ThinkingBlock
-from cli.tui.widgets.transcript import AssistantBlock, HumanTurn, strip_html_comments
+from cli.tui.widgets.transcript import AssistantBlock, HumanTurn, SystemNote, strip_html_comments
+
+
+def _system_label(msg: dict) -> str:
+    """Name a system entry by where it came from: heartbeat, cron, a notification."""
+    source = str(msg.get("source_key") or msg.get("type") or "").strip()
+    label = f"system · {source}" if source else "system"
+    subject = str(msg.get("subject") or "").strip()
+    return f"{label} — {subject}" if subject else label
+
 
 # WS event types that are fed into the shared sidebar state.
 _WS_STATE_TYPES = {
@@ -119,11 +129,35 @@ class AnimaChatApp(App):
         background: transparent;
         padding: 0 1;
     }
-    #transcript .human-label {
+    /* The one place a colour is picked: the reader has to be able to tell
+       their own turns from the anima's at a glance. Both are ANSI slots,
+       so they still come from the terminal's palette, and blue/bright
+       white is legible on light and dark schemes alike. */
+    #transcript HumanTurn {
+        margin-top: 1;
+        padding: 0 1;
+        background: ansi_blue;
+        color: ansi_bright_white;
+    }
+    #transcript .human-label, #transcript .human-message {
+        background: ansi_blue;
+        color: ansi_bright_white;
+    }
+    #transcript .assistant-label {
+        margin-top: 1;
+        color: ansi_green;
+    }
+    #transcript SystemNote {
         margin-top: 1;
     }
-    #transcript .assistant-text, #transcript .human-message {
+    #transcript .system-message {
         width: 100%;
+        padding: 0 2;
+    }
+    #transcript .assistant-text, #transcript .assistant-error, #transcript .human-message {
+        width: 100%;
+    }
+    #transcript .assistant-text, #transcript .assistant-error {
         padding: 0 2;
     }
     #transcript .transient {
@@ -303,7 +337,36 @@ class AnimaChatApp(App):
             self._history_end = True
         await self.render_history(history)
         # Open on the latest message, not the oldest of the first page.
-        self.call_after_refresh(self.transcript.scroll_end, animate=False)
+        self.call_after_refresh(self.transcript.jump_to_end)
+        # In the background: reattaching to an in-flight response must not
+        # wait on however many pages this takes.
+        self.run_worker(self._fill_viewport(), group="history", exit_on_error=False)
+
+    async def _await_refresh(self) -> None:
+        """Wait for the next screen refresh, so layout figures are current."""
+        done = asyncio.Event()
+        self.call_after_refresh(done.set)
+        try:
+            await asyncio.wait_for(done.wait(), timeout=2.0)
+        except TimeoutError:
+            pass
+
+    async def _fill_viewport(self, pages: int = 8) -> None:
+        """Pull older pages until the transcript can actually scroll.
+
+        A page can render to less than a screenful — a thread whose recent
+        history is all background traffic, say. Then there is no scrollbar
+        and no way to reach the conversation behind it, because loading
+        older history is triggered by scrolling to the top.
+        """
+        for _ in range(pages):
+            await self._await_refresh()
+            if self._history_end or self.transcript.max_scroll_y > 0:
+                return
+            cursor = self._history_cursor
+            await self.load_older_history()
+            if self._history_cursor == cursor:
+                return
 
     async def _get_history(self, *, before: str | None = None) -> dict | None:
         try:
@@ -328,19 +391,26 @@ class AnimaChatApp(App):
                 await self._render_history_msg(msg, prepend=False)
         self.current = None
 
-    async def _render_history_msg(self, msg: dict, *, prepend: bool) -> None:
-        role = msg.get("role")
+    def _history_widget(self, msg: dict) -> Widget | None:
+        """Build the transcript row for one stored message, if it has one."""
         content = msg.get("content")
         if not content:
-            return
+            return None
+        role = msg.get("role")
         if role == "human":
-            turn = HumanTurn("You", str(content))
-            await self.transcript.mount(turn, before=0 if prepend else None)
-        elif role == "assistant":
+            return HumanTurn("You", str(content))
+        if role == "assistant":
             block = self.transcript.new_assistant(self.anima_name)
             block.set_final(str(content))
-            await self.transcript.mount(block, before=0 if prepend else None)
-        # any other role (e.g. system) is skipped as noise
+            return block
+        if role == "system":
+            return SystemNote(_system_label(msg), str(content))
+        return None
+
+    async def _render_history_msg(self, msg: dict, *, prepend: bool) -> None:
+        widget = self._history_widget(msg)
+        if widget is not None:
+            await self.transcript.mount(widget, before=0 if prepend else None)
 
     async def _show_beginning_marker(self) -> None:
         if any(
@@ -385,18 +455,11 @@ class AnimaChatApp(App):
         added = 0
         for session in history.get("sessions", []):
             for msg in session.get("messages", []):
-                role = msg.get("role")
-                content = msg.get("content")
-                if not content:
+                widget = self._history_widget(msg)
+                if widget is None:
                     continue
                 added += 1
-                if role == "human":
-                    turn = HumanTurn("You", str(content))
-                    await self.transcript.mount(turn, before=old_first)
-                elif role == "assistant":
-                    block = self.transcript.new_assistant(self.anima_name)
-                    block.set_final(str(content))
-                    await self.transcript.mount(block, before=old_first)
+                await self.transcript.mount(widget, before=old_first)
         if not added:
             return
 
@@ -833,7 +896,7 @@ class AnimaChatApp(App):
 
     async def _show_error(self, message: str) -> None:
         if self.current is not None:
-            self.current.append_text(f"\n[red]Error: {message}[/red]\n")
+            await self.current.add_error(message)
 
     # ── Slash commands ───────────────────────────────────
     async def handle_command(self, text: str) -> None:
@@ -853,7 +916,7 @@ class AnimaChatApp(App):
     async def _show_transient_async(self, text: str) -> None:
         widget = Static(Text(str(text), style="italic dim"), classes="transient")
         await self.transcript.mount(widget)
-        self.transcript.scroll_end(animate=False)
+        self.transcript.jump_to_end()
 
     def clear_transcript(self) -> None:
         self.transcript.clear_all()
