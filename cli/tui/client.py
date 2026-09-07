@@ -134,6 +134,13 @@ class AnimaWorksClient:
         )
         return resp
 
+    async def list_threads(self, anima: str) -> dict:
+        """List an anima's conversation threads (``default`` plus UUID threads)."""
+        resp = await self._get(
+            f"{self.base_url}/api/animas/{anima}/sessions",
+        )
+        return resp
+
     async def get_active_stream(
         self,
         anima: str,

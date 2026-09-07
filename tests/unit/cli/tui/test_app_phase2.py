@@ -33,6 +33,9 @@ class FakeClient:
         self.active_refs = active_refs or []
         self._ws_queue: asyncio.Queue = asyncio.Queue()
         self.history_calls: list[str] = []
+        self.history_threads: list[str] = []
+        self.threads = {}
+        self.thread_calls: list[str] = []
         self.skill_calls: list[str] = []
         self.active_calls: list[str] = []
         self.set_active_calls: list = []
@@ -53,7 +56,12 @@ class FakeClient:
 
     async def get_history(self, anima, *, thread_id="default", limit=50, before=None):
         self.history_calls.append(anima)
+        self.history_threads.append(thread_id)
         return self.history
+
+    async def list_threads(self, anima):
+        self.thread_calls.append(anima)
+        return self.threads
 
     async def get_active_stream(self, anima, *, thread_id="default"):
         return self.active_stream
@@ -598,3 +606,172 @@ async def test_compact_skipped_when_busy():
         await app._handle_message("/compact")
         await _pump()
         assert client.compact_calls == [], "compact_session should not be called while busy"
+
+
+# ── (o) thread switching: /clear, /thread, /threads ──
+
+
+def _threads_data(active=None, threads=None):
+    return {
+        "anima": "sora",
+        "active_conversation": active,
+        "threads": threads or [],
+        "archived_sessions": [],
+        "episodes": [],
+        "transcripts": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_clear_starts_new_thread():
+    client = FakeClient()
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        first_thread = app.thread_id
+        await app._handle_message("/clear")
+        await _pump()
+        await _pump()
+        assert app.thread_id != first_thread
+        # new thread id is 8 hex chars
+        assert len(app.thread_id) == 8
+        assert all(c in "0123456789abcdef" for c in app.thread_id)
+        # history was fetched for the new thread
+        assert client.history_threads[-1] == app.thread_id
+        # skills reloaded for the new thread
+        assert client.skill_calls[-1] == "sora"
+        # session tracked the switch
+        assert app.session.thread_id == app.thread_id
+        transients = [t for t in app.query("Static.transient") if "new thread" in str(t.content)]
+        assert transients, "expected a 'new thread' transient"
+
+
+@pytest.mark.asyncio
+async def test_thread_without_args_matches_clear():
+    client = FakeClient()
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        await app._handle_message("/thread")
+        await _pump()
+        await _pump()
+        assert len(app.thread_id) == 8
+        assert client.history_threads[-1] == app.thread_id
+
+
+@pytest.mark.asyncio
+async def test_thread_with_id_switches():
+    client = FakeClient()
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        await app._handle_message("/thread abc123")
+        await _pump()
+        await _pump()
+        assert app.thread_id == "abc123"
+        assert app.session.thread_id == "abc123"
+        assert client.history_threads[-1] == "abc123"
+
+
+@pytest.mark.asyncio
+async def test_thread_same_id_is_noop():
+    client = FakeClient()
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        calls_before = len(client.history_threads)
+        await app._handle_message("/thread default")
+        await _pump()
+        transients = [t for t in app.query("Static.transient") if "Already on thread" in str(t.content)]
+        assert transients, "expected an 'Already on thread' transient"
+        assert app.thread_id == "default"
+        assert len(client.history_threads) == calls_before
+
+
+@pytest.mark.asyncio
+async def test_thread_invalid_id_rejected():
+    client = FakeClient()
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        await app._handle_message("/thread x/y")
+        await _pump()
+        transients = [t for t in app.query("Static.transient") if "Invalid thread id" in str(t.content)]
+        assert transients, "expected an 'Invalid thread id' transient"
+        assert app.thread_id == "default"
+
+
+@pytest.mark.asyncio
+async def test_thread_rejected_while_busy():
+    client = FakeClient()
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        app.busy = True
+        await app._handle_message("/thread xyz")
+        await _pump()
+        assert app.thread_id == "default"
+
+
+@pytest.mark.asyncio
+async def test_threads_lists_default_and_threads():
+    client = FakeClient()
+    client.threads = _threads_data(
+        active={"exists": True, "turn_count": 12, "total_turn_count": 40, "last_timestamp": "2026-09-07T12:00:00"},
+        threads=[
+            {"thread_id": "1a2b3c4d", "turn_count": 3, "total_turn_count": 3, "last_timestamp": "2026-09-07T11:30:00"},
+            {"thread_id": "9f8e7d6c", "turn_count": 0, "total_turn_count": 0},
+        ],
+    )
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        await app._handle_message("/threads")
+        await _pump()
+        await _pump()
+        assert client.thread_calls == ["sora"]
+        text = "\n".join(str(t.content) for t in app.query("Static.transient"))
+        assert "Threads for sora" in text
+        assert "default" in text
+        assert "40 turns" in text
+        assert "1a2b3c4d" in text
+        assert "9f8e7d6c" in text
+        # current thread (default) is marked with *
+        assert "* default" in text
+
+
+@pytest.mark.asyncio
+async def test_threads_shows_default_when_active_conversation_null():
+    client = FakeClient()
+    client.threads = _threads_data(
+        active=None,
+        threads=[{"thread_id": "1a2b3c4d", "turn_count": 3, "total_turn_count": 3}],
+    )
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        await app._handle_message("/threads")
+        await _pump()
+        await _pump()
+        text = "\n".join(str(t.content) for t in app.query("Static.transient"))
+        assert "default" in text
+        assert "1a2b3c4d" in text
+
+
+@pytest.mark.asyncio
+async def test_threads_marks_current_thread_not_on_server():
+    client = FakeClient()
+    client.threads = _threads_data(active=None, threads=[])
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        # switch to a brand-new id first, then list
+        await app._handle_message("/thread abcdef01")
+        await _pump()
+        await _pump()
+        await app._handle_message("/threads")
+        await _pump()
+        await _pump()
+        text = "\n".join(str(t.content) for t in app.query("Static.transient"))
+        assert "abcdef01" in text
+        assert "* abcdef01" in text

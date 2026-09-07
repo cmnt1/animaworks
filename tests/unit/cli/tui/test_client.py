@@ -477,3 +477,34 @@ async def test_list_available_models_empty_on_non_dict():
 
     client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
     assert await client.list_available_models() == []
+
+
+@pytest.mark.asyncio
+async def test_list_threads_hits_sessions_endpoint():
+    captured = {}
+
+    def handler(request):
+        captured["path"] = request.url.path
+        return httpx.Response(
+            200,
+            json={
+                "anima": "sora",
+                "active_conversation": None,
+                "threads": [{"thread_id": "abc", "turn_count": 1}],
+            },
+        )
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    res = await client.list_threads("sora")
+    assert captured["path"] == "/api/animas/sora/sessions"
+    assert res["threads"][0]["thread_id"] == "abc"
+
+
+@pytest.mark.asyncio
+async def test_list_threads_error_raises():
+    def handler(request):
+        raise httpx.ConnectError("refused")
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    with pytest.raises(AnimaWorksClientError):
+        await client.list_threads("sora")

@@ -11,6 +11,8 @@ from cli.tui.state import (
     PaletteItem,
     apply_ws_event,
     filter_palette,
+    is_valid_thread_id,
+    new_thread_id,
 )
 
 
@@ -241,3 +243,19 @@ def test_filter_case_insensitive():
     items = [_item("/skill PRReview", "/skill prreview /prreview prreview")]
     out = filter_palette(items, "/prr")
     assert [i.value for i in out] == ["/skill PRReview"]
+
+
+# ── Thread id rules ─────────────────────────────────────
+
+
+def test_is_valid_thread_id():
+    for ok in ("default", "1a2b3c4d", "a" * 36):
+        assert is_valid_thread_id(ok), f"expected {ok!r} valid"
+    for bad in ("", "a" * 37, "bad id", "x/y"):
+        assert not is_valid_thread_id(bad), f"expected {bad!r} invalid"
+
+
+def test_new_thread_id_is_8_hex():
+    tid = new_thread_id()
+    assert len(tid) == 8
+    assert all(c in "0123456789abcdef" for c in tid)
