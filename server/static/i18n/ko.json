@@ -826,5 +826,7 @@
   "ws.turns": "턴",
   "ws.view_toggle_title": "뷰 전환",
   "chat.model_default": "아니마 기본",
-  "chat.model_selector": "이 메시지의 모델"
+  "chat.model_selector": "이 스레드의 모델",
+  "chat.model_group_other": "기타",
+  "chat.model_load_error": "모델 목록을 불러오지 못했습니다"
 }
