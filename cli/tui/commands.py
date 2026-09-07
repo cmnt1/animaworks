@@ -42,6 +42,7 @@ def _cmd_help(_args: list[str], app: Any) -> None:
     for cmd in list_commands():
         usage = f" {cmd.usage}" if cmd.usage else ""
         lines.append(f"  {cmd.signature}{usage:<10} {cmd.description}")
+    lines.append("  /<skill> [text]  Activate a skill for this thread, then send text (if any)")
     lines.append("  Esc            interrupt the current response")
     lines.append("  Ctrl+B         toggle the sidebar")
     lines.append("  Ctrl+C (x2)    quit")
@@ -120,6 +121,10 @@ def _cmd_keys(_args: list[str], app: Any) -> None:
     app.show_keys()
 
 
+def _cmd_compact(_args: list[str], app: Any) -> None:
+    app.compact_session()
+
+
 def _cmd_reject(args: list[str], app: Any) -> None:
     # /reject <callback_id> → approve with "reject" option if it exists
     if args:
@@ -175,8 +180,11 @@ def _default_commands() -> list[SlashCommand]:
         SlashCommand("sidebar", "Toggle the sidebar", _cmd_sidebar),
         SlashCommand("sessions", "List saved TUI sessions", _cmd_sessions),
         SlashCommand("keys", "Show current key bindings", _cmd_keys),
-        SlashCommand("sessions", "List saved TUI sessions", _cmd_sessions),
-        SlashCommand("keys", "Show current key bindings", _cmd_keys),
+        SlashCommand(
+            "compact",
+            "Compact this thread's context (save a summary, start a fresh session)",
+            _cmd_compact,
+        ),
         SlashCommand(
             "approve",
             "Resolve a call_human card from the keyboard",

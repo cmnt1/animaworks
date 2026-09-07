@@ -103,7 +103,7 @@ class AnimaChatApp(App):
     }
     #palette {
         height: auto;
-        max-height: 12;
+        max-height: 15;
         display: none;
     }
     #input-container {
@@ -650,26 +650,73 @@ class AnimaChatApp(App):
             self.focus_input()
 
     def _matches_exact_command(self, text: str) -> bool:
-        """True when ``text`` is exactly ``/name`` (no extra whitespace or
-        arguments) and ``name`` is a registered command."""
+        """True when ``text`` is exactly ``/name`` (no arguments) and ``name``
+        is a registered command or an existing skill.
+
+        Built-in commands win over a skill with the same name. Trailing
+        whitespace is ignored.
+        """
         stripped = text.strip()
         if not stripped.startswith("/"):
             return False
         name = stripped[1:].strip()
         if not name or " " in name:
             return False
-        return get_command(name) is not None
+        if get_command(name) is not None:
+            return True
+        return self._find_skill_ref(name) is not None
+
+    def _palette_label(self, head: str, tail: str) -> Text:
+        """One-line palette row: bold ``head`` + dim ``tail``, cut to width.
+
+        ``OptionList`` wraps long prompts regardless of Rich's ``no_wrap``,
+        so the text is truncated here to the palette's usable width (the
+        input column minus the border, padding and scrollbar). Newlines inside skill
+        descriptions are collapsed so every candidate takes exactly one row.
+        """
+        tail = " ".join(tail.split())
+        label = Text.assemble(Text(head, style="bold"), Text(f"  {tail}", style="dim"), no_wrap=True)
+        width = self.input_container.size.width if self.input_container.size.width > 0 else 80
+        label.truncate(max(width - 8, 16), overflow="ellipsis")
+        return label
 
     def _palette_items(self) -> list[PaletteItem]:
         items: list[PaletteItem] = []
+        # Skills first (active ones first, then by name), so ``/`` shows
+        # the anima's skills as the main content. Built-ins come after.
+        ordered_skills = sorted(
+            self._skills,
+            key=lambda s: (not bool(s.get("active")), (s.get("name") or "").lower()),
+        )
+        for skill in ordered_skills:
+            name = skill.get("name") or ""
+            if not name:
+                continue
+            desc = skill.get("description") or ""
+            marks = []
+            if skill.get("active"):
+                marks.append("● ")
+            if skill.get("is_common"):
+                marks.append("(common) ")
+            if skill.get("is_procedure"):
+                marks.append("(procedure) ")
+            label = self._palette_label(f"/{name}", f"{''.join(marks)}{desc}")
+            low = name.lower()
+            items.append(
+                PaletteItem(
+                    value=f"/{name} ",
+                    label=label,
+                    takes_args=True,
+                    search=f"/{low} {low} /skill {low}",
+                )
+            )
         for cmd in iter_commands():
+            label = self._palette_label(f"/{cmd.name}", cmd.description)
             if cmd.takes_args:
                 items.append(
                     PaletteItem(
                         value=f"/{cmd.name} ",
-                        label=Text.assemble(
-                            Text(f"/{cmd.name}", style="bold"), Text(f"  {cmd.description}", style="dim")
-                        ),
+                        label=label,
                         takes_args=True,
                         search=f"/{cmd.name}",
                     )
@@ -678,39 +725,12 @@ class AnimaChatApp(App):
                 items.append(
                     PaletteItem(
                         value=f"/{cmd.name}",
-                        label=Text.assemble(
-                            Text(f"/{cmd.name}", style="bold"), Text(f"  {cmd.description}", style="dim")
-                        ),
+                        label=label,
                         takes_args=False,
                         search=f"/{cmd.name}",
                         on_confirm=_make_runner(cmd.handler),
                     )
                 )
-        for skill in self._skills:
-            name = skill.get("name") or ""
-            if not name:
-                continue
-            desc = (skill.get("description") or "")[:60]
-            marks = []
-            if skill.get("active"):
-                marks.append("● ")
-            if skill.get("is_common"):
-                marks.append("(common) ")
-            if skill.get("is_procedure"):
-                marks.append("(procedure) ")
-            label = Text.assemble(
-                Text(f"/skill {name}", style="bold"),
-                Text(f"  {''.join(marks)}{desc}", style="dim"),
-            )
-            low = name.lower()
-            items.append(
-                PaletteItem(
-                    value=f"/skill {name}",
-                    label=label,
-                    takes_args=True,
-                    search=f"/skill {low} /{low} {low}",
-                )
-            )
         return items
 
     # ── Input ────────────────────────────────────────────
@@ -904,11 +924,19 @@ class AnimaChatApp(App):
         name = parts[0][1:]
         args = parts[1:]
         cmd = get_command(name)
-        if cmd is None:
-            self.show_transient(f"Unknown command: /{name}   (try /help)")
+        if cmd is not None:
+            cmd.handler(args, self)
+            self.call_after_refresh(self.focus_input)
             return
-        cmd.handler(args, self)
-        self.call_after_refresh(self.focus_input)
+        # A skill can be invoked directly as ``/<skill name>``.
+        if self._find_skill_ref(name) is not None:
+            self.run_worker(
+                self._invoke_skill_worker(name, args),
+                group="submit",
+                exit_on_error=False,
+            )
+            return
+        self.show_transient(f"Unknown command: /{name}   (try /help)")
 
     def show_transient(self, text: str) -> None:
         self.run_worker(self._show_transient_async(text), group="ui", exit_on_error=False)
@@ -1073,6 +1101,37 @@ class AnimaChatApp(App):
                 lines.append(f"  (warn) {w}")
         self.show_transient("\n".join(lines))
 
+    def compact_session(self) -> None:
+        """Manually compact the current thread's context (``/compact``)."""
+        if self.busy:
+            self.show_transient("Wait for the response to finish before /compact")
+            return
+        compact = getattr(self.client, "compact_session", None)
+        if compact is None:
+            self.show_transient("Compaction not supported by this client.")
+            return
+        self.run_worker(
+            self._compact_session_worker(compact),
+            group="compact",
+            exit_on_error=False,
+        )
+
+    async def _compact_session_worker(self, compact) -> None:
+        self.show_transient("Compacting…")
+        try:
+            result = await compact(self.anima_name, self.thread_id)
+        except AnimaWorksClientError as exc:
+            self.show_transient(f"Compaction failed: {exc}")
+            return
+        status = (result or {}).get("status")
+        mode = (result or {}).get("mode") or "?"
+        if status == "ok":
+            self.show_transient(f"Context compacted (mode {mode}). The next message starts a fresh session.")
+        elif status == "skipped":
+            self.show_transient("Compaction skipped: the thread is busy")
+        else:
+            self.show_transient("Compaction failed: unexpected response")
+
     def show_animas(self) -> None:
         lines = ["Animas:"]
         for name, row in sorted(self.state.animas.items()):
@@ -1122,42 +1181,71 @@ class AnimaChatApp(App):
             exit_on_error=False,
         )
 
-    async def _activate_skill_worker(self, args: list[str]) -> None:
+    async def _activate_skill_worker(self, args: list[str]) -> bool:
+        """Apply a skill activation/deactivation.
+
+        Returns ``True`` when the requested state was reached (skill is now
+        active, or was already active), so callers can proceed to send a
+        follow-up message. Returns ``False`` on usage error, unknown
+        skill, I/O failure, or when the activation was rejected.
+        """
         confirm = "--confirm" in args
         off = "--off" in args
         wanted = next((a for a in args if not a.startswith("--")), "")
         if not wanted:
             self.show_transient("usage: /skill <name> [--confirm] [--off]")
-            return
+            return False
         ref = self._find_skill_ref(wanted)
         if ref is None:
             self.show_transient(f"Unknown skill: {wanted}")
-            return
+            return False
         try:
             active = await self.client.get_active_skills(self.anima_name, thread_id=self.thread_id)
             current_refs = [item.get("ref") for item in active.get("accepted", [])]
         except (AnimaWorksClientError, AttributeError) as exc:
             self.show_transient(f"Could not read active skills: {exc}")
-            return
+            return False
         new_refs = list(current_refs)
         if off:
             if ref in new_refs:
                 new_refs.remove(ref)
             else:
                 self.show_transient(f"Skill not active: {wanted}")
-                return
+                return False
         else:
             if ref in new_refs:
                 self.show_transient(f"Skill already active: {wanted}")
-                return
+                return True
             new_refs.append(ref)
         try:
             result = await self.client.set_active_skills(self.anima_name, self.thread_id, new_refs, confirm)
         except (AnimaWorksClientError, AttributeError) as exc:
             self.show_transient(f"Activation failed: {exc}")
-            return
+            return False
         self._render_skill_result(result, off)
         await self._load_skills()
+        return not bool(result.get("rejections"))
+
+    async def _invoke_skill_worker(self, name: str, args: list[str]) -> None:
+        """Handle ``/<skill name>`` direct invocation with optional message.
+
+        ``--off`` deactivates the skill. Otherwise the skill is activated
+        (a no-op when already active) and then any non-flag words are sent
+        to the anima as a follow-up message.
+        """
+        if "--off" in args:
+            await self._activate_skill_worker([name, "--off"])
+            return
+        flags = [a for a in args if a.startswith("--")]
+        rest = " ".join(a for a in args if not a.startswith("--")).strip()
+        ok = await self._activate_skill_worker([name] + flags)
+        if not ok:
+            return
+        if rest:
+            if self.busy:
+                self.status_bar.set_state(right_hint="Busy — wait for the response to finish")
+            else:
+                await self.send_message(rest)
 
     def _find_skill_ref(self, name: str) -> str | None:
         for skill in self._skills:

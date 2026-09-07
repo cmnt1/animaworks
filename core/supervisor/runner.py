@@ -808,6 +808,7 @@ class AnimaRunner:
             "reload_activity_schedule": self._handle_reload_activity_schedule,
             "shutdown": self._handle_shutdown,
             "interrupt": self._handle_interrupt,
+            "compact_session": self._handle_compact_session,
         }
         return handlers.get(method)
 
@@ -1095,6 +1096,27 @@ class AnimaRunner:
                 raise AnimaNotRunningError("Chat task runner supervisor is unavailable")
             return await supervisor.interrupt_chat(thread_id=thread_id)
         return await self.anima.interrupt(thread_id=thread_id)
+
+    async def _handle_compact_session(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle a manual compaction request for the given thread.
+
+        Runs the same mode-specific idle compaction as the scheduler but on
+        demand. Returns ``status`` of ``"ok"`` when compaction ran, or
+        ``"skipped"`` when the thread lock could not be acquired in time.
+        """
+        if not self.anima:
+            raise AnimaNotRunningError("Anima not initialized")
+
+        from core.session_compactor import run_idle_compaction
+        from core.skills.activation_state import validate_thread_id
+
+        thread_id = validate_thread_id(params.get("thread_id", "default"))
+        ok = await run_idle_compaction(self.anima, thread_id)
+        return {
+            "status": "ok" if ok else "skipped",
+            "thread_id": thread_id,
+            "mode": self.anima.agent.execution_mode,
+        }
 
     # ── Cleanup ───────────────────────────────────────────────────
 

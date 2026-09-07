@@ -42,6 +42,7 @@ class FakeClient:
         self.post_calls: list = []
         self.board_calls: list = []
         self.tasks_calls: list = []
+        self.compact_calls: list = []
         self.active_stream = {"active": False}
 
     def push_ws(self, event_type: str, data: dict) -> None:
@@ -116,6 +117,10 @@ class FakeClient:
         self.resolve_calls.append((anima, callback_id, decision))
         return {"status": "ok", "decision": decision}
 
+    async def compact_session(self, anima, thread_id="default"):
+        self.compact_calls.append((anima, thread_id))
+        return {"status": "ok", "thread_id": thread_id, "mode": "s"}
+
 
 async def _pump(n=80):
     for _ in range(n):
@@ -160,21 +165,48 @@ async def test_palette_opens_and_lists_skills_then_filters():
         await pilot.press("/")
         await _pump()
         assert app.palette.is_open
-        values = {it.value for it in app._palette_items()}
-        assert "/skill pr-review" in values
+        items = app._palette_items()
+        values = [it.value for it in items]
+        assert "/pr-review " in values
+        # Skills are the main content: the skill is the first candidate and
+        # built-in commands come after it.
+        assert items and items[0].value == "/pr-review "
+        first_builtin = next(i for i, it in enumerate(items) if it.value in ("/help", "/animas"))
+        assert first_builtin > 0
 
         # Narrow to the skill — candidate count must drop and the skill remain.
         await pilot.press("p", "r")
         await _pump()
         assert app.palette.is_open
         items = app._palette_items()
-        filtered = [it for it in items if "/skill pr-review" in it.value]
+        filtered = [it for it in items if it.value.startswith("/pr-review")]
         assert filtered
         # every remaining item matches the query
         for it in app.palette._items:
             assert it.matches("pr")
         # clean up the ws worker
         client.push_ws("anima.status", {"name": "rin", "status": "idle"})
+
+
+@pytest.mark.asyncio
+async def test_palette_labels_are_single_line():
+    skills = [
+        {
+            "ref": "pr",
+            "name": "pr-review",
+            "description": "review a PR",
+            "active": False,
+            "is_common": False,
+            "is_procedure": False,
+        },
+    ]
+    client = FakeClient(skills=skills)
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        for item in app._palette_items():
+            assert item.label.no_wrap is True
+
 
 
 # ── (d) /skill foo sets active skills with existing refs + foo ──
@@ -439,10 +471,10 @@ async def test_palette_enter_skill_completes_first_candidate():
         await _pump()
         assert app.palette.is_open
         # the skill candidate is the top (prefix-ranked) result
-        assert app.palette._items and app.palette._items[0].value == "/skill pr-review"
-        await pilot.press("enter")
+        assert app.palette._items and app.palette._items[0].value == "/pr-review "
+        await pilot.press("tab")
         await _pump()
-        assert app.input_container.input.text == "/skill pr-review"
+        assert app.input_container.input.text == "/pr-review "
 
 
 # ── (l) switching to an anima with empty history shows a hint ──
@@ -457,3 +489,112 @@ async def test_switch_to_empty_history_shows_hint():
         await _pump()
         transients = [t for t in app.query("Static.transient") if "no conversation history yet" in str(t.content)]
         assert transients, "expected a 'no conversation history yet' hint"
+
+
+# ── (m) direct skill invocation via /<skill> ──
+
+def _skill(
+    ref,
+    name,
+    description="desc",
+    active=False,
+    is_common=False,
+    is_procedure=False,
+):
+    return {
+        "ref": ref,
+        "name": name,
+        "description": description,
+        "active": active,
+        "is_common": is_common,
+        "is_procedure": is_procedure,
+    }
+
+
+@pytest.mark.asyncio
+async def test_skill_direct_invoke_activates_without_message():
+    skills = [_skill("pr", "pr-review")]
+    client = FakeClient(skills=skills)
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        await app._handle_message("/pr-review")
+        await _pump()
+        await _pump()
+        assert client.set_active_calls, "set_active_skills was not called"
+        anima, thread_id, refs, confirm = client.set_active_calls[-1]
+        assert anima == "sora"
+        assert refs == ["pr"]
+        assert confirm is False
+        assert client.messages == [], "no message should be sent on bare activation"
+
+
+@pytest.mark.asyncio
+async def test_skill_direct_invoke_with_message_sends_after_activation():
+    skills = [_skill("pr", "pr-review")]
+    client = FakeClient(skills=skills)
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        await app._handle_message("/pr-review レビューして")
+        await _pump()
+        await _pump()
+        assert client.set_active_calls, "set_active_skills was not called"
+        anima, thread_id, refs, confirm = client.set_active_calls[-1]
+        assert refs == ["pr"]
+        assert client.messages == [("sora", "レビューして")]
+
+
+@pytest.mark.asyncio
+async def test_skill_direct_invoke_off_deactivates():
+    skills = [_skill("pr", "pr-review")]
+    client = FakeClient(skills=skills, active_refs=["pr"])
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        await app._handle_message("/pr-review --off")
+        await _pump()
+        await _pump()
+        assert client.set_active_calls, "set_active_skills was not called"
+        anima, thread_id, refs, confirm = client.set_active_calls[-1]
+        assert refs == []
+        assert client.messages == []
+
+
+@pytest.mark.asyncio
+async def test_unknown_skill_shows_unknown_command():
+    client = FakeClient()  # no skills
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        await app._handle_message("/nosuchskill")
+        await _pump()
+        assert client.set_active_calls == [], "set_active_skills should not be called"
+        transients = [t for t in app.query("Static.transient") if "Unknown command" in str(t.content)]
+        assert transients, "expected an Unknown command message"
+
+
+# ── (n) /compact ──
+@pytest.mark.asyncio
+async def test_compact_calls_client():
+    client = FakeClient()
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        await app._handle_message("/compact")
+        await _pump()
+        await _pump()
+        assert client.compact_calls, "compact_session was not called"
+        assert client.compact_calls == [("sora", "default")]
+
+
+@pytest.mark.asyncio
+async def test_compact_skipped_when_busy():
+    client = FakeClient()
+    app = _app(client)
+    async with app.run_test() as _:
+        await _pump()
+        app.busy = True
+        await app._handle_message("/compact")
+        await _pump()
+        assert client.compact_calls == [], "compact_session should not be called while busy"
