@@ -18,10 +18,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from core.file_access_policy import load_denied_roots, memory_source_is_allowed
-from core.memory.priming.constants import _BUDGET_IMPORTANT_KNOWLEDGE, _CHARS_PER_TOKEN
+from core.memory.priming.constants import _BUDGET_IMPORTANT_KNOWLEDGE
 from core.memory.priming.utils import build_queries, build_unified_searcher, normalize_trigger
 from core.memory.retrieval.unified_search import UnifiedMemorySearch
 from core.memory.search_metadata import format_result_metadata_line
+from core.prompt.tokens import estimate_tokens
 
 if TYPE_CHECKING:
     from core.memory.rag.retriever import MemoryRetriever
@@ -160,7 +161,6 @@ async def channel_c0_important_knowledge(
         )
         if not results:
             return ""
-        budget_chars = _BUDGET_IMPORTANT_KNOWLEDGE * _CHARS_PER_TOKEN
         lines: list[tuple[int, str]] = []
         for r in results:
             meta = r.document.metadata
@@ -190,18 +190,15 @@ async def channel_c0_important_knowledge(
             lines.append((len(line), line))
         lines.sort(key=lambda x: x[0])
         out: list[str] = []
-        used = 0
         header = "### [IMPORTANT] Knowledge (summary pointers)"
-        header_len = len(header) + 1
-        if header_len > budget_chars:
+        if estimate_tokens(header) > _BUDGET_IMPORTANT_KNOWLEDGE:
             return ""
         out.append(header)
-        used += header_len
         for _, line in lines:
-            if used + len(line) + 1 > budget_chars:
+            candidate = "\n".join([*out, line])
+            if estimate_tokens(candidate) > _BUDGET_IMPORTANT_KNOWLEDGE:
                 break
             out.append(line)
-            used += len(line) + 1
         if len(out) <= 1:
             return ""
         return "\n".join(out)

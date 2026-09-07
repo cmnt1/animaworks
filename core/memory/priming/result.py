@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from core.memory.priming.constants import _CHARS_PER_TOKEN
+from core.prompt.tokens import estimate_tokens
 
 
 @dataclass
@@ -57,4 +57,18 @@ class PrimingResult:
 
     def estimated_tokens(self) -> int:
         """Estimate token count."""
-        return self.total_chars() // _CHARS_PER_TOKEN
+        return estimate_tokens(
+            "".join(
+                (
+                    self.sender_profile,
+                    self.recent_activity,
+                    self.related_knowledge,
+                    self.related_knowledge_untrusted,
+                    self.pending_tasks,
+                    self.recent_outbound,
+                    self.episodes,
+                    self.pending_human_notifications,
+                    self.graph_context,
+                )
+            )
+        )

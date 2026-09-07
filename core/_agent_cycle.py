@@ -28,7 +28,8 @@ from core.execution.session_types import is_clean_start_session, resolve_runtime
 from core.i18n import t
 from core.memory.shortterm import SessionState, ShortTermMemory
 from core.prompt.builder import build_system_prompt, inject_shortterm
-from core.prompt.context import CHARS_PER_TOKEN, ContextTracker
+from core.prompt.context import ContextTracker
+from core.prompt.tokens import estimate_tokens
 from core.schemas import CycleResult, ImageData, ModelConfig
 from core.time_utils import now_iso, now_local
 
@@ -43,7 +44,7 @@ def _update_tracker_from_prompt_estimate(
     system_prompt: str,
     prompt: str,
 ) -> None:
-    estimated_tokens = (len(system_prompt) + len(prompt)) // CHARS_PER_TOKEN
+    estimated_tokens = estimate_tokens(system_prompt) + estimate_tokens(prompt)
     tracker.update({"input_tokens": estimated_tokens}, include_output_in_ratio=False)
 
 

@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 from core._agent_prompt_log import _PROMPT_HARD_LIMIT_BYTES, _PROMPT_SOFT_LIMIT_BYTES
 from core.i18n import t
 from core.prompt.builder import build_system_prompt
+from core.prompt.tokens import estimate_tokens, tokens_to_chars_hint
 
 logger = logging.getLogger("animaworks.agent")
 
@@ -264,7 +265,6 @@ class PrimingMixin:
 
     # ── Context-window-aware tier downgrade ─────────────────
 
-    _BYTES_PER_TOKEN_ESTIMATE = 4
     _TOKENS_PER_MCP_SCHEMA = 200
     _TOKENS_PER_TOOL_SCHEMA = 150
     _MIN_TOOL_OVERHEAD = 5000
@@ -300,9 +300,8 @@ class PrimingMixin:
         from core.prompt.builder import _compute_system_budget
 
         tool_overhead = self._estimate_tool_overhead(mode)
-        sys_bytes = len(system_prompt.encode("utf-8"))
-        prompt_bytes = len(prompt.encode("utf-8"))
-        estimated_tokens = (sys_bytes + prompt_bytes) // self._BYTES_PER_TOKEN_ESTIMATE + tool_overhead
+        prompt_tokens = estimate_tokens(prompt)
+        estimated_tokens = estimate_tokens(system_prompt) + prompt_tokens + tool_overhead
         max_input_tokens = int(context_window * 0.80)
 
         if estimated_tokens <= max_input_tokens:
@@ -336,8 +335,7 @@ class PrimingMixin:
                 thread_id=thread_id,
             )
             best_prompt = build_result.system_prompt
-            new_sys_bytes = len(best_prompt.encode("utf-8"))
-            new_estimated = (new_sys_bytes + prompt_bytes) // self._BYTES_PER_TOKEN_ESTIMATE + tool_overhead
+            new_estimated = estimate_tokens(best_prompt) + prompt_tokens + tool_overhead
             if new_estimated <= max_input_tokens:
                 logger.warning(
                     "Prompt budget shrunk: %d -> %d chars (estimated %d -> %d tokens, limit %d)",
@@ -349,21 +347,16 @@ class PrimingMixin:
                 )
                 return best_prompt
 
-        max_sys_bytes = max(
-            (max_input_tokens - tool_overhead) * self._BYTES_PER_TOKEN_ESTIMATE - prompt_bytes,
-            2000,
-        )
-        if len(best_prompt.encode("utf-8")) > max_sys_bytes:
+        available_system_tokens = max(max_input_tokens - tool_overhead - prompt_tokens, 0)
+        max_sys_chars = max(tokens_to_chars_hint(available_system_tokens, best_prompt), 2000)
+        if len(best_prompt) > max_sys_chars:
             logger.error(
-                "Hard-truncating system prompt from %d to %d bytes to fit context window %d",
-                len(best_prompt.encode("utf-8")),
-                max_sys_bytes,
+                "Hard-truncating system prompt from %d to %d chars to fit context window %d",
+                len(best_prompt),
+                max_sys_chars,
                 context_window,
             )
-            best_prompt = best_prompt.encode("utf-8")[:max_sys_bytes].decode(
-                "utf-8",
-                errors="ignore",
-            )
+            best_prompt = best_prompt[:max_sys_chars]
 
         return best_prompt
 

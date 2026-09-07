@@ -128,13 +128,14 @@ class TestCollectGraphContext:
         assert "Postgres" not in result
 
     async def test_truncates_to_budget(self) -> None:
+        from core.prompt.tokens import estimate_tokens
+
         long_facts = [_mem(f"Fact number {i} with some longer content here") for i in range(50)]
         backend = _make_backend(facts=long_facts)
 
         result = await collect_graph_context(backend, "test", budget_tokens=50)
 
-        chars_per_token = 4
-        assert len(result) <= 50 * chars_per_token + 100  # rough check
+        assert estimate_tokens(result) <= 50
 
     async def test_default_budget_matches_constant(self) -> None:
         assert _BUDGET_GRAPH_CONTEXT == 500

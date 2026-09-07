@@ -54,7 +54,6 @@ from core.memory.priming.constants import (
     _BUDGET_RELATED_KNOWLEDGE,
     _BUDGET_REQUEST,
     _BUDGET_SENDER_PROFILE,
-    _CHARS_PER_TOKEN,
     _DEFAULT_MAX_PRIMING_TOKENS,
 )
 from core.memory.priming.gate import (
@@ -64,6 +63,7 @@ from core.memory.priming.gate import (
 )
 from core.memory.priming.result import PrimingResult
 from core.memory.priming.utils import RetrieverCache, extract_keywords, truncate_head, truncate_tail
+from core.prompt.tokens import estimate_tokens
 
 logger = logging.getLogger("animaworks.priming")
 
@@ -364,7 +364,7 @@ class PrimingEngine:
         budget_episodes = int(_BUDGET_RELATED_EPISODES * budget_ratio)
 
         truncated_knowledge = truncate_head(gated_result.related_knowledge, budget_knowledge)
-        knowledge_used_tokens = len(truncated_knowledge) // _CHARS_PER_TOKEN
+        knowledge_used_tokens = estimate_tokens(truncated_knowledge)
         remaining_knowledge_budget = max(0, budget_knowledge - knowledge_used_tokens)
         truncated_untrusted = (
             truncate_head(gated_result.related_knowledge_untrusted, remaining_knowledge_budget)

@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from core.i18n import t
-from core.memory.priming.constants import _CHARS_PER_TOKEN
+from core.prompt.tokens import estimate_tokens
 from core.time_utils import ensure_aware, now_local
 
 logger = logging.getLogger("animaworks.priming")
@@ -92,8 +92,7 @@ async def collect_pending_human_notifications(anima_dir: Path, *, channel: str =
         return ""
 
     lines: list[str] = []
-    budget_chars = _HUMAN_NOTIFY_BUDGET_TOKENS * _CHARS_PER_TOKEN
-    total = 0
+    header = "## Pending Human Notifications (last 24h)"
     try:
         resolver = resolver_for_anima_dir(anima_dir)
     except Exception:
@@ -109,14 +108,14 @@ async def collect_pending_human_notifications(anima_dir: Path, *, channel: str =
         if resolver is not None and not resolver.should_show_human_notify(anima_dir.name, notification_key, entry.ts):
             continue
         line = f"[{ts}] call_human (via {via}):\n{body}"
-        if total + len(line) > budget_chars:
+        candidate_lines = [line, *lines]
+        candidate = header + "\n\n" + "\n\n".join(reversed(candidate_lines))
+        if estimate_tokens(candidate) > _HUMAN_NOTIFY_BUDGET_TOKENS:
             break
         lines.append(line)
-        total += len(line)
 
     if not lines:
         return ""
 
     lines.reverse()
-    header = "## Pending Human Notifications (last 24h)"
     return header + "\n\n" + "\n\n".join(lines)
