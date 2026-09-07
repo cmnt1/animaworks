@@ -11,6 +11,7 @@ import pytest
 from cli.tui.app import AnimaChatApp
 from cli.tui.sse import SseEvent
 from cli.tui.widgets.response_status import ResponseStatus, format_elapsed
+from cli.tui.widgets.transcript import AssistantBlock
 from tests.unit.cli.tui.test_app import FakeClient
 
 
@@ -61,3 +62,18 @@ async def test_context_usage_stays_in_status() -> None:
         )
         await pilot.pause()
         assert "ctx:23%" in app.status_bar.render().plain
+
+
+@pytest.mark.asyncio
+async def test_mixed_japanese_text_does_not_split_a_latin_word() -> None:
+    source = "実測が出ました。sumireの遅さの構造を確認して、すぐ手を打ちます。"
+    client = FakeClient(history={"sessions": [{"messages": [{"role": "assistant", "content": source}]}]})
+    app = AnimaChatApp(client=client, anima_name="sora")
+    async with app.run_test(size=(47, 30)) as pilot:
+        for _ in range(40):
+            await asyncio.sleep(0)
+        await pilot.pause()
+        block = app.query_one(AssistantBlock)
+        lines = ["".join(segment.text for segment in block.text.render_line(y)) for y in range(block.text.size.height)]
+        for first, second in zip(lines, lines[1:], strict=False):
+            assert not (first.rstrip().endswith("su") and second.lstrip().startswith("mire"))

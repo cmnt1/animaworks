@@ -13,7 +13,7 @@ from textual.geometry import Size
 from textual.message import Message
 from textual.widgets import Static
 
-from cli.tui.markdown import MUTED_STYLE, render_markdown
+from cli.tui.markdown import MUTED_STYLE, plain_text, render_markdown, transcript_renderable
 from cli.tui.widgets.thinking import ThinkingBlock
 from cli.tui.widgets.tool_card import ToolCard
 
@@ -60,7 +60,7 @@ class HumanTurn(Vertical):
         self.label_widget.update(Text(f"{self._label}:", style="bold"))
         # Wrapped in Text so console markup a person happens to type
         # (`[red]…`) is shown, not interpreted.
-        self.message.update(Text(self._text))
+        self.message.update(transcript_renderable(plain_text(self._text)))
 
 
 class SystemNote(Vertical):
@@ -98,7 +98,8 @@ class SystemNote(Vertical):
         # drops the whole style, bold included. A `Style` object is kept
         # as it is.
         self.label_widget.update(Text(self._label, style=Style.parse(f"{MUTED_STYLE} bold")))
-        self.message.update(render_markdown(strip_html_comments(self._text).rstrip(), muted=True))
+        rendered = render_markdown(strip_html_comments(self._text).rstrip(), muted=True)
+        self.message.update(transcript_renderable(rendered))
 
 
 class AssistantBlock(Vertical):
@@ -147,7 +148,7 @@ class AssistantBlock(Vertical):
 
     def _refresh_text(self, index: int = 0) -> None:
         body = _strip_html_comments(self._segment_bodies[index]).rstrip()
-        self._text_segments[index].update(render_markdown(body))
+        self._text_segments[index].update(transcript_renderable(render_markdown(body)))
 
     def ensure_thinking(self) -> ThinkingBlock:
         if self.thinking is None:

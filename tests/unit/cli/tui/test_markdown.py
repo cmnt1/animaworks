@@ -115,6 +115,17 @@ def test_plain_text_survives_untouched():
     assert render_markdown("ふつうの文章です。").plain == "ふつうの文章です。"
 
 
+def test_latin_word_next_to_japanese_moves_whole_to_the_next_line():
+    source = "実測が出ました。sumireの遅さを確認します。"
+    rendered = render_markdown(source)
+    assert isinstance(rendered, Text)
+    lines = rendered.wrap(Console(width=18), 18)
+    out = "\n".join(line.plain for line in lines)
+    assert "su\nmire" not in out
+    assert "sum\nire" not in out
+    assert "sumire" in out
+
+
 def test_blank_lines_between_paragraphs_are_kept_but_collapsed():
     rendered = render_markdown("一段落目。\n\n\n\n二段落目。")
     assert isinstance(rendered, Text)
