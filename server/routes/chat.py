@@ -40,6 +40,7 @@ logger = logging.getLogger("animaworks.routes.chat")
 class CompactRequest(BaseModel):
     thread_id: str = "default"
 
+
 # Re-exports for tests and external consumers
 __all__ = [
     "AnimaNotFoundError",
