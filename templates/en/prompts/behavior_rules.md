@@ -23,5 +23,5 @@ Default: do not narrate routine, low-risk tool calls
 - **Detect duplicates**: Do not send the same report multiple times. Send an update only when the situation has changed since the last report
 
 ### current_state.md (Working Memory) and Task Management Separation
-- `state/current_state.md` is **working memory** for observations, plans, situational awareness, and blockers. It persists across session boundaries, so keep it concise
+- `state/current_state.md` is **working memory** for observations, plans, situational awareness, and blockers. It is archived automatically at session end and replaced by a summary, so write freely during the session
 - Record tasks in `task_queue.jsonl` with `backlog_task` / `update_task`; do not put task lists, durable knowledge, or procedures in current_state.md

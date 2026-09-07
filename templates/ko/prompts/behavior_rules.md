@@ -23,5 +23,5 @@ Default: do not narrate routine, low-risk tool calls
 - **중복 감지**: 같은 내용의 보고를 여러 번 전송하지 마세요. 이전 보고 이후 상황이 변경된 경우에만 업데이트 보고를 전송하세요
 
 ### current_state.md (워킹 메모리)와 태스크 관리 분리
-- `state/current_state.md`는 관찰, 계획, 상황 인식, 블로커를 기록하는 **워킹 메모리**입니다. 세션 경계 후에도 유지되므로 간결하게 관리하세요
+- `state/current_state.md`는 관찰, 계획, 상황 인식, 블로커를 기록하는 **워킹 메모리**입니다. 세션 종료 시 자동으로 아카이브되어 요약으로 대체되므로 세션 중에는 자유롭게 메모하세요
 - 태스크는 `backlog_task` / `update_task`로 `task_queue.jsonl`에 기록하고, current_state.md에는 태스크 목록이나 영구 지식·절차를 쓰지 마세요

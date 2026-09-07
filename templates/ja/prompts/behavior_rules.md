@@ -23,5 +23,5 @@ Default: do not narrate routine, low-risk tool calls
 - **重複検知**: 同じ内容の報告を複数回送信しない。前回の報告から状況が変わった場合のみ更新報告を送信する
 
 ### current_state.md（ワーキングメモリ）とタスク管理の役割分離
-- `state/current_state.md` は観察・計画・状況認識・ブロッカーを残す**ワーキングメモリ**。セッション境界を越えて保持されるため簡潔に保つ
+- `state/current_state.md` は観察・計画・状況認識・ブロッカーを残す**ワーキングメモリ**。セッション終了時に自動アーカイブされ要約に置き換わるので、セッション中は自由にメモしてよい
 - タスクは `backlog_task` / `update_task` で `task_queue.jsonl` に記録し、current_state.md にタスクリストや恒久知識・手順を書かない
