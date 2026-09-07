@@ -179,11 +179,14 @@ def format_priming_section(result: PrimingResult, sender_name: str = "human") ->
         parts.append("")
 
     if result.related_knowledge or result.related_knowledge_untrusted:
-        from core.execution._sanitize import ORIGIN_MIXED
+        from core.execution._sanitize import ORIGIN_CONSOLIDATION, ORIGIN_MIXED
 
         parts.append(t("priming.related_knowledge_header"))
         parts.append("")
         if result.related_knowledge:
+            # When an untrusted bucket follows, label the medium block so the
+            # model can tell consolidated internal knowledge from external chunks.
+            medium_kwargs = {"origin": ORIGIN_CONSOLIDATION} if result.related_knowledge_untrusted else {}
             parts.append(
                 _wrap_priming_for_mode(
                     result,
@@ -191,6 +194,7 @@ def format_priming_section(result: PrimingResult, sender_name: str = "human") ->
                     "related_knowledge",
                     result.related_knowledge,
                     trust="medium",
+                    **medium_kwargs,
                 )
             )
             parts.append("")
