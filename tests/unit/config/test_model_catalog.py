@@ -45,9 +45,10 @@ class TestModelCatalogMove:
         assert "gemini/gemini-2.5-flash" in ids
 
     def test_available_model_id_set_matches_catalog(self, provider_config):
-        with (
-            patch("core.config.model_catalog.is_codex_login_available", return_value=False),
-            patch("core.config.model_catalog.is_grok_authenticated", return_value=False),
+        # Discovery is exercised elsewhere; here verify the ID-set plumbing by
+        # monkeypatching discovery to a deterministic result.
+        with patch(
+            "core.config.model_catalog.discovered_model_ids", return_value={"openai/gpt-4.1", "claude-sonnet-4-6"}
         ):
             ids = available_model_id_set(provider_config)
         assert "openai/gpt-4.1" in ids
