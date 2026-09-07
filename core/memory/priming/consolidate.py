@@ -21,6 +21,8 @@ _TIME_RE = re.compile(r"\[\d{2}:\d{2}\]")
 _WHITESPACE_RE = re.compile(r"\s+")
 _HEADERS = {
     "important_knowledge": "### [IMPORTANT] Knowledge (summary pointers)",
+    "related_knowledge": "",
+    "related_knowledge_untrusted": "",
     "recent_activity": "",
     "episodes": "",
     "pending_tasks": "",
@@ -42,24 +44,40 @@ def _normalized_text(text: str) -> str:
     return _WHITESPACE_RE.sub(" ", _TIME_RE.sub("", text)).strip()
 
 
-def _same_long_text(left: str, right: str) -> bool:
-    """Return whether normalized texts share an identical 60-char body."""
+def _near_identical(left: str, right: str) -> bool:
+    """Return whether *right* adds little beyond a shared 60-char body."""
     if len(left) < 60 or len(right) < 60:
         return False
-    return SequenceMatcher(None, left, right, autojunk=False).find_longest_match().size >= 60
+    common_size = SequenceMatcher(None, left, right, autojunk=False).find_longest_match().size
+    # A long shared preface alone is not duplication: substantial text unique
+    # to the later item may be a correction or an important addendum.
+    return common_size >= 60 and len(right) - common_size < 40
+
+
+_PATH_SOURCE_PRIORITY = {
+    "important_knowledge": 2,
+    "related_knowledge": 1,
+    "related_knowledge_untrusted": 1,
+    "episodes": 0,
+}
+
+
+def _key_preference(item: MemoryItem) -> tuple[int, str]:
+    """Prefer intentional resident/search pointers over episode copies."""
+    return (_PATH_SOURCE_PRIORITY.get(item.source, 0), item.updated)
 
 
 def consolidate_items(result: PrimingResult) -> PrimingResult:
     """Drop duplicate/obsolete items and rebuild their channel strings."""
     flattened = [item for channel_items in result.items.values() for item in channel_items]
     normalized_texts = [_normalized_text(item.text) for item in flattened]
-    latest_by_key: dict[str, int] = {}
+    preferred_by_key: dict[str, int] = {}
     latest_important_by_ref: dict[str, int] = {}
     for index, item in enumerate(flattened):
         effective_key = item.key or normalized_texts[index]
-        current_index = latest_by_key.get(effective_key)
-        if current_index is None or item.updated > flattened[current_index].updated:
-            latest_by_key[effective_key] = index
+        current_index = preferred_by_key.get(effective_key)
+        if current_index is None or _key_preference(item) > _key_preference(flattened[current_index]):
+            preferred_by_key[effective_key] = index
         if item.source == "important_knowledge" and item.ref:
             current_ref_index = latest_important_by_ref.get(item.ref)
             if current_ref_index is None or item.updated > flattened[current_ref_index].updated:
@@ -67,19 +85,29 @@ def consolidate_items(result: PrimingResult) -> PrimingResult:
 
     kept: list[MemoryItem] = []
     normalized_kept: list[str] = []
-    dropped: list[MemoryItem] = []
+    dropped: list[tuple[MemoryItem, str, MemoryItem | None]] = []
 
     for index, item in enumerate(flattened):
         effective_key = item.key or normalized_texts[index]
-        if latest_by_key.get(effective_key) != index:
-            dropped.append(item)
+        preferred_index = preferred_by_key.get(effective_key)
+        if preferred_index != index:
+            dropped.append((item, "same_key", flattened[preferred_index] if preferred_index is not None else None))
             continue
         if item.source == "important_knowledge" and item.ref and latest_important_by_ref.get(item.ref) != index:
-            dropped.append(item)
+            kept_index = latest_important_by_ref[item.ref]
+            dropped.append((item, "older_important_ref", flattened[kept_index]))
             continue
         normalized = normalized_texts[index]
-        if any(_same_long_text(normalized, previous) for previous in normalized_kept):
-            dropped.append(item)
+        duplicate_index = next(
+            (
+                kept_index
+                for kept_index, previous in enumerate(normalized_kept)
+                if _near_identical(previous, normalized)
+            ),
+            None,
+        )
+        if duplicate_index is not None:
+            dropped.append((item, "near_identical", kept[duplicate_index]))
             continue
         kept.append(item)
         normalized_kept.append(normalized)
@@ -94,20 +122,33 @@ def consolidate_items(result: PrimingResult) -> PrimingResult:
             header = t("priming.outbound_header") if source == "recent_outbound" else _HEADERS[source]
             updates[source] = render_items(consolidated.get(source, ()), header)
 
-    if "important_knowledge" in result.items:
+    if "important_knowledge" in result.items or "related_knowledge" in result.items:
         important = render_items(
             consolidated.get("important_knowledge", ()),
             _HEADERS["important_knowledge"],
         )
-        related = result.related_knowledge
+        related = (
+            render_items(consolidated.get("related_knowledge", ()), "")
+            if "related_knowledge" in result.items
+            else result.related_knowledge
+        )
         updates["related_knowledge"] = f"{important}\n\n{related}" if important and related else important or related
 
-    for item in dropped:
+    if "related_knowledge_untrusted" in result.items:
+        updates["related_knowledge_untrusted"] = render_items(
+            consolidated.get("related_knowledge_untrusted", ()),
+            "",
+        )
+
+    for item, reason, retained in dropped:
         logger.debug(
-            "Priming consolidation dropped item: source=%s key=%s ref=%s",
+            "Priming consolidation dropped item: source=%s key=%s ref=%s reason=%s retained_source=%s retained_key=%s",
             item.source,
             item.key,
             item.ref,
+            reason,
+            retained.source if retained else "",
+            retained.key if retained else "",
         )
     logger.info("Priming consolidation: kept=%d dropped=%d", len(kept), len(dropped))
     return replace(result, **updates)

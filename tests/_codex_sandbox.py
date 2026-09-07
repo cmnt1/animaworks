@@ -56,6 +56,10 @@ class _PipeEnd:
 def install() -> bool:
     if not _socketpair_send_blocked():
         return False
+    # sandbox はネットワークも遮断するため、huggingface_hub がキャッシュ済みモデルの
+    # 更新確認で接続失敗→バックオフ再試行を繰り返して数分止まる。オフライン固定にする。
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     from asyncio import selector_events
 
     def _make_self_pipe(self) -> None:  # type: ignore[no-untyped-def]

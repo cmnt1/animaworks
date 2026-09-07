@@ -59,6 +59,96 @@ def test_consolidate_drops_old_keys_long_text_matches_and_duplicate_refs() -> No
     assert result.related_knowledge.count("knowledge/rule.md") == 0
 
 
+def test_consolidate_keeps_later_item_with_substantial_unique_text() -> None:
+    common = "共" * 61
+    first = MemoryItem("recent_activity", "first", common + "先行情報")
+    correction = MemoryItem("episodes", "second", common + "訂正" * 25)
+
+    result = consolidate_items(PrimingResult(items={"recent_activity": (first,), "episodes": (correction,)}))
+
+    assert result.items["recent_activity"] == (first,)
+    assert result.items["episodes"] == (correction,)
+
+
+def test_consolidate_drops_later_item_with_little_unique_text() -> None:
+    common = "共" * 61
+    first = MemoryItem("recent_activity", "first", common + "先行情報")
+    duplicate = MemoryItem("episodes", "second", common + "追" * 10)
+
+    result = consolidate_items(PrimingResult(items={"recent_activity": (first,), "episodes": (duplicate,)}))
+
+    assert result.items["recent_activity"] == (first,)
+    assert result.items["episodes"] == ()
+
+
+def test_consolidate_prefers_c0_then_channel_c_over_same_path_episode() -> None:
+    path = "knowledge/release.md"
+    episode = MemoryItem("episodes", path, "episode", ref=path, updated="2026-09-08")
+    related = MemoryItem("related_knowledge", path, "related", ref=path, updated="2026-09-09")
+    important = MemoryItem("important_knowledge", path, "important", ref=path, updated="2026-01-01")
+
+    with_c0 = consolidate_items(
+        PrimingResult(
+            items={
+                "episodes": (episode,),
+                "related_knowledge": (related,),
+                "important_knowledge": (important,),
+            }
+        )
+    )
+    without_c0 = consolidate_items(PrimingResult(items={"episodes": (episode,), "related_knowledge": (related,)}))
+
+    assert with_c0.items["important_knowledge"] == (important,)
+    assert with_c0.items["related_knowledge"] == ()
+    assert with_c0.items["episodes"] == ()
+    assert without_c0.items["related_knowledge"] == (related,)
+    assert without_c0.items["episodes"] == ()
+
+
+def test_sentence_boundary_trim_handles_japanese_and_english() -> None:
+    from core.memory.activity import ActivityLogger
+    from core.memory.priming.channel_b import _format_entry_at_sentence_boundary
+
+    for prefix, boundary in (("日" * 130, "。"), ("English words " * 11, "!")):
+        entry = ActivityEntry(
+            ts="2026-09-08T12:00:00+09:00",
+            type="message_received",
+            content=prefix + boundary + "切り捨て対象" * 30,
+            from_person="human",
+        )
+
+        rendered = _format_entry_at_sentence_boundary(
+            ActivityLogger(Path("/tmp/test-anima")),
+            entry,
+            content_trim=200,
+        )
+
+        before_pointer = rendered.split("\n  ->", 1)[0]
+        assert before_pointer.endswith(boundary)
+        assert "切り捨て対象" not in before_pointer
+
+
+def test_sentence_boundary_trim_uses_ellipsis_when_boundary_is_too_early() -> None:
+    from core.memory.activity import ActivityLogger
+    from core.memory.priming.channel_b import _format_entry_at_sentence_boundary
+
+    content = "短い文。" + "続" * 250
+    entry = ActivityEntry(
+        ts="2026-09-08T12:00:00+09:00",
+        type="message_received",
+        content=content,
+        from_person="human",
+    )
+
+    rendered = _format_entry_at_sentence_boundary(
+        ActivityLogger(Path("/tmp/test-anima")),
+        entry,
+        content_trim=200,
+    )
+
+    assert content[:200] + "…" in rendered
+
+
 def test_pending_tasks_are_split_with_task_ids_as_keys() -> None:
     items = _itemize_pending_tasks(
         "## Active Parallel Tasks\n"
@@ -237,6 +327,55 @@ async def test_prime_memories_item_budgets_and_cross_channel_dedup(tmp_path: Pat
     emitted_keys = [item.key for items in result.items.values() for item in items]
     assert emitted_keys.count(repeated_key) == 1
     assert estimate_tokens(result.related_knowledge) <= _BUDGET_IMPORTANT_KNOWLEDGE
+
+
+@pytest.mark.asyncio
+async def test_prime_memories_related_budget_never_splits_channel_c_item(tmp_path: Path, monkeypatch) -> None:
+    anima_dir = tmp_path / "animas" / "mei"
+    (anima_dir / "knowledge").mkdir(parents=True)
+    (anima_dir / "episodes").mkdir()
+    engine = PrimingEngine(anima_dir)
+    high = MemoryItem(
+        "related_knowledge",
+        "knowledge/high.md",
+        "📌 " + "甲" * 700 + ' → read_memory_file(path="knowledge/high.md")',
+        ref="knowledge/high.md",
+        rank=2,
+    )
+    low = MemoryItem(
+        "related_knowledge",
+        "knowledge/low.md",
+        "📌 " + "乙" * 700 + ' → read_memory_file(path="knowledge/low.md")',
+        ref="knowledge/low.md",
+        rank=1,
+    )
+    related_items = (low, high)
+    legacy_c0 = '📌 Legacy C0 → read_memory_file(path="knowledge/legacy.md")'
+
+    async def empty(*args, **kwargs):
+        return ""
+
+    async def related(*args, **kwargs):
+        return ItemizedMemory(render_items(related_items, ""), related_items), ItemizedMemory("")
+
+    async def c0(*args, **kwargs):
+        return legacy_c0
+
+    monkeypatch.setattr(engine, "_channel_a_sender_profile", empty)
+    monkeypatch.setattr(engine, "_channel_b_recent_activity", empty)
+    monkeypatch.setattr(engine, "_channel_c0_important_knowledge", c0)
+    monkeypatch.setattr(engine, "_channel_c_related_knowledge", related)
+    monkeypatch.setattr(engine, "_channel_e_pending_tasks", empty)
+    monkeypatch.setattr(engine, "_collect_recent_outbound", empty)
+    monkeypatch.setattr(engine, "_channel_f_episodes", empty)
+    monkeypatch.setattr(engine, "_collect_pending_human_notifications", empty)
+
+    result = await engine.prime_memories("知識を確認", enable_dynamic_budget=False)
+
+    assert result.related_knowledge == f"{legacy_c0}\n\n{high.text}"
+    assert result.items["related_knowledge"] == (high,)
+    assert low.text not in result.related_knowledge
+    assert "..." not in result.related_knowledge
 
 
 async def empty_pair() -> tuple[str, str]:

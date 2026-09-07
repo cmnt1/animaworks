@@ -70,7 +70,11 @@ class TestChannelCTrustSeparation:
             FakeSearchResult(
                 content="Trusted knowledge",
                 score=0.95,
-                metadata={"anima": "test-anima", "origin": "consolidation"},
+                metadata={
+                    "anima": "test-anima",
+                    "origin": "consolidation",
+                    "updated_at": "2026-09-08T09:00:00+09:00",
+                },
             ),
         ]
         patcher, _searcher = self._patch_unified_search(results)
@@ -79,6 +83,12 @@ class TestChannelCTrustSeparation:
         assert 'read_memory_file(path="knowledge/test.md")' in medium
         assert "Trusted knowledge" not in medium
         assert untrusted == ""
+        assert len(medium.items) == 1
+        assert medium.items[0].source == "related_knowledge"
+        assert medium.items[0].key == "knowledge/test.md"
+        assert medium.items[0].ref == "knowledge/test.md"
+        assert medium.items[0].updated == "2026-09-08T09:00:00+09:00"
+        assert medium.items[0].rank == 0.95
 
     @pytest.mark.asyncio
     async def test_all_untrusted_results(self, engine: PrimingEngine) -> None:
@@ -96,6 +106,7 @@ class TestChannelCTrustSeparation:
         assert medium == ""
         assert 'read_memory_file(path="knowledge/test.md")' in untrusted
         assert "External data" not in untrusted
+        assert untrusted.items[0].source == "related_knowledge_untrusted"
 
     @pytest.mark.asyncio
     async def test_mixed_trust_results(self, engine: PrimingEngine) -> None:

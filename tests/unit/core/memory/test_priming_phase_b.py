@@ -104,6 +104,38 @@ async def test_channel_c_normalizes_inbox_sender_trigger(tmp_path: Path) -> None
 
 
 @pytest.mark.asyncio
+async def test_inbox_human_activity_is_in_channel_c_and_f_queries(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "animas" / "test"
+    (anima_dir / "knowledge").mkdir(parents=True)
+    (anima_dir / "episodes").mkdir(parents=True)
+    c_searcher = _fake_unified_search([])
+    f_searcher = _fake_unified_search([])
+    recent_human = ["human-only inbox context"]
+
+    with patch("core.memory.priming.channel_c.UnifiedMemorySearch", return_value=c_searcher):
+        await channel_c_related_knowledge(
+            anima_dir,
+            anima_dir / "knowledge",
+            lambda: MagicMock(),
+            [],
+            recent_human_messages=recent_human,
+            trigger="inbox",
+        )
+    with patch("core.memory.priming.channel_f.UnifiedMemorySearch", return_value=f_searcher):
+        await channel_f_episodes(
+            anima_dir,
+            anima_dir / "episodes",
+            lambda: MagicMock(),
+            [],
+            recent_human_messages=recent_human,
+            trigger="inbox",
+        )
+
+    assert "human-only inbox context" in c_searcher.search_many.call_args.args[0]
+    assert "human-only inbox context" in f_searcher.search_many.call_args.args[0]
+
+
+@pytest.mark.asyncio
 async def test_prime_memories_wires_channel_to_trigger(tmp_path: Path) -> None:
     """End-to-end: prime_memories(channel="heartbeat") reaches search_many with heartbeat policy."""
     from core.memory.priming.engine import PrimingEngine

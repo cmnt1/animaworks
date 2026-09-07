@@ -159,6 +159,21 @@ class PrimingEngine:
             self._memory_backend_init_failed_at = time.monotonic()
             return None
 
+    def _graph_context_enabled(self) -> bool:
+        """Return whether channel G should be scheduled for this engine."""
+        from core.memory.backend.legacy import LegacyRAGBackend
+
+        if self._memory_backend is not None:
+            return not isinstance(self._memory_backend, LegacyRAGBackend)
+        try:
+            from core.memory.backend.registry import resolve_backend_type
+
+            return resolve_backend_type(self.anima_dir) != "legacy"
+        except Exception:
+            # Backend resolution itself defaults to legacy. Match that safe
+            # default here without constructing a backend just to skip G.
+            return False
+
     def _load_config_budgets(self) -> None:
         if self._config_loaded:
             return
@@ -283,27 +298,22 @@ class PrimingEngine:
         keywords = self._extract_keywords(message or effective_message)
         knowledge_queries = build_queries(effective_message, keywords, recent_human_messages)
 
-        channel_c_coro = self._channel_c_related_knowledge(
-            keywords,
-            message=effective_message,
-            recent_human_messages=recent_human_messages,
-            trigger=channel,
-        )
-
-        results = await asyncio.gather(
-            self._run_priming_channel("A", self._channel_a_sender_profile(sender_name)),
-            self._run_priming_channel(
-                "B",
-                self._channel_b_recent_activity(sender_name, keywords, channel=channel),
+        channel_calls = [
+            ("A", self._channel_a_sender_profile(sender_name)),
+            ("B", self._channel_b_recent_activity(sender_name, keywords, channel=channel)),
+            ("C0", self._channel_c0_important_knowledge(knowledge_queries, trigger=channel)),
+            (
+                "C",
+                self._channel_c_related_knowledge(
+                    keywords,
+                    message=effective_message,
+                    recent_human_messages=recent_human_messages,
+                    trigger=channel,
+                ),
             ),
-            self._run_priming_channel(
-                "C0",
-                self._channel_c0_important_knowledge(knowledge_queries, trigger=channel),
-            ),
-            self._run_priming_channel("C", channel_c_coro),
-            self._run_priming_channel("E", self._channel_e_pending_tasks()),
-            self._run_priming_channel("outbound", self._collect_recent_outbound()),
-            self._run_priming_channel(
+            ("E", self._channel_e_pending_tasks()),
+            ("outbound", self._collect_recent_outbound()),
+            (
                 "F",
                 self._channel_f_episodes(
                     keywords,
@@ -312,52 +322,64 @@ class PrimingEngine:
                     trigger=channel,
                 ),
             ),
-            self._run_priming_channel(
+            (
                 "pending_human_notifications",
                 self._collect_pending_human_notifications(channel=channel),
             ),
-            self._run_priming_channel(
-                "G",
-                self._channel_g_graph_context(effective_message, trigger=channel),
-            ),
+        ]
+        graph_context_enabled = self._graph_context_enabled()
+        if graph_context_enabled:
+            channel_calls.append(("G", self._channel_g_graph_context(effective_message, trigger=channel)))
+        else:
+            # Legacy has no graph data, so creating/scheduling G only burns a
+            # channel slot and reserves budget that can never produce context.
+            logger.debug("Priming channel G not scheduled for legacy backend")
+
+        channel_names = [name for name, _ in channel_calls]
+        gathered = await asyncio.gather(
+            *(self._run_priming_channel(name, coro) for name, coro in channel_calls),
             return_exceptions=True,
         )
+        results = dict(zip(channel_names, gathered, strict=True))
 
         def unpack_itemized(value: object) -> tuple[str, tuple[MemoryItem, ...]]:
             if not isinstance(value, str):
                 return "", ()
             return str(value), tuple(getattr(value, "items", ()))
 
-        sender_profile = results[0] if isinstance(results[0], str) else ""
-        recent_activity, recent_activity_items = unpack_itemized(results[1])
+        sender_profile = results["A"] if isinstance(results["A"], str) else ""
+        recent_activity, recent_activity_items = unpack_itemized(results["B"])
 
-        important_knowledge, important_items = unpack_itemized(results[2])
-        if isinstance(results[3], tuple):
-            related_knowledge, related_knowledge_untrusted = results[3]
+        important_knowledge, important_items = unpack_itemized(results["C0"])
+        channel_c_result = results["C"]
+        if isinstance(channel_c_result, tuple):
+            related_knowledge, related_items = unpack_itemized(channel_c_result[0])
+            related_knowledge_untrusted, untrusted_items = unpack_itemized(channel_c_result[1])
         else:
             related_knowledge = ""
             related_knowledge_untrusted = ""
-        # Plain strings are retained for patched/legacy channel implementations.
-        if important_knowledge and not important_items:
-            related_knowledge = (
-                f"{important_knowledge}\n\n{related_knowledge}" if related_knowledge else important_knowledge
-            )
+            related_items = ()
+            untrusted_items = ()
+        channel_c_related_knowledge = related_knowledge
 
-        pending_tasks, pending_task_items = unpack_itemized(results[4])
-        recent_outbound, outbound_items = unpack_itemized(results[5])
-        episodes, episode_items = unpack_itemized(results[6])
-        pending_human_notifications, notification_items = unpack_itemized(results[7])
-        graph_context = results[8] if isinstance(results[8], str) else ""
+        pending_tasks, pending_task_items = unpack_itemized(results["E"])
+        recent_outbound, outbound_items = unpack_itemized(results["outbound"])
+        episodes, episode_items = unpack_itemized(results["F"])
+        pending_human_notifications, notification_items = unpack_itemized(results["pending_human_notifications"])
+        graph_value = results.get("G", "")
+        graph_context = graph_value if isinstance(graph_value, str) else ""
 
-        for i, r in enumerate(results):
+        for name, r in results.items():
             if isinstance(r, Exception):
-                logger.warning("Priming channel %d failed: %s", i, r)
+                logger.warning("Priming channel %s failed: %s", name, r)
 
         item_channels = {
             source: channel_items
             for source, channel_items in (
                 ("important_knowledge", important_items),
                 ("recent_activity", recent_activity_items),
+                ("related_knowledge", related_items),
+                ("related_knowledge_untrusted", untrusted_items),
                 ("pending_tasks", pending_task_items),
                 ("recent_outbound", outbound_items),
                 ("episodes", episode_items),
@@ -379,6 +401,14 @@ class PrimingEngine:
                 items=item_channels,
             )
         )
+        # Plain C0 strings from patched/legacy implementations have no items
+        # for consolidation, so restore them after itemized Channel C rebuilds.
+        if important_knowledge and not important_items:
+            raw_result.related_knowledge = (
+                f"{important_knowledge}\n\n{raw_result.related_knowledge}"
+                if raw_result.related_knowledge
+                else important_knowledge
+            )
         gate_plan = build_priming_plan(
             effective_message,
             channel,
@@ -419,43 +449,59 @@ class PrimingEngine:
             final_items[source] = tuple(selected)
             return render_items(selected, header)
 
+        knowledge_visible = bool(gated_result.related_knowledge)
         important_budget = min(budget_knowledge, int(_BUDGET_IMPORTANT_KNOWLEDGE * budget_ratio))
-        important_text = ""
-        if "important_knowledge" in gated_result.items and gated_result.related_knowledge:
+        if important_items:
             important_text = itemized_or_truncated(
                 "important_knowledge",
-                gated_result.related_knowledge,
+                gated_result.related_knowledge if knowledge_visible else "",
                 important_budget,
                 header=_IMPORTANT_HEADER,
             )
-        elif "important_knowledge" in gated_result.items:
-            final_items["important_knowledge"] = ()
-        base_related = related_knowledge if gated_result.related_knowledge else ""
-        prefix = f"{important_text}\n\n" if important_text and base_related else important_text
-        remaining_knowledge_budget = max(0, budget_knowledge - estimate_tokens(prefix))
-        truncated_base_knowledge = truncate_head(base_related, remaining_knowledge_budget)
+        elif important_knowledge and knowledge_visible:
+            important_text = truncate_head(important_knowledge, important_budget)
+        else:
+            important_text = ""
+        remaining_knowledge_budget = max(0, budget_knowledge - estimate_tokens(important_text))
+        medium_text = itemized_or_truncated(
+            "related_knowledge",
+            channel_c_related_knowledge if knowledge_visible else "",
+            remaining_knowledge_budget,
+        )
         truncated_knowledge = (
-            f"{important_text}\n\n{truncated_base_knowledge}"
-            if important_text and truncated_base_knowledge
-            else important_text or truncated_base_knowledge
+            f"{important_text}\n\n{medium_text}" if important_text and medium_text else important_text or medium_text
         )
-        while truncated_base_knowledge and estimate_tokens(truncated_knowledge) > budget_knowledge:
-            remaining_knowledge_budget -= 1
-            truncated_base_knowledge = truncate_head(base_related, remaining_knowledge_budget)
+        while medium_text and estimate_tokens(truncated_knowledge) > budget_knowledge:
+            if "related_knowledge" in final_items and final_items["related_knowledge"]:
+                final_items["related_knowledge"] = final_items["related_knowledge"][:-1]
+                medium_text = render_items(final_items["related_knowledge"], "")
+            else:
+                remaining_knowledge_budget = max(0, remaining_knowledge_budget - 1)
+                medium_text = truncate_head(channel_c_related_knowledge, remaining_knowledge_budget)
             truncated_knowledge = (
-                f"{important_text}\n\n{truncated_base_knowledge}"
-                if important_text and truncated_base_knowledge
-                else important_text or truncated_base_knowledge
+                f"{important_text}\n\n{medium_text}"
+                if important_text and medium_text
+                else important_text or medium_text
             )
-        knowledge_used_tokens = estimate_tokens(truncated_knowledge)
-        remaining_knowledge_budget = max(0, budget_knowledge - knowledge_used_tokens)
-        truncated_untrusted = (
-            truncate_head(gated_result.related_knowledge_untrusted, remaining_knowledge_budget)
-            if remaining_knowledge_budget > 0
-            else ""
-        )
 
-        budget_graph = int(_BUDGET_GRAPH_CONTEXT * budget_ratio)
+        remaining_knowledge_budget = max(0, budget_knowledge - estimate_tokens(truncated_knowledge))
+        truncated_untrusted = itemized_or_truncated(
+            "related_knowledge_untrusted",
+            gated_result.related_knowledge_untrusted,
+            remaining_knowledge_budget,
+        )
+        while truncated_untrusted and estimate_tokens(truncated_knowledge + truncated_untrusted) > budget_knowledge:
+            if "related_knowledge_untrusted" in final_items and final_items["related_knowledge_untrusted"]:
+                final_items["related_knowledge_untrusted"] = final_items["related_knowledge_untrusted"][:-1]
+                truncated_untrusted = render_items(final_items["related_knowledge_untrusted"], "")
+            else:
+                remaining_knowledge_budget = max(0, remaining_knowledge_budget - 1)
+                truncated_untrusted = truncate_head(
+                    gated_result.related_knowledge_untrusted,
+                    remaining_knowledge_budget,
+                )
+
+        budget_graph = int(_BUDGET_GRAPH_CONTEXT * budget_ratio) if graph_context_enabled else 0
         result = PrimingResult(
             sender_profile=truncate_head(gated_result.sender_profile, budget_profile),
             recent_activity=itemized_or_truncated(
@@ -588,7 +634,7 @@ class PrimingEngine:
         from core.memory.backend.legacy import LegacyRAGBackend
 
         if isinstance(backend, LegacyRAGBackend):
-            logger.info("Priming channel G skipped for legacy backend")
+            logger.debug("Priming channel G skipped for legacy backend")
             return ""
         return await _channel_g.collect_graph_context(
             backend,

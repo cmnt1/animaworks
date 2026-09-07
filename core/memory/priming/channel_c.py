@@ -406,7 +406,7 @@ async def channel_c_related_knowledge(
     message: str = "",
     recent_human_messages: list[str] | None = None,
     trigger: str = "chat",
-) -> tuple[str, str]:
+) -> tuple[ItemizedMemory, ItemizedMemory]:
     """Channel C: Related knowledge search through unified Legacy retrieval.
 
     Searches both personal knowledge and shared common_knowledge,
@@ -415,19 +415,19 @@ async def channel_c_related_knowledge(
     ``trigger`` selects the retrieval policy (rerank/pool/scopes); it is
     normalized to a ``TRIGGER_POLICIES`` key before use.
 
-    Returns a ``(medium_text, untrusted_text)`` tuple where results
-    are split by their provenance-derived trust level.
+    Returns a ``(medium, untrusted)`` tuple whose string-compatible values
+    retain one indivisible item per readable source path.
     """
     if not knowledge_dir.is_dir():
         logger.debug("Channel C: No knowledge dir")
-        return ("", "")
+        return (ItemizedMemory(""), ItemizedMemory(""))
 
     try:
         denied_roots = load_denied_roots(anima_dir)
         queries = build_queries(message, keywords, recent_human_messages)
         if not queries:
             logger.debug("Channel C: No keywords and no message")
-            return ("", "")
+            return (ItemizedMemory(""), ItemizedMemory(""))
         anima_name = anima_dir.name
 
         _min_score: float | None = None
@@ -448,13 +448,13 @@ async def channel_c_related_knowledge(
         )
         if bool(searcher.last_search_meta.get("abstain", False)):
             logger.debug("Channel C: unified search abstained")
-            return ("", "")
+            return (ItemizedMemory(""), ItemizedMemory(""))
 
         if results:
             from core.execution._sanitize import ORIGIN_UNKNOWN, resolve_trust
 
-            medium_parts: list[str] = []
-            untrusted_parts: list[str] = []
+            medium_by_path: dict[str, MemoryItem] = {}
+            untrusted_by_path: dict[str, MemoryItem] = {}
             for result in results:
                 metadata = _metadata_from_unified_result(result)
                 chunk_origin = metadata.get("origin", "")
@@ -471,33 +471,53 @@ async def channel_c_related_knowledge(
                     metadata=metadata,
                     path=rel_path,
                 )
+                item_kwargs = {
+                    "key": rel_path,
+                    "text": line,
+                    "ref": rel_path,
+                    "updated": _updated_from_metadata(metadata),
+                    "rank": float(result.get("score", 0.0) or 0.0),
+                }
                 # Old internal files predate origin metadata. Elevate only paths
                 # whose ownership is unambiguous; the global sanitizer default
                 # remains conservative for every other origin-less payload.
                 if chunk_trust == "untrusted" and not chunk_origin and _unknown_origin_is_internal(anima_dir, rel_path):
-                    medium_parts.append(line)
+                    target = medium_by_path
+                    source = "related_knowledge"
                 elif chunk_trust == "untrusted":
-                    untrusted_parts.append(line)
+                    target = untrusted_by_path
+                    source = "related_knowledge_untrusted"
                 else:
-                    medium_parts.append(line)
+                    target = medium_by_path
+                    source = "related_knowledge"
+                item = MemoryItem(source=source, **item_kwargs)
+                previous = target.get(rel_path)
+                if previous is None or (item.rank, item.updated) > (previous.rank, previous.updated):
+                    target[rel_path] = item
 
-            medium_output = "\n".join(medium_parts)
-            untrusted_output = "\n".join(untrusted_parts)
+            medium_items = tuple(
+                sorted(medium_by_path.values(), key=lambda item: (item.rank, item.updated), reverse=True)
+            )
+            untrusted_items = tuple(
+                sorted(untrusted_by_path.values(), key=lambda item: (item.rank, item.updated), reverse=True)
+            )
+            medium_output = ItemizedMemory(render_items(medium_items, ""), medium_items)
+            untrusted_output = ItemizedMemory(render_items(untrusted_items, ""), untrusted_items)
 
             logger.debug(
                 "Channel C: Vector search returned %d results (medium=%d, untrusted=%d)",
                 len(results),
-                len(medium_parts),
-                len(untrusted_parts),
+                len(medium_items),
+                len(untrusted_items),
             )
             return (medium_output, untrusted_output)
         else:
             logger.debug("Channel C: Vector search found no results")
-            return ("", "")
+            return (ItemizedMemory(""), ItemizedMemory(""))
 
     except Exception as e:
         logger.warning("Channel C: Vector search failed: %s", e)
-        return ("", "")
+        return (ItemizedMemory(""), ItemizedMemory(""))
 
 
 def _metadata_from_unified_result(result: dict) -> dict:
