@@ -1,4 +1,4 @@
-### Runtime Data Directory
+## Runtime Data Directory
 
 All runtime data is stored under `{data_dir}/`.
 
@@ -20,7 +20,7 @@ All runtime data is stored under `{data_dir}/`.
     └── attachments/  # Message attachments
 ```
 
-### Access Rules
+## Access Rules
 
 1. **Your own directory** (`{data_dir}/animas/{anima_name}/`): Full read/write access
 2. **Shared area** (`{data_dir}/shared/`): Read/write. Used for messaging and shared user memory
