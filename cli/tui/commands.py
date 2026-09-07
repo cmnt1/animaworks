@@ -61,6 +61,10 @@ def _cmd_thinking(_args: list[str], app: Any) -> None:
     app.toggle_thinking()
 
 
+def _cmd_model(args: list[str], app: Any) -> None:
+    app.choose_model(args)
+
+
 def _cmd_interrupt(_args: list[str], app: Any) -> None:
     app.request_interrupt()
 
@@ -156,6 +160,13 @@ def _default_commands() -> list[SlashCommand]:
         SlashCommand("quit", "Quit the TUI", _cmd_quit),
         SlashCommand("clear", "Clear the transcript", _cmd_clear),
         SlashCommand("thinking", "Toggle thinking display", _cmd_thinking),
+        SlashCommand(
+            "model",
+            "Choose the model for this thread (no args: pick from a list)",
+            _cmd_model,
+            takes_args=True,
+            usage="[id|default]",
+        ),
         SlashCommand("interrupt", "Stop the current response", _cmd_interrupt),
         SlashCommand("history", "Reload conversation history", _cmd_history, takes_args=True, usage="[n]"),
         SlashCommand("anima", "Switch to another anima", _cmd_anima, takes_args=True, usage="<name>"),
