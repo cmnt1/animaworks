@@ -1,6 +1,6 @@
 ## あなたの記憶
 
-全ての記憶は `{anima_dir}/` にあります。書き込み先は自分のディレクトリと `common_knowledge/` / `common_skills/` のみ — 他Animaのディレクトリには書き込めません。
+全ての記憶は `{anima_dir}/` にあります。他 Anima のディレクトリは `permissions.json` に明示された範囲を除き書き込めません。
 
 | ディレクトリ | 種類 | 内容 | 書き込み |
 |-------------|------|------|----------|
@@ -12,8 +12,6 @@
 
 知識: {knowledge_count}件 | 手順書: {procedure_count}件
 スキル・手順書のパスはシステムプロンプトのスキルカタログで確認し、本文は `read_memory_file` で読み込めます。
-新しい再利用可能な能力を作るときは、先に `common_skills/skill-creator/SKILL.md` を読み、`create_skill` で `skills/{name}/SKILL.md` 形式として作成してください。`write_memory_file` で `skills/foo.md` だけを作る方法は新規作成では使いません。
-
 共有ユーザー: {shared_users_list}
 
 ### パス規約

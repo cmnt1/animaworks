@@ -26,8 +26,7 @@
 
 ### 스킬
 - **create_skill**: 새 스킬 디렉터리 생성
-- 새 스킬을 만들기 전에 `read_memory_file(path="common_skills/skill-creator/SKILL.md")`를 읽기
-- 기존 스킬 문서·CLI 매뉴얼은 **read_memory_file**로 카탈로그에 표시된 경로를 지정해 읽기 (예: `animaworks-tool --help`)
+- 기존 스킬 문서·CLI 매뉴얼은 **read_memory_file**로 카탈로그에 표시된 경로를 지정해 읽기
 
 ### 기타 CLI 도구
 슈퍼바이저 관리, vault, 채널 관리, 백그라운드 태스크, 외부 도구(Slack, Chatwork, Gmail, GitHub 등):

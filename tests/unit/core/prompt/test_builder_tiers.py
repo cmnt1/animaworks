@@ -63,7 +63,7 @@ def _make_mock_memory(
     permissions: str = "",
     specialty: str = "専門テスト",
     bootstrap: str = "Bootstrap初回指示",
-    vision: str = "Company Vision",
+    vision: str = "# Vision\nCompany Vision builds reliable systems that improve the organization every day.",
 ) -> MagicMock:
     """Create a mock MemoryManager with typical return values."""
     anima_dir = tmp_path / "animas" / "test-anima"

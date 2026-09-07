@@ -468,7 +468,7 @@ class MemoryRetriever:
         top_k: int = 3,
         min_score: float = 0.80,
     ) -> list[RetrievalResult]:
-        """Search for action rules relevant to the given tool and query.
+        """Search personal and shared action rules relevant to the tool and query.
 
         Args:
             tool_name: The tool about to be executed (e.g. ``call_human``).
@@ -481,18 +481,24 @@ class MemoryRetriever:
             List of matching action rule chunks, filtered by ``trigger_tools``
             and sorted by score descending.
         """
-        collection_name = f"{anima_name}_knowledge"
         filter_metadata: dict[str, str | int | float] = {"type": "action_rule"}
-        vector_rows = self._vector_search_collection(
-            query,
-            collection_name,
-            top_k * 2,
-            filter_metadata=filter_metadata,
-        )
+        vector_rows: list[tuple[str, str, float, dict]] = []
+        for collection_name in (f"{anima_name}_knowledge", "shared_common_knowledge"):
+            vector_rows.extend(
+                self._vector_search_collection(
+                    query,
+                    collection_name,
+                    top_k * 2,
+                    filter_metadata=filter_metadata,
+                )
+            )
 
         tool_lower = tool_name.lower()
         results: list[RetrievalResult] = []
+        seen_ids: set[str] = set()
         for doc_id, content, score, metadata in vector_rows:
+            if doc_id in seen_ids:
+                continue
             raw_triggers = metadata.get("trigger_tools")
             if raw_triggers is None:
                 continue
@@ -501,6 +507,7 @@ class MemoryRetriever:
                 continue
             if score < min_score:
                 continue
+            seen_ids.add(doc_id)
             results.append(
                 RetrievalResult(
                     doc_id=doc_id,

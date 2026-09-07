@@ -43,17 +43,18 @@ class TestCommunicationRulesTemplate:
 
 class TestBehaviorRulesTemplate:
     def test_has_task_recording_section(self):
-        path = TEMPLATES_DIR / "behavior_rules.md"
+        path = TEMPLATES_DIR / "builder" / "task_recording_chat.md"
         content = path.read_text(encoding="utf-8")
-        assert "### タスク記録と報告" in content
+        assert "### チャットでのタスク記録" in content
 
     def test_task_recording_rules(self):
-        path = TEMPLATES_DIR / "behavior_rules.md"
+        path = TEMPLATES_DIR / "builder" / "task_recording_chat.md"
         content = path.read_text(encoding="utf-8")
         assert "通常チャットでは `submit_tasks` を使わない" in content
         assert "`backlog_task` で登録" in content
         assert "完了条件の達成" in content
-        assert "解決済み案件の再報告禁止" in content
+        behavior = (TEMPLATES_DIR / "behavior_rules.md").read_text(encoding="utf-8")
+        assert "解決済み案件の再報告禁止" in behavior
 
     def test_existing_sections_preserved(self):
         path = TEMPLATES_DIR / "behavior_rules.md"
@@ -72,7 +73,20 @@ class TestBehaviorRulesTemplate:
             "create_skill",
         ]
         for locale in LOCALES:
-            content = (TEMPLATES_ROOT / locale / "prompts" / "behavior_rules.md").read_text(encoding="utf-8")
+            locale_root = TEMPLATES_ROOT / locale
+            content = "\n".join(
+                (
+                    (locale_root / "prompts" / "behavior_rules.md").read_text(encoding="utf-8"),
+                    (locale_root / "prompts" / "builder" / "instruction_internalization.md").read_text(
+                        encoding="utf-8"
+                    ),
+                    (locale_root / "prompts" / "builder" / "task_recording_chat.md").read_text(encoding="utf-8"),
+                    (locale_root / "reference" / "operations" / "memory-writing-guide.md").read_text(encoding="utf-8"),
+                    (
+                        locale_root / "common_knowledge" / "operations" / "action-rule-memory-write-destination.md"
+                    ).read_text(encoding="utf-8"),
+                )
+            )
             for token in required:
                 assert token in content, f"{locale} behavior_rules missing {token}"
             assert "backlog_task" in content
@@ -118,15 +132,15 @@ class TestActionRulesGuideTemplate:
             for cli in cli_mappings:
                 assert cli in content, f"{locale} action-rules-guide missing {cli}"
 
-    def test_indexes_and_hints_point_to_action_rules_and_skill_creator(self):
+    def test_indexes_and_hints_point_to_action_rules_without_skill_creator_duplication(self):
         for locale in LOCALES:
             index = (TEMPLATES_ROOT / locale / "common_knowledge" / "00_index.md").read_text(encoding="utf-8")
             hint = (TEMPLATES_ROOT / locale / "prompts" / "builder" / "common_knowledge_hint.md").read_text(
                 encoding="utf-8"
             )
-            for content in (index, hint):
-                assert "operations/action-rules-guide.md" in content
-                assert "common_skills/skill-creator/SKILL.md" in content
+            assert "operations/action-rules-guide.md" in index
+            assert "operations/action-rules-guide.md" in hint
+            assert "common_skills/skill-creator/SKILL.md" not in hint
 
 
 class TestPrimingChannelsReference:
