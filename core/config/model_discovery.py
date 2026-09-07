@@ -14,7 +14,9 @@ are *actually* usable right now, rather than a hard-coded snapshot.
 Every probe is split into a pure *parse* function (unit-testable with no
 subprocess) and an *execute* wrapper that runs the CLI / HTTP round-trip.
 All probes run concurrently with a short timeout; a single failure never
-blocks the others.  Results are cached for ``CACHE_TTL_SECONDS``.
+blocks the others.  Results are cached for ``CACHE_TTL_SECONDS``.  Expired
+results remain usable while the server refreshes them in the background, so
+opening a model picker never pays the recurring probe latency.
 """
 
 from __future__ import annotations
@@ -67,13 +69,15 @@ class DiscoveredModel:
 # ── Module-level cache ────────────────────────────────────────────────────
 _cache: dict[str, Any] = {}
 _cache_lock = threading.Lock()
+_cache_refreshing = False
 
 
 def invalidate_cache() -> None:
     """Clear the cached discovery result (force a fresh probe on next call)."""
-    global _cache
+    global _cache, _cache_refreshing
     with _cache_lock:
         _cache = {}
+        _cache_refreshing = False
 
 
 # ── Parse functions (pure, unit-testable, no network) ────────────────────
@@ -402,19 +406,8 @@ def _dedupe_and_sort(models: list[DiscoveredModel]) -> list[DiscoveredModel]:
     return result
 
 
-def discover_models(*, refresh: bool = False, config: Any = None) -> list[DiscoveredModel]:
-    """Return the dynamically discovered catalog of DiscoveredModel objects.
-
-    Probes all execution backends concurrently.  A failing probe is logged
-    and skipped (never raises).  Results are cached for ``CACHE_TTL_SECONDS``
-    unless ``refresh=True``.
-    """
-    now = time.monotonic()
-    global _cache
-    with _cache_lock:
-        if not refresh and _cache and now - _cache.get("timestamp", 0.0) < CACHE_TTL_SECONDS:
-            return list(_cache["models"])
-
+def _discover_uncached(config: Any = None) -> list[DiscoveredModel]:
+    """Run all discovery probes and return a newly built catalog."""
     if config is None:
         config = load_config()
 
@@ -438,9 +431,49 @@ def discover_models(*, refresh: bool = False, config: Any = None) -> list[Discov
     result = _dedupe_and_sort(merged)
     if not result:
         result = _dedupe_and_sort(_static_fallback(config))
+    return result
+
+
+def _refresh_cache_in_background(config: Any = None) -> None:
+    """Refresh an expired catalog without delaying the current caller."""
+    global _cache, _cache_refreshing
+    try:
+        result = _discover_uncached(config)
+        with _cache_lock:
+            _cache = {"timestamp": time.monotonic(), "models": list(result)}
+    except Exception:  # noqa: BLE001 - preserve the last usable catalog
+        logger.warning("background model catalog refresh failed", exc_info=True)
+    finally:
+        with _cache_lock:
+            _cache_refreshing = False
+
+
+def discover_models(*, refresh: bool = False, config: Any = None) -> list[DiscoveredModel]:
+    """Return the dynamically discovered catalog of DiscoveredModel objects.
+
+    The first call (or ``refresh=True``) probes all execution backends.
+    Normal calls return the server-side cache immediately.  Once its TTL has
+    elapsed, that stale-but-usable value is returned and one daemon thread
+    refreshes it for subsequent calls.
+    """
+    now = time.monotonic()
+    global _cache, _cache_refreshing
+    with _cache_lock:
+        if not refresh and _cache:
+            if now - _cache.get("timestamp", 0.0) >= CACHE_TTL_SECONDS and not _cache_refreshing:
+                _cache_refreshing = True
+                threading.Thread(
+                    target=_refresh_cache_in_background,
+                    args=(config,),
+                    name="model-catalog-refresh",
+                    daemon=True,
+                ).start()
+            return list(_cache["models"])
+
+    result = _discover_uncached(config)
 
     with _cache_lock:
-        _cache = {"timestamp": now, "models": list(result)}
+        _cache = {"timestamp": time.monotonic(), "models": list(result)}
     return list(result)
 
 

@@ -754,6 +754,17 @@ async def _run_model_warmup() -> None:
         logger.exception("Model warmup failed: stt")
 
 
+async def _warm_model_catalog() -> None:
+    """Prime the server-side model list before a UI opens its picker."""
+    try:
+        from core.config.model_discovery import discover_models
+
+        models = await asyncio.to_thread(discover_models)
+        logger.info("Model catalog warmup complete: %d models", len(models))
+    except Exception:
+        logger.exception("Model catalog warmup failed")
+
+
 async def _warm_voice_greets(app: FastAPI) -> None:
     """Pre-populate the greet cache for voice-enabled animas (those with a
     per-anima voice_id) so the popup greeting is instant after a restart."""
@@ -987,6 +998,7 @@ async def _activate_runtime_services(app: FastAPI) -> None:
         _run_startup_initialization(app),
     )
     app.state._model_warmup_task = asyncio.create_task(_run_model_warmup())
+    app.state._model_catalog_warmup_task = asyncio.create_task(_warm_model_catalog())
     app.state._voice_greet_warmup_task = asyncio.create_task(_warm_voice_greets(app))
 
     logger.info("Server started (startup initialization running in background)")

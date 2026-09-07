@@ -136,6 +136,35 @@ class TestDiscoverModels:
             discover_models(config=object())
             assert codex.call_count == 1
 
+    def test_expired_cache_is_returned_while_background_refresh_starts(self):
+        """A model picker must not wait for probes every time the TTL expires."""
+        invalidate_cache()
+        stub = [DiscoveredModel("s:fable", "s", "fable", "fable", "Claude", source="claude-cli")]
+        with (
+            patch("core.config.model_discovery._probe_codex", return_value=stub) as codex,
+            patch("core.config.model_discovery._probe_grok", return_value=[]),
+            patch("core.config.model_discovery._probe_claude", return_value=[]),
+            patch("core.config.model_discovery._probe_openai_compatible", return_value=[]),
+            patch("core.config.model_discovery._probe_ollama", return_value=[]),
+            patch("core.config.model_discovery.time.monotonic", return_value=1.0),
+        ):
+            discover_models(config=object())
+
+        with (
+            patch(
+                "core.config.model_discovery.time.monotonic",
+                return_value=1.0 + 301.0,
+            ),
+            patch("core.config.model_discovery.threading.Thread") as thread_cls,
+        ):
+            models = discover_models(config=object())
+
+        assert [model.id for model in models] == ["s:fable"]
+        assert codex.call_count == 1
+        thread_cls.assert_called_once()
+        thread_cls.return_value.start.assert_called_once()
+        invalidate_cache()
+
     def test_refresh_reruns_probes(self):
         invalidate_cache()
         stub = [
