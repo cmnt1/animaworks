@@ -84,6 +84,7 @@ async def test_c0_uses_title_for_table_header_and_orders_by_updated(tmp_path: Pa
             metadata={
                 "source_file": "knowledge/old.md",
                 "anima": "mei",
+                "importance": "important",
                 "updated_at": "2026-01-01T00:00:00+09:00",
             },
         ),
@@ -93,6 +94,7 @@ async def test_c0_uses_title_for_table_header_and_orders_by_updated(tmp_path: Pa
             metadata={
                 "source_file": "knowledge/new.md",
                 "anima": "mei",
+                "importance": "important",
                 "updated_at": "2026-09-07T00:00:00+09:00",
             },
         ),

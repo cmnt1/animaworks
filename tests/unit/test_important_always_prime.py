@@ -215,7 +215,7 @@ class TestChannelC0ImportantKnowledge:
         assert "📌" in result
 
     @pytest.mark.asyncio
-    async def test_output_includes_metadata_for_external_important_knowledge(self, temp_anima_dir):
+    async def test_output_omits_metadata_for_external_important_knowledge(self, temp_anima_dir):
         doc = Document(
             id="c1",
             content="# External Rule\n\nDetails here.",
@@ -240,7 +240,8 @@ class TestChannelC0ImportantKnowledge:
             engine = PrimingEngine(temp_anima_dir)
             result = await engine._channel_c0_important_knowledge()
 
-        assert "updated: 2026-06-03 | origin: external_web" in result
+        assert "updated:" not in result
+        assert "origin:" not in result
         assert 'read_memory_file(path="knowledge/external-rule.md")' in result
 
     @pytest.mark.asyncio
@@ -276,7 +277,7 @@ class TestChannelC0ImportantKnowledge:
         lines = result.split("\n")
         content_lines = [line for line in lines if line.startswith("📌")]
         assert estimate_tokens(result) <= _BUDGET_IMPORTANT_KNOWLEDGE
-        assert len(content_lines) < 30
+        assert len(content_lines) <= 3
 
     @pytest.mark.asyncio
     async def test_empty_when_no_knowledge_dir(self, tmp_path):

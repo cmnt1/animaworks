@@ -66,7 +66,7 @@ from core.memory.priming.gate import (
 )
 from core.memory.priming.items import MemoryItem, render_items, select_within_budget
 from core.memory.priming.result import PrimingResult
-from core.memory.priming.utils import RetrieverCache, extract_keywords, truncate_head, truncate_tail
+from core.memory.priming.utils import RetrieverCache, build_queries, extract_keywords, truncate_head, truncate_tail
 from core.prompt.tokens import estimate_tokens
 
 logger = logging.getLogger("animaworks.priming")
@@ -281,6 +281,7 @@ class PrimingEngine:
                 pass
 
         keywords = self._extract_keywords(message or effective_message)
+        knowledge_queries = build_queries(effective_message, keywords, recent_human_messages)
 
         channel_c_coro = self._channel_c_related_knowledge(
             keywords,
@@ -295,7 +296,10 @@ class PrimingEngine:
                 "B",
                 self._channel_b_recent_activity(sender_name, keywords, channel=channel),
             ),
-            self._run_priming_channel("C0", self._channel_c0_important_knowledge()),
+            self._run_priming_channel(
+                "C0",
+                self._channel_c0_important_knowledge(knowledge_queries, trigger=channel),
+            ),
             self._run_priming_channel("C", channel_c_coro),
             self._run_priming_channel("E", self._channel_e_pending_tasks()),
             self._run_priming_channel("outbound", self._collect_recent_outbound()),
@@ -515,11 +519,18 @@ class PrimingEngine:
             channel=channel,
         )
 
-    async def _channel_c0_important_knowledge(self) -> str:
+    async def _channel_c0_important_knowledge(
+        self,
+        queries: list[str] | None = None,
+        *,
+        trigger: str = "chat",
+    ) -> str:
         return await _channel_c.channel_c0_important_knowledge(
             self.anima_dir,
             self.knowledge_dir,
             self._get_retriever,
+            queries,
+            trigger=trigger,
         )
 
     async def _channel_c_related_knowledge(

@@ -1255,6 +1255,7 @@ class MemoryIndexer:
             metadata["importance"] = "important"
         else:
             metadata["importance"] = "normal"
+        metadata["always_prime"] = (frontmatter or {}).get("always_prime") is True
 
         # ── ActionRule ──────────
         if "[ACTION-RULE]" in content:

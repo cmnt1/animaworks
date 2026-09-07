@@ -148,7 +148,7 @@ class TestPrimeMemoriesIncludesChannelE:
         assert "Important task" in result.pending_tasks
 
 
-async def _empty_text() -> str:
+async def _empty_text(*args, **kwargs) -> str:
     return ""
 
 

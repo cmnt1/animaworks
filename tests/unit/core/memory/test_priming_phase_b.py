@@ -112,6 +112,8 @@ async def test_prime_memories_wires_channel_to_trigger(tmp_path: Path) -> None:
     (anima_dir / "knowledge").mkdir(parents=True)
     (anima_dir / "episodes").mkdir(parents=True)
     engine = PrimingEngine(anima_dir)
+    engine._retriever = MagicMock()
+    engine._retriever.indexer = MagicMock()
 
     c_searcher = _fake_unified_search([])
     f_searcher = _fake_unified_search([])
@@ -158,9 +160,11 @@ class TestRetrieverCacheTTL:
         clock["t"] = 1000.0 + utils_module._INIT_RETRY_TTL_SECONDS + 1
 
         sentinel = object()
-        with patch("core.memory.rag.singleton.get_vector_store", return_value=MagicMock()), patch(
-            "core.memory.rag.indexer.MemoryIndexer", return_value=MagicMock()
-        ), patch("core.memory.rag.MemoryRetriever", return_value=sentinel):
+        with (
+            patch("core.memory.rag.singleton.get_vector_store", return_value=MagicMock()),
+            patch("core.memory.rag.indexer.MemoryIndexer", return_value=MagicMock()),
+            patch("core.memory.rag.MemoryRetriever", return_value=sentinel),
+        ):
             result = cache.get_or_create(tmp_path, knowledge_dir)
 
         assert result is sentinel
