@@ -98,6 +98,25 @@ class AnimaWorksClient:
         resp = await self._get(f"{self.base_url}/api/animas")
         return resp
 
+    async def list_available_models(self, *, refresh: bool = False) -> list[dict]:
+        """Return the mode+model catalog from the gateway.
+
+        ``refresh`` asks the server to ignore its cache and re-fetch.
+        Any non-catalog response yields an empty list; network / HTTP
+        errors surface as :class:`AnimaWorksClientError`.
+        """
+        params = {"refresh": 1} if refresh else None
+        resp = await self._get(
+            f"{self.base_url}/api/system/available-models",
+            params=params,
+        )
+        if not isinstance(resp, dict):
+            return []
+        models = resp.get("models")
+        if not isinstance(models, list):
+            return []
+        return models
+
     async def get_history(
         self,
         anima: str,
@@ -199,6 +218,7 @@ class AnimaWorksClient:
         thread_id: str = "default",
         resume: str | None = None,
         last_event_id: str | None = None,
+        model: str | None = None,
     ) -> AsyncIterator[SseEvent]:
         payload = {
             "message": message,
@@ -206,7 +226,7 @@ class AnimaWorksClient:
             "intent": "",
             "images": [],
             "thread_id": thread_id,
-            "model": None,
+            "model": model or None,
             "resume": resume,
             "last_event_id": last_event_id,
         }

@@ -69,7 +69,7 @@ class FakeClient:
     async def interrupt(self, anima, *, thread_id):
         return {"status": "interrupted"}
 
-    async def chat_stream(self, anima, message, *, thread_id="default", resume=None, last_event_id=None):
+    async def chat_stream(self, anima, message, *, thread_id="default", resume=None, last_event_id=None, model=None):
         self.messages.append((anima, message))
         while True:
             ev = await self.chat_queue.get()
@@ -214,7 +214,6 @@ async def test_palette_labels_are_single_line():
         await _pump()
         for item in app._palette_items():
             assert item.label.no_wrap is True
-
 
 
 # ── (d) /skill foo sets active skills with existing refs + foo ──
@@ -501,6 +500,7 @@ async def test_switch_to_empty_history_shows_hint():
 
 # ── (m) direct skill invocation via /<skill> ──
 
+
 def _skill(
     ref,
     name,
@@ -609,6 +609,7 @@ async def test_compact_skipped_when_busy():
 
 
 # ── (o) thread switching: /clear, /thread, /threads ──
+
 
 def _threads_data(active=None, threads=None):
     return {

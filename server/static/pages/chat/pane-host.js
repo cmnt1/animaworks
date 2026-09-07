@@ -1,6 +1,7 @@
 // ── Pane Host — manages multiple independent Chat pane instances ──
 import { t } from "/shared/i18n.js";
-import { createChatContext, CONSTANTS } from "./ctx.js";
+import { createChatContext, CONSTANTS, modelKey, syncModelSelect, scheduleSaveChatUiState } from "./ctx.js";
+import { fetchModelCatalog, populateModelSelect } from "../../shared/chat/model-picker.js";
 import { createAnimaController } from "./anima-controller.js";
 import { createThreadController } from "./thread-controller.js";
 import { createChatRenderer } from "./chat-renderer.js";
@@ -101,6 +102,9 @@ function paneHtml() {
           ></textarea>
           <div class="chat-input-actions">
             <button type="button" class="chat-attach-btn" data-chat-id="chatPageAttachBtn" title="${t("chat.attach_image")}">+</button>
+            <select class="chat-model-select" data-chat-id="chatPageModel" data-i18n-title="chat.model_selector" title="${t("chat.model_selector")}">
+              <option value=""></option>
+            </select>
             <div class="context-ring-wrap" data-chat-id="chatContextRing" title="">
               <svg class="context-ring" viewBox="0 0 36 36" aria-hidden="true">
                 <circle class="context-ring-bg" cx="18" cy="18" r="15.5" fill="none" stroke-width="3"/>
@@ -183,6 +187,8 @@ export function createPaneHost(rootContainer) {
 
     paneEl.addEventListener("pointerdown", () => _handlePaneFocus(id), true);
     paneEl.addEventListener("focusin", () => _handlePaneFocus(id));
+
+    _initModelSelect(ctx, paneEl);
 
     ctx.controllers.sidebar.initRightPaneVisibility();
     ctx.controllers.events.bindPaneEvents();
@@ -273,6 +279,37 @@ export function createPaneHost(rootContainer) {
     _saveLayout();
     _updatePaneControls();
     return pane;
+  }
+
+  function _initModelSelect(ctx, paneEl) {
+    const select = paneEl.querySelector('[data-chat-id="chatPageModel"]');
+    if (!select) return;
+
+    // Initial text of the anima-default option comes from JS (i18n).
+    const defaultOpt = select.options[0];
+    if (defaultOpt) defaultOpt.textContent = t("chat.model_default");
+
+    // Populate the picker once; the catalog is shared/memoized across panes.
+    // Initial selection is the anima default; anima/thread switches will
+    // sync the stored per-thread value via syncModelSelect().
+    fetchModelCatalog()
+      .then(catalog => {
+        if (!select.isConnected) return;
+        populateModelSelect(select, catalog, "", {
+          defaultLabel: t("chat.model_default"),
+          otherLabel: t("chat.model_group_other"),
+          errorTitle: t("chat.model_load_error"),
+        });
+        syncModelSelect(ctx);
+      })
+      .catch(() => {});
+
+    select.addEventListener("change", () => {
+      const { selectedAnima, selectedThreadId } = ctx.state;
+      if (!selectedAnima) return;
+      ctx.state.modelByThread[modelKey(selectedAnima, selectedThreadId)] = select.value;
+      scheduleSaveChatUiState(ctx);
+    });
   }
 
   function removePane(id) {

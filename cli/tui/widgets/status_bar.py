@@ -27,6 +27,7 @@ class StatusBar(Widget):
         self.connected = False
         self.right_hint = "Esc: interrupt"
         self.skill_count = 0
+        self.model: str | None = None
 
     def set_anima(self, anima_name: str, thread_id: str | None = None) -> None:
         self.anima_name = anima_name
@@ -55,6 +56,11 @@ class StatusBar(Widget):
             self.skill_count = skill_count
         self.refresh()
 
+    def set_model(self, model: str | None) -> None:
+        """Set the model to show (``None`` leaves it untouched, "" clears it)."""
+        self.model = model or None
+        self.refresh()
+
     def render(self) -> Text:
         parts = [
             Text(self.anima_name),
@@ -77,6 +83,10 @@ class StatusBar(Widget):
             )
         )
         parts.append(Text(f" | thread:{self.thread_id}", style="dim"))
+
+        if self.model:
+            shown = self.model if len(self.model) <= 40 else self.model[:39] + "…"
+            parts.append(Text(f" | model:{shown}", style="dim"))
 
         line = Text.assemble(*parts)
         if self.right_hint:

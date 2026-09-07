@@ -880,5 +880,7 @@
   "ws.turns": " turns",
   "ws.view_toggle_title": "Toggle view",
   "chat.model_default": "Anima default",
-  "chat.model_selector": "Model for this message"
+  "chat.model_selector": "Model for this thread",
+  "chat.model_group_other": "Other",
+  "chat.model_load_error": "Failed to load the model list"
 }

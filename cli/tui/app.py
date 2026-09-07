@@ -222,6 +222,11 @@ class AnimaChatApp(App):
         self._suppress_palette = False
         self._sidebar_open = True
 
+        # Model picker state.
+        self._models: list[dict] = []
+        self._palette_mode: str | None = None
+        self._model_palette_items: list[PaletteItem] = []
+
         # Phase 3: session + resume + keybindings.
         self.session_dir = session_dir
         if session is None:
@@ -232,6 +237,7 @@ class AnimaChatApp(App):
                 from_person=getattr(client, "from_person", "human") or "human",
             )
         self.session: SessionInfo = session
+        self.chat_model: str = self.session.model or ""
         self.no_reattach = no_reattach
         self._keymap, self._key_warnings = (keymap, []) if keymap is not None else load_keybindings()
         self._key_warnings = list(self._key_warnings)
@@ -273,6 +279,8 @@ class AnimaChatApp(App):
         self.status_bar = self.query_one("#status", StatusBar)
         self.palette = self.query_one("#palette", Palette)
         self.input_container.input.set_controller(self)
+        # Show the model restored from the saved session, if any.
+        self.status_bar.set_model(self.chat_model or None)
 
         # Default the sidebar closed on narrow terminals.
         width = getattr(self, "size", None)
@@ -590,6 +598,14 @@ class AnimaChatApp(App):
         if self._suppress_palette:
             self._suppress_palette = False
             return
+        if self._palette_mode == "model":
+            query = text if text.startswith("/") else "/" + text
+            items = filter_palette(self._model_palette_items, query)
+            if items:
+                self.palette.set_items(items)
+            else:
+                self.palette.close()
+            return
         if text.startswith("/") and not self.busy:
             items = filter_palette(self._palette_items(), text)
             if items:
@@ -601,6 +617,7 @@ class AnimaChatApp(App):
 
     def _clear_input(self) -> None:
         self._suppress_palette = True
+        self._palette_mode = None
         self.input_container.input.text = ""
         self.palette.close()
 
@@ -617,6 +634,7 @@ class AnimaChatApp(App):
             self.palette.move(direction)
 
     def palette_close(self) -> None:
+        self._palette_mode = None
         self.palette.close()
 
     def palette_complete(self) -> None:
@@ -652,6 +670,7 @@ class AnimaChatApp(App):
             return
         item = self.palette.selected()
         self.palette.close()
+        self._palette_mode = None
         if item is None:
             return
         if item.on_confirm is not None:
@@ -770,6 +789,7 @@ class AnimaChatApp(App):
         elif self.busy:
             self.status_bar.set_state(right_hint="Busy — wait for the response to finish")
         else:
+            self._palette_mode = None
             await self.send_message(text)
 
     # ── Sending / streaming ──────────────────────────────
@@ -828,6 +848,7 @@ class AnimaChatApp(App):
                     thread_id=self.thread_id,
                     resume=resume,
                     last_event_id=last_event_id,
+                    model=self.chat_model or None,
                 ):
                     self._handle_stream_event_state(sse)
                     await self.handle_sse(sse)
@@ -951,6 +972,7 @@ class AnimaChatApp(App):
 
     # ── Slash commands ───────────────────────────────────
     async def handle_command(self, text: str) -> None:
+        self._palette_mode = None
         parts = text.split()
         name = parts[0][1:]
         args = parts[1:]
@@ -993,6 +1015,97 @@ class AnimaChatApp(App):
     def request_interrupt(self) -> None:
         self.action_maybe_interrupt()
 
+    # ── Model selection (called by commands.py) ────────
+    def choose_model(self, args: list[str]) -> None:
+        if not args:
+            self.run_worker(
+                self._model_palette_worker(),
+                group="model",
+                exit_on_error=False,
+            )
+            return
+        raw = " ".join(args)
+        if raw in ("default", "off", "-"):
+            self.set_chat_model("")
+            return
+        resolved = None
+        for m in self._models:
+            if m.get("id") == raw:
+                resolved = m.get("id")
+                break
+        if resolved is None:
+            for m in self._models:
+                if (m.get("model") or "") == raw:
+                    resolved = m.get("id")
+                    break
+        if resolved is None:
+            low = raw.lower()
+            for m in self._models:
+                if low in (m.get("label") or "").lower():
+                    resolved = m.get("id")
+                    break
+        self.set_chat_model(resolved or raw)
+
+    async def _model_palette_worker(self) -> None:
+        self.show_transient("Loading models…")
+        try:
+            models = await self.client.list_available_models()
+        except (AnimaWorksClientError, AttributeError) as exc:
+            self.show_transient(f"Failed to load models: {exc}")
+            self._palette_mode = None
+            return
+        if not models:
+            self.show_transient("No models available.")
+            self._palette_mode = None
+            return
+        self._models = models
+        items: list[PaletteItem] = []
+        items.append(
+            PaletteItem(
+                value="/model default",
+                label=self._palette_label(
+                    "(anima default)",
+                    "use the anima's configured model",
+                ),
+                takes_args=False,
+                search="default anima",
+                on_confirm=lambda app: app.set_chat_model(""),
+            )
+        )
+        selected = self.chat_model
+        for m in models:
+            mid = m.get("id") or ""
+            group = m.get("group") or ""
+            label = m.get("label") or mid
+            note = m.get("note") or ""
+            mark = "● " if mid == selected else ""
+            items.append(
+                PaletteItem(
+                    value=mid,
+                    label=self._palette_label(f"{mark}{group}  {label}", note),
+                    takes_args=False,
+                    search=f"{mid} {m.get('model') or ''} {label} {group}".lower(),
+                    on_confirm=lambda app, mid=mid: app.set_chat_model(mid),
+                )
+            )
+        self._palette_mode = "model"
+        self._model_palette_items = items
+        self.palette.set_items(items)
+        self.focus_input()
+
+    def set_chat_model(self, model_id: str) -> None:
+        self.chat_model = model_id
+        self.session.model = model_id
+        self._write_session()
+        self._palette_mode = None
+        if self.palette.is_open:
+            self.palette.close()
+        self.status_bar.set_model(model_id or None)
+        if model_id:
+            self.show_transient(f"Model: {model_id}")
+        else:
+            self.show_transient("Model: anima default")
+
     # ── Anima switching / sidebar ───────────────────────
     def switch_anima(self, name: str) -> None:
         self.run_worker(
@@ -1027,6 +1140,13 @@ class AnimaChatApp(App):
         if name not in self.session.recent_animas:
             self.session.recent_animas.append(name)
         self.session.anima = name
+        # Model validity is anima-specific: reset quietly (no transient) so
+        # the previous anima's model isn't carried over unchanged.
+        self.chat_model = ""
+        self.session.model = ""
+        self._palette_mode = None
+        self.palette.close()
+        self.status_bar.set_model(None)
         self._write_session()
 
     # ── Thread switching ────────────────────────────────

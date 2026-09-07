@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from core.config.model_discovery import discovered_model_ids
 from core.config.models import KNOWN_MODELS, load_config
 from core.platform.codex import is_codex_login_available
 from core.platform.grok import is_grok_authenticated
@@ -98,12 +99,12 @@ def _build_static_model_catalog(config: Any) -> list[dict[str, str]]:
 def available_model_id_set(config: Any = None) -> set[str]:
     """Return the set of canonical available-model IDs for override validation.
 
-    Excludes network-dependent providers (nanoGPT / Ollama) so the check
-    stays cheap and deterministic per request.
+    Backed by :func:`core.config.model_discovery.discovered_model_ids` which
+    probes the installed CLIs / endpoints (cached for 300 s).  Each model
+    contributes its ``mode:model`` id, its bare ``model``, and the tail
+    after ``/`` so a ``mode:model`` request can match against the model part.
     """
-    if config is None:
-        config = load_config()
-    return {entry["id"] for entry in _build_static_model_catalog(config)}
+    return discovered_model_ids(config=config)
 
 
 def validate_model_override(anima_name: str, requested_model: str | None) -> str | None:

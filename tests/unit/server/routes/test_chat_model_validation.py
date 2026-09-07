@@ -9,13 +9,13 @@ must return canonical IDs that resolve to a real execution mode, never B).
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import patch
 
+import pytest
+
+from core.config.model_catalog import _build_static_model_catalog, available_model_id_set
 from core.config.models import AnimaWorksConfig, CredentialConfig
 from server.routes.config_routes import (
-    _build_static_model_catalog,
-    available_model_id_set,
     validate_chat_model,
 )
 
@@ -57,9 +57,8 @@ class TestAvailableModelsCanonicalIds:
         """H-2: every returned id must resolve to a real mode (never Mode B)."""
         from core.config.model_mode import resolve_execution_mode
 
-        with (
-            patch("core.config.model_catalog.is_codex_login_available", return_value=False),
-            patch("core.config.model_catalog.is_grok_authenticated", return_value=False),
+        with patch(
+            "core.config.model_catalog.discovered_model_ids", return_value={"openai/gpt-4.1", "claude-sonnet-4-6"}
         ):
             ids = available_model_id_set(provider_config)
 
@@ -72,6 +71,7 @@ class TestAvailableModelsCanonicalIds:
 class TestValidateChatModel:
     def _patch_allowed(self, allowed_set, anima_model="claude-sonnet-4-6"):
         from contextlib import ExitStack
+
         from core.schemas import ModelConfig
 
         mc = ModelConfig(model=anima_model, fallback_models=["x:grok/grok-4.5"])

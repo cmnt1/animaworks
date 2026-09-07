@@ -394,6 +394,92 @@ async def test_chat_stream_resume_body_has_resume_and_empty_message():
 
 
 @pytest.mark.asyncio
+async def test_chat_stream_sends_model_field():
+    import json as _json
+
+    captured = {}
+
+    def handler(request):
+        captured["body"] = _json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            content=SSE_BODY.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    async for _ in client.chat_stream("sora", "hi", model="c:codex/gpt-5.6-sol"):
+        pass
+    assert captured["body"]["model"] == "c:codex/gpt-5.6-sol"
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_model_defaults_to_none():
+    import json as _json
+
+    captured = {}
+
+    def handler(request):
+        captured["body"] = _json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            content=SSE_BODY.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    async for _ in client.chat_stream("sora", "hi"):
+        pass
+    assert captured["body"]["model"] is None
+
+
+@pytest.mark.asyncio
+async def test_list_available_models_returns_list():
+    def handler(request):
+        assert request.url.path == "/api/system/available-models"
+        assert "refresh" not in request.url.params
+        return httpx.Response(
+            200,
+            json={"models": [{"id": "c:codex/gpt-5.6-sol", "label": "GPT-5.6-Sol"}], "groups": ["Codex"]},
+        )
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    models = await client.list_available_models()
+    assert models == [{"id": "c:codex/gpt-5.6-sol", "label": "GPT-5.6-Sol"}]
+
+
+@pytest.mark.asyncio
+async def test_list_available_models_refresh_param():
+    captured = {}
+
+    def handler(request):
+        captured["refresh"] = request.url.params.get("refresh")
+        return httpx.Response(200, json={"models": []})
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    await client.list_available_models(refresh=True)
+    assert captured["refresh"] == "1"
+
+
+@pytest.mark.asyncio
+async def test_list_available_models_empty_on_bad_shape():
+    def handler(request):
+        return httpx.Response(200, json={})
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    assert await client.list_available_models() == []
+
+
+@pytest.mark.asyncio
+async def test_list_available_models_empty_on_non_dict():
+    def handler(request):
+        return httpx.Response(200, json=[{"id": "x"}])
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    assert await client.list_available_models() == []
+
+
+@pytest.mark.asyncio
 async def test_list_threads_hits_sessions_endpoint():
     captured = {}
 
