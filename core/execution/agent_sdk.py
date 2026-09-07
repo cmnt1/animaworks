@@ -119,7 +119,8 @@ from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnecte
 from core.execution.error_classifier import guard_key, provider_family_of
 from core.execution.rate_guard import get_rate_guard
 from core.memory.shortterm import ShortTermMemory
-from core.prompt.context import CHARS_PER_TOKEN, ContextTracker
+from core.prompt.context import ContextTracker
+from core.prompt.tokens import estimate_tokens
 from core.schemas import ImageData, ModelConfig
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
@@ -303,8 +304,8 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
         return {
             "tool_call_count": 0,
             "total_result_bytes": 0,
-            "system_prompt_tokens": len(system_prompt) // CHARS_PER_TOKEN,
-            "user_prompt_tokens": len(prompt) // CHARS_PER_TOKEN,
+            "system_prompt_tokens": estimate_tokens(system_prompt),
+            "user_prompt_tokens": estimate_tokens(prompt),
             "force_chain": False,
             "trigger": trigger,
             "start_time": time.monotonic(),

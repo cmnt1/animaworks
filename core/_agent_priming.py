@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 from core._agent_prompt_log import _PROMPT_HARD_LIMIT_BYTES, _PROMPT_SOFT_LIMIT_BYTES
 from core.i18n import t
 from core.prompt.builder import build_system_prompt
+from core.prompt.tokens import estimate_tokens, tokens_to_chars_hint
 
 logger = logging.getLogger("animaworks.agent")
 
@@ -264,7 +265,6 @@ class PrimingMixin:
 
     # ── Context-window-aware tier downgrade ─────────────────
 
-    _BYTES_PER_TOKEN_ESTIMATE = 4
     _TOKENS_PER_MCP_SCHEMA = 200
     _TOKENS_PER_TOOL_SCHEMA = 150
     _MIN_TOOL_OVERHEAD = 5000
@@ -288,6 +288,7 @@ class PrimingMixin:
         trigger: str,
         pending_human_notifications: str = "",
         thread_id: str = "default",
+        shortterm_text: str = "",
     ) -> str:
         """Ensure system prompt fits context window, shrinking budget if needed.
 
@@ -300,9 +301,8 @@ class PrimingMixin:
         from core.prompt.builder import _compute_system_budget
 
         tool_overhead = self._estimate_tool_overhead(mode)
-        sys_bytes = len(system_prompt.encode("utf-8"))
-        prompt_bytes = len(prompt.encode("utf-8"))
-        estimated_tokens = (sys_bytes + prompt_bytes) // self._BYTES_PER_TOKEN_ESTIMATE + tool_overhead
+        prompt_tokens = estimate_tokens(prompt)
+        estimated_tokens = estimate_tokens(system_prompt) + prompt_tokens + tool_overhead
         max_input_tokens = int(context_window * 0.80)
 
         if estimated_tokens <= max_input_tokens:
@@ -311,16 +311,17 @@ class PrimingMixin:
         original_budget = _compute_system_budget(context_window)
         logger.warning(
             "Estimated prompt %d tokens exceeds context limit %d "
-            "(budget=%d, context_window=%d); attempting budget shrink",
+            "(target=%d, ceiling=%d, context_window=%d); attempting budget shrink",
             estimated_tokens,
             max_input_tokens,
-            original_budget,
+            original_budget.target,
+            original_budget.ceiling,
             context_window,
         )
 
         best_prompt = system_prompt
         for shrink in (0.75, 0.50, 0.25):
-            reduced_budget = int(original_budget * shrink)
+            reduced_budget = int(original_budget.target * shrink)
             build_result = build_system_prompt(
                 self.memory,
                 tool_registry=self._tool_registry,
@@ -334,14 +335,14 @@ class PrimingMixin:
                 system_budget=reduced_budget,
                 pending_human_notifications="" if shrink <= 0.25 else pending_human_notifications,
                 thread_id=thread_id,
+                shortterm_text="" if shrink <= 0.25 else shortterm_text,
             )
             best_prompt = build_result.system_prompt
-            new_sys_bytes = len(best_prompt.encode("utf-8"))
-            new_estimated = (new_sys_bytes + prompt_bytes) // self._BYTES_PER_TOKEN_ESTIMATE + tool_overhead
+            new_estimated = estimate_tokens(best_prompt) + prompt_tokens + tool_overhead
             if new_estimated <= max_input_tokens:
                 logger.warning(
-                    "Prompt budget shrunk: %d -> %d chars (estimated %d -> %d tokens, limit %d)",
-                    original_budget,
+                    "Prompt budget shrunk: %d -> %d tokens (estimated %d -> %d tokens, limit %d)",
+                    original_budget.target,
                     reduced_budget,
                     estimated_tokens,
                     new_estimated,
@@ -349,21 +350,16 @@ class PrimingMixin:
                 )
                 return best_prompt
 
-        max_sys_bytes = max(
-            (max_input_tokens - tool_overhead) * self._BYTES_PER_TOKEN_ESTIMATE - prompt_bytes,
-            2000,
-        )
-        if len(best_prompt.encode("utf-8")) > max_sys_bytes:
+        available_system_tokens = max(max_input_tokens - tool_overhead - prompt_tokens, 0)
+        max_sys_chars = max(tokens_to_chars_hint(available_system_tokens, best_prompt), 2000)
+        if len(best_prompt) > max_sys_chars:
             logger.error(
-                "Hard-truncating system prompt from %d to %d bytes to fit context window %d",
-                len(best_prompt.encode("utf-8")),
-                max_sys_bytes,
+                "Hard-truncating system prompt from %d to %d chars to fit context window %d",
+                len(best_prompt),
+                max_sys_chars,
                 context_window,
             )
-            best_prompt = best_prompt.encode("utf-8")[:max_sys_bytes].decode(
-                "utf-8",
-                errors="ignore",
-            )
+            best_prompt = best_prompt[:max_sys_chars]
 
         return best_prompt
 
@@ -382,6 +378,7 @@ class PrimingMixin:
         context_window: int = 200_000,
         pending_human_notifications: str = "",
         thread_id: str = "default",
+        shortterm_text: str = "",
     ) -> tuple[str, str, bool]:
         """Check combined prompt size and shrink if necessary.
 
@@ -420,6 +417,7 @@ class PrimingMixin:
                     context_window=context_window,
                     pending_human_notifications=pending_human_notifications,
                     thread_id=thread_id,
+                    shortterm_text=shortterm_text,
                 ).system_prompt
             except Exception:
                 logger.exception("Forced compression failed")

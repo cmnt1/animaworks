@@ -6,10 +6,11 @@ from __future__ import annotations
 
 """Shared priming result container."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
-from core.memory.priming.constants import _CHARS_PER_TOKEN
+from core.memory.priming.items import MemoryItem
+from core.prompt.tokens import estimate_tokens
 
 
 @dataclass
@@ -25,6 +26,7 @@ class PrimingResult:
     episodes: str = ""
     pending_human_notifications: str = ""
     graph_context: str = ""
+    items: dict[str, tuple[MemoryItem, ...]] = field(default_factory=dict)
     gate_plan: Any | None = None
 
     def is_empty(self) -> bool:
@@ -57,4 +59,18 @@ class PrimingResult:
 
     def estimated_tokens(self) -> int:
         """Estimate token count."""
-        return self.total_chars() // _CHARS_PER_TOKEN
+        return estimate_tokens(
+            "".join(
+                (
+                    self.sender_profile,
+                    self.recent_activity,
+                    self.related_knowledge,
+                    self.related_knowledge_untrusted,
+                    self.pending_tasks,
+                    self.recent_outbound,
+                    self.episodes,
+                    self.pending_human_notifications,
+                    self.graph_context,
+                )
+            )
+        )
