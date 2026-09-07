@@ -391,3 +391,34 @@ async def test_chat_stream_resume_body_has_resume_and_empty_message():
     assert body["message"] == ""
     assert body["resume"] == "r1"
     assert body["last_event_id"] == "r1:5"
+
+
+@pytest.mark.asyncio
+async def test_list_threads_hits_sessions_endpoint():
+    captured = {}
+
+    def handler(request):
+        captured["path"] = request.url.path
+        return httpx.Response(
+            200,
+            json={
+                "anima": "sora",
+                "active_conversation": None,
+                "threads": [{"thread_id": "abc", "turn_count": 1}],
+            },
+        )
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    res = await client.list_threads("sora")
+    assert captured["path"] == "/api/animas/sora/sessions"
+    assert res["threads"][0]["thread_id"] == "abc"
+
+
+@pytest.mark.asyncio
+async def test_list_threads_error_raises():
+    def handler(request):
+        raise httpx.ConnectError("refused")
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    with pytest.raises(AnimaWorksClientError):
+        await client.list_threads("sora")

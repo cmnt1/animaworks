@@ -10,10 +10,27 @@ unit tested directly as pure functions.
 
 from __future__ import annotations
 
+import re
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
 MAX_ACTIVITY = 200
+
+# Same rule as core.skills.activation_state.validate_thread_id (kept here so
+# the TUI does not import from core): alphanumerics, underscores and hyphens,
+# 1 to 36 characters.
+_THREAD_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,36}$")
+
+
+def is_valid_thread_id(value: str) -> bool:
+    """True when ``value`` is a valid thread id (see ``_THREAD_ID_RE``)."""
+    return bool(_THREAD_ID_RE.match(value or ""))
+
+
+def new_thread_id() -> str:
+    """Return a fresh thread id: 8 hex chars, matching the Web UI's format."""
+    return uuid.uuid4().hex[:8]
 
 
 @dataclass

@@ -21,7 +21,14 @@ from cli.tui.commands import get_command, is_command, iter_commands
 from cli.tui.keybindings import app_keymap, load_keybindings
 from cli.tui.session import SessionInfo, new_session, save_session
 from cli.tui.sse import SseEvent
-from cli.tui.state import AppState, PaletteItem, apply_ws_event, filter_palette
+from cli.tui.state import (
+    AppState,
+    PaletteItem,
+    apply_ws_event,
+    filter_palette,
+    is_valid_thread_id,
+    new_thread_id,
+)
 from cli.tui.widgets import (
     CallHumanOption,
     ChatInputContainer,
@@ -997,6 +1004,107 @@ class AnimaChatApp(App):
             self.session.recent_animas.append(name)
         self.session.anima = name
         self._write_session()
+
+    # ── Thread switching ────────────────────────────────
+    def switch_thread(self, thread_id: str) -> None:
+        self.run_worker(
+            self._switch_thread_worker(thread_id),
+            group="switch",
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    async def _switch_thread_worker(self, thread_id: str, announce: str | None = None) -> None:
+        if self.busy:
+            self.show_transient("Finish or Esc-interrupt the current response before switching threads.")
+            return
+        if not is_valid_thread_id(thread_id):
+            self.show_transient(f"Invalid thread id: {thread_id}")
+            return
+        if thread_id == self.thread_id:
+            self.show_transient(f"Already on thread {thread_id}")
+            return
+        self.thread_id = thread_id
+        self.session.thread_id = thread_id
+        self.status_bar.set_anima(self.anima_name, thread_id)
+        self.clear_transcript()
+        await self.reload_history(limit=50)
+        self.show_transient(announce if announce is not None else f"-- thread {thread_id} --")
+        if len(self.transcript.children) == 0:
+            self.show_transient("no conversation history yet")
+        await self._load_skills()
+        # Reset stream-resume state: it is per-thread.
+        self.session.last_response_id = None
+        self.session.last_event_id = None
+        self.session.in_flight = False
+        self._last_response_id = None
+        self._last_event_id = None
+        self._write_session()
+
+    def new_thread(self) -> None:
+        tid = new_thread_id()
+        self.run_worker(
+            self._switch_thread_worker(tid, announce=f"-- new thread {tid} --"),
+            group="switch",
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    def show_threads(self) -> None:
+        self.run_worker(
+            self._show_threads_worker(),
+            group="threads",
+            exit_on_error=False,
+        )
+
+    async def _show_threads_worker(self) -> None:
+        list_threads = getattr(self.client, "list_threads", None)
+        if list_threads is None:
+            self.show_transient("Thread listing not supported by this client.")
+            return
+        try:
+            data = await list_threads(self.anima_name)
+        except AnimaWorksClientError as exc:
+            self.show_transient(f"Could not list threads: {exc}")
+            return
+
+        def _fmt(ts: str | None) -> str:
+            if not ts:
+                return ""
+            return (ts or "")[:16].replace("T", " ")
+
+        lines = [f"Threads for {self.anima_name}:"]
+        # The default thread always comes first (from active_conversation).
+        active = (data or {}).get("active_conversation") or {}
+        default_turns = int((active or {}).get("total_turn_count") or 0)
+        default_ts = _fmt(active.get("last_timestamp") or "")
+        if self.thread_id == "default":
+            lines.append(f"* default {default_turns:>3} turns   last {default_ts}")
+        else:
+            lines.append(f"  default {default_turns:>3} turns   last {default_ts}")
+        threads = sorted(
+            (data or {}).get("threads") or [],
+            key=lambda t: t.get("last_timestamp") or "",
+            reverse=True,
+        )
+        current = self.thread_id
+        seen_current = current == "default"
+        for t in threads:
+            tid = t.get("thread_id") or "?"
+            if tid == current:
+                seen_current = True
+            turns = int(t.get("total_turn_count") or t.get("turn_count") or 0)
+            ts = _fmt(t.get("last_timestamp") or "")
+            mark = "*" if tid == current else " "
+            line = f"{mark} {tid:<8} {turns:>3} turns"
+            if ts:
+                line += f"   last {ts}"
+            lines.append(line)
+        # The current thread may not exist on the server yet (a brand-new id).
+        if not seen_current:
+            lines.append(f"* {current:<8}   0 turns")
+        lines.append("(/thread <id> to switch, /thread to start a new one)")
+        self.show_transient("\n".join(lines))
 
     def _set_sidebar_open(self, open_state: bool) -> None:
         self._sidebar_open = open_state

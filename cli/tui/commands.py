@@ -54,7 +54,18 @@ def _cmd_quit(_args: list[str], app: Any) -> None:
 
 
 def _cmd_clear(_args: list[str], app: Any) -> None:
-    app.clear_transcript()
+    app.new_thread()
+
+
+def _cmd_thread(args: list[str], app: Any) -> None:
+    if args:
+        app.switch_thread(args[0])
+    else:
+        app.new_thread()
+
+
+def _cmd_threads(_args: list[str], app: Any) -> None:
+    app.show_threads()
 
 
 def _cmd_thinking(_args: list[str], app: Any) -> None:
@@ -154,7 +165,15 @@ def _default_commands() -> list[SlashCommand]:
     return [
         SlashCommand("help", "Show available commands", _cmd_help),
         SlashCommand("quit", "Quit the TUI", _cmd_quit),
-        SlashCommand("clear", "Clear the transcript", _cmd_clear),
+        SlashCommand("clear", "Start a new thread (same as /thread)", _cmd_clear),
+        SlashCommand(
+            "thread",
+            "Start a new thread, or switch to <id>",
+            _cmd_thread,
+            takes_args=True,
+            usage="[id]",
+        ),
+        SlashCommand("threads", "List this anima's threads", _cmd_threads),
         SlashCommand("thinking", "Toggle thinking display", _cmd_thinking),
         SlashCommand("interrupt", "Stop the current response", _cmd_interrupt),
         SlashCommand("history", "Reload conversation history", _cmd_history, takes_args=True, usage="[n]"),

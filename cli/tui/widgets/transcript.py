@@ -6,13 +6,14 @@ from __future__ import annotations
 
 import re
 
+from rich.style import Style
 from rich.text import Text
 from textual.containers import Vertical, VerticalScroll
 from textual.geometry import Size
 from textual.message import Message
 from textual.widgets import Static
 
-from cli.tui.markdown import render_markdown
+from cli.tui.markdown import MUTED_STYLE, render_markdown
 from cli.tui.widgets.thinking import ThinkingBlock
 from cli.tui.widgets.tool_card import ToolCard
 
@@ -66,9 +67,10 @@ class SystemNote(Vertical):
     """A system-role entry: heartbeats, cron triggers, notifications.
 
     These are the anima's background traffic rather than the
-    conversation, so they are drawn faintly — the same treatment the web
-    UI gives them. Dropping them altogether made threads whose recent
-    history is all background look empty.
+    conversation, so they are drawn faintly — in the terminal's own grey,
+    see ``MUTED_STYLE`` — the same treatment the web UI gives them.
+    Dropping them altogether made threads whose recent history is all
+    background look empty.
     """
 
     DEFAULT_CSS = """
@@ -90,7 +92,12 @@ class SystemNote(Vertical):
         yield self.message
 
     def on_mount(self) -> None:
-        self.label_widget.update(Text(self._label, style="dim bold"))
+        # A parsed style, not the string: a style *string* on a `Text` is
+        # re-parsed by Textual with its own CSS colour names, where
+        # `bright_black` means nothing — and an unknown name silently
+        # drops the whole style, bold included. A `Style` object is kept
+        # as it is.
+        self.label_widget.update(Text(self._label, style=Style.parse(f"{MUTED_STYLE} bold")))
         self.message.update(render_markdown(strip_html_comments(self._text).rstrip(), muted=True))
 
 
