@@ -118,6 +118,34 @@ async def test_interrupt_posts_thread_id():
 
 
 @pytest.mark.asyncio
+async def test_compact_session_posts_thread_id():
+    captured = {}
+
+    def handler(request):
+        captured["path"] = request.url.path
+        captured["body"] = request.content.decode()
+        return httpx.Response(200, json={"status": "ok", "thread_id": "t1", "mode": "s"})
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    res = await client.compact_session("sora", thread_id="t1")
+    assert res == {"status": "ok", "thread_id": "t1", "mode": "s"}
+    assert captured["path"] == "/api/animas/sora/chat/compact"
+    import json
+
+    assert json.loads(captured["body"]) == {"thread_id": "t1"}
+
+
+@pytest.mark.asyncio
+async def test_compact_session_http_error_raises():
+    def handler(request):
+        return httpx.Response(409, json={"detail": "chat in progress"})
+
+    client = AnimaWorksClient("http://localhost:18500", transport=httpx.MockTransport(handler))
+    with pytest.raises(AnimaWorksClientError):
+        await client.compact_session("sora")
+
+
+@pytest.mark.asyncio
 async def test_chat_stream_http_error_raises_client_error():
     def handler(request):
         raise httpx.ConnectError("refused")

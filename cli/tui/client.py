@@ -223,6 +223,19 @@ class AnimaWorksClient:
         resp.raise_for_status()
         return resp.json()
 
+    async def compact_session(self, anima: str, thread_id: str = "default") -> dict:
+        """Request the server to compact a chat thread's context on demand."""
+        try:
+            resp = await self._http.post(
+                f"{self.base_url}/api/animas/{anima}/chat/compact",
+                json={"thread_id": thread_id},
+                timeout=120,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPError as exc:
+            raise AnimaWorksClientError(str(exc)) from exc
+
     # ── Skills ───────────────────────────────────────────
     async def list_skills(self, anima: str, thread_id: str = "default") -> dict:
         resp = await self._get(
