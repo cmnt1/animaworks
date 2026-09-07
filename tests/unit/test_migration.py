@@ -548,8 +548,11 @@ class TestMigrationSteps:
             encoding="utf-8"
         )
         skill_creator = (data_dir / "common_skills" / "skill-creator" / "SKILL.md").read_text(encoding="utf-8")
-        assert "[ACTION-RULE]" in behavior_rules
-        assert "common_skills/skill-creator/SKILL.md" in behavior_rules
+        # The resynced template is the trimmed L1 version: the stale submit_tasks
+        # rule is gone, the skill-creator pointer now lives only in the skill catalog.
+        assert "stale:" not in behavior_rules
+        assert "[IMPORTANT]" in behavior_rules
+        assert "common_skills/skill-creator/SKILL.md" not in behavior_rules
         assert "gmail_draft" in action_guide
         assert "slack_post" not in action_guide
         assert "trust_level" in skill_creator
