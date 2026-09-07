@@ -98,7 +98,7 @@ def _assemble_with_tags(allocated: list[SectionEntry]) -> str:
 
 def _compute_system_budget(context_window: int, system_budget: int | None = None) -> PromptBudget:
     """Compute the normal target and hard ceiling in tokens."""
-    target_tokens = 16_000
+    target_tokens = 20_000
     ceiling_pct = 0.35
     try:
         from core.config import load_config

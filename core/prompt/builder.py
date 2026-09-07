@@ -363,7 +363,7 @@ def _collapse_superseded_notes(state: str) -> str:
         latest_match = matches[superseded[index]]
         latest_heading = latest_match.group(0).removeprefix("## ").strip()
         old_heading = match.group(0).rstrip()
-        parts.append(f"{old_heading}（旧版。{latest_heading} に統合）\n\n")
+        parts.append(f"{old_heading}{t('builder.superseded_note', latest=latest_heading)}\n\n")
         dropped_body = state[match.end() : next_start]
         logger.debug("Collapsed superseded current_state note body: %s", dropped_body.strip())
         cursor = next_start

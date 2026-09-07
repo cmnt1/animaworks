@@ -27,7 +27,7 @@ class TestComputeSystemBudget:
 
     def test_128k_budget(self):
         budget = _compute_system_budget(128_000)
-        assert budget == PromptBudget(target=16_000, ceiling=44_800)
+        assert budget == PromptBudget(target=20_000, ceiling=44_800)
 
     def test_32k_budget(self):
         budget = _compute_system_budget(32_000)
@@ -62,7 +62,7 @@ class TestComputeSystemBudget:
 
     def test_200k_budget(self):
         budget = _compute_system_budget(200_000)
-        assert budget == PromptBudget(target=16_000, ceiling=70_000)
+        assert budget == PromptBudget(target=20_000, ceiling=70_000)
 
     def test_configured_target_and_ceiling(self):
         config = MagicMock()
