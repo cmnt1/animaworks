@@ -104,9 +104,10 @@ class AnimaChatApp(App):
     }
     #transcript {
         height: 1fr;
-        border: round ansi_default;
+        border: none;
         background: transparent;
-        padding: 0 1;
+        padding: 0;
+        scrollbar-size-vertical: 1;
     }
     #palette {
         height: auto;

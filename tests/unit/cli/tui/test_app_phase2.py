@@ -415,6 +415,10 @@ async def test_transcript_scroll_moves_scrollbar_and_refreshes():
             await app.transcript.add_human("You", f"line {index}")
         await pilot.pause()
         assert app.transcript.max_scroll_y > 0
+        scrollbar = app.transcript.vertical_scrollbar
+        assert scrollbar.region.width == 1
+        assert scrollbar.region.right == app.transcript.region.right
+        assert app.transcript.scrollable_content_region.right == scrollbar.region.x
         app.transcript.scroll_to(y=0, animate=False, force=True)
         await pilot.pause()
         assert app.transcript.vertical_scrollbar.position == 0
