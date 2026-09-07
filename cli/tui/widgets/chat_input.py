@@ -29,10 +29,14 @@ class ChatInputChanged(Message):
 class ChatInput(TextArea):
     """A multi-line chat input.
 
-    ``Enter`` submits the current **entire** buffer, ``Shift+Enter``
-    inserts a newline. Submissions are posted as a :class:`ChatSubmitted`
-    message. Grows up to ``max_lines`` rows as content is added and
-    returns to a single row after submission.
+    ``Enter`` submits the current **entire** buffer. A newline is inserted
+    by any of ``Shift+Enter`` (needs a terminal / tmux that forwards the
+    kitty keyboard protocol), ``Ctrl+J`` (works everywhere: it is the raw
+    ``\\n`` byte) or a trailing backslash before ``Enter`` (Claude Code's
+    ``\\``+``Enter``, which swaps the backslash for the newline).
+    Submissions are posted as a :class:`ChatSubmitted` message. Grows up
+    to ``max_lines`` rows as content is added and returns to a single row
+    after submission.
 
     A ``controller`` (the running app) may be attached so that arrow /
     tab keys can drive the open slash-command :class:`~cli.tui.widgets.palette.Palette`
@@ -40,6 +44,7 @@ class ChatInput(TextArea):
     """
 
     max_lines = 6
+    NEWLINE_KEYS = ("shift+enter", "ctrl+j")
 
     def __init__(self, placeholder: str = "Say something…", *, controller=None, **kwargs) -> None:
         super().__init__(placeholder=placeholder, **kwargs)
@@ -72,6 +77,8 @@ class ChatInput(TextArea):
                 return
             event.stop()
             event.prevent_default()
+            if self._consume_backslash_continuation():
+                return
             text = self.text
             if text.strip():
                 self.post_message(ChatSubmitted(text))
@@ -93,13 +100,30 @@ class ChatInput(TextArea):
             event.prevent_default()
             self._controller.palette_move(event.key)
             return
-        if event.key == "shift+enter":
+        if event.key in self.NEWLINE_KEYS:
             event.stop()
             event.prevent_default()
             self.insert("\n")
             self._update_height()
             return
         await super()._on_key(event)
+
+    def _consume_backslash_continuation(self) -> bool:
+        """``\\`` immediately before the cursor + Enter → newline.
+
+        Returns True when the backslash was replaced by a newline (the
+        caller must then *not* submit).
+        """
+        row, col = self.cursor_location
+        if col == 0:
+            return False
+        line = self.document.get_line(row)
+        if line[col - 1] != "\\":
+            return False
+        self.delete((row, col - 1), (row, col))
+        self.insert("\n")
+        self._update_height()
+        return True
 
 
 class ChatInputContainer(Horizontal):
