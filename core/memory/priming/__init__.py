@@ -45,11 +45,15 @@ from core.memory.priming.constants import (
 )
 from core.memory.priming.engine import PrimingEngine, PrimingResult
 from core.memory.priming.format import format_priming_section
+from core.memory.priming.items import MemoryItem, render_items, select_within_budget
 
 __all__ = [
     "PrimingEngine",
     "PrimingResult",
+    "MemoryItem",
     "format_priming_section",
+    "render_items",
+    "select_within_budget",
     "_BUDGET_GRAPH_CONTEXT",
     "_BUDGET_GREETING",
     "_BUDGET_HEARTBEAT",
