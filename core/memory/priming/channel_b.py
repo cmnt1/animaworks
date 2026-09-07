@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -20,6 +21,8 @@ from core.time_utils import ensure_aware, now_local, today_local
 from core.tools._async_compat import run_sync
 
 logger = logging.getLogger("animaworks.priming")
+
+_SPECIAL_ACTIVITY_TYPES = frozenset({"heartbeat_end", "tool_result", "human_notify"})
 
 # Event types that are noise for heartbeat/cron priming — tool invocations
 # and heartbeat lifecycle events crowd out actionable messages.
@@ -144,7 +147,7 @@ async def channel_b_recent_activity(
         ranked = prioritize_entries_with_ranks(entries, sender_name, keywords)
         item_list: list[MemoryItem] = []
         for rank, entry in ranked:
-            text = activity._format_entry(entry, content_trim=200)
+            text = _format_entry_at_sentence_boundary(activity, entry, content_trim=200)
             if text:
                 item_list.append(
                     MemoryItem(
@@ -164,6 +167,31 @@ async def channel_b_recent_activity(
         return ""
     item = MemoryItem(source="recent_activity", key="", text=fallback)
     return ItemizedMemory(fallback, (item,))
+
+
+def _format_entry_at_sentence_boundary(activity, entry, *, content_trim: int) -> str:
+    """Format one priming entry without cutting a sentence when practical."""
+    text = entry.summary or entry.content
+    if entry.type in _SPECIAL_ACTIVITY_TYPES or content_trim <= 0 or len(text) <= content_trim:
+        return activity._format_entry(entry, content_trim=content_trim)
+
+    trim_window = text[:content_trim]
+    last_boundary = max(trim_window.rfind(mark) for mark in ("。", "．", ".", "!", "?", "\n"))
+    if last_boundary + 1 >= 100:
+        trimmed = trim_window[: last_boundary + 1]
+    else:
+        trimmed = trim_window + "…"
+    date_str = entry.ts[:10] if len(entry.ts) >= 10 else "unknown"
+    trimmed += f"\n  -> activity_log/{date_str}.jsonl"
+
+    # Do this only in Channel B: changing ActivityLogger's shared formatter
+    # would alter dashboard and consolidation views outside priming.
+    formatted_entry = replace(
+        entry,
+        summary=trimmed if entry.summary else "",
+        content=entry.content if entry.summary else trimmed,
+    )
+    return activity._format_entry(formatted_entry, content_trim=0)
 
 
 def read_shared_channels(

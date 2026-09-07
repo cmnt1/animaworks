@@ -179,12 +179,39 @@ class PrimingMixin:
         return "\n".join(content_lines) if content_lines else prompt
 
     def _get_recent_human_messages(self, trigger: str, *, model_config=None) -> list[str]:
-        """Get last 5 human messages from conversation memory for priming context.
+        """Get recent human messages from the trigger's own activity source.
 
         Returns newest-first list of human message contents.
-        Active for human chat triggers only.
+        Chat behavior remains conversation-backed; inbox reads only the activity
+        log so unrelated chat history cannot leak into a background run.
         """
         from core.execution.session_types import trigger_uses_chat_session
+
+        if trigger.startswith("inbox:"):
+            try:
+                from core.memory.activity import ActivityLogger
+
+                animas_dir = self.anima_dir.parent
+                anima_names = {path.name.casefold() for path in animas_dir.iterdir() if path.is_dir()}
+                entries = ActivityLogger(self.anima_dir).recent(
+                    days=2,
+                    types=["message_received"],
+                    limit=100,
+                )
+                messages: list[str] = []
+                for entry in reversed(entries):
+                    sender = str(entry.from_person or "").strip()
+                    if not sender or sender.casefold() == "system" or sender.casefold() in anima_names:
+                        continue
+                    content = str(entry.content or entry.summary or "").strip()
+                    if content:
+                        messages.append(content[:200])
+                    if len(messages) == 3:
+                        break
+                return messages
+            except Exception:
+                logger.debug("Failed to load recent inbox human messages for priming", exc_info=True)
+                return []
 
         if not trigger.startswith("message:") or not trigger_uses_chat_session(trigger):
             return []
