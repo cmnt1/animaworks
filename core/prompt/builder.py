@@ -20,9 +20,10 @@ This module re-exports every symbol that tests reference via
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from core.i18n import t
 from core.memory import MemoryManager
@@ -31,6 +32,7 @@ from core.paths import get_data_dir, load_prompt, load_prompt_text
 from core.prompt.assembler import (
     _MIN_SYSTEM_BUDGET,  # noqa: F401
     _REFERENCE_WINDOW,
+    PromptBudget,  # noqa: F401
     SectionEntry,  # noqa: F401
     _allocate_sections,
     _assemble_with_tags,
@@ -162,7 +164,7 @@ def _build_group1(
     *,
     tier: str = TIER_FULL,
 ) -> list[SectionEntry]:
-    """Group 1: Environment, identity, injection, time, behaviour rules."""
+    """Group 1: Environment, identity, injection, and behaviour rules."""
     out: list[SectionEntry] = []
 
     def _add(c: str, sid: str, pri: int = 2, kind: str = "rigid") -> None:
@@ -203,9 +205,6 @@ def _build_group1(
                 logger.warning("injection.md oversized: %d chars (threshold=%d)", len(injection), threshold)
         except Exception:
             pass
-
-    current_time = now_local().strftime("%Y-%m-%d %H:%M (%Z)")
-    _add(f"{_ss.get('current_time_label', '**Current time**:')} {current_time}", "current_time", 1)
 
     if tier != TIER_MICRO:
         _br = load_prompt_text("behavior_rules")
@@ -328,6 +327,51 @@ def _build_resolved_approvals_section(anima_name: str, _ss: dict[str, str]) -> s
     return "\n".join(lines)
 
 
+_DATED_STATE_HEADING_RE = re.compile(
+    r"^##\s+(?P<title>.+?)（(?P<date>[^）]*\d{1,4}[-/]\d{1,2}[^）]*)）\s*$",
+    re.MULTILINE,
+)
+
+
+def _collapse_superseded_notes(state: str) -> str:
+    """Collapse bodies of older dated notes that share the same case key."""
+    matches = list(_DATED_STATE_HEADING_RE.finditer(state))
+    by_key: dict[str, list[int]] = {}
+    for index, match in enumerate(matches):
+        title = match.group("title").strip()
+        if " " not in title:
+            continue
+        case_key = title.rsplit(" ", 1)[0].strip()
+        if case_key:
+            by_key.setdefault(case_key, []).append(index)
+
+    superseded: dict[int, int] = {}
+    for indices in by_key.values():
+        if len(indices) > 1:
+            latest = indices[-1]
+            superseded.update({old: latest for old in indices[:-1]})
+    if not superseded:
+        return state
+
+    parts: list[str] = []
+    cursor = 0
+    for index, match in enumerate(matches):
+        if index not in superseded:
+            continue
+        next_start = matches[index + 1].start() if index + 1 < len(matches) else len(state)
+        parts.append(state[cursor : match.start()])
+        latest_match = matches[superseded[index]]
+        latest_heading = latest_match.group(0).removeprefix("## ").strip()
+        old_heading = match.group(0).rstrip()
+        parts.append(f"{old_heading}（旧版。{latest_heading} に統合）\n\n")
+        dropped_body = state[match.end() : next_start]
+        logger.debug("Collapsed superseded current_state note body: %s", dropped_body.strip())
+        cursor = next_start
+    parts.append(state[cursor:])
+    logger.info("Collapsed %d superseded current_state note(s)", len(superseded))
+    return "".join(parts)
+
+
 def _build_group3(
     pd: Path,
     memory: MemoryManager,
@@ -340,15 +384,35 @@ def _build_group3(
     is_task: bool,
     _ss: dict[str, str],
     _fs: dict[str, str],
+    *,
+    shortterm_text: str = "",
 ) -> list[SectionEntry]:
     """Group 3: Current state, resolutions, priming, notifications, recent tools."""
     out: list[SectionEntry] = []
 
-    def _add(c: str, sid: str, pri: int = 2, kind: str = "rigid") -> None:
+    def _add(
+        c: str,
+        sid: str,
+        pri: int = 2,
+        kind: str = "rigid",
+        *,
+        trim_from: Literal["head", "tail"] = "tail",
+    ) -> None:
         if c and c.strip():
-            out.append(SectionEntry(id=sid, priority=pri, kind=kind, content=c))
+            out.append(
+                SectionEntry(
+                    id=sid,
+                    priority=pri,
+                    kind=kind,
+                    content=c,
+                    trim_from=trim_from,
+                )
+            )
 
-    _add(_ss.get("group3_header", "# 3. Current Situation"), "group3_header", 1)
+    _add(_ss.get("group3_header", "# 6. Current Situation"), "group3_header", 1)
+
+    current_time = now_local().strftime("%Y-%m-%d %H:%M (%Z)")
+    _add(f"{_ss.get('current_time_label', '**Current time**:')} {current_time}", "current_time", 1)
 
     _state_max = max(int(_CURRENT_STATE_MAX_CHARS * scale), 500)
     state = memory.read_current_state()
@@ -366,6 +430,7 @@ def _build_group3(
         except Exception:
             logger.debug("TaskBoard current_state gate failed; using current_state as-is", exc_info=True)
     if state and state.strip() != "status: idle":
+        state = _collapse_superseded_notes(state)
         if len(state) > _state_max:
             truncated = state[-_state_max:]
             first_nl = truncated.find("\n")
@@ -376,7 +441,7 @@ def _build_group3(
     elif state:
         state_content = f"{_ss.get('current_state_header', '## Current State')}\n\n{state}"
     if state_content:
-        _add(state_content, "current_state", 2, "elastic")
+        _add(state_content, "current_state", 2, "elastic", trim_from="head")
 
     # Deterministic safety net: remind anima to close resolved approval blockers
     try:
@@ -417,6 +482,8 @@ def _build_group3(
                 _add(recent, "recent_tools", 3, "elastic")
         except Exception:
             logger.debug("Failed to inject recent tool results", exc_info=True)
+    if shortterm_text:
+        _add(shortterm_text, "shortterm", 3, "elastic", trim_from="head")
     return out
 
 
@@ -551,7 +618,7 @@ def _build_group4(
         if c and c.strip():
             out.append(SectionEntry(id=sid, priority=pri, kind=kind, content=c))
 
-    _add(_ss.get("group4_header", "# 4. Memory and Capabilities"), "group4_header", 1)
+    _add(_ss.get("group4_header", "# 3. Memory and Capabilities"), "group4_header", 1)
 
     _none = _fs.get("none", "(none)")
     mg = load_prompt(
@@ -744,7 +811,7 @@ def _build_group5(
         if c and c.strip():
             out.append(SectionEntry(id=sid, priority=pri, kind=kind, content=c))
 
-    _add(_ss.get("group5_header", "# 5. Organization and Communication"), "group5_header", 1)
+    _add(_ss.get("group5_header", "# 4. Organization and Communication"), "group5_header", 1)
 
     if tier == TIER_MICRO:
         return out
@@ -785,7 +852,7 @@ def _build_group6(
         if c and c.strip():
             out.append(SectionEntry(id=sid, priority=pri, kind=kind, content=c))
 
-    _add(_ss.get("group6_header", "# 6. Meta Settings"), "group6_header", 1)
+    _add(_ss.get("group6_header", "# 5. Meta Settings"), "group6_header", 1)
 
     if tier == TIER_MICRO:
         return out
@@ -820,6 +887,7 @@ def build_system_prompt(
     system_budget: int | None = None,
     pending_human_notifications: str = "",
     thread_id: str = "default",
+    shortterm_text: str = "",
 ) -> BuildResult:
     """Construct the full system prompt from Markdown files.
 
@@ -864,10 +932,9 @@ def build_system_prompt(
     )
     permissions = memory.read_permissions()
 
-    # Assemble sections from all 6 groups
-    sections = _build_group1(pd, data_dir, memory, is_task, _ss, tier=tier)
-    sections += _build_group2(memory, permissions, is_background_auto, is_task, _ss)
-    sections += _build_group3(
+    group1 = _build_group1(pd, data_dir, memory, is_task, _ss, tier=tier)
+    group2 = _build_group2(memory, permissions, is_background_auto, is_task, _ss)
+    group3 = _build_group3(
         pd,
         memory,
         scale,
@@ -879,6 +946,7 @@ def build_system_prompt(
         is_task,
         _ss,
         _fs,
+        shortterm_text=shortterm_text,
     )
     g4 = _build_group4(
         pd,
@@ -898,8 +966,7 @@ def build_system_prompt(
         message=message,
         thread_id=thread_id,
     )
-    sections += g4
-    sections += _build_group5(
+    group5 = _build_group5(
         pd,
         memory,
         other_animas,
@@ -911,7 +978,7 @@ def build_system_prompt(
         _fs,
         tier=tier,
     )
-    sections += _build_group6(
+    group6 = _build_group6(
         execution_mode,
         is_chat,
         is_background_auto,
@@ -920,15 +987,20 @@ def build_system_prompt(
         tier=tier,
     )
 
+    # Dynamic current-state content stays last so the preceding static groups
+    # form a stable prefix that providers can cache across turns.
+    sections = group1 + group2 + g4 + group5 + group6 + group3
+
     # Budget allocation + Final assembly
     allocated = _allocate_sections(sections, budget)
     prompt = _assemble_with_tags(allocated)
     logger.debug(
-        "System prompt built: %d/%d sections, total_len=%d, budget=%d, tier=%s, cw=%d",
+        "System prompt built: %d/%d sections, total_len=%d, target=%d, ceiling=%d, tier=%s, cw=%d",
         len(allocated),
         len(sections),
         len(prompt),
-        budget,
+        budget.target,
+        budget.ceiling,
         tier,
         context_window,
     )

@@ -27,7 +27,7 @@ from core.execution.session_context import RuntimeSessionContext, runtime_sessio
 from core.execution.session_types import is_clean_start_session, resolve_runtime_session_type, trigger_uses_chat_session
 from core.i18n import t
 from core.memory.shortterm import SessionState, ShortTermMemory
-from core.prompt.builder import build_system_prompt, inject_shortterm
+from core.prompt.builder import build_system_prompt, inject_shortterm  # noqa: F401
 from core.prompt.context import ContextTracker
 from core.prompt.tokens import estimate_tokens
 from core.schemas import CycleResult, ImageData, ModelConfig
@@ -494,6 +494,10 @@ class CycleMixin:
             thread_id=thread_id,
             shortterm=shortterm,
         )
+        shortterm_text = ""
+        if uses_chat_session and shortterm.has_pending():
+            shortterm_text = shortterm.render_for_injection()
+            logger.info("Included short-term memory in system prompt allocation")
         tracker = ContextTracker(
             model=active_model_config.model,
             threshold=active_model_config.context_threshold,
@@ -512,6 +516,7 @@ class CycleMixin:
             context_window=_ctx_window,
             pending_human_notifications=pending_human_notifications,
             thread_id=thread_id,
+            shortterm_text=shortterm_text,
         )
         system_prompt = build_result.system_prompt
         logger.debug("System prompt assembled, length=%d tier=%s", len(system_prompt), _prompt_tier)
@@ -526,11 +531,8 @@ class CycleMixin:
             trigger=trigger,
             pending_human_notifications=pending_human_notifications,
             thread_id=thread_id,
+            shortterm_text=shortterm_text,
         )
-
-        if uses_chat_session and shortterm.has_pending():
-            system_prompt = inject_shortterm(system_prompt, shortterm)
-            logger.info("Injected short-term memory into system prompt")
 
         # ── Prompt log: save full payload for debugging ───
         from core.tooling.schemas import load_all_tool_schemas
@@ -898,6 +900,8 @@ class CycleMixin:
             trigger=trigger,
             context_window=_ctx_window,
             pending_human_notifications=pending_human_notifications,
+            thread_id=thread_id,
+            shortterm_text=shortterm_text,
         )
         if use_fallback:
             executor = self._create_fallback_executor(active_model_config)
@@ -943,7 +947,7 @@ class CycleMixin:
         accumulated_text = result.text
 
         if tracker.threshold_exceeded and uses_chat_session:
-            # Save shortterm for the next message to pick up via inject_shortterm.
+            # Save shortterm for the next system-prompt allocation.
             # Do NOT chain here — chaining mid-response causes the LLM to produce
             # unnatural "session handoff" messages.
             logger.info(
@@ -1182,6 +1186,10 @@ class CycleMixin:
             thread_id=thread_id,
             shortterm=shortterm,
         )
+        shortterm_text = ""
+        if uses_chat_session and shortterm.has_pending():
+            shortterm_text = shortterm.render_for_injection()
+            logger.info("Included short-term memory in system prompt allocation")
         tracker = ContextTracker(
             model=active_model_config.model,
             threshold=active_model_config.context_threshold,
@@ -1200,6 +1208,7 @@ class CycleMixin:
             context_window=_ctx_window_s,
             pending_human_notifications=pending_human_notifications,
             thread_id=thread_id,
+            shortterm_text=shortterm_text,
         )
         system_prompt = build_result.system_prompt
 
@@ -1212,10 +1221,9 @@ class CycleMixin:
             mode=mode,
             trigger=trigger,
             pending_human_notifications=pending_human_notifications,
+            thread_id=thread_id,
+            shortterm_text=shortterm_text,
         )
-
-        if uses_chat_session and shortterm.has_pending():
-            system_prompt = inject_shortterm(system_prompt, shortterm)
 
         # Pre-flight size check for streaming path
         conv_memory = None
@@ -1234,6 +1242,7 @@ class CycleMixin:
             context_window=_ctx_window_s,
             pending_human_notifications=pending_human_notifications,
             thread_id=thread_id,
+            shortterm_text=shortterm_text,
         )
         if use_fallback:
             logger.warning("Streaming fallback: using blocking S Fallback for oversized prompt")
@@ -1491,6 +1500,7 @@ class CycleMixin:
                         context_window=_ctx_window_s,
                         pending_human_notifications=pending_human_notifications,
                         thread_id=thread_id,
+                        shortterm_text=shortterm_text,
                     ).system_prompt
 
                     await asyncio.sleep(actual_delay)
@@ -1534,6 +1544,7 @@ class CycleMixin:
                         context_window=_ctx_window_s,
                         pending_human_notifications=pending_human_notifications,
                         thread_id=thread_id,
+                        shortterm_text=shortterm_text,
                     ).system_prompt
                     yield {
                         "type": "retry_start",
@@ -1564,7 +1575,7 @@ class CycleMixin:
             logger.info("Context auto-compact (stream): forcing threshold_exceeded")
 
         if tracker.threshold_exceeded and uses_chat_session:
-            # Save shortterm for the next message to pick up via inject_shortterm.
+            # Save shortterm for the next system-prompt allocation.
             # Do NOT chain here — chaining mid-response causes the LLM to produce
             # unnatural "session handoff" messages.
             logger.info(

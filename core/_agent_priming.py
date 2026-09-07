@@ -288,6 +288,7 @@ class PrimingMixin:
         trigger: str,
         pending_human_notifications: str = "",
         thread_id: str = "default",
+        shortterm_text: str = "",
     ) -> str:
         """Ensure system prompt fits context window, shrinking budget if needed.
 
@@ -310,16 +311,17 @@ class PrimingMixin:
         original_budget = _compute_system_budget(context_window)
         logger.warning(
             "Estimated prompt %d tokens exceeds context limit %d "
-            "(budget=%d, context_window=%d); attempting budget shrink",
+            "(target=%d, ceiling=%d, context_window=%d); attempting budget shrink",
             estimated_tokens,
             max_input_tokens,
-            original_budget,
+            original_budget.target,
+            original_budget.ceiling,
             context_window,
         )
 
         best_prompt = system_prompt
         for shrink in (0.75, 0.50, 0.25):
-            reduced_budget = int(original_budget * shrink)
+            reduced_budget = int(original_budget.target * shrink)
             build_result = build_system_prompt(
                 self.memory,
                 tool_registry=self._tool_registry,
@@ -333,13 +335,14 @@ class PrimingMixin:
                 system_budget=reduced_budget,
                 pending_human_notifications="" if shrink <= 0.25 else pending_human_notifications,
                 thread_id=thread_id,
+                shortterm_text="" if shrink <= 0.25 else shortterm_text,
             )
             best_prompt = build_result.system_prompt
             new_estimated = estimate_tokens(best_prompt) + prompt_tokens + tool_overhead
             if new_estimated <= max_input_tokens:
                 logger.warning(
-                    "Prompt budget shrunk: %d -> %d chars (estimated %d -> %d tokens, limit %d)",
-                    original_budget,
+                    "Prompt budget shrunk: %d -> %d tokens (estimated %d -> %d tokens, limit %d)",
+                    original_budget.target,
                     reduced_budget,
                     estimated_tokens,
                     new_estimated,
@@ -375,6 +378,7 @@ class PrimingMixin:
         context_window: int = 200_000,
         pending_human_notifications: str = "",
         thread_id: str = "default",
+        shortterm_text: str = "",
     ) -> tuple[str, str, bool]:
         """Check combined prompt size and shrink if necessary.
 
@@ -413,6 +417,7 @@ class PrimingMixin:
                     context_window=context_window,
                     pending_human_notifications=pending_human_notifications,
                     thread_id=thread_id,
+                    shortterm_text=shortterm_text,
                 ).system_prompt
             except Exception:
                 logger.exception("Forced compression failed")
