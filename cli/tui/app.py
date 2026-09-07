@@ -113,6 +113,14 @@ class AnimaChatApp(App):
         max-height: 15;
         display: none;
     }
+    /* The theme maps every colour to ansi_default, so neutralise the
+       OptionList's own highlight/hover tints; Palette.render_line paints
+       the selected row in reverse video instead. */
+    #palette > .option-list--option-highlighted,
+    #palette > .option-list--option-hover {
+        color: ansi_default;
+        background: ansi_default;
+    }
     #input-container {
         height: auto;
         background: transparent;
@@ -596,6 +604,14 @@ class AnimaChatApp(App):
         self.input_container.input.text = ""
         self.palette.close()
 
+    def _set_input_text(self, text: str) -> None:
+        """Replace the input buffer without reopening the palette, leaving
+        the caret at the end (``TextArea.text`` resets it to the start)."""
+        self._suppress_palette = True
+        widget = self.input_container.input
+        widget.text = text
+        widget.move_cursor(widget.document.end)
+
     def palette_move(self, direction: str) -> None:
         if self.palette.is_open:
             self.palette.move(direction)
@@ -611,8 +627,7 @@ class AnimaChatApp(App):
         self.palette.close()
         if item is None:
             return
-        self._suppress_palette = True
-        self.input_container.input.text = item.value
+        self._set_input_text(item.value)
         self.focus_input()
 
     def palette_confirm(self) -> None:
@@ -643,8 +658,7 @@ class AnimaChatApp(App):
             self._clear_input()
             item.on_confirm(self)
             return
-        self._suppress_palette = True
-        self.input_container.input.text = item.value
+        self._set_input_text(item.value)
         self.palette.close()
         if not item.takes_args:
             self._clear_input()
@@ -830,6 +844,7 @@ class AnimaChatApp(App):
                 delay = min(delay * 2, 4.0)
                 resume = self._last_response_id
                 last_event_id = self._last_event_id
+        self._stop_thinking_blink()
         self.busy = False
         self.session.in_flight = False
         self._schedule_session_save(force=True)
@@ -867,14 +882,17 @@ class AnimaChatApp(App):
                 self.current.append_text(data.get("text", ""))
         elif name == "thinking_start":
             if self.current is not None:
-                self.current.ensure_thinking().set_visible(self.show_thinking)
+                block = self.current.ensure_thinking()
+                block.set_visible(self.show_thinking)
+                block.start()
         elif name == "thinking_delta":
             if self.current is not None:
                 block = self.current.ensure_thinking()
                 block.set_visible(self.show_thinking)
+                block.start()
                 block.add_delta(data.get("text", ""))
         elif name == "thinking_end":
-            pass
+            self._stop_thinking_blink()
         elif name == "tool_start":
             tool_id = data.get("tool_id", "")
             card = ToolCard(data.get("tool_name", "tool"), tool_id)
@@ -900,6 +918,7 @@ class AnimaChatApp(App):
             pass
         elif name == "done":
             summary = data.get("summary") or ""
+            self._stop_thinking_blink()
             if self.current is not None:
                 self.current.set_final(summary)
             self.busy = False
@@ -907,6 +926,7 @@ class AnimaChatApp(App):
             self._schedule_session_save(force=True)
             self.status_bar.set_state(status="idle", active_tool=None, right_hint="Esc: interrupt")
         elif name == "error":
+            self._stop_thinking_blink()
             await self._show_error(data.get("message", "Stream error"))
             self.busy = False
             self.session.in_flight = False
@@ -920,6 +940,10 @@ class AnimaChatApp(App):
                 self.status_bar.set_state(right_hint=f"context: {int(float(ratio) * 100)}% | Esc: interrupt")
         elif name == "heartbeat_relay":
             pass
+
+    def _stop_thinking_blink(self) -> None:
+        if self.current is not None and self.current.thinking is not None:
+            self.current.thinking.stop()
 
     async def _show_error(self, message: str) -> None:
         if self.current is not None:
@@ -1506,6 +1530,7 @@ class AnimaChatApp(App):
         except AnimaWorksClientError as exc:
             self.show_transient(f"Interrupt failed: {exc}")
             return
+        self._stop_thinking_blink()
         self.busy = False
         self.session.in_flight = False
         self._write_session()

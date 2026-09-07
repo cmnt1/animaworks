@@ -12,6 +12,8 @@ the user can keep typing; the app drives navigation here.
 
 from __future__ import annotations
 
+from rich.style import Style
+from textual.strip import Strip
 from textual.widgets import OptionList
 from textual.widgets._option_list import Option
 
@@ -19,7 +21,15 @@ from cli.tui.state import PaletteItem
 
 
 class Palette(OptionList):
-    """A compact completion overlay (hidden until opened)."""
+    """A compact completion overlay (hidden until opened).
+
+    The selected row is painted in reverse video (SGR 7) directly on the
+    rendered strip: the ansi theme maps every colour to ``ansi_default``
+    so the stock highlight is invisible, and ``text-style: reverse`` in
+    CSS never reaches the row (Textual's ``VisualStyle`` drops it).
+    """
+
+    HIGHLIGHT_STYLE = Style(reverse=True)
 
     DEFAULT_CSS = """
     Palette {
@@ -59,6 +69,20 @@ class Palette(OptionList):
             self.open()
         else:
             self.close()
+
+    def _line_option_index(self, y: int) -> int | None:
+        """Option index painted on widget line ``y`` (None for blank rows)."""
+        try:
+            option_index, _ = self._lines[self.scroll_offset.y + y]
+        except IndexError:
+            return None
+        return option_index
+
+    def render_line(self, y: int) -> Strip:
+        strip = super().render_line(y)
+        if self.highlighted is not None and self._line_option_index(y) == self.highlighted:
+            strip = strip.apply_style(self.HIGHLIGHT_STYLE)
+        return strip
 
     def _focus_first(self) -> None:
         if self._items:
