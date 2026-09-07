@@ -127,6 +127,7 @@ class AnimaChatApp(App):
         height: auto;
         background: transparent;
         border-top: solid ansi_default;
+        border-bottom: solid ansi_default;
         padding-top: 0;
     }
     #response-status {

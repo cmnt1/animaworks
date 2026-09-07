@@ -38,6 +38,7 @@ async def test_response_indicator_runs_until_done() -> None:
         indicator._tick()
         assert indicator.render().plain.startswith(" ")
         assert app.input_container.styles.border.top[0] == "solid"
+        assert app.input_container.styles.border.bottom[0] == "solid"
         assert indicator.region.bottom == app.input_container.region.y
 
         await app.handle_sse(SseEvent("done", {"summary": "finished"}))
