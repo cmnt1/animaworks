@@ -73,8 +73,10 @@ macOS / Linux / WSL:
 curl -sSL https://raw.githubusercontent.com/xuiltul/animaworks/main/scripts/setup.sh | bash
 cd animaworks
 uv sync --all-extras        # adds the codex/claude execution extras
-uv run animaworks start     # start server — setup wizard opens on first run
+animaworks start            # start server — setup wizard opens on first run
 ```
+
+> **`animaworks` from any directory.** `setup.sh` symlinks the CLI into `~/.local/bin`, so you can drop the `uv run` prefix once that directory is on your `PATH` (add `export PATH="$HOME/.local/bin:$PATH"` to your shell rc if it is not). The console script pins this repo's `.venv` interpreter by absolute path, so `animaworks` and `uv run animaworks` always use the same environment. Installing manually? Link it yourself: `ln -sfn "$PWD/.venv/bin/animaworks" ~/.local/bin/animaworks`.
 
 Windows (PowerShell):
 
@@ -97,7 +99,7 @@ Open **http://localhost:18500/** — the setup wizard walks you through five ste
 
 You do not need to hand-edit `.env`. The wizard saves settings to `config.json` automatically.
 
-The setup script installs [uv](https://docs.astral.sh/uv/), clones the repository, and installs dependencies. **macOS, Linux, and WSL** work without a pre-installed Python. On **Windows**, use the PowerShell steps above; note that Mode S (Claude Agent SDK) is not available on Windows — use Codex, Gemini, or API-based modes there.
+The setup script installs [uv](https://docs.astral.sh/uv/), clones the repository, installs dependencies, and symlinks the `animaworks` CLI into `~/.local/bin`. **macOS, Linux, and WSL** work without a pre-installed Python. On **Windows**, use the PowerShell steps above; note that Mode S (Claude Agent SDK) is not available on Windows — use Codex, Gemini, or API-based modes there.
 
 > **Always use `--all-extras` with `uv sync`.** The plain `uv sync` that `setup.sh` runs is enough for the core, but Mode C (Codex) needs the `codex` extra, and a later filtered sync can remove the `codex` / `claude` execution packages from the venv and break those modes across the fleet.
 

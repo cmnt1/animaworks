@@ -73,8 +73,10 @@ macOS / Linux / WSL:
 curl -sSL https://raw.githubusercontent.com/xuiltul/animaworks/main/scripts/setup.sh | bash
 cd animaworks
 uv sync --all-extras        # codex/claude実行系のextraを追加
-uv run animaworks start     # サーバー起動 — 初回はセットアップウィザードが開きます
+animaworks start            # サーバー起動 — 初回はセットアップウィザードが開きます
 ```
+
+> **どのディレクトリからでも `animaworks` で起動できます。** `setup.sh` が CLI を `~/.local/bin` にシンボリックリンクするので、そのディレクトリに `PATH` が通っていれば `uv run` を省略できます（通っていない場合は `export PATH="$HOME/.local/bin:$PATH"` をシェルの rc に追加してください）。コンソールスクリプトはこのリポジトリの `.venv` のインタープリタを絶対パスで指しているため、`animaworks` と `uv run animaworks` は常に同じ環境で動きます。手動インストールの場合は自分でリンクを張ってください: `ln -sfn "$PWD/.venv/bin/animaworks" ~/.local/bin/animaworks`
 
 Windows (PowerShell):
 
@@ -97,7 +99,7 @@ OpenAI の Codex を APIキーなしで使う場合は、初回起動前に `cod
 
 `.env` を手で書く必要はありません。ウィザードが `config.json` に自動保存します。
 
-セットアップスクリプトが [uv](https://docs.astral.sh/uv/) のインストール、リポジトリのクローン、依存パッケージの導入までやってくれます。**macOS、Linux、WSL** では Python の事前インストールなしに動きます。**Windows** は上の PowerShell 手順を使ってください。なお Mode S（Claude Agent SDK）は Windows では利用できません — Codex / Gemini / API系モードを使ってください。
+セットアップスクリプトが [uv](https://docs.astral.sh/uv/) のインストール、リポジトリのクローン、依存パッケージの導入、そして `animaworks` コマンドの `~/.local/bin` へのリンク作成までやってくれます。**macOS、Linux、WSL** では Python の事前インストールなしに動きます。**Windows** は上の PowerShell 手順を使ってください。なお Mode S（Claude Agent SDK）は Windows では利用できません — Codex / Gemini / API系モードを使ってください。
 
 > **`uv sync` には必ず `--all-extras` を付けてください。** `setup.sh` が実行する素の `uv sync` でも本体は動きますが、Mode C（Codex）には `codex` extra が必要です。また後から extras 無しの sync を実行すると、venv から `codex` / `claude` 実行パッケージが消えて該当モードのAnimaが一斉に壊れます。
 
