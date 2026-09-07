@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from core.file_access_policy import find_denied_root, load_denied_roots
+from core.i18n import t
 
 # Import submodules directly to avoid circular import when package __init__ loads engine
 from core.memory.priming import (
@@ -43,10 +44,12 @@ from core.memory.priming import (
 from core.memory.priming import (
     outbound as _outbound,
 )
+from core.memory.priming.consolidate import consolidate_items
 from core.memory.priming.constants import (
     _BUDGET_GRAPH_CONTEXT,
     _BUDGET_GREETING,
     _BUDGET_HEARTBEAT,
+    _BUDGET_IMPORTANT_KNOWLEDGE,
     _BUDGET_PENDING_TASKS,
     _BUDGET_QUESTION,
     _BUDGET_RECENT_ACTIVITY,
@@ -61,11 +64,15 @@ from core.memory.priming.gate import (
     build_candidates_from_result,
     build_priming_plan,
 )
+from core.memory.priming.items import MemoryItem, render_items, select_within_budget
 from core.memory.priming.result import PrimingResult
 from core.memory.priming.utils import RetrieverCache, extract_keywords, truncate_head, truncate_tail
 from core.prompt.tokens import estimate_tokens
 
 logger = logging.getLogger("animaworks.priming")
+
+_IMPORTANT_HEADER = "### [IMPORTANT] Knowledge (summary pointers)"
+_NOTIFICATIONS_HEADER = "## Pending Human Notifications (last 24h)"
 
 # TTL (seconds) before a failed MemoryBackend init is retried once.  Prevents a
 # transient failure from permanently disabling graph/episode priming.
@@ -312,40 +319,61 @@ class PrimingEngine:
             return_exceptions=True,
         )
 
-        sender_profile = results[0] if isinstance(results[0], str) else ""
-        recent_activity = results[1] if isinstance(results[1], str) else ""
+        def unpack_itemized(value: object) -> tuple[str, tuple[MemoryItem, ...]]:
+            if not isinstance(value, str):
+                return "", ()
+            return str(value), tuple(getattr(value, "items", ()))
 
-        important_knowledge = results[2] if isinstance(results[2], str) else ""
+        sender_profile = results[0] if isinstance(results[0], str) else ""
+        recent_activity, recent_activity_items = unpack_itemized(results[1])
+
+        important_knowledge, important_items = unpack_itemized(results[2])
         if isinstance(results[3], tuple):
             related_knowledge, related_knowledge_untrusted = results[3]
         else:
             related_knowledge = ""
             related_knowledge_untrusted = ""
-        if important_knowledge:
+        # Plain strings are retained for patched/legacy channel implementations.
+        if important_knowledge and not important_items:
             related_knowledge = (
                 f"{important_knowledge}\n\n{related_knowledge}" if related_knowledge else important_knowledge
             )
 
-        pending_tasks = results[4] if isinstance(results[4], str) else ""
-        recent_outbound = results[5] if isinstance(results[5], str) else ""
-        episodes = results[6] if isinstance(results[6], str) else ""
-        pending_human_notifications = results[7] if isinstance(results[7], str) else ""
+        pending_tasks, pending_task_items = unpack_itemized(results[4])
+        recent_outbound, outbound_items = unpack_itemized(results[5])
+        episodes, episode_items = unpack_itemized(results[6])
+        pending_human_notifications, notification_items = unpack_itemized(results[7])
         graph_context = results[8] if isinstance(results[8], str) else ""
 
         for i, r in enumerate(results):
             if isinstance(r, Exception):
                 logger.warning("Priming channel %d failed: %s", i, r)
 
-        raw_result = PrimingResult(
-            sender_profile=sender_profile,
-            recent_activity=recent_activity,
-            related_knowledge=related_knowledge,
-            related_knowledge_untrusted=related_knowledge_untrusted,
-            pending_tasks=pending_tasks,
-            recent_outbound=recent_outbound,
-            episodes=episodes,
-            pending_human_notifications=pending_human_notifications,
-            graph_context=graph_context,
+        item_channels = {
+            source: channel_items
+            for source, channel_items in (
+                ("important_knowledge", important_items),
+                ("recent_activity", recent_activity_items),
+                ("pending_tasks", pending_task_items),
+                ("recent_outbound", outbound_items),
+                ("episodes", episode_items),
+                ("pending_human_notifications", notification_items),
+            )
+            if channel_items
+        }
+        raw_result = consolidate_items(
+            PrimingResult(
+                sender_profile=sender_profile,
+                recent_activity=recent_activity,
+                related_knowledge=related_knowledge,
+                related_knowledge_untrusted=related_knowledge_untrusted,
+                pending_tasks=pending_tasks,
+                recent_outbound=recent_outbound,
+                episodes=episodes,
+                pending_human_notifications=pending_human_notifications,
+                graph_context=graph_context,
+                items=item_channels,
+            )
         )
         gate_plan = build_priming_plan(
             effective_message,
@@ -363,7 +391,58 @@ class PrimingEngine:
         budget_tasks = int(_BUDGET_PENDING_TASKS * budget_ratio)
         budget_episodes = int(_BUDGET_RELATED_EPISODES * budget_ratio)
 
-        truncated_knowledge = truncate_head(gated_result.related_knowledge, budget_knowledge)
+        final_items: dict[str, tuple[MemoryItem, ...]] = dict(gated_result.items)
+
+        def itemized_or_truncated(
+            source: str,
+            text: str,
+            budget: int,
+            *,
+            header: str = "",
+            tail: bool = False,
+        ) -> str:
+            if source not in gated_result.items:
+                return truncate_tail(text, budget) if tail else truncate_head(text, budget)
+            if not text:
+                final_items[source] = ()
+                return ""
+            available = max(0, budget - estimate_tokens(header))
+            selected = select_within_budget(gated_result.items[source], available)
+            if source in {"recent_outbound", "pending_human_notifications"}:
+                selected.sort(key=lambda item: item.updated)
+            while selected and estimate_tokens(render_items(selected, header)) > budget:
+                selected.pop()
+            final_items[source] = tuple(selected)
+            return render_items(selected, header)
+
+        important_budget = min(budget_knowledge, int(_BUDGET_IMPORTANT_KNOWLEDGE * budget_ratio))
+        important_text = ""
+        if "important_knowledge" in gated_result.items and gated_result.related_knowledge:
+            important_text = itemized_or_truncated(
+                "important_knowledge",
+                gated_result.related_knowledge,
+                important_budget,
+                header=_IMPORTANT_HEADER,
+            )
+        elif "important_knowledge" in gated_result.items:
+            final_items["important_knowledge"] = ()
+        base_related = related_knowledge if gated_result.related_knowledge else ""
+        prefix = f"{important_text}\n\n" if important_text and base_related else important_text
+        remaining_knowledge_budget = max(0, budget_knowledge - estimate_tokens(prefix))
+        truncated_base_knowledge = truncate_head(base_related, remaining_knowledge_budget)
+        truncated_knowledge = (
+            f"{important_text}\n\n{truncated_base_knowledge}"
+            if important_text and truncated_base_knowledge
+            else important_text or truncated_base_knowledge
+        )
+        while truncated_base_knowledge and estimate_tokens(truncated_knowledge) > budget_knowledge:
+            remaining_knowledge_budget -= 1
+            truncated_base_knowledge = truncate_head(base_related, remaining_knowledge_budget)
+            truncated_knowledge = (
+                f"{important_text}\n\n{truncated_base_knowledge}"
+                if important_text and truncated_base_knowledge
+                else important_text or truncated_base_knowledge
+            )
         knowledge_used_tokens = estimate_tokens(truncated_knowledge)
         remaining_knowledge_budget = max(0, budget_knowledge - knowledge_used_tokens)
         truncated_untrusted = (
@@ -373,17 +452,32 @@ class PrimingEngine:
         )
 
         budget_graph = int(_BUDGET_GRAPH_CONTEXT * budget_ratio)
-
         result = PrimingResult(
             sender_profile=truncate_head(gated_result.sender_profile, budget_profile),
-            recent_activity=truncate_tail(gated_result.recent_activity, budget_activity),
+            recent_activity=itemized_or_truncated(
+                "recent_activity",
+                gated_result.recent_activity,
+                budget_activity,
+                tail=True,
+            ),
             related_knowledge=truncated_knowledge,
             related_knowledge_untrusted=truncated_untrusted,
-            pending_tasks=truncate_head(gated_result.pending_tasks, budget_tasks),
-            recent_outbound=gated_result.recent_outbound,
-            episodes=truncate_tail(gated_result.episodes, budget_episodes),
-            pending_human_notifications=gated_result.pending_human_notifications,
+            pending_tasks=itemized_or_truncated("pending_tasks", gated_result.pending_tasks, budget_tasks),
+            recent_outbound=itemized_or_truncated(
+                "recent_outbound",
+                gated_result.recent_outbound,
+                max(1, int(500 * budget_ratio)),
+                header=t("priming.outbound_header"),
+            ),
+            episodes=itemized_or_truncated("episodes", gated_result.episodes, budget_episodes, tail=True),
+            pending_human_notifications=itemized_or_truncated(
+                "pending_human_notifications",
+                gated_result.pending_human_notifications,
+                max(1, int(500 * budget_ratio)),
+                header=_NOTIFICATIONS_HEADER,
+            ),
             graph_context=truncate_tail(gated_result.graph_context, budget_graph),
+            items=final_items,
             gate_plan=gate_plan,
         )
 

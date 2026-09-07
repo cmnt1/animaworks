@@ -11,17 +11,66 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from core.file_access_policy import find_denied_root, load_denied_roots
 from core.i18n import t
-from core.memory.priming.constants import _BUDGET_PENDING_TASKS
+from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items
 from core.paths import get_animas_dir
 from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.priming")
+
+_TASK_ID_RE = re.compile(r"\[([^\]]+)\]")
+_ITEM_COLLECTION_BUDGET = 10_000
+
+
+def _itemize_pending_tasks(
+    text: str,
+    task_updates: dict[str, str] | None = None,
+) -> tuple[MemoryItem, ...]:
+    """Split formatter sections into indivisible task-sized blocks."""
+    known_updates = task_updates or {}
+    items: list[MemoryItem] = []
+    for section_index, section in enumerate(part for part in text.split("\n\n") if part.strip()):
+        prefix: list[str] = []
+        blocks: list[list[str]] = []
+        for line in section.splitlines():
+            if line.startswith("-"):
+                blocks.append([line])
+            elif blocks:
+                blocks[-1].append(line)
+            else:
+                prefix.append(line)
+        if not blocks:
+            blocks = [prefix]
+            prefix = []
+        for block_index, block in enumerate(blocks):
+            block_lines = [*prefix, *block] if block_index == 0 else block
+            block_text = "\n".join(block_lines).strip()
+            if not block_text:
+                continue
+            match = _TASK_ID_RE.search(block_text)
+            displayed_key = match.group(1) if match else ""
+            matching_keys = [key for key in known_updates if key == displayed_key or key.startswith(displayed_key)]
+            key = (
+                matching_keys[0]
+                if len(matching_keys) == 1
+                else displayed_key or f"section:{section_index}:{block_index}:{block_text[:60]}"
+            )
+            items.append(
+                MemoryItem(
+                    source="pending_tasks",
+                    key=key,
+                    text=block_text,
+                    updated=known_updates.get(key, ""),
+                    rank=float(-len(items)),
+                )
+            )
+    return tuple(items)
 
 
 def _resolved_readable_path(path: Path, denied_roots: tuple[Path, ...]) -> Path | None:
@@ -63,12 +112,14 @@ async def channel_e_pending_tasks(
     Human-origin tasks are marked with 🔴 HIGH priority.
     Also includes currently running parallel tasks (Level 2 format:
     title + description summary + status + elapsed time).
-    Budget: 300 tokens.
+    Collection is intentionally untrimmed here; the engine applies its scaled
+    budget to whole task items after cross-channel consolidation.
 
     Uses asyncio.to_thread to avoid blocking the event loop
     since TaskQueueManager performs synchronous file I/O.
     """
     parts: list[str] = []
+    task_updates: dict[str, str] = {}
     resolver = None
     denied_roots = load_denied_roots(anima_dir)
     unresolved_queue_path = anima_dir / "state" / "task_queue.jsonl"
@@ -98,8 +149,9 @@ async def channel_e_pending_tasks(
             include_archived=True,
         )
         visible_tasks = resolver.filter_for_priming(anima_dir.name, board_tasks, now_local())
+        task_updates.update({task.task_id: task.queue_updated_at or "" for task in visible_tasks})
         animas_dir = anima_dir.parent if anima_dir.parent.name == "animas" else get_animas_dir()
-        queue_summary = format_tasks_for_priming(visible_tasks, _BUDGET_PENDING_TASKS, animas_dir=animas_dir)
+        queue_summary = format_tasks_for_priming(visible_tasks, _ITEM_COLLECTION_BUDGET, animas_dir=animas_dir)
         if queue_summary:
             parts.append(queue_summary)
     except Exception:
@@ -110,10 +162,14 @@ async def channel_e_pending_tasks(
             if queue_path is None:
                 raise PermissionError("task queue is explicitly denied")
             manager = TaskQueueManager(anima_dir)
-            queue_summary = await asyncio.to_thread(
-                manager.format_for_priming,
-                _BUDGET_PENDING_TASKS,
-            )
+
+            def collect_fallback() -> tuple[str, dict[str, str]]:
+                fallback_tasks = [*manager.get_pending(), *manager.get_delegated_tasks()]
+                updates = {task.task_id: task.updated_at or task.ts for task in fallback_tasks}
+                return manager.format_for_priming(_ITEM_COLLECTION_BUDGET), updates
+
+            queue_summary, fallback_updates = await asyncio.to_thread(collect_fallback)
+            task_updates.update(fallback_updates)
             if queue_summary:
                 parts.append(queue_summary)
         except Exception:
@@ -123,6 +179,7 @@ async def channel_e_pending_tasks(
     if active:
         lines = [t("priming.active_parallel_tasks_header")]
         for tid, info in active.items():
+            task_updates[tid] = str(info.get("started_at", "") or "")
             elapsed = format_elapsed(info.get("started_at", ""))
             status = info.get("status", "running")
             deps = info.get("depends_on", [])
@@ -182,6 +239,7 @@ async def channel_e_pending_tasks(
                     try:
                         content = rf.read_text(encoding="utf-8").strip()
                         task_id = rf.stem
+                        task_updates[task_id] = datetime.fromtimestamp(rf.stat().st_mtime, tz=now.tzinfo).isoformat()
                         preview = content[:150].replace("\n", " ")
                         lines.append(f"- [{task_id}] {preview}")
                     except Exception:
@@ -191,7 +249,9 @@ async def channel_e_pending_tasks(
         except Exception:
             logger.debug("Channel E: task_results read failed", exc_info=True)
 
-    return "\n\n".join(parts)
+    text = "\n\n".join(parts)
+    items = _itemize_pending_tasks(text, task_updates)
+    return ItemizedMemory(render_items(items, ""), items) if items else ""
 
 
 def _should_show_task_result(anima_dir: Path, result_file: Path, resolver: object | None, now: datetime) -> bool:

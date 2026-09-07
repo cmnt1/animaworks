@@ -6,9 +6,10 @@ from __future__ import annotations
 
 """Shared priming result container."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
+from core.memory.priming.items import MemoryItem
 from core.prompt.tokens import estimate_tokens
 
 
@@ -25,6 +26,7 @@ class PrimingResult:
     episodes: str = ""
     pending_human_notifications: str = ""
     graph_context: str = ""
+    items: dict[str, tuple[MemoryItem, ...]] = field(default_factory=dict)
     gate_plan: Any | None = None
 
     def is_empty(self) -> bool:
