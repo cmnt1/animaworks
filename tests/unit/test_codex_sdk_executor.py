@@ -2549,3 +2549,132 @@ class TestCodexUsageDeltas:
                 assert usage == expected
                 assert events[-1]["usage"] == expected.to_dict()
                 assert events[-1]["result_message"].num_turns == 2
+
+
+class TestPartialToolEvidence:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("completed", [False, True])
+    @pytest.mark.parametrize("blocking", [False, True])
+    @pytest.mark.parametrize("resumed", [False, True])
+    async def test_native_failure_retains_tool_evidence_without_internal_replay(
+        self,
+        executor,
+        anima_dir,
+        completed,
+        blocking,
+        resumed,
+    ):
+        from core.execution.fallback_activity import has_partial_execution
+
+        tool = SimpleNamespace(
+            type="mcp_tool_call",
+            id="send-1",
+            server="aw",
+            tool="send_message",
+            arguments={},
+            result=SimpleNamespace(content="delivered"),
+            error=None,
+        )
+
+        async def events():
+            yield SimpleNamespace(type="item.started", item=tool)
+            if completed:
+                yield SimpleNamespace(type="item.completed", item=tool)
+            raise RuntimeError("fatal stderr signal: synthetic disconnect after sending")
+
+        thread = _mock_stream_thread("thread-tools", [])
+        thread.turn.return_value.stream.return_value = events()
+        codex = _mock_codex(thread)
+        if resumed:
+            _save_thread_id(anima_dir, "thread-tools", "chat")
+        with (
+            patch.object(executor, "_create_codex_client", return_value=codex),
+            patch.object(executor, "_execute_streaming_via_cli_exec") as cli,
+        ):
+            if blocking:
+                result = await executor.execute(prompt="p")
+                assert result.error is True
+                assert has_partial_execution(result) is True
+                records = result.tool_call_records
+                assert len(records) == 1
+                assert records[0].tool_id == "send-1"
+                assert records[0].is_error is (not completed)
+            else:
+                with pytest.raises(Exception) as caught:
+                    async for _event in executor.execute_streaming("s", "p", ContextTracker(model="test")):
+                        pass
+                records = caught.value.tool_call_records
+                assert len(records) == 1
+                assert isinstance(records[0], dict)
+                assert records[0]["tool_id"] == "send-1"
+                assert records[0]["is_error"] is (not completed)
+            cli.assert_not_called()
+            assert codex.thread_start.await_count == (0 if resumed else 1)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("completed", [False, True])
+    @pytest.mark.parametrize("blocking", [False, True])
+    @pytest.mark.parametrize("exit_code", [0, 1])
+    async def test_cli_records_survive_failure_and_do_not_duplicate_done(
+        self,
+        executor,
+        completed,
+        blocking,
+        exit_code,
+    ):
+        from core.execution.fallback_activity import has_partial_execution
+
+        item = {
+            "type": "mcp_tool_call",
+            "id": "send-cli",
+            "server": "aw",
+            "tool": "send_message",
+            "arguments": {},
+            "result": {"content": "delivered"},
+        }
+        rows = [{"type": "item.started", "item": item}]
+        if completed:
+            rows.append({"type": "item.completed", "item": item})
+        proc = SimpleNamespace(
+            stdin=SimpleNamespace(write=MagicMock(), drain=AsyncMock(), close=MagicMock()),
+            stdout=SimpleNamespace(readline=AsyncMock(side_effect=[json.dumps(row).encode() for row in rows] + [b""])),
+            stderr=SimpleNamespace(read=AsyncMock(return_value=b"")),
+            returncode=exit_code,
+            wait=AsyncMock(return_value=exit_code),
+        )
+        with (
+            patch.object(executor, "_write_codex_config"),
+            patch.object(executor, "_build_cli_exec_command", return_value=["codex", "exec"]),
+            patch.object(executor, "_build_env", return_value={}),
+            patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)),
+            patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=True),
+        ):
+            if blocking:
+                result = await executor.execute(prompt="p", trigger="task:test")
+                assert result.error is bool(exit_code)
+                assert has_partial_execution(result) is True
+                records = [vars(record) for record in result.tool_call_records]
+            elif exit_code:
+                with pytest.raises(RuntimeError) as caught:
+                    async for _event in executor.execute_streaming("s", "p", ContextTracker(model="test")):
+                        pass
+                records = caught.value.tool_call_records
+            else:
+                events = [event async for event in executor.execute_streaming("s", "p", ContextTracker(model="test"))]
+                records = events[-1]["tool_call_records"]
+        assert len(records) == 1
+        assert records[0]["tool_id"] == "send-cli"
+        assert records[0]["is_error"] is (not completed)
+
+    @pytest.mark.asyncio
+    async def test_collector_preserves_started_tool_on_cancellation(self, executor):
+        async def events(*args, **kwargs):
+            yield {"type": "tool_start", "tool_id": "send-cancel", "tool_name": "send_message"}
+            raise asyncio.CancelledError()
+
+        with (
+            patch.object(executor, "execute_streaming", side_effect=events),
+            pytest.raises(asyncio.CancelledError) as caught,
+        ):
+            await executor.execute(prompt="p")
+        assert caught.value.tool_call_records[0]["tool_id"] == "send-cancel"

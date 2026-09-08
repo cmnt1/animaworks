@@ -58,11 +58,12 @@ async def test_stream_usage_deltas_are_not_counted_again_at_done(cycle):
     assert not any(e["type"] == "usage" for e in events)
 
 
-async def test_terminal_error_preserves_usage_and_completed_tools(cycle):
+@pytest.mark.parametrize("via_exception", [False, True])
+async def test_terminal_error_preserves_usage_and_completed_tools(cycle, via_exception):
     agent, log = cycle
 
     async def stream(*args, **kwargs):
-        yield {
+        event = {
             "type": "error",
             "terminal": True,
             "message": "API Error: ConnectionRefused",
@@ -78,6 +79,12 @@ async def test_terminal_error_preserves_usage_and_completed_tools(cycle):
                 }
             ],
         }
+        if via_exception:
+            exc = RuntimeError(event["message"])
+            exc.usage = event["usage"]
+            exc.tool_call_records = event["tool_call_records"]
+            raise exc
+        yield event
 
     agent._executor.execute_streaming = stream
     agent.model_config.fallback_models = ["s:claude-test"]

@@ -108,6 +108,57 @@ async def test_isolated_task_journal_recovery_clears_the_orphan(tmp_path: Path) 
     owner._pending_executor.add_recovered_task_checkpoint.assert_not_called()
 
 
+@pytest.mark.parametrize("lane", ["task", "chat", "heartbeat", "cron"])
+async def test_journal_recovery_preserves_active_sibling_lane(tmp_path: Path, lane: str) -> None:
+    anima_dir = tmp_path / "animas" / "sakura"
+    anima_dir.mkdir(parents=True)
+    supervisor = TaskRunnerSupervisor("sakura", anima_dir, tmp_path / "shared")
+    journal = StreamingJournal(anima_dir, session_type=lane, thread_id="live")
+    journal.open(trigger=f"{lane}:live")
+    journal.write_text("still running")
+    journal.close()
+    journal_path = anima_dir / "shortterm" / lane / "live" / "streaming_journal.jsonl"
+    original = journal_path.read_bytes()
+    supervisor.jobs["live-job"] = SimpleNamespace(identity=SimpleNamespace(lane=lane))
+
+    await supervisor._recover_task_journals((lane,))
+
+    assert journal_path.read_bytes() == original
+    supervisor.jobs.clear()
+    await supervisor._recover_task_journals((lane,))
+    assert not journal_path.exists()
+
+
+async def test_journal_recovery_keeps_registration_locked_until_disk_work_finishes(tmp_path: Path) -> None:
+    import threading
+
+    supervisor = TaskRunnerSupervisor("sakura", tmp_path / "sakura", tmp_path / "shared")
+    started = asyncio.Event()
+    release = threading.Event()
+    loop = asyncio.get_running_loop()
+
+    def slow_has_orphan(*args, **kwargs):
+        loop.call_soon_threadsafe(started.set)
+        assert release.wait(timeout=5)
+        return False
+
+    with patch.object(StreamingJournal, "has_orphan", side_effect=slow_has_orphan):
+        recovery = asyncio.create_task(supervisor._recover_task_journals(("task",)))
+        await asyncio.wait_for(started.wait(), timeout=5)
+        registration = asyncio.create_task(supervisor._journal_recovery_lock.acquire())
+        try:
+            recovery.cancel()
+            await asyncio.sleep(0)
+            assert not registration.done()
+            assert not recovery.done()
+        finally:
+            release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await recovery
+        await asyncio.wait_for(registration, timeout=5)
+        supervisor._journal_recovery_lock.release()
+
+
 @pytest.mark.asyncio
 async def test_task_flag_false_preserves_legacy_path_without_spawn(tmp_path: Path) -> None:
     executor, anima, _ = _executor(tmp_path, task_isolated=False)

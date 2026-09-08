@@ -1445,6 +1445,9 @@ class CycleMixin:
                 observed = getattr(e, "usage", None)
                 if isinstance(observed, dict) and not getattr(e, "usage_already_emitted", False):
                     record_usage(observed)
+                records = getattr(e, "tool_call_records", None)
+                if isinstance(records, list):
+                    all_tool_call_records.extend(records)
                 from core.execution.base import StreamDisconnectedError
 
                 is_stream_error = isinstance(e, StreamDisconnectedError)

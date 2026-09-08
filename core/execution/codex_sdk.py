@@ -778,6 +778,48 @@ def _token_usage(usage: Any) -> TokenUsage:
     )
 
 
+class _CodexToolEvidence:
+    """Retain attempted tools when a stream ends before its final result.
+
+    A completed record replaces its provisional start by tool ID. Started
+    tools are not assumed safe to replay just because completion was lost.
+    """
+
+    def __init__(self) -> None:
+        self._records: dict[str, dict[str, Any]] = {}
+
+    def started(self, tool_id: str, tool_name: str) -> None:
+        key = tool_id or f"unknown:{tool_name}"
+        self._records.setdefault(
+            key,
+            asdict(
+                ToolCallRecord(
+                    tool_id=tool_id,
+                    tool_name=tool_name,
+                    result_summary="completion_not_observed",
+                    is_error=True,
+                )
+            ),
+        )
+
+    def merge(self, records: list[Any]) -> None:
+        for record in records:
+            data = asdict(record) if isinstance(record, ToolCallRecord) else dict(record)
+            key = data.get("tool_id") or f"unknown:{data.get('tool_name', '')}"
+            self._records[key] = data
+
+    def observe(self, event: dict[str, Any]) -> None:
+        if event.get("type") == "tool_start":
+            self.started(str(event.get("tool_id") or ""), str(event.get("tool_name") or ""))
+        self.merge(event.get("tool_call_records") or [])
+
+    def to_dicts(self) -> list[dict[str, Any]]:
+        return list(self._records.values())
+
+    def __bool__(self) -> bool:
+        return bool(self._records)
+
+
 class _CodexUsageAccumulator:
     """Turn-local deltas from thread totals, including resumed/reset counters.
 
@@ -1677,6 +1719,7 @@ class CodexSDKExecutor(BaseExecutor):
         stderr_task = asyncio.create_task(_read_stderr())
         response_parts: list[str] = []
         tool_records: list[ToolCallRecord] = []
+        tool_evidence = _CodexToolEvidence()
         usage_acc = TokenUsage()
         emitted_tool_starts: set[str] = set()
         usage_meter = _CodexUsageAccumulator(fresh_thread=True)
@@ -1715,8 +1758,12 @@ class CodexSDKExecutor(BaseExecutor):
                     item = payload.get("item") or {}
                     item_type = str(item.get("type", ""))
                     item_id = str(item.get("id", ""))
-                    if item_type in ("command_execution", "mcp_tool_call") and item_id not in emitted_tool_starts:
+                    if (
+                        item_type in ("command_execution", "mcp_tool_call", "file_change")
+                        and item_id not in emitted_tool_starts
+                    ):
                         emitted_tool_starts.add(item_id)
+                        tool_evidence.started(item_id, _codex_item_tool_name(item, item_type))
                         yield {
                             "type": "tool_start",
                             "tool_name": _codex_item_tool_name(type("Obj", (), item)(), item_type),
@@ -1736,7 +1783,8 @@ class CodexSDKExecutor(BaseExecutor):
                             yield {"type": "text_delta", "text": text}
                         continue
 
-                    if item_type in ("command_execution", "mcp_tool_call"):
+                    if item_type in ("command_execution", "mcp_tool_call", "file_change"):
+                        tool_evidence.started(item_id, _codex_item_tool_name(item, item_type))
                         if item_id not in emitted_tool_starts:
                             emitted_tool_starts.add(item_id)
                             yield {
@@ -1744,9 +1792,10 @@ class CodexSDKExecutor(BaseExecutor):
                                 "tool_name": _codex_item_tool_name(type("Obj", (), item)(), item_type),
                                 "tool_id": item_id,
                             }
-                        rec = _cli_exec_item_to_tool_record(item)
+                        rec = _cli_exec_item_to_tool_record(item) or _item_to_tool_record(item)
                         if rec:
                             tool_records.append(rec)
+                            tool_evidence.merge([rec])
                         yield {
                             "type": "tool_end",
                             "tool_name": _codex_item_tool_name(type("Obj", (), item)(), item_type),
@@ -1776,6 +1825,7 @@ class CodexSDKExecutor(BaseExecutor):
             if isinstance(exc, (Exception, asyncio.CancelledError)):
                 exc.usage = usage_acc.to_dict()
                 exc.usage_already_emitted = True
+                exc.tool_call_records = tool_evidence.to_dicts()
             raise
         finally:
             if proc.returncode is None:
@@ -1801,7 +1851,7 @@ class CodexSDKExecutor(BaseExecutor):
                 usage=usage_acc.to_dict(),
             ),
             "replied_to_from_transcript": replied_to,
-            "tool_call_records": [asdict(r) for r in tool_records],
+            "tool_call_records": tool_evidence.to_dicts(),
             "usage": usage_acc.to_dict(),
             "usage_already_emitted": True,
         }
@@ -1817,8 +1867,10 @@ class CodexSDKExecutor(BaseExecutor):
         tracker = tracker or ContextTracker(model=self._model_config.model)
         final_event: dict[str, Any] | None = None
         usage_acc = TokenUsage()
+        tool_evidence = _CodexToolEvidence()
         try:
             async for ev in self._execute_streaming_via_cli_exec(system_prompt, prompt, tracker, trigger=trigger):
+                tool_evidence.observe(ev)
                 if ev.get("type") == "usage":
                     usage_acc.merge(_token_usage(ev.get("usage") or {}))
                 elif ev.get("type") == "done":
@@ -1829,14 +1881,21 @@ class CodexSDKExecutor(BaseExecutor):
             if isinstance(exc, (Exception, asyncio.CancelledError)):
                 exc.usage = usage_acc.to_dict()
                 exc.usage_already_emitted = False
+                tool_evidence.merge(getattr(exc, "tool_call_records", None) or [])
+                exc.tool_call_records = tool_evidence.to_dicts()
             raise
         if final_event is None:
-            return ExecutionResult(text="[Codex CLI exec fallback returned no result]", usage=usage_acc, error=True)
+            return ExecutionResult(
+                text="[Codex CLI exec fallback returned no result]",
+                usage=usage_acc,
+                error=True,
+                tool_call_records=[ToolCallRecord(**record) for record in tool_evidence.to_dicts()],
+            )
         return ExecutionResult(
             text=str(final_event.get("full_text", "")),
             result_message=final_event.get("result_message"),
             replied_to_from_transcript=final_event.get("replied_to_from_transcript", set()),
-            tool_call_records=[ToolCallRecord(**record) for record in (final_event.get("tool_call_records") or [])],
+            tool_call_records=[ToolCallRecord(**record) for record in tool_evidence.to_dicts()],
             usage=usage_acc,
         )
 
@@ -1904,6 +1963,7 @@ class CodexSDKExecutor(BaseExecutor):
         final_event: dict[str, Any] = {}
         error_message = ""
         error_reason = ""
+        tool_evidence = _CodexToolEvidence()
         try:
             async for event in self.execute_streaming(
                 system_prompt,
@@ -1914,6 +1974,7 @@ class CodexSDKExecutor(BaseExecutor):
                 trigger=trigger,
                 thread_id=thread_id,
             ):
+                tool_evidence.observe(event)
                 if event.get("type") == "usage":
                     usage.merge(_token_usage(event.get("usage") or {}))
                 elif event.get("type") == "done":
@@ -1926,8 +1987,11 @@ class CodexSDKExecutor(BaseExecutor):
         except asyncio.CancelledError as exc:
             exc.usage = usage.to_dict()
             exc.usage_already_emitted = False
+            tool_evidence.merge(getattr(exc, "tool_call_records", None) or [])
+            exc.tool_call_records = tool_evidence.to_dicts()
             raise
         except Exception as exc:
+            tool_evidence.merge(getattr(exc, "tool_call_records", None) or [])
             error_message = f"[Codex SDK Error: {exc}]"
             error_reason = str(_codex_error_metadata(str(exc), self._model_config.model).get("reason") or "")
             logger.exception("Codex execution failed after observed usage")
@@ -1935,7 +1999,7 @@ class CodexSDKExecutor(BaseExecutor):
             text=str(final_event.get("full_text") or error_message),
             result_message=final_event.get("result_message"),
             replied_to_from_transcript=final_event.get("replied_to_from_transcript", set()),
-            tool_call_records=[ToolCallRecord(**record) for record in final_event.get("tool_call_records", [])],
+            tool_call_records=[ToolCallRecord(**record) for record in tool_evidence.to_dicts()],
             usage=usage,
             error=bool(error_message),
             reason=error_reason,
@@ -2011,6 +2075,7 @@ class CodexSDKExecutor(BaseExecutor):
         response_item_order: list[str] = []
         response_text_by_item: dict[str, str] = {}
         all_tool_records: list[ToolCallRecord] = []
+        tool_evidence = _CodexToolEvidence()
         turn_result: Any = None
         active_thread: Any = None
         usage_acc = TokenUsage()
@@ -2079,6 +2144,7 @@ class CodexSDKExecutor(BaseExecutor):
             tool_ended: set[str] = set()
 
             def _tool_start_chunk(tool_id: str, tool_name: str) -> dict[str, Any] | None:
+                tool_evidence.started(tool_id, tool_name)
                 if not tool_id or tool_id in tool_started:
                     return None
                 tool_started.add(tool_id)
@@ -2125,6 +2191,20 @@ class CodexSDKExecutor(BaseExecutor):
 
                     method = _event_method(event)
                     payload = _event_payload(event)
+                    if method in ("item/started", "item/updated", "item/completed"):
+                        received_item = _get_attr(payload, "item", None)
+                        received_type = _item_type(received_item)
+                        if received_type in (
+                            "command_execution",
+                            "mcp_tool_call",
+                            "file_change",
+                            "web_search",
+                            "dynamic_tool_call",
+                            "collab_agent_tool_call",
+                        ):
+                            tool_evidence.started(
+                                _item_id(received_item), _codex_item_tool_name(received_item, received_type)
+                            )
                     # A stop can race the final usage notification. Account
                     # for already-received usage before honoring interruption.
                     if method == "thread/tokenUsage/updated":
@@ -2312,6 +2392,7 @@ class CodexSDKExecutor(BaseExecutor):
                             rec = _item_to_tool_record(item)
                             if rec:
                                 all_tool_records.append(rec)
+                                tool_evidence.merge([rec])
                             if item_id not in tool_ended:
                                 tool_ended.add(item_id)
                                 yield {
@@ -2415,7 +2496,12 @@ class CodexSDKExecutor(BaseExecutor):
                             gen.__anext__(),
                             timeout=RESUME_TIMEOUT_SEC,
                         )
-                    except (TimeoutError, StopAsyncIteration):
+                    except (TimeoutError, StopAsyncIteration) as e:
+                        if tool_evidence:
+                            raise StreamDisconnectedError(
+                                "Codex resumed stream ended after starting a tool",
+                                partial_text=_current_full_text(),
+                            ) from e
                         logger.warning(
                             "Codex resume timed out or empty (thread=%s), falling back to fresh thread.",
                             codex_thread_id,
@@ -2425,6 +2511,8 @@ class CodexSDKExecutor(BaseExecutor):
                         fell_back = True
                         await gen.aclose()
                     except Exception as e:
+                        if tool_evidence:
+                            raise
                         logger.warning(
                             "Codex resume stream failed (thread=%s): %s",
                             codex_thread_id,
@@ -2440,6 +2528,8 @@ class CodexSDKExecutor(BaseExecutor):
                         async for ev in gen:
                             yield ev
                 except Exception as e:
+                    if tool_evidence:
+                        raise
                     logger.warning(
                         "Codex stream resume error: %s. Fresh thread.",
                         e,
@@ -2455,7 +2545,7 @@ class CodexSDKExecutor(BaseExecutor):
                     async for ev in _stream_turn(None):
                         yield ev
                 except Exception as e:
-                    if _should_cli_exec_fallback(e):
+                    if not tool_evidence and _should_cli_exec_fallback(e):
                         logger.warning("Codex SDK streaming failed; falling back to `codex exec`")
                         end_chunk = _thinking_end_chunk()
                         if end_chunk:
@@ -2463,6 +2553,7 @@ class CodexSDKExecutor(BaseExecutor):
                         async for ev in self._execute_streaming_via_cli_exec(
                             system_prompt, prompt, tracker, trigger=trigger
                         ):
+                            tool_evidence.observe(ev)
                             if ev.get("type") == "usage":
                                 usage_acc.merge(_token_usage(ev.get("usage") or {}))
                             elif ev.get("type") == "done":
@@ -2514,7 +2605,7 @@ class CodexSDKExecutor(BaseExecutor):
                 "full_text": full_text,
                 "result_message": turn_result,
                 "replied_to_from_transcript": replied_to,
-                "tool_call_records": [asdict(r) for r in all_tool_records],
+                "tool_call_records": tool_evidence.to_dicts(),
                 "usage": usage_acc.to_dict(),
                 "usage_already_emitted": True,
                 "stop_kind": "interrupted" if interrupted else "normal",
@@ -2523,6 +2614,8 @@ class CodexSDKExecutor(BaseExecutor):
             if isinstance(exc, (Exception, asyncio.CancelledError)):
                 exc.usage = usage_acc.to_dict()
                 exc.usage_already_emitted = True
+                tool_evidence.merge(getattr(exc, "tool_call_records", None) or [])
+                exc.tool_call_records = tool_evidence.to_dicts()
             raise
         finally:
             await _close_codex_client(codex)

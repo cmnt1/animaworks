@@ -104,6 +104,7 @@ class TaskRunnerSupervisor:
         self._memory_service = MemoryService(anima_name, anima_dir) if memory_via_root else None
         self._start_lock = asyncio.Lock()
         self._jobs: dict[str, TaskRunnerJob] = {}
+        self._journal_recovery_lock = asyncio.Lock()
         self._accepting = True
         self._busy_hang_threshold_sec = max(0.0, float(busy_hang_threshold_sec))
         self._hang_check_interval = min(
@@ -479,7 +480,10 @@ class TaskRunnerSupervisor:
             last_progress_at=loop.time(),
             stream_events=list(stream_events or []),
         )
-        self._jobs[job_id] = job
+        # A recovery worker must finish unlinking old journals before a new
+        # child can open a journal in the same runtime.
+        async with self._journal_recovery_lock:
+            self._jobs[job_id] = job
 
         env = os.environ.copy()
         for name in tuple(env):
@@ -830,7 +834,21 @@ class TaskRunnerSupervisor:
                     )
             return outcomes
 
-        await asyncio.to_thread(_disk_recovery)
+        async with self._journal_recovery_lock:
+            # File existence does not mean orphaned: a sibling child may still
+            # be writing. Defer the entire lane until its final child exits.
+            active_lanes = {job.identity.lane for job in self._jobs.values()}
+            session_types = tuple(lane for lane in session_types if lane not in active_lanes)
+            if not session_types:
+                return
+            recovery_task = asyncio.create_task(asyncio.to_thread(_disk_recovery))
+            try:
+                await asyncio.shield(recovery_task)
+            except asyncio.CancelledError:
+                # Cancelling to_thread does not stop its disk work. Retain the
+                # registration lock until that work has really finished.
+                await recovery_task
+                raise
 
     async def _handle_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         connection: IPCV2Connection | None = None
