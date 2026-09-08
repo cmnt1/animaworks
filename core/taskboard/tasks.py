@@ -428,6 +428,12 @@ class TaskStore:
             started = now_iso()
             entry.status = "in_progress"
             entry.updated_at = started
+            # These fields describe this execution, not the immutable task.
+            # Leaving them on a resumed claim can make the runner classify a
+            # successful attempt using the previous attempt's crash. Historical
+            # outcomes and result references remain in task_attempts.
+            for key in ("last_run_stop_kind", "last_run_ended_at", "last_run_note"):
+                entry.meta.pop(key, None)
             db.execute(
                 "INSERT INTO task_attempts(token,anima,task_id,number,identity_json,started_at) VALUES(?,?,?,?,?,?)",
                 (token, anima, task_id, number, _json(identity), started),

@@ -1001,7 +1001,9 @@ class PendingTaskExecutor:
                 await asyncio.gather(cancel_watch, return_exceptions=True)
             entry = store.read(self._anima_name, archived=True).get(task_id)
             status = entry.status if entry and entry.status in {"done", "cancelled"} else "pending"
-            if entry:
+            if entry and stop_kind == "normal":
+                # A caught runner failure/cancellation is newer than the cycle
+                # metadata (e.g. shutdown after the model declared completion).
                 stop_kind = str(entry.meta.get("last_run_stop_kind") or stop_kind)
             if status == "cancelled" and stop_kind == "normal":
                 # Cancellation can terminate an isolated child before it returns
@@ -1451,6 +1453,7 @@ class PendingTaskExecutor:
             raise RuntimeError(task_failed_reason)
 
         if stop_kind == "budget_skipped":
+            self._record_run_ended(task_id, stop_kind)
             logger.info("[%s] Task %s skipped without execution: token budget unavailable", self._anima_name, task_id)
             return _SENTINEL_BUDGET_SKIPPED
 
@@ -1465,6 +1468,10 @@ class PendingTaskExecutor:
         # pending: no continuation, no probe, no descriptor regeneration.
         entry = self._get_task_queue_entry(task_id)
         if entry is not None:
+            # Business completion and execution termination are separate: a
+            # declared task can still have an interrupted stream. Persist the
+            # current run's outcome for the canonical attempt finalizer too.
+            self._record_run_ended(task_id, stop_kind)
             meta = entry.meta if isinstance(entry.meta, dict) else {}
             if entry.status == "cancelled":
                 return _SENTINEL_CANCELLED
@@ -1474,7 +1481,6 @@ class PendingTaskExecutor:
                 # updating the ledger). The sentinel controls task state; it
                 # must not replace the model's evidence in the result file.
                 self._save_task_result(task_id, f"{_SENTINEL_UNDECLARED}\n\n{result_summary}")
-                self._record_run_ended(task_id, stop_kind)
                 logger.info(
                     "[%s] LLM task ended without a completion declaration: id=%s stop_kind=%s",
                     self._anima_name,

@@ -197,6 +197,109 @@ async def test_external_cancel_keeps_terminal_status_and_only_references_real_ar
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stop_kind", "declare_done", "expected_status"),
+    [
+        ("normal", True, "done"),
+        ("interrupted", False, "pending"),
+        ("interrupted", True, "done"),
+        ("budget_skipped", False, "pending"),
+    ],
+)
+async def test_resumed_attempt_records_its_own_stop_kind(
+    tmp_path: Path, stop_kind: str, declare_done: bool, expected_status: str
+) -> None:
+    """A previous crash must not override a resumed run's actual outcome."""
+    from core.taskboard.tasks import process_identity
+    from core.tasks_dispatch import publish_tasks
+
+    executor = _make_executor(tmp_path, stop_kind)
+    task_id = "resumed"
+    payload = _task(task_id)
+    publish_tasks(executor._anima_dir, [payload])
+    manager = TaskQueueManager(executor._anima_dir)
+    first = manager.store.claim("test-anima", task_id, process_identity())
+    assert first is not None
+    manager.update_meta(
+        task_id,
+        {"last_run_ended_at": "2026-09-08T20:25:28+09:00", "last_run_note": "old failure", "business_tag": "keep"},
+    )
+    manager.store.finish(first["_attempt_token"], status="pending", stop_kind="crash")
+    assert manager.store.pending("test-anima") == []  # No implicit retry.
+    publish_tasks(executor._anima_dir, [{"task_id": task_id, "resume": True}])
+    second = manager.store.claim("test-anima", task_id, process_identity())
+    assert second is not None
+    assert second["_attempt_number"] == 2
+    claimed = manager.get_task_by_id(task_id)
+    assert claimed.meta["business_tag"] == "keep"
+    assert not {"last_run_stop_kind", "last_run_ended_at", "last_run_note"}.intersection(claimed.meta)
+    assert manager.store.get_input("test-anima", task_id)["description"] == payload["description"]
+
+    stream = executor._anima.agent.run_cycle_streaming
+
+    async def run(*args, **kwargs):
+        if declare_done:
+            manager.update_meta(task_id, {"completed_by": "agent_declaration", "result_note": "verified"})
+            manager.update_status(task_id, "done")
+        async for chunk in stream(*args, **kwargs):
+            yield chunk
+
+    executor._anima.agent.run_cycle_streaming = run
+    with _execution_patches():
+        await executor._execute_canonical_task(second)
+
+    entry = manager.get_task_by_id(task_id)
+    assert entry.status == expected_status
+    assert entry.meta["last_run_stop_kind"] == stop_kind
+    assert entry.meta["last_attempt_token"] == second["_attempt_token"]
+    assert entry.meta["last_run_ended_at"] != "2026-09-08T20:25:28+09:00"
+    assert entry.meta.get("last_run_note") != "old failure"
+    assert manager.store.active_attempts("test-anima") == []
+    assert manager.store.pending("test-anima") == []
+    with manager.store.reader() as db:
+        attempts = db.execute(
+            "SELECT number,stop_kind FROM task_attempts WHERE task_id=? ORDER BY number", (task_id,)
+        ).fetchall()
+    assert [tuple(row) for row in attempts] == [(1, "crash"), (2, stop_kind)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stop_kind", ["crash", "interrupted"])
+async def test_runner_termination_overrides_earlier_normal_cycle_metadata(tmp_path: Path, stop_kind: str) -> None:
+    from core.taskboard.tasks import process_identity
+    from core.tasks_dispatch import publish_tasks
+
+    executor = _make_executor(tmp_path)
+    task_id = "terminated-after-cycle"
+    publish_tasks(executor._anima_dir, [_task(task_id)])
+    manager = TaskQueueManager(executor._anima_dir)
+    claim = manager.store.claim("test-anima", task_id, process_identity())
+    assert claim is not None
+
+    async def terminate_after_cycle(_payload):
+        manager.update_status(task_id, "done")
+        executor._record_run_ended(task_id, "normal")
+        if stop_kind == "interrupted":
+            raise asyncio.CancelledError
+        raise RuntimeError("runner failed after recording its cycle outcome")
+
+    executor.execute_pending_task = terminate_after_cycle
+    if stop_kind == "interrupted":
+        with pytest.raises(asyncio.CancelledError):
+            await executor._execute_canonical_task(claim)
+    else:
+        await executor._execute_canonical_task(claim)
+
+    entry = manager.get_task_by_id(task_id)
+    assert entry.status == "done"  # A declared business result is not rolled back.
+    assert entry.meta["last_run_stop_kind"] == stop_kind
+    assert manager.store.pending("test-anima") == []
+    with manager.store.reader() as db:
+        attempt = db.execute("SELECT stop_kind FROM task_attempts WHERE token=?", (claim["_attempt_token"],)).fetchone()
+    assert attempt["stop_kind"] == stop_kind
+
+
+@pytest.mark.asyncio
 async def test_interrupted_after_declaration_stays_done(tmp_path: Path) -> None:
     """A run that declared done before being interrupted keeps its declaration."""
     executor = _make_executor(tmp_path, "interrupted")
