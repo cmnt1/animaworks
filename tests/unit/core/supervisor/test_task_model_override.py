@@ -208,3 +208,48 @@ class TestModelConfigHelper:
         cfg = AnimaWorksConfig(credentials={})
         cand = build_model_override_config(base, "s", "claude-sonnet-4-6", cfg)
         assert cand is None
+
+
+class TestClaudeCliAliases:
+    """The picker offers the CLI's own aliases; they have to resolve.
+
+    ``claude --help`` lists ``fable`` / ``opus`` / ``sonnet``, which carry
+    no ``provider/`` prefix and do not start with ``claude-``.  Family
+    detection found nothing, so the whole Claude group of the model picker
+    resolved to no credential and every override was dropped in silence.
+    """
+
+    def test_bare_alias_resolves_to_the_anthropic_credential(self):
+        from core.config.model_config import build_model_override_config
+
+        base = ModelConfig(model="claude-fable-5", credential="openai")
+        cfg = _config_with_anthropic()
+        for alias in ("opus", "sonnet", "fable"):
+            cand = build_model_override_config(base, "s", alias, cfg)
+            assert cand is not None, alias
+            assert cand.model == alias
+            assert cand.credential == "anthropic"
+
+    def test_alias_without_an_anthropic_credential_still_returns_none(self):
+        from core.config.model_config import build_model_override_config
+
+        base = ModelConfig(model="claude-fable-5")
+        cand = build_model_override_config(base, "s", "opus", AnimaWorksConfig(credentials={}))
+        assert cand is None
+
+    def test_bare_name_stays_unresolvable_for_non_s_modes(self):
+        """Only Mode S is the Claude CLI; an ``a:`` model needs a real family."""
+        from core.config.model_config import build_model_override_config
+
+        base = ModelConfig(model="claude-fable-5")
+        cand = build_model_override_config(base, "a", "opus", _config_with_anthropic())
+        assert cand is None
+
+    def test_can_build_matches_the_builder(self):
+        from core.config.model_config import build_model_override_config, can_build_model_override
+
+        base = ModelConfig(model="claude-fable-5")
+        cfg = _config_with_anthropic()
+        for mode, model in (("s", "opus"), ("c", "codex/gpt-5.6-sol"), ("x", "grok/grok-4.6"), ("a", "opus")):
+            built = build_model_override_config(base, mode, model, cfg) is not None
+            assert can_build_model_override(mode, model, cfg) is built, (mode, model)

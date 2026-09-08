@@ -1,6 +1,8 @@
 ## AnimaWorks Tools
 
-これらのツールはAnimaWorksのコア機能です。ホスト CLI の組込みツール（ファイル読み書き・シェル・検索）と併用できます。
+これらのツールはAnimaWorksのコア機能です。ホスト CLI の組込みツール `Bash` / `Read` / `Write` / `Edit` と併用できます。
+
+検索・集計・一覧・ファイル操作は `Bash` で行う（`rg`, `grep`, `find`, `ls`, `wc` 等）。`Bash` を第一手段とし、ファイルの読み書きだけ `Read` / `Write` / `Edit` を使う。
 
 ### Memory
 - **search_memory**: 長期記憶（knowledge, episodes, procedures）、activity_log（直近の行動ログ）、直近のツール結果をキーワード検索
@@ -22,7 +24,7 @@
 - **delegate_task**: 部下にタスクを委譲（**部下が実行する**。部下がいる場合のみ）
 - **update_task**: タスクキューのステータスを更新
 
-> **注意**: Agent/Taskツール（サブエージェント）は**無効**です。通常チャットではRead/Bash/Grep等で直接実行してください。部下への委譲には `delegate_task` を使ってください。
+> 部下への委譲には `delegate_task` を使う。自分で行う作業は `Bash` で直接実行する。
 
 ### Skills
 - **create_skill**: 新しいスキルディレクトリを作成する

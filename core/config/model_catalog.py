@@ -155,6 +155,19 @@ def validate_model_override(anima_name: str, requested_model: str | None) -> str
             check = tail
     if check not in allowed:
         return f"unknown model override '{model}'"
+
+    # Being in the catalog is not enough: the override still has to resolve
+    # to a credential.  It used to be dropped silently inside the anima (a
+    # WARNING in its own log) while the request looked accepted and the reply
+    # came back on the unchanged model.
+    from core.config.model_config import can_build_model_override
+    from core.config.model_mode import parse_fallback_entry
+
+    parsed = parse_fallback_entry(model, config)
+    if parsed is None:
+        return f"unparseable model override '{model}'"
+    if not can_build_model_override(parsed[0], parsed[1], config):
+        return f"no credential configured for model override '{model}'"
     return None
 
 

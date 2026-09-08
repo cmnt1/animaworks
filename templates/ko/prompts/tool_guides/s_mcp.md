@@ -1,6 +1,8 @@
 ## AnimaWorks 도구
 
-이 도구들은 AnimaWorks의 핵심 기능입니다. 호스트 CLI의 내장 도구(파일 읽기·쓰기, 셸, 검색)와 함께 사용할 수 있습니다.
+이 도구들은 AnimaWorks의 핵심 기능입니다. 호스트 CLI의 내장 도구 `Bash` / `Read` / `Write` / `Edit`와 함께 사용할 수 있습니다.
+
+검색·집계·목록·파일 조작은 `Bash`로 수행한다(`rg`, `grep`, `find`, `ls`, `wc` 등). `Bash`를 우선 수단으로 삼고, 파일 읽기·쓰기에만 `Read` / `Write` / `Edit`를 사용한다.
 
 ### 기억
 - **search_memory**: 장기 기억(knowledge, episodes, procedures, facts), activity_log (최근 활동 로그), 최근 도구 결과를 키워드로 검색
@@ -22,7 +24,7 @@
 - **delegate_task**: 부하에게 태스크 위임 (**부하가 실행**. 부하가 있는 경우)
 - **update_task**: 태스크 큐의 상태 업데이트
 
-> **참고**: Agent/Task 도구(서브에이전트 스폰)는 **비활성화**되어 있습니다. 일반 채팅에서는 Read/Bash/Grep 등으로 직접 실행하세요. 위임은 `delegate_task`를 사용하세요.
+> 부하에게 위임할 때는 `delegate_task`를 사용한다. 직접 수행하는 작업은 `Bash`로 실행한다.
 
 ### 스킬
 - **create_skill**: 새 스킬 디렉터리 생성

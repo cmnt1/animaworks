@@ -1,6 +1,8 @@
 ## AnimaWorks Tools
 
-These tools are your core AnimaWorks capabilities, available alongside the host CLI's built-in tools (file read/write, shell, and search).
+These tools are your core AnimaWorks capabilities, available alongside the host CLI's built-in `Bash` / `Read` / `Write` / `Edit`.
+
+Search, counting, listing and file manipulation go through `Bash` (`rg`, `grep`, `find`, `ls`, `wc`). Reach for `Bash` first; use `Read` / `Write` / `Edit` for reading and writing files.
 
 ### Memory
 - **search_memory**: Search long-term memory (knowledge, episodes, procedures, facts), activity_log (recent action logs), and recent tool results by keyword
@@ -22,7 +24,7 @@ Targets: `call_human`, `send_message`, `post_channel`, `write_memory_file`, `gma
 - **delegate_task**: Delegate task to a subordinate (**subordinate executes it**; when you have subordinates)
 - **update_task**: Update task status in the task queue
 
-> **Note**: Agent/Task tools (sub-agent spawning) are **disabled**. In normal chat, do the work directly with Read/Bash/Grep etc. For delegation, use `delegate_task`.
+> Use `delegate_task` to delegate to a subordinate. Work you do yourself runs directly through `Bash`.
 
 ### Skills
 - **create_skill**: Create a new skill directory structure

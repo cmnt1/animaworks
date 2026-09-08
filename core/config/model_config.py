@@ -157,6 +157,41 @@ def _fallback_credential_name(model: str) -> str | None:
     return _FAMILY_CREDENTIAL_MAP.get(model_family) or _FAMILY_CREDENTIAL_MAP.get(provider_family_of(model))
 
 
+# Engines that authenticate through their own CLI credential store and so
+# need no entry in ``config.credentials``.
+_CLI_AUTH_MODES = frozenset({"C", "D", "G", "X"})
+
+
+def _mode_s_default_credential(resolved_mode: str) -> str | None:
+    """Credential for a Mode S model whose family cannot be read off the name.
+
+    The model picker offers the Claude CLI's own aliases (``opus``,
+    ``sonnet``, ``fable`` — whatever ``claude --help`` lists), which carry
+    no ``provider/`` prefix and do not start with ``claude-``, so family
+    detection finds nothing and the override used to be dropped for the
+    entire Claude group.  Mode S *is* the Claude CLI / Agent SDK, so
+    Anthropic is the right credential for any name it accepts.
+    """
+    if resolved_mode != "S":
+        return None
+    return _FAMILY_CREDENTIAL_MAP.get("claude")
+
+
+def can_build_model_override(mode: str, model: str, config: AnimaWorksConfig) -> bool:
+    """Whether an override for *mode*/*model* would resolve to a credential.
+
+    The same decision :func:`build_model_override_config` makes, without a
+    base config, so a request carrying an unusable override can be rejected
+    at the wall instead of being dropped deep inside the anima where only a
+    log line records it.
+    """
+    resolved_mode = mode.upper()
+    if resolved_mode in _CLI_AUTH_MODES:
+        return True
+    name = _fallback_credential_name(model) or _mode_s_default_credential(resolved_mode)
+    return bool(name) and config.credentials.get(name) is not None
+
+
 def build_model_override_config(
     base: ModelConfig,
     mode: str,
@@ -176,7 +211,7 @@ def build_model_override_config(
     back to the base config rather than risk an auth error).
     """
     resolved_mode = mode.upper()
-    if resolved_mode in {"C", "D", "G", "X"}:
+    if resolved_mode in _CLI_AUTH_MODES:
         # CLI-auth engines (codex/cursor/gemini/grok) authenticate via their own
         # CLI credential stores, so the base credential fields are stale here.
         # Clear them explicitly: e.g. an Anthropic-credential anima using a
@@ -198,7 +233,7 @@ def build_model_override_config(
                 "extra_keys": {},
             },
         )
-    credential_name = _fallback_credential_name(model)
+    credential_name = _fallback_credential_name(model) or _mode_s_default_credential(resolved_mode)
     credential = config.credentials.get(credential_name) if credential_name else None
     if credential is None:
         logger.warning(

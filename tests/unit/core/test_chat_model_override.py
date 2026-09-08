@@ -68,7 +68,7 @@ def test_apply_valid_override_builds_and_logs() -> None:
     assert call.kwargs["safe"] is True
 
 
-def test_apply_invalid_entry_keeps_base_without_event() -> None:
+def test_apply_invalid_entry_keeps_base_and_says_so() -> None:
     owner = _owner()
     base = _base()
     config = MagicMock()
@@ -79,10 +79,15 @@ def test_apply_invalid_entry_keeps_base_without_event() -> None:
         result = _apply_chat_model_override(owner, base, "not a model", thread_id="default")
 
     assert result is base
-    owner._activity.log.assert_not_called()
+    # A dropped override is invisible in the reply, so it has to reach the
+    # activity feed rather than only the anima's log file.
+    call = owner._activity.log.call_args
+    assert call.args[0] == "model_override_failed"
+    assert call.kwargs["meta"]["requested"] == "not a model"
+    assert call.kwargs["meta"]["reason"] == "unparseable"
 
 
-def test_apply_unresolvable_credential_keeps_base_without_event() -> None:
+def test_apply_unresolvable_credential_keeps_base_and_says_so() -> None:
     owner = _owner()
     base = _base()
     config = MagicMock()
@@ -99,7 +104,10 @@ def test_apply_unresolvable_credential_keeps_base_without_event() -> None:
         )
 
     assert result is base
-    owner._activity.log.assert_not_called()
+    call = owner._activity.log.call_args
+    assert call.args[0] == "model_override_failed"
+    assert "no resolvable credential" in call.kwargs["meta"]["reason"]
+    assert call.kwargs["meta"]["model"] == base.model
 
 
 def test_apply_empty_model_returns_base() -> None:
