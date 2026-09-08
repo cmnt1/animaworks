@@ -217,10 +217,17 @@ def _reindex_into_store(
     if (state_dir / "conversation.json").is_file():
         total_chunks += indexer.index_conversation_summary(state_dir, anima_name, force=True)
 
-    from core.memory.entity_index import rebuild_entity_collection
+    from core.memory.entity_index import load_entity_registry, rebuild_entity_collection
 
-    if not rebuild_entity_collection(anima_dir, vector_store=vector_store):
-        logger.warning("Failed to rebuild entity collection for %s", anima_name)
+    # Resolve one registry snapshot for both the write and its expected count.
+    # Each entry creates one entity document. Omitting these documents from the
+    # count made otherwise successful full repairs fail verification.
+    registry = load_entity_registry(anima_dir)
+    entity_count = len(registry.get("entities", {}))
+    if entity_count:
+        if not rebuild_entity_collection(anima_dir, registry=registry, vector_store=vector_store):
+            raise RebuildVerificationError(f"failed to fully rebuild entities for {anima_name}")
+        total_chunks += entity_count
 
     if rebuild_bm25:
         bm25_result = rebuild_longterm_bm25_index(anima_dir)

@@ -10,6 +10,11 @@
 from __future__ import annotations
 
 STRINGS: dict[str, dict[str, str]] = {
+    "rag.phase3_repair_requires_shared": {
+        "ja": "phase3の全DB再構築にはinclude_shared=Trueが必要です。共有記憶を除外すると既存の共有索引が失われます。",
+        "en": "Phase3 full-DB repair requires include_shared=True to preserve shared memory collections.",
+        "ko": "공유 메모리 컬렉션을 보존하려면 phase3 전체 DB 재구축에 include_shared=True가 필요합니다.",
+    },
     "rag.signature_unknown_shape": {
         "ja": "埋め込み索引の署名が不明です（メタデータがオブジェクトではありません）。",
         "en": "Embedding index signature is unknown (metadata is not an object).",

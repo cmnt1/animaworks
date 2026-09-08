@@ -144,6 +144,12 @@ class MemoryService:
 
     async def repair(self, *, include_shared: bool) -> dict[str, Any]:
         """Rebuild, swap, reopen, and verify this root's sole vector store."""
+        if not include_shared:
+            from core.i18n import t
+
+            # This operation replaces the whole DB, not just personal
+            # collections. A partial rebuild would discard shared memories.
+            raise ValueError(t("rag.phase3_repair_requires_shared"))
         if self._repair_lock.locked():
             raise MemoryServiceUnavailable("RAG repair already in progress")
         async with self._repair_lock:
@@ -355,7 +361,7 @@ class MemoryService:
             reason="store_init_failed",
             collection=None,
             source="phase3_root_startup",
-            include_shared=False,
+            include_shared=True,
             animas_dir=self.anima_dir.parent,
         )
         logger.warning("Marked phase3 root RAG for background repair after open failure: %s", error)

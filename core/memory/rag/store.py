@@ -607,10 +607,11 @@ class ChromaVectorStore(VectorStore):
             raise
 
     def verify_rebuilt_data(self, *, expected_chunks: int) -> dict[str, int]:
-        """Run a real similarity query against freshly reopened Chroma data."""
+        """Verify counts and query every nonempty freshly reopened collection."""
         collections = self._list_collections_once()
         opened = [(name, self.client.get_collection(name=name)) for name in collections]
-        chunks = sum(collection.count() for _name, collection in opened)
+        counted = [(name, collection, collection.count()) for name, collection in opened]
+        chunks = sum(count for _name, _collection, count in counted)
         if chunks != expected_chunks:
             raise RuntimeError(f"expected {expected_chunks} chunks after rebuild, found {chunks}")
         if expected_chunks <= 0:
@@ -618,19 +619,23 @@ class ChromaVectorStore(VectorStore):
         if not collections:
             raise RuntimeError(f"no collections found despite indexing {expected_chunks} chunks")
 
-        for _name, collection in opened:
+        query_results = 0
+        for name, collection, count in counted:
+            if count == 0:
+                continue
             sample = collection.get(limit=1, include=["embeddings"])
             ids = sample.get("ids") or []
             embeddings = sample.get("embeddings")
             if not ids or embeddings is None or len(embeddings) == 0:
-                continue
+                raise RuntimeError(f"rebuilt collection '{name}' has {count} documents but no queryable embedding")
             embedding = list(embeddings[0])
             queried = collection.query(query_embeddings=[embedding], n_results=1)
             result_ids = queried.get("ids") or []
-            if result_ids and result_ids[0]:
-                return {"collections": len(collections), "chunks": chunks, "query_results": len(result_ids[0])}
+            if not result_ids or not result_ids[0]:
+                raise RuntimeError(f"rebuilt collection '{name}' returned no similarity query results")
+            query_results += len(result_ids[0])
 
-        raise RuntimeError(f"no queryable documents found despite indexing {expected_chunks} chunks")
+        return {"collections": len(collections), "chunks": chunks, "query_results": query_results}
 
     def _upsert_once(self, collection: str, documents: list[Document]) -> bool:
         coll = self.client.get_or_create_collection(

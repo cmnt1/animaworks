@@ -481,7 +481,7 @@ async def test_root_repair_swaps_reopens_and_queries(tmp_path: Path, monkeypatch
     monkeypatch.setattr(service, "_rebuild_bm25_sync", lambda: None)
 
     await service.start()
-    result = await service.repair(include_shared=False)
+    result = await service.repair(include_shared=True)
 
     assert result["ok"] is True
     assert (live / "new.bin").read_text(encoding="utf-8") == "new"
@@ -517,7 +517,7 @@ async def test_root_repair_verification_failure_rolls_back_vector_and_bm25(tmp_p
 
     await service.start()
     with pytest.raises(RuntimeError, match="query failed"):
-        await service.repair(include_shared=False)
+        await service.repair(include_shared=True)
 
     assert (live / "old.bin").read_text(encoding="utf-8") == "old"
     assert bm25.read_text(encoding="utf-8") == "old-bm25"
@@ -544,7 +544,7 @@ async def test_root_repair_swap_failure_reopens_untouched_store(tmp_path: Path, 
 
     await service.start()
     with pytest.raises(FileNotFoundError):
-        await service.repair(include_shared=False)
+        await service.repair(include_shared=True)
 
     assert (live / "old.bin").read_text(encoding="utf-8") == "old"
     assert await service.handle("memory.list_collections_checked", {}) == {"collections": ["sakura_knowledge"]}
@@ -563,7 +563,7 @@ async def test_root_memory_is_explicitly_unavailable_during_repair(tmp_path: Pat
         raise RuntimeError("stop test repair")
 
     service._build_staging_subprocess = build  # type: ignore[method-assign]
-    repair = asyncio.create_task(service.repair(include_shared=False))
+    repair = asyncio.create_task(service.repair(include_shared=True))
     await entered.wait()
 
     with pytest.raises(MemoryServiceUnavailable, match="repair in progress"):
@@ -589,7 +589,29 @@ async def test_root_open_failure_marks_background_repair_without_failing_startup
     assert state["status"] == "requested"
     assert state["reason"] == "store_init_failed"
     assert state["source"] == "phase3_root_startup"
+    assert state["include_shared"] is True
     await service.close()
+
+
+@pytest.mark.asyncio
+async def test_root_repair_rejects_partial_db_swap_before_any_mutation(tmp_path: Path) -> None:
+    anima_dir = tmp_path / "sakura"
+    live = anima_dir / "vectordb"
+    live.mkdir(parents=True)
+    (live / "shared.bin").write_bytes(b"existing shared collection")
+    opener = MagicMock()
+    service = MemoryService("sakura", anima_dir, opener=opener)
+    service._build_staging_subprocess = AsyncMock()  # type: ignore[method-assign]
+    try:
+        with pytest.raises(ValueError, match="include_shared=True"):
+            await service.repair(include_shared=False)
+        service._build_staging_subprocess.assert_not_awaited()
+        opener.assert_not_called()
+        assert (live / "shared.bin").read_bytes() == b"existing shared collection"
+        assert not service._repairing
+        assert not (anima_dir / "archive").exists()
+    finally:
+        await service.close()
 
 
 async def test_repeated_collection_initialization_is_idempotent_through_root(tmp_path: Path) -> None:
