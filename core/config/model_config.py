@@ -167,6 +167,16 @@ def _fallback_credential_name(model: str, config: AnimaWorksConfig | None = None
 _CLI_AUTH_MODES = frozenset({"C", "D", "G", "X"})
 
 
+def _credential_supports_mode(credential: Any, mode: str) -> bool:
+    """Reject explicitly foreign provider credentials, not opaque API keys.
+
+    Legacy ``api_key`` credentials can describe a deliberate Anthropic proxy.
+    An OpenAI gateway or Codex login, however, cannot authenticate Claude SDK
+    requests. Inherited background defaults must not cross that boundary.
+    """
+    return not (mode.upper() == "S" and getattr(credential, "type", None) in {"openai", "codex_login"})
+
+
 def _mode_s_default_credential(resolved_mode: str) -> str | None:
     """Credential for a Mode S model whose family cannot be read off the name.
 
@@ -194,7 +204,8 @@ def can_build_model_override(mode: str, model: str, config: AnimaWorksConfig) ->
     if resolved_mode in _CLI_AUTH_MODES:
         return True
     name = _fallback_credential_name(model, config) or _mode_s_default_credential(resolved_mode)
-    return bool(name) and config.credentials.get(name) is not None
+    credential = config.credentials.get(name) if name else None
+    return credential is not None and _credential_supports_mode(credential, resolved_mode)
 
 
 def build_model_override_config(
@@ -250,6 +261,14 @@ def build_model_override_config(
             "build_model_override_config: no credential configured for model %r (family=%r)",
             model,
             credential_name,
+        )
+        return None
+    if not _credential_supports_mode(credential, resolved_mode):
+        logger.warning(
+            "Credential %s (type=%s) is incompatible with execution mode %s",
+            credential_name,
+            credential.type,
+            resolved_mode,
         )
         return None
     credential_type = getattr(credential, "type", None)
@@ -406,12 +425,27 @@ def resolve_model_selection(
     reason = "anima_default"
     if lane in {"background", "heartbeat", "cron"}:
         background = base.background_model or config.heartbeat.default_model
+        credential_name = base.background_credential
+        background_mode = _resolved_mode_for_config(base, config)
+        if background:
+            parsed_background = parse_fallback_entry(background, config)
+            if parsed_background is None:
+                raise ValueError(f"Invalid background model: {background!r}")
+            background_mode = parsed_background[0]
+        background_credential = config.credentials.get(credential_name) if credential_name else None
+        if background_credential is not None and not _credential_supports_mode(background_credential, background_mode):
+            logger.warning(
+                "Ignoring incompatible background credential %s (type=%s) for mode %s; keeping provider auth",
+                credential_name,
+                background_credential.type,
+                background_mode,
+            )
+            credential_name = None
         if background and background != base.model:
             parsed = parse_fallback_entry(background, config)
             if parsed is None:
                 raise ValueError(f"Invalid background model: {background!r}")
             mode, model = parsed
-            credential_name = base.background_credential
             if (
                 not credential_name
                 and mode.upper() == _resolved_mode_for_config(base, config)
@@ -427,13 +461,13 @@ def resolve_model_selection(
                 if primary.credential:
                     primary = primary.model_copy(update={"background_credential": primary.credential})
             reason = "background_model" if base.background_model else "heartbeat_default"
-        elif base.background_credential:
+        elif credential_name:
             primary = build_model_override_config(
                 base,
                 _resolved_mode_for_config(base, config),
                 base.model,
                 config,
-                credential_name=base.background_credential,
+                credential_name=credential_name,
             )
             if primary is None:
                 raise ValueError(f"Unknown background credential: {base.background_credential!r}")

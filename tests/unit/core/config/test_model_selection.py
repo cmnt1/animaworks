@@ -95,6 +95,62 @@ def test_same_model_background_credential_switch_is_not_lost(config):
     assert selected.effective.api_key == "gateway-secret"
 
 
+@pytest.mark.parametrize("lane", ["background", "heartbeat", "cron"])
+@pytest.mark.parametrize("background_model", [None, "claude-original", "claude-other"])
+@pytest.mark.parametrize("foreign_type", ["openai", "codex_login"])
+def test_claude_background_does_not_inherit_openai_gateway(config, lane, background_model, foreign_type):
+    config.credentials["foreign"] = CredentialConfig(
+        type=foreign_type, api_key="foreign-secret", base_url="http://localhost:4000/v1"
+    )
+    base = ModelConfig(
+        model="claude-original",
+        resolved_mode="S",
+        credential="anthropic",
+        credential_type="claude_code_login",
+        mode_s_auth="max",
+        background_model=background_model,
+        background_credential="foreign",
+        background_thinking_effort="low",
+    )
+    selected = resolve_model_selection(base, lane=lane, config=config, apply_fallback=False)
+    assert selected.effective.model == (background_model or base.model)
+    assert selected.mode == "S"
+    assert selected.credential == "anthropic"
+    assert selected.guard_key == "anthropic:max"
+    assert selected.effective.api_base_url is None
+    assert selected.effective.api_key is None
+    assert selected.effective.thinking_effort == "low"
+    assert base.background_credential == "foreign"
+
+
+def test_claude_explicit_api_background_gateway_is_preserved(config):
+    base = ModelConfig(
+        model="claude-original",
+        resolved_mode="S",
+        credential="anthropic",
+        mode_s_auth="max",
+        background_credential="gateway",
+    )
+    selected = resolve_model_selection(base, lane="background", config=config, apply_fallback=False)
+    assert selected.effective.mode_s_auth == "api"
+    assert selected.effective.api_base_url == "https://gateway.invalid/v1"
+    assert selected.effective.api_key == "gateway-secret"
+
+
+def test_foreign_credential_cannot_be_selected_for_explicit_claude_override(config):
+    config.credentials["foreign"] = CredentialConfig(type="openai", base_url="http://localhost:4000/v1")
+    with (
+        patch("core.config.model_config._match_models_json", return_value={"credential": "foreign"}),
+        pytest.raises(ValueError, match="No credential configured"),
+    ):
+        resolve_model_selection(
+            ModelConfig(model="codex/model", resolved_mode="C"),
+            requested_model="s:claude-original",
+            config=config,
+            apply_fallback=False,
+        )
+
+
 def test_same_route_request_keeps_custom_auth(config):
     base = ModelConfig(model="openai/model", resolved_mode="A", credential="gateway", api_key="custom-secret")
     selected = resolve_model_selection(base, requested_model="a:openai/model", config=config, apply_fallback=False)
