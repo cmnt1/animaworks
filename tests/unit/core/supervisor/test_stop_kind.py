@@ -139,6 +139,61 @@ async def test_undeclared_result_is_saved_for_its_attempt_without_completing(tmp
     assert not (result_dir / "attempt-result.md").exists()
     assert manager.get_task_by_id("attempt-result").status == "pending"
     executor._anima.messenger.send.assert_not_called()
+    with manager.store.reader() as db:
+        attempt = db.execute("SELECT * FROM task_attempts WHERE token=?", (token,)).fetchone()
+    assert attempt["stop_kind"] == "normal"
+    assert attempt["result_ref"] == f"state/task_results/attempt-result/{token}.md"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("has_partial_artifact", [False, True])
+async def test_external_cancel_keeps_terminal_status_and_only_references_real_artifact(
+    tmp_path: Path, has_partial_artifact: bool
+) -> None:
+    """A SIGTERM before child result must not become a successful empty run."""
+    from core.taskboard.tasks import process_identity
+    from core.tasks_dispatch import publish_tasks
+
+    executor = _make_executor(tmp_path)
+    executor._task_isolated = True
+    executor._task_runner_supervisor = MagicMock()
+    payload = _task("external-cancel")
+    publish_tasks(executor._anima_dir, [payload])
+    manager = TaskQueueManager(executor._anima_dir)
+    claim = manager.store.claim("test-anima", "external-cancel", process_identity())
+    assert claim is not None
+    token = claim["_attempt_token"]
+    result_ref = f"state/task_results/external-cancel/{token}.md"
+
+    async def cancelled_child(*_args, **_kwargs):
+        if has_partial_artifact:
+            executor._save_task_result("external-cancel", "observed partial result")
+        manager.update_status("external-cancel", "cancelled", summary="work no longer needed")
+        raise RuntimeError("task runner exited before returning a result (exit=-15)")
+
+    executor._run_task_in_worker = AsyncMock(side_effect=cancelled_child)
+    with _execution_patches():
+        await executor._execute_canonical_task(claim)
+
+    executor._run_task_in_worker.assert_awaited_once()
+    entry = manager.get_task_by_id("external-cancel")
+    assert entry.status == "cancelled"
+    assert entry.summary == "work no longer needed"
+    assert entry.meta["last_run_stop_kind"] == "interrupted"
+    assert manager.store.active_attempts("test-anima") == []
+    assert manager.store.pending("test-anima") == []
+    assert manager.store.wakeups("test-anima") == []
+    assert manager.store.get_input("test-anima", "external-cancel")["description"] == payload["description"]
+    executor._anima.messenger.send.assert_not_called()
+    with manager.store.reader() as db:
+        attempt = db.execute("SELECT * FROM task_attempts WHERE token=?", (token,)).fetchone()
+    assert attempt["ended_at"]
+    assert attempt["stop_kind"] == "interrupted"
+    assert attempt["result_ref"] == (result_ref if has_partial_artifact else "")
+    if has_partial_artifact:
+        assert (executor._anima_dir / result_ref).read_text() == "observed partial result"
+    else:
+        assert not (executor._anima_dir / result_ref).exists()
 
 
 @pytest.mark.asyncio

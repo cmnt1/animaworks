@@ -1003,6 +1003,11 @@ class PendingTaskExecutor:
             status = entry.status if entry and entry.status in {"done", "cancelled"} else "pending"
             if entry:
                 stop_kind = str(entry.meta.get("last_run_stop_kind") or stop_kind)
+            if status == "cancelled" and stop_kind == "normal":
+                # Cancellation can terminate an isolated child before it returns
+                # a result. The sticky cancelled path must not look like a
+                # normally completed run merely because its error was handled.
+                stop_kind = "interrupted"
             from core.taskboard.tasks import identity_liveness
 
             active = next((item for item in store.active_attempts(self._anima_name) if item["token"] == token), None)
@@ -1012,8 +1017,12 @@ class PendingTaskExecutor:
                 child_pid = owner.get("task_pid") or owner.get("pid")
                 child_still_live = child_pid != os.getpid() and identity_liveness(owner) != "dead"
             if not child_still_live:
+                result_ref = f"state/task_results/{task_id}/{token}.md"
                 store.finish(
-                    token, status=status, stop_kind=stop_kind, result_ref=f"state/task_results/{task_id}/{token}.md"
+                    token,
+                    status=status,
+                    stop_kind=stop_kind,
+                    result_ref=result_ref if (self._anima_dir / result_ref).is_file() else "",
                 )
             self._active_task_ids.discard(task_id)
             self.wake()
