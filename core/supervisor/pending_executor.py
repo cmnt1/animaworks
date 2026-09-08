@@ -1460,6 +1460,11 @@ class PendingTaskExecutor:
             if entry.status == "cancelled":
                 return _SENTINEL_CANCELLED
             if entry.status not in ("done", "delegated"):
+                # Keep the actual outcome available to the owner even when
+                # completion could not be declared (e.g. a tool failed while
+                # updating the ledger). The sentinel controls task state; it
+                # must not replace the model's evidence in the result file.
+                self._save_task_result(task_id, f"{_SENTINEL_UNDECLARED}\n\n{result_summary}")
                 self._record_run_ended(task_id, stop_kind)
                 logger.info(
                     "[%s] LLM task ended without a completion declaration: id=%s stop_kind=%s",
@@ -1785,7 +1790,8 @@ class PendingTaskExecutor:
                 )
             else:
                 result = await self._run_llm_task(task_desc, task_desc.get("_completed_results"))
-            self._save_task_result(task_id, result)
+            if result != _SENTINEL_UNDECLARED:
+                self._save_task_result(task_id, result)
             status, summary = _classify_task_result(result)
             self._sync_task_queue(task_id, status, summary=summary)
             if status == "done":

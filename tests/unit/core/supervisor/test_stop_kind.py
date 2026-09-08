@@ -115,6 +115,30 @@ async def test_normal_stop_without_declaration_returns_to_pending(tmp_path: Path
     # No descriptor is regenerated: nothing re-runs it on the anima's behalf.
     assert not list((executor._anima_dir / "state" / "pending").glob("*.json"))
     executor._anima.messenger.send.assert_not_called()
+    result_path = executor._anima_dir / "state" / "task_results" / "undeclared.md"
+    assert result_path.read_text() == "(undeclared)\n\nresult"
+
+
+@pytest.mark.asyncio
+async def test_undeclared_result_is_saved_for_its_attempt_without_completing(tmp_path: Path) -> None:
+    from core.taskboard.tasks import process_identity
+    from core.tasks_dispatch import publish_tasks
+
+    executor = _make_executor(tmp_path)
+    publish_tasks(executor._anima_dir, [_task("attempt-result")])
+    manager = TaskQueueManager(executor._anima_dir)
+    claim = manager.store.claim("test-anima", "attempt-result", process_identity())
+    assert claim is not None
+    token = claim["_attempt_token"]
+
+    with _execution_patches():
+        await executor._execute_canonical_task(claim)
+
+    result_dir = executor._anima_dir / "state" / "task_results"
+    assert (result_dir / "attempt-result" / f"{token}.md").read_text() == "(undeclared)\n\nresult"
+    assert not (result_dir / "attempt-result.md").exists()
+    assert manager.get_task_by_id("attempt-result").status == "pending"
+    executor._anima.messenger.send.assert_not_called()
 
 
 @pytest.mark.asyncio
