@@ -103,8 +103,8 @@ Use **`list_background_tasks`** for a merged list of in-memory and on-disk tasks
 
 - After a **crash or abnormal exit**, if JSON is left under `processing/`, **PendingTaskExecutor** recovers it when the Anima process starts:
   - **Command-type** (`animaworks-tool submit`): `state/background_tasks/pending/processing/*.json` → `state/background_tasks/pending/failed/`
-  - **LLM-type** (`submit_tasks` / Heartbeat handoff): `state/pending/processing/*.json` → `state/pending/failed/`
-  These use **different directories** from submit in this guide (the latter is the `state/pending/` tree).
+  - **LLM-type** work uses canonical tasks and fenced attempts, not descriptor recovery. Incomplete work remains pending with a durable attention notification; inspect effects before explicitly resuming.
+  Legacy LLM files are migration evidence only. Do not move or regenerate them to restart work.
 
 ## Common Mistakes
 
@@ -168,19 +168,15 @@ Independently of **background tool execution**, `core/background.py` defines `ro
 5. Actual work is delegated to `BackgroundTaskManager.submit(composite_name, tool_args, execute_fn)`. `composite_name` is `tool:subcommand` (e.g. `image_gen:3d`) and is checked against `is_eligible`.
 6. On completion, `_on_background_task_complete` writes `state/background_notifications/{task_id}.md`, which heartbeat’s `drain_background_notifications()` reads.
 
-### LLM-type tasks (`state/pending/`)
+### LLM-type tasks (canonical task store)
 
-LLM tasks written by Heartbeat or the `submit_tasks` tool go to a **different directory**, `state/pending/`.
+1. `submit_tasks` / `delegate_task` atomically publish complete instructions, context, acceptance criteria, constraints, model and dependencies.
+2. The watcher claims a ready task in the same transaction that creates its attempt. It checks dependencies and configured worker capacity; nonparallel tasks serialize only within their own batch.
+3. An attempt ending without a `done` / `cancelled` declaration leaves the task pending, not automatically runnable. Inspect side effects and resume explicitly with `submit_tasks(batch_id="resume", tasks=[{"task_id":"ID","resume":true}])` when appropriate.
+4. Results may be referenced by `state/task_results/{task_id}.md`; durable task state, saved input and attempts remain authoritative. Completion is declared with `update_task`, never inferred from an LLM response or a file's existence.
+5. Durable notifications request attention or report completion without depending on periodic heartbeat. DM contents never reconstruct task input.
 
-1. `submit_tasks` writes task descriptors to `state/pending/{task_id}.json` (`task_type: "llm"`, `batch_id`, etc.)
-2. The watcher monitors `state/pending/` similarly.
-3. Tasks with `batch_id` are batched and executed via `_dispatch_batch` according to the DAG.
-4. Tasks with `parallel: true` run under a semaphore (`config.json` `background_task.max_parallel_llm_tasks`, default 3).
-5. Tasks with `depends_on` run after dependencies complete.
-6. Results go to `state/task_results/{task_id}.md` (summaries are length-capped). If `reply_to` is set, completion/failure is notified by DM.
-7. Tasks older than 24 hours (TTL) are skipped.
-
-This differs from `animaworks-tool submit` in entry point and directory layout.
+Do not edit SQLite or legacy task files directly; use task tools. The command-tool pipeline described above remains separate.
 
 ### File Lifecycle
 
@@ -198,12 +194,12 @@ Also the **task state file** (overall execution):
 state/background_tasks/{task_id}.json   # running → completed / failed
 ```
 
-**LLM-type** (`submit_tasks` / Heartbeat):
+**LLM-type** (`submit_tasks` / `delegate_task`):
 
 ```
-state/pending/*.json
-  → pending/processing/*.json
-  → success: deleted | failure: pending/failed/*.json
+saved input → ready pending → claimed attempt (in_progress)
+  → declared done/cancelled, or pending + durable attention notification
+  → explicit resume creates a new attempt using the saved input
 ```
 
-On startup, orphaned files left in each respective `processing/` are moved to `failed/` for recovery.
+The command-file recovery described above does not apply to LLM tasks. Old LLM JSONL/descriptor files are migration/export formats, not live execution signals.

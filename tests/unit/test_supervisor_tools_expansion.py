@@ -408,17 +408,15 @@ class TestDelegateTask:
         assert "委譲しました" in result
         assert "hinata" in result
 
-        # Check subordinate's task queue was created
-        sub_queue = tmp_path / "animas" / "hinata" / "state" / "task_queue.jsonl"
-        assert sub_queue.exists()
+        from core.memory.task_queue import TaskQueueManager
 
-        # Check own tracking entry
-        own_queue = tmp_path / "animas" / "sakura" / "state" / "task_queue.jsonl"
-        assert own_queue.exists()
-        lines = own_queue.read_text(encoding="utf-8").strip().split("\n")
-        own_task = json.loads(lines[-1])
+        subordinate_tasks = TaskQueueManager(tmp_path / "animas" / "hinata").list_tasks()
+        own_tasks = TaskQueueManager(tmp_path / "animas" / "sakura").list_tasks()
+        assert len(subordinate_tasks) == len(own_tasks) == 1
+        own_task = own_tasks[0].model_dump()
         assert own_task["status"] == "delegated"
         assert own_task["meta"]["delegated_to"] == "hinata"
+        assert own_task["meta"]["delegated_task_id"] == subordinate_tasks[0].task_id
 
     def test_delegate_to_non_descendant(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")
@@ -473,9 +471,9 @@ class TestDelegateTask:
             )
 
         assert "メッセンジャー未設定" in result
-        # Task should still be added to queues
-        sub_queue = tmp_path / "animas" / "hinata" / "state" / "task_queue.jsonl"
-        assert sub_queue.exists()
+        from core.memory.task_queue import TaskQueueManager
+
+        assert len(TaskQueueManager(tmp_path / "animas" / "hinata").list_tasks()) == 1
 
     def test_disable_subordinate_no_longer_reassigns_open_delegations(self, tmp_path):
         """Disabling a subordinate is a plain state change; nothing is re-filed."""
@@ -511,8 +509,12 @@ class TestDelegateTask:
             result = handler.handle("disable_subordinate", {"name": "hinata", "reason": "maintenance"})
 
         assert "maintenance" in result
-        own_queue = tmp_path / "animas" / "sakura" / "state" / "task_queue.jsonl"
-        records = [json.loads(line) for line in own_queue.read_text(encoding="utf-8").splitlines()]
+        from core.memory.task_queue import TaskQueueManager
+
+        records = [entry.model_dump() for entry in TaskQueueManager(tmp_path / "animas" / "sakura").list_tasks()]
+        assert len(records) == 1
+        assert records[0]["status"] == "delegated"
+        assert records[0]["meta"]["delegated_to"] == "hinata"
         assert not any(record.get("meta", {}).get("kind") == "disabled_delegation_reassignment" for record in records)
 
 

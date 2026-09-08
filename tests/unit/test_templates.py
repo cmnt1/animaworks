@@ -50,9 +50,9 @@ class TestBehaviorRulesTemplate:
     def test_task_recording_rules(self):
         path = TEMPLATES_DIR / "builder" / "task_recording_chat.md"
         content = path.read_text(encoding="utf-8")
-        assert "通常チャットでは `submit_tasks` を使わない" in content
-        assert "`backlog_task` で登録" in content
-        assert "完了条件の達成" in content
+        assert "通常チャットは直接対応" in content
+        assert "`backlog_task` で永続追跡" in content
+        assert "完了条件の証跡" in content
         behavior = (TEMPLATES_DIR / "behavior_rules.md").read_text(encoding="utf-8")
         assert "解決済み案件の再報告禁止" in behavior
 
@@ -90,7 +90,8 @@ class TestBehaviorRulesTemplate:
             for token in required:
                 assert token in content, f"{locale} behavior_rules missing {token}"
             assert "backlog_task" in content
-            assert 'update_task(status="in_progress")' in content
+            assert 'update_task(status="in_progress")' not in content
+            assert "`pending`" in content and "`done`" in content
             assert "must be registered with `submit_tasks`" not in content
             assert "必ず `submit_tasks` でタスクキューに登録" not in content
             assert "반드시 `submit_tasks`로 태스크 큐에 등록" not in content
@@ -220,13 +221,14 @@ class TestPrimingChannelsReference:
 
 
 class TestHeartbeatToolInstructionTemplate:
-    def test_heartbeat_mentions_lightweight_skill_authoring_all_locales(self):
+    def test_heartbeat_uses_explicit_resume_and_authoritative_task_read_all_locales(self):
         for locale in LOCALES:
             content = (TEMPLATES_ROOT / locale / "prompts" / "builder" / "heartbeat_tool_instruction.md").read_text(
                 encoding="utf-8"
             )
-            assert "create_skill" in content
             assert "submit_tasks" in content
+            assert "resume" in content
+            assert "list_tasks(detail=true)" in content
 
 
 class TestSkillCreatorTemplate:

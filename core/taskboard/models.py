@@ -33,14 +33,14 @@ class BoardColumn(StrEnum):
 
 
 class TaskQueueRef(BaseModel):
-    """Stable reference to one task_queue.jsonl entry."""
+    """Stable reference to one canonical task record."""
 
     anima_name: str
     task_id: str
 
 
 class TaskBoardMetadata(BaseModel):
-    """TaskBoard-only metadata layered over task_queue.jsonl entries."""
+    """TaskBoard-only presentation metadata layered over canonical tasks."""
 
     anima_name: str
     task_id: str

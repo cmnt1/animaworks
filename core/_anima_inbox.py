@@ -15,7 +15,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -234,133 +234,23 @@ def _split_delegation_items(
 
 
 def _check_task_state(anima_dir: Path, task_id: str) -> str:
-    """Check task execution state. Returns one of:
-    'completed', 'processing', 'pending', 'terminal', 'missing'.
-    """
-    results_dir = anima_dir / "state" / "task_results"
-    if (results_dir / f"{task_id}.md").exists():
-        return "completed"
+    """Inspect canonical status; result files are artifacts, not completion proof."""
+    from core.memory.task_queue import TaskQueueManager
 
-    pending_dir = anima_dir / "state" / "pending"
-    processing_dir = pending_dir / "processing"
-    if (processing_dir / f"{task_id}.json").exists():
-        return "processing"
-
-    if (pending_dir / f"{task_id}.json").exists():
-        return "pending"
-
-    try:
-        from core.memory.task_queue import TaskQueueManager
-
-        tqm = TaskQueueManager(anima_dir)
-        entry = tqm.get_task_by_id(task_id)
-        # "failed" was retired (A1 task-model teardown): a legacy failed row
-        # now reads back as "pending" via TaskQueueManager, so it is no
-        # longer terminal here either.
-        if entry and entry.status in ("done", "cancelled"):
-            return "terminal"
-    except Exception:
-        logger.debug("Failed to check task_queue for %s", task_id, exc_info=True)
-
-    return "missing"
+    entry = TaskQueueManager(anima_dir).get_task_by_id(task_id)
+    if entry is None:
+        return "missing"
+    return {"done": "completed", "cancelled": "terminal", "in_progress": "processing"}.get(entry.status, "pending")
 
 
-def _rescue_attention_decision(anima_dir: Path, task_id: str):
-    """Return TaskBoard execution decision for delegation rescue."""
-    try:
-        from core.memory.task_queue import TaskQueueManager
-        from core.taskboard.attention_resolver import resolver_for_anima_dir
-
-        entry = TaskQueueManager(anima_dir).get_task_by_id(task_id)
-        return resolver_for_anima_dir(anima_dir).should_execute(
-            anima_dir.name,
-            task_id,
-            queue_status=entry.status if entry is not None else None,
-        )
-    except Exception:
-        logger.warning("TaskBoard delegation rescue gate unavailable for %s; failing open", task_id, exc_info=True)
-        from core.taskboard.models import AttentionDecision
-
-        return AttentionDecision(reason="active")
-
-
-def _cancel_rescued_queue_task(anima_dir: Path, task_id: str, reason: str) -> None:
-    if reason not in _RESCUE_QUEUE_CANCEL_REASONS:
-        return
-    try:
-        from core.memory.task_queue import TaskQueueManager
-
-        tqm = TaskQueueManager(anima_dir)
-        entry = tqm.get_task_by_id(task_id)
-        if entry and entry.status in _RESCUE_QUEUE_ACTIVE_STATUSES:
-            tqm.update_status(task_id, "cancelled", summary=f"{reason} by TaskBoard")
-    except Exception:
-        logger.debug("Failed to cancel suppressed rescued task %s", task_id, exc_info=True)
-
-
-def _rescue_regenerate_pending(anima_dir: Path, task_id: str, msg: Any) -> None:
-    """Rescue: regenerate pending file from delegation DM content for TaskExec pickup."""
-    pending_dir = anima_dir / "state" / "pending"
-    pending_dir.mkdir(parents=True, exist_ok=True)
-
-    instruction = getattr(msg, "content", "")
-
-    # Try to get original instruction from task_queue
-    try:
-        from core.memory.task_queue import TaskQueueManager
-
-        tqm = TaskQueueManager(anima_dir)
-        entry = tqm.get_task_by_id(task_id)
-        if entry and entry.original_instruction:
-            instruction = entry.original_instruction
-    except Exception:
-        logger.debug("Failed to retrieve original instruction for task %s", task_id, exc_info=True)
-
-    decision = _rescue_attention_decision(anima_dir, task_id)
-    if not decision.executable and decision.reason != "snoozed":
-        _cancel_rescued_queue_task(anima_dir, task_id, decision.reason)
-        logger.info(
-            "Rescue: suppressed pending regeneration for task %s (reason=%s)",
-            task_id,
-            decision.reason,
-        )
-        return
-
-    task_desc = {
-        "task_type": "llm",
-        "task_id": task_id,
-        "title": instruction[:100],
-        "description": instruction,
-        "context": "",
-        "acceptance_criteria": [],
-        "constraints": [],
-        "file_paths": [],
-        "submitted_by": getattr(msg, "from_person", "unknown"),
-        "submitted_at": datetime.now(UTC).isoformat(),
-        "reply_to": getattr(msg, "from_person", ""),
-        "source": "delegation_rescue",
-    }
-
-    # Always land in pending/: nothing restores state/pending/deferred any more,
-    # so a descriptor parked there would never be picked up again.
-    path = pending_dir / f"{task_id}.json"
-    path.write_text(
-        json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    logger.info(
-        "Rescue: regenerated pending file for task %s from delegation DM",
-        task_id,
-    )
-
-
-async def _handle_delegation_dms(anima_mixin: Any, delegation_items: list[InboxItem]) -> None:
+async def _handle_delegation_dms(anima_mixin: Any, delegation_items: list[InboxItem]) -> list[InboxItem]:
     """Handle delegation DMs at framework level without involving LLM.
 
     Checks task state and either archives (task exists/completed) or
     rescues (regenerates pending file) for each delegation DM.
     """
     anima_dir = anima_mixin.anima_dir
+    unresolved: list[InboxItem] = []
 
     for item in delegation_items:
         msg = item.msg
@@ -371,13 +261,10 @@ async def _handle_delegation_dms(anima_mixin: Any, delegation_items: list[InboxI
         state = _check_task_state(anima_dir, task_id)
 
         if state == "missing":
-            _rescue_regenerate_pending(anima_dir, task_id, msg)
-            logger.info(
-                "[%s] Delegation DM rescue: task=%s from=%s (pending file regenerated)",
-                anima_mixin.name,
-                task_id,
-                msg.from_person,
-            )
+            # A DM is not an executable input. Let the normal inbox handler
+            # ask the sender about the missing record; never guess constraints.
+            unresolved.append(item)
+            continue
         else:
             logger.info(
                 "[%s] Delegation DM handled at framework level: task=%s state=%s from=%s",
@@ -430,13 +317,14 @@ async def _handle_delegation_dms(anima_mixin: Any, delegation_items: list[InboxI
 
     # Archive delegation DMs immediately
     try:
-        anima_mixin.messenger.archive_paths(delegation_items)
+        anima_mixin.messenger.archive_paths([item for item in delegation_items if item not in unresolved])
     except Exception:
         logger.debug(
             "[%s] Failed to archive delegation DMs",
             anima_mixin.name,
             exc_info=True,
         )
+    return unresolved
 
 
 @dataclass
@@ -979,7 +867,8 @@ class InboxMixin:
         # ── Delegation DM framework-level handling ──
         delegation_items, non_delegation_items = _split_delegation_items(inbox_items, messages)
         if delegation_items:
-            await _handle_delegation_dms(self, delegation_items)
+            unresolved = await _handle_delegation_dms(self, delegation_items)
+            non_delegation_items.extend(unresolved)
             inbox_items = non_delegation_items
             messages = [item.msg for item in non_delegation_items]
             unread_count = len(messages)

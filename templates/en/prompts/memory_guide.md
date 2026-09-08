@@ -8,7 +8,7 @@ All memory is in `{anima_dir}/`. Other Anima directories are not writable except
 | `knowledge/` | Knowledge | Learned facts, policies, know-how | Record on discovery |
 | `procedures/` | Procedures | How to carry out tasks | Create when established |
 | `skills/` | Skills | Executable capabilities | Create when acquired |
-| `state/` | Current state | What you are doing now | Update as needed (`pending/` is for explicit background execution workflows) |
+| `state/` | Working state | Current context and host-produced results | Update current_state.md as needed; task changes use task tools |
 
 Knowledge: {knowledge_count} files | Procedures: {procedure_count} files
 Skill and procedure paths appear in the system prompt skill catalog; load bodies with `read_memory_file`.

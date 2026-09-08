@@ -3,14 +3,13 @@ Default: do not narrate routine, low-risk tool calls
 
 ### Using Memory
 
-- **Verify memory before responding (MUST)**: Before generating a response, confirm relevant memories with `search_memory` or `read_memory_file`. Applies to all questions and requests except greetings and small talk. When in doubt, search — search cost is low, misinformation cost is high.
-- **Immediate external-reply exception**: If a message includes `[reply_instruction: use tool ...]` and all required information is already present in that message plus the reply instruction, you may skip extra `search_memory` / `read_memory_file` calls and execute the tool immediately. Use this for simple delivery checks or short receipt confirmations.
+- Check `search_memory` / `read_memory_file` when prior instructions, customer context, or continuing work affect the answer. Use the supplied context directly when it already contains what this event needs.
 - **Read files before acting (MUST)**: Before changing settings, editing code, or executing commands, find related files with your search tools and read them with your file-reading tools before deciding. The current file contents — not memory or summaries — are the source of truth.
-- **Record when you discover**: When you solve problems, find correct parameters, or establish procedures, immediately record important findings in knowledge/ or procedures/
+- Preserve reusable, environment-specific discoveries in knowledge/ or procedures/. Keep one-off results and PR/commit review status in the task history; do not turn general tool usage into permanent procedures.
 - **Record instructions, preferences, and feedback immediately (MUST)**: When a human says "remember this," "do it this way from now on," "this is unnecessary," "we don't use X," or gives any feedback, preference, or policy, do NOT just acknowledge verbally — you **MUST** use `write_memory_file` to record it in `knowledge/`. Verbal acknowledgment alone means you will forget next time. For user-specific preferences, also consider appending to `shared/users/{name}/`
 - **Check existing before writing to knowledge/**: Before writing a file to `knowledge/`, use `search_memory(scope="knowledge")` to check for existing related knowledge. If similar files are found, read them with `read_memory_file` first and update existing files instead of creating new ones
 - **Tag critical knowledge with `[IMPORTANT]`**: When writing lessons, failure records, or security-critical notes to knowledge/ that must never be forgotten, place `[IMPORTANT]` at the start of the body (right after frontmatter). Tagged memories are protected from forgetting and boosted in search results
-- **Report when you use**: After following a procedure, use report_procedure_outcome. After using knowledge, use report_knowledge_outcome to report results
+- Report a memory/procedure outcome when it failed, contradicted the source, or an evaluation explicitly requests it. Routine reading needs no separate outcome report.
 
 ### Communication Rules
 - Text and file references only. Do not share internal state directly
@@ -23,5 +22,5 @@ Default: do not narrate routine, low-risk tool calls
 - **Detect duplicates**: Do not send the same report multiple times. Send an update only when the situation has changed since the last report
 
 ### current_state.md (Working Memory) and Task Management Separation
-- `state/current_state.md` is **working memory** for observations, plans, situational awareness, and blockers. It is archived automatically at session end and replaced by a summary, so write freely during the session
-- Record tasks in `task_queue.jsonl` with `backlog_task` / `update_task`; do not put task lists, durable knowledge, or procedures in current_state.md
+- `state/current_state.md` is **working memory** for observations, plans, context, and blockers. It is preserved across normal session boundaries; keep it concise and update it when the working context changes
+- Use `list_tasks` to inspect tasks, `submit_tasks` to enqueue work, and `update_task` to declare `done`, `pending`, or `cancelled`. Execution claims are host-owned; never write task storage directly. Keep task lists, durable knowledge, and procedures out of current_state.md

@@ -28,11 +28,13 @@ class PrimingResult:
     graph_context: str = ""
     items: dict[str, tuple[MemoryItem, ...]] = field(default_factory=dict)
     gate_plan: Any | None = None
+    resident_knowledge: str = ""
 
     def is_empty(self) -> bool:
         """Return True if no memories were primed."""
         return (
             not self.sender_profile
+            and not self.resident_knowledge
             and not self.recent_activity
             and not self.related_knowledge
             and not self.related_knowledge_untrusted
@@ -47,6 +49,7 @@ class PrimingResult:
         """Estimate total character count."""
         return (
             len(self.sender_profile)
+            + len(self.resident_knowledge)
             + len(self.recent_activity)
             + len(self.related_knowledge)
             + len(self.related_knowledge_untrusted)
@@ -63,6 +66,7 @@ class PrimingResult:
             "".join(
                 (
                     self.sender_profile,
+                    self.resident_knowledge,
                     self.recent_activity,
                     self.related_knowledge,
                     self.related_knowledge_untrusted,

@@ -46,6 +46,7 @@ class SectionEntry:
     content: str
     items: tuple[str, ...] | None = None
     trim_from: Literal["head", "tail"] = "tail"
+    budget_group: Literal["framework", "recall"] = "framework"
 
 
 def _normalize_headings(content: str) -> str:
@@ -98,7 +99,7 @@ def _assemble_with_tags(allocated: list[SectionEntry]) -> str:
 
 def _compute_system_budget(context_window: int, system_budget: int | None = None) -> PromptBudget:
     """Compute the normal target and hard ceiling in tokens."""
-    target_tokens = 20_000
+    target_tokens = 6_000
     ceiling_pct = 0.35
     try:
         from core.config import load_config
@@ -199,29 +200,60 @@ def _allocate_sections(
     dropped_items: dict[str, int] = {}
     trimmed_elastic_indices: set[int] = set()
 
-    def total_tokens() -> int:
-        rigid_cost = sum(estimate_tokens(prepared[i].content) for i in included_rigid)
-        elastic_cost = sum(estimate_tokens("\n\n".join(items)) for items in elastic_items.values())
+    def total_tokens(group: str | None = None) -> int:
+        rigid_cost = sum(
+            estimate_tokens(prepared[i].content)
+            for i in included_rigid
+            if group is None or prepared[i].budget_group == group
+        )
+        elastic_cost = sum(
+            estimate_tokens("\n\n".join(items))
+            for i, items in elastic_items.items()
+            if group is None or prepared[i].budget_group == group
+        )
         return rigid_cost + elastic_cost
 
     # Low-priority elastic sections give way first. For ties, trim whichever
     # section is currently largest so one oversized source cannot dominate.
-    for priority in range(4, 0, -1):
-        while total_tokens() > budget.target:
-            candidates = [i for i, items in elastic_items.items() if items and prepared[i].priority == priority]
-            if not candidates:
-                break
-            index = max(
-                candidates,
-                key=lambda i: (estimate_tokens("\n\n".join(elastic_items[i])), -i),
-            )
-            section = prepared[index]
-            if section.trim_from == "head":
-                elastic_items[index].pop(0)
-            else:
-                elastic_items[index].pop()
-            trimmed_elastic_indices.add(index)
-            dropped_items[section.id] = dropped_items.get(section.id, 0) + 1
+    def trim_elastic(target: int, group: str | None = None) -> None:
+        for priority in range(4, 0, -1):
+            while total_tokens(group) > target:
+                candidates = [
+                    i
+                    for i, items in elastic_items.items()
+                    if items
+                    and prepared[i].priority == priority
+                    and (group is None or prepared[i].budget_group == group)
+                ]
+                if not candidates:
+                    break
+                index = max(candidates, key=lambda i: (estimate_tokens("\n\n".join(elastic_items[i])), -i))
+                section = prepared[index]
+                if section.trim_from == "head":
+                    elastic_items[index].pop(0)
+                else:
+                    elastic_items[index].pop()
+                trimmed_elastic_indices.add(index)
+                dropped_items[section.id] = dropped_items.get(section.id, 0) + 1
+
+    # The framework target does not consume the separately configured recall
+    # allowance. Both still share the model's hard context ceiling.
+    recall_target = 2000
+    if any(section.budget_group == "recall" for section in prepared):
+        try:
+            from core.config import load_config
+
+            configured_target = load_config().priming.max_tokens
+            if (
+                isinstance(configured_target, int)
+                and not isinstance(configured_target, bool)
+                and configured_target >= 200
+            ):
+                recall_target = configured_target
+        except Exception:
+            logger.debug("Using default recall prompt budget", exc_info=True)
+    trim_elastic(budget.target, "framework")
+    trim_elastic(max(0, min(recall_target, budget.ceiling)), "recall")
 
     dropped_rigid: list[str] = []
     # Rigid sections may exceed the target, but only the hard ceiling is
@@ -237,6 +269,8 @@ def _allocate_sections(
                 break
             included_rigid.remove(index)
             dropped_rigid.append(prepared[index].id)
+
+    trim_elastic(budget.ceiling)
 
     result: list[SectionEntry] = []
     for i, section in enumerate(prepared):

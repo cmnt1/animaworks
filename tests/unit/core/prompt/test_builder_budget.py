@@ -27,11 +27,11 @@ class TestComputeSystemBudget:
 
     def test_128k_budget(self):
         budget = _compute_system_budget(128_000)
-        assert budget == PromptBudget(target=20_000, ceiling=44_800)
+        assert budget == PromptBudget(target=6_000, ceiling=44_800)
 
     def test_32k_budget(self):
         budget = _compute_system_budget(32_000)
-        assert budget == PromptBudget(target=11_200, ceiling=11_200)
+        assert budget == PromptBudget(target=6_000, ceiling=11_200)
 
     def test_8k_budget(self):
         budget = _compute_system_budget(8_000)
@@ -48,12 +48,12 @@ class TestComputeSystemBudget:
     def test_explicit_budget_clamped_to_auto(self):
         """system_budget cannot exceed auto-computed budget."""
         budget = _compute_system_budget(32_000, system_budget=999_999)
-        assert budget == PromptBudget(target=11_200, ceiling=11_200)
+        assert budget == PromptBudget(target=6_000, ceiling=11_200)
 
     def test_explicit_budget_below_auto(self):
         """system_budget below auto is used as-is."""
         budget = _compute_system_budget(128_000, system_budget=10_000)
-        assert budget == PromptBudget(target=10_000, ceiling=10_000)
+        assert budget == PromptBudget(target=6_000, ceiling=10_000)
 
     def test_explicit_budget_below_minimum(self):
         """system_budget cannot go below _MIN_SYSTEM_BUDGET."""
@@ -62,7 +62,7 @@ class TestComputeSystemBudget:
 
     def test_200k_budget(self):
         budget = _compute_system_budget(200_000)
-        assert budget == PromptBudget(target=20_000, ceiling=70_000)
+        assert budget == PromptBudget(target=6_000, ceiling=70_000)
 
     def test_configured_target_and_ceiling(self):
         config = MagicMock()

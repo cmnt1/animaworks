@@ -573,6 +573,7 @@ class RAGMemorySearch:
             "abstain_on_low_confidence": True,
             "confidence_threshold": 0.35,
             "rrf_confidence_threshold": 0.02,
+            "enable_spreading_activation": True,
             "iterative_retrieval_enabled": True,
             "iterative_min_results": 2,
             "entity_registry_enabled": True,
@@ -594,6 +595,7 @@ class RAGMemorySearch:
             rag = load_config().rag
             defaults.update(
                 {
+                    "enable_spreading_activation": rag.enable_spreading_activation,
                     "rerank_enabled": rag.rerank_enabled,
                     "rerank_candidate_pool": rag.rerank_candidate_pool,
                     "cross_encoder_model": rag.cross_encoder_model,
@@ -672,6 +674,8 @@ class RAGMemorySearch:
         access_batch=None,
     ) -> list[dict]:
         """Episodes vector search with graph spreading activation."""
+        if not self._load_rag_pipeline_settings().get("enable_spreading_activation", True):
+            return []
         if indexer is None:
             indexer = self._get_indexer()
         if indexer is None:

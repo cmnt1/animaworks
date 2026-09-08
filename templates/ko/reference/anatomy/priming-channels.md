@@ -1,5 +1,7 @@
 # Priming 채널 기술 레퍼런스
 
+기본 `compact` 프로필은 발신자, 정본 태스크, 명시적인 `always_prime` 보호 조건과 필요한 경우에만 제한된 관련 검색을 수집합니다. 최근 활동, 에피소드, 그래프 채널은 검색 전에 제외합니다. 아래 채널 목록은 선택적인 `full` 프로필의 기능이며 모든 트리거에서 전부 실행된다는 뜻이 아닙니다. 회상은 프레임워크 본문 목표와 별도의 토큰 예산을 사용합니다.
+
 PrimingEngine이 실행하는 전체 채널의 상세 사양입니다.
 버짓, 검색 소스, 필터링, 동적 조정을 포함합니다.
 
@@ -15,7 +17,7 @@ PrimingEngine이 실행하는 전체 채널의 상세 사양입니다.
 | B: recent_activity | 1300 | `activity_log/` + shared channels | trusted |
 | C: related_knowledge | 1200 | RAG 벡터 검색 (knowledge + common_knowledge) | medium / untrusted |
 | C0: important_knowledge | 300 | `[IMPORTANT]` 태그가 지정된 청크 | medium |
-| E: pending_tasks | 500 | `task_queue.jsonl` + `task_results/` | trusted |
+| E: pending_tasks | 500 | TaskStore + accepted task results | trusted |
 | F: episodes | 400 | RAG 벡터 검색 (episodes/) | medium |
 | G: graph_context | 500 | MemoryBackend의 community context + recent facts | medium |
 

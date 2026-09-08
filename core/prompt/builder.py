@@ -38,12 +38,13 @@ from core.prompt.assembler import (
     _assemble_with_tags,
     _compute_system_budget,
     _normalize_headings,  # noqa: F401
+    _split_content_items,
 )
 from core.prompt.messaging import (
     _build_human_notification_guidance,  # noqa: F401
     _build_messaging_section,
     _build_recent_tool_section,
-    _load_a_reflection,
+    _load_a_reflection,  # noqa: F401 -- compatibility export
 )
 from core.prompt.org_context import (
     _build_full_org_tree,  # noqa: F401
@@ -303,7 +304,7 @@ def _build_group2(
         if sp:
             _add(sp, "specialty", 3)
     if permissions:
-        _add(permissions, "permissions", 2)
+        _add(permissions, "permissions", 1)
     return out
 
 
@@ -456,6 +457,7 @@ def _build_group3(
         kind: str = "rigid",
         *,
         trim_from: Literal["head", "tail"] = "tail",
+        budget_group: Literal["framework", "recall"] = "framework",
     ) -> None:
         if c and c.strip():
             out.append(
@@ -465,6 +467,7 @@ def _build_group3(
                     kind=kind,
                     content=c,
                     trim_from=trim_from,
+                    budget_group=budget_group,
                 )
             )
 
@@ -506,7 +509,7 @@ def _build_group3(
     try:
         resolved_block = _build_resolved_approvals_section(pd.name, _ss)
         if resolved_block:
-            _add(resolved_block, "resolved_approvals", 2, "elastic")
+            _add(resolved_block, "resolved_approvals", 1, "rigid")
     except Exception:
         logger.debug("Failed to inject resolved approvals section", exc_info=True)
 
@@ -524,16 +527,25 @@ def _build_group3(
             _add(
                 load_prompt("builder/resolution_registry", res_lines="\n".join(lines)),
                 "resolution_registry",
-                3,
-                "elastic",
+                2,
+                "rigid",
             )
     except Exception:
         logger.debug("Failed to inject resolution registry", exc_info=True)
 
     if priming_section:
-        _add(priming_section, "priming", 2, "elastic")
+        # Explicit source contracts survive recall trimming. Never infer safety
+        # importance from arbitrary memory prose or split a trust-boundary block.
+        protected, recall = [], []
+        for item in _split_content_items(priming_section):
+            if re.match(r'<priming\b[^>]*\bsource="(?:resident_knowledge|pending_tasks|recent_outbound)"', item):
+                protected.append(item)
+            else:
+                recall.append(item)
+        _add("\n\n".join(protected), "priming_required_context", 1, "rigid", budget_group="recall")
+        _add("\n\n".join(recall), "priming", 2, "elastic", budget_group="recall")
     if pending_human_notifications and (is_chat or is_heartbeat):
-        _add(pending_human_notifications, "pending_human_notifications", 3, "elastic")
+        _add(pending_human_notifications, "pending_human_notifications", 1, "rigid")
     if is_chat and execution_mode.upper() == "B":
         try:
             recent = _build_recent_tool_section(pd, memory.read_model_config())
@@ -907,10 +919,6 @@ def _build_group6(
         ei = _build_emotion_instruction()
         if ei:
             _add(ei, "emotion_instruction", 4)
-    if not is_background_auto and execution_mode == "a":
-        ar = _load_a_reflection()
-        if ar:
-            _add(ar, "a_reflection", 4)
     if execution_mode == "c" and not is_background_auto:
         _add(t("builder.c_response_requirement"), "c_response_requirement", 2)
     return out

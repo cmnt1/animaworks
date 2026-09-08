@@ -1,5 +1,7 @@
 # Priming Channels Technical Reference
 
+The default `compact` profile gathers sender context, canonical task context, explicit `always_prime` guardrails, and bounded related recall when relevant. It skips recent-activity, episode, and graph channels before retrieval. The channel inventory below describes the opt-in `full` profile; it is not a promise that every channel runs on every trigger. Recall has its own token budget, separate from the framework prompt target.
+
 Detailed specification of all channels executed by PrimingEngine.
 Includes budget, search sources, filtering, and dynamic adjustment.
 
@@ -15,7 +17,7 @@ Parallel retrieval uses **six channels** (A / B / C / E / F / G). Channel C0 (im
 | B: recent_activity | 1300 | `activity_log/` + shared channels | trusted |
 | C: related_knowledge | 1200 | RAG vector search (knowledge + common_knowledge) | medium / untrusted |
 | C0: important_knowledge | 300 | Chunks tagged with `[IMPORTANT]` | medium |
-| E: pending_tasks | 500 | `task_queue.jsonl` + `task_results/` | trusted |
+| E: pending_tasks | 500 | TaskStore + accepted task results | trusted |
 | F: episodes | 400 | RAG vector search (episodes/) | medium |
 | G: graph_context | 500 | MemoryBackend community context + recent facts | medium |
 

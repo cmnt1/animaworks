@@ -30,6 +30,6 @@
 6. **他の社員のディレクトリ**: permissions.json に明示された範囲のみアクセス可能
 7. **配下のディレクトリ**（supervisorのみ。子・孫・曾孫…全配下に同じ権限）:
    - **管理ファイル**: `injection.md`, `cron.md`, `heartbeat.md`, `status.json` は**読み書き可能**（組織運営に必要な辞令・設定変更）
-   - **状態参照**: `activity_log/`, `state/current_state.md`（ワーキングメモリ）, `state/task_queue.jsonl`, `state/pending/` は**読み取りのみ**
+   - **状態参照**: `activity_log/` と `state/current_state.md` は**読み取りのみ**。部下のタスクは権限のあるタスクツールで確認する。正本の保存先はホスト管理で直接編集は禁止。
    - **identity.md**: **読み取りのみ**（書き込み保護）
 8. **同僚のactivity_log**: 同じsupervisorを持つ同僚の `activity_log/` は読み取り可能（検証用）。書き込みは不可

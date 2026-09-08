@@ -85,6 +85,89 @@ def test_environment_is_l1_and_points_to_reference(data_dir: Path, monkeypatch: 
     assert 'read_memory_file(path="reference/anatomy/environment-layout.md")' in prompt
 
 
+@pytest.mark.parametrize("trigger", ["chat", "heartbeat", "task:fixture", "inbox:peer"])
+def test_framework_resident_prompt_budget(data_dir: Path, monkeypatch: pytest.MonkeyPatch, trigger: str) -> None:
+    from core.prompt.tokens import estimate_tokens
+
+    prompt = _build(data_dir, monkeypatch, trigger)
+    count = estimate_tokens(prompt)
+    print(f"framework_prompt {trigger} tokens={count}")
+    assert count <= 6000
+    assert "Fixture anima" in prompt
+    assert "回答の前に記憶を確認せよ" not in prompt
+
+
+def test_large_recall_does_not_evict_resident_rules_tasks_or_human_notifications(data_dir: Path, monkeypatch):
+    from core.memory.priming.format import format_priming_section
+    from core.memory.priming.result import PrimingResult
+
+    memory = _memory(data_dir / "animas" / "fixture")
+    memory.read_injection.return_value = "ROLE_SAFETY: external sending requires human approval."
+    monkeypatch.setattr(builder, "get_data_dir", lambda: data_dir)
+    monkeypatch.setattr(builder, "_discover_other_animas", lambda _path: [])
+    monkeypatch.setattr(
+        builder, "_build_resolved_approvals_section", lambda *_args: "APPROVAL_STATE: decision settled."
+    )
+    priming = PrimingResult(
+        resident_knowledge='MANDATORY_POLICY → read_memory_file(path="knowledge/approval-policy.md")',
+        pending_tasks="PENDING_REQUEST: wait for customer approval",
+        recent_outbound="DUPLICATE_GUARD: invoice already sent",
+        related_knowledge_untrusted="UNTRUSTED_RECALL " * 12_000,
+    )
+    prompt = builder.build_system_prompt(
+        memory,
+        execution_mode="s",
+        trigger="chat",
+        context_window=200_000,
+        priming_section=format_priming_section(priming),
+        pending_human_notifications="HUMAN_NOTIFICATION: outstanding decision",
+    ).system_prompt
+    for preserved in (
+        "ROLE_SAFETY",
+        "MANDATORY_POLICY",
+        "approval-policy.md",
+        "PENDING_REQUEST",
+        "DUPLICATE_GUARD",
+        "HUMAN_NOTIFICATION",
+        "APPROVAL_STATE",
+    ):
+        assert preserved in prompt
+    assert "UNTRUSTED_RECALL" not in prompt
+    assert prompt.count("<priming ") == prompt.count("</priming>")
+
+
+@pytest.mark.parametrize("execution_mode", ["a", "c"])
+def test_modest_recall_pointers_survive_full_framework_prompt(data_dir: Path, monkeypatch, execution_mode):
+    from core.memory.priming.format import format_priming_section
+    from core.memory.priming.result import PrimingResult
+    from core.prompt.tokens import estimate_tokens
+
+    memory = _memory(data_dir / "animas" / "fixture")
+    monkeypatch.setattr(builder, "get_data_dir", lambda: data_dir)
+    monkeypatch.setattr(builder, "_discover_other_animas", lambda _path: [])
+    pointers = [f'CUSTOMER_{i:02d} → read_memory_file(path="knowledge/customer-{i:02d}.md")' for i in range(12)]
+    result = builder.build_system_prompt(
+        memory,
+        execution_mode=execution_mode,
+        trigger="chat",
+        context_window=200_000,
+        priming_section=format_priming_section(PrimingResult(related_knowledge="\n".join(pointers))),
+    )
+    for index in range(12):
+        assert f"customer-{index:02d}.md" in result.system_prompt
+    assert estimate_tokens(result.system_prompt) <= 8000
+
+
+def test_permission_source_survives_even_an_infeasible_context_ceiling(data_dir: Path, monkeypatch):
+    memory = _memory(data_dir / "animas" / "fixture")
+    permissions = "PERMISSION_ORIGINAL: never send without explicit approval. " * 400
+    memory.read_permissions.return_value = permissions
+    monkeypatch.setattr(builder, "get_data_dir", lambda: data_dir)
+    monkeypatch.setattr(builder, "_discover_other_animas", lambda _path: [])
+    result = builder.build_system_prompt(memory, execution_mode="c", trigger="chat", context_window=4000)
+    assert permissions in result.system_prompt
+
+
 def test_cli_duplication_and_skill_creator_are_removed(
     data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,

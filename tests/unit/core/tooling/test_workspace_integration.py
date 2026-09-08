@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from core.config.models import AnimaModelConfig, AnimaWorksConfig
+from core.memory.task_queue import TaskQueueManager
 
 # ── TestSubmitTasksWorkspace ─────────────────────────────────────
 
@@ -64,8 +65,8 @@ class TestSubmitTasksWorkspace:
         assert "t1" in data.get("task_ids", [])
 
         pending_path = handler._anima_dir / "state" / "pending" / "t1.json"
-        assert pending_path.exists()
-        task_json = json.loads(pending_path.read_text(encoding="utf-8"))
+        assert not pending_path.exists()
+        task_json = TaskQueueManager(handler._anima_dir).store.get_input(handler._anima_dir.name, "t1")
         assert task_json.get("working_directory") == str(resolved_path.resolve())
 
     def test_invalid_workspace_returns_error(self, handler) -> None:
@@ -112,8 +113,9 @@ class TestSubmitTasksWorkspace:
         assert data.get("status") == "submitted"
 
         pending_path = handler._anima_dir / "state" / "pending" / "t1.json"
-        task_json = json.loads(pending_path.read_text(encoding="utf-8"))
+        task_json = TaskQueueManager(handler._anima_dir).store.get_input(handler._anima_dir.name, "t1")
         assert task_json.get("working_directory") == ""
+        assert not pending_path.exists()
 
     def test_multiple_tasks_with_workspace_each_resolved(self, handler, tmp_path: Path) -> None:
         """Multiple tasks with same workspace all get resolved working_directory."""
@@ -151,9 +153,7 @@ class TestSubmitTasksWorkspace:
         assert len(data.get("task_ids", [])) == 2
 
         for tid in ("t2a", "t2b"):
-            task_json = json.loads(
-                (handler._anima_dir / "state" / "pending" / f"{tid}.json").read_text(encoding="utf-8")
-            )
+            task_json = TaskQueueManager(handler._anima_dir).store.get_input(handler._anima_dir.name, tid)
             assert task_json.get("working_directory") == str(resolved_path.resolve())
 
 
@@ -215,12 +215,12 @@ class TestDelegateTaskWorkspace:
                     "workspace": "project",
                 },
             )
-        # Success: pending JSON written with working_directory
+        # Success: immutable canonical input retains the resolved workspace.
         pending_dir = tmp_path / "animas" / "sub" / "state" / "pending"
-        assert pending_dir.exists(), f"Expected pending dir; result: {result}"
-        json_files = list(pending_dir.glob("*.json"))
-        assert json_files, f"No pending JSON; result: {result}"
-        task_json = json.loads(json_files[0].read_text(encoding="utf-8"))
+        assert not pending_dir.exists()
+        tasks = TaskQueueManager(tmp_path / "animas" / "sub").store.pending("sub")
+        assert tasks, result
+        task_json = tasks[0]
         assert task_json.get("working_directory") == str(resolved_path.resolve())
 
     def test_delegate_task_invalid_workspace_returns_error(self, handler) -> None:
@@ -263,8 +263,8 @@ class TestInterceptWorkingDirectory:
             tool_use_id=None,
         )
         pending_path = anima_dir / "state" / "pending" / f"{task_id}.json"
-        assert pending_path.exists()
-        task_json = json.loads(pending_path.read_text(encoding="utf-8"))
+        assert not pending_path.exists()
+        task_json = TaskQueueManager(anima_dir).store.get_input(anima_dir.name, task_id)
         assert "working_directory" in task_json
         assert task_json["working_directory"] == ""
 
@@ -280,7 +280,7 @@ class TestInterceptWorkingDirectory:
             {"description": "Task", "prompt": "Task"},
             tool_use_id=None,
         )
-        task_json = json.loads((anima_dir / "state" / "pending" / f"{task_id}.json").read_text(encoding="utf-8"))
+        task_json = TaskQueueManager(anima_dir).store.get_input(anima_dir.name, task_id)
         assert task_json["working_directory"] == ""
 
 

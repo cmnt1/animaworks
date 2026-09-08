@@ -519,12 +519,13 @@ class SchedulerMixin:
             except Exception:
                 logger.exception("Daily consolidation failed for %s", anima_name)
             finally:
-                await run_daily_consolidation_post_processing(
-                    anima_name,
-                    anima_dir,
-                    consolidation_cfg=consolidation_cfg,
-                    model=model,
-                )
+                if result.get("action") != "skipped":
+                    await run_daily_consolidation_post_processing(
+                        anima_name,
+                        anima_dir,
+                        consolidation_cfg=consolidation_cfg,
+                        model=model,
+                    )
 
                 await self._broadcast_event(
                     "system.consolidation",

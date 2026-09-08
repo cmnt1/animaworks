@@ -36,7 +36,6 @@ class TestTaskToolSchemas:
         assert update_task["parameters"]["properties"]["result"]["type"] == "string"
         assert update_task["parameters"]["properties"]["status"]["enum"] == [
             "pending",
-            "in_progress",
             "done",
             "cancelled",
         ]

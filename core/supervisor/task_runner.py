@@ -9,7 +9,6 @@ import argparse
 import asyncio
 import logging
 import os
-import re
 import sys
 import threading
 import traceback
@@ -150,24 +149,15 @@ async def execute_cron_contract(anima: DigitalAnima, task: CronTask) -> dict[str
     )
     success = result.get("exit_code", 1) == 0
     usage: dict[str, int] | None = None
-    stdout = str(result.get("stdout", "")).strip()
-    should_follow_up = bool(stdout and success and task.trigger_heartbeat)
-    if should_follow_up and task.skip_pattern:
-        try:
-            should_follow_up = re.search(task.skip_pattern, stdout) is None
-        except re.error as exc:
-            logger.warning(
-                "Invalid skip_pattern %r for task %r: %s; continuing without skip",
-                task.skip_pattern,
-                task.name,
-                exc,
-            )
+    from core.supervisor.cron_followup import command_followup_output
+
+    command_output = command_followup_output(task, result)
     followup: dict[str, Any] | None = None
-    if should_follow_up:
+    if command_output is not None:
         followup_result = await anima.run_cron_task(
             task.name,
             task.description or t("scheduler.cron_fallback_description", task_name=task.name),
-            command_output=stdout,
+            command_output=command_output,
             **({"skills": task.skills} if task.skills else {}),
         )
         followup = followup_result.model_dump(mode="json")
@@ -220,7 +210,17 @@ async def execute_task_contract(anima: DigitalAnima, task_desc: dict[str, Any]) 
     completed_results = task_desc.get("_completed_results")
     if not isinstance(completed_results, dict):
         completed_results = None
-    result = await executor._run_llm_task(task_desc, completed_results)
+    from core.memory.task_queue import TaskQueueManager
+    from core.taskboard.tasks import attempt_scope, process_identity
+
+    token = task_desc.get("_attempt_token")
+    identity = None
+    if token:
+        identity = {"anima": anima.name, "task_id": str(task_desc["task_id"]), "token": str(token)}
+        if not TaskQueueManager(anima.anima_dir).store.set_identity(str(token), process_identity()):
+            raise RuntimeError("Task claim expired before child execution")
+    with attempt_scope(identity):
+        result = await executor._run_llm_task(task_desc, completed_results)
     return {
         "task_type": "llm",
         "result": result,

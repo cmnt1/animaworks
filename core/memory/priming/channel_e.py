@@ -128,11 +128,13 @@ async def channel_e_pending_tasks(
         queue_path = None
 
     from core.taskboard.attention_resolver import taskboard_db_path_for_anima
+    from core.taskboard.tasks import task_database_path
 
     taskboard_path = _resolved_readable_path(taskboard_db_path_for_anima(anima_dir), denied_roots)
+    task_store_path = _resolved_readable_path(task_database_path(anima_dir), denied_roots)
 
     try:
-        if queue_path is None or taskboard_path is None:
+        if queue_path is None or task_store_path is None or taskboard_path is None:
             raise PermissionError("pending task source is explicitly denied")
         from core.taskboard.attention_resolver import AttentionResolver
         from core.taskboard.formatting import format_tasks_for_priming
@@ -159,7 +161,7 @@ async def channel_e_pending_tasks(
         from core.memory.task_queue import TaskQueueManager
 
         try:
-            if queue_path is None:
+            if queue_path is None or task_store_path is None:
                 raise PermissionError("task queue is explicitly denied")
             manager = TaskQueueManager(anima_dir)
 
@@ -228,8 +230,22 @@ async def channel_e_pending_tasks(
                 for candidate in results_dir.glob("*.md")
                 if (resolved := _resolved_readable_path(candidate, denied_roots)) is not None
             ]
+            canonical_ids: dict[Path, str] = {}
+            if queue_path is not None and task_store_path is not None:
+                from core.memory.task_queue import TaskQueueManager
+
+                entries = await asyncio.to_thread(TaskQueueManager(anima_dir).store.read, anima_dir.name, archived=True)
+                for entry in entries.values():
+                    token = entry.meta.get("last_attempt_token")
+                    if entry.status != "done" or not isinstance(token, str):
+                        continue
+                    candidate = results_dir / entry.task_id / f"{token}.md"
+                    resolved = _resolved_readable_path(candidate, denied_roots)
+                    if resolved is not None and resolved.is_relative_to(results_dir.resolve()) and resolved.is_file():
+                        readable_result_files.append(resolved)
+                        canonical_ids[resolved] = entry.task_id
             for rf in sorted(readable_result_files, key=lambda p: p.stat().st_mtime, reverse=True):
-                if _should_show_task_result(anima_dir, rf, resolver, now):
+                if _should_show_task_result(anima_dir, rf, resolver, now, task_id=canonical_ids.get(rf)):
                     result_files.append(rf)
                 if len(result_files) >= 5:
                     break
@@ -238,7 +254,7 @@ async def channel_e_pending_tasks(
                 for rf in result_files:
                     try:
                         content = rf.read_text(encoding="utf-8").strip()
-                        task_id = rf.stem
+                        task_id = canonical_ids.get(rf, rf.stem)
                         task_updates[task_id] = datetime.fromtimestamp(rf.stat().st_mtime, tz=now.tzinfo).isoformat()
                         preview = content[:150].replace("\n", " ")
                         lines.append(f"- [{task_id}] {preview}")
@@ -254,7 +270,9 @@ async def channel_e_pending_tasks(
     return ItemizedMemory(render_items(items, ""), items) if items else ""
 
 
-def _should_show_task_result(anima_dir: Path, result_file: Path, resolver: object | None, now: datetime) -> bool:
+def _should_show_task_result(
+    anima_dir: Path, result_file: Path, resolver: object | None, now: datetime, *, task_id: str | None = None
+) -> bool:
     try:
         result_mtime = result_file.stat().st_mtime
     except OSError:
@@ -268,7 +286,7 @@ def _should_show_task_result(anima_dir: Path, result_file: Path, resolver: objec
         return bool(
             resolver.should_show_task_result(
                 anima_dir.name,
-                result_file.stem,
+                task_id or result_file.stem,
                 result_mtime,
                 now,
             )

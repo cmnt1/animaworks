@@ -159,7 +159,7 @@ class CycleMixin:
             return None
         if result.action != "error" and not result.reason:
             return None
-        from core.execution.fallback_activity import runtime_fallback_config
+        from core.execution.fallback_activity import has_partial_execution, runtime_fallback_config
 
         return runtime_fallback_config(
             self.anima_dir,
@@ -168,6 +168,7 @@ class CycleMixin:
             error_text=result.summary or "",
             reason=str(result.reason or ""),
             channel=self._cycle_fallback_channel(trigger),
+            partial_execution=has_partial_execution(result),
         )
 
     def _check_monthly_token_budget(
@@ -1308,6 +1309,7 @@ class CycleMixin:
         terminal_error_reason = ""
         terminal_error_chunk: dict[str, Any] | None = None
         fallback_swapped = False
+        stream_started_work = False
         stream_stop_kind = "normal"
         stream_truncated = False
         current_prompt = prompt
@@ -1331,6 +1333,10 @@ class CycleMixin:
                         trigger=trigger,
                         thread_id=thread_id,
                     ):
+                        if chunk["type"] in {"tool_start", "tool_end"} or (
+                            chunk["type"] == "text_delta" and chunk.get("text")
+                        ):
+                            stream_started_work = True
                         if self._progress_callback:
                             self._progress_callback()
                         if chunk["type"] == "done":
@@ -1516,6 +1522,7 @@ class CycleMixin:
                     error_text=terminal_error_message,
                     reason=terminal_error_reason,
                     channel=self._cycle_fallback_channel(trigger),
+                    partial_execution=stream_started_work or bool(all_tool_call_records),
                 )
                 if swap_config is not None:
                     logger.warning(

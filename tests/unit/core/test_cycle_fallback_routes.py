@@ -9,6 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from core._agent_cycle import CycleMixin
 from core.execution.fallback_activity import preflight_fallback_config, runtime_fallback_config
 from core.schemas import CycleResult, ModelConfig
@@ -153,3 +155,66 @@ def test_cycle_runtime_fallback_skips_successful_result(tmp_path: Path) -> None:
     cycle = _Cycle(primary, tmp_path)
     ok = CycleResult(trigger="task:gh-123", action="responded", summary="done")
     assert cycle._cycle_runtime_fallback(ok, primary, None, "task:gh-123") is None
+
+
+def test_cycle_does_not_replay_task_after_a_tool_was_executed(tmp_path: Path) -> None:
+    primary, fallback = _configs()
+    cycle = _Cycle(primary, tmp_path)
+    result = CycleResult(
+        trigger="task:gh-123",
+        action="error",
+        reason="quota_exhausted",
+        summary="Usage limit reached after sending the report",
+        tool_call_records=[
+            {
+                "tool_name": "send_message",
+                "tool_id": "delivered-once",
+                "input_summary": "report",
+                "result_summary": "delivered",
+                "is_error": False,
+            }
+        ],
+    )
+    with patch("core.execution.fallback_activity.resolve_effective_model_config", return_value=fallback) as resolve:
+        assert cycle._cycle_runtime_fallback(result, primary, None, result.trigger) is None
+    resolve.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_outer_fallback_does_not_repeat_a_completed_external_action():
+    from unittest.mock import MagicMock
+
+    from core.execution.fallback_activity import run_with_model_fallback
+
+    primary, fallback = _configs()
+    deliveries = []
+
+    async def run(config):
+        deliveries.append(config.model)
+        return CycleResult(
+            trigger="cron:send",
+            action="error",
+            reason="quota_exhausted",
+            summary="Usage limit reached",
+            tool_call_records=[
+                {
+                    "tool_name": "send_message",
+                    "tool_id": "sent",
+                    "input_summary": "report",
+                    "result_summary": "delivered",
+                    "is_error": False,
+                }
+            ],
+        )
+
+    with patch("core.execution.fallback_activity.resolve_effective_model_config", return_value=fallback):
+        result = await run_with_model_fallback(
+            run,
+            activity=MagicMock(),
+            primary_config=primary,
+            active_config=primary,
+            channel="cron",
+        )
+    assert deliveries == [primary.model]
+    assert result.action == "error"
+    assert result.tool_call_records[0]["tool_id"] == "sent"

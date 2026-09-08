@@ -231,6 +231,9 @@ class AnimaRunner:
 
             logger.info("Initializing Anima: %s", self.anima_name)
 
+            from core.taskboard.readiness import require_task_store_ready
+
+            require_task_store_ready(self._anima_dir)
             process_config = resolve_process_model_config(self._anima_dir)
             if not process_config.valid:
                 raise ValueError(process_config.error or "invalid process model configuration")

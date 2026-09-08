@@ -39,9 +39,7 @@ def test_chat_request_model_backward_compatible() -> None:
 def test_apply_valid_override_builds_and_logs() -> None:
     owner = _owner()
     base = _base()
-    override = base.model_copy(
-        update={"model": "gpt-4.1", "execution_mode": "s", "resolved_mode": "S"}
-    )
+    override = base.model_copy(update={"model": "gpt-4.1", "execution_mode": "s", "resolved_mode": "S"})
     config = MagicMock()
     with (
         patch("core.config.io.load_config", return_value=config),
@@ -84,7 +82,7 @@ def test_apply_invalid_entry_keeps_base_and_says_so() -> None:
     call = owner._activity.log.call_args
     assert call.args[0] == "model_override_failed"
     assert call.kwargs["meta"]["requested"] == "not a model"
-    assert call.kwargs["meta"]["reason"] == "unparseable"
+    assert "Invalid model override" in call.kwargs["meta"]["reason"]
 
 
 def test_apply_unresolvable_credential_keeps_base_and_says_so() -> None:
@@ -99,14 +97,12 @@ def test_apply_unresolvable_credential_keeps_base_and_says_so() -> None:
         ),
         patch("core.config.model_config.build_model_override_config", return_value=None),
     ):
-        result = _apply_chat_model_override(
-            owner, base, "unknown-model", thread_id="default"
-        )
+        result = _apply_chat_model_override(owner, base, "unknown-model", thread_id="default")
 
     assert result is base
     call = owner._activity.log.call_args
     assert call.args[0] == "model_override_failed"
-    assert "no resolvable credential" in call.kwargs["meta"]["reason"]
+    assert "No credential configured" in call.kwargs["meta"]["reason"]
     assert call.kwargs["meta"]["model"] == base.model
 
 
@@ -188,9 +184,7 @@ class TestProcessMessageModelOverride:
     ):
         """A requested model must be passed as ``model_config_override``."""
         base = _base()
-        override = base.model_copy(
-            update={"model": "gpt-4.1", "execution_mode": "s", "resolved_mode": "S"}
-        )
+        override = base.model_copy(update={"model": "gpt-4.1", "execution_mode": "s", "resolved_mode": "S"})
         mock_mm_cls.return_value.read_model_config.return_value = base
         mock_agent_cls.return_value = _agent()
 

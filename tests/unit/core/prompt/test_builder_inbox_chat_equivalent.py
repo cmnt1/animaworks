@@ -145,7 +145,7 @@ class TestInboxPromptIsolation:
             )
         assert '<section name="emotion_instruction">' not in result.system_prompt
 
-    def test_inbox_includes_a_reflection(self, tmp_path):
+    def test_inbox_does_not_inject_redundant_a_reflection(self, tmp_path):
         memory = _mock_memory(tmp_path)
 
         reflection_text = "## A-mode reflection\nReflect on past actions."
@@ -159,7 +159,7 @@ class TestInboxPromptIsolation:
                 trigger="inbox:alice",
                 context_window=200_000,
             )
-        assert "Reflect on past actions" in result.system_prompt
+        assert "Reflect on past actions" not in result.system_prompt
 
     def test_chat_still_works_identically(self, tmp_path):
         """Regression: chat trigger should still include all sections."""

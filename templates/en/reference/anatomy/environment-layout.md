@@ -30,6 +30,6 @@ All runtime data is stored under `{data_dir}/`.
 6. **Other Anima directories**: Access only as explicitly permitted in permissions.json
 7. **Descendants' directories** (supervisors only — same permissions for children, grandchildren, great-grandchildren, etc.):
    - **Management files**: `injection.md`, `cron.md`, `heartbeat.md`, `status.json` are **read/write** (for organizational role assignments and configuration changes)
-   - **State files**: `activity_log/`, `state/current_state.md` (working memory), `state/task_queue.jsonl`, `state/pending/` are **read-only**
+   - **State files**: `activity_log/` and `state/current_state.md` are **read-only**. Inspect subordinate tasks through authorized task tools; canonical task storage is host-owned and must not be directly edited.
    - **identity.md**: **read-only** (write-protected)
 8. **Peers' activity_log**: You may read `activity_log/` of peers who share the same supervisor (for verification). Writing is not allowed

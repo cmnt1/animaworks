@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -364,21 +364,46 @@ class TestExecuteLlmTaskStatusMapping:
 class TestSerialBatchUnfinishedDependency:
     @pytest.mark.asyncio
     async def test_unfinished_dependency_syncs_to_queue(self, tmp_path):
-        """A serial batch whose dependency never finished returns both to pending."""
+        """An ended incomplete predecessor never releases or reruns its child."""
+        from core.memory.task_queue import TaskQueueManager
+        from core.taskboard.tasks import process_identity
+        from core.tasks_dispatch import publish_tasks
+
         executor = _make_executor(tmp_path)
-
         tasks = [
-            {"task_id": "dep1", "description": "dep", "depends_on": [], "parallel": False},
-            {"task_id": "child1", "description": "child", "depends_on": ["dep1"], "parallel": False},
+            {
+                "task_id": "dep1",
+                "title": "Dependency",
+                "description": "dep",
+                "depends_on": [],
+                "parallel": False,
+                "batch_id": "test-batch",
+            },
+            {
+                "task_id": "child1",
+                "title": "Child",
+                "description": "child",
+                "depends_on": ["dep1"],
+                "parallel": False,
+                "batch_id": "test-batch",
+            },
         ]
-
+        publish_tasks(executor._anima_dir, tasks)
+        store = TaskQueueManager(executor._anima_dir).store
+        claim = store.claim("test-anima", "dep1", process_identity())
+        assert claim is not None
+        assert store.claim("test-anima", "child1", process_identity()) is None
         with (
-            patch.object(executor, "_run_llm_task", side_effect=RuntimeError("dep failed")),
-            patch.object(executor, "_sync_task_queue") as mock_sync,
-            patch.object(executor, "_get_semaphore", return_value=asyncio.Lock()),
+            patch.object(
+                executor, "execute_pending_task", new=AsyncMock(side_effect=RuntimeError("dep failed"))
+            ) as execute,
         ):
-            await executor._dispatch_batch("test-batch", tasks)
-
-            sync_calls = {call[0][0]: call[0][1] for call in mock_sync.call_args_list}
-            assert sync_calls["dep1"] == "pending"
-            assert sync_calls["child1"] == "pending"
+            await executor._execute_canonical_task(claim)
+        execute.assert_awaited_once()
+        assert store.get("test-anima", "dep1").status == "pending"
+        assert store.get("test-anima", "child1").status == "pending"
+        assert store.active_attempts("test-anima") == []
+        assert store.claim("test-anima", "dep1", process_identity()) is None
+        assert store.claim("test-anima", "child1", process_identity()) is None
+        assert [event["task_id"] for event in store.wakeups("test-anima")] == ["dep1"]
+        assert store.get_input("test-anima", "child1")["depends_on"] == ["dep1"]

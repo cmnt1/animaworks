@@ -247,6 +247,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Optional LLM model override for this task (e.g. 'claude-sonnet-4-6' or 'c:codex/gpt-5.6-sol'). The manager can specify based on task weight. Usually leave unset (uses the Anima default model)",
         "ko": "이 태스크를 실행할 LLM 모델 오버라이드 (예: 'claude-sonnet-4-6' 또는 'c:codex/gpt-5.6-sol'). 관리자가 태스크 무게에 따라 지정할 수 있다. 보통은 미지정(기본 모델 사용)",
     },
+    "schema.submit_tasks.resume": {
+        "ja": "終了したpendingタスクを保存済みの実行入力で再開する。trueの場合はtask_idとresumeのみ指定。新規タスクにはtitleとdescriptionが必須。",
+        "en": "Resume an ended pending task using its saved execution input. When true, provide only task_id and resume. New tasks require title and description.",
+        "ko": "저장된 실행 입력으로 종료된 pending 작업을 재개합니다. true이면 task_id와 resume만 지정합니다. 새 작업에는 title과 description이 필요합니다.",
+    },
     "schema.submit_tasks.task_model": {
         "ja": "このタスクを実行するLLMモデルの上書き指定（例: 'claude-sonnet-4-6' や 'c:codex/gpt-5.6-sol'）。通常は未指定でよい（未指定ならanimaのデフォルトモデルを使う）",
         "en": "Optional LLM model override for this task (e.g. 'claude-sonnet-4-6' or 'c:codex/gpt-5.6-sol'). Leave empty to use the Anima default model",

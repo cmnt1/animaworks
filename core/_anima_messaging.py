@@ -175,17 +175,15 @@ def _apply_chat_model_override(
 
     try:
         from core.config.io import load_config
-        from core.config.model_config import build_model_override_config
-        from core.config.model_mode import parse_fallback_entry
+        from core.config.model_config import resolve_model_selection
 
         config = load_config()
-        parsed = parse_fallback_entry(requested_model, config)
-        if parsed is None:
-            return _dropped("unparseable")
-        mode, model = parsed
-        override = build_model_override_config(base_config, mode, model, config)
-        if override is None:
-            return _dropped(f"no resolvable credential (mode={mode})")
+        override = resolve_model_selection(
+            base_config,
+            requested_model=requested_model,
+            config=config,
+            apply_fallback=False,
+        ).effective
         owner._activity.log(
             "model_override",
             summary=(f"Chat model override: {base_config.model} -> {override.resolved_mode}:{override.model}"),
@@ -205,6 +203,8 @@ def _apply_chat_model_override(
             override.model,
         )
         return override
+    except ValueError as exc:
+        return _dropped(str(exc))
     except Exception:
         logger.warning(
             "[%s] Ignoring chat model override for %r",

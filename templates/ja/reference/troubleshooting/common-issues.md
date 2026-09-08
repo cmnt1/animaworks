@@ -140,7 +140,7 @@ send_message(
 
 5. **待っている間に進められる作業がないか確認する**
    - 永続タスクキュー: ツールが使える場合は `list_tasks`、または `Bash: animaworks-tool task list` で確認する
-   - Heartbeat が書き出す LLM タスク（`state/pending/*.json`）に他の作業がないか確認する
+   - `list_tasks(detail=true)` で未着手・依存関係・要対応理由を確認する。既存タスクの複製や手動での再投入はしない
    - 別のタスクに着手する
 
 ---

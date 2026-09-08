@@ -84,6 +84,7 @@ docs/paper/evaluation_results.md
 !docs/process-architecture.ja.md
 !docs/security.md
 !docs/security.ja.md
+!docs/slim-runtime-migration.md
 !docs/slack-socket-mode-setup.md
 !docs/slack-socket-mode-setup.ja.md
 !docs/spec.md

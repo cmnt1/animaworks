@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -42,18 +41,17 @@ class TestAddTask:
         assert entry.status == "pending"
         assert len(entry.task_id) == 12
 
-    def test_add_task_persists_to_jsonl(self, task_queue):
+    def test_add_task_persists_to_canonical_store(self, task_queue):
         task_queue.add_task(
             source="human",
             original_instruction="test",
             assignee="rin",
             summary="test",
         )
-        assert task_queue.queue_path.exists()
-        lines = task_queue.queue_path.read_text().strip().splitlines()
-        assert len(lines) == 1
-        data = json.loads(lines[0])
-        assert data["source"] == "human"
+        entries = TaskQueueManager(task_queue.anima_dir)._load_all()
+        assert len(entries) == 1
+        assert next(iter(entries.values())).source == "human"
+        assert not task_queue.queue_path.exists()
 
     def test_add_multiple_tasks(self, task_queue):
         task_queue.add_task(
@@ -312,7 +310,7 @@ class TestSourceValidation:
 
 
 class TestInstructionSizeCap:
-    def test_long_instruction_truncated(self, task_queue):
+    def test_long_instruction_preserved(self, task_queue):
         long_text = "x" * 20_000
         entry = task_queue.add_task(
             source="human",
@@ -320,7 +318,7 @@ class TestInstructionSizeCap:
             assignee="a",
             summary="s",
         )
-        assert len(entry.original_instruction) == 10_000
+        assert entry.original_instruction == long_text
 
 
 class TestCorruptedFile:
@@ -349,11 +347,11 @@ class TestFormatForPrimingWithStaleness:
     """Tests for staleness markers in format_for_priming().
 
     Uses unittest.mock.patch to control now_local() in the task_queue module.
-    Tasks are written directly to JSONL with specific timestamps.
+    Tasks are seeded in the canonical store with specific timestamps.
     """
 
     def _write_task_entry(self, task_queue, *, updated_at):
-        """Write a task entry directly to JSONL with controlled timestamps."""
+        """Seed a canonical task entry with controlled timestamps."""
         import uuid
 
         task_id = uuid.uuid4().hex[:12]
@@ -368,9 +366,7 @@ class TestFormatForPrimingWithStaleness:
             "relay_chain": [],
             "updated_at": updated_at,
         }
-        task_queue.queue_path.parent.mkdir(parents=True, exist_ok=True)
-        with task_queue.queue_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        task_queue.store.apply(task_queue.anima_dir.name, entry)
         return task_id
 
     def test_format_shows_elapsed_time(self, task_queue):
@@ -413,14 +409,11 @@ class TestFormatForPrimingWithStaleness:
         now = datetime(2026, 3, 1, 15, 0, 0, tzinfo=JST)
         updated_at = (now - timedelta(minutes=5)).isoformat()
         task_id = self._write_task_entry(task_queue, updated_at=updated_at)
-        # Rewrite the just-written line with a legacy "deadline" key injected,
-        # simulating a row from before the A1 task-model teardown.
-        lines = task_queue.queue_path.read_text(encoding="utf-8").splitlines()
-        row = json.loads(lines[-1])
+        # Simulate an imported row carrying an obsolete deadline key.
+        row = task_queue.get_task_by_id(task_id).model_dump()
         assert row["task_id"] == task_id
         row["deadline"] = "2026-03-01T14:00:00+09:00"  # in the past relative to `now`
-        lines[-1] = json.dumps(row, ensure_ascii=False)
-        task_queue.queue_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        task_queue.store.apply(task_queue.anima_dir.name, row)
 
         with patch("core.memory.task_queue.now_local", return_value=now):
             output = task_queue.format_for_priming()
@@ -443,9 +436,7 @@ class TestFormatForPrimingWithStaleness:
             "relay_chain": [],
             "updated_at": "not-a-valid-iso-timestamp",
         }
-        task_queue.queue_path.parent.mkdir(parents=True, exist_ok=True)
-        with task_queue.queue_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        task_queue.store.apply(task_queue.anima_dir.name, entry)
 
         now = datetime(2026, 3, 1, 12, 0, 0, tzinfo=JST)
         with patch("core.memory.task_queue.now_local", return_value=now):
@@ -462,7 +453,7 @@ class TestGetStaleTasks:
     """Tests for the get_stale_tasks() method."""
 
     def _write_task_entry(self, task_queue, *, updated_at, status="pending"):
-        """Write a task entry directly to JSONL with controlled timestamps."""
+        """Seed a canonical task entry with controlled timestamps."""
         import uuid
 
         task_id = uuid.uuid4().hex[:12]
@@ -478,9 +469,7 @@ class TestGetStaleTasks:
             "relay_chain": [],
             "updated_at": updated_at,
         }
-        task_queue.queue_path.parent.mkdir(parents=True, exist_ok=True)
-        with task_queue.queue_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        task_queue.store.apply(task_queue.anima_dir.name, entry)
         return task_id
 
     def test_returns_stale_tasks(self, task_queue):

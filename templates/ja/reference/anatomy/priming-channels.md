@@ -1,5 +1,7 @@
 # Priming チャネル技術リファレンス
 
+既定の `compact` は送信者・正本タスク・明示的な `always_prime` 保護条件と、必要なときだけ上限付き関連検索を取得する。最近の活動・エピソード・グラフの各チャネルは検索前に除外する。下記のチャネル一覧はオプトインの `full` の機能一覧で、すべてのトリガーで全チャネルが動く意味ではない。想起にはフレームワーク本文の目標とは独立したトークン予算を使う。
+
 PrimingEngine が実行する全チャネルの詳細仕様。
 バジェット、検索ソース、フィルタリング、動的調整を含む。
 
@@ -15,7 +17,7 @@ PrimingEngine が実行する全チャネルの詳細仕様。
 | B: recent_activity | 1300 | `activity_log/` + shared channels | trusted |
 | C: related_knowledge | 1200 | RAG ベクトル検索（knowledge + common_knowledge） | medium / untrusted |
 | C0: important_knowledge | 300 | `[IMPORTANT]` タグ付きチャンク | medium |
-| E: pending_tasks | 500 | `task_queue.jsonl` + `task_results/` | trusted |
+| E: pending_tasks | 500 | TaskStore + accepted task results | trusted |
 | F: episodes | 400 | RAG ベクトル検索（episodes/） | medium |
 | G: graph_context | 500 | MemoryBackend の community context + recent facts | medium |
 

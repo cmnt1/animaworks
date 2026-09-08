@@ -1,37 +1,12 @@
-ハートビートです。以下のプロセスに従って行動してください。
+ハートビートです。担当の定期確認を行ってください。
 
-## Observe（観察）
+## 確認事項
 {checklist}
 
-## Plan（計画）
-観察結果に基づき、次に行うべきタスクを判断してください。
+未処理の依頼・異常・期限のある仕事について、必要な対応を選んでください。
+- 自分の実作業は `submit_tasks`、適切な担当への委譲は `delegate_task` を使う。既存タスクへの追加情報は既存IDに紐づけ、新しい同内容の仕事を作らない。
+- 人間への連絡や承認が必要なら `send_message` / `call_human` を使う。報告は判断・対応が必要な相手へ直接送り、同じ内容を全階層へ転送しない。
+- 受けた指示を放置せず、対応・委譲・明示した待機理由のいずれかを残す。
+- 未完実行の通知が来たら、既済の操作や成果を確認してから継続を判断する。継続する場合は `submit_tasks` の tasks に `{{"task_id":"既存ID","resume":true}}` を指定する。元の入力は保存されているため再構築しない。不要な仕事は `update_task(status="cancelled", summary="理由")` で閉じる。
 
-**メッセージ送信前チェック(MUST)**: 委譲・報告・エスカレーション送信前に `common_knowledge/communication/message-quality-protocol.md` の必須項目を確認
-
-**【MUST】対応が必要な事項を発見したら、必ずタスクとして具体化すること。「認識したが何もしない」は禁止。**
-以下のいずれかの手段で必ずアクション化する:
-- 部下に任せる → `delegate_task`（**書く前に読む**: 直前に `list_tasks(status="delegated")` / `list_tasks(status="in_progress")` を読み、同じ PR / Issue / 対象の未完タスクがあれば新規作成せず、既存 task_id を添えて担当者へ `send_message` で追加指示する。**書いた後に読む**: 投入後に `list_tasks` で登録を読み戻す）
-- 自分で対応する → `submit_tasks` で自分の TaskExec に投入する
-- 即座にフォローアップ → `send_message` / `call_human`
-
-### チェック項目
-- バックグラウンドタスク結果: state/task_results/ に完了タスクがあれば内容を確認し、必要に応じてフォローアップ
-- **MUST**: 直近のチャット・Inboxで人間やAnimaから受けた指示が未処理であれば、直接対応・`delegate_task`・`send_message`・`call_human`・`state/current_state.md` のいずれかに具体化する
-- STALEタスク・期限間近タスク: 担当者にフォローアップ（send_message）、必要なら上司にエスカレーション
-- 長期待機中タスク（24h超）: 状況確認・リマインド
-- ブロッカーがある場合: 報告のみ行う（send_message / call_human）
-- 上記すべてで対応事項がない場合のみ: HEARTBEAT_OK
-
-**このフェーズは観察・計画・投入に使います。実作業は `submit_tasks` で投入した TaskExec が別セッションで行います。**
-
-**pending タスクの再投入（MUST）**: 台帳の `pending` は、あなたが `submit_tasks` で投入したときに動きます。`list_tasks(status="pending")` を読み、続けるものは同じ `task_id`・元の指示（original_instruction）・必要な `workspace` で `submit_tasks` に投入します。複数あれば 1 回の `submit_tasks` にまとめ、別の PR / 対象は `parallel: true` にします。やめるものは `update_task(status="cancelled")` にして依頼者へ理由を送ります。`in_progress` は実行中の TaskExec が書きます。
-
-**委譲ガイドライン**: `delegate_task` 使用時は `read_memory_file(path="common_knowledge/operations/task-delegation-guide.md")` の記述原則・禁止パターンに従うこと（MUST）。`submit_tasks` は自分の pending の再投入と、自分でやる作業の投入に使う。
-
-## Reflect（振り返り）
-上記の観察・計画をすべて終えた後、気づいたことや洞察があれば以下の形式で述べてください。
-なければ省略して構いません。
-
-[REFLECTION]
-（ここに気づき・洞察・パターン認識を記述）
-[/REFLECTION]
+タスクの実行状態やファイルを修復するための巡回・一括再投入は不要です。必要な業務手順や承認条件は参照してください。対応事項がなければ HEARTBEAT_OK のみを返してください。

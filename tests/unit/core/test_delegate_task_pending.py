@@ -106,11 +106,11 @@ class TestDelegateTaskWritesPending:
                 },
             )
 
-        pending_dir = alice_dir / "state" / "pending"
-        pending_files = list(pending_dir.glob("*.json"))
-        assert len(pending_files) == 1, f"Expected 1 pending file, got {len(pending_files)}: {result}"
+        pending_inputs = TaskQueueManager(alice_dir).store.pending("alice")
+        assert len(pending_inputs) == 1, result
+        assert not list((alice_dir / "state" / "pending").glob("*.json"))
 
-        task_data = json.loads(pending_files[0].read_text(encoding="utf-8"))
+        task_data = pending_inputs[0]
         assert task_data["task_type"] == "llm"
         assert task_data["title"] == "Login form implementation"
         assert task_data["description"] == "Implement the login form"
@@ -139,8 +139,7 @@ class TestDelegateTaskWritesPending:
                 },
             )
 
-        pending_files = list((alice_dir / "state" / "pending").glob("*.json"))
-        pending_task = json.loads(pending_files[0].read_text(encoding="utf-8"))
+        pending_task = TaskQueueManager(alice_dir).store.pending("alice")[0]
 
         tqm = TaskQueueManager(alice_dir)
         tasks = tqm.list_tasks()
@@ -166,8 +165,7 @@ class TestDelegateTaskWritesPending:
                 },
             )
 
-        pending_files = list((alice_dir / "state" / "pending").glob("*.json"))
-        task_data = json.loads(pending_files[0].read_text(encoding="utf-8"))
+        task_data = TaskQueueManager(alice_dir).store.pending("alice")[0]
 
         required_fields = [
             "task_type",
@@ -203,9 +201,9 @@ class TestDelegateTaskWritesPending:
                 },
             )
 
-        pending_files = list((alice_dir / "state" / "pending").glob("*.json"))
-        assert len(pending_files) == 1, f"Expected 1 pending file: {result}"
-        task_data = json.loads(pending_files[0].read_text(encoding="utf-8"))
+        pending_inputs = TaskQueueManager(alice_dir).store.pending("alice")
+        assert len(pending_inputs) == 1, result
+        task_data = pending_inputs[0]
         assert task_data["acceptance_criteria"] == criteria
 
     def test_pending_file_defaults_acceptance_criteria_empty(self, handler_with_sub):
@@ -227,8 +225,7 @@ class TestDelegateTaskWritesPending:
                 },
             )
 
-        pending_files = list((alice_dir / "state" / "pending").glob("*.json"))
-        task_data = json.loads(pending_files[0].read_text(encoding="utf-8"))
+        task_data = TaskQueueManager(alice_dir).store.pending("alice")[0]
         assert task_data["acceptance_criteria"] == []
 
 

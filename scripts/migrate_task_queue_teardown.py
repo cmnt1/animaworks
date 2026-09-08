@@ -5,21 +5,16 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Retire blocked/failed task_queue.jsonl entries to pending (A1 task-model teardown).
+"""Read-only legacy blocked/failed task diagnostics.
 
-``blocked``/``failed`` were removed from the valid task status vocabulary
-(see docs/plans/20260902_teardown-A1-task-model.md). ``TaskQueueManager``
-already reads old blocked/failed rows as ``pending`` at load time, but this
-script writes a durable append-only ``pending`` update event for each task
-whose *latest* status is still blocked/failed in the raw jsonl, with a note
-explaining the retirement so the owning anima can decide whether to proceed
-or cancel.
+The mutation mode is retired: canonical migration requires an offline runtime,
+a durable claim gate and an explicit backup via ``animaworks task-store migrate``.
+This older script never rewrites legacy evidence or the canonical database.
 
-Usage (never run against production without --dry-run first)::
+Usage::
 
     python scripts/migrate_task_queue_teardown.py --dry-run
-    python scripts/migrate_task_queue_teardown.py
-    python scripts/migrate_task_queue_teardown.py --animas-dir /path/to/animas
+    python scripts/migrate_task_queue_teardown.py --dry-run --animas-dir /path/to/animas
 """
 
 import argparse
@@ -29,13 +24,12 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from core.memory.task_queue import TaskQueueManager
+from core.i18n import t
 from core.paths import get_animas_dir
 
 logger = logging.getLogger("animaworks.migrate_task_queue_teardown")
 
 _RETIRED_STATUSES = frozenset({"blocked", "failed"})
-_RETIREMENT_NOTE = " [2026-09-02 blocked/failed 制度廃止。進めるか cancelled にするかは自分で判断]"
 
 
 def _raw_latest_statuses(queue_path: Path) -> dict[str, str]:
@@ -54,6 +48,8 @@ def _raw_latest_statuses(queue_path: Path) -> dict[str, str]:
         try:
             raw = json.loads(line)
         except json.JSONDecodeError:
+            continue
+        if not isinstance(raw, dict):
             continue
         task_id = raw.get("task_id", "")
         if not task_id or "status" not in raw:
@@ -78,24 +74,16 @@ def plan_anima(anima_dir: Path) -> list[str]:
 
 
 def migrate_anima(anima_dir: Path, *, dry_run: bool) -> AnimaResult:
-    """Plan and, unless dry_run, append pending-retirement updates for one anima."""
+    """Inspect old statuses; reject the retired write path before accessing state."""
+    if not dry_run:
+        raise RuntimeError(t("task_store.teardown_retired"))
     task_ids = plan_anima(anima_dir)
-    if dry_run or not task_ids:
-        return AnimaResult(name=anima_dir.name, retired_task_ids=tuple(task_ids))
-
-    manager = TaskQueueManager(anima_dir)
-    for task_id in task_ids:
-        entry = manager.get_task_by_id(task_id)
-        old_summary = entry.summary if entry is not None else ""
-        manager.update_status(task_id, "pending", summary=f"{old_summary}{_RETIREMENT_NOTE}")
-        logger.info("Retired blocked/failed task %s (anima=%s) to pending", task_id, anima_dir.name)
-
     return AnimaResult(name=anima_dir.name, retired_task_ids=tuple(task_ids))
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Retire blocked/failed task_queue.jsonl entries to pending (A1 task-model teardown).",
+        description=t("task_store.teardown_retired"),
     )
     parser.add_argument(
         "--animas-dir",
@@ -109,6 +97,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Report planned changes without writing (recommended first).",
     )
     args = parser.parse_args(argv)
+    if not args.dry_run:
+        print(t("task_store.teardown_retired"), file=sys.stderr)
+        return 2
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 

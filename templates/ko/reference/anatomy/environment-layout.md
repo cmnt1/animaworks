@@ -30,6 +30,6 @@
 6. **다른 Anima의 디렉토리**: permissions.json에 명시된 범위에서만 접근 가능
 7. **하위 직원의 디렉토리** (supervisor 전용 — 자식, 손자, 증손자 등 모든 하위에 동일 권한):
    - **관리 파일**: `injection.md`, `cron.md`, `heartbeat.md`, `status.json`은 **읽기/쓰기 가능** (조직 역할 배정 및 설정 변경용)
-   - **상태 파일**: `activity_log/`, `state/current_state.md` (워킹 메모리), `state/task_queue.jsonl`, `state/pending/`은 **읽기 전용**
+   - **상태 참조**: `activity_log/`와 `state/current_state.md`는 **읽기 전용**입니다. 부하의 태스크는 권한이 있는 태스크 도구로 확인하세요. 정본 저장소는 호스트 소유이므로 직접 수정하지 마세요.
    - **identity.md**: **읽기 전용** (쓰기 보호)
 8. **동료의 activity_log**: 같은 supervisor를 가진 동료의 `activity_log/`는 읽기 가능 (검증용). 쓰기는 불가

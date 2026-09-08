@@ -495,6 +495,12 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
 
         _names_to_start = [n for n in app.state.anima_names if n not in _gov_excluded]
 
+        # Do not choose a new task authority while legacy writers may be live.
+        from core.taskboard.readiness import require_task_store_ready
+
+        for name in _names_to_start:
+            require_task_store_ready(app.state.animas_dir / name)
+
         # ── Ensure infrastructure services (Neo4j, etc.) ──────────
         try:
             from core.infra import ensure_infra_services

@@ -38,14 +38,14 @@ STRINGS: dict[str, dict[str, str]] = {
     "pending_executor.task_fail_notify": {
         "ja": (
             "[タスク失敗通知]\nタスクID: {task_id}\nタスク: {title}\nエラー: {error}\n"
-            "必要なら再委譲を判断してください。"
+            "実行済みの操作・成果を確認し、継続、条件待ち、取り消しを判断してください。元の入力は保存されています。"
         ),
         "en": (
             "[Task Failure]\nTask ID: {task_id}\nTask: {title}\nError: {error}\n"
-            "Decide whether to re-delegate if needed."
+            "Check existing effects and artifacts, then decide whether to resume, wait for a condition, or cancel. Original input is retained."
         ),
         "ko": (
-            "[작업 실패 알림]\n작업 ID: {task_id}\n작업: {title}\n오류: {error}\n필요한 경우 재위임 여부를 판단하세요."
+            "[작업 실패 알림]\n작업 ID: {task_id}\n작업: {title}\n오류: {error}\n실행된 조치와 결과를 확인하고 재개, 조건 대기, 취소를 판단하세요. 원래 입력은 보존됩니다."
         ),
     },
     "pending_executor.workspace_not_specified": {

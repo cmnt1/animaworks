@@ -375,8 +375,8 @@ def _static_fallback(config: Any) -> list[DiscoveredModel]:
         mid = str(entry.get("id", ""))
         if not mid:
             continue
-        mode = resolve_execution_mode(config, mid).lower()
-        full_id = f"{mode}:{mid}" if ":" not in mid else mid
+        mode = resolve_execution_mode(config, mid, entry.get("mode") or None).lower()
+        full_id = f"{mode}:{mid}"
         results.append(
             DiscoveredModel(
                 id=full_id,
@@ -431,6 +431,24 @@ def _discover_uncached(config: Any = None) -> list[DiscoveredModel]:
     result = _dedupe_and_sort(merged)
     if not result:
         result = _dedupe_and_sort(_static_fallback(config))
+    else:
+        from core.config.model_catalog import _configured_model_entries
+
+        configured = []
+        for entry in _configured_model_entries(config):
+            model = entry["id"]
+            mode = resolve_execution_mode(config, model, entry.get("mode") or None).lower()
+            configured.append(
+                DiscoveredModel(
+                    id=f"{mode}:{model}",
+                    mode=mode,
+                    model=model,
+                    label=entry["label"],
+                    group=entry["credential"] or "Configured",
+                    source="configured",
+                )
+            )
+        result = _dedupe_and_sort([*result, *configured])
     return result
 
 

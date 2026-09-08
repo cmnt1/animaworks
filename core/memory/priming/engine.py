@@ -64,7 +64,7 @@ from core.memory.priming.gate import (
     build_candidates_from_result,
     build_priming_plan,
 )
-from core.memory.priming.items import MemoryItem, render_items, select_within_budget
+from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items, select_within_budget
 from core.memory.priming.result import PrimingResult
 from core.memory.priming.utils import RetrieverCache, build_queries, extract_keywords, truncate_head, truncate_tail
 from core.prompt.tokens import estimate_tokens
@@ -268,6 +268,9 @@ class PrimingEngine:
         intent: str = "",
         enable_dynamic_budget: bool = False,
         recent_human_messages: list[str] | None = None,
+        profile: str = "full",
+        max_tokens: int | None = None,
+        include_related: bool = True,
     ) -> PrimingResult:
         """Prime memories based on incoming message."""
         logger.debug(
@@ -281,6 +284,13 @@ class PrimingEngine:
             token_budget = self._adjust_token_budget(message, channel, intent=intent)
         else:
             token_budget = _DEFAULT_MAX_PRIMING_TOKENS
+        if max_tokens is not None:
+            token_budget = min(token_budget, max_tokens)
+
+        if profile == "compact":
+            return await self._prime_compact(
+                message, sender_name, channel, intent, token_budget, recent_human_messages, include_related
+            )
 
         logger.debug("Token budget: %d", token_budget)
 
@@ -545,6 +555,83 @@ class PrimingEngine:
 
         return result
 
+    async def _prime_compact(
+        self,
+        message: str,
+        sender_name: str,
+        channel: str,
+        intent: str,
+        token_budget: int,
+        recent_human_messages: list[str] | None,
+        include_related: bool,
+    ) -> PrimingResult:
+        """Retrieve only event-relevant sources; preserve notifications independently.
+
+        Resident pointers are explicit opt-ins. General activity, graph and
+        episode expansion belong to explicit search or the opt-in full profile.
+        """
+        started = time.perf_counter()
+        calls = [
+            ("A", self._channel_a_sender_profile(sender_name)),
+            ("E", self._channel_e_pending_tasks()),
+            ("C0", self._channel_c0_important_knowledge([], trigger=channel, resident_only=True)),
+            ("outbound", self._collect_recent_outbound()),
+            ("pending_human_notifications", self._collect_pending_human_notifications(channel=channel)),
+        ]
+        # Use event/intent contracts, not a new text classifier or model list.
+        related = channel in {"chat", "task"} or intent in {"question", "request", "delegation"}
+        if include_related and related and message.strip():
+            calls.append(
+                (
+                    "C",
+                    self._channel_c_related_knowledge(
+                        self._extract_keywords(message),
+                        message=message,
+                        recent_human_messages=recent_human_messages,
+                        trigger=channel,
+                    ),
+                )
+            )
+        values = await asyncio.gather(
+            *(self._run_priming_channel(name, coro) for name, coro in calls),
+            return_exceptions=True,
+        )
+        results = dict(zip((name for name, _ in calls), values, strict=True))
+
+        def content(name: str) -> str:
+            value = results.get(name, "")
+            return value if isinstance(value, str) else ""
+
+        def bounded(value: str, budget: int) -> str:
+            if isinstance(value, ItemizedMemory):
+                return render_items(select_within_budget(value.items, budget), "")
+            return truncate_head(value, budget)
+
+        result = PrimingResult(
+            sender_profile=truncate_head(content("A"), min(400, token_budget // 4)),
+            pending_tasks=bounded(content("E"), min(500, token_budget // 3)),
+            resident_knowledge=content("C0"),
+            recent_outbound=truncate_tail(content("outbound"), 250),
+            # Notification delivery is a separate contract, never dropped to
+            # meet a recall optimization budget.
+            pending_human_notifications=content("pending_human_notifications"),
+        )
+        related_value = results.get("C")
+        if isinstance(related_value, tuple):
+            remaining = max(0, token_budget - result.estimated_tokens())
+            trusted, untrusted = related_value
+            result.related_knowledge += ("\n" if result.related_knowledge else "") + bounded(trusted, remaining)
+            remaining = max(0, token_budget - result.estimated_tokens())
+            result.related_knowledge_untrusted = bounded(untrusted, remaining)
+        logger.info(
+            "Priming compact: channels=%s related_searches=%d elapsed=%.3fs tokens=%d",
+            ",".join(results),
+            int("C" in results),
+            time.perf_counter() - started,
+            result.estimated_tokens(),
+        )
+        return result
+
     # ── Channel wrappers (delegate to modules; tests may patch these) ────
 
     async def _channel_a_sender_profile(self, sender_name: str) -> str:
@@ -570,6 +657,7 @@ class PrimingEngine:
         queries: list[str] | None = None,
         *,
         trigger: str = "chat",
+        resident_only: bool = False,
     ) -> str:
         return await _channel_c.channel_c0_important_knowledge(
             self.anima_dir,
@@ -577,6 +665,7 @@ class PrimingEngine:
             self._get_retriever,
             queries,
             trigger=trigger,
+            resident_only=resident_only,
         )
 
     async def _channel_c_related_knowledge(

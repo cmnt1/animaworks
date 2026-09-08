@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import sys
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -49,7 +50,7 @@ def cmd_task(args: argparse.Namespace) -> None:
 
 
 def _cmd_add(args: argparse.Namespace, manager) -> None:
-    from core.memory._io import atomic_write_text
+    from core.tasks_dispatch import publish_tasks
     from core.workspace import resolve_workspace
 
     source = getattr(args, "source", "anima")
@@ -87,19 +88,10 @@ def _cmd_add(args: argparse.Namespace, manager) -> None:
             print(f"Error: workspace resolution failed: {e}", file=sys.stderr)
             sys.exit(2)
 
-    entry = manager.add_task(
-        source=source,
-        original_instruction=instruction,
-        assignee=assignee,
-        summary=summary,
-        relay_chain=relay_chain,
-    )
-
-    # 1-2: write the descriptor so PendingTaskExecutor will run the task.
     submitted_by = relay_chain[0] if relay_chain else anima_name
     task_desc = {
         "task_type": "llm",
-        "task_id": entry.task_id,
+        "task_id": uuid.uuid4().hex[:12],
         "title": summary,
         "description": instruction,
         "context": "",
@@ -113,25 +105,14 @@ def _cmd_add(args: argparse.Namespace, manager) -> None:
         "working_directory": resolved_wd,
         "model": "",
     }
-    pending_dir = manager.anima_dir / "state" / "pending"
-    pending_dir.mkdir(parents=True, exist_ok=True)
-    pending_file = pending_dir / f"{entry.task_id}.json"
     try:
-        atomic_write_text(
-            pending_file,
-            json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
-        )
+        entry = publish_tasks(manager.anima_dir, [task_desc], source=source, meta={"relay_chain": relay_chain})[0]
     except Exception as e:
-        # 1-4: never leave a ledger-only row. Cancel it and report.
-        try:
-            manager.update_status(entry.task_id, "cancelled")
-        except Exception:
-            pass
-        print(f"Error: failed to write pending descriptor: {e}", file=sys.stderr)
+        print(f"Error: failed to submit task: {e}", file=sys.stderr)
         sys.exit(3)
 
     result = entry.model_dump()
-    result["pending_file"] = str(pending_file.resolve())
+    result["executable"] = True
     result["note"] = "picked up by the pending watcher within a few seconds"
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

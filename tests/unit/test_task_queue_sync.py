@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from core.memory.task_queue import TaskQueueManager
+from core.taskboard.tasks import TaskStore, task_database_path
 from core.time_utils import now_iso
 
 
@@ -38,6 +39,21 @@ def _add_delegated(sup_tqm: TaskQueueManager, sub_tqm: TaskQueueManager, target:
 class TestSyncDelegated:
     """Tests for TaskQueueManager.sync_delegated()."""
 
+    def test_alias_observes_changes_before_noop_sync_and_writes_no_second_record(self, tmp_path):
+        animas_dir = _make_animas_dir(tmp_path)
+        supervisor = TaskQueueManager(animas_dir / "supervisor")
+        subordinate = TaskQueueManager(animas_dir / "subordinate")
+        alias, task_id = _add_delegated(supervisor, subordinate, "subordinate")
+        subordinate.update_status(task_id, "done", summary="actual result")
+        assert supervisor.get_task_by_id(alias).status == "done"
+        assert supervisor.get_task_by_id(alias).summary == "actual result"
+        before = supervisor.store.db_path.read_bytes()
+        assert supervisor.sync_delegated(animas_dir) == 0
+        assert supervisor.store.db_path.read_bytes() == before
+        with supervisor.store.reader() as database:
+            assert database.execute("SELECT COUNT(*) FROM tasks WHERE anima='supervisor'").fetchone()[0] == 0
+        assert not supervisor.queue_path.exists()
+
     def test_subordinate_done_with_agent_declaration_syncs_to_done(self, tmp_path):
         animas_dir = _make_animas_dir(tmp_path)
         sup_tqm = TaskQueueManager(animas_dir / "supervisor")
@@ -49,16 +65,14 @@ class TestSyncDelegated:
 
         synced = sup_tqm.sync_delegated(animas_dir)
 
-        assert synced == 1
+        assert synced == 0
         task = sup_tqm.get_task_by_id(sup_id)
         assert task is not None
         assert task.status == "done"
-        assert "subordinate" in task.summary
-        assert "完了" in task.summary or "done" in task.summary
         assert "Completed the assigned work" in task.summary
         assert "acceptance" not in (task.meta or {})
 
-    def test_subordinate_done_without_declaration_is_legacy_unverified(self, tmp_path):
+    def test_subordinate_done_does_not_invent_acceptance_evidence(self, tmp_path):
         animas_dir = _make_animas_dir(tmp_path)
         sup_tqm = TaskQueueManager(animas_dir / "supervisor")
         sub_tqm = TaskQueueManager(animas_dir / "subordinate")
@@ -68,13 +82,11 @@ class TestSyncDelegated:
 
         synced = sup_tqm.sync_delegated(animas_dir)
 
-        assert synced == 1
+        assert synced == 0
         task = sup_tqm.get_task_by_id(sup_id)
         assert task is not None
         assert task.status == "done"
-        assert "subordinate" in task.summary
-        assert "完了" in task.summary or "done" in task.summary
-        assert (task.meta or {}).get("acceptance") == "legacy_unverified"
+        assert "acceptance" not in task.meta
 
     # "failed" was retired (A1 task-model teardown): a subordinate task can no
     # longer reach status="failed", so the old
@@ -92,11 +104,11 @@ class TestSyncDelegated:
 
         synced = sup_tqm.sync_delegated(animas_dir)
 
-        assert synced == 1
+        assert synced == 0
         task = sup_tqm.get_task_by_id(sup_id)
         assert task is not None
         assert task.status == "cancelled"
-        assert "キャンセル" in task.summary or "cancelled" in task.summary
+        assert task.summary == "Review document"
 
     def test_subordinate_still_pending_no_sync(self, tmp_path):
         animas_dir = _make_animas_dir(tmp_path)
@@ -135,11 +147,12 @@ class TestSyncDelegated:
         sub_tqm.compact()
 
         sub_task = sub_tqm.get_task_by_id(sub_id)
-        assert sub_task is None  # compacted away
+        assert sub_task.status == "done"  # archived is still addressable by canonical ID
+        assert not sub_tqm.list_tasks()
 
         synced = sup_tqm.sync_delegated(animas_dir)
 
-        assert synced == 1
+        assert synced == 0
         task = sup_tqm.get_task_by_id(sup_id)
         assert task.status == "done"
 
@@ -170,7 +183,7 @@ class TestSyncDelegated:
 
         synced = sup_tqm.sync_delegated(animas_dir)
 
-        assert synced == 1
+        assert synced == 0
         assert sup_tqm.get_task_by_id(sup_id1).status == "done"
         assert sup_tqm.get_task_by_id(sup_id2).status == "delegated"
 
@@ -206,7 +219,7 @@ class TestFormatDelegatedForPriming:
         sub_tqm.update_status(sub_id, "done")
 
         result = sup_tqm.format_delegated_for_priming(animas_dir)
-        assert "✅" in result
+        assert result == ""  # terminal aliases are not unfinished delegated work
 
     def test_delegated_with_cancelled_subordinate(self, tmp_path):
         """ "failed" was retired (A1 task-model teardown); the icon map only
@@ -219,7 +232,7 @@ class TestFormatDelegatedForPriming:
         sub_tqm.update_status(sub_id, "cancelled")
 
         result = sup_tqm.format_delegated_for_priming(animas_dir)
-        assert "🚫" in result
+        assert result == ""  # terminal aliases are not unfinished delegated work
 
     def test_capped_at_five(self, tmp_path):
         animas_dir = _make_animas_dir(tmp_path)
@@ -245,6 +258,19 @@ class TestFormatDelegatedForPriming:
         assert len(result) <= 200  # some tolerance for last line
 
 
+def _legacy_archive_entry(task_id: str) -> dict:
+    return {
+        "task_id": task_id,
+        "status": "done",
+        "ts": now_iso(),
+        "updated_at": now_iso(),
+        "source": "anima",
+        "original_instruction": "historical work",
+        "assignee": "subordinate",
+        "summary": "done",
+    }
+
+
 class TestSearchArchive:
     """Tests for TaskQueueManager._search_archive()."""
 
@@ -253,9 +279,10 @@ class TestSearchArchive:
         target_dir = animas_dir / "subordinate"
         archive_path = target_dir / "state" / "task_queue_archive.jsonl"
 
-        archive_data = {"task_id": "abc123", "status": "done", "ts": now_iso()}
+        archive_data = _legacy_archive_entry("abc123")
         archive_path.write_text(json.dumps(archive_data) + "\n", encoding="utf-8")
 
+        TaskStore(task_database_path(target_dir)).import_legacy(target_dir)
         result = TaskQueueManager._search_archive(target_dir, "abc123")
         assert result == "done"
 
@@ -264,9 +291,10 @@ class TestSearchArchive:
         target_dir = animas_dir / "subordinate"
         archive_path = target_dir / "state" / "task_queue_archive.jsonl"
 
-        archive_data = {"task_id": "other", "status": "done", "ts": now_iso()}
+        archive_data = _legacy_archive_entry("other")
         archive_path.write_text(json.dumps(archive_data) + "\n", encoding="utf-8")
 
+        TaskStore(task_database_path(target_dir)).import_legacy(target_dir)
         result = TaskQueueManager._search_archive(target_dir, "abc123")
         assert result is None
 
@@ -280,7 +308,8 @@ class TestSearchArchive:
         target_dir = animas_dir / "subordinate"
         archive_path = target_dir / "state" / "task_queue_archive.jsonl"
 
-        archive_path.write_text('not json\n{"task_id": "x", "status": "done"}\n', encoding="utf-8")
+        archive_path.write_text("not json\n" + json.dumps(_legacy_archive_entry("x")) + "\n", encoding="utf-8")
 
+        TaskStore(task_database_path(target_dir)).import_legacy(target_dir)
         result = TaskQueueManager._search_archive(target_dir, "x")
         assert result == "done"

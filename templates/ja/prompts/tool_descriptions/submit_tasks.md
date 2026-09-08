@@ -1,4 +1,1 @@
-【重要】このツールで投入したタスクはあなた自身のTaskExecが実行する（部下には送られない）。部下に任せるなら delegate_task。
-【書く前に読む（MUST）】投入前に `list_tasks`（pending / in_progress）を読み、同じ PR / Issue / 対象のタスクが既に無いか確認する。あれば新しい task_id を作らず、その既存 task_id を指定して投入する。
-【pending の再投入】自分の台帳の pending（前回の run が完了宣言なしで終わったものを含む）を続けるときは、同じ task_id・元の指示（original_instruction）・必要な workspaceでこのツールに投入する。これが再実行の経路。
-【書いた後に読む（MUST）】投入後に `list_tasks` で読み戻し、登録と summary（先頭に `[PR #N]` 等の対象）を確認する。
+投入した仕事は自分自身の TaskExec が実行する。直属の部下には delegate_task を使う。新規には task_id・title・description と必要な文脈・制約・依存関係・workspace を渡す。同じ仕事を重複作成せず、必要に応じ list_tasks で確認する。タスクと入力は一括で永続化され、再配信は冪等で再試行ではない。中断理由を解消した未終了タスクは既存 task_id と resume=true で明示的に再開する。保存済み入力を再構築しない。稼働中・終了済みのタスクを再開しない。

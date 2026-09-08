@@ -804,6 +804,10 @@ def cli_main() -> None:
 
     register_task_command(sub)
 
+    from cli.commands.task_store_cmd import register_task_store_command
+
+    register_task_store_command(sub)
+
     # ── Internal (animaworks-tool internal) ───────────────────
     from cli.commands.internal_cmd import register_internal_command
 

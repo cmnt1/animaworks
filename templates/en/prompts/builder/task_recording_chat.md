@@ -1,5 +1,5 @@
 ### Task Recording in Chat
 
-- Do not use `submit_tasks` in normal chat
-- If a human gives explicit completion criteria for work that can outlive one conversation stream, register it with `backlog_task` before starting (it is registered as `pending`; call `update_task(status="in_progress")` only while you are actually working on it in this conversation). A conversation ending or an interim report must not complete or remove it; keep it durable until the completion criteria are proven, the task is explicitly blocked, or the human cancels it
+- Handle ordinary chat directly; use `submit_tasks` only when background or parallel execution is actually needed
+- For human work with explicit completion criteria that may outlive this conversation, use `backlog_task` for durable tracking before starting. It remains `pending` while you work in chat; only the host claims TaskExec execution. Preserve the task through conversation boundaries and interim reports. Declare `done` only when criteria are verified, `pending` with a concrete waiting reason, or `cancelled` when explicitly stopped
 - Set `done` only after verifying evidence for every completion criterion

@@ -164,6 +164,14 @@ def format_priming_section(result: PrimingResult, sender_name: str = "human") ->
         )
         parts.append("")
 
+    if result.resident_knowledge:
+        from core.execution._sanitize import wrap_priming
+
+        parts.append(
+            wrap_priming("resident_knowledge", result.resident_knowledge, trust="medium", render_mode="guardrail")
+        )
+        parts.append("")
+
     if result.recent_activity:
         parts.append(t("priming.recent_activity_header"))
         parts.append("")

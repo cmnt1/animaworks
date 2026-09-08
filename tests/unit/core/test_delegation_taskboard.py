@@ -73,8 +73,10 @@ def test_delegate_task_records_taskboard_metadata(monkeypatch, tmp_path: Path) -
     assert by_anima["boss"].column == BoardColumn.WAITING
     assert by_anima["boss"].source_ref == f"task_queue:boss:{by_anima['boss'].task_id}"
 
-    worker_queue = (worker_dir / "state" / "task_queue.jsonl").read_text(encoding="utf-8")
-    boss_queue = (boss_dir / "state" / "task_queue.jsonl").read_text(encoding="utf-8")
+    from core.memory.task_queue import TaskQueueManager
+
+    worker_queue = TaskQueueManager(worker_dir)._load_all()
+    boss_queue = TaskQueueManager(boss_dir)._load_all()
     assert by_anima["worker"].task_id in worker_queue
     assert by_anima["boss"].task_id in boss_queue
 
@@ -113,8 +115,10 @@ def test_delegate_task_keeps_queue_entries_when_taskboard_write_fails(monkeypatc
         )
 
     assert "worker" in result
-    assert (worker_dir / "state" / "task_queue.jsonl").exists()
-    assert (boss_dir / "state" / "task_queue.jsonl").exists()
+    from core.memory.task_queue import TaskQueueManager
+
+    assert len(TaskQueueManager(worker_dir).list_tasks()) == 1
+    assert len(TaskQueueManager(boss_dir).get_delegated_tasks()) == 1
 
 
 def test_delegate_task_missing_instruction_does_not_write_taskboard(monkeypatch, tmp_path: Path) -> None:

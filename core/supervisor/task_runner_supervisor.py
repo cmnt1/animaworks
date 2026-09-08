@@ -603,10 +603,12 @@ class TaskRunnerSupervisor:
                     process.returncode,
                 )
             return result
-        except asyncio.CancelledError:
-            self._terminate_job_group(job)
-            if job.process is not None:
-                await job.process.wait()
+        except BaseException:
+            # Failure in IPC/on_spawned is as capable of leaving a live child
+            # as cancellation. Reap the exact recorded group before releasing
+            # ownership; escalate after the existing bounded TERM grace.
+            if job.process is not None and job.process.returncode is None:
+                await self._terminate_hung_job(job)
             raise
         finally:
             if stderr_file is not None:

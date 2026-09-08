@@ -22,6 +22,18 @@ _T = TypeVar("_T")
 _logger = logging.getLogger("animaworks.execution.fallback")
 
 
+def has_partial_execution(result: Any) -> bool:
+    """A fresh invocation cannot safely replay work already handed to tools.
+
+    Tool records include reads as well as writes; without a proven resumable
+    checkpoint we conservatively retain the failed attempt for its owner to
+    inspect. Engine-native session IDs are never a cross-engine checkpoint.
+    """
+    if isinstance(result, dict):
+        return bool(result.get("tool_call_records")) or result.get("fallback_safe") is False
+    return bool(getattr(result, "tool_call_records", None)) or getattr(result, "fallback_safe", None) is False
+
+
 def log_model_fallback(
     activity: ActivityLogger,
     primary_config: ModelConfig,
@@ -141,12 +153,16 @@ def runtime_fallback_config(
     error_text: str,
     reason: str = "",
     channel: str,
+    partial_execution: bool = False,
 ) -> ModelConfig | None:
     """Return a different config to retry with after a fallback-safe failure.
 
     ``None`` means "do not retry": the error is not fallback-eligible, or the
     re-resolved config is the one that just failed.
     """
+    if partial_execution:
+        _logger.info("Model fallback deferred: attempt already produced work channel=%s", channel)
+        return None
     if not isinstance(primary_config, ModelConfig) or not isinstance(active_config, ModelConfig):
         return None
     if not primary_config.fallback_models:
@@ -219,6 +235,8 @@ async def run_with_model_fallback(
             result = await run(current_config)
         except Exception as exc:
             last_failure = exc
+            if has_partial_execution(exc):
+                raise
             reason, hint = classify_llm_error(exc)
             if not hint.fallback_ok:
                 raise
@@ -226,6 +244,8 @@ async def run_with_model_fallback(
             last_result = result
             data = result.model_dump(mode="json") if hasattr(result, "model_dump") else result
             if not isinstance(data, dict):
+                return result
+            if has_partial_execution(data):
                 return result
             error_text = str(data.get("summary") or "")
             reason, hint = classify_llm_error_message(f"{data.get('reason') or ''} {error_text}".strip())

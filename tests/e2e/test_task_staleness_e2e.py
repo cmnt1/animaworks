@@ -12,7 +12,6 @@ Verifies the full lifecycle:
 
 from __future__ import annotations
 
-import json
 from datetime import timedelta
 from pathlib import Path
 
@@ -42,7 +41,7 @@ def task_queue(anima_dir: Path) -> TaskQueueManager:
     return TaskQueueManager(anima_dir)
 
 
-def _write_task_entry_to_jsonl(
+def _seed_canonical_task_entry(
     queue_path: Path,
     *,
     task_id: str,
@@ -56,7 +55,7 @@ def _write_task_entry_to_jsonl(
     ts: str | None = None,
     updated_at: str | None = None,
 ) -> None:
-    """Write a raw task entry directly to the JSONL file.
+    """Seed a canonical entry with controlled timestamps.
 
     This allows tests to inject tasks with specific timestamps that would
     be impossible to achieve through the normal add_task() API.
@@ -74,9 +73,8 @@ def _write_task_entry_to_jsonl(
         "relay_chain": relay_chain or [],
         "updated_at": updated_at or now,
     }
-    queue_path.parent.mkdir(parents=True, exist_ok=True)
-    with queue_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    anima_dir = queue_path.parent.parent
+    TaskQueueManager(anima_dir).store.apply(anima_dir.name, entry)
 
 
 # ── Test 1: Full task lifecycle with staleness ─────────────────
@@ -101,7 +99,7 @@ class TestFullTaskLifecycleWithStaleness:
 
         # Write an old task directly with updated_at 45 minutes ago
         old_updated = (now_jst() - timedelta(minutes=45)).isoformat()
-        _write_task_entry_to_jsonl(
+        _seed_canonical_task_entry(
             task_queue.queue_path,
             task_id="old_task_001",
             source="human",
@@ -140,7 +138,7 @@ class TestFullTaskLifecycleWithStaleness:
 
         # Old task: updated 45 minutes ago
         old_updated = (now_jst() - timedelta(minutes=45)).isoformat()
-        _write_task_entry_to_jsonl(
+        _seed_canonical_task_entry(
             task_queue.queue_path,
             task_id="stale_task_01",
             source="anima",
@@ -175,7 +173,7 @@ class TestFullTaskLifecycleWithStaleness:
         """Task updated exactly at the threshold boundary is stale."""
         # Exactly 30 minutes ago (the threshold)
         boundary_updated = (now_jst() - timedelta(seconds=_STALE_TASK_THRESHOLD_SEC)).isoformat()
-        _write_task_entry_to_jsonl(
+        _seed_canonical_task_entry(
             task_queue.queue_path,
             task_id="boundary_task",
             source="human",
@@ -195,7 +193,7 @@ class TestFullTaskLifecycleWithStaleness:
     ):
         """Completed tasks should not appear in stale results even if old."""
         old_updated = (now_jst() - timedelta(hours=2)).isoformat()
-        _write_task_entry_to_jsonl(
+        _seed_canonical_task_entry(
             task_queue.queue_path,
             task_id="done_old_task",
             source="human",
@@ -217,7 +215,7 @@ class TestFullTaskLifecycleWithStaleness:
     ):
         """Priming output includes elapsed time indicator."""
         updated = (now_jst() - timedelta(minutes=15)).isoformat()
-        _write_task_entry_to_jsonl(
+        _seed_canonical_task_entry(
             task_queue.queue_path,
             task_id="elapsed_task",
             source="anima",
@@ -306,7 +304,7 @@ class TestPrimingOutputStructure:
         """Human-origin tasks appear before anima-origin tasks."""
         # Add anima task first (chronologically earlier)
         early_ts = (now_jst() - timedelta(minutes=10)).isoformat()
-        _write_task_entry_to_jsonl(
+        _seed_canonical_task_entry(
             task_queue.queue_path,
             task_id="anima_first",
             source="anima",
@@ -317,7 +315,7 @@ class TestPrimingOutputStructure:
         )
 
         # Add human task second (chronologically later)
-        _write_task_entry_to_jsonl(
+        _seed_canonical_task_entry(
             task_queue.queue_path,
             task_id="human_second",
             source="human",
@@ -369,7 +367,7 @@ class TestPrimingOutputStructure:
         """Output should not exceed the token budget."""
         # Write many tasks
         for i in range(50):
-            _write_task_entry_to_jsonl(
+            _seed_canonical_task_entry(
                 task_queue.queue_path,
                 task_id=f"budget_{i:03d}",
                 source="human",
@@ -385,7 +383,7 @@ class TestPrimingOutputStructure:
 
 def test_legacy_deadline_is_ignored_when_loading_and_priming(task_queue: TaskQueueManager):
     """Old queue rows remain readable without reviving deadline enforcement."""
-    _write_task_entry_to_jsonl(
+    _seed_canonical_task_entry(
         task_queue.queue_path,
         task_id="legacy-deadline",
         summary="Legacy task",

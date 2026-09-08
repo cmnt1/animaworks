@@ -20,7 +20,7 @@ def _queue(tmp_path: Path, anima_name: str) -> TaskQueueManager:
     return TaskQueueManager(anima_dir)
 
 
-def test_projection_replays_latest_status_and_skips_corrupt_lines(tmp_path: Path) -> None:
+def test_projection_uses_canonical_status_and_ignores_legacy_file_corruption(tmp_path: Path) -> None:
     manager = _queue(tmp_path, "sakura")
     task = manager.add_task(
         source="human",
@@ -30,7 +30,7 @@ def test_projection_replays_latest_status_and_skips_corrupt_lines(tmp_path: Path
         task_id="task-1",
     )
     manager.update_status(task.task_id, "in_progress", summary="projection running")
-    manager.queue_path.write_text(manager.queue_path.read_text(encoding="utf-8") + "{corrupt-json\n", encoding="utf-8")
+    manager.queue_path.write_text("{corrupt-json\n", encoding="utf-8")
 
     projected = project_anima(manager.anima_dir, TaskBoardStore(tmp_path / "taskboard.sqlite3"))
 

@@ -197,12 +197,15 @@ def _static_c0_chunks(
     queries: list[str],
     trigger: str,
     min_score: float,
+    resident_only: bool = False,
 ) -> tuple[list, list[dict]]:
     """Load all C0 sources in one worker-thread transaction."""
     retriever = get_retriever()
     if retriever is None:
         return [], []
     always = _always_prime_chunks(retriever, anima_name)
+    if resident_only:
+        return always, []
     if not include_fallback:
         searcher = _build_unified_searcher(anima_dir, get_retriever)
         relevant = searcher.search_many(
@@ -285,6 +288,7 @@ async def channel_c0_important_knowledge(
     get_retriever: Callable[[], MemoryRetriever | None],
     queries: list[str] | None = None,
     trigger: str = "chat",
+    resident_only: bool = False,
 ) -> str:
     """Channel C0: opt-in resident and query-relevant important pointers."""
     if not knowledge_dir.is_dir():
@@ -311,6 +315,7 @@ async def channel_c0_important_knowledge(
             queries=effective_queries,
             trigger=trigger,
             min_score=float(_min_score) if _min_score is not None else 0.0,
+            resident_only=resident_only,
         )
         newest_always_by_path: dict[str, tuple[MemoryItem, float]] = {}
         for r in always_results:

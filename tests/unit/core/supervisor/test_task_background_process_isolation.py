@@ -199,28 +199,56 @@ async def test_child_crash_returns_task_to_pending_and_root_continues(tmp_path: 
 
 @pytest.mark.asyncio
 async def test_child_crash_during_shutdown_stays_for_startup_recovery(tmp_path: Path) -> None:
+    from core.memory.task_queue import TaskQueueManager
+    from core.taskboard.tasks import process_identity
+    from core.tasks_dispatch import publish_tasks
+
     executor, anima, anima_dir = _executor(tmp_path, task_isolated=True)
     assert executor._task_runner_supervisor is not None
     type(anima)._acquire_background_worker = None  # type: ignore[attr-defined]
-    executor._task_runner_supervisor.run_task = AsyncMock(
-        side_effect=TaskRunnerError("task runner exited during shutdown")
-    )
+
+    async def crash_after_spawn(task_desc, *, attempt, display_lane, on_spawned):
+        await on_spawned(
+            SimpleNamespace(
+                pid=os.getpid() + 1000000,
+                pgid=os.getpid() + 1000000,
+                process_start_time=123.45,
+                identity=SimpleNamespace(job_id="shutdown-job", root_epoch="shutdown-epoch"),
+            )
+        )
+        raise TaskRunnerError("task runner exited during shutdown")
+
+    executor._task_runner_supervisor.run_task = AsyncMock(side_effect=crash_after_spawn)
     task_desc = {
         "task_id": "t-shutdown-crash",
         "title": "shutdown crash",
         "description": "work",
         "task_type": "llm",
     }
-    processing = anima_dir / "state" / "pending" / "processing"
-    processing.mkdir(parents=True)
-    processing_path = processing / "t-shutdown-crash.json"
-    processing_path.write_text(json.dumps(task_desc), encoding="utf-8")
+    publish_tasks(anima_dir, [task_desc])
+    store = TaskQueueManager(anima_dir).store
+    claim = store.claim("sakura", task_desc["task_id"], process_identity())
+    assert claim is not None
     executor._shutdown_event.set()
-
-    await executor._execute_claimed_llm_task(task_desc, processing_path, None)
-
-    assert processing_path.exists()
+    with patch("core.taskboard.tasks.identity_liveness", return_value="unknown"):
+        await executor._execute_canonical_task(claim)
+        executor._recover_task_attempts(store)
+    # An owner with uncertain liveness retains its exact attempt fence.
+    assert store.active_attempts("sakura")[0]["token"] == claim["_attempt_token"]
+    assert store.get("sakura", task_desc["task_id"]).status == "in_progress"
+    assert store.claim("sakura", task_desc["task_id"], process_identity()) is None
+    assert store.wakeups("sakura") == []
     anima.messenger.send.assert_not_called()
+    with patch("core.taskboard.tasks.identity_liveness", return_value="dead"):
+        executor._recover_task_attempts(store)
+    # Proven death ends ownership, preserves input, and requests attention;
+    # it does not automatically replay possibly completed side effects.
+    assert store.active_attempts("sakura") == []
+    assert store.get("sakura", task_desc["task_id"]).status == "pending"
+    assert store.get_input("sakura", task_desc["task_id"]) == task_desc
+    assert store.claim("sakura", task_desc["task_id"], process_identity()) is None
+    assert len(store.wakeups("sakura")) == 1
+    executor._task_runner_supervisor.run_task.assert_awaited_once()
 
 
 @pytest.mark.asyncio

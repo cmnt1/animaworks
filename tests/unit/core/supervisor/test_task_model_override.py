@@ -97,6 +97,7 @@ class TestTaskModelOverrideConstruction:
     def test_s_mode_replaces_credential(self, tmp_path):
         # S-mode resolves the family credential and replaces credential fields.
         executor = _make_executor(tmp_path)
+        executor._anima.model_config.model = "openai/gpt-4.1"
         with patch("core.config.load_config", return_value=_config_with_anthropic()):
             override = executor._task_model_config_override({"task_id": "t2", "model": "claude-sonnet-4-6"})
         assert override is not None
@@ -114,6 +115,7 @@ class TestTaskModelOverrideConstruction:
         # task uses the anima default (avoid auth-error → quota misclassification).
         executor = _make_executor(tmp_path)
         cfg = AnimaWorksConfig(credentials={})
+        executor._anima.model_config.model = "openai/gpt-4.1"
         with patch("core.config.load_config", return_value=cfg):
             override = executor._task_model_config_override({"task_id": "t2", "model": "claude-sonnet-4-6"})
         assert override is None

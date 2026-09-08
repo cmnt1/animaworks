@@ -917,6 +917,10 @@ class SchedulerManager:
         """Execute a scheduled heartbeat."""
         if not self._anima:
             return
+        # A job already dispatched by APScheduler can outlive a disable/reload.
+        # Only this periodic entrance is gated; messages and cron keep working.
+        if not self._anima.memory.read_model_config().heartbeat_enabled:
+            return
         if self._awaiting_initial_setup():
             logger.debug("Scheduled heartbeat deferred until setup completes: %s", self._anima_name)
             return
@@ -1057,47 +1061,14 @@ class SchedulerManager:
                         "result": result,
                     },
                 )
-                # If command produced non-empty output, run a follow-up
-                # cron LLM session so the Anima can review and act on the
-                # results with full background context (heartbeat-equivalent).
-                stdout = result.get("stdout", "").strip()
-                if stdout and result.get("exit_code", 0) == 0:
-                    # trigger_heartbeat=False means no follow-up analysis
-                    if not task.trigger_heartbeat:
-                        logger.info(
-                            "Cron command '%s' trigger_heartbeat=False, skipping cron LLM for %s",
-                            task.name,
-                            self._anima_name,
-                        )
-                        return
+                from core.supervisor.cron_followup import command_followup_output
 
-                    # skip_pattern: if stdout matches, suppress follow-up
-                    if task.skip_pattern:
-                        try:
-                            if re.search(task.skip_pattern, stdout):
-                                logger.info(
-                                    "Cron command '%s' output matched skip_pattern, suppressing cron LLM for %s",
-                                    task.name,
-                                    self._anima_name,
-                                )
-                                return
-                        except re.error as e:
-                            logger.warning(
-                                "Invalid skip_pattern '%s' for task '%s': %s — continuing without skip",
-                                task.skip_pattern,
-                                task.name,
-                                e,
-                            )
-
-                    logger.info(
-                        "Cron command '%s' produced output, running cron LLM for %s",
-                        task.name,
-                        self._anima_name,
-                    )
+                command_output = command_followup_output(task, result)
+                if command_output is not None:
                     followup_result = await self._anima.run_cron_task(
                         task.name,
-                        task.description or f"cron.mdの「{task.name}」の指示に従って処理してください。",
-                        command_output=stdout,
+                        task.description or t("scheduler.cron_fallback_description", task_name=task.name),
+                        command_output=command_output,
                         **({"skills": task.skills} if task.skills else {}),
                     )
                     success = success and self._cron_result_succeeded(followup_result)

@@ -310,8 +310,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": ("[Task delegation]\n{instruction}\n\nTask ID: {task_id}"),
     },
     "handler.delegation_dm_skipped": {
-        "ja": "DM は送っていません（descriptor で相手に届きます）",
-        "en": "DM skipped (the pending descriptor reaches the assignee)",
+        "ja": "DM は送っていません（タスクは相手の実行キューに登録済みです）",
+        "en": "DM skipped (the task is already in the assignee's execution queue)",
+        "ko": "DM을 보내지 않았습니다 (담당자의 실행 큐에 작업이 등록되어 있습니다)",
     },
     "handler.delegation_intent_deprecated": {
         "ja": (

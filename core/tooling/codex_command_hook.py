@@ -106,7 +106,7 @@ def check_recursive_search(command: str, cwd: Path, data_dir: Path) -> str | Non
                 return (
                     f"Recursive search over '{raw}' is denied: the runtime data tree is "
                     "multi-GB and sweeping it stalls every running task. Search a specific "
-                    "subdirectory or file (e.g. state/task_queue.jsonl, knowledge/, shared/task_results/<file>)."
+                    "subdirectory or file (e.g. state/current_state.md, knowledge/, shared/task_results/<file>)."
                 )
     return None
 

@@ -1,3 +1,1 @@
-Update a task's status. Use status='done' on completion and status='cancelled' on withdrawal. Use status='in_progress' from a running TaskExec to record interim progress in the summary. To continue a task, re-submit the same task_id with `submit_tasks`.
-[Read before write] Before updating, read the current status / summary with `list_tasks` (another worker may already have set done / cancelled). If two or more tasks exist for the same target, continue the newer one and cancel the older.
-[Read after write] After updating, confirm with `list_tasks`. Pushing the fix and replying is completion: write status='done' at that point.
+Declare a task outcome: status='done' after verification, 'pending' with a waiting reason, or 'cancelled' when stopped. The host owns in_progress; do not set it. To deliberately resume an interrupted nonterminal task, use submit_tasks with its existing task_id and resume=true; stored inputs and history are preserved.

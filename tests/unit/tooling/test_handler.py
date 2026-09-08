@@ -2753,7 +2753,7 @@ class TestDelegateTaskDmConfig:
         }
         return handler, animas_dir, cfg, messenger
 
-    def test_disabled_skips_send_and_writes_descriptor(self, tmp_path: Path):
+    def test_disabled_skips_send_and_publishes_canonical_input(self, tmp_path: Path):
         handler, animas_dir, cfg, messenger = self._setup(tmp_path)
         cfg.heartbeat.delegation_dm_enabled = False
         with (
@@ -2774,7 +2774,9 @@ class TestDelegateTaskDmConfig:
                 },
             )
         messenger.send.assert_not_called()
-        pending = list((animas_dir / "alice" / "state" / "pending").glob("*.json"))
+        from core.memory.task_queue import TaskQueueManager
+
+        pending = TaskQueueManager(animas_dir / "alice").store.pending("alice")
         assert len(pending) == 1, result
         from core.i18n import t
 
@@ -2800,7 +2802,9 @@ class TestDelegateTaskDmConfig:
                 },
             )
         assert messenger.send.call_count == 1
-        pending = list((animas_dir / "alice" / "state" / "pending").glob("*.json"))
+        from core.memory.task_queue import TaskQueueManager
+
+        pending = TaskQueueManager(animas_dir / "alice").store.pending("alice")
         assert len(pending) == 1, result
         from core.i18n import t
 

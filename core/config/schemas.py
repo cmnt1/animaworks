@@ -341,7 +341,7 @@ class RAGConfig(BaseModel):
     rrf_confidence_threshold: float = 0.02
     iterative_retrieval_enabled: bool = True
     iterative_min_results: int = 2
-    facts_extraction_enabled: bool = True
+    facts_extraction_enabled: bool = False
     fact_extraction_timeout_seconds: int = Field(
         default=120,
         ge=1,
@@ -456,7 +456,7 @@ class PromptConfig(BaseModel):
     """Configuration for system prompt building."""
 
     injection_size_warning_chars: int = 2000
-    system_prompt_target_tokens: int = Field(default=20000, ge=2000)
+    system_prompt_target_tokens: int = Field(default=6000, ge=2000)
     system_prompt_ceiling_pct: float = Field(default=0.35, gt=0.0, le=1.0)
     skill_catalog_router_enabled: bool = True
     skill_catalog_router_top_k: int = Field(default=5, ge=1)
@@ -469,19 +469,26 @@ class PromptConfig(BaseModel):
 class PrimingConfig(BaseModel):
     """Configuration for priming layer (automatic memory retrieval)."""
 
+    profile: Literal["compact", "full"] = "compact"
+    max_tokens: int = Field(default=2000, ge=200)
     dynamic_budget: bool = True
     channel_timeout_seconds: float = Field(default=60.0, ge=0.1)
     budget_greeting: int = 500
     budget_question: int = 2000
     budget_request: int = 3000
     budget_heartbeat: int = 200  # fallback when context_window is unknown
-    heartbeat_context_pct: float = 0.05  # fraction of context_window for HB budget
+    heartbeat_context_pct: float = 0.0  # opt-in proportional HB budget; max_tokens still applies
 
 
 class ConsolidationConfig(BaseModel):
     """Configuration for memory consolidation processes."""
 
     daily_enabled: bool = True
+    knowledge_mutation_enabled: bool = False
+    weekly_distillation_enabled: bool = False
+    synaptic_downscaling_enabled: bool = False
+    skill_autolearn_enabled: bool = False
+    curator_auto_apply_enabled: bool = False
     daily_time: str = "02:00"  # Format: HH:MM
     min_episodes_threshold: int = 1
     llm_model: str = DEFAULT_CONSOLIDATION_MODEL
@@ -492,14 +499,14 @@ class ConsolidationConfig(BaseModel):
     ipc_timeout_per_carryover_item_seconds: float = Field(default=600.0, ge=0.0)
     ipc_timeout_max_seconds: int = Field(default=7200, ge=60)
     weekly_ipc_timeout_seconds: int = Field(default=3600, ge=60)
-    weekly_enabled: bool = True  # Phase 3 implementation
+    weekly_enabled: bool = False
     weekly_time: str = "sun:03:00"  # Format: day:HH:MM
     duplicate_threshold: float = 0.85  # Similarity threshold for duplicate detection
-    monthly_enabled: bool = True  # Monthly forgetting toggle
+    monthly_enabled: bool = False
     monthly_time: str = "1:04:00"  # Format: day:HH:MM (day of month)
     indexing_enabled: bool = True  # Daily RAG indexing toggle
     indexing_time: str = "04:00"  # Format: HH:MM
-    knowledge_self_correction_enabled: bool = True
+    knowledge_self_correction_enabled: bool = False
     knowledge_self_correction_max_reconsolidation_files: int = Field(default=5, ge=0)
     knowledge_self_correction_timeout_seconds: int = Field(default=300, ge=1)
     post_processing_cooldown_seconds: int = Field(default=30, ge=0)

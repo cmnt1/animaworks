@@ -167,26 +167,39 @@ async def test_budget_skipped_keeps_queue_pending_and_records_activity(tmp_path:
 
 @pytest.mark.asyncio
 async def test_cancelled_batch_result_does_not_start_dependent(tmp_path: Path) -> None:
-    executor = _make_executor(tmp_path)
-    _queue_task(executor, "parent")
-    manager = _queue_task(executor, "child")
-    executor._run_task_in_worker = AsyncMock(return_value=_SENTINEL_CANCELLED)
+    from core.taskboard.tasks import process_identity
+    from core.tasks_dispatch import publish_tasks
 
-    await executor._dispatch_batch(
-        "batch",
+    executor = _make_executor(tmp_path)
+    publish_tasks(
+        executor._anima_dir,
         [
-            {"task_id": "parent", "task_type": "llm", "parallel": False},
-            {"task_id": "child", "task_type": "llm", "parallel": False, "depends_on": ["parent"]},
+            _task("parent", batch_id="batch", parallel=False),
+            _task("child", batch_id="batch", parallel=False, depends_on=["parent"]),
         ],
     )
+    manager = TaskQueueManager(executor._anima_dir)
+    store = manager.store
+    claim = store.claim("test-anima", "parent", process_identity())
+    assert claim is not None
+    assert store.claim("test-anima", "child", process_identity()) is None
+    executor._run_llm_task = AsyncMock(return_value=_SENTINEL_CANCELLED)
 
-    assert executor._run_task_in_worker.await_count == 1
+    with _execution_patches():
+        await executor._execute_canonical_task(claim)
+
+    executor._run_llm_task.assert_awaited_once()
+    assert store.get("test-anima", "parent").status == "cancelled"
+    assert store.active_attempts("test-anima") == []
+    assert store.claim("test-anima", "child", process_identity()) is None
     child = manager.get_task_by_id("child")
     assert child is not None
     assert child.status == "pending"
-    assert child.summary == "stop kind test"  # title survives; the reason goes to meta
-    assert child.meta["last_run_note"] == "a task this one depends on did not complete"
-    assert child.meta["last_run_stop_kind"] == "dependency"
+    assert child.summary == "Stop kind test"
+    wakeups = [event for event in store.wakeups("test-anima") if event["task_id"] == "child"]
+    assert len(wakeups) == 1
+    assert wakeups[0]["reason"] == "dependency_cancelled"
+    assert store.claim("test-anima", "child", process_identity()) is None
 
 
 @pytest.mark.asyncio

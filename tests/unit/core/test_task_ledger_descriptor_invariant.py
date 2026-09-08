@@ -4,22 +4,12 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Regression tests for the ledger↔descriptor invariant.
+"""Regression tests for atomic canonical task publication.
 
-Invariant under test
--------------------
-
-台帳（task_queue.jsonl）に `pending` または `in_progress` の行を作るコード経路は、
-必ず同じ task_id の descriptor を `state/pending/` に書かなければならない。
-`delegated` はこの不変条件の対象外。
-
-Concretely:
-- ``animaworks-tool task add`` must write BOTH a ledger row AND a descriptor
-  (and roll the ledger row back to ``cancelled`` if the descriptor write fails).
-- ``animaworks-tool task update`` / ``update_task`` / ``/api/internal/update-task``
-  may not set ``in_progress``; that status is written only by the running TaskExec
-  calling ``TaskQueueManager.update_status`` directly.
-- ``list_tasks`` must flag pending rows that have no descriptor as not executable.
+Every executable task owns its complete input in the same SQLite transaction.
+Backlog entries may remain intentionally unscheduled. No second ledger or
+filesystem descriptor is published, and failures roll back without cancellation
+compensation. Only the execution path can set in_progress through public tools.
 """
 
 import argparse
@@ -50,7 +40,7 @@ def _make_handler(anima_dir) -> ToolHandler:
 
 
 class TestCliTaskAdd:
-    def test_cli_task_add_writes_both_ledger_row_and_descriptor(self, tmp_path, monkeypatch):
+    def test_cli_task_add_atomically_persists_entry_and_complete_input(self, tmp_path, monkeypatch):
         anima_dir = tmp_path / "testanima"
         (anima_dir / "state").mkdir(parents=True)
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
@@ -58,10 +48,14 @@ class TestCliTaskAdd:
         from cli.commands.task_cmd import _cmd_add
 
         args = _parse_task_args(
-            "task", "add",
-            "--assignee", "testanima",
-            "--instruction", "do the e2e check",
-            "--summary", "e2e check",
+            "task",
+            "add",
+            "--assignee",
+            "testanima",
+            "--instruction",
+            "do the e2e check",
+            "--summary",
+            "e2e check",
         )
         manager = TaskQueueManager(anima_dir)
         _cmd_add(args, manager)
@@ -72,9 +66,11 @@ class TestCliTaskAdd:
         assert tasks[0].status == "pending"
 
         desc_path = anima_dir / "state" / "pending" / f"{task_id}.json"
-        assert desc_path.is_file()
-        desc = json.loads(desc_path.read_text(encoding="utf-8"))
+        assert not desc_path.exists()
+        assert not manager.queue_path.exists()
+        desc = manager.store.get_input(anima_dir.name, task_id)
         assert desc["task_id"] == task_id
+        assert desc["description"] == tasks[0].original_instruction == "do the e2e check"
 
     def test_cli_task_add_rejects_foreign_assignee(self, tmp_path, monkeypatch):
         anima_dir = tmp_path / "testanima"
@@ -84,10 +80,14 @@ class TestCliTaskAdd:
         from cli.commands.task_cmd import _cmd_add
 
         args = _parse_task_args(
-            "task", "add",
-            "--assignee", "other",
-            "--instruction", "x",
-            "--summary", "x",
+            "task",
+            "add",
+            "--assignee",
+            "other",
+            "--instruction",
+            "x",
+            "--summary",
+            "x",
         )
         manager = TaskQueueManager(anima_dir)
         with pytest.raises(SystemExit) as exc:
@@ -99,37 +99,40 @@ class TestCliTaskAdd:
             (anima_dir / "state" / "pending").rglob("*.json")
         )
 
-    def test_cli_task_add_rolls_back_ledger_row_when_descriptor_write_fails(
-        self, tmp_path, monkeypatch
-    ):
+    def test_cli_task_add_rolls_back_transaction_without_compensating_cancel(self, tmp_path, monkeypatch):
         anima_dir = tmp_path / "testanima"
         (anima_dir / "state").mkdir(parents=True)
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
         import cli.commands.task_cmd as task_cmd
-        import core.memory._io as memory_io
+        from core.taskboard.tasks import TaskStore
 
-        def _boom(*a, **k):
-            raise OSError("simulated descriptor write failure")
+        original_submit = TaskStore.submit
 
-        # Patch at the source module; _cmd_add imports it lazily at call time.
-        monkeypatch.setattr(memory_io, "atomic_write_text", _boom)
+        def _boom(store, *args, **kwargs):
+            original_submit(store, *args, **kwargs)
+            raise OSError("simulated failure before transaction commit")
+
+        monkeypatch.setattr(TaskStore, "submit", _boom)
 
         args = _parse_task_args(
-            "task", "add",
-            "--assignee", "testanima",
-            "--instruction", "x",
-            "--summary", "x",
+            "task",
+            "add",
+            "--assignee",
+            "testanima",
+            "--instruction",
+            "x",
+            "--summary",
+            "x",
         )
         manager = TaskQueueManager(anima_dir)
         with pytest.raises(SystemExit) as exc:
             task_cmd._cmd_add(args, manager)
         assert exc.value.code == 3
 
-        # The ledger row must have been cancelled, not left as pending.
-        tasks = manager.list_tasks(status="cancelled")
-        assert len(tasks) == 1
-        assert tasks[0].status == "cancelled"
+        # Neither a partially executable task nor a compensating cancellation exists.
+        assert not manager.store.read(anima_dir.name, archived=True)
+        assert not manager.store.pending(anima_dir.name)
 
 
 class TestInProgressRejection:
@@ -150,9 +153,7 @@ class TestInProgressRejection:
         )
         task_id = add["task_id"]
 
-        res = json.loads(
-            handler.handle("update_task", {"task_id": task_id, "status": "in_progress"})
-        )
+        res = json.loads(handler.handle("update_task", {"task_id": task_id, "status": "in_progress"}))
         assert res["status"] == "error"
         assert res["error_type"] == "InvalidArguments"
 
@@ -191,16 +192,8 @@ class TestListTasksExecutability:
             assignee="aoi",
             summary="ghost",
         )
-        # Row with a real descriptor.
-        real_path = anima_dir / "state" / "pending"
-        real_path.mkdir(parents=True)
-        real = manager.add_task(
-            source="anima",
-            original_instruction="will run",
-            assignee="aoi",
-            summary="real",
-        )
-        (real_path / f"{real.task_id}.json").write_text("{}", encoding="utf-8")
+        # A complete canonical input is executable without a filesystem descriptor.
+        real = manager.submit({"task_id": "real", "title": "real", "description": "will run"})
 
         data = json.loads(handler.handle("list_tasks", {}))
         by_id = {item["task_id"]: item for item in data}
@@ -212,8 +205,8 @@ class TestListTasksExecutability:
         real_item = by_id[real.task_id]
         assert real_item["executable"] is True
 
-    def test_mark_executability_scans_pending_once(self, tmp_path, monkeypatch):
-        """mark_executability should scan state/pending only once, not per row."""
+    def test_mark_executability_queries_canonical_input_ids_once(self, tmp_path, monkeypatch):
+        """One canonical input lookup serves the whole listing, without file scans."""
         import core.memory.task_queue as tq
 
         anima_dir = tmp_path / "aoi"
@@ -221,13 +214,8 @@ class TestListTasksExecutability:
         manager = TaskQueueManager(anima_dir)
         # Several ledger rows, only one with a real descriptor.
         for i in range(4):
-            manager.add_task(
-                source="anima", original_instruction="x", assignee="aoi", summary=f"s{i}"
-            )
-        real = manager.add_task(
-            source="anima", original_instruction="r", assignee="aoi", summary="real"
-        )
-        (anima_dir / "state" / "pending" / f"{real.task_id}.json").write_text("{}")
+            manager.add_task(source="anima", original_instruction="x", assignee="aoi", summary=f"s{i}")
+        real = manager.submit({"task_id": "real", "title": "real", "description": "r"})
 
         calls = {"n": 0}
         orig = tq._descriptor_ids
@@ -240,6 +228,7 @@ class TestListTasksExecutability:
         items = [e.model_dump() for e in manager.list_tasks()]
         tq.mark_executability(items, anima_dir)
         assert calls["n"] == 1
+        assert [item["task_id"] for item in items if item["executable"]] == [real.task_id]
 
     def test_list_tasks_does_not_flag_delegated_rows(self, tmp_path):
         anima_dir = tmp_path / "aoi"
@@ -260,7 +249,54 @@ class TestListTasksExecutability:
 
 
 class TestSubmitTasksInvariant:
-    def test_submit_tasks_writes_descriptor_for_every_active_row(self, tmp_path):
+    def test_submission_retains_full_execution_input_beyond_display_limit(self, tmp_path):
+        anima_dir = tmp_path / "aoi"
+        handler = _make_handler(anima_dir)
+        instruction = "Preserve every instruction\n" + "x" * 12_000
+        task = {
+            "task_id": "long-input",
+            "title": "long task",
+            "description": instruction,
+            "context": "prior decision",
+            "acceptance_criteria": ["verified"],
+            "constraints": ["do not send"],
+            "file_paths": ["src/example.py"],
+        }
+        result = json.loads(handler.handle("submit_tasks", {"batch_id": "long", "tasks": [task]}))
+        assert result["status"] == "submitted"
+        stored = TaskQueueManager(anima_dir).store.get_input(anima_dir.name, "long-input")
+        for field in ("description", "context", "acceptance_criteria", "constraints", "file_paths"):
+            assert stored[field] == task[field]
+
+    def test_batch_failure_never_leaves_partial_work_or_compensating_cancel(self, tmp_path, monkeypatch):
+        from core.taskboard.tasks import TaskStore
+
+        anima_dir = tmp_path / "aoi"
+        handler = _make_handler(anima_dir)
+        original_submit = TaskStore.submit
+
+        def fail_second(store, owner, entry, payload, **kwargs):
+            original_submit(store, owner, entry, payload, **kwargs)
+            if payload["task_id"] == "second":
+                raise OSError("second input publication failed before commit")
+
+        monkeypatch.setattr(TaskStore, "submit", fail_second)
+        result = json.loads(
+            handler.handle(
+                "submit_tasks",
+                {
+                    "batch_id": "atomic",
+                    "tasks": [
+                        {"task_id": "first", "title": "first", "description": "first"},
+                        {"task_id": "second", "title": "second", "description": "second", "depends_on": ["first"]},
+                    ],
+                },
+            )
+        )
+        assert result["status"] == "error"
+        assert not TaskQueueManager(anima_dir).store.read(anima_dir.name, archived=True)
+
+    def test_submit_tasks_persists_complete_dag_input_without_descriptors(self, tmp_path):
         anima_dir = tmp_path / "aoi"
         handler = _make_handler(anima_dir)
 
@@ -287,6 +323,8 @@ class TestSubmitTasksInvariant:
 
         for tid in ("t-a", "t-b"):
             desc_path = anima_dir / "state" / "pending" / f"{tid}.json"
-            assert desc_path.is_file()
-            desc = json.loads(desc_path.read_text(encoding="utf-8"))
+            assert not desc_path.exists()
+            desc = TaskQueueManager(anima_dir).store.get_input(anima_dir.name, tid)
             assert desc["task_id"] == tid
+            assert desc["description"] == ("task A" if tid == "t-a" else "task B")
+            assert desc["depends_on"] == ([] if tid == "t-a" else ["t-a"])
