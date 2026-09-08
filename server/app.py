@@ -702,6 +702,7 @@ async def _start_usage_governor_if_enabled(app: FastAPI) -> None:
 
 async def _run_startup_initialization(app: FastAPI) -> None:
     """Run heavyweight startup work after the ASGI app is accepting requests."""
+    app.state.worker_services_ready = False
     try:
         startup_progress.set_phase("preflight", detail=t("startup.detail_vector_worker"), reset_counts=True)
         await _prepare_startup_vector_worker(app)
@@ -711,6 +712,7 @@ async def _run_startup_initialization(app: FastAPI) -> None:
         await asyncio.to_thread(preflight_runner, force_all_vectordb=False)
 
         startup_progress.raise_if_cancelled()
+        app.state.worker_services_ready = True
         startup_progress.set_phase(
             "spawning_animas",
             detail=t("startup.detail_spawning"),
@@ -722,9 +724,11 @@ async def _run_startup_initialization(app: FastAPI) -> None:
         startup_progress.set_phase("ready", detail=t("startup.detail_ready"), reset_counts=True)
         logger.info("Server startup initialization complete")
     except asyncio.CancelledError:
+        app.state.worker_services_ready = False
         logger.info("Startup initialization cancelled (shutdown)")
         raise
     except Exception as exc:
+        app.state.worker_services_ready = False
         message = f"{type(exc).__name__}: {exc}"
         startup_progress.set_phase("failed", detail=t("startup.detail_failed"), error=message)
         logger.exception("Startup initialization failed")
@@ -808,6 +812,7 @@ async def _warm_voice_greets(app: FastAPI) -> None:
 
 async def _activate_runtime_services(app: FastAPI) -> None:
     """Start the runtime both at boot and when the setup wizard finishes."""
+    app.state.worker_services_ready = False
     startup_progress.begin_startup(t("startup.detail_starting"))
     # ── Global permissions cache ────────────────────────
     from core.config.global_permissions import GlobalPermissionsCache
@@ -1149,6 +1154,7 @@ def create_app(
     app.state.animas_dir = animas_dir
     app.state.shared_dir = shared_dir
     app.state.setup_complete = config.setup_complete
+    app.state.worker_services_ready = False
     app.state.vector_worker = vector_worker
     app.state.force_startup_repair_all_vectordb = False
     app.state.startup_preflight_runner = _startup_default_preflight_runner
@@ -1314,14 +1320,17 @@ def create_app(
         if progress.get("phase") == "ready":
             return await call_next(request)
         if (
-            progress.get("phase") == "spawning_animas"
+            progress.get("phase") != "failed"
+            and getattr(request.app.state, "worker_services_ready", False)
             and path.startswith("/api/internal/")
             and _is_safe_localhost_request(request)
         ):
             # Vector startup and preflight have finished before workers are
             # spawned. Workers need embed/vector and persistence endpoints
             # during their own initialization; gating those on all workers
-            # being ready creates a startup dependency cycle. This only
+            # being ready creates a startup dependency cycle. Catch-up indexing
+            # can change the progress phase before public readiness, so service
+            # availability must not depend on that display state. This only
             # bypasses readiness: the normal auth/setup guards still run.
             return await call_next(request)
 
