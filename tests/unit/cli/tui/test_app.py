@@ -388,7 +388,11 @@ async def test_history_assistant_body_is_rendered_and_emotion_stripped():
 
         blocks = list(app.query(AssistantBlock))
         assert len(blocks) == 1
-        rendered = blocks[0].text.render()
-        assert "Reply body." in rendered.plain
-        assert "emotion" not in rendered.plain
+        rendered = "".join(
+            segment.text
+            for y in range(blocks[0].text.size.height)
+            for segment in blocks[0].text.render_line(y)
+        )
+        assert "Reply body." in rendered
+        assert "emotion" not in rendered
         assert blocks[0].region.height <= 3, blocks[0].region

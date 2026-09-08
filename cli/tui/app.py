@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from rich.text import Text
+from textual.actions import SkipAction
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -39,6 +40,7 @@ from cli.tui.widgets import (
     StatusBar,
     ToolCard,
     Transcript,
+    format_input_summary,
 )
 from cli.tui.widgets.response_status import ResponseStatus
 from cli.tui.widgets.sidebar import AnimaChosen
@@ -127,6 +129,7 @@ class AnimaChatApp(App):
         height: auto;
         background: transparent;
         border-top: solid ansi_default;
+        border-bottom: solid ansi_default;
         padding-top: 0;
     }
     #response-status {
@@ -192,7 +195,20 @@ class AnimaChatApp(App):
     """
 
     BINDINGS = [
-        Binding("escape", "maybe_interrupt", "Interrupt", id="interrupt"),
+        # Priority so it beats the input's own Enter; the action skips
+        # itself when nothing is selected, and the key then submits.
+        Binding(
+            "enter",
+            "copy_selection",
+            "Copy selection",
+            show=False,
+            priority=True,
+            id="copy_selection",
+        ),
+        # Also priority: Textual's own ``Screen._key_escape`` clears the
+        # selection before a non-priority binding would see it, which made
+        # Escape-to-deselect interrupt the answer as well.
+        Binding("escape", "maybe_interrupt", "Interrupt", id="interrupt", priority=True),
         Binding("ctrl+c", "quit_or_confirm", "Quit"),
         Binding("ctrl+d", "quit_now", "Quit", id="quit", priority=True),
         Binding("ctrl+b", "toggle_sidebar", "Toggle sidebar", show=False, id="toggle_sidebar"),
@@ -324,6 +340,11 @@ class AnimaChatApp(App):
     def focus_sidebar(self) -> None:
         self.sidebar.animas.focus()
 
+    def _refresh_default_model(self) -> None:
+        """Tell the status bar which model the current anima falls back to."""
+        row = self.state.animas.get(self.anima_name)
+        self.status_bar.set_default_model(row.model if row else None)
+
     async def _bootstrap(self) -> None:
         try:
             animas = await self.client.list_animas()
@@ -333,6 +354,7 @@ class AnimaChatApp(App):
             return
         self.state.set_animas(animas)
         self.sidebar.update_state(self.state)
+        self._refresh_default_model()
         names = {a.get("name") for a in animas}
         if self.anima_name not in names:
             self.status_bar.set_state(
@@ -931,7 +953,7 @@ class AnimaChatApp(App):
             tool_id = data.get("tool_id", "")
             card = ToolCard(data.get("tool_name", "tool"), tool_id)
             if data.get("input_summary"):
-                card.add_detail(str(data.get("input_summary")))
+                card.set_preview(format_input_summary(str(data.get("input_summary"))))
             self.tool_cards[tool_id] = card
             if self.current is not None:
                 await self.current.add_tool(card)
@@ -945,6 +967,7 @@ class AnimaChatApp(App):
                 card.finish(
                     result_summary=data.get("result_summary"),
                     is_error=bool(data.get("is_error")),
+                    input_summary=data.get("input_summary"),
                 )
             if data.get("tool_name") == self.status_bar.active_tool:
                 self.status_bar.set_state(active_tool=None)
@@ -1166,6 +1189,7 @@ class AnimaChatApp(App):
         self._palette_mode = None
         self.palette.close()
         self.status_bar.set_model(None)
+        self._refresh_default_model()
         self._write_session()
 
     # ── Thread switching ────────────────────────────────
@@ -1318,9 +1342,10 @@ class AnimaChatApp(App):
             for tool in active.get("tool_history") or []:
                 try:
                     card = ToolCard(tool.get("tool_name", "tool"), tool.get("tool_id", ""))
-                    if tool.get("input_summary"):
-                        card.add_detail(str(tool.get("input_summary")))
-                    if tool.get("result_summary"):
+                    preview = tool.get("detail") or tool.get("input_summary")
+                    if preview:
+                        card.set_preview(format_input_summary(str(preview)))
+                    if tool.get("result_summary") or tool.get("completed"):
                         card.finish(
                             result_summary=tool.get("result_summary"),
                             is_error=bool(tool.get("is_error")),
@@ -1660,7 +1685,69 @@ class AnimaChatApp(App):
         self.resolve_interaction([message.callback_id, message.option])
 
     # ── Actions ──────────────────────────────────────────
+    def action_copy_selection(self) -> None:
+        """``Enter`` copies the current mouse selection, tmux copy-mode style.
+
+        The clipboard is written with OSC 52, which reaches the outer
+        terminal through tmux (``set-clipboard on``). With nothing
+        selected the action skips itself so the key still submits.
+        """
+        text = self._selected_text()
+        if not text:
+            self._restore_input_focus()
+            raise SkipAction()
+        self.copy_to_clipboard(text)
+        self.clear_selection()
+        self._restore_input_focus()
+        # Kept short: the hint sits at the right edge and is clipped there.
+        lines = text.count("\n") + 1
+        self.status_bar.flash(
+            f"Copied {len(text)} chars" if lines == 1 else f"Copied {lines} lines"
+        )
+
+    def _restore_input_focus(self) -> None:
+        """Put focus back in the input box after a click in the transcript.
+
+        Clicking (which is also how a selection starts) moves focus to the
+        scrollable transcript — or drops it entirely — and every keystroke
+        after that goes nowhere. Those two cases are repaired; a deliberate
+        Tab into the sidebar must survive.
+        """
+        if self.focused is None or self.focused is self.transcript:
+            # ``Widget.focus()`` defers through ``call_later``, which is too
+            # late for the key being handled right now: Textual reads
+            # ``app.focused`` again to pick the forward target as soon as
+            # this action returns. Setting it on the screen is immediate.
+            self.screen.set_focus(self.input_container.input)
+
+    def _selected_text(self) -> str:
+        """Return the transcript selection, ignoring the input box.
+
+        ``TextArea`` keeps its own selection and its own copy binding, so
+        text highlighted while typing must not hijack Enter.
+        """
+        screen = self.screen
+        if not screen.selections:
+            return ""
+        chunks: list[str] = []
+        for widget, selection in screen.selections.items():
+            if widget is self.input_container.input or not widget.is_attached:
+                continue
+            selected = widget.get_selection(selection)
+            if selected is not None:
+                chunks.extend(selected)
+        return "".join(chunks).rstrip("\n")
+
     def action_maybe_interrupt(self) -> None:
+        # The slash palette owns Escape while it is open (the input closes
+        # it), and a live selection is what Escape drops next: the reader
+        # is picking text out of the transcript, not stopping the anima.
+        if self.palette_is_open():
+            raise SkipAction()
+        if self.screen.selections:
+            self.clear_selection()
+            self._restore_input_focus()
+            return
         if self.busy:
             self.run_worker(self._do_interrupt(), group="interrupt", exit_on_error=False)
 

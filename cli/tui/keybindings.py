@@ -21,6 +21,9 @@ from cli.tui.session import tui_base_dir
 DEFAULT_KEYBINDINGS: dict[str, str] = {
     "send": "enter",
     "newline": "shift+enter",
+    # Enter copies while text is selected and submits otherwise, the way
+    # tmux copy-mode ends a selection.
+    "copy_selection": "enter",
     "interrupt": "escape",
     "toggle_sidebar": "ctrl+b",
     "toggle_thinking": "ctrl+t",
@@ -33,6 +36,7 @@ DEFAULT_KEYBINDINGS: dict[str, str] = {
 # Subset of config keys that map onto App-level Textual bindings (each must
 # have a matching ``Binding(..., id=...)`` in ``AnimaChatApp.BINDINGS``).
 APP_BINDING_IDS = {
+    "copy_selection",
     "interrupt",
     "toggle_sidebar",
     "toggle_thinking",

@@ -28,6 +28,14 @@ async def _settle(pilot, rounds=8):
         await asyncio.sleep(0.02)
 
 
+def _rendered_plain(widget) -> str:
+    return "".join(
+        segment.text
+        for y in range(widget.size.height)
+        for segment in widget.render_line(y)
+    )
+
+
 def _history(*pairs):
     return {"sessions": [{"messages": [{"ts": "1", "role": role, "content": text} for role, text in pairs]}]}
 
@@ -43,7 +51,7 @@ async def test_assistant_name_gets_its_own_row():
         block = next(iter(app.query(AssistantBlock)))
         assert block.label_widget.render().plain == "sora:"
         # The name must not be buried at the start of the body any more.
-        assert "sora:" not in block.text.render().plain
+        assert "sora:" not in _rendered_plain(block.text)
 
 
 @pytest.mark.asyncio
@@ -67,7 +75,7 @@ async def test_assistant_markdown_is_rendered_not_shown_as_markup():
         await pilot.pause()
 
         block = next(iter(app.query(AssistantBlock)))
-        plain = block.text.render().plain
+        plain = _rendered_plain(block.text)
         assert "**" not in plain and "- 一つ目" not in plain
         assert "はい" in plain and "• 一つ目" in plain
 
@@ -189,7 +197,7 @@ async def test_system_entries_are_shown_faintly_with_their_source():
         assert notes[0].label_widget.render().plain == "system · heartbeat"
         assert notes[1].label_widget.render().plain == "system · call_human — systemd failedの増加"
 
-        assert "ハートビートを完了しました。" in notes[0].message.render().plain
+        assert "ハートビートを完了しました。" in _rendered_plain(notes[0].message)
         # Grey, not the `dim` attribute: terminals are free to ignore SGR
         # 2, and on the ansi themes nothing turns it into a colour. The
         # label counts too — `dim bold` came out as plain bold, brighter

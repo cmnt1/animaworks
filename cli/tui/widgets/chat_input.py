@@ -64,8 +64,18 @@ class ChatInput(TextArea):
         if self._controller is not None:
             self._controller.on_input_text_changed(self.text)
 
+    def _on_resize(self) -> None:
+        # The base handler re-wraps the document for the new width; the row
+        # count that falls out of it is what the box has to be sized to.
+        super()._on_resize()
+        self._update_height()
+
     def _update_height(self) -> None:
-        lines = max(self.document.line_count, 1)
+        # Visual rows, not document lines: soft wrap is on, so one long
+        # line occupies several rows. Sizing by `document.line_count` kept
+        # the box one row tall and scrolled the earlier rows out of sight,
+        # which read as a line running off to the right.
+        lines = max(self.wrapped_document.height, self.document.line_count, 1)
         self.styles.height = min(lines, self.max_lines)
 
     async def _on_key(self, event: events.Key) -> None:

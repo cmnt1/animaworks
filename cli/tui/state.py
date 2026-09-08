@@ -43,6 +43,8 @@ class AnimaRow:
     active_tool: str | None = None
     unread: int = 0
     needs_user_input: bool = False
+    # The anima's own configured model — what "no override" resolves to.
+    model: str = ""
 
 
 @dataclass
@@ -89,6 +91,7 @@ class AppState:
                 status="busy" if is_busy else "idle",
                 busy=is_busy,
                 needs_user_input=bool(entry.get("needs_user_input")),
+                model=str(entry.get("model") or ""),
             )
         if self.current is not None and self.current not in self.animas:
             self.current = None

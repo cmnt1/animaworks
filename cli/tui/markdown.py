@@ -26,10 +26,11 @@ import re
 from typing import NamedTuple
 
 from rich import box
+from rich.cells import cell_len
 from rich.console import Group, RenderableType
 from rich.style import Style
 from rich.table import Table
-from rich.text import Text
+from rich.text import DEFAULT_JUSTIFY, DEFAULT_OVERFLOW, Lines, Text, pick_bool
 
 
 class Palette(NamedTuple):
@@ -86,6 +87,7 @@ _QUOTE_RE = re.compile(r"^\s{0,3}>\s?(.*)$")
 _ULIST_RE = re.compile(r"^(\s*)[-*+]\s+(.*)$")
 _OLIST_RE = re.compile(r"^(\s*)(\d{1,9})[.)]\s+(.*)$")
 _TABLE_DELIM_RE = re.compile(r"^\s*\|?(\s*:?-+:?\s*\|)+\s*:?-*:?\s*\|?\s*$")
+_WRAP_TOKEN_RE = re.compile(r"[!-~]+|[ \t]+|.", re.S)
 
 # Ordered so the longest fences win: ``***x***`` before ``**x**`` before ``*x*``.
 _INLINE_RE = re.compile(
@@ -115,10 +117,114 @@ _EMPHASIS = (
 
 
 # ── Inline ────────────────────────────────────────────────
+def _mixed_script_breaks(source: str, width: int) -> list[int]:
+    """Return line breaks that keep ASCII words intact in Japanese prose."""
+    if width <= 0:
+        return []
+    breaks: list[int] = []
+    used = 0
+    for match in _WRAP_TOKEN_RE.finditer(source):
+        token = match.group(0)
+        token_width = cell_len(token)
+        if token.isspace():
+            used += token_width
+            continue
+        if token.isascii() and token_width <= width:
+            if used and used + token_width > width:
+                breaks.append(match.start())
+                used = token_width
+            else:
+                used += token_width
+            continue
+        if token.isascii():
+            if used and match.start():
+                breaks.append(match.start())
+                used = 0
+            for offset in range(width, len(token), width):
+                breaks.append(match.start() + offset)
+            used = token_width % width
+            continue
+        if used and used + token_width > width:
+            breaks.append(match.start())
+            used = token_width
+        else:
+            used += token_width
+    return breaks
+
+
+class _TranscriptText(Text):
+    """Rich text with CJK-aware wrapping that does not split ASCII words."""
+
+    def blank_copy(self, plain: str = "") -> _TranscriptText:
+        return _TranscriptText(
+            plain,
+            style=self.style,
+            justify=self.justify,
+            overflow=self.overflow,
+            no_wrap=self.no_wrap,
+            end=self.end,
+            tab_size=self.tab_size,
+        )
+
+    def wrap(
+        self,
+        console,
+        width: int,
+        *,
+        justify=None,
+        overflow=None,
+        tab_size: int = 8,
+        no_wrap=None,
+    ) -> Lines:
+        wrap_justify = justify or self.justify or DEFAULT_JUSTIFY
+        wrap_overflow = overflow or self.overflow or DEFAULT_OVERFLOW
+        no_wrap = pick_bool(no_wrap, self.no_wrap, False) or overflow == "ignore"
+        lines = Lines()
+        for source_line in self.split(allow_blank=True):
+            if "\t" in source_line:
+                source_line.expand_tabs(tab_size)
+            if no_wrap:
+                new_lines = Lines([source_line])
+            else:
+                new_lines = source_line.divide(_mixed_script_breaks(str(source_line), width))
+                for wrapped_line in new_lines:
+                    wrapped_line.rstrip_end(width)
+            if wrap_justify:
+                new_lines.justify(console, width, justify=wrap_justify, overflow=wrap_overflow)
+            for wrapped_line in new_lines:
+                wrapped_line.truncate(width, overflow=wrap_overflow)
+            lines.extend(new_lines)
+        return lines
+
+
+class _TranscriptRenderable:
+    """Keep Textual from flattening :class:`_TranscriptText` to plain Text."""
+
+    def __init__(self, renderable: RenderableType) -> None:
+        self.renderable = renderable
+
+    @property
+    def plain(self) -> str:
+        return getattr(self.renderable, "plain", "")
+
+    def __rich_console__(self, console, options):
+        yield from console.render(self.renderable, options)
+
+
+def transcript_renderable(renderable: RenderableType) -> RenderableType:
+    """Preserve transcript-specific wrapping through Textual's render path."""
+    return _TranscriptRenderable(renderable)
+
+
+def plain_text(source: str, *, style: str | Style = "") -> Text:
+    """Create unparsed transcript text with mixed-script-safe wrapping."""
+    return _TranscriptText(source, style=style, overflow="fold")
+
+
 def render_inline(source: str, *, base: str | Style = "", muted: bool = False) -> Text:
     """Render a single run of markdown text (no block structure)."""
     palette = MUTED if muted else NORMAL
-    text = Text(style=_style(palette.base) + _style(base), overflow="fold")
+    text = _TranscriptText(style=_style(palette.base) + _style(base), overflow="fold")
     _append_inline(text, source, Style.null(), 0, palette)
     return text
 
@@ -171,7 +277,7 @@ def _parse_blocks(source: str, palette: Palette) -> list[RenderableType]:
 
     def flush() -> None:
         if pending:
-            out.append(Text("\n", overflow="fold").join(pending))
+            out.append(_TranscriptText("\n", overflow="fold").join(pending))
             pending.clear()
 
     def blank() -> None:
@@ -262,7 +368,7 @@ def _list_item(line: str, palette: Palette) -> Text | None:
     level = min(len(match.group(1).expandtabs(4)) // 2, len(BULLETS) - 1)
     marker = BULLETS[level] if unordered else f"{ordered.group(2)}."  # type: ignore[union-attr]
     body = (unordered.group(2) if unordered else ordered.group(3)).rstrip()  # type: ignore[union-attr]
-    item = Text("  " * level, overflow="fold")
+    item = _TranscriptText("  " * level, overflow="fold")
     item.append(f"{marker} ", style=palette.bullet)
     item.append_text(_inline(body, palette))
     return item
@@ -271,7 +377,7 @@ def _list_item(line: str, palette: Palette) -> Text | None:
 def _code_block(lines: list[str], palette: Palette) -> Text:
     while lines and not lines[-1].strip():
         lines.pop()
-    body = Text(style=palette.base, overflow="fold")
+    body = _TranscriptText(style=palette.base, overflow="fold")
     for index, raw in enumerate(lines):
         if index:
             body.append("\n")
@@ -281,7 +387,7 @@ def _code_block(lines: list[str], palette: Palette) -> Text:
 
 
 def _quote_block(lines: list[str], palette: Palette) -> Text:
-    body = Text(overflow="fold")
+    body = _TranscriptText(overflow="fold")
     for index, raw in enumerate(lines):
         if index:
             body.append("\n")

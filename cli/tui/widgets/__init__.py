@@ -8,7 +8,7 @@ from cli.tui.widgets.palette import Palette
 from cli.tui.widgets.sidebar import AnimaChosen, Sidebar
 from cli.tui.widgets.status_bar import StatusBar
 from cli.tui.widgets.thinking import ThinkingBlock
-from cli.tui.widgets.tool_card import ToolCard
+from cli.tui.widgets.tool_card import ToolCard, format_input_summary
 from cli.tui.widgets.transcript import AssistantBlock, HumanTurn, SystemNote, Transcript
 
 __all__ = [
@@ -24,6 +24,7 @@ __all__ = [
     "StatusBar",
     "ThinkingBlock",
     "ToolCard",
+    "format_input_summary",
     "AssistantBlock",
     "HumanTurn",
     "SystemNote",

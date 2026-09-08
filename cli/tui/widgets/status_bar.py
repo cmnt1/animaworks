@@ -8,6 +8,10 @@ from rich.text import Text
 from textual.widget import Widget
 
 
+def _clip(model: str, limit: int = 40) -> str:
+    return model if len(model) <= limit else model[: limit - 1] + "…"
+
+
 class StatusBar(Widget):
     """A single status line showing anima, state, tool, connection, thread."""
 
@@ -31,6 +35,10 @@ class StatusBar(Widget):
         self.context_usage_ratio: float | None = None
         self.context_input_tokens: int | None = None
         self.context_window: int | None = None
+        # What "no override" resolves to: the anima's own configured model.
+        self.default_model: str | None = None
+        self._flash_restore: str | None = None
+        self._flash_timer = None
 
     def set_anima(self, anima_name: str, thread_id: str | None = None) -> None:
         self.anima_name = anima_name
@@ -54,14 +62,46 @@ class StatusBar(Widget):
         if connected is not None:
             self.connected = connected
         if right_hint is not None:
+            self._cancel_flash()
             self.right_hint = right_hint
         if skill_count is not None:
             self.skill_count = skill_count
         self.refresh()
 
+    def flash(self, message: str, duration: float = 3.0) -> None:
+        """Show *message* in the hint slot, then restore the hint.
+
+        Used for one-shot feedback (a copy, say) that would only clutter
+        the transcript if it were written there.
+        """
+        if self._flash_restore is None:
+            self._flash_restore = self.right_hint
+        if self._flash_timer is not None:
+            self._flash_timer.stop()
+        self.right_hint = message
+        self.refresh()
+        self._flash_timer = self.set_timer(duration, self._end_flash)
+
+    def _end_flash(self) -> None:
+        if self._flash_restore is not None:
+            self.right_hint = self._flash_restore
+        self._cancel_flash()
+        self.refresh()
+
+    def _cancel_flash(self) -> None:
+        if self._flash_timer is not None:
+            self._flash_timer.stop()
+        self._flash_timer = None
+        self._flash_restore = None
+
     def set_model(self, model: str | None) -> None:
         """Set the model to show (``None`` leaves it untouched, "" clears it)."""
         self.model = model or None
+        self.refresh()
+
+    def set_default_model(self, model: str | None) -> None:
+        """Name the anima's configured model, shown when nothing overrides it."""
+        self.default_model = model or None
         self.refresh()
 
     def set_context_usage(
@@ -96,17 +136,23 @@ class StatusBar(Widget):
             percent = round(self.context_usage_ratio * 100)
             parts.append(Text(f" | ctx:{percent}%", style="dim"))
 
-        parts.append(
-            Text(
-                f" | ws: {'connected' if self.connected else 'disconnected'}",
-                style="dim",
-            )
-        )
-        parts.append(Text(f" | thread:{self.thread_id}", style="dim"))
-
+        # The model in use gets the permanent slot the connection used to
+        # hold: `ws: connected` is the normal case and said nothing, so the
+        # connection only speaks up now when it is actually down. With no
+        # override the anima's own model is named, so the line always says
+        # which model is about to answer rather than just "default".
         if self.model:
-            shown = self.model if len(self.model) <= 40 else self.model[:39] + "…"
-            parts.append(Text(f" | model:{shown}", style="dim"))
+            shown = _clip(self.model)
+        elif self.default_model:
+            shown = f"{_clip(self.default_model)} (default)"
+        else:
+            shown = "default"
+        parts.append(Text(f" | model:{shown}", style="dim"))
+
+        if not self.connected:
+            parts.append(Text(" | ws: disconnected", style="bold"))
+
+        parts.append(Text(f" | thread:{self.thread_id}", style="dim"))
 
         line = Text.assemble(*parts)
         if self.right_hint:

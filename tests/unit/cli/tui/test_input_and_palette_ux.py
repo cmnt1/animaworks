@@ -2,8 +2,9 @@
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Input newline alternatives, Tab-completion caret, palette highlight and
-the blinking thinking marker (2026-09-07 TUI feedback)."""
+"""Input newline alternatives, Tab-completion caret, palette highlight,
+the blinking thinking marker, the wrapping input box and the model on the
+status line (2026-09-07 TUI feedback)."""
 
 from __future__ import annotations
 
@@ -85,7 +86,11 @@ async def test_palette_highlight_is_reverse_video():
             return [
                 y
                 for y in range(min(app.palette.size.height, len(app.palette._items)))
-                if all(seg.style is not None and seg.style.reverse for seg in app.palette.render_line(y) if seg.text.strip())
+                if all(
+                    seg.style is not None and seg.style.reverse
+                    for seg in app.palette.render_line(y)
+                    if seg.text.strip()
+                )
             ]
 
         assert reversed_rows() == [0]
@@ -120,3 +125,67 @@ async def test_thinking_marker_blinks_only_while_thinking():
         assert not block.is_active and block._timer is None
         assert str(block.header.content).startswith("▸")
         await client.chat_queue.put(None)
+
+
+@pytest.mark.asyncio
+async def test_input_grows_with_wrapped_rows_not_document_lines():
+    """A long single line wraps into visible rows instead of scrolling away."""
+    client = FakeClient()
+    app = AnimaChatApp(client=client, anima_name="sora")
+    async with app.run_test(size=(100, 32)) as pilot:
+        await _ready(app, pilot)
+        chat_input = app.input_container.input
+        chat_input.insert("これは折り返されるべき長い一行の入力です。" * 3)
+        await pilot.pause()
+        assert chat_input.document.line_count == 1
+        rows = chat_input.wrapped_document.height
+        assert rows > 1, "the sample text is meant to wrap"
+        assert chat_input.size.height == rows
+
+        # Never past `max_lines`; from there the box scrolls.
+        chat_input.insert("さらに続く長い文章。" * 30)
+        await pilot.pause()
+        assert chat_input.size.height == chat_input.max_lines
+
+        # A narrower terminal wraps harder, so the box grows again.
+        chat_input.clear()
+        chat_input.insert("あ" * 40)
+        await pilot.pause()
+        wide = chat_input.size.height
+        await pilot.resize_terminal(60, 32)
+        await pilot.pause()
+        assert chat_input.size.height > wide
+
+        # Submitting empties it back to one row.
+        chat_input.clear()
+        await pilot.pause()
+        assert chat_input.size.height == 1
+
+
+@pytest.mark.asyncio
+async def test_status_line_names_the_model_in_use():
+    """The model replaces `ws: connected`, which never said anything."""
+    client = FakeClient(animas=[{"name": "sora", "status": "idle", "model": "claude-opus-4-6"}])
+    app = AnimaChatApp(client=client, anima_name="sora")
+    async with app.run_test() as pilot:
+        await _ready(app, pilot)
+        app.status_bar.set_state(connected=True)
+        await pilot.pause()
+
+        # No override: the anima's own model, marked as the default.
+        line = app.status_bar.render().plain
+        assert "model:claude-opus-4-6 (default)" in line
+        assert "ws:" not in line
+
+        app.set_chat_model("codex/gpt-5.6-sol")
+        await pilot.pause()
+        assert "model:codex/gpt-5.6-sol" in app.status_bar.render().plain
+
+        app.set_chat_model("")
+        await pilot.pause()
+        assert "model:claude-opus-4-6 (default)" in app.status_bar.render().plain
+
+        # A dropped websocket is the one connection state worth a slot.
+        app.status_bar.set_state(connected=False)
+        await pilot.pause()
+        assert "ws: disconnected" in app.status_bar.render().plain

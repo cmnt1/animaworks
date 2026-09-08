@@ -123,6 +123,17 @@ def _install_stack_dump(app=None) -> None:
                 lines.append(f"focused={app.focused!r} busy={getattr(app, 'busy', None)}")
                 mouse = getattr(app, "mouse_position", None)
                 lines.append(f"mouse={mouse} over={getattr(app, 'mouse_over', None)!r} captured={app.mouse_captured!r}")
+                # Text selection: everything the drag path depends on. A
+                # drag that highlights nothing while the mouse is clearly
+                # over a selectable widget shows up here as selecting=False
+                # or an allow_select that has gone False.
+                screen = app.screen
+                lines.append(
+                    f"selection: n={len(getattr(screen, 'selections', {}) or {})} "
+                    f"selecting={getattr(screen, '_selecting', None)} "
+                    f"state={'set' if getattr(screen, '_select_state', None) else None} "
+                    f"allow: app={getattr(app, 'ALLOW_SELECT', None)} screen={getattr(screen, 'allow_select', None)}"
+                )
                 lines.append(f"queues: app={app._message_queue.qsize()} screen={app.screen._message_queue.qsize()}")
                 lines.append(
                     f"history: loading={getattr(app, '_history_loading', None)} "
