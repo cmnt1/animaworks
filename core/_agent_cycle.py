@@ -1762,6 +1762,11 @@ class CycleMixin:
                 session_chained=session_chained,
                 total_turns=total_turns,
                 tool_call_records=all_tool_call_records,
+                # Preserve the inner-cycle replay guard across IPC and the
+                # outer fallback wrapper, even if a failed stream never
+                # produced its final tool records. Text already delivered is
+                # also conservatively treated as started work, as above.
+                fallback_safe=not (stream_started_work or all_tool_call_records),
                 usage=_final_usage,
                 truncated=stream_truncated,
             ).model_dump(mode="json"),

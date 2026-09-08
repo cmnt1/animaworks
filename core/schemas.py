@@ -216,6 +216,9 @@ class CycleResult(BaseModel):
     total_turns: int = 0
     truncated: bool = False
     tool_call_records: list[ToolCallRecordDict] = Field(default_factory=list)
+    # Older stored results omit this field; their tool records remain an
+    # independent replay guard. Streaming may start work before records exist.
+    fallback_safe: bool = True
     images: list[dict[str, str]] = Field(default_factory=list)
     meeting_redirects: list[dict[str, str]] = Field(default_factory=list)
     cron_skill_rejections: list[dict[str, str]] = Field(default_factory=list)

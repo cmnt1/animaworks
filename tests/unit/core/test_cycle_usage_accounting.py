@@ -200,6 +200,60 @@ async def test_wrapped_content_policy_error_never_retries_or_switches(cycle):
     assert events[-1]["cycle_result"]["reason"] == "content_policy"
 
 
+@pytest.mark.parametrize("work_type", ["tool_start", "tool_end", "text_delta"])
+@pytest.mark.parametrize("as_model", [False, True])
+async def test_outer_fallback_preserves_stream_started_guard_without_final_tool_records(cycle, work_type, as_model):
+    from core.execution.fallback_activity import run_with_model_fallback
+    from core.schemas import CycleResult
+
+    agent, _ = cycle
+    agent.model_config.fallback_models = ["s:claude-test"]
+    fallback = agent.model_config.model_copy(update={"model": "claude-test", "resolved_mode": "S"})
+    invocations = []
+
+    async def stream(*args, **kwargs):
+        yield {"type": work_type, "tool_name": "send_message", "tool_id": "sent-once", "text": "partial reply"}
+        yield {"type": "error", "terminal": True, "message": "API Error: ConnectionRefused", "reason": "network"}
+
+    agent._executor.execute_streaming = stream
+
+    async def run(config):
+        invocations.append(config.model)
+        events = [event async for event in agent._run_cycle_streaming_inner("prompt", trigger="heartbeat")]
+        result = events[-1]["cycle_result"]
+        assert result["tool_call_records"] == []
+        assert result["fallback_safe"] is False
+        return CycleResult.model_validate(result) if as_model else result
+
+    with (
+        patch("core.execution.fallback_activity.resolve_effective_model_config", return_value=fallback) as resolve,
+        patch("core.execution.fallback_activity.report_capacity_block") as block,
+    ):
+        result = await run_with_model_fallback(
+            run,
+            activity=MagicMock(),
+            primary_config=agent.model_config,
+            active_config=agent.model_config,
+            channel="heartbeat",
+        )
+
+    assert invocations == [agent.model_config.model]
+    assert (result.action if as_model else result["action"]) == "error"
+    resolve.assert_not_called()
+    block.assert_not_called()
+
+
+def test_legacy_cycle_result_without_fallback_safe_keeps_tool_replay_guard():
+    from core.execution.fallback_activity import has_partial_execution
+    from core.schemas import CycleResult
+
+    legacy = CycleResult.model_validate({"trigger": "heartbeat", "action": "error"})
+    assert legacy.fallback_safe is True
+    assert not has_partial_execution(legacy)
+    legacy.tool_call_records = [{"tool_name": "send_message", "tool_id": "sent"}]
+    assert has_partial_execution(legacy)
+
+
 async def test_codex_blocking_failure_is_not_reported_as_success(cycle):
     agent, log = cycle
     agent._executor.execute = AsyncMock(
