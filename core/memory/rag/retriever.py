@@ -998,9 +998,11 @@ class MemoryRetriever:
     ) -> list[RetrievalResult]:
         """Apply spreading activation to expand search results.
 
-        Builds a graph from all configured memory types (knowledge +
-        episodes by default).  Tries loading from cache first, then
-        falls back to a full build.
+        Uses an already-built, schema-compatible graph cache. A cache miss
+        retains the retrieved seeds: full graph construction embeds and queries
+        every source file and belongs to explicit/background maintenance, never
+        a latency-bounded search (whose cancelled worker thread would keep
+        building the graph after its caller has timed out).
 
         Args:
             initial_results: Initial search results
@@ -1027,48 +1029,32 @@ class MemoryRetriever:
                 try:
                     from core.memory.rag.graph import GRAPH_SCHEMA_VERSION, KnowledgeGraph
 
-                    self._knowledge_graph = KnowledgeGraph(
+                    graph = KnowledgeGraph(
                         self.vector_store,
                         self.indexer,
                     )
 
                     cache_dir = self.knowledge_dir.parent / "vectordb"
-                    threshold = (
-                        getattr(
-                            _cfg.rag,
-                            "implicit_link_threshold",
-                            0.75,
-                        )
-                        if _cfg
-                        else 0.75
-                    )
                     cache_enabled = bool(getattr(_cfg.rag, "graph_cache_enabled", True)) if _cfg else True
                     loaded = False
                     if cache_enabled:
-                        loaded = self._knowledge_graph.load_graph(
+                        loaded = graph.load_graph(
                             cache_dir,
                             expected_schema_version=GRAPH_SCHEMA_VERSION,
                             entity_aware_graph_enabled=bool(graph_settings["enabled"]),
                         )
                     if not loaded:
-                        memory_dirs = self._collect_spreading_dirs()
-                        self._knowledge_graph.build_graph(
+                        logger.info(
+                            "Graph expansion skipped: no usable prebuilt cache for %s; retaining retrieval seeds",
                             anima_name,
-                            self.knowledge_dir,
-                            memory_dirs=memory_dirs,
-                            implicit_link_threshold=threshold,
-                            entity_aware_graph_enabled=bool(graph_settings["enabled"]),
-                            graph_entity_edge_cap=int(graph_settings["edge_cap"]),
-                            graph_inverse_fan_enabled=bool(graph_settings["inverse_fan"]),
-                            graph_recency_weight_enabled=bool(graph_settings["recency_weight"]),
                         )
-                        if cache_enabled:
-                            cache_dir.mkdir(parents=True, exist_ok=True)
-                            self._knowledge_graph.save_graph(cache_dir)
+                        return initial_results
+                    self._knowledge_graph = graph
                     self._knowledge_graph_signature = graph_signature
 
                 except Exception as e:
                     logger.warning("Failed to initialize knowledge graph: %s", e)
+                    self._knowledge_graph = None
                     self._knowledge_graph_signature = None
                     return initial_results
 
