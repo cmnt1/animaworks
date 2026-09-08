@@ -108,6 +108,8 @@ class MemoryIndexer:
         collection_prefix: str | None = None,
         embedding_model: SentenceTransformer | None = None,
         upsert_quarantine_failure_threshold: int | None = None,
+        source_data_dir: Path | None = None,
+        source_file_stats: dict[str, os.stat_result] | None = None,
     ) -> None:
         """Initialize indexer.
 
@@ -123,10 +125,30 @@ class MemoryIndexer:
             embedding_model: Pre-initialized SentenceTransformer instance.
                 When provided, ``_init_embedding_model()`` is skipped,
                 avoiding redundant model loading.
+            source_data_dir: Private full-rebuild input root, or None for the
+                ordinary live indexing path. Preserves snapshot exclusion policy.
+            source_file_stats: Original source stats keyed by copied absolute
+                path; keeps document creation timestamps stable during repair.
         """
         self.vector_store = vector_store
         self.anima_name = anima_name
         self.anima_dir = anima_dir
+        # Explicit full rebuilds read private copies. Keep source timestamps
+        # and exclusion policy without changing normal runtime indexing.
+        self._source_file_stats = source_file_stats or {}
+        self._source_data_dir = source_data_dir
+        self._source_ragignore = None
+        if source_data_dir is not None:
+            ignore_path = source_data_dir / ".ragignore"
+            self._source_ragignore = (
+                [
+                    line.strip()
+                    for line in ignore_path.read_text(encoding="utf-8").splitlines()
+                    if line.strip() and not line.lstrip().startswith("#")
+                ]
+                if ignore_path.exists()
+                else []
+            )
         self.collection_prefix = collection_prefix or anima_name
         self._embedding_model_name_override = embedding_model_name
         if upsert_quarantine_failure_threshold is None:
@@ -261,6 +283,18 @@ class MemoryIndexer:
                 json.dump(self.index_meta, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.warning("Failed to save index metadata: %s", e)
+
+    def _source_is_ragignored(self, path: Path) -> bool:
+        root = getattr(self, "_source_data_dir", None)
+        if root is None:
+            return self.is_ragignored(path)
+        from core.paths import get_data_dir
+
+        # Absolute .ragignore patterns refer to the original runtime layout,
+        # not the randomly named private copy used by a repair.
+        original_root = get_data_dir()
+        original_path = original_root / path.relative_to(root)
+        return is_rag_excluded(original_path, root=original_root, ragignore_patterns=self._source_ragignore or ())
 
     def _load_upsert_failure_state(self) -> dict:
         """Load persistent per-file upsert failures and quarantine history."""
@@ -426,7 +460,7 @@ class MemoryIndexer:
         # Check .ragignore exclusion. Remove any previously-indexed chunks so
         # a file that matches .ragignore only after indexing does not linger
         # in the collection (mirrors the curator-denied path below).
-        if self.is_ragignored(file_path):
+        if self._source_is_ragignored(file_path):
             logger.debug("Skipping ragignored file: %s", file_path)
             self.delete_indexed_file(file_path, memory_type)
             return self._finish_index_file(0, "skipped")
@@ -686,7 +720,7 @@ class MemoryIndexer:
             if not source_key.is_relative_to(directory_key):
                 continue
             source_path = anima_dir / source_key
-            if not os.path.lexists(source_path) or self.is_ragignored(source_path):
+            if not os.path.lexists(source_path) or self._source_is_ragignored(source_path):
                 stale_sources.append(source_file)
                 if len(stale_sources) >= STALE_RECONCILIATION_LIMIT:
                     break
@@ -1246,7 +1280,7 @@ class MemoryIndexer:
         }
 
         # File timestamps
-        stat = file_path.stat()
+        stat = getattr(self, "_source_file_stats", {}).get(str(file_path)) or file_path.stat()
         metadata["created_at"] = ensure_aware(datetime.fromtimestamp(stat.st_ctime)).isoformat()
         metadata["updated_at"] = ensure_aware(datetime.fromtimestamp(stat.st_mtime)).isoformat()
 

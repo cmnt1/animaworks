@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import shutil
 import threading
 import uuid
@@ -30,6 +31,16 @@ def _store() -> MagicMock:
     ]
     store._get_by_ids_once.return_value = [Document("doc-1", "hello", metadata={"kind": "knowledge"})]
     return store
+
+
+def _staging_metadata(staging: Path, anima_dir: Path) -> None:
+    artifact = staging / ".rebuild"
+    artifact.mkdir()
+    (artifact / "index_meta.json").write_text("{}", encoding="utf-8")
+    (artifact / "sources.json").write_text(
+        json.dumps({"owner": str(anima_dir.resolve()), "sources": {}}),
+        encoding="utf-8",
+    )
 
 
 @pytest.mark.asyncio
@@ -473,6 +484,7 @@ async def test_root_repair_swaps_reopens_and_queries(tmp_path: Path, monkeypatch
     staging = anima_dir / "vectordb.staging-test"
     staging.mkdir()
     (staging / "new.bin").write_text("new", encoding="utf-8")
+    _staging_metadata(staging, anima_dir)
     old_store = _store()
     reopened = _store()
     reopened.verify_rebuilt_data.return_value = {"collections": 1, "chunks": 1, "query_results": 1}
@@ -505,6 +517,7 @@ async def test_root_repair_verification_failure_rolls_back_vector_and_bm25(tmp_p
     staging = anima_dir / "vectordb.staging-test"
     staging.mkdir()
     (staging / "new.bin").write_text("new", encoding="utf-8")
+    _staging_metadata(staging, anima_dir)
     reopened = _store()
     reopened.verify_rebuilt_data.side_effect = RuntimeError("query failed")
     service = MemoryService(
@@ -532,14 +545,20 @@ async def test_root_repair_swap_failure_reopens_untouched_store(tmp_path: Path, 
     live = anima_dir / "vectordb"
     live.mkdir()
     (live / "old.bin").write_text("old", encoding="utf-8")
-    missing_staging = anima_dir / "vectordb.staging-missing"
+    staging = anima_dir / "vectordb.staging-swap-failure"
+    staging.mkdir()
+    _staging_metadata(staging, anima_dir)
+    original = _store()
     reopened = _store()
     service = MemoryService(
         "sakura",
         anima_dir,
-        opener=MagicMock(side_effect=[_store(), reopened]),
+        opener=MagicMock(side_effect=[original, reopened]),
     )
-    service._build_staging_subprocess = AsyncMock(return_value=(missing_staging, 1, {}))  # type: ignore[method-assign]
+    service._build_staging_subprocess = AsyncMock(return_value=(staging, 1, {}))  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        service, "_promote_staging_sync", MagicMock(side_effect=FileNotFoundError("injected swap failure"))
+    )
     monkeypatch.setattr(service, "_rebuild_bm25_sync", lambda: None)
 
     await service.start()
@@ -547,6 +566,8 @@ async def test_root_repair_swap_failure_reopens_untouched_store(tmp_path: Path, 
         await service.repair(include_shared=True)
 
     assert (live / "old.bin").read_text(encoding="utf-8") == "old"
+    original.close.assert_called_once()
+    assert service._store is reopened
     assert await service.handle("memory.list_collections_checked", {}) == {"collections": ["sakura_knowledge"]}
     await service.close()
 

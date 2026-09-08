@@ -10,6 +10,26 @@
 from __future__ import annotations
 
 STRINGS: dict[str, dict[str, str]] = {
+    "rag.rebuild_symlink_input": {
+        "ja": "再構築の入力にシンボリックリンクは使用できません: {path}",
+        "en": "A symlink is not a safe rebuild input: {path}",
+        "ko": "재구축 입력에 심볼릭 링크를 사용할 수 없습니다: {path}",
+    },
+    "rag.rebuild_input_changed": {
+        "ja": "RAG再構築の入力が変更されたため、古いDBへの切り替えを中止します。",
+        "en": "RAG rebuild inputs changed; refusing stale database promotion.",
+        "ko": "RAG 재구축 입력이 변경되어 오래된 DB로의 전환을 중단합니다.",
+    },
+    "rag.rebuild_invalid_metadata": {
+        "ja": "再構築した索引メタデータが不正です。",
+        "en": "Invalid rebuilt index metadata.",
+        "ko": "재구축한 색인 메타데이터가 올바르지 않습니다.",
+    },
+    "rag.rebuild_invalid_manifest": {
+        "ja": "RAG再構築の入力マニフェストが不正です。",
+        "en": "Invalid RAG rebuild source manifest.",
+        "ko": "RAG 재구축 입력 매니페스트가 올바르지 않습니다.",
+    },
     "rag.phase3_repair_requires_shared": {
         "ja": "phase3の全DB再構築にはinclude_shared=Trueが必要です。共有記憶を除外すると既存の共有索引が失われます。",
         "en": "Phase3 full-DB repair requires include_shared=True to preserve shared memory collections.",
