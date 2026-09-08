@@ -639,6 +639,46 @@ def _format_skill_catalog_line(
     return f"- {path}{label_text}{_format_trust_tag(meta)}{ext_tag}: {desc}"
 
 
+def _skill_catalog_sections(entries: list[str], *, mode_b: bool) -> list[SectionEntry]:
+    """Keep a bounded discovery foothold for the text-tool Mode B executor."""
+    from core.prompt.tokens import estimate_tokens
+
+    def render(lines: list[str]) -> str:
+        return "\n".join(
+            [
+                t("builder.skill_catalog_header"),
+                t("builder.skill_catalog_instruction"),
+                "",
+                "<available_skills>",
+                *lines,
+                "</available_skills>",
+            ]
+        )
+
+    protected_count = 0
+    if mode_b:
+        # Preserve the existing router ranking and permission filtering. The
+        # soft framework target must not erase every way to discover a skill;
+        # the hard ceiling can still evict this priority-2 section.
+        for count in range(1, min(3, len(entries)) + 1):
+            if estimate_tokens(render(entries[:count])) > 512:
+                break
+            protected_count = count
+    if not protected_count:
+        return [SectionEntry("skill_catalog", 2, "elastic", render(entries))]
+    sections = [SectionEntry("skill_catalog", 2, "rigid", render(entries[:protected_count]))]
+    if remaining := entries[protected_count:]:
+        sections.append(
+            SectionEntry(
+                "skill_catalog_additional",
+                2,
+                "elastic",
+                "\n".join(["<available_skills>", *remaining, "</available_skills>"]),
+            )
+        )
+    return sections
+
+
 def _requires_human_approval(meta: Any) -> bool:
     risk = getattr(meta, "risk", None)
     if isinstance(risk, dict):
@@ -763,7 +803,7 @@ def _build_group4(
     # Uses SkillIndex which excludes blocked/quarantine skills. Background
     # automation also excludes skills that need separate human approval.
     if not is_heartbeat:
-        _DESC_LIMIT = 250
+        _DESC_LIMIT = 120 if execution_mode == "b" else 250
         common_label = t("skill.label_common")
         procedure_label = t("skill.label_procedure")
         settings = _load_skill_catalog_router_settings()
@@ -835,16 +875,7 @@ def _build_group4(
                 )
 
         if catalog_entries or not (settings.enabled and message.strip()):
-            catalog_lines: list[str] = [
-                t("builder.skill_catalog_header"),
-                t("builder.skill_catalog_instruction"),
-                "",
-                "<available_skills>",
-                *catalog_entries,
-                "</available_skills>",
-            ]
-            catalog_text = "\n".join(catalog_lines)
-            _add(catalog_text, "skill_catalog", 2, "elastic")
+            out.extend(_skill_catalog_sections(catalog_entries, mode_b=execution_mode == "b"))
 
     return out
 
