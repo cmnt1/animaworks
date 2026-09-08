@@ -295,7 +295,9 @@ async def test_corruption_isolated_and_reads_continue_during_repair(
         assert healthy.result["results"][0]["document"]["content"] == "cascade-b indexed while sibling corrupt"
 
         embed_server.arm_repair_gate()
-        repairing = asyncio.create_task(root_a.send_request("repair_memory", {"include_shared": False}, timeout=60))
+        # A whole-store replacement must include shared collections; partial
+        # rebuilds are deliberately rejected before any embedding work starts.
+        repairing = asyncio.create_task(root_a.send_request("repair_memory", {"include_shared": True}, timeout=60))
         assert await asyncio.to_thread(embed_server.repair_started.wait, 10)
         during_repair = await _query(root_a)
         assert during_repair.error and "repair in progress" in during_repair.error["message"].lower()

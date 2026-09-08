@@ -124,13 +124,16 @@ class TestGlobalDefaultPropagation:
         assert result is not None
         assert result.model == "claude-sonnet-4-6"
 
-    def test_per_anima_overrides_global(self):
-        """Per-anima background_model takes priority over global default."""
+    @pytest.mark.parametrize("credential_available", [False, True])
+    def test_per_anima_overrides_global(self, credential_available):
+        """Cross-provider priority requires its own explicitly configured auth."""
         from core._anima_heartbeat import HeartbeatMixin
+        from core.config.models import CredentialConfig
 
         mc = ModelConfig(
             model="claude-opus-4-6",
             background_model="openai/gpt-4.1",
+            api_key="synthetic-main-provider-key",
         )
 
         class FakeMixin(HeartbeatMixin):
@@ -140,10 +143,21 @@ class TestGlobalDefaultPropagation:
         mixin.agent = MagicMock()
         mixin.agent.model_config = mc
 
-        result = mixin._resolve_background_config()
+        config = AnimaWorksConfig(
+            credentials={"openai": CredentialConfig(api_key="synthetic-openai-key")} if credential_available else {}
+        )
+        config.heartbeat.default_model = "claude-sonnet-4-6"
+        with patch("core.config.models.load_config", return_value=config):
+            if not credential_available:
+                with pytest.raises(ValueError, match="No credential configured"):
+                    mixin._resolve_background_config()
+                assert mixin.agent.model_config.api_key == "synthetic-main-provider-key"
+                return
+            result = mixin._resolve_background_config()
 
         assert result is not None
         assert result.model == "openai/gpt-4.1"
+        assert result.api_key == "synthetic-openai-key"
 
 
 # ── Role defaults merge ──────────────────────────────────────
