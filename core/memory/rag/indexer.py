@@ -502,8 +502,8 @@ class MemoryIndexer:
                     logger.debug("File unchanged, skipping: %s", file_path)
                     return self._finish_index_file(0, "unchanged")
                 if existence is CollectionExistence.UNAVAILABLE:
-                    logger.debug("Collection availability unknown, skipping re-index of %s", file_path)
-                    return self._finish_index_file(0, "unchanged")
+                    logger.debug("Collection availability unknown, deferring re-index of %s", file_path)
+                    return self._finish_index_file(0, "failed", transient=True)
                 logger.info(
                     "Collection '%s' missing despite tracked hash, forcing re-index of %s",
                     collection_name,
@@ -791,22 +791,23 @@ class MemoryIndexer:
         Returns:
             Number of chunks indexed
         """
+        self._last_index_file_outcome = _IndexFileOutcome(status="failed")
         conv_file = conversation_path / "conversation.json"
         if not conv_file.exists():
             logger.debug("conversation.json not found at %s", conv_file)
-            return 0
+            return self._finish_index_file(0, "skipped")
 
         try:
             with open(conv_file, encoding="utf-8") as f:
                 conv_data = json.load(f)
         except Exception as e:
             logger.warning("Failed to read conversation.json: %s", e)
-            return 0
+            return self._finish_index_file(0, "failed")
 
         summary = conv_data.get("compressed_summary", "")
         if not summary or len(summary) < 50:
             logger.debug("compressed_summary too short or empty, skipping")
-            return 0
+            return self._finish_index_file(0, "skipped")
 
         # Check if content has changed via hash
         content_hash = hashlib.sha256(summary.encode("utf-8")).hexdigest()
@@ -819,10 +820,10 @@ class MemoryIndexer:
                 existence = self._collection_exists(collection_name)
                 if existence is CollectionExistence.EXISTS:
                     logger.debug("compressed_summary unchanged, skipping")
-                    return 0
+                    return self._finish_index_file(0, "unchanged")
                 if existence is CollectionExistence.UNAVAILABLE:
                     logger.debug("Conversation collection availability unknown, skipping re-index")
-                    return 0
+                    return self._finish_index_file(0, "failed", transient=True)
                 logger.info(
                     "Collection '%s' missing despite tracked hash, forcing re-index of conversation_summary",
                     collection_name,
@@ -836,13 +837,13 @@ class MemoryIndexer:
 
         if not chunks:
             logger.debug("No chunks extracted from compressed_summary")
-            return 0
+            return self._finish_index_file(0, "skipped")
 
         # Gate GPU work on write availability.  A failed create is the
         # fail-soft signal used by HTTP circuit/fence/unavailable paths.
         if not self.vector_store.create_collection(collection_name):
             logger.warning("Conversation summary collection unavailable for write, skipping index")
-            return 0
+            return self._finish_index_file(0, "failed", transient=True)
 
         # Generate embeddings
         embeddings = self._generate_embeddings([c.content for c in chunks])
@@ -861,7 +862,9 @@ class MemoryIndexer:
         ]
         if not self.vector_store.upsert(collection_name, documents):
             logger.warning("Upsert failed for conversation_summary, skipping index_meta update")
-            return 0
+            transient_probe = getattr(self.vector_store, "is_transient_write_failure", None)
+            transient = bool(callable(transient_probe) and transient_probe(collection_name))
+            return self._finish_index_file(0, "failed", transient=transient)
 
         self._mark_collection_known(collection_name)
 
@@ -873,7 +876,7 @@ class MemoryIndexer:
         self._save_index_meta()
 
         logger.info("Indexed %d conversation_summary chunks for %s", len(chunks), anima_name)
-        return len(chunks)
+        return self._finish_index_file(len(chunks), "indexed")
 
     def _chunk_markdown_text(
         self,
