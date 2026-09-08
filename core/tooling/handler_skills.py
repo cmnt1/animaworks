@@ -9,12 +9,10 @@ from __future__ import annotations
 import json as _json
 import logging
 import re
-import sqlite3
 from datetime import UTC
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from core.exceptions import TaskPersistenceError
 from core.i18n import t
 from core.time_utils import now_iso, now_local
 from core.tooling.handler_base import _error_result
@@ -564,41 +562,9 @@ class SkillsToolsMixin:
 
         return _json.dumps(entry.model_dump(), ensure_ascii=False, indent=2)
 
-    def _persist_task_update_via_server(
-        self,
-        *,
-        task_id: str,
-        status: str,
-        meta: dict[str, Any],
-        summary: str | None,
-    ) -> tuple[dict[str, Any] | None, str | None]:
-        """Persist a task update through the host when the sandbox is read-only."""
-        try:
-            from core.taskboard.tasks import current_attempt_identity
-            from core.tasks_dispatch import _post_tasks
-        except ImportError as exc:
-            return None, f"httpx unavailable: {exc}"
-
-        try:
-            data = _post_tasks(
-                "update-task",
-                {
-                    "anima_name": self._anima_name,
-                    "task_id": task_id,
-                    "status": status,
-                    "meta": meta,
-                    "summary": summary,
-                    "attempt_identity": current_attempt_identity(),
-                },
-            )
-        except Exception as exc:
-            return None, f"server unreachable: {exc}"
-        task = data.get("task") if isinstance(data, dict) and data.get("ok") else None
-        return (task, None) if isinstance(task, dict) else (None, f"unexpected response: {data!r}")
-
     def _handle_update_task(self, args: dict[str, Any]) -> str:
         from core.memory.task_queue import TaskQueueManager
-        from core.schemas import TaskEntry
+        from core.tasks_dispatch import update_task
 
         manager = TaskQueueManager(self._anima_dir)
         task_id = args.get("task_id", "")
@@ -627,47 +593,8 @@ class SkillsToolsMixin:
         if result is not None:
             summary = result
 
-        if status == "pending" and manager.get_task_by_id(task_id) is None:
-            return _error_result(
-                "TaskNotFound",
-                f"Task not found or invalid status: {task_id}",
-            )
-
-        declaration_meta: dict[str, Any] = {}
-        if status == "done":
-            declaration_meta = {
-                "completed_by": "agent_declaration",
-                "declared_at": now_iso(),
-            }
-            if result is not None:
-                declaration_meta["result_note"] = result
-
         try:
-            with manager.store.transaction():
-                if declaration_meta:
-                    entry = manager.update_meta(task_id, declaration_meta, summary=result)
-                    if entry is not None:
-                        entry = manager.update_status(task_id, status, summary=summary)
-                else:
-                    entry = manager.update_status(task_id, status, summary=summary)
-        except (OSError, TaskPersistenceError, sqlite3.OperationalError) as e:
-            from core.tasks_dispatch import is_task_permission_error
-
-            if not is_task_permission_error(e):
-                return _error_result("PersistenceFailed", f"Failed to update task: {e}")
-            task_data, fallback_error = self._persist_task_update_via_server(
-                task_id=task_id,
-                status=status,
-                meta=declaration_meta,
-                summary=summary,
-            )
-            if fallback_error is not None or task_data is None:
-                logger.error("Task persistence fallback failed in update_task: %s", fallback_error)
-                return _error_result(
-                    "PersistenceFailed",
-                    f"Failed to update task: {e}; server fallback failed: {fallback_error}",
-                )
-            entry = TaskEntry.model_validate(task_data)
+            entry = update_task(manager, task_id, status, summary=summary, result=result)
         except Exception as e:
             logger.error("Task persistence failed in update_task: %s", e)
             return _error_result("PersistenceFailed", f"Failed to update task: {e}")

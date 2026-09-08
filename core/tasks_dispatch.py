@@ -74,6 +74,49 @@ def is_task_permission_error(exc: BaseException) -> bool:
     return False
 
 
+def update_task(
+    manager: TaskQueueManager,
+    task_id: str,
+    status: str,
+    *,
+    summary: str | None = None,
+    result: str | None = None,
+) -> TaskEntry | None:
+    """Atomically declare a task result, proxying only sandbox storage denial."""
+    from core.time_utils import now_iso
+
+    if status not in {"pending", "delegated", "done", "cancelled"}:
+        raise ValueError(f"Invalid task update status: {status}")
+    if result is not None:
+        summary = result
+    meta: dict[str, Any] = {}
+    if status == "done":
+        meta = {"completed_by": "agent_declaration", "declared_at": now_iso()}
+        if summary is not None:
+            meta["result_note"] = summary
+    try:
+        with manager.store.transaction():
+            if meta and manager.update_meta(task_id, meta, summary=summary) is None:
+                return None
+            return manager.update_status(task_id, status, summary=summary)
+    except Exception as exc:
+        if not is_task_permission_error(exc):
+            raise
+        response = _post_tasks(
+            "update-task",
+            {
+                "anima_name": manager.anima_dir.name,
+                "task_id": task_id,
+                "status": status,
+                "summary": summary,
+                "meta": meta,
+            },
+        )
+        if response.get("ok") is not True or not isinstance(response.get("task"), dict):
+            raise TaskPersistenceError("Unexpected response from task update host") from exc
+        return TaskEntry.model_validate(response["task"])
+
+
 def read_tasks_via_server(
     anima_name: str, *, include_archived: bool = False, task_id: str | None = None
 ) -> dict[str, TaskEntry]:

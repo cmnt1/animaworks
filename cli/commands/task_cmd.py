@@ -118,6 +118,9 @@ def _cmd_add(args: argparse.Namespace, manager) -> None:
 
 
 def _cmd_update(args: argparse.Namespace, manager) -> None:
+    from core.i18n import t
+    from core.tasks_dispatch import update_task
+
     task_id = getattr(args, "task_id", "")
     status = getattr(args, "status", "")
     summary = getattr(args, "summary", None)
@@ -136,7 +139,11 @@ def _cmd_update(args: argparse.Namespace, manager) -> None:
         )
         sys.exit(2)
 
-    entry = manager.update_status(task_id, status, summary=summary)
+    try:
+        entry = update_task(manager, task_id, status, summary=summary)
+    except Exception as exc:
+        print(t("tooling.task_update_failed", error=str(exc)), file=sys.stderr)
+        sys.exit(3)
     if entry is None:
         print(f"Error: task not found or invalid status: {task_id}", file=sys.stderr)
         sys.exit(1)
