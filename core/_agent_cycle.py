@@ -1451,6 +1451,24 @@ class CycleMixin:
                 from core.execution.base import StreamDisconnectedError
 
                 is_stream_error = isinstance(e, StreamDisconnectedError)
+                if is_stream_error:
+                    from core.execution.error_classifier import FailoverReason, classify_llm_error
+
+                    cause = e.__cause__ if isinstance(e.__cause__, Exception) else e
+                    classified, hint = classify_llm_error(cause)
+                    # API adapters wrap even a failed connection before the
+                    # first response as a stream disconnect. Their own API
+                    # retry budget is already exhausted: do not multiply it
+                    # by the stream retry budget or lose its provider reason.
+                    can_route = (
+                        hint.fallback_ok
+                        and getattr(primary_config, "fallback_models", None)
+                        and not stream_started_work
+                        and not all_tool_call_records
+                    )
+                    if classified != FailoverReason.UNKNOWN and (hint.is_terminal or can_route):
+                        is_stream_error = False
+                        terminal_error_reason = classified.value
                 if not is_stream_error:
                     # Non-stream errors: no stream-level retry, but still
                     # eligible for a model fallback swap (checked below).

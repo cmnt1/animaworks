@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.execution.base import ExecutionResult, TokenUsage
+from core.execution.base import ExecutionResult, StreamDisconnectedError, TokenUsage
 from core.prompt.builder import BuildResult
 from tests.unit.core.test_agent import _make_agent
 
@@ -155,6 +155,49 @@ async def test_fallback_usage_is_billed_under_each_actual_provider(cycle):
     first, second = (call.kwargs for call in log.call_args_list)
     assert (first["model"], first["mode"], first["usage"]["input_tokens"]) == ("codex/test-model", "c", 12)
     assert (second["model"], second["mode"], second["usage"]["input_tokens"]) == ("claude-test", "s", 5)
+
+
+async def test_wrapped_api_failure_routes_without_repeating_stream_retry_budget(cycle):
+    agent, log = cycle
+    agent.model_config.fallback_models = ["s:claude-test"]
+    fallback = agent.model_config.model_copy(update={"model": "claude-test", "resolved_mode": "S"})
+    attempts = []
+
+    async def primary_stream(*args, **kwargs):
+        attempts.append("primary")
+        yield {"type": "usage", "usage": {"input_tokens": 1}}
+        raise StreamDisconnectedError("A-stream error") from ConnectionError("Connection refused")
+
+    async def fallback_stream(*args, **kwargs):
+        attempts.append("fallback")
+        yield _done({"input_tokens": 2})
+
+    agent._executor.execute_streaming = primary_stream
+    other_executor = MagicMock()
+    other_executor.execute_streaming = fallback_stream
+    agent._create_executor = MagicMock(return_value=other_executor)
+    with patch("core.execution.fallback_activity.runtime_fallback_config", return_value=fallback) as route:
+        events = [e async for e in agent._run_cycle_streaming_inner("prompt", trigger="heartbeat")]
+    assert attempts == ["primary", "fallback"]
+    assert route.call_args.kwargs["reason"] == "network"
+    assert events[-1]["cycle_result"]["action"] == "responded"
+    assert log.call_count == 2
+
+
+async def test_wrapped_content_policy_error_never_retries_or_switches(cycle):
+    agent, _ = cycle
+    attempts = []
+
+    async def stream(*args, **kwargs):
+        attempts.append("primary")
+        raise StreamDisconnectedError("A-stream error") from RuntimeError("content_filter")
+        yield  # pragma: no cover
+
+    agent._executor.execute_streaming = stream
+    events = [e async for e in agent._run_cycle_streaming_inner("prompt", trigger="heartbeat")]
+    assert attempts == ["primary"]
+    assert events[-1]["cycle_result"]["action"] == "error"
+    assert events[-1]["cycle_result"]["reason"] == "content_policy"
 
 
 async def test_codex_blocking_failure_is_not_reported_as_success(cycle):

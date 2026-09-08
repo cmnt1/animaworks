@@ -151,21 +151,26 @@ class TestInternalDelegateTask:
     async def test_model_override_persisted_in_meta_and_pending(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """H-3: a per-task model must be stored in both the queue meta and the
-        pending task_desc (the fields the blocked-recovery path restores from)."""
+        """An accepted per-task model survives canonical metadata and input storage."""
         animas = _setup_animas(tmp_path)
         monkeypatch.setattr("core.paths.get_animas_dir", lambda: animas)
 
         app = _make_test_app()
         transport = ASGITransport(app=app)
-        with patch("core.tooling.handler_delegation._record_taskboard_delegation"):
+        with (
+            patch("core.tooling.handler_delegation._record_taskboard_delegation"),
+            # Model availability must not depend on developer CLI logins or
+            # network discovery; exercise the real validator with fixed inputs.
+            patch("core.config.model_catalog.available_model_id_set", return_value={"codex/gpt-5.6-sol"}),
+            patch("core.config.model_config.can_build_model_override", return_value=True),
+        ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
                     "/api/internal/delegate-task",
                     json=_base_payload(model="c:codex/gpt-5.6-sol"),
                 )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 200, resp.text
 
         sub_queue = animas / "natsume" / "state" / "task_queue.jsonl"
         sub_entry = TaskQueueManager(animas / "natsume").get_task_by_id("aabbccddeeff").model_dump()
@@ -181,6 +186,27 @@ class TestInternalDelegateTask:
         pending_data = TaskQueueManager(animas / "natsume").store.get_input("natsume", "aabbccddeeff")
         assert pending_data["model"] == "c:codex/gpt-5.6-sol"
         assert not pending.exists()
+
+    @pytest.mark.anyio
+    async def test_unavailable_model_rejected_before_any_task_is_published(self, tmp_path, monkeypatch) -> None:
+        animas = _setup_animas(tmp_path)
+        monkeypatch.setattr("core.paths.get_animas_dir", lambda: animas)
+        with (
+            patch("core.config.model_catalog.available_model_id_set", return_value={"codex/gpt-5.6-sol"}),
+            patch("core.config.model_config.can_build_model_override", return_value=False),
+            patch("core.tooling.handler_delegation._record_taskboard_delegation") as record,
+        ):
+            async with AsyncClient(transport=ASGITransport(app=_make_test_app()), base_url="http://test") as client:
+                response = await client.post(
+                    "/api/internal/delegate-task", json=_base_payload(model="c:codex/gpt-5.6-sol")
+                )
+
+        assert response.status_code == 422, response.text
+        assert "no credential configured" in response.text
+        assert TaskQueueManager(animas / "natsume").list_tasks() == []
+        assert TaskQueueManager(animas / "rin").list_tasks() == []
+        assert TaskQueueManager(animas / "natsume").store.get_input("natsume", "aabbccddeeff") is None
+        record.assert_not_called()
 
     @pytest.mark.anyio
     async def test_success_writes_queues_and_pending(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
