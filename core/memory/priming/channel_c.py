@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import re
+import threading
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -29,6 +30,18 @@ if TYPE_CHECKING:
     from core.memory.rag.retriever import MemoryRetriever
 
 logger = logging.getLogger("animaworks.priming")
+
+
+class KnowledgeSearchCache:
+    """Single-flight search results owned by one prime_memories invocation.
+
+    C0 and C run in separate worker threads but can request the exact same
+    search. Never retain this cache on an engine or across conversations.
+    """
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.results: dict[tuple, tuple[UnifiedMemorySearch, list[dict]]] = {}
 
 
 def _single_line(text: str, limit: int = 160) -> str:
@@ -198,6 +211,7 @@ def _static_c0_chunks(
     trigger: str,
     min_score: float,
     resident_only: bool = False,
+    search_cache: KnowledgeSearchCache | None = None,
 ) -> tuple[list, list[dict]]:
     """Load all C0 sources in one worker-thread transaction."""
     retriever = get_retriever()
@@ -207,13 +221,13 @@ def _static_c0_chunks(
     if resident_only:
         return always, []
     if not include_fallback:
-        searcher = _build_unified_searcher(anima_dir, get_retriever)
-        relevant = searcher.search_many(
+        searcher, relevant = _search_related_knowledge(
+            anima_dir,
+            get_retriever,
             queries,
-            scope="common_knowledge",
-            limit=5,
             trigger=normalize_trigger(trigger),
             min_score=min_score,
+            search_cache=search_cache,
         )
         if bool(searcher.last_search_meta.get("abstain", False)):
             relevant = []
@@ -269,8 +283,21 @@ def _search_related_knowledge(
     *,
     trigger: str,
     min_score: float,
+    search_cache: KnowledgeSearchCache | None = None,
 ) -> tuple[UnifiedMemorySearch, list[dict]]:
     """Build and execute Channel C search without blocking the event loop."""
+    if search_cache is not None:
+        key = (str(anima_dir), tuple(queries), normalize_trigger(trigger), min_score)
+        with search_cache.lock:
+            if key not in search_cache.results:
+                search_cache.results[key] = _search_related_knowledge(
+                    anima_dir,
+                    get_retriever,
+                    queries,
+                    trigger=trigger,
+                    min_score=min_score,
+                )
+            return search_cache.results[key]
     searcher = _build_unified_searcher(anima_dir, get_retriever)
     results = searcher.search_many(
         queries,
@@ -289,6 +316,7 @@ async def channel_c0_important_knowledge(
     queries: list[str] | None = None,
     trigger: str = "chat",
     resident_only: bool = False,
+    search_cache: KnowledgeSearchCache | None = None,
 ) -> str:
     """Channel C0: opt-in resident and query-relevant important pointers."""
     if not knowledge_dir.is_dir():
@@ -316,6 +344,7 @@ async def channel_c0_important_knowledge(
             trigger=trigger,
             min_score=float(_min_score) if _min_score is not None else 0.0,
             resident_only=resident_only,
+            search_cache=search_cache,
         )
         newest_always_by_path: dict[str, tuple[MemoryItem, float]] = {}
         for r in always_results:
@@ -411,6 +440,7 @@ async def channel_c_related_knowledge(
     message: str = "",
     recent_human_messages: list[str] | None = None,
     trigger: str = "chat",
+    search_cache: KnowledgeSearchCache | None = None,
 ) -> tuple[ItemizedMemory, ItemizedMemory]:
     """Channel C: Related knowledge search through unified Legacy retrieval.
 
@@ -450,6 +480,7 @@ async def channel_c_related_knowledge(
             queries,
             trigger=normalize_trigger(trigger),
             min_score=float(_min_score) if _min_score is not None else 0.0,
+            search_cache=search_cache,
         )
         if bool(searcher.last_search_meta.get("abstain", False)):
             logger.debug("Channel C: unified search abstained")

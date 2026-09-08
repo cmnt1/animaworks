@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -55,6 +56,48 @@ def anima_dir(tmp_path: Path) -> Path:
     path = tmp_path / "animas" / "mei"
     (path / "knowledge").mkdir(parents=True)
     return path
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("abstain", [False, True])
+async def test_c0_and_c_share_search_without_losing_selection_or_abstention(
+    anima_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    abstain: bool,
+) -> None:
+    retriever = MagicMock()
+    retriever.vector_store.get_by_metadata.return_value = []
+    searcher = MagicMock()
+    searcher.last_search_meta = {"abstain": abstain}
+    searcher.search_many.return_value = [
+        _search_row("important-result", score=0.99),
+        _search_row("ordinary-result", score=0.95, importance="normal"),
+    ]
+    monkeypatch.setattr(channel_c, "_build_unified_searcher", lambda *args: searcher)
+    cache = channel_c.KnowledgeSearchCache()
+    queries = channel_c.build_queries("current topic", [])
+
+    # Use the real worker threads: both consumers can request the same search
+    # concurrently, but retain their own ranking and trust filtering.
+    important, related = await asyncio.gather(
+        channel_c.channel_c0_important_knowledge(
+            anima_dir, anima_dir / "knowledge", lambda: retriever, queries, search_cache=cache
+        ),
+        channel_c.channel_c_related_knowledge(
+            anima_dir, anima_dir / "knowledge", lambda: retriever, [], "current topic", search_cache=cache
+        ),
+    )
+
+    searcher.search_many.assert_called_once()
+    if abstain:
+        assert not important
+        assert not any(related)
+    else:
+        assert "important-result" in important
+        assert "ordinary-result" not in important
+        combined_related = "\n".join(related)
+        assert "important-result" in combined_related
+        assert "ordinary-result" in combined_related
 
 
 @pytest.mark.asyncio

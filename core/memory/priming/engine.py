@@ -307,11 +307,19 @@ class PrimingEngine:
 
         keywords = self._extract_keywords(message or effective_message)
         knowledge_queries = build_queries(effective_message, keywords, recent_human_messages)
+        knowledge_search_cache = _channel_c.KnowledgeSearchCache()
 
         channel_calls = [
             ("A", self._channel_a_sender_profile(sender_name)),
             ("B", self._channel_b_recent_activity(sender_name, keywords, channel=channel)),
-            ("C0", self._channel_c0_important_knowledge(knowledge_queries, trigger=channel)),
+            (
+                "C0",
+                self._channel_c0_important_knowledge(
+                    knowledge_queries,
+                    trigger=channel,
+                    search_cache=knowledge_search_cache,
+                ),
+            ),
             (
                 "C",
                 self._channel_c_related_knowledge(
@@ -319,6 +327,7 @@ class PrimingEngine:
                     message=effective_message,
                     recent_human_messages=recent_human_messages,
                     trigger=channel,
+                    search_cache=knowledge_search_cache,
                 ),
             ),
             ("E", self._channel_e_pending_tasks()),
@@ -658,6 +667,7 @@ class PrimingEngine:
         *,
         trigger: str = "chat",
         resident_only: bool = False,
+        search_cache: _channel_c.KnowledgeSearchCache | None = None,
     ) -> str:
         return await _channel_c.channel_c0_important_knowledge(
             self.anima_dir,
@@ -666,6 +676,7 @@ class PrimingEngine:
             queries,
             trigger=trigger,
             resident_only=resident_only,
+            search_cache=search_cache,
         )
 
     async def _channel_c_related_knowledge(
@@ -674,6 +685,7 @@ class PrimingEngine:
         message: str = "",
         recent_human_messages: list[str] | None = None,
         trigger: str = "chat",
+        search_cache: _channel_c.KnowledgeSearchCache | None = None,
     ) -> tuple[str, str]:
         return await _channel_c.channel_c_related_knowledge(
             self.anima_dir,
@@ -683,6 +695,7 @@ class PrimingEngine:
             message=message,
             recent_human_messages=recent_human_messages,
             trigger=trigger,
+            search_cache=search_cache,
         )
 
     async def _channel_e_pending_tasks(self) -> str:
