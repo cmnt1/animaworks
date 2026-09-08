@@ -2402,7 +2402,8 @@
   overflow: hidden;
 }
 
-.chat-model-select:hover:not(:disabled) {
+.chat-model-select:hover:not(:disabled),
+.chat-model-select:active:not(:disabled) {
   border-color: var(--aw-color-accent);
 }
 
