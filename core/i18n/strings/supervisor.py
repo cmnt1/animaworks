@@ -18,6 +18,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "(なし)",
         "en": "(none)",
     },
+    "pending_executor.task_cancelled": {
+        "ja": "タスクはキャンセルされました",
+        "en": "Task was cancelled",
+        "ko": "작업이 취소되었습니다",
+    },
     "pending_executor.task_completed": {
         "ja": "(タスク完了)",
         "en": "(task completed)",

@@ -105,7 +105,7 @@ def _classify_task_result(result: str) -> tuple[str, str]:
     ``_run_llm_task`` raising ``TaskExecError``.
     """
     if result == _SENTINEL_CANCELLED:
-        return "cancelled", "cancelled before execution"
+        return "cancelled", t("pending_executor.task_cancelled")
     if result == _SENTINEL_EXPIRED:
         return "cancelled", "expired (TTL exceeded)"
     if result == _SENTINEL_BUDGET_SKIPPED:
@@ -528,6 +528,10 @@ class PendingTaskExecutor:
 
             manager = TaskQueueManager(self._anima_dir)
             entry = manager.get_task_by_id(task_id)
+            if entry and entry.status == "cancelled":
+                # The owner supplied the cancellation reason. A child ending
+                # after observing it must not replace it with a generic result.
+                return
             if entry and entry.status != status and entry.status in _QUEUE_STICKY_STATUSES:
                 # done / cancelled are the anima's own declarations and
                 # delegated hands ownership to a subordinate; a runner-side

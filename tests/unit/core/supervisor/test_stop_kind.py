@@ -300,6 +300,49 @@ async def test_runner_termination_overrides_earlier_normal_cycle_metadata(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_mid_run_cancel_preserves_owners_business_reason(tmp_path: Path) -> None:
+    from core.taskboard.tasks import process_identity
+    from core.tasks_dispatch import publish_tasks
+
+    executor = _make_executor(tmp_path)
+    task_id = "cancelled-duplicate"
+    publish_tasks(executor._anima_dir, [_task(task_id)])
+    manager = TaskQueueManager(executor._anima_dir)
+    claim = manager.store.claim("test-anima", task_id, process_identity())
+    assert claim is not None
+    reason = "Prior task already completed the work; cancel this duplicate"
+
+    async def cancelled_during_stream(*_args, **_kwargs):
+        yield {"type": "text_delta", "text": "Partial work"}
+        manager.update_status(task_id, "cancelled", summary=reason)
+        yield {"type": "cycle_done", "cycle_result": {"summary": "Partial work", "stop_kind": "interrupted"}}
+
+    executor._anima.agent.run_cycle_streaming = cancelled_during_stream
+    with _execution_patches():
+        await executor._execute_canonical_task(claim)
+
+    entry = manager.get_task_by_id(task_id)
+    assert entry.status == "cancelled"
+    assert entry.summary == reason
+    assert entry.meta["last_run_stop_kind"] == "interrupted"
+    assert manager.store.active_attempts("test-anima") == []
+    assert manager.store.pending("test-anima") == []
+
+
+def test_new_cancel_uses_generic_localized_summary(tmp_path: Path) -> None:
+    from core.i18n import t
+    from core.supervisor.pending_executor import _classify_task_result
+
+    executor = _make_executor(tmp_path)
+    manager = _queue_task(executor, "new-cancel")
+    status, summary = _classify_task_result(_SENTINEL_CANCELLED)
+    executor._sync_task_queue("new-cancel", status, summary=summary)
+    entry = manager.get_task_by_id("new-cancel")
+    assert entry.status == "cancelled"
+    assert entry.summary == t("pending_executor.task_cancelled")
+
+
+@pytest.mark.asyncio
 async def test_interrupted_after_declaration_stays_done(tmp_path: Path) -> None:
     """A run that declared done before being interrupted keeps its declaration."""
     executor = _make_executor(tmp_path, "interrupted")

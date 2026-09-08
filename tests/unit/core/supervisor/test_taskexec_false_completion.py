@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.i18n import t
 from core.supervisor.pending_executor import (
     _SENTINEL_CANCELLED,
     _SENTINEL_EXPIRED,
@@ -82,7 +83,7 @@ class TestClassifyTaskResult:
     def test_cancelled(self):
         status, summary = _classify_task_result(_SENTINEL_CANCELLED)
         assert status == "cancelled"
-        assert "cancelled" in summary.lower()
+        assert summary == t("pending_executor.task_cancelled")
 
     def test_expired(self):
         status, summary = _classify_task_result(_SENTINEL_EXPIRED)
@@ -292,7 +293,7 @@ class TestExecuteLlmTaskStatusMapping:
             patch.object(executor, "_sync_task_queue") as mock_sync,
         ):
             await executor._execute_llm_task(task)
-            mock_sync.assert_called_once_with("test-task-1", "cancelled", summary="cancelled before execution")
+            mock_sync.assert_called_once_with("test-task-1", "cancelled", summary=t("pending_executor.task_cancelled"))
 
     @pytest.mark.asyncio
     async def test_expired_maps_to_cancelled_status(self, tmp_path):
