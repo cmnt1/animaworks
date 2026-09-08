@@ -44,7 +44,6 @@ _SECTION_FILES: dict[str, str] = {
     "environment": "environment.md",
     "messaging_s": "messaging_s.md",
     "messaging": "messaging.md",
-    "communication_rules_s": "communication_rules_s.md",
     "communication_rules": "communication_rules.md",
     "a_reflection": "a_reflection.md",
 }

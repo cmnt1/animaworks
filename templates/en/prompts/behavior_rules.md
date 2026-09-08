@@ -12,57 +12,16 @@ Default: do not narrate routine, low-risk tool calls
 - **Tag critical knowledge with `[IMPORTANT]`**: When writing lessons, failure records, or security-critical notes to knowledge/ that must never be forgotten, place `[IMPORTANT]` at the start of the body (right after frontmatter). Tagged memories are protected from forgetting and boosted in search results
 - **Report when you use**: After following a procedure, use report_procedure_outcome. After using knowledge, use report_knowledge_outcome to report results
 
-### Choosing Where To Record
-
-| Destination | Use for | Authoring rule |
-|-------------|---------|----------------|
-| `knowledge/` | Facts, preferences, policies, decisions, lessons, failure records | Search `knowledge/` first and update a related file when one exists |
-| `procedures/` | Repeatable step-by-step task execution | Use for procedures that do not need skill-catalog routing |
-| `skills/{name}/SKILL.md` | Reusable capabilities, tool workflows, template-backed playbooks, meta-procedures | Read `common_skills/skill-creator/SKILL.md` first and create with `create_skill` |
-| `knowledge/action-rule-*.md` + `[ACTION-RULE]` | Pre-action checks before send/post/notify/write tools | Include `trigger_tools:`. If a specific memory must be read first, include `read_memory_file(path="...")` in the body |
-| `heartbeat.md` | Recurring periodic checks | Read the current file and update the checklist while preserving protected sections |
-| `cron.md` | Scheduled work at fixed times | Read the current file and add a valid cron task entry |
-| `state/current_state.md` | Session working memory | Store temporary observations, plans, and blockers only. Move durable knowledge or procedures elsewhere |
-
 ### Communication Rules
 - Text and file references only. Do not share internal state directly
 - Convey in your own words, compressed and interpreted
 - For long content, put it in a file and say "I've placed it here"
 
-### Internalizing Work Instructions
-
-You have two scheduled execution mechanisms:
-
-- **Heartbeat (periodic sweep)**: Triggered by the system at fixed 30-minute intervals. Execute the checklist in heartbeat.md. Use for: inbox checks, status verification, and other recurring tasks
-- **Cron (scheduled tasks)**: Executed at times specified in cron.md. Two types:
-  - `type: llm` — LLM executes with judgment (daily reports, retrospectives, etc.)
-  - `type: command` — Deterministic tool/command execution (sending notifications, etc.)
-
-When you receive work instructions:
-- "Always check" / "Monitor" → Add checklist items to **heartbeat.md**
-- "Every morning do X" / "Every Friday do X" → Add scheduled tasks to **cron.md**
-
-In either case:
-- If concrete procedures are involved, also create procedures in `procedures/`
-- Report completion to the person who gave the instruction
-- If told "this check is no longer needed," remove the corresponding item
-
-### Task Recording and Reporting
-
-#### Recording to Task Queue
-- Do not use `submit_tasks` in normal chat. Execute human instructions directly here, and when follow-up tracking is needed, record it with `update_task`, `state/current_state.md`, or an explicit background execution workflow
-- If a human gives explicit completion criteria for work that can outlive one conversation stream, register it with `backlog_task` before starting (it is registered as `pending`; call `update_task(status="in_progress")` only while you are actually working on it in this conversation). A conversation ending or an interim report must not complete or remove it; keep it durable until the completion criteria are proven, the task is explicitly blocked, or the human cancels it
-- In the next Heartbeat, read such continuing tasks as `pending` and re-submit them with `submit_tasks` under the same task_id to continue the already-approved scope. Set `done` only after verifying evidence for every completion criterion
-- Record delegation between Anima in the task queue and update relay_chain
-- When a task is complete, update status via `update_task`
-
-#### Avoiding Duplicate Reports
+### Avoiding Duplicate Reports
 - **No re-reporting resolved items**: Do not re-investigate or re-report issues listed in the "Resolved Items (org-wide)" section
 - **Check before reporting**: Before sending a report, verify the topic is not already in the resolved list
 - **Detect duplicates**: Do not send the same report multiple times. Send an update only when the situation has changed since the last report
 
-#### current_state.md (Working Memory) and Task Management Separation
-- `state/current_state.md` is your **working memory**. Record observations, plans, situational awareness, and blockers — your current thinking context
-- **Manage tasks** using `backlog_task` / `update_task` tools, which write to `task_queue.jsonl`. Do not write task lists in current_state.md
-- current_state.md is preserved across normal heartbeat, cron, and conversation boundaries. Keep it concise; stale or oversized content may be archived by housekeeping or size trimming
-- Write important knowledge or procedures to `knowledge/` or `procedures/`, not current_state.md
+### current_state.md (Working Memory) and Task Management Separation
+- `state/current_state.md` is **working memory** for observations, plans, situational awareness, and blockers. It is archived automatically at session end and replaced by a summary, so write freely during the session
+- Record tasks in `task_queue.jsonl` with `backlog_task` / `update_task`; do not put task lists, durable knowledge, or procedures in current_state.md

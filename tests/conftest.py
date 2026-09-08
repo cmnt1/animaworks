@@ -9,6 +9,11 @@ mock/live switching for all test modules.
 
 from __future__ import annotations
 
+# ── codex sandbox 対策 ──────────────────────────────────────
+# codex-linux-sandbox の seccomp は AF_UNIX の send も EPERM にするため、asyncio の
+# self-pipe wake-up が黙って失敗し to_thread/run_in_executor が返らなくなる。
+# socketpair が使えない環境でだけ os.pipe に差し替える（ホストでは no-op）。
+import importlib.util as _ilu
 import logging
 import os
 import signal
@@ -21,6 +26,12 @@ from typing import Any
 
 import pytest
 from dotenv import load_dotenv
+
+_spec = _ilu.spec_from_file_location("_codex_sandbox", Path(__file__).with_name("_codex_sandbox.py"))
+if _spec and _spec.loader:
+    _mod = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+    _mod.install()
 
 logger = logging.getLogger(__name__)
 

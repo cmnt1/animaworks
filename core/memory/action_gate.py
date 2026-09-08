@@ -47,6 +47,7 @@ _HANDLER_ACTION_TOOLS: frozenset[str] = frozenset(
         "post_channel",
         "call_human",
         "write_memory_file",
+        "create_skill",
         "gmail_draft",
         "gmail_draft_update",
         "gmail_send",

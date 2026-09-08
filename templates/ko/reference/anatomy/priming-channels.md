@@ -13,10 +13,10 @@ PrimingEngine이 실행하는 전체 채널의 상세 사양입니다.
 |------|-------------|------|-------|
 | A: sender_profile | 500 | `shared/users/{sender}/index.md` | medium |
 | B: recent_activity | 1300 | `activity_log/` + shared channels | trusted |
-| C: related_knowledge | 1000 | RAG 벡터 검색 (knowledge + common_knowledge) | medium / untrusted |
-| C0: important_knowledge | 500 | `[IMPORTANT]` 태그가 지정된 청크 | medium |
+| C: related_knowledge | 1200 | RAG 벡터 검색 (knowledge + common_knowledge) | medium / untrusted |
+| C0: important_knowledge | 300 | `[IMPORTANT]` 태그가 지정된 청크 | medium |
 | E: pending_tasks | 500 | `task_queue.jsonl` + `task_results/` | trusted |
-| F: episodes | 800 | RAG 벡터 검색 (episodes/) | medium |
+| F: episodes | 400 | RAG 벡터 검색 (episodes/) | medium |
 | G: graph_context | 500 | MemoryBackend의 community context + recent facts | medium |
 
 추가 주입:
@@ -61,7 +61,7 @@ PrimingEngine이 실행하는 전체 채널의 상세 사양입니다.
 
 RAG 벡터 검색으로 관련 지식을 주입합니다.
 
-- **버짓**: 1000 토큰
+- **버짓**: 1200 토큰
 - **검색 방식**: Dual-query (메시지 컨텍스트 + 키워드만)
 - **검색 대상**: 개인 `knowledge/` + `shared_common_knowledge` 컬렉션
 - **최소 스코어**: `config.json`의 `rag.min_retrieval_score` (기본값 0.3)
@@ -81,7 +81,7 @@ RAG 벡터 검색으로 관련 지식을 주입합니다.
 
 `[IMPORTANT]` 태그가 지정된 청크의 요약 포인터를 항상 주입합니다.
 
-- **버짓**: 500 토큰
+- **버짓**: 300 토큰
 - **대상**: `knowledge/` 내 `[IMPORTANT]` 태그가 지정된 청크
 - **주입 형식**: 요약 포인터만 (전문 아님). 상세는 `read_memory_file`로 조회
 - **용도**: 중요한 비즈니스 규칙과 판단 기준의 확실한 회상
@@ -109,7 +109,7 @@ RAG 벡터 검색으로 관련 지식을 주입합니다.
 
 RAG 벡터 검색으로 관련 에피소드를 주입합니다.
 
-- **버짓**: 800 토큰
+- **버짓**: 400 토큰
 - **검색 대상**: `episodes/` 컬렉션 (ChromaDB)
 - **최소 스코어**: Channel C와 동일 (`rag.min_retrieval_score`)
 

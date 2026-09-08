@@ -524,7 +524,7 @@ class TestBuildSystemPrompt:
             assert "External Tools" in result
             assert "call it directly by tool name" in result
             assert "slack_channel_post" in result
-            assert "Prefer direct tools" in result
+            assert "Use `animaworks-tool <tool> <subcommand>` via Bash" not in result
 
     def test_b_mode_injects_external_tools_hint_with_bash_cli(self, tmp_path, data_dir):
         """B mode injects External Tools hint mentioning Bash + animaworks-tool."""

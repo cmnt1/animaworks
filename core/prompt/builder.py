@@ -109,6 +109,22 @@ def _read_default_workspace(anima_dir: Path) -> str:
     return t("builder.default_workspace_unresolved", alias=alias)
 
 
+def _prompt_kind(
+    is_task: bool,
+    is_heartbeat: bool,
+    is_chat: bool,
+) -> Literal["chat", "heartbeat", "task", "inbox"]:
+    """Classify the prompt for trigger-specific L2 instructions."""
+    if is_heartbeat:
+        return "heartbeat"
+    if is_task:
+        return "task"
+    if is_chat:
+        return "chat"
+    # Cron and inbox both receive instructions from outside a chat session.
+    return "inbox"
+
+
 @dataclass
 class BuildResult:
     """Result of system prompt building."""
@@ -163,6 +179,8 @@ def _build_group1(
     _ss: dict[str, str],
     *,
     tier: str = TIER_FULL,
+    is_heartbeat: bool = False,
+    is_chat: bool = False,
 ) -> list[SectionEntry]:
     """Group 1: Environment, identity, injection, and behaviour rules."""
     out: list[SectionEntry] = []
@@ -179,6 +197,11 @@ def _build_group1(
         dw = _read_default_workspace(pd)
         if dw:
             _add(dw, "default_workspace", 2)
+            _add(
+                load_prompt("builder/repo_work_rules", data_dir=data_dir),
+                "repo_work_rules",
+                2,
+            )
 
         _env = load_prompt("environment", data_dir=data_dir, anima_name=pd.name)
         if _env:
@@ -211,11 +234,47 @@ def _build_group1(
         if _br:
             _add(_br, "behavior_rules", 2)
 
+        # Trigger-specific procedures stay out of the stable L1 prompt.
+        prompt_kind = _prompt_kind(is_task, is_heartbeat, is_chat)
+        behavior_context: list[str] = []
+        if prompt_kind in ("chat", "inbox"):
+            behavior_context.append(load_prompt("builder/instruction_internalization"))
+        if prompt_kind == "chat":
+            behavior_context.append(load_prompt("builder/task_recording_chat"))
+        elif prompt_kind == "heartbeat":
+            behavior_context.append(load_prompt("builder/task_recording_heartbeat"))
+        _add("\n\n".join(behavior_context), "behavior_rules_ctx", 2)
+
         _tdi = load_prompt("tool_data_interpretation")
         if _tdi:
             _add(_tdi, "tool_data_interpretation", 2)
 
     return out
+
+
+_VISION_PLACEHOLDERS = frozenset(
+    {
+        "要記入",
+        "未記入",
+        "todo",
+        "tbd",
+        "to be determined",
+        "not entered",
+        "not filled in",
+        "작성 필요",
+        "미작성",
+        "추후 작성",
+    }
+)
+
+
+def _is_placeholder_vision(text: str) -> bool:
+    """Return whether a vision has no substantive body worth injecting."""
+    body = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#")).strip()
+    if len(body) < 40:
+        return True
+    normalized = re.sub(r"^[\s\[\](){}<>（）：:._*-]+|[\s\[\](){}<>（）：:._*-]+$", "", body).casefold()
+    return normalized in _VISION_PLACEHOLDERS
 
 
 def _build_group2(
@@ -237,7 +296,7 @@ def _build_group2(
     if b:
         _add(b, "bootstrap", 3)
     v = memory.read_company_vision()
-    if v:
+    if v and not _is_placeholder_vision(v):
         _add(v, "vision", 3)
     if not is_background_auto:
         sp = memory.read_specialty_prompt()
@@ -662,31 +721,18 @@ def _build_group4(
                 ns = host_line + "\n\n" + ns
             _add(ns, "tool_guides", 2)
 
-    if not is_heartbeat:
-        _add(
-            "\n## CLI Tools\n"
-            "For supervisor management, vault, channel management, "
-            "background tasks, and external tools (Slack, Chatwork, Gmail, GitHub, etc.):\n"
-            "```\nBash: animaworks-tool <tool> <subcommand> [args]\n```\n"
-            "Run `animaworks-tool --help` to see available commands.",
-            "tool_guides",
-            1,
-        )
     if not is_heartbeat and (tool_registry or personal_tools):
         cats = sorted(set((tool_registry or []) + list((personal_tools or {}).keys())))
         if cats:
             if _is_mcp_mode(execution_mode):
                 et = (
                     f"## External Tools\nAvailable categories: {', '.join(cats)}\n"
-                    "When a dedicated external tool is visible in your tool list, call it directly by tool name.\n"
-                    "Prefer direct tools such as `slack_channel_post` over Bash/CLI.\n"
-                    "Use `animaworks-tool <tool> <subcommand>` via Bash only when no equivalent dedicated tool is available."
+                    "When a dedicated external tool is visible in your tool list, call it directly by tool name."
                 )
             else:
                 et = (
                     f"## External Tools\nAvailable categories: {', '.join(cats)}\n"
-                    "Use read_memory_file to load skill content and look up CLI usage, "
-                    f"then execute via Bash: `animaworks-tool <tool> <subcommand>`."
+                    "Read the skill document with read_memory_file for CLI usage."
                 )
             _add(et, "external_tools", 2)
 
@@ -932,7 +978,16 @@ def build_system_prompt(
     )
     permissions = memory.read_permissions()
 
-    group1 = _build_group1(pd, data_dir, memory, is_task, _ss, tier=tier)
+    group1 = _build_group1(
+        pd,
+        data_dir,
+        memory,
+        is_task,
+        _ss,
+        tier=tier,
+        is_heartbeat=is_heartbeat,
+        is_chat=is_chat,
+    )
     group2 = _build_group2(memory, permissions, is_background_auto, is_task, _ss)
     group3 = _build_group3(
         pd,
