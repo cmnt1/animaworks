@@ -343,6 +343,29 @@ class InboxMixin:
 
     # ── Inbox MSG Immediate Processing ────────────────────────
 
+    def _undo_failed_inbox_presentation(self, items: list[InboxItem]) -> None:
+        """Provider failure does not consume the unanswered-message limit."""
+        path = self.anima_dir / "state" / "inbox_read_counts.json"
+        if not items or not path.exists():
+            return
+        try:
+            from core.memory._io import atomic_write_text
+
+            counts = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(counts, dict):
+                return
+            for item in items:
+                key = item.path.name
+                count = counts.get(key)
+                if isinstance(count, int) and not isinstance(count, bool):
+                    if count > 1:
+                        counts[key] = count - 1
+                    else:
+                        counts.pop(key, None)
+            atomic_write_text(path, json.dumps(counts, ensure_ascii=False))
+        except (OSError, ValueError):
+            logger.warning("[%s] Failed to restore inbox presentation counters", self.name, exc_info=True)
+
     async def process_inbox_message(
         self,
         cascade_suppressed_senders: set[str] | None = None,
@@ -613,6 +636,7 @@ class InboxMixin:
                     # outage / rate limit).  Keeping them lets the next
                     # inbox cycle retry — up to _MAX_INBOX_RETRIES.
                     if cycle_failed:
+                        self._undo_failed_inbox_presentation(inbox_result.inbox_items)
                         logger.warning(
                             "[%s] Inbox LLM cycle failed — messages NOT archived (reason=%s)",
                             self.name,
@@ -669,6 +693,9 @@ class InboxMixin:
                             "trigger": trigger,
                             "session_type": "inbox",
                             "thread_id": _INBOX_THREAD_ID,
+                            "status": "failed" if cycle_failed else "completed",
+                            "reason": result.reason,
+                            "stop_kind": result.stop_kind,
                         },
                     )
 
@@ -688,16 +715,11 @@ class InboxMixin:
                             await locals()["agent_session_context"].__aexit__(None, None, None)
                         agent_session_acquired = False
                     logger.exception("[%s] process_inbox_message FAILED", self.name)
-                    # Archive on crash to prevent re-processing storms
-                    if inbox_result is not None and inbox_result.inbox_items:
-                        try:
-                            self.messenger.archive_paths(inbox_result.inbox_items)
-                        except Exception:
-                            logger.warning(
-                                "[%s] Failed to crash-archive inbox messages",
-                                self.name,
-                                exc_info=True,
-                            )
+                    # A provider/session failure is not acknowledgement of
+                    # unread work. The watcher schedules its bounded retry;
+                    # retain the original messages for recovery.
+                    if inbox_result is not None:
+                        self._undo_failed_inbox_presentation(inbox_result.inbox_items)
                     self._activity.log(
                         "error",
                         summary=t("anima.inbox_error", exc=type(exc).__name__),

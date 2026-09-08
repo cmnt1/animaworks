@@ -725,7 +725,7 @@ class HeartbeatMixin:
                     )
 
                 try:
-                    self.memory.append_episode(episode_entry)
+                    await asyncio.to_thread(self.memory.append_episode, episode_entry)
                 except Exception:
                     logger.debug("[%s] Failed to record heartbeat episode", self.name, exc_info=True)
 
@@ -772,7 +772,7 @@ class HeartbeatMixin:
             # Keep current_state.md across normal heartbeat boundaries. It is
             # working memory, not a disposable session scratchpad; only trim it
             # when an explicit size limit is configured.
-            self._enforce_state_size_limit()
+            await asyncio.to_thread(self._enforce_state_size_limit)
 
             return result
         finally:
@@ -786,26 +786,11 @@ class HeartbeatMixin:
         inbox_items: list[InboxItem],
         unread_count: int,
     ) -> None:
-        """Handle heartbeat failure: crash-archive, log error, save recovery note."""
+        """Keep unread work on failure, log the error, and save recovery state."""
         logger.exception("[%s] run_heartbeat FAILED", self.name)
 
-        # Archive inbox messages even on crash to prevent
-        # re-processing storms on next heartbeat.
-        if inbox_items:
-            try:
-                crash_archived = self.messenger.archive_paths(inbox_items)
-                logger.info(
-                    "[%s] Crash-archived %d/%d inbox messages",
-                    self.name,
-                    crash_archived,
-                    len(inbox_items),
-                )
-            except Exception:
-                logger.warning(
-                    "[%s] Failed to crash-archive inbox messages",
-                    self.name,
-                    exc_info=True,
-                )
+        # Failed model execution never acknowledges unread requests. Retry
+        # cadence remains owned by the scheduler/watcher, not a local loop.
 
         # Activity log: heartbeat failure (single event to avoid double-fault)
         self._activity.log(

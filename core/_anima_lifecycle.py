@@ -947,6 +947,9 @@ class LifecycleMixin:
                         meta={
                             "task_name": task_name,
                             "duration_ms": result.duration_ms if result else 0,
+                            "status": "failed" if result.action == "error" else "completed",
+                            "reason": result.reason,
+                            "stop_kind": result.stop_kind,
                             "skill_rejections": rejection_dicts,
                             "skill_warnings": warning_dicts,
                         },

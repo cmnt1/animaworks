@@ -11,6 +11,7 @@ from core.execution.error_classifier import (
     FailoverReason,
     classify_llm_error,
     classify_llm_error_message,
+    detect_cli_error_envelope,
 )
 from core.schemas import ModelConfig
 
@@ -106,6 +107,9 @@ _CAPACITY_REASONS = frozenset(
         FailoverReason.QUOTA_EXHAUSTED,
         FailoverReason.AUTH,
         FailoverReason.BILLING,
+        FailoverReason.NETWORK,
+        FailoverReason.TIMEOUT,
+        FailoverReason.SERVER_ERROR,
     }
 )
 
@@ -196,10 +200,6 @@ def runtime_fallback_config(
     return retry_config
 
 
-# ponytail: length cap; longest real provider error text seen is ~330 chars
-_IMPLICIT_ERROR_MAX_CHARS = 400
-
-
 async def run_with_model_fallback(
     run: Callable[[ModelConfig], Awaitable[_T]],
     *,
@@ -211,8 +211,8 @@ async def run_with_model_fallback(
     """Walk the configured priority list until one model succeeds.
 
     Some CLI executors return provider failures as ordinary response text
-    (not an exception or ``action=error``).  Classify every result summary so
-    those responses cannot escape as a successful chat reply.
+    (not an exception or ``action=error``). Recognize only their fixed error
+    envelopes; normal answers mentioning an error are not provider failures.
     """
     current_config = active_config
     seen: set[tuple[Any, ...]] = set()
@@ -245,18 +245,20 @@ async def run_with_model_fallback(
             data = result.model_dump(mode="json") if hasattr(result, "model_dump") else result
             if not isinstance(data, dict):
                 return result
-            if has_partial_execution(data):
-                return result
             error_text = str(data.get("summary") or "")
-            reason, hint = classify_llm_error_message(f"{data.get('reason') or ''} {error_text}".strip())
             explicit_error = data.get("action") == "error" or bool(data.get("reason"))
-            if reason is FailoverReason.UNKNOWN and not explicit_error:
+            if not explicit_error and detect_cli_error_envelope(error_text) is None:
                 return result
-            if not explicit_error and len(error_text) > _IMPLICIT_ERROR_MAX_CHARS:
-                # A provider failure returned as plain text is short (longest
-                # observed: ~330 chars, OpenAI policy refusal). A long reply that
-                # merely *mentions* a 403/"forbidden" is a real answer; registering
-                # it would block the shared provider for every anima.
+            reason, hint = classify_llm_error_message(f"{data.get('reason') or ''} {error_text}".strip())
+            if data.get("action") != "error":
+                failure_fields = {"action": "error", "reason": reason.value, "stop_kind": "stream_error"}
+                result = (
+                    result.model_copy(update=failure_fields)
+                    if hasattr(result, "model_copy")
+                    else {**data, **failure_fields}
+                )
+                last_result = result
+            if has_partial_execution(data):
                 return result
             if not hint.fallback_ok:
                 return result
