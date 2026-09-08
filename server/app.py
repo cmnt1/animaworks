@@ -1313,6 +1313,17 @@ def create_app(
         progress = startup_progress.snapshot()
         if progress.get("phase") == "ready":
             return await call_next(request)
+        if (
+            progress.get("phase") == "spawning_animas"
+            and path.startswith("/api/internal/")
+            and _is_safe_localhost_request(request)
+        ):
+            # Vector startup and preflight have finished before workers are
+            # spawned. Workers need embed/vector and persistence endpoints
+            # during their own initialization; gating those on all workers
+            # being ready creates a startup dependency cycle. This only
+            # bypasses readiness: the normal auth/setup guards still run.
+            return await call_next(request)
 
         headers = {"Retry-After": "5", "Cache-Control": "no-store"}
         if _request_accepts_html(request):
