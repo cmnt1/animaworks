@@ -386,17 +386,71 @@ def create_internal_router() -> APIRouter:
         return body.dict()
 
     async def _require_vector_worker(request: Request, path: str, body: BaseModel) -> dict[str, Any] | JSONResponse:
+        from core.i18n import t
+
         anima_name = getattr(body, "anima_name", None)
         if isinstance(anima_name, str) and anima_name:
+            from core.anima_factory import validate_anima_name
             from core.config.resolver import resolve_process_model_config
             from core.paths import get_animas_dir
 
+            if validate_anima_name(anima_name) is not None:
+                return JSONResponse(status_code=422, content={"detail": t("rag.invalid_anima_name")})
             process_config = resolve_process_model_config(get_animas_dir() / anima_name)
             if process_config.valid and process_config.process_model == "phase3":
-                return JSONResponse(
-                    status_code=409,
-                    content={"detail": f"Vector proxy disabled for phase3 anima: {anima_name}"},
-                )
+                # MCP/CLI subprocesses cannot share a task runner's Python IPC
+                # requester. This is transport forwarding only: the phase3
+                # root retains the sole native handle, queue and repair fence.
+                methods = {
+                    "/query": "memory.query",
+                    "/upsert": "memory.upsert",
+                    "/update-metadata": "memory.update_metadata",
+                    "/delete-documents": "memory.delete_documents",
+                    "/get-by-metadata": "memory.get_by_metadata",
+                    "/get-by-ids": "memory.get_by_ids",
+                    "/create-collection": "memory.create_collection",
+                    "/delete-collection": "memory.delete_collection",
+                    "/list-collections": "memory.list_collections_checked",
+                }
+                method = methods.get(path)
+                if method is None:
+                    # Reset/repair/health must not open a second native owner.
+                    return JSONResponse(
+                        status_code=409,
+                        content={"detail": t("rag.worker_operation_disabled", anima=anima_name)},
+                    )
+                supervisor = getattr(request.app.state, "supervisor", None)
+                if supervisor is None:
+                    return JSONResponse(
+                        status_code=503,
+                        content={"detail": t("rag.root_unavailable")},
+                        headers={"Retry-After": "1"},
+                    )
+                payload = _body_payload(body)
+                payload.pop("anima_name", None)
+                try:
+                    result = await supervisor.send_request(
+                        anima_name,
+                        "memory",
+                        {"method": method, "params": payload},
+                        timeout=120.0,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Root memory proxy unavailable: anima=%s method=%s", anima_name, method, exc_info=True
+                    )
+                    return JSONResponse(
+                        status_code=503,
+                        content={"detail": t("rag.root_unavailable")},
+                        headers={"Retry-After": "1"},
+                    )
+                if not isinstance(result, dict) or result.get("ok") is False:
+                    return JSONResponse(
+                        status_code=503,
+                        content={"detail": t("rag.root_operation_failed")},
+                        headers={"Retry-After": "1"},
+                    )
+                return result
         manager = getattr(request.app.state, "vector_worker", None)
         if manager is None or not getattr(manager, "enabled", False):
             logger.warning("Vector worker unavailable for %s: manager disabled or missing", path)

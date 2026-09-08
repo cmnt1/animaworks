@@ -742,28 +742,17 @@ class SchedulerMixin:
         current_e5_prefix = get_embedding_e5_prefix_enabled()
         global_meta_path = base_dir / "index_meta.json"
         if global_meta_path.is_file():
+            from core.i18n import t
+            from core.memory.rag.index_signature import index_signature_error
+
             try:
                 meta = json.loads(global_meta_path.read_text(encoding="utf-8"))
-                previous_model = meta.get("embedding_model")
-                previous_e5_prefix = bool(meta.get("embedding_e5_prefix", False))
-                if previous_model and previous_model != current_model:
-                    logger.warning(
-                        "Embedding model changed: %s -> %s. "
-                        "Skipping daily indexing — run 'animaworks index --full' to rebuild.",
-                        previous_model,
-                        current_model,
-                    )
-                    return
-                if previous_e5_prefix != current_e5_prefix:
-                    logger.warning(
-                        "Embedding E5 prefix setting changed: %s -> %s. "
-                        "Skipping daily indexing — run 'animaworks index --full' to rebuild.",
-                        previous_e5_prefix,
-                        current_e5_prefix,
-                    )
-                    return
+                signature_error = index_signature_error(meta, current_model, current_e5_prefix)
             except (json.JSONDecodeError, OSError):
-                pass
+                signature_error = t("rag.signature_unreadable")
+            if signature_error:
+                logger.warning(t("rag.daily_indexing_blocked", reason=signature_error))
+                return
 
         from core.memory.rag.shared_meta import read_shared_hash, write_shared_hash
         from core.memory.rag_search import _compute_dir_hash

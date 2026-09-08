@@ -83,6 +83,7 @@ class AnimaRunner:
         self._inbox_limiter: InboxRateLimiter | None = None
         self._pending_executor: PendingTaskExecutor | None = None
         self._streaming_handler: StreamingIPCHandler | None = None
+        self._root_memory_requester_installed = False
 
     @staticmethod
     def _conversation_contains_recovery(conv_memory: Any, recovered_text: str, saved_text: str) -> bool:
@@ -249,6 +250,7 @@ class AnimaRunner:
                 anima_dir=self._anima_dir,
                 emit_event=self._emit_event,
             )
+            self._configure_root_memory_requester()
             self._inbox_limiter = InboxRateLimiter(
                 anima=self.anima,
                 anima_name=self.anima_name,
@@ -387,6 +389,27 @@ class AnimaRunner:
                 if not task.done():
                     task.cancel()
             await asyncio.gather(ack_task, shutdown_task, return_exceptions=True)
+
+    def _configure_root_memory_requester(self) -> None:
+        """Route root inbox/tool retrieval to the same DB owner as child jobs."""
+        supervisor = self._scheduler_mgr._task_runner_supervisor if self._scheduler_mgr is not None else None
+        if supervisor is None or supervisor._memory_service is None:
+            return
+        from core.memory.rag.ipc_store import root_memory_requester
+        from core.memory.rag.singleton import configure_ipc_vector_requester
+
+        async def request(method: str, params: dict[str, Any]) -> dict[str, Any]:
+            if self.shutdown_event.is_set():
+                from core.supervisor.memory_service import MemoryServiceUnavailable
+
+                raise MemoryServiceUnavailable("root memory service is shutting down")
+            # A first inbox query can beat the asynchronous startup task.
+            # start() is idempotent and serializes native DB initialization.
+            await supervisor.start()
+            return await supervisor.handle_memory(method, params)
+
+        configure_ipc_vector_requester(root_memory_requester(request), anima_name=self.anima_name)
+        self._root_memory_requester_installed = True
 
     def _start_autonomous_services(self) -> None:
         """Start autonomous background services after startup ack."""
@@ -1170,6 +1193,12 @@ class AnimaRunner:
         if self._scheduler_mgr:
             self._scheduler_mgr.shutdown()
             await self._scheduler_mgr.shutdown_task_runners()
+
+        if getattr(self, "_root_memory_requester_installed", False):
+            from core.memory.rag.singleton import configure_ipc_vector_requester
+
+            configure_ipc_vector_requester(None)
+            self._root_memory_requester_installed = False
 
         # Stop IPC server
         if self.ipc_server:

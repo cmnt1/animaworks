@@ -688,7 +688,7 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
         from core.memory.rag.singleton import configure_ipc_vector_requester
 
         memory_client = _MemoryRpcClient(connection)
-        configure_ipc_vector_requester(memory_client.request)
+        configure_ipc_vector_requester(memory_client.request, anima_name=args.anima)
 
     link = _RootLink(connection, socket_path, state, request_id, memory_client)
 
