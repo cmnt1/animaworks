@@ -10,6 +10,14 @@
 from __future__ import annotations
 
 STRINGS: dict[str, dict[str, str]] = {
+    "cost.unknown_pricing": {
+        "ja": "不明（{count}件の料金未登録）",
+        "en": "Unknown (pricing unavailable for {count} sessions)",
+    },
+    "cost.partial_pricing": {
+        "ja": "{cost} + 不明分（{count}件の料金未登録）",
+        "en": "{cost} + unknown (pricing unavailable for {count} sessions)",
+    },
     "activity.blocked": {
         "ja": "ブロック: {reason}",
         "en": "Blocked: {reason}",

@@ -608,14 +608,29 @@ class CycleMixin:
         # ── Mode C: Codex SDK ─────────────────────────────
         if mode == "c":
             _update_tracker_from_prompt_estimate(tracker, system_prompt, prompt)
-            result = await active_executor.execute(
-                prompt=prompt,
-                system_prompt=system_prompt,
-                tracker=tracker,
-                trigger=trigger,
-                images=images,
-                thread_id=thread_id,
-            )
+            try:
+                result = await active_executor.execute(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    tracker=tracker,
+                    trigger=trigger,
+                    images=images,
+                    thread_id=thread_id,
+                )
+            except (Exception, asyncio.CancelledError) as exc:
+                # Blocking collectors attach the usage observed before an
+                # interruption. Cancellation must still propagate unchanged.
+                observed = getattr(exc, "usage", None)
+                if isinstance(observed, dict):
+                    _log_session_token_usage(
+                        self.anima_dir,
+                        model=active_model_config.model,
+                        mode=mode,
+                        trigger=trigger,
+                        usage=observed,
+                        duration_ms=int((time.monotonic() - start) * 1000),
+                    )
+                raise
             if result.replied_to_from_transcript:
                 self._tool_handler.merge_replied_to(result.replied_to_from_transcript)
             _save_prompt_log_end(
@@ -652,6 +667,8 @@ class CycleMixin:
                 len(result.text),
             )
             _c_usage = result.usage.to_dict() if result.usage else None
+            c_turns = getattr(result.result_message, "num_turns", 0)
+            c_turns = c_turns if isinstance(c_turns, int) else 0
             _log_session_token_usage(
                 self.anima_dir,
                 model=active_model_config.model,
@@ -659,10 +676,17 @@ class CycleMixin:
                 trigger=trigger,
                 usage=_c_usage,
                 duration_ms=duration_ms,
+                turns=c_turns,
             )
+            is_error = result.error is True
+            error_reason = result.reason if isinstance(result.reason, str) else ""
+            error_category = _resolve_error_category(error_reason, result.text) if is_error else None
             return CycleResult(
                 trigger=trigger,
-                action="responded",
+                action="error" if is_error else "responded",
+                stop_kind="stream_error" if is_error else "normal",
+                reason=(error_category or "unknown") if is_error else "",
+                error_category=error_category,
                 summary=result.text,
                 duration_ms=duration_ms,
                 context_usage_ratio=tracker.usage_ratio,
@@ -670,6 +694,7 @@ class CycleMixin:
                 context_threshold=tracker.threshold,
                 tool_call_records=_tool_records_to_dicts(result),
                 usage=_c_usage,
+                total_turns=c_turns,
                 truncated=result.truncated,
             )
 
@@ -1320,6 +1345,13 @@ class CycleMixin:
             completed_tools: list[dict[str, Any]] = []
             text_parts_this_attempt: list[str] = []
             stream_succeeded = False
+            attempt_usage: dict[str, int] = {}
+            attempt_started = time.monotonic()
+            attempt_turns = 0
+
+            def record_usage(usage: dict[str, int] | None, acc: dict[str, int] = attempt_usage) -> None:
+                _merge_stream_usage(_stream_usage, usage)
+                _merge_stream_usage(acc, usage)
 
             try:
                 self._active_streaming_executor = active_executor
@@ -1339,12 +1371,18 @@ class CycleMixin:
                             stream_started_work = True
                         if self._progress_callback:
                             self._progress_callback()
-                        if chunk["type"] == "done":
+                        if chunk["type"] == "usage":
+                            record_usage(chunk.get("usage"))
+                        elif chunk["type"] == "done":
                             full_text_parts.append(chunk["full_text"])
                             text_parts_this_attempt.append(chunk["full_text"])
                             result_message = chunk["result_message"]
                             all_tool_call_records.extend(chunk.get("tool_call_records", []))
-                            _merge_stream_usage(_stream_usage, chunk.get("usage"))
+                            if not chunk.get("usage_already_emitted"):
+                                record_usage(chunk.get("usage"))
+                            reported_turns = getattr(result_message, "num_turns", 0)
+                            if isinstance(reported_turns, int):
+                                attempt_turns = reported_turns
                             transcript_replied = chunk.get("replied_to_from_transcript", set())
                             if transcript_replied:
                                 self._tool_handler.merge_replied_to(transcript_replied)
@@ -1355,6 +1393,9 @@ class CycleMixin:
                             stream_stop_kind = str(chunk.get("stop_kind") or "normal")
                             stream_succeeded = True
                         elif chunk["type"] == "error" and chunk.get("terminal") is True:
+                            if not chunk.get("usage_already_emitted"):
+                                record_usage(chunk.get("usage"))
+                            all_tool_call_records.extend(chunk.get("tool_call_records", []))
                             terminal_error_message = chunk.get("message", "[Terminal LLM error]")
                             terminal_error_reason = str(chunk.get("reason") or "")
                             # Held back until the fallback decision below: a
@@ -1395,7 +1436,15 @@ class CycleMixin:
                     if self._active_streaming_executor is active_executor:
                         self._active_streaming_executor = None
 
+            except (asyncio.CancelledError, GeneratorExit) as exc:
+                observed = getattr(exc, "usage", None)
+                if isinstance(observed, dict) and not getattr(exc, "usage_already_emitted", False):
+                    record_usage(observed)
+                raise
             except Exception as e:
+                observed = getattr(e, "usage", None)
+                if isinstance(observed, dict) and not getattr(e, "usage_already_emitted", False):
+                    record_usage(observed)
                 from core.execution.base import StreamDisconnectedError
 
                 is_stream_error = isinstance(e, StreamDisconnectedError)
@@ -1511,6 +1560,19 @@ class CycleMixin:
 
                     await asyncio.sleep(actual_delay)
                     continue
+            finally:
+                # Flush each execution attempt under its actual model/mode,
+                # including failures, cancellation and generator close. A
+                # fallback can use a different provider's token semantics.
+                _log_session_token_usage(
+                    self.anima_dir,
+                    model=active_model_config.model,
+                    mode=mode,
+                    trigger=trigger,
+                    usage=attempt_usage,
+                    duration_ms=int((time.monotonic() - attempt_started) * 1000),
+                    turns=attempt_turns,
+                )
 
             if terminal_error_message and not fallback_swapped and getattr(primary_config, "fallback_models", None):
                 from core.execution.fallback_activity import runtime_fallback_config
@@ -1574,7 +1636,6 @@ class CycleMixin:
 
         session_chained = False
         total_turns = result_message.num_turns if result_message else 0
-        chain_count = 0
 
         # Session chaining — force_chain from mid-session auto-compact.
         if _stream_force_chain and not tracker.threshold_exceeded:
@@ -1662,16 +1723,6 @@ class CycleMixin:
         )
 
         _final_usage = _stream_usage if any(_stream_usage.values()) else None
-        _log_session_token_usage(
-            self.anima_dir,
-            model=active_model_config.model,
-            mode=mode,
-            trigger=trigger,
-            usage=_final_usage,
-            duration_ms=duration_ms,
-            turns=total_turns,
-            chains=chain_count if session_chained else 0,
-        )
         yield {
             "type": "cycle_done",
             "cycle_result": CycleResult(

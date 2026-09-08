@@ -24,13 +24,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core._agent_executor import ExecutorFactoryMixin
-from core.execution.base import ExecutionResult
+from core.execution.base import ExecutionResult, TokenUsage
 from core.execution.codex_sdk import (
     CodexSDKExecutor,
     _clear_thread_id,
     _close_codex_client,
     _close_subprocess_stdio,
     _codex_item_tool_name,
+    _CodexUsageAccumulator,
     _default_home_dir,
     _default_path_env,
     _event_idle_timeout_seconds,
@@ -148,6 +149,16 @@ def _mock_stream_thread(thread_id: str, events):
     thread.turn = AsyncMock(return_value=turn)
     thread.id = thread_id
     return thread
+
+
+def _mock_result_thread(thread_id: str, result):
+    """Blocking execution consumes the same protocol stream as streaming."""
+    items = list(result.items)
+    if result.final_response and not any(getattr(item, "text", None) == result.final_response for item in items):
+        items.append(SimpleNamespace(type="agent_message", text=result.final_response))
+    events = [SimpleNamespace(type="item.completed", item=item) for item in items]
+    events.append(SimpleNamespace(type="turn.completed", usage=result.usage))
+    return _mock_stream_thread(thread_id, events)
 
 
 # ── Helper function tests ────────────────────────────────────
@@ -519,6 +530,18 @@ class TestExecutorInit:
         env = executor._build_mcp_env()
         assert "ANIMAWORKS_ANIMA_DIR" in env
         assert "PYTHONPATH" in env
+
+    @pytest.mark.parametrize("value", ["", "http://127.0.0.1:18900"])
+    def test_build_mcp_env_forwards_configured_memory_services(self, executor, monkeypatch, value):
+        names = ("ANIMAWORKS_EMBED_URL", "ANIMAWORKS_VECTOR_URL", "ANIMAWORKS_RERANK_URL")
+        for name in names:
+            monkeypatch.setenv(name, value)
+        env = executor._build_mcp_env()
+        for name in names:
+            if value:
+                assert env[name] == value
+            else:
+                assert name not in env
 
     def test_default_path_env_prepends_embedded_codex(self):
         if os.name == "nt":
@@ -1084,11 +1107,9 @@ class TestBlockingExecution:
         mock_turn = MagicMock()
         mock_turn.final_response = "Hello from Codex!"
         mock_turn.items = []
-        mock_turn.usage = MagicMock(input_tokens=100, output_tokens=50)
+        mock_turn.usage = SimpleNamespace(input_tokens=100, output_tokens=50)
 
-        mock_thread = MagicMock()
-        mock_thread.run = AsyncMock(return_value=mock_turn)
-        mock_thread.id = "thread-001"
+        mock_thread = _mock_result_thread("thread-001", mock_turn)
 
         mock_codex = _mock_codex(mock_thread)
 
@@ -1100,8 +1121,10 @@ class TestBlockingExecution:
 
         assert isinstance(result, ExecutionResult)
         assert result.text == "Hello from Codex!"
-        assert mock_thread.run.call_args.kwargs["summary"].root.value == "concise"
-        assert "sandbox" not in mock_thread.run.call_args.kwargs
+        assert mock_thread.turn.call_args.kwargs["summary"].root.value == "concise"
+        assert "sandbox" not in mock_thread.turn.call_args.kwargs
+        assert result.usage.input_tokens == 100
+        assert result.usage.output_tokens == 50
         assert _load_thread_id(anima_dir, "chat") == "thread-001"
 
     @pytest.mark.asyncio
@@ -1124,15 +1147,13 @@ class TestBlockingExecution:
         mock_turn.items = [before_tool, tool_item, final_item]
         mock_turn.usage = None
 
-        mock_thread = MagicMock()
-        mock_thread.run = AsyncMock(return_value=mock_turn)
-        mock_thread.id = "thread-tool-text"
+        mock_thread = _mock_result_thread("thread-tool-text", mock_turn)
         mock_codex = _mock_codex(mock_thread)
 
         with patch.object(executor, "_create_codex_client", return_value=mock_codex):
             result = await executor.execute(prompt="use a tool")
 
-        assert result.text == "Context before the tool call.\n\nFinal answer after the tool call."
+        assert result.text == "Context before the tool call.\nFinal answer after the tool call."
         assert len(result.tool_call_records) == 1
 
     @pytest.mark.asyncio
@@ -1142,9 +1163,7 @@ class TestBlockingExecution:
         mock_turn.items = []
         mock_turn.usage = None
 
-        mock_thread = MagicMock()
-        mock_thread.run = AsyncMock(return_value=mock_turn)
-        mock_thread.id = "tid-saved"
+        mock_thread = _mock_result_thread("tid-saved", mock_turn)
 
         mock_codex = _mock_codex(mock_thread)
 
@@ -1160,9 +1179,7 @@ class TestBlockingExecution:
         mock_turn.items = []
         mock_turn.usage = None
 
-        mock_thread = MagicMock()
-        mock_thread.run = AsyncMock(return_value=mock_turn)
-        mock_thread.id = "tid-hb"
+        mock_thread = _mock_result_thread("tid-hb", mock_turn)
 
         mock_codex = _mock_codex(mock_thread)
 
@@ -1186,9 +1203,7 @@ class TestBlockingExecution:
         mock_turn.items = []
         mock_turn.usage = None
 
-        mock_thread = MagicMock()
-        mock_thread.run = AsyncMock(return_value=mock_turn)
-        mock_thread.id = "tid-inbox"
+        mock_thread = _mock_result_thread("tid-inbox", mock_turn)
 
         mock_codex = _mock_codex(mock_thread)
 
@@ -1225,7 +1240,7 @@ class TestBlockingExecution:
     async def test_execute_error_returns_error_result(self, executor):
         mock_codex = MagicMock()
         mock_thread = MagicMock()
-        mock_thread.run = AsyncMock(side_effect=RuntimeError("CLI crashed"))
+        mock_thread.turn = AsyncMock(side_effect=RuntimeError("CLI crashed"))
         mock_thread.id = None
         mock_codex.thread_start = AsyncMock(return_value=mock_thread)
         mock_codex.close = AsyncMock()
@@ -1239,34 +1254,37 @@ class TestBlockingExecution:
     async def test_execute_falls_back_to_cli_exec_on_fatal_sdk_error(self, executor):
         mock_codex = MagicMock()
         mock_thread = MagicMock()
-        mock_thread.run = AsyncMock(side_effect=RuntimeError("fatal stderr signal: Reading prompt from stdin..."))
+        mock_thread.turn = AsyncMock(side_effect=RuntimeError("fatal stderr signal: Reading prompt from stdin..."))
         mock_thread.id = None
         mock_codex.thread_start = AsyncMock(return_value=mock_thread)
         mock_codex.close = AsyncMock()
-        fallback = ExecutionResult(text="fallback ok")
+
+        async def fallback(*args, **kwargs):
+            yield {"type": "done", "full_text": "fallback ok", "usage": {}}
 
         with (
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
-            patch.object(executor, "_execute_via_cli_exec", AsyncMock(return_value=fallback)) as mock_fallback,
+            patch.object(executor, "_execute_streaming_via_cli_exec", side_effect=fallback) as mock_fallback,
         ):
             result = await executor.execute(prompt="test", system_prompt="sys")
 
         assert result.text == "fallback ok"
-        mock_fallback.assert_awaited_once()
+        mock_fallback.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_execute_prefers_cli_exec_for_background_trigger(self, executor):
-        fallback = ExecutionResult(text="cli preferred")
+        async def fallback(*args, **kwargs):
+            yield {"type": "done", "full_text": "cli preferred", "usage": {}}
 
         with (
             patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=True),
-            patch.object(executor, "_execute_via_cli_exec", AsyncMock(return_value=fallback)) as mock_fallback,
+            patch.object(executor, "_execute_streaming_via_cli_exec", side_effect=fallback) as mock_fallback,
             patch.object(executor, "_create_codex_client") as mock_client,
         ):
             result = await executor.execute(prompt="test", system_prompt="sys", trigger="task:demo")
 
         assert result.text == "cli preferred"
-        mock_fallback.assert_awaited_once()
+        mock_fallback.assert_called_once()
         mock_client.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1278,12 +1296,10 @@ class TestBlockingExecution:
         mock_turn.items = []
         mock_turn.usage = None
 
-        fresh_thread = MagicMock()
-        fresh_thread.run = AsyncMock(return_value=mock_turn)
-        fresh_thread.id = "new-thread"
+        fresh_thread = _mock_result_thread("new-thread", mock_turn)
 
         stale_thread = MagicMock()
-        stale_thread.run = AsyncMock(side_effect=RuntimeError("Resume failed"))
+        stale_thread.turn = AsyncMock(side_effect=RuntimeError("Resume failed"))
 
         mock_codex = _mock_codex(fresh_thread, resume_thread=stale_thread)
 
@@ -2286,7 +2302,8 @@ class TestModeResolution:
 
 class TestCliExecUsageCache:
     @pytest.mark.asyncio
-    async def test_cache_read_tokens_recorded_from_cli_exec(self, executor):
+    @pytest.mark.parametrize("cache_key", ["cached_input_tokens", "cache_read_tokens"])
+    async def test_cache_read_tokens_recorded_from_cli_exec(self, executor, cache_key):
         async def fake_stream(system_prompt, prompt, tracker, trigger=""):
             yield {
                 "type": "done",
@@ -2297,7 +2314,7 @@ class TestCliExecUsageCache:
                 "usage": {
                     "input_tokens": 100,
                     "output_tokens": 20,
-                    "cached_input_tokens": 77,
+                    cache_key: 77,
                 },
             }
 
@@ -2308,3 +2325,227 @@ class TestCliExecUsageCache:
         assert result.usage.input_tokens == 100
         assert result.usage.output_tokens == 20
         assert result.usage.cache_read_tokens == 77
+
+
+def _usage_snapshot(total_input, total_output, total_cache, last_input, last_output, last_cache):
+    return {
+        "total": {
+            "input_tokens": total_input,
+            "output_tokens": total_output,
+            "cached_input_tokens": total_cache,
+        },
+        "last": {
+            "input_tokens": last_input,
+            "output_tokens": last_output,
+            "cached_input_tokens": last_cache,
+        },
+    }
+
+
+def _usage_notice(snapshot):
+    return SimpleNamespace(
+        method="thread/tokenUsage/updated", payload=SimpleNamespace(thread_id="thread-test", token_usage=snapshot)
+    )
+
+
+class TestCodexUsageDeltas:
+    def test_native_sdk_object_breakdowns_preserve_cache(self):
+        meter = _CodexUsageAccumulator()
+        raw = SimpleNamespace(
+            total=SimpleNamespace(input_tokens=1000, output_tokens=200, cached_input_tokens=700),
+            last=SimpleNamespace(input_tokens=100, output_tokens=20, cached_input_tokens=70),
+        )
+        assert meter.update(raw) == TokenUsage(input_tokens=100, output_tokens=20, cache_read_tokens=70)
+
+    def test_resumed_multiple_requests_and_repeated_final_snapshot(self):
+        meter = _CodexUsageAccumulator()
+        usage = meter.update(_usage_snapshot(1200, 120, 900, 200, 20, 100))
+        final = _usage_snapshot(1700, 180, 1300, 300, 40, 250)
+        # The delta also includes an intermediate request whose notification
+        # was omitted; summing only `last` would undercount by 200 input.
+        usage.merge(meter.update(final))
+        usage.merge(meter.update(final))
+        assert usage == TokenUsage(input_tokens=700, output_tokens=80, cache_read_tokens=500)
+
+    def test_new_thread_first_total_includes_omitted_requests(self):
+        meter = _CodexUsageAccumulator(fresh_thread=True)
+        assert meter.update(_usage_snapshot(700, 80, 500, 300, 40, 250)) == TokenUsage(
+            input_tokens=700, output_tokens=80, cache_read_tokens=500
+        )
+
+    def test_reset_can_repeat_an_earlier_epoch_total(self):
+        meter = _CodexUsageAccumulator()
+        first = _usage_snapshot(200, 20, 100, 200, 20, 100)
+        usage = meter.update(first)
+        usage.merge(meter.update(_usage_snapshot(500, 50, 300, 300, 30, 200)))
+        usage.merge(meter.update(first))
+        usage.merge(meter.update(first))
+        assert usage == TokenUsage(input_tokens=700, output_tokens=70, cache_read_tokens=400)
+
+    def test_resumed_total_without_last_never_charges_history(self):
+        meter = _CodexUsageAccumulator()
+        assert meter.update({"total": {"input_tokens": 1000000}}) == TokenUsage()
+        assert meter.update({"total": {"input_tokens": 1000100}}).input_tokens == 100
+
+    @pytest.mark.parametrize("key", ["cached_input_tokens", "cachedInputTokens", "cache_read_tokens"])
+    def test_flat_cli_cache_aliases(self, key):
+        meter = _CodexUsageAccumulator(fresh_thread=True)
+        snapshot = {"input_tokens": 100, "output_tokens": 20, key: 77, "cache_write_tokens": 3}
+        assert meter.update(snapshot) == TokenUsage(
+            input_tokens=100, output_tokens=20, cache_read_tokens=77, cache_write_tokens=3
+        )
+        assert meter.update(snapshot) == TokenUsage()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("blocking", [False, True])
+    async def test_native_resume_stream_and_blocking_have_same_turn_local_usage(self, executor, anima_dir, blocking):
+        _save_thread_id(anima_dir, "resumed-thread", "chat")
+        first = _usage_snapshot(1200, 120, 900, 200, 20, 100)
+        final = _usage_snapshot(1700, 180, 1300, 300, 40, 250)
+        thread = _mock_stream_thread(
+            "resumed-thread",
+            [
+                _usage_notice(first),
+                _usage_notice(final),
+                _usage_notice(final),
+                SimpleNamespace(type="turn.completed", usage=final),
+            ],
+        )
+        with patch.object(executor, "_create_codex_client", return_value=_mock_codex(thread)):
+            if blocking:
+                result = await executor.execute(prompt="p")
+                usage = result.usage
+                assert result.result_message.num_turns == 1
+                assert result.result_message.usage == usage.to_dict()
+            else:
+                events = [event async for event in executor.execute_streaming("s", "p", ContextTracker(model="test"))]
+                usage = TokenUsage()
+                for event in events:
+                    if event["type"] == "usage":
+                        usage.merge(TokenUsage(**event["usage"]))
+                done = [event for event in events if event["type"] == "done"]
+                assert len(done) == 1
+                assert done[0]["usage_already_emitted"] is True
+                assert done[0]["usage"] == usage.to_dict()
+        assert usage == TokenUsage(input_tokens=700, output_tokens=80, cache_read_tokens=500)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("blocking", [False, True])
+    @pytest.mark.parametrize("cancelled", [False, True])
+    async def test_observed_usage_survives_failure_or_cancellation(self, executor, blocking, cancelled):
+        async def events():
+            yield _usage_notice(_usage_snapshot(100, 20, 77, 100, 20, 77))
+            if cancelled:
+                raise asyncio.CancelledError()
+            raise RuntimeError("synthetic disconnect")
+
+        thread = _mock_stream_thread("fresh-thread", [])
+        thread.turn.return_value.stream.return_value = events()
+        expected = TokenUsage(input_tokens=100, output_tokens=20, cache_read_tokens=77)
+        with patch.object(executor, "_create_codex_client", return_value=_mock_codex(thread)):
+            if blocking and not cancelled:
+                result = await executor.execute(prompt="p")
+                assert result.error is True
+                assert result.usage == expected
+            else:
+                with pytest.raises(asyncio.CancelledError if cancelled else Exception) as caught:
+                    if blocking:
+                        await executor.execute(prompt="p")
+                    else:
+                        async for _event in executor.execute_streaming("s", "p", ContextTracker(model="test")):
+                            pass
+                assert caught.value.usage == expected.to_dict()
+                assert caught.value.usage_already_emitted is (not blocking)
+
+    @pytest.mark.asyncio
+    async def test_interrupt_racing_usage_keeps_usage_and_emits_one_done(self, executor):
+        thread = _mock_stream_thread("fresh-thread", [_usage_notice(_usage_snapshot(100, 20, 77, 100, 20, 77))])
+        with (
+            patch.object(executor, "_create_codex_client", return_value=_mock_codex(thread)),
+            patch.object(executor, "_check_interrupted", side_effect=[False, True]),
+        ):
+            events = [event async for event in executor.execute_streaming("s", "p", ContextTracker(model="test"))]
+        done = [event for event in events if event["type"] == "done"]
+        assert len(done) == 1
+        assert done[0]["stop_kind"] == "interrupted"
+        assert done[0]["usage"]["cache_read_tokens"] == 77
+        assert sum(event["usage"]["input_tokens"] for event in events if event["type"] == "usage") == 100
+
+    @pytest.mark.asyncio
+    async def test_native_to_cli_fallback_keeps_both_attempts_usage(self, executor):
+        async def native_events():
+            yield _usage_notice(_usage_snapshot(100, 20, 77, 100, 20, 77))
+            raise RuntimeError("fatal stderr signal: synthetic transport failure")
+
+        async def cli_events(*args, **kwargs):
+            usage = TokenUsage(input_tokens=300, output_tokens=50, cache_read_tokens=200).to_dict()
+            yield {"type": "usage", "usage": usage}
+            yield {
+                "type": "done",
+                "full_text": "recovered",
+                "usage": usage,
+                "usage_already_emitted": True,
+                "result_message": SimpleNamespace(num_turns=1, usage=usage),
+            }
+
+        thread = _mock_stream_thread("fresh-thread", [])
+        thread.turn.return_value.stream.return_value = native_events()
+        with (
+            patch.object(executor, "_create_codex_client", return_value=_mock_codex(thread)),
+            patch.object(executor, "_execute_streaming_via_cli_exec", side_effect=cli_events),
+        ):
+            result = await executor.execute(prompt="p")
+        assert result.error is False
+        assert result.text == "recovered"
+        assert result.usage == TokenUsage(input_tokens=400, output_tokens=70, cache_read_tokens=277)
+        assert result.result_message.usage == result.usage.to_dict()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("blocking", [False, True])
+    @pytest.mark.parametrize("exit_code", [0, 1])
+    async def test_cli_parser_cache_duplicates_multiple_turns_and_nonzero_exit(self, executor, blocking, exit_code):
+        snapshots = [
+            {"type": "turn.started"},
+            {"type": "turn.completed", "usage": {"input_tokens": 100, "output_tokens": 20, "cached_input_tokens": 77}},
+            {"type": "turn.completed", "usage": {"input_tokens": 100, "output_tokens": 20, "cached_input_tokens": 77}},
+            {"type": "turn.started"},
+            {"type": "turn.completed", "usage": {"input_tokens": 300, "output_tokens": 50, "cached_input_tokens": 200}},
+        ]
+        proc = SimpleNamespace(
+            stdin=SimpleNamespace(write=MagicMock(), drain=AsyncMock(), close=MagicMock()),
+            stdout=SimpleNamespace(
+                readline=AsyncMock(side_effect=[json.dumps(row).encode() for row in snapshots] + [b""])
+            ),
+            stderr=SimpleNamespace(read=AsyncMock(return_value=b"")),
+            returncode=exit_code,
+            wait=AsyncMock(return_value=exit_code),
+        )
+        expected = TokenUsage(input_tokens=400, output_tokens=70, cache_read_tokens=277)
+        with (
+            patch.object(executor, "_write_codex_config"),
+            patch.object(executor, "_build_cli_exec_command", return_value=["codex", "exec"]),
+            patch.object(executor, "_build_env", return_value={}),
+            patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)),
+            patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=True),
+        ):
+            if blocking:
+                result = await executor.execute(prompt="p", trigger="task:test")
+                assert result.usage == expected
+                assert result.error is bool(exit_code)
+                if not exit_code:
+                    assert result.result_message.num_turns == 2
+            elif exit_code:
+                with pytest.raises(RuntimeError) as caught:
+                    async for _event in executor.execute_streaming("s", "p", ContextTracker(model="test")):
+                        pass
+                assert caught.value.usage == expected.to_dict()
+                assert caught.value.usage_already_emitted is True
+            else:
+                events = [event async for event in executor.execute_streaming("s", "p", ContextTracker(model="test"))]
+                usage = TokenUsage()
+                for event in events:
+                    if event["type"] == "usage":
+                        usage.merge(TokenUsage(**event["usage"]))
+                assert usage == expected
+                assert events[-1]["usage"] == expected.to_dict()
+                assert events[-1]["result_message"].num_turns == 2
