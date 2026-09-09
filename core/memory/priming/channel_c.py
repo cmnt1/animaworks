@@ -151,8 +151,15 @@ def format_pointer_result(
 
 
 def _is_action_rule(path: str, content: str) -> bool:
-    """Return whether a chunk belongs to the separately primed action gate."""
-    return Path(path).name.startswith("action-rule-") or "[ACTION-RULE]" in content
+    """Return whether a chunk belongs to the separately primed action gate.
+
+    A file is an action rule if it carries the ``action-rule-`` filename
+    prefix or contains ``[ACTION-RULE]`` outside any fenced code block
+    (fenced examples from the guide must not be treated as real rules).
+    """
+    from core.memory.rag.indexer import _strip_fenced_code
+
+    return Path(path).name.startswith("action-rule-") or "[ACTION-RULE]" in _strip_fenced_code(content)
 
 
 def _updated_from_metadata(metadata: dict) -> str:

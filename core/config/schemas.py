@@ -450,6 +450,11 @@ class ActionGateConfig(BaseModel):
     # Cooldown for no_matching_rule human notifications (seconds).
     # Prevents spam while allowing re-alert so holds cannot freeze silently forever.
     no_rule_notify_cooldown_seconds: int = Field(default=21600, ge=0)  # 6h
+    required_read_ttl_hours: int = Field(
+        default=24,
+        ge=0,
+        description="Threshold for required read (read_memory_file) records to stay valid per-anima, in hours. 0 = unlimited.",
+    )
 
 
 class PromptConfig(BaseModel):

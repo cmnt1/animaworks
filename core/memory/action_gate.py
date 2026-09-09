@@ -30,6 +30,7 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -247,6 +248,89 @@ def _notify_state_path(anima_dir: Path) -> Path:
     return _state_dir(anima_dir) / "no_rule_notify.json"
 
 
+def _anima_reads_path(anima_dir: Path) -> Path:
+    """Per-anima required-read record (not per tool session)."""
+    return _state_dir(anima_dir) / "anima_reads.json"
+
+
+def _load_anima_reads(anima_dir: Path) -> dict[str, str]:
+    """Load per-anima required-read records as ``{normalized_path: ISO8601 UTC timestamp}``.
+
+    Corrupt / missing files are treated as empty (exceptions are not raised).
+    """
+    path = _anima_reads_path(anima_dir)
+    try:
+        if not path.is_file():
+            return {}
+        data = json.loads(path.read_text(encoding="utf-8"))
+        reads = data.get("read_paths", {}) if isinstance(data, dict) else {}
+        if not isinstance(reads, dict):
+            return {}
+        out: dict[str, str] = {}
+        for key, value in reads.items():
+            if isinstance(key, str) and isinstance(value, str):
+                out[key] = value
+        return out
+    except Exception:
+        logger.debug("Failed to load anima reads", exc_info=True)
+        return {}
+
+
+def _save_anima_reads(anima_dir: Path, reads: dict[str, str]) -> None:
+    """Persist per-anima required-read records atomically (tmp file -> replace)."""
+    path = _anima_reads_path(anima_dir)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.tmp")
+        tmp.write_text(
+            json.dumps({"read_paths": reads}, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        tmp.replace(path)
+    except Exception:
+        logger.debug("Failed to save anima reads", exc_info=True)
+
+
+def _fresh_anima_read_paths(anima_dir: Path, ttl_hours: int) -> set[str]:
+    """Return normalized paths read within ``ttl_hours`` across all sessions.
+
+    A TTL of 0 means the records never expire.  Records with an
+    unparseable timestamp are treated as expired (skipped).
+    """
+    reads = _load_anima_reads(anima_dir)
+    if not reads:
+        return set()
+    if ttl_hours == 0:
+        return set(reads.keys())
+    cutoff_epoch = time.time() - ttl_hours * 3600
+    fresh: set[str] = set()
+    for path, ts in reads.items():
+        try:
+            parsed = datetime.fromisoformat(ts)
+        except (ValueError, TypeError):
+            continue
+        if parsed.timestamp() >= cutoff_epoch:
+            fresh.add(path)
+    return fresh
+
+
+def _resolve_required_read_ttl_hours() -> int:
+    """Load the required-read TTL (hours) from config; 0 means unlimited.
+
+    Falls back to 24 hours when config is unavailable.
+    """
+    try:
+        from core.config import load_config
+
+        cfg = load_config().action_gate
+        value = getattr(cfg, "required_read_ttl_hours", None)
+        # 0 is a valid value (unlimited); only fall back when unset.
+        return 24 if value is None else int(value)
+    except Exception:
+        logger.debug("Failed to load required_read_ttl_hours; defaulting to 24", exc_info=True)
+        return 24
+
+
 def _empty_state() -> dict[str, Any]:
     return {
         "read_paths": [],
@@ -288,7 +372,13 @@ def _save_state(anima_dir: Path, state: dict[str, Any], session_key: str | None 
 
 
 def record_memory_read(anima_dir: Path, path: str, *, session_key: str | None = None) -> str:
-    """Record that a memory file was read in the current action-gate session."""
+    """Record that a memory file was read in the current action-gate session.
+
+    The read is recorded both in the session state (legacy behaviour) and
+    in the per-anima record so other sessions can reuse it within the
+    required-read TTL.  Multiple processes may call this concurrently, so
+    the per-anima file is read, merged, then written back.
+    """
     rel = _normalize_memory_path(path, anima_dir)
     if not rel:
         return rel
@@ -297,6 +387,10 @@ def record_memory_read(anima_dir: Path, path: str, *, session_key: str | None = 
     if rel not in read_paths:
         read_paths.append(rel)
         _save_state(anima_dir, state, session_key)
+    # Per-anima record (shared across sessions, with TTL pruning at check time).
+    anima_reads = _load_anima_reads(anima_dir)
+    anima_reads[rel] = datetime.now(UTC).isoformat()
+    _save_anima_reads(anima_dir, anima_reads)
     return rel
 
 
@@ -576,6 +670,9 @@ def _evaluate_matching_rules(
     """Apply required-memory / review-once logic to matching rules."""
     state = _load_state(anima_dir, session_key)
     read_paths = set(state.get("read_paths", []))
+    # Required reads are shared per-anima within the required-read TTL so
+    # heartbeat / inbox runs do not re-pay the pause every time.
+    read_paths |= _fresh_anima_read_paths(anima_dir, _resolve_required_read_ttl_hours())
     for rule_id, rule_content, required_paths, score in matching_rules:
         missing_paths = [p for p in required_paths if p not in read_paths]
         if missing_paths:

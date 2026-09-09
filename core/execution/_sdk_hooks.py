@@ -462,12 +462,32 @@ def _build_pre_tool_hook(
             from core.i18n import t as _t
 
             system_message = _t("action_rule.system_message", rule_content=decision.rule.strip())
+            if decision.reason in ("no_matching_rule", "search_failed"):
+                # No rule body exists for these cases, so surface the payload message directly.
+                permission_reason = decision.to_payload()["message"]
+            else:
+                rule_body = decision.rule.strip()
+                # Do not emit an empty <action-rule> block when there is no rule content.
+                rule_section = f"<action-rule>\n{rule_body}\n</action-rule>" if rule_body else ""
+                if decision.missing_paths:
+                    next_step = _t(
+                        "action_rule.deny_reason_read_before",
+                        paths=", ".join(decision.missing_paths),
+                    )
+                else:
+                    next_step = _t("action_rule.deny_reason_retry_allowed")
+                permission_reason = _t(
+                    "action_rule.deny_reason_detail",
+                    reason=_t("action_rule.deny_reason"),
+                    rule_section=rule_section,
+                    next_step=next_step,
+                )
             return SyncHookJSONOutput(
                 systemMessage=system_message,
                 hookSpecificOutput=PreToolUseHookSpecificOutput(
                     hookEventName="PreToolUse",
                     permissionDecision="deny",
-                    permissionDecisionReason=_t("action_rule.deny_reason"),
+                    permissionDecisionReason=permission_reason,
                 ),
             )
         except Exception:

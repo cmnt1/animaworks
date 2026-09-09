@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC
 from pathlib import Path
 
 
@@ -75,6 +76,81 @@ def test_required_read_blocks_until_memory_read(tmp_path: Path, monkeypatch) -> 
 
     assert allowed.allowed is True
     assert allowed.reason == "required_memory_satisfied"
+
+
+def test_required_read_is_shared_across_sessions_within_ttl(tmp_path: Path, monkeypatch) -> None:
+    """A required read recorded in one session allows the action in another session."""
+    from core.memory import action_gate
+
+    anima_dir = tmp_path / "animas" / "mei"
+    (anima_dir / "knowledge").mkdir(parents=True)
+    rule = FakeRule(
+        "mei/knowledge/rule.md#0",
+        '## [ACTION-RULE]\ntrigger_tools: call_human\n---\nread_memory_file(path="procedures/check.md")',
+    )
+    monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [rule])
+    monkeypatch.setattr(action_gate, "_resolve_required_read_ttl_hours", lambda: 24)
+
+    action_gate.record_memory_read(anima_dir, "procedures/check.md", session_key="session-A")
+    decision = action_gate.check_action(anima_dir, "call_human", {"body": "notify"}, session_key="session-B")
+
+    assert decision.allowed is True
+    assert decision.reason == "required_memory_satisfied"
+
+
+def test_required_read_expires_after_ttl(tmp_path: Path, monkeypatch) -> None:
+    """A per-anima read older than the TTL no longer satisfies the gate."""
+    from datetime import datetime, timedelta
+
+    from core.memory import action_gate
+
+    anima_dir = tmp_path / "animas" / "mei"
+    (anima_dir / "knowledge").mkdir(parents=True)
+    rule = FakeRule(
+        "x",
+        '## [ACTION-RULE]\ntrigger_tools: call_human\n---\nread_memory_file(path="procedures/check.md")',
+    )
+    monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [rule])
+    monkeypatch.setattr(action_gate, "_resolve_required_read_ttl_hours", lambda: 24)
+
+    old = (datetime.now(UTC) - timedelta(hours=48)).isoformat()
+    action_gate._save_anima_reads(anima_dir, {"procedures/check.md": old})
+
+    decision = action_gate.check_action(anima_dir, "call_human", {"body": "notify"}, session_key="session-new")
+
+    assert decision.allowed is False
+    assert decision.reason == "missing_required_memory"
+
+
+def test_required_read_never_expires_when_ttl_zero(tmp_path: Path, monkeypatch) -> None:
+    """required_read_ttl_hours=0 keeps old per-anima reads valid indefinitely."""
+    from datetime import datetime, timedelta
+
+    from core.memory import action_gate
+
+    anima_dir = tmp_path / "animas" / "mei"
+    (anima_dir / "knowledge").mkdir(parents=True)
+    rule = FakeRule(
+        "x",
+        '## [ACTION-RULE]\ntrigger_tools: call_human\n---\nread_memory_file(path="procedures/check.md")',
+    )
+    monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [rule])
+    # Go through the real resolver so a configured 0 is not coerced to the
+    # 24h default (regression: ``value or 24`` turned 0 into 24).
+    from types import SimpleNamespace
+
+    import core.config as config_module
+
+    fake_cfg = SimpleNamespace(action_gate=SimpleNamespace(required_read_ttl_hours=0))
+    monkeypatch.setattr(config_module, "load_config", lambda: fake_cfg)
+    assert action_gate._resolve_required_read_ttl_hours() == 0
+
+    old = (datetime.now(UTC) - timedelta(days=30)).isoformat()
+    action_gate._save_anima_reads(anima_dir, {"procedures/check.md": old})
+
+    decision = action_gate.check_action(anima_dir, "call_human", {"body": "notify"}, session_key="session-new")
+
+    assert decision.allowed is True
 
 
 def test_rule_without_required_read_blocks_once_then_allows(tmp_path: Path, monkeypatch) -> None:

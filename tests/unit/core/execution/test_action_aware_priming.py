@@ -172,6 +172,68 @@ class TestActionAwarePrimingHook:
         assert allowed.get("hookSpecificOutput", {}).get("permissionDecision") != "deny"
 
     @pytest.mark.asyncio
+    async def test_required_read_deny_reason_contains_rule_and_missing_path(
+        self, anima_dir, session_stats, monkeypatch
+    ):
+        """Deny reason exposes the rule body and the missing required path."""
+        from core.memory import action_gate
+
+        rule_text = (
+            "## [ACTION-RULE] send check\n"
+            "trigger_tools: send_message\n"
+            "---\n"
+            'read_memory_file(path="procedures/check.md")'
+        )
+
+        def fake_search(_anima_dir, tool_name, _query):
+            return [FakeRule("rule-required", rule_text)]
+
+        monkeypatch.setattr(action_gate, "_search_action_rules", fake_search)
+        hook = self._build_hook(anima_dir, session_stats)
+        result = await hook(
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "send_message",
+                "tool_input": {"content": "test"},
+                "tool_use_id": "t1",
+            },
+            "t1",
+            {"signal": None},
+        )
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
+        assert "procedures/check.md" in reason
+        assert "read_memory_file" in reason
+        assert "## [ACTION-RULE] send check" in reason
+        assert "<action-rule>" in reason
+        assert "</action-rule>" in reason
+
+    @pytest.mark.asyncio
+    async def test_review_only_deny_reason_excludes_empty_rule_block(self, anima_dir, session_stats, monkeypatch):
+        """No empty <action-rule> block is emitted when the rule body is empty."""
+        from core.memory import action_gate
+
+        monkeypatch.setattr(
+            action_gate,
+            "_search_action_rules",
+            lambda *args, **kwargs: [FakeRule("r1", "")],
+        )
+        hook = self._build_hook(anima_dir, session_stats)
+        result = await hook(
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "send_message",
+                "tool_input": {"content": "test"},
+                "tool_use_id": "t1",
+            },
+            "t1",
+            {"signal": None},
+        )
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
+        assert "<action-rule>" not in reason
+
+    @pytest.mark.asyncio
     async def test_review_only_rule_blocks_once_then_allows(self, anima_dir, session_stats, monkeypatch):
         """Review-only rules are deduplicated by action-gate state."""
         from core.memory import action_gate

@@ -42,6 +42,85 @@ UPSERT_FAILURE_STATE_FILE = "rag_upsert_failures.json"
 STALE_RECONCILIATION_LIMIT = 500
 
 
+_FENCE_LINE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
+_H2_HEADING_RE = re.compile(r"^##\s+.+$")
+
+
+def _split_by_h2_outside_fences(content: str) -> list[str]:
+    """Split ``content`` on ``## `` headings that are outside fenced code blocks.
+
+    Returns the same shape as the legacy ``re.split`` on ``## `` lines:
+    ``[preamble, heading1, body1, heading2, body2, ...]``.  Headings that
+    appear inside triple-backtick or ``~~~`` fences (e.g. rule examples in a guide)
+    stay in the enclosing section instead of starting a new chunk, so
+    per-chunk metadata extraction can see the surrounding fence.
+    """
+    sections: list[str] = []
+    buf: list[str] = []
+    in_fence = False
+    fence_char = ""
+    fenced_headings = 0
+    for line in content.split("\n"):
+        match = _FENCE_LINE_RE.match(line)
+        if match:
+            chars = match.group(1)
+            if not in_fence:
+                in_fence = True
+                fence_char = chars[0]
+            elif chars[0] == fence_char:
+                in_fence = False
+            buf.append(line)
+            continue
+        if _H2_HEADING_RE.match(line):
+            if in_fence:
+                fenced_headings += 1
+            else:
+                sections.append("\n".join(buf))
+                sections.append(line)
+                buf = []
+                continue
+        buf.append(line)
+    sections.append("\n".join(buf))
+    if len(sections) == 1 and fenced_headings:
+        # Every heading sits inside a fence: the whole document is wrapped
+        # (e.g. an auto-consolidated file emitted as one ```markdown block).
+        # Treat the fence as decoration and split on headings as before so
+        # chunk granularity is preserved.
+        return re.split(r"\n(##\s+.+)", f"\n{content}")
+    return sections
+
+
+def _strip_fenced_code(text: str) -> str:
+    """Return ``text`` with Markdown fenced code blocks removed.
+
+    Fences are lines whose left-trimmed content begins with ````` `` or ``~~~``
+    (3 or more backticks or tildes; leading indentation is allowed).  The first
+    matching fence opens a block and the next fence of the same character type
+    closes it; everything between them is removed.  This keeps ``[ACTION-RULE]``
+    examples inside fenced guides from being indexed as real action rules.
+    """
+    fence_re = re.compile(r"^\s*(`{3,}|~{3,})")
+    lines = text.splitlines()
+    out: list[str] = []
+    in_fence = False
+    fence_char = ""
+    for line in lines:
+        match = fence_re.match(line)
+        if match:
+            chars = match.group(1)
+            if not in_fence:
+                in_fence = True
+                fence_char = chars[0]
+            else:
+                # Closing fence must use the same fence character type (``` vs ~~~).
+                if chars[0] == fence_char:
+                    in_fence = False
+            continue
+        if not in_fence:
+            out.append(line)
+    return "\n".join(out)
+
+
 def access_tracking_metadata() -> dict[str, str | int | float]:
     """Return default split access-tracking metadata for new chunks."""
     return {
@@ -1114,7 +1193,8 @@ class MemoryIndexer:
         frontmatter = self._parse_frontmatter(content)
         content = self._strip_frontmatter(content)
         chunks: list[MemoryChunk] = []
-        sections = re.split(r"\n(##\s+.+)", f"\n{content}")
+        # Headings inside fenced code blocks do not start a new chunk.
+        sections = _split_by_h2_outside_fences(content)
 
         preamble = sections[0].strip()
         chunk_idx = 0
@@ -1389,8 +1469,12 @@ class MemoryIndexer:
         metadata["always_prime"] = (frontmatter or {}).get("always_prime") is True
 
         # ── ActionRule ──────────
-        if "[ACTION-RULE]" in content:
-            lines = content.splitlines()
+        # Decide against content with fenced code blocks stripped so that
+        # [ACTION-RULE] examples shown inside ``` fences are not indexed as
+        # real action rules (only fences-outside rules become type=action_rule).
+        rule_scan_content = _strip_fenced_code(content)
+        if "[ACTION-RULE]" in rule_scan_content:
+            lines = rule_scan_content.splitlines()
             heading_idx = next((i for i, ln in enumerate(lines) if "[ACTION-RULE]" in ln), None)
             if heading_idx is not None:
                 meta_lines: list[str] = []
