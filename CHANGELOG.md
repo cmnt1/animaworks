@@ -7,6 +7,10 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `heartbeat.heartbeat_md_max_bytes` (default `20000`): when an anima's `heartbeat.md` grows past the limit, the heartbeat prompt carries a compaction instruction asking the anima to rewrite it down to roughly half, since the file is loaded in full on every run.
+
 ### Changed
 
 - Reduced tool-result token growth for task runs: `list_tasks` now returns a compact summary by default (`detail=True` for the full view), and `search_memory` caps results at 8K tokens / 600 lines (~a third of the previous limit).

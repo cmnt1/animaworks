@@ -53,6 +53,7 @@ def _create_anima(anima_dir, shared_dir, **extra_patches):
     (anima_dir / "run").mkdir(parents=True, exist_ok=True)
 
     dp._get_current_state_max_chars = MagicMock(return_value=0)
+    dp._get_heartbeat_md_max_bytes = MagicMock(return_value=0)
 
     mocks = {
         "agent": MockAgent,

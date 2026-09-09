@@ -61,6 +61,30 @@ STRINGS: dict[str, dict[str, str]] = {
             "and important items may be lost."
         ),
     },
+    "heartbeat.heartbeat_md_cleanup_required": {
+        "ja": (
+            "【要圧縮】heartbeat.md が {current_kb}KB あり、上限 {max_kb}KB を超えています。"
+            "このファイルは毎回の heartbeat プロンプトに丸ごと読み込まれるため、肥大すると毎回の巡回が重くなり、"
+            "恒常の手順が経緯の中に埋もれます。本題に入る前に heartbeat.md を自分で書き直してください: "
+            "(1) 特定の PR 番号・日付に紐づく経緯や事例、終わった案件のゲート・観測項目は削除する"
+            "（経緯は episodes と knowledge に残っている）、"
+            "(2) 同じルールの重複は 1 か所にまとめる、"
+            "(3) 残すのは毎回の巡回で実際に使う手順だけにし、各項目は見出し 1 行＋要点数行にする、"
+            "(4) 「## 活動時間」「## 通知ルール」セクションは変えない。"
+            '書き直し後は {target_kb}KB 以内を目安とし、write_memory_file(path="heartbeat.md", mode="overwrite") で保存する。'
+        ),
+        "en": (
+            "[Compaction required] Your heartbeat.md is {current_kb}KB, over the {max_kb}KB limit. "
+            "This file is loaded in full into every heartbeat prompt, so bloat makes every run heavier "
+            "and buries the recurring steps under case history. Before the main task, rewrite heartbeat.md yourself: "
+            "(1) delete history and examples tied to specific PR numbers or dates, and gates/observation items "
+            "for finished cases (their history remains in episodes and knowledge), "
+            "(2) merge duplicated rules into one place, "
+            "(3) keep only the steps you actually use on every run, each as one heading plus a few key lines, "
+            "(4) leave the '## 活動時間' and '## 通知ルール' sections unchanged. "
+            'Aim for {target_kb}KB or less and save with write_memory_file(path="heartbeat.md", mode="overwrite").'
+        ),
+    },
     "scheduler.cron_fallback_description": {
         "ja": "cron.mdの「{task_name}」の指示に従って処理してください。",
         "en": "Follow the instructions for '{task_name}' in cron.md.",

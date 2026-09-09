@@ -450,6 +450,43 @@ class HeartbeatMixin:
             target_chars=max_chars // 2,
         )
 
+    def _get_heartbeat_md_max_bytes(self) -> int:
+        try:
+            from core.config.models import load_config
+
+            return load_config().heartbeat.heartbeat_md_max_bytes
+        except Exception:
+            return 0
+
+    def _build_heartbeat_md_cleanup_instruction(self, hb_config: str) -> str | None:
+        """Return a compaction instruction when heartbeat.md grows past the limit.
+
+        heartbeat.md is re-read into every heartbeat prompt, so a bloated
+        checklist (dated case notes, per-PR gates, duplicated rules) costs
+        tokens on every run and buries the recurring steps.  Above
+        ``heartbeat.heartbeat_md_max_bytes`` the anima is asked to rewrite
+        it down to roughly half the limit before doing anything else.
+        Disabled when the limit is 0.
+        """
+        max_bytes = self._get_heartbeat_md_max_bytes()
+        if max_bytes <= 0 or not hb_config:
+            return None
+        current_bytes = len(hb_config.encode("utf-8"))
+        if current_bytes <= max_bytes:
+            return None
+        logger.info(
+            "[%s] heartbeat.md exceeds limit (%d > %d bytes), injecting compaction instruction",
+            self.name,
+            current_bytes,
+            max_bytes,
+        )
+        return t(
+            "heartbeat.heartbeat_md_cleanup_required",
+            current_kb=f"{current_bytes / 1024:.1f}",
+            max_kb=f"{max_bytes / 1024:.0f}",
+            target_kb=f"{max_bytes / 2048:.0f}",
+        )
+
     async def _build_heartbeat_prompt(self) -> list[str]:
         """Build heartbeat prompt parts.
 
@@ -460,6 +497,10 @@ class HeartbeatMixin:
         hb_config = self.memory.read_heartbeat_config()
         checklist = hb_config or load_prompt("heartbeat_default_checklist")
         parts = [load_prompt("heartbeat", checklist=checklist)]
+
+        hb_cleanup = self._build_heartbeat_md_cleanup_instruction(hb_config)
+        if hb_cleanup:
+            parts.append(hb_cleanup)
 
         cleanup = self._build_state_cleanup_instruction()
         if cleanup:

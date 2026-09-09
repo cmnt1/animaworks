@@ -943,6 +943,14 @@ class HeartbeatConfig(BaseModel):
         ge=0,
         description="Max chars for current_state.md before trim; 0 = disabled",
     )
+    heartbeat_md_max_bytes: int = Field(
+        default=20000,
+        ge=0,
+        description=(
+            "Max bytes of heartbeat.md before a compaction instruction is "
+            "injected into the heartbeat prompt; 0 = disabled"
+        ),
+    )
     soft_timeout_seconds: int = Field(
         default=300,
         ge=30,
