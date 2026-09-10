@@ -571,11 +571,17 @@ class SkillsToolsMixin:
         status = args.get("status", "")
         summary = args.get("summary")
         result = args.get("result")
+        resume = args.get("resume")
 
         if not task_id:
             return _error_result("InvalidArguments", "task_id is required")
         if not status:
             return _error_result("InvalidArguments", "status is required")
+        if resume is not None and not isinstance(resume, bool):
+            return _error_result("InvalidArguments", "resume must be a boolean")
+        resume = bool(resume)
+        if resume and status != "pending":
+            return _error_result("InvalidArguments", "resume requires status='pending'")
         if status in ("blocked", "failed"):
             return _error_result(
                 "InvalidArguments",
@@ -594,7 +600,7 @@ class SkillsToolsMixin:
             summary = result
 
         try:
-            entry = update_task(manager, task_id, status, summary=summary, result=result)
+            entry = update_task(manager, task_id, status, summary=summary, result=result, resume=resume)
         except Exception as e:
             logger.error("Task persistence failed in update_task: %s", e)
             return _error_result("PersistenceFailed", f"Failed to update task: {e}")
@@ -607,7 +613,7 @@ class SkillsToolsMixin:
         self._activity.log(
             "task_updated",
             summary=t("handler.task_update_log", summary=entry.summary[:100], status=status),
-            meta={"task_id": task_id, "status": status},
+            meta={"task_id": task_id, "status": status, "resume": resume},
         )
 
         return _json.dumps(entry.model_dump(), ensure_ascii=False, indent=2)

@@ -81,10 +81,17 @@ def update_task(
     *,
     summary: str | None = None,
     result: str | None = None,
+    resume: bool = False,
 ) -> TaskEntry | None:
-    """Atomically declare a task result, proxying only sandbox storage denial."""
+    """Atomically declare a task result, proxying only sandbox storage denial.
+
+    When ``resume`` is True the task is requeued under its original task_id
+    using its saved execution input (status must be 'pending').
+    """
     from core.time_utils import now_iso
 
+    if resume and status != "pending":
+        raise ValueError("resume requires status='pending'")
     if status not in {"pending", "delegated", "done", "cancelled"}:
         raise ValueError(f"Invalid task update status: {status}")
     if result is not None:
@@ -98,7 +105,12 @@ def update_task(
         with manager.store.transaction():
             if meta and manager.update_meta(task_id, meta, summary=summary) is None:
                 return None
-            return manager.update_status(task_id, status, summary=summary)
+            entry = manager.update_status(task_id, status, summary=summary)
+            if entry is None:
+                return None
+            if resume:
+                return manager.store.resume(manager.anima_dir.name, task_id)
+            return entry
     except Exception as exc:
         if not is_task_permission_error(exc):
             raise
@@ -110,6 +122,7 @@ def update_task(
                 "status": status,
                 "summary": summary,
                 "meta": meta,
+                "resume": resume,
             },
         )
         if response.get("ok") is not True or not isinstance(response.get("task"), dict):
@@ -239,10 +252,16 @@ def publish_tasks(
                 if payload.get("resume") is True:
                     original = store.get_input(anima_dir.name, payload["task_id"])
                     previous = existing.get(payload["task_id"])
-                    if previous is None or original is None:
-                        raise ValueError(f"No saved execution input for task: {payload['task_id']}")
+                    if previous is None:
+                        raise ValueError(f"Task not found: {payload['task_id']}")
+                    if original is None:
+                        raise ValueError(f"Task has no saved execution input: {payload['task_id']}")
                     if previous.status != "pending":
-                        raise ValueError("Only an ended pending task may be resumed")
+                        raise ValueError(
+                            "Only an ended pending task may be resumed. "
+                            "A cancelled or done task can be reopened with "
+                            "update_task(status='pending', resume=true)."
+                        )
                     validate_task_payloads(anima_dir.name, [original], check_dependencies=False)
                     originals[payload["task_id"]] = original
             _validate_task_dependencies(

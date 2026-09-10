@@ -382,6 +382,42 @@ class TaskStore:
             )
             return True
 
+    def resume(self, anima: str, task_id: str) -> TaskEntry:
+        """Requeue a task under its original task_id using its saved execution input.
+
+        The saved input is immutable; a resume never accepts new input. Done and
+        cancelled tasks may be reopened, matching the canonical re-queue contract
+        of update_task(status='pending', resume=True). An active attempt must
+        finish/cancel first.
+        """
+        with self.transaction() as db:
+            owner, resolved_id = self._resolve(db, anima, task_id)
+            row = db.execute("SELECT * FROM tasks WHERE anima=? AND task_id=?", (owner, resolved_id)).fetchone()
+            if row is None:
+                raise ValueError(f"Task not found: {task_id}")
+            identity = current_attempt_identity()
+            if identity and (identity["anima"], identity["task_id"]) == (owner, resolved_id):
+                if row["current_attempt"] != identity["token"]:
+                    raise ValueError("Stale task attempt cannot resume itself")
+            if row["current_attempt"]:
+                raise ValueError("Cannot resume an active attempt; stop it first")
+            if row["input_json"] is None:
+                raise ValueError(
+                    "Task has no saved execution input; it is a backlog entry. "
+                    "Publish it with submit_tasks."
+                )
+            existing = TaskEntry(**json.loads(row["entry_json"]))
+            updated = existing.model_copy(update={"status": "pending", "updated_at": now_iso()})
+            db.execute(
+                "UPDATE tasks SET entry_json=?, ready=1, archived=0 WHERE anima=? AND task_id=?",
+                (_json(updated.model_dump()), owner, resolved_id),
+            )
+            db.execute(
+                "UPDATE task_wakeups SET acknowledged_at=? WHERE anima=? AND task_id=? AND acknowledged_at IS NULL",
+                (now_iso(), owner, resolved_id),
+            )
+            return updated
+
     def pending(self, anima: str) -> list[dict[str, Any]]:
         with self.reader() as db:
             rows = db.execute(

@@ -169,6 +169,7 @@ class UpdateTaskPersistRequest(BaseModel):
     meta: dict[str, Any] = {}
     summary: str | None = None
     attempt_identity: dict[str, str] | None = None
+    resume: bool = False
 
 
 class SubmitTasksPersistRequest(BaseModel):
@@ -892,7 +893,12 @@ def create_internal_router() -> APIRouter:
                 entry = manager.update_meta(body.task_id, body.meta, summary=body.summary)
                 if entry is None:
                     return None
-                return manager.update_status(body.task_id, body.status, summary=body.summary)
+                entry = manager.update_status(body.task_id, body.status, summary=body.summary)
+                if entry is None:
+                    return None
+                if body.resume:
+                    return manager.store.resume(manager.anima_dir.name, body.task_id)
+                return entry
 
         try:
             loop = asyncio.get_running_loop()

@@ -143,6 +143,10 @@ def _task_tools() -> list[dict[str, Any]]:
                         "enum": ["pending", "done", "cancelled"],
                         "description": _t("schema.update_task.status"),
                     },
+                    "resume": {
+                        "type": "boolean",
+                        "description": _t("schema.update_task.resume"),
+                    },
                     "summary": {
                         "type": "string",
                         "description": _t("schema.update_task.summary"),

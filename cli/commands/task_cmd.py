@@ -42,10 +42,12 @@ def cmd_task(args: argparse.Namespace) -> None:
         _cmd_add(args, manager)
     elif sub == "update":
         _cmd_update(args, manager)
+    elif sub == "resume":
+        _cmd_resume(args, manager)
     elif sub == "list":
         _cmd_list(args, manager)
     else:
-        print("Usage: animaworks-tool task {add|update|list}", file=sys.stderr)
+        print("Usage: animaworks-tool task {add|update|resume|list}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -152,6 +154,31 @@ def _cmd_update(args: argparse.Namespace, manager) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
+def _cmd_resume(args: argparse.Namespace, manager) -> None:
+    """Requeue a task under the same task_id using its saved execution input."""
+    from core.tasks_dispatch import update_task
+
+    task_id = getattr(args, "task_id", "")
+
+    if not task_id:
+        print("Error: --task-id is required", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        entry = update_task(manager, task_id, "pending", resume=True)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(3)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(4)
+    if entry is None:
+        print(f"Error: task not found or invalid status: {task_id}", file=sys.stderr)
+        sys.exit(1)
+
+    print(json.dumps(entry.model_dump(), ensure_ascii=False, indent=2))
+
+
 def _cmd_list(args: argparse.Namespace, manager) -> None:
     from core.memory.task_queue import mark_executability
 
@@ -181,6 +208,10 @@ def register_task_command(subparsers) -> None:
     p_update.add_argument("--task-id", required=True, help="Task ID")
     p_update.add_argument("--status", required=True, choices=["pending", "delegated", "done", "cancelled"])
     p_update.add_argument("--summary", default=None, help="Updated summary")
+
+    # task resume
+    p_resume = task_sub.add_parser("resume", help="Requeue a task with its saved execution input")
+    p_resume.add_argument("--task-id", required=True, help="Task ID")
 
     # task list
     p_list = task_sub.add_parser("list", help="List tasks")

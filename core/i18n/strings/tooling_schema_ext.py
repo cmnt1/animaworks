@@ -91,6 +91,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "新しいステータス",
         "en": "New status",
     },
+    "schema.update_task.resume": {
+        "ja": "保存済みの依頼文をそのまま使い、同じ task_id で実行待ちに戻す。status='pending' と一緒に指定する。",
+        "en": "Requeue the task under the same task_id using its saved request, unchanged. Specify together with status='pending'.",
+    },
     "schema.update_task.summary": {
         "ja": "更新後の要約（任意）",
         "en": "Updated summary (optional)",
