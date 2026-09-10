@@ -306,8 +306,9 @@ def _intercept_task_to_delegation(
 
     from core.tasks_dispatch import publish_delegation
 
+    # 1つの ID を委譲側・受け側の両方で共有する
     sub_task_id = uuid.uuid4().hex[:12]
-    tracking_task_id = uuid.uuid4().hex[:12]
+    tracking_task_id = sub_task_id
     task_desc = {
         "task_type": "llm",
         "task_id": sub_task_id,

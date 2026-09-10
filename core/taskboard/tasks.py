@@ -217,10 +217,31 @@ class TaskStore:
             callback()
 
     def _resolve(self, db: sqlite3.Connection, anima: str, task_id: str) -> tuple[str, str]:
+        # まず既存の alias 優先順位を変えずに解決する。
         alias = db.execute(
             "SELECT anima, task_id FROM task_aliases WHERE viewer=? AND alias=?", (anima, task_id)
         ).fetchone()
-        return (alias["anima"], alias["task_id"]) if alias else (anima, task_id)
+        if alias:
+            return (alias["anima"], alias["task_id"])
+        # 自分が本当に持っているタスクは、後続のフォールバックが横取りしないための門番。
+        own = db.execute(
+            "SELECT 1 FROM tasks WHERE anima=? AND task_id=?", (anima, task_id)
+        ).fetchone()
+        if own:
+            return (anima, task_id)
+        # 受け側フォールバック（旧データ互換）: 部下が、上司の追跡 ID を渡してきた場合に部下自身へ解決する。
+        receiver = db.execute(
+            "SELECT task_id FROM task_aliases WHERE anima=? AND alias=?", (anima, task_id)
+        ).fetchone()
+        if receiver:
+            return (anima, receiver["task_id"])
+        # 委譲側フォールバック（旧データ互換）: 上司が、部下側の実 ID を渡してきた場合に委譲先へ解決する。
+        delegator = db.execute(
+            "SELECT anima, task_id FROM task_aliases WHERE viewer=? AND task_id=?", (anima, task_id)
+        ).fetchone()
+        if delegator:
+            return (delegator["anima"], delegator["task_id"])
+        return (anima, task_id)
 
     def read(self, anima: str, *, archived: bool = False) -> dict[str, TaskEntry]:
         with self.reader() as db:
@@ -303,7 +324,8 @@ class TaskStore:
             if row is None:
                 return None
             entry = TaskEntry(**json.loads(row[0]))
-            if (owner, resolved) != (anima, task_id):
+            # 受け側フォールバック（owner == anima のまま resolved だけが変わる）では self-delegated にしない。
+            if owner != anima:
                 entry.meta = {
                     **entry.meta,
                     "delegated_to": owner,

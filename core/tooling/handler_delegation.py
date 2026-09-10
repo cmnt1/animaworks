@@ -137,8 +137,9 @@ class DelegationMixin(OrgHelpersMixin):
 
         target_dir = animas_dir / target_name
 
+        # 1つの ID を委譲側・受け側の両方で共有する（旧データは _resolve の双方向フォールバックで解決）
         sub_task_id = uuid.uuid4().hex[:12]
-        tracking_task_id = uuid.uuid4().hex[:12]
+        tracking_task_id = sub_task_id
         from core.tasks_dispatch import publish_delegation
 
         task_desc = {
