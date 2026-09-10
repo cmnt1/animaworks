@@ -161,6 +161,19 @@ def _mock_result_thread(thread_id: str, result):
     return _mock_stream_thread(thread_id, events)
 
 
+def _read_activity_jsonl(anima_dir: Path) -> list[dict]:
+    """Read all JSONL entries written to the anima's activity_log dir."""
+    entries: list[dict] = []
+    log_dir = anima_dir / "activity_log"
+    if not log_dir.exists():
+        return entries
+    for path in sorted(log_dir.glob("*.jsonl")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                entries.append(json.loads(line))
+    return entries
+
+
 # ── Helper function tests ────────────────────────────────────
 
 
@@ -1578,6 +1591,212 @@ class TestStreamingExecution:
         assert "tool_end" in types
         tool_start = next(e for e in events if e["type"] == "tool_start")
         assert "web_search" in tool_start["tool_name"]
+
+    @pytest.mark.asyncio
+    async def test_stream_command_execution_logs_bash_activity(self, executor, anima_dir):
+        cmd_item = SimpleNamespace(
+            type="command_execution",
+            id="cmd-1",
+            command="ls -la",
+            aggregated_output="total 0",
+            exit_code=0,
+        )
+        cmd_event = SimpleNamespace(type="item.completed", item=cmd_item)
+        done_event = SimpleNamespace(type="turn.completed", usage=None)
+        mock_thread = _mock_stream_thread("cmd-thread", [cmd_event, done_event])
+        mock_codex = _mock_codex(mock_thread)
+
+        events = []
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for ev in executor.execute_streaming(
+                system_prompt="test",
+                prompt="run",
+                tracker=tracker,
+            ):
+                events.append(ev)
+
+        assert any(e["type"] == "done" for e in events)
+        entries = _read_activity_jsonl(anima_dir)
+        uses = [e for e in entries if e.get("type") == "tool_use" and e.get("tool") == "Bash"]
+        results = [e for e in entries if e.get("type") == "tool_result" and e.get("tool") == "Bash"]
+        assert uses, "expected a Bash tool_use entry"
+        assert "ls -la" in uses[0]["content"]
+        assert results, "expected a Bash tool_result entry"
+        assert "total 0" in results[0]["content"]
+        assert results[0]["meta"]["is_error"] is False
+        assert results[0]["meta"]["tool_use_id"] == "cmd-1"
+        assert results[0]["meta"]["exit_code"] == 0
+
+    @pytest.mark.asyncio
+    async def test_stream_failed_command_logs_error_bash_activity(self, executor, anima_dir):
+        cmd_item = SimpleNamespace(
+            type="command_execution",
+            id="cmd-2",
+            command="false",
+            aggregated_output="boom",
+            exit_code=2,
+        )
+        cmd_event = SimpleNamespace(type="item.completed", item=cmd_item)
+        done_event = SimpleNamespace(type="turn.completed", usage=None)
+        mock_thread = _mock_stream_thread("cmd-thread", [cmd_event, done_event])
+        mock_codex = _mock_codex(mock_thread)
+
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for _ev in executor.execute_streaming(
+                system_prompt="test", prompt="run", tracker=tracker
+            ):
+                pass
+
+        entries = _read_activity_jsonl(anima_dir)
+        results = [e for e in entries if e.get("type") == "tool_result" and e.get("tool") == "Bash"]
+        assert results, "expected a Bash tool_result entry"
+        assert results[0]["meta"]["is_error"] is True
+        assert results[0]["meta"]["exit_code"] == 2
+
+    @pytest.mark.asyncio
+    async def test_stream_mcp_tool_call_not_written_to_activity(self, executor, anima_dir):
+        # A plain mcp_tool_call must not be written (avoid double logging via handler.py).
+        tool_item = MagicMock(spec=["type", "id", "server", "tool", "arguments", "result", "error", "status"])
+        tool_item.type = "mcp_tool_call"
+        tool_item.id = "ws-1"
+        tool_item.server = "aw"
+        tool_item.tool = "web_search"
+        tool_item.arguments = {"query": "test"}
+        tool_item.result = MagicMock(content="results")
+        tool_item.error = None
+        tool_item.status = "completed"
+
+        tool_event = MagicMock()
+        tool_event.type = "item.completed"
+        tool_event.item = tool_item
+        done_event = MagicMock()
+        done_event.type = "turn.completed"
+        done_event.usage = None
+
+        mock_thread = _mock_stream_thread("tool-thread", [tool_event, done_event])
+        mock_codex = _mock_codex(mock_thread)
+
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for _ev in executor.execute_streaming(
+                system_prompt="test", prompt="search", tracker=tracker
+            ):
+                pass
+
+        entries = _read_activity_jsonl(anima_dir)
+        logged = [
+            e for e in entries if e.get("type") in ("tool_use", "tool_result")
+        ]
+        assert logged == []
+
+    @pytest.mark.asyncio
+    async def test_stream_file_change_logs_edit_activity(self, executor, anima_dir):
+        file_item = MagicMock(spec=["type", "id", "changes", "status"])
+        file_item.type = "file_change"
+        file_item.id = "fc-1"
+        file_item.status = "completed"
+        file_item.changes = [SimpleNamespace(path="a.py", type="add")]
+        file_event = MagicMock()
+        file_event.type = "item.completed"
+        file_event.item = file_item
+        done_event = MagicMock()
+        done_event.type = "turn.completed"
+        done_event.usage = None
+        mock_thread = _mock_stream_thread("file-thread", [file_event, done_event])
+        mock_codex = _mock_codex(mock_thread)
+
+        with patch.object(executor, "_create_codex_client", return_value=mock_codex):
+            tracker = ContextTracker(model="codex/o4-mini")
+            async for _ev in executor.execute_streaming(
+                system_prompt="test", prompt="edit", tracker=tracker
+            ):
+                pass
+
+        entries = _read_activity_jsonl(anima_dir)
+        uses = [e for e in entries if e.get("type") == "tool_use" and e.get("tool") == "Edit"]
+        results = [e for e in entries if e.get("type") == "tool_result" and e.get("tool") == "Edit"]
+        assert uses, "expected an Edit tool_use entry"
+        assert uses[0]["meta"]["tool_use_id"] == "fc-1"
+        assert results, "expected an Edit tool_result entry"
+        assert results[0]["meta"]["is_error"] is False
+
+    @pytest.mark.asyncio
+    async def test_cli_exec_streaming_logs_command_activity(self, executor, anima_dir):
+        class _FakeStdin:
+            def __init__(self):
+                self.written = b""
+                self.closed = False
+
+            def write(self, data):
+                self.written += data
+
+            async def drain(self):
+                return None
+
+            def close(self):
+                self.closed = True
+
+        class _FakeStdout:
+            def __init__(self):
+                self.lines = [
+                    b'{"type":"thread.started","thread_id":"thread-cli-2"}\n',
+                    b'{"type":"item.started","item":{"type":"command_execution","id":"cli-cmd-1","command":"pytest"}}\n',
+                    b'{"type":"item.completed","item":{"type":"command_execution","id":"cli-cmd-1","command":"pytest","aggregated_output":"1 passed","exit_code":0}}\n',
+                    b'{"type":"item.completed","item":{"type":"agent_message","id":"msg-1","text":"CLI response"}}\n',
+                    b'{"type":"turn.completed","usage":{"input_tokens":11,"output_tokens":5}}\n',
+                    b"",
+                ]
+
+            async def readline(self):
+                return self.lines.pop(0)
+
+        class _FakeStderr:
+            async def read(self, _size):
+                return b""
+
+        class _FakeProc:
+            def __init__(self):
+                self.stdin = _FakeStdin()
+                self.stdout = _FakeStdout()
+                self.stderr = _FakeStderr()
+                self.returncode = None
+                self.kill_calls = 0
+
+            async def wait(self):
+                self.returncode = 0
+                return 0
+
+            def kill(self):
+                self.kill_calls += 1
+                self.returncode = 1
+
+        proc = _FakeProc()
+        tracker = ContextTracker(model="codex/o4-mini")
+
+        with (
+            patch.object(executor, "_write_codex_config"),
+            patch.object(executor, "_build_cli_exec_command", return_value=["codex", "exec", "--json", "-"]),
+            patch.object(executor, "_build_env", return_value={}),
+            patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)),
+        ):
+            async for _ev in executor._execute_streaming_via_cli_exec(
+                system_prompt="sys",
+                prompt="hello",
+                tracker=tracker,
+            ):
+                pass
+
+        entries = _read_activity_jsonl(anima_dir)
+        uses = [e for e in entries if e.get("type") == "tool_use" and e.get("tool") == "Bash"]
+        results = [e for e in entries if e.get("type") == "tool_result" and e.get("tool") == "Bash"]
+        assert uses, "expected a Bash tool_use entry from CLI exec"
+        assert "pytest" in uses[0]["content"]
+        assert results, "expected a Bash tool_result entry from CLI exec"
+        assert "1 passed" in results[0]["content"]
+        assert results[0]["meta"]["tool_use_id"] == "cli-cmd-1"
+        assert results[0]["meta"]["is_error"] is False
 
     @pytest.mark.asyncio
     async def test_stream_interrupted_mid_stream(self, model_config, anima_dir):

@@ -33,6 +33,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from core.execution._sdk_stream import _log_tool_result, _log_tool_use
 from core.execution.base import (
     BaseExecutor,
     ExecutionResult,
@@ -945,6 +946,42 @@ def _cli_exec_item_to_tool_record(item: dict[str, Any]) -> ToolCallRecord | None
     return None
 
 
+def _log_codex_command_activity(
+    anima_dir: Path,
+    item_id: str,
+    command: str,
+    output: str,
+    exit_code: int | None,
+) -> None:
+    """Record a command_execution item as a Bash tool in the activity log (best-effort)."""
+    try:
+        _log_tool_use(anima_dir, "Bash", {"command": command}, tool_use_id=item_id)
+        _log_tool_result(
+            anima_dir,
+            "Bash",
+            item_id,
+            output,
+            is_error=exit_code is not None and exit_code != 0,
+            extra_meta={"exit_code": exit_code} if exit_code is not None else None,
+        )
+    except Exception:
+        logger.debug("Failed to log codex command activity", exc_info=True)
+
+
+def _log_codex_file_change_activity(
+    anima_dir: Path,
+    item_id: str,
+    detail: str,
+    status: str,
+) -> None:
+    """Record a file_change item as an Edit tool in the activity log (best-effort)."""
+    try:
+        _log_tool_use(anima_dir, "Edit", {"file_path": detail}, tool_use_id=item_id)
+        _log_tool_result(anima_dir, "Edit", item_id, status or detail, is_error=False)
+    except Exception:
+        logger.debug("Failed to log codex file change activity", exc_info=True)
+
+
 def _stderr_contains_fatal_signal(text: str) -> bool:
     """Return True when Codex stderr already indicates the stream is unrecoverable."""
     lowered = text.lower()
@@ -1722,6 +1759,7 @@ class CodexSDKExecutor(BaseExecutor):
         tool_evidence = _CodexToolEvidence()
         usage_acc = TokenUsage()
         emitted_tool_starts: set[str] = set()
+        activity_logged: set[str] = set()
         usage_meter = _CodexUsageAccumulator(fresh_thread=True)
         completed_turn_count = 0
         turn_completed = False
@@ -1792,6 +1830,21 @@ class CodexSDKExecutor(BaseExecutor):
                                 "tool_name": _codex_item_tool_name(type("Obj", (), item)(), item_type),
                                 "tool_id": item_id,
                             }
+                        if item_id not in activity_logged:
+                            if item_type == "command_execution":
+                                command = str(item.get("command", ""))
+                                output = str(item.get("aggregated_output") or item.get("output", ""))
+                                exit_code = item.get("exit_code")
+                                _log_codex_command_activity(
+                                    self._anima_dir, item_id, command, output, exit_code
+                                )
+                                activity_logged.add(item_id)
+                            elif item_type == "file_change":
+                                detail = _format_file_changes(item.get("changes") or [])
+                                _log_codex_file_change_activity(
+                                    self._anima_dir, item_id, detail, item.get("status", "")
+                                )
+                                activity_logged.add(item_id)
                         rec = _cli_exec_item_to_tool_record(item) or _item_to_tool_record(item)
                         if rec:
                             tool_records.append(rec)
@@ -2142,6 +2195,7 @@ class CodexSDKExecutor(BaseExecutor):
             agent_delta_seen: set[str] = set()
             tool_started: set[str] = set()
             tool_ended: set[str] = set()
+            activity_logged: set[str] = set()
 
             def _tool_start_chunk(tool_id: str, tool_name: str) -> dict[str, Any] | None:
                 tool_evidence.started(tool_id, tool_name)
@@ -2389,6 +2443,24 @@ class CodexSDKExecutor(BaseExecutor):
                                 detail_chunk = _tool_detail_chunk(item_id, tool_name, detail)
                                 if detail_chunk:
                                     yield detail_chunk
+                            if item_id not in activity_logged:
+                                if item_type == "command_execution":
+                                    unwrapped = _unwrap_thread_item(item)
+                                    command = _get_str(unwrapped, "command")
+                                    output = _get_str(unwrapped, "aggregated_output", "aggregatedOutput")
+                                    exit_code = _get_first_attr(
+                                        unwrapped, "exit_code", "exitCode", default=None
+                                    )
+                                    _log_codex_command_activity(
+                                        self._anima_dir, item_id, command, output, exit_code
+                                    )
+                                    activity_logged.add(item_id)
+                                elif item_type == "file_change":
+                                    status = _get_str(_unwrap_thread_item(item), "status")
+                                    _log_codex_file_change_activity(
+                                        self._anima_dir, item_id, detail, status
+                                    )
+                                    activity_logged.add(item_id)
                             rec = _item_to_tool_record(item)
                             if rec:
                                 all_tool_records.append(rec)

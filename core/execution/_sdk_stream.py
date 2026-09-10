@@ -118,17 +118,27 @@ def _log_tool_result(
     result_content: str,
     *,
     is_error: bool = False,
+    extra_meta: dict[str, Any] | None = None,
 ) -> None:
-    """Record a tool result to the activity log (best-effort, never raises)."""
+    """Record a tool result to the activity log (best-effort, never raises).
+
+    ``extra_meta`` (if given) is merged into the meta dict without overwriting
+    the existing ``tool_use_id`` / ``is_error`` keys.  When omitted the output
+    is identical to the previous behaviour.
+    """
     try:
         from core.memory.activity import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
+        meta: dict[str, Any] = {"tool_use_id": tool_use_id, "is_error": is_error}
+        if extra_meta:
+            for key, value in extra_meta.items():
+                meta.setdefault(key, value)
         activity.log(
             "tool_result",
             tool=tool_name,
             content=result_content[:20_000] if len(result_content) > 20_000 else result_content,
-            meta={"tool_use_id": tool_use_id, "is_error": is_error},
+            meta=meta,
         )
     except Exception:
         logger.debug("Failed to log tool_result for %s", tool_name, exc_info=True)
