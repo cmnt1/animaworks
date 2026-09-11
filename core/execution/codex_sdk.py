@@ -1835,9 +1835,7 @@ class CodexSDKExecutor(BaseExecutor):
                                 command = str(item.get("command", ""))
                                 output = str(item.get("aggregated_output") or item.get("output", ""))
                                 exit_code = item.get("exit_code")
-                                _log_codex_command_activity(
-                                    self._anima_dir, item_id, command, output, exit_code
-                                )
+                                _log_codex_command_activity(self._anima_dir, item_id, command, output, exit_code)
                                 activity_logged.add(item_id)
                             elif item_type == "file_change":
                                 detail = _format_file_changes(item.get("changes") or [])
@@ -2448,18 +2446,12 @@ class CodexSDKExecutor(BaseExecutor):
                                     unwrapped = _unwrap_thread_item(item)
                                     command = _get_str(unwrapped, "command")
                                     output = _get_str(unwrapped, "aggregated_output", "aggregatedOutput")
-                                    exit_code = _get_first_attr(
-                                        unwrapped, "exit_code", "exitCode", default=None
-                                    )
-                                    _log_codex_command_activity(
-                                        self._anima_dir, item_id, command, output, exit_code
-                                    )
+                                    exit_code = _get_first_attr(unwrapped, "exit_code", "exitCode", default=None)
+                                    _log_codex_command_activity(self._anima_dir, item_id, command, output, exit_code)
                                     activity_logged.add(item_id)
                                 elif item_type == "file_change":
                                     status = _get_str(_unwrap_thread_item(item), "status")
-                                    _log_codex_file_change_activity(
-                                        self._anima_dir, item_id, detail, status
-                                    )
+                                    _log_codex_file_change_activity(self._anima_dir, item_id, detail, status)
                                     activity_logged.add(item_id)
                             rec = _item_to_tool_record(item)
                             if rec:

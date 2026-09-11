@@ -224,15 +224,11 @@ class TaskStore:
         if alias:
             return (alias["anima"], alias["task_id"])
         # 自分が本当に持っているタスクは、後続のフォールバックが横取りしないための門番。
-        own = db.execute(
-            "SELECT 1 FROM tasks WHERE anima=? AND task_id=?", (anima, task_id)
-        ).fetchone()
+        own = db.execute("SELECT 1 FROM tasks WHERE anima=? AND task_id=?", (anima, task_id)).fetchone()
         if own:
             return (anima, task_id)
         # 受け側フォールバック（旧データ互換）: 部下が、上司の追跡 ID を渡してきた場合に部下自身へ解決する。
-        receiver = db.execute(
-            "SELECT task_id FROM task_aliases WHERE anima=? AND alias=?", (anima, task_id)
-        ).fetchone()
+        receiver = db.execute("SELECT task_id FROM task_aliases WHERE anima=? AND alias=?", (anima, task_id)).fetchone()
         if receiver:
             return (anima, receiver["task_id"])
         # 委譲側フォールバック（旧データ互換）: 上司が、部下側の実 ID を渡してきた場合に委譲先へ解決する。
@@ -403,8 +399,7 @@ class TaskStore:
                 raise ValueError("Cannot resume an active attempt; stop it first")
             if row["input_json"] is None:
                 raise ValueError(
-                    "Task has no saved execution input; it is a backlog entry. "
-                    "Publish it with submit_tasks."
+                    "Task has no saved execution input; it is a backlog entry. Publish it with submit_tasks."
                 )
             existing = TaskEntry(**json.loads(row["entry_json"]))
             updated = existing.model_copy(update={"status": "pending", "updated_at": now_iso()})
