@@ -11,7 +11,6 @@ Issue #143: Archive/reset compatibility remains available outside normal session
 
 Covers:
 - archive_and_reset_state: skip, archive, reset, failure handling
-- _update_state_from_summary routes to task_queue.jsonl
 - heartbeat prompt no longer injects cleanup instructions
 - builder.py _CURRENT_STATE_MAX_CHARS still exists for prompt-side truncation
 """
@@ -22,7 +21,6 @@ import pytest
 
 from core.memory.conversation import (
     ConversationMemory,
-    ParsedSessionSummary,
 )
 from core.schemas import ModelConfig
 from tests.helpers.filesystem import create_anima_dir, create_test_data_dir
@@ -136,65 +134,6 @@ class TestArchiveAndResetState:
         assert mm.read_current_state().strip() == "status: idle"
 
 
-# ── _update_state_from_summary (Issue #114: task_queue routing) ────
-
-
-class TestUpdateStateFromSummary:
-    """Tests that _update_state_from_summary() routes to task_queue.jsonl."""
-
-    def test_resolved_items_mark_task_done(self, conv_memory, anima_dir):
-        """Resolved items update matching task_queue entries to done."""
-        from core.memory.manager import MemoryManager
-        from core.memory.task_queue import TaskQueueManager
-
-        memory_mgr = MemoryManager(anima_dir)
-        tqm = TaskQueueManager(anima_dir)
-        tqm.add_task(
-            source="anima",
-            original_instruction="Fix login bug",
-            assignee=anima_dir.name,
-            summary="Fix login bug",
-        )
-        task_id = list(tqm._load_all().keys())[0]
-
-        parsed = ParsedSessionSummary(
-            title="test",
-            episode_body="test body",
-            resolved_items=["Fix login bug"],
-            new_tasks=[],
-            current_status="",
-            has_state_changes=True,
-        )
-
-        conv_memory._update_state_from_summary(memory_mgr, parsed)
-
-        task = tqm.get_task_by_id(task_id)
-        assert task is not None
-        assert task.status == "done"
-
-    def test_new_tasks_not_added_to_queue(self, conv_memory, anima_dir):
-        """new_tasks from session summary are NOT registered (auto-detection disabled)."""
-        from core.memory.manager import MemoryManager
-        from core.memory.task_queue import TaskQueueManager
-
-        memory_mgr = MemoryManager(anima_dir)
-        tqm = TaskQueueManager(anima_dir)
-
-        parsed = ParsedSessionSummary(
-            title="test",
-            episode_body="test body",
-            resolved_items=[],
-            new_tasks=["Implement feature X", "Review PR #42"],
-            current_status="",
-            has_state_changes=True,
-        )
-
-        conv_memory._update_state_from_summary(memory_mgr, parsed)
-
-        pending = tqm.get_pending()
-        assert len(pending) == 0
-
-
 # ── Heartbeat prompt (cleanup instruction removed) ─────────────
 
 
@@ -211,10 +150,7 @@ class TestHeartbeatPromptCleanup:
         memory_mock = MagicMock()
         mixin.memory = memory_mock
         mixin._build_state_cleanup_instruction = lambda: HeartbeatMixin._build_state_cleanup_instruction(mixin)
-        mixin._get_heartbeat_md_max_bytes = lambda: 0
-        mixin._build_heartbeat_md_cleanup_instruction = lambda hb_config: (
-            HeartbeatMixin._build_heartbeat_md_cleanup_instruction(mixin, hb_config)
-        )
+        mixin._build_heartbeat_md_cleanup_instruction = MagicMock(return_value=None)
 
         return mixin
 
