@@ -210,6 +210,26 @@ def test_indexer_copies_always_prime_frontmatter_to_chunk_metadata(anima_dir: Pa
     assert metadata["always_prime"] is True
 
 
+def test_indexer_copies_frontmatter_description_into_summary(anima_dir: Path) -> None:
+    """Human-written frontmatter description becomes the chunk summary."""
+    path = anima_dir / "knowledge" / "resident.md"
+    path.write_text("# Resident", encoding="utf-8")
+    indexer = MemoryIndexer.__new__(MemoryIndexer)
+    indexer.collection_prefix = "mei"
+    indexer.anima_dir = anima_dir
+
+    metadata = indexer._extract_metadata(
+        path,
+        "# Resident",
+        "knowledge",
+        0,
+        1,
+        frontmatter={"description": "人間の書いた要約"},
+    )
+
+    assert metadata["summary"] == "人間の書いた要約"
+
+
 @pytest.mark.asyncio
 async def test_originless_own_company_knowledge_is_medium(
     anima_dir: Path,

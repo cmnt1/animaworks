@@ -98,7 +98,7 @@ async def test_channel_c_uses_unified_search_without_direct_retriever(tmp_path: 
             ["deploy"],
         )
 
-    assert 'read_memory_file(path="knowledge/deploy.md")' in medium
+    assert "knowledge/deploy.md" in medium
     assert untrusted == ""
     searcher.search_many.assert_called_once()
     direct_retriever.search.assert_not_called()
@@ -135,7 +135,7 @@ async def test_channel_c_runs_unified_search_in_thread(tmp_path: Path, monkeypat
             ["deploy"],
         )
 
-    assert 'read_memory_file(path="knowledge/deploy.md")' in medium
+    assert "knowledge/deploy.md" in medium
     assert untrusted == ""
     assert channel_c_module._search_related_knowledge in threaded_funcs
 
@@ -169,7 +169,7 @@ async def test_channel_c_omits_metadata_for_external_knowledge(tmp_path: Path) -
     assert medium == ""
     assert "updated:" not in untrusted
     assert "origin:" not in untrusted
-    assert 'read_memory_file(path="knowledge/vendor.md")' in untrusted
+    assert "knowledge/vendor.md" in untrusted
 
 
 @pytest.mark.asyncio
@@ -198,8 +198,9 @@ async def test_channel_f_uses_unified_search_without_direct_retriever(tmp_path: 
             message="deploy outage",
         )
 
-    assert 'read_memory_file(path="episodes/2026-03-01.md")' in output
-    assert "Full body should not be injected" not in output
+    assert "episodes/2026-03-01.md" in output
+    # As the single top-ranked result it may carry a bounded body cue.
+    assert "📌 [0.82] episodes/2026-03-01.md" in output
     searcher.search_many.assert_called_once()
     direct_retriever.search.assert_not_called()
 
@@ -235,8 +236,8 @@ async def test_channel_f_runs_unified_search_in_thread(tmp_path: Path, monkeypat
             message="deploy outage",
         )
 
-    assert 'read_memory_file(path="episodes/2026-03-01.md")' in output
-    assert "Full body should not be injected" not in output
+    assert "episodes/2026-03-01.md" in output
+    assert "📌 [0.82] episodes/2026-03-01.md" in output
     assert any(func is searcher.search_many for func in threaded_funcs)
 
 

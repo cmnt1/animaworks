@@ -17,7 +17,6 @@ from __future__ import annotations
 
 # Load submodules first so engine can import them without circular import
 from core.memory.priming import (
-    budget,
     channel_a,
     channel_b,
     channel_c,

@@ -10,7 +10,6 @@ from __future__ import annotations
 """Channel C: Related knowledge and important knowledge search."""
 
 import asyncio
-import json
 import logging
 import re
 import threading
@@ -48,11 +47,6 @@ def _single_line(text: str, limit: int = 160) -> str:
     """Collapse prompt cue text to one bounded line."""
     collapsed = " ".join(str(text or "").split())
     return collapsed[:limit]
-
-
-def _quote_path(path: str) -> str:
-    """Return a JSON string literal for read_memory_file path examples."""
-    return json.dumps(path, ensure_ascii=False)
 
 
 def extract_summary(content: str, metadata: dict) -> tuple[str, str]:
@@ -142,12 +136,17 @@ def format_pointer_result(
     content: str,
     metadata: dict,
     path: str,
+    score: float,
 ) -> str:
-    """Format a retrieval result as a pointer cue instead of raw payload."""
+    """Format a retrieval result as a pointer cue instead of raw payload.
+
+    One line per item: ``📌 [score] path — summary`` where ``path`` is a
+    relative path that can be handed to ``read_memory_file`` directly.
+    """
     title, _ = extract_summary(content, metadata)
     summary = title or Path(path).stem.replace("-", " ").replace("_", " ")
-    summary = _single_line(summary)
-    return f"📌 {summary} → read_memory_file(path={_quote_path(path)})"
+    summary = _single_line(summary, 60)
+    return f"📌 [{score:.2f}] {path} — {summary}"
 
 
 def _is_action_rule(path: str, content: str) -> bool:
@@ -174,11 +173,11 @@ def _item_from_chunk(
     rank: float,
 ) -> MemoryItem:
     title, _ = extract_summary(content, metadata)
-    title = _single_line(title or Path(path).stem.replace("-", " ").replace("_", " "))
+    summary = _single_line(title or Path(path).stem.replace("-", " ").replace("_", " "), 60)
     return MemoryItem(
         source="important_knowledge",
         key=path,
-        text=f"📌 {title} → read_memory_file(path={_quote_path(path)})",
+        text=f"📌 [{rank:.2f}] {path} — {summary}",
         ref=path,
         updated=_updated_from_metadata(metadata),
         rank=rank,
@@ -548,6 +547,7 @@ async def channel_c_related_knowledge(
                     content=str(result.get("content", "") or ""),
                     metadata=metadata,
                     path=rel_path,
+                    score=float(result.get("score", 0.0) or 0.0),
                 )
                 item_kwargs = {
                     "key": rel_path,

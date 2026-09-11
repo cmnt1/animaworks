@@ -1551,7 +1551,12 @@ class MemoryIndexer:
         if "valid_at" not in metadata:
             metadata["valid_at"] = float(stat.st_mtime)
 
-        if fm.get("summary"):
+        # Human-written frontmatter ``description`` is the most reliable summary;
+        # fall back to the legacy ``summary`` key only when it is absent.
+        description = str(fm.get("description") or "")
+        if description:
+            metadata["summary"] = description[:200]
+        elif fm.get("summary"):
             metadata["summary"] = str(fm["summary"])[:200]
 
         # Failure tracking fields from frontmatter (knowledge + procedures)

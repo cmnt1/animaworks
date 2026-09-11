@@ -456,13 +456,7 @@ class PrimingConfig(BaseModel):
 
     profile: Literal["compact", "full"] = "compact"
     max_tokens: int = Field(default=2000, ge=200)
-    dynamic_budget: bool = True
     channel_timeout_seconds: float = Field(default=60.0, ge=0.1)
-    budget_greeting: int = 500
-    budget_question: int = 2000
-    budget_request: int = 3000
-    budget_heartbeat: int = 200  # fallback when context_window is unknown
-    heartbeat_context_pct: float = 0.0  # opt-in proportional HB budget; max_tokens still applies
 
 
 class ConsolidationConfig(BaseModel):

@@ -255,7 +255,6 @@ def wrap_priming(
     trust: str = "mixed",
     origin: str | None = None,
     origin_chain: list[str] | None = None,
-    render_mode: str | None = None,
 ) -> str:
     """Wrap priming content with source and trust boundary tags.
 
@@ -266,9 +265,6 @@ def wrap_priming(
             Overridden by ``resolve_trust()`` when *origin* is provided.
         origin: Origin category of the data (optional, provenance Phase 1).
         origin_chain: Intermediate origins the data traversed.
-        render_mode: Optional priming gate render mode (e.g. ``pointer``,
-            ``evidence``, ``guardrail``).  Omitted by default for backwards
-            compatible prompt text.
 
     Returns:
         Content unchanged if empty/falsy; otherwise wrapped in
@@ -288,9 +284,6 @@ def wrap_priming(
         attrs += f' origin="{origin}"'
     if origin_chain:
         attrs += f' origin_chain="{",".join(origin_chain[:MAX_ORIGIN_CHAIN_LENGTH])}"'
-    if render_mode:
-        attrs += f' render_mode="{render_mode}"'
-
     escaped = escape_boundary_tags(content)
     return f"<priming {attrs}>\n{escaped}\n</priming>"
 

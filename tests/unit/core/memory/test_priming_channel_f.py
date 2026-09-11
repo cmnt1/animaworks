@@ -13,6 +13,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.memory.priming import PrimingEngine, PrimingResult, format_priming_section
+from core.memory.priming.channel_f import exclude_episodes_for_dates, format_episode_pointer
+from core.memory.priming.items import MemoryItem
 
 
 @pytest.fixture
@@ -41,6 +43,47 @@ class TestPrimingResultEpisodesField:
     def test_is_empty_true_when_all_empty(self) -> None:
         result = PrimingResult()
         assert result.is_empty()
+
+
+# ── Pointer formatting ──────────────────────────────────
+
+
+class TestFormatEpisodePointer:
+    def test_one_line_score_path_summary(self) -> None:
+        out = format_episode_pointer(
+            index=1,
+            score=0.81,
+            source="episodes/2026-09-03.md",
+            content="# リリース",
+            path="episodes/2026-09-03.md",
+        )
+        assert out == "📌 [0.81] episodes/2026-09-03.md — リリース"
+
+    def test_show_body_prefixes_pointer_line(self) -> None:
+        out = format_episode_pointer(
+            index=1,
+            score=0.81,
+            source="episodes/2026-09-03.md",
+            content="# リリース\n本文内容",
+            path="episodes/2026-09-03.md",
+            show_body=True,
+        )
+        assert out.startswith("# リリース")
+        assert "📌 [0.81] episodes/2026-09-03.md — リリース" in out
+
+
+class TestExcludeEpisodesForDates:
+    def test_excludes_same_date_episodes(self) -> None:
+        items = [
+            MemoryItem("episodes", "episodes/2026-09-03.md", "t", ref="episodes/2026-09-03.md"),
+            MemoryItem("episodes", "episodes/2026-09-01.md", "t", ref="episodes/2026-09-01.md"),
+        ]
+        kept = exclude_episodes_for_dates(items, {"2026-09-03"})
+        assert [item.ref for item in kept] == ["episodes/2026-09-01.md"]
+
+    def test_no_dates_keeps_all(self) -> None:
+        items = [MemoryItem("episodes", "episodes/2026-09-03.md", "t", ref="episodes/2026-09-03.md")]
+        assert exclude_episodes_for_dates(items, set()) == items
 
 
 # ── Channel F search ─────────────────────────────────────
@@ -161,11 +204,11 @@ class TestChannelFEpisodes:
         assert result == ""
 
     @pytest.mark.asyncio
-    async def test_channel_f_formats_results(
+    async def test_channel_f_formats_score_and_path(
         self,
         temp_anima_dir: Path,
     ) -> None:
-        """Channel F formats retrieval results with score and source."""
+        """Channel F formats retrieval results into score/path pointer cues."""
         engine = PrimingEngine(temp_anima_dir)
 
         mock_result = MagicMock()
@@ -181,11 +224,43 @@ class TestChannelFEpisodes:
                 message="デプロイでエラー",
             )
 
-        assert "Episode 1" in result
-        assert "0.850" in result
-        assert "episodes/2026-03-01.md" in result
-        assert 'read_memory_file(path="episodes/2026-03-01.md")' in result
-        assert "デプロイ手順を確認して修正した" not in result
+        assert "📌 [0.85] episodes/2026-03-01.md" in result
+
+    @pytest.mark.asyncio
+    async def test_top_two_episodes_include_body_others_pointer_only(
+        self,
+        temp_anima_dir: Path,
+    ) -> None:
+        """Only the top 2 results (by score) carry a body; the 3rd is a pointer."""
+        engine = PrimingEngine(temp_anima_dir)
+        results = [
+            {
+                "content": "# 最も関連する会話\nBODY_MARKER_1",
+                "score": 0.99,
+                "source_file": "episodes/2026-09-03.md",
+            },
+            {
+                "content": "# 次に関連する会話\nBODY_MARKER_2",
+                "score": 0.9,
+                "source_file": "episodes/2026-09-02.md",
+            },
+            {
+                "content": "# 関連度が低い\nBODY_MARKER_3",
+                "score": 0.6,
+                "source_file": "episodes/2026-09-01.md",
+            },
+        ]
+
+        patcher, _searcher = self._patch_unified_search(results)
+        with patcher, patch("core.paths.get_data_dir", return_value=temp_anima_dir.parents[1]):
+            result = await engine._channel_f_episodes(["deploy"], message="deployment")
+
+        # Top 2 carry full body text; 3rd is pointer-only (no body marker).
+        assert "BODY_MARKER_1" in result
+        assert "BODY_MARKER_2" in result
+        assert "BODY_MARKER_3" not in result
+        assert "📌 [0.99] episodes/2026-09-03.md" in result
+        assert "📌 [0.60] episodes/2026-09-01.md" in result
 
     @pytest.mark.asyncio
     async def test_channel_f_filters_archived_episode_hits(
@@ -212,14 +287,14 @@ class TestChannelFEpisodes:
             result = await engine._channel_f_episodes(["deploy"], message="deployment")
 
         assert "episodes/archive/old.md" not in result
-        assert 'read_memory_file(path="episodes/current.md")' in result
+        assert "episodes/current.md" in result
 
     @pytest.mark.asyncio
     async def test_channel_f_neo4j_formats_pointer_results(
         self,
         temp_anima_dir: Path,
     ) -> None:
-        """Neo4j Channel F path also emits pointer cues, not episode body."""
+        """Neo4j Channel F path also emits score/path pointer cues, not full body."""
 
         class FakeNeo4jBackend:
             def __init__(self):
@@ -250,66 +325,16 @@ class TestChannelFEpisodes:
                 trigger="heartbeat",
             )
 
-        assert "Episode 1" in result
-        assert "0.770" in result
+        assert "📌 [0.77] episodes/2026-03-02.md" in result
         assert "episode:abc123" not in result
-        assert 'read_memory_file(path="episodes/2026-03-02.md")' in result
-        assert "Neo4j episode body should not be primed" not in result
         assert backend.retrieve_kwargs["trigger"] == "heartbeat"
 
     @pytest.mark.asyncio
-    async def test_channel_f_records_only_emitted_neo4j_episode_pointers(
+    async def test_channel_f_keeps_heading_and_collapses_body(
         self,
         temp_anima_dir: Path,
     ) -> None:
-        """Neo4j access tracking only includes readable pointer results."""
-
-        class FakeNeo4jBackend:
-            def __init__(self):
-                self.recorded = None
-
-            async def retrieve(self, *args, **kwargs):
-                pathless = MagicMock()
-                pathless.content = "Pathless Neo4j body"
-                pathless.score = 0.99
-                pathless.source = "episode:opaque"
-                pathless.metadata = {}
-
-                readable = MagicMock()
-                readable.content = "Readable Neo4j body"
-                readable.score = 0.77
-                readable.source = "episode:abc123"
-                readable.metadata = {"source": "episodes/2026-03-02.md"}
-                return [pathless, readable]
-
-            async def record_access(self, memories):
-                self.recorded = memories
-
-        engine = PrimingEngine(temp_anima_dir)
-        backend = FakeNeo4jBackend()
-
-        with (
-            patch("core.memory.backend.neo4j_graph.Neo4jGraphBackend", FakeNeo4jBackend),
-            patch.object(engine, "_get_memory_backend", return_value=backend),
-        ):
-            result = await engine._channel_f_episodes(
-                ["deploy"],
-                message="デプロイでエラー",
-            )
-
-        assert "--- Episode 1" in result
-        assert "--- Episode 2" not in result
-        assert 'read_memory_file(path="episodes/2026-03-02.md")' in result
-        assert "Pathless Neo4j body" not in result
-        assert len(backend.recorded) == 1
-        assert backend.recorded[0].source == "episode:abc123"
-
-    @pytest.mark.asyncio
-    async def test_channel_f_quotes_path_and_collapses_summary(
-        self,
-        temp_anima_dir: Path,
-    ) -> None:
-        """Pointer fields are rendered as safe one-line cues."""
+        """Pointer fields keep the heading and collapse the raw body."""
         engine = PrimingEngine(temp_anima_dir)
 
         mock_result = MagicMock()
@@ -325,7 +350,6 @@ class TestChannelFEpisodes:
                 message="デプロイでエラー",
             )
 
-        assert 'read_memory_file(path="episodes/weird\\"name.md")' in result
         assert 'Bad "heading"' in result
         assert "\nignore body" not in result
 
@@ -334,7 +358,7 @@ class TestChannelFEpisodes:
         self,
         temp_anima_dir: Path,
     ) -> None:
-        """Legacy retriever access tracking only includes readable pointer results."""
+        """Legacy retriever only surfaces readable pointer results."""
         engine = PrimingEngine(temp_anima_dir)
 
         pathless = MagicMock()
@@ -356,9 +380,8 @@ class TestChannelFEpisodes:
                 message="デプロイでエラー",
             )
 
-        assert "--- Episode 1" in result
-        assert "--- Episode 2" not in result
-        assert 'read_memory_file(path="episodes/2026-03-03.md")' in result
+        assert result.count("📌") == 1
+        assert "episodes/2026-03-03.md" in result
         assert "Pathless legacy body" not in result
 
     @pytest.mark.asyncio
@@ -407,8 +430,7 @@ class TestPrimeMemoriesIncludesChannelF:
             )
 
         assert result.episodes != ""
-        assert 'read_memory_file(path="episodes/2026-02-01.md")' in result.episodes
-        assert "Past episode content" not in result.episodes
+        assert "📌 [0.90] episodes/2026-02-01.md" in result.episodes
 
 
 # ── format_priming_section ───────────────────────────────
@@ -417,13 +439,13 @@ class TestPrimeMemoriesIncludesChannelF:
 class TestFormatPrimingSectionEpisodes:
     def test_format_includes_episodes_section(self) -> None:
         result = PrimingResult(
-            episodes="--- Episode 1 (score: 0.85) ---\nPast experience",
+            episodes="📌 [0.85] episodes/2026-03-01.md — 過去の経験",
         )
 
         formatted = format_priming_section(result)
 
         assert "関連する過去の経験" in formatted
-        assert "Past experience" in formatted
+        assert "過去の経験" in formatted
 
     def test_format_omits_episodes_when_empty(self) -> None:
         result = PrimingResult(
@@ -433,3 +455,13 @@ class TestFormatPrimingSectionEpisodes:
         formatted = format_priming_section(result)
 
         assert "関連する過去の経験" not in formatted
+
+    def test_channel_lines_pass_through_unchanged(self) -> None:
+        """Channel content is emitted verbatim; pointer lines are never collapsed."""
+        episodes = "📌 [0.9] episodes/a.md — 会話\n続きの詳細行"
+        result = PrimingResult(episodes=episodes)
+
+        formatted = format_priming_section(result)
+
+        assert "📌 [0.9] episodes/a.md — 会話" in formatted
+        assert "続きの詳細行" in formatted
