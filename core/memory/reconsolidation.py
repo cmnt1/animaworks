@@ -10,7 +10,7 @@ from __future__ import annotations
 
 """Failure-count-based memory reconsolidation engine.
 
-When a procedure has accumulated enough failures (failure_count >= 2)
+When a procedure has accumulated any failures (failure_count >= 1)
 and its confidence has dropped below a threshold (confidence < 0.6),
 the system triggers reconsolidation — an LLM-driven revision of the
 procedure content.  After revision the counters are reset and a new
@@ -102,7 +102,7 @@ class ReconsolidationEngine:
         *,
         max_files: int | None = None,
     ) -> list[Path]:
-        """Find procedures with failure_count >= 2 and confidence < 0.6.
+        """Find procedures with failure_count >= 1 or confidence < 0.6.
 
         Scans all ``*.md`` files in the anima's ``procedures/`` directory,
         reading YAML frontmatter to check the trigger conditions.
@@ -121,7 +121,7 @@ class ReconsolidationEngine:
             meta = self.memory_manager.read_procedure_metadata(md_file)
             failure_count = meta.get("failure_count", 0)
             confidence = meta.get("confidence", 1.0)
-            if failure_count >= 2 and confidence < 0.6:
+            if failure_count >= 1 or confidence < 0.6:
                 targets.append(md_file)
                 if max_files is not None and len(targets) >= max_files:
                     break
@@ -441,7 +441,7 @@ class ReconsolidationEngine:
         max_files: int | None = None,
         exclude_paths: set[Path] | None = None,
     ) -> list[Path]:
-        """Find knowledge files with failure_count >= 2 and confidence < 0.6.
+        """Find knowledge files with failure_count >= 1 or confidence < 0.6.
 
         Scans all ``*.md`` files in the anima's ``knowledge/`` directory,
         reading YAML frontmatter to check the trigger conditions.
@@ -467,7 +467,7 @@ class ReconsolidationEngine:
                 continue
             failure_count = meta.get("failure_count", 0)
             confidence = meta.get("confidence", 1.0)
-            if failure_count >= 2 and confidence < 0.6:
+            if failure_count >= 1 or confidence < 0.6:
                 targets.append(md_file)
                 if max_files is not None and len(targets) >= max_files:
                     break
@@ -482,7 +482,7 @@ class ReconsolidationEngine:
     ) -> dict[str, int]:
         """Revise knowledge files using LLM and reset counters.
 
-        Scans knowledge/*.md files for those with failure_count >= 2
+        Scans knowledge/*.md files for those with failure_count >= 1
         and confidence < 0.6, then uses an LLM to revise the content.
         Each revision is version-controlled with an archived copy.
 

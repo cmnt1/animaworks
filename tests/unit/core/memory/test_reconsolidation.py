@@ -162,12 +162,12 @@ class TestFindReconsolidationTargets:
         assert len(targets) == 1
 
     @pytest.mark.asyncio
-    async def test_boundary_failure_count_1_not_triggered(
+    async def test_failure_count_1_triggers(
         self,
         engine: ReconsolidationEngine,
         anima_dir: Path,
     ) -> None:
-        """Procedure with failure_count=1 should NOT trigger."""
+        """Procedure with failure_count=1 should trigger (>= 1)."""
         _write_procedure(
             anima_dir,
             "almost.md",
@@ -175,23 +175,24 @@ class TestFindReconsolidationTargets:
             confidence=0.3,
         )
         targets = await engine.find_reconsolidation_targets()
-        assert targets == []
+        assert len(targets) == 1
+        assert targets[0].name == "almost.md"
 
     @pytest.mark.asyncio
-    async def test_boundary_confidence_0_6_not_triggered(
+    async def test_high_failure_count_triggers_even_with_high_confidence(
         self,
         engine: ReconsolidationEngine,
         anima_dir: Path,
     ) -> None:
-        """Procedure with confidence=0.6 exactly should NOT trigger (strict less-than)."""
+        """Procedure with failure_count=3 and confidence=0.8 triggers (>= 1)."""
         _write_procedure(
             anima_dir,
-            "borderline.md",
+            "high-conf-fail.md",
             failure_count=3,
-            confidence=0.6,
+            confidence=0.8,
         )
         targets = await engine.find_reconsolidation_targets()
-        assert targets == []
+        assert len(targets) == 1
 
     @pytest.mark.asyncio
     async def test_boundary_confidence_0_59_triggered(
@@ -210,36 +211,36 @@ class TestFindReconsolidationTargets:
         assert len(targets) == 1
 
     @pytest.mark.asyncio
-    async def test_no_trigger_when_confidence_high(
+    async def test_no_trigger_when_high_confidence_and_no_failures(
         self,
         engine: ReconsolidationEngine,
         anima_dir: Path,
     ) -> None:
-        """Procedure with high confidence is not a target even with failures."""
+        """Procedure with high confidence and no failures is not a target."""
         _write_procedure(
             anima_dir,
-            "confident.md",
-            failure_count=3,
+            "fine.md",
+            failure_count=0,
             confidence=0.8,
         )
         targets = await engine.find_reconsolidation_targets()
         assert targets == []
 
     @pytest.mark.asyncio
-    async def test_no_trigger_when_no_failures(
+    async def test_low_confidence_triggers_without_failures(
         self,
         engine: ReconsolidationEngine,
         anima_dir: Path,
     ) -> None:
-        """Procedure with no failures is not a target even with low confidence."""
+        """Procedure with failure_count=0 but confidence below 0.6 triggers."""
         _write_procedure(
             anima_dir,
-            "low-conf-ok.md",
+            "low-conf-no-fail.md",
             failure_count=0,
             confidence=0.2,
         )
         targets = await engine.find_reconsolidation_targets()
-        assert targets == []
+        assert len(targets) == 1
 
     @pytest.mark.asyncio
     async def test_defaults_for_missing_metadata(

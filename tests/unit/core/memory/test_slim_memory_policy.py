@@ -95,15 +95,15 @@ def test_per_anima_profile_overrides_global_without_model_assumptions(tmp_path: 
     assert (policy.profile, policy.max_tokens) == ("full", 1500)
 
 
-def test_defaults_keep_storage_but_disable_automatic_mutation():
+def test_defaults_keep_storage_but_reenable_automatic_mutation():
     config = ConsolidationConfig()
     assert config.daily_enabled and config.indexing_enabled
     assert not config.knowledge_mutation_enabled
     assert not config.weekly_enabled and not config.monthly_enabled
-    assert not config.knowledge_self_correction_enabled
-    assert not config.weekly_distillation_enabled and not config.skill_autolearn_enabled
+    assert config.knowledge_self_correction_enabled
+    assert config.weekly_distillation_enabled and config.skill_autolearn_enabled
     assert RAGConfig().enabled and RAGConfig().repair_enabled and RAGConfig().vector_worker_enabled
-    assert RAGConfig().rerank_enabled and not RAGConfig().facts_extraction_enabled
+    assert RAGConfig().rerank_enabled and RAGConfig().facts_extraction_enabled
 
 
 def test_episode_checkpoint_processes_only_new_inputs_and_preserves_source(tmp_path: Path):

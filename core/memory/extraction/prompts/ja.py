@@ -63,49 +63,6 @@ FACT_USER = """## テキスト
 }}
 ```"""
 
-# ── Entity deduplication ──────────────────────────────────
-
-DEDUPE_SYSTEM = (
-    "あなたはエンティティ重複判定エージェントです。新しいエンティティが既存の候補と同一かどうかを判定してください。"
-)
-
-DEDUPE_USER = """## 新規エンティティ
-名前: {new_entity_name}
-タイプ: {new_entity_type}
-概要: {new_entity_summary}
-
-## 既存エンティティ候補
-{candidates_json}
-
-## 指示
-新規エンティティが既存候補のいずれかと同一の実体を指す場合、そのUUIDと統合サマリーをJSON形式で返してください。
-同一でない場合、または判断に自信がない場合は duplicate_of_uuid を null にしてください。
-
-```json
-{{"duplicate_of_uuid": "既存のUUID or null", "merged_summary": "統合した1-2文の説明"}}
-```"""
-
-# ── Fact invalidation ─────────────────────────────────────
-
-INVALIDATE_SYSTEM = (
-    "あなたは事実の矛盾判定エージェントです。新しい事実が既存の事実と矛盾するかどうかを判定してください。"
-)
-
-INVALIDATE_USER = """## 新しい事実
-{new_fact}
-
-## 既存の事実（まだ有効）
-{existing_facts_json}
-
-## 指示
-新しい事実が既存の事実のいずれかと矛盾する場合、矛盾する事実のUUIDをリストで返してください。
-矛盾とは、両方が同時に真であり得ない場合を指します。補完的な情報は矛盾ではありません。
-判断に自信がない場合は空リストを返してください。
-
-```json
-{{"contradicted_uuids": ["矛盾するfactのUUID", ...]}}
-```"""
-
 # ── Community summarization ───────────────────────────────
 
 COMMUNITY_SYSTEM = "あなたはグループ分析エージェントです。関連するエンティティのグループに名前と要約を付けてください。"

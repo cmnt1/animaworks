@@ -25,27 +25,24 @@ def _capture_kwargs_resolver(captured: dict):
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_entity_resolver_passes_credential():
-    from core.memory.extraction.extractor import ExtractedEntity
-    from core.memory.extraction.resolver import EntityResolver
+async def test_fact_extractor_passes_credential():
+    from core.memory.extraction.extractor import FactExtractor
 
     captured: dict = {}
-    resolver = EntityResolver(
-        AsyncMock(),
-        "alice",
+    ext = FactExtractor(
         model="qwen-model",
         credential="vllm-lb",
+        max_retries=1,
     )
-    entity = ExtractedEntity(name="Tokyo", entity_type="Place", summary="capital")
 
     with (
         patch(
             "core.memory._llm_utils.get_memory_llm_kwargs_for_model",
             side_effect=_capture_kwargs_resolver(captured),
         ),
-        patch("litellm.acompletion", new_callable=AsyncMock, return_value=_llm_response('{"duplicate": false}')),
+        patch("litellm.acompletion", new_callable=AsyncMock, return_value=_llm_response('{"entities": []}')),
     ):
-        await resolver._llm_judge(entity, [{"uuid": "u1", "name": "Tokio", "summary": "x"}])
+        await ext._call_llm("system", "user")
 
     assert captured["credential"] == "vllm-lb"
     assert captured["model"] == "qwen-model"
@@ -53,30 +50,18 @@ async def test_entity_resolver_passes_credential():
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_edge_invalidator_passes_credential():
-    from core.memory.extraction.invalidator import EdgeInvalidator
+async def test_resolver_retains_credential_without_llm():
+    from core.memory.extraction.resolver import EntityResolver
 
-    captured: dict = {}
-    invalidator = EdgeInvalidator(
+    # Resolver no longer calls an LLM, but retains its credential for parity.
+    resolver = EntityResolver(
         AsyncMock(),
         "alice",
         model="qwen-model",
         credential="vllm-lb",
     )
-
-    with (
-        patch(
-            "core.memory._llm_utils.get_memory_llm_kwargs_for_model",
-            side_effect=_capture_kwargs_resolver(captured),
-        ),
-        patch("litellm.acompletion", new_callable=AsyncMock, return_value=_llm_response("[]")),
-    ):
-        await invalidator._judge_contradictions(
-            "new fact",
-            [{"uuid": "f1", "fact_text": "old fact", "valid_at": "2026-01-01"}],
-        )
-
-    assert captured["credential"] == "vllm-lb"
+    assert resolver._credential == "vllm-lb"
+    assert resolver._model == "qwen-model"
 
 
 @pytest.mark.unit

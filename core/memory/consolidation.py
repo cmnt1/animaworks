@@ -1420,6 +1420,94 @@ class ConsolidationEngine:
         candidates.sort(key=lambda x: x[2], reverse=True)
         return candidates[:max_pairs]
 
+    # ── Conflicting-fact candidates ────────────────────────────
+
+    def _find_conflicting_fact_candidates(
+        self,
+        max_pairs: int = 20,
+    ) -> list[tuple[str, str, str]]:
+        """Find conflicting fact pairs for the weekly consolidation LLM.
+
+        Reads the legacy atomic facts stored as JSONL under ``{anima_dir}/facts/``.
+        Facts are grouped by entity (``source_entity``) + attribute
+        (``target_entity`` / ``edge_type``).  When two currently-active facts in
+        the same group describe different values (``text``), the pair is a
+        candidate for the weekly consolidation model to resolve (archive the
+        older one or report unresolved).
+
+        Only active facts (no valid_until, or valid_until still in the future)
+        are considered, so superseded/expired records do not surface as
+        conflicts.
+
+        Args:
+            max_pairs: Maximum number of pairs to return.
+
+        Returns:
+            List of (older_fact_path, newer_fact_path, one_line_description)
+            sorted by the newer fact's observed time (newest first).  Paths are
+            relative to the anima_dir and include the JSONL file and fact id so
+            the model can locate the exact record.
+        """
+        from core.memory.facts import FactRecord, facts_dir
+
+        facts_dir_path = facts_dir(self.anima_dir)
+        if not facts_dir_path.exists():
+            return []
+
+        # Group by (source_entity, target_entity, edge_type).
+        grouped: dict[tuple[str, str, str], list[dict]] = {}
+        for jsonl in sorted(facts_dir_path.glob("*.jsonl")):
+            try:
+                lines = jsonl.read_text(encoding="utf-8").splitlines()
+            except Exception:
+                continue
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = FactRecord.from_json_line(line)
+                except Exception:
+                    continue
+                if not record.is_active():
+                    continue
+                entity = (record.source_entity, record.target_entity, record.edge_type)
+                observed = record.recorded_at or record.valid_at or ""
+                grouped.setdefault(entity, []).append(
+                    {
+                        "path": f"{jsonl.relative_to(self.anima_dir).as_posix()}#{record.fact_id}",
+                        "text": record.text,
+                        "observed": observed,
+                    }
+                )
+
+        # (older_path, newer_path, description, newer_observed)
+        raw: list[tuple[str, str, str, str]] = []
+        for items in grouped.values():
+            if len(items) < 2:
+                continue
+            # Newest item is compared against every older item with a
+            # different value (source of the conflict).
+            items_sorted = sorted(items, key=lambda i: i["observed"], reverse=True)
+            newest = items_sorted[0]
+            for older in items_sorted[1:]:
+                if older["text"] == newest["text"]:
+                    continue
+                raw.append(
+                    (
+                        older["path"],
+                        newest["path"],
+                        (
+                            f"{newest['text'][:60]!r} (recent) differs from "
+                            f"{older['text'][:60]!r} (earlier) for the same attribute"
+                        ),
+                        newest["observed"],
+                    )
+                )
+
+        raw.sort(key=lambda c: c[3], reverse=True)
+        return [(a, b, d) for a, b, d, _ in raw[:max_pairs]]
+
     # ── Origin detection ─────────────────────────────────────────
 
     _EXTERNAL_ORIGINS = frozenset({"external_web", "mixed", "consolidation_external"})

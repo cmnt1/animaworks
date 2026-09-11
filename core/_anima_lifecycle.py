@@ -69,6 +69,21 @@ def _format_merge_candidates(candidates: list[tuple[str, str, float]]) -> str:
     return "\n".join(lines)
 
 
+def _format_conflict_candidates(candidates: list[tuple[str, str, str]]) -> str:
+    """Format conflicting-fact candidate pairs for prompt injection.
+
+    Mirrors ``_format_merge_candidates``: when there are no candidates a
+    short "no candidates" line is shown (rather than rendering an empty
+    section), so the placeholder always resolves to something.
+    """
+    if not candidates:
+        return "（食い違い候補なし / No conflict candidates）"
+    lines: list[str] = []
+    for older, newer, desc in candidates:
+        lines.append(f"- {older} ↔ {newer}: {desc}")
+    return "\n".join(lines)
+
+
 def _format_hygiene_section(
     report: dict[str, list[dict[str, Any]]],
     *,
@@ -766,11 +781,19 @@ class LifecycleMixin:
             merge_candidates = []
         merge_candidates_text = _format_merge_candidates(merge_candidates)
 
+        try:
+            conflict_candidates = engine._find_conflicting_fact_candidates(max_pairs=20)
+        except Exception:
+            logger.debug("[%s] conflicting-fact candidate detection failed", self.name, exc_info=True)
+            conflict_candidates = []
+        conflict_candidates_text = _format_conflict_candidates(conflict_candidates)
+
         prompt = load_prompt(
             "memory/weekly_consolidation_instruction",
             anima_name=self.name,
             knowledge_files_list="",
             merge_candidates=merge_candidates_text,
+            conflict_candidates=conflict_candidates_text,
             total_knowledge_count=0,
             hygiene_section="",
         )

@@ -341,7 +341,7 @@ class RAGConfig(BaseModel):
     rrf_confidence_threshold: float = 0.02
     iterative_retrieval_enabled: bool = True
     iterative_min_results: int = 2
-    facts_extraction_enabled: bool = False
+    facts_extraction_enabled: bool = True
     fact_extraction_timeout_seconds: int = Field(
         default=120,
         ge=1,
@@ -464,9 +464,9 @@ class ConsolidationConfig(BaseModel):
 
     daily_enabled: bool = True
     knowledge_mutation_enabled: bool = False
-    weekly_distillation_enabled: bool = False
-    synaptic_downscaling_enabled: bool = False
-    skill_autolearn_enabled: bool = False
+    weekly_distillation_enabled: bool = True
+    synaptic_downscaling_enabled: bool = True
+    skill_autolearn_enabled: bool = True
     curator_auto_apply_enabled: bool = False
     daily_time: str = "02:00"  # Format: HH:MM
     min_episodes_threshold: int = 1
@@ -485,7 +485,7 @@ class ConsolidationConfig(BaseModel):
     monthly_time: str = "1:04:00"  # Format: day:HH:MM (day of month)
     indexing_enabled: bool = True  # Daily RAG indexing toggle
     indexing_time: str = "04:00"  # Format: HH:MM
-    knowledge_self_correction_enabled: bool = False
+    knowledge_self_correction_enabled: bool = True
     knowledge_self_correction_max_reconsolidation_files: int = Field(default=5, ge=0)
     knowledge_self_correction_timeout_seconds: int = Field(default=300, ge=1)
     post_processing_cooldown_seconds: int = Field(default=30, ge=0)
