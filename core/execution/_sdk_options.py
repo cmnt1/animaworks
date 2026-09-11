@@ -508,8 +508,10 @@ class SDKOptionsMixin:
                             )
                         ],
                         "PostToolUse": [
+                            # No matcher: the hook itself filters to Write/Edit and
+                            # side-effect action tools (MCP mcp__aw__*), attaching
+                            # relevant ACTION-RULE bodies where applicable.
                             HookMatcher(
-                                matcher="Write|Edit",
                                 hooks=[_build_post_tool_hook(self._anima_dir)],
                             )
                         ],

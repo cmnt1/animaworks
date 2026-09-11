@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC
 from pathlib import Path
+
+import pytest
 
 
 @dataclass
@@ -12,271 +13,93 @@ class FakeRule:
     score: float = 0.95
 
 
-def test_extract_required_memory_paths_normalizes_and_deduplicates(tmp_path: Path) -> None:
-    from core.memory.action_gate import extract_required_memory_paths
-
-    anima_dir = tmp_path / "animas" / "mei"
-    anima_dir.mkdir(parents=True)
-    content = (
-        "## [ACTION-RULE] test\n"
-        "trigger_tools: call_human\n"
-        "---\n"
-        'read_memory_file(path="./procedures/check.md")\n'
-        "read_memory_file(path='procedures/check.md')\n"
-    )
-
-    assert extract_required_memory_paths(content, anima_dir) == ["procedures/check.md"]
+@pytest.fixture
+def anima_dir(tmp_path: Path) -> Path:
+    d = tmp_path / "animas" / "mei"
+    (d / "knowledge").mkdir(parents=True)
+    return d
 
 
-def test_extract_required_memory_paths_normalizes_absolute_and_shared_paths(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    from core.memory.action_gate import extract_required_memory_paths
-
-    anima_dir = tmp_path / "animas" / "mei"
-    own_file = anima_dir / "procedures" / "check.md"
-    common_dir = tmp_path / "shared" / "common_knowledge"
-    common_file = common_dir / "ops" / "rules.md"
-    own_file.parent.mkdir(parents=True)
-    common_file.parent.mkdir(parents=True)
-    own_file.write_text("# Check\n", encoding="utf-8")
-    common_file.write_text("# Rules\n", encoding="utf-8")
-    monkeypatch.setattr("core.paths.get_common_knowledge_dir", lambda: common_dir)
-    monkeypatch.setattr("core.paths.get_reference_dir", lambda: tmp_path / "shared" / "reference")
-    monkeypatch.setattr("core.paths.get_common_skills_dir", lambda: tmp_path / "shared" / "common_skills")
-
-    content = f'read_memory_file(path="{own_file}")\nread_memory_file(path="{common_file}")\n'
-
-    assert extract_required_memory_paths(content, anima_dir) == [
-        "procedures/check.md",
-        "common_knowledge/ops/rules.md",
-    ]
+# ── find_action_rules ───────────────────────────────────────
 
 
-def test_required_read_blocks_until_memory_read(tmp_path: Path, monkeypatch) -> None:
+def test_find_action_rules_only_above_threshold(anima_dir: Path, monkeypatch) -> None:
     from core.memory import action_gate
 
-    anima_dir = tmp_path / "animas" / "mei"
-    (anima_dir / "knowledge").mkdir(parents=True)
-    rule = FakeRule(
-        "mei/knowledge/rule.md#0",
-        '## [ACTION-RULE] before notify\ntrigger_tools: call_human\n---\nread_memory_file(path="procedures/check.md")',
-    )
-    monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [rule])
-
-    blocked = action_gate.check_action(anima_dir, "call_human", {"body": "notify"}, session_key="s1")
-
-    assert blocked.allowed is False
-    assert blocked.reason == "missing_required_memory"
-    assert blocked.missing_paths == ["procedures/check.md"]
-
-    action_gate.record_memory_read(anima_dir, "procedures/check.md", session_key="s1")
-    allowed = action_gate.check_action(anima_dir, "call_human", {"body": "notify"}, session_key="s1")
-
-    assert allowed.allowed is True
-    assert allowed.reason == "required_memory_satisfied"
-
-
-def test_required_read_is_shared_across_sessions_within_ttl(tmp_path: Path, monkeypatch) -> None:
-    """A required read recorded in one session allows the action in another session."""
-    from core.memory import action_gate
-
-    anima_dir = tmp_path / "animas" / "mei"
-    (anima_dir / "knowledge").mkdir(parents=True)
-    rule = FakeRule(
-        "mei/knowledge/rule.md#0",
-        '## [ACTION-RULE]\ntrigger_tools: call_human\n---\nread_memory_file(path="procedures/check.md")',
-    )
-    monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [rule])
-    monkeypatch.setattr(action_gate, "_resolve_required_read_ttl_hours", lambda: 24)
-
-    action_gate.record_memory_read(anima_dir, "procedures/check.md", session_key="session-A")
-    decision = action_gate.check_action(anima_dir, "call_human", {"body": "notify"}, session_key="session-B")
-
-    assert decision.allowed is True
-    assert decision.reason == "required_memory_satisfied"
-
-
-def test_required_read_expires_after_ttl(tmp_path: Path, monkeypatch) -> None:
-    """A per-anima read older than the TTL no longer satisfies the gate."""
-    from datetime import datetime, timedelta
-
-    from core.memory import action_gate
-
-    anima_dir = tmp_path / "animas" / "mei"
-    (anima_dir / "knowledge").mkdir(parents=True)
-    rule = FakeRule(
-        "x",
-        '## [ACTION-RULE]\ntrigger_tools: call_human\n---\nread_memory_file(path="procedures/check.md")',
-    )
-    monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [rule])
-    monkeypatch.setattr(action_gate, "_resolve_required_read_ttl_hours", lambda: 24)
-
-    old = (datetime.now(UTC) - timedelta(hours=48)).isoformat()
-    action_gate._save_anima_reads(anima_dir, {"procedures/check.md": old})
-
-    decision = action_gate.check_action(anima_dir, "call_human", {"body": "notify"}, session_key="session-new")
-
-    assert decision.allowed is False
-    assert decision.reason == "missing_required_memory"
-
-
-def test_required_read_never_expires_when_ttl_zero(tmp_path: Path, monkeypatch) -> None:
-    """required_read_ttl_hours=0 keeps old per-anima reads valid indefinitely."""
-    from datetime import datetime, timedelta
-
-    from core.memory import action_gate
-
-    anima_dir = tmp_path / "animas" / "mei"
-    (anima_dir / "knowledge").mkdir(parents=True)
-    rule = FakeRule(
-        "x",
-        '## [ACTION-RULE]\ntrigger_tools: call_human\n---\nread_memory_file(path="procedures/check.md")',
-    )
-    monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [rule])
-    # Go through the real resolver so a configured 0 is not coerced to the
-    # 24h default (regression: ``value or 24`` turned 0 into 24).
-    from types import SimpleNamespace
-
-    import core.config as config_module
-
-    fake_cfg = SimpleNamespace(action_gate=SimpleNamespace(required_read_ttl_hours=0))
-    monkeypatch.setattr(config_module, "load_config", lambda: fake_cfg)
-    assert action_gate._resolve_required_read_ttl_hours() == 0
-
-    old = (datetime.now(UTC) - timedelta(days=30)).isoformat()
-    action_gate._save_anima_reads(anima_dir, {"procedures/check.md": old})
-
-    decision = action_gate.check_action(anima_dir, "call_human", {"body": "notify"}, session_key="session-new")
-
-    assert decision.allowed is True
-
-
-def test_rule_without_required_read_blocks_once_then_allows(tmp_path: Path, monkeypatch) -> None:
-    from core.memory import action_gate
-
-    anima_dir = tmp_path / "animas" / "mei"
-    (anima_dir / "knowledge").mkdir(parents=True)
-    rule = FakeRule("rule-1", "## [ACTION-RULE] check context\ntrigger_tools: post_channel\n---\nConfirm context.")
-    monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [rule])
-
-    first = action_gate.check_action(anima_dir, "post_channel", {"text": "FYI"}, session_key="s2")
-    second = action_gate.check_action(anima_dir, "post_channel", {"text": "FYI"}, session_key="s2")
-
-    assert first.allowed is False
-    assert first.reason == "review_rule_before_retry"
-    assert second.allowed is True
-    assert second.reason == "rule_already_shown"
-
-
-def test_lower_ranked_required_rule_blocks_before_review_only_rule(tmp_path: Path, monkeypatch) -> None:
-    from core.memory import action_gate
-
-    anima_dir = tmp_path / "animas" / "mei"
-    (anima_dir / "knowledge").mkdir(parents=True)
-    rules = [
-        FakeRule("rule-review", "## [ACTION-RULE] review\ntrigger_tools: gmail_send\n---\nReview context.", 0.97),
-        FakeRule(
-            "rule-required",
-            '## [ACTION-RULE] duplicate check\ntrigger_tools: gmail_send\n---\nread_memory_file(path="procedures/check.md")',
-            0.96,
-        ),
-    ]
-    monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: rules)
-
-    decision = action_gate.check_action(anima_dir, "gmail_send", {"body": "hello"}, session_key="s4")
-
-    assert decision.allowed is False
-    assert decision.reason == "missing_required_memory"
-    assert decision.rule_id == "rule-required"
-    assert decision.missing_paths == ["procedures/check.md"]
-
-
-def test_empty_tool_and_no_matching_rule_are_allowed(tmp_path: Path) -> None:
-    from core.memory import action_gate
-
-    anima_dir = tmp_path / "animas" / "mei"
-
-    empty_tool = action_gate.check_action(anima_dir, "", {}, session_key="s-empty")
-    no_match = action_gate.check_action(anima_dir, "gmail_send", {"body": "hello"}, session_key="s-no-match")
-
-    assert empty_tool.allowed is True
-    assert no_match.allowed is True
-    assert no_match.reason == "no_matching_rule"
-
-
-def test_below_threshold_rule_is_allowed(tmp_path: Path, monkeypatch) -> None:
-    from core.memory import action_gate
-
-    anima_dir = tmp_path / "animas" / "mei"
-    (anima_dir / "knowledge").mkdir(parents=True)
     monkeypatch.setattr(
         action_gate,
         "_search_action_rules",
-        lambda *args, **kwargs: [FakeRule("rule-low", "## [ACTION-RULE]\ntrigger_tools: gmail_send", 0.79)],
+        lambda *a, **k: [
+            FakeRule("r-high", "## [ACTION-RULE] high\ntrigger_tools: call_human", 0.92),
+            FakeRule("r-low", "## [ACTION-RULE] low", 0.79),
+        ],
     )
 
-    decision = action_gate.check_action(anima_dir, "gmail_send", {"body": "hello"}, session_key="s-low")
+    rules = action_gate.find_action_rules(anima_dir, "call_human", {})
 
-    assert decision.allowed is True
-    assert decision.reason == "below_threshold"
-    assert decision.score == 0.79
+    assert [r.rule_id for r in rules] == ["r-high"]
 
 
-def test_search_failure_fails_open(tmp_path: Path, monkeypatch) -> None:
+def test_find_action_rules_sorted_by_score_and_capped(anima_dir: Path, monkeypatch) -> None:
     from core.memory import action_gate
 
-    anima_dir = tmp_path / "animas" / "mei"
-    (anima_dir / "knowledge").mkdir(parents=True)
+    monkeypatch.setattr(
+        action_gate,
+        "_search_action_rules",
+        lambda *a, **k: [
+            FakeRule(f"r{i}", "body", 0.80 + i * 0.02) for i in range(5)
+        ],
+    )
 
-    def raise_search(*args, **kwargs):
-        raise RuntimeError("vector store unavailable")
+    rules = action_gate.find_action_rules(anima_dir, "gmail_send", {})
+
+    assert len(rules) == 3
+    assert [r.score for r in rules] == sorted((r.score for r in rules), reverse=True)
+
+
+def test_find_action_rules_truncates_body(anima_dir: Path, monkeypatch) -> None:
+    from core.memory import action_gate
+
+    monkeypatch.setattr(
+        action_gate,
+        "_search_action_rules",
+        lambda *a, **k: [FakeRule("r", "x" * 5000, 0.95)],
+    )
+    rules = action_gate.find_action_rules(anima_dir, "gmail_send", {})
+    assert len(rules[0].content) == 2000
+
+
+def test_find_action_rules_empty_when_search_raises(anima_dir: Path, monkeypatch) -> None:
+    from core.memory import action_gate
+
+    def raise_search(*a, **k):
+        raise RuntimeError("down")
 
     monkeypatch.setattr(action_gate, "_search_action_rules", raise_search)
-
-    decision = action_gate.check_action(anima_dir, "chatwork_send", {"message": "hello"}, session_key="s3")
-
-    assert decision.allowed is True
-    assert decision.reason == "search_failed"
+    assert action_gate.find_action_rules(anima_dir, "gmail_send", {}) == []
 
 
-def test_retriever_initialization_failure_fails_open(tmp_path: Path, monkeypatch) -> None:
-    from core.memory import action_gate
-
-    anima_dir = tmp_path / "animas" / "mei"
-    (anima_dir / "knowledge").mkdir(parents=True)
-
-    def raise_vector_store(*args, **kwargs):
-        raise RuntimeError("vector init failed")
-
-    monkeypatch.setattr("core.memory.rag.singleton.get_vector_store", raise_vector_store)
-
-    decision = action_gate.check_action(anima_dir, "gmail_send", {"body": "hello"}, session_key="s-retriever")
-
-    assert decision.allowed is True
-    assert decision.reason == "no_matching_rule"
+# ── format_action_rules ─────────────────────────────────────
 
 
-def test_corrupt_state_is_treated_as_empty(tmp_path: Path) -> None:
-    from core.memory import action_gate
+def test_format_action_rules_empty_is_empty_string() -> None:
+    from core.memory.action_gate import format_action_rules
 
-    anima_dir = tmp_path / "animas" / "mei"
-    state_file = anima_dir / "run" / "action_memory_gate" / "s-corrupt.json"
-    state_file.parent.mkdir(parents=True)
-    state_file.write_text("[]", encoding="utf-8")
-
-    state = action_gate._load_state(anima_dir, "s-corrupt")
-
-    assert state == {"read_paths": [], "shown_rules": [], "no_rule_allows": []}
+    assert format_action_rules([]) == ""
 
 
-def test_session_key_uses_env_when_runtime_context_missing(monkeypatch) -> None:
-    from core.memory import action_gate
+def test_format_action_rules_includes_tag_and_body() -> None:
+    from core.memory.action_gate import ActionRule, format_action_rules
 
-    monkeypatch.setenv("ANIMAWORKS_TOOL_SESSION_ID", "tool session/1")
+    rendered = format_action_rules(
+        [ActionRule(rule_id="mei/knowledge/rule.md#0", content="本文", score=0.87)]
+    )
+    assert '<action-rule path="mei/knowledge/rule.md#0" score="0.87">' in rendered
+    assert "本文" in rendered
+    assert "</action-rule>" in rendered
 
-    assert action_gate._session_key() == "tool_session_1"
+
+# ── tool-name resolution ────────────────────────────────────
 
 
 def test_cli_argv_mapping() -> None:

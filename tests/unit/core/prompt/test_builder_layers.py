@@ -136,6 +136,35 @@ def test_large_recall_does_not_evict_resident_rules_tasks_or_human_notifications
     assert prompt.count("<priming ") == prompt.count("</priming>")
 
 
+def test_action_rule_priming_source_is_protected(data_dir: Path, monkeypatch):
+    """A priming block with source=action_rule lands in the protected (rigid) region."""
+    memory = _memory(data_dir / "animas" / "fixture")
+    monkeypatch.setattr(builder, "get_data_dir", lambda: data_dir)
+    monkeypatch.setattr(builder, "_discover_other_animas", lambda _path: [])
+    monkeypatch.setattr(builder, "_build_resolved_approvals_section", lambda *_args: "APPROVAL_STATE: x")
+    rule_block = (
+        '<priming source="action_rule" trust="mixed">\n'
+        '<action-rule path="knowledge/send-rule.md">\n'
+        "## [ACTION-RULE] Send check\n"
+        "trigger_tools: send_message\n"
+        "---\n"
+        "Confirm the recipient before sending.\n"
+        "</action-rule>\n"
+        "</priming>"
+    )
+    prompt = builder.build_system_prompt(
+        memory,
+        execution_mode="s",
+        trigger="chat",
+        context_window=200_000,
+        priming_section=rule_block,
+    ).system_prompt
+    assert "Confirm the recipient before sending." in prompt
+    assert "Send check" in prompt
+    assert "APPROVAL_STATE" in prompt
+    assert prompt.count("<priming ") == prompt.count("</priming>")
+
+
 @pytest.mark.parametrize("execution_mode", ["a", "c"])
 def test_modest_recall_pointers_survive_full_framework_prompt(data_dir: Path, monkeypatch, execution_mode):
     from core.memory.priming.format import format_priming_section

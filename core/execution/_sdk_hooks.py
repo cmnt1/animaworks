@@ -416,9 +416,6 @@ def _build_pre_tool_hook(
         SyncHookJSONOutput,
     )
 
-    if session_stats is not None and "action_gate_denied_count" not in session_stats:
-        session_stats["action_gate_denied_count"] = 0
-
     # Cache subordinate and peer paths once at hook build time
     _sub_activity_dirs, _sub_mgmt_files, _peer_activity_dirs, _desc_read_files, _desc_read_dirs = (
         _cache_subordinate_paths(anima_dir)
@@ -437,64 +434,6 @@ def _build_pre_tool_hook(
         "WebSearch": "untrusted",
     }
 
-    async def _action_aware_priming_check(
-        tool_name: str,
-        tool_input: dict[str, Any],
-        tool_use_id: str | None,
-    ) -> SyncHookJSONOutput | None:
-        del tool_use_id
-        if session_stats is None:
-            return None
-
-        try:
-            from core.memory.action_gate import action_tool_name_for_sdk, check_action
-
-            action_tool = action_tool_name_for_sdk(tool_name)
-            if action_tool is None:
-                return None
-
-            decision = await asyncio.to_thread(check_action, anima_dir, action_tool, tool_input)
-            if decision.allowed:
-                return None
-
-            if session_stats is not None:
-                session_stats["action_gate_denied_count"] = session_stats.get("action_gate_denied_count", 0) + 1
-
-            from core.i18n import t as _t
-
-            system_message = _t("action_rule.system_message", rule_content=decision.rule.strip())
-            if decision.reason in ("no_matching_rule", "search_failed"):
-                # No rule body exists for these cases, so surface the payload message directly.
-                permission_reason = decision.to_payload()["message"]
-            else:
-                rule_body = decision.rule.strip()
-                # Do not emit an empty <action-rule> block when there is no rule content.
-                rule_section = f"<action-rule>\n{rule_body}\n</action-rule>" if rule_body else ""
-                if decision.missing_paths:
-                    next_step = _t(
-                        "action_rule.deny_reason_read_before",
-                        paths=", ".join(decision.missing_paths),
-                    )
-                else:
-                    next_step = _t("action_rule.deny_reason_retry_allowed")
-                permission_reason = _t(
-                    "action_rule.deny_reason_detail",
-                    reason=_t("action_rule.deny_reason"),
-                    rule_section=rule_section,
-                    next_step=next_step,
-                )
-            return SyncHookJSONOutput(
-                systemMessage=system_message,
-                hookSpecificOutput=PreToolUseHookSpecificOutput(
-                    hookEventName="PreToolUse",
-                    permissionDecision="deny",
-                    permissionDecisionReason=permission_reason,
-                ),
-            )
-        except Exception:
-            logger.debug("Action-Aware Priming check failed", exc_info=True)
-            return None
-
     async def _pre_tool_hook(
         input_data: HookInput,
         tool_use_id: str | None,
@@ -503,11 +442,6 @@ def _build_pre_tool_hook(
         tool_name = input_data.get("tool_name", "")
         raw_inp = input_data.get("tool_input", {})
         tool_input = raw_inp if isinstance(raw_inp, dict) else {}
-
-        # ── Action-Aware Priming ──────────
-        aap_result = await _action_aware_priming_check(tool_name, tool_input, tool_use_id)
-        if aap_result is not None:
-            return aap_result
 
         # ── Heartbeat soft timeout check ──
         if session_stats is not None and session_stats.get("trigger") == "heartbeat":
@@ -920,7 +854,8 @@ def _log_compaction_event(anima_dir: Path, trigger: str, *, blocked: bool) -> No
 
 
 def _build_post_tool_hook(anima_dir: Path) -> Callable:
-    """Build a PostToolUse hook that updates knowledge frontmatter after Write/Edit."""
+    """Build a PostToolUse hook that attaches ACTION-RULE bodies to side-effect
+    tool results and updates knowledge frontmatter after Write/Edit."""
 
     knowledge_dir_str = str(anima_dir / "knowledge")
 
@@ -930,14 +865,38 @@ def _build_post_tool_hook(anima_dir: Path) -> Callable:
         context: Any,
     ) -> dict:
         tool_name = input_data.get("tool_name", "")
+        raw_input = input_data.get("tool_input", {})
+        tool_input = raw_input if isinstance(raw_input, dict) else {}
+
+        # Attach relevant ACTION-RULE bodies to side-effect tool results.
+        try:
+            from core.memory.action_gate import (
+                action_tool_name_for_sdk,
+                find_action_rules,
+                format_action_rules,
+            )
+
+            action_tool = action_tool_name_for_sdk(tool_name)
+            if action_tool is not None:
+                rules = await asyncio.to_thread(find_action_rules, anima_dir, action_tool, tool_input)
+                rendered = format_action_rules(rules)
+                if rendered:
+                    return {
+                        "hookSpecificOutput": {
+                            "hookEventName": "PostToolUse",
+                            "additionalContext": rendered,
+                        }
+                    }
+                return {}
+        except Exception:
+            logger.debug("Failed to attach action rules in PostToolUse for %s", tool_name, exc_info=True)
+
         if tool_name not in ("Write", "Edit"):
             return {}
 
-        file_path = input_data.get("tool_input", {}).get("file_path", "")
+        file_path = tool_input.get("file_path", "")
         if not file_path.startswith(knowledge_dir_str + "/") or not file_path.endswith(".md"):
             return {}
-
-        import asyncio
 
         # Cycle-context inheritance is intentional here: this task is spawned
         # synchronously within the active cycle as a direct continuation of the

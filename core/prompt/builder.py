@@ -538,7 +538,7 @@ def _build_group3(
         # importance from arbitrary memory prose or split a trust-boundary block.
         protected, recall = [], []
         for item in _split_content_items(priming_section):
-            if re.match(r'<priming\b[^>]*\bsource="(?:resident_knowledge|pending_tasks|recent_outbound)"', item):
+            if re.match(r'<priming\b[^>]*\bsource="(?:resident_knowledge|pending_tasks|recent_outbound|action_rule)"', item):
                 protected.append(item)
             else:
                 recall.append(item)

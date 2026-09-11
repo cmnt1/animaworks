@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -15,8 +14,8 @@ class FakeRule:
     score: float = 0.95
 
 
-def test_action_memory_gate_blocks_then_allows_after_read_memory_file(tmp_path: Path, monkeypatch) -> None:
-    """Exercise the ToolHandler + memory-read state path end to end."""
+def test_action_gate_attaches_rule_body_and_passes_through(tmp_path: Path, monkeypatch) -> None:
+    """ToolHandler attaches the relevant ACTION-RULE body instead of blocking."""
     from core.memory import action_gate
     from core.tooling.handler import ToolHandler
 
@@ -39,16 +38,13 @@ def test_action_memory_gate_blocks_then_allows_after_read_memory_file(tmp_path: 
             "## [ACTION-RULE] Gmail draft duplicate check\n"
             "trigger_tools: gmail_draft\n"
             "---\n"
-            'read_memory_file(path="procedures/secretary-checklist.md")'
+            "Check duplicates before sending."
         ),
     )
     monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [rule])
 
-    blocked = json.loads(handler.handle("gmail_draft", {"to": "a@example.com", "body": "hello"}))
-    assert blocked["error_type"] == "ActionMemoryGate"
-    assert blocked["missing_paths"] == ["procedures/secretary-checklist.md"]
+    result = handler.handle("gmail_draft", {"to": "a@example.com", "body": "hello"})
 
-    checklist = handler.handle("read_memory_file", {"path": "procedures/secretary-checklist.md"})
-    assert "Check duplicates" in checklist
-
-    assert handler.handle("gmail_draft", {"to": "a@example.com", "body": "hello"}) == "draft created"
+    assert result.startswith("draft created")
+    assert '<action-rule path="rule-e2e"' in result
+    assert "Check duplicates before sending." in result
