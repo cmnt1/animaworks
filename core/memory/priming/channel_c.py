@@ -185,6 +185,33 @@ def _item_from_chunk(
     )
 
 
+def _result_score(result) -> float:
+    """Return a retrieval result's score, defaulting to 0 when absent."""
+    return float(getattr(result, "score", 0.0) or 0.0)
+
+
+def _add_action_rule_item(
+    by_path: dict[str, MemoryItem],
+    path: str,
+    content: str,
+    metadata: dict,
+    *,
+    rank: float,
+) -> None:
+    """Record an ACTION-RULE chunk as a full-body item (source=action_rule)."""
+    item = MemoryItem(
+        source="action_rule",
+        key=path,
+        text=content[:2000],
+        ref=path,
+        updated=_updated_from_metadata(metadata),
+        rank=rank,
+    )
+    previous = by_path.get(path)
+    if previous is None or rank > previous.rank:
+        by_path[path] = item
+
+
 def _always_prime_chunks(retriever: MemoryRetriever, anima_name: str) -> list:
     """Fetch opt-in resident chunks without reusing the all-IMPORTANT query."""
     vector_store = getattr(retriever, "vector_store", None)
@@ -354,6 +381,7 @@ async def channel_c0_important_knowledge(
             search_cache=search_cache,
         )
         newest_always_by_path: dict[str, tuple[MemoryItem, float]] = {}
+        action_rules_by_path: dict[str, MemoryItem] = {}
         for r in always_results:
             meta = r.document.metadata
             doc_id = str(getattr(r.document, "id", "") or getattr(r, "doc_id", "") or "")
@@ -362,6 +390,7 @@ async def channel_c0_important_knowledge(
                 continue
             content = r.document.content
             if _is_action_rule(rel_path, content):
+                _add_action_rule_item(action_rules_by_path, rel_path, content, meta, rank=_result_score(r))
                 continue
             timestamp = _timestamp_rank(_updated_from_metadata(meta))
             item = _item_from_chunk(content=content, metadata=meta, path=rel_path, rank=timestamp)
@@ -384,12 +413,16 @@ async def channel_c0_important_knowledge(
                 continue
             content = str(row.get("content", "") or "")
             rel_path = to_read_memory_path(metadata, anima_name, str(row.get("doc_id", "") or ""))
-            if (
-                not rel_path
-                or rel_path in always_paths
-                or _is_action_rule(rel_path, content)
-                or not memory_source_is_allowed(anima_dir, rel_path, denied_roots)
-            ):
+            if not rel_path or rel_path in always_paths or not memory_source_is_allowed(anima_dir, rel_path, denied_roots):
+                continue
+            if _is_action_rule(rel_path, content):
+                _add_action_rule_item(
+                    action_rules_by_path,
+                    rel_path,
+                    content,
+                    metadata,
+                    rank=float(row.get("score", 0.0) or 0.0),
+                )
                 continue
             score = float(row.get("score", 0.0) or 0.0)
             item = _item_from_chunk(content=content, metadata=metadata, path=rel_path, rank=score)
@@ -405,7 +438,9 @@ async def channel_c0_important_knowledge(
                 reverse=True,
             )[:3]
         ]
-        ordered_items = always_items + relevant_items
+        # ACTION-RULE chunks ride as full body; cap at the top 2 by score.
+        action_items = sorted(action_rules_by_path.values(), key=lambda item: item.rank, reverse=True)[:2]
+        ordered_items = action_items + always_items + relevant_items
         # Stable synthetic ranks preserve each category's required ordering when
         # the engine reapplies its item budget later in the pipeline.
         ranked_items = [

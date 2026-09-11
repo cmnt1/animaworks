@@ -149,7 +149,7 @@ async def test_c0_limits_residents_and_relevant_important_chunks(
 
 
 @pytest.mark.asyncio
-async def test_c0_excludes_action_rules(anima_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_c0_attaches_action_rules_as_body(anima_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     retriever = MagicMock()
     retriever.vector_store.get_by_metadata.side_effect = [
         [
@@ -166,7 +166,7 @@ async def test_c0_excludes_action_rules(anima_dir: Path, monkeypatch: pytest.Mon
     searcher = MagicMock()
     searcher.last_search_meta = {"abstain": False}
     searcher.search_many.return_value = [
-        _search_row("action-rule-send", score=0.99),
+        _search_row("action-rule-send", content="# action-rule-send", score=0.99),
         _search_row("safe-related", score=0.90),
     ]
 
@@ -183,8 +183,10 @@ async def test_c0_excludes_action_rules(anima_dir: Path, monkeypatch: pytest.Mon
         ["mail"],
     )
 
-    assert "action-rule" not in result
-    assert "ordinary-file" not in result
+    # ACTION-RULE chunks ride as full body (source=action_rule), capped at 2.
+    assert "# action-rule-mail" in result
+    assert "Rule" in result
+    assert "action-rule-send" not in result  # dropped by the 2-cap
     assert "safe-resident" in result
     assert "safe-related" in result
 

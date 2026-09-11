@@ -156,31 +156,10 @@ STRINGS: dict[str, dict[str, str]] = {
             "Use these instead of Agent/Task."
         ),
     },
-    "action_rule.deny_reason": {
-        "ja": "アクションルールにより一時停止: 実行前に以下のルールを確認してください",
-        "en": "Paused by action rule: please review the following rule before proceeding",
-    },
-    "action_rule.deny_reason_detail": {
-        "ja": "{reason}\n{rule_section}\n\n{next_step}",
-        "en": "{reason}\n{rule_section}\n\n{next_step}",
-    },
-    "action_rule.deny_reason_read_before": {
-        "ja": "先に次を read_memory_file で読んでから同じ操作を再試行: {paths}",
-        "en": "First read the following via read_memory_file, then retry the same operation: {paths}",
-    },
-    "action_rule.deny_reason_retry_allowed": {
-        "ja": "上記ルールを確認したうえで、同じ操作をそのまま再試行してよい。",
-        "en": "After reviewing the rule above, you may retry the same operation as-is.",
-    },
-    "action_rule.system_message": {
-        "ja": (
-            "<action-rule>\n{rule_content}\n</action-rule>\n\n"
-            "上記ルールを確認した上で、必要な事前アクションを実行してから再試行してください。"
-        ),
-        "en": (
-            "<action-rule>\n{rule_content}\n</action-rule>\n\n"
-            "Please review the rule above, take any required pre-actions, then retry."
-        ),
+    "action_rule.attached": {
+        "ja": "この操作に関係する行動ルール。内容に反していたら、いま是正すること。",
+        "en": "Action rules related to this call. If the action conflicted with them, correct it now.",
+        "ko": "이 작업과 관련된 행동 규칙입니다. 내용에 위배된다면 지금 바로 잡으십시오.",
     },
     "executor.unavailable_no_configured_fallback": {
         "ja": "実行方式 {mode}（{model}）を利用できません。利用可能な fallback_models を設定してください。",
