@@ -4,7 +4,6 @@ Covers:
 - handler_org._handle_delegate_task writes pending JSON to subordinate's state/pending/
 - Pending JSON schema matches PendingTaskExecutor expectations
 - PendingTaskExecutor skips cancelled tasks
-- _select_subordinate explicit-only behavior
 """
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
@@ -13,7 +12,6 @@ Covers:
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -272,102 +270,3 @@ class TestPendingExecutorCancelledCheck:
 
         result = await executor._run_llm_task(task_desc, None)
         assert result == "(cancelled)"
-
-
-# ── _select_subordinate explicit-only ───────────────────────
-
-
-class TestSelectSubordinateExplicitOnly:
-    """Verify _select_subordinate only delegates when name is in description."""
-
-    def _make_config(self, animas: dict[str, dict]):
-        cfg = SimpleNamespace()
-        cfg.animas = {name: SimpleNamespace(**data) for name, data in animas.items()}
-        return cfg
-
-    @pytest.fixture(autouse=True)
-    def _mock_sdk(self):
-        sys.modules.setdefault("claude_agent_sdk", MagicMock())
-        sys.modules.setdefault("claude_agent_sdk.types", MagicMock())
-
-    @patch("core.config.models.load_config")
-    @patch("core.paths.get_animas_dir")
-    def test_generic_description_returns_none(self, mock_animas_dir, mock_load, tmp_path: Path):
-        """Generic task description without subordinate name → self-pending."""
-        from core.execution._sdk_hooks import _select_subordinate
-
-        animas_dir = tmp_path / "animas"
-        for name in ("boss", "alice", "bob"):
-            d = animas_dir / name
-            d.mkdir(parents=True)
-            (d / "status.json").write_text(
-                json.dumps({"enabled": True, "role": "engineer"}),
-                encoding="utf-8",
-            )
-
-        mock_animas_dir.return_value = animas_dir
-        mock_load.return_value = self._make_config(
-            {
-                "boss": {"supervisor": None},
-                "alice": {"supervisor": "boss"},
-                "bob": {"supervisor": "boss"},
-            }
-        )
-
-        result = _select_subordinate(animas_dir / "boss", "fix the authentication bug")
-        assert result is None
-
-    @patch("core.config.models.load_config")
-    @patch("core.paths.get_animas_dir")
-    def test_explicit_name_delegates(self, mock_animas_dir, mock_load, tmp_path: Path):
-        """Task description with subordinate name → delegate to that subordinate."""
-        from core.execution._sdk_hooks import _select_subordinate
-
-        animas_dir = tmp_path / "animas"
-        for name in ("boss", "alice", "bob"):
-            d = animas_dir / name
-            d.mkdir(parents=True)
-            (d / "status.json").write_text(
-                json.dumps({"enabled": True}),
-                encoding="utf-8",
-            )
-
-        mock_animas_dir.return_value = animas_dir
-        mock_load.return_value = self._make_config(
-            {
-                "boss": {"supervisor": None},
-                "alice": {"supervisor": "boss"},
-                "bob": {"supervisor": "boss"},
-            }
-        )
-
-        result = _select_subordinate(animas_dir / "boss", "Ask bob to handle the deployment")
-        assert result == "bob"
-
-    @patch("core.config.models.load_config")
-    @patch("core.paths.get_animas_dir")
-    def test_role_match_alone_does_not_delegate(self, mock_animas_dir, mock_load, tmp_path: Path):
-        """Role matching alone does NOT trigger delegation (explicit name required)."""
-        from core.execution._sdk_hooks import _select_subordinate
-
-        animas_dir = tmp_path / "animas"
-        alice_dir = animas_dir / "alice"
-        alice_dir.mkdir(parents=True)
-        (alice_dir / "status.json").write_text(
-            json.dumps({"enabled": True, "role": "engineer"}),
-            encoding="utf-8",
-        )
-
-        boss_dir = animas_dir / "boss"
-        boss_dir.mkdir(parents=True)
-
-        mock_animas_dir.return_value = animas_dir
-        mock_load.return_value = self._make_config(
-            {
-                "boss": {"supervisor": None},
-                "alice": {"supervisor": "boss"},
-            }
-        )
-
-        result = _select_subordinate(boss_dir, "need an engineer to fix the bug")
-        assert result is None

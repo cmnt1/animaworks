@@ -349,7 +349,6 @@ class CycleMixin:
         """Run one agent cycle with autonomous memory search.
 
         Routing:
-          - Mode B (basic):      ``AssistedExecutor``  -- text-based tool loop
           - Mode A (autonomous): ``LiteLLMExecutor`` -- LiteLLM + tool_use
           - Mode C (codex):      ``CodexSDKExecutor`` -- Codex CLI wrapper
           - Mode D (cursor):     ``CursorAgentExecutor`` -- Cursor Agent CLI
@@ -562,48 +561,6 @@ class CycleMixin:
             from dataclasses import asdict as _asdict
 
             return [_asdict(r) for r in result.tool_call_records]
-
-        # ── Mode B: text-based tool-call loop ─────────────
-        if mode == "b":
-            result = await active_executor.execute(
-                prompt=prompt,
-                system_prompt=system_prompt,
-                trigger=trigger,
-                images=images,
-                thread_id=thread_id,
-            )
-            _save_prompt_log_end(
-                self.anima_dir,
-                session_id=self._tool_handler.session_id,
-                tool_call_count=len(result.tool_call_records),
-            )
-            duration_ms = int((time.monotonic() - start) * 1000)
-            logger.info(
-                "run_cycle END (mode-b) trigger=%s duration_ms=%d response_len=%d",
-                trigger,
-                duration_ms,
-                len(result.text),
-            )
-            _b_usage = result.usage.to_dict() if result.usage else None
-            _log_session_token_usage(
-                self.anima_dir,
-                model=active_model_config.model,
-                mode="b",
-                trigger=trigger,
-                usage=_b_usage,
-                duration_ms=duration_ms,
-            )
-            return CycleResult(
-                trigger=trigger,
-                action="responded",
-                summary=result.text,
-                duration_ms=duration_ms,
-                context_window=tracker.context_window,
-                context_threshold=tracker.threshold,
-                tool_call_records=_tool_records_to_dicts(result),
-                usage=_b_usage,
-                truncated=result.truncated,
-            )
 
         # ── Mode C: Codex SDK ─────────────────────────────
         if mode == "c":

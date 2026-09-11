@@ -8,128 +8,15 @@ behavior for both normal and error paths.
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.exceptions import (
     ConfigError,
-    ExecutionError,
-    LLMAPIError,
     MemoryWriteError,
-    ToolExecutionError,
 )
 from core.time_utils import today_local
-
-# ── Layer 1: Execution ──────────────────────────────────────────────
-
-
-class TestAssistedExecutorErrorHandling:
-    """Verify assisted.py raises typed exceptions instead of swallowing errors."""
-
-    @pytest.fixture
-    def assisted_executor(self, data_dir: Path, make_anima):
-        anima_dir = make_anima(
-            "test-b",
-            model="ollama/gemma3:27b",
-            execution_mode="assisted",
-        )
-        from core.memory import MemoryManager
-
-        memory = MemoryManager(anima_dir)
-        model_config = memory.read_model_config()
-        from core.tooling.handler import ToolHandler
-
-        tool_handler = ToolHandler(anima_dir=anima_dir, memory=memory)
-        from core.execution.assisted import AssistedExecutor
-
-        return AssistedExecutor(
-            model_config=model_config,
-            anima_dir=anima_dir,
-            tool_handler=tool_handler,
-            memory=memory,
-        )
-
-    @pytest.mark.asyncio
-    async def test_llm_error_raises_execution_error(self, assisted_executor):
-        """Generic Exception from LLM should be wrapped in ExecutionError."""
-        with (
-            patch("core.execution.assisted.decorrelated_jitter", return_value=0.0),
-            patch("litellm.acompletion", new_callable=AsyncMock, side_effect=Exception("API exploded")),
-            pytest.raises(ExecutionError, match="API exploded"),
-        ):
-            await assisted_executor.execute(
-                prompt="test",
-                system_prompt="test",
-            )
-
-    @pytest.mark.asyncio
-    async def test_llm_api_error_propagates(self, assisted_executor):
-        """LLMAPIError should propagate unchanged."""
-        with (
-            patch("core.execution.assisted.decorrelated_jitter", return_value=0.0),
-            patch("litellm.acompletion", new_callable=AsyncMock, side_effect=LLMAPIError("provider failed")),
-            pytest.raises(LLMAPIError, match="provider failed"),
-        ):
-            await assisted_executor.execute(
-                prompt="test",
-                system_prompt="test",
-            )
-
-    @pytest.mark.asyncio
-    async def test_tool_execution_error_returns_result_string(self, assisted_executor):
-        """ToolExecutionError in tool dispatch should become result string, not crash."""
-        known = next(iter(assisted_executor._known_tools)) if assisted_executor._known_tools else "read_file"
-
-        def _make_resp(content, finish="stop"):
-            msg = MagicMock()
-            msg.content = content
-            ch = MagicMock()
-            ch.message = msg
-            ch.finish_reason = finish
-            resp = MagicMock()
-            resp.choices = [ch]
-            return resp
-
-        resp1 = _make_resp(
-            f'<tool_call>{{"name": "{known}", "arguments": {{"path": "/tmp/x"}}}}</tool_call>',
-            finish="tool_calls",
-        )
-        resp2 = _make_resp("Done")
-
-        assisted_executor._tool_handler = MagicMock()
-        assisted_executor._tool_handler.handle.side_effect = ToolExecutionError("tool broke")
-
-        with patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[resp1, resp2]):
-            result = await assisted_executor.execute(
-                prompt="use tool",
-                system_prompt="test",
-            )
-        assert result.text is not None
-
-    def test_exception_catch_ordering_in_tool_dispatch(self):
-        """Verify the catch ordering: ToolExecutionError -> AnimaWorksError -> Exception."""
-        from core.exceptions import AnimaWorksError
-
-        caught_by = None
-        for exc in [ToolExecutionError("te"), MemoryWriteError("mw"), RuntimeError("rt")]:
-            caught_by = None
-            try:
-                raise exc
-            except ToolExecutionError:
-                caught_by = "ToolExecutionError"
-            except AnimaWorksError:
-                caught_by = "AnimaWorksError"
-            except Exception:
-                caught_by = "Exception"
-
-            if isinstance(exc, ToolExecutionError):
-                assert caught_by == "ToolExecutionError"
-            elif isinstance(exc, MemoryWriteError):
-                assert caught_by == "AnimaWorksError"
-            elif isinstance(exc, RuntimeError):
-                assert caught_by == "Exception"
-
 
 # ── Layer 3: Tooling ────────────────────────────────────────────────
 

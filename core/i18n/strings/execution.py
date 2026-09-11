@@ -39,29 +39,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "ストリームが{retry_count}回切断されました。最大リトライ回数に達しました。",
         "en": "Stream disconnected {retry_count} time(s). Max retries reached.",
     },
-    "assisted.intent_reprompt": {
-        "ja": (
-            'ツールを使う意図があるようですが、実際にツールが呼び出されていません。必要な操作を以下の形式で出力してください:\n\n```json\n{"tool": "ツール名", "arguments": {"引数名": "値"}}\n```'
-        ),
-        "en": (
-            'You indicated intent to use a tool but did not actually call one. Please output the tool call in the following format:\n\n```json\n{"tool": "tool_name", "arguments": {"arg_name": "value"}}\n```'
-        ),
-    },
-    "assisted.output_truncated": {
-        "ja": "... [出力切り捨て: 元のサイズ {size}バイト]",
-        "en": "... [Output truncated: original size {size} bytes]",
-    },
     "assisted.tool_exec_error": {
         "ja": "ツール実行エラー: {error}",
         "en": "Tool execution error: {error}",
-    },
-    "assisted.tool_result_header": {
-        "ja": "ツール実行結果:",
-        "en": "Tool execution result:",
-    },
-    "assisted.unknown_tool": {
-        "ja": "エラー: 不明なツール '{tool_name}' です。利用可能なツール: {available}",
-        "en": "Error: Unknown tool '{tool_name}'. Available tools: {available}",
     },
     "litellm_context.compact_system": {
         "ja": "以下のAIアシスタントと人間の作業会話を簡潔に要約してください。主要な発見、決定事項、ツール結果、未完了の項目をすべて保持してください。要約のみを出力してください。",
@@ -156,6 +136,20 @@ STRINGS: dict[str, dict[str, str]] = {
             "Use these instead of Agent/Task."
         ),
     },
+    "sdk_hooks.submit_tasks_success": {
+        "ja": (
+            "成功: submit_tasks でタスク {task_ids} をキューに投入した。"
+            "これらは自分の TaskExecutor が後で実行するため、このターンではそれ以上手を出さない。"
+        ),
+        "en": (
+            "Success: tasks {task_ids} are queued in your TaskExecutor for later execution. "
+            "Do not touch them further in this turn."
+        ),
+        "ko": (
+            "성공: submit_tasks로 작업 {task_ids}을(를) 큐에 넣었습니다. "
+            "이는 나중에 자신의 TaskExecutor가 실행하므로 이번 턴에서는 더 이상 다루지 마세요."
+        ),
+    },
     "action_rule.deny_reason": {
         "ja": "アクションルールにより一時停止: 実行前に以下のルールを確認してください",
         "en": "Paused by action rule: please review the following rule before proceeding",
@@ -198,3 +192,4 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
     },
 }
+

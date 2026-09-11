@@ -20,9 +20,8 @@ Tests cover:
 import logging
 from datetime import timedelta
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -646,83 +645,6 @@ class TestCompleteForgetting:
 
 
 # ── Consolidation Integration Tests ─────────────────────────────────
-
-
-class TestConsolidationForgettingHooks:
-    """Test that lifecycle hooks into ForgettingEngine correctly.
-
-    After the Anima-driven consolidation refactoring, forgetting hooks
-    are called from lifecycle.py as post-processing steps:
-    - Daily: lifecycle._handle_daily_consolidation calls synaptic_downscaling
-    """
-
-    @pytest.mark.asyncio
-    async def test_consolidation_daily_calls_downscaling(self, tmp_path: Path):
-        """Test that _handle_daily_consolidation calls synaptic_downscaling().
-
-        After the Anima-driven consolidation, the lifecycle handler
-        invokes ForgettingEngine.synaptic_downscaling as post-processing.
-        """
-        from core.lifecycle import LifecycleManager
-
-        manager = LifecycleManager()
-
-        anima_dir = tmp_path / "test_anima"
-        anima_dir.mkdir(parents=True)
-
-        # Mock anima
-        mock_anima = MagicMock()
-        mock_anima.name = "test_anima"
-        mock_anima.memory = MagicMock()
-        mock_anima.memory.anima_dir = anima_dir
-        mock_anima.count_recent_episodes.return_value = 3
-
-        mock_result = MagicMock()
-        mock_result.duration_ms = 30_000
-        mock_result.summary = "consolidated"
-        mock_anima.run_consolidation = AsyncMock(return_value=mock_result)
-
-        manager.animas["test_anima"] = mock_anima
-        manager._schedule_consolidation_retry = MagicMock()
-
-        mock_config = MagicMock()
-        mock_consolidation_cfg = MagicMock()
-        mock_consolidation_cfg.daily_enabled = True
-        mock_consolidation_cfg.synaptic_downscaling_enabled = True
-        mock_consolidation_cfg.min_episodes_threshold = 1
-        mock_config.consolidation = mock_consolidation_cfg
-
-        mock_downscaling_result = {"scanned": 10, "marked_low": 2}
-
-        gate = SimpleNamespace(
-            should_run=True,
-            activity_count=3,
-            episode_count=0,
-            carryover_count=0,
-            threshold=1,
-        )
-
-        with (
-            patch("core.config.load_config", return_value=mock_config),
-            patch("core.lifecycle.system_consolidation.load_config", return_value=mock_config),
-            patch("core.lifecycle.system_consolidation.should_skip_inactive_consolidation", return_value=False),
-            patch("core.lifecycle.system_consolidation.evaluate_daily_consolidation_gate", return_value=gate),
-            patch("core.lifecycle.system_consolidation.run_knowledge_self_correction_if_enabled", AsyncMock()),
-            patch("core.lifecycle.system_consolidation.detect_communities_if_neo4j", AsyncMock()),
-            patch("core.memory.forgetting.ForgettingEngine") as MockForgettingEngine,
-            patch("core.memory.consolidation.ConsolidationEngine"),
-        ):
-            mock_forgetter = MagicMock()
-            mock_forgetter.synaptic_downscaling.return_value = mock_downscaling_result
-            MockForgettingEngine.return_value = mock_forgetter
-
-            await manager._handle_daily_consolidation()
-
-        # Verify downscaling was called
-        mock_forgetter.synaptic_downscaling.assert_called_once()
-
-
-# ── Monthly Forgetting Hook Test ────────────────────────────────────
 
 
 class TestMonthlyForgettingHook:

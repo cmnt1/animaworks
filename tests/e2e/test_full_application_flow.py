@@ -18,13 +18,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.anima import DigitalAnima
-from core.lifecycle import LifecycleManager
 from core.memory import MemoryManager
 from core.memory.consolidation import ConsolidationEngine
 from core.memory.conversation import ConversationMemory
 from core.memory.priming import PrimingEngine, format_priming_section
-from core.schemas import CycleResult
 from core.supervisor.manager import ProcessSupervisor
 from core.time_utils import now_jst
 
@@ -568,28 +565,8 @@ async def test_system_cron_integration(tmp_path: Path, data_dir: Path, mock_llm,
     config.consolidation.weekly_enabled = weekly_enabled
     save_config(config)
 
-    # Create DigitalAnima and LifecycleManager
+    # Setup system crons through the production supervisor scheduler.
     with patch("core.paths.get_shared_dir", return_value=shared_dir):
-        anima = DigitalAnima(anima_dir, shared_dir)
-        lifecycle = LifecycleManager()
-
-        # Set up WebSocket broadcast mock
-        if mock_websocket:
-            lifecycle.set_broadcast(mock_websocket)
-
-        # Register anima
-        anima.run_consolidation = AsyncMock(
-            return_value=CycleResult(
-                timestamp=now_jst(),
-                trigger="consolidation:daily",
-                action="completed",
-                summary="Mocked consolidation completed",
-                duration_ms=15_000,
-            )
-        )
-        lifecycle.register_anima(anima)
-
-        # Setup system crons through the production supervisor scheduler.
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
         from core.time_utils import get_app_timezone
@@ -618,16 +595,6 @@ async def test_system_cron_integration(tmp_path: Path, data_dir: Path, mock_llm,
         weekly_job = supervisor.scheduler.get_job("system_weekly_integration")
         assert (weekly_job is not None) is weekly_enabled
         # The trigger should be a CronTrigger with day_of_week="sun", hour=3
-
-        # Test manual trigger of daily consolidation
-        await lifecycle._handle_daily_consolidation()
-
-        # Consolidation may or may not create files depending on LLM response parsing
-        # Just verify it doesn't error
-
-        # Verify WebSocket broadcast was called (if broadcast is set)
-        # The broadcast might not be called if consolidation was skipped
-        # This is acceptable - we're testing that the cron runs without errors
 
 
 # ── Additional Edge Case Tests ────────────────────────────────
@@ -694,46 +661,36 @@ async def test_conversation_finalization_creates_episode(full_anima_environment,
 
 
 @pytest.mark.asyncio
-async def test_lifecycle_anima_registration(tmp_path: Path):
-    """Test LifecycleManager anima registration and cleanup."""
-    anima_dir = tmp_path / "test_anima"
-    anima_dir.mkdir()
+async def test_supervisor_anima_heartbeat_registration(tmp_path: Path):
+    """Test per-anima heartbeat job registration and removal via SchedulerManager."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock, patch
 
-    for subdir in ["knowledge", "episodes", "state", "shortterm"]:
-        (anima_dir / subdir).mkdir()
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-    (anima_dir / "identity.md").write_text("# Test", encoding="utf-8")
-    (anima_dir / "injection.md").write_text("# Role", encoding="utf-8")
-    (anima_dir / "permissions.md").write_text("", encoding="utf-8")
-    (anima_dir / "heartbeat.md").write_text("30分ごと (9:00-22:00)", encoding="utf-8")
-    (anima_dir / "cron.md").write_text("", encoding="utf-8")
+    from core.schemas import ModelConfig
+    from core.supervisor.scheduler_manager import SchedulerManager
+    from core.time_utils import get_app_timezone
 
-    (anima_dir / "model_config.json").write_text(
-        json.dumps({"provider": "anthropic", "model_name": "claude-sonnet-4", "mode": "A1"}),
-        encoding="utf-8",
-    )
+    anima = MagicMock()
+    anima.name = "test_anima"
+    anima.memory.read_model_config.return_value = ModelConfig(heartbeat_enabled=True)
+    anima.memory.read_heartbeat_config.return_value = "30分ごと (9:00-22:00)"
 
-    shared_dir = tmp_path / "shared"
-    shared_dir.mkdir()
+    mgr = SchedulerManager(anima, "test_anima", tmp_path, lambda _e, _d: None)
+    mgr.scheduler = AsyncIOScheduler(timezone=get_app_timezone())
 
-    with patch("core.paths.get_shared_dir", return_value=shared_dir):
-        anima = DigitalAnima(anima_dir, shared_dir)
-        lifecycle = LifecycleManager()
+    with patch(
+        "core.supervisor.scheduler_manager.load_config",
+        return_value=SimpleNamespace(
+            heartbeat=SimpleNamespace(interval_minutes=30),
+            activity_level=100,
+        ),
+    ):
+        mgr._setup_heartbeat()
+        assert mgr.scheduler.get_job("test_anima_heartbeat") is not None
 
-        # Register anima
-        lifecycle.register_anima(anima)
-        assert "test_anima" in lifecycle.animas
-
-        # Verify heartbeat job was created
-        jobs = lifecycle.scheduler.get_jobs()
-        job_ids = [job.id for job in jobs]
-        assert "test_anima_heartbeat" in job_ids
-
-        # Unregister anima
-        lifecycle.unregister_anima("test_anima")
-        assert "test_anima" not in lifecycle.animas
-
-        # Verify heartbeat job was removed
-        jobs = lifecycle.scheduler.get_jobs()
-        job_ids = [job.id for job in jobs]
-        assert "test_anima_heartbeat" not in job_ids
+        # Disabling heartbeat removes the existing job
+        anima.memory.read_model_config.return_value = ModelConfig(heartbeat_enabled=False)
+        mgr._setup_heartbeat()
+        assert mgr.scheduler.get_job("test_anima_heartbeat") is None

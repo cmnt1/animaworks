@@ -53,7 +53,6 @@ from core.execution._sdk_hooks import (  # noqa: F401
     _build_pre_compact_hook,
     _build_pre_tool_hook,
     _cache_subordinate_paths,
-    _read_status_json,
 )
 from core.execution._sdk_interrupt import (  # noqa: F401
     _graceful_interrupt_blocking,

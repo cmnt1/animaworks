@@ -56,7 +56,7 @@ class ExecutorFactoryMixin:
 
         from core.config.model_config import resolve_unavailable_model_config
         from core.exceptions import ExecutorUnavailableError
-        from core.execution import AssistedExecutor, LiteLLMExecutor
+        from core.execution import LiteLLMExecutor
         from core.i18n import t
 
         active_config = model_config or self.model_config
@@ -107,9 +107,9 @@ class ExecutorFactoryMixin:
             return executor_class(**common)
 
         common.update(tool_handler=self._tool_handler, memory=self.memory)
-        if mode == "a":
-            return LiteLLMExecutor(**common)
-        return AssistedExecutor(**common, messenger=self.messenger)
+        # Mode A (and the former Mode B, now treated identically) both use
+        # LiteLLM's tool_use loop.
+        return LiteLLMExecutor(**common)
 
     def _resolve_api_key(self) -> str | None:
         """Resolve the actual API key (direct value from config.json, then env var)."""

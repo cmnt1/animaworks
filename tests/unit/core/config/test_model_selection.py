@@ -33,7 +33,7 @@ def config() -> AnimaWorksConfig:
         ("g:gemini/model", "G", None),
         ("x:grok/model", "X", None),
         ("a:openai/model", "A", "openai"),
-        ("b:ollama/model", "B", "ollama"),
+        ("a:ollama/model", "A", "ollama"),
     ],
 )
 def test_explicit_routes_preserve_all_adapters(config, requested, mode, credential):

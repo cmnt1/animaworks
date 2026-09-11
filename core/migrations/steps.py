@@ -276,67 +276,6 @@ def step_enable_skill_catalog_router(data_dir: Path, dry_run: bool, verbose: boo
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
-def step_remove_turn_limit(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Remove the retired tool-loop limit from persisted runtime configuration."""
-    del verbose
-    legacy_key = "max_turns"
-    candidates: list[tuple[Path, dict[str, Any]]] = []
-    details: list[str] = []
-
-    try:
-        config_path = data_dir / "config.json"
-        if config_path.is_file():
-            config_data = json.loads(config_path.read_text(encoding="utf-8") or "{}")
-            defaults = config_data.get("anima_defaults")
-            if isinstance(defaults, dict) and legacy_key in defaults:
-                candidates.append((config_path, config_data))
-
-        animas_dir = data_dir / "animas"
-        if animas_dir.is_dir():
-            for anima_dir in sorted(path for path in animas_dir.iterdir() if path.is_dir()):
-                status_path = anima_dir / "status.json"
-                if not status_path.is_file():
-                    continue
-                status_data = json.loads(status_path.read_text(encoding="utf-8") or "{}")
-                if isinstance(status_data, dict) and legacy_key in status_data:
-                    candidates.append((status_path, status_data))
-
-        if not candidates:
-            return StepResult(changed=0, skipped=1, details=["Retired turn limit already absent"])
-
-        if dry_run:
-            return StepResult(
-                changed=len(candidates),
-                skipped=0,
-                details=[f"Would back up and update {path.relative_to(data_dir)}" for path, _ in candidates],
-            )
-
-        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-        for path, data in candidates:
-            backup_path = path.with_name(f"{path.name}.bak-{timestamp}")
-            shutil.copy2(path, backup_path)
-            if path == config_path:
-                defaults = data.get("anima_defaults")
-                if isinstance(defaults, dict):
-                    defaults.pop(legacy_key, None)
-            else:
-                data.pop(legacy_key, None)
-            path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-            details.append(f"Backed up and updated {path.relative_to(data_dir)} ({backup_path.name})")
-
-        try:
-            from core.config import invalidate_cache
-
-            invalidate_cache()
-        except Exception:
-            logger.debug("Failed to invalidate config cache after turn-limit migration", exc_info=True)
-
-        return StepResult(changed=len(candidates), skipped=0, details=details)
-    except Exception as exc:
-        logger.exception("step_remove_turn_limit failed")
-        return StepResult(changed=0, skipped=0, details=details, error=str(exc))
-
-
 # ── Category 2: Per-anima file migrations ───────────────────────
 
 
@@ -731,54 +670,6 @@ def step_channel_company_defaults(data_dir: Path, dry_run: bool, verbose: bool) 
         return StepResult(changed=changed, skipped=skipped, details=details)
     except Exception as exc:
         logger.exception("step_channel_company_defaults failed")
-        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
-
-
-def step_remove_machine_config(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Remove the retired ``machine`` key from config.json root.
-
-    ``AppConfig`` uses ``extra="forbid"``, so a leftover ``machine`` key in an
-    existing config.json would crash startup.  This step drops it (idempotent).
-    """
-    del verbose
-    config_path = data_dir / "config.json"
-    if not config_path.is_file():
-        return StepResult(changed=0, skipped=1, details=["config.json not found"])
-    try:
-        config_data = json.loads(config_path.read_text(encoding="utf-8") or "{}")
-        if not isinstance(config_data, dict) or "machine" not in config_data:
-            return StepResult(
-                changed=0,
-                skipped=1,
-                details=["No retired machine key in config.json"],
-            )
-        if dry_run:
-            return StepResult(
-                changed=1,
-                skipped=0,
-                details=["Would remove the retired machine key from config.json"],
-            )
-        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-        backup_path = config_path.with_name(f"{config_path.name}.bak-{timestamp}")
-        shutil.copy2(config_path, backup_path)
-        config_data.pop("machine", None)
-        config_path.write_text(
-            json.dumps(config_data, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-        try:
-            from core.config import invalidate_cache
-
-            invalidate_cache()
-        except Exception:
-            logger.debug("Failed to invalidate config cache after machine-key migration", exc_info=True)
-        return StepResult(
-            changed=1,
-            skipped=0,
-            details=[f"Backed up and removed machine key from {config_path.name} ({backup_path.name})"],
-        )
-    except Exception as exc:
-        logger.exception("step_remove_machine_config failed")
         return StepResult(changed=0, skipped=0, details=[], error=str(exc))
 
 
@@ -1421,7 +1312,7 @@ def step_common_knowledge_team_design_resync(data_dir: Path, dry_run: bool, verb
     Re-runs the common_knowledge template sync, then removes the obsolete flat
     machine-*.md files under operations/ left from older template layouts.
     (The step name is kept for migration-state compatibility; the team-design
-    templates it originally deployed were retired — see step_remove_team_design.)
+    templates it originally deployed were retired.)
     """
     details: list[str] = []
     total = 0
@@ -1538,87 +1429,6 @@ def step_v0120_prompt_deadline_engine_neutral_resync(
     return StepResult(changed=total, skipped=skipped, details=details, error=error)
 
 
-def step_remove_precompletion_guide(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Resync templates after pre-completion verification removal and delete the guide file.
-
-    Covers:
-    - common_knowledge / common_skills / prompts / reference resync
-      (tool guides, 00_index, tool-usage-overview, tool-creator skill)
-    - remove stale common_knowledge/operations/completion-gate-guide.md
-    """
-    details: list[str] = []
-    total = 0
-    skipped = 0
-    errors: list[str] = []
-
-    for resync_fn in (
-        step_common_knowledge_resync,
-        step_common_skills_resync,
-        step_prompt_resync,
-        step_reference_resync,
-    ):
-        result = resync_fn(data_dir, dry_run, verbose)
-        total += result.changed
-        skipped += result.skipped
-        details.extend(result.details)
-        if result.error:
-            errors.append(f"{resync_fn.__name__}: {result.error}")
-
-    stale = data_dir / "common_knowledge" / "operations" / "completion-gate-guide.md"
-    if stale.is_file():
-        if dry_run:
-            details.append("Would remove stale common_knowledge/operations/completion-gate-guide.md")
-        else:
-            stale.unlink()
-            details.append("Removed stale common_knowledge/operations/completion-gate-guide.md")
-        total += 1
-    else:
-        skipped += 1
-
-    error = "; ".join(errors) if errors else None
-    return StepResult(changed=total, skipped=skipped, details=details, error=error)
-
-
-def step_remove_team_design(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """Remove retired common_knowledge/team-design/ trees.
-
-    The team-design templates were retired; resync alone does not delete
-    directories that were already deployed, so every ``common_knowledge/
-    team-design/`` under the data dir (top level, per-Anima, and runtime
-    copies) is removed here.
-    """
-    details: list[str] = []
-    total = 0
-    skipped = 0
-    errors: list[str] = []
-
-    result = step_common_knowledge_resync(data_dir, dry_run, verbose)
-    total += result.changed
-    skipped += result.skipped
-    details.extend(result.details)
-    if result.error:
-        errors.append(f"step_common_knowledge_resync: {result.error}")
-
-    targets = sorted(p for p in data_dir.rglob("team-design") if p.is_dir() and p.parent.name == "common_knowledge")
-    for path in targets:
-        rel = path.relative_to(data_dir)
-        if dry_run:
-            details.append(f"Would remove {rel}")
-        else:
-            try:
-                shutil.rmtree(path)
-            except OSError as exc:
-                errors.append(f"{rel}: {exc}")
-                continue
-            details.append(f"Removed {rel}")
-        total += 1
-    if not targets:
-        skipped += 1
-
-    error = "; ".join(errors) if errors else None
-    return StepResult(changed=total, skipped=skipped, details=details, error=error)
-
-
 # ── Category 4: Database sync ────────────────────────────────────
 
 
@@ -1680,12 +1490,7 @@ def register_all_steps(runner: Any) -> None:
             "structural",
             step_enable_skill_catalog_router,
         ),
-        MigrationStep(
-            "remove_turn_limit_20260802",
-            "Remove retired tool-loop limit from runtime config",
-            "structural",
-            step_remove_turn_limit,
-        ),
+
         MigrationStep("current_task_rename", "current_task → current_state", "per_anima", step_current_task_rename),
         MigrationStep("pending_merge", "Merge pending.md into current_state", "per_anima", step_pending_merge),
         MigrationStep(
@@ -1777,12 +1582,7 @@ def register_all_steps(runner: Any) -> None:
             "template_sync",
             step_v063_behavior_rules_action_rules_skill_sync,
         ),
-        MigrationStep(
-            "remove_precompletion_guide",
-            "Remove pre-completion verification guide and resync tool templates",
-            "template_sync",
-            step_remove_precompletion_guide,
-        ),
+
         MigrationStep(
             "legacy_flat_skill_migration",
             "Convert legacy flat skills to trusted SKILL.md bundles",
@@ -1813,24 +1613,14 @@ def register_all_steps(runner: Any) -> None:
             "structural",
             step_channel_company_defaults,
         ),
-        MigrationStep(
-            "remove_machine_config_20260903",
-            "Remove retired machine key from config.json",
-            "structural",
-            step_remove_machine_config,
-        ),
+
         MigrationStep(
             "tool_prompts_db_to_md",
             "Write legacy tool prompt DB to Markdown templates",
             "db_sync",
             step_tool_prompts_db_to_md,
         ),
-        MigrationStep(
-            "remove_team_design",
-            "Remove retired common_knowledge/team-design/ trees",
-            "template_sync",
-            step_remove_team_design,
-        ),
+
         MigrationStep(
             "v0120_prompt_deadline_engine_neutral_resync",
             "v0.12.0: Resync prompts (deadline rule + engine-neutral tool wording)",

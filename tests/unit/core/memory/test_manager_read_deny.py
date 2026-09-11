@@ -93,7 +93,6 @@ def test_prompt_related_direct_reads_reject_denied_symlink_targets(tmp_path: Pat
     memory = _memory_manager(anima_dir)
 
     assert memory.load_recent_heartbeat_summary() == ""
-    assert memory.read_recent_episodes() == ""
     assert memory.read_knowledge_content(knowledge_link) == ""
     assert memory.read_knowledge_metadata(knowledge_link) == {}
     assert memory.list_knowledge_files() == []

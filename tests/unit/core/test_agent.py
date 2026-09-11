@@ -55,9 +55,9 @@ def _make_agent(
 
 
 class TestResolveExecutionMode:
-    def test_assisted_mode(self, tmp_path):
-        agent = _make_agent(tmp_path, resolved_mode="B")
-        assert agent._resolve_execution_mode() == "b"
+    def test_autonomous_mode(self, tmp_path):
+        agent = _make_agent(tmp_path, resolved_mode="A")
+        assert agent._resolve_execution_mode() == "a"
 
     def test_auto_non_claude_model(self, tmp_path):
         agent = _make_agent(tmp_path, model="openai/gpt-4o")

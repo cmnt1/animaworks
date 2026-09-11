@@ -277,7 +277,7 @@ def get_depth_limiter() -> ConversationDepthLimiter:
     """Return a ConversationDepthLimiter with current config.
 
     Config is reloaded on each call so changes to heartbeat.max_depth
-    and max_messages_per_hour take effect without process restart.
+take effect without process restart.
     """
     return ConversationDepthLimiter()
 

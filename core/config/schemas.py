@@ -992,8 +992,7 @@ class HeartbeatConfig(BaseModel):
         ),
     )
     outbound_limit_enabled: bool = True  # False disables the global hourly/daily outbound message caps
-    max_messages_per_hour: int = 30  # Deprecated: use ROLE_OUTBOUND_DEFAULTS + status.json override
-    max_messages_per_day: int = 100  # Deprecated: use ROLE_OUTBOUND_DEFAULTS + status.json override
+
     idle_compaction_minutes: float = Field(
         default=10.0,
         ge=1.0,
@@ -1320,12 +1319,6 @@ class SkillPromotionConfig(BaseModel):
     confidence_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
     failure_count_max: int = Field(default=1, ge=0)
     last_used_within_days: int = Field(default=180, ge=1)
-    # DEPRECATED no-op flags. Retained only for config.json backward compat so
-    # existing files validate. They are never read: promotion always writes to
-    # quarantine and requires human approval before activation. A warning is
-    # emitted at load time (see core.config.io) when set to a non-default value.
-    auto_activate: bool = False
-    require_approval_on_warn: bool = True
 
 
 class SkillCronConfig(BaseModel):

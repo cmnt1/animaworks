@@ -790,15 +790,11 @@ class BaseExecutor(ABC):
 
         Args:
             prompt: The user/trigger prompt.
-            system_prompt: Assembled system prompt (not used by Mode B,
-                which builds its own from memory).
+            system_prompt: Assembled system prompt.
             tracker: Context usage tracker for monitoring window consumption.
-                Not used by Mode B.
             shortterm: Short-term memory for inline session chaining
                 (A / Fallback). S chaining is managed by AgentCore.
             trigger: Trigger identifier (e.g. "message:sakura", "heartbeat").
-                Used by Mode B for post-call send judgement. Other modes
-                ignore this parameter.
             images: Optional list of image dicts with ``data`` (base64) and
                 ``media_type`` keys. Supported by S Fallback and A modes.
 

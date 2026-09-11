@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -359,25 +358,6 @@ class TestWriteKnowledge:
         # Should create file with sanitized name
         files = list(mm.knowledge_dir.glob("*.md"))
         assert len(files) == 1
-
-
-# ── Read helpers for Mode B ───────────────────────────────
-
-
-class TestReadRecentEpisodes:
-    def test_reads_recent(self, mm):
-        today = today_local()
-        for i in range(3):
-            d = today - timedelta(days=i)
-            (mm.episodes_dir / f"{d.isoformat()}.md").write_text(f"Day {i}", encoding="utf-8")
-        result = mm.read_recent_episodes(days=3)
-        assert "Day 0" in result
-        assert "Day 1" in result
-        assert "Day 2" in result
-
-    def test_empty_when_no_episodes(self, mm):
-        result = mm.read_recent_episodes(days=7)
-        assert result == ""
 
 
 class TestSearchMemoryText:

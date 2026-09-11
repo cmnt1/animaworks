@@ -499,20 +499,6 @@ class MemoryManager:
         # Index the new/updated knowledge file
         self._rag.index_file(path, "knowledge", origin=origin)
 
-    # ── Read helpers for Mode B (assisted) ────────────────
-
-    def read_recent_episodes(self, days: int = 7) -> str:
-        """Return concatenated episode logs for the last *days* days."""
-        parts: list[str] = []
-        today = today_local()
-        for offset in range(days):
-            d = today - timedelta(days=offset)
-            path = self.episodes_dir / f"{d.isoformat()}.md"
-            content = self._read(path)
-            if content:
-                parts.append(content)
-        return "\n\n".join(parts)
-
     # ── Backward-compatible RAG proxies ─────────────────
     # Tests and internal code may access these private attributes
     # which now live in RAGMemorySearch.
