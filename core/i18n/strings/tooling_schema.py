@@ -172,8 +172,7 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "schema.submit_tasks.desc": {
         "ja": (
-            "あなた自身のTaskExecでタスクを投入・実行する（部下には送られない）。"
-            "部下への委任は delegate_task を使う。"
+            "あなた自身のTaskExecでタスクを投入・実行する（部下には送られない）。部下への委任は delegate_task を使う。"
         ),
         "en": (
             "Submit tasks to be executed by your own TaskExec (not sent to subordinates). "

@@ -171,4 +171,3 @@ STRINGS: dict[str, dict[str, str]] = {
         ),
     },
 }
-

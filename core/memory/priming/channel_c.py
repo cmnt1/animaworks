@@ -412,7 +412,11 @@ async def channel_c0_important_knowledge(
                 continue
             content = str(row.get("content", "") or "")
             rel_path = to_read_memory_path(metadata, anima_name, str(row.get("doc_id", "") or ""))
-            if not rel_path or rel_path in always_paths or not memory_source_is_allowed(anima_dir, rel_path, denied_roots):
+            if (
+                not rel_path
+                or rel_path in always_paths
+                or not memory_source_is_allowed(anima_dir, rel_path, denied_roots)
+            ):
                 continue
             if _is_action_rule(rel_path, content):
                 _add_action_rule_item(

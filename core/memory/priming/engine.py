@@ -378,9 +378,7 @@ class PrimingEngine:
 
         medium_text = _select("related_knowledge", related_items, channel_c_related_knowledge)
         related_knowledge_text = (
-            f"{important_text}\n\n{medium_text}"
-            if important_text and medium_text
-            else important_text or medium_text
+            f"{important_text}\n\n{medium_text}" if important_text and medium_text else important_text or medium_text
         )
 
         untrusted_text = _select("related_knowledge_untrusted", untrusted_items, related_knowledge_untrusted)
@@ -420,7 +418,6 @@ class PrimingEngine:
         )
 
         return result
-
 
     async def _prime_compact(
         self,

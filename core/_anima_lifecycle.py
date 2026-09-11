@@ -806,9 +806,7 @@ class LifecycleMixin:
         try:
             from core.memory.forgetting import ForgettingEngine
 
-            forgetting_candidates = ForgettingEngine(self.anima_dir, self.name).list_forgetting_candidates(
-                max_items=20
-            )
+            forgetting_candidates = ForgettingEngine(self.anima_dir, self.name).list_forgetting_candidates(max_items=20)
         except Exception:
             logger.debug("[%s] forgetting candidate detection failed", self.name, exc_info=True)
             forgetting_candidates = []

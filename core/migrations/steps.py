@@ -1490,7 +1490,6 @@ def register_all_steps(runner: Any) -> None:
             "structural",
             step_enable_skill_catalog_router,
         ),
-
         MigrationStep("current_task_rename", "current_task → current_state", "per_anima", step_current_task_rename),
         MigrationStep("pending_merge", "Merge pending.md into current_state", "per_anima", step_pending_merge),
         MigrationStep(
@@ -1582,7 +1581,6 @@ def register_all_steps(runner: Any) -> None:
             "template_sync",
             step_v063_behavior_rules_action_rules_skill_sync,
         ),
-
         MigrationStep(
             "legacy_flat_skill_migration",
             "Convert legacy flat skills to trusted SKILL.md bundles",
@@ -1613,14 +1611,12 @@ def register_all_steps(runner: Any) -> None:
             "structural",
             step_channel_company_defaults,
         ),
-
         MigrationStep(
             "tool_prompts_db_to_md",
             "Write legacy tool prompt DB to Markdown templates",
             "db_sync",
             step_tool_prompts_db_to_md,
         ),
-
         MigrationStep(
             "v0120_prompt_deadline_engine_neutral_resync",
             "v0.12.0: Resync prompts (deadline rule + engine-neutral tool wording)",
