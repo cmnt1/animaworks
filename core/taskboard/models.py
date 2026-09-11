@@ -93,12 +93,3 @@ class BoardTask(BaseModel):
     tombstone_reason: str | None = None
     board_updated_at: str | None = None
     board_updated_by: str | None = None
-
-
-class AttentionDecision(BaseModel):
-    """Runtime decision derived from TaskBoard visibility and policy."""
-
-    visible_in_prompt: bool = True
-    executable: bool = True
-    notify_allowed: bool = True
-    reason: str = "active"

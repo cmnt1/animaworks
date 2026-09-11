@@ -54,7 +54,10 @@ def _append_task_entry(
 
 
 @pytest.mark.asyncio
-async def test_channel_e_filters_suppressed_tasks(attention_env: tuple[Path, TaskBoardStore]) -> None:
+async def test_channel_e_surfaces_all_projected_tasks(
+    attention_env: tuple[Path, TaskBoardStore],
+) -> None:
+    """All projected tasks appear in Channel E; visibility metadata does not filter."""
     anima_dir, store = attention_env
     queue = TaskQueueManager(anima_dir)
     queue.add_task(
@@ -76,11 +79,14 @@ async def test_channel_e_filters_suppressed_tasks(attention_env: tuple[Path, Tas
     result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
 
     assert "visible work" in result
-    assert "archived work" not in result
+    assert "archived work" in result
 
 
 @pytest.mark.asyncio
-async def test_channel_e_filters_snoozed_tasks(attention_env: tuple[Path, TaskBoardStore]) -> None:
+async def test_channel_e_surfaces_snoozed_tasks(
+    attention_env: tuple[Path, TaskBoardStore],
+) -> None:
+    """Snoozed tasks still appear in Channel E; visibility metadata does not filter."""
     anima_dir, store = attention_env
     queue = TaskQueueManager(anima_dir)
     queue.add_task(
@@ -99,11 +105,14 @@ async def test_channel_e_filters_snoozed_tasks(attention_env: tuple[Path, TaskBo
 
     result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
 
-    assert "snoozed work" not in result
+    assert "snoozed work" in result
 
 
 @pytest.mark.asyncio
-async def test_channel_e_filters_task_results(attention_env: tuple[Path, TaskBoardStore]) -> None:
+async def test_channel_e_task_results_freshness_only(
+    attention_env: tuple[Path, TaskBoardStore],
+) -> None:
+    """Channel E task_results gate is purely freshness-based; visibility metadata does not filter."""
     anima_dir, store = attention_env
     results_dir = anima_dir / "state" / "task_results"
     results_dir.mkdir(parents=True)
@@ -118,7 +127,7 @@ async def test_channel_e_filters_task_results(attention_env: tuple[Path, TaskBoa
     result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
 
     assert "recent result" in result
-    assert "hidden result" not in result
+    assert "hidden result" in result
     assert "old orphan result" not in result
 
 

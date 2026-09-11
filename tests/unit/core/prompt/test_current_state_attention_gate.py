@@ -41,7 +41,8 @@ def _current_state_entries(anima_dir: Path, state: str):
     )
 
 
-def test_stale_current_state_body_is_not_injected(tmp_path: Path) -> None:
+def test_stale_current_state_body_is_injected(tmp_path: Path) -> None:
+    """current_state is injected as-is even when the file is stale (no freshness gate)."""
     data_dir = tmp_path / "data"
     anima_dir = data_dir / "animas" / "sakura"
     (anima_dir / "state").mkdir(parents=True)
@@ -52,11 +53,13 @@ def test_stale_current_state_body_is_not_injected(tmp_path: Path) -> None:
     os.utime(state_path, (old, old))
 
     entries = _current_state_entries(anima_dir, state)
+    current_state = next(entry.content for entry in entries if entry.id == "current_state")
 
-    assert all(entry.id != "current_state" for entry in entries)
+    assert "old task body" in current_state
 
 
-def test_fresh_current_state_removes_suppressed_task_refs(tmp_path: Path) -> None:
+def test_fresh_current_state_keeps_all_lines(tmp_path: Path) -> None:
+    """current_state lines are not filtered by TaskBoard visibility metadata."""
     data_dir = tmp_path / "data"
     anima_dir = data_dir / "animas" / "sakura"
     (anima_dir / "state").mkdir(parents=True)
@@ -68,11 +71,12 @@ def test_fresh_current_state_removes_suppressed_task_refs(tmp_path: Path) -> Non
     entries = _current_state_entries(anima_dir, state)
     current_state = next(entry.content for entry in entries if entry.id == "current_state")
 
-    assert "abc12345" not in current_state
+    assert "abc12345" in current_state
     assert "keep this live note" in current_state
 
 
-def test_fresh_current_state_removes_shortened_suppressed_task_refs(tmp_path: Path) -> None:
+def test_fresh_current_state_keeps_shortened_task_refs(tmp_path: Path) -> None:
+    """current_state shortened task refs are not filtered by TaskBoard visibility."""
     data_dir = tmp_path / "data"
     anima_dir = data_dir / "animas" / "sakura"
     (anima_dir / "state").mkdir(parents=True)
@@ -84,11 +88,12 @@ def test_fresh_current_state_removes_shortened_suppressed_task_refs(tmp_path: Pa
     entries = _current_state_entries(anima_dir, state)
     current_state = next(entry.content for entry in entries if entry.id == "current_state")
 
-    assert "abcdef12" not in current_state
+    assert "abcdef12" in current_state
     assert "keep this live note" in current_state
 
 
-def test_current_state_gate_fails_open_when_taskboard_db_is_corrupt(tmp_path: Path) -> None:
+def test_current_state_is_injected_with_taskboard_db(tmp_path: Path) -> None:
+    """current_state is injected regardless of TaskBoard DB availability (even if corrupt)."""
     data_dir = tmp_path / "data"
     anima_dir = data_dir / "animas" / "sakura"
     (anima_dir / "state").mkdir(parents=True)

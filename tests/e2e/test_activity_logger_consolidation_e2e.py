@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from core.memory.activity import ActivityLogger
-from core.taskboard.attention_resolver import notification_key_for
+from core.notification import notification_key_for
 
 # ── DigitalAnima activity logging ────────────────────────────
 

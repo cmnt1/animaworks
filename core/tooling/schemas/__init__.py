@@ -25,7 +25,6 @@ from core.tooling.schemas.converters import (
     to_litellm_format,
     to_text_format,
 )
-from core.tooling.schemas.goal import _goal_tools
 from core.tooling.schemas.loader import (
     _normalise_schema,
     load_all_tool_schemas,
@@ -81,7 +80,6 @@ __all__ = [
     "_normalise_schema",
     "_create_skill_schemas",
     "_curator_skill_schemas",
-    "_goal_tools",
     "_supervisor_tools",
     "_task_tools",
     "_vault_tools",

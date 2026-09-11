@@ -176,10 +176,6 @@ class TestResolvedApprovalsInGroup3:
                 return_value=[pair],
             ),
             patch(
-                "core.taskboard.attention_resolver.resolver_for_anima_dir",
-                side_effect=Exception("skip gate"),
-            ),
-            patch(
                 "core.prompt.builder.load_prompt",
                 side_effect=lambda name, **kw: (
                     f"## Task\n{kw.get('state', '')}" if name == "builder/task_in_progress" else ""

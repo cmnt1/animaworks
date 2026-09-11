@@ -88,9 +88,6 @@ from core.memory.conversation_prompt import (
 from core.memory.conversation_state_update import (
     _record_resolutions as _record_resolutions_fn,
 )
-from core.memory.conversation_state_update import (
-    _update_state_from_summary as _update_state_from_summary_fn,
-)
 from core.schemas import ModelConfig
 from core.time_utils import today_local
 
@@ -318,9 +315,6 @@ class ConversationMemory:
     @staticmethod
     def _parse_session_summary(raw: str) -> ParsedSessionSummary:
         return _parse_session_summary_fn(raw)
-
-    def _update_state_from_summary(self, memory_mgr: MemoryManager, parsed: ParsedSessionSummary) -> None:
-        _update_state_from_summary_fn(self.anima_dir, memory_mgr, parsed)
 
     def _record_resolutions(self, memory_mgr: MemoryManager, resolved_items: list[str]) -> None:
         _record_resolutions_fn(self.anima_dir, memory_mgr, resolved_items)
