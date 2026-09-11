@@ -19,8 +19,6 @@ def test_group1_uses_file_backed_environment_and_behavior_rules(tmp_path: Path) 
     ):
         load.side_effect = lambda name, **kwargs: {
             "environment": "file environment",
-            "builder/instruction_internalization": "file instruction rules",
-            "tool_data_interpretation": "tool data",
         }[name]
         sections = _build_group1(tmp_path / "anima", tmp_path, memory, False, {})
 

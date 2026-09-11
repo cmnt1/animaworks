@@ -239,8 +239,6 @@ class TestMicroTierSectionExclusion:
                 return f"[env-full] data_dir={kwargs.get('data_dir', '?')}"
             if name == "behavior_rules":
                 return "[behavior_rules content]"
-            if name == "tool_data_interpretation":
-                return "[tool_data_interpretation content]"
             return "section"
 
         with (
@@ -256,10 +254,6 @@ class TestMicroTierSectionExclusion:
     def test_micro_excludes_behavior_rules(self, tmp_path, data_dir):
         result = self._build(tmp_path, data_dir, 4_000)
         assert "[behavior_rules content]" not in result
-
-    def test_micro_excludes_tool_data_interpretation(self, tmp_path, data_dir):
-        result = self._build(tmp_path, data_dir, 4_000)
-        assert "[tool_data_interpretation content]" not in result
 
     def test_micro_uses_compact_environment(self, tmp_path, data_dir):
         result = self._build(tmp_path, data_dir, 4_000)

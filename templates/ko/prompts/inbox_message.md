@@ -1,21 +1,5 @@
-Inbox에 메시지가 도착했습니다. 아래 내용을 확인하고 적절히 응답하세요.
+Inbox에 메시지가 도착했다.
 
 {messages}
 
-## 대응 가이드라인
-- 질문에는 직접 답변하세요
-- 요청에는 확인과 예상 일정을 답변하세요
-- **[MUST] 수행이 필요한 작업을 파악했다면, 반드시 작업으로 구체화하세요. 답변만 하고 잊어버려서는 안 됩니다.**
-  - 부하에게 맡기기 → `delegate_task`
-  - 직접 하기 → 이 세션에서 직접 실행하고, 후속 추적이 필요하면 `state/current_state.md` 또는 명시적인 백그라운드 실행 워크플로에 기록
-- 답변은 간결하게 (장문 불필요)
-
-### 외부 플랫폼 메시지에 대한 응답
-메시지에 `[reply_instruction: ...]` 메타데이터가 있는 경우:
-- **반드시 해당 지시에 따라 응답**하세요
-- 지시가 `use tool ...` 형식이면 지정된 도구를 직접 호출하세요
-- 지시가 셸 명령 형식이면 `Bash`로 실행하세요
-- `{reply_content}`를 실제 응답 내용으로 대체하세요
-- `send_message`를 사용하지 마세요 (DM으로 전송되며, 스레드 응답이 아닙니다)
-
-**위임 가이드라인**: `delegate_task` 사용 시 `read_memory_file(path="common_knowledge/operations/task-delegation-guide.md")`의 작성 원칙과 금지 패턴을 따르세요 (MUST). 일반 Inbox 처리에서는 `submit_tasks`를 사용하지 마세요.
+질문에는 직접 답하고, 요청에는 수락과 전망을 돌려준다. 대응이 필요한 작업은 부하에게 맡기려면 delegate_task, 스스로 하려면 current_state.md에 기록해 태스크로 만든다. 답장은 간결하게. 일반적인 Inbox 처리에서는 submit_tasks를 사용하지 않는다.

@@ -48,22 +48,17 @@ def _build(
     ).system_prompt
 
 
-def test_trigger_specific_behavior_context(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_trigger_shared_behavior_rules(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     chat = _build(data_dir, monkeypatch, "chat")
     heartbeat = _build(data_dir, monkeypatch, "heartbeat")
     task = _build(data_dir, monkeypatch, "task:fixture")
 
-    assert "業務指示を受けた場合の振り分け" in chat
-    assert "チャットでのタスク記録" in chat
-    assert "Heartbeat でのタスク記録" not in chat
-
-    assert "業務指示を受けた場合の振り分け" not in heartbeat
-    assert "Heartbeat でのタスク記録" in heartbeat
-    assert "チャットでのタスク記録" not in heartbeat
-
-    assert "業務指示を受けた場合の振り分け" not in task
-    assert "チャットでのタスク記録" not in task
-    assert "Heartbeat でのタスク記録" not in task
+    assert "## 行動ルール" in chat
+    assert "## 行動ルール" in heartbeat
+    assert "## 行動ルール" in task
+    # Trigger-specific task-recording snippets were consolidated into behavior_rules.
+    assert "チャットでのタスク記録" not in chat
+    assert "Heartbeat でのタスク記録" not in heartbeat
 
 
 def test_repo_rules_only_with_workspace(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:

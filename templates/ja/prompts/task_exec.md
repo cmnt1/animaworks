@@ -21,14 +21,9 @@
 ## 関連ファイル
 {file_paths}
 
-## 並列worker状況
-あなたと同じAnimaの別worker（分身）が、いま以下のタスクを並列実行しています（着手時点のスナップショット）:
+## 並列 worker 状況
+同じ Anima の別 worker が並列実行中のタスク（着手時点のスナップショット）:
 {active_workers}
 
 ## 指示
-- 上記の作業と完了条件に集中してください。権限・承認条件・制約を守り、必要な記憶や資料を参照してください。
-- 完了したら `update_task(task_id="{task_id}", status="done", result="成果と検証の要約")` を呼んでください。セッション終了だけでは仕事の完了になりません。
-- 待機や中断が必要なら `update_task(task_id="{task_id}", status="pending", summary="理由・確認した事実・次に必要な条件")` で記録して終了できます。システムが未完実行を通知します。勝手に再実行はしません。
-- 不要になった仕事は `update_task(task_id="{task_id}", status="cancelled", summary="理由")` で閉じてください。進められない操作を繰り返さないでください。
-- 作業ディレクトリが指定されていればそこを起点にします。指定がなければ本文から確認してください。
-- 他のworkerと共有する資源を変更する際は競合を確認し、既存の仕事や成果を上書きしないでください。重複を見つけても他のタスクを自動的に取り消さないでください。
+完了したら `update_task(task_id="{task_id}", status="done", result="成果と検証の要約")` を呼ぶ。待機や中断が必要なら `update_task(task_id="{task_id}", status="pending", summary="理由と次に必要な条件")` で記録して終了する。不要になった仕事は `status="cancelled"` で閉じる。他 worker と共有する資源を変更するときは競合を確認し、既存の成果を上書きしない。

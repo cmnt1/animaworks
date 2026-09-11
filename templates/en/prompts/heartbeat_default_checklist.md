@@ -1,26 +1,5 @@
-- **MUST**: Check current_state.md for in-progress tasks and state findings as evidence. Always check before deciding "idle" or "waiting"
-- **MUST**: Check task queue for STALE tasks (⚠️ STALE). Cite `list_tasks()` results as evidence. Never return HEARTBEAT_OK while STALE tasks exist
-- **MUST**: Check for waiting tasks stalled 24+ hours. If stalled, send status check or reminder
-- Board check: Run `read_channel(...)` for your restricted team channel first and state specifically whether any mentions target you. If you do not belong to one, check `general`. Do **not** post praise/acknowledgment replies
-- Whether you can access required external tools (if not, report to supervisor)
-- Whether in-progress tasks have blockers
-- Check `list_tasks` for pending work, unmet dependencies, or tasks needing a decision
-
-### Blocker Reporting (MUST)
-
-Report immediately to requester. Do not leave in "waiting" state.
-
-- File/directory not found
-- Insufficient permissions / prerequisites not met / technical issues
-- Instructions unclear and cannot decide
-
-Report to: Requester (send_message). Critical blockers (30+ min delay): also call_human
-
-### HEARTBEAT_OK Gate (ALL must be true)
-
-- Zero self-assigned pending tasks (or all delegated)
-- `read_channel` executed with no mentions targeting you
-- Zero STALE / OVERDUE tasks
-- No unaddressed self-assigned tasks in current_state.md
-
-If any condition is unmet, describe the action you are taking.
+- Check in-progress tasks in current_state.md and STALE / 24-hour-old waiting tasks in list_tasks, and state your evidence
+- Check your restricted channel (or general if none) with read_channel and state whether there are mentions for you. Do not post praise or acknowledgement only
+- Check whether required external tools are accessible and whether in-progress tasks have blockers
+- Report blockers such as missing files, insufficient permissions, unmet prerequisites, or unclear instructions to the requester immediately. Send call_human as well for a major blocker lasting more than 30 minutes
+- Include HEARTBEAT_OK only in responses where you have confirmed all of the above are resolved

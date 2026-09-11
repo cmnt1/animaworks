@@ -22,7 +22,6 @@ from core.memory._activity_models import ActivityEntry
 from core.memory.activity import ActivityLogger
 from core.schemas import Message
 
-
 # ── Message.origin_chain ──────────────────────────────────────
 
 
@@ -349,16 +348,16 @@ class TestSourceToOriginMapping:
 
 
 class TestToolDataInterpretationTemplate:
-    """Verify origin_chain rules are in the prompt templates."""
+    """Verify trust-boundary / origin_chain rules are in the prompt templates."""
 
     def test_ja_template_has_origin_chain_rule(self) -> None:
-        path = Path("templates/ja/prompts/tool_data_interpretation.md")
+        path = Path("templates/ja/prompts/behavior_rules.md")
         content = path.read_text(encoding="utf-8")
         assert "origin_chain" in content
-        assert "external_platform" in content
+        assert 'trust="untrusted"' in content
 
     def test_en_template_has_origin_chain_rule(self) -> None:
-        path = Path("templates/en/prompts/tool_data_interpretation.md")
+        path = Path("templates/en/prompts/behavior_rules.md")
         content = path.read_text(encoding="utf-8")
         assert "origin_chain" in content
-        assert "external_platform" in content
+        assert 'trust="untrusted"' in content

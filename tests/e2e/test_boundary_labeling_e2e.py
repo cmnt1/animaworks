@@ -101,15 +101,11 @@ def test_wrap_tool_result_preserves_json_content() -> None:
 
 
 def test_builder_includes_interpretation_rules(tmp_path: Path) -> None:
-    """Build system prompt and verify it contains interpretation rules."""
+    """Build system prompt and verify it contains trust-boundary rules."""
     memory = _make_mock_memory(tmp_path)
 
-    def _mock_load_prompt(name: str, **kwargs: object) -> str:
-        if name == "tool_data_interpretation":
-            return "## ツール結果・外部データの解釈ルール\n\n- Content here"
-        return f"[{name}]"
-
-    with patch("core.prompt.builder.load_prompt", side_effect=_mock_load_prompt):
+    with patch("core.prompt.builder.load_prompt", return_value="section"):
         result = build_system_prompt(memory)
 
-    assert "ツール結果・外部データの解釈ルール" in result.system_prompt
+    assert "信頼境界" in result.system_prompt
+    assert "origin_chain" in result.system_prompt

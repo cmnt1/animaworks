@@ -42,19 +42,11 @@ class TestCommunicationRulesTemplate:
 
 
 class TestBehaviorRulesTemplate:
-    def test_has_task_recording_section(self):
-        path = TEMPLATES_DIR / "builder" / "task_recording_chat.md"
-        content = path.read_text(encoding="utf-8")
-        assert "### チャットでのタスク記録" in content
-
     def test_task_recording_rules(self):
-        path = TEMPLATES_DIR / "builder" / "task_recording_chat.md"
-        content = path.read_text(encoding="utf-8")
-        assert "通常チャットは直接対応" in content
-        assert "`backlog_task` で永続追跡" in content
-        assert "完了条件の証跡" in content
         behavior = (TEMPLATES_DIR / "behavior_rules.md").read_text(encoding="utf-8")
-        assert "解決済み案件の再報告禁止" in behavior
+        assert "backlog_task" in behavior
+        assert "完了条件の証跡" in behavior
+        assert "resume" in behavior
 
     def test_existing_sections_preserved(self):
         path = TEMPLATES_DIR / "behavior_rules.md"
@@ -77,10 +69,6 @@ class TestBehaviorRulesTemplate:
             content = "\n".join(
                 (
                     (locale_root / "prompts" / "behavior_rules.md").read_text(encoding="utf-8"),
-                    (locale_root / "prompts" / "builder" / "instruction_internalization.md").read_text(
-                        encoding="utf-8"
-                    ),
-                    (locale_root / "prompts" / "builder" / "task_recording_chat.md").read_text(encoding="utf-8"),
                     (locale_root / "reference" / "operations" / "memory-writing-guide.md").read_text(encoding="utf-8"),
                     (
                         locale_root / "common_knowledge" / "operations" / "action-rule-memory-write-destination.md"
@@ -89,9 +77,10 @@ class TestBehaviorRulesTemplate:
             )
             for token in required:
                 assert token in content, f"{locale} behavior_rules missing {token}"
-            assert "backlog_task" in content
+            behavior = (locale_root / "prompts" / "behavior_rules.md").read_text(encoding="utf-8")
+            assert "backlog_task" in behavior
+            assert "update_task" in behavior
             assert 'update_task(status="in_progress")' not in content
-            assert "`pending`" in content and "`done`" in content
             assert "must be registered with `submit_tasks`" not in content
             assert "必ず `submit_tasks` でタスクキューに登録" not in content
             assert "반드시 `submit_tasks`로 태스크 큐에 등록" not in content
@@ -257,17 +246,6 @@ class TestSkillCreatorTemplate:
 
 
 class TestUnreadMessagesTemplate:
-    def test_has_task_delegation_receipt(self):
-        path = TEMPLATES_DIR / "unread_messages.md"
-        content = path.read_text(encoding="utf-8")
-        assert "### タスク委任の受領" in content
-
-    def test_delegation_receipt_steps(self):
-        path = TEMPLATES_DIR / "unread_messages.md"
-        content = path.read_text(encoding="utf-8")
-        assert "パラフレーズ確認" in content
-        assert "不明点の質問" in content
-
     def test_existing_sections_preserved(self):
         path = TEMPLATES_DIR / "unread_messages.md"
         content = path.read_text(encoding="utf-8")
