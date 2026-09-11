@@ -257,7 +257,6 @@ def cmd_anima_info(args: argparse.Namespace) -> None:
         "G": "G (Gemini CLI)",
         "X": "X (Grok Build CLI)",
         "A": "A (Autonomous)",
-        "B": "B (Basic)",
     }
 
     print(f"Anima:            {name}")

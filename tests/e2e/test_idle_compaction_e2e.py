@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.lifecycle import LifecycleManager
 from core.memory.conversation_compression import CompressionResult
 from core.schemas import CycleResult
 from core.session_compactor import SessionCompactor, run_idle_compaction
@@ -139,11 +138,8 @@ async def test_timer_cancelled_when_new_message_arrives() -> None:
 
 
 @pytest.mark.asyncio
-async def test_lifecycle_shutdown_cancels_all_compaction_timers(anima) -> None:
-    """Register animas, schedule timers, shutdown lifecycle; all timers cancelled."""
-    lifecycle = LifecycleManager()
-    lifecycle.register_anima(anima)
-
+async def test_shutdown_cancels_all_compaction_timers(anima) -> None:
+    """SessionCompactor shutdown cancels all scheduled compaction timers."""
     # Schedule timers for the anima (need event loop for schedule)
     anima._session_compactor.schedule("test-anima", "default", lambda: None)
     anima._session_compactor.schedule("test-anima", "thread-2", lambda: None)
@@ -151,9 +147,7 @@ async def test_lifecycle_shutdown_cancels_all_compaction_timers(anima) -> None:
     assert ("test-anima", "default") in anima._session_compactor._timers
     assert ("test-anima", "thread-2") in anima._session_compactor._timers
 
-    # Patch scheduler.shutdown to avoid SchedulerNotRunningError
-    with patch.object(lifecycle.scheduler, "shutdown"):
-        lifecycle.shutdown()
+    anima._session_compactor.shutdown()
 
     assert len(anima._session_compactor._timers) == 0
 

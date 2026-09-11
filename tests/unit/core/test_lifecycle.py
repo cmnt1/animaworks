@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from core.lifecycle import _parse_cron_md, _parse_schedule
+from core.schedule_parser import parse_cron_md as _parse_cron_md
+from core.schedule_parser import parse_schedule as _parse_schedule
 
 
 class TestParseCronMd:

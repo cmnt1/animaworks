@@ -158,54 +158,26 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "schema.delegate_task.desc": {
         "ja": (
-            "【重要】直属部下のAnimaにタスクを委譲する（部下のTaskExecが実行する。あなた自身は実行しない）。"
-            "部下のタスクキューに追加し、state/pending/ に書き出して即時実行をトリガーする。"
-            "同時にDMで指示を送信。自分側にも追跡用エントリが作成される。直属部下のみ操作可能。"
-            "【instruction必須ルール】TaskExecはMinimalコンテキスト（identity数行+タスク記述のみ）で動作し、"
-            "あなたの会話履歴・DM履歴・短期記憶・Priming結果には一切アクセスできない。"
-            "instructionは完全に自己完結させること。"
-            "禁止: ❌「先ほどの報告内容をベースに」❌「前回の続き」❌「さっきのDMの内容」等の曖昧な参照（実行者はその情報を持たない）。"
-            "必須: ✅具体的データ・本文を直接instructionに埋め込む ✅ファイルパス・完了条件を明記。"
-            "詳細は common_knowledge/operations/task-delegation-guide.md を参照。"
+            "直属部下のAnimaにタスクを委譲する（部下のTaskExecが実行する）。"
+            "詳細は operations/task-delegation-guide.md を参照。"
         ),
         "en": (
-            "IMPORTANT: Delegate a task to a direct subordinate Anima — the SUBORDINATE executes it via their own TaskExec (not you). "
-            "Adds to the subordinate's task queue and writes to state/pending/ to trigger immediate execution. "
-            "Also sends a DM with instructions. A tracking entry is created on your side. Only direct subordinates can be targeted. "
-            "INSTRUCTION RULES: TaskExec runs with Minimal context (identity few lines + task description only) "
-            "and has NO access to your conversation history, DM history, short-term memory, or Priming results. "
-            "The instruction MUST be completely self-contained. "
-            "FORBIDDEN: ❌ 'based on the report you sent earlier' ❌ 'continue from last time' ❌ 'the content from the DM' "
-            "— the executor has NONE of that context. "
-            "REQUIRED: ✅ Embed concrete data/content directly in the instruction ✅ Specify file paths and completion criteria. "
-            "Details: common_knowledge/operations/task-delegation-guide.md."
+            "Delegate a task to a direct subordinate Anima (executed by the subordinate's TaskExec). "
+            "See operations/task-delegation-guide.md for details."
         ),
         "ko": (
-            "【중요】직속 부하 Anima에게 태스크를 위임한다(부하의 TaskExec가 실행. 본인은 실행하지 않음). "
-            "부하의 태스크 큐에 추가하고 state/pending/에 기록하여 즉시 실행을 트리거한다. "
-            "동시에 DM으로 지시를 전송. 본인 측에도 추적용 엔트리가 생성된다. 직속 부하만 대상 가능. "
-            "【instruction 필수 규칙】TaskExec는 Minimal 컨텍스트(identity 수 줄 + 태스크 기술만)로 동작하며, "
-            "대화 이력・DM 이력・단기 기억・Priming 결과에 일절 접근할 수 없다. "
-            "instruction은 완전히 자기 완결적이어야 한다. "
-            "금지: ❌「앞서 보고한 내용을 기반으로」❌「지난번 계속」❌「아까 DM으로 보낸 내용」등 모호한 참조(실행자는 그 정보가 없음). "
-            "필수: ✅구체적 데이터・본문을 직접 instruction에 포함 ✅파일 경로・완료 조건을 명기. "
-            "상세: common_knowledge/operations/task-delegation-guide.md 참조."
+            "직속 부하 Anima에게 태스크를 위임한다(부하의 TaskExec가 실행). "
+            "상세는 operations/task-delegation-guide.md 참조."
         ),
     },
     "schema.submit_tasks.desc": {
         "ja": (
-            "【重要】このツールで投入したタスクはあなた自身のTaskExecが実行します（部下には送られません）。"
-            "部下にタスクを委任する場合は delegate_task を使ってください。"
-            "複数タスクをDAGとして並列/直列実行する。parallel=trueのタスクは同時実行。depends_on指定タスクは依存完了後に実行。"
-            "TaskExecはあなたの会話履歴を持たない。descriptionの書き方は common_knowledge/operations/task-delegation-guide.md を参照（MUST）。"
+            "あなた自身のTaskExecでタスクを投入・実行する（部下には送られない）。"
+            "部下への委任は delegate_task を使う。"
         ),
         "en": (
-            "IMPORTANT: Tasks submitted here are executed by YOUR OWN TaskExec — they are NOT sent to subordinates. "
-            "To delegate work to a subordinate, use delegate_task instead. "
-            "Submit multiple tasks as a DAG for parallel/serial execution. "
-            "Independent tasks with parallel=true run concurrently. "
-            "Tasks with depends_on wait for dependencies to complete."
-            " TaskExec has NO access to your conversation history. For description writing guidelines, read common_knowledge/operations/task-delegation-guide.md (MUST)."
+            "Submit tasks to be executed by your own TaskExec (not sent to subordinates). "
+            "Use delegate_task to delegate work to a subordinate."
         ),
     },
     "schema.delegate_task.instruction": {

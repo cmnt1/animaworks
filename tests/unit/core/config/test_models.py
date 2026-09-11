@@ -118,7 +118,6 @@ class TestAnimaWorksConfig:
         assert isinstance(config.skills.promotion, SkillPromotionConfig)
         assert config.skills.promotion.success_count_threshold == 3
         assert config.skills.promotion.confidence_threshold == 0.8
-        assert config.skills.promotion.auto_activate is False
 
     def test_roundtrip_json(self):
         config = AnimaWorksConfig()
@@ -760,7 +759,8 @@ class TestResolveExecutionModeWildcard:
 
     def test_explicit_override_assisted(self):
         config = AnimaWorksConfig()
-        assert resolve_execution_mode(config, "any-model", "assisted") == "B"
+        # 'assisted' (legacy Mode B name) normalises to A now that B is removed
+        assert resolve_execution_mode(config, "any-model", "assisted") == "A"
 
     def test_explicit_override_legacy_a1(self):
         config = AnimaWorksConfig()
@@ -820,15 +820,16 @@ class TestResolveExecutionModeWildcard:
         assert resolve_execution_mode(config, "ollama/qwen3:30b") == "A"
         assert resolve_execution_mode(config, "ollama/llama4:scout") == "A"
 
-    def test_ollama_b_models(self):
+    def test_ollama_small_models_default_a(self):
         config = AnimaWorksConfig()
-        assert resolve_execution_mode(config, "ollama/qwen3:8b") == "B"
-        assert resolve_execution_mode(config, "ollama/deepseek-r1:14b") == "B"
-        assert resolve_execution_mode(config, "ollama/gemma3:27b") == "B"
+        # Mode B was removed; small local models now default to A
+        assert resolve_execution_mode(config, "ollama/qwen3:8b") == "A"
+        assert resolve_execution_mode(config, "ollama/deepseek-r1:14b") == "A"
+        assert resolve_execution_mode(config, "ollama/gemma3:27b") == "A"
 
-    def test_unknown_model_fallback_b(self):
+    def test_unknown_model_fallback_a(self):
         config = AnimaWorksConfig()
-        assert resolve_execution_mode(config, "totally/unknown-model") == "B"
+        assert resolve_execution_mode(config, "totally/unknown-model") == "A"
 
     def test_config_legacy_values_normalised(self):
         # config.json model_modes with legacy A2 value → normalised to A
@@ -840,14 +841,14 @@ class TestResolveExecutionModeWildcard:
     def test_config_wildcard_overrides_code_default(self):
         with patch("core.config.model_mode._match_models_json", return_value=None):
             config = AnimaWorksConfig(model_modes={"ollama/gemma3*": "A"})
-            # Code default says B for gemma3*, but config.json overrides
+            # Code default says A for gemma3*, but config.json overrides
             assert resolve_execution_mode(config, "ollama/gemma3:27b") == "A"
 
     def test_empty_config_falls_through_to_code(self):
         config = AnimaWorksConfig(model_modes={})
         assert resolve_execution_mode(config, "claude-sonnet-4-6") == "S"
         assert resolve_execution_mode(config, "openai/gpt-4.1") == "A"
-        assert resolve_execution_mode(config, "ollama/qwen3:8b") == "B"
+        assert resolve_execution_mode(config, "ollama/qwen3:8b") == "A"
 
 
 # ── load_model_config ─────────────────────────────────────

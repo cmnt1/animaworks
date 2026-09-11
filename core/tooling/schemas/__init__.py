@@ -23,7 +23,6 @@ from core.tooling.schemas.channel import _channel_tools
 from core.tooling.schemas.converters import (
     to_anthropic_format,
     to_litellm_format,
-    to_text_format,
 )
 from core.tooling.schemas.goal import _goal_tools
 from core.tooling.schemas.loader import (
@@ -94,6 +93,5 @@ __all__ = [
     "load_personal_tool_schemas",
     "to_anthropic_format",
     "to_litellm_format",
-    "to_text_format",
     "submit_tasks_enabled_for_trigger",
 ]

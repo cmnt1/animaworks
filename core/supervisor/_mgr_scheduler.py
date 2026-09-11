@@ -231,7 +231,7 @@ class SchedulerMixin:
         except Exception:
             logger.debug("Housekeeping schedule setup failed", exc_info=True)
 
-        # DM log rotation (mirrors LifecycleManager registration)
+        # DM log rotation
         self.scheduler.add_job(
             self._run_dm_log_rotation,
             CronTrigger(hour=4, minute=30),

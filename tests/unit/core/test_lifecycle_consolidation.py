@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -52,109 +52,6 @@ class TestLifecycleConsolidationIntegration:
 
         weekly_job = next(j for j in jobs if j.id == "system_weekly_integration")
         assert weekly_job.name == "System: Weekly Integration"
-
-    @pytest.mark.asyncio
-    async def test_handle_daily_consolidation_with_config(self, tmp_path: Path):
-        """Test daily consolidation handler respects config settings."""
-        from core.anima import DigitalAnima
-        from core.lifecycle import LifecycleManager
-
-        manager = LifecycleManager()
-
-        # Create mock anima
-        anima_dir = tmp_path / "test_anima"
-        anima_dir.mkdir(parents=True)
-        (anima_dir / "identity.md").write_text("# Test Anima", encoding="utf-8")
-
-        # Mock DigitalAnima
-        mock_anima = MagicMock(spec=DigitalAnima)
-        mock_anima.name = "test_anima"
-        mock_anima.memory = MagicMock()
-        mock_anima.memory.anima_dir = anima_dir
-
-        manager.animas["test_anima"] = mock_anima
-
-        # Mock config to disable consolidation
-        mock_config = MagicMock()
-        mock_consolidation_cfg = MagicMock()
-        mock_consolidation_cfg.daily_enabled = False
-        mock_config.consolidation = mock_consolidation_cfg
-
-        with patch("core.config.load_config", return_value=mock_config):
-            await manager._handle_daily_consolidation()
-
-        # Consolidation should be skipped when disabled
-        # (No exception should be raised)
-
-    @pytest.mark.asyncio
-    async def test_handle_daily_consolidation_with_anima(self, tmp_path: Path):
-        """Test daily consolidation runs for registered anima via run_consolidation."""
-        from core.anima import DigitalAnima
-        from core.lifecycle import LifecycleManager
-
-        manager = LifecycleManager()
-
-        # Create anima directory structure
-        anima_dir = tmp_path / "test_anima"
-        knowledge_dir = anima_dir / "knowledge"
-        knowledge_dir.mkdir(parents=True)
-
-        # Mock anima with run_consolidation() (new Anima-driven flow)
-        mock_anima = MagicMock(spec=DigitalAnima)
-        mock_anima.name = "test_anima"
-        mock_anima.memory = MagicMock()
-        mock_anima.memory.anima_dir = anima_dir
-        # run_consolidation side-effect: simulate knowledge file creation
-        mock_result = MagicMock()
-        mock_result.duration_ms = 1234
-        mock_result.summary = "Consolidated 3 episodes"
-
-        async def _fake_run_consolidation(**kwargs):
-            # Simulate the Anima writing a knowledge file during consolidation
-            kf = knowledge_dir / "test-knowledge.md"
-            kf.write_text(
-                "---\nauto_consolidated: true\n---\n# Test Knowledge\n\nTest content from consolidation\n",
-                encoding="utf-8",
-            )
-            return mock_result
-
-        mock_anima.run_consolidation = AsyncMock(side_effect=_fake_run_consolidation)
-
-        manager.animas["test_anima"] = mock_anima
-
-        # Mock config to enable consolidation
-        mock_config = MagicMock()
-        mock_consolidation_cfg = MagicMock()
-        mock_consolidation_cfg.daily_enabled = True
-        mock_consolidation_cfg.min_episodes_threshold = 1
-        mock_config.consolidation = mock_consolidation_cfg
-
-        gate = SimpleNamespace(
-            should_run=True,
-            activity_count=3,
-            episode_count=0,
-            carryover_count=0,
-            threshold=1,
-        )
-
-        with (
-            patch("core.config.load_config", return_value=mock_config),
-            patch("core.lifecycle.system_consolidation.should_skip_inactive_consolidation", return_value=False),
-            patch("core.lifecycle.system_consolidation.evaluate_daily_consolidation_gate", return_value=gate),
-            patch("core.lifecycle.system_consolidation.run_daily_consolidation_post_processing", AsyncMock()),
-        ):
-            await manager._handle_daily_consolidation()
-
-        # Verify anima.run_consolidation was called
-        mock_anima.run_consolidation.assert_called_once()
-
-        # Verify knowledge file was created by the (mocked) Anima
-        knowledge_file = knowledge_dir / "test-knowledge.md"
-        assert knowledge_file.exists()
-        content = knowledge_file.read_text(encoding="utf-8")
-        assert "Test Knowledge" in content
-        assert "auto_consolidated: true" in content
-
 
 def test_resolve_post_processing_cooldown_seconds() -> None:
     from core.lifecycle.system_consolidation import resolve_post_processing_cooldown_seconds

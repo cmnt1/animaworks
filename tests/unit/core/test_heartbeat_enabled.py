@@ -16,18 +16,9 @@ from core.config.models import (
     CredentialConfig,
     resolve_anima_config,
 )
-from core.lifecycle.scheduler import SchedulerMixin
 from core.memory.config_reader import ConfigReader
 from core.schemas import ModelConfig
 from core.time_utils import get_app_timezone
-
-
-class _SchedulerHarness(SchedulerMixin):
-    def __init__(self) -> None:
-        self.scheduler = AsyncIOScheduler(timezone=get_app_timezone())
-
-    async def _heartbeat_wrapper(self, name: str) -> None:
-        pass
 
 
 def _anima(name: str, *, heartbeat_enabled: bool) -> MagicMock:
@@ -95,49 +86,6 @@ def test_heartbeat_enabled_propagates_to_runtime_model_config(tmp_path) -> None:
         model_config = ConfigReader(tmp_path).read_model_config()
 
     assert model_config.heartbeat_enabled is False
-
-
-def test_heartbeat_disable_skips_periodic_job() -> None:
-    harness = _SchedulerHarness()
-    anima = _anima("alice", heartbeat_enabled=False)
-
-    with patch(
-        "core.lifecycle.scheduler.load_config",
-        return_value=SimpleNamespace(heartbeat=SimpleNamespace(interval_minutes=30)),
-    ):
-        harness._setup_heartbeat(anima)
-
-    assert harness.scheduler.get_job("alice_heartbeat") is None
-
-
-def test_heartbeat_enabled_registers_periodic_job() -> None:
-    harness = _SchedulerHarness()
-    anima = _anima("alice", heartbeat_enabled=True)
-
-    with patch(
-        "core.lifecycle.scheduler.load_config",
-        return_value=SimpleNamespace(heartbeat=SimpleNamespace(interval_minutes=30)),
-    ):
-        harness._setup_heartbeat(anima)
-
-    assert harness.scheduler.get_job("alice_heartbeat") is not None
-
-
-def test_heartbeat_disable_removes_existing_periodic_job() -> None:
-    harness = _SchedulerHarness()
-    anima = _anima("alice", heartbeat_enabled=True)
-
-    with patch(
-        "core.lifecycle.scheduler.load_config",
-        return_value=SimpleNamespace(heartbeat=SimpleNamespace(interval_minutes=30)),
-    ):
-        harness._setup_heartbeat(anima)
-        assert harness.scheduler.get_job("alice_heartbeat") is not None
-
-        anima.memory.read_model_config.return_value = ModelConfig(heartbeat_enabled=False)
-        harness._setup_heartbeat(anima)
-
-    assert harness.scheduler.get_job("alice_heartbeat") is None
 
 
 # ── Supervisor-mode scheduler (core/supervisor/scheduler_manager.py) ─────────

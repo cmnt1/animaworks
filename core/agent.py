@@ -62,7 +62,6 @@ class AgentCore(
       - S  (SDK, Claude):             ``AgentSDKExecutor``
       - C/D/G/X:                     engine-specific native CLI/SDK adapters
       - A  (autonomous, non-Claude):   ``LiteLLMExecutor``
-      - B  (basic):                    ``AssistedExecutor``
 
     Missing engines use only an explicitly configured fallback route.
     """

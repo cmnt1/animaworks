@@ -9,11 +9,28 @@ Post-call: episode recording and knowledge extraction.
 
 from __future__ import annotations
 
-from core.time_utils import now_jst, today_local
+from contextlib import contextmanager
 
 import pytest
 
+from core.time_utils import now_jst, today_local
 from tests.helpers.mocks import make_litellm_response, patch_litellm
+
+
+@contextmanager
+def _capture_system_prompt(main_resp, captured_system):
+    """Patch litellm.acompletion and record the first system message sent."""
+    with patch_litellm(main_resp) as mock_acompletion:
+
+        async def wrapped(messages=None, **kwargs):
+            for msg in messages or []:
+                if msg.get("role") == "system":
+                    captured_system.append(msg.get("content"))
+                    break
+            return main_resp
+
+        mock_acompletion.side_effect = wrapped
+        yield
 
 
 class TestModeBMock:
@@ -177,141 +194,3 @@ class TestModeBOllamaLive:
         assert result.action == "responded"
 
 
-class TestModeBSkillInjection:
-    """Tests for skill section injection in Mode B system prompt."""
-
-    async def test_personal_skill_in_system_prompt(self, make_agent_core):
-        """Mode B includes personal skills in system prompt."""
-        agent = make_agent_core(
-            name="b-skill-personal",
-            model="ollama/gemma3:27b",
-            execution_mode="assisted",
-        )
-        # Create a personal skill (directory structure)
-        (agent.anima_dir / "skills" / "test_skill").mkdir(parents=True, exist_ok=True)
-        (agent.anima_dir / "skills" / "test_skill" / "SKILL.md").write_text(
-            "# Test Skill\n## 概要\n[test, validation, check]\nA test skill for validation\n## 手順\n1. Do something",
-            encoding="utf-8",
-        )
-
-        main_resp = make_litellm_response(content="Response with skills.")
-
-        captured_system = []
-        original_call = agent._executor._call_llm
-
-        async def capture_call(messages, **kwargs):
-            for msg in messages:
-                if msg.get("role") == "system":
-                    captured_system.append(msg["content"])
-                    break
-            return await original_call(messages, **kwargs)
-
-        agent._executor._call_llm = capture_call
-
-        with patch_litellm(main_resp):
-            await agent.run_cycle("I need to run a test validation check")
-
-        assert len(captured_system) >= 1
-        sys_prompt = captured_system[0]
-        # Personal skills appear in system prompt catalog
-        assert "Available Skills" in sys_prompt or "<available_skills>" in sys_prompt
-        assert "test_skill" in sys_prompt
-
-    async def test_common_skill_in_system_prompt(self, make_agent_core, data_dir):
-        """Mode B includes common skills in system prompt."""
-        agent = make_agent_core(
-            name="b-skill-common",
-            model="ollama/gemma3:27b",
-            execution_mode="assisted",
-        )
-        # Create a common skill
-        common_skills_dir = data_dir / "common_skills"
-        common_skills_dir.mkdir(exist_ok=True)
-        (common_skills_dir / "shared_skill" / "SKILL.md").parent.mkdir(parents=True, exist_ok=True)
-        (common_skills_dir / "shared_skill" / "SKILL.md").write_text(
-            "# Shared\n## 概要\nA shared skill for all animas\n## 手順\n1. Step",
-            encoding="utf-8",
-        )
-
-        main_resp = make_litellm_response(content="Response with common skills.")
-
-        captured_system = []
-        original_call = agent._executor._call_llm
-
-        async def capture_call(messages, **kwargs):
-            for msg in messages:
-                if msg.get("role") == "system":
-                    captured_system.append(msg["content"])
-                    break
-            return await original_call(messages, **kwargs)
-
-        agent._executor._call_llm = capture_call
-
-        with patch_litellm(main_resp):
-            await agent.run_cycle("I need help with a shared skill for all animas")
-
-        assert len(captured_system) >= 1
-        sys_prompt = captured_system[0]
-        assert "共通" in sys_prompt
-        assert "shared_skill" in sys_prompt
-        assert "A shared skill for all animas" in sys_prompt
-
-    async def test_no_skills_no_section(self, make_agent_core):
-        """Mode B omits skill sections when no skills exist."""
-        agent = make_agent_core(
-            name="b-no-skills",
-            model="ollama/gemma3:27b",
-            execution_mode="assisted",
-        )
-
-        main_resp = make_litellm_response(content="Response without skills.")
-
-        captured_system = []
-        original_call = agent._executor._call_llm
-
-        async def capture_call(messages, **kwargs):
-            for msg in messages:
-                if msg.get("role") == "system":
-                    captured_system.append(msg["content"])
-                    break
-            return await original_call(messages, **kwargs)
-
-        agent._executor._call_llm = capture_call
-
-        with patch_litellm(main_resp):
-            await agent.run_cycle("Hello")
-
-        assert len(captured_system) >= 1
-        sys_prompt = captured_system[0]
-        # Verify no skill table sections are injected when no skills exist.
-        # Use section headers to avoid false positives from environment/directory
-        # descriptions that mention "スキル" in passing.
-        assert "## あなたのスキル" not in sys_prompt
-        assert "## 共通スキル\n" not in sys_prompt
-
-
-class TestModeBAzureLive:
-    """Mode B tests using Azure OpenAI API."""
-
-    @pytest.mark.live
-    @pytest.mark.azure
-    @pytest.mark.timeout(60)
-    async def test_live_azure_assisted_response(self, make_agent_core):
-        """Live Mode B: Azure OpenAI gpt-4.1 in assisted mode."""
-        pytest.importorskip("litellm")
-        import os
-
-        agent = make_agent_core(
-            name="b-azure-live",
-            model="azure/gpt-4.1",
-            credential="azure",
-            execution_mode="assisted",
-            api_base_url=os.environ.get("AZURE_API_BASE", ""),
-        )
-
-        result = await agent.run_cycle(
-            "Reply with exactly: ANIMAWORKS_AZURE_B_TEST_OK"
-        )
-
-        assert result.summary
-        assert result.action == "responded"

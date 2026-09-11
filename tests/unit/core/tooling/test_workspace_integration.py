@@ -244,46 +244,6 @@ class TestDelegateTaskWorkspace:
         assert "Workspace" in result or "workspace" in result.lower()
 
 
-# ── TestInterceptWorkingDirectory ─────────────────────────────────
-
-
-class TestInterceptWorkingDirectory:
-    """_intercept_task_to_pending includes working_directory in task JSON."""
-
-    def test_intercept_includes_working_directory_key(self, tmp_path: Path) -> None:
-        """Intercepted task JSON has working_directory key."""
-        from core.execution._sdk_hooks import _intercept_task_to_pending
-
-        anima_dir = tmp_path / "animas" / "test"
-        (anima_dir / "state" / "pending").mkdir(parents=True)
-
-        task_id = _intercept_task_to_pending(
-            anima_dir,
-            {"description": "Background task", "prompt": "Do X"},
-            tool_use_id=None,
-        )
-        pending_path = anima_dir / "state" / "pending" / f"{task_id}.json"
-        assert not pending_path.exists()
-        task_json = TaskQueueManager(anima_dir).store.get_input(anima_dir.name, task_id)
-        assert "working_directory" in task_json
-        assert task_json["working_directory"] == ""
-
-    def test_working_directory_defaults_to_empty_string(self, tmp_path: Path) -> None:
-        """working_directory in intercepted task defaults to empty string."""
-        from core.execution._sdk_hooks import _intercept_task_to_pending
-
-        anima_dir = tmp_path / "animas" / "a"
-        (anima_dir / "state" / "pending").mkdir(parents=True)
-
-        task_id = _intercept_task_to_pending(
-            anima_dir,
-            {"description": "Task", "prompt": "Task"},
-            tool_use_id=None,
-        )
-        task_json = TaskQueueManager(anima_dir).store.get_input(anima_dir.name, task_id)
-        assert task_json["working_directory"] == ""
-
-
 # ── TestTaskExecPromptInjection ─────────────────────────────────
 
 

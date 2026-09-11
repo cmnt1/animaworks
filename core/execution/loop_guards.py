@@ -257,8 +257,7 @@ class RunawayGuard:
     """Detect repeated tool-call turns consecutively or within a window.
 
     A *turn signature* is the ordered tuple of per-call signatures in one
-    assistant turn (Mode B turns carry exactly one call, so this degenerates
-    to per-call tracking).  Consecutive identical turns advance a streak.
+    assistant turn.  Consecutive identical turns advance a streak.
     Independently, each signature is counted in a sliding window so
     interleaved or slightly varied loops are also bounded.  The two detectors
     are combined with OR semantics.
