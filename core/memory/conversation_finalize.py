@@ -360,11 +360,7 @@ async def finalize_session(
 
     from core.memory.conversation_state_update import (
         _record_resolutions,
-        _update_state_from_summary,
     )
-
-    if parsed.has_state_changes:
-        _update_state_from_summary(anima_dir, memory_mgr, parsed)
 
     if parsed.resolved_items:
         _record_resolutions(anima_dir, memory_mgr, parsed.resolved_items)

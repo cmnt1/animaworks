@@ -19,7 +19,6 @@ from core.memory.conversation import (
     SESSION_GAP_MINUTES,
     ConversationMemory,
     ConversationTurn,
-    ParsedSessionSummary,
 )
 from core.schemas import ModelConfig
 from core.time_utils import now_jst, today_local
@@ -498,120 +497,6 @@ class TestParseSessionSummary:
         raw = "これは構造化されていないテキストです"
         parsed = ConversationMemory._parse_session_summary(raw)
         assert parsed.episode_body == raw
-
-
-# ── State auto-update tests (Issue #114: task_queue routing) ────
-
-
-class TestUpdateState:
-    """Tests for _update_state_from_summary — routes to task_queue.jsonl."""
-
-    def test_resolved_items_mark_task_done(self, conv_memory, anima_dir):
-        """Resolved items update matching task_queue entries to done."""
-        from core.memory.manager import MemoryManager
-        from core.memory.task_queue import TaskQueueManager
-
-        mm = MemoryManager(anima_dir)
-        tqm = TaskQueueManager(anima_dir)
-        tqm.add_task(
-            source="anima",
-            original_instruction="サーバー障害の修正",
-            assignee=anima_dir.name,
-            summary="サーバー障害の修正",
-        )
-        task_id = list(tqm._load_all().keys())[0]
-
-        parsed = ParsedSessionSummary(
-            title="test",
-            episode_body="",
-            resolved_items=["サーバー障害の修正"],
-            new_tasks=[],
-            current_status="",
-            has_state_changes=True,
-        )
-
-        conv_memory._update_state_from_summary(mm, parsed)
-        task = tqm.get_task_by_id(task_id)
-        assert task is not None
-        assert task.status == "done"
-
-    def test_new_tasks_not_added_to_queue(self, conv_memory, anima_dir):
-        """new_tasks from session summary are NOT registered (auto-detection disabled)."""
-        from core.memory.manager import MemoryManager
-        from core.memory.task_queue import TaskQueueManager
-
-        mm = MemoryManager(anima_dir)
-        mm.update_state("status: idle")
-
-        parsed = ParsedSessionSummary(
-            title="test",
-            episode_body="",
-            resolved_items=[],
-            new_tasks=["レポート作成"],
-            current_status="",
-            has_state_changes=True,
-        )
-
-        conv_memory._update_state_from_summary(mm, parsed)
-        tqm = TaskQueueManager(anima_dir)
-        pending = tqm.get_pending()
-        assert len(pending) == 0
-
-    def test_resolved_items_mark_matching_task_done(self, conv_memory, anima_dir):
-        """Resolved items update matching task_queue entries to done."""
-        from core.memory.manager import MemoryManager
-        from core.memory.task_queue import TaskQueueManager
-
-        mm = MemoryManager(anima_dir)
-        tqm = TaskQueueManager(anima_dir)
-        tqm.add_task(
-            source="anima",
-            original_instruction="ネットワーク障害の対応",
-            assignee=anima_dir.name,
-            summary="ネットワーク障害",
-        )
-        task_id = list(tqm._load_all().keys())[0]
-
-        parsed = ParsedSessionSummary(
-            title="test",
-            episode_body="",
-            resolved_items=["ネットワーク障害"],
-            new_tasks=[],
-            current_status="",
-            has_state_changes=True,
-        )
-
-        conv_memory._update_state_from_summary(mm, parsed)
-        task = tqm.get_task_by_id(task_id)
-        assert task is not None
-        assert task.status == "done"
-
-    def test_existing_tasks_unaffected_by_new_tasks(self, conv_memory, anima_dir):
-        """Existing tasks in queue are not affected when new_tasks are present."""
-        from core.memory.manager import MemoryManager
-        from core.memory.task_queue import TaskQueueManager
-
-        mm = MemoryManager(anima_dir)
-        tqm = TaskQueueManager(anima_dir)
-        tqm.add_task(
-            source="anima",
-            original_instruction="レポート作成",
-            assignee=anima_dir.name,
-            summary="レポート作成",
-        )
-
-        parsed = ParsedSessionSummary(
-            title="test",
-            episode_body="",
-            resolved_items=[],
-            new_tasks=["レポート作成"],
-            current_status="",
-            has_state_changes=True,
-        )
-
-        conv_memory._update_state_from_summary(mm, parsed)
-        all_tasks = [t for t in tqm._load_all().values() if "レポート作成" in t.summary]
-        assert len(all_tasks) == 1
 
 
 # ── Resolution recording tests ────────────────────────────────

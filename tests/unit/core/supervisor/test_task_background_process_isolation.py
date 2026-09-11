@@ -169,7 +169,6 @@ async def test_task_flag_false_preserves_legacy_path_without_spawn(tmp_path: Pat
     with (
         patch.object(executor, "_run_llm_task", new=AsyncMock(return_value="done")) as run_llm,
         patch.object(executor, "_sync_task_queue"),
-        patch.object(executor, "_handle_goal_completion", new=AsyncMock()),
     ):
         await executor._execute_llm_task(task_desc)
 
@@ -205,7 +204,6 @@ async def test_task_flag_true_uses_child_result_without_root_llm(tmp_path: Path)
     with (
         patch.object(executor, "_run_llm_task", new=AsyncMock()) as run_llm,
         patch.object(executor, "_sync_task_queue") as sync,
-        patch.object(executor, "_handle_goal_completion", new=AsyncMock()),
     ):
         await executor._execute_llm_task(task_desc, processing_path=processing_path)
 
@@ -363,7 +361,6 @@ async def test_lease_v2_written_on_spawn_callback(tmp_path: Path) -> None:
     executor._task_runner_supervisor.run_task = AsyncMock(side_effect=_fake_run_task)
     with (
         patch.object(executor, "_sync_task_queue"),
-        patch.object(executor, "_handle_goal_completion", new=AsyncMock()),
     ):
         await executor._execute_llm_task(
             {"task_id": "t-lease", "title": "x", "description": "y", "task_type": "llm"},

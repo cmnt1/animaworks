@@ -120,14 +120,13 @@ async def channel_e_pending_tasks(
     """
     parts: list[str] = []
     task_updates: dict[str, str] = {}
-    resolver = None
     denied_roots = load_denied_roots(anima_dir)
     unresolved_queue_path = anima_dir / "state" / "task_queue.jsonl"
     queue_path = _resolved_readable_path(unresolved_queue_path, denied_roots)
     if denied_roots and unresolved_queue_path.is_symlink():
         queue_path = None
 
-    from core.taskboard.attention_resolver import taskboard_db_path_for_anima
+    from core.taskboard.store import taskboard_db_path_for_anima
     from core.taskboard.tasks import task_database_path
 
     taskboard_path = _resolved_readable_path(taskboard_db_path_for_anima(anima_dir), denied_roots)
@@ -136,24 +135,22 @@ async def channel_e_pending_tasks(
     try:
         if queue_path is None or task_store_path is None or taskboard_path is None:
             raise PermissionError("pending task source is explicitly denied")
-        from core.taskboard.attention_resolver import AttentionResolver
         from core.taskboard.formatting import format_tasks_for_priming
         from core.taskboard.projector import project_anima
         from core.taskboard.store import TaskBoardStore
 
-        resolver = AttentionResolver(TaskBoardStore(taskboard_path))
+        store = TaskBoardStore(taskboard_path)
         board_tasks = await asyncio.to_thread(
             project_anima,
             anima_dir,
-            resolver.store,
+            store,
             anima_name=anima_dir.name,
             include_missing=True,
             include_archived=True,
         )
-        visible_tasks = resolver.filter_for_priming(anima_dir.name, board_tasks, now_local())
-        task_updates.update({task.task_id: task.queue_updated_at or "" for task in visible_tasks})
+        task_updates.update({task.task_id: task.queue_updated_at or "" for task in board_tasks})
         animas_dir = anima_dir.parent if anima_dir.parent.name == "animas" else get_animas_dir()
-        queue_summary = format_tasks_for_priming(visible_tasks, _ITEM_COLLECTION_BUDGET, animas_dir=animas_dir)
+        queue_summary = format_tasks_for_priming(board_tasks, _ITEM_COLLECTION_BUDGET, animas_dir=animas_dir)
         if queue_summary:
             parts.append(queue_summary)
     except Exception:
@@ -245,7 +242,7 @@ async def channel_e_pending_tasks(
                         readable_result_files.append(resolved)
                         canonical_ids[resolved] = entry.task_id
             for rf in sorted(readable_result_files, key=lambda p: p.stat().st_mtime, reverse=True):
-                if _should_show_task_result(anima_dir, rf, resolver, now, task_id=canonical_ids.get(rf)):
+                if _should_show_task_result(rf, now):
                     result_files.append(rf)
                 if len(result_files) >= 5:
                     break
@@ -270,28 +267,11 @@ async def channel_e_pending_tasks(
     return ItemizedMemory(render_items(items, ""), items) if items else ""
 
 
-def _should_show_task_result(
-    anima_dir: Path, result_file: Path, resolver: object | None, now: datetime, *, task_id: str | None = None
-) -> bool:
+def _should_show_task_result(result_file: Path, now: datetime) -> bool:
+    """Return whether a task_results entry is fresh enough for Channel E injection."""
     try:
         result_mtime = result_file.stat().st_mtime
     except OSError:
         return False
-
-    if resolver is None:
-        modified_at = datetime.fromtimestamp(result_mtime, tz=now.tzinfo)
-        return now - modified_at <= timedelta(hours=24)
-
-    try:
-        return bool(
-            resolver.should_show_task_result(
-                anima_dir.name,
-                task_id or result_file.stem,
-                result_mtime,
-                now,
-            )
-        )
-    except Exception:
-        logger.debug("Channel E: TaskBoard task_result gate failed", exc_info=True)
-        modified_at = datetime.fromtimestamp(result_mtime, tz=now.tzinfo)
-        return now - modified_at <= timedelta(hours=24)
+    modified_at = datetime.fromtimestamp(result_mtime, tz=now.tzinfo)
+    return now - modified_at <= timedelta(hours=24)

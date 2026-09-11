@@ -506,3 +506,11 @@ def _json_safe_updates(updates: Mapping[str, Any]) -> dict[str, Any]:
         else:
             safe[key] = value
     return safe
+
+
+def taskboard_db_path_for_anima(anima_dir: Path | str) -> Path:
+    """Resolve the shared TaskBoard DB path for a per-Anima directory."""
+    resolved = Path(anima_dir)
+    if resolved.parent.name == "animas":
+        return resolved.parent.parent / "shared" / "taskboard.sqlite3"
+    return get_taskboard_db_path()

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from core.memory.priming import PrimingEngine
-from core.taskboard.attention_resolver import notification_key_for
+from core.notification import notification_key_for
 from core.taskboard.store import TaskBoardStore
 from core.time_utils import now_iso, now_local
 
@@ -23,7 +23,8 @@ def _write_activity(anima_dir: Path, entries: list[dict]) -> None:
 
 
 @pytest.mark.asyncio
-async def test_human_notify_suppresses_same_notification_key_for_24h(tmp_path: Path) -> None:
+async def test_human_notify_surfaces_even_after_same_key_notified(tmp_path: Path) -> None:
+    """Human notifications are shown regardless of prior notification_key metadata."""
     data_dir = tmp_path / "data"
     anima_dir = data_dir / "animas" / "rin"
     (anima_dir / "activity_log").mkdir(parents=True)
@@ -50,11 +51,12 @@ async def test_human_notify_suppresses_same_notification_key_for_24h(tmp_path: P
 
     result = await PrimingEngine(anima_dir)._collect_pending_human_notifications(channel="chat")
 
-    assert result == ""
+    assert "Please check deployment" in result
 
 
 @pytest.mark.asyncio
-async def test_human_notify_suppresses_subject_body_key_from_activity_meta(tmp_path: Path) -> None:
+async def test_human_notify_surfaces_with_subject_body_key_meta(tmp_path: Path) -> None:
+    """Human notifications are shown even when notification_key metadata is present."""
     data_dir = tmp_path / "data"
     anima_dir = data_dir / "animas" / "rin"
     (anima_dir / "activity_log").mkdir(parents=True)
@@ -83,7 +85,7 @@ async def test_human_notify_suppresses_subject_body_key_from_activity_meta(tmp_p
 
     result = await PrimingEngine(anima_dir)._collect_pending_human_notifications(channel="chat")
 
-    assert result == ""
+    assert "Please check deployment" in result
 
 
 @pytest.mark.asyncio
@@ -116,7 +118,7 @@ async def test_human_notify_allows_new_body(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_human_notify_gate_fails_open_when_taskboard_db_is_corrupt(tmp_path: Path) -> None:
+async def test_human_notify_surfaces_when_taskboard_db_is_corrupt(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     anima_dir = data_dir / "animas" / "rin"
     (anima_dir / "activity_log").mkdir(parents=True)

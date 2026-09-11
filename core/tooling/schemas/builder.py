@@ -15,7 +15,6 @@ from core.prompt.tool_content import apply_prompt_descriptions
 from core.skills.trust_gate import trust_skill_enabled_for_trigger
 from core.tooling.schemas.admin import _AW_CORE_NAMES, ADMIN_TOOLS, CC_TOOLS
 from core.tooling.schemas.channel import _channel_tools
-from core.tooling.schemas.goal import _goal_tools
 from core.tooling.schemas.memory import (
     FILE_TOOLS,
     KNOWLEDGE_TOOLS,
@@ -42,7 +41,7 @@ from core.tooling.schemas.task import _submit_tasks_tools, _task_tools
 from core.tooling.schemas.workspace import WORKSPACE_TOOLS
 
 _CONSOLIDATION_BLOCKED_TOOLS: frozenset[str] = frozenset(
-    {"delegate_task", "submit_tasks", "goal", "send_message", "post_channel"}
+    {"delegate_task", "submit_tasks", "send_message", "post_channel"}
 )
 
 _COMPACT_COMM_TOOLS: frozenset[str] = frozenset(
@@ -93,7 +92,6 @@ def build_tool_list(
     include_tool_management: bool = False,
     include_task_tools: bool = False,
     include_submit_tasks: bool = False,
-    include_goal_tools: bool = False,
     include_background_task_tools: bool = False,
     include_vault_tools: bool = False,
     include_create_skill: bool = False,
@@ -114,7 +112,6 @@ def build_tool_list(
         include_task_tools: Include task queue tools (backlog_task, update_task, list_tasks).
         include_submit_tasks: Include submit_tasks DAG batch submission tool
             only for explicit background task-authoring triggers.
-        include_goal_tools: Include persistent goal loop tool.
         include_background_task_tools: Include background task check/list tools.
         include_vault_tools: Include credential vault tools (get/store/list).
         include_create_skill: Include create_skill tool.
@@ -153,8 +150,6 @@ def build_tool_list(
         tools.extend(_task_tools())
     if include_submit_tasks and submit_tasks_enabled_for_trigger(trigger) and not is_consolidation:
         tools.extend(_submit_tasks_tools())
-    if (include_goal_tools or include_task_tools) and not is_consolidation:
-        tools.extend(_goal_tools())
     if include_background_task_tools:
         tools.extend(_background_task_tools())
     if include_vault_tools:
@@ -237,7 +232,6 @@ def build_unified_tool_list(
     if not is_consolidation:
         if submit_tasks_enabled_for_trigger(trigger):
             tools.extend(_submit_tasks_tools())
-        tools.extend(_goal_tools())
     for t in _task_tools():
         if t["name"] in {"update_task", "list_tasks"}:
             tools.append(t)

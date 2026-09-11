@@ -102,7 +102,7 @@ async def collect_pending_human_notifications(anima_dir: Path, *, channel: str =
         return ""
 
     from core.memory.activity import ActivityLogger
-    from core.taskboard.attention_resolver import notification_key_for, resolver_for_anima_dir
+    from core.notification import notification_key_for
 
     activity = ActivityLogger(anima_dir)
     entries = activity.recent(days=1, limit=10, types=["human_notify"])
@@ -111,11 +111,6 @@ async def collect_pending_human_notifications(anima_dir: Path, *, channel: str =
 
     items: list[MemoryItem] = []
     header = "## Pending Human Notifications (last 24h)"
-    try:
-        resolver = resolver_for_anima_dir(anima_dir)
-    except Exception:
-        logger.debug("TaskBoard human_notify gate unavailable; using activity entries as-is", exc_info=True)
-        resolver = None
 
     for entry in reversed(entries):
         ts = entry.ts[:16]
@@ -123,8 +118,6 @@ async def collect_pending_human_notifications(anima_dir: Path, *, channel: str =
         via = entry.via or ""
         subject = str(entry.meta.get("subject") or "")
         notification_key = str(entry.meta.get("notification_key") or notification_key_for(subject, body))
-        if resolver is not None and not resolver.should_show_human_notify(anima_dir.name, notification_key, entry.ts):
-            continue
         line = f"[{ts}] call_human (via {via}):\n{body}"
         items.append(
             MemoryItem(

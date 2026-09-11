@@ -64,7 +64,6 @@ from core.tooling.handler_base import (  # noqa: F401
 # ── Import Mixins ──
 from core.tooling.handler_comms import CommsToolsMixin
 from core.tooling.handler_files import FileToolsMixin
-from core.tooling.handler_goals import GoalsToolsMixin
 from core.tooling.handler_memory import MemoryToolsMixin
 from core.tooling.handler_org import OrgToolsMixin
 from core.tooling.handler_perms import PermissionsMixin
@@ -96,7 +95,6 @@ class ToolHandler(
     CommsToolsMixin,
     OrgToolsMixin,
     SkillsToolsMixin,
-    GoalsToolsMixin,
     WorkspaceToolsMixin,
     FileToolsMixin,
     PermissionsMixin,
@@ -269,7 +267,6 @@ class ToolHandler(
             "unblock_skill": self._handle_unblock_skill,
             "delete_skill": self._handle_delete_skill,
             "set_skill_lifecycle": self._handle_set_skill_lifecycle,
-            "goal": self._handle_goal,
             "backlog_task": self._handle_backlog_task,
             "update_task": self._handle_update_task,
             "list_tasks": self._handle_list_tasks,
@@ -684,7 +681,7 @@ class ToolHandler(
                     meta=meta or None,
                 )
             elif name == "call_human":
-                from core.taskboard.attention_resolver import notification_key_for
+                from core.notification import notification_key_for
 
                 body = args.get("body", "")
                 subject = args.get("subject", "")
