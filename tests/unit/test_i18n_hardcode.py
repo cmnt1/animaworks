@@ -74,8 +74,6 @@ _REGEX_METACHAR_RE = re.compile(
 # When you fix violations, lower the count so the ratchet tightens.
 
 KNOWN_VIOLATIONS: dict[str, int] = {
-    # guardrail note detection prefixes (NLP marker data, not user-facing text)
-    "core/memory/priming/format.py": 1,
     # bilingual empty-state placeholders for prompt injection (ja/en)
     "core/_anima_lifecycle.py": 2,
     # command templates with {返信内容} — borderline (platform-specific CLI syntax)

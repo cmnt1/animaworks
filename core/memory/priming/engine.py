@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -20,9 +20,6 @@ from core.file_access_policy import find_denied_root, load_denied_roots
 from core.i18n import t
 
 # Import submodules directly to avoid circular import when package __init__ loads engine
-from core.memory.priming import (
-    budget as _budget,
-)
 from core.memory.priming import (
     channel_a as _channel_a,
 )
@@ -44,30 +41,13 @@ from core.memory.priming import (
 from core.memory.priming import (
     outbound as _outbound,
 )
-from core.memory.priming.consolidate import consolidate_items
 from core.memory.priming.constants import (
     _BUDGET_GRAPH_CONTEXT,
-    _BUDGET_GREETING,
-    _BUDGET_HEARTBEAT,
-    _BUDGET_IMPORTANT_KNOWLEDGE,
-    _BUDGET_PENDING_TASKS,
-    _BUDGET_QUESTION,
-    _BUDGET_RECENT_ACTIVITY,
-    _BUDGET_RELATED_EPISODES,
-    _BUDGET_RELATED_KNOWLEDGE,
-    _BUDGET_REQUEST,
-    _BUDGET_SENDER_PROFILE,
     _DEFAULT_MAX_PRIMING_TOKENS,
-)
-from core.memory.priming.gate import (
-    apply_priming_plan,
-    build_candidates_from_result,
-    build_priming_plan,
 )
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items, select_within_budget
 from core.memory.priming.result import PrimingResult
 from core.memory.priming.utils import RetrieverCache, build_queries, extract_keywords, truncate_head, truncate_tail
-from core.prompt.tokens import estimate_tokens
 
 logger = logging.getLogger("animaworks.priming")
 
@@ -106,11 +86,6 @@ class PrimingEngine:
         self._retriever: Any | None = None
         self._retriever_initialized = False
         self._config_loaded = False
-        self._budget_greeting = _BUDGET_GREETING
-        self._budget_question = _BUDGET_QUESTION
-        self._budget_request = _BUDGET_REQUEST
-        self._budget_heartbeat = _BUDGET_HEARTBEAT
-        self._heartbeat_context_pct = 0.05
         self._channel_timeout_seconds = 60.0
         self._get_active_parallel_tasks: Callable[[], dict[str, dict]] | None = None
         self._memory_backend: Any | None = None
@@ -174,17 +149,10 @@ class PrimingEngine:
             # default here without constructing a backend just to skip G.
             return False
 
-    def _load_config_budgets(self) -> None:
+    def _load_channel_timeout(self) -> None:
         if self._config_loaded:
             return
         self._config_loaded = True
-        (
-            self._budget_greeting,
-            self._budget_question,
-            self._budget_request,
-            self._budget_heartbeat,
-            self._heartbeat_context_pct,
-        ) = _budget.load_config_budgets()
         try:
             from core.config.models import load_config
 
@@ -193,7 +161,7 @@ class PrimingEngine:
             logger.debug("Failed to load priming channel timeout; using default", exc_info=True)
 
     async def _run_priming_channel(self, name: str, coro):
-        self._load_config_budgets()
+        self._load_channel_timeout()
         started = time.perf_counter()
         try:
             result = await asyncio.wait_for(coro, timeout=self._channel_timeout_seconds)
@@ -246,33 +214,22 @@ class PrimingEngine:
 
         return await fallback_episodes_and_channels(self.anima_dir, self.shared_dir)
 
-    def _adjust_token_budget(self, message: str, channel: str, *, intent: str = "") -> int:
-        self._load_config_budgets()
-        return _budget.adjust_token_budget(
-            message,
-            channel,
-            self.context_window,
-            intent=intent,
-            budget_greeting=self._budget_greeting,
-            budget_question=self._budget_question,
-            budget_request=self._budget_request,
-            budget_heartbeat=self._budget_heartbeat,
-            heartbeat_context_pct=self._heartbeat_context_pct,
-        )
-
     async def prime_memories(
         self,
         message: str,
         sender_name: str = "human",
         channel: str = "chat",
         intent: str = "",
-        enable_dynamic_budget: bool = False,
         recent_human_messages: list[str] | None = None,
         profile: str = "full",
         max_tokens: int | None = None,
         include_related: bool = True,
     ) -> PrimingResult:
-        """Prime memories based on incoming message."""
+        """Prime memories based on incoming message.
+
+        A single ``max_tokens`` budget governs every itemized channel; pointer
+        cues are intentionally small so the resident surface stays minimal.
+        """
         logger.debug(
             "Priming memories: sender=%s, message_len=%d, channel=%s",
             sender_name,
@@ -280,12 +237,7 @@ class PrimingEngine:
             channel,
         )
 
-        if enable_dynamic_budget:
-            token_budget = self._adjust_token_budget(message, channel, intent=intent)
-        else:
-            token_budget = _DEFAULT_MAX_PRIMING_TOKENS
-        if max_tokens is not None:
-            token_budget = min(token_budget, max_tokens)
+        token_budget = _DEFAULT_MAX_PRIMING_TOKENS if max_tokens is None else max_tokens
 
         if profile == "compact":
             return await self._prime_compact(
@@ -392,162 +344,67 @@ class PrimingEngine:
             if isinstance(r, Exception):
                 logger.warning("Priming channel %s failed: %s", name, r)
 
-        item_channels = {
-            source: channel_items
-            for source, channel_items in (
-                ("important_knowledge", important_items),
-                ("recent_activity", recent_activity_items),
-                ("related_knowledge", related_items),
-                ("related_knowledge_untrusted", untrusted_items),
-                ("pending_tasks", pending_task_items),
-                ("recent_outbound", outbound_items),
-                ("episodes", episode_items),
-                ("pending_human_notifications", notification_items),
-            )
-            if channel_items
-        }
-        raw_result = consolidate_items(
-            PrimingResult(
-                sender_profile=sender_profile,
-                recent_activity=recent_activity,
-                related_knowledge=related_knowledge,
-                related_knowledge_untrusted=related_knowledge_untrusted,
-                pending_tasks=pending_tasks,
-                recent_outbound=recent_outbound,
-                episodes=episodes,
-                pending_human_notifications=pending_human_notifications,
-                graph_context=graph_context,
-                items=item_channels,
-            )
-        )
-        # Plain C0 strings from patched/legacy implementations have no items
-        # for consolidation, so restore them after itemized Channel C rebuilds.
-        if important_knowledge and not important_items:
-            raw_result.related_knowledge = (
-                f"{important_knowledge}\n\n{raw_result.related_knowledge}"
-                if raw_result.related_knowledge
-                else important_knowledge
-            )
-        gate_plan = build_priming_plan(
-            effective_message,
-            channel,
-            intent,
-            build_candidates_from_result(raw_result),
-            recent_human_messages=recent_human_messages,
-        )
-        gated_result = apply_priming_plan(raw_result, gate_plan)
+        # Channel B carries recent-conversation dates in ``updated``; exclude the
+        # same-date episodes from Channel F so recent conversation is not
+        # duplicated by the episode channel.
+        b_dates = {item.updated[:10] for item in recent_activity_items if item.updated}
+        episode_items = tuple(_channel_f.exclude_episodes_for_dates(list(episode_items), b_dates))
 
-        budget_ratio = token_budget / _DEFAULT_MAX_PRIMING_TOKENS
-        budget_profile = int(_BUDGET_SENDER_PROFILE * budget_ratio)
-        budget_activity = max(400, int(_BUDGET_RECENT_ACTIVITY * budget_ratio))
-        budget_knowledge = int(_BUDGET_RELATED_KNOWLEDGE * budget_ratio)
-        budget_tasks = int(_BUDGET_PENDING_TASKS * budget_ratio)
-        budget_episodes = int(_BUDGET_RELATED_EPISODES * budget_ratio)
+        final_items: dict[str, tuple[MemoryItem, ...]] = {}
 
-        final_items: dict[str, tuple[MemoryItem, ...]] = dict(gated_result.items)
-
-        def itemized_or_truncated(
+        def _select(
             source: str,
+            items: Sequence[MemoryItem],
             text: str,
-            budget: int,
             *,
             header: str = "",
             tail: bool = False,
         ) -> str:
-            if source not in gated_result.items:
-                return truncate_tail(text, budget) if tail else truncate_head(text, budget)
+            if items:
+                selected = select_within_budget(items, token_budget)
+                final_items[source] = tuple(selected)
+                return render_items(selected, header)
+            final_items[source] = ()
             if not text:
-                final_items[source] = ()
                 return ""
-            available = max(0, budget - estimate_tokens(header))
-            selected = select_within_budget(gated_result.items[source], available)
-            if source in {"recent_outbound", "pending_human_notifications"}:
-                selected.sort(key=lambda item: item.updated)
-            while selected and estimate_tokens(render_items(selected, header)) > budget:
-                selected.pop()
-            final_items[source] = tuple(selected)
-            return render_items(selected, header)
+            return truncate_tail(text, token_budget) if tail else truncate_head(text, token_budget)
 
-        knowledge_visible = bool(gated_result.related_knowledge)
-        important_budget = min(budget_knowledge, int(_BUDGET_IMPORTANT_KNOWLEDGE * budget_ratio))
         if important_items:
-            important_text = itemized_or_truncated(
-                "important_knowledge",
-                gated_result.related_knowledge if knowledge_visible else "",
-                important_budget,
-                header=_IMPORTANT_HEADER,
-            )
-        elif important_knowledge and knowledge_visible:
-            important_text = truncate_head(important_knowledge, important_budget)
+            important_text = _select("important_knowledge", important_items, "", header=_IMPORTANT_HEADER)
+        elif important_knowledge:
+            important_text = truncate_head(important_knowledge, token_budget)
         else:
             important_text = ""
-        remaining_knowledge_budget = max(0, budget_knowledge - estimate_tokens(important_text))
-        medium_text = itemized_or_truncated(
-            "related_knowledge",
-            channel_c_related_knowledge if knowledge_visible else "",
-            remaining_knowledge_budget,
-        )
-        truncated_knowledge = (
-            f"{important_text}\n\n{medium_text}" if important_text and medium_text else important_text or medium_text
-        )
-        while medium_text and estimate_tokens(truncated_knowledge) > budget_knowledge:
-            if "related_knowledge" in final_items and final_items["related_knowledge"]:
-                final_items["related_knowledge"] = final_items["related_knowledge"][:-1]
-                medium_text = render_items(final_items["related_knowledge"], "")
-            else:
-                remaining_knowledge_budget = max(0, remaining_knowledge_budget - 1)
-                medium_text = truncate_head(channel_c_related_knowledge, remaining_knowledge_budget)
-            truncated_knowledge = (
-                f"{important_text}\n\n{medium_text}"
-                if important_text and medium_text
-                else important_text or medium_text
-            )
 
-        remaining_knowledge_budget = max(0, budget_knowledge - estimate_tokens(truncated_knowledge))
-        truncated_untrusted = itemized_or_truncated(
-            "related_knowledge_untrusted",
-            gated_result.related_knowledge_untrusted,
-            remaining_knowledge_budget,
+        medium_text = _select("related_knowledge", related_items, channel_c_related_knowledge)
+        related_knowledge_text = (
+            f"{important_text}\n\n{medium_text}"
+            if important_text and medium_text
+            else important_text or medium_text
         )
-        while truncated_untrusted and estimate_tokens(truncated_knowledge + truncated_untrusted) > budget_knowledge:
-            if "related_knowledge_untrusted" in final_items and final_items["related_knowledge_untrusted"]:
-                final_items["related_knowledge_untrusted"] = final_items["related_knowledge_untrusted"][:-1]
-                truncated_untrusted = render_items(final_items["related_knowledge_untrusted"], "")
-            else:
-                remaining_knowledge_budget = max(0, remaining_knowledge_budget - 1)
-                truncated_untrusted = truncate_head(
-                    gated_result.related_knowledge_untrusted,
-                    remaining_knowledge_budget,
-                )
 
-        budget_graph = int(_BUDGET_GRAPH_CONTEXT * budget_ratio) if graph_context_enabled else 0
+        untrusted_text = _select("related_knowledge_untrusted", untrusted_items, related_knowledge_untrusted)
+        pending_tasks_text = _select("pending_tasks", pending_task_items, pending_tasks)
+        recent_outbound_text = _select(
+            "recent_outbound", outbound_items, recent_outbound, header=t("priming.outbound_header")
+        )
+        episodes_text = _select("episodes", episode_items, episodes, tail=True)
+        notifications_text = _select(
+            "pending_human_notifications", notification_items, pending_human_notifications, header=_NOTIFICATIONS_HEADER
+        )
+        graph_context_text = truncate_tail(graph_context, token_budget)
+
         result = PrimingResult(
-            sender_profile=truncate_head(gated_result.sender_profile, budget_profile),
-            recent_activity=itemized_or_truncated(
-                "recent_activity",
-                gated_result.recent_activity,
-                budget_activity,
-                tail=True,
-            ),
-            related_knowledge=truncated_knowledge,
-            related_knowledge_untrusted=truncated_untrusted,
-            pending_tasks=itemized_or_truncated("pending_tasks", gated_result.pending_tasks, budget_tasks),
-            recent_outbound=itemized_or_truncated(
-                "recent_outbound",
-                gated_result.recent_outbound,
-                max(1, int(500 * budget_ratio)),
-                header=t("priming.outbound_header"),
-            ),
-            episodes=itemized_or_truncated("episodes", gated_result.episodes, budget_episodes, tail=True),
-            pending_human_notifications=itemized_or_truncated(
-                "pending_human_notifications",
-                gated_result.pending_human_notifications,
-                max(1, int(500 * budget_ratio)),
-                header=_NOTIFICATIONS_HEADER,
-            ),
-            graph_context=truncate_tail(gated_result.graph_context, budget_graph),
+            sender_profile=truncate_head(sender_profile, token_budget),
+            recent_activity=_select("recent_activity", recent_activity_items, recent_activity, tail=True),
+            related_knowledge=related_knowledge_text,
+            related_knowledge_untrusted=untrusted_text,
+            pending_tasks=pending_tasks_text,
+            recent_outbound=recent_outbound_text,
+            episodes=episodes_text,
+            pending_human_notifications=notifications_text,
+            graph_context=graph_context_text,
             items=final_items,
-            gate_plan=gate_plan,
         )
 
         logger.info(
@@ -563,6 +420,7 @@ class PrimingEngine:
         )
 
         return result
+
 
     async def _prime_compact(
         self,
@@ -749,10 +607,6 @@ class PrimingEngine:
     def _extract_keywords(self, message: str) -> list[str]:
         """Backward compat: delegate to utils.extract_keywords."""
         return extract_keywords(message, self.knowledge_dir)
-
-    def _classify_message_type(self, message: str, channel: str, *, intent: str = "") -> str:
-        """Backward compat: delegate to budget.classify_message_type."""
-        return _budget.classify_message_type(message, channel, intent=intent)
 
     async def _read_old_channels(self) -> str:
         """Backward compat: delegate to channel_b.read_old_channels."""

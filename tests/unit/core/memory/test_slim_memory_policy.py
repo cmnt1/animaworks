@@ -82,18 +82,17 @@ async def test_compact_never_truncates_an_itemized_memory_pointer(tmp_path: Path
 @pytest.mark.asyncio
 async def test_compact_cap_applies_to_proportional_heartbeat_budget(tmp_path: Path):
     engine = PrimingEngine(tmp_path, context_window=1_000_000)
-    engine._adjust_token_budget = MagicMock(return_value=50_000)
     engine._prime_compact = AsyncMock()
-    await engine.prime_memories("", channel="heartbeat", profile="compact", max_tokens=1200, enable_dynamic_budget=True)
+    await engine.prime_memories("", channel="heartbeat", profile="compact", max_tokens=1200)
     assert engine._prime_compact.call_args.args[4] == 1200
 
 
 def test_per_anima_profile_overrides_global_without_model_assumptions(tmp_path: Path):
-    config = SimpleNamespace(priming=PrimingConfig(profile="compact", dynamic_budget=False, max_tokens=1500))
+    config = SimpleNamespace(priming=PrimingConfig(profile="compact", max_tokens=1500))
     (tmp_path / "status.json").write_text(json.dumps({"model": "any/future-engine", "priming_profile": "full"}))
     with patch("core.config.load_config", return_value=config):
         policy = resolve_priming_policy(tmp_path)
-    assert (policy.profile, policy.dynamic_budget, policy.max_tokens) == ("full", False, 1500)
+    assert (policy.profile, policy.max_tokens) == ("full", 1500)
 
 
 def test_defaults_keep_storage_but_disable_automatic_mutation():

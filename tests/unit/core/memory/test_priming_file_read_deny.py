@@ -93,7 +93,7 @@ async def test_channel_c_filters_denied_and_ambiguous_unified_hits(tmp_path: Pat
             ["test"],
         )
 
-    assert 'read_memory_file(path="knowledge/public.md")' in medium
+    assert "knowledge/public.md" in medium
     assert "knowledge/private" not in medium
     assert "opaque-vector-id" not in medium
     assert "CANARY" not in medium
@@ -128,7 +128,7 @@ async def test_channel_f_filters_denied_unified_episode_hit(tmp_path: Path) -> N
             ["test"],
         )
 
-    assert 'read_memory_file(path="episodes/public.md")' in result
+    assert "episodes/public.md" in result
     assert "episodes/private" not in result
     assert "DENIED F CANARY" not in result
 
@@ -170,7 +170,7 @@ async def test_channel_f_filters_denied_neo4j_episode_hit(tmp_path: Path) -> Non
             get_memory_backend=lambda: backend,
         )
 
-    assert 'read_memory_file(path="episodes/public.md")' in result
+    assert "episodes/public.md" in result
     assert "episodes/private" not in result
     assert "DENIED NEO4J CANARY" not in result
     assert [memory.source for memory in backend.recorded] == ["episode:public"]

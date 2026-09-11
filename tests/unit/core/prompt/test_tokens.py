@@ -5,8 +5,7 @@ from pathlib import Path
 import pytest
 
 from core.memory.priming.constants import (
-    _BUDGET_RECENT_ACTIVITY,
-    _BUDGET_RELATED_KNOWLEDGE,
+    _DEFAULT_MAX_PRIMING_TOKENS,
 )
 from core.memory.priming.engine import PrimingEngine
 from core.prompt.tokens import estimate_tokens, tokens_to_chars_hint, truncate_to_tokens
@@ -94,9 +93,11 @@ async def test_prime_memories_keeps_japanese_channels_within_token_budgets(
     monkeypatch.setattr(engine, "_collect_pending_human_notifications", empty)
     monkeypatch.setattr(engine, "_channel_g_graph_context", empty)
 
-    result = await engine.prime_memories("根拠を教えて", enable_dynamic_budget=False)
+    result = await engine.prime_memories("根拠を教えて")
 
     assert result.recent_activity
     assert result.related_knowledge
-    assert estimate_tokens(result.recent_activity) <= _BUDGET_RECENT_ACTIVITY
-    assert estimate_tokens(result.related_knowledge) <= _BUDGET_RELATED_KNOWLEDGE
+    # The single max_tokens budget bounds each channel; pointer cues are small
+    # so the resident surface stays minimal.
+    assert estimate_tokens(result.recent_activity) <= _DEFAULT_MAX_PRIMING_TOKENS
+    assert estimate_tokens(result.related_knowledge) <= _DEFAULT_MAX_PRIMING_TOKENS

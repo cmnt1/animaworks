@@ -112,7 +112,6 @@ class PrimingMixin:
                 sender_name,
                 channel=channel,
                 intent=message_intent,
-                enable_dynamic_budget=policy.dynamic_budget,
                 recent_human_messages=recent_human_messages,
                 profile="compact" if prompt_tier in (TIER_MINIMAL, TIER_MICRO, TIER_LIGHT) else policy.profile,
                 max_tokens=min(policy.max_tokens, 1000) if prompt_tier == TIER_STANDARD else policy.max_tokens,

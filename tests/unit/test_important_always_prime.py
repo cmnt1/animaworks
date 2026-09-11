@@ -211,7 +211,7 @@ class TestChannelC0ImportantKnowledge:
 
         assert "### [IMPORTANT] Knowledge (summary pointers)" in result
         assert "My Important Rule" in result
-        assert 'read_memory_file(path="knowledge/rule-a.md")' in result
+        assert "knowledge/rule-a.md" in result
         assert "📌" in result
 
     @pytest.mark.asyncio
@@ -242,7 +242,7 @@ class TestChannelC0ImportantKnowledge:
 
         assert "updated:" not in result
         assert "origin:" not in result
-        assert 'read_memory_file(path="knowledge/external-rule.md")' in result
+        assert "knowledge/external-rule.md" in result
 
     @pytest.mark.asyncio
     async def test_budget_trims_when_over_500_tokens(self, temp_anima_dir):

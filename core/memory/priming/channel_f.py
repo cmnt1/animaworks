@@ -10,7 +10,6 @@ from __future__ import annotations
 """Channel F: Episode memory search (vector search)."""
 
 import asyncio
-import json
 import logging
 import re
 from collections.abc import Callable
@@ -34,11 +33,6 @@ def _single_line(text: str, limit: int = 160) -> str:
     return collapsed[:limit]
 
 
-def _quote_path(path: str) -> str:
-    """Return a JSON string literal for read_memory_file path examples."""
-    return json.dumps(path, ensure_ascii=False)
-
-
 def to_episode_memory_path(source: str) -> str:
     """Normalize retriever/backend source to a read_memory_file episode path."""
     if not source:
@@ -57,10 +51,10 @@ def extract_episode_summary(content: str, source: str) -> str:
     for line in content.splitlines():
         stripped = line.strip()
         if stripped.startswith("#"):
-            return _single_line(stripped.lstrip("#").strip(), 120)
+            return _single_line(stripped.lstrip("#").strip(), 60)
     path = to_episode_memory_path(source)
     if path:
-        return _single_line(Path(path).stem.replace("-", " ").replace("_", " "))
+        return _single_line(Path(path).stem.replace("-", " ").replace("_", " "), 60)
     return "Related episode memory"
 
 
@@ -80,14 +74,34 @@ def format_episode_pointer(
     source: str,
     content: str,
     path: str,
+    show_body: bool = False,
 ) -> str:
-    """Format an episode result as a pointer cue instead of raw payload."""
+    """Format an episode result as a pointer cue instead of raw payload.
+
+    ``show_body`` (top 1-2 results) also emits up to 600 chars of the
+    episode body as recent conversation, followed by the pointer line.
+    """
     summary = extract_episode_summary(content, source)
-    return (
-        f"--- Episode {index} (score: {score:.3f}, source: {_single_line(source, 120)}) ---\n"
-        f"{summary}\n"
-        f"  -> read_memory_file(path={_quote_path(path)})\n"
-    )
+    pointer = f"📌 [{score:.2f}] {path} — {summary}"
+    if not show_body:
+        return pointer
+    body = _single_line(content, 600)
+    if body and body != summary:
+        return f"{body}\n{pointer}"
+    return pointer
+
+
+def episode_date(path: str) -> str:
+    """Return the YYYY-MM-DD date embedded in an episode path (or "")."""
+    match = re.search(r"(\d{4}-\d{2}-\d{2})", path)
+    return match.group(1) if match else ""
+
+
+def exclude_episodes_for_dates(items: list, dates: set[str]) -> list:
+    """Drop episode items whose date also appears in ``dates`` (from Channel B)."""
+    if not dates:
+        return items
+    return [item for item in items if episode_date(str(item.ref)) not in dates]
 
 
 async def channel_f_episodes(
@@ -156,7 +170,7 @@ async def channel_f_episodes(
                     parts: list[str] = []
                     items: list[MemoryItem] = []
                     accessed_memories = []
-                    for mem in merged:
+                    for position, mem in enumerate(merged):
                         meta = mem.metadata if isinstance(mem.metadata, dict) else {}
                         source = meta.get("source_file") or meta.get("source") or mem.source
                         path = to_episode_memory_path(source)
@@ -171,11 +185,12 @@ async def channel_f_episodes(
                             continue
                         accessed_memories.append(mem)
                         text = format_episode_pointer(
-                            index=len(parts) + 1,
+                            index=position + 1,
                             score=mem.score,
                             source=source,
                             content=mem.content,
                             path=path,
+                            show_body=position < 2,
                         )
                         parts.append(text)
                         items.append(
@@ -222,9 +237,14 @@ async def channel_f_episodes(
         if not results:
             return ""
 
+        results = sorted(
+            results,
+            key=lambda result: float(result.get("score", 0.0) or 0.0),
+            reverse=True,
+        )
         parts = []
         items = []
-        for result in results:
+        for position, result in enumerate(results):
             source = str(result.get("source_file", "") or result.get("doc_id", "") or "")
             path = to_episode_memory_path(source)
             if not path:
@@ -237,11 +257,12 @@ async def channel_f_episodes(
                 logger.debug("Channel F: skipping episode from denied source: %s", path)
                 continue
             text = format_episode_pointer(
-                index=len(parts) + 1,
+                index=position + 1,
                 score=float(result.get("score", 0.0) or 0.0),
                 source=source,
                 content=str(result.get("content", "") or ""),
                 path=path,
+                show_body=position < 2,
             )
             parts.append(text)
             metadata = result if isinstance(result, dict) else {}

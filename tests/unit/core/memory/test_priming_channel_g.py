@@ -178,12 +178,9 @@ class TestFormatPrimingSectionGraphContext:
 
         result = PrimingResult(graph_context="## Communities\n- [Team A] Engineers")
 
-        with patch(
-            "core.execution._sanitize.wrap_priming", side_effect=lambda tag, content, **kw: f"<{tag}>{content}</{tag}>"
-        ):
-            output = format_priming_section(result, "human")
+        output = format_priming_section(result, "human")
 
-        assert "<graph_context>" in output
+        assert '<priming source="graph_context"' in output
         assert "Team A" in output
 
     def test_empty_graph_context_not_rendered(self) -> None:
@@ -192,10 +189,7 @@ class TestFormatPrimingSectionGraphContext:
 
         result = PrimingResult(sender_profile="some profile")
 
-        with patch(
-            "core.execution._sanitize.wrap_priming", side_effect=lambda tag, content, **kw: f"<{tag}>{content}</{tag}>"
-        ):
-            output = format_priming_section(result, "human")
+        output = format_priming_section(result, "human")
 
         assert "graph_context" not in output
 
