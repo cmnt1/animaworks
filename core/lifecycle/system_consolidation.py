@@ -503,58 +503,6 @@ class SystemConsolidationMixin:
                     }
                 )
 
-    async def _handle_monthly_forgetting(self) -> None:
-        """Run monthly forgetting for all animas."""
-        logger.info("Starting system-wide monthly forgetting")
-
-        config = load_config()
-        consolidation_cfg = getattr(config, "consolidation", None)
-
-        # Default config
-        enabled = True
-
-        if consolidation_cfg:
-            enabled = getattr(consolidation_cfg, "monthly_forgetting_enabled", True)
-
-        if not enabled:
-            logger.info("Monthly forgetting is disabled in config")
-            return
-
-        # Run forgetting for each anima
-        for anima_name, anima in self.animas.items():
-            try:
-                from core.memory.consolidation import ConsolidationEngine
-
-                engine = ConsolidationEngine(
-                    anima_dir=anima.memory.anima_dir,
-                    anima_name=anima_name,
-                )
-
-                result = await engine.monthly_forget()
-
-                logger.info(
-                    "Monthly forgetting for %s: forgotten=%d archived=%d",
-                    anima_name,
-                    result.get("forgotten_chunks", 0),
-                    len(result.get("archived_files", [])),
-                )
-
-                # Broadcast result
-                if self._ws_broadcast:
-                    await self._ws_broadcast(
-                        {
-                            "type": "system.consolidation",
-                            "data": {
-                                "anima": anima_name,
-                                "type": "monthly_forgetting",
-                                "result": result,
-                            },
-                        }
-                    )
-
-            except Exception:
-                logger.exception("Monthly forgetting failed for anima=%s", anima_name)
-
     # ── Community detection helper ────────────────────────────
 
     @staticmethod

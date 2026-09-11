@@ -1076,7 +1076,7 @@ class TestArchiveVersionSubdirCollision:
         assert contents == {"content a", "content b"}
 
     def test_archive_name_matches_cleanup_grouping(self, engine: ReconsolidationEngine, anima_dir: Path):
-        # forgetting.cleanup_procedure_archives groups by ^(.+?)_v\d+_\d{8}_\d{6}\.md$
+        # Archive naming follows the {stem}_v{N}_{timestamp}.md convention
         import re
 
         proc = anima_dir / "procedures" / "sub" / "task.md"

@@ -75,8 +75,8 @@ _REGEX_METACHAR_RE = re.compile(
 
 KNOWN_VIOLATIONS: dict[str, int] = {
     # bilingual empty-state placeholders for prompt injection (ja/en)
-    # (knowledge list / merge candidates / conflict candidates none-lines)
-    "core/_anima_lifecycle.py": 3,
+    # (knowledge list / merge candidates / conflict candidates / forgetting candidates none-lines)
+    "core/_anima_lifecycle.py": 4,
     # command templates with {返信内容} — borderline (platform-specific CLI syntax)
     "core/_anima_inbox.py": 4,
     # MD section names used for parsing (基本情報, 人格, etc.)
@@ -116,6 +116,9 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # LLM extraction + community prompt templates — intentionally Japanese for ja locale
     # (dedupe/invalidation prompts removed in harness diet PR-6)
     "core/memory/extraction/prompts/ja.py": 4,
+    # forgetting candidate reason string fed to the weekly consolidation prompt
+    # ("N日間低活性・参照M回", plan-specified wording)
+    "core/memory/forgetting.py": 1,
     # voice front lane — ask_anima tool schema wording fed to the front LLM
     "core/voice/front.py": 2,
     # voice front lane — spoken ACK/error phrases voiced to the user via TTS

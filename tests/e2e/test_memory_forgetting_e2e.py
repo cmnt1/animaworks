@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -9,9 +10,10 @@ Requires ChromaDB and sentence-transformers.
 """
 
 from datetime import datetime, timedelta
-from core.time_utils import now_jst
 
 import pytest
+
+from core.time_utils import now_jst
 
 # Skip all tests if required dependencies are not installed
 chromadb = pytest.importorskip(
@@ -300,18 +302,18 @@ def test_synaptic_downscaling_e2e(anima_dir, vector_store, indexer):
         )
 
 
-# ── Test 3: Complete Forgetting E2E ────────────────────────────────
+# ── Test 3: Forgetting Candidate Listing E2E ──────────────────────
 
 
-def test_complete_forgetting_e2e(anima_dir, vector_store, indexer):
-    """Verify complete forgetting archives and deletes low-activation chunks.
+def test_list_forgetting_candidates_e2e(anima_dir, vector_store, indexer):
+    """Verify forgetting now only lists low-activation candidates.
 
     Steps:
     1. Index knowledge files
-    2. Manually set metadata: activation_level="low", low_activation_since=90 days ago
-    3. Run complete_forgetting()
-    4. Verify chunks are deleted from ChromaDB
-    5. Verify source files are moved to archive/forgotten/
+    2. Manually set metadata: activation_level="low", low_activation_since=120 days ago
+    3. Run list_forgetting_candidates()
+    4. Verify candidates are returned with paths and reasons
+    5. Verify chunks are NOT deleted and source files are NOT moved
     """
     from core.memory.forgetting import ForgettingEngine
 
@@ -332,12 +334,12 @@ def test_complete_forgetting_e2e(anima_dir, vector_store, indexer):
     initial_count = len(all_ids)
     assert initial_count > 0, "Should have indexed chunks"
 
-    # Verify source files exist before forgetting
-    assert chatwork_file.exists(), "Source file should exist before forgetting"
-    assert slack_file.exists(), "Source file should exist before forgetting"
+    # Verify source files exist before listing
+    assert chatwork_file.exists(), "Source file should exist before listing"
+    assert slack_file.exists(), "Source file should exist before listing"
 
-    # Simulate low activation for 90 days with zero access
-    low_since = (now_jst() - timedelta(days=90)).isoformat()
+    # Simulate low activation for 120 days with zero access
+    low_since = (now_jst() - timedelta(days=120)).isoformat()
     low_metas = [
         {
             "activation_level": "low",
@@ -352,26 +354,24 @@ def test_complete_forgetting_e2e(anima_dir, vector_store, indexer):
     engine = ForgettingEngine(anima_dir, "test_anima")
     engine._get_vector_store = lambda: vector_store
 
-    # Run complete forgetting
-    result = engine.complete_forgetting()
+    # List forgetting candidates (model-driven review)
+    candidates = engine.list_forgetting_candidates()
 
-    assert result["forgotten_chunks"] > 0, "Should have forgotten some chunks"
-    assert len(result["archived_files"]) > 0, "Should have archived source files"
+    assert len(candidates) > 0, "Should have listed some candidates"
+    assert all(c.path and c.reason for c in candidates), "Candidates need path and reason"
 
-    # Verify chunks are deleted from ChromaDB
+    # Verify chunks were NOT deleted from ChromaDB
     coll = vector_store.client.get_collection(name=collection_name)
     remaining_data = coll.get(include=["metadatas"])
     remaining_count = len(remaining_data["ids"])
-    assert remaining_count < initial_count, (
-        f"Chunks should be deleted: had {initial_count}, now {remaining_count}"
+    assert remaining_count == initial_count, (
+        f"Candidates should not be deleted: had {initial_count}, now {remaining_count}"
     )
 
-    # Verify source files are moved to archive/forgotten/
-    archive_dir = anima_dir / "archive" / "forgotten"
-    assert archive_dir.exists(), "Archive directory should be created"
-
-    archived_files = list(archive_dir.iterdir())
-    assert len(archived_files) > 0, "Should have archived files in the directory"
+    # Verify source files were NOT moved to archive/forgotten/
+    assert not (anima_dir / "archive" / "forgotten").exists(), (
+        "Source files should not be archived by candidate listing"
+    )
 
     # At least one of the original source files should be gone
     source_files_gone = (

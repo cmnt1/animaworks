@@ -187,7 +187,7 @@ class TestProcessSupervisorSystemCronE2E:
 
         assert sup.is_scheduler_running() is True
         jobs = sup.scheduler.get_jobs()
-        assert len(jobs) == 7  # daily + weekly + monthly + indexing + activity_log + housekeeping + dm_log
+        assert len(jobs) == 6  # daily + weekly + indexing + activity_log + housekeeping + dm_log
 
         # Check job details
         daily = sup.scheduler.get_job("system_daily_consolidation")
@@ -197,10 +197,6 @@ class TestProcessSupervisorSystemCronE2E:
         weekly = sup.scheduler.get_job("system_weekly_integration")
         assert weekly is not None
         assert "Weekly" in weekly.name
-
-        monthly = sup.scheduler.get_job("system_monthly_forgetting")
-        assert monthly is not None
-        assert "Monthly" in monthly.name
 
         housekeeping = sup.scheduler.get_job("system_housekeeping")
         assert housekeeping is not None

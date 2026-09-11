@@ -120,33 +120,6 @@ class SchedulerMixin:
             )
             logger.info("System cron: Weekly integration on %s at %s:%s", day_of_week, time_parts[0], time_parts[1])
 
-        # Monthly forgetting
-        monthly_enabled = True
-        monthly_time = "1:04:00"
-        if consolidation_cfg:
-            monthly_enabled = getattr(consolidation_cfg, "monthly_enabled", True)
-            monthly_time = getattr(consolidation_cfg, "monthly_time", "1:04:00")
-
-        if monthly_enabled:
-            parts = monthly_time.split(":")
-            day_of_month = int(parts[0]) if len(parts) == 3 else 1
-            time_parts = parts[-2:]
-            hour, minute = int(time_parts[0]), int(time_parts[1])
-            self.scheduler.add_job(
-                self._run_monthly_forgetting,
-                CronTrigger(day=day_of_month, hour=hour, minute=minute),
-                id="system_monthly_forgetting",
-                name="System: Monthly Forgetting",
-                replace_existing=True,
-                misfire_grace_time=600,
-            )
-            logger.info(
-                "System cron: Monthly forgetting on day %d at %02d:%02d",
-                day_of_month,
-                hour,
-                minute,
-            )
-
         indexing_enabled = True
         indexing_time = "04:00"
         if consolidation_cfg:
@@ -675,38 +648,6 @@ class SchedulerMixin:
 
         _write_marker(_marker_dir(self._get_data_dir()) / "last_weekly_integration")
 
-    async def _run_monthly_forgetting(self) -> None:
-        """Run monthly forgetting for all animas."""
-        logger.info("Starting system-wide monthly forgetting")
-
-        for anima_name, anima_dir in self._iter_consolidation_targets():
-            try:
-                from core.memory.consolidation import ConsolidationEngine
-
-                engine = ConsolidationEngine(
-                    anima_dir=anima_dir,
-                    anima_name=anima_name,
-                )
-
-                result = await engine.monthly_forget()
-
-                logger.info(
-                    "Monthly forgetting for %s: forgotten=%d, archived=%d files",
-                    anima_name,
-                    result.get("forgotten_chunks", 0),
-                    len(result.get("archived_files", [])),
-                )
-
-                if not result.get("skipped"):
-                    await self._broadcast_event(
-                        "system.consolidation",
-                        {"anima": anima_name, "type": "monthly_forgetting", "result": result},
-                    )
-            except Exception:
-                logger.exception("Monthly forgetting failed for %s", anima_name)
-
-        _write_marker(_marker_dir(self._get_data_dir()) / "last_monthly_forgetting")
-
     async def _run_daily_indexing(self) -> None:
         """Run daily RAG indexing for all animas.
 
@@ -1149,7 +1090,6 @@ class SchedulerMixin:
 
         daily_enabled = getattr(consolidation_cfg, "daily_enabled", True) if consolidation_cfg else True
         weekly_enabled = getattr(consolidation_cfg, "weekly_enabled", True) if consolidation_cfg else True
-        monthly_enabled = getattr(consolidation_cfg, "monthly_enabled", True) if consolidation_cfg else True
 
         if daily_enabled:
             last = _read_marker(mdir / "last_daily_consolidation")
@@ -1168,15 +1108,6 @@ class SchedulerMixin:
                     last,
                 )
                 await self._run_weekly_integration()
-
-        if monthly_enabled:
-            last = _read_marker(mdir / "last_monthly_forgetting")
-            if last is None or (now - last) > timedelta(days=35):
-                logger.info(
-                    "Catch-up: monthly forgetting missed (last=%s), running now",
-                    last,
-                )
-                await self._run_monthly_forgetting()
 
         indexing_enabled = getattr(consolidation_cfg, "indexing_enabled", True) if consolidation_cfg else True
         if indexing_enabled:

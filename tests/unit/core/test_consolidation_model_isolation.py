@@ -424,6 +424,45 @@ async def test_weekly_consolidation_does_not_scan_whole_memory_library(report, e
     scan.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_weekly_consolidation_passes_forgetting_candidates_to_prompt():
+    """Weekly consolidation passes forgetting candidates into the prompt."""
+    from core.memory.forgetting import ForgettingCandidate
+
+    status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
+    anima = _make_lifecycle(status_config)
+    anima.anima_dir = Path("/tmp/test-weekly-forgetting")
+    prompt_kwargs: dict = {}
+
+    def capture_prompt(name: str, **kwargs):
+        prompt_kwargs.update(kwargs)
+        return "weekly prompt"
+
+    fake_engine = MagicMock()
+    fake_engine._find_merge_candidates.return_value = []
+    fake_engine._find_conflicting_fact_candidates.return_value = []
+    fake_engine.list_forgetting_candidates.return_value = [
+        ForgettingCandidate(
+            path="knowledge/old-topic.md",
+            days_low=120,
+            used_count=0,
+            last_used_at="",
+            reason="120日間低活性・参照0回",
+        )
+    ]
+
+    with (
+        patch("core.config.load_config", return_value=_mock_config()),
+        patch("core.config.resolve_execution_mode", return_value="D"),
+        patch("core.memory.forgetting.ForgettingEngine", return_value=fake_engine),
+        patch("core._anima_lifecycle.load_prompt", side_effect=capture_prompt),
+    ):
+        await anima._run_weekly_consolidation(fake_engine)
+
+    assert "knowledge/old-topic.md" in prompt_kwargs["forgetting_candidates"]
+    assert "120日間低活性" in prompt_kwargs["forgetting_candidates"]
+
+
 class _FakeExecutor:
     supports_streaming = True
 
