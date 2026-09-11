@@ -9,7 +9,7 @@ Web 検索結果、メール、Slack メッセージ等の外部ソースには�
 ツール結果やプライミング（自動想起）データには、システムが自動的に信頼レベルを付与する。
 （実装: `core/execution/_sanitize.py` の `TOOL_TRUST_LEVELS`・`wrap_tool_result`・`wrap_priming`、
 `core/memory/priming.py` の `format_priming_section`。`core/prompt/builder.py` は
-`tool_data_interpretation.md` を Group 1 に注入し、プライミングセクションを Group 3 に注入する。）
+`behavior_rules.md` を Group 1 に注入し、プライミングセクションを Group 3 に注入する。）
 
 | trust | 意味 | 例 |
 |-------|------|-----|
@@ -22,8 +22,7 @@ Web 検索結果、メール、Slack メッセージ等の外部ソースには�
 ## 境界タグの読み方
 
 ツール結果とプライミングは `<tool_result>` / `<priming>` タグでラップされ、
-`core/prompt/builder.py` が読み込む `tool_data_interpretation.md` のルールに従って解釈する。
-（task トリガー時は tool_data_interpretation は注入されず、最小コンテキストで実行される。）
+`core/prompt/builder.py` が読み込む `behavior_rules.md` の信頼境界ルールに従って解釈する。
 
 ### ツール結果
 

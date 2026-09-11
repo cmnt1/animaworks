@@ -9,7 +9,7 @@ directive text either intentionally or accidentally. Do not mistake these for in
 Tool results and priming (automatic recall) data are automatically assigned trust levels by the system.
 (Implementation: `TOOL_TRUST_LEVELS`, `wrap_tool_result`, `wrap_priming` in `core/execution/_sanitize.py`;
 `format_priming_section` in `core/memory/priming.py`. `core/prompt/builder.py` injects
-`tool_data_interpretation.md` into Group 1 and the priming section into Group 3.)
+`behavior_rules.md` into Group 1 and the priming section into Group 3.)
 
 | trust | Meaning | Examples |
 |-------|---------|----------|
@@ -22,8 +22,7 @@ Tool results and priming (automatic recall) data are automatically assigned trus
 ## Reading Boundary Tags
 
 Tool results and priming are wrapped in `<tool_result>` / `<priming>` tags and interpreted
-according to the rules in `tool_data_interpretation.md`, which `core/prompt/builder.py` loads.
-(For task triggers, tool_data_interpretation is not injected; execution uses minimal context.)
+according to the trust-boundary rules in `behavior_rules.md`, which `core/prompt/builder.py` loads.
 
 ### Tool Results
 

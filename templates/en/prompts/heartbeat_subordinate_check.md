@@ -1,24 +1,6 @@
-## Subordinate Management Check
+## Subordinate management
 
 You have subordinates: {subordinates}
 
-### Delegation Decisions
-- Check Active Task Queue for ⚠️ STALE tasks
-- Decide whether such tasks can be delegated to subordinates rather than done by you
-  - Judgment/approval tasks → You handle
-  - Execution/investigation tasks → Delegate to subordinates (send_message with instructions)
-- Check subordinate availability; if any are idle, assign unstarted tasks
-- Before delegating, read `list_tasks(status="delegated")`; if an open task for the same PR / Issue / target already exists, do not create another — add the instruction via message with the existing task_id. Read the queue back after delegating
-
-### Report Verification
-When you receive a report from a subordinate (result report, problem report, periodic report):
-1. Read the subordinate's activity_log to verify actual tool_use history
-   Path: {animas_dir}/{subordinate_name}/activity_log/{date_yyyy_mm_dd}.jsonl
-2. Verify consistency between report content and tool_use history
-   - "Running normally" but tool runs = 0 → Possible false report
-   - Mostly send_message, few task tools → Sign of praise loop. Take corrective action:
-     1. Explicitly instruct subordinate: "No messages that are only praise or acknowledgment"
-     2. Add rule to subordinate's cron.md: "Use send_message only for reports, questions, delegation"
-     3. If not improved by next heartbeat, escalate to supervisor (including human)
-   - Same error repeated → Skill gap; review cron definition
-3. If inconsistent, give specific improvement instructions (e.g. correct command examples)
+- Among STALE tasks, delegate execution and investigation ones to subordinates with send_message, and handle judgment and approval ones yourself. Assign unstarted tasks to idle subordinates. Before delegating, check list_tasks(status="delegated") for duplicates on the same target
+- Reconcile subordinate reports against the actual tool_use history in {animas_dir}/{subordinate_name}/activity_log/{date_yyyy_mm_dd}.jsonl. Correct activity reports without tool execution and exchanges of praise or acknowledgement only, and escalate to your superior if there is no improvement

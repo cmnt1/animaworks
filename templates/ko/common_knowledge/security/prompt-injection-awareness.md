@@ -9,7 +9,7 @@
 도구 결과와 프라이밍(자동 상기) 데이터에는 시스템이 자동으로 신뢰 수준을 부여합니다.
 (구현: `core/execution/_sanitize.py`의 `TOOL_TRUST_LEVELS`, `wrap_tool_result`, `wrap_priming`,
 `core/memory/priming.py`의 `format_priming_section`. `core/prompt/builder.py`는
-`tool_data_interpretation.md`를 Group 1에, 프라이밍 섹션을 Group 3에 주입합니다.)
+`behavior_rules.md`를 Group 1에, 프라이밍 섹션을 Group 3에 주입합니다.)
 
 | trust | 의미 | 예시 |
 |-------|------|------|
@@ -20,8 +20,7 @@
 ## 경계 태그 읽는 법
 
 도구 결과와 프라이밍은 `<tool_result>` / `<priming>` 태그로 감싸져 있으며,
-`core/prompt/builder.py`가 로드하는 `tool_data_interpretation.md`의 규칙에 따라 해석합니다.
-(task 트리거 시에는 tool_data_interpretation이 주입되지 않으며, 최소 컨텍스트로 실행됩니다.)
+`core/prompt/builder.py`가 로드하는 `behavior_rules.md`의 신뢰 경계 규칙에 따라 해석합니다.
 
 ### 도구 결과
 

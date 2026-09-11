@@ -26,13 +26,12 @@ _KO_DIR = _TEMPLATES_DIR / "ko"
 
 @pytest.mark.parametrize("locale", ["ja", "en", "ko"])
 def test_environment_enforces_worktree_and_credential_resolver(locale: str) -> None:
-    content = (_TEMPLATES_DIR / locale / "prompts" / "environment.md").read_text(encoding="utf-8")
     repo_rules = (_TEMPLATES_DIR / locale / "prompts" / "builder" / "repo_work_rules.md").read_text(encoding="utf-8")
+    behavior = (_TEMPLATES_DIR / locale / "prompts" / "behavior_rules.md").read_text(encoding="utf-8")
 
     assert "git worktree" in repo_rules
     assert "main" in repo_rules and "clean" in repo_rules
-    assert "shared/credentials.json" in content
-    assert "parse" in content
+    assert "secrets.json" in behavior
 
 
 # All expected files (sorted; must match templates/ko/ exactly)
@@ -100,7 +99,6 @@ _EXPECTED_FILES = [
     "prompts/builder/human_notification.md",
     "prompts/builder/human_notification_howto_other.md",
     "prompts/builder/human_notification_howto_s.md",
-    "prompts/builder/instruction_internalization.md",
     "prompts/builder/light_tier_org.md",
     "prompts/builder/org_context_toplevel.md",
     "prompts/builder/reference_hint.md",
@@ -109,8 +107,6 @@ _EXPECTED_FILES = [
     "prompts/builder/sections.md",
     "prompts/builder/task_in_progress.md",
     "prompts/builder/task_queue.md",
-    "prompts/builder/task_recording_chat.md",
-    "prompts/builder/task_recording_heartbeat.md",
     "prompts/character_design_guide.md",
     "prompts/chat_message.md",
     "prompts/chat_message_with_history.md",
@@ -151,7 +147,6 @@ _EXPECTED_FILES = [
     "prompts/session_continuation.md",
     "prompts/task_complete_notify.md",
     "prompts/task_exec.md",
-    "prompts/tool_data_interpretation.md",
     "prompts/tool_descriptions/Bash.md",
     "prompts/tool_descriptions/Edit.md",
     "prompts/tool_descriptions/Glob.md",
@@ -331,6 +326,7 @@ _HEADING_EXEMPT = {
     "prompts/chat_message_with_history.md",
     "prompts/cron_task.md",
     "prompts/greet.md",
+    "prompts/heartbeat_default_checklist.md",
     "prompts/inbox_message.md",
     "prompts/session_continuation.md",
     "prompts/task_complete_notify.md",

@@ -110,22 +110,6 @@ def _read_default_workspace(anima_dir: Path) -> str:
     return t("builder.default_workspace_unresolved", alias=alias)
 
 
-def _prompt_kind(
-    is_task: bool,
-    is_heartbeat: bool,
-    is_chat: bool,
-) -> Literal["chat", "heartbeat", "task", "inbox"]:
-    """Classify the prompt for trigger-specific L2 instructions."""
-    if is_heartbeat:
-        return "heartbeat"
-    if is_task:
-        return "task"
-    if is_chat:
-        return "chat"
-    # Cron and inbox both receive instructions from outside a chat session.
-    return "inbox"
-
-
 @dataclass
 class BuildResult:
     """Result of system prompt building."""
@@ -234,21 +218,6 @@ def _build_group1(
         _br = load_prompt_text("behavior_rules")
         if _br:
             _add(_br, "behavior_rules", 2)
-
-        # Trigger-specific procedures stay out of the stable L1 prompt.
-        prompt_kind = _prompt_kind(is_task, is_heartbeat, is_chat)
-        behavior_context: list[str] = []
-        if prompt_kind in ("chat", "inbox"):
-            behavior_context.append(load_prompt("builder/instruction_internalization"))
-        if prompt_kind == "chat":
-            behavior_context.append(load_prompt("builder/task_recording_chat"))
-        elif prompt_kind == "heartbeat":
-            behavior_context.append(load_prompt("builder/task_recording_heartbeat"))
-        _add("\n\n".join(behavior_context), "behavior_rules_ctx", 2)
-
-        _tdi = load_prompt("tool_data_interpretation")
-        if _tdi:
-            _add(_tdi, "tool_data_interpretation", 2)
 
     return out
 

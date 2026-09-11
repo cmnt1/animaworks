@@ -115,7 +115,8 @@ class TestPromptTemplates:
 
         result = load_prompt("inbox_message", messages="test msg")
         assert "test msg" in result
-        assert "task-delegation-guide" in result
+        assert "delegate_task" in result
+        assert "submit_tasks" in result
 
     def test_task_exec_template_loads(self):
         from core.paths import load_prompt
