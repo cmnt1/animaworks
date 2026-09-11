@@ -211,6 +211,10 @@ class TestHeartbeatPromptCleanup:
         memory_mock = MagicMock()
         mixin.memory = memory_mock
         mixin._build_state_cleanup_instruction = lambda: HeartbeatMixin._build_state_cleanup_instruction(mixin)
+        mixin._get_heartbeat_md_max_bytes = lambda: 0
+        mixin._build_heartbeat_md_cleanup_instruction = lambda hb_config: (
+            HeartbeatMixin._build_heartbeat_md_cleanup_instruction(mixin, hb_config)
+        )
 
         return mixin
 
