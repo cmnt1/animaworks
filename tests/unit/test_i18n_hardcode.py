@@ -77,7 +77,8 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # guardrail note detection prefixes (NLP marker data, not user-facing text)
     "core/memory/priming/format.py": 1,
     # bilingual empty-state placeholders for prompt injection (ja/en)
-    "core/_anima_lifecycle.py": 2,
+    # (knowledge list / merge candidates / conflict candidates none-lines)
+    "core/_anima_lifecycle.py": 3,
     # command templates with {返信内容} — borderline (platform-specific CLI syntax)
     "core/_anima_inbox.py": 4,
     # MD section names used for parsing (基本情報, 人格, etc.)
@@ -114,8 +115,9 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # meeting/room feature — Japanese meeting prompts and labels
     "server/room_manager.py": 12,
     "server/routes/room.py": 4,
-    # LLM extraction + dedupe + invalidation + community prompt templates — intentionally Japanese for ja locale
-    "core/memory/extraction/prompts/ja.py": 7,
+    # LLM extraction + community prompt templates — intentionally Japanese for ja locale
+    # (dedupe/invalidation prompts removed in harness diet PR-6)
+    "core/memory/extraction/prompts/ja.py": 4,
     # voice front lane — ask_anima tool schema wording fed to the front LLM
     "core/voice/front.py": 2,
     # voice front lane — spoken ACK/error phrases voiced to the user via TTS

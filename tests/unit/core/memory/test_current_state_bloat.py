@@ -211,6 +211,10 @@ class TestHeartbeatPromptCleanup:
         memory_mock = MagicMock()
         mixin.memory = memory_mock
         mixin._build_state_cleanup_instruction = lambda: HeartbeatMixin._build_state_cleanup_instruction(mixin)
+        # Without these, MagicMock auto-mock instances (truthy) leak into the
+        # prompt parts list; stub them to None so cleanup stays disabled when
+        # max_chars/max_bytes are 0.
+        mixin._build_heartbeat_md_cleanup_instruction = lambda hb_config=None: None
 
         return mixin
 

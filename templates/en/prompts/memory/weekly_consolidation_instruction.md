@@ -6,6 +6,11 @@
 
 {merge_candidates}
 
+## Conflicting facts
+The following are fact pairs that disagree about the same subject. Read the source, archive the older one with archive_memory_file if the newer is correct, and report as unresolved if you cannot tell.
+
+{conflict_candidates}
+
 Read the originals before deciding; similarity is not evidence of duplication. Preserve entity-specific detail, provenance, `[IMPORTANT]` rules, and the original records. If uncertain, leave them unchanged and report a proposal. Do not rewrite identity.md, injection.md, permissions, or raw episodes, and do not scan or compress the whole memory library.
 
 Only confirmed duplicate knowledge or obsolete procedures may be updated or archived; name the surviving source and reason. Do not create abstract concepts merely to meet a quota. Do not delegate tasks or send messages during maintenance.
