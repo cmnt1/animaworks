@@ -65,6 +65,10 @@ class AnimaRunner:
         self.shared_dir = shared_dir
 
         self._anima_dir = animas_dir / anima_name
+        # Child processes (cron commands, helper scripts) inherit this so that
+        # per-Anima credentials resolve to this Anima instead of falling back
+        # to the owner identity.
+        os.environ["ANIMAWORKS_ANIMA_DIR"] = str(self._anima_dir)
 
         self.anima: DigitalAnima | None = None
         self.ipc_server: IPCServer | None = None
