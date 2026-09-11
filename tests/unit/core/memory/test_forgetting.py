@@ -13,11 +13,10 @@ from __future__ import annotations
 Tests cover:
 - ForgettingEngine._is_protected() classification
 - Synaptic downscaling (Stage 1)
-- Complete forgetting with archival (Stage 2)
+- Forgetting candidate listing (model-driven weekly review, Stage 2)
 - Integration with ConsolidationEngine (daily hook)
 """
 
-import logging
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -407,280 +406,156 @@ class TestSynapticDownscaling:
 # ── Neurogenesis Source Sync Tests ─────────────────────────────────
 
 
-# ── Complete Forgetting Tests ───────────────────────────────────────
+# ── Forgetting Candidate Tests ───────────────────────────────────
 
 
-class TestCompleteForgetting:
-    """Test complete_forgetting() (Stage 2: monthly archive and delete)."""
+class TestListForgettingCandidates:
+    """Test list_forgetting_candidates() (model-driven weekly review)."""
 
-    def test_complete_forgetting_archives_and_deletes(self, forgetting_engine, anima_dir):
-        """Test that low-activation chunks are archived and deleted.
-
-        Chunks with low_activation_since > 60 days ago and access_count=0
-        should have their source files moved to archive/forgotten/ and
-        be deleted from the vector store.
-        """
-        old_low_since = (now_jst() - timedelta(days=90)).isoformat()
-
-        # Create source file in the anima dir
-        source_file = anima_dir / "knowledge" / "forgotten-topic.md"
-        source_file.write_text("# Old topic\n\nThis will be forgotten.", encoding="utf-8")
-
-        knowledge_chunks = [
+    def test_lists_eligible_low_activation_chunk(self, forgetting_engine):
+        """Low-activation chunk past the threshold becomes a candidate."""
+        old_low = (now_jst() - timedelta(days=120)).isoformat()
+        chunks = [
             _make_chunk(
                 doc_id="forget_me",
                 access_count=0,
                 activation_level="low",
-                low_activation_since=old_low_since,
+                low_activation_since=old_low,
                 source_file="knowledge/forgotten-topic.md",
             ),
         ]
-
-        def get_chunks(collection_name):
-            if "knowledge" in collection_name:
-                return knowledge_chunks
-            return []
-
-        mock_store = MagicMock()
-        mock_store.delete_documents = MagicMock()
-
         with (
-            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
-            patch.object(forgetting_engine, "_get_all_chunks", side_effect=get_chunks),
-        ):
-            result = forgetting_engine.complete_forgetting()
-
-        assert result["forgotten_chunks"] == 1
-        assert len(result["archived_files"]) == 1
-        assert "knowledge/forgotten-topic.md" in result["archived_files"]
-
-        # Verify source file was moved to archive
-        archive_dir = anima_dir / "archive" / "forgotten"
-        assert archive_dir.exists()
-        archived_files = list(archive_dir.iterdir())
-        assert len(archived_files) == 1
-        assert "forgotten-topic" in archived_files[0].name
-
-        # Verify original file is gone
-        assert not source_file.exists()
-
-        # Verify delete_documents was called once (for the knowledge collection)
-        mock_store.delete_documents.assert_called_once()
-        call_args = mock_store.delete_documents.call_args[0]
-        assert call_args[0] == "test_anima_knowledge"
-        assert call_args[1] == ["forget_me"]
-
-    def test_complete_forgetting_skips_frequently_accessed_chunks(self, forgetting_engine, anima_dir):
-        """Test that low-activation chunks with access_count > 2 are NOT deleted.
-
-        Even if low_activation_since is old, access_count above the threshold
-        (FORGETTING_MAX_ACCESS_COUNT=2) means the memory should survive.
-        """
-        old_low_since = (now_jst() - timedelta(days=120)).isoformat()
-        chunks = [
-            _make_chunk(
-                doc_id="accessed_low",
-                access_count=3,
-                activation_level="low",
-                low_activation_since=old_low_since,
-                source_file="knowledge/accessed.md",
-            ),
-        ]
-
-        mock_store = MagicMock()
-        mock_store.delete_documents = MagicMock()
-
-        with (
-            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_vector_store", return_value=MagicMock()),
             patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
         ):
-            result = forgetting_engine.complete_forgetting()
+            result = forgetting_engine.list_forgetting_candidates()
+        assert len(result) == 1
+        assert result[0].path == "knowledge/forgotten-topic.md"
+        assert result[0].days_low > 90
+        assert result[0].used_count == 0
+        assert "低活性" in result[0].reason
 
-        assert result["forgotten_chunks"] == 0
-        assert len(result["archived_files"]) == 0
-        mock_store.delete_documents.assert_not_called()
-
-    def test_complete_forgetting_protects_retrieved_only_chunks(self, forgetting_engine, anima_dir):
-        """F11: frequently retrieved chunks are protected from complete forgetting.
-
-        ``access_count`` above ``FORGETTING_MAX_ACCESS_COUNT`` now counts as
-        usage, so a low-activation chunk that keeps getting retrieved must NOT
-        be deleted even though it was never explicitly "used".
-        """
-        old_low_since = (now_jst() - timedelta(days=120)).isoformat()
-        recent_retrieval = (now_jst() - timedelta(days=1)).isoformat()
-        chunks = [
-            _make_chunk(
-                doc_id="retrieved_low",
-                access_count=50,
-                last_accessed_at=recent_retrieval,
-                activation_level="low",
-                low_activation_since=old_low_since,
-                source_file="knowledge/retrieved.md",
-            ),
-        ]
-        chunks[0]["metadata"].update(
-            {
-                "retrieved_count": 250,
-                "used_count": 0,
-                "last_retrieved_at": recent_retrieval,
-                "last_used_at": "",
-            }
-        )
-
-        mock_store = MagicMock()
-        mock_store.delete_documents = MagicMock()
-
-        with (
-            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
-            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
-        ):
-            result = forgetting_engine.complete_forgetting()
-
-        assert result["forgotten_chunks"] == 0
-        mock_store.delete_documents.assert_not_called()
-
-    def test_complete_forgetting_skips_protected(self, forgetting_engine, anima_dir):
-        """Test that protected chunks are not forgotten even if low-activation."""
-        old_low_since = (now_jst() - timedelta(days=90)).isoformat()
+    def test_skips_protected(self, forgetting_engine):
+        """Protected (important) chunks are excluded from candidates."""
+        old_low = (now_jst() - timedelta(days=120)).isoformat()
         chunks = [
             _make_chunk(
                 doc_id="protected_chunk",
                 access_count=0,
                 activation_level="low",
-                low_activation_since=old_low_since,
+                low_activation_since=old_low,
                 importance="important",
+                source_file="knowledge/important.md",
             ),
         ]
-
-        mock_store = MagicMock()
-        mock_store.delete_documents = MagicMock()
-
         with (
-            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_vector_store", return_value=MagicMock()),
             patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
         ):
-            result = forgetting_engine.complete_forgetting()
+            result = forgetting_engine.list_forgetting_candidates()
+        assert result == []
 
-        assert result["forgotten_chunks"] == 0
-        mock_store.delete_documents.assert_not_called()
-
-    def test_complete_forgetting_skips_normal_activation(self, forgetting_engine, anima_dir):
-        """Test that chunks with activation_level='normal' are not forgotten."""
+    def test_skips_frequently_used(self, forgetting_engine):
+        """Chunks with used_count above the cap are excluded."""
+        old_low = (now_jst() - timedelta(days=120)).isoformat()
         chunks = [
             _make_chunk(
-                doc_id="normal_chunk",
-                access_count=0,
-                activation_level="normal",
-                low_activation_since="",
+                doc_id="used_chunk",
+                access_count=3,  # > FORGETTING_MAX_ACCESS_COUNT
+                activation_level="low",
+                low_activation_since=old_low,
+                source_file="knowledge/used.md",
             ),
         ]
-
-        mock_store = MagicMock()
-        mock_store.delete_documents = MagicMock()
-
         with (
-            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_vector_store", return_value=MagicMock()),
             patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
         ):
-            result = forgetting_engine.complete_forgetting()
+            result = forgetting_engine.list_forgetting_candidates()
+        assert result == []
 
-        assert result["forgotten_chunks"] == 0
-        mock_store.delete_documents.assert_not_called()
-
-    def test_complete_forgetting_skips_recent_low_activation(self, forgetting_engine, anima_dir):
-        """Test that chunks recently marked as low are NOT yet forgotten.
-
-        Chunks that have been low for less than FORGETTING_LOW_ACTIVATION_DAYS
-        should not be deleted yet.
-        """
+    def test_skips_recent_low_activation(self, forgetting_engine):
+        """Chunks below the low-activation duration threshold are excluded."""
         recent_low = (now_jst() - timedelta(days=10)).isoformat()
         chunks = [
             _make_chunk(
-                doc_id="recent_low",
+                doc_id="recent_chunk",
                 access_count=0,
                 activation_level="low",
                 low_activation_since=recent_low,
+                source_file="knowledge/recent.md",
             ),
         ]
-
-        mock_store = MagicMock()
-        mock_store.delete_documents = MagicMock()
-
         with (
-            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_vector_store", return_value=MagicMock()),
             patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
         ):
-            result = forgetting_engine.complete_forgetting()
+            result = forgetting_engine.list_forgetting_candidates()
+        assert result == []
 
-        assert result["forgotten_chunks"] == 0
-        mock_store.delete_documents.assert_not_called()
-
-    def test_complete_forgetting_emits_funnel_log(self, forgetting_engine, caplog):
-        """Complete forgetting logs diagnostic funnel counts."""
-        old_low_since = (now_jst() - timedelta(days=120)).isoformat()
+    def test_collapses_same_source_file(self, forgetting_engine):
+        """Multiple chunks from the same file collapse into one candidate."""
+        old_low = (now_jst() - timedelta(days=120)).isoformat()
         chunks = [
             _make_chunk(
-                doc_id="forget_me",
-                access_count=0,
-                activation_level="low",
-                low_activation_since=old_low_since,
+                doc_id="a", access_count=0, activation_level="low",
+                low_activation_since=old_low, source_file="knowledge/same.md",
+            ),
+            _make_chunk(
+                doc_id="b", access_count=0, activation_level="low",
+                low_activation_since=old_low, source_file="knowledge/same.md",
             ),
         ]
-
-        mock_store = MagicMock()
-        mock_store.delete_documents.return_value = True
-
         with (
-            patch.object(forgetting_engine, "_get_vector_store", return_value=mock_store),
+            patch.object(forgetting_engine, "_get_vector_store", return_value=MagicMock()),
             patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
-            caplog.at_level(logging.INFO, logger="animaworks.forgetting"),
         ):
-            forgetting_engine.complete_forgetting()
+            result = forgetting_engine.list_forgetting_candidates()
+        assert len(result) == 1
+        assert result[0].path == "knowledge/same.md"
 
-        assert "forgetting_funnel: anima=test_anima stage=complete" in caplog.text
-        assert "scanned=3" in caplog.text
-        assert "marked=3" in caplog.text
-        assert "forgotten=3" in caplog.text
+    def test_respects_max_items(self, forgetting_engine):
+        """Only up to max_items candidates are returned."""
+        old_low = (now_jst() - timedelta(days=120)).isoformat()
+        chunks = [
+            _make_chunk(
+                doc_id=f"c{i}", access_count=0, activation_level="low",
+                low_activation_since=old_low, source_file=f"knowledge/f{i}.md",
+            )
+            for i in range(5)
+        ]
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=MagicMock()),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.list_forgetting_candidates(max_items=2)
+        assert len(result) == 2
 
+    def test_sorts_by_days_low_desc(self, forgetting_engine):
+        """Candidates are sorted by low-activation days descending."""
+        very_old = (now_jst() - timedelta(days=200)).isoformat()
+        old = (now_jst() - timedelta(days=100)).isoformat()
+        chunks = [
+            _make_chunk(
+                doc_id="older", access_count=0, activation_level="low",
+                low_activation_since=very_old, source_file="knowledge/older.md",
+            ),
+            _make_chunk(
+                doc_id="younger", access_count=0, activation_level="low",
+                low_activation_since=old, source_file="knowledge/younger.md",
+            ),
+        ]
+        with (
+            patch.object(forgetting_engine, "_get_vector_store", return_value=MagicMock()),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+        ):
+            result = forgetting_engine.list_forgetting_candidates()
+        assert [c.path for c in result] == ["knowledge/older.md", "knowledge/younger.md"]
 
-# ── Consolidation Integration Tests ─────────────────────────────────
-
-
-class TestMonthlyForgettingHook:
-    """Test ConsolidationEngine.monthly_forget() integration."""
-
-    @pytest.fixture
-    def consolidation_engine(self, tmp_path: Path):
-        """Create a ConsolidationEngine instance."""
-        from core.memory.consolidation import ConsolidationEngine
-
-        anima_dir = tmp_path / "test_anima"
-        (anima_dir / "episodes").mkdir(parents=True)
-        (anima_dir / "knowledge").mkdir(parents=True)
-        return ConsolidationEngine(
-            anima_dir=anima_dir,
-            anima_name="test_anima",
-        )
-
-    @pytest.mark.asyncio
-    async def test_monthly_forget_calls_complete_forgetting(self, consolidation_engine):
-        """Test that monthly_forget() calls ForgettingEngine.complete_forgetting()."""
-        mock_result = {"forgotten_chunks": 5, "archived_files": ["a.md", "b.md"]}
-
-        with patch("core.memory.forgetting.ForgettingEngine") as MockForgettingEngine:
-            mock_forgetter = MagicMock()
-            mock_forgetter.complete_forgetting.return_value = mock_result
-            mock_forgetter.cleanup_procedure_archives.return_value = {"deleted_count": 0, "kept_count": 0}
-            MockForgettingEngine.return_value = mock_forgetter
-
-            with patch.object(consolidation_engine, "_rebuild_rag_index"):
-                result = await consolidation_engine.monthly_forget()
-
-        mock_forgetter.complete_forgetting.assert_called_once()
-        assert result["forgotten_chunks"] == 5
-        assert result["archived_files"] == ["a.md", "b.md"]
-        assert "episode_retention" not in result
+    def test_rag_unavailable_returns_empty(self, forgetting_engine):
+        """Returns an empty list when RAG is unavailable."""
+        with patch.object(forgetting_engine, "_get_vector_store", return_value=None):
+            assert forgetting_engine.list_forgetting_candidates() == []
 
 
 # ── F11: usage metrics combine explicit use and automatic recall ───

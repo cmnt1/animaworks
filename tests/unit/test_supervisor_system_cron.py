@@ -92,8 +92,7 @@ class TestSupervisorSchedulerInit:
         assert sup.scheduler.running
         jobs = sup.scheduler.get_jobs()
         job_ids = {j.id for j in jobs}
-        # Monthly forgetting and activity log rotation are always present
-        assert "system_monthly_forgetting" in job_ids
+        # Activity log rotation is always present
         assert "system_activity_log_rotation" in job_ids
         # Daily and weekly consolidation should be disabled
         assert "system_daily_consolidation" not in job_ids

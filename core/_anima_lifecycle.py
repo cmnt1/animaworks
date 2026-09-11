@@ -84,6 +84,21 @@ def _format_conflict_candidates(candidates: list[tuple[str, str, str]]) -> str:
     return "\n".join(lines)
 
 
+def _format_forgetting_candidates(candidates: list[Any]) -> str:
+    """Format forgetting candidates for prompt injection.
+
+    Returns a bullet list of ``- path — reason`` lines, or a short
+    "no candidates" line when there is nothing to review (so the
+    placeholder always resolves to something).
+    """
+    if not candidates:
+        return "（忘却候補なし / No forgetting candidates）"
+    lines: list[str] = []
+    for candidate in candidates:
+        lines.append(f"- {candidate.path} — {candidate.reason}")
+    return "\n".join(lines)
+
+
 def _format_hygiene_section(
     report: dict[str, list[dict[str, Any]]],
     *,
@@ -788,12 +803,24 @@ class LifecycleMixin:
             conflict_candidates = []
         conflict_candidates_text = _format_conflict_candidates(conflict_candidates)
 
+        try:
+            from core.memory.forgetting import ForgettingEngine
+
+            forgetting_candidates = ForgettingEngine(self.anima_dir, self.name).list_forgetting_candidates(
+                max_items=20
+            )
+        except Exception:
+            logger.debug("[%s] forgetting candidate detection failed", self.name, exc_info=True)
+            forgetting_candidates = []
+        forgetting_candidates_text = _format_forgetting_candidates(forgetting_candidates)
+
         prompt = load_prompt(
             "memory/weekly_consolidation_instruction",
             anima_name=self.name,
             knowledge_files_list="",
             merge_candidates=merge_candidates_text,
             conflict_candidates=conflict_candidates_text,
+            forgetting_candidates=forgetting_candidates_text,
             total_knowledge_count=0,
             hygiene_section="",
         )

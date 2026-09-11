@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -13,13 +14,11 @@ Tests cover:
 - _is_protected_procedure() with various metadata combinations
 - _is_protected() delegation to _is_protected_procedure() for procedures
 - Procedure-specific downscaling (180-day inactivity, utility score)
-- Procedures included in complete_forgetting scan
-- cleanup_procedure_archives() keeps only 5 recent versions
+- Procedures included in forgetting candidate scan
 - Skills and shared_users remain in PROTECTED_MEMORY_TYPES
 - Edge cases: version >= 3 protection, IMPORTANT tag with low utility
 """
 
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -30,7 +29,6 @@ JST = timezone(timedelta(hours=9))
 import pytest
 
 from core.memory.forgetting import (
-    PROCEDURE_ARCHIVE_KEEP_VERSIONS,
     PROCEDURE_INACTIVITY_DAYS,
     PROCEDURE_LOW_UTILITY_MIN_FAILURES,
     PROCEDURE_LOW_UTILITY_THRESHOLD,
@@ -38,7 +36,6 @@ from core.memory.forgetting import (
     PROTECTED_MEMORY_TYPES,
     ForgettingEngine,
 )
-
 
 # ── Fixtures ────────────────────────────────────────────────────────
 
@@ -334,7 +331,7 @@ class TestShouldDownscaleProcedure:
         }
         # days_since is approximately 180, not > 180
         # Due to float precision this may be slightly > 180, so we use a tight check
-        result = engine._should_downscale_procedure(meta, datetime.now(tz=JST))
+        engine._should_downscale_procedure(meta, datetime.now(tz=JST))
         # At exactly 180 days (maybe a few seconds over), the behaviour is acceptable either way
         # The important thing is 179 days is definitely False
         meta_recent = {
@@ -374,9 +371,11 @@ class TestDownscalingWithProcedures:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(engine, "_get_all_chunks", side_effect=get_chunks):
-                result = engine.synaptic_downscaling()
+        with (
+            patch.object(engine, "_get_vector_store", return_value=mock_store),
+            patch.object(engine, "_get_all_chunks", side_effect=get_chunks),
+        ):
+            result = engine.synaptic_downscaling()
 
         assert result["scanned"] == 1
         assert result["marked_low"] == 1
@@ -408,9 +407,11 @@ class TestDownscalingWithProcedures:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(engine, "_get_all_chunks", side_effect=get_chunks):
-                result = engine.synaptic_downscaling()
+        with (
+            patch.object(engine, "_get_vector_store", return_value=mock_store),
+            patch.object(engine, "_get_all_chunks", side_effect=get_chunks),
+        ):
+            result = engine.synaptic_downscaling()
 
         assert result["marked_low"] == 0
         mock_store.update_metadata.assert_not_called()
@@ -438,9 +439,11 @@ class TestDownscalingWithProcedures:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(engine, "_get_all_chunks", side_effect=get_chunks):
-                result = engine.synaptic_downscaling()
+        with (
+            patch.object(engine, "_get_vector_store", return_value=mock_store),
+            patch.object(engine, "_get_all_chunks", side_effect=get_chunks),
+        ):
+            result = engine.synaptic_downscaling()
 
         assert result["marked_low"] == 1
 
@@ -467,27 +470,24 @@ class TestDownscalingWithProcedures:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(engine, "_get_all_chunks", side_effect=get_chunks):
-                result = engine.synaptic_downscaling()
+        with (
+            patch.object(engine, "_get_vector_store", return_value=mock_store),
+            patch.object(engine, "_get_all_chunks", side_effect=get_chunks),
+        ):
+            result = engine.synaptic_downscaling()
 
         assert result["marked_low"] == 0
 
 
-# ── Complete Forgetting with Procedures ────────────────────────────
+# ── Forgetting Candidates with Procedures ────────────────────────
 
 
-class TestCompleteForgettingProcedures:
-    """Test that procedures are included in complete_forgetting scan."""
+class TestForgettingCandidatesWithProcedures:
+    """Test that procedures are included in the forgetting candidate scan."""
 
-    def test_procedure_archived_and_deleted(self, engine, anima_dir):
-        """Low-activation procedure is archived and deleted from vector store."""
-        old_low_since = (datetime.now(tz=JST) - timedelta(days=90)).isoformat()
-
-        # Create source file
-        source_file = anima_dir / "procedures" / "old-deploy.md"
-        source_file.write_text("# Old Deploy\n\n1. Step one", encoding="utf-8")
-
+    def test_eligible_procedure_is_candidate(self, engine):
+        """Low-activation, low-usage procedure becomes a candidate."""
+        old_low_since = (datetime.now(tz=JST) - timedelta(days=120)).isoformat()
         proc_chunks = [
             _make_chunk(
                 doc_id="forget_proc",
@@ -500,40 +500,19 @@ class TestCompleteForgettingProcedures:
             ),
         ]
 
-        def get_chunks(collection_name):
-            if "procedures" in collection_name:
-                return proc_chunks
-            return []
+        with (
+            patch.object(engine, "_get_vector_store", return_value=MagicMock()),
+            patch.object(engine, "_get_all_chunks", return_value=proc_chunks),
+        ):
+            result = engine.list_forgetting_candidates()
 
-        mock_store = MagicMock()
-        mock_store.delete_documents = MagicMock()
+        assert len(result) == 1
+        assert result[0].path == "procedures/old-deploy.md"
+        assert result[0].days_low > 90
 
-        with patch.object(engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(engine, "_get_all_chunks", side_effect=get_chunks):
-                result = engine.complete_forgetting()
-
-        assert result["forgotten_chunks"] == 1
-        assert "procedures/old-deploy.md" in result["archived_files"]
-
-        # Verify source file was moved to archive
-        archive_dir = anima_dir / "archive" / "forgotten"
-        archived_files = list(archive_dir.iterdir())
-        assert len(archived_files) == 1
-        assert "old-deploy" in archived_files[0].name
-
-        # Verify original file is gone
-        assert not source_file.exists()
-
-        # Verify delete_documents called for procedures collection
-        mock_store.delete_documents.assert_called_once()
-        call_args = mock_store.delete_documents.call_args[0]
-        assert call_args[0] == "test_anima_procedures"
-        assert call_args[1] == ["forget_proc"]
-
-    def test_protected_procedure_not_forgotten(self, engine, anima_dir):
-        """Mature procedure (version >= 3) is not forgotten."""
+    def test_protected_procedure_not_candidate(self, engine):
+        """Mature procedure (version >= 3) is not a candidate."""
         old_low_since = (datetime.now(tz=JST) - timedelta(days=90)).isoformat()
-
         proc_chunks = [
             _make_chunk(
                 doc_id="mature_proc",
@@ -545,118 +524,13 @@ class TestCompleteForgettingProcedures:
             ),
         ]
 
-        def get_chunks(collection_name):
-            if "procedures" in collection_name:
-                return proc_chunks
-            return []
+        with (
+            patch.object(engine, "_get_vector_store", return_value=MagicMock()),
+            patch.object(engine, "_get_all_chunks", return_value=proc_chunks),
+        ):
+            result = engine.list_forgetting_candidates()
 
-        mock_store = MagicMock()
-        mock_store.delete_documents = MagicMock()
-
-        with patch.object(engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(engine, "_get_all_chunks", side_effect=get_chunks):
-                result = engine.complete_forgetting()
-
-        assert result["forgotten_chunks"] == 0
-        mock_store.delete_documents.assert_not_called()
-
-
-# ── Archive Cleanup Tests ──────────────────────────────────────────
-
-
-class TestCleanupProcedureArchives:
-    """Test cleanup_procedure_archives() version retention."""
-
-    def test_keeps_only_n_recent_versions(self, engine, anima_dir):
-        """Cleanup keeps only PROCEDURE_ARCHIVE_KEEP_VERSIONS per stem."""
-        archive_dir = anima_dir / "archive" / "versions"
-
-        # Create 8 version files for a procedure stem
-        for i in range(8):
-            ts = f"2026010{i + 1}_120000"
-            path = archive_dir / f"deploy_v{i + 1}_{ts}.md"
-            path.write_text(f"version {i + 1}", encoding="utf-8")
-            # Ensure distinct mtime ordering
-            time.sleep(0.01)
-
-        result = engine.cleanup_procedure_archives()
-
-        assert result["deleted_count"] == 3  # 8 - 5 = 3
-        assert result["kept_count"] == 5
-
-        remaining = sorted(archive_dir.iterdir())
-        assert len(remaining) == 5
-
-    def test_keeps_all_when_under_limit(self, engine, anima_dir):
-        """No deletion when there are fewer versions than the limit."""
-        archive_dir = anima_dir / "archive" / "versions"
-
-        for i in range(3):
-            ts = f"2026010{i + 1}_120000"
-            path = archive_dir / f"deploy_v{i + 1}_{ts}.md"
-            path.write_text(f"version {i + 1}", encoding="utf-8")
-
-        result = engine.cleanup_procedure_archives()
-
-        assert result["deleted_count"] == 0
-        assert result["kept_count"] == 3
-
-    def test_groups_by_stem(self, engine, anima_dir):
-        """Cleanup groups files by procedure stem, not globally."""
-        archive_dir = anima_dir / "archive" / "versions"
-
-        # Create 7 files for stem "deploy"
-        for i in range(7):
-            ts = f"2026010{i + 1}_120000"
-            path = archive_dir / f"deploy_v{i + 1}_{ts}.md"
-            path.write_text(f"deploy version {i + 1}", encoding="utf-8")
-            time.sleep(0.01)
-
-        # Create 3 files for stem "backup"
-        for i in range(3):
-            ts = f"2026010{i + 1}_120000"
-            path = archive_dir / f"backup_v{i + 1}_{ts}.md"
-            path.write_text(f"backup version {i + 1}", encoding="utf-8")
-            time.sleep(0.01)
-
-        result = engine.cleanup_procedure_archives()
-
-        # deploy: 7 - 5 = 2 deleted; backup: 0 deleted
-        assert result["deleted_count"] == 2
-        assert result["kept_count"] == 5 + 3  # 5 deploy + 3 backup
-
-    def test_no_archive_dir(self, engine, anima_dir):
-        """Cleanup returns zero counts when archive/versions/ doesn't exist."""
-        # Remove the archive/versions directory
-        import shutil
-        versions_dir = anima_dir / "archive" / "versions"
-        if versions_dir.exists():
-            shutil.rmtree(versions_dir)
-
-        result = engine.cleanup_procedure_archives()
-
-        assert result["deleted_count"] == 0
-        assert result["kept_count"] == 0
-
-    def test_ignores_non_matching_files(self, engine, anima_dir):
-        """Files that don't match the version pattern are not touched."""
-        archive_dir = anima_dir / "archive" / "versions"
-
-        # Create a non-matching file
-        (archive_dir / "random_notes.md").write_text("notes", encoding="utf-8")
-
-        # Create matching version files
-        for i in range(3):
-            ts = f"2026010{i + 1}_120000"
-            path = archive_dir / f"deploy_v{i + 1}_{ts}.md"
-            path.write_text(f"version {i + 1}", encoding="utf-8")
-
-        result = engine.cleanup_procedure_archives()
-
-        assert result["deleted_count"] == 0
-        assert result["kept_count"] == 3
-        # Non-matching file should still exist
-        assert (archive_dir / "random_notes.md").exists()
+        assert result == []
 
 
 # ── Edge Cases ─────────────────────────────────────────────────────
@@ -724,9 +598,11 @@ class TestEdgeCases:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(engine, "_get_all_chunks", side_effect=get_chunks):
-                result = engine.synaptic_downscaling()
+        with (
+            patch.object(engine, "_get_vector_store", return_value=mock_store),
+            patch.object(engine, "_get_all_chunks", side_effect=get_chunks),
+        ):
+            result = engine.synaptic_downscaling()
 
         assert result["marked_low"] == 0
         mock_store.update_metadata.assert_not_called()
@@ -754,53 +630,14 @@ class TestEdgeCases:
         mock_store = MagicMock()
         mock_store.update_metadata = MagicMock()
 
-        with patch.object(engine, "_get_vector_store", return_value=mock_store):
-            with patch.object(engine, "_get_all_chunks", side_effect=get_chunks):
-                result = engine.synaptic_downscaling()
+        with (
+            patch.object(engine, "_get_vector_store", return_value=mock_store),
+            patch.object(engine, "_get_all_chunks", side_effect=get_chunks),
+        ):
+            result = engine.synaptic_downscaling()
 
         # 100 days > 90 day threshold, access_count=0 < 3 → should be marked
         assert result["marked_low"] == 1
-
-
-# ── Consolidation Integration Tests ────────────────────────────────
-
-
-class TestConsolidationProcedureArchiveCleanup:
-    """Test that monthly_forget() calls cleanup_procedure_archives()."""
-
-    @pytest.fixture
-    def consolidation_engine(self, tmp_path: Path):
-        """Create a ConsolidationEngine instance."""
-        from core.memory.consolidation import ConsolidationEngine
-
-        anima_dir = tmp_path / "test_anima"
-        (anima_dir / "episodes").mkdir(parents=True)
-        (anima_dir / "knowledge").mkdir(parents=True)
-        (anima_dir / "procedures").mkdir(parents=True)
-        return ConsolidationEngine(
-            anima_dir=anima_dir,
-            anima_name="test_anima",
-        )
-
-    @pytest.mark.asyncio
-    async def test_monthly_forget_calls_archive_cleanup(self, consolidation_engine):
-        """monthly_forget() should call cleanup_procedure_archives()."""
-        mock_forget_result = {"forgotten_chunks": 0, "archived_files": []}
-        mock_cleanup_result = {"deleted_count": 2, "kept_count": 5}
-
-        with patch(
-            "core.memory.forgetting.ForgettingEngine"
-        ) as MockForgettingEngine:
-            mock_forgetter = MagicMock()
-            mock_forgetter.complete_forgetting.return_value = mock_forget_result
-            mock_forgetter.cleanup_procedure_archives.return_value = mock_cleanup_result
-            MockForgettingEngine.return_value = mock_forgetter
-
-            with patch.object(consolidation_engine, "_rebuild_rag_index"):
-                result = await consolidation_engine.monthly_forget()
-
-        mock_forgetter.cleanup_procedure_archives.assert_called_once()
-        assert result["procedure_archive_cleanup"] == mock_cleanup_result
 
 
 # ── Constants Tests ────────────────────────────────────────────────
@@ -821,8 +658,6 @@ class TestConstants:
     def test_low_utility_min_failures(self):
         assert PROCEDURE_LOW_UTILITY_MIN_FAILURES == 3
 
-    def test_archive_keep_versions(self):
-        assert PROCEDURE_ARCHIVE_KEEP_VERSIONS == 5
 
 
 if __name__ == "__main__":

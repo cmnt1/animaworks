@@ -17,7 +17,6 @@ its tool-call loop (see ``Anima.run_consolidation()``).
 This module retains:
 - Episode and resolved-event collection (pre-processing for the Anima)
 - RAG index updates and rebuilds (post-processing after the Anima finishes)
-- Monthly forgetting (lifecycle.py post-processing)
 - Legacy knowledge migration
 - LLM output sanitisation (shared utility used by reconsolidation.py)
 """
@@ -54,7 +53,7 @@ class ConsolidationEngine:
     The Anima itself now drives the consolidation loop via tool calls.
     This class provides:
     - **Pre-processing**: episode collection, resolved-event collection
-    - **Post-processing**: RAG index updates/rebuilds, monthly forgetting
+    - **Post-processing**: RAG index updates and rebuilds
     - **Utilities**: knowledge file listing, LLM output sanitisation,
       legacy knowledge migration
     """
@@ -1737,50 +1736,3 @@ class ConsolidationEngine:
             )
         except Exception:
             logger.warning("Failed to rebuild long-term BM25 index for anima=%s", self.anima_name, exc_info=True)
-
-    # ── Monthly Forgetting ──────────────────────────────────────
-
-    async def monthly_forget(self) -> dict[str, Any]:
-        """Perform monthly forgetting: archive and remove forgotten memories.
-
-        This is the final stage of the forgetting pipeline, removing
-        memories that have remained at low activation for extended periods.
-        Also cleans up old procedure version archives.
-        """
-        logger.info("Starting monthly forgetting for anima=%s", self.anima_name)
-        try:
-            from core.memory.forgetting import ForgettingEngine
-
-            forgetter = ForgettingEngine(self.anima_dir, self.anima_name)
-            result = forgetter.complete_forgetting()
-
-            # Clean up old procedure version archives
-            try:
-                archive_result = forgetter.cleanup_procedure_archives()
-                result["procedure_archive_cleanup"] = archive_result
-                logger.info(
-                    "Procedure archive cleanup for anima=%s: deleted=%d, kept=%d",
-                    self.anima_name,
-                    archive_result.get("deleted_count", 0),
-                    archive_result.get("kept_count", 0),
-                )
-            except Exception:
-                logger.exception(
-                    "Procedure archive cleanup failed for anima=%s",
-                    self.anima_name,
-                )
-
-            # Rebuild RAG index after deletions
-            self._rebuild_rag_index()
-
-            logger.info(
-                "Monthly forgetting complete for anima=%s: forgotten=%d, archived=%d files",
-                self.anima_name,
-                result.get("forgotten_chunks", 0),
-                len(result.get("archived_files", [])),
-            )
-            return result
-
-        except Exception:
-            logger.exception("Monthly forgetting failed for anima=%s", self.anima_name)
-            return {"forgotten_chunks": 0, "archived_files": [], "error": True}
