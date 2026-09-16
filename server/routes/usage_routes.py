@@ -988,17 +988,20 @@ _NANOGPT_USAGE_URL = "https://nano-gpt.com/api/subscription/v1/usage"
 
 
 def _read_nanogpt_api_key() -> str | None:
-    """Read nanoGPT API key from AnimaWorks config credentials."""
+    """Read the current local nanoGPT key, with config as fallback."""
+    from core.config.nanogpt import nanogpt_api_key
+
+    configured = None
     try:
         from core.config.models import load_config
 
         config = load_config()
         cred = config.credentials.get("nanogpt")
-        if cred and cred.api_key:
-            return cred.api_key
+        if cred:
+            configured = cred.api_key
     except Exception:
         logger.debug("Failed to read nanoGPT credentials", exc_info=True)
-    return None
+    return nanogpt_api_key(configured) or None
 
 
 def _fetch_nanogpt_usage(skip_cache: bool = False) -> dict[str, Any]:

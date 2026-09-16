@@ -555,8 +555,10 @@ def _refresh_opencode_go_models(config) -> dict[str, object]:
 
 
 def _refresh_nanogpt_models(config) -> dict[str, object]:
+    from core.config.nanogpt import nanogpt_api_key
+
     credential = config.credentials.get("nanogpt", CredentialConfig())
-    api_key = _first_secret(credential.api_key, os.environ.get("NANOGPT_API_KEY"), _abconfig_value("nanogpt_api"))
+    api_key = nanogpt_api_key(credential.api_key)
     if not api_key:
         cached = _cached_provider_models("nanogpt")
         return {
@@ -720,13 +722,16 @@ def _available_models_payload(config) -> list[dict[str, str]]:
         for model_id in ("grok/grok-4.5", "grok/grok-composer-2.5-fast"):
             add(model_id, route="C", provider_label="Grok", credential="grok")
 
-    nanogpt_cred = config.credentials.get("nanogpt")
-    if nanogpt_cred and nanogpt_cred.api_key:
+    from core.config.nanogpt import nanogpt_api_key
+
+    nanogpt_cred = config.credentials.get("nanogpt", CredentialConfig())
+    ngpt_key = nanogpt_api_key(nanogpt_cred.api_key)
+    if ngpt_key:
         nanogpt_models = _cached_provider_models("nanogpt")
         if not nanogpt_models:
             try:
                 ngpt_base = nanogpt_cred.base_url or "https://nano-gpt.com/api/subscription/v1"
-                nanogpt_models = [f"nanogpt/{model}" for model in _list_nanogpt_models(ngpt_base, nanogpt_cred.api_key)]
+                nanogpt_models = [f"nanogpt/{model}" for model in _list_nanogpt_models(ngpt_base, ngpt_key)]
             except Exception:
                 nanogpt_models = []
         for model_id in nanogpt_models:

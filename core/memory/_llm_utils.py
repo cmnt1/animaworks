@@ -200,6 +200,10 @@ def get_llm_kwargs_for_model(model: str, *, credential: str = "") -> dict[str, A
         api_key = cred.api_key if cred else None
     else:
         api_key = _get_api_key_for_provider(cfg, provider)
+    if provider == "nanogpt" or explicit_cred == "nanogpt":
+        from core.config.nanogpt import nanogpt_api_key
+
+        api_key = nanogpt_api_key(api_key)
     if api_key:
         kwargs["api_key"] = api_key
     if cred and cred.base_url:
@@ -263,6 +267,10 @@ def get_llm_kwargs_for_model_config(model_config: Any) -> dict[str, Any]:
 
     api_key = getattr(model_config, "api_key", None)
     api_key_env = getattr(model_config, "api_key_env", "")
+    if resolved_model.startswith("nanogpt/") or api_key_env == "NANOGPT_API_KEY":
+        from core.config.nanogpt import nanogpt_api_key
+
+        api_key = nanogpt_api_key(api_key)
     if not api_key and api_key_env:
         api_key = os.environ.get(api_key_env) or None
     if api_key:

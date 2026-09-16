@@ -92,6 +92,12 @@ def get_credential(
     # 1. config.json
     config = load_config()
     cred = config.credentials.get(credential_name)
+    if credential_name == "nanogpt" and key_name == "api_key":
+        from core.config.nanogpt import nanogpt_api_key
+
+        val = nanogpt_api_key(cred.api_key if cred else None)
+        if val:
+            return val
     if cred:
         if key_name == "api_key" and cred.api_key:
             _log_resolved(credential_name, key_name, "config.json", cred.api_key)

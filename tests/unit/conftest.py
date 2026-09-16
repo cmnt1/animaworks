@@ -61,6 +61,17 @@ def _reset_config_caches_for_unit_tests(
 
 
 @pytest.fixture(autouse=True)
+def _isolate_nanogpt_secrets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Never read the developer's real nanoGPT key in unit tests."""
+    from core.config import nanogpt
+
+    monkeypatch.setattr(nanogpt, "_DEFAULT_ABCONFIG_DIR", tmp_path / "_abconfig")
+    monkeypatch.delenv(nanogpt.NANOGPT_SECRETS_PATH_ENV, raising=False)
+    monkeypatch.delenv("ANIMAWORKS_ABCONFIG_PATH", raising=False)
+    monkeypatch.delenv("NANOGPT_API_KEY", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _disable_skill_dense_embeddings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

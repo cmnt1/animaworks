@@ -303,23 +303,17 @@ def _cache_nanogpt_image_models(models: list[dict[str, object]], *, status: str,
 
 
 def _nanogpt_image_api_key() -> str:
+    from core.config.nanogpt import nanogpt_api_key
+
+    configured = None
     try:
         from core.config.models import CredentialConfig, load_config
 
         credential = load_config().credentials.get("nanogpt", CredentialConfig())
-        if credential.api_key:
-            return credential.api_key
+        configured = credential.api_key
     except Exception:
         pass
-    if os.environ.get("NANOGPT_API_KEY"):
-        return os.environ["NANOGPT_API_KEY"]
-    try:
-        from server.routes.config_routes import _abconfig_value
-
-        return _abconfig_value("nanogpt_api")
-    except Exception:
-        logger.warning("Failed to read nanoGPT key from abconfig", exc_info=True)
-        return ""
+    return nanogpt_api_key(configured)
 
 
 def _as_model_items(data: object) -> list[object]:

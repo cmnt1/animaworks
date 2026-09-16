@@ -231,6 +231,10 @@ def resolve_anima_config(
         raise KeyError(f"Credential '{credential_name}' (for anima '{anima_name}') not found in config.credentials")
 
     credential = config.credentials[credential_name]
+    if credential_name == "nanogpt":
+        from core.config.nanogpt import nanogpt_api_key
+
+        credential = credential.model_copy(update={"api_key": nanogpt_api_key(credential.api_key)})
     return resolved_defaults, credential
 
 
