@@ -86,10 +86,9 @@ def _known_claude_code_models() -> list[str]:
 
 def _known_google_models() -> list[str]:
     return [
-        "google/gemini-2.5-pro",
-        "google/gemini-2.5-flash",
-        "google/gemini-2.0-flash",
-        "google/gemini-2.0-flash-lite",
+        str(item["name"])
+        for item in KNOWN_MODELS
+        if item.get("mode") == "A" and str(item.get("name", "")).startswith("google/")
     ]
 
 
@@ -624,7 +623,7 @@ def _display_model_name(model_id: str, provider_label: str) -> str:
     if lower_provider == "anthropic":
         return model_id.removeprefix("anthropic/")
     if lower_provider == "openai":
-        return model_id.removeprefix("openai/").removeprefix("openai-codex/")
+        return model_id.removeprefix("openai/").removeprefix("openai-codex/").removeprefix("codex/")
     if lower_provider == "google":
         return model_id.removeprefix("google/")
     if lower_provider == "opencode go":
@@ -711,8 +710,13 @@ def _available_models_payload(config) -> list[dict[str, str]]:
                 for model_id in codex_models:
                     add(model_id, route="C", provider_label="OpenAI", credential="openai")
         elif provider in ("google", "gemini"):
-            for model_id in _models_for_provider("google", _known_google_models()):
+            known_models = _known_google_models()
+            cached_models = _models_for_provider("google", known_models)
+            for model_id in _unique_model_ids([*known_models, *cached_models]):
                 add(model_id, route="A", provider_label="Google", credential="google")
+        elif provider == OPENCODE_GO_PROVIDER:
+            for model_id in _models_for_provider("opencode_go", _known_opencode_go_models()):
+                add(model_id, route="A", provider_label="OpenCode Go", credential=OPENCODE_GO_PROVIDER)
 
     if is_codex_login_available():
         for model_id in codex_models:

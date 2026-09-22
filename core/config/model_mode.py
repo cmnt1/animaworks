@@ -97,6 +97,8 @@ DEFAULT_MODEL_MODES = DEFAULT_MODEL_MODE_PATTERNS
 # informational and does NOT restrict which models can be used.
 KNOWN_MODELS: list[dict[str, str]] = [
     # ── Claude / Anthropic (Mode S) ──────────────────────────────────────────
+    {"name": "claude-opus-5-5", "mode": "S", "note": "Opus 5.5・最新"},
+    {"name": "claude-fable-5-1", "mode": "S", "note": "Fable 5.1・長時間エージェント処理"},
     {"name": "claude-fable-5", "mode": "S", "note": "最高性能・長時間タスク（usage credits）"},
     {"name": "claude-opus-5", "mode": "S", "note": "Opus最高性能・最新"},
     {"name": "claude-opus-4-8", "mode": "S", "note": "Opus最高性能・推奨"},
@@ -120,6 +122,14 @@ KNOWN_MODELS: list[dict[str, str]] = [
     {"name": "azure/gpt-4.1-mini", "mode": "A", "note": "Azure OpenAI 4.1-mini"},
     {"name": "azure/gpt-4.1", "mode": "A", "note": "Azure OpenAI 4.1"},
     # ── Google Gemini (Mode A) ────────────────────────────────────────────────
+    {"name": "google/gemini-3.8-flash", "mode": "A", "note": "最新Flash・エージェント処理"},
+    {"name": "google/gemini-3.7-flash", "mode": "A", "note": "コーディング・エージェント処理"},
+    {"name": "google/gemini-3.6-flash", "mode": "A", "note": "高速バランス"},
+    {"name": "google/gemini-3.5-flash", "mode": "A", "note": "高速処理"},
+    {"name": "google/gemini-3.5-flash-lite", "mode": "A", "note": "軽量・高スループット"},
+    {"name": "google/gemini-3.1-flash-lite", "mode": "A", "note": "軽量・高速"},
+    {"name": "google/gemini-3.1-pro-preview", "mode": "A", "note": "Pro・プレビュー"},
+    {"name": "google/gemini-3-flash-preview", "mode": "A", "note": "Flash・プレビュー"},
     {"name": "google/gemini-2.5-pro", "mode": "A", "note": "最高性能"},
     {"name": "google/gemini-2.5-flash", "mode": "A", "note": "高速バランス"},
     {"name": "google/gemini-2.5-flash-lite", "mode": "A", "note": "軽量・高スループット"},
@@ -142,6 +152,9 @@ KNOWN_MODELS: list[dict[str, str]] = [
     {"name": "ollama/qwen3:14b", "mode": "A", "note": "ローカル中型"},
     {"name": "ollama/qwen3:32b", "mode": "A", "note": "ローカル大型"},
     # ── Codex (Mode C) ──────────────────────────────────────────────────────
+    {"name": "codex/gpt-6-astra", "mode": "C", "note": "Codex CLI経由・最高性能"},
+    {"name": "codex/gpt-6-sol", "mode": "C", "note": "Codex CLI経由・コーディング・エージェント処理"},
+    {"name": "codex/gpt-6-luna", "mode": "C", "note": "Codex CLI経由・高速・低コスト"},
     {"name": "codex/gpt-5.6-sol", "mode": "C", "note": "Codex CLI経由・最高性能"},
     {"name": "codex/gpt-5.6-terra", "mode": "C", "note": "Codex CLI経由・バランス型"},
     {"name": "codex/gpt-5.6-luna", "mode": "C", "note": "Codex CLI経由・高速"},

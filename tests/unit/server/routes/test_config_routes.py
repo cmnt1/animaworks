@@ -337,6 +337,57 @@ class TestOpenAIAuthSettings:
         assert "codex/gpt-5.3-codex" in ids
         assert "openai-codex/gpt-5.3-codex" not in ids
 
+    async def test_current_models_survive_stale_cache_and_validate(self):
+        from core.config.model_catalog import available_model_id_set
+
+        config = AnimaWorksConfig(
+            credentials={
+                "anthropic": CredentialConfig(api_key="sk-test"),
+                "openai": CredentialConfig(type="codex_login"),
+                "google": CredentialConfig(api_key="google-test"),
+                "opencode-go": CredentialConfig(api_key="go-test"),
+            }
+        )
+        cached = {
+            "claude_code": ["claude-opus-4-8"],
+            "codex": ["codex/gpt-5.4"],
+            "google": ["google/gemini-2.5-flash"],
+        }
+        expected = {
+            "claude-opus-5-5": ("S", "Anthropic", "claude-opus-5-5"),
+            "claude-fable-5-1": ("S", "Anthropic", "claude-fable-5-1"),
+            "anthropic/claude-opus-5-5": ("A", "Anthropic", "claude-opus-5-5"),
+            "codex/gpt-6-astra": ("C", "OpenAI", "gpt-6-astra"),
+            "codex/gpt-6-sol": ("C", "OpenAI", "gpt-6-sol"),
+            "codex/gpt-6-luna": ("C", "OpenAI", "gpt-6-luna"),
+            "google/gemini-3.8-flash": ("A", "Google", "gemini-3.8-flash"),
+            "google/gemini-3.7-flash": ("A", "Google", "gemini-3.7-flash"),
+            "opencode-go/glm-5.1": ("A", "OpenCode Go", "glm-5.1"),
+        }
+        with (
+            patch("server.routes.config_routes.load_config", return_value=config),
+            patch("server.routes.config_routes._cached_provider_models", side_effect=lambda p: cached.get(p, [])),
+            patch("server.routes.config_routes._list_ollama_models", return_value=[]),
+            patch("core.config.nanogpt.nanogpt_api_key", return_value=""),
+            patch("server.routes.config_routes.is_codex_login_available", return_value=False),
+            patch("server.routes.config_routes.is_grok_authenticated", return_value=False),
+            patch("core.config.model_catalog.is_codex_login_available", return_value=False),
+            patch("core.config.model_catalog.is_grok_authenticated", return_value=False),
+        ):
+            async with AsyncClient(transport=ASGITransport(app=_make_test_app()), base_url="http://test") as client:
+                response = await client.get("/api/system/available-models")
+            allowed = available_model_id_set(config)
+
+        assert response.status_code == 200
+        models = response.json()["models"]
+        by_id = {item["id"]: item for item in models}
+        assert len(by_id) == len(models)
+        for model_id, (route, provider, name) in expected.items():
+            assert by_id[model_id]["route"] == route
+            assert by_id[model_id]["provider"] == provider
+            assert by_id[model_id]["model_name"] == name
+            assert model_id in allowed
+
     async def test_available_models_include_known_anthropic_models_with_stale_cache(self):
         config = AnimaWorksConfig(
             credentials={

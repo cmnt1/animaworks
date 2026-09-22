@@ -18,6 +18,7 @@ import logging
 from typing import Any
 
 from core.config.models import KNOWN_MODELS, load_config
+from core.config.opencode_go import OPENCODE_GO_FALLBACK_MODELS, OPENCODE_GO_PROVIDER
 from core.platform.codex import is_codex_login_available
 from core.platform.grok import is_grok_authenticated
 
@@ -47,10 +48,20 @@ def _build_static_model_catalog(config: Any) -> list[dict[str, str]]:
         if not cred.api_key and cred.type not in ("claude_code_login", "codex_login"):
             continue
         if provider == "anthropic":
-            for m in ("claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"):
+            claude_models = [
+                str(item["name"])
+                for item in KNOWN_MODELS
+                if item.get("mode") == "S" and str(item.get("name", "")).startswith("claude-")
+            ]
+            for m in [*claude_models, "claude-haiku-4-5"]:
                 if m not in seen:
                     models.append({"id": m, "label": m, "credential": "anthropic"})
                     seen.add(m)
+                if cred.api_key:
+                    api_id = f"anthropic/{m}"
+                    if api_id not in seen:
+                        models.append({"id": api_id, "label": m, "credential": "anthropic"})
+                        seen.add(api_id)
         elif provider == "openai":
             # Canonical ``openai/`` ids so bare names resolve to a real mode.
             for m in (
@@ -73,10 +84,20 @@ def _build_static_model_catalog(config: Any) -> list[dict[str, str]]:
                         models.append({"id": m, "label": m, "credential": "openai"})
                         seen.add(m)
         elif provider in ("google", "gemini"):
-            for m in ("gemini/gemini-2.5-flash",):
-                label = m.removeprefix("gemini/")
+            google_models = [
+                str(item["name"])
+                for item in KNOWN_MODELS
+                if item.get("mode") == "A" and str(item.get("name", "")).startswith("google/")
+            ]
+            for m in [*google_models, "gemini/gemini-2.5-flash"]:
+                label = m.removeprefix("google/").removeprefix("gemini/")
                 if m not in seen:
                     models.append({"id": m, "label": label, "credential": "google"})
+                    seen.add(m)
+        elif provider == OPENCODE_GO_PROVIDER:
+            for m in OPENCODE_GO_FALLBACK_MODELS:
+                if m not in seen:
+                    models.append({"id": m, "label": m, "credential": OPENCODE_GO_PROVIDER})
                     seen.add(m)
     # Codex CLI models (standalone — no openai credential entry needed)
     if is_codex_login_available():

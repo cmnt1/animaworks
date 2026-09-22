@@ -820,6 +820,7 @@ function _selectedModelPickerValue(prefix) {
 const MODEL_REFRESH_PROVIDER_LABELS = {
   claude_code: "Claude Code",
   codex: "Codex",
+  opencode_go: "OpenCode Go",
   nanogpt: "nanoGPT",
   google: "Google",
 };
@@ -885,7 +886,7 @@ function _bindModelRefreshButton({ buttonId, statusId, selectId = null, currentM
       const res = await api("/api/system/available-models/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providers: ["claude_code", "codex", "nanogpt", "google"] }),
+        body: JSON.stringify({ providers: ["claude_code", "codex", "opencode_go", "nanogpt", "google"] }),
       });
       _modelsCache = res.models || await _fetchModels(true);
       if (select) {
