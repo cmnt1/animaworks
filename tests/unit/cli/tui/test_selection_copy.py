@@ -30,9 +30,7 @@ async def _select(app, pilot, text: str, start: int = 0, end: int | None = None)
     widget = Static(text, classes="assistant-text")
     await app.transcript.mount(widget)
     await pilot.pause()
-    app.screen.selections = {
-        widget: Selection(Offset(start, 0), Offset(len(text) if end is None else end, 0))
-    }
+    app.screen.selections = {widget: Selection(Offset(start, 0), Offset(len(text) if end is None else end, 0))}
     await pilot.pause()
     return widget
 
@@ -135,7 +133,8 @@ async def test_copy_reports_on_the_status_bar():
 
 @pytest.mark.asyncio
 async def test_focus_returns_to_the_input_after_copying():
-    """Starting a selection moves focus to the scrollable transcript."""
+    """Safety net: even if focus somehow lands on the transcript, Enter
+    copies and hands focus back to the input."""
     client = FakeClient()
     app = AnimaChatApp(client=client, anima_name="sora")
     async with app.run_test() as pilot:
@@ -153,7 +152,7 @@ async def test_focus_returns_to_the_input_after_copying():
 
 @pytest.mark.asyncio
 async def test_enter_after_a_click_still_submits():
-    """A click in the transcript takes focus away; Enter must still send."""
+    """Safety net: focus dropped onto the transcript must not eat Enter."""
     client = FakeClient()
     app = AnimaChatApp(client=client, anima_name="sora")
     async with app.run_test() as pilot:
@@ -239,3 +238,23 @@ async def test_escape_clears_the_selection_before_interrupting():
         await pilot.press("escape")
         await _pump()
         assert client.interrupt_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_click_in_the_transcript_keeps_focus_in_the_input():
+    """The transcript is not focusable: clicking it (to select, to grab
+    the scrollbar) must not take keystrokes away from the input box."""
+    client = FakeClient()
+    app = AnimaChatApp(client=client, anima_name="sora")
+    async with app.run_test() as pilot:
+        await _ready(app, pilot)
+        widget = await _select(app, pilot, "read me")
+        app.screen.selections = {}
+        await pilot.pause()
+
+        await pilot.click(widget)
+        await pilot.pause()
+        assert app.focused is app.input_container.input
+
+        await pilot.press("h", "i")
+        assert app.input_container.input.text == "hi"

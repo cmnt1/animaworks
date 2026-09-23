@@ -218,8 +218,17 @@ class TranscriptScrolledToTop(Message):
     """
 
 
-class Transcript(VerticalScroll):
-    """The vertical scroll of all chat turns."""
+class Transcript(VerticalScroll, can_focus=False):
+    """The vertical scroll of all chat turns.
+
+    Never focusable: the input box is the only place keystrokes belong,
+    the way Claude Code keeps its prompt live while you read. Textual's
+    ``ScrollableContainer`` is focusable by default, so a click in the
+    transcript (starting a selection, grabbing the scrollbar) used to
+    move focus here and swallow everything typed until Enter or Escape.
+    Wheel scrolling, selection and the scrollbar all work without focus;
+    keyboard scrolling is the app-level PageUp/PageDown binding.
+    """
 
     # Following the tail is a mode, the way a pager behaves: scrolling up
     # turns it off, coming back to the bottom turns it on again. Mounting
