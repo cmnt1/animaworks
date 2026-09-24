@@ -1030,6 +1030,15 @@ class IrodoriConfig(BaseModel):
     base_url: str = "http://localhost:7861"
 
 
+class GeminiTTSVoiceConfig(BaseModel):
+    """Gemini API TTS settings (key: env var, then vault ``shared`` section)."""
+
+    model: str = "gemini-3.8-flash-tts"
+    api_key_env: str = "GEMINI_API_KEY"
+    vault_key: str = "GEMINI_API_KEY"
+    chunk_seconds: float = 1.0
+
+
 class VoiceConfig(BaseModel):
     """Voice chat configuration."""
 
@@ -1055,6 +1064,7 @@ class VoiceConfig(BaseModel):
     elevenlabs: ElevenLabsVoiceConfig = ElevenLabsVoiceConfig()
     style_bert_vits2: StyleBertVits2Config = StyleBertVits2Config()
     irodori: IrodoriConfig = IrodoriConfig()
+    gemini: GeminiTTSVoiceConfig = GeminiTTSVoiceConfig()
 
 
 # ── UI Config ────────────────────────────────────────────────────────────────
@@ -1445,6 +1455,7 @@ __all__ = [
     "InboxConfig",
     "InteractionConfig",
     "IrodoriConfig",
+    "GeminiTTSVoiceConfig",
     "LlmRateGuardConfig",
     "LocalLLMConfig",
     "LoggingConfig",
