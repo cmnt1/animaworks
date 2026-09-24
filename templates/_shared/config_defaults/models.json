@@ -156,15 +156,15 @@
     "context_window": 131072
   },
   "ollama/gemma3*": {
-    "mode": "B",
+    "mode": "A",
     "context_window": 8192
   },
   "ollama/phi4*": {
-    "mode": "B",
+    "mode": "A",
     "context_window": 16384
   },
   "ollama/*": {
-    "mode": "B",
+    "mode": "A",
     "context_window": 8192
   },
   "openai/deepseek-v4-flash": {

@@ -1429,6 +1429,71 @@ def step_v0120_prompt_deadline_engine_neutral_resync(
     return StepResult(changed=total, skipped=skipped, details=details, error=error)
 
 
+_V0140_STALE_PROMPTS = (
+    "communication_rules_s.md",
+    "hiring_context.md",
+    "meeting_chair.md",
+    "tool_data_interpretation.md",
+)
+
+
+def step_v0140_harness_diet_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """v0.14.0: Resync prompts/common_knowledge, drop retired prompts, map Mode B to A in models.json."""
+    details: list[str] = []
+    total = 0
+    skipped = 0
+    errors: list[str] = []
+
+    for resync_fn in (step_prompt_resync, step_common_knowledge_resync):
+        r = resync_fn(data_dir, dry_run, verbose)
+        total += r.changed
+        skipped += r.skipped
+        details.extend(r.details)
+        if r.error:
+            errors.append(f"{resync_fn.__name__}: {r.error}")
+
+    for name in _V0140_STALE_PROMPTS:
+        stale = data_dir / "prompts" / name
+        if not stale.is_file():
+            skipped += 1
+            continue
+        if dry_run:
+            details.append(f"Would remove stale prompts/{name}")
+        else:
+            stale.unlink()
+            details.append(f"Removed stale prompts/{name}")
+        total += 1
+
+    # Mode B was removed; runtime models.json copies still map ollama/* to "B".
+    models_path = data_dir / "models.json"
+    if models_path.is_file():
+        try:
+            models = json.loads(models_path.read_text(encoding="utf-8"))
+            patched = [
+                pattern
+                for pattern, entry in models.items()
+                if isinstance(entry, dict) and str(entry.get("mode", "")).upper() == "B"
+            ]
+            if patched:
+                if dry_run:
+                    details.append(f"Would map Mode B to A in models.json: {', '.join(patched)}")
+                else:
+                    for pattern in patched:
+                        models[pattern]["mode"] = "A"
+                    models_path.write_text(json.dumps(models, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                    details.append(f"Mapped Mode B to A in models.json: {', '.join(patched)}")
+                total += len(patched)
+            else:
+                skipped += 1
+        except (OSError, ValueError, AttributeError) as exc:
+            errors.append(f"models.json: {exc}")
+    else:
+        skipped += 1
+
+    error = "; ".join(errors) if errors else None
+    return StepResult(changed=total, skipped=skipped, details=details, error=error)
+
+
 # ── Category 4: Database sync ────────────────────────────────────
 
 
@@ -1622,6 +1687,12 @@ def register_all_steps(runner: Any) -> None:
             "v0.12.0: Resync prompts (deadline rule + engine-neutral tool wording)",
             "template_sync",
             step_v0120_prompt_deadline_engine_neutral_resync,
+        ),
+        MigrationStep(
+            "v0140_harness_diet_resync",
+            "v0.14.0: Resync prompts/common_knowledge, drop retired prompts, map Mode B to A",
+            "template_sync",
+            step_v0140_harness_diet_resync,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

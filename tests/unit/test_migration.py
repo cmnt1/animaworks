@@ -525,6 +525,62 @@ class TestMigrationSteps:
         assert "v0120_prompt_deadline_engine_neutral_resync" in ids
         assert ids.index("v0120_prompt_deadline_engine_neutral_resync") < ids.index("update_version")
 
+    def test_step_v0140_resyncs_and_drops_retired_prompts(self, data_dir: Path) -> None:
+        from core.migrations.steps import step_v0140_harness_diet_resync
+
+        prompts_dir = data_dir / "prompts"
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+        (prompts_dir / "behavior_rules.md").write_text("stale rules", encoding="utf-8")
+        for name in ("meeting_chair.md", "hiring_context.md"):
+            (prompts_dir / name).write_text("retired", encoding="utf-8")
+        ck = data_dir / "common_knowledge"
+        ck.mkdir(parents=True, exist_ok=True)
+        (data_dir / "models.json").write_text(
+            json.dumps({"ollama/*": {"mode": "B", "context_window": 8192}, "claude-*": {"mode": "S"}}),
+            encoding="utf-8",
+        )
+
+        result = step_v0140_harness_diet_resync(data_dir, dry_run=False, verbose=True)
+
+        assert result.error is None
+        assert (prompts_dir / "behavior_rules.md").read_text(encoding="utf-8") != "stale rules"
+        assert not (prompts_dir / "meeting_chair.md").exists()
+        assert not (prompts_dir / "hiring_context.md").exists()
+        assert any(ck.rglob("*.md"))
+        models = json.loads((data_dir / "models.json").read_text(encoding="utf-8"))
+        assert models["ollama/*"] == {"mode": "A", "context_window": 8192}
+        assert models["claude-*"]["mode"] == "S"
+
+    def test_step_v0140_dry_run_keeps_files(self, data_dir: Path) -> None:
+        from core.migrations.steps import step_v0140_harness_diet_resync
+
+        prompts_dir = data_dir / "prompts"
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+        (prompts_dir / "meeting_chair.md").write_text("retired", encoding="utf-8")
+        (data_dir / "models.json").write_text(json.dumps({"ollama/*": {"mode": "B"}}), encoding="utf-8")
+
+        result = step_v0140_harness_diet_resync(data_dir, dry_run=True, verbose=True)
+
+        assert (prompts_dir / "meeting_chair.md").exists()
+        assert json.loads((data_dir / "models.json").read_text(encoding="utf-8"))["ollama/*"]["mode"] == "B"
+        assert any("Would remove stale prompts/meeting_chair.md" in d for d in result.details)
+
+    def test_step_v0140_registered_before_update_version(self, tmp_path: Path) -> None:
+        from core.migrations.steps import register_all_steps
+
+        runner = MigrationRunner(tmp_path)
+        register_all_steps(runner)
+        ids = [item["id"] for item in runner.list_steps()]
+
+        assert ids.index("v0120_prompt_deadline_engine_neutral_resync") < ids.index("v0140_harness_diet_resync")
+        assert ids.index("v0140_harness_diet_resync") < ids.index("update_version")
+
+    def test_shipped_models_json_has_no_mode_b(self) -> None:
+        from core.paths import TEMPLATES_DIR
+
+        models = json.loads((TEMPLATES_DIR / "_shared" / "config_defaults" / "models.json").read_text(encoding="utf-8"))
+        assert all(str(e.get("mode", "")).upper() != "B" for e in models.values() if isinstance(e, dict))
+
     def test_step_common_knowledge_team_design_removes_stale_machine_docs(self, data_dir: Path) -> None:
         from core.migrations.registry import StepResult
         from core.migrations.steps import step_common_knowledge_team_design_resync
