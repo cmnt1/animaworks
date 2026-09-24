@@ -258,3 +258,63 @@ async def test_click_in_the_transcript_keeps_focus_in_the_input():
 
         await pilot.press("h", "i")
         assert app.input_container.input.text == "hi"
+
+
+async def _mount_reply(app, pilot, body: str):
+    from cli.tui.widgets import AssistantBlock
+
+    block = AssistantBlock("sora")
+    await app.transcript.mount(block)
+    block.append_text(body)
+    await pilot.pause()
+    return block.text
+
+
+async def _drag(pilot, widget, start: tuple[int, int], end: tuple[int, int]):
+    await pilot.mouse_down(widget, offset=start)
+    await pilot.hover(widget, offset=end)
+    await pilot.mouse_up(widget, offset=end)
+    await pilot.pause()
+
+
+@pytest.mark.asyncio
+async def test_a_markdown_reply_body_can_be_selected_with_the_mouse():
+    """The body used to be a bare Rich renderable: no offsets, no selection."""
+    app = AnimaChatApp(client=FakeClient(), anima_name="sora")
+    async with app.run_test(size=(80, 30)) as pilot:
+        await _ready(app, pilot)
+        body = await _mount_reply(app, pilot, "Hello **bold** world\n\nsecond paragraph")
+
+        pad = body.styles.padding.left
+        await _drag(pilot, body, (pad + 6, 0), (pad + 8, 2))
+
+        assert app._selected_text() == "bold world\n\nsecond pa"
+
+
+@pytest.mark.asyncio
+async def test_a_wrapped_japanese_line_is_copied_unwrapped():
+    app = AnimaChatApp(client=FakeClient(), anima_name="sora")
+    async with app.run_test(size=(40, 30)) as pilot:
+        await _ready(app, pilot)
+        line = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほ"
+        body = await _mount_reply(app, pilot, line)
+        assert body.size.height > 1
+
+        await _drag(pilot, body, (0, 0), (body.size.width - 1, body.size.height - 1))
+
+        assert app._selected_text() == line
+
+
+@pytest.mark.asyncio
+async def test_a_table_in_a_reply_can_be_selected():
+    app = AnimaChatApp(client=FakeClient(), anima_name="sora")
+    async with app.run_test(size=(80, 30)) as pilot:
+        await _ready(app, pilot)
+        body = await _mount_reply(app, pilot, "intro\n\n| a | b |\n|---|---|\n| x1 | y2 |\n\nafter")
+
+        await _drag(pilot, body, (0, 0), (body.size.width - 1, body.size.height - 1))
+
+        copied = app._selected_text()
+        assert copied.startswith("intro")
+        assert "x1" in copied and "y2" in copied
+        assert copied.endswith("after")

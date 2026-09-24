@@ -28,9 +28,15 @@ from typing import NamedTuple
 from rich import box
 from rich.cells import cell_len
 from rich.console import Group, RenderableType
+from rich.segment import Segment
 from rich.style import Style
 from rich.table import Table
 from rich.text import DEFAULT_JUSTIFY, DEFAULT_OVERFLOW, Lines, Text, pick_bool
+from textual._context import active_app
+from textual.css.styles import RulesMap
+from textual.strip import Strip
+from textual.style import Style as VisualStyle
+from textual.visual import RenderOptions, Visual
 
 
 class Palette(NamedTuple):
@@ -209,6 +215,95 @@ class _TranscriptRenderable:
 
     def __rich_console__(self, console, options):
         yield from console.render(self.renderable, options)
+
+    def visualize(self) -> TranscriptVisual:
+        return TranscriptVisual(self.renderable)
+
+
+class TranscriptVisual(Visual):
+    """Draw a transcript renderable so the mouse can select its text.
+
+    Textual wraps any Rich renderable other than a bare ``Text`` in a
+    ``RichVisual``, whose segments carry no ``offset`` metadata and whose
+    widget cannot extract a selection — so a response body could not be
+    selected at all. This lays the blocks out itself, with the same
+    mixed-script wrapping as :class:`_TranscriptText`, stamping every
+    segment with its (column, source line) so a selection maps back to
+    the unwrapped text: copying a paragraph yields the paragraph, not the
+    screen lines it happened to wrap into. Blocks that are not text
+    (tables) are selected line by line as drawn.
+    """
+
+    def __init__(self, renderable: RenderableType) -> None:
+        self._blocks: list[RenderableType] = (
+            list(renderable.renderables) if isinstance(renderable, Group) else [renderable]
+        )
+        self._layout_width: int | None = None
+        # One (fragment, first column, source line) per screen row.
+        self._rows: list[tuple[Text, int, int]] = []
+        self._lines: list[str] = []
+
+    @property
+    def plain(self) -> str:
+        """The text a selection is taken from: one entry per source line."""
+        return "\n".join(self._lines)
+
+    def _layout(self, width: int) -> list[tuple[Text, int, int]]:
+        if width == self._layout_width:
+            return self._rows
+        console = active_app.get().console
+        rows: list[tuple[Text, int, int]] = []
+        lines: list[str] = []
+        for block in self._blocks:
+            if isinstance(block, Text):
+                for line in block.split(allow_blank=True) or [block.blank_copy()]:
+                    line.expand_tabs()
+                    y = len(lines)
+                    lines.append(line.plain)
+                    breaks = _mixed_script_breaks(line.plain, width)
+                    for x, fragment in zip([0, *breaks], line.divide(breaks), strict=True):
+                        fragment.rstrip_end(width)
+                        fragment.truncate(width, overflow="fold")
+                        rows.append((fragment, x, y))
+                continue
+            options = console.options.update(width=width, highlight=False)
+            for segments in console.render_lines(block, options, pad=False):
+                drawn = Text.assemble(*((seg.text, seg.style) for seg in segments if not seg.control))
+                rows.append((drawn, 0, len(lines)))
+                lines.append(drawn.plain)
+        self._layout_width = width
+        self._rows = rows
+        self._lines = lines
+        return rows
+
+    def render_strips(self, width: int, height: int | None, style: VisualStyle, options: RenderOptions) -> list[Strip]:
+        console = active_app.get().console
+        selection = options.selection
+        selection_style = options.selection_style.rich_style if options.selection_style is not None else None
+        base = style.rich_style
+        strips: list[Strip] = []
+        for fragment, x, y in self._layout(width)[:height]:
+            if selection is not None and selection_style is not None and (span := selection.get_span(y)):
+                start, end = span
+                if end == -1:
+                    end = len(self._lines[y])
+                start, end = max(start - x, 0), min(end - x, len(fragment))
+                if start < end:
+                    fragment = fragment.copy()
+                    fragment.stylize(selection_style, start, end)
+            segments: list[Segment] = []
+            for text, seg_style, _ in fragment.render(console, end=""):
+                offset = Style.from_meta({"offset": (x, y)})
+                segments.append(Segment(text, base + (seg_style or Style.null()) + offset))
+                x += len(text)
+            strips.append(Strip(segments))
+        return strips
+
+    def get_optimal_width(self, rules: RulesMap, container_width: int) -> int:
+        return max((fragment.cell_len for fragment, _, _ in self._layout(container_width)), default=0)
+
+    def get_height(self, rules: RulesMap, width: int) -> int:
+        return len(self._layout(width))
 
 
 def transcript_renderable(renderable: RenderableType) -> RenderableType:

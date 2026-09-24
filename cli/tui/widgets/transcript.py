@@ -11,9 +11,10 @@ from rich.text import Text
 from textual.containers import Vertical, VerticalScroll
 from textual.geometry import Size
 from textual.message import Message
+from textual.selection import Selection
 from textual.widgets import Static
 
-from cli.tui.markdown import MUTED_STYLE, plain_text, render_markdown, transcript_renderable
+from cli.tui.markdown import MUTED_STYLE, TranscriptVisual, plain_text, render_markdown, transcript_renderable
 from cli.tui.widgets.thinking import ThinkingBlock
 from cli.tui.widgets.tool_card import ToolCard
 
@@ -35,6 +36,21 @@ def strip_html_comments(text: str) -> str:
     return _strip_html_comments(text)
 
 
+class TranscriptText(Static):
+    """A transcript body the mouse can select and copy.
+
+    ``Widget.get_selection`` only knows how to read ``Text`` and
+    ``Content``; the body is a :class:`TranscriptVisual`, which keeps the
+    unwrapped source lines its selection offsets refer to.
+    """
+
+    def get_selection(self, selection: Selection) -> tuple[str, str] | None:
+        visual = self.visual
+        if isinstance(visual, TranscriptVisual):
+            return selection.extract(visual.plain), "\n"
+        return super().get_selection(selection)
+
+
 class HumanTurn(Vertical):
     """A single user message in the transcript."""
 
@@ -50,7 +66,7 @@ class HumanTurn(Vertical):
         self._label = label
         self._text = text
         self.label_widget = Static("", classes="human-label")
-        self.message = Static("", classes="human-message")
+        self.message = TranscriptText("", classes="human-message")
 
     def compose(self):
         yield self.label_widget
@@ -85,7 +101,7 @@ class SystemNote(Vertical):
         self._label = label
         self._text = text
         self.label_widget = Static("", classes="system-label")
-        self.message = Static("", classes="system-message")
+        self.message = TranscriptText("", classes="system-message")
 
     def compose(self):
         yield self.label_widget
@@ -128,8 +144,8 @@ class AssistantBlock(Vertical):
         # prefix left the name buried in the first paragraph, so a reader
         # scanning the transcript could not tell who was talking.
         self.label_widget = Static("", classes="assistant-label")
-        self.text = Static("", classes="assistant-text")
-        self._text_segments: list[Static] = [self.text]
+        self.text = TranscriptText("", classes="assistant-text")
+        self._text_segments: list[TranscriptText] = [self.text]
         self._segment_bodies: list[str] = [""]
         self._active_text_segment: int | None = 0
         self.thinking: ThinkingBlock | None = None
@@ -163,7 +179,7 @@ class AssistantBlock(Vertical):
     def append_text(self, text: str) -> None:
         self._body += text
         if self._active_text_segment is None:
-            segment = Static("", classes="assistant-text")
+            segment = TranscriptText("", classes="assistant-text")
             self._text_segments.append(segment)
             self._segment_bodies.append("")
             self._active_text_segment = len(self._text_segments) - 1
