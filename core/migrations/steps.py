@@ -1516,6 +1516,13 @@ def step_v0142_task_board_cli_resync(data_dir: Path, dry_run: bool, verbose: boo
     )
 
 
+def step_v0143_tool_guide_dedup_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """v0.14.3: Resync prompts (drop the Background Command Output block duplicated in s_mcp)."""
+    r = step_prompt_resync(data_dir, dry_run, verbose)
+    error = f"step_prompt_resync: {r.error}" if r.error else None
+    return StepResult(changed=r.changed, skipped=r.skipped, details=list(r.details), error=error)
+
+
 # ── Category 4: Database sync ────────────────────────────────────
 
 
@@ -1727,6 +1734,12 @@ def register_all_steps(runner: Any) -> None:
             "v0.14.2: Resync heartbeat prompt and task-board guide (task board CLI)",
             "template_sync",
             step_v0142_task_board_cli_resync,
+        ),
+        MigrationStep(
+            "v0143_tool_guide_dedup_resync",
+            "v0.14.3: Resync prompts (dedupe tool guide background-command block)",
+            "template_sync",
+            step_v0143_tool_guide_dedup_resync,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]
