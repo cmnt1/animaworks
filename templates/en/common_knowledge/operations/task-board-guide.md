@@ -32,3 +32,5 @@ A lease is a time-limited lock that authorizes its holder to close or annotate s
 Changes are allowed only while the lease is held; by default it expires naturally after 30 minutes.
 An owner may change their own task without a lease when nobody else holds one.
 Anima makes the judgment; machines do not close tasks automatically.
+The owner's current judgment takes precedence over earlier notes in the task such as "do not cancel" or "keep pending".
+When owners `done` / `cancel` their own task, the delegating anima is notified with the reason. Delegators read that notice before re-sending the same work.
