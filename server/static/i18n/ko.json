@@ -658,6 +658,7 @@
   "taskboard.filter_suppressed": "Suppressed",
   "taskboard.load_failed": "Failed to load TaskBoard",
   "taskboard.loaded_count": "{count} tasks loaded.",
+  "taskboard.history_truncated": "숨긴 작업은 최신 {count}건만 표시합니다.",
   "taskboard.loading": "Loading TaskBoard...",
   "taskboard.modal_archive": "Archive Task",
   "taskboard.modal_expire": "Expire Task",

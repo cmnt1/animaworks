@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
 from core.memory.task_queue import TaskQueueManager
@@ -24,6 +24,10 @@ _SUPPRESSED_VISIBILITIES = {
     AttentionVisibility.TOMBSTONED,
 }
 _CANCEL_QUEUE_VISIBILITIES = _SUPPRESSED_VISIBILITIES
+# Hidden (expired/archived/tombstoned) cards are history; the ledger holds tens of
+# thousands of them, so list views return only the most recent ones.
+DEFAULT_HISTORY_LIMIT = 500
+MAX_HISTORY_LIMIT = 5000
 _COLUMN_TITLES = {
     BoardColumn.TODO: "Todo",
     BoardColumn.RUNNING: "Running",
@@ -74,6 +78,7 @@ def create_taskboard_router() -> APIRouter:
         include_archived: bool = False,
         include_missing: bool = False,
         q: str | None = None,
+        history_limit: int = Query(DEFAULT_HISTORY_LIMIT, ge=0, le=MAX_HISTORY_LIMIT),
     ) -> dict[str, Any]:
         """Return the canonical task projection plus TaskBoard presentation metadata."""
         try:
@@ -86,6 +91,7 @@ def create_taskboard_router() -> APIRouter:
                 include_archived=include_archived,
                 include_missing=include_missing,
                 q=q,
+                history_limit=history_limit,
             )
         except HTTPException:
             raise
@@ -168,6 +174,7 @@ def summarize_task_board(
         anima_names=anima_names,
         include_missing=True,
         include_archived=True,
+        archived_limit=0,
     )
     summary = {
         "pending": 0,
@@ -221,6 +228,7 @@ def _list_task_board(
     include_archived: bool,
     include_missing: bool,
     q: str | None,
+    history_limit: int = DEFAULT_HISTORY_LIMIT,
 ) -> dict[str, Any]:
     paths = _resolve_paths(request)
     animas_dir = paths["animas_dir"]
@@ -228,13 +236,18 @@ def _list_task_board(
     anima_names = paths["anima_names"]
     selected_names = _selected_anima_names(animas_dir, anima_names, assignee)
     store = _store_for(shared_dir)
+    # The default active view only needs live ledger rows. Views that show hidden
+    # cards load only the most recent archived ledger rows.
+    wants_history = include_archived or visibility in _SUPPRESSED_VISIBILITIES
+    wants_hidden = wants_history or (visibility is not None and visibility != AttentionVisibility.ACTIVE)
 
     tasks = project_all(
         animas_dir,
         store,
         anima_names=selected_names,
         include_missing=include_missing,
-        include_archived=True,
+        include_archived=wants_hidden,
+        archived_limit=history_limit if wants_history else 0,
     )
     tasks = [
         task
@@ -247,15 +260,18 @@ def _list_task_board(
             q=q,
         )
     ]
+    tasks, history_truncated = _trim_history(tasks, history_limit if wants_history else None)
 
     return {
         "columns": _column_response(tasks),
         "tasks": [_task_to_response(task) for task in tasks],
         "counts": _visibility_counts(tasks),
         "meta": {
+            "history_limit": history_limit if wants_history else None,
+            "history_truncated": history_truncated,
             "warnings": {
                 "corrupt_task_queue_lines": _count_corrupt_task_queue_lines(animas_dir, selected_names),
-            }
+            },
         },
     }
 
@@ -415,6 +431,18 @@ def _ensure_known_anima(animas_dir: Path, anima_names: list[str], anima_name: st
     if anima_name in set(anima_names) or (animas_dir / anima_name).is_dir():
         return
     raise HTTPException(status_code=404, detail={"error": "anima_not_found", "anima_name": anima_name})
+
+
+def _trim_history(tasks: list[BoardTask], limit: int | None) -> tuple[list[BoardTask], bool]:
+    """Keep every visible card plus the ``limit`` most recently updated hidden ones."""
+    if limit is None:
+        return tasks, False
+    history = [task for task in tasks if task.visibility in _SUPPRESSED_VISIBILITIES]
+    if len(history) < limit:
+        return tasks, False
+    history.sort(key=lambda task: task.queue_updated_at or task.board_updated_at or "", reverse=True)
+    dropped = {(task.anima_name, task.task_id) for task in history[limit:]}
+    return [task for task in tasks if (task.anima_name, task.task_id) not in dropped], True
 
 
 def _matches_filters(

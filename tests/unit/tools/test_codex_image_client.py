@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import io
+import subprocess
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -78,6 +79,12 @@ class TestCodexImageClient:
             out = client.generate_fullbody(prompt="1girl, black hair", width=1024, height=1536)
         assert isinstance(out, bytes)
         assert _decode_size(out) == (1024, 1536)
+
+    def test_codex_stdin_is_detached(self) -> None:
+        client = CodexImageClient(ImageGenConfig(image_style="anime"))
+        with patch("core.tools.image.codex.subprocess.run", side_effect=_mock_codex_writes_png((80, 120))) as run:
+            client.generate_fullbody(prompt="p", width=100, height=100)
+        assert run.call_args.kwargs["stdin"] is subprocess.DEVNULL
 
     def test_cover_crop_from_square_to_portrait(self) -> None:
         """Square mock output must become 1024x1536 without stretch."""
