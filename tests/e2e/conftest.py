@@ -140,7 +140,7 @@ def _deterministic_reranker(monkeypatch: pytest.MonkeyPatch):
     reranker = _DeterministicReranker()
     monkeypatch.setattr("core.memory.retrieval.reranker.get_reranker", lambda model_name=None: reranker)
     monkeypatch.setattr("core.memory.retrieval.pipeline.get_reranker", lambda model_name=None: reranker)
-    monkeypatch.setattr("core.memory.graph.reranker.get_reranker", lambda model_name=None: reranker)
+    monkeypatch.setattr("core.memory.retrieval.reranker.get_reranker", lambda model_name=None: reranker)
 
 
 @pytest.fixture

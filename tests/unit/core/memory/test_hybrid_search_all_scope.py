@@ -42,12 +42,12 @@ def _patch_reranker():
         return [{**it, "ce_score": 0.5} for it in items]
 
     mock_reranker.rerank = _passthrough
-    return patch("core.memory.graph.reranker.get_reranker", return_value=mock_reranker)
+    return patch("core.memory.retrieval.reranker.get_reranker", return_value=mock_reranker)
 
 
 @pytest.mark.asyncio
 async def test_reranker_accepts_callable_text_resolver():
-    from core.memory.graph.reranker import CrossEncoderReranker
+    from core.memory.retrieval.reranker import CrossEncoderReranker
 
     reranker = CrossEncoderReranker()
     mock_model = MagicMock()
@@ -127,7 +127,7 @@ async def test_search_all_reranks_with_per_item_text():
     driver.execute_query = AsyncMock(side_effect=_mock_execute)
 
     search = HybridSearch(driver, "test_group")
-    with patch("core.memory.graph.reranker.get_reranker", return_value=mock_reranker):
+    with patch("core.memory.retrieval.reranker.get_reranker", return_value=mock_reranker):
         await search.search("query", scope="all", query_embedding=[0.1] * 384, limit=10)
 
     assert "fact text" in captured_texts

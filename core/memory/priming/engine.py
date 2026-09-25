@@ -187,33 +187,6 @@ class PrimingEngine:
         except asyncio.CancelledError:
             raise
 
-    @staticmethod
-    def _extract_summary(content: str, metadata: dict) -> str:
-        """Delegate to standalone extract_summary for backward compat."""
-        from core.memory.priming.channel_c import extract_summary
-
-        title, _ = extract_summary(content, metadata)
-        return title
-
-    @staticmethod
-    def _to_read_memory_path(metadata: dict, anima_name: str) -> str:
-        """Delegate to standalone to_read_memory_path for backward compat."""
-        from core.memory.priming.channel_c import to_read_memory_path
-
-        return to_read_memory_path(metadata, anima_name)
-
-    def _read_shared_channels(self, limit_per_channel: int = 5) -> list:
-        """Delegate to standalone read_shared_channels for backward compat."""
-        from core.memory.priming.channel_b import read_shared_channels
-
-        return read_shared_channels(self.anima_dir, self.shared_dir, limit_per_channel=limit_per_channel)
-
-    async def _fallback_episodes_and_channels(self) -> str:
-        """Delegate to standalone fallback for backward compat."""
-        from core.memory.priming.channel_b import fallback_episodes_and_channels
-
-        return await fallback_episodes_and_channels(self.anima_dir, self.shared_dir)
-
     async def prime_memories(
         self,
         message: str,
@@ -604,35 +577,3 @@ class PrimingEngine:
     def _extract_keywords(self, message: str) -> list[str]:
         """Backward compat: delegate to utils.extract_keywords."""
         return extract_keywords(message, self.knowledge_dir)
-
-    async def _read_old_channels(self) -> str:
-        """Backward compat: delegate to channel_b.read_old_channels."""
-        return await _channel_b.read_old_channels(self.anima_dir, self.shared_dir)
-
-    @staticmethod
-    def _search_and_merge(retriever, queries, anima_name, *, memory_type, top_k, include_shared=False, min_score=None):
-        """Backward compat: delegate to utils.search_and_merge."""
-        from core.memory.priming.utils import search_and_merge as _search_and_merge
-
-        return _search_and_merge(
-            retriever,
-            queries,
-            anima_name,
-            memory_type=memory_type,
-            top_k=top_k,
-            include_shared=include_shared,
-            min_score=min_score,
-        )
-
-    # Backward compatibility: static methods for tests that call PrimingEngine._build_dual_queries etc.
-    @staticmethod
-    def _build_dual_queries(message: str, keywords: list[str]) -> list[str]:
-        from core.memory.priming.utils import build_dual_queries
-
-        return build_dual_queries(message, keywords)
-
-    @staticmethod
-    def _meets_min_length(token: str) -> bool:
-        from core.memory.priming.utils import meets_min_length
-
-        return meets_min_length(token)
