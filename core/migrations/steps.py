@@ -1501,6 +1501,21 @@ def step_v0141_harness_diet_r2_resync(data_dir: Path, dry_run: bool, verbose: bo
     return StepResult(changed=r.changed, skipped=r.skipped, details=list(r.details), error=error)
 
 
+def step_v0142_task_board_cli_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """v0.14.2: Resync heartbeat prompt and task-board guide (task board CLI triage)."""
+    results = {
+        "step_prompt_resync": step_prompt_resync(data_dir, dry_run, verbose),
+        "step_common_knowledge_resync": step_common_knowledge_resync(data_dir, dry_run, verbose),
+    }
+    errors = [f"{name}: {r.error}" for name, r in results.items() if r.error]
+    return StepResult(
+        changed=sum(r.changed for r in results.values()),
+        skipped=sum(r.skipped for r in results.values()),
+        details=[d for r in results.values() for d in r.details],
+        error="; ".join(errors) or None,
+    )
+
+
 # ── Category 4: Database sync ────────────────────────────────────
 
 
@@ -1706,6 +1721,12 @@ def register_all_steps(runner: Any) -> None:
             "v0.14.1: Resync prompts (task submission time line, tool guide wording)",
             "template_sync",
             step_v0141_harness_diet_r2_resync,
+        ),
+        MigrationStep(
+            "v0142_task_board_cli_resync",
+            "v0.14.2: Resync heartbeat prompt and task-board guide (task board CLI)",
+            "template_sync",
+            step_v0142_task_board_cli_resync,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

@@ -702,3 +702,26 @@ class TestRegisterAllSteps:
             < ids.index("v0141_harness_diet_r2_resync")
             < ids.index("update_version")
         )
+
+    def test_step_v0142_resyncs_heartbeat_and_task_board_guide(self, data_dir: Path) -> None:
+        from core.migrations.steps import register_all_steps, step_v0142_task_board_cli_resync
+
+        (data_dir / "prompts").mkdir(parents=True, exist_ok=True)
+        (data_dir / "prompts" / "heartbeat.md").write_text("stale", encoding="utf-8")
+        guide = data_dir / "common_knowledge" / "operations" / "task-board-guide.md"
+        guide.parent.mkdir(parents=True, exist_ok=True)
+        guide.write_text("stale", encoding="utf-8")
+
+        result = step_v0142_task_board_cli_resync(data_dir, dry_run=False, verbose=True)
+
+        assert result.error is None
+        assert "task board" in (data_dir / "prompts" / "heartbeat.md").read_text(encoding="utf-8")
+        assert "task claim" in guide.read_text(encoding="utf-8")
+        runner = MigrationRunner(data_dir)
+        register_all_steps(runner)
+        ids = [item["id"] for item in runner.list_steps()]
+        assert (
+            ids.index("v0141_harness_diet_r2_resync")
+            < ids.index("v0142_task_board_cli_resync")
+            < ids.index("update_version")
+        )
