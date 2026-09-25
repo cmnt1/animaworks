@@ -98,3 +98,43 @@ async def test_internal_endpoint_applies_lease_rules(runtime) -> None:
     assert claimed.json()["ok"] is True
     assert cancelled.json()["result"]["status"] == "cancelled"
     assert runtime.get_task_by_id("t1").status == "cancelled"
+
+
+def _delegated_task(runtime) -> None:
+    runtime.add_task(
+        source="anima",
+        original_instruction="verify",
+        assignee="worker",
+        summary="verify",
+        task_id="t2",
+        relay_chain=["boss"],
+    )
+
+
+def test_owner_cancel_notifies_delegator(runtime) -> None:
+    from core.taskboard.board_actions import run_board_action
+
+    _delegated_task(runtime)
+    with patch("core.taskboard.board_actions._send_task_notice", return_value=None) as send:
+        result = run_board_action(actor="worker", action="cancel", task_id="t2", text="blocked on human")
+    assert result["status"] == "cancelled"
+    send.assert_called_once_with("worker", "boss", "t2", "cancel", "blocked on human", owner="worker")
+
+
+def test_delegator_cancel_notifies_owner_only(runtime) -> None:
+    from core.taskboard.board_actions import run_board_action
+
+    _delegated_task(runtime)
+    run_board_action(actor="boss", action="claim", task_id="t2", ttl_seconds=600)
+    with patch("core.taskboard.board_actions._send_task_notice", return_value=None) as send:
+        run_board_action(actor="boss", action="cancel", task_id="t2", text="superseded")
+    send.assert_called_once_with("boss", "worker", "t2", "cancel", "superseded")
+
+
+def test_owner_note_does_not_notify_delegator(runtime) -> None:
+    from core.taskboard.board_actions import run_board_action
+
+    _delegated_task(runtime)
+    with patch("core.taskboard.board_actions._send_task_notice", return_value=None) as send:
+        run_board_action(actor="worker", action="note", task_id="t2", text="progress")
+    send.assert_not_called()

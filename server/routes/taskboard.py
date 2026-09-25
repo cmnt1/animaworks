@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from core.memory.task_queue import TaskQueueManager
 from core.taskboard.models import AttentionVisibility, BoardColumn, BoardTask
-from core.taskboard.projector import project_all, project_anima
+from core.taskboard.projector import project_all, project_task
 from core.taskboard.store import TaskBoardStore
 from core.time_utils import now_iso
 
@@ -392,16 +392,9 @@ def _load_projected_task(
     anima_name: str,
     task_id: str,
 ) -> dict[str, Any]:
-    tasks = project_anima(
-        animas_dir / anima_name,
-        store,
-        anima_name=anima_name,
-        include_missing=True,
-        include_archived=True,
-    )
-    for task in tasks:
-        if task.task_id == task_id:
-            return _task_to_response(task)
+    task = project_task(animas_dir / anima_name, store, task_id, anima_name=anima_name)
+    if task is not None:
+        return _task_to_response(task)
     raise HTTPException(status_code=404, detail={"error": "task_not_found", "task_id": task_id})
 
 

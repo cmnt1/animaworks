@@ -726,14 +726,29 @@ class TestRegisterAllSteps:
             < ids.index("update_version")
         )
 
-    def test_step_v0143_registered_after_v0142(self, tmp_path: Path) -> None:
+    def test_step_v0143_resyncs_owner_led_triage(self, data_dir: Path) -> None:
+        from core.migrations.steps import register_all_steps, step_v0143_task_board_self_triage_resync
+
+        (data_dir / "prompts").mkdir(parents=True, exist_ok=True)
+        (data_dir / "prompts" / "heartbeat.md").write_text("stale", encoding="utf-8")
+
+        result = step_v0143_task_board_self_triage_resync(data_dir, dry_run=False, verbose=True)
+
+        assert result.error is None
+        assert "task done ID" in (data_dir / "prompts" / "heartbeat.md").read_text(encoding="utf-8")
+        runner = MigrationRunner(data_dir)
+        register_all_steps(runner)
+        ids = [item["id"] for item in runner.list_steps()]
+        assert (
+            ids.index("v0142_task_board_cli_resync")
+            < ids.index("v0143_task_board_self_triage_resync")
+            < ids.index("update_version")
+        )
+
+    def test_step_v0144_tool_guide_dedup_registered_last(self, tmp_path: Path) -> None:
         from core.migrations.steps import register_all_steps
 
         runner = MigrationRunner(tmp_path)
         register_all_steps(runner)
         ids = [item["id"] for item in runner.list_steps()]
-        assert (
-            ids.index("v0142_task_board_cli_resync")
-            < ids.index("v0143_tool_guide_dedup_resync")
-            < ids.index("update_version")
-        )
+        assert ids.index("v0144_tool_guide_dedup_resync") == ids.index("update_version") - 1

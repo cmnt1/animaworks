@@ -77,6 +77,26 @@ def project_anima(
     return sorted(projected, key=_sort_key)
 
 
+def project_task(
+    anima_dir: Path | str,
+    store: TaskBoardStore | None,
+    task_id: str,
+    *,
+    anima_name: str | None = None,
+) -> BoardTask | None:
+    """Project a single task (archived rows and missing-queue cards included) by primary key."""
+    resolved_anima_dir = Path(anima_dir)
+    resolved_anima_name = anima_name or resolved_anima_dir.name
+    resolved_store = store or TaskBoardStore()
+    metadata = resolved_store.get_metadata(resolved_anima_name, task_id)
+    entry = TaskQueueManager(resolved_anima_dir).get_task_by_id(task_id)
+    if entry is not None:
+        return _project_queue_task(task=entry, anima_name=resolved_anima_name, metadata=metadata)
+    if metadata is not None:
+        return _project_missing_task(metadata)
+    return None
+
+
 def project_all(
     animas_dir: Path | str | None = None,
     store: TaskBoardStore | None = None,

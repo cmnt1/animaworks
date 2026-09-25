@@ -85,21 +85,50 @@ def notify_task_owner(actor: str, owner: str, task_id: str, action: str, detail:
     """Tell the owner another actor changed their task. Returns a warning on failure."""
     if actor == owner:
         return None
+    return _send_task_notice(actor, owner, task_id, action, detail)
+
+
+def task_delegator(entry: dict[str, Any], owner: str) -> str | None:
+    """Return the anima that delegated this task, if it still exists."""
+    from core.paths import get_animas_dir
+
+    if entry.get("source") != "anima":
+        return None
+    for name in entry.get("relay_chain") or []:
+        if isinstance(name, str) and name and name != owner:
+            return name if (get_animas_dir() / name).is_dir() else None
+    return None
+
+
+def notify_task_delegator(
+    actor: str, owner: str, entry: dict[str, Any], task_id: str, action: str, detail: str
+) -> str | None:
+    """Tell the delegator their delegated task was closed, so it is not re-sent."""
+    delegator = task_delegator(entry, owner)
+    if delegator is None or delegator == actor:
+        return None
+    return _send_task_notice(actor, delegator, task_id, action, detail, owner=owner)
+
+
+def _send_task_notice(
+    actor: str, to: str, task_id: str, action: str, detail: str, *, owner: str | None = None
+) -> str | None:
+    target = f"{owner}/{task_id}" if owner else task_id
     try:
         from cli.commands.messaging import _resolve_sender_source
         from core.messenger import Messenger
         from core.paths import get_shared_dir
 
         message = Messenger(get_shared_dir(), actor).send(
-            to=owner,
-            content=f"{actor} {action} task {task_id}: {detail[:180]}",
+            to=to,
+            content=f"{actor} {action} task {target}: {detail[:180]}",
             source=_resolve_sender_source(actor),
         )
         if message.type == "error":
-            return f"task changed, but owner notification failed: {message.content}"
+            return f"task changed, but notification to {to} failed: {message.content}"
     except Exception as exc:
         # Task state is authoritative; notification delivery must not roll it back.
-        return f"task changed, but owner notification failed: {exc}"
+        return f"task changed, but notification to {to} failed: {exc}"
     return None
 
 
@@ -198,7 +227,10 @@ def run_board_action(
         "lease": store.get_lease(owner, canonical_id),
         "message": f"Task {owner}/{canonical_id} {action} recorded (status: {updated.status})",
     }
-    warning = notify_task_owner(actor, owner, canonical_id, action, text or "")
-    if warning:
-        result["warning"] = warning
+    warnings = [notify_task_owner(actor, owner, canonical_id, action, text or "")]
+    if action in {"done", "cancel"}:
+        warnings.append(notify_task_delegator(actor, owner, entry, canonical_id, action, text or ""))
+    warnings = [w for w in warnings if w]
+    if warnings:
+        result["warning"] = "; ".join(warnings)
     return result

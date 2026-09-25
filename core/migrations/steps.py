@@ -1501,6 +1501,11 @@ def step_v0141_harness_diet_r2_resync(data_dir: Path, dry_run: bool, verbose: bo
     return StepResult(changed=r.changed, skipped=r.skipped, details=list(r.details), error=error)
 
 
+def step_v0143_task_board_self_triage_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """v0.14.3: Resync heartbeat prompt and task-board guide (owner-led task triage)."""
+    return step_v0142_task_board_cli_resync(data_dir, dry_run, verbose)
+
+
 def step_v0142_task_board_cli_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """v0.14.2: Resync heartbeat prompt and task-board guide (task board CLI triage)."""
     results = {
@@ -1516,8 +1521,8 @@ def step_v0142_task_board_cli_resync(data_dir: Path, dry_run: bool, verbose: boo
     )
 
 
-def step_v0143_tool_guide_dedup_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
-    """v0.14.3: Resync prompts (drop the Background Command Output block duplicated in s_mcp)."""
+def step_v0144_tool_guide_dedup_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """v0.14.4: Resync prompts (drop the Background Command Output block duplicated in s_mcp)."""
     r = step_prompt_resync(data_dir, dry_run, verbose)
     error = f"step_prompt_resync: {r.error}" if r.error else None
     return StepResult(changed=r.changed, skipped=r.skipped, details=list(r.details), error=error)
@@ -1736,10 +1741,16 @@ def register_all_steps(runner: Any) -> None:
             step_v0142_task_board_cli_resync,
         ),
         MigrationStep(
-            "v0143_tool_guide_dedup_resync",
-            "v0.14.3: Resync prompts (dedupe tool guide background-command block)",
+            "v0143_task_board_self_triage_resync",
+            "v0.14.3: Resync heartbeat prompt and task-board guide (owner-led task triage)",
             "template_sync",
-            step_v0143_tool_guide_dedup_resync,
+            step_v0143_task_board_self_triage_resync,
+        ),
+        MigrationStep(
+            "v0144_tool_guide_dedup_resync",
+            "v0.14.4: Resync prompts (dedupe tool guide background-command block)",
+            "template_sync",
+            step_v0144_tool_guide_dedup_resync,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]
