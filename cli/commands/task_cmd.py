@@ -72,54 +72,25 @@ def cmd_task(args: argparse.Namespace) -> None:
 
 
 def _get_task_store():
-    from core.paths import get_taskboard_db_path
-    from core.taskboard.tasks import TaskStore
+    from core.taskboard.board_actions import get_task_store
 
-    return TaskStore(get_taskboard_db_path())
+    return get_task_store()
 
 
 def _find_task_matches(store, task_id: str, owner: str | None = None) -> list[dict]:
-    """Resolve canonical IDs and viewer aliases without assuming a current anima."""
-    matches: dict[tuple[str, str], dict] = {}
-    with store.reader() as db:
-        direct = db.execute("SELECT anima,task_id,entry_json FROM tasks WHERE task_id=?", (task_id,)).fetchall()
-        for row in direct:
-            if owner is None or row["anima"] == owner:
-                matches[(row["anima"], row["task_id"])] = {
-                    "anima": row["anima"],
-                    "task_id": row["task_id"],
-                    "requested_id": task_id,
-                    "entry": json.loads(row["entry_json"]),
-                }
-        aliases = db.execute(
-            "SELECT a.anima,a.task_id,t.entry_json FROM task_aliases a "
-            "JOIN tasks t ON t.anima=a.anima AND t.task_id=a.task_id WHERE a.alias=?",
-            (task_id,),
-        ).fetchall()
-        for row in aliases:
-            if owner is None or row["anima"] == owner:
-                matches.setdefault(
-                    (row["anima"], row["task_id"]),
-                    {
-                        "anima": row["anima"],
-                        "task_id": row["task_id"],
-                        "requested_id": task_id,
-                        "entry": json.loads(row["entry_json"]),
-                    },
-                )
-    return list(matches.values())
+    from core.taskboard.board_actions import find_task_matches
+
+    return find_task_matches(store, task_id, owner)
 
 
 def _resolve_task(store, task_id: str) -> dict:
-    matches = _find_task_matches(store, task_id)
-    if not matches:
-        print(f"Error: task not found: {task_id}", file=sys.stderr)
-        sys.exit(1)
-    if len(matches) > 1:
-        owners = ", ".join(f"{item['anima']}/{item['task_id']}" for item in matches)
-        print(f"Error: task ID is ambiguous ({owners}); use task show ID --anima OWNER", file=sys.stderr)
-        sys.exit(2)
-    return matches[0]
+    from core.taskboard.board_actions import BoardActionError, resolve_task
+
+    try:
+        return resolve_task(store, task_id)
+    except BoardActionError as exc:
+        print(f"Error: {exc.message}", file=sys.stderr)
+        sys.exit(exc.exit_code)
 
 
 def _task_details(store, match: dict) -> dict:
@@ -317,127 +288,70 @@ def _actor() -> str:
     return path.name
 
 
-def _notify_task_owner(actor: str, owner: str, task_id: str, action: str, detail: str) -> None:
-    if actor == owner:
-        return
-    try:
-        from cli.commands.messaging import _resolve_sender_source
-        from core.messenger import Messenger
-        from core.paths import get_shared_dir
+def _post_board_action(payload: dict) -> dict:
+    """Run the action on the host when the sandbox cannot write the task DB."""
+    import httpx
 
-        message = Messenger(get_shared_dir(), actor).send(
-            to=owner,
-            content=f"{actor} {action} task {task_id}: {detail[:180]}",
-            source=_resolve_sender_source(actor),
-        )
-        if message.type == "error":
-            print(f"Warning: task changed, but owner notification failed: {message.content}", file=sys.stderr)
-    except Exception as exc:
-        # Task state is authoritative; notification delivery must not roll it back.
-        print(f"Warning: task changed, but owner notification failed: {exc}", file=sys.stderr)
+    from core.tasks_dispatch import _server_url
+
+    response = httpx.post(f"{_server_url()}/api/internal/task-board-action", json=payload, timeout=60.0)
+    response.raise_for_status()
+    return response.json()
 
 
 def _cmd_lease_action(args: argparse.Namespace) -> None:
-    from core.memory.task_queue import TaskQueueManager
-    from core.paths import get_animas_dir
+    from core.taskboard.board_actions import BoardActionError, run_board_action
+    from core.tasks_dispatch import is_task_permission_error
 
-    store = _get_task_store()
-    actor = _actor()
-    match = _resolve_task(store, args.task_id)
-    owner, task_id = match["anima"], match["task_id"]
-    entry = match["entry"]
+    as_json = getattr(args, "json", False)
     action = args.task_command
+    ttl_seconds = None
     if action == "claim":
         try:
-            ttl = _parse_ttl(args.ttl)
+            ttl_seconds = _parse_ttl(args.ttl)
         except ValueError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(2)
-        if entry.get("status") not in {"pending", "in_progress", "delegated"}:
-            print(f"Error: task is not active: {args.task_id}", file=sys.stderr)
-            sys.exit(1)
-        lease = store.acquire_lease(owner, task_id, actor, ttl)
-        if lease is None:
-            current = store.get_lease(owner, task_id)
-            if getattr(args, "json", False):
-                print(json.dumps({"ok": False, "lease": current}, ensure_ascii=False))
-            else:
-                holder = current["holder"] if current else "another actor"
-                expiry = f" until {current['expires_at']}" if current else ""
-                print(f"Lease held by {holder}{expiry}", file=sys.stderr)
-            sys.exit(2)
-        result = {"ok": True, "lease": lease}
-        print(
-            json.dumps(result, ensure_ascii=False, indent=2)
-            if getattr(args, "json", False)
-            else f"Lease acquired for {owner}/{task_id} until {lease['expires_at']}"
-        )
-        return
+    text = {"note": getattr(args, "text", None), "done": getattr(args, "note", None)}.get(
+        action, getattr(args, "reason", None)
+    )
+    payload = {"actor": _actor(), "action": action, "task_id": args.task_id, "ttl_seconds": ttl_seconds, "text": text}
 
-    if action == "release":
-        released = store.release_lease(owner, task_id, actor)
-        if getattr(args, "json", False):
-            print(json.dumps({"ok": released, "owner": owner, "task_id": task_id}, ensure_ascii=False))
-        elif released:
-            print(f"Lease released for {owner}/{task_id}")
-        else:
-            print(f"No lease held by {actor} for {owner}/{task_id}", file=sys.stderr)
-            sys.exit(1)
-        return
-
-    if action in {"done", "cancel", "note"} and entry.get("status") in {"done", "cancelled"}:
-        result = {"ok": True, "unchanged": True, "owner": owner, "task_id": task_id, "status": entry["status"]}
-        print(
-            json.dumps(result, ensure_ascii=False)
-            if getattr(args, "json", False)
-            else f"Task is already {entry['status']}; unchanged"
-        )
-        return
-
-    lease = store.get_lease(owner, task_id)
-    if lease and lease["holder"] != actor:
-        print(f"Error: task is leased by {lease['holder']} until {lease['expires_at']}", file=sys.stderr)
-        sys.exit(2)
-    if actor != owner and lease is None:
-        print("Error: claim a lease before changing another anima's task", file=sys.stderr)
-        sys.exit(2)
-    manager = TaskQueueManager(get_animas_dir() / owner)
-    if action == "note":
-        text = args.text
-    elif action == "done":
-        text = args.note
-    else:
-        text = args.reason
-    if not text.strip():
-        print("Error: note/reason must not be empty", file=sys.stderr)
-        sys.exit(2)
-    notes = entry.get("meta", {}).get("notes", [])
-    if not isinstance(notes, list):
-        notes = []
-    notes = [*notes, {"ts": datetime.now(UTC).isoformat(), "by": actor, "text": text}]
-    updated = manager.update_meta(task_id, {"notes": notes})
-    if updated is None:
-        print(f"Error: task not found: {task_id}", file=sys.stderr)
-        sys.exit(1)
-    if action in {"done", "cancel"}:
-        status = "done" if action == "done" else "cancelled"
-        updated = manager.update_status(task_id, status)
-        if updated is None:
-            print(f"Error: failed to update task status: {task_id}", file=sys.stderr)
+    try:
+        result = run_board_action(**payload)
+    except BoardActionError as exc:
+        _exit_board_error(exc.message, exc.exit_code, exc.payload, as_json)
+    except Exception as exc:
+        if not is_task_permission_error(exc):
+            raise
+        try:
+            response = _post_board_action(payload)
+        except Exception as post_exc:
+            print(f"Error: task DB is read-only here and the server fallback failed: {post_exc}", file=sys.stderr)
             sys.exit(3)
-    _notify_task_owner(actor, owner, task_id, action, text)
-    result = {
-        "ok": True,
-        "owner": owner,
-        "task_id": task_id,
-        "status": updated.status,
-        "note": text,
-        "lease": store.get_lease(owner, task_id),
-    }
-    if getattr(args, "json", False):
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if not response.get("ok"):
+            _exit_board_error(
+                str(response.get("error", "board action failed")),
+                int(response.get("exit_code", 1)),
+                response.get("payload"),
+                as_json,
+            )
+        result = response["result"]
+
+    if result.get("warning"):
+        print(f"Warning: {result['warning']}", file=sys.stderr)
+    if as_json:
+        print(json.dumps({k: v for k, v in result.items() if k != "message"}, ensure_ascii=False, indent=2))
     else:
-        print(f"Task {owner}/{task_id} {action} recorded (status: {updated.status})")
+        print(result["message"])
+
+
+def _exit_board_error(message: str, exit_code: int, payload: dict | None, as_json: bool) -> None:
+    if as_json and payload is not None:
+        print(json.dumps(payload, ensure_ascii=False))
+    else:
+        print(f"Error: {message}" if not message.startswith("Lease held") else message, file=sys.stderr)
+    sys.exit(exit_code)
 
 
 def _cmd_add(args: argparse.Namespace, manager) -> None:
