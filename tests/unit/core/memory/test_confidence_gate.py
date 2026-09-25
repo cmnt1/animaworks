@@ -8,21 +8,24 @@ from core.memory.retrieval.confidence_gate import GateResult, apply_confidence_g
 class TestApplyConfidenceGate:
     def test_empty_candidates_abstains(self) -> None:
         result = apply_confidence_gate([], threshold=0.35)
-        assert result == GateResult(candidates=[], abstain=True, reason="low_confidence")
+        assert result == GateResult(candidates=[], abstain=True, reason="low_confidence", low_confidence=True)
 
-    def test_single_below_threshold_abstains(self) -> None:
+    def test_single_below_threshold_marks_low_confidence(self) -> None:
         result = apply_confidence_gate([{"score": 0.1, "content": "x"}], threshold=0.35)
-        assert result.abstain is True
-        assert result.candidates == []
+        assert result.abstain is False
+        assert result.low_confidence is True
+        assert result.candidates == [{"score": 0.1, "content": "x"}]
 
     def test_single_at_threshold_passes(self) -> None:
         result = apply_confidence_gate([{"score": 0.35, "content": "x"}], threshold=0.35)
         assert result.abstain is False
+        assert result.low_confidence is False
         assert len(result.candidates) == 1
 
     def test_single_above_threshold_passes(self) -> None:
         result = apply_confidence_gate([{"score": 0.9, "content": "x"}], threshold=0.35)
         assert result.abstain is False
+        assert result.low_confidence is False
 
     def test_max_score_wins_among_many(self) -> None:
         items = [
@@ -32,34 +35,41 @@ class TestApplyConfidenceGate:
         ]
         result = apply_confidence_gate(items, threshold=0.35)
         assert result.abstain is False
+        assert result.low_confidence is False
         assert result.candidates == items
 
     def test_one_high_one_low_still_passes(self) -> None:
         items = [{"score": 0.5, "content": "a"}, {"score": 0.01, "content": "b"}]
         result = apply_confidence_gate(items, threshold=0.35)
         assert result.abstain is False
+        assert result.low_confidence is False
 
-    def test_all_below_threshold_abstains(self) -> None:
+    def test_all_below_threshold_keeps_candidates_and_marks(self) -> None:
         items = [{"score": 0.01, "content": "a"}, {"score": 0.02, "content": "b"}]
         result = apply_confidence_gate(items, threshold=0.35)
-        assert result.abstain is True
-        assert result.candidates == []
+        assert result.abstain is False
+        assert result.low_confidence is True
+        assert result.candidates == items
 
     def test_rrf_low_threshold_boundary(self) -> None:
         result = apply_confidence_gate([{"score": 0.019, "content": "x"}], threshold=0.02)
-        assert result.abstain is True
+        assert result.abstain is False
+        assert result.low_confidence is True
 
     def test_rrf_threshold_pass(self) -> None:
         result = apply_confidence_gate([{"score": 0.02, "content": "x"}], threshold=0.02)
         assert result.abstain is False
+        assert result.low_confidence is False
 
     def test_missing_score_treated_as_zero(self) -> None:
         result = apply_confidence_gate([{"content": "no score"}], threshold=0.01)
-        assert result.abstain is True
+        assert result.abstain is False
+        assert result.low_confidence is True
 
     def test_none_score_treated_as_zero(self) -> None:
         result = apply_confidence_gate([{"score": None, "content": "x"}], threshold=0.01)
-        assert result.abstain is True
+        assert result.abstain is False
+        assert result.low_confidence is True
 
     def test_custom_score_field(self) -> None:
         result = apply_confidence_gate(
@@ -68,9 +78,10 @@ class TestApplyConfidenceGate:
             score_field="ce_score",
         )
         assert result.abstain is False
+        assert result.low_confidence is False
 
     @pytest.mark.parametrize(
-        ("score", "threshold", "expected_abstain"),
+        ("score", "threshold", "expected_low_confidence"),
         [
             (0.34, 0.35, True),
             (0.35, 0.35, False),
@@ -81,7 +92,8 @@ class TestApplyConfidenceGate:
         self,
         score: float,
         threshold: float,
-        expected_abstain: bool,
+        expected_low_confidence: bool,
     ) -> None:
         result = apply_confidence_gate([{"score": score}], threshold=threshold)
-        assert result.abstain is expected_abstain
+        assert result.abstain is False
+        assert result.low_confidence is expected_low_confidence

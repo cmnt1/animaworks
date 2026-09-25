@@ -14,7 +14,7 @@ class TestRRFMerge:
     """Tests for reciprocal rank fusion merge."""
 
     def _rrf(self, *args, **kwargs):
-        from core.memory.graph.rrf import rrf_merge
+        from core.memory.retrieval.rrf import rrf_merge
 
         return rrf_merge(*args, **kwargs)
 
@@ -68,7 +68,7 @@ class TestRRFMerge:
 
 def _make_reranker_with_mock(scores: list[float]):
     """Create a CrossEncoderReranker with a pre-injected mock model."""
-    from core.memory.graph.reranker import CrossEncoderReranker
+    from core.memory.retrieval.reranker import CrossEncoderReranker
 
     reranker = CrossEncoderReranker()
     mock_model = MagicMock()
@@ -93,7 +93,7 @@ class TestCrossEncoderReranker:
 
     @pytest.mark.asyncio
     async def test_rerank_fallback_on_import_error(self):
-        from core.memory.graph.reranker import CrossEncoderReranker
+        from core.memory.retrieval.reranker import CrossEncoderReranker
 
         reranker = CrossEncoderReranker()
         reranker._available = True
@@ -121,7 +121,7 @@ class TestCrossEncoderReranker:
 
     @pytest.mark.asyncio
     async def test_rerank_empty_items(self):
-        from core.memory.graph.reranker import CrossEncoderReranker
+        from core.memory.retrieval.reranker import CrossEncoderReranker
 
         reranker = CrossEncoderReranker()
         result = await reranker.rerank("query", [])
@@ -159,7 +159,7 @@ def _patch_reranker():
         return [{**it, "ce_score": 0.5} for it in items]
 
     mock_reranker.rerank = _passthrough
-    return patch("core.memory.graph.reranker.get_reranker", return_value=mock_reranker)
+    return patch("core.memory.retrieval.reranker.get_reranker", return_value=mock_reranker)
 
 
 class TestHybridSearch:

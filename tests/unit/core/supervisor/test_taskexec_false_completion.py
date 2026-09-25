@@ -22,7 +22,6 @@ import pytest
 from core.i18n import t
 from core.supervisor.pending_executor import (
     _SENTINEL_CANCELLED,
-    _SENTINEL_EXPIRED,
     PendingTaskExecutor,
     TaskExecError,
     _classify_task_result,
@@ -84,11 +83,6 @@ class TestClassifyTaskResult:
         status, summary = _classify_task_result(_SENTINEL_CANCELLED)
         assert status == "cancelled"
         assert summary == t("pending_executor.task_cancelled")
-
-    def test_expired(self):
-        status, summary = _classify_task_result(_SENTINEL_EXPIRED)
-        assert status == "cancelled"
-        assert "expired" in summary.lower()
 
     def test_normal_result(self):
         status, summary = _classify_task_result("Task completed successfully")
@@ -296,18 +290,6 @@ class TestExecuteLlmTaskStatusMapping:
             mock_sync.assert_called_once_with("test-task-1", "cancelled", summary=t("pending_executor.task_cancelled"))
 
     @pytest.mark.asyncio
-    async def test_expired_maps_to_cancelled_status(self, tmp_path):
-        executor = _make_executor(tmp_path)
-        task = _make_task_desc()
-
-        with (
-            patch.object(executor, "_run_llm_task", return_value=_SENTINEL_EXPIRED),
-            patch.object(executor, "_sync_task_queue") as mock_sync,
-        ):
-            await executor._execute_llm_task(task)
-            mock_sync.assert_called_once_with("test-task-1", "cancelled", summary="expired (TTL exceeded)")
-
-    @pytest.mark.asyncio
     async def test_normal_result_maps_to_done(self, tmp_path):
         executor = _make_executor(tmp_path)
         task = _make_task_desc()
@@ -410,40 +392,41 @@ class TestSerialBatchUnfinishedDependency:
         assert store.get_input("test-anima", "child1")["depends_on"] == ["dep1"]
 
 
-# ── TTL gate: resume keeps submitted_at, so age follows the last queue touch ──
+# ── Submitted-time line: age is surfaced to the model instead of a TTL gate ──
 
 
-class _PastExpiryGate(Exception):
-    pass
-
-
-class TestTtlGateAfterResume:
+class TestSubmissionLine:
     @staticmethod
     def _iso(hours_ago: float) -> str:
         from datetime import UTC, datetime, timedelta
 
         return (datetime.now(UTC) - timedelta(hours=hours_ago)).isoformat()
 
-    async def _run(self, tmp_path, *, submitted_hours_ago, entry):
-        executor = _make_executor(tmp_path)
-        task = _make_task_desc(submitted_at=self._iso(submitted_hours_ago))
-        with (
-            patch("core.memory.task_queue.TaskQueueManager.get_task_by_id", return_value=entry),
-            patch.object(executor, "_sync_task_queue", side_effect=_PastExpiryGate),
-        ):
-            return await executor._run_llm_task(task)
+    def test_missing_timestamp_yields_empty(self):
+        from core.supervisor.pending_executor import _submission_line
 
-    @pytest.mark.asyncio
-    async def test_untouched_old_task_expires(self, tmp_path):
-        entry = MagicMock(status="pending", updated_at=self._iso(30))
-        assert await self._run(tmp_path, submitted_hours_ago=38, entry=entry) == _SENTINEL_EXPIRED
+        assert _submission_line("", locale="ja") == ""
+        assert _submission_line("garbage-date", locale="ja") == ""
 
-    @pytest.mark.asyncio
-    async def test_old_task_without_queue_entry_expires(self, tmp_path):
-        assert await self._run(tmp_path, submitted_hours_ago=38, entry=None) == _SENTINEL_EXPIRED
+    def test_ja_formats_submission_and_elapsed(self):
+        from core.supervisor.pending_executor import _submission_line
 
-    @pytest.mark.asyncio
-    async def test_recently_resumed_old_task_is_not_expired(self, tmp_path):
-        entry = MagicMock(status="pending", updated_at=self._iso(0.01))
-        with pytest.raises(_PastExpiryGate):
-            await self._run(tmp_path, submitted_hours_ago=63, entry=entry)
+        line = _submission_line(self._iso(3.2), locale="ja")
+        assert line.startswith("提出: ")
+        assert "（経過 3時間" in line
+
+    def test_en_formats_submission_and_elapsed(self):
+        from core.supervisor.pending_executor import _submission_line
+
+        line = _submission_line(self._iso(3.2), locale="en")
+        assert line.startswith("Submitted: ")
+        assert "3h " in line
+
+    def test_past_timestamp_never_negative(self):
+        from datetime import UTC, datetime, timedelta
+
+        from core.supervisor.pending_executor import _submission_line
+
+        future = (datetime.now(UTC) + timedelta(hours=5)).isoformat()
+        line = _submission_line(future, locale="ja")
+        assert "0時間0分" in line

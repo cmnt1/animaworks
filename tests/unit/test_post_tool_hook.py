@@ -80,6 +80,41 @@ class TestBuildPostToolHook:
         assert result.get("async_") is True
 
 
+class TestMcpRuleAttachment:
+    """PostToolUse must attach ACTION-RULE bodies exactly once per tool result.
+
+    MCP aw tools (``mcp__aw__*``) get rules attached by the handler
+    (``core.tooling.handler``), so PostToolUse must NOT attach them again
+    for those tools — otherwise the rule body would appear twice.
+    """
+
+    @pytest.mark.asyncio
+    async def test_mcp_tool_does_not_attach_action_rules(self, tmp_path, monkeypatch):
+        from core.execution._sdk_hooks import _build_post_tool_hook
+        from core.memory import action_gate
+        from core.memory.action_gate import ActionRule
+
+        found = [ActionRule(rule_id="r1", content="RULE-BODY", score=0.9)]
+        calls = []
+
+        def _fake_find_action_rules(*args, **kwargs):
+            calls.append(args)
+            return found
+
+        monkeypatch.setattr(action_gate, "find_action_rules", _fake_find_action_rules)
+        monkeypatch.setattr(action_gate, "format_action_rules", lambda rules: "RULE-BODY")
+
+        hook = _build_post_tool_hook(tmp_path)
+        result = await hook(
+            {"tool_name": "mcp__aw__send_message", "tool_input": {"to": "u", "text": "hi"}},
+            None,
+            None,
+        )
+        # MCP rules are attached handler-side; PostToolUse must not add them.
+        assert result == {}
+        assert calls == []
+
+
 class TestUpdateKnowledgeFrontmatter:
     """Tests for _update_knowledge_frontmatter."""
 

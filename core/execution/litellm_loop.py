@@ -44,7 +44,7 @@ from core.execution._litellm_tools import (  # noqa: F401
     _tool_executor,
     _ToolCallShim,
 )
-from core.execution._session import build_continuation_prompt, handle_session_chaining
+from core.execution._session import handle_session_chaining
 from core.execution._streaming import try_parse_text_tool_call
 from core.execution.backoff import decorrelated_jitter
 from core.execution.base import (
@@ -318,9 +318,8 @@ class LiteLLMExecutor(
 
                 current_text = message.content or ""
                 _, current_text = strip_thinking_tags(current_text)
-                new_sys = None
                 if not is_final_iteration:
-                    new_sys, chain_count = await handle_session_chaining(
+                    await handle_session_chaining(
                         tracker=tracker,
                         shortterm=shortterm,
                         memory=self._memory,
@@ -342,14 +341,6 @@ class LiteLLMExecutor(
                         turn_count=iteration,
                         tool_uses=_extract_tool_uses_from_messages(messages),
                     )
-                if new_sys is not None:
-                    if current_text:
-                        all_response_text.append(current_text)
-                    messages = [
-                        {"role": "system", "content": new_sys},
-                        {"role": "user", "content": build_continuation_prompt()},
-                    ]
-                    continue
 
             # ── P1-2: output truncation reminder ─────────────────
             if choice.finish_reason == "length":

@@ -22,6 +22,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.memory.priming import PrimingEngine
+from core.memory.priming.utils import build_dual_queries, meets_min_length, search_and_merge
 
 
 @pytest.fixture
@@ -53,7 +54,7 @@ def anima_dir_with_knowledge(anima_dir):
 
 class TestBuildDualQueries:
     def test_both_message_and_keywords(self) -> None:
-        queries = PrimingEngine._build_dual_queries(
+        queries = build_dual_queries(
             "Hello world, how are you?",
             ["hello", "world"],
         )
@@ -62,31 +63,31 @@ class TestBuildDualQueries:
         assert queries[1] == "hello world"
 
     def test_message_only(self) -> None:
-        queries = PrimingEngine._build_dual_queries("Some message", [])
+        queries = build_dual_queries("Some message", [])
         assert len(queries) == 1
         assert queries[0] == "Some message"
 
     def test_keywords_only(self) -> None:
-        queries = PrimingEngine._build_dual_queries("", ["alpha", "beta"])
+        queries = build_dual_queries("", ["alpha", "beta"])
         assert len(queries) == 1
         assert queries[0] == "alpha beta"
 
     def test_empty_both(self) -> None:
-        queries = PrimingEngine._build_dual_queries("", [])
+        queries = build_dual_queries("", [])
         assert queries == []
 
     def test_dedup_identical(self) -> None:
-        queries = PrimingEngine._build_dual_queries("test", ["test"])
+        queries = build_dual_queries("test", ["test"])
         assert len(queries) == 1
 
     def test_long_message_truncated_to_300(self) -> None:
         long_msg = "a" * 500
-        queries = PrimingEngine._build_dual_queries(long_msg, ["kw"])
+        queries = build_dual_queries(long_msg, ["kw"])
         assert len(queries[0]) == 300
 
     def test_max_5_keywords(self) -> None:
         kws = ["a", "b", "c", "d", "e", "f", "g"]
-        queries = PrimingEngine._build_dual_queries("msg", kws)
+        queries = build_dual_queries("msg", kws)
         assert queries[1] == "a b c d e"
 
 
@@ -94,9 +95,7 @@ class TestBuildDualQueries:
 
 
 class TestSearchAndMerge:
-    def test_merge_deduplicates_by_doc_id(self, anima_dir) -> None:
-        engine = PrimingEngine(anima_dir)
-
+    def test_merge_deduplicates_by_doc_id(self) -> None:
         r1 = MagicMock(doc_id="doc1", score=0.8, content="result 1")
         r2 = MagicMock(doc_id="doc2", score=0.6, content="result 2")
         r3 = MagicMock(doc_id="doc1", score=0.9, content="result 1 better")
@@ -104,7 +103,7 @@ class TestSearchAndMerge:
         mock_retriever = MagicMock()
         mock_retriever.search.side_effect = [[r1, r2], [r3]]
 
-        results = engine._search_and_merge(
+        results = search_and_merge(
             mock_retriever,
             ["query1", "query2"],
             "test",
@@ -117,16 +116,14 @@ class TestSearchAndMerge:
         assert results[0].score == 0.9
         assert results[1].doc_id == "doc2"
 
-    def test_merge_respects_top_k(self, anima_dir) -> None:
-        engine = PrimingEngine(anima_dir)
-
+    def test_merge_respects_top_k(self) -> None:
         results_a = [MagicMock(doc_id=f"a{i}", score=0.9 - i * 0.1) for i in range(5)]
         results_b = [MagicMock(doc_id=f"b{i}", score=0.85 - i * 0.1) for i in range(5)]
 
         mock_retriever = MagicMock()
         mock_retriever.search.side_effect = [results_a, results_b]
 
-        results = engine._search_and_merge(
+        results = search_and_merge(
             mock_retriever,
             ["q1", "q2"],
             "test",
@@ -136,13 +133,12 @@ class TestSearchAndMerge:
 
         assert len(results) == 3
 
-    def test_single_query_works(self, anima_dir) -> None:
-        engine = PrimingEngine(anima_dir)
+    def test_single_query_works(self) -> None:
         r1 = MagicMock(doc_id="doc1", score=0.7)
         mock_retriever = MagicMock()
         mock_retriever.search.return_value = [r1]
 
-        results = engine._search_and_merge(
+        results = search_and_merge(
             mock_retriever,
             ["single"],
             "test",
@@ -159,37 +155,37 @@ class TestSearchAndMerge:
 
 class TestMeetsMinLength:
     def test_single_cjk_kanji(self) -> None:
-        assert PrimingEngine._meets_min_length("裏") is True
-        assert PrimingEngine._meets_min_length("金") is True
-        assert PrimingEngine._meets_min_length("型") is True
+        assert meets_min_length("裏") is True
+        assert meets_min_length("金") is True
+        assert meets_min_length("型") is True
 
     def test_cjk_two_chars(self) -> None:
-        assert PrimingEngine._meets_min_length("実装") is True
-        assert PrimingEngine._meets_min_length("검색") is True  # Korean
+        assert meets_min_length("実装") is True
+        assert meets_min_length("검색") is True  # Korean
 
     def test_kaオーナーna(self) -> None:
-        assert PrimingEngine._meets_min_length("マレーシア") is True
-        assert PrimingEngine._meets_min_length("ア") is True  # single kaオーナーna
+        assert meets_min_length("マレーシア") is True
+        assert meets_min_length("ア") is True  # single kaオーナーna
 
     def test_latin_short_rejected(self) -> None:
-        assert PrimingEngine._meets_min_length("a") is False
-        assert PrimingEngine._meets_min_length("to") is False
+        assert meets_min_length("a") is False
+        assert meets_min_length("to") is False
 
     def test_latin_3_chars_accepted(self) -> None:
-        assert PrimingEngine._meets_min_length("RAG") is True
-        assert PrimingEngine._meets_min_length("the") is True  # length OK, stopword filters separately
+        assert meets_min_length("RAG") is True
+        assert meets_min_length("the") is True  # length OK, stopword filters separately
 
     def test_mixed_cjk_latin(self) -> None:
-        assert PrimingEngine._meets_min_length("Python3") is True
-        assert PrimingEngine._meets_min_length("型A") is True  # has CJK -> threshold 1
+        assert meets_min_length("Python3") is True
+        assert meets_min_length("型A") is True  # has CJK -> threshold 1
 
     def test_thai(self) -> None:
-        assert PrimingEngine._meets_min_length("ก") is True  # single Thai char
-        assert PrimingEngine._meets_min_length("กร") is True
+        assert meets_min_length("ก") is True  # single Thai char
+        assert meets_min_length("กร") is True
 
     def test_korean_hangul(self) -> None:
-        assert PrimingEngine._meets_min_length("검") is True
-        assert PrimingEngine._meets_min_length("검색") is True
+        assert meets_min_length("검") is True
+        assert meets_min_length("검색") is True
 
 
 # ── _extract_keywords: language-agnostic ──────────────────
@@ -303,12 +299,8 @@ class TestSemanticDilutionRegression:
         queries = mock_searcher.search_many.call_args.args[0]
         assert len(queries) == 2, "Dual query should include message and keyword searches"
         medium_text, _ = result
-        assert "knowledge/malaysia-travel.md" in medium_text, (
-            f"Malaysia pointer should be in results: {medium_text}"
-        )
-        assert "knowledge/debugging-guide.md" in medium_text, (
-            f"Debug pointer should also be in results: {medium_text}"
-        )
+        assert "knowledge/malaysia-travel.md" in medium_text, f"Malaysia pointer should be in results: {medium_text}"
+        assert "knowledge/debugging-guide.md" in medium_text, f"Debug pointer should also be in results: {medium_text}"
         assert "マレーシア旅行の計画" not in medium_text
         assert "デバッグ手順" not in medium_text
 

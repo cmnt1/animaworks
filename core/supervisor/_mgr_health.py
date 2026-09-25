@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import time
 from datetime import datetime as _dt
 from pathlib import Path
@@ -51,12 +50,7 @@ class HealthMixin:
         return Path(run_dir) / "animas" / f"{anima_name}.busy.json"
 
     def _read_busy_sidecar(self, anima_name: str, handle: ProcessHandle) -> dict[str, Any] | None:
-        """Read a child-written busy marker for ping-timeout fallback.
-
-        The marker is trusted only when it names the current child PID.  This
-        prevents stale files from a killed/restarted process from suppressing
-        real hang recovery.
-        """
+        """Read a child-written busy marker for ping-timeout fallback."""
         path = self._busy_sidecar_path(anima_name)
         if path is None or not path.exists():
             return None
@@ -136,12 +130,7 @@ class HealthMixin:
         )
 
     def _log_hang_context(self, anima_name: str, handle: ProcessHandle) -> None:
-        """Emit a one-line JSON context for hang forensics.
-
-        Captures the busy sidecar (lanes, timestamps) and the tail of the
-        anima's activity log so the last tool/type before the hang is known.
-        Best-effort: never raises into the health loop.
-        """
+        """Emit a one-line JSON hang context (sidecar + activity-log tail)."""
         try:
             ctx: dict[str, Any] = {}
             sidecar = self._read_busy_sidecar(anima_name, handle)
@@ -155,28 +144,21 @@ class HealthMixin:
                 )
             animas_dir = getattr(self, "animas_dir", None)
             if animas_dir is not None:
-                log_dir = Path(animas_dir) / anima_name / "activity_log"
-                if log_dir.is_dir():
-                    files = sorted(log_dir.glob("*.jsonl"))
-                    if files:
-                        recent: list[dict[str, Any]] = []
-                        with open(files[-1], "rb") as f:
-                            f.seek(0, os.SEEK_END)
-                            f.seek(max(0, f.tell() - 8192))
-                            lines = f.read().decode("utf-8", errors="replace").strip().splitlines()
-                        for line in lines[-3:]:
-                            try:
-                                e = json.loads(line)
-                                recent.append(
-                                    {
-                                        "ts": e.get("ts"),
-                                        "type": e.get("type"),
-                                        "tool": e.get("tool"),
-                                        "summary": str(e.get("summary") or "")[:120],
-                                    }
-                                )
-                            except (ValueError, TypeError):
-                                continue
+                anima_dir = Path(animas_dir) / anima_name
+                if (anima_dir / "activity_log").is_dir():
+                    from core.memory.activity import ActivityLogger
+
+                    recent: list[dict[str, Any]] = []
+                    for e in ActivityLogger(anima_dir).recent(days=1)[-3:]:
+                        recent.append(
+                            {
+                                "ts": e.ts,
+                                "type": e.type,
+                                "tool": e.tool,
+                                "summary": str(e.summary or "")[:120],
+                            }
+                        )
+                    if recent:
                         ctx["recent_activity"] = recent
             logger.error(
                 "Busy hang context: %s %s",

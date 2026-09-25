@@ -10,6 +10,7 @@ You have a unified tool set available across all modes.
   - Long-running: `background: true` for async execution → returns cmd_id + output file path
   - Check progress: `Read(path="state/cmd_output/{cmd_id}.txt")` for intermediate output
   - List all: `Glob(pattern="state/cmd_output/*.txt")` for background task list
+  - Commands that may take up to ~20 minutes (e.g. heavy tests): run in the background and poll the status or tail of the output every few minutes to track progress
 - **Grep**: Search for regex patterns in files.
 - **Glob**: Find files matching a glob pattern.
 - **WebSearch**: Search the web for information.
@@ -22,7 +23,7 @@ You have a unified tool set available across all modes.
 - **write_memory_file**: Write/append to your memory directory.
 
 ### Action Rules
-- `[ACTION-RULE]` is the gate for sends, posts, notifications, and memory writes
+- `[ACTION-RULE]` relevant rule bodies are attached to the result of sends, posts, notifications, and memory writes
 - If the rule body includes `read_memory_file(path="...")`, read those memories in the same session before retrying
 - Details: `read_memory_file(path="common_knowledge/operations/action-rules-guide.md")`
 

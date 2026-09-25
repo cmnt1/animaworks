@@ -1022,7 +1022,6 @@ async def test_setup_activates_runtime_without_restart(data_dir, monkeypatch):
             patch("core.config.global_permissions.GlobalPermissionsCache.get"),
             patch("server.app._startup_animas_background", new_callable=AsyncMock) as start_animas,
             patch("server.app._run_model_warmup", new_callable=AsyncMock),
-            patch("server.app._warm_voice_greets", new_callable=AsyncMock),
             patch("server.app._start_usage_governor_if_enabled", new_callable=AsyncMock),
         ):
             async with lifespan(app):

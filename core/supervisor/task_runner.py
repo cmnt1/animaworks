@@ -255,6 +255,7 @@ async def execute_background_contract(
         import subprocess
 
         from core.exceptions import ToolExecutionError
+        from core.supervisor.pending_executor import _PENDING_TASK_SUBPROCESS_TIMEOUT
 
         tool_name = str(payload.get("tool_name") or "")
         subcommand = str(payload.get("subcommand") or "")
@@ -274,7 +275,7 @@ async def execute_background_contract(
             cmd,
             capture_output=True,
             text=True,
-            timeout=1800,
+            timeout=_PENDING_TASK_SUBPROCESS_TIMEOUT,
             env=env,
             check=False,
         )

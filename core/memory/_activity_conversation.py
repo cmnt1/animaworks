@@ -20,9 +20,9 @@ from typing import Any
 from core.i18n import t
 from core.memory._activity_models import (
     ActivityEntry,
-    find_tool_result_fallback,
     time_diff,
 )
+from core.memory.activity_format import EVENT_SETS
 from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.activity")
@@ -78,21 +78,7 @@ def _truncate_tool_field(value: Any, limit: int) -> Any:
 class ConversationMixin:
     """Mixin providing conversation view methods for ActivityLogger."""
 
-    _CONVERSATION_TYPES = {
-        "message_received",
-        "message_sent",
-        "response_sent",
-        "tool_use",
-        "tool_result",
-        "heartbeat_start",
-        "heartbeat_end",
-        "cron_executed",
-        "task_exec_start",
-        "task_exec_end",
-        "error",
-        "human_notify",
-        "human_reply",
-    }
+    _CONVERSATION_TYPES = EVENT_SETS["chat"]
 
     def get_conversation_view(
         self,
@@ -105,24 +91,8 @@ class ConversationMixin:
     ) -> dict[str, Any]:
         """Build a conversation view from activity log entries.
 
-        Reads activity log events, pairs tool_use/tool_result, groups into
-        sessions (separated by gaps >= *session_gap_minutes*), and returns a
-        structure ready for UI rendering.
-
-        Args:
-            before: If given, only include entries with ``ts < before``
-                (cursor-based pagination, ISO 8601 timestamp).
-            limit: Maximum number of *messages* to return (tool_calls are
-                nested within assistant messages and do not count).
-            session_gap_minutes: Minimum gap in minutes to start a new session.
-            thread_id: If given, only include entries whose
-                ``meta.thread_id`` matches. Entries without a ``thread_id``
-                in meta are treated as belonging to ``"default"``.
-            strict_thread: If True, require explicit ``meta.thread_id`` match.
-                Entries without ``meta.thread_id`` are excluded.
-
-        Returns:
-            ``{"sessions": [...], "has_more": bool, "next_before": str | None}``
+        Pairs tool events, groups into sessions (by gap/trigger change),
+        returns ``{"sessions": [...], "has_more": bool, "next_before": str}``.
         """
         entries = self._load_conversation_entries(
             before=before,
@@ -167,16 +137,7 @@ class ConversationMixin:
         strict_thread: bool = False,
         _target_multiplier: int = 3,
     ) -> list[ActivityEntry]:
-        """Load conversation-relevant entries, scanning backwards.
-
-        Returns entries in chronological order.  Scans enough days to
-        collect at least ``limit * _target_multiplier`` raw entries (to
-        account for tool_use/tool_result pairs being folded into messages).
-
-        When *thread_id* is given, only entries whose ``meta.thread_id``
-        matches are returned.  Entries without the field are treated as
-        belonging to ``"default"`` unless *strict_thread* is True.
-        """
+        """Load conversation-relevant entries, scanning enough days for *limit* messages."""
         target_raw = limit * _target_multiplier + 50
         entries: list[ActivityEntry] = []
         today = now_local().date()
@@ -263,17 +224,12 @@ class ConversationMixin:
         self,
         entries: list[ActivityEntry],
     ) -> list[dict[str, Any]]:
-        """Convert raw activity entries to conversation messages.
+        """Convert raw activity entries to conversation messages (pair + nest tools)."""
+        from core.memory.activity_format import pair_tool_events
 
-        Pairs ``tool_use``/``tool_result`` by ``meta.tool_use_id`` and
-        nests them into the preceding ``response_sent`` message.
-        """
-        tool_results: dict[str, ActivityEntry] = {}
-        for e in entries:
-            if e.type == "tool_result":
-                tid = e.meta.get("tool_use_id", "")
-                if tid:
-                    tool_results[tid] = e
+        result_by_use_id: dict[int, ActivityEntry] = {
+            id(ex.tool_use): ex.result for ex in pair_tool_events(entries) if ex.result is not None
+        }
 
         messages: list[dict[str, Any]] = []
         pending_tool_calls: list[dict[str, Any]] = []
@@ -332,9 +288,7 @@ class ConversationMixin:
                 if e.tool == "call_human":
                     continue
                 tid = e.meta.get("tool_use_id", "")
-                result_entry = tool_results.get(tid) if tid else None
-                if not result_entry:
-                    result_entry = find_tool_result_fallback(entries, e)
+                result_entry = result_by_use_id.get(id(e))
                 raw_input = e.meta.get("args", e.content)
                 raw_result = result_entry.content if result_entry else ""
                 tc: dict[str, Any] = {
@@ -493,15 +447,7 @@ class ConversationMixin:
         messages: list[dict[str, Any]],
         gap_minutes: int,
     ) -> list[dict[str, Any]]:
-        """Group messages into sessions based on time gaps and trigger changes.
-
-        Sessions are split when either:
-        - The time gap between consecutive messages exceeds *gap_minutes*, or
-        - The trigger type changes (e.g. heartbeat → chat, chat → cron).
-
-        This ensures background sessions (heartbeat/cron/task) never contain
-        chat messages and vice versa.
-        """
+        """Group messages into sessions by time gaps and trigger changes."""
         if not messages:
             return []
 

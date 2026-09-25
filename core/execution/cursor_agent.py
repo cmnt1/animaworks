@@ -37,6 +37,7 @@ from core.execution.error_classifier import (
     provider_family_of,
 )
 from core.execution.rate_guard import get_rate_guard
+from core.execution.session_context import _resolve_session_type
 from core.i18n import t
 from core.memory.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
@@ -122,17 +123,6 @@ def is_cursor_agent_available() -> bool:
 
 
 # ── Session (chat ID) persistence ─────────────────────────────
-
-
-def _resolve_session_type(trigger: str) -> str:
-    """Map a trigger string to its session type for chatId isolation.
-
-    ``message:*`` triggers (human chat) map to ``"chat"`` so that session
-    IDs are stored under ``shortterm/chat/`` alongside other chat artifacts.
-    """
-    if not trigger or trigger.startswith(("chat", "message")):
-        return "chat"
-    return trigger.split(":")[0]
 
 
 def _chat_id_path(anima_dir: Path, session_type: str, thread_id: str = "default") -> Path:

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -25,14 +26,14 @@ activity log recording quality, and fix priming data loss:
 
 import json
 from datetime import timedelta
-from core.time_utils import now_jst
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.memory.activity import ActivityEntry, ActivityLogger
-
+from core.memory.priming.channel_b import read_shared_channels
+from core.time_utils import now_jst
 
 # ── Fixtures ────────────────────────────────────────────────────────
 
@@ -72,8 +73,6 @@ class TestReadSharedChannels:
 
     def test_returns_entries_from_channel_files(self, anima_dir: Path, shared_dir: Path):
         """Verify that _read_shared_channels reads JSONL and returns ActivityEntry."""
-        from core.memory.priming import PrimingEngine
-
         channels_dir = shared_dir / "channels"
         channels_dir.mkdir(parents=True)
         now = now_jst()
@@ -88,8 +87,7 @@ class TestReadSharedChannels:
         )
         (channels_dir / "general.jsonl").write_text(entry + "\n", encoding="utf-8")
 
-        engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
-        result = engine._read_shared_channels(limit_per_channel=5)
+        result = read_shared_channels(anima_dir, shared_dir, limit_per_channel=5)
 
         assert len(result) >= 1
         assert isinstance(result[0], ActivityEntry)
@@ -100,25 +98,17 @@ class TestReadSharedChannels:
 
     def test_returns_empty_when_shared_dir_is_none(self, anima_dir: Path):
         """Verify returns empty list when shared_dir is None."""
-        from core.memory.priming import PrimingEngine
-
-        engine = PrimingEngine(anima_dir, shared_dir=None)
-        result = engine._read_shared_channels()
+        result = read_shared_channels(anima_dir, None)
         assert result == []
 
     def test_returns_empty_when_channels_dir_missing(self, anima_dir: Path, shared_dir: Path):
         """Verify returns empty list when channels/ directory doesn't exist."""
-        from core.memory.priming import PrimingEngine
-
         # shared_dir exists but channels/ subdirectory does not
-        engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
-        result = engine._read_shared_channels()
+        result = read_shared_channels(anima_dir, shared_dir)
         assert result == []
 
     def test_handles_malformed_jsonl_gracefully(self, anima_dir: Path, shared_dir: Path):
         """Verify malformed JSONL lines are skipped without error."""
-        from core.memory.priming import PrimingEngine
-
         channels_dir = shared_dir / "channels"
         channels_dir.mkdir(parents=True)
         now = now_jst()
@@ -132,8 +122,7 @@ class TestReadSharedChannels:
             encoding="utf-8",
         )
 
-        engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
-        result = engine._read_shared_channels(limit_per_channel=10)
+        result = read_shared_channels(anima_dir, shared_dir, limit_per_channel=10)
 
         # Only the valid entry should be returned
         assert len(result) == 1
@@ -141,8 +130,6 @@ class TestReadSharedChannels:
 
     def test_includes_mention_entries(self, anima_dir: Path, shared_dir: Path):
         """Verify that @mention entries are included even if outside latest N."""
-        from core.memory.priming import PrimingEngine
-
         channels_dir = shared_dir / "channels"
         channels_dir.mkdir(parents=True)
 
@@ -170,8 +157,7 @@ class TestReadSharedChannels:
             encoding="utf-8",
         )
 
-        engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
-        result = engine._read_shared_channels(limit_per_channel=5)
+        result = read_shared_channels(anima_dir, shared_dir, limit_per_channel=5)
 
         # Should include the mention entry (index 2) plus latest 5 (indices 5-9)
         contents = [e.content for e in result]
@@ -180,8 +166,6 @@ class TestReadSharedChannels:
 
     def test_includes_recent_human_posts(self, anima_dir: Path, shared_dir: Path):
         """Verify that human posts within 24h are included."""
-        from core.memory.priming import PrimingEngine
-
         channels_dir = shared_dir / "channels"
         channels_dir.mkdir(parents=True)
 
@@ -206,8 +190,7 @@ class TestReadSharedChannels:
             encoding="utf-8",
         )
 
-        engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
-        result = engine._read_shared_channels(limit_per_channel=5)
+        result = read_shared_channels(anima_dir, shared_dir, limit_per_channel=5)
 
         # The human post at index 1 (within 24h) should be included
         contents = [e.content for e in result]
@@ -215,8 +198,6 @@ class TestReadSharedChannels:
 
     def test_limits_to_limit_per_channel(self, anima_dir: Path, shared_dir: Path):
         """Verify that at most limit_per_channel latest entries are returned."""
-        from core.memory.priming import PrimingEngine
-
         channels_dir = shared_dir / "channels"
         channels_dir.mkdir(parents=True)
 
@@ -240,8 +221,7 @@ class TestReadSharedChannels:
             encoding="utf-8",
         )
 
-        engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
-        result = engine._read_shared_channels(limit_per_channel=3)
+        result = read_shared_channels(anima_dir, shared_dir, limit_per_channel=3)
 
         # Only the latest 3 (no mentions/human posts match)
         assert len(result) == 3
@@ -279,7 +259,7 @@ class TestChannelBRecentActivity:
         engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
 
         # Mock to avoid needing actual paths and RAG
-        with patch("core.memory.priming.PrimingEngine._fallback_episodes_and_channels", return_value=""):
+        with patch("core.memory.priming.channel_b.fallback_episodes_and_channels", return_value=""):
             result = await engine._channel_b_recent_activity("alice", ["test"])
 
         # The result should contain shared channel content
@@ -292,11 +272,13 @@ class TestChannelBRecentActivity:
 
         engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
 
-        with patch("core.memory.activity.ActivityLogger.recent") as mock_recent:
+        with (
+            patch("core.memory.activity.ActivityLogger.recent") as mock_recent,
+            patch("core.memory.priming.channel_b.read_shared_channels", return_value=[]),
+            patch("core.memory.priming.channel_b.fallback_episodes_and_channels", return_value="fallback"),
+        ):
             mock_recent.return_value = []
-            with patch.object(engine, "_read_shared_channels", return_value=[]):
-                with patch.object(engine, "_fallback_episodes_and_channels", return_value="fallback"):
-                    result = await engine._channel_b_recent_activity("alice", [])
+            await engine._channel_b_recent_activity("alice", [])
 
             # Verify recent() was called with days=2 and no limit keyword
             call_kwargs = mock_recent.call_args
@@ -538,6 +520,7 @@ class TestAnimaDmReceiveLimit:
     def test_recordable_limit_is_50_in_source(self):
         """Verify the source code uses [:50] for DM recording, not [:10]."""
         import inspect
+
         from core.anima import DigitalAnima
 
         # After decomposition, inbox message processing moved to

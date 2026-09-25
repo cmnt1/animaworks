@@ -75,14 +75,17 @@ def format_episode_pointer(
     content: str,
     path: str,
     show_body: bool = False,
+    low_confidence: bool = False,
 ) -> str:
     """Format an episode result as a pointer cue instead of raw payload.
 
     ``show_body`` (top 1-2 results) also emits up to 600 chars of the
     episode body as recent conversation, followed by the pointer line.
+    ``low_confidence`` suffixes the pointer with ``[low-confidence]``.
     """
     summary = extract_episode_summary(content, source)
-    pointer = f"📌 [{score:.2f}] {path} — {summary}"
+    marker = " [low-confidence]" if low_confidence else ""
+    pointer = f"📌 [{score:.2f}] {path} — {summary}{marker}"
     if not show_body:
         return pointer
     body = _single_line(content, 600)
@@ -234,6 +237,8 @@ async def channel_f_episodes(
             logger.debug("Channel F: unified search abstained")
             return ""
 
+        low_confidence = bool(searcher.last_search_meta.get("low_confidence", False))
+
         if not results:
             return ""
 
@@ -263,6 +268,7 @@ async def channel_f_episodes(
                 content=str(result.get("content", "") or ""),
                 path=path,
                 show_body=position < 2,
+                low_confidence=low_confidence,
             )
             parts.append(text)
             metadata = result if isinstance(result, dict) else {}

@@ -347,7 +347,7 @@ async def run_inside(output: Path, cases_path: Path, monitor_profile: str) -> di
 
     # The runtime and worker lifecycle are real; optional native-model warmup
     # and avatar/catalog network jobs are excluded from this hermetic smoke.
-    for name in ("_run_model_warmup", "_warm_model_catalog", "_warm_voice_greets", "_reconcile_assets_at_startup"):
+    for name in ("_run_model_warmup", "_warm_model_catalog", "_reconcile_assets_at_startup"):
         setattr(server_module, name, AsyncMock())
 
     app = server_module.create_app(data / "animas", data / "shared")

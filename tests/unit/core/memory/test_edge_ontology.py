@@ -450,7 +450,7 @@ class TestHybridSearchEdgeTypeFilter:
 
         with (
             patch("core.memory.graph.search.asyncio.gather", new_callable=AsyncMock) as mock_gather,
-            patch("core.memory.graph.rrf.rrf_merge", return_value=results_with_types),
+            patch("core.memory.retrieval.rrf.rrf_merge", return_value=results_with_types),
         ):
             mock_gather.return_value = [results_with_types, [], []]
 
@@ -478,7 +478,7 @@ class TestHybridSearchEdgeTypeFilter:
 
         with (
             patch("core.memory.graph.search.asyncio.gather", new_callable=AsyncMock) as mock_gather,
-            patch("core.memory.graph.rrf.rrf_merge", return_value=results_with_types),
+            patch("core.memory.retrieval.rrf.rrf_merge", return_value=results_with_types),
         ):
             mock_gather.return_value = [results_with_types, [], []]
 
@@ -504,7 +504,7 @@ class TestHybridSearchEdgeTypeFilter:
 
         with (
             patch("core.memory.graph.search.asyncio.gather", new_callable=AsyncMock) as mock_gather,
-            patch("core.memory.graph.rrf.rrf_merge", return_value=entity_results),
+            patch("core.memory.retrieval.rrf.rrf_merge", return_value=entity_results),
         ):
             mock_gather.return_value = [entity_results, [], []]
 

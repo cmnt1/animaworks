@@ -57,6 +57,16 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "(指定なし)",
         "en": "(not specified)",
     },
+    "pending_executor.submitted_line": {
+        "ja": "提出: {time}（経過 {elapsed}）",
+        "en": "Submitted: {time} (elapsed {elapsed})",
+        "ko": "제출: {time} (경과 {elapsed})",
+    },
+    "pending_executor.elapsed": {
+        "ja": "{hours}時間{minutes}分",
+        "en": "{hours}h {minutes}m",
+        "ko": "{hours}시간 {minutes}분",
+    },
     "supervisor.zombie_reaped": {
         "ja": "zombie reaper: {count}個の子プロセスを回収しました",
         "en": "zombie reaper: reaped {count} child process(es)",

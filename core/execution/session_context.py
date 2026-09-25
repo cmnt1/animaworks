@@ -13,6 +13,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
+from core.execution.session_types import SESSION_TYPE_CHAT, SESSION_TYPE_HEARTBEAT, resolve_runtime_session_type
+
 
 @dataclass(frozen=True)
 class RuntimeSessionContext:
@@ -91,6 +93,26 @@ active_runtime_session: contextvars.ContextVar[RuntimeSessionContext | None] = c
 
 def current_runtime_session() -> RuntimeSessionContext | None:
     return active_runtime_session.get(None)
+
+
+def _resolve_session_type(trigger: str) -> str:
+    """Resolve the session-type namespace for an execution trigger.
+
+    Single canonical definition shared by all engine layers (previously
+    duplicated across several engine modules).  Human-facing chat triggers
+    (``chat*``, ``message*``, bare ``chat``/``message``) always map to the
+    chat session so conversation history stays resumable; every other
+    trigger defers to :func:`core.execution.session_types.resolve_runtime_session_type`.
+    """
+    if not trigger or trigger.startswith(("chat", "message")):
+        return SESSION_TYPE_CHAT
+    # Keep ``heartbeat:*`` triggers in the heartbeat namespace.  The engine
+    # implementations this unifies (cursor/grok) resolved these via their
+    # prefix; ``consolidation:*`` is folded to heartbeat by the canonical
+    # resolver below.
+    if trigger == "heartbeat" or trigger.startswith("heartbeat:"):
+        return SESSION_TYPE_HEARTBEAT
+    return resolve_runtime_session_type(trigger)
 
 
 @contextmanager

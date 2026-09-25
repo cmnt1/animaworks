@@ -78,7 +78,7 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # (knowledge list / merge candidates / conflict candidates / forgetting candidates none-lines)
     "core/_anima_lifecycle.py": 4,
     # command templates with {返信内容} — borderline (platform-specific CLI syntax)
-    "core/_anima_inbox.py": 4,
+    "core/_anima_inbox.py": 3,
     # MD section names used for parsing (基本情報, 人格, etc.)
     "core/anima_factory.py": 8,
     # error messages returned to Anima (GlobalOutboundLimitExceeded etc.)

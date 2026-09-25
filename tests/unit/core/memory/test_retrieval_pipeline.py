@@ -19,14 +19,14 @@ def test_pipeline_rerank_disabled_keeps_rrf_order() -> None:
         ],
     ]
     pipeline = RetrievalPipeline(reranker=MagicMock())
-    result = pipeline.run("q", ranked, limit=2, rerank_enabled=False, abstain_on_low_confidence=False)
+    result = pipeline.run("q", ranked, limit=2, rerank_enabled=False)
     assert [c["content"] for c in result.items] == ["first", "second"]
     pipeline._reranker.rerank_sync.assert_not_called()
 
 
 def test_pipeline_empty_lists_abstains() -> None:
     pipeline = RetrievalPipeline(reranker=MagicMock())
-    result = pipeline.run("q", [[]], abstain_on_low_confidence=True, confidence_threshold=0.35)
+    result = pipeline.run("q", [[]], confidence_threshold=0.35)
     assert result.abstain is True
     assert result.items == []
 
@@ -40,7 +40,6 @@ def test_pipeline_single_rrf_list_can_pass_default_confidence_gate() -> None:
         ranked,
         limit=1,
         rerank_enabled=False,
-        abstain_on_low_confidence=True,
         rrf_confidence_threshold=0.02,
     )
 
@@ -65,7 +64,6 @@ def test_pipeline_uses_reranker_when_enabled() -> None:
         ranked,
         limit=1,
         rerank_enabled=True,
-        abstain_on_low_confidence=False,
     )
     assert result.items[0]["content"] == "b"
     reranker.rerank_sync.assert_called_once()
@@ -86,7 +84,7 @@ def test_pipeline_temporal_boost_absent_keeps_default_order() -> None:
     ]
     pipeline = RetrievalPipeline(reranker=MagicMock())
 
-    result = pipeline.run("what happened in 2023?", ranked, limit=2, rerank_enabled=False, abstain_on_low_confidence=False)
+    result = pipeline.run("what happened in 2023?", ranked, limit=2, rerank_enabled=False)
 
     assert [item["content"] for item in result.items] == ["older", "newer 2023"]
     assert "temporal_boost" not in result.items[1]
@@ -111,7 +109,6 @@ def test_pipeline_temporal_boost_is_category_2_only() -> None:
         ranked,
         limit=1,
         rerank_enabled=False,
-        abstain_on_low_confidence=False,
         temporal_boost=TemporalBoostConfig(enabled=True, category=4),
     )
 
@@ -137,7 +134,6 @@ def test_pipeline_temporal_boost_adds_score_for_temporal_year_match() -> None:
         ranked,
         limit=1,
         rerank_enabled=False,
-        abstain_on_low_confidence=False,
         temporal_boost=TemporalBoostConfig(enabled=True, category=2),
     )
 
@@ -161,7 +157,6 @@ def test_pipeline_access_boost_applies_after_rrf_when_rerank_disabled() -> None:
         ranked,
         limit=2,
         rerank_enabled=False,
-        abstain_on_low_confidence=False,
         access_boost=AccessBoostConfig(weight=0.05, cap=0.25),
     )
 
@@ -188,7 +183,6 @@ def test_pipeline_access_boost_applies_after_cross_encoder_scores() -> None:
         ranked,
         limit=2,
         rerank_enabled=True,
-        abstain_on_low_confidence=False,
         access_boost=AccessBoostConfig(weight=0.05, cap=0.25),
     )
 
@@ -258,7 +252,6 @@ def test_pipeline_entity_boost_absent_keeps_default_order() -> None:
         ranked,
         limit=2,
         rerank_enabled=False,
-        abstain_on_low_confidence=False,
     )
 
     assert [item["content"] for item in result.items] == [
@@ -287,7 +280,6 @@ def test_pipeline_entity_boost_reorders_category_1_overlap() -> None:
         ranked,
         limit=2,
         rerank_enabled=False,
-        abstain_on_low_confidence=False,
         entity_boost=EntityBoostConfig(
             enabled=True,
             category=1,
@@ -321,7 +313,6 @@ def test_pipeline_entity_boost_is_category_1_and_4_only() -> None:
             ranked,
             limit=1,
             rerank_enabled=False,
-            abstain_on_low_confidence=False,
             entity_boost=EntityBoostConfig(enabled=True, category=category),
         )
 
@@ -346,7 +337,6 @@ def test_pipeline_entity_boost_applies_to_category_4() -> None:
         ranked,
         limit=1,
         rerank_enabled=False,
-        abstain_on_low_confidence=False,
         entity_boost=EntityBoostConfig(enabled=True, category=4),
     )
 
@@ -373,7 +363,6 @@ def test_pipeline_entity_boost_strict_mode_ignores_generic_single_token_overlap(
         ranked,
         limit=2,
         rerank_enabled=False,
-        abstain_on_low_confidence=False,
         entity_boost=EntityBoostConfig(
             enabled=True,
             category=1,
@@ -410,7 +399,6 @@ def test_pipeline_entity_boost_strict_mode_allows_metadata_multi_token_overlap()
         ranked,
         limit=2,
         rerank_enabled=False,
-        abstain_on_low_confidence=False,
         entity_boost=EntityBoostConfig(
             enabled=True,
             category=1,
