@@ -228,13 +228,16 @@ def _list_task_board(
     anima_names = paths["anima_names"]
     selected_names = _selected_anima_names(animas_dir, anima_names, assignee)
     store = _store_for(shared_dir)
+    # The default active view only needs live ledger rows; loading archived
+    # history (tens of thousands of rows) is reserved for views that show it.
+    load_archived = include_archived or (visibility is not None and visibility != AttentionVisibility.ACTIVE)
 
     tasks = project_all(
         animas_dir,
         store,
         anima_names=selected_names,
         include_missing=include_missing,
-        include_archived=True,
+        include_archived=load_archived,
     )
     tasks = [
         task

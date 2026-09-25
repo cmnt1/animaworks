@@ -107,6 +107,39 @@ class TestTaskBoardList:
 
         assert [task["task_id"] for task in query_resp.json()["tasks"]] == ["task-active"]
 
+    async def test_default_view_skips_ledger_archived_tasks(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path, ["alice"])
+        queue = _queue(app, "alice")
+        queue.add_task(
+            source="human",
+            original_instruction="live work",
+            assignee="alice",
+            summary="live work",
+            task_id="task-live",
+        )
+        failed = queue.add_task(
+            source="human",
+            original_instruction="old failure",
+            assignee="alice",
+            summary="old failure",
+            task_id="task-failed",
+        )
+        # Legacy 'failed' rows were archived in the ledger but carry no board metadata.
+        with queue.store.transaction() as db:
+            db.execute(
+                "UPDATE tasks SET archived=1, entry_json=json_set(entry_json, '$.status', 'failed') "
+                "WHERE anima=? AND task_id=?",
+                ("alice", failed.task_id),
+            )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            default_resp = await client.get("/api/task-board")
+            full_resp = await client.get("/api/task-board", params={"include_archived": "true"})
+
+        assert [task["task_id"] for task in default_resp.json()["tasks"]] == ["task-live"]
+        assert {task["task_id"] for task in full_resp.json()["tasks"]} == {"task-live", "task-failed"}
+
     async def test_unknown_assignee_returns_404(self, tmp_path: Path) -> None:
         app = _make_app(tmp_path, ["alice"])
         transport = ASGITransport(app=app)
