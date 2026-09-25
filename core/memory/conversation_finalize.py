@@ -72,9 +72,11 @@ def _gather_activity_context(anima_dir: Path, turns: list[ConversationTurn]) -> 
         if not session_entries:
             return ""
 
+        from core.memory.activity_format import entry_text
+
         lines = [t("conversation.activity_context_header")]
         for e in session_entries:
-            text = e.summary or e.content[:100]
+            text = e.summary or entry_text(e)[:100]
             lines.append(f"- [{e.type}] {text}")
 
         return "\n".join(lines)
