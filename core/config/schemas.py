@@ -338,11 +338,8 @@ class RAGConfig(BaseModel):
     rerank_enabled: bool = True
     rerank_candidate_pool: int = 50
     cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-12-v2"
-    abstain_on_low_confidence: bool = True
     confidence_threshold: float = 0.35
     rrf_confidence_threshold: float = 0.02
-    iterative_retrieval_enabled: bool = True
-    iterative_min_results: int = 2
     facts_extraction_enabled: bool = True
     fact_extraction_timeout_seconds: int = Field(
         default=120,
