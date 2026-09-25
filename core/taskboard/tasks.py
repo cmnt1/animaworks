@@ -23,6 +23,45 @@ from core.time_utils import now_iso
 
 logger = logging.getLogger(__name__)
 
+_TERMINAL_STATUSES = frozenset({"done", "cancelled"})
+
+
+def _archive_board_cards(db: sqlite3.Connection, anima: str, task_id: str) -> None:
+    """Close every active TaskBoard card for a finished task, in the same transaction.
+
+    Covers the owner's card and the requesters' ``waiting`` cards, which share the
+    task_id or reach it through ``task_aliases``. Stores without the board table
+    (isolated task DBs) are left alone.
+    """
+    try:
+        rows = db.execute(
+            "SELECT anima_name, task_id FROM taskboard_metadata WHERE visibility='active' AND ("
+            "(task_id=?) OR (anima_name, task_id) IN "
+            "(SELECT viewer, alias FROM task_aliases WHERE anima=? AND task_id=?))",
+            (task_id, anima, task_id),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return
+    now = now_iso()
+    for card_anima, card_id in rows:
+        db.execute(
+            "UPDATE taskboard_metadata SET visibility='archived', column='done', updated_at=?, updated_by=? "
+            "WHERE anima_name=? AND task_id=?",
+            (now, anima, card_anima, card_id),
+        )
+        db.execute(
+            "INSERT INTO taskboard_events(ts, actor, event_type, anima_name, task_id, payload_json) "
+            "VALUES(?, ?, 'archived', ?, ?, ?)",
+            (
+                now,
+                anima,
+                card_anima,
+                card_id,
+                _json({"reason": "task_terminal", "owner": anima, "owner_task_id": task_id}),
+            ),
+        )
+
+
 _attempt_identity: ContextVar[dict[str, str] | None] = ContextVar("task_attempt_identity", default=None)
 
 
@@ -294,6 +333,8 @@ class TaskStore:
                     "THEN 0 ELSE ready END WHERE anima=? AND task_id=?",
                     (_json(entry), new_status, owner, task_id),
                 )
+                if new_status in _TERMINAL_STATUSES:
+                    _archive_board_cards(db, owner, task_id)
                 return
             entry = TaskEntry(**{key: value for key, value in event.items() if key != "_event"})
             target = entry.meta.get("delegated_to")
@@ -562,6 +603,8 @@ class TaskStore:
                     "INSERT OR IGNORE INTO task_wakeups VALUES(?,?,?,?,?,NULL)",
                     (row["anima"], row["task_id"], token, "completion", entry.updated_at),
                 )
+            if status in _TERMINAL_STATUSES:
+                _archive_board_cards(db, row["anima"], row["task_id"])
             return True
 
     def active_attempts(self, anima: str) -> list[dict[str, Any]]:
