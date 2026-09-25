@@ -199,6 +199,9 @@ class CodexImageClient:
             try:
                 completed = subprocess.run(
                     cmd,
+                    # codex exec reads an inherited non-TTY stdin and blocks
+                    # until the timeout when run from a background process.
+                    stdin=subprocess.DEVNULL,
                     timeout=_CODEX_TIMEOUT,
                     capture_output=True,
                     check=False,
