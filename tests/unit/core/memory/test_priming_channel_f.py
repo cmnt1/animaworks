@@ -71,6 +71,27 @@ class TestFormatEpisodePointer:
         assert out.startswith("# リリース")
         assert "📌 [0.81] episodes/2026-09-03.md — リリース" in out
 
+    def test_low_confidence_marker_omitted_by_default(self) -> None:
+        out = format_episode_pointer(
+            index=1,
+            score=0.81,
+            source="episodes/2026-09-03.md",
+            content="# リリース",
+            path="episodes/2026-09-03.md",
+        )
+        assert "[low-confidence]" not in out
+
+    def test_low_confidence_marker_appended(self) -> None:
+        out = format_episode_pointer(
+            index=1,
+            score=0.81,
+            source="episodes/2026-09-03.md",
+            content="# リリース",
+            path="episodes/2026-09-03.md",
+            low_confidence=True,
+        )
+        assert out == "📌 [0.81] episodes/2026-09-03.md — リリース [low-confidence]"
+
 
 class TestExcludeEpisodesForDates:
     def test_excludes_same_date_episodes(self) -> None:

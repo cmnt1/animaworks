@@ -5,6 +5,7 @@
 - **제목**: {title}
 - **제출자**: {submitted_by}
 - **작업 디렉터리**: {workspace}
+{submission_line}
 
 ## 작업 내용
 {description}

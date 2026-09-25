@@ -5,6 +5,7 @@
 - **タイトル**: {title}
 - **提出者**: {submitted_by}
 - **作業ディレクトリ**: {workspace}
+{submission_line}
 
 ## 作業内容
 {description}

@@ -14,6 +14,7 @@ from server.stream_registry import StreamRegistry
 
 def _make_test_app(animas: dict | None = None, supervisor: MagicMock | None = None):
     from fastapi import FastAPI
+
     from server.routes.chat import create_chat_router
 
     app = FastAPI()
@@ -50,8 +51,10 @@ def _make_test_app(animas: dict | None = None, supervisor: MagicMock | None = No
             if anima_name not in animas:
                 raise KeyError(anima_name)
             p = animas[anima_name]
-            from core.supervisor.ipc import IPCResponse
             import json as _json
+
+            from core.supervisor.ipc import IPCResponse
+
             async for chunk in p.process_message_stream(
                 params.get("message", ""),
                 from_person=params.get("from_person", "human"),
@@ -113,14 +116,16 @@ class TestChat:
 
     async def test_chat_includes_images_from_cycle_result(self):
         supervisor = MagicMock()
-        supervisor.send_request = AsyncMock(return_value={
-            "response": "ok",
-            "replied_to": [],
-            "cycle_result": {
-                "summary": "ok",
-                "images": [{"type": "image", "source": "generated", "path": "assets/a.png"}],
-            },
-        })
+        supervisor.send_request = AsyncMock(
+            return_value={
+                "response": "ok",
+                "replied_to": [],
+                "cycle_result": {
+                    "summary": "ok",
+                    "images": [{"type": "image", "source": "generated", "path": "assets/a.png"}],
+                },
+            }
+        )
         app = _make_test_app(supervisor=supervisor)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -150,7 +155,7 @@ class TestChat:
         app = _make_test_app({"alice": alice})
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post(
+            await client.post(
                 "/api/animas/alice/chat",
                 json={"message": "Hi"},
             )
@@ -196,9 +201,7 @@ class TestChat:
         ws = app.state.ws_manager
         # 2 broadcasts: thinking status + idle status
         assert ws.broadcast.await_count >= 2
-        broadcast_types = [
-            call[0][0]["type"] for call in ws.broadcast.call_args_list
-        ]
+        broadcast_types = [call[0][0]["type"] for call in ws.broadcast.call_args_list]
         assert "anima.status" in broadcast_types
         assert "chat.response" not in broadcast_types
 
@@ -281,6 +284,7 @@ class TestChatStream:
 
         async def _stream(*args, **kwargs):
             from core.supervisor.ipc import IPCResponse
+
             captured_kwargs.update(kwargs)
             yield IPCResponse(
                 id="test",
@@ -369,11 +373,13 @@ class TestChatStream:
 class TestGreet:
     async def test_greet_success(self):
         supervisor = MagicMock()
-        supervisor.send_request = AsyncMock(return_value={
-            "response": "こんにちは！待機中です。",
-            "emotion": "smile",
-            "cached": False,
-        })
+        supervisor.send_request = AsyncMock(
+            return_value={
+                "response": "こんにちは！待機中です。",
+                "emotion": "smile",
+                "cached": False,
+            }
+        )
         app = _make_test_app(supervisor=supervisor)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -386,13 +392,16 @@ class TestGreet:
         assert data["cached"] is False
         assert data["anima"] == "alice"
 
-    async def test_greet_cached(self):
+    async def test_greet_field_cached_always_false(self):
+        """The greet cache was removed; the API keeps ``cached`` as ``false``."""
         supervisor = MagicMock()
-        supervisor.send_request = AsyncMock(return_value={
-            "response": "Hi!",
-            "emotion": "neutral",
-            "cached": True,
-        })
+        supervisor.send_request = AsyncMock(
+            return_value={
+                "response": "Hi!",
+                "emotion": "neutral",
+                "cached": True,
+            }
+        )
         app = _make_test_app(supervisor=supervisor)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -400,7 +409,7 @@ class TestGreet:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["cached"] is True
+        assert data["cached"] is False
 
     async def test_greet_anima_not_found(self):
         supervisor = MagicMock()
@@ -414,9 +423,13 @@ class TestGreet:
 
     async def test_greet_ipc_sends_correct_method(self):
         supervisor = MagicMock()
-        supervisor.send_request = AsyncMock(return_value={
-            "response": "Hi", "emotion": "neutral", "cached": False,
-        })
+        supervisor.send_request = AsyncMock(
+            return_value={
+                "response": "Hi",
+                "emotion": "neutral",
+                "cached": False,
+            }
+        )
         app = _make_test_app(supervisor=supervisor)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -440,9 +453,7 @@ class TestChatCompact:
         app = _make_test_app(supervisor=supervisor)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post(
-                "/api/animas/nobody/chat/compact", json={"thread_id": "default"}
-            )
+            resp = await client.post("/api/animas/nobody/chat/compact", json={"thread_id": "default"})
         assert resp.status_code == 404
 
     async def test_compact_conflict_when_stream_active(self):
@@ -452,9 +463,7 @@ class TestChatCompact:
         app.state.stream_registry.register("alice", thread_id="default")
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post(
-                "/api/animas/alice/chat/compact", json={"thread_id": "default"}
-            )
+            resp = await client.post("/api/animas/alice/chat/compact", json={"thread_id": "default"})
         assert resp.status_code == 409
         assert resp.json()["detail"] == "chat in progress"
         supervisor.send_request.assert_not_called()
@@ -462,15 +471,11 @@ class TestChatCompact:
     async def test_compact_success(self):
         supervisor = MagicMock()
         supervisor.processes = {"alice"}
-        supervisor.send_request = AsyncMock(
-            return_value={"status": "ok", "thread_id": "default", "mode": "s"}
-        )
+        supervisor.send_request = AsyncMock(return_value={"status": "ok", "thread_id": "default", "mode": "s"})
         app = _make_test_app(supervisor=supervisor)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post(
-                "/api/animas/alice/chat/compact", json={"thread_id": "default"}
-            )
+            resp = await client.post("/api/animas/alice/chat/compact", json={"thread_id": "default"})
         assert resp.status_code == 200
         assert resp.json() == {"status": "ok", "thread_id": "default", "mode": "s"}
         supervisor.send_request.assert_awaited_once_with(
@@ -487,7 +492,5 @@ class TestChatCompact:
         app = _make_test_app(supervisor=supervisor)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post(
-                "/api/animas/alice/chat/compact", json={"thread_id": "default"}
-            )
+            resp = await client.post("/api/animas/alice/chat/compact", json={"thread_id": "default"})
         assert resp.status_code == 504

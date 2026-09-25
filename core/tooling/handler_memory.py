@@ -685,6 +685,9 @@ class MemoryToolsMixin:
 
         search_method = results[0].get("search_method", "vector") if results else "vector"
         header = f'Search results for "{query}" ({search_method}, {scope}, {offset + 1}-{offset + len(results)}):\n'
+        meta = getattr(self._memory, "last_search_meta", {}) or {}
+        if meta.get("low_confidence"):
+            header = header.strip() + " [low-confidence]\n"
 
         output_parts: list[str] = [header]
         total_tokens = len(header) // 4

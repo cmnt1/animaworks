@@ -182,7 +182,9 @@ class TestRAGSearchScopeAllPipeline:
                 procedures_dir=rag_search._anima_dir / "procedures",
                 common_knowledge_dir=rag_search._anima_dir / "common_knowledge",
             )
-        assert rag_search.last_search_meta["abstain"] is False
+        # No candidates: the unified search abstains by the new confidence-gate
+        # semantics (abstain is only True when there are genuinely 0 results).
+        assert rag_search.last_search_meta["abstain"] is True
 
     def test_keyword_fallback_includes_knowledge_metadata(self, rag_search: RAGMemorySearch) -> None:
         knowledge_file = rag_search._anima_dir / "knowledge" / "vendor.md"

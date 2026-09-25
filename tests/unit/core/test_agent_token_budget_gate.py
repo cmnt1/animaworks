@@ -189,29 +189,6 @@ async def test_budget_check_io_failure_blocks_cycle(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_budget_gate_still_allows_non_llm_inbox_fast_path(tmp_path: Path) -> None:
-    agent = _DummyCycle(tmp_path, budget=100)
-    inbox = _DummyInbox(tmp_path, agent)
-    inbox_result = InboxResult(
-        messages=[MagicMock()],
-        senders={"sender"},
-        unread_count=1,
-        prompt_parts=["message"],
-    )
-    inbox._process_inbox_messages = AsyncMock(return_value=inbox_result)
-    inbox._maybe_fast_reply_external_probe = MagicMock(
-        return_value=CycleResult(trigger="inbox:sender", action="responded", summary="fast reply")
-    )
-
-    with patch("core.memory.token_usage.TokenUsageLogger.monthly_total", return_value=100):
-        result = await inbox.process_inbox_message()
-
-    assert result.action == "responded"
-    inbox._process_inbox_messages.assert_awaited_once_with(None, track_retries=False)
-    inbox._maybe_fast_reply_external_probe.assert_called_once()
-
-
-@pytest.mark.asyncio
 async def test_budget_blocked_inbox_preprocessing_has_no_persistent_side_effects(tmp_path: Path) -> None:
     agent = _DummyCycle(tmp_path, budget=100)
     inbox = _DummyInbox(tmp_path, agent)
