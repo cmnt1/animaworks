@@ -4,12 +4,12 @@
 """E2E tests for the character greeting feature.
 
 Tests the full greet flow: DigitalAnima.process_greet() with mocked LLM,
-verifying response format, caching, emotion extraction, and conversation
-memory recording.
+verifying response format, emotion extraction, and conversation memory
+recording.  The 1h response cache was removed, so every greet runs the LLM.
 """
+
 from __future__ import annotations
 
-import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -32,53 +32,37 @@ class TestGreetE2E:
         dp = make_digital_anima("greeter")
 
         with patch.object(
-            dp.agent, "run_cycle",
-            new=AsyncMock(return_value=_make_cycle_result(
-                summary='やあ！今はのんびりしてるよ。<!-- emotion: {"emotion": "smile"} -->'
-            )),
+            dp.agent,
+            "run_cycle",
+            new=AsyncMock(
+                return_value=_make_cycle_result(
+                    summary='やあ！今はのんびりしてるよ。<!-- emotion: {"emotion": "smile"} -->'
+                )
+            ),
         ):
             result = await dp.process_greet()
 
         assert result["response"] == "やあ！今はのんびりしてるよ。"
         assert result["emotion"] == "smile"
         assert result["cached"] is False
-        assert dp._last_greet_text == "やあ！今はのんびりしてるよ。"
 
-    async def test_greet_caching_within_cooldown(self, make_digital_anima):
-        """Test that repeated greet calls within 5 minutes return cached response."""
+    async def test_greet_always_runs_llm_no_cache(self, make_digital_anima):
+        """Repeated greets always run the LLM; the response cache was removed."""
         dp = make_digital_anima("greeter")
 
         with patch.object(
-            dp.agent, "run_cycle",
+            dp.agent,
+            "run_cycle",
             new=AsyncMock(return_value=_make_cycle_result(summary="Hello!")),
         ) as mock_cycle:
-            # First call — fresh
             result1 = await dp.process_greet()
-            assert result1["cached"] is False
-
-            # Second call — should be cached
             result2 = await dp.process_greet()
-            assert result2["cached"] is True
-            assert result2["response"] == result1["response"]
 
-            # LLM should have been called exactly once
-            assert mock_cycle.await_count == 1
-
-    async def test_greet_cache_expires_after_cooldown(self, make_digital_anima):
-        """Test that cache expires after the cooldown period."""
-        dp = make_digital_anima("greeter")
-
-        with patch.object(
-            dp.agent, "run_cycle",
-            new=AsyncMock(return_value=_make_cycle_result(summary="Hello again!")),
-        ) as mock_cycle:
-            await dp.process_greet()
-
-            # Simulate cache expiry (set last greet to beyond the 1-hour cooldown)
-            dp._last_greet_at = time.time() - 3601
-
-            result = await dp.process_greet()
-            assert result["cached"] is False
+            assert result1["cached"] is False
+            assert result2["cached"] is False
+            assert result1["response"] == "Hello!"
+            assert result2["response"] == "Hello!"
+            # LLM must be invoked on every greet
             assert mock_cycle.await_count == 2
 
     async def test_greet_records_visit_and_assistant_turns(self, make_digital_anima):
@@ -86,7 +70,8 @@ class TestGreetE2E:
         dp = make_digital_anima("greeter")
 
         with patch.object(
-            dp.agent, "run_cycle",
+            dp.agent,
+            "run_cycle",
             new=AsyncMock(return_value=_make_cycle_result(summary="Hi there!")),
         ):
             await dp.process_greet()
@@ -96,6 +81,7 @@ class TestGreetE2E:
         assert conv_path.exists()
 
         import json
+
         conv_data = json.loads(conv_path.read_text(encoding="utf-8"))
         turns = conv_data.get("turns", [])
         assert len(turns) == 2
@@ -111,10 +97,11 @@ class TestGreetE2E:
         dp._task_slots["conversation"] = "Building report"
 
         with patch.object(
-            dp.agent, "run_cycle",
+            dp.agent,
+            "run_cycle",
             new=AsyncMock(return_value=_make_cycle_result(summary="Busy!")),
         ):
-            result = await dp.process_greet()
+            await dp.process_greet()
 
         assert dp._status_slots["conversation"] == "working"
         assert dp._task_slots["conversation"] == "Building report"
@@ -143,10 +130,9 @@ class TestGreetE2E:
         dp = make_digital_anima("greeter")
 
         with patch.object(
-            dp.agent, "run_cycle",
-            new=AsyncMock(return_value=_make_cycle_result(
-                summary='Hi! <!-- emotion: {"emotion": "angry"} -->'
-            )),
+            dp.agent,
+            "run_cycle",
+            new=AsyncMock(return_value=_make_cycle_result(summary='Hi! <!-- emotion: {"emotion": "angry"} -->')),
         ):
             result = await dp.process_greet()
 
@@ -158,10 +144,9 @@ class TestGreetE2E:
         dp = make_digital_anima("greeter")
 
         with patch.object(
-            dp.agent, "run_cycle",
-            new=AsyncMock(return_value=_make_cycle_result(
-                summary="Plain greeting without emotion"
-            )),
+            dp.agent,
+            "run_cycle",
+            new=AsyncMock(return_value=_make_cycle_result(summary="Plain greeting without emotion")),
         ):
             result = await dp.process_greet()
 
@@ -191,6 +176,7 @@ class TestGreetE2E:
         dp = make_digital_anima("greeter")
 
         import json
+
         conv_path = dp.anima_dir / "state" / "conversation.json"
         turns_at_llm_call = []
 

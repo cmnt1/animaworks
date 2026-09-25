@@ -775,41 +775,6 @@ async def _warm_model_catalog() -> None:
         logger.exception("Model catalog warmup failed")
 
 
-async def _warm_voice_greets(app: FastAPI) -> None:
-    """Pre-populate the greet cache for voice-enabled animas (those with a
-    per-anima voice_id) so the popup greeting is instant after a restart."""
-    import json as _json
-
-    from core.paths import get_animas_dir
-
-    voiced: list[str] = []
-    try:
-        for status_path in sorted(get_animas_dir().glob("*/status.json")):
-            try:
-                voice = _json.loads(status_path.read_text(encoding="utf-8")).get("voice") or {}
-            except (OSError, ValueError):
-                continue
-            if isinstance(voice, dict) and voice.get("voice_id"):
-                voiced.append(status_path.parent.name)
-    except OSError:
-        return
-    if not voiced:
-        return
-
-    supervisor = app.state.supervisor
-    for name in voiced:
-        # Wait for the anima process to come up (startup spawns them async).
-        for _ in range(60):
-            if supervisor.get_process_status(name).get("status") == "running":
-                break
-            await asyncio.sleep(5)
-        try:
-            await supervisor.send_request(anima_name=name, method="greet", params={}, timeout=120.0)
-            logger.info("Voice greet cache warmed: %s", name)
-        except Exception as e:
-            logger.info("Voice greet warmup skipped (%s): %s", name, e)
-
-
 async def _activate_runtime_services(app: FastAPI) -> None:
     """Start the runtime both at boot and when the setup wizard finishes."""
     app.state.worker_services_ready = False
@@ -1010,7 +975,6 @@ async def _activate_runtime_services(app: FastAPI) -> None:
     )
     app.state._model_warmup_task = asyncio.create_task(_run_model_warmup())
     app.state._model_catalog_warmup_task = asyncio.create_task(_warm_model_catalog())
-    app.state._voice_greet_warmup_task = asyncio.create_task(_warm_voice_greets(app))
 
     logger.info("Server started (startup initialization running in background)")
 

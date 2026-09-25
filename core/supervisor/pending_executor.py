@@ -45,21 +45,18 @@ class TaskExecError(RuntimeError):
 
 
 _PENDING_WATCHER_POLL_INTERVAL = 3.0
-_LLM_TASK_TTL_HOURS = 24
 _PENDING_TASK_SUBPROCESS_TIMEOUT = 1800
 _TASK_RESULT_MAX_CHARS = 2000
 _TASK_COMPLETE_NOTIFY_MAX_CHARS = 10_000
 _PROCESSING_TOUCH_INTERVAL_SECONDS = 600
 
 _SENTINEL_CANCELLED = "(cancelled)"
-_SENTINEL_EXPIRED = "(expired)"
 _SENTINEL_BUDGET_SKIPPED = "(budget_skipped)"
 # The session ended without the anima declaring done or cancelled.
 _SENTINEL_UNDECLARED = "(undeclared)"
 # Results that mean "this task produced no output a dependent task can use".
 _NON_COMPLETING_SENTINELS = {
     _SENTINEL_CANCELLED,
-    _SENTINEL_EXPIRED,
     _SENTINEL_BUDGET_SKIPPED,
     _SENTINEL_UNDECLARED,
 }
@@ -106,13 +103,35 @@ def _classify_task_result(result: str) -> tuple[str, str]:
     """
     if result == _SENTINEL_CANCELLED:
         return "cancelled", t("pending_executor.task_cancelled")
-    if result == _SENTINEL_EXPIRED:
-        return "cancelled", "expired (TTL exceeded)"
     if result == _SENTINEL_BUDGET_SKIPPED:
         return "pending", "execution skipped because token budget is unavailable"
     if result == _SENTINEL_UNDECLARED:
         return "pending", "run ended without a completion declaration"
     return "done", (result or "")[:200]
+
+
+def _submission_line(submitted_at: str, *, locale: str | None = None) -> str:
+    """Build a single-line submission timestamp for the task_exec prompt.
+
+    The TTL was removed; age information is surfaced to the model so it can
+    judge staleness itself.  Returns an empty string when no usable timestamp
+    is available.  ``locale`` is exposed for deterministic unit tests.
+    """
+    if not submitted_at:
+        return ""
+    try:
+        dt = datetime.fromisoformat(submitted_at)
+    except (ValueError, TypeError):
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    now = datetime.now(UTC)
+    total_seconds = max(0, int((now - dt).total_seconds()))
+    hours, rem = divmod(total_seconds, 3600)
+    minutes = rem // 60
+    time_str = dt.strftime("%Y-%m-%d %H:%M")
+    elapsed = t("pending_executor.elapsed", locale=locale, hours=hours, minutes=minutes)
+    return t("pending_executor.submitted_line", locale=locale, time=time_str, elapsed=elapsed)
 
 
 def _resolve_default_workspace(anima_dir: Path) -> str:
@@ -1056,7 +1075,6 @@ class PendingTaskExecutor:
 
         status = {
             _SENTINEL_CANCELLED: "cancelled",
-            _SENTINEL_EXPIRED: "expired",
             _SENTINEL_BUDGET_SKIPPED: "budget_skipped",
             _SENTINEL_UNDECLARED: "undeclared",
         }.get(result, "completed")
@@ -1161,13 +1179,10 @@ class PendingTaskExecutor:
         submitted_at = task_desc.get("submitted_at", "")
 
         # Skip if task was cancelled in task_queue (batch path; single path checks in watcher)
-        touched_at = ""
         try:
             from core.memory.task_queue import TaskQueueManager
 
             entry = TaskQueueManager(self._anima_dir).get_task_by_id(task_id)
-            if entry:
-                touched_at = entry.updated_at or ""
             if entry and entry.status == "cancelled":
                 logger.info(
                     "[%s] Skipping cancelled LLM task: id=%s",
@@ -1182,34 +1197,7 @@ class PendingTaskExecutor:
                 exc_info=True,
             )
 
-        # TTL check. The saved input (and its submitted_at) is immutable across
-        # resume, so age is measured from the newest of submission and the last
-        # queue touch; otherwise a resumed task older than the TTL dies on start.
-        stamps = []
-        for raw in (submitted_at, touched_at):
-            try:
-                stamp = datetime.fromisoformat(raw)
-            except (ValueError, TypeError):
-                continue
-            stamps.append(stamp if stamp.tzinfo else stamp.replace(tzinfo=UTC))
-        if stamps:
-            try:
-                sub_dt = max(stamps)
-                now_utc = datetime.now(UTC)
-                age_hours = (now_utc - sub_dt).total_seconds() / 3600
-                if age_hours > _LLM_TASK_TTL_HOURS:
-                    logger.warning(
-                        "[%s] Skipping expired LLM task: %s (age=%.1fh, TTL=%dh)",
-                        self._anima_name,
-                        task_id,
-                        age_hours,
-                        _LLM_TASK_TTL_HOURS,
-                    )
-                    return _SENTINEL_EXPIRED
-            except (ValueError, TypeError):
-                pass
-
-        # Mirror the start only after the cancellation and expiry gates.
+        # Mirror the start only after the cancellation gate.
         self._sync_task_queue(task_id, "in_progress")
 
         # Build dependency context for batch tasks
@@ -1246,6 +1234,7 @@ class PendingTaskExecutor:
             constraints=constraints_text,
             file_paths=paths_text,
             active_workers=self._format_active_sibling_tasks(task_id) or _none,
+            submission_line=_submission_line(submitted_at),
         )
 
         lane_getter = getattr(type(self._anima), "_agent_for_lane", None)
