@@ -15,6 +15,7 @@ import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -139,6 +140,14 @@ CREATE TABLE IF NOT EXISTS task_claim_control (
     anima TEXT PRIMARY KEY,
     paused INTEGER NOT NULL CHECK(paused IN (0,1))
 );
+CREATE TABLE IF NOT EXISTS task_leases (
+    anima TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    holder TEXT NOT NULL,
+    acquired_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    PRIMARY KEY(anima, task_id)
+);
 """
 
 
@@ -188,6 +197,13 @@ class TaskStore:
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_claim_control'"
             ).fetchone():
                 db.executescript(_SCHEMA)
+            # Keep this migration independent from the older schema sentinel:
+            # databases that already have task_claim_control still need leases.
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS task_leases ("
+                "anima TEXT NOT NULL, task_id TEXT NOT NULL, holder TEXT NOT NULL, "
+                "acquired_at TEXT NOT NULL, expires_at TEXT NOT NULL, PRIMARY KEY(anima, task_id))"
+            )
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -334,6 +350,7 @@ class TaskStore:
                     (_json(entry), new_status, owner, task_id),
                 )
                 if new_status in _TERMINAL_STATUSES:
+                    db.execute("DELETE FROM task_leases WHERE anima=? AND task_id=?", (owner, task_id))
                     _archive_board_cards(db, owner, task_id)
                 return
             entry = TaskEntry(**{key: value for key, value in event.items() if key != "_event"})
@@ -373,6 +390,136 @@ class TaskStore:
                 if entry.status in {"pending", "in_progress"}:
                     entry.status = "delegated"
             return entry
+
+    def acquire_lease(self, anima: str, task_id: str, holder: str, ttl_seconds: int) -> dict[str, str] | None:
+        """Acquire or renew a task lease, atomically rejecting another live holder."""
+        if ttl_seconds <= 0:
+            raise ValueError("Lease TTL must be positive")
+        now = datetime.now(UTC)
+        acquired_at = now.isoformat()
+        expires_at = (now + timedelta(seconds=ttl_seconds)).isoformat()
+        with self.transaction() as db:
+            current = db.execute("SELECT * FROM task_leases WHERE anima=? AND task_id=?", (anima, task_id)).fetchone()
+            if current and current["holder"] != holder:
+                try:
+                    current_expiry = datetime.fromisoformat(current["expires_at"])
+                    if current_expiry.tzinfo is None:
+                        current_expiry = current_expiry.replace(tzinfo=UTC)
+                    if current_expiry > now:
+                        return None
+                except (TypeError, ValueError):
+                    # An unreadable expiry cannot safely reserve a task forever.
+                    pass
+            db.execute(
+                "INSERT INTO task_leases(anima,task_id,holder,acquired_at,expires_at) VALUES(?,?,?,?,?) "
+                "ON CONFLICT(anima,task_id) DO UPDATE SET holder=excluded.holder, "
+                "acquired_at=excluded.acquired_at,expires_at=excluded.expires_at",
+                (anima, task_id, holder, acquired_at, expires_at),
+            )
+            return {
+                "anima": anima,
+                "task_id": task_id,
+                "holder": holder,
+                "acquired_at": acquired_at,
+                "expires_at": expires_at,
+            }
+
+    def release_lease(self, anima: str, task_id: str, holder: str) -> bool:
+        with self.transaction() as db:
+            cursor = db.execute(
+                "DELETE FROM task_leases WHERE anima=? AND task_id=? AND holder=?", (anima, task_id, holder)
+            )
+            return cursor.rowcount > 0
+
+    def get_lease(self, anima: str, task_id: str) -> dict[str, str] | None:
+        now = datetime.now(UTC)
+        with self.reader() as db:
+            row = db.execute("SELECT * FROM task_leases WHERE anima=? AND task_id=?", (anima, task_id)).fetchone()
+        if row is None:
+            return None
+        try:
+            expiry = datetime.fromisoformat(row["expires_at"])
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=UTC)
+            if expiry <= now:
+                return None
+        except (TypeError, ValueError):
+            return None
+        return dict(row)
+
+    def board_rows(self, anima: str | None = None, viewer: str | None = None) -> list[dict[str, Any]]:
+        """Return active canonical tasks plus alias-visible delegated work."""
+        rows: list[dict[str, Any]] = []
+        with self.reader() as db:
+            where = (
+                "WHERE t.archived=0 AND json_extract(t.entry_json,'$.status') IN ('pending','in_progress','delegated')"
+            )
+            params: list[str] = []
+            if anima is not None:
+                where += " AND t.anima=?"
+                params.append(anima)
+            query = (
+                "SELECT t.anima,t.task_id,t.entry_json, "
+                "a.started_at,a.ended_at,a.stop_kind "
+                "FROM tasks t LEFT JOIN task_attempts a ON a.token=("
+                "SELECT token FROM task_attempts x WHERE x.anima=t.anima AND x.task_id=t.task_id "
+                "ORDER BY x.number DESC LIMIT 1) "
+                f"{where} ORDER BY t.anima,t.task_id"
+            )
+            for row in db.execute(query, params):
+                entry = json.loads(row["entry_json"])
+                rows.append(
+                    {
+                        **entry,
+                        "anima": row["anima"],
+                        "canonical_task_id": row["task_id"],
+                        "waiting": False,
+                        "started_at": row["started_at"],
+                        "ended_at": row["ended_at"],
+                        "stop_kind": row["stop_kind"],
+                    }
+                )
+            if viewer:
+                alias_rows = db.execute(
+                    "SELECT a.viewer,a.alias,a.anima,a.task_id,t.entry_json, "
+                    "x.started_at,x.ended_at,x.stop_kind FROM task_aliases a "
+                    "JOIN tasks t ON t.anima=a.anima AND t.task_id=a.task_id "
+                    "LEFT JOIN task_attempts x ON x.token=(SELECT token FROM task_attempts y "
+                    "WHERE y.anima=t.anima AND y.task_id=t.task_id ORDER BY y.number DESC LIMIT 1) "
+                    "WHERE a.viewer=? AND t.archived=0 AND "
+                    "json_extract(t.entry_json,'$.status') IN ('pending','in_progress','delegated') "
+                    "ORDER BY a.alias",
+                    (viewer,),
+                ).fetchall()
+                for row in alias_rows:
+                    entry = json.loads(row["entry_json"])
+                    entry["task_id"] = row["alias"]
+                    rows.append(
+                        {
+                            **entry,
+                            "anima": row["anima"],
+                            "canonical_task_id": row["task_id"],
+                            "alias_viewer": row["viewer"],
+                            "waiting": True,
+                            "started_at": row["started_at"],
+                            "ended_at": row["ended_at"],
+                            "stop_kind": row["stop_kind"],
+                        }
+                    )
+            leases = {(row["anima"], row["task_id"]): dict(row) for row in db.execute("SELECT * FROM task_leases")}
+        now = datetime.now(UTC)
+        for row in rows:
+            lease = leases.get((row["anima"], row["canonical_task_id"]))
+            if lease:
+                try:
+                    expiry = datetime.fromisoformat(lease["expires_at"])
+                    if expiry.tzinfo is None:
+                        expiry = expiry.replace(tzinfo=UTC)
+                    lease = lease if expiry > now else None
+                except (TypeError, ValueError):
+                    lease = None
+            row["lease"] = lease
+        return rows
 
     def alias(self, viewer: str, alias: str, anima: str, task_id: str) -> None:
         with self.transaction() as db:
@@ -604,6 +751,7 @@ class TaskStore:
                     (row["anima"], row["task_id"], token, "completion", entry.updated_at),
                 )
             if status in _TERMINAL_STATUSES:
+                db.execute("DELETE FROM task_leases WHERE anima=? AND task_id=?", (row["anima"], row["task_id"]))
                 _archive_board_cards(db, row["anima"], row["task_id"])
             return True
 
@@ -809,7 +957,7 @@ class TaskStore:
                 updated.add(new_owner)
                 if owner == source:
                     moved.append(new_id)
-                    for table in ("task_attempts", "task_wakeups", "task_aliases"):
+                    for table in ("task_attempts", "task_wakeups", "task_aliases", "task_leases"):
                         db.execute(
                             f"UPDATE {table} SET anima=?,task_id=? WHERE anima=? AND task_id=?",
                             (target, new_id, source, old_id),

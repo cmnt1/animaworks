@@ -15,14 +15,26 @@ Usage via animaworks-tool:
 import argparse
 import json
 import os
+import re
 import sys
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
 def cmd_task(args: argparse.Namespace) -> None:
     """Dispatch task subcommand."""
+    sub = getattr(args, "task_command", None)
+    if sub == "board":
+        _cmd_board(args)
+        return
+    if sub == "show":
+        _cmd_show(args)
+        return
+    if sub in {"claim", "release", "done", "cancel", "note"}:
+        _cmd_lease_action(args)
+        return
+
     anima_dir_str = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
     if not anima_dir_str:
         print(
@@ -43,7 +55,6 @@ def cmd_task(args: argparse.Namespace) -> None:
 
     manager = TaskQueueManager(anima_dir)
 
-    sub = getattr(args, "task_command", None)
     if sub == "add":
         _cmd_add(args, manager)
     elif sub == "update":
@@ -53,8 +64,380 @@ def cmd_task(args: argparse.Namespace) -> None:
     elif sub == "list":
         _cmd_list(args, manager)
     else:
-        print("Usage: animaworks-tool task {add|update|resume|list}", file=sys.stderr)
+        print(
+            "Usage: animaworks-tool task {board|show|claim|release|done|cancel|note|add|update|resume|list}",
+            file=sys.stderr,
+        )
         sys.exit(1)
+
+
+def _get_task_store():
+    from core.paths import get_taskboard_db_path
+    from core.taskboard.tasks import TaskStore
+
+    return TaskStore(get_taskboard_db_path())
+
+
+def _find_task_matches(store, task_id: str, owner: str | None = None) -> list[dict]:
+    """Resolve canonical IDs and viewer aliases without assuming a current anima."""
+    matches: dict[tuple[str, str], dict] = {}
+    with store.reader() as db:
+        direct = db.execute("SELECT anima,task_id,entry_json FROM tasks WHERE task_id=?", (task_id,)).fetchall()
+        for row in direct:
+            if owner is None or row["anima"] == owner:
+                matches[(row["anima"], row["task_id"])] = {
+                    "anima": row["anima"],
+                    "task_id": row["task_id"],
+                    "requested_id": task_id,
+                    "entry": json.loads(row["entry_json"]),
+                }
+        aliases = db.execute(
+            "SELECT a.anima,a.task_id,t.entry_json FROM task_aliases a "
+            "JOIN tasks t ON t.anima=a.anima AND t.task_id=a.task_id WHERE a.alias=?",
+            (task_id,),
+        ).fetchall()
+        for row in aliases:
+            if owner is None or row["anima"] == owner:
+                matches.setdefault(
+                    (row["anima"], row["task_id"]),
+                    {
+                        "anima": row["anima"],
+                        "task_id": row["task_id"],
+                        "requested_id": task_id,
+                        "entry": json.loads(row["entry_json"]),
+                    },
+                )
+    return list(matches.values())
+
+
+def _resolve_task(store, task_id: str) -> dict:
+    matches = _find_task_matches(store, task_id)
+    if not matches:
+        print(f"Error: task not found: {task_id}", file=sys.stderr)
+        sys.exit(1)
+    if len(matches) > 1:
+        owners = ", ".join(f"{item['anima']}/{item['task_id']}" for item in matches)
+        print(f"Error: task ID is ambiguous ({owners}); use task show ID --anima OWNER", file=sys.stderr)
+        sys.exit(2)
+    return matches[0]
+
+
+def _task_details(store, match: dict) -> dict:
+    owner, task_id = match["anima"], match["task_id"]
+    with store.reader() as db:
+        attempts = [
+            dict(row)
+            for row in db.execute(
+                "SELECT number,started_at,ended_at,stop_kind,result_ref FROM task_attempts "
+                "WHERE anima=? AND task_id=? ORDER BY number",
+                (owner, task_id),
+            )
+        ]
+        aliases = [
+            dict(row)
+            for row in db.execute(
+                "SELECT viewer,alias FROM task_aliases WHERE anima=? AND task_id=? ORDER BY viewer,alias",
+                (owner, task_id),
+            )
+        ]
+    return {
+        "requested_id": match["requested_id"],
+        "owner": owner,
+        "task_id": task_id,
+        "entry": match["entry"],
+        "attempts": attempts,
+        "lease": store.get_lease(owner, task_id),
+        "aliases": aliases,
+    }
+
+
+def _parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+        return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_age(value: str | None, now: datetime | None = None) -> str:
+    updated = _parse_timestamp(value)
+    if updated is None:
+        return "?"
+    seconds = max(0, int(((now or datetime.now(UTC)) - updated).total_seconds()))
+    if seconds >= 86400:
+        return f"{seconds // 86400}d"
+    if seconds >= 3600:
+        return f"{seconds // 3600}h"
+    if seconds >= 60:
+        return f"{seconds // 60}m"
+    return f"{seconds}s"
+
+
+def _remaining_lease(expires_at: str, now: datetime | None = None) -> str:
+    expiry = _parse_timestamp(expires_at)
+    if expiry is None:
+        return "?"
+    seconds = max(0, int((expiry - (now or datetime.now(UTC))).total_seconds()))
+    if seconds >= 3600:
+        return f"{seconds // 3600}h"
+    if seconds >= 60:
+        return f"{seconds // 60}m"
+    return f"{seconds}s"
+
+
+def _cmd_board(args: argparse.Namespace) -> None:
+    from core.paths import get_animas_dir
+
+    store = _get_task_store()
+    actor_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
+    if actor_dir and not Path(actor_dir).is_dir():
+        print(f"Error: anima_dir not found: {actor_dir}", file=sys.stderr)
+        sys.exit(1)
+    actor = Path(actor_dir).name if actor_dir else None
+    requested_owner = getattr(args, "anima", None)
+    all_owners = bool(getattr(args, "all", False))
+    if requested_owner:
+        owner_filter = requested_owner
+        viewer = requested_owner
+    elif all_owners or actor is None:
+        owner_filter = None
+        viewer = None
+    else:
+        owner_filter = actor
+        viewer = actor
+    if viewer and not (get_animas_dir() / viewer).is_dir():
+        print(f"Error: anima_dir not found: {get_animas_dir() / viewer}", file=sys.stderr)
+        sys.exit(1)
+
+    rows = store.board_rows(anima=owner_filter, viewer=viewer)
+    now = datetime.now(UTC)
+    stale_days = getattr(args, "stale", None)
+    if stale_days is not None:
+        if stale_days < 0:
+            print("Error: --stale must be non-negative", file=sys.stderr)
+            sys.exit(2)
+        cutoff = now - timedelta(days=stale_days)
+        rows = [
+            row
+            for row in rows
+            if (updated := _parse_timestamp(row.get("updated_at") or row.get("ts"))) is not None and updated <= cutoff
+        ]
+
+    def group(row: dict) -> int:
+        if row.get("waiting") or row.get("status") == "delegated":
+            return 2
+        return 0 if row.get("status") == "in_progress" else 1
+
+    min_time = datetime.min.replace(tzinfo=UTC)
+    rows.sort(
+        key=lambda row: (
+            group(row),
+            _parse_timestamp(row.get("updated_at") or row.get("ts")) or min_time,
+            row.get("task_id", ""),
+        )
+    )
+    counts = {
+        "todo": sum(1 for row in rows if group(row) == 1),
+        "running": sum(1 for row in rows if group(row) == 0),
+        "waiting": sum(1 for row in rows if group(row) == 2),
+    }
+    limit = getattr(args, "limit", 50)
+    if limit < 1:
+        print("Error: --limit must be at least 1", file=sys.stderr)
+        sys.exit(2)
+    visible, more = rows[:limit], max(0, len(rows) - limit)
+    if getattr(args, "json", False):
+        print(json.dumps({"counts": counts, "tasks": visible, "more": more}, ensure_ascii=False, indent=2))
+        return
+    print(f"todo {counts['todo']} / running {counts['running']} / waiting {counts['waiting']}")
+    for row in visible:
+        state = "waiting" if group(row) == 2 else ("running" if group(row) == 0 else "todo")
+        lease = row.get("lease")
+        lock = f"{lease['holder']} ({_remaining_lease(lease['expires_at'], now)})" if lease else "-"
+        summary = str(row.get("summary", "")).replace("\n", " ")[:80]
+        age = _format_age(row.get("updated_at") or row.get("ts"), now)
+        print(f"{row['task_id']}  {row['anima']}  {state}  {age}  {lock}  {summary}")
+    if more:
+        print(f"… {more} more (use --limit)")
+
+
+def _cmd_show(args: argparse.Namespace) -> None:
+    store = _get_task_store()
+    task_id = args.task_id
+    owner_filter = getattr(args, "anima", None)
+    matches = _find_task_matches(store, task_id, owner_filter)
+    if not matches:
+        print(f"Error: task not found: {task_id}", file=sys.stderr)
+        sys.exit(1)
+    if len(matches) > 1:
+        owners = ", ".join(f"{item['anima']}/{item['task_id']}" for item in matches)
+        print(f"Error: task ID is ambiguous ({owners}); specify --anima OWNER", file=sys.stderr)
+        sys.exit(2)
+    details = _task_details(store, matches[0])
+    if getattr(args, "json", False):
+        print(json.dumps(details, ensure_ascii=False, indent=2))
+        return
+    entry = details["entry"]
+    print(f"Task: {details['requested_id']} (owner: {details['owner']}, canonical ID: {details['task_id']})")
+    print(f"Summary: {entry.get('summary', '')}")
+    print(f"Status: {entry.get('status', '')}  Assignee: {entry.get('assignee', '')}")
+    print(f"Created: {entry.get('ts', '')}  Updated: {entry.get('updated_at', '')}")
+    print("Original instruction:")
+    print(entry.get("original_instruction", ""))
+    print("Meta:")
+    print(json.dumps(entry.get("meta", {}), ensure_ascii=False, indent=2))
+    print("Attempts:")
+    print(json.dumps(details["attempts"], ensure_ascii=False, indent=2))
+    print(f"Lease: {json.dumps(details['lease'], ensure_ascii=False) if details['lease'] else '-'}")
+    print("Delegator aliases:")
+    print(json.dumps(details["aliases"], ensure_ascii=False, indent=2))
+
+
+def _parse_ttl(value: str) -> int:
+    match = re.fullmatch(r"(\d+)([smh])", value.strip().lower())
+    if not match:
+        raise ValueError("TTL must use seconds, minutes, or hours (for example 30m)")
+    amount = int(match.group(1))
+    seconds = amount * {"s": 1, "m": 60, "h": 3600}[match.group(2)]
+    if seconds <= 0 or seconds > 4 * 3600:
+        raise ValueError("TTL must be greater than 0 and no more than 4h")
+    return seconds
+
+
+def _actor() -> str:
+    actor_dir = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
+    if not actor_dir:
+        return "human"
+    path = Path(actor_dir)
+    if not path.is_dir():
+        print(f"Error: anima_dir not found: {path}", file=sys.stderr)
+        sys.exit(1)
+    return path.name
+
+
+def _notify_task_owner(actor: str, owner: str, task_id: str, action: str, detail: str) -> None:
+    if actor == owner:
+        return
+    try:
+        from cli.commands.messaging import _resolve_sender_source
+        from core.messenger import Messenger
+        from core.paths import get_shared_dir
+
+        message = Messenger(get_shared_dir(), actor).send(
+            to=owner,
+            content=f"{actor} {action} task {task_id}: {detail[:180]}",
+            source=_resolve_sender_source(actor),
+        )
+        if message.type == "error":
+            print(f"Warning: task changed, but owner notification failed: {message.content}", file=sys.stderr)
+    except Exception as exc:
+        # Task state is authoritative; notification delivery must not roll it back.
+        print(f"Warning: task changed, but owner notification failed: {exc}", file=sys.stderr)
+
+
+def _cmd_lease_action(args: argparse.Namespace) -> None:
+    from core.memory.task_queue import TaskQueueManager
+    from core.paths import get_animas_dir
+
+    store = _get_task_store()
+    actor = _actor()
+    match = _resolve_task(store, args.task_id)
+    owner, task_id = match["anima"], match["task_id"]
+    entry = match["entry"]
+    action = args.task_command
+    if action == "claim":
+        try:
+            ttl = _parse_ttl(args.ttl)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(2)
+        if entry.get("status") not in {"pending", "in_progress", "delegated"}:
+            print(f"Error: task is not active: {args.task_id}", file=sys.stderr)
+            sys.exit(1)
+        lease = store.acquire_lease(owner, task_id, actor, ttl)
+        if lease is None:
+            current = store.get_lease(owner, task_id)
+            if getattr(args, "json", False):
+                print(json.dumps({"ok": False, "lease": current}, ensure_ascii=False))
+            else:
+                holder = current["holder"] if current else "another actor"
+                expiry = f" until {current['expires_at']}" if current else ""
+                print(f"Lease held by {holder}{expiry}", file=sys.stderr)
+            sys.exit(2)
+        result = {"ok": True, "lease": lease}
+        print(
+            json.dumps(result, ensure_ascii=False, indent=2)
+            if getattr(args, "json", False)
+            else f"Lease acquired for {owner}/{task_id} until {lease['expires_at']}"
+        )
+        return
+
+    if action == "release":
+        released = store.release_lease(owner, task_id, actor)
+        if getattr(args, "json", False):
+            print(json.dumps({"ok": released, "owner": owner, "task_id": task_id}, ensure_ascii=False))
+        elif released:
+            print(f"Lease released for {owner}/{task_id}")
+        else:
+            print(f"No lease held by {actor} for {owner}/{task_id}", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    if action in {"done", "cancel", "note"} and entry.get("status") in {"done", "cancelled"}:
+        result = {"ok": True, "unchanged": True, "owner": owner, "task_id": task_id, "status": entry["status"]}
+        print(
+            json.dumps(result, ensure_ascii=False)
+            if getattr(args, "json", False)
+            else f"Task is already {entry['status']}; unchanged"
+        )
+        return
+
+    lease = store.get_lease(owner, task_id)
+    if lease and lease["holder"] != actor:
+        print(f"Error: task is leased by {lease['holder']} until {lease['expires_at']}", file=sys.stderr)
+        sys.exit(2)
+    if actor != owner and lease is None:
+        print("Error: claim a lease before changing another anima's task", file=sys.stderr)
+        sys.exit(2)
+    manager = TaskQueueManager(get_animas_dir() / owner)
+    if action == "note":
+        text = args.text
+    elif action == "done":
+        text = args.note
+    else:
+        text = args.reason
+    if not text.strip():
+        print("Error: note/reason must not be empty", file=sys.stderr)
+        sys.exit(2)
+    notes = entry.get("meta", {}).get("notes", [])
+    if not isinstance(notes, list):
+        notes = []
+    notes = [*notes, {"ts": datetime.now(UTC).isoformat(), "by": actor, "text": text}]
+    updated = manager.update_meta(task_id, {"notes": notes})
+    if updated is None:
+        print(f"Error: task not found: {task_id}", file=sys.stderr)
+        sys.exit(1)
+    if action in {"done", "cancel"}:
+        status = "done" if action == "done" else "cancelled"
+        updated = manager.update_status(task_id, status)
+        if updated is None:
+            print(f"Error: failed to update task status: {task_id}", file=sys.stderr)
+            sys.exit(3)
+    _notify_task_owner(actor, owner, task_id, action, text)
+    result = {
+        "ok": True,
+        "owner": owner,
+        "task_id": task_id,
+        "status": updated.status,
+        "note": text,
+        "lease": store.get_lease(owner, task_id),
+    }
+    if getattr(args, "json", False):
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"Task {owner}/{task_id} {action} recorded (status: {updated.status})")
 
 
 def _cmd_add(args: argparse.Namespace, manager) -> None:
@@ -199,6 +582,44 @@ def register_task_command(subparsers) -> None:
     """Register the task subcommand under animaworks-tool."""
     p_task = subparsers.add_parser("task", help="Manage persistent task queue")
     task_sub = p_task.add_subparsers(dest="task_command")
+
+    # Read-only board inspection is also available to human operators without an anima context.
+    p_board = task_sub.add_parser("board", help="List active tasks across the task board")
+    board_scope = p_board.add_mutually_exclusive_group()
+    board_scope.add_argument("--anima", default=None, help="Show an owner's tasks and delegated work")
+    board_scope.add_argument("--all", action="store_true", help="Show all owners")
+    p_board.add_argument("--stale", type=float, default=None, help="Only tasks older than DAYS")
+    p_board.add_argument("--limit", type=int, default=50, help="Maximum rows (default: 50)")
+    p_board.add_argument("--json", action="store_true", help="Emit JSON")
+
+    p_show = task_sub.add_parser("show", help="Show complete task details")
+    p_show.add_argument("task_id", help="Task ID or delegator alias")
+    p_show.add_argument("--anima", default=None, help="Disambiguate by task owner")
+    p_show.add_argument("--json", action="store_true", help="Emit JSON")
+
+    p_claim = task_sub.add_parser("claim", help="Acquire a time-limited task lease")
+    p_claim.add_argument("task_id")
+    p_claim.add_argument("--ttl", default="30m", help="Lease duration up to 4h (default: 30m)")
+    p_claim.add_argument("--json", action="store_true", help="Emit JSON")
+
+    p_release = task_sub.add_parser("release", help="Release your task lease")
+    p_release.add_argument("task_id")
+    p_release.add_argument("--json", action="store_true", help="Emit JSON")
+
+    p_done = task_sub.add_parser("done", help="Mark a task done")
+    p_done.add_argument("task_id")
+    p_done.add_argument("--note", required=True)
+    p_done.add_argument("--json", action="store_true", help="Emit JSON")
+
+    p_cancel = task_sub.add_parser("cancel", help="Cancel a task")
+    p_cancel.add_argument("task_id")
+    p_cancel.add_argument("--reason", required=True)
+    p_cancel.add_argument("--json", action="store_true", help="Emit JSON")
+
+    p_note = task_sub.add_parser("note", help="Append a note to a task")
+    p_note.add_argument("task_id")
+    p_note.add_argument("text")
+    p_note.add_argument("--json", action="store_true", help="Emit JSON")
 
     # task add
     p_add = task_sub.add_parser("add", help="Add a new task")
