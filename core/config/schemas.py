@@ -340,11 +340,8 @@ class RAGConfig(BaseModel):
     rerank_enabled: bool = True
     rerank_candidate_pool: int = 50
     cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-12-v2"
-    abstain_on_low_confidence: bool = True
     confidence_threshold: float = 0.35
     rrf_confidence_threshold: float = 0.02
-    iterative_retrieval_enabled: bool = True
-    iterative_min_results: int = 2
     facts_extraction_enabled: bool = True
     fact_extraction_timeout_seconds: int = Field(
         default=120,
@@ -1037,6 +1034,15 @@ class IrodoriConfig(BaseModel):
     base_url: str = "http://localhost:7861"
 
 
+class GeminiTTSVoiceConfig(BaseModel):
+    """Gemini API TTS settings (key: env var, then vault ``shared`` section)."""
+
+    model: str = "gemini-3.8-flash-tts"
+    api_key_env: str = "GEMINI_API_KEY"
+    vault_key: str = "GEMINI_API_KEY"
+    chunk_seconds: float = 1.0
+
+
 class VoiceConfig(BaseModel):
     """Voice chat configuration."""
 
@@ -1062,6 +1068,7 @@ class VoiceConfig(BaseModel):
     elevenlabs: ElevenLabsVoiceConfig = ElevenLabsVoiceConfig()
     style_bert_vits2: StyleBertVits2Config = StyleBertVits2Config()
     irodori: IrodoriConfig = IrodoriConfig()
+    gemini: GeminiTTSVoiceConfig = GeminiTTSVoiceConfig()
 
 
 # ── UI Config ────────────────────────────────────────────────────────────────
@@ -1452,6 +1459,7 @@ __all__ = [
     "InboxConfig",
     "InteractionConfig",
     "IrodoriConfig",
+    "GeminiTTSVoiceConfig",
     "LlmRateGuardConfig",
     "LocalLLMConfig",
     "LoggingConfig",

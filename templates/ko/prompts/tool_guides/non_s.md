@@ -10,6 +10,7 @@
   - 장시간 명령: `background: true`로 비동기 실행 → cmd_id + 출력 파일 경로 반환
   - 진행 확인: `Read(path="state/cmd_output/{cmd_id}.txt")`로 중간 출력 확인
   - 목록: `Glob(pattern="state/cmd_output/*.txt")`로 백그라운드 태스크 목록
+  - 약 20분가량 걸릴 수 있는 명령 (예: 무거운 테스트)은 백그라운드로 실행하고, 몇 분마다 상태나 출력의 끝을 확인하며 진행 상황을 추적
 - **Grep**: 정규식으로 파일 내 검색
 - **Glob**: 글로브 패턴으로 파일 검색
 - **WebSearch**: 웹 검색
@@ -22,7 +23,7 @@
 - **write_memory_file**: 기억 디렉터리에 쓰기 또는 추가
 
 ### 액션 규칙
-- `[ACTION-RULE]`은 전송, 게시, 알림, 메모리 쓰기 전 게이트입니다
+- `[ACTION-RULE]`은 전송, 게시, 알림, 메모리 쓰기 결과에 관련 규칙 본문이 첨부됩니다
 - 본문에 `read_memory_file(path="...")`가 있으면 같은 세션에서 해당 기억을 읽고 다시 실행하세요
 - 자세한 내용: `read_memory_file(path="common_knowledge/operations/action-rules-guide.md")`
 

@@ -759,50 +759,14 @@ class TestProcessInboxMessages:
 
 
 class TestProcessInboxFastPath:
-    async def test_slack_probe_uses_fast_reply_without_llm(self, data_dir, make_anima):
-        """Short Slack probe messages should be replied to without LLM latency."""
-        anima_dir = make_anima("alice")
-        shared_dir = data_dir / "shared"
+    async def test_slack_fast_reply_helpers_removed(self):
+        """The canned Slack probe reply was removed; probes go through the LLM."""
+        import core._anima_inbox as inbox_mod
+        from core._anima_inbox import InboxMixin
 
-        inbox_dir = shared_dir / "inbox" / "alice"
-        inbox_dir.mkdir(parents=True, exist_ok=True)
-        slack_file = inbox_dir / "msg_slack.json"
-        slack_file.write_text("{}", encoding="utf-8")
-
-        dp, mocks = _create_anima(anima_dir, shared_dir)
-        try:
-            dp.messenger.has_unread.return_value = True
-            dp.messenger.archive_paths = MagicMock(return_value=1)
-            dp.agent.run_cycle_streaming = MagicMock(side_effect=AssertionError("LLM path should not run"))
-
-            slack_item = _make_inbox_item("slack:U1", "テスト", slack_file)
-            slack_item.msg.source = "slack"
-            slack_item.msg.external_channel_id = "D1"
-            slack_item.msg.external_user_id = "U1"
-            slack_item.msg.source_message_id = "1774615394.245749"
-            dp.messenger.receive_with_paths.return_value = [slack_item]
-
-            with (
-                patch("core.memory.dedup.MessageDeduplicator") as MockDedup,
-                patch("core.anima.ActivityLogger"),
-                patch(
-                    "core.tooling.dispatch.ExternalToolDispatcher.dispatch",
-                    return_value='{"status":"ok","channel":"D1","ts":"1774615571.307679"}',
-                ),
-            ):
-                dedup_inst = MockDedup.return_value
-                dedup_inst.split_critical.side_effect = lambda msgs: (msgs, [])
-                dedup_inst.overflow_to_files.side_effect = lambda msgs: (msgs, 0)
-                dp.memory.append_episode = MagicMock()
-
-                result = await dp.process_inbox_message()
-
-            assert result.action == "responded"
-            assert "受信しました" in result.summary
-            dp.messenger.archive_paths.assert_called()
-            dp.agent.run_cycle_streaming.assert_not_called()
-        finally:
-            _stop_patches(mocks)
+        assert not hasattr(inbox_mod, "_is_fast_slack_probe")
+        assert not hasattr(inbox_mod, "_build_fast_slack_reply")
+        assert not hasattr(InboxMixin, "_maybe_fast_reply_external_probe")
 
 
 # ── _execute_heartbeat_cycle ─────────────────────────────

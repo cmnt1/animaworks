@@ -28,7 +28,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from core.execution.session_types import resolve_runtime_session_type
 from core.schemas import ImageData
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
@@ -284,13 +283,7 @@ def record_session_measurement(
     return state
 
 
-def _resolve_session_type(trigger: str) -> str:
-    """Resolve SDK session type from execution trigger.
-
-    Each trigger category gets its own session namespace to prevent
-    cross-contamination of Claude CLI conversation histories.
-    """
-    return resolve_runtime_session_type(trigger)
+from core.execution.session_context import _resolve_session_type  # noqa: F401 (re-exported to agent_sdk)
 
 
 def _session_file(session_type: str, thread_id: str = "default") -> str:

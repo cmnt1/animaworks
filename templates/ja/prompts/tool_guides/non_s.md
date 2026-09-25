@@ -10,6 +10,7 @@
   - 長時間コマンド: `background: true` で非同期実行 → cmd_id + 出力ファイルパスが返る
   - 進捗確認: `Read(path="state/cmd_output/{cmd_id}.txt")` で中間出力を確認
   - 一覧: `Glob(pattern="state/cmd_output/*.txt")` でバックグラウンドタスク一覧
+  - 20分近くかかりうるコマンド（重いテスト等）はバックグラウンドで起動し、数分おきに状態や出力の末尾を確認して進捗を追う
 - **Grep**: 正規表現でファイル内を検索
 - **Glob**: グロブパターンでファイルを検索
 - **WebSearch**: Web検索
@@ -22,7 +23,7 @@
 - **write_memory_file**: 記憶ディレクトリに書き込みまたは追記
 
 ### Action Rules
-- `[ACTION-RULE]` は送信・投稿・通知・記憶書き込み前のゲートです
+- `[ACTION-RULE]` は送信・投稿・通知・記憶書き込みの結果に、関連するルール本文が添付されます
 - 本文に `read_memory_file(path="...")` が示されたら、同じセッションで必ず読んでから再実行する
 - 詳細は `read_memory_file(path="common_knowledge/operations/action-rules-guide.md")`
 

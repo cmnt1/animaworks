@@ -1494,6 +1494,13 @@ def step_v0140_harness_diet_resync(data_dir: Path, dry_run: bool, verbose: bool)
     return StepResult(changed=total, skipped=skipped, details=details, error=error)
 
 
+def step_v0141_harness_diet_r2_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """v0.14.1: Resync prompts (task_exec submission line, tool guide wording)."""
+    r = step_prompt_resync(data_dir, dry_run, verbose)
+    error = f"step_prompt_resync: {r.error}" if r.error else None
+    return StepResult(changed=r.changed, skipped=r.skipped, details=list(r.details), error=error)
+
+
 # ── Category 4: Database sync ────────────────────────────────────
 
 
@@ -1693,6 +1700,12 @@ def register_all_steps(runner: Any) -> None:
             "v0.14.0: Resync prompts/common_knowledge, drop retired prompts, map Mode B to A",
             "template_sync",
             step_v0140_harness_diet_resync,
+        ),
+        MigrationStep(
+            "v0141_harness_diet_r2_resync",
+            "v0.14.1: Resync prompts (task submission time line, tool guide wording)",
+            "template_sync",
+            step_v0141_harness_diet_r2_resync,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

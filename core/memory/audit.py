@@ -17,17 +17,10 @@ from core.i18n import t
 
 logger = logging.getLogger(__name__)
 
-AUDIT_EVENT_TYPES: list[str] = [
-    "heartbeat_end",
-    "heartbeat_reflection",
-    "response_sent",
-    "cron_executed",
-    "tool_use",
-    "message_sent",
-    "task_exec_end",
-    "issue_resolved",
-    "error",
-]
+from core.memory.activity_format import EVENT_SETS
+
+# Aliased from the shared event-set registry to keep a single source of truth.
+AUDIT_EVENT_TYPES: list[str] = sorted(EVENT_SETS["audit"])
 
 _REPORT_ENTRY_TRUNCATE = 300
 
@@ -87,42 +80,26 @@ class AuditAggregator:
     @staticmethod
     def _extract_content(entry: Any) -> str:
         """Extract display content from an entry based on its type."""
+        from core.memory.activity_format import clip, entry_text
+
         etype = entry.type
-
-        if etype == "heartbeat_end":
-            return (entry.summary or entry.content)[:_REPORT_ENTRY_TRUNCATE]
-
-        if etype == "heartbeat_reflection":
-            return entry.content[:_REPORT_ENTRY_TRUNCATE]
-
-        if etype == "response_sent":
-            return entry.content[:_REPORT_ENTRY_TRUNCATE]
+        T = _REPORT_ENTRY_TRUNCATE
 
         if etype == "cron_executed":
-            return (entry.content or entry.summary)[:500]
-
+            return clip(entry_text(entry), 500)
         if etype == "tool_use":
             tool_name = entry.tool or "unknown"
-            detail = (entry.content or entry.summary)[:200]
+            detail = clip(entry_text(entry), 200)
             return f"{tool_name}: {detail}" if detail else tool_name
-
         if etype == "message_sent":
-            peer = entry.to_person or "unknown"
-            content = entry.content[:200]
-            return f"→ {peer}: {content}"
-
-        if etype == "task_exec_end":
-            return (entry.summary or entry.content)[:_REPORT_ENTRY_TRUNCATE]
-
-        if etype == "issue_resolved":
-            return entry.content[:_REPORT_ENTRY_TRUNCATE]
-
+            return f"→ {entry.to_person or 'unknown'}: {clip(entry.content, 200)}"
+        if etype in ("heartbeat_reflection", "response_sent", "issue_resolved"):
+            return clip(entry.content, T)
         if etype == "error":
-            text = entry.summary or entry.content[:100]
+            text = entry.summary or clip(entry.content, 100)
             phase = entry.meta.get("phase", "") if isinstance(entry.meta, dict) else ""
             return f"(phase: {phase}) {text}" if phase else text
-
-        return (entry.summary or entry.content)[:_REPORT_ENTRY_TRUNCATE]
+        return clip(entry_text(entry, prefer="summary"), T)
 
     # ── Report mode ──────────────────────────────────────────
 

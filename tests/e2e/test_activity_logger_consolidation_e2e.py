@@ -45,10 +45,6 @@ class TestAnimaActivityLogging:
         anima._on_lock_released = None
         anima._heartbeat_stream_queue = None
         anima._heartbeat_context = ""
-        anima._last_greet_at = None
-        anima._last_greet_text = None
-        anima._last_greet_emotion = "neutral"
-        anima._GREET_COOLDOWN = 3600
         anima._HEARTBEAT_HISTORY_N = 3
         anima._RECENT_REFLECTIONS_N = 3
         anima._ws_broadcast = None

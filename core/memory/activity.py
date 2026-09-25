@@ -74,13 +74,13 @@ from core.memory._activity_models import (
 from core.memory._activity_models import (
     time_diff as _time_diff,  # noqa: F401
 )
-from core.memory._activity_priming import PrimingMixin
 from core.memory._activity_replay import (  # noqa: F401
     build_semantic_replay_events,
     resolve_semantic_group_id,
 )
 from core.memory._activity_rotation import RotationMixin
 from core.memory._activity_timeline import TimelineMixin
+from core.memory.activity_format import PrimingMixin
 from core.paths import get_data_dir
 from core.time_utils import ensure_aware, now_iso, now_local  # noqa: F401
 

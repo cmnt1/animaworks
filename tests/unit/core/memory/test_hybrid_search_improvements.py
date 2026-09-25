@@ -14,7 +14,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-
 # ── TestBfsFactsQuery ────────────────────────────────────
 
 
@@ -162,7 +161,7 @@ class TestBfsUsesMaxDepth:
         )
 
         hs = HybridSearch(mock_driver, "group", max_depth=3)
-        results = await hs._bfs_search("query", "fact", "2026-01-01", [0.1] * 384)
+        await hs._bfs_search("query", "fact", "2026-01-01", [0.1] * 384)
 
         bfs_call = mock_driver.execute_query.call_args_list[1]
         bfs_query = bfs_call[0][0]
@@ -202,10 +201,7 @@ class TestEpisodeEmbeddingInIngest:
             )
             await backend.ingest_text("test content", source="test")
 
-        embedding_calls = [
-            c for c in mock_driver.execute_write.call_args_list
-            if "content_embedding" in str(c)
-        ]
+        embedding_calls = [c for c in mock_driver.execute_write.call_args_list if "content_embedding" in str(c)]
         assert len(embedding_calls) >= 1
 
 
@@ -214,7 +210,7 @@ class TestEpisodeEmbeddingInIngest:
 
 class TestRrfKPassthrough:
     def test_rrf_merge_accepts_custom_k(self) -> None:
-        from core.memory.graph.rrf import rrf_merge
+        from core.memory.retrieval.rrf import rrf_merge
 
         lists = [
             [{"uuid": "a", "fact": "1"}, {"uuid": "b", "fact": "2"}],

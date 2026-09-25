@@ -682,3 +682,23 @@ class TestRegisterAllSteps:
         assert "per_anima" in categories
         assert "template_sync" in categories
         assert "version" in categories
+
+    def test_step_v0141_resyncs_task_exec_prompt(self, data_dir: Path) -> None:
+        from core.migrations.steps import register_all_steps, step_v0141_harness_diet_r2_resync
+
+        prompts_dir = data_dir / "prompts"
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+        (prompts_dir / "task_exec.md").write_text("stale", encoding="utf-8")
+
+        result = step_v0141_harness_diet_r2_resync(data_dir, dry_run=False, verbose=True)
+
+        assert result.error is None
+        assert "{submission_line}" in (prompts_dir / "task_exec.md").read_text(encoding="utf-8")
+        runner = MigrationRunner(data_dir)
+        register_all_steps(runner)
+        ids = [item["id"] for item in runner.list_steps()]
+        assert (
+            ids.index("v0140_harness_diet_resync")
+            < ids.index("v0141_harness_diet_r2_resync")
+            < ids.index("update_version")
+        )

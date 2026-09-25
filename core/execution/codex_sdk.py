@@ -49,7 +49,8 @@ from core.execution.error_classifier import (
     provider_family_of,
 )
 from core.execution.rate_guard import get_rate_guard
-from core.execution.session_types import is_persistent_codex_session, resolve_runtime_session_type
+from core.execution.session_context import _resolve_session_type
+from core.execution.session_types import is_persistent_codex_session
 from core.memory.shortterm import ShortTermMemory
 from core.platform.codex import default_home_dir, get_codex_executable
 from core.prompt.context import ContextTracker
@@ -429,10 +430,6 @@ def _get_thread_id(thread: Any) -> str | None:
         if val:
             return str(val)
     return None
-
-
-def _resolve_session_type(trigger: str) -> str:
-    return resolve_runtime_session_type(trigger)
 
 
 def _event_idle_timeout_seconds(trigger: str) -> float:

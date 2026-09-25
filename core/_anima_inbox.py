@@ -15,7 +15,6 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -51,10 +50,6 @@ _SOURCE_TO_ORIGIN: dict[str, str] = {
 _RE_THREAD_CTX = re.compile(
     r"(\[Thread context[^\]]*\].*?\[/Thread context\]\s*)",
     re.DOTALL,
-)
-_RE_FAST_SLACK_PROBE = re.compile(
-    r"^\s*(?:test(?:\s+from\s+slack)?|テスト|ping|疎通(?:確認)?|届いた[？?]?|反応(?:ある)?[？?]?|応答(?:ある)?[？?]?|確認(?:ですか)?[？?]?|見えてる[？?]?)\s*$",
-    re.IGNORECASE,
 )
 _THREAD_CTX_BUDGET = 300
 _MSG_BODY_BUDGET = 2000
@@ -108,22 +103,6 @@ def _is_self_task_completion_notice(msg: Any, anima_name: str) -> bool:
         return False
     body = _extract_user_body(getattr(msg, "content", ""))
     return body.startswith("タスク「") and "が完了しました" in body
-
-
-def _is_fast_slack_probe(msg: Any) -> bool:
-    """True for short Slack connectivity checks that can skip the LLM."""
-    if getattr(msg, "source", "") != "slack":
-        return False
-    if not getattr(msg, "external_channel_id", ""):
-        return False
-    body = _extract_user_body(getattr(msg, "content", ""))
-    return bool(body) and len(body) <= 40 and bool(_RE_FAST_SLACK_PROBE.fullmatch(body))
-
-
-def _build_fast_slack_reply(msg: Any) -> str:
-    """Small canned reply for Slack probe messages."""
-    mention = f"<@{msg.external_user_id}> " if getattr(msg, "external_user_id", "") else ""
-    return f"{mention}受信しました。"
 
 
 def _is_auto_response_enabled() -> bool:
@@ -431,10 +410,6 @@ class InboxMixin:
                     senders_str = ", ".join(inbox_result.senders)
                     trigger = f"inbox:{senders_str}"
 
-                    fast_result = self._maybe_fast_reply_external_probe(inbox_result, started_at=started_at)
-                    if fast_result is not None:
-                        return fast_result
-
                     if budget_result is not None:
                         self._activity.log(
                             "inbox_processing_end",
@@ -737,89 +712,6 @@ class InboxMixin:
                     self._task_slots["inbox"] = ""
         finally:
             self._notify_lock_released()
-
-    def _maybe_fast_reply_external_probe(
-        self,
-        inbox_result: InboxResult,
-        *,
-        started_at: datetime,
-    ) -> CycleResult | None:
-        """Reply to simple Slack connectivity probes without invoking the LLM."""
-        if inbox_result.unread_count != 1 or len(inbox_result.inbox_items) != 1:
-            return None
-
-        item = inbox_result.inbox_items[0]
-        msg = item.msg
-        if not _is_fast_slack_probe(msg):
-            return None
-
-        from core.tooling.dispatch import ExternalToolDispatcher
-
-        dispatcher = ExternalToolDispatcher(
-            getattr(self.agent, "_tool_registry", []) or [],
-            getattr(self.agent, "_personal_tools", {}) or {},
-        )
-        reply_text = _build_fast_slack_reply(msg)
-        thread_id = msg.external_thread_ts or msg.source_message_id
-        args: dict[str, Any] = {
-            "anima_dir": str(self.anima_dir),
-            "channel_id": msg.external_channel_id,
-            "text": reply_text,
-        }
-        if thread_id:
-            args["thread_ts"] = thread_id
-
-        raw = dispatcher.dispatch("slack_channel_post", args)
-        if raw is None:
-            return None
-        try:
-            parsed = json.loads(raw)
-        except Exception:
-            logger.info("[%s] Fast Slack probe fallback to LLM (raw=%r)", self.name, raw[:200])
-            return None
-        if parsed.get("status") != "ok":
-            logger.info("[%s] Fast Slack probe fallback to LLM (result=%s)", self.name, parsed)
-            return None
-
-        self._last_activity = now_local()
-        self._activity.log(
-            "response_sent",
-            content=reply_text,
-            to_person=msg.from_person,
-            channel="inbox",
-            summary=reply_text,
-            meta={
-                "trigger": "inbox_fast_probe",
-                "session_type": "inbox",
-                "thread_id": _INBOX_THREAD_ID,
-            },
-        )
-        self._activity.log(
-            "inbox_processing_end",
-            summary=reply_text,
-            meta={
-                "senders": list(inbox_result.senders),
-                "count": inbox_result.unread_count,
-                "trigger": "inbox_fast_probe",
-                "session_type": "inbox",
-                "thread_id": _INBOX_THREAD_ID,
-            },
-        )
-        self.messenger.archive_paths(inbox_result.inbox_items)
-        duration_ms = max(1, int((now_local() - started_at).total_seconds() * 1000))
-        logger.info("[%s] Fast Slack probe reply sent in %dms", self.name, duration_ms)
-        logger.info(
-            "[%s] process_inbox_message END duration_ms=%d unread=%d",
-            self.name,
-            duration_ms,
-            inbox_result.unread_count,
-        )
-        return CycleResult(
-            trigger=f"inbox:{msg.from_person}",
-            action="responded",
-            summary=reply_text,
-            duration_ms=duration_ms,
-        )
 
     async def _process_inbox_messages(
         self,

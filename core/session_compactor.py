@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
-import json
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -25,20 +24,13 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from core.anima import DigitalAnima
+    from core.memory._activity_models import ActivityEntry
 
 logger = logging.getLogger("animaworks.session_compactor")
 
 # ── Activity-log extraction constants ─────────────────────
 _MAX_CONVERSATION_ROUNDS = 3
 _MAX_TOOL_ENTRIES = 10
-_CHAT_ENTRY_TYPES = frozenset(
-    {
-        "message_received",
-        "response_sent",
-        "tool_use",
-        "tool_result",
-    }
-)
 _TOOL_INPUT_TRUNCATE = 500
 _TOOL_RESULT_TRUNCATE = 500
 _SCAN_DAYS = 2
@@ -237,66 +229,36 @@ def _extract_recent_chat_context(
     anima_dir: Path,
     thread_id: str = "default",
 ) -> dict[str, Any]:
-    """Extract recent chat context from the activity_log.
-
-    Scans up to ``_SCAN_DAYS`` of log files (today + yesterday) in
-    reverse to collect the most recent chat session entries matching
-    the given *thread_id*:
-
-    - Up to ``_MAX_CONVERSATION_ROUNDS`` user/assistant exchange rounds
-    - Up to ``_MAX_TOOL_ENTRIES`` tool_use + tool_result pairs
-
-    Returns a dict with keys matching ``SessionState`` fields:
-    ``accumulated_response``, ``tool_uses``, ``original_prompt``,
-    ``timestamp``, ``trigger``, ``notes``.  Returns ``{}`` when no
-    relevant entries are found.
-    """
-    from datetime import timedelta
-
+    """Extract recent chat context from the activity_log for idle compaction."""
+    from core.memory.activity_format import (
+        EVENT_SETS,
+        EntryRole,
+        clip,
+        entry_role,
+        iter_entries,
+    )
     from core.time_utils import now_local
 
-    log_dir = anima_dir / "activity_log"
     now = now_local()
 
-    all_lines: list[str] = []
-    for day_offset in range(_SCAN_DAYS):
-        target_date = (now - timedelta(days=day_offset)).date()
-        log_file = log_dir / f"{target_date.isoformat()}.jsonl"
-        if not log_file.exists():
-            continue
-        try:
-            with log_file.open(encoding="utf-8", errors="replace") as fh:
-                day_lines = [ln.strip() for ln in fh if ln.strip()]
-        except OSError:
-            logger.warning("Failed to read %s", log_file, exc_info=True)
-            continue
-        if day_offset == 0:
-            all_lines = day_lines
-        else:
-            all_lines = day_lines + all_lines
-
-    raw_entries: list[dict[str, Any]] = []
-    for line in all_lines:
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        etype = entry.get("type") or entry.get("event", "")
-        if etype not in _CHAT_ENTRY_TYPES:
-            continue
-        meta = entry.get("meta") or {}
-        trigger = meta.get("trigger", "") if isinstance(meta, dict) else ""
+    raw_entries: list[ActivityEntry] = []
+    for entry in iter_entries(
+        anima_dir,
+        days=_SCAN_DAYS,
+        types=list(EVENT_SETS["compaction"]),
+    ):
+        meta = entry.meta or {}
+        trigger = meta.get("trigger", "")
         if (
-            entry.get("channel") == "inbox"
+            entry.channel == "inbox"
             or meta.get("session_type") == "inbox"
             or trigger == "inbox"
             or (isinstance(trigger, str) and trigger.startswith("inbox:"))
         ):
             continue
-        entry_thread = meta.get("thread_id", "default")
-        if entry_thread != thread_id:
+        if meta.get("thread_id", "default") != thread_id:
             continue
-        if etype == "message_received":
+        if entry.type == "message_received":
             if meta.get("from_type", "") != "human":
                 continue
         raw_entries.append(entry)
@@ -310,17 +272,18 @@ def _extract_recent_chat_context(
     tool_count = 0
 
     for entry in reversed(raw_entries):
-        etype = entry.get("type") or entry.get("event", "")
+        etype = entry.type
+        role = entry_role(entry)
 
-        if etype == "message_received" and user_count < _MAX_CONVERSATION_ROUNDS:
-            turns.append({"role": "user", "content": entry.get("content", "")})
+        if role == EntryRole.USER and user_count < _MAX_CONVERSATION_ROUNDS:
+            turns.append({"role": "user", "content": entry.content})
             user_count += 1
-        elif etype == "response_sent" and assistant_count < _MAX_CONVERSATION_ROUNDS:
-            content = entry.get("content", "") or entry.get("summary", "")
+        elif role == EntryRole.ASSISTANT and assistant_count < _MAX_CONVERSATION_ROUNDS:
+            content = entry.content or entry.summary
             turns.append({"role": "assistant", "content": content})
             assistant_count += 1
         elif etype in ("tool_use", "tool_result") and tool_count < _MAX_TOOL_ENTRIES:
-            meta = entry.get("meta") or {}
+            meta = entry.meta or {}
             turns.append({"role": etype, "entry": entry, "meta": meta})
             tool_count += 1
 
@@ -346,18 +309,18 @@ def _extract_recent_chat_context(
                 tool_uses.append(pending_use)
             entry = t["entry"]
             meta = t["meta"]
-            tool_name = entry.get("tool", "") or entry.get("content", "")[:100]
+            tool_name = entry.tool or clip(entry.content, 100)
             args = meta.get("args", {})
             pending_use = {
                 "name": tool_name,
-                "input": str(args)[:_TOOL_INPUT_TRUNCATE] if args else entry.get("content", "")[:_TOOL_INPUT_TRUNCATE],
+                "input": str(args)[:_TOOL_INPUT_TRUNCATE] if args else clip(entry.content, _TOOL_INPUT_TRUNCATE),
                 "tool_use_id": meta.get("tool_use_id", ""),
             }
         elif t["role"] == "tool_result":
             entry = t["entry"]
             meta = t["meta"]
             result_id = meta.get("tool_use_id", "")
-            result_text = entry.get("content", "")[:_TOOL_RESULT_TRUNCATE]
+            result_text = clip(entry.content, _TOOL_RESULT_TRUNCATE)
             if pending_use and result_id and result_id == pending_use.get("tool_use_id", ""):
                 pending_use["result"] = result_text
                 del pending_use["tool_use_id"]

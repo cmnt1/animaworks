@@ -137,16 +137,19 @@ def format_pointer_result(
     metadata: dict,
     path: str,
     score: float,
+    low_confidence: bool = False,
 ) -> str:
     """Format a retrieval result as a pointer cue instead of raw payload.
 
     One line per item: ``📌 [score] path — summary`` where ``path`` is a
-    relative path that can be handed to ``read_memory_file`` directly.
+    relative path that can be handed to ``read_memory_file`` directly.  When
+    ``low_confidence`` is set the pointer is suffixed with ``[low-confidence]``.
     """
     title, _ = extract_summary(content, metadata)
     summary = title or Path(path).stem.replace("-", " ").replace("_", " ")
     summary = _single_line(summary, 60)
-    return f"📌 [{score:.2f}] {path} — {summary}"
+    marker = " [low-confidence]" if low_confidence else ""
+    return f"📌 [{score:.2f}] {path} — {summary}{marker}"
 
 
 def _is_action_rule(path: str, content: str) -> bool:
@@ -171,13 +174,15 @@ def _item_from_chunk(
     metadata: dict,
     path: str,
     rank: float,
+    low_confidence: bool = False,
 ) -> MemoryItem:
     title, _ = extract_summary(content, metadata)
     summary = _single_line(title or Path(path).stem.replace("-", " ").replace("_", " "), 60)
+    marker = " [low-confidence]" if low_confidence else ""
     return MemoryItem(
         source="important_knowledge",
         key=path,
-        text=f"📌 [{rank:.2f}] {path} — {summary}",
+        text=f"📌 [{rank:.2f}] {path} — {summary}{marker}",
         ref=path,
         updated=_updated_from_metadata(metadata),
         rank=rank,
@@ -249,10 +254,10 @@ def _static_c0_chunks(
     """Load all C0 sources in one worker-thread transaction."""
     retriever = get_retriever()
     if retriever is None:
-        return [], []
+        return [], [], False
     always = _always_prime_chunks(retriever, anima_name)
     if resident_only:
-        return always, []
+        return always, [], False
     if not include_fallback:
         searcher, relevant = _search_related_knowledge(
             anima_dir,
@@ -262,9 +267,11 @@ def _static_c0_chunks(
             min_score=min_score,
             search_cache=search_cache,
         )
+        low_confidence = bool(searcher.last_search_meta.get("low_confidence", False))
         if bool(searcher.last_search_meta.get("abstain", False)):
             relevant = []
-        return always, relevant
+            low_confidence = False
+        return always, relevant, low_confidence
 
     fallback = retriever.get_important_chunks(anima_name, include_shared=True)
     relevant = [
@@ -277,7 +284,7 @@ def _static_c0_chunks(
         }
         for r in fallback
     ]
-    return always, relevant
+    return always, relevant, False
 
 
 def _unknown_origin_is_internal(anima_dir: Path, path: str) -> bool:
@@ -367,7 +374,7 @@ async def channel_c0_important_knowledge(
             _min_score = _load_cfg().rag.min_retrieval_score
         except Exception:
             logger.debug("Failed to load rag.min_retrieval_score from config, using default")
-        always_results, relevant_rows = await asyncio.to_thread(
+        always_results, relevant_rows, low_confidence = await asyncio.to_thread(
             _static_c0_chunks,
             get_retriever,
             anima_name,
@@ -428,7 +435,13 @@ async def channel_c0_important_knowledge(
                 )
                 continue
             score = float(row.get("score", 0.0) or 0.0)
-            item = _item_from_chunk(content=content, metadata=metadata, path=rel_path, rank=score)
+            item = _item_from_chunk(
+                content=content,
+                metadata=metadata,
+                path=rel_path,
+                rank=score,
+                low_confidence=low_confidence,
+            )
             previous = relevant_by_path.get(rel_path)
             if previous is None or score > previous[1]:
                 relevant_by_path[rel_path] = (item, score)
@@ -552,6 +565,7 @@ async def channel_c_related_knowledge(
                     metadata=metadata,
                     path=rel_path,
                     score=float(result.get("score", 0.0) or 0.0),
+                    low_confidence=bool(searcher.last_search_meta.get("low_confidence", False)),
                 )
                 item_kwargs = {
                     "key": rel_path,

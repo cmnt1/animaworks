@@ -111,7 +111,7 @@ async def test_neo4j_backend_all_scope_retrieves_and_formats_mixed_results(tmp_p
     with (
         patch.object(backend, "_ensure_driver", new_callable=AsyncMock, return_value=driver),
         patch.object(backend, "_embed_texts", new_callable=AsyncMock, return_value=[[0.1] * 384]),
-        patch("core.memory.graph.reranker.get_reranker", return_value=mock_reranker),
+        patch("core.memory.retrieval.reranker.get_reranker", return_value=mock_reranker),
     ):
         memories = await backend.retrieve("Sakura Neo4j", scope="all", limit=10)
 

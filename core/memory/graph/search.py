@@ -128,7 +128,7 @@ class HybridSearch:
         if not result_lists:
             return []
 
-        from core.memory.graph.rrf import rrf_merge
+        from core.memory.retrieval.rrf import rrf_merge
 
         merged = rrf_merge(result_lists, top_k=min(30, limit * 3), k=self._rrf_k)
 
@@ -143,7 +143,7 @@ class HybridSearch:
             ]
 
         try:
-            from core.memory.graph.reranker import get_reranker
+            from core.memory.retrieval.reranker import get_reranker
 
             reranker = get_reranker(self._ce_model)
             text_field = (
