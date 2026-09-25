@@ -132,13 +132,50 @@ class TestTaskBoardList:
                 ("alice", failed.task_id),
             )
 
+        # A stale active card must not resurface the archived row as a missing task.
+        _store(app).upsert_metadata(anima_name="alice", task_id=failed.task_id, actor="planner", visibility="active")
+
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            default_resp = await client.get("/api/task-board")
+            default_resp = await client.get("/api/task-board", params={"include_missing": "true"})
             full_resp = await client.get("/api/task-board", params={"include_archived": "true"})
+            summary_resp = await client.get("/api/task-board/summary")
 
         assert [task["task_id"] for task in default_resp.json()["tasks"]] == ["task-live"]
         assert {task["task_id"] for task in full_resp.json()["tasks"]} == {"task-live", "task-failed"}
+        assert summary_resp.json()["pending"] == 1
+        assert summary_resp.json()["failed_review"] == 0
+
+    async def test_history_view_returns_latest_hidden_cards_only(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path, ["alice"])
+        queue = _queue(app, "alice")
+        queue.add_task(
+            source="human", original_instruction="live", assignee="alice", summary="live", task_id="task-live"
+        )
+        for index in range(3):
+            old = queue.add_task(
+                source="human",
+                original_instruction=f"old {index}",
+                assignee="alice",
+                summary=f"old {index}",
+                task_id=f"task-old-{index}",
+            )
+            with queue.store.transaction() as db:
+                db.execute(
+                    "UPDATE tasks SET archived=1, entry_json=json_set(entry_json, '$.status', 'done', "
+                    "'$.updated_at', ?) WHERE anima=? AND task_id=?",
+                    (f"2026-01-0{index + 1}T00:00:00+09:00", "alice", old.task_id),
+                )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            limited = await client.get("/api/task-board", params={"include_archived": "true", "history_limit": 2})
+            roomy = await client.get("/api/task-board", params={"include_archived": "true", "history_limit": 10})
+
+        assert {task["task_id"] for task in limited.json()["tasks"]} == {"task-live", "task-old-2", "task-old-1"}
+        assert limited.json()["meta"]["history_truncated"] is True
+        assert len(roomy.json()["tasks"]) == 4
+        assert roomy.json()["meta"]["history_truncated"] is False
 
     async def test_unknown_assignee_returns_404(self, tmp_path: Path) -> None:
         app = _make_app(tmp_path, ["alice"])

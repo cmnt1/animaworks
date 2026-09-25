@@ -321,6 +321,25 @@ class TaskStore:
                 result[entry.task_id] = entry
             return result
 
+    def read_recent_archived(self, anima: str, limit: int) -> dict[str, TaskEntry]:
+        """Return the anima's most recently updated archived tasks (no viewer aliases)."""
+        if limit <= 0:
+            return {}
+        with self.reader() as db:
+            rows = db.execute(
+                "SELECT entry_json FROM tasks WHERE anima=? AND archived=1 "
+                "ORDER BY json_extract(entry_json, '$.updated_at') DESC LIMIT ?",
+                (anima, limit),
+            ).fetchall()
+        return {entry.task_id: entry for row in rows if (entry := TaskEntry(**json.loads(row[0])))}
+
+    def known_task_ids(self, anima: str) -> set[str]:
+        """Return every ledger ID the anima can see, archived rows and viewer aliases included."""
+        with self.reader() as db:
+            own = db.execute("SELECT task_id FROM tasks WHERE anima=?", (anima,)).fetchall()
+            aliases = db.execute("SELECT alias FROM task_aliases WHERE viewer=?", (anima,)).fetchall()
+        return {row[0] for row in own} | {row[0] for row in aliases}
+
     def apply(self, anima: str, event: dict[str, Any]) -> None:
         """Compatibility entry/update API; merges within the write transaction."""
         with self.transaction() as db:

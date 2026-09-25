@@ -712,6 +712,7 @@
   "taskboard.filter_suppressed": "Suppressed",
   "taskboard.load_failed": "TaskBoard の読み込みに失敗しました",
   "taskboard.loaded_count": "{count} 件のタスクを読み込みました。",
+  "taskboard.history_truncated": "非表示タスクは最新 {count} 件のみ表示しています。",
   "taskboard.loading": "TaskBoard を読み込み中...",
   "taskboard.modal_archive": "タスクをアーカイブ",
   "taskboard.modal_expire": "タスクを期限切れにする",

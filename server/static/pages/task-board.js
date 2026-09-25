@@ -564,8 +564,11 @@ function _findTask(key) { return _tasks.find((task) => taskKey(task) === key) ||
 
 function _summaryText(data) {
   const warnings = data?.meta?.warnings?.corrupt_task_queue_lines || 0;
-  const base = t("taskboard.loaded_count", { count: _tasks.length });
-  return warnings ? `${base} ${t("taskboard.corrupt_warning", { count: warnings })}` : base;
+  let text = t("taskboard.loaded_count", { count: _tasks.length });
+  if (data?.meta?.history_truncated) {
+    text = `${text} ${t("taskboard.history_truncated", { count: data.meta.history_limit })}`;
+  }
+  return warnings ? `${text} ${t("taskboard.corrupt_warning", { count: warnings })}` : text;
 }
 
 function _setFeedback(message, tone) {

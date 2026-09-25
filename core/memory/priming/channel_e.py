@@ -147,6 +147,7 @@ async def channel_e_pending_tasks(
             anima_name=anima_dir.name,
             include_missing=True,
             include_archived=True,
+            archived_limit=0,
         )
         task_updates.update({task.task_id: task.queue_updated_at or "" for task in board_tasks})
         animas_dir = anima_dir.parent if anima_dir.parent.name == "animas" else get_animas_dir()
