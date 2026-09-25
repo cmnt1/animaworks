@@ -1260,6 +1260,7 @@ class CodexSDKExecutor(BaseExecutor):
             return env
 
         if self._uses_codex_login_auth():
+            env.pop("CODEX_API_KEY", None)
             logger.debug("Using Codex login auth; not forwarding OPENAI_API_KEY to Codex child")
         elif api_key and _is_openai_api_key(api_key):
             env["OPENAI_API_KEY"] = api_key
@@ -1667,7 +1668,10 @@ class CodexSDKExecutor(BaseExecutor):
             )
 
         if uses_codex_login:
-            auth_method_line = 'preferred_auth_method = "chatgpt"\n'
+            # forced_login_method stops Codex from silently falling back to an
+            # API key (e.g. one cached in the shared auth.json) against the
+            # ChatGPT backend, which surfaces as 401 Incorrect API key.
+            auth_method_line = 'preferred_auth_method = "chatgpt"\nforced_login_method = "chatgpt"\n'
         elif self._resolve_api_key():
             auth_method_line = 'preferred_auth_method = "apikey"\n'
         else:
@@ -1678,6 +1682,9 @@ class CodexSDKExecutor(BaseExecutor):
         ) or self._model_config.thinking_effort
         effort_line = f'model_reasoning_effort = "{esc(reasoning_effort)}"\n' if reasoning_effort else ""
 
+        # Heartbeat depends on the aw catalog. Making it required prevents
+        # Codex's short optional-server grace period from silently omitting
+        # tools during slower Windows cold starts.
         config_toml = (
             f'model = "{esc(provider_config.model)}"\n'
             f"{effort_line}"
@@ -1693,6 +1700,8 @@ class CodexSDKExecutor(BaseExecutor):
             f"[mcp_servers.aw]\n"
             f'command = "{esc(mcp_command)}"\n'
             f"args = [{mcp_args_toml}]\n"
+            f"required = true\n"
+            f"startup_timeout_sec = 30\n"
             f'default_tools_approval_mode = "approve"\n'
             f"\n"
             f"[mcp_servers.aw.env]\n"

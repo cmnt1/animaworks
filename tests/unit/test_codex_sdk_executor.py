@@ -682,6 +682,26 @@ class TestConfigWriting:
         assert (config_home / "instructions.md").exists()
         assert (config_home / "hooks.json").exists()
 
+    def test_codex_login_forces_chatgpt_auth_and_strips_api_keys(self, anima_dir, monkeypatch):
+        from core.schemas import ModelConfig
+
+        login_executor = CodexSDKExecutor(
+            model_config=ModelConfig(model="codex/o4-mini", credential="openai", credential_type="codex_login"),
+            anima_dir=anima_dir,
+            tool_registry=[],
+            personal_tools={},
+        )
+        login_executor._write_codex_config("My prompt")
+        parsed = tomllib.loads((anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8"))
+        assert parsed["preferred_auth_method"] == "chatgpt"
+        assert parsed["forced_login_method"] == "chatgpt"
+
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-svcacct-leak")
+        monkeypatch.setenv("CODEX_API_KEY", "sk-svcacct-leak")
+        env = login_executor._build_env()
+        assert "OPENAI_API_KEY" not in env
+        assert "CODEX_API_KEY" not in env
+
     def test_write_codex_config_toml_content(self, executor, anima_dir):
         executor._write_codex_config("My prompt")
         config_toml = (anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8")
@@ -695,6 +715,8 @@ class TestConfigWriting:
         parsed = tomllib.loads(config_toml)
         assert parsed["approval_policy"] == "never"
         assert parsed["mcp_servers"]["aw"]["default_tools_approval_mode"] == "approve"
+        assert parsed["mcp_servers"]["aw"]["required"] is True
+        assert parsed["mcp_servers"]["aw"]["startup_timeout_sec"] == 30
         assert parsed["mcp_servers"]["aw"]["command"] == sys.executable
         assert parsed["mcp_servers"]["aw"]["args"] == ["-m", "core.mcp.server"]
 
