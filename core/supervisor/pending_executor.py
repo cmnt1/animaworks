@@ -129,7 +129,9 @@ def _submission_line(submitted_at: str, *, locale: str | None = None) -> str:
     total_seconds = max(0, int((now - dt).total_seconds()))
     hours, rem = divmod(total_seconds, 3600)
     minutes = rem // 60
-    time_str = dt.strftime("%Y-%m-%d %H:%M")
+    from core.time_utils import get_app_timezone
+
+    time_str = dt.astimezone(get_app_timezone()).strftime("%Y-%m-%d %H:%M")
     elapsed = t("pending_executor.elapsed", locale=locale, hours=hours, minutes=minutes)
     return t("pending_executor.submitted_line", locale=locale, time=time_str, elapsed=elapsed)
 

@@ -430,3 +430,13 @@ class TestSubmissionLine:
         future = (datetime.now(UTC) + timedelta(hours=5)).isoformat()
         line = _submission_line(future, locale="ja")
         assert "0時間0分" in line
+
+    def test_submission_time_rendered_in_app_timezone(self):
+        from datetime import UTC, datetime
+
+        from core.supervisor.pending_executor import _submission_line
+        from core.time_utils import get_app_timezone
+
+        line = _submission_line("2026-09-25T10:04:00+00:00", locale="ja")
+        expected = datetime(2026, 9, 25, 10, 4, tzinfo=UTC).astimezone(get_app_timezone())
+        assert line.startswith(f"提出: {expected:%Y-%m-%d %H:%M}（")
