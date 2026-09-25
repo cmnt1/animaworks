@@ -349,32 +349,17 @@ class ProceduralDistiller:
         min_cluster_size: int = 3,
         min_similarity: float = 0.80,
     ) -> list[list[dict]]:
-        """Cluster activities using vector embeddings.
-
-        Uses the RAG embedding model to encode activity summaries, then
-        groups entries with cosine similarity >= min_similarity.
-
-        Args:
-            entries: Activity entry dicts.
-            min_cluster_size: Minimum cluster size.
-            min_similarity: Cosine similarity threshold.
-
-        Returns:
-            List of clusters (lists of entry dicts).
-
-        Raises:
-            ImportError: When RAG dependencies are unavailable.
-            Exception: On embedding or clustering failures.
-        """
+        """Cluster activities using vector embeddings (cosine similarity)."""
+        # Build text representations
+        from core.memory.activity_format import entry_text
         from core.memory.rag.singleton import generate_embeddings
 
-        # Build text representations
         texts: list[str] = []
         for entry in entries:
             parts = [entry.get("type", "")]
             if entry.get("tool"):
                 parts.append(entry["tool"])
-            summary = entry.get("summary") or entry.get("content", "")
+            summary = entry_text(entry, prefer="summary")
             if summary:
                 parts.append(summary[:200])
             texts.append(" ".join(parts))
@@ -415,23 +400,17 @@ class ProceduralDistiller:
 
     @staticmethod
     def _format_clusters_for_prompt(clusters: list[list[dict]]) -> str:
-        """Format activity clusters for the weekly pattern prompt.
-
-        Args:
-            clusters: List of entry clusters.
-
-        Returns:
-            Formatted text for LLM prompt injection.
-        """
+        """Format activity clusters for the weekly pattern prompt."""
         parts: list[str] = []
+        from core.memory.activity_format import entry_text
+
         for i, cluster in enumerate(clusters, 1):
             lines = [t("distillation.pattern_n_repeat", i=i, count=len(cluster))]
             for entry in cluster[:10]:  # Limit entries per cluster
                 ts = entry.get("ts", "")[:16]
                 etype = entry.get("type", "")
                 tool = entry.get("tool", "")
-                summary = entry.get("summary") or entry.get("content", "")
-                summary = summary[:150]
+                summary = entry_text(entry, prefer="summary")[:150]
                 tool_info = f" [tool: {tool}]" if tool else ""
                 lines.append(f"- {ts} {etype}{tool_info}: {summary}")
             parts.append("\n".join(lines))
