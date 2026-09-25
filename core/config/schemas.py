@@ -928,8 +928,13 @@ class HeartbeatConfig(BaseModel):
         ge=0,
         description="Max chars for current_state.md before trim; 0 = disabled",
     )
+    current_state_cleanup_chars: int = Field(
+        default=2000,
+        ge=0,
+        description="Soft cleanup threshold for current_state.md; 0 = 80% of current_state_max_chars",
+    )
     heartbeat_md_max_bytes: int = Field(
-        default=20000,
+        default=8000,
         ge=0,
         description=(
             "Max bytes of heartbeat.md before a compaction instruction is "
