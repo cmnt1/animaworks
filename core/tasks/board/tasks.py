@@ -692,7 +692,7 @@ class TaskStore:
             # Leaving them on a resumed claim can make the runner classify a
             # successful attempt using the previous attempt's crash. Historical
             # outcomes and result references remain in task_attempts.
-            for key in ("last_run_stop_kind", "last_run_ended_at", "last_run_note"):
+            for key in ("last_run_stop_kind", "last_run_ended_at", "last_run_note", "last_run_declared_pending"):
                 entry.meta.pop(key, None)
             db.execute(
                 "INSERT INTO task_attempts(token,anima,task_id,number,identity_json,started_at) VALUES(?,?,?,?,?,?)",
@@ -730,10 +730,21 @@ class TaskStore:
             return True
 
     def finish(
-        self, token: str, *, status: str, stop_kind: str, summary: str | None = None, result_ref: str = ""
+        self,
+        token: str,
+        *,
+        status: str,
+        stop_kind: str,
+        summary: str | None = None,
+        result_ref: str = "",
+        wakeup: bool = True,
     ) -> bool:
-        """End only the matching attempt. Incomplete work gets one durable wakeup."""
-        if status not in {"pending", "done", "cancelled"}:
+        """End only the matching attempt. Incomplete work gets one durable wakeup.
+
+        ``delegated`` work is owned by a subordinate and ``wakeup=False`` marks a
+        pending the anima declared itself; neither needs a wakeup.
+        """
+        if status not in {"pending", "done", "cancelled", "delegated"}:
             raise ValueError(f"Invalid attempt outcome: {status}")
         with self.transaction() as db:
             row = db.execute(
@@ -759,7 +770,7 @@ class TaskStore:
                 "UPDATE tasks SET entry_json=?,current_attempt=NULL,ready=0 WHERE anima=? AND task_id=?",
                 (_json(entry.model_dump()), row["anima"], row["task_id"]),
             )
-            if status == "pending":
+            if status == "pending" and wakeup:
                 db.execute(
                     "INSERT OR IGNORE INTO task_wakeups VALUES(?,?,?,?,?,NULL)",
                     (row["anima"], row["task_id"], token, stop_kind, entry.updated_at),

@@ -464,3 +464,72 @@ async def test_stream_error_is_not_suppressed_without_declaration(tmp_path: Path
     assert entry.status == "pending"
     assert "streaming error" in entry.meta["last_run_note"]
     assert entry.meta["last_run_stop_kind"] == "crash"
+
+
+def _claim_with_mid_run_status(tmp_path: Path, task_id: str, mid_run_status: str | None):
+    """Claim a canonical task whose model sets ``mid_run_status`` before the cycle ends."""
+    from core.tasks.board.tasks import process_identity
+    from core.tasks.dispatch import publish_tasks
+
+    executor = _make_executor(tmp_path)
+    publish_tasks(executor._anima_dir, [_task(task_id, reply_to="manager-anima")])
+    manager = TaskQueueManager(executor._anima_dir)
+    claim = manager.store.claim("test-anima", task_id, process_identity())
+    assert claim is not None
+
+    async def stream(*_args, **_kwargs):
+        if mid_run_status is not None:
+            manager.update_status(task_id, mid_run_status)
+        yield {"type": "text_delta", "text": "output"}
+        yield {
+            "type": "cycle_done",
+            "cycle_result": {
+                "summary": "result",
+                "action": "responded",
+                "stop_kind": "normal",
+                "tool_call_records": [],
+            },
+        }
+
+    executor._anima.agent.run_cycle_streaming = stream
+    return executor, manager, claim
+
+
+@pytest.mark.asyncio
+async def test_pending_declared_by_the_anima_raises_no_wakeup(tmp_path: Path) -> None:
+    """Handing the task back to pending (e.g. waiting on a delegate) is a decision, not a failure."""
+    executor, manager, claim = _claim_with_mid_run_status(tmp_path, "waiting", "pending")
+
+    with _execution_patches():
+        await executor._execute_canonical_task(claim)
+
+    assert manager.get_task_by_id("waiting").status == "pending"
+    assert manager.store.wakeups("test-anima") == []
+    executor._deliver_task_wakeups(manager.store)
+    executor._anima.messenger.send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_delegated_status_survives_the_attempt_finalizer(tmp_path: Path) -> None:
+    executor, manager, claim = _claim_with_mid_run_status(tmp_path, "handed-off", "delegated")
+
+    with _execution_patches():
+        await executor._execute_canonical_task(claim)
+
+    assert manager.get_task_by_id("handed-off").status == "delegated"
+    assert manager.store.wakeups("test-anima") == []
+
+
+@pytest.mark.asyncio
+async def test_undeclared_normal_end_is_not_reported_as_a_failure(tmp_path: Path) -> None:
+    executor, manager, claim = _claim_with_mid_run_status(tmp_path, "silent", None)
+
+    with _execution_patches():
+        await executor._execute_canonical_task(claim)
+
+    wakeups = manager.store.wakeups("test-anima")
+    assert [event["reason"] for event in wakeups] == ["normal"]
+    with patch("core.tasks.pending_executor.t", side_effect=lambda key, **_kw: key):
+        executor._deliver_task_wakeups(manager.store)
+    contents = {call.kwargs["content"] for call in executor._anima.messenger.send.call_args_list}
+    assert contents == {"pending_executor.task_undeclared_notify"}

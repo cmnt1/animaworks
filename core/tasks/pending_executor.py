@@ -463,6 +463,20 @@ class PendingTaskExecutor:
                 exc_info=True,
             )
 
+    def _mark_declared_pending(self, task_id: str) -> None:
+        """Record that the anima itself handed this run's task back to pending."""
+        try:
+            from core.tasks.queue import TaskQueueManager
+
+            TaskQueueManager(self._anima_dir).update_meta(task_id, {"last_run_declared_pending": True})
+        except Exception:
+            logger.warning(
+                "[%s] Failed to record declared pending for task %s",
+                self._anima_name,
+                task_id,
+                exc_info=True,
+            )
+
     def _return_task_to_pending(self, task_desc: dict[str, Any], reason: str, *, stop_kind: str) -> None:
         """Put a task whose run ended abnormally back on its owner's pending list.
 
@@ -883,6 +897,13 @@ class PendingTaskExecutor:
                         title=payload.get("title", event["task_id"]),
                         result_summary=result[:_TASK_COMPLETE_NOTIFY_MAX_CHARS],
                     )
+                elif event["reason"] == "normal":
+                    # The run itself ended cleanly; only the declaration is missing.
+                    content = t(
+                        "pending_executor.task_undeclared_notify",
+                        task_id=event["task_id"],
+                        title=payload.get("title", event["task_id"]),
+                    )
                 else:
                     content = t(
                         "pending_executor.task_fail_notify",
@@ -943,7 +964,7 @@ class PendingTaskExecutor:
                 cancel_watch.cancel()
                 await asyncio.gather(cancel_watch, return_exceptions=True)
             entry = store.read(self._anima_name, archived=True).get(task_id)
-            status = entry.status if entry and entry.status in {"done", "cancelled"} else "pending"
+            status = entry.status if entry and entry.status in {"done", "cancelled", "delegated"} else "pending"
             if entry and stop_kind == "normal":
                 # A caught runner failure/cancellation is newer than the cycle
                 # metadata (e.g. shutdown after the model declared completion).
@@ -963,11 +984,19 @@ class PendingTaskExecutor:
                 child_still_live = child_pid != os.getpid() and identity_liveness(owner) != "dead"
             if not child_still_live:
                 result_ref = f"state/task_results/{task_id}/{token}.md"
+                # An anima that put its own task back to pending (e.g. waiting
+                # on a delegate) already decided what happens next.
+                declared_pending = (
+                    status == "pending"
+                    and stop_kind == "normal"
+                    and bool(entry and entry.meta.get("last_run_declared_pending"))
+                )
                 store.finish(
                     token,
                     status=status,
                     stop_kind=stop_kind,
                     result_ref=result_ref if (self._anima_dir / result_ref).is_file() else "",
+                    wakeup=not declared_pending,
                 )
             self._active_task_ids.discard(task_id)
             self.wake()
@@ -1398,6 +1427,10 @@ class PendingTaskExecutor:
             meta = entry.meta if isinstance(entry.meta, dict) else {}
             if entry.status == "cancelled":
                 return _SENTINEL_CANCELLED
+            if entry.status == "pending" and stop_kind == "normal":
+                # The claim set in_progress; pending here means the anima
+                # declared it (update_task status=pending) during this run.
+                self._mark_declared_pending(task_id)
             if entry.status not in ("done", "delegated"):
                 # Keep the actual outcome available to the owner even when
                 # completion could not be declared (e.g. a tool failed while
