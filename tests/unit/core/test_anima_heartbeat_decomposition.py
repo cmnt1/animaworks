@@ -9,6 +9,8 @@ from dataclasses import fields
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from core._anima_heartbeat import _build_cron_rejected_notice
 from core.schemas import CycleResult, Message
 
@@ -51,6 +53,7 @@ def _create_anima(anima_dir, shared_dir, **extra_patches):
     (anima_dir / "run").mkdir(parents=True, exist_ok=True)
 
     dp._get_current_state_max_chars = MagicMock(return_value=0)
+    dp._get_heartbeat_md_max_bytes = MagicMock(return_value=0)
 
     mocks = {
         "agent": MockAgent,
@@ -923,7 +926,8 @@ class TestExecuteHeartbeatCycle:
         finally:
             _stop_patches(mocks)
 
-    async def test_heartbeat_preserves_error_reason_and_stop_kind(self, data_dir, make_anima):
+    @pytest.mark.parametrize("failure_reason", ["quota_exhausted", "network"])
+    async def test_heartbeat_preserves_error_reason_and_stop_kind(self, data_dir, make_anima, failure_reason):
         anima_dir = make_anima("heartbeat_error_fields")
         shared_dir = data_dir / "shared"
         dp, mocks = _create_anima(anima_dir, shared_dir)
@@ -943,12 +947,13 @@ class TestExecuteHeartbeatCycle:
                         trigger="heartbeat",
                         action="error",
                         stop_kind="stream_error",
-                        summary="provider failed",
-                        reason="quota_exhausted",
+                        summary="API Error: ConnectionRefused" if failure_reason == "network" else "provider failed",
+                        reason=failure_reason,
                     ).model_dump(mode="json"),
                 }
 
             dp.agent.run_cycle_streaming = mock_stream
+            dp._activity = MagicMock()
             with (
                 patch("core._anima_heartbeat.StreamingJournal"),
                 patch("core._anima_heartbeat.ConversationMemory") as conversation,
@@ -957,9 +962,13 @@ class TestExecuteHeartbeatCycle:
                 conversation.return_value.finalize_if_session_ended = AsyncMock()
                 result = await dp._execute_heartbeat_cycle("prompt", [], 0)
 
-            assert result.reason == "quota_exhausted"
+            assert result.action == "error"
+            assert result.reason == failure_reason
             assert result.stop_kind == "stream_error"
             assert (anima_dir / "state" / "heartbeat_checkpoint.json").exists()
+            ends = [call for call in dp._activity.log.call_args_list if call.args[0] == "heartbeat_end"]
+            assert len(ends) == 1
+            assert ends[0].kwargs["meta"]["status"] == "failed"
         finally:
             _stop_patches(mocks)
 
@@ -1251,6 +1260,98 @@ class TestExecuteHeartbeatCycle:
 
 
 class TestProcessInboxMessage:
+    async def test_cron_all_connection_failures_record_failed_end(self, data_dir, make_anima):
+        from core.schemas import ModelConfig
+        from core.tooling.handler_base import active_session_type
+
+        anima_dir = make_anima("cron_connection_error")
+        dp, mocks = _create_anima(anima_dir, data_dir / "shared")
+        try:
+            primary = ModelConfig(model="claude-sonnet-4-6", resolved_mode="S")
+            fallback = primary.model_copy(update={"model": "codex/gpt-5.6-luna", "resolved_mode": "C"})
+            dp.agent.model_config = primary
+            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+            dp._resolve_background_config = MagicMock(return_value=primary)
+            dp._activity = MagicMock()
+            dp.agent.run_cycle = AsyncMock(
+                return_value=CycleResult(
+                    trigger="cron:test",
+                    action="error",
+                    reason="network",
+                    stop_kind="stream_error",
+                    summary="API Error: ConnectionRefused",
+                )
+            )
+            with (
+                patch("core.execution.fallback_activity.resolve_effective_model_config", return_value=fallback),
+                patch("core.execution.fallback_activity.report_capacity_block"),
+            ):
+                result = await dp.run_cron_task("test", "Inspect the synthetic fixture.")
+            assert result.action == "error"
+            assert dp.agent.run_cycle.await_count == 2
+            ends = [call for call in dp._activity.log.call_args_list if call.args[0] == "cron_executed"]
+            assert len(ends) == 1
+            assert ends[0].kwargs["meta"]["status"] == "failed"
+            assert ends[0].kwargs["meta"]["reason"] == "network"
+            assert dp.memory.append_cron_log.call_args.kwargs["summary"].startswith("[ERROR:network]")
+        finally:
+            _stop_patches(mocks)
+
+    async def test_repeated_provider_failures_do_not_exhaust_unread_request_limit(self, data_dir, make_anima):
+        from core.schemas import ModelConfig
+        from core.tooling.handler_base import active_session_type
+
+        anima_dir = make_anima("inbox_repeated_outage")
+        dp, mocks = _create_anima(anima_dir, data_dir / "shared")
+        try:
+            inbox_path = data_dir / "shared/inbox/inbox_repeated_outage/request.json"
+            inbox_path.parent.mkdir(parents=True, exist_ok=True)
+            item = _make_inbox_item("bob", "Please handle this request.", inbox_path)
+            item.msg.source = "human"
+            item.msg.intent = "question"
+            inbox_path.write_text(item.msg.model_dump_json())
+            original = inbox_path.read_bytes()
+            primary = ModelConfig(model="claude-sonnet-4-6", resolved_mode="S")
+            dp.agent.model_config = primary
+            dp.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
+            dp._resolve_background_config = MagicMock(return_value=primary)
+            dp.messenger.has_unread.return_value = True
+            dp.messenger.receive_with_paths.return_value = [item]
+            dp.agent.replied_to = set()
+            dp._activity = MagicMock()
+            dp._archive_processed_messages = AsyncMock()
+            calls = 0
+
+            async def fail(*args, **kwargs):
+                nonlocal calls
+                calls += 1
+                yield {
+                    "type": "cycle_done",
+                    "cycle_result": CycleResult(
+                        trigger="inbox:bob", action="error", reason="network", summary="API Error: ConnectionRefused"
+                    ).model_dump(),
+                }
+
+            dp.agent.run_cycle_streaming = fail
+            with (
+                patch("core._anima_inbox.StreamingJournal"),
+                patch("core.execution.fallback_activity.resolve_effective_model_config", return_value=primary),
+                patch("core.execution.fallback_activity.report_capacity_block"),
+            ):
+                for _ in range(6):
+                    result = await dp.process_inbox_message()
+                    assert result.action == "error"
+            assert calls == 6  # one attempt per scheduled invocation, no local hot-loop
+            assert inbox_path.read_bytes() == original
+            dp.messenger.archive_paths.assert_not_called()
+            dp._archive_processed_messages.assert_not_awaited()
+            import json
+
+            counts = json.loads((anima_dir / "state/inbox_read_counts.json").read_text())
+            assert counts.get(inbox_path.name, 0) == 0
+        finally:
+            _stop_patches(mocks)
+
     async def test_inbox_retries_once_then_keeps_message_on_fallback_error(self, data_dir, make_anima):
         anima_dir = make_anima("inbox_runtime_fallback")
         shared_dir = data_dir / "shared"
@@ -1518,8 +1619,8 @@ class TestArchiveProcessedMessages:
 
 
 class TestHandleHeartbeatFailure:
-    async def test_crash_archive_inbox_messages(self, data_dir, make_anima):
-        """Inbox messages are crash-archived on failure."""
+    async def test_failure_preserves_unread_inbox_messages(self, data_dir, make_anima):
+        """A failed heartbeat must never acknowledge unread requests."""
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
         dp, mocks = _create_anima(anima_dir, shared_dir)
@@ -1533,7 +1634,7 @@ class TestHandleHeartbeatFailure:
             with patch("core.anima.ActivityLogger"):
                 await dp._handle_heartbeat_failure(error, [item], unread_count=1)
 
-            dp.messenger.archive_paths.assert_called_once_with([item])
+            dp.messenger.archive_paths.assert_not_called()
         finally:
             _stop_patches(mocks)
 

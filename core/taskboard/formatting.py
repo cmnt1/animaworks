@@ -89,10 +89,7 @@ def _format_delegated_tasks(
     for task in delegated[:5]:
         meta = task.meta or {}
         target = meta.get("delegated_to", unknown_label)
-        child_id = meta.get("delegated_task_id", "")
-        sub_status = "?"
-        if animas_dir is not None and child_id and target != unknown_label:
-            sub_status = _resolve_subordinate_display(animas_dir / str(target), str(child_id))
+        sub_status = str(meta.get("delegated_status", "?"))
         icon = status_icons.get(sub_status, "⏳")
         elapsed_sec = _elapsed_seconds(task.queue_updated_at or "", now)
         elapsed_str = _format_elapsed_from_sec(elapsed_sec) or ""

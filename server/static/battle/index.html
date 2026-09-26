@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="aw-base-path" content="__AW_BASE__">
+  <title>AnimaWorks · Battle</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%237fe5d0' d='M10 1h4v4l-7 7-3-3zM2 8l6 6-2 2-6-6z'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="__AW_BASE__/_v/__AW_VERSION__/battle/style.css">
+  <script type="importmap">{"imports":{"/shared/":"__AW_BASE__/_v/__AW_VERSION__/shared/"}}</script>
+  <script type="module" src="__AW_BASE__/_v/__AW_VERSION__/battle/modules/app.js"></script>
+</head>
+<body>
+  <main id="app">
+    <header class="masthead">
+      <a class="brand" href="__AW_BASE__/">✦ <span>ANIMAWORKS</span></a>
+      <nav aria-label="Workspace"><a href="__AW_BASE__/workspace/pixel/">PIXEL</a><span class="current">BATTLE</span></nav>
+      <span id="connection" class="connection" role="status" data-i18n="battle.connecting"></span>
+    </header>
+    <section class="heading">
+      <div><p class="eyebrow" data-i18n="battle.eyebrow"></p><h1 data-i18n="battle.title"></h1><p class="subtitle" data-i18n="battle.subtitle"></p></div>
+      <div class="counters"><div><b id="activeCount">0</b><span data-i18n="battle.encounters"></span></div><div><b id="clearCount">0</b><span data-i18n="battle.cleared"></span></div></div>
+    </section>
+    <section id="theater" class="theater" aria-label="Battle">
+      <div class="field-bar"><span><i></i> <span data-i18n="battle.field"></span></span><span id="modeLabel" data-i18n="battle.live"></span></div>
+      <div class="field">
+        <canvas id="battle" width="960" height="440" role="img" data-i18n-title="battle.canvas"></canvas>
+        <div id="announcement" class="announcement" role="status"></div>
+        <div id="empty" class="empty" hidden><span>✦</span><p data-i18n="battle.empty"></p><small data-i18n="battle.empty_hint"></small></div>
+        <div class="field-caption"><span id="phaseLabel"></span><span id="turnLabel"></span></div>
+      </div>
+      <div class="hud">
+        <section class="panel targets"><h2><span data-i18n="battle.targets"></span><small id="reserveCount"></small></h2><div id="targets"></div></section>
+        <section class="panel commands"><h2 id="commandActor" data-i18n="battle.commands"></h2><div id="commands"></div></section>
+        <section class="panel party"><h2><span data-i18n="battle.party"></span><button id="partyPage" type="button"></button></h2><div id="party"></div></section>
+      </div>
+      <div class="message-box"><span class="message-star">✦</span><div><p id="message" role="status"></p><small id="detail"></small></div><span class="advance">▾</span></div>
+    </section>
+    <div class="controls">
+      <div class="playback"><button id="pause" type="button" data-i18n="battle.pause"></button><label><span data-i18n="battle.speed"></span><select id="speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label><button id="fullscreen" type="button" data-i18n="battle.fullscreen"></button></div>
+      <div class="mode-switch"><a id="modeSwitch" href="?demo=1" data-i18n="battle.demo_button"></a></div>
+    </div>
+    <p class="explanation" data-i18n="battle.explanation"></p>
+    <dialog id="taskDialog" aria-labelledby="taskMonster"><h2 id="taskMonster"></h2><p data-i18n="battle.original_task"></p><p id="taskTitle"></p><small id="taskOwner"></small><form method="dialog"><button id="taskClose" type="submit" data-i18n="battle.close"></button></form></dialog>
+    <details class="journal" open><summary><span data-i18n="battle.journal"></span><span id="queueCount"></span></summary><ol id="journal"></ol></details>
+    <footer><span data-i18n="battle.footer"></span><a href="__AW_BASE__/workspace/" data-i18n="battle.workspace"></a></footer>
+  </main>
+</body>
+</html>

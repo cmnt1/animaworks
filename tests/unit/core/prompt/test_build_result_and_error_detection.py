@@ -12,6 +12,7 @@ and bugfix: pending procedures persistence + streaming retry BuildResult extract
 """
 
 from pathlib import Path
+from unittest.mock import patch
 
 from core.memory.conversation import (
     _ERROR_PATTERN,
@@ -137,6 +138,7 @@ class TestDoubleCountPrevention:
 
             # Set up environment for MemoryManager
             import os
+
             os.environ["ANIMAWORKS_DATA_DIR"] = str(anima_dir.parent.parent)
             data_dir = anima_dir.parent.parent
             (data_dir / "company").mkdir(parents=True, exist_ok=True)
@@ -155,10 +157,16 @@ class TestDoubleCountPrevention:
             )
 
             handler = ToolHandler(anima_dir, memory)
-            handler.handle("report_procedure_outcome", {
-                "path": "procedures/deploy.md",
-                "success": True,
-            })
+            # This test checks persisted session metadata, not RAG access
+            # tracking. Do not load an embedding model from a unit test.
+            with patch.object(handler, "_record_memory_file_used"):
+                handler.handle(
+                    "report_procedure_outcome",
+                    {
+                        "path": "procedures/deploy.md",
+                        "success": True,
+                    },
+                )
 
             meta = memory.read_procedure_metadata(
                 anima_dir / "procedures" / "deploy.md",
@@ -175,6 +183,7 @@ class TestDoubleCountPrevention:
                 (anima_dir / sub).mkdir(parents=True)
 
             import os
+
             os.environ["ANIMAWORKS_DATA_DIR"] = str(anima_dir.parent.parent)
             data_dir = anima_dir.parent.parent
             (data_dir / "company").mkdir(parents=True, exist_ok=True)
@@ -199,6 +208,7 @@ class TestDoubleCountPrevention:
                 (anima_dir / sub).mkdir(parents=True)
 
             import os
+
             os.environ["ANIMAWORKS_DATA_DIR"] = str(anima_dir.parent.parent)
             data_dir = anima_dir.parent.parent
             (data_dir / "company").mkdir(parents=True, exist_ok=True)

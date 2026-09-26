@@ -1,1 +1,1 @@
-태스크의 상태를 업데이트한다. 완료 시 status='done', 철회 시 status='cancelled'로 설정. status='in_progress'는 실행 중인 TaskExec가 경과를 summary에 쓸 때 사용한다. 계속하려면 같은 task_id를 `submit_tasks`로 재제출한다.
+태스크 결과를 선언합니다. 검증 후 status='done', 대기 사유가 있으면 'pending', 중지 시 'cancelled'를 사용하세요. in_progress는 호스트가 관리하므로 설정하지 마세요. 중단된 미종료 태스크를 의도적으로 재개하려면 submit_tasks에 기존 task_id와 resume=true를 전달하세요. 저장된 입력과 이력을 보존합니다.

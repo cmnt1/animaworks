@@ -2,15 +2,12 @@
 
 Verifies the full pipeline:
   1. PreToolUse hook hard-blocks "Agent" / "Task" tool (no pending creation)
-  2. _intercept_task_to_pending still works for delegation code
   3. _tool_summary handles "Agent" tool
-  4. Channel E reads task_results for Heartbeat visibility
   5. AgentOutput / TaskOutput are also blocked
 """
 
 from __future__ import annotations
 
-import json
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -36,57 +33,6 @@ def anima_dir():
 
 class TestAgentToolHardBlockE2E:
     """Full pipeline: Agent tool → hard block → no pending file."""
-
-    @pytest.mark.asyncio
-    async def test_intercept_to_pending_still_works_for_delegation(self, anima_dir: Path):
-        """_intercept_task_to_pending still creates pending files (used by delegation)."""
-        from core.execution._sdk_hooks import _intercept_task_to_pending
-
-        tool_input = {
-            "description": "Research AI safety standards",
-            "prompt": "Find and summarize current AI safety frameworks",
-        }
-        task_id = _intercept_task_to_pending(anima_dir, tool_input, "tu_e2e_001")
-
-        pending_file = anima_dir / "state" / "pending" / f"{task_id}.json"
-        assert pending_file.exists()
-
-        data = json.loads(pending_file.read_text(encoding="utf-8"))
-        assert data["reply_to"] == "ayame"
-        assert data["task_type"] == "llm"
-        assert data["submitted_by"] == "self_task_intercept"
-
-    @pytest.mark.asyncio
-    async def test_channel_e_shows_task_results(self, anima_dir: Path):
-        """Channel E reads task_results for Heartbeat visibility."""
-        from core.execution._sdk_hooks import _intercept_task_to_pending
-
-        tool_input = {
-            "description": "Research task",
-            "prompt": "Find info",
-        }
-        task_id = _intercept_task_to_pending(anima_dir, tool_input, "tu_e2e_ch")
-
-        result_content = (
-            f"# Task Result: {task_id}\n\n"
-            "Found 3 major AI safety frameworks:\n"
-            "1. NIST AI RMF\n"
-            "2. EU AI Act\n"
-            "3. ISO/IEC 42001"
-        )
-        (anima_dir / "state" / "task_results" / f"{task_id}.md").write_text(
-            result_content,
-            encoding="utf-8",
-        )
-
-        from core.memory.priming import PrimingEngine
-
-        engine = PrimingEngine(anima_dir)
-        channel_e_output = await engine._channel_e_pending_tasks()
-
-        assert task_id in channel_e_output
-        assert "完了済みバックグラウンドタスク" in channel_e_output
-        assert "Task Result" in channel_e_output
 
     def test_tool_summary_handles_agent(self):
         """_tool_summary generates detail for both Agent and Task tools."""

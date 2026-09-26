@@ -4,31 +4,31 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""E2E tests for forgetting pipeline fixes.
+"""E2E tests for the model-driven forgetting pipeline (harness diet PR-7).
 
-Tests two aspects of the forgetting pipeline that were fixed:
-1. Complete forgetting deletes vectors before archiving files
-2. ProcessSupervisor registers the monthly forgetting job
+The mechanical (delete + archive) forgetting pipeline was removed.  The
+engine now only *lists* low-activation candidates for the model to review
+during weekly consolidation, so source files and vectors are left intact.
 """
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-import pytest
+from core.memory.forgetting import ForgettingEngine
 
-# ── Test 1: complete_forgetting() archive order ──────────────────
+_META = {
+    "memory_type": "knowledge",
+    "activation_level": "low",
+    "low_activation_since": "2019-01-01T00:00:00",
+    "access_count": 0,
+    "source_file": "knowledge/test.md",
+    "importance": "",
+}
 
 
-class TestCompleteForgettingOrder:
-    """Verify complete_forgetting() deletes vectors FIRST, then archives files."""
+class TestListForgettingCandidates:
+    """Verify list_forgetting_candidates() only lists, never deletes/archives."""
 
-    def test_complete_forgetting_skips_archive_on_vector_failure(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """If vector deletion fails, source files should NOT be archived."""
-        from core.memory.forgetting import ForgettingEngine
-
+    def _engine(self, tmp_path: Path, chunks):
         anima_dir = tmp_path / "test_anima"
         (anima_dir / "knowledge").mkdir(parents=True)
         source = anima_dir / "knowledge" / "test.md"
@@ -36,263 +36,59 @@ class TestCompleteForgettingOrder:
 
         engine = ForgettingEngine(anima_dir, "test_anima")
 
-        # Build a mock vector store whose delete_documents always fails.
-        # _get_all_chunks is called internally via store.client.get_collection(),
-        # so we mock at the _get_all_chunks level AND _get_vector_store level.
-        mock_store = MagicMock()
-        mock_store.delete_documents.side_effect = Exception("ChromaDB error")
-
-        engine._get_vector_store = lambda: mock_store
-
-        # Mock _get_all_chunks to return a forgettable chunk
-        _original_get_all_chunks = engine._get_all_chunks  # noqa: F841
-
         def fake_get_all_chunks(collection_name: str):
             if "knowledge" in collection_name:
-                return [
-                    {
-                        "id": "chunk1",
-                        "metadata": {
-                            "memory_type": "knowledge",
-                            "activation_level": "low",
-                            "low_activation_since": "2025-01-01T00:00:00",
-                            "access_count": 0,
-                            "source_file": "knowledge/test.md",
-                            "importance": "",
-                        },
-                        "content": "test content",
-                    }
-                ]
+                return chunks
             return []
 
+        engine._get_vector_store = lambda: MagicMockStore()  # type: ignore[union-attr]
         engine._get_all_chunks = fake_get_all_chunks
+        return engine, source
 
-        result = engine.complete_forgetting()
-
-        # Source file should still exist (not archived) because vector delete failed
-        assert source.exists(), "Source file should NOT be archived when vector deletion fails"
-        assert result["forgotten_chunks"] == 0
-
-    def test_complete_forgetting_archives_after_successful_delete(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """When vector deletion succeeds, source files are archived."""
-        from core.memory.forgetting import ForgettingEngine
-
-        anima_dir = tmp_path / "test_anima"
-        (anima_dir / "knowledge").mkdir(parents=True)
-        source = anima_dir / "knowledge" / "test.md"
-        source.write_text("test content", encoding="utf-8")
-
-        engine = ForgettingEngine(anima_dir, "test_anima")
-
-        mock_store = MagicMock()
-        mock_store.delete_documents.return_value = None  # Success
-
-        engine._get_vector_store = lambda: mock_store
-
-        def fake_get_all_chunks(collection_name: str):
-            if "knowledge" in collection_name:
-                return [
-                    {
-                        "id": "chunk1",
-                        "metadata": {
-                            "memory_type": "knowledge",
-                            "activation_level": "low",
-                            "low_activation_since": "2025-01-01T00:00:00",
-                            "access_count": 0,
-                            "source_file": "knowledge/test.md",
-                            "importance": "",
-                        },
-                        "content": "test content",
-                    }
-                ]
-            return []
-
-        engine._get_all_chunks = fake_get_all_chunks
-
-        result = engine.complete_forgetting()
-
-        # Source file should be archived (moved)
-        assert not source.exists(), "Source file should be archived after successful vector deletion"
-        assert result["forgotten_chunks"] == 1
-        assert "knowledge/test.md" in result["archived_files"]
-
-        # Verify archive directory has the file
-        archive_dir = anima_dir / "archive" / "forgotten"
-        assert archive_dir.exists()
-        archived = list(archive_dir.iterdir())
-        assert len(archived) == 1
-
-    def test_complete_forgetting_delete_then_archive_ordering(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Verify that delete_documents is called before _archive_source_file."""
-        from core.memory.forgetting import ForgettingEngine
-
-        anima_dir = tmp_path / "test_anima"
-        (anima_dir / "knowledge").mkdir(parents=True)
-        source = anima_dir / "knowledge" / "ordered.md"
-        source.write_text("content", encoding="utf-8")
-
-        engine = ForgettingEngine(anima_dir, "test_anima")
-
-        call_order: list[str] = []
-
-        mock_store = MagicMock()
-
-        def track_delete(*args, **kwargs):
-            call_order.append("vector_delete")
-
-        mock_store.delete_documents.side_effect = track_delete
-        engine._get_vector_store = lambda: mock_store
-
-        original_archive = engine._archive_source_file
-
-        def track_archive(rel_path: str):
-            call_order.append("file_archive")
-            original_archive(rel_path)
-
-        engine._archive_source_file = track_archive
-
-        def fake_get_all_chunks(collection_name: str):
-            if "knowledge" in collection_name:
-                return [
-                    {
-                        "id": "chunk1",
-                        "metadata": {
-                            "memory_type": "knowledge",
-                            "activation_level": "low",
-                            "low_activation_since": "2025-01-01T00:00:00",
-                            "access_count": 0,
-                            "source_file": "knowledge/ordered.md",
-                            "importance": "",
-                        },
-                        "content": "content",
-                    }
-                ]
-            return []
-
-        engine._get_all_chunks = fake_get_all_chunks
-
-        engine.complete_forgetting()
-
-        assert call_order == ["vector_delete", "file_archive"], (
-            f"Expected vector_delete before file_archive, got: {call_order}"
+    def test_lists_eligible_chunk_without_deleting(self, tmp_path: Path) -> None:
+        engine, source = self._engine(
+            tmp_path,
+            [
+                {
+                    "id": "chunk1",
+                    "metadata": dict(_META),
+                    "content": "test content",
+                }
+            ],
         )
 
+        result = engine.list_forgetting_candidates()
 
-# ── Test 2: Monthly forgetting schedule ───────────────────────────
+        assert len(result) == 1
+        assert result[0].path == "knowledge/test.md"
+        # Nothing was archived or deleted
+        assert source.exists()
 
-
-class TestMonthlyForgettingSchedule:
-    """Verify ProcessSupervisor._setup_system_crons registers monthly forgetting."""
-
-    def test_setup_system_crons_registers_monthly(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """ProcessSupervisor._setup_system_crons registers monthly forgetting job."""
-        from core.supervisor.manager import ProcessSupervisor
-
-        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
-
-        supervisor = ProcessSupervisor.__new__(ProcessSupervisor)
-        supervisor.animas_dir = tmp_path / "animas"
-        supervisor.animas_dir.mkdir(parents=True)
-        supervisor.processes = {}
-
-        mock_scheduler = MagicMock()
-        supervisor.scheduler = mock_scheduler
-
-        with patch("core.config.load_config") as mock_config:
-            mock_cfg = MagicMock()
-            mock_cfg.consolidation = None
-            mock_config.return_value = mock_cfg
-            supervisor._setup_system_crons()
-
-        # Extract job IDs from add_job calls
-        calls = mock_scheduler.add_job.call_args_list
-        job_ids = [call.kwargs.get("id") for call in calls]
-
-        monthly_found = "system_monthly_forgetting" in job_ids
-        assert monthly_found, f"Monthly forgetting job should be registered. Registered jobs: {job_ids}"
-
-    def test_setup_system_crons_monthly_disabled(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """When monthly_enabled=False, the monthly forgetting job is NOT registered."""
-        from core.supervisor.manager import ProcessSupervisor
-
-        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
-
-        supervisor = ProcessSupervisor.__new__(ProcessSupervisor)
-        supervisor.animas_dir = tmp_path / "animas"
-        supervisor.animas_dir.mkdir(parents=True)
-        supervisor.processes = {}
-
-        mock_scheduler = MagicMock()
-        supervisor.scheduler = mock_scheduler
-
-        with patch("core.config.load_config") as mock_config:
-            mock_cfg = MagicMock()
-            mock_consolidation = MagicMock()
-            mock_consolidation.monthly_enabled = False
-            # Keep defaults for other settings
-            mock_consolidation.daily_enabled = True
-            mock_consolidation.daily_time = "02:00"
-            mock_consolidation.weekly_enabled = True
-            mock_consolidation.weekly_time = "sun:03:00"
-            mock_consolidation.monthly_time = "1:04:00"
-            mock_consolidation.indexing_enabled = True
-            mock_consolidation.indexing_time = "04:00"
-            mock_cfg.consolidation = mock_consolidation
-            mock_config.return_value = mock_cfg
-            supervisor._setup_system_crons()
-
-        calls = mock_scheduler.add_job.call_args_list
-        job_ids = [call.kwargs.get("id") for call in calls]
-
-        assert "system_monthly_forgetting" not in job_ids, (
-            f"Monthly forgetting job should NOT be registered when disabled. Registered jobs: {job_ids}"
-        )
-
-    def test_setup_system_crons_registers_all_three(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """All three system crons (daily, weekly, monthly) are registered by default."""
-        from core.supervisor.manager import ProcessSupervisor
-
-        monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))
-
-        supervisor = ProcessSupervisor.__new__(ProcessSupervisor)
-        supervisor.animas_dir = tmp_path / "animas"
-        supervisor.animas_dir.mkdir(parents=True)
-        supervisor.processes = {}
-
-        mock_scheduler = MagicMock()
-        supervisor.scheduler = mock_scheduler
-
-        with patch("core.config.load_config") as mock_config:
-            mock_cfg = MagicMock()
-            mock_cfg.consolidation = None
-            mock_config.return_value = mock_cfg
-            supervisor._setup_system_crons()
-
-        calls = mock_scheduler.add_job.call_args_list
-        job_ids = [call.kwargs.get("id") for call in calls]
-
-        expected_ids = [
-            "system_daily_consolidation",
-            "system_weekly_integration",
-            "system_monthly_forgetting",
+    def test_unprotected_low_activation_is_a_candidate(self, tmp_path: Path) -> None:
+        engine, _source = self._engine(tmp_path, [])
+        engine._get_all_chunks = lambda _collection: [
+            {"id": "c", "metadata": dict(_META), "content": "x"}
         ]
-        for expected_id in expected_ids:
-            assert expected_id in job_ids, f"{expected_id} should be registered. Registered: {job_ids}"
+        assert len(engine.list_forgetting_candidates()) == 1
+
+    def test_protected_chunk_not_a_candidate(self, tmp_path: Path) -> None:
+        protected_meta = dict(_META, importance="important")
+        engine, _source = self._engine(
+            tmp_path,
+            [{"id": "c", "metadata": protected_meta, "content": "x"}],
+        )
+        assert engine.list_forgetting_candidates() == []
+
+    def test_rag_unavailable_returns_empty(self, tmp_path: Path) -> None:
+        anima_dir = tmp_path / "test_anima"
+        (anima_dir / "knowledge").mkdir(parents=True)
+        engine = ForgettingEngine(anima_dir, "test_anima")
+        engine._get_vector_store = lambda: None
+        assert engine.list_forgetting_candidates() == []
+
+
+class MagicMockStore:
+    """Minimal stand-in so _get_vector_store() returns a truthy object."""
+
+    def __bool__(self) -> bool:
+        return True

@@ -17,11 +17,11 @@ its tool-call loop (see ``Anima.run_consolidation()``).
 This module retains:
 - Episode and resolved-event collection (pre-processing for the Anima)
 - RAG index updates and rebuilds (post-processing after the Anima finishes)
-- Monthly forgetting (lifecycle.py post-processing)
 - Legacy knowledge migration
 - LLM output sanitisation (shared utility used by reconsolidation.py)
 """
 
+import hashlib
 import json
 import logging
 import re
@@ -53,7 +53,7 @@ class ConsolidationEngine:
     The Anima itself now drives the consolidation loop via tool calls.
     This class provides:
     - **Pre-processing**: episode collection, resolved-event collection
-    - **Post-processing**: RAG index updates/rebuilds, monthly forgetting
+    - **Post-processing**: RAG index updates and rebuilds
     - **Utilities**: knowledge file listing, LLM output sanitisation,
       legacy knowledge migration
     """
@@ -97,6 +97,42 @@ class ConsolidationEngine:
     CONSOLIDATED_TIMELINE_HEADER = "## Consolidated timeline"
     PHASE_B_CARRYOVER_FILE = "consolidation_phase_b_carryover.json"
     PHASE_B_CARRYOVER_MAX_DAYS = 3
+
+    def unprocessed_activity_chunks(self, target_date: date, chunks: list[str]) -> list[str]:
+        """Exclude inputs whose episode was durably written by an earlier run."""
+        checkpoint = self._load_episode_checkpoint()
+        processed = set(checkpoint.get(target_date.isoformat(), []))
+        return [chunk for chunk in chunks if hashlib.sha256(chunk.encode()).hexdigest() not in processed]
+
+    def _load_episode_checkpoint(self) -> dict[str, list[str]]:
+        path = self.anima_dir / "state" / "consolidation_episode_checkpoint.json"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return (
+                {
+                    key: values
+                    for key, values in data.items()
+                    if isinstance(values, list) and all(isinstance(value, str) for value in values)
+                }
+                if isinstance(data, dict)
+                else {}
+            )
+        except (OSError, ValueError):
+            return {}
+
+    def record_consolidated_chunks(self, target_date: date, chunks: list[str]) -> None:
+        """Advance only after the episode write succeeds; raw inputs stay intact."""
+        from core.memory._io import atomic_write_text
+
+        checkpoint = self._load_episode_checkpoint()
+        key = target_date.isoformat()
+        checkpoint[key] = sorted(
+            set(checkpoint.get(key, [])) | {hashlib.sha256(chunk.encode()).hexdigest() for chunk in chunks}
+        )
+        atomic_write_text(
+            self.anima_dir / "state" / "consolidation_episode_checkpoint.json",
+            json.dumps(checkpoint, ensure_ascii=False),
+        )
 
     @staticmethod
     def previous_local_day_window(reference: datetime | None = None) -> tuple[date, datetime, datetime]:
@@ -203,6 +239,7 @@ class ConsolidationEngine:
         target_date: date,
         reason: str,
         max_days: int = PHASE_B_CARRYOVER_MAX_DAYS,
+        incremental: bool = False,
     ) -> list[dict[str, Any]]:
         """Persist Phase B source so timeout retries can resume from it.
 
@@ -215,7 +252,17 @@ class ConsolidationEngine:
         if not summary:
             return self.load_phase_b_carryover()
 
-        items = [item for item in self.load_phase_b_carryover() if item.get("date") != target_date.isoformat()]
+        prior = self.load_phase_b_carryover()
+        if incremental:
+            same_day = [
+                str(item.get("episodes_summary", "")) for item in prior if item.get("date") == target_date.isoformat()
+            ]
+            existing = "\n\n".join(part for part in same_day if part)
+            if existing and summary not in existing:
+                summary = existing + "\n\n" + summary
+            elif existing:
+                summary = existing
+        items = [item for item in prior if item.get("date") != target_date.isoformat()]
         items.append(
             {
                 "date": target_date.isoformat(),
@@ -1372,6 +1419,94 @@ class ConsolidationEngine:
         candidates.sort(key=lambda x: x[2], reverse=True)
         return candidates[:max_pairs]
 
+    # ── Conflicting-fact candidates ────────────────────────────
+
+    def _find_conflicting_fact_candidates(
+        self,
+        max_pairs: int = 20,
+    ) -> list[tuple[str, str, str]]:
+        """Find conflicting fact pairs for the weekly consolidation LLM.
+
+        Reads the legacy atomic facts stored as JSONL under ``{anima_dir}/facts/``.
+        Facts are grouped by entity (``source_entity``) + attribute
+        (``target_entity`` / ``edge_type``).  When two currently-active facts in
+        the same group describe different values (``text``), the pair is a
+        candidate for the weekly consolidation model to resolve (archive the
+        older one or report unresolved).
+
+        Only active facts (no valid_until, or valid_until still in the future)
+        are considered, so superseded/expired records do not surface as
+        conflicts.
+
+        Args:
+            max_pairs: Maximum number of pairs to return.
+
+        Returns:
+            List of (older_fact_path, newer_fact_path, one_line_description)
+            sorted by the newer fact's observed time (newest first).  Paths are
+            relative to the anima_dir and include the JSONL file and fact id so
+            the model can locate the exact record.
+        """
+        from core.memory.facts import FactRecord, facts_dir
+
+        facts_dir_path = facts_dir(self.anima_dir)
+        if not facts_dir_path.exists():
+            return []
+
+        # Group by (source_entity, target_entity, edge_type).
+        grouped: dict[tuple[str, str, str], list[dict]] = {}
+        for jsonl in sorted(facts_dir_path.glob("*.jsonl")):
+            try:
+                lines = jsonl.read_text(encoding="utf-8").splitlines()
+            except Exception:
+                continue
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = FactRecord.from_json_line(line)
+                except Exception:
+                    continue
+                if not record.is_active():
+                    continue
+                entity = (record.source_entity, record.target_entity, record.edge_type)
+                observed = record.recorded_at or record.valid_at or ""
+                grouped.setdefault(entity, []).append(
+                    {
+                        "path": f"{jsonl.relative_to(self.anima_dir).as_posix()}#{record.fact_id}",
+                        "text": record.text,
+                        "observed": observed,
+                    }
+                )
+
+        # (older_path, newer_path, description, newer_observed)
+        raw: list[tuple[str, str, str, str]] = []
+        for items in grouped.values():
+            if len(items) < 2:
+                continue
+            # Newest item is compared against every older item with a
+            # different value (source of the conflict).
+            items_sorted = sorted(items, key=lambda i: i["observed"], reverse=True)
+            newest = items_sorted[0]
+            for older in items_sorted[1:]:
+                if older["text"] == newest["text"]:
+                    continue
+                raw.append(
+                    (
+                        older["path"],
+                        newest["path"],
+                        (
+                            f"{newest['text'][:60]!r} (recent) differs from "
+                            f"{older['text'][:60]!r} (earlier) for the same attribute"
+                        ),
+                        newest["observed"],
+                    )
+                )
+
+        raw.sort(key=lambda c: c[3], reverse=True)
+        return [(a, b, d) for a, b, d, _ in raw[:max_pairs]]
+
     # ── Origin detection ─────────────────────────────────────────
 
     _EXTERNAL_ORIGINS = frozenset({"external_web", "mixed", "consolidation_external"})
@@ -1601,50 +1736,3 @@ class ConsolidationEngine:
             )
         except Exception:
             logger.warning("Failed to rebuild long-term BM25 index for anima=%s", self.anima_name, exc_info=True)
-
-    # ── Monthly Forgetting ──────────────────────────────────────
-
-    async def monthly_forget(self) -> dict[str, Any]:
-        """Perform monthly forgetting: archive and remove forgotten memories.
-
-        This is the final stage of the forgetting pipeline, removing
-        memories that have remained at low activation for extended periods.
-        Also cleans up old procedure version archives.
-        """
-        logger.info("Starting monthly forgetting for anima=%s", self.anima_name)
-        try:
-            from core.memory.forgetting import ForgettingEngine
-
-            forgetter = ForgettingEngine(self.anima_dir, self.anima_name)
-            result = forgetter.complete_forgetting()
-
-            # Clean up old procedure version archives
-            try:
-                archive_result = forgetter.cleanup_procedure_archives()
-                result["procedure_archive_cleanup"] = archive_result
-                logger.info(
-                    "Procedure archive cleanup for anima=%s: deleted=%d, kept=%d",
-                    self.anima_name,
-                    archive_result.get("deleted_count", 0),
-                    archive_result.get("kept_count", 0),
-                )
-            except Exception:
-                logger.exception(
-                    "Procedure archive cleanup failed for anima=%s",
-                    self.anima_name,
-                )
-
-            # Rebuild RAG index after deletions
-            self._rebuild_rag_index()
-
-            logger.info(
-                "Monthly forgetting complete for anima=%s: forgotten=%d, archived=%d files",
-                self.anima_name,
-                result.get("forgotten_chunks", 0),
-                len(result.get("archived_files", [])),
-            )
-            return result
-
-        except Exception:
-            logger.exception("Monthly forgetting failed for anima=%s", self.anima_name)
-            return {"forgotten_chunks": 0, "archived_files": [], "error": True}

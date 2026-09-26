@@ -76,7 +76,7 @@ def _gemini_error_metadata(message: str, model: str) -> dict[str, Any]:
     RATE / OVERLOAD / QUOTA failures are registered against the shared rate
     guard so the fleet handler can begin a backoff / failover for the realm.
     """
-    reason, _hint = classify_llm_error_message(message)
+    reason, hint = classify_llm_error_message(message)
     guarded_reasons = {
         FailoverReason.RATE_LIMIT,
         FailoverReason.OVERLOADED,
@@ -93,6 +93,7 @@ def _gemini_error_metadata(message: str, model: str) -> dict[str, Any]:
                 guard_key(provider_family_of(model), _GEMINI_REALM),
                 block_seconds,
                 reason.value,
+                reset_in_s=hint.reset_in_s,
             )
         except Exception:
             logger.debug("Failed to report gemini error to rate guard", exc_info=True)

@@ -68,6 +68,10 @@ class AnimaRunner:
         self.shared_dir = shared_dir
 
         self._anima_dir = animas_dir / anima_name
+        # Child processes (cron commands, helper scripts) inherit this so that
+        # per-Anima credentials resolve to this Anima instead of falling back
+        # to the owner identity.
+        os.environ["ANIMAWORKS_ANIMA_DIR"] = str(self._anima_dir)
 
         self.anima: DigitalAnima | None = None
         self.ipc_server: IPCServer | None = None
@@ -86,6 +90,7 @@ class AnimaRunner:
         self._inbox_limiter: InboxRateLimiter | None = None
         self._pending_executor: PendingTaskExecutor | None = None
         self._streaming_handler: StreamingIPCHandler | None = None
+        self._root_memory_requester_installed = False
 
     @staticmethod
     def _conversation_contains_recovery(conv_memory: Any, recovered_text: str, saved_text: str) -> bool:
@@ -234,6 +239,9 @@ class AnimaRunner:
 
             logger.info("Initializing Anima: %s", self.anima_name)
 
+            from core.taskboard.readiness import require_task_store_ready
+
+            require_task_store_ready(self._anima_dir)
             process_config = resolve_process_model_config(self._anima_dir)
             if not process_config.valid:
                 raise ValueError(process_config.error or "invalid process model configuration")
@@ -247,6 +255,7 @@ class AnimaRunner:
 
             # Initialize DigitalAnima (heavy: RAG indexer, model loading)
             self.anima = DigitalAnima(anima_dir=self._anima_dir, shared_dir=self.shared_dir)
+            self.anima._session_compactor.start(self.anima)
             self._repair_interrupted_heartbeat()
 
             # Create delegate instances
@@ -256,6 +265,7 @@ class AnimaRunner:
                 anima_dir=self._anima_dir,
                 emit_event=self._emit_event,
             )
+            self._configure_root_memory_requester()
             self._inbox_limiter = InboxRateLimiter(
                 anima=self.anima,
                 anima_name=self.anima_name,
@@ -394,6 +404,27 @@ class AnimaRunner:
                 if not task.done():
                     task.cancel()
             await asyncio.gather(ack_task, shutdown_task, return_exceptions=True)
+
+    def _configure_root_memory_requester(self) -> None:
+        """Route root inbox/tool retrieval to the same DB owner as child jobs."""
+        supervisor = self._scheduler_mgr._task_runner_supervisor if self._scheduler_mgr is not None else None
+        if supervisor is None or supervisor._memory_service is None:
+            return
+        from core.memory.rag.ipc_store import root_memory_requester
+        from core.memory.rag.singleton import configure_ipc_vector_requester
+
+        async def request(method: str, params: dict[str, Any]) -> dict[str, Any]:
+            if self.shutdown_event.is_set():
+                from core.supervisor.memory_service import MemoryServiceUnavailable
+
+                raise MemoryServiceUnavailable("root memory service is shutting down")
+            # A first inbox query can beat the asynchronous startup task.
+            # start() is idempotent and serializes native DB initialization.
+            await supervisor.start()
+            return await supervisor.handle_memory(method, params)
+
+        configure_ipc_vector_requester(root_memory_requester(request), anima_name=self.anima_name)
+        self._root_memory_requester_installed = True
 
     def _start_autonomous_services(self) -> None:
         """Start autonomous background services after startup ack."""
@@ -857,6 +888,7 @@ class AnimaRunner:
             "reload_activity_schedule": self._handle_reload_activity_schedule,
             "shutdown": self._handle_shutdown,
             "interrupt": self._handle_interrupt,
+            "compact_session": self._handle_compact_session,
         }
         return handlers.get(method)
 
@@ -1149,10 +1181,33 @@ class AnimaRunner:
             return await supervisor.interrupt_chat(thread_id=thread_id)
         return await self.anima.interrupt(thread_id=thread_id)
 
+    async def _handle_compact_session(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle a manual compaction request for the given thread.
+
+        Runs the same mode-specific idle compaction as the scheduler but on
+        demand. Returns ``status`` of ``"ok"`` when compaction ran, or
+        ``"skipped"`` when the thread lock could not be acquired in time.
+        """
+        if not self.anima:
+            raise AnimaNotRunningError("Anima not initialized")
+
+        from core.session_compactor import run_idle_compaction
+        from core.skills.activation_state import validate_thread_id
+
+        thread_id = validate_thread_id(params.get("thread_id", "default"))
+        ok = await run_idle_compaction(self.anima, thread_id)
+        return {
+            "status": "ok" if ok else "skipped",
+            "thread_id": thread_id,
+            "mode": self.anima.agent.execution_mode,
+        }
+
     # ── Cleanup ───────────────────────────────────────────────────
 
     async def _cleanup(self) -> None:
         """Clean up resources."""
+        if self.anima is not None:
+            self.anima._session_compactor.shutdown()
         # Release process lock and remove pidfile
         if self._lock_file:
             try:
@@ -1198,6 +1253,12 @@ class AnimaRunner:
         if self._scheduler_mgr:
             self._scheduler_mgr.shutdown()
             await self._scheduler_mgr.shutdown_task_runners()
+
+        if getattr(self, "_root_memory_requester_installed", False):
+            from core.memory.rag.singleton import configure_ipc_vector_requester
+
+            configure_ipc_vector_requester(None)
+            self._root_memory_requester_installed = False
 
         # Stop IPC server
         if self.ipc_server:

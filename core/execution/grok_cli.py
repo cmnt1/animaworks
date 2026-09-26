@@ -223,7 +223,7 @@ def _resolve_real_error(
 
 def _grok_error_metadata(message: str, model: str) -> dict[str, Any]:
     """Classify a Grok failure, report fleet blocks, and return chunk metadata."""
-    reason, _hint = classify_llm_error_message(message)
+    reason, hint = classify_llm_error_message(message)
     guarded_reasons = {
         FailoverReason.RATE_LIMIT,
         FailoverReason.OVERLOADED,
@@ -240,6 +240,7 @@ def _grok_error_metadata(message: str, model: str) -> dict[str, Any]:
                 guard_key(provider_family_of(model), "grok"),
                 block_seconds,
                 reason.value,
+                reset_in_s=hint.reset_in_s,
             )
         except Exception:  # noqa: BLE001
             logger.debug("Failed to report Grok error to rate guard", exc_info=True)

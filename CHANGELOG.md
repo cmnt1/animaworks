@@ -7,6 +7,64 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-24
+
+### Added
+
+- Terminal chat UI: running `animaworks chat NAME` without a message opens a Textual TUI. It has a live Anima sidebar and activity feed, Markdown transcript with tool cards, a slash palette that lists built-ins and the Anima's skills (`/<skill>`, `/model`, `/clear`, `/thread(s)`, `/sessions`, `/keys`, `/compact`), session resume with in-flight stream reattach, history paging and login. New CLI flags `--resume`, `--sessions`, `--user/--password` and `--no-reattach`. Install with the new `tui` extra (included in `all-tools`).
+- Per-thread chat model picker in the web chat and workspace, grouped by execution mode. The model catalog is now discovered from the installed CLIs and OpenAI-compatible endpoints (`codex`, `grok`, `claude`, `/models`), with the static list kept as a fallback.
+- Battle view (`/battle`, linked from the sidebar): live Anima tasks visualized as pixel RPG battles, with varied techniques, enemy turns and dedicated Anima poses.
+- Optional Atlas Cloud backend for character image generation (by @binyangzhu000-sudo).
+- Slack: an empty value in `external_messaging.slack.anima_mapping` opts a channel out of routing instead of falling back to `default_anima`.
+- `update_task(resume=True)` requeues an interrupted, done or cancelled task under its original task ID, reusing the stored execution input.
+- Codex mode records `command_execution` and `file_change` in the activity log as Bash and Edit entries.
+- `heartbeat.heartbeat_md_max_bytes` (default `20000`): when an Anima's `heartbeat.md` grows past the limit, the heartbeat prompt asks the Anima to compact it to roughly half.
+- `setup.sh` symlinks `animaworks` and `animaworks-tool` into `~/.local/bin`.
+- Docker image ships git, GitHub CLI, Node.js 22 and the Claude Code CLI; the entrypoint wires `gh auth setup-git` when `GH_TOKEN` is set, and `IS_SANDBOX=1` is baked in so Mode S works as root. README gains a Docker section.
+
+### Changed
+
+- Harness diet: the static system prompt is split into resident, conditional and reference layers. Behavior rules are consolidated into one short template, and directory layout and access tables move to `reference/` docs. Token estimation is now CJK-aware instead of assuming 4 characters per token, and the prompt budget allocator drops whole items, starting with static groups.
+- Priming: keyword gating and per-message-type budgets are removed. Channels emit scored items under a single token budget, near-identical items are deduplicated, and channels C and F show one scored pointer per item with a summary.
+- The action memory gate no longer blocks tool calls. Matching `[ACTION-RULE]` knowledge is attached to the tool result instead.
+- Nightly LLM memory pipelines are back on by default (facts extraction, knowledge self-correction, weekly distillation, skill autolearn, synaptic downscaling). Conflicting facts and forgetting candidates are handed to the weekly consolidation model, replacing the mechanical monthly forgetting job.
+- Mode S passes `--strict-mcp-config` and an explicit tool allowlist to the Claude Code CLI (88 → 34 tools, about 101K → 43K prompt tokens), and a per-Anima model override is no longer silently dropped.
+- Agent runtime slimmed and durable task execution unified. Delegator and receiver share one task ID.
+- Tool-result growth reduced: `list_tasks` returns a compact summary by default (`detail=True` for the full view), and `search_memory` caps results at 8K tokens / 600 lines.
+- `heartbeat.delegation_dm_enabled` (default `true`) lets `delegate_task` skip the wake-up DM.
+- Orphan reaper grace is derived from each Anima's heartbeat interval (`heartbeat.orphan_grace_multiplier` / `heartbeat.orphan_grace_min_seconds`) instead of a fixed 30 minutes.
+- Codex `cached_input_tokens` are recorded as `cache_read_tokens`, and per-execution Codex usage and unknown pricing are accounted for.
+- The container runs `start --foreground`; `animaworks start` falls back to foreground automatically when it is PID 1. Startup preflight warns when Mode S Animas exist but the Claude Code CLI is missing, or when running as root without `IS_SANDBOX=1`.
+- `animaworks-tool task`, when run outside an Anima context, points to `animaworks send`.
+
+### Removed
+
+- Mode B (`AssistedExecutor`). `ollama/*` models and the legacy `assisted` mode value now map to Mode A.
+- The in-process `LifecycleManager` with its inbox watcher, scheduler and rate limiter (production runs on `core.supervisor`).
+- `AttentionResolver`, the goal tool and post-TaskExec goal judging, and the session-summary fuzzy match that marked tasks done.
+- Retired prompts `communication_rules_s`, `hiring_context`, `meeting_chair` and `tool_data_interpretation`. Deprecated config keys `skills.promotion.auto_activate` / `require_approval_on_warn` and `heartbeat.max_messages_per_hour` / `max_messages_per_day` are dropped; existing `config.json` files still load.
+
+### Fixed
+
+- Chat sessions no longer grow without bound: the context baseline is persisted across resumes, an absolute ceiling triggers compaction, and overgrown sessions are recycled before resume.
+- Rate guard honors the provider-stated quota reset time and treats reports from calls already in flight as concurrent instead of doubling the backoff. Codex's bare "hit your usage limit" text is classified as quota exhaustion.
+- Chat SSE streams have an idle timeout, and the polling guard fails safe on stuck streams.
+- Task TTL is measured from the last queue touch, so resuming an old task no longer cancels it immediately.
+- Stop metadata is isolated between resumed attempts, cancelled attempts are recorded without phantom results, the owner's cancellation reason is preserved, task output is retained when completion is undeclared, and sandboxed task updates persist through the host.
+- Memory: incomplete indexing is retried after transient failures, verified embeddings are reused for unchanged chunks, full graph construction stays off the retrieval path, identical knowledge searches are reused within a recall cycle, and memory rebuilds are verified and keep rollback state.
+- Server: worker service readiness is separated from progress phases, worker dependencies are allowed during Anima startup, and the shutdown sequence can finish. SQLite preflight connections close before native ownership.
+- Chatwork: concurrent collectors no longer die with "database is locked".
+- Supervisor exports `ANIMAWORKS_ANIMA_DIR` from the Anima runner and preserves subprocess exit status during reaping.
+- Provider auth is preserved when background credentials are incompatible; wrapped provider failures are routed without multiplying retries; replay guards survive outer model fallback.
+- Vault shared-section values are visible to get/list, and delete is supported.
+- The dev-team docs referred to the nonexistent `animaworks create`; they now use `animaworks anima create --name … --template …`.
+
+### Upgrade notes
+
+- On first start, the `v0140_harness_diet_resync` migration overwrites runtime `prompts/` and `common_knowledge/` from the templates, removes the four retired prompts, and maps any `"mode": "B"` entries in `models.json` to `"A"`. Local edits to `common_knowledge/` files that ship with AnimaWorks are replaced; keep custom knowledge in separately named files.
+- Replace any explicit Mode B configuration with Mode A.
+- Install the `tui` extra (or `all-tools`) to use the terminal chat UI.
+
 ## [0.13.0] - 2026-09-05
 
 ### Added
@@ -1926,7 +1984,8 @@ memory, and decision-making criteria.
 - Moved model mode patterns from config.json to models.json
 - Tool permissions changed from whitelist to default-allow (blacklist) model
 
-[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/xuiltul/animaworks/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/xuiltul/animaworks/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/xuiltul/animaworks/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/xuiltul/animaworks/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/xuiltul/animaworks/compare/v0.10.0...v0.11.0

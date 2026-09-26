@@ -132,7 +132,7 @@ class TestInLoopRetry:
         with patch("litellm.acompletion", mock), pytest.raises(LLMAPIError):
             await executor.execute("test", system_prompt="sys")
         assert mock.call_count == 1
-        _mock_rate_guard.report_block.assert_called_once_with("openai:api", 1800, "auth")
+        _mock_rate_guard.report_block.assert_called_once_with("openai:api", 1800, "auth", reset_in_s=None)
 
     async def test_streaming_reporter_blocks_quota_and_auth(self):
         from core.execution._litellm_streaming import _make_rate_guard_reporter

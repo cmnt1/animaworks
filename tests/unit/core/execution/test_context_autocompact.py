@@ -17,30 +17,33 @@ import pytest
 # The SDK may not be installed in the test environment, so we inject
 # lightweight mock modules that satisfy the import at module level.
 
-_mock_sdk = MagicMock()
-
-# HookInput / HookContext are dict-like in the real SDK.
-# SyncHookJSONOutput is a TypedDict.  For testing we just need them
-# importable and usable as plain dicts / constructors.
-_mock_types = MagicMock()
-
 
 def _sync_hook_json_output(**kwargs: Any) -> dict[str, Any]:
     """Mimic SyncHookJSONOutput as a plain dict."""
     return dict(kwargs)
 
 
-_mock_types.SyncHookJSONOutput = _sync_hook_json_output
-_mock_types.PreToolUseHookSpecificOutput = dict
-_mock_types.HookInput = dict
-_mock_types.HookContext = dict
+try:
+    import claude_agent_sdk.types  # noqa: F401
+except ModuleNotFoundError:
+    _mock_sdk = MagicMock()
 
-sys.modules.setdefault("claude_agent_sdk", _mock_sdk)
-sys.modules.setdefault("claude_agent_sdk.types", _mock_types)
+    # HookInput / HookContext are dict-like in the real SDK.
+    # SyncHookJSONOutput is a TypedDict.  For testing we just need them
+    # importable and usable as plain dicts / constructors.
+    _mock_types = MagicMock()
+
+    _mock_types.SyncHookJSONOutput = _sync_hook_json_output
+    _mock_types.PreToolUseHookSpecificOutput = dict
+    _mock_types.HookInput = dict
+    _mock_types.HookContext = dict
+
+    sys.modules["claude_agent_sdk"] = _mock_sdk
+    sys.modules["claude_agent_sdk.types"] = _mock_types
 
 from core.execution.agent_sdk import (  # noqa: E402
-    _build_pre_tool_hook,
     _CONTEXT_AUTOCOMPACT_SAFETY,
+    _build_pre_tool_hook,
     _tool_result_content_len,
 )
 from core.execution.base import ExecutionResult  # noqa: E402

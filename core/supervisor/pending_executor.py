@@ -105,7 +105,7 @@ def _classify_task_result(result: str) -> tuple[str, str]:
     ``_run_llm_task`` raising ``TaskExecError``.
     """
     if result == _SENTINEL_CANCELLED:
-        return "cancelled", "cancelled before execution"
+        return "cancelled", t("pending_executor.task_cancelled")
     if result == _SENTINEL_EXPIRED:
         return "cancelled", "expired (TTL exceeded)"
     if result == _SENTINEL_BUDGET_SKIPPED:
@@ -183,11 +183,9 @@ class PendingTaskExecutor:
         self._anima_dir = anima_dir
         self._shutdown_event = shutdown_event
         self._wake_event = asyncio.Event()
-        self._batch_tasks: dict[str, list[dict[str, Any]]] = {}
         self._active_dispatch_tasks: set[asyncio.Task[None]] = set()
         self._active_task_ids: set[str] = set()
         self._task_runner_supervisor = task_runner_supervisor
-        self._last_orphan_sweep: float = 0.0
         process_config = resolve_process_model_config(anima_dir)
         if process_config.valid:
             self._task_isolated = bool(process_config.task_process_isolation.task)
@@ -394,30 +392,19 @@ class PendingTaskExecutor:
 
         background_task.add_done_callback(_done)
 
-    # ── Semaphore lazy init ──────────────────────────────────
-
-    def _get_semaphore(self) -> asyncio.Semaphore:
-        """Get or create the task semaphore from config."""
-        if self._anima._task_semaphore is None:
-            try:
-                from core.config.models import load_config
-
-                config = load_config()
-                max_parallel = config.background_task.max_parallel_llm_tasks
-            except Exception:
-                max_parallel = 3
-            self._anima._task_semaphore = asyncio.Semaphore(max_parallel)
-        return self._anima._task_semaphore
-
     # ── Result save / dependency context ─────────────────────
 
     def _save_task_result(self, task_id: str, summary: str) -> None:
         """Save task result summary to state/task_results/{task_id}.md."""
+        from core.memory._io import atomic_write_text
+        from core.taskboard.tasks import current_attempt_identity
+
         results_dir = self._anima_dir / "state" / "task_results"
         results_dir.mkdir(parents=True, exist_ok=True)
-        path = results_dir / f"{task_id}.md"
+        identity = current_attempt_identity()
+        path = (results_dir / task_id / f"{identity['token']}.md") if identity else results_dir / f"{task_id}.md"
         truncated = summary[:_TASK_RESULT_MAX_CHARS]
-        path.write_text(truncated, encoding="utf-8")
+        atomic_write_text(path, truncated)
 
     def _build_dependency_context(
         self,
@@ -473,6 +460,9 @@ class PendingTaskExecutor:
         self._save_task_result(task_id, reason)
         self._record_run_ended(task_id, stop_kind, note=reason)
         self._sync_task_queue(task_id, "pending")
+        if task_desc.get("_attempt_token"):
+            # The canonical attempt wrapper records a durable notification.
+            return
 
         reply_to = task_desc.get("reply_to")
         if isinstance(reply_to, dict):
@@ -523,7 +513,7 @@ class PendingTaskExecutor:
         *,
         summary: str | None = None,
     ) -> None:
-        """Sync task status to task_queue.jsonl (Layer 2).
+        """Update the canonical task status after an execution outcome.
 
         Silently skips if the task is not registered in task_queue
         (e.g., legacy tasks created before this sync was implemented).
@@ -538,6 +528,10 @@ class PendingTaskExecutor:
 
             manager = TaskQueueManager(self._anima_dir)
             entry = manager.get_task_by_id(task_id)
+            if entry and entry.status == "cancelled":
+                # The owner supplied the cancellation reason. A child ending
+                # after observing it must not replace it with a generic result.
+                return
             if entry and entry.status != status and entry.status in _QUEUE_STICKY_STATUSES:
                 # done / cancelled are the anima's own declarations and
                 # delegated hands ownership to a subordinate; a runner-side
@@ -610,88 +604,6 @@ class PendingTaskExecutor:
                 break
         return "\n".join(lines)
 
-    async def _handle_goal_completion(self, task_desc: dict[str, Any], result_summary: str) -> None:
-        """Run persistent-goal judging after a TaskExec task has completed."""
-        task_id = task_desc.get("task_id", "")
-        if not task_id:
-            return
-        try:
-            from core.goals import GoalJudge, GoalManager
-            from core.memory.task_queue import TaskQueueManager
-
-            entry = TaskQueueManager(self._anima_dir).get_task_by_id(task_id)
-            meta = entry.meta if entry is not None else {}
-            goal_id = str(meta.get("goal_id") or task_desc.get("goal_id") or "").strip()
-            if not goal_id:
-                return
-
-            manager = GoalManager(self._anima_dir)
-            state = manager.get_goal(goal_id)
-            if state is None or state.status != "active":
-                return
-
-            judge = GoalJudge(
-                self._anima_dir,
-                judge_fn=getattr(self, "_goal_judge_fn", None),
-            )
-            judgment = await judge.judge(
-                state,
-                task_id=task_id,
-                result_summaries=[result_summary],
-                verification_output=str(task_desc.get("verification_output") or ""),
-            )
-            updated = manager.record_judgment(
-                goal_id,
-                judgment,
-                result_summary=result_summary,
-                actor="goal_judge",
-            )
-            if updated is None or updated.last_judgment is None:
-                return
-
-            actual = updated.last_judgment
-            if actual.verdict == "done":
-                manager.mark_done_activity(updated)
-                return
-            if actual.verdict == "blocked":
-                manager.mark_blocked_activity(updated)
-                await self._notify_goal_blocked(updated)
-                return
-            if actual.verdict == "continue":
-                continuation = manager.enqueue_continuation(
-                    goal_id,
-                    actual,
-                    source_task_desc=task_desc,
-                    result_summary=result_summary,
-                    respect_human_priority=True,
-                )
-                if continuation is not None:
-                    self.wake()
-        except Exception:
-            logger.warning(
-                "[%s] Goal completion hook failed for task %s",
-                self._anima_name,
-                task_id,
-                exc_info=True,
-            )
-
-    async def _notify_goal_blocked(self, state: Any) -> None:
-        """Best-effort human notification for blocked persistent goals."""
-        try:
-            agent = getattr(self._anima, "agent", None)
-            notifier = getattr(agent, "human_notifier", None)
-            if notifier is None:
-                return
-            reason = state.blocked_reason or (state.last_judgment.reason if state.last_judgment else "")
-            await notifier.notify(
-                f"Goal blocked: {state.title or state.goal_id}",
-                reason or state.objective,
-                "high",
-                anima_name=self._anima_name,
-            )
-        except Exception:
-            logger.debug("[%s] Goal blocked notification failed", self._anima_name, exc_info=True)
-
     # ── Watcher loop ─────────────────────────────────────────
 
     @staticmethod
@@ -762,143 +674,6 @@ class PendingTaskExecutor:
                     task_id,
                 )
 
-    async def _execute_claimed_llm_task(
-        self,
-        task_desc: dict[str, Any],
-        processing_path: Path,
-        worker_slot: BackgroundWorkerSlot | None,
-    ) -> None:
-        """Run a claimed single LLM task without blocking the coordinator."""
-        task_id = str(task_desc.get("task_id") or processing_path.stem).strip()
-        touch_task = asyncio.create_task(
-            self._touch_processing_descriptor(processing_path),
-            name=f"task-touch-{self._anima_name}-{task_id}",
-        )
-        try:
-            exec_kwargs: dict[str, Any] = {"worker_slot": worker_slot}
-            if self._task_isolated and self._task_runner_supervisor is not None:
-                exec_kwargs["processing_path"] = processing_path
-            await self.execute_pending_task(task_desc, **exec_kwargs)
-            _unlink_processing_descriptor(processing_path)
-        except asyncio.CancelledError:
-            if self._shutdown_event.is_set():
-                logger.info(
-                    "[%s] Shutdown interrupted task %s; left in processing/ for startup recovery",
-                    self._anima_name,
-                    task_id,
-                )
-                raise
-            try:
-                _unlink_processing_descriptor(processing_path)
-            except OSError:
-                logger.exception("Failed to drop cancelled task descriptor: %s", processing_path.name)
-            self._return_task_to_pending(
-                task_desc,
-                "INTERRUPTED: the run was cancelled outside shutdown and may have "
-                "PARTIALLY EXECUTED. Verify the actual state before running it again.",
-                stop_kind="cancelled",
-            )
-            raise
-        except Exception as exc:
-            if self._shutdown_event.is_set():
-                logger.info(
-                    "[%s] Shutdown interrupted task %s; left in processing/ for startup recovery",
-                    self._anima_name,
-                    task_id,
-                )
-                return
-            logger.exception("Error processing LLM pending task file: %s", processing_path.name)
-            try:
-                _unlink_processing_descriptor(processing_path)
-            except OSError:
-                logger.exception("Failed to drop task descriptor: %s", processing_path.name)
-            self._return_task_to_pending(
-                task_desc,
-                f"{type(exc).__name__}: {str(exc)[:200]}",
-                stop_kind="crash",
-            )
-        finally:
-            touch_task.cancel()
-            await asyncio.gather(touch_task, return_exceptions=True)
-            # A replacement root must see a still-live isolated child; removing
-            # its lease here allowed restart recovery to dispatch the same task.
-            if not (self._shutdown_event.is_set() and processing_path.exists()):
-                _remove_processing_lease(processing_path)
-            self._active_task_ids.discard(task_id)
-            # A pre-leased slot is normally released by _execute_llm_task.  If
-            # dispatch was cancelled before it entered that method, release it here.
-            active = getattr(self._anima, "_active_background_workers", {})
-            if (
-                worker_slot is not None
-                and isinstance(active, dict)
-                and active.get(worker_slot.slot_id) == task_desc.get("task_id")
-            ):
-                await self._release_worker(worker_slot)
-
-    async def _execute_claimed_batch(
-        self,
-        batch_id: str,
-        tasks: list[dict[str, Any]],
-    ) -> None:
-        """Dispatch one accepted batch while retaining its active task ids.
-
-        Batches are not serialized against each other: concurrency is already
-        bounded by ``_task_semaphore`` (parallel tasks) and ``_background_lock``
-        (serial tasks). Serializing whole batches made every later heartbeat
-        submission wait for the slowest task of the previous batch
-        (observed 2026-09-03: a 6-task batch sat behind one CI-polling task).
-        """
-        try:
-            await self._dispatch_batch(batch_id, tasks)
-        finally:
-            self._active_task_ids.difference_update(str(task.get("task_id") or "").strip() for task in tasks)
-
-    def _run_orphan_sweep(self) -> int:
-        """Reap orphan tasks and notify; returns the number reaped.
-
-        File I/O and messaging are synchronous, so this is always invoked
-        inside ``asyncio.to_thread`` to keep the watcher's loop responsive.
-        A single task failing must not abort the sweep (handled in
-        ``reap_orphan_tasks``) and any unexpected error here is contained to a
-        warning so the watcher loop keeps running.
-        """
-        from core.supervisor.orphan_reaper import notify_reaped, reap_orphan_tasks
-
-        try:
-            reaped = reap_orphan_tasks(
-                self._anima_dir,
-                active_task_ids=set(self._active_task_ids),
-            )
-        except Exception:
-            logger.warning(
-                "[%s] Orphan sweep failed",
-                self._anima_name,
-                exc_info=True,
-            )
-            return 0
-        if not reaped:
-            return 0
-        try:
-            notify_reaped(self._anima_name, reaped)
-        except Exception:
-            logger.warning(
-                "[%s] Orphan reaped-notification failed for %d task(s)",
-                self._anima_name,
-                len(reaped),
-                exc_info=True,
-            )
-        logger.info("Orphan sweep: anima=%s reaped=%d", self._anima_name, len(reaped))
-        return len(reaped)
-
-    async def _maybe_run_orphan_sweep(self) -> None:
-        """Run a throttled orphan sweep, at most once per interval."""
-        from core.supervisor.orphan_reaper import _ORPHAN_SWEEP_INTERVAL_SECONDS
-
-        if time.monotonic() - self._last_orphan_sweep < _ORPHAN_SWEEP_INTERVAL_SECONDS:
-            return
-        self._last_orphan_sweep = time.monotonic()
-        await asyncio.to_thread(self._run_orphan_sweep)
-
     async def watcher_loop(self) -> None:
         """Watch state/background_tasks/pending/ for submitted tasks.
 
@@ -914,16 +689,10 @@ class PendingTaskExecutor:
         cmd_processing_dir = pending_dir / "processing"
         cmd_processing_dir.mkdir(exist_ok=True)
 
-        llm_pending_dir = self._anima_dir / "state" / "pending"
-        llm_pending_dir.mkdir(parents=True, exist_ok=True)
-        llm_processing_dir = llm_pending_dir / "processing"
-        llm_processing_dir.mkdir(exist_ok=True)
-
         def _recovered(task_desc: dict[str, Any], reason: str) -> None:
             self._return_task_to_pending(task_desc, reason, stop_kind="crash")
 
         self._recover_processing(cmd_processing_dir, self._anima_dir, _recovered)
-        self._recover_processing(llm_processing_dir, self._anima_dir, _recovered)
 
         logger.info("Pending task watcher started for %s", self._anima_name)
 
@@ -990,106 +759,29 @@ class PendingTaskExecutor:
                             self._active_task_ids.discard(claimed_task_id)
                             _remove_processing_lease(processing_path)
 
-                # Scan LLM pending tasks — group batch tasks, execute serial ones
-                for path in self._order_pending_claims(list(llm_pending_dir.glob("*.json"))):
-                    try:
-                        task_desc = json.loads(path.read_text(encoding="utf-8"))
-                    except json.JSONDecodeError:
-                        logger.warning(
-                            "Invalid JSON in LLM pending task file: %s",
-                            path.name,
-                        )
-                        path.unlink(missing_ok=True)
-                        continue
-                    if not isinstance(task_desc, dict):
-                        # Not a task descriptor (e.g. an anima's scratch JSON
-                        # dropped into pending/); park it instead of crashing
-                        # the watcher loop on every tick (sumire, 2026-08-30).
-                        logger.warning(
-                            "Non-object JSON in LLM pending task file, dropping: %s",
-                            path.name,
-                        )
-                        path.unlink(missing_ok=True)
-                        continue
+                # One canonical claim transaction owns task, input, and attempt.
+                from core.memory.task_queue import TaskQueueManager
+                from core.taskboard.tasks import process_identity
 
-                    if self._should_defer_claim(path, task_desc, llm_processing_dir):
+                store = TaskQueueManager(self._anima_dir).store
+                self._recover_task_attempts(store)
+                self._deliver_task_wakeups(store)
+                for payload in store.pending(self._anima_name):
+                    task_desc = store.claim(
+                        self._anima_name,
+                        str(payload["task_id"]),
+                        process_identity(),
+                        max_active=self._worker_pool_size(),
+                    )
+                    if task_desc is None:
                         continue
-
-                    try:
-                        processing_path = llm_processing_dir / path.name
-                        path.rename(processing_path)
-                    except OSError:
-                        logger.exception(
-                            "Failed to move LLM task to processing: %s",
-                            path.name,
-                        )
-                        continue
-
-                    claimed_task_id = self._claim_processing_task(processing_path, task_desc)
-                    if claimed_task_id is None:
-                        continue
-                    claim_transferred = False
-                    try:
-                        batch_id = task_desc.get("batch_id")
-                        if batch_id:
-                            self._batch_tasks.setdefault(batch_id, []).append(task_desc)
-                            claim_transferred = True
-                            logger.info(
-                                "Queued batch task: id=%s batch=%s anima=%s",
-                                task_desc.get("task_id", "?"),
-                                batch_id,
-                                self._anima_name,
-                            )
-                        else:
-                            task_id = task_desc.get("task_id", "")
-                            logger.info(
-                                "Picked up LLM pending task: id=%s anima=%s",
-                                task_id,
-                                self._anima_name,
-                            )
-                            if self._worker_pool_size() > 1:
-                                worker_slot = await self._acquire_worker(task_id)
-                                if worker_slot is not None:
-                                    dispatch = asyncio.create_task(
-                                        self._execute_claimed_llm_task(
-                                            task_desc,
-                                            processing_path,
-                                            worker_slot,
-                                        ),
-                                        name=f"taskexec-{self._anima_name}-{task_id}",
-                                    )
-                                    self._track_dispatch_task(dispatch)
-                                    claim_transferred = True
-                                else:
-                                    await self._execute_claimed_llm_task(task_desc, processing_path, None)
-                                    claim_transferred = True
-                            else:
-                                await self._execute_claimed_llm_task(task_desc, processing_path, None)
-                                claim_transferred = True
-                        if batch_id:
-                            _unlink_processing_descriptor(processing_path)
-                    except Exception:
-                        logger.exception(
-                            "Error processing LLM pending task file: %s",
-                            path.name,
-                        )
-                        processing_path.unlink(missing_ok=True)
-                    finally:
-                        if not claim_transferred:
-                            self._active_task_ids.discard(claimed_task_id)
-                            _remove_processing_lease(processing_path)
-
-                # Dispatch accumulated batch tasks
-                for batch_id, tasks in list(self._batch_tasks.items()):
-                    del self._batch_tasks[batch_id]
+                    task_id = task_desc["task_id"]
+                    self._active_task_ids.add(task_id)
                     dispatch = asyncio.create_task(
-                        self._execute_claimed_batch(batch_id, tasks),
-                        name=f"taskexec-batch-{self._anima_name}-{batch_id}",
+                        self._execute_canonical_task(task_desc),
+                        name=f"taskexec-{self._anima_name}-{task_id}",
                     )
                     self._track_dispatch_task(dispatch)
-
-                # Throttled orphan sweep (ledger rows with no descriptor).
-                await self._maybe_run_orphan_sweep()
 
                 try:
                     await asyncio.wait_for(
@@ -1132,176 +824,141 @@ class PendingTaskExecutor:
                 task.cancel()
             await asyncio.gather(*active_dispatch_tasks, return_exceptions=True)
             self._active_dispatch_tasks.difference_update(active_dispatch_tasks)
-        for tasks in self._batch_tasks.values():
-            self._active_task_ids.difference_update(str(task.get("task_id") or "").strip() for task in tasks)
-        self._batch_tasks.clear()
         logger.info("Pending task watcher stopped for %s", self._anima_name)
 
-    # ── DAG batch dispatch ──────────────────────────────────────
+    def _recover_task_attempts(self, store: Any) -> None:
+        """Only proven-dead owners become incomplete; never replay side effects."""
+        from core.taskboard.tasks import identity_liveness
 
-    async def _dispatch_batch(
-        self,
-        batch_id: str,
-        tasks: list[dict[str, Any]],
-    ) -> None:
-        """Dispatch a batch of tasks respecting DAG dependencies.
+        for attempt in store.active_attempts(self._anima_name):
+            if attempt["task_id"] in self._active_task_ids:
+                continue
+            if identity_liveness(json.loads(attempt["identity_json"])) != "dead":
+                continue
+            entry = store.read(self._anima_name, archived=True).get(attempt["task_id"])
+            status = entry.status if entry and entry.status in {"done", "cancelled"} else "pending"
+            store.finish(attempt["token"], status=status, stop_kind="owner_exited")
 
-        Independent parallel tasks run under ``_task_semaphore``.
-        Serial tasks (``parallel=false``) and dependency-gated tasks
-        run sequentially under ``_background_lock``.
-        """
-        logger.info(
-            "[%s] Dispatching batch %s with %d tasks",
-            self._anima_name,
-            batch_id,
-            len(tasks),
-        )
-
-        try:
-            order = _topological_sort(tasks)
-        except ValueError:
-            logger.error(
-                "[%s] Cycle detected in batch %s; aborting all tasks",
-                self._anima_name,
-                batch_id,
-            )
-            for td in tasks:
-                self._return_task_to_pending(td, "cycle_in_batch", stop_kind="cycle_in_batch")
-            return
-
-        completed: dict[str, str] = {}  # task_id -> result_summary
-        unfinished: set[str] = set()
-        remaining = list(order)
-
-        while remaining:
-            ready = [td for td in remaining if _deps_satisfied(td, completed, unfinished)]
-            if not ready:
-                for td in remaining:
-                    unfinished.add(td["task_id"])
-                    self._return_task_to_pending(td, _DEPENDENCY_UNFINISHED, stop_kind="dependency")
-                break
-
-            parallel_ready = [td for td in ready if td.get("parallel")]
-            serial_ready = [td for td in ready if not td.get("parallel")]
-
-            # Skip parallel tasks whose dependencies never completed
-            for td in list(parallel_ready):
-                if any(dep in unfinished for dep in td.get("depends_on", [])):
-                    parallel_ready.remove(td)
-                    remaining.remove(td)
-                    unfinished.add(td["task_id"])
-                    self._return_task_to_pending(td, _DEPENDENCY_UNFINISHED, stop_kind="dependency")
-
-            # Execute parallel tasks concurrently under semaphore
-            if parallel_ready:
-                coros = [self._execute_parallel_task(td, completed, batch_id) for td in parallel_ready]
-                results = await asyncio.gather(*coros, return_exceptions=True)
-                for task, result in zip(parallel_ready, results, strict=False):
-                    remaining.remove(task)
-                    if isinstance(result, Exception):
-                        logger.error(
-                            "[%s] Parallel task %s failed: %s",
-                            self._anima_name,
-                            task["task_id"],
-                            result,
-                        )
-                        unfinished.add(task["task_id"])
-                        self._return_task_to_pending(
-                            task,
-                            f"batch execution failed: {type(result).__name__}: {str(result)[:200]}",
-                            stop_kind="crash",
-                        )
-                    elif result in _NON_COMPLETING_SENTINELS:
-                        # Non-completing tasks cannot satisfy DAG dependencies.
-                        unfinished.add(task["task_id"])
-                    else:
-                        completed[task["task_id"]] = result or ""
-
-            # Execute serial tasks sequentially
-            for task in serial_ready:
-                remaining.remove(task)
-                if any(dep in unfinished for dep in task.get("depends_on", [])):
-                    unfinished.add(task["task_id"])
-                    self._return_task_to_pending(task, _DEPENDENCY_UNFINISHED, stop_kind="dependency")
-                    continue
-                try:
-                    result = await self._execute_serial_batch_task(
-                        task,
-                        completed,
-                        batch_id,
-                    )
-                    if result in _NON_COMPLETING_SENTINELS:
-                        unfinished.add(task["task_id"])
-                    else:
-                        completed[task["task_id"]] = result or ""
-                except Exception as exc:
-                    logger.error(
-                        "[%s] Serial batch task %s failed: %s",
-                        self._anima_name,
-                        task["task_id"],
-                        exc,
-                    )
-                    unfinished.add(task["task_id"])
-                    self._return_task_to_pending(
-                        task,
-                        f"batch execution failed: {type(exc).__name__}: {str(exc)[:200]}",
-                        stop_kind="crash",
-                    )
-
-        logger.info(
-            "[%s] Batch %s complete: %d completed, %d unfinished",
-            self._anima_name,
-            batch_id,
-            len(completed),
-            len(unfinished),
-        )
-
-    async def _execute_parallel_task(
-        self,
-        task_desc: dict[str, Any],
-        completed_results: dict[str, str],
-        batch_id: str,
-    ) -> str:
-        """Execute a single parallel task under the semaphore (no _background_lock)."""
-        task_id = task_desc.get("task_id", "unknown")
-        title = task_desc.get("title", "Untitled")
-
-        async with self._get_semaphore():
-            # Register in active parallel tasks
-            self._anima._active_parallel_tasks[task_id] = {
-                "title": title,
-                "description": (task_desc.get("description", ""))[:100],
-                "started_at": datetime.now(UTC).isoformat(),
-                "batch_id": batch_id,
-                "status": "running",
-                "depends_on": task_desc.get("depends_on", []),
-            }
+    def _deliver_task_wakeups(self, store: Any) -> None:
+        """Retry the durable outbox, independent of periodic heartbeat enablement."""
+        for event in store.wakeups(self._anima_name):
+            payload = store.get_input(self._anima_name, event["task_id"]) or {}
+            reply_to = payload.get("reply_to")
+            if isinstance(reply_to, dict):
+                reply_to = reply_to.get("name")
+            completion = event["reason"] == "completion"
+            recipients = set() if completion else {self._anima_name}
+            if isinstance(reply_to, str) and reply_to:
+                recipients.add(reply_to)
             try:
-                result = await self._run_task_in_worker(task_desc, completed_results)
-                status, summary = _classify_task_result(result)
-                self._save_task_result(task_id, result)
-                self._sync_task_queue(task_id, status, summary=summary)
-                if status == "done":
-                    await self._handle_goal_completion(task_desc, result)
-                return result
-            finally:
-                self._anima._active_parallel_tasks.pop(task_id, None)
+                if completion:
+                    from core.paths import load_prompt
 
-    async def _execute_serial_batch_task(
-        self,
-        task_desc: dict[str, Any],
-        completed_results: dict[str, str],
-        batch_id: str,
-    ) -> str:
-        """Execute a serial batch task under _background_lock."""
-        task_id = task_desc.get("task_id", "unknown")
-        result = await self._run_task_in_worker(task_desc, completed_results)
-        status, summary = _classify_task_result(result)
-        self._save_task_result(task_id, result)
-        self._sync_task_queue(task_id, status, summary=summary)
-        if status == "done":
-            await self._handle_goal_completion(task_desc, result)
-        return result
+                    entry = store.read(self._anima_name, archived=True).get(event["task_id"])
+                    result = str(entry.meta.get("result_note") or entry.summary) if entry else ""
+                    content = load_prompt(
+                        "task_complete_notify",
+                        task_id=event["task_id"],
+                        title=payload.get("title", event["task_id"]),
+                        result_summary=result[:_TASK_COMPLETE_NOTIFY_MAX_CHARS],
+                    )
+                else:
+                    content = t(
+                        "pending_executor.task_fail_notify",
+                        task_id=event["task_id"],
+                        title=payload.get("title", event["task_id"]),
+                        error=event["reason"],
+                    )
+                for recipient in sorted(recipients):
+                    self._anima.messenger.send(
+                        to=recipient,
+                        content=content,
+                        msg_type="system_alert",
+                        intent="report",
+                        meta={
+                            "task_id": event["task_id"],
+                            "attempt_token": event["attempt_token"],
+                            "event": "task_completed" if completion else "task_needs_attention",
+                        },
+                        delivery_id=f"task-wakeup-{event['attempt_token']}",
+                    )
+                store.acknowledge_wakeup(self._anima_name, event["attempt_token"])
+            except Exception:
+                logger.warning("Task wakeup delivery retained for retry: %s", event["task_id"], exc_info=True)
+
+    async def _execute_canonical_task(self, task_desc: dict[str, Any]) -> None:
+        from core.memory.task_queue import TaskQueueManager
+        from core.taskboard.tasks import attempt_scope
+
+        task_id = str(task_desc["task_id"])
+        token = str(task_desc["_attempt_token"])
+        store = TaskQueueManager(self._anima_dir).store
+        identity = {"anima": self._anima_name, "task_id": task_id, "token": token}
+        stop_kind = "normal"
+        cancel_watch: asyncio.Task[None] | None = None
+        try:
+            with attempt_scope(identity):
+                entries = store.read(self._anima_name, archived=True)
+                task_desc = {
+                    **task_desc,
+                    "_completed_results": {
+                        dependency: str(entries[dependency].meta.get("result_note") or entries[dependency].summary)
+                        for dependency in task_desc.get("depends_on", [])
+                        if dependency in entries
+                    },
+                }
+                execution = asyncio.create_task(self.execute_pending_task(task_desc))
+                if not self._task_isolated:
+                    cancel_watch = asyncio.create_task(self._watch_canonical_cancel(task_id, execution))
+                await execution
+        except asyncio.CancelledError:
+            stop_kind = "interrupted"
+            raise
+        except Exception:
+            stop_kind = "crash"
+            logger.exception("Task attempt failed: %s", task_id)
+        finally:
+            if cancel_watch is not None:
+                cancel_watch.cancel()
+                await asyncio.gather(cancel_watch, return_exceptions=True)
+            entry = store.read(self._anima_name, archived=True).get(task_id)
+            status = entry.status if entry and entry.status in {"done", "cancelled"} else "pending"
+            if entry and stop_kind == "normal":
+                # A caught runner failure/cancellation is newer than the cycle
+                # metadata (e.g. shutdown after the model declared completion).
+                stop_kind = str(entry.meta.get("last_run_stop_kind") or stop_kind)
+            if status == "cancelled" and stop_kind == "normal":
+                # Cancellation can terminate an isolated child before it returns
+                # a result. The sticky cancelled path must not look like a
+                # normally completed run merely because its error was handled.
+                stop_kind = "interrupted"
+            from core.taskboard.tasks import identity_liveness
+
+            active = next((item for item in store.active_attempts(self._anima_name) if item["token"] == token), None)
+            child_still_live = False
+            if active:
+                owner = json.loads(active["identity_json"])
+                child_pid = owner.get("task_pid") or owner.get("pid")
+                child_still_live = child_pid != os.getpid() and identity_liveness(owner) != "dead"
+            if not child_still_live:
+                result_ref = f"state/task_results/{task_id}/{token}.md"
+                store.finish(
+                    token,
+                    status=status,
+                    stop_kind=stop_kind,
+                    result_ref=result_ref if (self._anima_dir / result_ref).is_file() else "",
+                )
+            self._active_task_ids.discard(task_id)
+            self.wake()
+
+    async def _watch_canonical_cancel(self, task_id: str, execution: asyncio.Task[Any]) -> None:
+        """Cancellation must work even when a model/tool yields no stream chunks."""
+        while not execution.done():
+            await asyncio.sleep(_CANCEL_POLL_SECONDS)
+            entry = await asyncio.to_thread(self._get_task_queue_entry, task_id)
+            if entry is not None and entry.status == "cancelled":
+                execution.cancel()
+                return
 
     async def _run_task_in_worker(
         self,
@@ -1356,6 +1013,8 @@ class PendingTaskExecutor:
             "task_id": task_id,
             "title": title,
             "submitted_by": submitted_by,
+            "attempt_token": task_desc.get("_attempt_token", ""),
+            "attempt": task_desc.get("_attempt_number"),
         }
         activity = ActivityLogger(self._anima_dir)
         activity.log(
@@ -1434,8 +1093,7 @@ class PendingTaskExecutor:
 
         try:
             from core.config import load_config
-            from core.config.model_config import build_model_override_config
-            from core.config.model_mode import parse_fallback_entry
+            from core.config.model_config import resolve_model_selection
 
             cfg = load_config()
         except Exception as exc:
@@ -1446,22 +1104,20 @@ class PendingTaskExecutor:
             )
             return None
 
-        parsed = parse_fallback_entry(requested, cfg)
-        if parsed is None:
+        try:
+            override = resolve_model_selection(
+                base,
+                lane="task",
+                requested_model=requested,
+                config=cfg,
+                apply_fallback=False,
+            ).effective
+        except ValueError as exc:
             logger.warning(
-                "[%s] Ignoring invalid per-task model override %r; using anima default",
+                "[%s] Ignoring invalid per-task model override %r; using anima default: %s",
                 self._anima_name,
                 requested,
-            )
-            return None
-        mode, model = parsed
-
-        override = build_model_override_config(base, mode, model, cfg)
-        if override is None:
-            logger.warning(
-                "[%s] No credential for per-task model override %r; using anima default",
-                self._anima_name,
-                requested,
+                exc,
             )
             return None
         try:
@@ -1470,7 +1126,7 @@ class PendingTaskExecutor:
                 summary=t(
                     "pending_executor.model_override",
                     requested=requested,
-                    resolved=model,
+                    resolved=override.model,
                 ),
                 ctx=f"task:{task_desc.get('task_id', 'unknown')}",
                 meta={
@@ -1505,10 +1161,13 @@ class PendingTaskExecutor:
         submitted_at = task_desc.get("submitted_at", "")
 
         # Skip if task was cancelled in task_queue (batch path; single path checks in watcher)
+        touched_at = ""
         try:
             from core.memory.task_queue import TaskQueueManager
 
             entry = TaskQueueManager(self._anima_dir).get_task_by_id(task_id)
+            if entry:
+                touched_at = entry.updated_at or ""
             if entry and entry.status == "cancelled":
                 logger.info(
                     "[%s] Skipping cancelled LLM task: id=%s",
@@ -1523,12 +1182,19 @@ class PendingTaskExecutor:
                 exc_info=True,
             )
 
-        # TTL check
-        if submitted_at:
+        # TTL check. The saved input (and its submitted_at) is immutable across
+        # resume, so age is measured from the newest of submission and the last
+        # queue touch; otherwise a resumed task older than the TTL dies on start.
+        stamps = []
+        for raw in (submitted_at, touched_at):
             try:
-                sub_dt = datetime.fromisoformat(submitted_at)
-                if sub_dt.tzinfo is None:
-                    sub_dt = sub_dt.replace(tzinfo=UTC)
+                stamp = datetime.fromisoformat(raw)
+            except (ValueError, TypeError):
+                continue
+            stamps.append(stamp if stamp.tzinfo else stamp.replace(tzinfo=UTC))
+        if stamps:
+            try:
+                sub_dt = max(stamps)
                 now_utc = datetime.now(UTC)
                 age_hours = (now_utc - sub_dt).total_seconds() / 3600
                 if age_hours > _LLM_TASK_TTL_HOURS:
@@ -1719,6 +1385,7 @@ class PendingTaskExecutor:
             raise RuntimeError(task_failed_reason)
 
         if stop_kind == "budget_skipped":
+            self._record_run_ended(task_id, stop_kind)
             logger.info("[%s] Task %s skipped without execution: token budget unavailable", self._anima_name, task_id)
             return _SENTINEL_BUDGET_SKIPPED
 
@@ -1733,11 +1400,19 @@ class PendingTaskExecutor:
         # pending: no continuation, no probe, no descriptor regeneration.
         entry = self._get_task_queue_entry(task_id)
         if entry is not None:
+            # Business completion and execution termination are separate: a
+            # declared task can still have an interrupted stream. Persist the
+            # current run's outcome for the canonical attempt finalizer too.
+            self._record_run_ended(task_id, stop_kind)
             meta = entry.meta if isinstance(entry.meta, dict) else {}
             if entry.status == "cancelled":
                 return _SENTINEL_CANCELLED
             if entry.status not in ("done", "delegated"):
-                self._record_run_ended(task_id, stop_kind)
+                # Keep the actual outcome available to the owner even when
+                # completion could not be declared (e.g. a tool failed while
+                # updating the ledger). The sentinel controls task state; it
+                # must not replace the model's evidence in the result file.
+                self._save_task_result(task_id, f"{_SENTINEL_UNDECLARED}\n\n{result_summary}")
                 logger.info(
                     "[%s] LLM task ended without a completion declaration: id=%s stop_kind=%s",
                     self._anima_name,
@@ -1749,6 +1424,10 @@ class PendingTaskExecutor:
                 result_summary = str(meta.get("result_note") or result_summary)
 
         # Send completion notification
+        if task_desc.get("_attempt_token"):
+            # Completion and its retryable outbox event commit together on
+            # the root. Notification delivery never changes task outcome.
+            reply_to = None
         if reply_to:
             if isinstance(reply_to, dict):
                 reply_to = reply_to.get("name")
@@ -1968,6 +1647,20 @@ class PendingTaskExecutor:
         }
 
         async def _on_spawned(job: Any) -> None:
+            if token := task_desc.get("_attempt_token"):
+                from core.memory.task_queue import TaskQueueManager
+
+                TaskQueueManager(self._anima_dir).store.set_identity(
+                    str(token),
+                    {
+                        "pid": os.getpid(),
+                        "task_pid": job.pid,
+                        "pgid": job.pgid,
+                        "job_id": job.identity.job_id,
+                        "root_epoch": job.identity.root_epoch,
+                        "process_start_time": job.process_start_time,
+                    },
+                )
             if processing_path is not None:
                 await self._write_lease_v2_for_job(
                     processing_path,
@@ -2038,15 +1731,16 @@ class PendingTaskExecutor:
                 # Worker lease also gates concurrent isolated children (pool size).
                 result = await self._run_task_in_worker(
                     task_desc,
+                    task_desc.get("_completed_results"),
                     worker_slot=worker_slot,
                     processing_path=processing_path,
                 )
             else:
-                result = await self._run_llm_task(task_desc)
+                result = await self._run_llm_task(task_desc, task_desc.get("_completed_results"))
+            if result != _SENTINEL_UNDECLARED:
+                self._save_task_result(task_id, result)
             status, summary = _classify_task_result(result)
             self._sync_task_queue(task_id, status, summary=summary)
-            if status == "done":
-                await self._handle_goal_completion(task_desc, result)
         except Exception as exc:
             if self._shutdown_event.is_set():
                 logger.info(
@@ -2098,11 +1792,25 @@ class PendingTaskExecutor:
 
         assert self._task_runner_supervisor is not None
         task_id = str(task_desc.get("task_id") or "unknown")
-        attempt = self._next_attempt(task_id)
+        attempt = int(task_desc.get("_attempt_number") or self._next_attempt(task_id))
         slot_id = worker_slot.slot_id if worker_slot is not None else None
         display_lane = self._display_lane_for_task(task_id, slot_id)
 
         async def _on_spawned(job: Any) -> None:
+            if token := task_desc.get("_attempt_token"):
+                from core.memory.task_queue import TaskQueueManager
+
+                TaskQueueManager(self._anima_dir).store.set_identity(
+                    str(token),
+                    {
+                        "pid": os.getpid(),
+                        "task_pid": job.pid,
+                        "pgid": job.pgid,
+                        "job_id": job.identity.job_id,
+                        "root_epoch": job.identity.root_epoch,
+                        "process_start_time": job.process_start_time,
+                    },
+                )
             if processing_path is not None:
                 await self._write_lease_v2_for_job(
                     processing_path,

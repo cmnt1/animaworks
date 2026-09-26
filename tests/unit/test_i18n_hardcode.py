@@ -75,7 +75,8 @@ _REGEX_METACHAR_RE = re.compile(
 
 KNOWN_VIOLATIONS: dict[str, int] = {
     # bilingual empty-state placeholders for prompt injection (ja/en)
-    "core/_anima_lifecycle.py": 2,
+    # (knowledge list / merge candidates / conflict candidates / forgetting candidates none-lines)
+    "core/_anima_lifecycle.py": 4,
     # command templates with {返信内容} — borderline (platform-specific CLI syntax)
     "core/_anima_inbox.py": 3,
     # MD section names used for parsing (基本情報, 人格, etc.)
@@ -92,9 +93,7 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/prompt/messaging.py": 2,
     "core/prompt/org_context.py": 3,
     "core/response_normalize.py": 15,
-    "core/supervisor/scheduler_manager.py": 1,
     # orphan reaper — Japanese notification body sent to the owning anima (plan-specified wording)
-    "core/supervisor/orphan_reaper.py": 3,
     # label "個人ツール"
     "core/tooling/handler_memory.py": 1,
     # tool descriptions — already have ja/en dict structure
@@ -123,7 +122,9 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     # project-task board: Japanese column/field labels (カテゴリ, タスク名, ステータス…)
     "server/project_tasks.py": 11,
     # LLM extraction + dedupe + invalidation + community prompt templates — intentionally Japanese for ja locale
-    "core/memory/extraction/prompts/ja.py": 7,
+    "core/memory/extraction/prompts/ja.py": 4,
+    # diagnostic metadata rendered by the forgetting pipeline
+    "core/memory/forgetting.py": 1,
     # auth-failure / token-expiry messages surfaced to the dashboard
     "core/execution/agent_sdk.py": 2,
     # Governor notification suppression messages

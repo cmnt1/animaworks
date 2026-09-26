@@ -12,11 +12,10 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any
 
 from core.paths import PROJECT_DIR, load_prompt, load_prompt_text
 from core.prompt.org_context import _is_mcp_mode
-from core.prompt.sections import _load_fallback_strings, _load_section_strings
+from core.prompt.sections import _load_fallback_strings
 
 logger = logging.getLogger("animaworks.prompt_builder")
 
@@ -168,43 +167,6 @@ def _load_a_reflection() -> str:
     except Exception:
         logger.debug("a_reflection template not found, skipping")
         return ""
-
-
-def _build_recent_tool_section(anima_dir: Path, model_config: Any) -> str:
-    """Build a summary of recent tool results for system prompt injection.
-
-    Reads the last few turns from ConversationMemory and extracts tool
-    records with result summaries, constrained to a ~2000 token budget.
-    """
-    try:
-        from core.memory.conversation import ConversationMemory
-
-        conv_memory = ConversationMemory(anima_dir, model_config)
-        state = conv_memory.load()
-    except Exception:
-        return ""
-    if not state.turns:
-        return ""
-
-    tool_lines: list[str] = []
-    budget_remaining = 2000  # approximate token budget (~8000 chars)
-    for turn in reversed(state.turns[-3:]):
-        for tr in turn.tool_records[:5]:
-            if not tr.result_summary:
-                continue
-            line = f"- {tr.tool_name}: {tr.result_summary[:500]}"
-            budget_remaining -= len(line) // 4
-            if budget_remaining <= 0:
-                break
-            tool_lines.append(line)
-        if budget_remaining <= 0:
-            break
-
-    if not tool_lines:
-        return ""
-    _ss = _load_section_strings()
-    header = _ss.get("recent_tool_results_header", "## Recent Tool Results")
-    return f"{header}\n\n" + "\n".join(tool_lines)
 
 
 def _build_human_notification_guidance(execution_mode: str = "") -> str:

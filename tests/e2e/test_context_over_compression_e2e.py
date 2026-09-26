@@ -16,24 +16,22 @@ import json
 from datetime import timedelta
 from pathlib import Path
 
-
-from core.memory.conversation import (
-    ConversationMemory,
-    ToolRecord,
-    _MAX_TOOL_RESULT_SUMMARY,
-)
-from core.memory.shortterm import SessionState, ShortTermMemory
 from core.execution.base import (
-    tool_result_save_budget,
     _BUDGET_FLOOR,
     _BUDGET_SCALE_MAX,
     _BUDGET_SCALE_MIN,
     _REFERENCE_CONTEXT_WINDOW,
     _TOOL_RESULT_BASE_BUDGET,
     _TOOL_RESULT_DEFAULT_BUDGET,
+    tool_result_save_budget,
 )
+from core.memory.conversation import (
+    _MAX_TOOL_RESULT_SUMMARY,
+    ConversationMemory,
+    ToolRecord,
+)
+from core.memory.shortterm import SessionState, ShortTermMemory
 from core.schemas import ModelConfig
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -322,75 +320,6 @@ class TestSessionStateToolUses:
 
         md_content = stm.load_markdown()
         assert "(なし)" in md_content
-
-
-# ---------------------------------------------------------------------------
-# Test 4: Builder includes recent tool section
-# ---------------------------------------------------------------------------
-
-
-class TestBuilderRecentToolSection:
-    """build_system_prompt includes a 'Recent Tool Results' section when
-    conversation.json contains tool records."""
-
-    def test_recent_tool_section_appears(self, tmp_path: Path):
-        """_build_recent_tool_section returns a non-empty section when
-        the conversation state has tool records."""
-        from core.prompt.builder import _build_recent_tool_section
-
-        anima_dir = tmp_path / "animas" / "builder-tools"
-        conv = _make_conv_memory(anima_dir)
-
-        record = ToolRecord(
-            tool_name="Grep",
-            tool_id="toolu_grep_001",
-            input_summary="search pattern",
-            result_summary="Found 3 matches in file.py:\nline 10: match\nline 20: match\nline 30: match",
-        )
-        conv.append_turn(
-            "assistant",
-            "I searched for the pattern.",
-            tool_records=[record],
-        )
-        conv.save()
-
-        model_config = ModelConfig(model="claude-sonnet-4-6")
-        section = _build_recent_tool_section(anima_dir, model_config)
-
-        assert section, "Recent tool section should be non-empty"
-        assert "Recent Tool Results" in section
-        assert "Grep" in section
-        assert "Found 3 matches" in section
-
-    def test_no_section_without_tool_records(self, tmp_path: Path):
-        """_build_recent_tool_section returns empty string when
-        there are no tool records."""
-        from core.prompt.builder import _build_recent_tool_section
-
-        anima_dir = tmp_path / "animas" / "builder-no-tools"
-        conv = _make_conv_memory(anima_dir)
-
-        conv.append_turn("human", "Hello")
-        conv.append_turn("assistant", "Hi there!")
-        conv.save()
-
-        model_config = ModelConfig(model="claude-sonnet-4-6")
-        section = _build_recent_tool_section(anima_dir, model_config)
-
-        assert section == ""
-
-    def test_no_section_without_conversation(self, tmp_path: Path):
-        """_build_recent_tool_section returns empty string when
-        there is no conversation state at all."""
-        from core.prompt.builder import _build_recent_tool_section
-
-        anima_dir = tmp_path / "animas" / "builder-empty"
-        (anima_dir / "state").mkdir(parents=True, exist_ok=True)
-
-        model_config = ModelConfig(model="claude-sonnet-4-6")
-        section = _build_recent_tool_section(anima_dir, model_config)
-
-        assert section == ""
 
 
 # ---------------------------------------------------------------------------

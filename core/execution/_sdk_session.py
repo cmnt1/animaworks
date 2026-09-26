@@ -17,9 +17,13 @@ Leaf module in the dependency graph — no internal framework imports
 import asyncio
 import json
 import logging
+import os
 import shutil
 import sys
+import tempfile
+import threading
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -113,6 +117,173 @@ _RESUMABLE_SESSION_TYPES: frozenset[str] = frozenset({SESSION_TYPE_CHAT})
 All other types start fresh each time (no resume, no save)."""
 
 
+@dataclass(frozen=True)
+class SessionContextState:
+    """Persisted metadata for a resumable SDK session."""
+
+    session_id: str
+    timestamp: str
+    created_at: str
+    updated_at: str
+    baseline_tokens: int = 0
+    last_tokens: int = 0
+    last_ratio: float = 0.0
+    model: str = ""
+    swept_at: str = ""
+
+
+_session_state_lock = threading.Lock()
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _session_state_path(anima_dir: Path, session_type: str, thread_id: str) -> Path:
+    return anima_dir / "state" / _session_file(session_type, thread_id)
+
+
+def _state_from_dict(data: dict[str, Any]) -> SessionContextState | None:
+    """Convert old and current state-file shapes into typed state."""
+    session_id = data.get("session_id")
+    if not isinstance(session_id, str):
+        return None
+    if not session_id and not any(
+        key in data for key in ("created_at", "updated_at", "baseline_tokens", "last_tokens", "last_ratio")
+    ):
+        return None
+    timestamp = data.get("timestamp")
+    if not isinstance(timestamp, str) or not timestamp:
+        timestamp = _now_iso()
+    created_at = data.get("created_at")
+    if not isinstance(created_at, str) or not created_at:
+        created_at = timestamp
+    updated_at = data.get("updated_at")
+    if not isinstance(updated_at, str) or not updated_at:
+        updated_at = timestamp
+    try:
+        baseline_tokens = max(0, int(data.get("baseline_tokens", 0) or 0))
+        last_tokens = max(0, int(data.get("last_tokens", 0) or 0))
+        last_ratio = float(data.get("last_ratio", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return None
+    model = data.get("model", "")
+    swept_at = data.get("swept_at", "")
+    return SessionContextState(
+        session_id=session_id,
+        timestamp=timestamp,
+        created_at=created_at,
+        updated_at=updated_at,
+        baseline_tokens=baseline_tokens,
+        last_tokens=last_tokens,
+        last_ratio=last_ratio,
+        model=model if isinstance(model, str) else "",
+        swept_at=swept_at if isinstance(swept_at, str) else "",
+    )
+
+
+def load_session_state(
+    anima_dir: Path,
+    session_type: str = SESSION_TYPE_CHAT,
+    thread_id: str = "default",
+) -> SessionContextState | None:
+    """Load persisted SDK session metadata, including legacy files."""
+    path = _session_state_path(anima_dir, session_type, thread_id)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return _state_from_dict(data)
+
+
+def _write_session_state(path: Path, data: dict[str, Any]) -> None:
+    """Atomically replace a session state file in its own directory."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_name: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp:
+            temp_name = temp.name
+            json.dump(data, temp, ensure_ascii=False)
+            temp.write("\n")
+            temp.flush()
+            os.fsync(temp.fileno())
+        os.replace(temp_name, path)
+        temp_name = None
+    finally:
+        if temp_name:
+            try:
+                os.unlink(temp_name)
+            except OSError:
+                pass
+
+
+def _state_to_dict(state: SessionContextState) -> dict[str, Any]:
+    return {
+        "session_id": state.session_id,
+        "timestamp": state.timestamp,
+        "created_at": state.created_at,
+        "updated_at": state.updated_at,
+        "baseline_tokens": state.baseline_tokens,
+        "last_tokens": state.last_tokens,
+        "last_ratio": state.last_ratio,
+        "model": state.model,
+        "swept_at": state.swept_at,
+    }
+
+
+def record_session_measurement(
+    anima_dir: Path,
+    session_type: str = SESSION_TYPE_CHAT,
+    thread_id: str = "default",
+    *,
+    tokens: int,
+    ratio: float,
+    model: str = "",
+    session_id: str | None = None,
+    baseline_tokens: int = 0,
+) -> SessionContextState:
+    """Persist a context measurement without reseeding its baseline."""
+    path = _session_state_path(anima_dir, session_type, thread_id)
+    now = _now_iso()
+    with _session_state_lock:
+        existing = load_session_state(anima_dir, session_type, thread_id)
+        if existing is None:
+            sid = session_id or ""
+            state = SessionContextState(
+                session_id=sid,
+                timestamp=now,
+                created_at=now,
+                updated_at=now,
+                baseline_tokens=max(0, baseline_tokens or tokens),
+                last_tokens=max(0, tokens),
+                last_ratio=ratio,
+                model=model,
+            )
+        else:
+            state = SessionContextState(
+                session_id=session_id or existing.session_id,
+                timestamp=now,
+                created_at=existing.created_at,
+                updated_at=now,
+                baseline_tokens=existing.baseline_tokens or max(0, baseline_tokens or tokens),
+                last_tokens=max(0, tokens),
+                last_ratio=ratio,
+                model=model or existing.model,
+                swept_at=existing.swept_at,
+            )
+        _write_session_state(path, _state_to_dict(state))
+    return state
+
+
 def _resolve_session_type(trigger: str) -> str:
     """Resolve SDK session type from execution trigger.
 
@@ -131,70 +302,106 @@ def _session_file(session_type: str, thread_id: str = "default") -> str:
 
 def _load_session_id(
     anima_dir: Path,
-    session_type: str = "chat",
+    session_type: str = SESSION_TYPE_CHAT,
     thread_id: str = "default",
 ) -> str | None:
-    """Load persisted session ID for SDK session resume.
-
-    Sessions are immortal — no TTL.  The timestamp is retained for
-    debug logging only and never used for expiry decisions.
-    """
-    path = anima_dir / "state" / _session_file(session_type, thread_id)
-    if not path.exists():
+    """Load persisted session ID through the unified state reader."""
+    state = load_session_state(anima_dir, session_type, thread_id)
+    if state is None:
         return None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        session_id = data.get("session_id")
-        if not session_id:
-            return None
+        saved = datetime.fromisoformat(state.timestamp)
+        if saved.tzinfo is None:
+            saved = saved.replace(tzinfo=UTC)
+        elapsed_min = (datetime.now(UTC) - saved).total_seconds() / 60
+        logger.debug(
+            "Session loaded (%s/%s, thread=%s): age %.1f min",
+            session_type,
+            anima_dir.name,
+            thread_id,
+            elapsed_min,
+        )
+    except ValueError:
+        pass
+    return state.session_id or None
 
-        ts_str = data.get("timestamp")
-        if ts_str:
-            saved = datetime.fromisoformat(ts_str)
-            if saved.tzinfo is None:
-                saved = saved.replace(tzinfo=UTC)
-            elapsed_min = (datetime.now(UTC) - saved).total_seconds() / 60
-            logger.debug(
-                "Session loaded (%s/%s, thread=%s): age %.1f min",
-                session_type,
-                anima_dir.name,
-                thread_id,
-                elapsed_min,
+
+def _save_session_id(
+    anima_dir: Path,
+    session_id: str,
+    session_type: str = SESSION_TYPE_CHAT,
+    thread_id: str = "default",
+) -> None:
+    """Persist a session ID while retaining all measurement metadata."""
+    path = _session_state_path(anima_dir, session_type, thread_id)
+    now = _now_iso()
+    with _session_state_lock:
+        existing = load_session_state(anima_dir, session_type, thread_id)
+        if existing is None:
+            state = SessionContextState(
+                session_id=session_id,
+                timestamp=now,
+                created_at=now,
+                updated_at=now,
             )
+        else:
+            state = SessionContextState(
+                session_id=session_id,
+                timestamp=now,
+                created_at=existing.created_at,
+                updated_at=existing.updated_at,
+                baseline_tokens=existing.baseline_tokens,
+                last_tokens=existing.last_tokens,
+                last_ratio=existing.last_ratio,
+                model=existing.model,
+                swept_at=existing.swept_at,
+            )
+        _write_session_state(path, _state_to_dict(state))
 
-        return session_id
-    except (json.JSONDecodeError, OSError, ValueError) as exc:
-        logger.warning("Failed to load session ID from %s: %s", path, exc)
-        return None
 
+def mark_session_swept(
+    anima_dir: Path,
+    session_type: str = SESSION_TYPE_CHAT,
+    thread_id: str = "default",
+) -> None:
+    """Record that the idle sweep already handled this measurement.
 
-def _save_session_id(anima_dir: Path, session_id: str, session_type: str = "chat", thread_id: str = "default") -> None:
-    """Persist session ID for future SDK session resume."""
-    path = anima_dir / "state" / _session_file(session_type, thread_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
-                "session_id": session_id,
-                "timestamp": datetime.now(UTC).isoformat(),
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
+    Only Mode S compaction deletes the state file. Every other mode leaves
+    it in place, so without this marker a stale session would be compacted
+    again on every sweep tick. Marking ``swept_at`` with the current
+    ``updated_at`` makes the sweep wait for fresh activity.
+    """
+    path = _session_state_path(anima_dir, session_type, thread_id)
+    with _session_state_lock:
+        existing = load_session_state(anima_dir, session_type, thread_id)
+        if existing is None:
+            return
+        state = SessionContextState(
+            session_id=existing.session_id,
+            timestamp=existing.timestamp,
+            created_at=existing.created_at,
+            updated_at=existing.updated_at,
+            baseline_tokens=existing.baseline_tokens,
+            last_tokens=existing.last_tokens,
+            last_ratio=existing.last_ratio,
+            model=existing.model,
+            swept_at=existing.updated_at,
+        )
+        _write_session_state(path, _state_to_dict(state))
 
 
 def _clear_session_id(anima_dir: Path, session_type: str = "chat", thread_id: str = "default") -> None:
     """Clear persisted session ID (e.g., after resume failure)."""
     path = anima_dir / "state" / _session_file(session_type, thread_id)
-    if path.exists():
-        logger.debug(
-            "Clearing session ID (%s/%s, thread=%s)",
-            session_type,
-            anima_dir.name,
-            thread_id,
-        )
-        path.unlink(missing_ok=True)
+    with _session_state_lock:
+        if path.exists():
+            logger.debug(
+                "Clearing session ID (%s/%s, thread=%s)",
+                session_type,
+                anima_dir.name,
+                thread_id,
+            )
+            path.unlink(missing_ok=True)
 
 
 def clear_session_id_for_type(anima_dir: Path, session_type: str, thread_id: str = "default") -> None:

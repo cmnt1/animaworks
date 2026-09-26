@@ -8,7 +8,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from core.memory.task_queue import TaskQueueManager
+import pytest
+
 from scripts.migrate_task_queue_teardown import main, migrate_anima, plan_anima
 
 
@@ -68,46 +69,26 @@ def test_migrate_anima_dry_run_does_not_write(tmp_path: Path) -> None:
     assert queue_path.read_text(encoding="utf-8") == before
 
 
-def test_migrate_anima_appends_pending_update_with_note(tmp_path: Path) -> None:
+def test_migrate_anima_write_mode_refuses_without_changing_evidence(tmp_path: Path) -> None:
     animas_dir = _animas_layout(tmp_path)
     sakura_dir = animas_dir / "sakura"
 
-    result = migrate_anima(sakura_dir, dry_run=False)
-    assert set(result.retired_task_ids) == {"t-blocked", "t-failed"}
-
-    manager = TaskQueueManager(sakura_dir)
-    blocked_entry = manager.get_task_by_id("t-blocked")
-    failed_entry = manager.get_task_by_id("t-failed")
-    pending_entry = manager.get_task_by_id("t-pending")
-
-    assert blocked_entry is not None
-    assert blocked_entry.status == "pending"
-    assert "blocked/failed 制度廃止" in blocked_entry.summary
-
-    assert failed_entry is not None
-    assert failed_entry.status == "pending"
-    assert "blocked/failed 制度廃止" in failed_entry.summary
-
-    # Untouched task must keep its original summary (append-only: existing
-    # rows are never rewritten, and non-retired tasks get no new event).
-    assert pending_entry is not None
-    assert pending_entry.summary == "s"
-
-    # Append-only: the original blocked/failed creation lines are still there,
-    # plus one new "update" event per retired task.
-    lines = [ln for ln in (sakura_dir / "state" / "task_queue.jsonl").read_text(encoding="utf-8").splitlines() if ln]
-    assert len(lines) == 3 + 2
+    queue_path = sakura_dir / "state/task_queue.jsonl"
+    before = queue_path.read_bytes()
+    with pytest.raises(RuntimeError, match="task-store migrate"):
+        migrate_anima(sakura_dir, dry_run=False)
+    assert queue_path.read_bytes() == before
+    assert not list(tmp_path.rglob("*.sqlite3"))
 
 
-def test_migrate_anima_no_retired_tasks_is_noop(tmp_path: Path) -> None:
+def test_migrate_anima_write_mode_refuses_even_without_retired_rows(tmp_path: Path) -> None:
     animas_dir = _animas_layout(tmp_path)
     hinata_dir = animas_dir / "hinata"
     queue_path = hinata_dir / "state" / "task_queue.jsonl"
     before = queue_path.read_text(encoding="utf-8")
 
-    result = migrate_anima(hinata_dir, dry_run=False)
-
-    assert result.retired_task_ids == ()
+    with pytest.raises(RuntimeError, match="task-store migrate"):
+        migrate_anima(hinata_dir, dry_run=False)
     assert queue_path.read_text(encoding="utf-8") == before
 
 
@@ -125,21 +106,19 @@ def test_main_dry_run_reports_and_does_not_write(tmp_path: Path, capsys) -> None
     assert (animas_dir / "sakura" / "state" / "task_queue.jsonl").read_text(encoding="utf-8") == before
 
 
-def test_main_execute_writes_updates(tmp_path: Path, capsys) -> None:
+def test_main_execute_fails_closed_without_creating_database(tmp_path: Path, capsys) -> None:
     animas_dir = _animas_layout(tmp_path)
 
+    queue_path = animas_dir / "sakura/state/task_queue.jsonl"
+    before = queue_path.read_bytes()
     rc = main(["--animas-dir", str(animas_dir)])
 
-    assert rc == 0
-    out = capsys.readouterr().out
-    assert "EXECUTE" in out
-    assert "Total: 2 task(s) retired." in out
-
-    manager = TaskQueueManager(animas_dir / "sakura")
-    assert manager.get_task_by_id("t-blocked").status == "pending"
-    assert manager.get_task_by_id("t-failed").status == "pending"
+    assert rc == 2
+    assert "task-store migrate" in capsys.readouterr().err
+    assert queue_path.read_bytes() == before
+    assert not list(tmp_path.rglob("*.sqlite3"))
 
 
 def test_main_missing_animas_dir_returns_error(tmp_path: Path) -> None:
-    rc = main(["--animas-dir", str(tmp_path / "does-not-exist")])
+    rc = main(["--animas-dir", str(tmp_path / "does-not-exist"), "--dry-run"])
     assert rc == 1

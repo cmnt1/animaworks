@@ -12,7 +12,6 @@ class TestActionRuleMetadataExtraction:
 
     @pytest.fixture(autouse=True)
     def _setup(self, tmp_path):
-        from pathlib import Path
 
         self._anima_dir = tmp_path / "anima"
         self._anima_dir.mkdir()
@@ -49,12 +48,7 @@ class TestActionRuleMetadataExtraction:
         assert metadata["action_rule_keywords"] == "ペンディング,pending,報告"
 
     def test_action_rule_without_keywords(self):
-        content = (
-            "## [ACTION-RULE] 送信前確認\n"
-            "trigger_tools: gmail_send\n"
-            "---\n"
-            "宛先を確認すること。\n"
-        )
+        content = "## [ACTION-RULE] 送信前確認\ntrigger_tools: gmail_send\n---\n宛先を確認すること。\n"
         metadata = self._call_extract(content)
         assert metadata["type"] == "action_rule"
         assert metadata["trigger_tools"] == "gmail_send"
@@ -73,22 +67,12 @@ class TestActionRuleMetadataExtraction:
         assert metadata["importance"] == "important"
 
     def test_action_rule_missing_trigger_tools(self):
-        content = (
-            "## [ACTION-RULE] ルール名\n"
-            "keywords: something\n"
-            "---\n"
-            "本文\n"
-        )
+        content = "## [ACTION-RULE] ルール名\nkeywords: something\n---\n本文\n"
         metadata = self._call_extract(content)
         assert "type" not in metadata or metadata.get("type") != "action_rule"
 
     def test_action_rule_multiple_trigger_tools_with_spaces(self):
-        content = (
-            "## [ACTION-RULE] テスト\n"
-            "trigger_tools:  call_human ,  send_message , post_channel  \n"
-            "---\n"
-            "本文\n"
-        )
+        content = "## [ACTION-RULE] テスト\ntrigger_tools:  call_human ,  send_message , post_channel  \n---\n本文\n"
         metadata = self._call_extract(content)
         assert metadata["type"] == "action_rule"
         assert metadata["trigger_tools"] == "call_human,send_message,post_channel"
@@ -98,14 +82,100 @@ class TestActionRuleMetadataExtraction:
         metadata = self._call_extract(content)
         assert metadata.get("type") != "action_rule"
 
+    def test_fenced_action_rule_example_is_not_indexed(self):
+        """[ACTION-RULE] examples inside ``` fences are not real action rules."""
+        content = (
+            "Actions are rules that pause before side effects.\n"
+            "Here is an example (do not treat as a real rule):\n"
+            "```markdown\n"
+            "## [ACTION-RULE] 顧客メモ更新前の確認\n"
+            "trigger_tools: write_memory_file\n"
+            "---\n"
+            "メモを更新する前に顧客選択を確認する。\n"
+            "```\n"
+            "End of guide.\n"
+        )
+        metadata = self._call_extract(content)
+        assert metadata.get("type") != "action_rule"
+        assert "trigger_tools" not in metadata
+
+    def test_tilde_fenced_action_rule_example_is_not_indexed(self):
+        """~~~ fences are also stripped when evaluating action rules."""
+        content = "Guide:\n~~~\n## [ACTION-RULE] 送信前確認\ntrigger_tools: gmail_send\n---\n本文\n~~~\n"
+        metadata = self._call_extract(content)
+        assert metadata.get("type") != "action_rule"
+
+    def test_action_rule_outside_fence_is_still_indexed(self):
+        """A real rule written outside any fence keeps type=action_rule."""
+        content = (
+            "```\n"
+            "## [ACTION-RULE] 例（これ自体は無視）\n"
+            "trigger_tools: write_memory_file\n"
+            "---\n"
+            "例本文\n"
+            "```\n"
+            "\n"
+            "## [ACTION-RULE] 本物のルール\n"
+            "trigger_tools: call_human\n"
+            "---\n"
+            "本当に適用するルール。\n"
+        )
+        metadata = self._call_extract(content)
+        assert metadata["type"] == "action_rule"
+        assert metadata["trigger_tools"] == "call_human"
+
+    def test_guide_template_is_not_indexed_as_action_rule(self):
+        """The shipped action-rules-guide template must not become an action rule."""
+        from pathlib import Path
+
+        repo = Path(__file__).resolve().parents[2] / ".." / ".."
+        guide = repo / "templates" / "ja" / "common_knowledge" / "operations" / "action-rules-guide.md"
+        metadata = self._call_extract(guide.read_text(encoding="utf-8"))
+        assert metadata.get("type") != "action_rule"
+        assert "trigger_tools" not in metadata
+
+    def _chunk(self, content: str):
+        """Run the real ## chunker (the path used for knowledge/common_knowledge)."""
+        indexer = MemoryIndexer.__new__(MemoryIndexer)
+        indexer.collection_prefix = "test"
+        indexer.anima_dir = self._anima_dir
+        indexer.anima_name = "test"
+        self._test_file.write_text(content)
+        return indexer._chunk_by_markdown_headings(self._test_file, content, "common_knowledge")
+
+    def test_guide_template_chunks_are_not_action_rules(self):
+        """Fenced examples must not become action rules even after ## chunking.
+
+        The chunker used to split on ``## [ACTION-RULE] ...`` lines inside the
+        guide's code fences, producing chunks without their opening fence that
+        were then indexed as real rules (the write_memory_file example blocked
+        every memory write in production).
+        """
+        from pathlib import Path
+
+        repo = Path(__file__).resolve().parents[2] / ".." / ".."
+        guide = repo / "templates" / "ja" / "common_knowledge" / "operations" / "action-rules-guide.md"
+        chunks = self._chunk(guide.read_text(encoding="utf-8"))
+        assert chunks, "guide should produce chunks"
+        offenders = [c.content[:60] for c in chunks if c.metadata.get("type") == "action_rule"]
+        assert offenders == []
+        assert all("trigger_tools" not in c.metadata for c in chunks)
+
+    def test_real_rule_outside_fence_is_chunked_as_action_rule(self):
+        content = (
+            "# 説明\n\n"
+            "## 例\n\n```markdown\n## [ACTION-RULE] 例\ntrigger_tools: call_human\n---\n例\n```\n\n"
+            "## [ACTION-RULE] 本物\ntrigger_tools: write_memory_file\nkeywords: memo\n---\n本物のルール。\n"
+        )
+        chunks = self._chunk(content)
+        rules = [c for c in chunks if c.metadata.get("type") == "action_rule"]
+        assert len(rules) == 1
+        assert rules[0].metadata["trigger_tools"] == "write_memory_file"
+        assert "本物" in rules[0].content
+
     def test_action_rule_without_separator(self):
         """trigger_tools without --- separator should still work."""
-        content = (
-            "## [ACTION-RULE] テスト\n"
-            "trigger_tools: call_human\n"
-            "\n"
-            "ルール本文がここから始まる。\n"
-        )
+        content = "## [ACTION-RULE] テスト\ntrigger_tools: call_human\n\nルール本文がここから始まる。\n"
         metadata = self._call_extract(content)
         assert metadata["type"] == "action_rule"
         assert metadata["trigger_tools"] == "call_human"
@@ -115,7 +185,7 @@ class TestActionRuleRetrieverFiltering:
     """Test search_action_rules filters by trigger_tools correctly."""
 
     def test_trigger_tools_case_insensitive_matching(self):
-        from core.memory.rag.retriever import MemoryRetriever, RetrievalResult
+        from core.memory.rag.retriever import MemoryRetriever
 
         retriever = MemoryRetriever.__new__(MemoryRetriever)
 

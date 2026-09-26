@@ -321,7 +321,13 @@ class MemoryManager:
         return self._read(self.company_dir / "vision.md")
 
     def read_identity(self) -> str:
-        return self._read(self.anima_dir / "identity.md")
+        """Read identity.md, stripping YAML frontmatter if present."""
+        from core.memory.frontmatter import strip_frontmatter
+
+        raw = self._read(self.anima_dir / "identity.md")
+        if raw and raw.lstrip().startswith("---"):
+            return strip_frontmatter(raw)
+        return raw
 
     def read_injection(self) -> str:
         """Read injection.md, stripping YAML frontmatter if present."""
@@ -510,20 +516,6 @@ class MemoryManager:
 
         # Index the new/updated knowledge file
         self._rag.index_file(path, "knowledge", origin=origin)
-
-    # ── Read helpers for Mode B (assisted) ────────────────
-
-    def read_recent_episodes(self, days: int = 7) -> str:
-        """Return concatenated episode logs for the last *days* days."""
-        parts: list[str] = []
-        today = today_local()
-        for offset in range(days):
-            d = today - timedelta(days=offset)
-            path = self.episodes_dir / f"{d.isoformat()}.md"
-            content = self._read(path)
-            if content:
-                parts.append(content)
-        return "\n\n".join(parts)
 
     # ── Backward-compatible RAG proxies ─────────────────
     # Tests and internal code may access these private attributes

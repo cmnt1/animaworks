@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -38,78 +37,62 @@ def handler(anima_dir: Path):
     return h
 
 
-def test_handler_blocks_external_action_until_required_memory_is_read(anima_dir: Path, handler, monkeypatch) -> None:
+def test_find_action_rules_returns_only_above_threshold(anima_dir: Path, monkeypatch) -> None:
     from core.memory import action_gate
 
-    rule = FakeRule(
-        "rule-1",
-        '## [ACTION-RULE] Gmail draft check\ntrigger_tools: gmail_draft\n---\nread_memory_file(path="procedures/check.md")',
-    )
-    monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [rule])
+    results = [
+        FakeRule("r-high", "## [ACTION-RULE] high", 0.95),
+        FakeRule("r-low", "## [ACTION-RULE] low", 0.79),
+    ]
+    monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: results)
 
-    blocked = handler.handle("gmail_draft", {"to": "a@example.com", "body": "hello"})
-    blocked_payload = json.loads(blocked)
+    rules = action_gate.find_action_rules(anima_dir, "gmail_send", {"to": "a@example.com"})
 
-    assert blocked_payload["error_type"] == "ActionMemoryGate"
-    assert blocked_payload["missing_paths"] == ["procedures/check.md"]
-    handler._external.dispatch.assert_not_called()
-
-    read_result = handler.handle("read_memory_file", {"path": "procedures/check.md"})
-    assert "Confirm before action" in read_result
-
-    allowed = handler.handle("gmail_draft", {"to": "a@example.com", "body": "hello"})
-    assert allowed == "draft ok"
-    handler._external.dispatch.assert_called_once()
+    assert [r.rule_id for r in rules] == ["r-high"]
 
 
-@pytest.mark.parametrize("tool_name", ["call_human", "send_message", "post_channel", "write_memory_file"])
-def test_handler_blocks_core_side_effect_actions_before_dispatch(
-    anima_dir: Path,
-    handler,
-    monkeypatch,
-    tool_name: str,
-) -> None:
+def test_find_action_rules_sorts_by_score_desc(anima_dir: Path, monkeypatch) -> None:
     from core.memory import action_gate
 
-    rule = FakeRule(
-        f"rule-{tool_name}",
-        (
-            f"## [ACTION-RULE] {tool_name} check\n"
-            f"trigger_tools: {tool_name}\n"
-            "---\n"
-            'read_memory_file(path="procedures/check.md")'
-        ),
-    )
-    monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [rule])
+    results = [
+        FakeRule("r1", "body", 0.81),
+        FakeRule("r3", "body", 0.99),
+        FakeRule("r2", "body", 0.85),
+    ]
+    monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: results)
 
-    result = handler.handle(tool_name, {"text": "hello", "path": "note.md", "content": "hello"})
-    payload = json.loads(result)
+    rules = action_gate.find_action_rules(anima_dir, "gmail_send", {})
 
-    assert payload["error_type"] == "ActionMemoryGate"
-    assert payload["tool"] == tool_name
-    assert payload["missing_paths"] == ["procedures/check.md"]
+    assert [r.rule_id for r in rules] == ["r3", "r2", "r1"]
 
 
-def test_use_tool_is_gated_by_schema_name_before_dispatch(anima_dir: Path, handler, monkeypatch) -> None:
+def test_find_action_rules_caps_at_three(anima_dir: Path, monkeypatch) -> None:
     from core.memory import action_gate
 
-    rule = FakeRule(
-        "rule-2",
-        '## [ACTION-RULE] use_tool check\ntrigger_tools: gmail_draft\n---\nread_memory_file(path="procedures/check.md")',
+    results = [FakeRule(f"r{i}", "body", 0.90 + i * 0.01) for i in range(6)]
+    monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: results)
+
+    rules = action_gate.find_action_rules(anima_dir, "gmail_send", {})
+
+    assert len(rules) == 3
+
+
+def test_find_action_rules_truncates_body_to_2000(anima_dir: Path, monkeypatch) -> None:
+    from core.memory import action_gate
+
+    long_body = "x" * 5000
+    monkeypatch.setattr(
+        action_gate,
+        "_search_action_rules",
+        lambda *args, **kwargs: [FakeRule("r-long", long_body, 0.98)],
     )
-    monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [rule])
 
-    result = handler.handle(
-        "use_tool",
-        {"tool_name": "gmail", "action": "draft", "args": {"to": "a@example.com", "body": "hello"}},
-    )
-    payload = json.loads(result)
+    rules = action_gate.find_action_rules(anima_dir, "gmail_send", {})
 
-    assert payload["error_type"] == "ActionMemoryGate"
-    assert payload["tool"] == "gmail_draft"
+    assert len(rules[0].content) == 2000
 
 
-def test_handler_gate_fails_open_when_search_fails(anima_dir: Path, handler, monkeypatch) -> None:
+def test_find_action_rules_returns_empty_on_search_exception(anima_dir: Path, monkeypatch) -> None:
     from core.memory import action_gate
 
     def raise_search(*args, **kwargs):
@@ -117,6 +100,76 @@ def test_handler_gate_fails_open_when_search_fails(anima_dir: Path, handler, mon
 
     monkeypatch.setattr(action_gate, "_search_action_rules", raise_search)
 
+    assert action_gate.find_action_rules(anima_dir, "gmail_send", {}) == []
+
+
+def test_find_action_rules_empty_tool_name(anima_dir: Path) -> None:
+    from core.memory import action_gate
+
+    assert action_gate.find_action_rules(anima_dir, "", {}) == []
+
+
+def test_format_action_rules_contains_tag_and_body() -> None:
+    from core.memory.action_gate import ActionRule, format_action_rules
+
+    rendered = format_action_rules(
+        [ActionRule(rule_id="mei/knowledge/rule.md#0", content="## [ACTION-RULE] check", score=0.87)]
+    )
+
+    assert '<action-rule path="mei/knowledge/rule.md#0" score="0.87">' in rendered
+    assert "## [ACTION-RULE] check" in rendered
+    assert "</action-rule>" in rendered
+
+
+def test_format_action_rules_empty_returns_empty_string() -> None:
+    from core.memory.action_gate import format_action_rules
+
+    assert format_action_rules([]) == ""
+
+
+def test_handler_appends_rules_to_result(anima_dir: Path, handler, monkeypatch) -> None:
+    from core.memory import action_gate
+
+    rule = FakeRule(
+        "rule-1",
+        "## [ACTION-RULE] Gmail draft check\ntrigger_tools: gmail_draft\n---\nConfirm the recipient.",
+    )
+    monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [rule])
+
+    result = handler.handle("gmail_draft", {"to": "a@example.com", "body": "hello"})
+
+    assert result.startswith("draft ok")
+    assert '<action-rule path="rule-1"' in result
+    assert "Confirm the recipient." in result
+    handler._external.dispatch.assert_called_once()
+
+
+def test_handler_without_action_rules_returns_result_unchanged(anima_dir: Path, handler, monkeypatch) -> None:
+    from core.memory import action_gate
+
+    monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [])
+
     result = handler.handle("gmail_draft", {"to": "a@example.com", "body": "hello"})
 
     assert result == "draft ok"
+
+
+def test_handler_attaches_for_core_side_effect_tool(anima_dir: Path, handler, monkeypatch) -> None:
+    from core.memory import action_gate
+    from core.tooling.handler import ToolHandler
+
+    memory = MagicMock()
+    memory.search_memory_text.return_value = []
+    with patch("core.config.models.load_config", side_effect=ConfigError("skip subordinate cache")):
+        h = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=["gmail"])
+    h._dispatch = {"call_human": lambda _args: "called human"}
+    monkeypatch.setattr(
+        action_gate,
+        "_search_action_rules",
+        lambda *args, **kwargs: [FakeRule("rule-call", "## [ACTION-RULE] confirm\n---\nConfirm first.", 0.96)],
+    )
+
+    result = h.handle("call_human", {"message": "ping"})
+
+    assert result.startswith("called human")
+    assert '<action-rule path="rule-call"' in result

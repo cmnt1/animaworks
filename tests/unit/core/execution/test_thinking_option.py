@@ -1,7 +1,7 @@
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Unit tests for the Ollama thinking option in LiteLLMExecutor and AssistedExecutor.
+"""Unit tests for the Ollama thinking option in LiteLLMExecutor.
 
 The ``thinking`` field on ``ModelConfig`` controls the ``think`` kwarg passed
 to ``litellm.acompletion``.  Behaviour:
@@ -14,12 +14,11 @@ to ``litellm.acompletion``.  Behaviour:
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from core.schemas import ModelConfig
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -73,25 +72,6 @@ def _make_litellm_executor(
         tool_handler=tool_handler,
         tool_registry=[],
         memory=memory,
-    )
-
-
-def _make_assisted_executor(
-    model_config: ModelConfig,
-    anima_dir: Path,
-    tool_handler: MagicMock,
-    memory: MagicMock,
-):
-    """Instantiate an AssistedExecutor with minimal dependencies."""
-    from core.execution.assisted import AssistedExecutor
-    return AssistedExecutor(
-        model_config=model_config,
-        anima_dir=anima_dir,
-        tool_handler=tool_handler,
-        memory=memory,
-        messenger=None,
-        tool_registry=[],
-        personal_tools={},
     )
 
 
@@ -156,84 +136,3 @@ class TestLiteLLMThinkingOption:
         ex = _make_litellm_executor(cfg, anima_dir, tool_handler, memory)
         kwargs = ex._build_llm_kwargs()
         assert kwargs["think"] is False
-
-
-# ── AssistedExecutor._call_llm tests ────────────────────────
-
-
-@pytest.mark.asyncio
-class TestAssistedThinkingOption:
-    """Verify ``think`` kwarg passed through AssistedExecutor._call_llm()."""
-
-    async def test_ollama_model_thinking_none_defaults_to_false(
-        self, anima_dir, tool_handler, memory,
-    ):
-        """Ollama model + thinking=None → think=False passed to litellm."""
-        cfg = ModelConfig(model="ollama/glm-4", thinking=None, api_key="k", max_tokens=512)
-        ex = _make_assisted_executor(cfg, anima_dir, tool_handler, memory)
-        mock_acompletion = AsyncMock(return_value=MagicMock())
-        with patch("litellm.acompletion", mock_acompletion):
-            await ex._call_llm([{"role": "user", "content": "hi"}])
-        _, kwargs = mock_acompletion.call_args
-        assert kwargs.get("think") is False
-
-    async def test_ollama_model_thinking_true_overrides(
-        self, anima_dir, tool_handler, memory,
-    ):
-        """Ollama model + thinking=True → think=True passed to litellm."""
-        cfg = ModelConfig(model="ollama/qwen3", thinking=True, api_key="k", max_tokens=512)
-        ex = _make_assisted_executor(cfg, anima_dir, tool_handler, memory)
-        mock_acompletion = AsyncMock(return_value=MagicMock())
-        with patch("litellm.acompletion", mock_acompletion):
-            await ex._call_llm([{"role": "user", "content": "hi"}])
-        _, kwargs = mock_acompletion.call_args
-        assert kwargs.get("think") is True
-
-    async def test_ollama_model_thinking_false_explicit(
-        self, anima_dir, tool_handler, memory,
-    ):
-        """Ollama model + thinking=False → think=False passed to litellm."""
-        cfg = ModelConfig(model="ollama/deepseek-r1", thinking=False, api_key="k", max_tokens=512)
-        ex = _make_assisted_executor(cfg, anima_dir, tool_handler, memory)
-        mock_acompletion = AsyncMock(return_value=MagicMock())
-        with patch("litellm.acompletion", mock_acompletion):
-            await ex._call_llm([{"role": "user", "content": "hi"}])
-        _, kwargs = mock_acompletion.call_args
-        assert kwargs.get("think") is False
-
-    async def test_non_ollama_model_thinking_none_no_think_key(
-        self, anima_dir, tool_handler, memory,
-    ):
-        """Non-ollama model + thinking=None → ``think`` key absent from kwargs."""
-        cfg = ModelConfig(model="openai/gpt-4o", thinking=None, api_key="k", max_tokens=512)
-        ex = _make_assisted_executor(cfg, anima_dir, tool_handler, memory)
-        mock_acompletion = AsyncMock(return_value=MagicMock())
-        with patch("litellm.acompletion", mock_acompletion):
-            await ex._call_llm([{"role": "user", "content": "hi"}])
-        _, kwargs = mock_acompletion.call_args
-        assert "think" not in kwargs
-
-    async def test_openai_model_thinking_true_sets_extra_body(
-        self, anima_dir, tool_handler, memory,
-    ):
-        """openai/* model + thinking=True → extra_body.enable_thinking=True passed to litellm."""
-        cfg = ModelConfig(model="openai/gpt-4o", thinking=True, api_key="k", max_tokens=512)
-        ex = _make_assisted_executor(cfg, anima_dir, tool_handler, memory)
-        mock_acompletion = AsyncMock(return_value=MagicMock())
-        with patch("litellm.acompletion", mock_acompletion):
-            await ex._call_llm([{"role": "user", "content": "hi"}])
-        _, kwargs = mock_acompletion.call_args
-        assert kwargs["extra_body"]["enable_thinking"] is True
-        assert "think" not in kwargs
-
-    async def test_non_ollama_model_thinking_false_sets_think(
-        self, anima_dir, tool_handler, memory,
-    ):
-        """Non-ollama model + thinking=False → think=False passed to litellm."""
-        cfg = ModelConfig(model="google/gemini-2.5-pro", thinking=False, api_key="k", max_tokens=512)
-        ex = _make_assisted_executor(cfg, anima_dir, tool_handler, memory)
-        mock_acompletion = AsyncMock(return_value=MagicMock())
-        with patch("litellm.acompletion", mock_acompletion):
-            await ex._call_llm([{"role": "user", "content": "hi"}])
-        _, kwargs = mock_acompletion.call_args
-        assert kwargs.get("think") is False

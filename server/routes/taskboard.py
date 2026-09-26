@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 from datetime import datetime
@@ -78,7 +77,7 @@ def create_taskboard_router() -> APIRouter:
         include_missing: bool = False,
         q: str | None = None,
     ) -> dict[str, Any]:
-        """Return TaskBoard projection from task_queue.jsonl plus TaskBoard metadata."""
+        """Return the canonical task projection plus TaskBoard presentation metadata."""
         try:
             return await asyncio.to_thread(
                 _list_task_board,
@@ -658,21 +657,9 @@ def _task_display_text(value: Any) -> Any:
 
 
 def _count_corrupt_task_queue_lines(animas_dir: Path, anima_names: list[str]) -> int:
-    corrupt = 0
-    for name in anima_names:
-        queue_path = animas_dir / name / "state" / "task_queue.jsonl"
-        if not queue_path.exists():
-            continue
-        try:
-            lines = queue_path.read_bytes().decode("utf-8", errors="replace").splitlines()
-        except OSError:
-            continue
-        for line in lines:
-            raw_line = line.strip()
-            if not raw_line:
-                continue
-            try:
-                json.loads(raw_line)
-            except json.JSONDecodeError:
-                corrupt += 1
-    return corrupt
+    from core.memory.task_queue import TaskQueueManager
+
+    return sum(
+        TaskQueueManager(animas_dir / name).store.maintenance_status(name)["invalid_import_rows"]
+        for name in anima_names
+    )

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -101,10 +101,12 @@ class TestEntityResolverResolve:
         return ExtractedEntity(name="田中", entity_type="Person", summary="A person named Tanaka")
 
     @pytest.mark.asyncio
-    async def test_resolve_no_candidates_creates_new(self, mock_driver, entity):
+    async def test_resolve_always_creates_new(self, mock_driver, entity):
+        # The LLM judgment step was removed: entities are always new.
         resolver = EntityResolver(mock_driver, "test_group", model="test-model")
         result = await resolver.resolve(entity)
         assert result.is_new is True
+        assert result.merged_with_uuid is None
         assert result.name == "田中"
 
     @pytest.mark.asyncio
@@ -112,133 +114,67 @@ class TestEntityResolverResolve:
         resolver = EntityResolver(mock_driver, "test_group", model="test-model")
 
         r1 = await resolver.resolve(entity)
-        mock_driver.execute_query.reset_mock()
-
         r2 = await resolver.resolve(entity)
         assert r2 is r1
+
+        # Resolution is a pure in-memory compute; no driver interaction.
         mock_driver.execute_query.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_resolve_cache_cleared(self, mock_driver, entity):
-        resolver = EntityResolver(mock_driver, "test_group", model="test-model")
-
-        await resolver.resolve(entity)
-        mock_driver.execute_query.reset_mock()
-
-        resolver.clear_cache()
-        await resolver.resolve(entity)
-        mock_driver.execute_query.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_resolve_jaccard_filters_all(self, mock_driver, entity):
+    async def test_resolve_ignores_candidates(self, mock_driver, entity):
+        # Even with candidate matches, resolution still creates a new entity.
         mock_driver.execute_query = AsyncMock(
             return_value=[
                 {
                     "uuid": "c1",
-                    "name": "completely unrelated xyz",
-                    "summary": "nothing similar",
-                    "entity_type": "Person",
-                },
-            ]
-        )
-        resolver = EntityResolver(mock_driver, "test_group", model="test-model")
-        result = await resolver.resolve(entity)
-        assert result.is_new is True
-
-    @pytest.mark.asyncio
-    @patch("litellm.acompletion")
-    async def test_resolve_llm_says_duplicate(self, mock_acompletion, mock_driver, entity):
-        mock_driver.execute_query = AsyncMock(
-            return_value=[
-                {
-                    "uuid": "existing-uuid",
                     "name": "田中太郎",
                     "summary": "A person named Tanaka Taro",
                     "entity_type": "Person",
                 },
             ]
         )
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = '{"duplicate_of_uuid": "existing-uuid", "merged_summary": "merged"}'
-        mock_acompletion.return_value = mock_response
-
         resolver = EntityResolver(mock_driver, "test_group", model="test-model", jaccard_threshold=0.0)
         result = await resolver.resolve(entity)
+        assert result.is_new is True
+        assert mock_driver.execute_query.call_count == 0
 
-        assert result.is_new is False
-        assert result.merged_with_uuid == "existing-uuid"
+
+# ── TestEntityResolverFilters ───────────────────────────────
+
+
+class TestEntityResolverFilters:
+    """The vector + Jaccard candidate filters are retained as helpers."""
+
+    def _candidate(self, uuid: str, name: str, summary: str, score: float = 0.0) -> dict:
+        return {"uuid": uuid, "name": name, "summary": summary, "entity_type": "Person", "score": score}
+
+    def test_filter_by_jaccard_keeps_similar_name(self):
+        resolver = EntityResolver(AsyncMock(), "group")
+        entity = ExtractedEntity(name="Tanaka", entity_type="Person", summary="A developer")
+        candidates = [self._candidate("c1", "Tanaka", "A developer")]
+        filtered = resolver._filter_by_jaccard(entity, candidates)
+        assert len(filtered) == 1
+
+    def test_filter_by_jaccard_drops_unrelated(self):
+        resolver = EntityResolver(AsyncMock(), "group")
+        entity = ExtractedEntity(name="Tanaka", entity_type="Person", summary="A developer")
+        candidates = [self._candidate("c1", "Quantum physics", "Nuclear reactor engineering")]
+        filtered = resolver._filter_by_jaccard(entity, candidates)
+        assert filtered == []
+
+    def test_filter_by_jaccard_keeps_high_scoring_vector_match(self):
+        resolver = EntityResolver(AsyncMock(), "group")
+        entity = ExtractedEntity(name="さくら", entity_type="Person", summary="A person")
+        candidates = [self._candidate("c1", "sakura", "A person", score=0.95)]
+        filtered = resolver._filter_by_jaccard(entity, candidates)
+        assert len(filtered) == 1
 
     @pytest.mark.asyncio
-    @patch("litellm.acompletion")
-    async def test_resolve_llm_says_not_duplicate(self, mock_acompletion, mock_driver, entity):
-        mock_driver.execute_query = AsyncMock(
-            return_value=[
-                {"uuid": "c1", "name": "田中花子", "summary": "A different Tanaka", "entity_type": "Person"},
-            ]
-        )
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = '{"duplicate_of_uuid": null}'
-        mock_acompletion.return_value = mock_response
-
-        resolver = EntityResolver(mock_driver, "test_group", model="test-model", jaccard_threshold=0.0)
-        result = await resolver.resolve(entity)
-
-        assert result.is_new is True
-
-    @pytest.mark.asyncio
-    @patch("litellm.acompletion", side_effect=RuntimeError("API error"))
-    async def test_resolve_llm_failure_creates_new(self, _mock, mock_driver, entity):
-        mock_driver.execute_query = AsyncMock(
-            return_value=[
-                {"uuid": "c1", "name": "田中太郎", "summary": "Tanaka person", "entity_type": "Person"},
-            ]
-        )
-        resolver = EntityResolver(mock_driver, "test_group", model="test-model", jaccard_threshold=0.0)
-        result = await resolver.resolve(entity)
-
-        assert result.is_new is True
-
-    @pytest.mark.asyncio
-    async def test_resolve_entity_type_filtered(self, mock_driver):
-        mock_driver.execute_query = AsyncMock(return_value=[])
-
-        entity = ExtractedEntity(name="Tokyo", entity_type="Place", summary="Capital city")
-        embedding = [0.1] * 384
-
-        resolver = EntityResolver(mock_driver, "test_group", model="test-model")
-        result = await resolver.resolve(entity, name_embedding=embedding)
-
-        assert result.is_new is True
-        call_args = mock_driver.execute_query.call_args
-        params = call_args[0][1]
-        assert params["entity_type"] == "Place"
-
-
-# ── TestParseDedupeResponse ─────────────────────────────────
-
-
-class TestParseDedupeResponse:
-    def test_parse_valid_json(self):
-        result = EntityResolver._parse_dedupe_response('{"duplicate_of_uuid": "abc", "merged_summary": "x"}')
-        assert result == {"duplicate_of_uuid": "abc", "merged_summary": "x"}
-
-    def test_parse_json_in_code_fence(self):
-        text = '```json\n{"duplicate_of_uuid": "abc", "merged_summary": "x"}\n```'
-        result = EntityResolver._parse_dedupe_response(text)
-        assert result is not None
-        assert result["duplicate_of_uuid"] == "abc"
-
-    def test_parse_null_duplicate(self):
-        result = EntityResolver._parse_dedupe_response('{"duplicate_of_uuid": null}')
-        assert result is not None
-        assert result["duplicate_of_uuid"] is None
-
-    def test_parse_invalid_json(self):
-        result = EntityResolver._parse_dedupe_response("not json at all {{{")
-        assert result is None
-
-    def test_parse_empty(self):
-        result = EntityResolver._parse_dedupe_response("")
-        assert result is None
+    async def test_vector_candidates_by_name(self):
+        driver = AsyncMock()
+        driver.execute_query = AsyncMock(return_value=[])
+        resolver = EntityResolver(driver, "group")
+        entity = ExtractedEntity(name="Tanaka", entity_type="Person", summary="A developer")
+        await resolver._find_vector_candidates(entity, name_embedding=None)
+        args = driver.execute_query.call_args
+        assert args[0][1]["name_pattern"] == "(?i).*Tanaka.*"

@@ -173,7 +173,7 @@ If the channel message body **contains this ID** in the form `<@U01234567>`, it 
 |-----|------|---------|-------------|
 | `enabled` | bool | `false` | Enable or disable Slack ingestion |
 | `mode` | string | `"socket"` | `"socket"` (recommended) or `"webhook"` |
-| `anima_mapping` | object | `{}` | Slack channel ID → Anima name (shared bot) |
+| `anima_mapping` | object | `{}` | Slack channel ID → Anima name (shared bot). An empty value (`""`) ignores that channel instead of falling back to `default_anima` |
 | `default_anima` | string | `""` | Fallback Anima when the channel is not in anima_mapping |
 | `app_id_mapping` | object | `{}` | Slack API App ID → Anima name (multiple apps in Webhook mode) |
 
@@ -271,8 +271,8 @@ Implementation: `server/reload_manager.py` → `SlackSocketModeManager.reload()`
 4. **call_human thread replies**: If the message is a thread reply and mapped via `route_thread_reply`, it is routed to the inbox of the Anima that sent the original notification (`core/notification/reply_routing.py`)
 5. **Routing resolution**:
    - **Socket Mode Per-Anima bot**: All messages to that bot go directly to the corresponding Anima
-   - **Socket Mode shared bot**: On each message, `anima_mapping.get(channel_id) or default_anima` (config hot-reloads)
-   - **Webhook**: Resolve Anima with `app_id_mapping.get(api_app_id)` → otherwise `anima_mapping.get(channel_id) or default_anima`
+   - **Socket Mode shared bot**: On each message, `anima_mapping[channel_id]` if the channel is listed (an empty value ignores the channel), otherwise `default_anima` (config hot-reloads)
+   - **Webhook**: Resolve Anima with `app_id_mapping.get(api_app_id)` → otherwise the same `anima_mapping` / `default_anima` rule as above
 6. **Thread context**: When `thread_ts` is present, a one-line parent summary and reply count are prepended as a `[Thread context]` block (`conversations.replies`, logic equivalent to fetching up to ~10 items)
 7. **Body normalization**: Expand `<@U...>` to display names and convert Slack markup to plain text (`clean_slack_markup` in `core/tools/_slack_markdown.py`)
 8. **Annotation**: Prepend a line indicating `[slack:DM]` or whether the channel message mentions the bot or an alias (`_build_slack_annotation`)

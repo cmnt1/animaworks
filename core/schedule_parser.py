@@ -10,7 +10,7 @@ from __future__ import annotations
 """Schedule-parsing helpers extracted from lifecycle.py.
 
 Provides pure-function parsers for cron.md and heartbeat.md with no
-dependency on LifecycleManager or APScheduler internals.
+dependency on APScheduler internals.
 """
 
 import logging

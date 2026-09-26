@@ -13,9 +13,7 @@ from datetime import UTC
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from core.exceptions import TaskPersistenceError
 from core.i18n import t
-from core.memory._io import atomic_write_text
 from core.time_utils import now_iso, now_local
 from core.tooling.handler_base import _error_result
 
@@ -26,7 +24,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("animaworks.tool_handler")
 
-_INSTRUCTION_TRUNCATE_LEN = 200
+_INSTRUCTION_TRUNCATE_LEN = 120
 
 
 class SkillsToolsMixin:
@@ -458,7 +456,14 @@ class SkillsToolsMixin:
             return _error_result("InvalidArguments", "reason is required")
         absorbed_target = str(absorbed_into).strip() if absorbed_into is not None else ""
         try:
-            event = self._curator().change_state(
+            from core.config import load_config
+
+            curator = self._curator()
+            # Security quarantine remains immediate. Routine curation records
+            # proposals; a host-side explicit action can accept them later.
+            apply_change = state == "blocked" or load_config().consolidation.curator_auto_apply_enabled
+            operation = curator.change_state if apply_change else curator.propose_state_change
+            event = operation(
                 skill_name,
                 state,
                 reason=reason,
@@ -557,59 +562,26 @@ class SkillsToolsMixin:
 
         return _json.dumps(entry.model_dump(), ensure_ascii=False, indent=2)
 
-    def _persist_task_update_via_server(
-        self,
-        *,
-        task_id: str,
-        status: str,
-        meta: dict[str, Any],
-        summary: str | None,
-    ) -> tuple[dict[str, Any] | None, str | None]:
-        """Persist a task update through the host when the sandbox is read-only."""
-        try:
-            import httpx
-
-            from core.tooling.handler_delegation import _extract_detail, _server_base_url
-        except ImportError as exc:
-            return None, f"httpx unavailable: {exc}"
-
-        try:
-            response = httpx.post(
-                f"{_server_base_url()}/api/internal/update-task",
-                json={
-                    "anima_name": self._anima_name,
-                    "task_id": task_id,
-                    "status": status,
-                    "meta": meta,
-                    "summary": summary,
-                },
-                timeout=httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0),
-            )
-        except Exception as exc:
-            return None, f"server unreachable: {exc}"
-        if response.status_code >= 400:
-            return None, f"HTTP {response.status_code}: {_extract_detail(response)}"
-        try:
-            data = response.json()
-        except Exception:
-            data = {}
-        task = data.get("task") if isinstance(data, dict) and data.get("ok") else None
-        return (task, None) if isinstance(task, dict) else (None, f"unexpected response: {data!r}")
-
     def _handle_update_task(self, args: dict[str, Any]) -> str:
         from core.memory.task_queue import TaskQueueManager
-        from core.schemas import TaskEntry
+        from core.tasks_dispatch import update_task
 
         manager = TaskQueueManager(self._anima_dir)
         task_id = args.get("task_id", "")
         status = args.get("status", "")
         summary = args.get("summary")
         result = args.get("result")
+        resume = args.get("resume")
 
         if not task_id:
             return _error_result("InvalidArguments", "task_id is required")
         if not status:
             return _error_result("InvalidArguments", "status is required")
+        if resume is not None and not isinstance(resume, bool):
+            return _error_result("InvalidArguments", "resume must be a boolean")
+        resume = bool(resume)
+        if resume and status != "pending":
+            return _error_result("InvalidArguments", "resume requires status='pending'")
         if status in ("blocked", "failed"):
             return _error_result(
                 "InvalidArguments",
@@ -627,45 +599,8 @@ class SkillsToolsMixin:
         if result is not None:
             summary = result
 
-        if status == "pending" and manager.get_task_by_id(task_id) is None:
-            return _error_result(
-                "TaskNotFound",
-                f"Task not found or invalid status: {task_id}",
-            )
-
-        declaration_meta: dict[str, Any] = {}
-        if status == "done":
-            declaration_meta = {
-                "completed_by": "agent_declaration",
-                "declared_at": now_iso(),
-            }
-            if result is not None:
-                declaration_meta["result_note"] = result
-
         try:
-            if declaration_meta:
-                entry = manager.update_meta(task_id, declaration_meta, summary=result)
-                if entry is not None:
-                    entry = manager.update_status(task_id, status, summary=summary)
-            else:
-                entry = manager.update_status(task_id, status, summary=summary)
-        except (OSError, TaskPersistenceError) as e:
-            if not declaration_meta:
-                logger.error("Task persistence failed in update_task: %s", e)
-                return _error_result("PersistenceFailed", f"Failed to update task: {e}")
-            task_data, fallback_error = self._persist_task_update_via_server(
-                task_id=task_id,
-                status=status,
-                meta=declaration_meta,
-                summary=summary,
-            )
-            if fallback_error is not None or task_data is None:
-                logger.error("Task persistence fallback failed in update_task: %s", fallback_error)
-                return _error_result(
-                    "PersistenceFailed",
-                    f"Failed to update task: {e}; server fallback failed: {fallback_error}",
-                )
-            entry = TaskEntry.model_validate(task_data)
+            entry = update_task(manager, task_id, status, summary=summary, result=result, resume=resume)
         except Exception as e:
             logger.error("Task persistence failed in update_task: %s", e)
             return _error_result("PersistenceFailed", f"Failed to update task: {e}")
@@ -688,7 +623,7 @@ class SkillsToolsMixin:
         self._activity.log(
             "task_updated",
             summary=t("handler.task_update_log", summary=entry.summary[:100], status=status),
-            meta={"task_id": task_id, "status": status},
+            meta={"task_id": task_id, "status": status, "resume": resume},
         )
 
         return _json.dumps(entry.model_dump(), ensure_ascii=False, indent=2)
@@ -702,139 +637,60 @@ class SkillsToolsMixin:
         tasks = manager.list_tasks(status=status_filter)
         result = [t.model_dump() for t in tasks]
         if not detail:
+            _META_SUMMARY_KEYS = {
+                "last_run_stop_kind",
+                "last_run_note",
+                "depends_on",
+                "batch_id",
+            }
+            projected: list[dict[str, Any]] = []
             for item in result:
-                instr = item.get("original_instruction", "")
-                if len(instr) > _INSTRUCTION_TRUNCATE_LEN:
-                    item["original_instruction"] = instr[:_INSTRUCTION_TRUNCATE_LEN] + "..."
+                meta = item.get("meta") or {}
+                meta_subset = {k: v for k, v in meta.items() if k in _META_SUMMARY_KEYS}
+
+                def _truncate(value: str) -> str:
+                    if len(value) > _INSTRUCTION_TRUNCATE_LEN:
+                        return value[:_INSTRUCTION_TRUNCATE_LEN] + "..."
+                    return value
+
+                truncated = {
+                    "task_id": item.get("task_id", ""),
+                    "status": item.get("status", ""),
+                    "summary": _truncate(item.get("summary", "")),
+                    "original_instruction": _truncate(item.get("original_instruction", "")),
+                    "assignee": item.get("assignee", ""),
+                    "source": item.get("source", ""),
+                    "updated_at": item.get("updated_at", ""),
+                }
+                if meta_subset:
+                    truncated["meta"] = meta_subset
+                projected.append(truncated)
+            result = projected
         mark_executability(result, self._anima_dir)
         return _json.dumps(result, ensure_ascii=False)
 
     # ── submit_tasks handler (DAG batch submission) ────────────
 
     def _handle_submit_tasks(self, args: dict[str, Any]) -> str:
-        """Validate and write a DAG batch of tasks to state/pending/.
+        """Validate a complete DAG batch, then publish it in one transaction."""
+        from core.tasks_dispatch import publish_tasks
 
-        Performs cycle detection, duplicate ID check, and dependency
-        reference validation before writing task files.
-        """
         batch_id = args.get("batch_id", "")
         tasks = args.get("tasks", [])
-
-        if not batch_id:
+        if not isinstance(batch_id, str) or not batch_id:
             return _error_result("InvalidArguments", "batch_id is required")
-        if not tasks:
+        if not isinstance(tasks, list) or not tasks or not all(isinstance(task, dict) for task in tasks):
             return _error_result("InvalidArguments", "tasks must contain at least one task")
-
-        # Validate task IDs are unique
-        task_ids = [task.get("task_id", "") for task in tasks]
-        if len(task_ids) != len(set(task_ids)):
-            return _error_result("InvalidArguments", "Duplicate task_id found in batch")
-
-        task_id_set = set(task_ids)
-
-        # Validate depends_on references
-        for task in tasks:
-            for dep in task.get("depends_on", []):
-                if dep not in task_id_set:
-                    return _error_result(
-                        "InvalidArguments", f"Task '{task['task_id']}' depends on unknown task_id '{dep}'"
-                    )
-
-        # Validate required fields
-        for task in tasks:
-            if not task.get("task_id") or not task.get("title") or not task.get("description"):
-                return _error_result(
-                    "InvalidArguments",
-                    f"Task missing required fields (task_id, title, description): {task.get('task_id', '?')}",
-                )
-
-        from core.config.model_catalog import validate_model_override
-
-        for task in tasks:
-            t_model = task.get("model") if isinstance(task.get("model"), str) else ""
-            if not t_model.strip():
-                continue
-            model_err = validate_model_override(self._anima_name, t_model)
-            if model_err:
-                return _error_result(
-                    "InvalidArguments",
-                    t(
-                        "tooling.model_list_hint",
-                        error=f"Task '{task.get('task_id', '?')}' model: {model_err}",
-                    ),
-                )
-
-        # Cycle detection via topological sort
-        from core.supervisor.pending_executor import _topological_sort
-
-        try:
-            _topological_sort(tasks)
-        except ValueError:
-            return _error_result("InvalidArguments", "Cycle detected in depends_on references")
-
-        try:
-            from core.config.model_config import load_model_config
-            from core.task_granularity import assess_task_granularity, capability_for_model
-
-            config = load_model_config(self._anima_dir)
-            model_name = config.background_model or config.model
-            capability = capability_for_model(model_name)
-            lightweight_task_limit = 1 if capability != "high" else None
-            for task_spec in tasks:
-                decision = assess_task_granularity(
-                    model_name=model_name,
-                    title=task_spec.get("title", ""),
-                    description=task_spec.get("description", ""),
-                    context=task_spec.get("context", ""),
-                    allow_multistage=bool(task_spec.get("allow_multistage")),
-                    honor_allow_multistage=capability == "high",
-                    max_phases=lightweight_task_limit,
-                )
-                if not decision.allowed:
-                    return _error_result(
-                        "TaskTooBroadForModel",
-                        (
-                            f"{decision.guidance} "
-                            "For lightweight or medium background models, submit one concrete phase per task. "
-                            f"task_id={task_spec.get('task_id', '?')}, model={decision.model_name}, "
-                            f"capability={decision.capability}."
-                        ),
-                    )
-        except Exception:
-            logger.debug("submit_tasks granularity preflight skipped", exc_info=True)
-
-        # Write task files to state/pending/ AND register in task_queue.jsonl
-        pending_dir = self._anima_dir / "state" / "pending"
-        pending_dir.mkdir(parents=True, exist_ok=True)
         submitted_at = now_iso()
-
-        from core.memory.task_queue import TaskQueueManager
-
-        manager = TaskQueueManager(self._anima_dir)
-
-        written: list[str] = []
-        for task in tasks:
-            workspace_raw = task.get("workspace", "")
-            resolved_wd = ""
-            if workspace_raw:
-                try:
-                    from core.workspace import resolve_workspace
-
-                    resolved_wd = str(resolve_workspace(workspace_raw))
-                except ValueError as e:
-                    return _error_result(
-                        "InvalidArguments",
-                        f"Workspace resolution failed: {e}",
-                        suggestion=str(e),
-                    )
-
-            t_model = task.get("model") if isinstance(task.get("model"), str) else ""
-            task_desc = {
+        payloads = [
+            dict(task)
+            if task.get("resume") is True
+            else {
                 "task_type": "llm",
-                "task_id": task["task_id"],
+                "task_id": task.get("task_id"),
                 "batch_id": batch_id,
-                "title": task["title"],
-                "description": task["description"],
+                "title": task.get("title"),
+                "description": task.get("description"),
                 "parallel": task.get("parallel", False),
                 "depends_on": task.get("depends_on", []),
                 "context": task.get("context", ""),
@@ -845,68 +701,31 @@ class SkillsToolsMixin:
                 "submitted_by": self._anima_name,
                 "submitted_at": submitted_at,
                 "reply_to": task.get("reply_to", self._anima_name),
-                "working_directory": resolved_wd,
-                "model": t_model,
+                "workspace": task.get("workspace", ""),
+                "model": task.get("model", ""),
             }
+            for task in tasks
+        ]
+        try:
+            entries = publish_tasks(self._anima_dir, payloads)
+        except ValueError as exc:
+            return _error_result("InvalidArguments", str(exc))
+        except Exception as exc:
+            logger.exception("Failed to submit task batch %s", batch_id)
+            return _error_result("PersistenceFailed", str(exc))
 
-            # Layer 1: Write JSON to state/pending/
-            path = pending_dir / f"{task['task_id']}.json"
-            atomic_write_text(
-                path,
-                _json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
-            )
-
-            # Layer 2: Register in task_queue.jsonl
-            try:
-                manager.add_task(
-                    source="anima",
-                    original_instruction=task["description"][:5000],
-                    assignee=self._anima_name,
-                    summary=task["title"],
-                    task_id=task["task_id"],
-                    status="pending" if task.get("depends_on") else "in_progress",
-                    meta={
-                        "executor": "taskexec",
-                        "batch_id": batch_id,
-                        "depends_on": task.get("depends_on", []),
-                        "parallel": task.get("parallel", False),
-                        "model": t_model,
-                        "task_desc": {
-                            "title": task["title"],
-                            "description": task["description"],
-                            "acceptance_criteria": task.get("acceptance_criteria", []),
-                            "constraints": task.get("constraints", []),
-                            "file_paths": task.get("file_paths", []),
-                            "context": task.get("context", ""),
-                            "reply_to": task.get("reply_to", self._anima_name),
-                            "working_directory": resolved_wd,
-                            "model": t_model,
-                        },
-                    },
-                )
-            except Exception:
-                logger.warning(
-                    "Failed to register submit_task in task_queue: %s",
-                    task["task_id"],
-                    exc_info=True,
-                )
-
-            written.append(task["task_id"])
-
-        # Wake the pending executor
-        if hasattr(self, "_pending_executor_wake") and self._pending_executor_wake:
+        if getattr(self, "_pending_executor_wake", None):
             self._pending_executor_wake()
-
         return _json.dumps(
             {
                 "status": "submitted",
                 "batch_id": batch_id,
-                "task_count": len(written),
-                "task_ids": written,
+                "task_count": len(entries),
+                "task_ids": [entry.task_id for entry in entries],
                 "message": (
-                    f"Batch '{batch_id}' submitted with {len(written)} tasks. "
-                    f"Parallel tasks will execute concurrently. "
-                    f"Tasks with depends_on will wait for dependencies."
+                    f"Batch '{batch_id}' submitted with {len(entries)} tasks. "
+                    "Parallel tasks will execute concurrently. "
+                    "Tasks with depends_on will wait for dependencies."
                 ),
             },
             ensure_ascii=False,

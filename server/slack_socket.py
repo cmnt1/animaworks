@@ -884,7 +884,8 @@ class SlackSocketModeManager:
 
         The ``anima_mapping`` is resolved dynamically via ``load_config()``
         on every incoming message so that config changes take effect without
-        reconnecting the Socket Mode handler.
+        reconnecting the Socket Mode handler.  A channel mapped to ``""`` is
+        ignored instead of falling back to ``default_anima``.
         """
 
         # Reference to all known bot UIDs for self-message filtering
@@ -917,7 +918,7 @@ class SlackSocketModeManager:
             channel_id = event.get("channel", "")
             cfg = load_config()
             slack_cfg = cfg.external_messaging.slack
-            anima_name = slack_cfg.anima_mapping.get(channel_id) or slack_cfg.default_anima
+            anima_name = slack_cfg.resolve_anima(channel_id)
             if not anima_name:
                 logger.debug(
                     "No anima mapping for channel %s and no default_anima; ignoring",
@@ -1033,7 +1034,7 @@ class SlackSocketModeManager:
             channel_id = event.get("channel", "")
             cfg = load_config()
             slack_cfg = cfg.external_messaging.slack
-            anima_name_resolved = slack_cfg.anima_mapping.get(channel_id) or slack_cfg.default_anima
+            anima_name_resolved = slack_cfg.resolve_anima(channel_id)
             if not anima_name_resolved:
                 logger.debug(
                     "No anima mapping for channel %s (app_mention); ignoring",

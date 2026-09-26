@@ -1,28 +1,5 @@
-- **MUST**: `status: ok` の `Current Pre-Observed Heartbeat Snapshot` があれば固定スコープ（Inbox / task_queue / current_state / state/pending / state/task_results / background_notifications / peer_activity / recent_own_files）の根拠としてツールを重ねて呼ばない。事前観測がなければ `heartbeat_observe_snapshot` をフォールバックとして呼ぶ
-- **MUST**: current_state.mdに進行中タスクがあるか確認し、確認結果を根拠として述べること。「idle」「待機中」と判定する前に必ず確認
-- **MUST**: タスクキューのSTALEタスク（⚠️ STALE表示）を確認。`heartbeat_observe_snapshot` の task_queue を根拠として示すこと。STALEタスクを放置してHEARTBEAT_OKとしてはならない
-- **MUST**: 待機タスクが24時間以上経過していないか確認。長期停滞があれば状況確認やリマインドを行う
-- **MUST**: ボード確認 — 自分がメンバーになっているチャネルを**すべて** `read_channel(...)` で読むこと。最低でも `general` と所属する部門チャネル（`property` / `finance` / `affiliate` / `administration` のうち該当するもの）。`ops` のメンバーなら `ops` も。メンション無しの投稿はここで拾う（メンション付きは既に Inbox に届いている）。他者の報告への称賛・承認応答は**投稿禁止**。判断基準は `common_knowledge/communication/broadcasting-guide.md`
-- 利用すべき外部ツールにアクセスできるか（不可なら上司に報告）
-- 進行中タスクにブロッカーがないか
-- state/pending/ に未実行のタスクがないか `heartbeat_observe_snapshot` の pending_files を根拠に確認
-
-### ブロッカー報告（MUST）
-
-以下の状況は即座に依頼者に報告。放置禁止。
-
-- ファイル/ディレクトリが見つからない
-- 権限不足・前提条件未達・技術的問題
-- 指示内容が不明確で判断できない
-
-報告先: 依頼者（send_message）。重大ブロッカー（30分超遅延）: call_humanも送信
-
-### HEARTBEAT_OK 判定条件（すべて満たすこと）
-
-- 自分担当のpendingタスクが0件、またはすべて委譲済み
-- `read_channel` 実行済みで自分宛メンションなし
-- STALE / OVERDUEタスクが0件
-- current_state.md に未対応の自分担当タスクなし
-- `status: ok` の事前観測または `heartbeat_observe_snapshot` の直接呼出し結果がある
-
-いずれかが満たされなければ、対応アクションを記述すること。
+- current_state.md の進行中タスクと、list_tasks の STALE / 24 時間超の待機タスクを確認し、根拠を示す
+- 所属する制限チャネル（なければ general）を read_channel で確認し、自分宛メンションの有無を述べる。称賛・承認だけの投稿はしない
+- 必要な外部ツールにアクセスできるか、進行中タスクにブロッカーがないかを確認する
+- ファイル不在・権限不足・前提未達・指示不明などのブロッカーは依頼者に即報告する。30 分を超える重大なブロッカーは call_human も送る
+- 上記がすべて解消していると確認できた応答にだけ HEARTBEAT_OK を含める

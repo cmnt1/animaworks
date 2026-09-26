@@ -21,6 +21,7 @@ from core.exceptions import (
     ChannelAccessDeniedError,
     ChannelNotFoundError,
     DeliveryError,
+    MemoryWriteError,
     RecipientNotFoundError,
 )  # noqa: F401
 from core.i18n import t
@@ -221,7 +222,17 @@ class Messenger:
         origin_chain: list[str] | None = None,
         meta: dict[str, Any] | None = None,
         source: str = "anima",
+        delivery_id: str = "",
     ) -> Message:
+        if delivery_id:
+            import re
+
+            if not re.fullmatch(r"[a-zA-Z0-9_-]{1,160}", delivery_id):
+                raise ValueError("Invalid durable delivery ID")
+            target = self.shared_dir / "inbox" / to
+            for previous in (target / f"{delivery_id}.json", target / "processed" / f"{delivery_id}.json"):
+                if previous.exists():
+                    return Message.model_validate_json(previous.read_text(encoding="utf-8"))
         # ── Conversation depth check (internal Anima only) ──
         is_internal = False
         animas_dir: Path | None = None
@@ -272,6 +283,8 @@ class Messenger:
             meta=meta or {},
             source=source,
         )
+        if delivery_id:
+            msg.id = delivery_id
         # New thread: use message id as thread_id
         new_thread = not msg.thread_id
         if new_thread:
@@ -285,7 +298,7 @@ class Messenger:
                 raise DeliveryError(
                     f"Message delivery failed: file not created at {filepath} ({self.anima_name} -> {to})"
                 )
-        except OSError as exc:
+        except (OSError, MemoryWriteError) as exc:
             # Sandboxed processes cannot write shared/inbox (write-access
             # charter: only company shared + work dirs are writable).
             # Deliver via the host server instead, like delegate_task.

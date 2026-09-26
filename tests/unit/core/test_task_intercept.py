@@ -5,108 +5,10 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
-
-
-# ── _intercept_task_to_pending ───────────────────────────────
-
-
-class TestInterceptTaskToPending:
-    """Verify _intercept_task_to_pending writes correct pending JSON."""
-
-    def test_creates_pending_json(self, tmp_path: Path) -> None:
-        """A JSON file is written to state/pending/ with correct structure."""
-        from core.execution._sdk_hooks import _intercept_task_to_pending
-
-        anima_dir = tmp_path / "animas" / "test"
-        anima_dir.mkdir(parents=True)
-
-        tool_input = {
-            "description": "Implement feature X",
-            "prompt": "Read the issue file and create a worktree...",
-        }
-
-        with patch("core.execution._sdk_hooks._log_tool_use"):
-            task_id = _intercept_task_to_pending(anima_dir, tool_input, "tool-123")
-
-        pending_dir = anima_dir / "state" / "pending"
-        task_files = list(pending_dir.glob("*.json"))
-        assert len(task_files) == 1
-
-        task_desc = json.loads(task_files[0].read_text(encoding="utf-8"))
-        assert task_desc["task_type"] == "llm"
-        assert task_desc["task_id"] == task_id
-        assert task_desc["title"] == "Implement feature X"
-        assert task_desc["description"] == "Read the issue file and create a worktree..."
-        assert task_desc["submitted_by"] == "self_task_intercept"
-        assert "submitted_at" in task_desc
-
-    def test_prompt_fallback_to_description(self, tmp_path: Path) -> None:
-        """When prompt is absent, description is used as the task body."""
-        from core.execution._sdk_hooks import _intercept_task_to_pending
-
-        anima_dir = tmp_path / "animas" / "test"
-        anima_dir.mkdir(parents=True)
-
-        tool_input = {"description": "Quick background check"}
-
-        with patch("core.execution._sdk_hooks._log_tool_use"):
-            _intercept_task_to_pending(anima_dir, tool_input, None)
-
-        pending_dir = anima_dir / "state" / "pending"
-        task_desc = json.loads(
-            next(pending_dir.glob("*.json")).read_text(encoding="utf-8"),
-        )
-        assert task_desc["description"] == "Quick background check"
-
-    def test_logs_activity(self, tmp_path: Path) -> None:
-        """Tool use is logged as intercept info (not blocked)."""
-        from core.execution._sdk_hooks import _intercept_task_to_pending
-
-        anima_dir = tmp_path / "animas" / "test"
-        anima_dir.mkdir(parents=True)
-
-        tool_input = {"description": "test", "prompt": "do stuff"}
-
-        with patch("core.execution._sdk_hooks._log_tool_use") as mock_log:
-            _intercept_task_to_pending(anima_dir, tool_input, "tid-1")
-
-        mock_log.assert_called_once()
-        _, kwargs = mock_log.call_args
-        assert kwargs["blocked"] is False
-
-    def test_json_compatible_with_execute_llm_task(self, tmp_path: Path) -> None:
-        """Generated JSON has all fields expected by PendingTaskExecutor._execute_llm_task."""
-        from core.execution._sdk_hooks import _intercept_task_to_pending
-
-        anima_dir = tmp_path / "animas" / "test"
-        anima_dir.mkdir(parents=True)
-
-        tool_input = {
-            "description": "Build the feature",
-            "prompt": "Step 1: read file\nStep 2: edit code",
-        }
-
-        with patch("core.execution._sdk_hooks._log_tool_use"):
-            _intercept_task_to_pending(anima_dir, tool_input, None)
-
-        task_desc = json.loads(
-            next((anima_dir / "state" / "pending").glob("*.json")).read_text(
-                encoding="utf-8",
-            ),
-        )
-
-        required_keys = {
-            "task_type", "task_id", "title", "description",
-            "context", "acceptance_criteria", "constraints",
-            "file_paths", "submitted_by", "submitted_at",
-        }
-        assert required_keys <= set(task_desc.keys())
-
 
 # ── PreToolUse hook Task branch ──────────────────────────────
 
@@ -208,9 +110,11 @@ class TestPreToolHookTaskBranch:
             "tool_input": {"file_path": "/tmp/test.txt"},
         }
 
-        with patch("core.execution._sdk_hooks._log_tool_use"), \
-             patch("core.execution._sdk_hooks._check_a1_file_access", return_value=None), \
-             patch("core.execution._sdk_hooks._build_output_guard", return_value=None):
+        with (
+            patch("core.execution._sdk_hooks._log_tool_use"),
+            patch("core.execution._sdk_hooks._check_a1_file_access", return_value=None),
+            patch("core.execution._sdk_hooks._build_output_guard", return_value=None),
+        ):
             result = await hook(input_data, "tool-id-4", {})
 
         output = result.get("hookSpecificOutput", {})
@@ -223,9 +127,11 @@ class TestPreToolHookTaskBranch:
             "tool_input": {"command": "echo hello"},
         }
 
-        with patch("core.execution._sdk_hooks._log_tool_use"), \
-             patch("core.execution._sdk_hooks._check_a1_bash_command", return_value=None), \
-             patch("core.execution._sdk_hooks._build_output_guard", return_value=None):
+        with (
+            patch("core.execution._sdk_hooks._log_tool_use"),
+            patch("core.execution._sdk_hooks._check_a1_bash_command", return_value=None),
+            patch("core.execution._sdk_hooks._build_output_guard", return_value=None),
+        ):
             result = await hook(input_data, "tool-id-5", {})
 
         output = result.get("hookSpecificOutput", {})
@@ -237,9 +143,11 @@ class TestPreToolHookTaskBranch:
             "tool_input": {"command": "echo safe; echo injected"},
         }
 
-        with patch("core.execution._sdk_hooks._log_tool_use") as log_tool, \
-             patch("core.execution._sdk_hooks._check_a1_bash_command", return_value="injection") as check, \
-             patch("core.execution._sdk_hooks._build_output_guard", return_value=None):
+        with (
+            patch("core.execution._sdk_hooks._log_tool_use") as log_tool,
+            patch("core.execution._sdk_hooks._check_a1_bash_command", return_value="injection") as check,
+            patch("core.execution._sdk_hooks._build_output_guard", return_value=None),
+        ):
             result = await hook(input_data, "tool-id-injection", {})
 
         output = result.get("hookSpecificOutput", {})

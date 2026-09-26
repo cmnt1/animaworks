@@ -92,6 +92,7 @@ def _make_rate_guard_reporter(guard: Any, key: str, label: str) -> Any:
                 if long_lived
                 else hint.backoff_s or guard.config.default_block_seconds,
                 reason.value,
+                reset_in_s=getattr(hint, "reset_in_s", None),
             )
         if reason in (FailoverReason.AUTH, FailoverReason.BILLING):
             logger.error(

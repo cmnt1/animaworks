@@ -98,6 +98,7 @@ class TestPendingTaskWatcherLoop:
         """Return a mock for asyncio.wait_for that stops the loop after one iteration."""
 
         async def _mock(coro, *, timeout):
+            coro.close()
             executor._shutdown_event.set()
             raise TimeoutError
 
@@ -145,18 +146,21 @@ class TestPendingTaskWatcherLoop:
 
         assert not corrupt_path.exists()
 
-    async def test_drops_non_object_llm_pending_json(self, tmp_path: Path) -> None:
-        """A list-shaped JSON in state/pending/ is dropped instead of crashing the loop."""
+    async def test_preserves_non_object_legacy_llm_evidence_after_explicit_import(self, tmp_path: Path) -> None:
+        """Only command descriptors are swept; imported legacy LLM evidence remains untouched."""
+        from core.taskboard.tasks import TaskStore, task_database_path
+
         executor = _make_executor_with_anima(tmp_path)
         llm_pending_dir = executor._anima_dir / "state" / "pending"
         llm_pending_dir.mkdir(parents=True, exist_ok=True)
         junk = llm_pending_dir / "pr4894-reviews-raw.json"
         junk.write_text("[]", encoding="utf-8")
+        TaskStore(task_database_path(executor._anima_dir)).import_legacy(executor._anima_dir)
 
         with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
             await executor.watcher_loop()
 
-        assert not junk.exists()
+        assert junk.read_text(encoding="utf-8") == "[]"
 
     async def test_processes_multiple_pending_files(self, tmp_path: Path) -> None:
         """Watcher processes all pending files in a single scan iteration."""
@@ -197,6 +201,7 @@ class TestPendingTaskWatcherLoop:
         executor = _make_executor_with_anima(tmp_path)
 
         async def cancel_wait(coro, *, timeout):
+            coro.close()
             raise asyncio.CancelledError()
 
         with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=cancel_wait):

@@ -121,7 +121,7 @@ send_message(
    - 불필요해졌다면 `update_task(status="cancelled", summary="이유")`로 설정합니다
 
 5. **대기하는 동안 진행 가능한 작업이 있는지 확인합니다**
-   - 영속 태스크 큐(`Bash: animaworks-tool task list`)와 `state/pending/` 하위의 태스크에 다른 작업이 없는지 확인합니다
+   - `list_tasks(detail=true)`로 미착수 작업, 의존 관계, 주의 사유를 확인하세요. 기존 태스크를 복제하거나 수동 재투입하지 마세요
    - 다른 태스크에 착수합니다
 
 ---

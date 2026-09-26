@@ -28,7 +28,7 @@ An Anima runs on five paths. All except Chat start automatically.
 | **Inbox** | When another Anima sends a DM | Immediate response to internal messages | Anima → Anima |
 | **Heartbeat** | Periodic auto-start (default: every 30 min) | Observe → Plan → Reflect. **Does NOT execute tasks** | Automatic |
 | **Cron** | Per cron.md schedule (e.g. daily at 9:00) | Execute scheduled tasks at fixed times | Automatic |
-| **TaskExec** | When a task appears in `state/pending/` | Execute real work in an LLM session | Automatic (submitted by Heartbeat or submit_tasks) |
+| **TaskExec** | A canonical task is ready and dependencies are complete | Execute saved input in a claimed LLM attempt | Published through submit_tasks or delegate_task |
 
 Chat and Heartbeat run on **separate locks**, so the Anima can respond to humans instantly even during a patrol.
 
@@ -127,7 +127,7 @@ There are two ways to move a task into execution.
 | **Who executes** | **Your own** TaskExec path | **Direct subordinate** |
 | **When to use** | Want to async-execute a task yourself | Want to delegate to a subordinate |
 | **DAG/parallel** | `parallel: true` for parallel, `depends_on` for dependencies | One task at a time |
-| **Tracking** | task_queue.jsonl + Priming display | `task_tracker` |
+| **Tracking** | `list_tasks` / TaskBoard using the canonical task store | `task_tracker` |
 | **Typical example** | Execute a task discovered during Heartbeat | Manager delegates work to subordinate |
 
 **Decision flow:**
@@ -182,7 +182,7 @@ There are two ways to move a task into execution.
 
 **Priming (automatic recall)** automatically retrieves relevant memories with each conversation or patrol and injects the needed context into the system prompt. You can also actively search with `search_memory`.
 
-**Consolidation** extracts episodes from activity_log daily and distills them into knowledge. Unused memories are automatically organized by **Forgetting (active forgetting)**.
+**Consolidation** records episodes from new activity chunks only; an unchanged repeat performs no generation. Automatic knowledge mutation, weekly/monthly cleanup and skill autolearning are disabled by default. Memory storage and on-demand retrieval remain available.
 
 → Details: `anatomy/memory-system.md`
 
@@ -192,12 +192,12 @@ There are two ways to move a task into execution.
 
 ### background_model
 
-Heartbeat / Inbox / Cron can run on a lighter model separate from the main model.
+Heartbeat / Cron can use an explicitly configured background model. Inbox stays on the main model; task-specific overrides take precedence for that task. No model is automatically chosen merely because it is cheaper.
 
 | Category | Model used | Target |
 |----------|-----------|--------|
-| foreground | Main model (e.g. claude-opus-4-6) | Chat (human conversation), TaskExec |
-| background | background_model (e.g. claude-sonnet-4-6) | Heartbeat, Inbox, Cron |
+| foreground | Main model, or explicit task override | Chat, Inbox, TaskExec |
+| background | Explicit background_model, otherwise main model | Heartbeat, Cron |
 
 Setting: `animaworks anima set-background-model {name} claude-sonnet-4-6`
 
@@ -241,7 +241,7 @@ An Anima's hierarchy is determined by the `supervisor` field in `status.json`.
 | Don't know how to do something | `search_memory(query="keyword", scope="common_knowledge")` |
 | Task is blocked | See `troubleshooting/escalation-flowchart.md` |
 | Tool isn't working | See `troubleshooting/common-issues.md` |
-| Don't know what to do | Run Heartbeat checklist. Check current_state.md and task_queue |
+| Don't know what to do | Check current_state.md and `list_tasks`; use the configured Heartbeat checklist when needed |
 | Unsure about a decision | Ask your supervisor with `send_message(intent="question")` |
 
 → Full document index: `common_knowledge/00_index.md`

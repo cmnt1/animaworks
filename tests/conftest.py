@@ -10,6 +10,7 @@ mock/live switching for all test modules.
 from __future__ import annotations
 
 import errno
+import importlib.util as _ilu
 import logging
 import os
 import shutil
@@ -25,6 +26,12 @@ from typing import Any
 
 import pytest
 from dotenv import load_dotenv
+
+_spec = _ilu.spec_from_file_location("_codex_sandbox", Path(__file__).with_name("_codex_sandbox.py"))
+if _spec and _spec.loader:
+    _mod = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+    _mod.install()
 
 logger = logging.getLogger(__name__)
 

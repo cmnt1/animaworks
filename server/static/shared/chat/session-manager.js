@@ -17,6 +17,8 @@ class ChatSession {
     this._streamingMsg = null;
     this._abortController = null;
     this._pendingQueue = [];
+    /** Epoch ms when the current stream started; null when idle. */
+    this._streamingSince = null;
   }
 
   get isStreaming() {
@@ -224,6 +226,17 @@ export class ChatSessionManager extends EventTarget {
     return session ? session.isStreaming : false;
   }
 
+  /**
+   * Epoch ms when the current stream for anima:thread started, or null when
+   * not streaming. Used by pollers to bypass the streaming guard when a stream
+   * has been "in progress" for suspiciously long (stuck SSE fail-safe).
+   */
+  getStreamingSince(anima, thread = "default") {
+    const session = this.#sessions.get(this.#key(anima, thread));
+    if (!session?.isStreaming) return null;
+    return session._streamingSince ?? null;
+  }
+
   getStreamingContext(anima) {
     for (const [key, session] of this.#sessions) {
       if (key.startsWith(`${anima}:`) && session.isStreaming) {
@@ -279,6 +292,7 @@ export class ChatSessionManager extends EventTarget {
     };
     session.messages.push(streamingMsg);
     session._streamingMsg = streamingMsg;
+    session._streamingSince = Date.now();
     session._abortController = new AbortController();
 
     // Deliver streamingMsg synchronously before async streaming starts
@@ -306,6 +320,7 @@ export class ChatSessionManager extends EventTarget {
       return { streamingMsg, success: false, error: err };
     } finally {
       session._streamingMsg = null;
+      session._streamingSince = null;
       session._abortController = null;
       this.#dispatch("stream-state-changed", { anima, thread, isStreaming: false });
       onFinally?.();
@@ -349,6 +364,7 @@ export class ChatSessionManager extends EventTarget {
       };
       session.messages.push(streamingMsg);
       session._streamingMsg = streamingMsg;
+      session._streamingSince = Date.now();
       session._abortController = new AbortController();
 
       // Deliver streamingMsg synchronously before async streaming starts
@@ -375,6 +391,7 @@ export class ChatSessionManager extends EventTarget {
       return { streamingMsg: null, success: false, error: err };
     } finally {
       session._streamingMsg = null;
+      session._streamingSince = null;
       session._abortController = null;
       this.#dispatch("stream-state-changed", { anima, thread, isStreaming: false });
       onFinally?.();
@@ -410,6 +427,7 @@ export class ChatSessionManager extends EventTarget {
 
     session._abortController = new AbortController();
     session._streamingMsg = { streaming: true };
+    session._streamingSince = Date.now();
 
     this.#dispatch("stream-state-changed", { anima: sessionKey, thread: "default", isStreaming: true });
 
@@ -430,6 +448,7 @@ export class ChatSessionManager extends EventTarget {
       return { success: false, error: err };
     } finally {
       session._streamingMsg = null;
+      session._streamingSince = null;
       session._abortController = null;
       this.#dispatch("stream-state-changed", { anima: sessionKey, thread: "default", isStreaming: false });
       onFinally?.();

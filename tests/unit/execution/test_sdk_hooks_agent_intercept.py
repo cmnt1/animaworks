@@ -17,10 +17,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.execution._sdk_hooks import (
-    _intercept_task_to_pending,
-)
-
 # ── Fixtures ──────────────────────────────────────────────────
 
 
@@ -30,57 +26,6 @@ def anima_dir(tmp_path: Path) -> Path:
     d.mkdir(parents=True)
     (d / "state").mkdir()
     return d
-
-
-# ── _intercept_task_to_pending (still used by delegation code) ──
-
-
-class TestInterceptTaskToPending:
-    def test_writes_pending_json(self, anima_dir: Path):
-        tool_input = {
-            "description": "Background research",
-            "prompt": "Search for information",
-        }
-        task_id = _intercept_task_to_pending(anima_dir, tool_input, "tu_001")
-
-        pending_dir = anima_dir / "state" / "pending"
-        task_file = pending_dir / f"{task_id}.json"
-        assert task_file.exists()
-
-        data = json.loads(task_file.read_text(encoding="utf-8"))
-        assert data["task_type"] == "llm"
-        assert data["task_id"] == task_id
-        assert data["title"] == "Background research"
-        assert data["description"] == "Search for information"
-        assert data["submitted_by"] == "self_task_intercept"
-
-    def test_reply_to_set_to_anima_name(self, anima_dir: Path):
-        """reply_to should be the anima directory name."""
-        tool_input = {"description": "test", "prompt": "test"}
-        task_id = _intercept_task_to_pending(anima_dir, tool_input, "tu_002")
-
-        task_file = anima_dir / "state" / "pending" / f"{task_id}.json"
-        data = json.loads(task_file.read_text(encoding="utf-8"))
-        assert data["reply_to"] == "ayame"
-
-    def test_returns_task_id(self, anima_dir: Path):
-        tool_input = {"description": "test", "prompt": "test"}
-        task_id = _intercept_task_to_pending(anima_dir, tool_input, "tu_003")
-        assert isinstance(task_id, str)
-        assert len(task_id) == 12
-
-    def test_context_from_state_files(self, anima_dir: Path):
-        """Context should include current_state.md content."""
-        (anima_dir / "state" / "current_state.md").write_text(
-            "Working on API refactor",
-            encoding="utf-8",
-        )
-        tool_input = {"description": "related task", "prompt": "do stuff"}
-        task_id = _intercept_task_to_pending(anima_dir, tool_input, "tu_004")
-
-        task_file = anima_dir / "state" / "pending" / f"{task_id}.json"
-        data = json.loads(task_file.read_text(encoding="utf-8"))
-        assert "API refactor" in data["context"]
 
 
 # ── PreToolUse hook: Agent/Task hard-block ────────────────────
@@ -415,7 +360,7 @@ class TestSubmitTasksInterceptDenyReason:
 
     @pytest.mark.asyncio
     async def test_submit_tasks_intercept_success_reason(self, anima_dir: Path):
-        """Success case: deny reason starts with SUCCESS, warns about DUPLICATE."""
+        """Success case: deny reason is the short success message with task_ids."""
         success_result = json.dumps(
             {
                 "status": "submitted",
@@ -453,12 +398,9 @@ class TestSubmitTasksInterceptDenyReason:
         assert output is not None
         assert output["permissionDecision"] == "deny"
         reason = output["permissionDecisionReason"]
-        assert reason.startswith("SUCCESS")
-        assert "DUPLICATE" in reason
-        assert "re-submit" in reason.lower() or "Do NOT" in reason
-        assert "STOP working on the submitted task(s) in this conversation" in reason
-        assert "Do not use Read/Edit/Bash/update_task" in reason
-        assert "Proceed with your current conversation." not in reason
+        assert "t1, t2" in reason
+        assert not reason.startswith("BLOCKED")
+        assert "DUPLICATE" not in reason
 
     @pytest.mark.asyncio
     async def test_submit_tasks_intercept_error_reason(self, anima_dir: Path):

@@ -303,10 +303,10 @@ class TestSemanticDilutionRegression:
         queries = mock_searcher.search_many.call_args.args[0]
         assert len(queries) == 2, "Dual query should include message and keyword searches"
         medium_text, _ = result
-        assert 'read_memory_file(path="knowledge/malaysia-travel.md")' in medium_text, (
+        assert "knowledge/malaysia-travel.md" in medium_text, (
             f"Malaysia pointer should be in results: {medium_text}"
         )
-        assert 'read_memory_file(path="knowledge/debugging-guide.md")' in medium_text, (
+        assert "knowledge/debugging-guide.md" in medium_text, (
             f"Debug pointer should also be in results: {medium_text}"
         )
         assert "マレーシア旅行の計画" not in medium_text
@@ -342,5 +342,5 @@ class TestSemanticDilutionRegression:
         mock_searcher.search_many.assert_called_once()
         assert len(mock_searcher.search_many.call_args.args[0]) == 2
         medium_text, _ = result
-        assert 'read_memory_file(path="knowledge/test.md")' in medium_text
+        assert "knowledge/test.md" in medium_text
         assert "relevant content" not in medium_text

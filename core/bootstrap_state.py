@@ -29,6 +29,7 @@ ALLOWED_STATES = {
 
 UNDEFINED_MARKERS = ("未定義", "undefined")
 PRESERVED_STATUS_KEYS = {
+    "priming_profile",
     "model",
     "credential",
     "execution_mode",

@@ -348,3 +348,125 @@ class TestAgentPrimingConsolidationChannel:
         else:
             channel = "chat"
         assert channel == "heartbeat"
+
+
+# ── _find_conflicting_fact_candidates ──────────────────────
+
+
+class TestFindConflictingFactCandidates:
+    """Tests for ConsolidationEngine._find_conflicting_fact_candidates."""
+
+    def _make_engine(self, tmp_path: Path):
+        from core.memory.consolidation import ConsolidationEngine
+
+        anima_dir = tmp_path / "animas" / "test"
+        anima_dir.mkdir(parents=True)
+        return ConsolidationEngine(anima_dir, "test")
+
+    def _write_fact(self, engine, date_str: str, *, source: str, target: str, edge: str, text: str, recorded_at: str):
+        import json
+
+        facts_dir = engine.anima_dir / "facts"
+        facts_dir.mkdir(parents=True, exist_ok=True)
+        file = facts_dir / f"{date_str}.jsonl"
+        record = {
+            "fact_id": f"fact_{source}_{text[:4]}",
+            "text": text,
+            "source_entity": source,
+            "target_entity": target,
+            "edge_type": edge,
+            "recorded_at": recorded_at,
+            "valid_until": "",
+        }
+        with file.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    def test_same_entity_attribute_different_value_one_pair(self, tmp_path: Path) -> None:
+        engine = self._make_engine(tmp_path)
+        self._write_fact(
+            engine, "2026-09-01", source="Anima", target="Policy", edge="HAS_LIMIT",
+            text="daily limit is 100", recorded_at="2026-09-01T00:00:00",
+        )
+        self._write_fact(
+            engine, "2026-09-10", source="Anima", target="Policy", edge="HAS_LIMIT",
+            text="daily limit is 200", recorded_at="2026-09-10T00:00:00",
+        )
+        result = engine._find_conflicting_fact_candidates()
+        assert len(result) == 1
+        older, newer, desc = result[0]
+        assert "2026-09-01" in older
+        assert "2026-09-10" in newer
+        assert "daily limit" in desc
+
+    def test_same_value_no_conflict(self, tmp_path: Path) -> None:
+        engine = self._make_engine(tmp_path)
+        self._write_fact(
+            engine, "2026-09-01", source="Anima", target="Policy", edge="HAS_LIMIT",
+            text="daily limit is 100", recorded_at="2026-09-01T00:00:00",
+        )
+        self._write_fact(
+            engine, "2026-09-10", source="Anima", target="Policy", edge="HAS_LIMIT",
+            text="daily limit is 100", recorded_at="2026-09-10T00:00:00",
+        )
+        assert engine._find_conflicting_fact_candidates() == []
+
+    def test_different_attribute_no_conflict(self, tmp_path: Path) -> None:
+        engine = self._make_engine(tmp_path)
+        self._write_fact(
+            engine, "2026-09-01", source="Anima", target="Policy", edge="HAS_LIMIT",
+            text="daily limit is 100", recorded_at="2026-09-01T00:00:00",
+        )
+        self._write_fact(
+            engine, "2026-09-10", source="Anima", target="Policy", edge="HAS_COLOR",
+            text="color is blue", recorded_at="2026-09-10T00:00:00",
+        )
+        assert engine._find_conflicting_fact_candidates() == []
+
+    def test_archive_beyond_active_is_ignored(self, tmp_path: Path) -> None:
+        engine = self._make_engine(tmp_path)
+        self._write_fact_with_valid_until(
+            engine, "2026-09-01", source="Anima", target="Policy", edge="HAS_LIMIT",
+            text="daily limit is 100", recorded_at="2026-09-01T00:00:00",
+            valid_until="2026-09-05T00:00:00",
+        )
+        self._write_fact(
+            engine, "2026-09-10", source="Anima", target="Policy", edge="HAS_LIMIT",
+            text="daily limit is 200", recorded_at="2026-09-10T00:00:00",
+        )
+        # The older fact is already invalid (archived) so it is not a live conflict.
+        assert engine._find_conflicting_fact_candidates() == []
+
+    def test_respects_max_pairs(self, tmp_path: Path) -> None:
+        engine = self._make_engine(tmp_path)
+        for _i, edge in enumerate(("A", "B", "C", "D", "E")):
+            self._write_fact(
+                engine, "2026-09-01", source="Anima", target="Policy", edge=edge,
+                text=f"old {edge}", recorded_at="2026-09-01T00:00:00",
+            )
+            self._write_fact(
+                engine, "2026-09-10", source="Anima", target="Policy", edge=edge,
+                text=f"new {edge}", recorded_at="2026-09-10T00:00:00",
+            )
+        result = engine._find_conflicting_fact_candidates(max_pairs=3)
+        assert len(result) == 3
+
+    def _write_fact_with_valid_until(
+        self, engine, date_str: str, *, source: str, target: str, edge: str,
+        text: str, recorded_at: str, valid_until: str,
+    ):
+        import json
+
+        facts_dir = engine.anima_dir / "facts"
+        facts_dir.mkdir(parents=True, exist_ok=True)
+        file = facts_dir / f"{date_str}.jsonl"
+        record = {
+            "fact_id": f"fact_exp_{text[:4]}",
+            "text": text,
+            "source_entity": source,
+            "target_entity": target,
+            "edge_type": edge,
+            "recorded_at": recorded_at,
+            "valid_until": valid_until,
+        }
+        with file.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")

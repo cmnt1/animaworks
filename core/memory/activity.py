@@ -29,6 +29,7 @@ import os  # noqa: F401  — kept at module level for mock.patch compat
 import threading
 import time
 from collections import deque
+from contextvars import ContextVar
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -155,19 +156,23 @@ class ActivityLogger(
 
     _MAX_CONTENT_CHARS = 20_000
     _live_rate_limiter = _LiveEventRateLimiter(rate=3.0, capacity=5.0)
+    # Lifecycle transitions drive task views (including /battle). Never lose a
+    # completion behind a burst of tool events: no later tool may follow it.
+    _TASK_LIFECYCLE_EVENT_TYPES = frozenset({"task_created", "task_updated", "task_exec_start", "task_exec_end"})
 
-    _LIVE_EVENT_TYPES = frozenset(
-        {
-            "inbox_processing_start",
-            "inbox_processing_end",
-            "message_sent",
-            "response_sent",
-            "channel_post",
-            "task_created",
-            "task_updated",
-            "human_notify",
-            "human_reply",
-        }
+    _LIVE_EVENT_TYPES = (
+        frozenset(
+            {
+                "inbox_processing_start",
+                "inbox_processing_end",
+                "message_sent",
+                "response_sent",
+                "channel_post",
+                "human_notify",
+                "human_reply",
+            }
+        )
+        | _TASK_LIFECYCLE_EVENT_TYPES
     )
 
     # Keep in sync with org-dashboard.js VISIBLE_TOOL_NAMES
@@ -187,7 +192,7 @@ class ActivityLogger(
         self.anima_dir = anima_dir
         self._log_dir = anima_dir / "activity_log"
         self._anima_name = anima_dir.name
-        self._ctx = ""
+        self._ctx: ContextVar[str] = ContextVar("activity_logger_context", default="")
         self._start_event_exporter()
 
     def _start_event_exporter(self) -> None:
@@ -203,20 +208,18 @@ class ActivityLogger(
 
     def bind_runtime_session(self, ctx: RuntimeSessionContext) -> None:
         """Bind the execution context used by subsequent activity entries."""
-        self._ctx = activity_context_from_trigger(ctx.trigger, ctx.session_type)
+        self._ctx.set(activity_context_from_trigger(ctx.trigger, ctx.session_type))
 
     def _resolve_context(self, ctx: str | None) -> str:
-        """Resolve an explicit, bound, or context-local execution label."""
+        """Prefer the active invocation over a context-local bound fallback."""
         if ctx is not None:
             return ctx
-        if self._ctx:
-            return self._ctx
         from core.execution.session_context import current_runtime_session
 
         runtime_ctx = current_runtime_session()
-        if runtime_ctx is None:
-            return ""
-        return activity_context_from_trigger(runtime_ctx.trigger, runtime_ctx.session_type)
+        if runtime_ctx is not None:
+            return activity_context_from_trigger(runtime_ctx.trigger, runtime_ctx.session_type)
+        return self._ctx.get()
 
     # ── Recording ─────────────────────────────────────────────
 
@@ -249,8 +252,8 @@ class ActivityLogger(
             channel: Channel name (``chat``, ``general``, etc.).
             tool: Tool name (for ``tool_use`` events).
             via: Delivery channel (for ``human_notify`` events).
-            ctx: Execution context override.  When omitted, the context bound
-                by :meth:`bind_runtime_session` is used.
+            ctx: Execution context override. When omitted, use the active
+                runtime scope, then the context-local bound session fallback.
             meta: Arbitrary metadata dict.
             origin: Origin category (e.g. ``"human"``, ``"external_platform"``).
             origin_chain: Intermediate origins the data traversed.
@@ -294,7 +297,9 @@ class ActivityLogger(
         written = self._append(entry, safe=safe)
         if written:
             self._export_event(entry)
-        if event_type in self._LIVE_EVENT_TYPES or event_type in ("tool_use", "tool_result"):
+        if event_type in self._TASK_LIFECYCLE_EVENT_TYPES:
+            self._emit_live_event(entry)
+        elif event_type in self._LIVE_EVENT_TYPES or event_type in ("tool_use", "tool_result"):
             allowed, dropped = self._live_rate_limiter.allow(self._anima_name)
             if allowed:
                 self._emit_live_event(entry, dropped=dropped)

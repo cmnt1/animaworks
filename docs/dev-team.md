@@ -4,7 +4,7 @@
 
 AnimaWorks ships a set of anima templates for running an in-house development team backed by
 GitHub pull-request workflows. They are injected directly through the existing
-`animaworks create <name> --template <template>` mechanism — no framework code changes are needed.
+`animaworks anima create --name <name> --template <template>` mechanism — no framework code changes are needed.
 
 > These templates are a **starting point**. Memory, knowledge, and procedures grow through
 > real operation. Treat them as scaffolding, not as a copy of anyone's operating history.
@@ -25,12 +25,13 @@ use the default (`_blank`) template and grow the role incrementally — that rem
 ## Creating a team
 
 ```bash
-animaworks create alice --template dev-lead
-animaworks create bob   --template dev-engineer
-animaworks create carol --template dev-engineer
-animaworks create dave  --template dev-researcher
+animaworks anima create --name alice --template dev-lead
+animaworks anima create --name bob   --template dev-engineer --supervisor alice
+animaworks anima create --name carol --template dev-engineer --supervisor alice
+animaworks anima create --name dave  --template dev-researcher --supervisor alice
 ```
 
+Passing `--supervisor alice` builds the org chart (making each a direct report of the lead).
 Each command creates an anima with `identity.md` / `heartbeat.md` / `cron.md` /
 `injection.md` / `permissions.json` / `status.json`. Individual names are given at creation time;
 the template itself is role-based and engine-neutral (no model or engine name is hardcoded).

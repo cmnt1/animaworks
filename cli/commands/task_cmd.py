@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import sys
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -24,7 +25,13 @@ def cmd_task(args: argparse.Namespace) -> None:
     """Dispatch task subcommand."""
     anima_dir_str = os.environ.get("ANIMAWORKS_ANIMA_DIR", "")
     if not anima_dir_str:
-        print("Error: ANIMAWORKS_ANIMA_DIR not set", file=sys.stderr)
+        print(
+            "Error: ANIMAWORKS_ANIMA_DIR not set.\n"
+            "`animaworks-tool task` runs inside an anima's tool context (the server sets this variable).\n"
+            "To hand work to an anima from outside, use:\n"
+            '  animaworks send <your-name> <anima> "<instruction>"',
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     anima_dir = Path(anima_dir_str)
@@ -41,15 +48,17 @@ def cmd_task(args: argparse.Namespace) -> None:
         _cmd_add(args, manager)
     elif sub == "update":
         _cmd_update(args, manager)
+    elif sub == "resume":
+        _cmd_resume(args, manager)
     elif sub == "list":
         _cmd_list(args, manager)
     else:
-        print("Usage: animaworks-tool task {add|update|list}", file=sys.stderr)
+        print("Usage: animaworks-tool task {add|update|resume|list}", file=sys.stderr)
         sys.exit(1)
 
 
 def _cmd_add(args: argparse.Namespace, manager) -> None:
-    from core.memory._io import atomic_write_text
+    from core.tasks_dispatch import publish_tasks
     from core.workspace import resolve_workspace
 
     source = getattr(args, "source", "anima")
@@ -87,19 +96,10 @@ def _cmd_add(args: argparse.Namespace, manager) -> None:
             print(f"Error: workspace resolution failed: {e}", file=sys.stderr)
             sys.exit(2)
 
-    entry = manager.add_task(
-        source=source,
-        original_instruction=instruction,
-        assignee=assignee,
-        summary=summary,
-        relay_chain=relay_chain,
-    )
-
-    # 1-2: write the descriptor so PendingTaskExecutor will run the task.
     submitted_by = relay_chain[0] if relay_chain else anima_name
     task_desc = {
         "task_type": "llm",
-        "task_id": entry.task_id,
+        "task_id": uuid.uuid4().hex[:12],
         "title": summary,
         "description": instruction,
         "context": "",
@@ -113,30 +113,22 @@ def _cmd_add(args: argparse.Namespace, manager) -> None:
         "working_directory": resolved_wd,
         "model": "",
     }
-    pending_dir = manager.anima_dir / "state" / "pending"
-    pending_dir.mkdir(parents=True, exist_ok=True)
-    pending_file = pending_dir / f"{entry.task_id}.json"
     try:
-        atomic_write_text(
-            pending_file,
-            json.dumps(task_desc, ensure_ascii=False, indent=2) + "\n",
-        )
+        entry = publish_tasks(manager.anima_dir, [task_desc], source=source, meta={"relay_chain": relay_chain})[0]
     except Exception as e:
-        # 1-4: never leave a ledger-only row. Cancel it and report.
-        try:
-            manager.update_status(entry.task_id, "cancelled")
-        except Exception:
-            pass
-        print(f"Error: failed to write pending descriptor: {e}", file=sys.stderr)
+        print(f"Error: failed to submit task: {e}", file=sys.stderr)
         sys.exit(3)
 
     result = entry.model_dump()
-    result["pending_file"] = str(pending_file.resolve())
+    result["executable"] = True
     result["note"] = "picked up by the pending watcher within a few seconds"
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 def _cmd_update(args: argparse.Namespace, manager) -> None:
+    from core.i18n import t
+    from core.tasks_dispatch import update_task
+
     task_id = getattr(args, "task_id", "")
     status = getattr(args, "status", "")
     summary = getattr(args, "summary", None)
@@ -155,13 +147,42 @@ def _cmd_update(args: argparse.Namespace, manager) -> None:
         )
         sys.exit(2)
 
-    entry = manager.update_status(task_id, status, summary=summary)
+    try:
+        entry = update_task(manager, task_id, status, summary=summary)
+    except Exception as exc:
+        print(t("tooling.task_update_failed", error=str(exc)), file=sys.stderr)
+        sys.exit(3)
     if entry is None:
         print(f"Error: task not found or invalid status: {task_id}", file=sys.stderr)
         sys.exit(1)
 
     result = entry.model_dump()
     print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def _cmd_resume(args: argparse.Namespace, manager) -> None:
+    """Requeue a task under the same task_id using its saved execution input."""
+    from core.tasks_dispatch import update_task
+
+    task_id = getattr(args, "task_id", "")
+
+    if not task_id:
+        print("Error: --task-id is required", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        entry = update_task(manager, task_id, "pending", resume=True)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(3)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(4)
+    if entry is None:
+        print(f"Error: task not found or invalid status: {task_id}", file=sys.stderr)
+        sys.exit(1)
+
+    print(json.dumps(entry.model_dump(), ensure_ascii=False, indent=2))
 
 
 def _cmd_list(args: argparse.Namespace, manager) -> None:
@@ -193,6 +214,10 @@ def register_task_command(subparsers) -> None:
     p_update.add_argument("--task-id", required=True, help="Task ID")
     p_update.add_argument("--status", required=True, choices=["pending", "delegated", "done", "cancelled"])
     p_update.add_argument("--summary", default=None, help="Updated summary")
+
+    # task resume
+    p_resume = task_sub.add_parser("resume", help="Requeue a task with its saved execution input")
+    p_resume.add_argument("--task-id", required=True, help="Task ID")
 
     # task list
     p_list = task_sub.add_parser("list", help="List tasks")

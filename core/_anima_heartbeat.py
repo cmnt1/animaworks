@@ -281,8 +281,6 @@ class HeartbeatMixin:
                 phase="preflight",
             )
 
-        # Preserve the existing no-swap signal when neither a background
-        # override nor a rate-guard fallback changed the main config.
         if base_config is main_config and effective_config is main_config:
             return None
         return effective_config
@@ -584,6 +582,43 @@ class HeartbeatMixin:
             target_chars=max_chars // 2,
         )
 
+    def _get_heartbeat_md_max_bytes(self) -> int:
+        try:
+            from core.config.models import load_config
+
+            return load_config().heartbeat.heartbeat_md_max_bytes
+        except Exception:
+            return 0
+
+    def _build_heartbeat_md_cleanup_instruction(self, hb_config: str) -> str | None:
+        """Return a compaction instruction when heartbeat.md grows past the limit.
+
+        heartbeat.md is re-read into every heartbeat prompt, so a bloated
+        checklist (dated case notes, per-PR gates, duplicated rules) costs
+        tokens on every run and buries the recurring steps.  Above
+        ``heartbeat.heartbeat_md_max_bytes`` the anima is asked to rewrite
+        it down to roughly half the limit before doing anything else.
+        Disabled when the limit is 0.
+        """
+        max_bytes = self._get_heartbeat_md_max_bytes()
+        if max_bytes <= 0 or not hb_config:
+            return None
+        current_bytes = len(hb_config.encode("utf-8"))
+        if current_bytes <= max_bytes:
+            return None
+        logger.info(
+            "[%s] heartbeat.md exceeds limit (%d > %d bytes), injecting compaction instruction",
+            self.name,
+            current_bytes,
+            max_bytes,
+        )
+        return t(
+            "heartbeat.heartbeat_md_cleanup_required",
+            current_kb=f"{current_bytes / 1024:.1f}",
+            max_kb=f"{max_bytes / 1024:.0f}",
+            target_kb=f"{max_bytes / 2048:.0f}",
+        )
+
     async def _build_heartbeat_prompt(self) -> list[str]:
         """Build heartbeat prompt parts.
 
@@ -594,6 +629,10 @@ class HeartbeatMixin:
         hb_config = self.memory.read_heartbeat_config()
         checklist = hb_config or load_prompt("heartbeat_default_checklist")
         parts = [load_prompt("heartbeat", checklist=checklist)]
+
+        hb_cleanup = HeartbeatMixin._build_heartbeat_md_cleanup_instruction(self, hb_config) if hb_config else None
+        if hb_cleanup:
+            parts.append(hb_cleanup)
 
         cleanup = self._build_state_cleanup_instruction()
         if cleanup:
@@ -863,7 +902,7 @@ class HeartbeatMixin:
                     )
 
                 try:
-                    self.memory.append_episode(episode_entry)
+                    await asyncio.to_thread(self.memory.append_episode, episode_entry)
                 except Exception:
                     logger.debug("[%s] Failed to record heartbeat episode", self.name, exc_info=True)
 
@@ -910,7 +949,7 @@ class HeartbeatMixin:
             # Keep current_state.md across normal heartbeat boundaries. It is
             # working memory, not a disposable session scratchpad; only trim it
             # when an explicit size limit is configured.
-            self._enforce_state_size_limit()
+            await asyncio.to_thread(self._enforce_state_size_limit)
 
             return result
         except Exception:
@@ -927,26 +966,11 @@ class HeartbeatMixin:
         inbox_items: list[InboxItem],
         unread_count: int,
     ) -> None:
-        """Handle heartbeat failure: crash-archive, log error, save recovery note."""
+        """Keep unread work on failure, log the error, and save recovery state."""
         logger.exception("[%s] run_heartbeat FAILED", self.name)
 
-        # Archive inbox messages even on crash to prevent
-        # re-processing storms on next heartbeat.
-        if inbox_items:
-            try:
-                crash_archived = self.messenger.archive_paths(inbox_items)
-                logger.info(
-                    "[%s] Crash-archived %d/%d inbox messages",
-                    self.name,
-                    crash_archived,
-                    len(inbox_items),
-                )
-            except Exception:
-                logger.warning(
-                    "[%s] Failed to crash-archive inbox messages",
-                    self.name,
-                    exc_info=True,
-                )
+        # Failed model execution never acknowledges unread requests. Retry
+        # cadence remains owned by the scheduler/watcher, not a local loop.
 
         # Activity log: heartbeat failure (single event to avoid double-fault)
         self._activity.log(
@@ -996,15 +1020,5 @@ class HeartbeatMixin:
         Called after heartbeat completion to ensure tasks written
         during planning phase are picked up promptly.
         """
-        pending_dir = self.anima_dir / "state" / "pending"
-        if not pending_dir.exists():
-            return
-        task_files = list(pending_dir.glob("*.json"))
-        if task_files:
-            logger.info(
-                "[%s] %d pending tasks found after heartbeat, signaling executor",
-                self.name,
-                len(task_files),
-            )
-            if self._pending_executor is not None:
-                self._pending_executor.wake()
+        if self._pending_executor is not None:
+            self._pending_executor.wake()

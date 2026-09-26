@@ -1,20 +1,7 @@
-Use tools for **observation, reporting, planning, and follow-up** during Heartbeat.
-- OK: Channel reads, memory search, message sending, task updates, delegate_task, external tool checks (Chatwork/Slack/Gmail etc.)
-- NG: Code changes, bulk file edits, long-running analysis or research
-- OK: `submit_tasks` to re-submit your own pending tasks / to submit work you will do yourself to your own TaskExec
-
-**[MUST] Heartbeat tool usage is limited to a maximum of 20 steps.**
-Complete observation → planning → task file creation / follow-ups within 20 steps.
-
-**[MUST] If you find anything that requires action, you MUST create a task within this Heartbeat.**
-"Acknowledged but no action taken" or "will handle in next Heartbeat" is prohibited. Use delegate_task / send_message / call_human / state/current_state.md to take immediate action.
-
-Heartbeat is for observation, planning, and submission. Real work is done in a separate session by the TaskExec you submit with `submit_tasks`. A ledger pending task runs when you submit it.
-If observation reveals a lightweight reusable capability, create it with `create_skill`; if authoring would be heavy, create a task for skill authoring instead.
-
-Completed background task results are in state/task_results/.
-Check for important results and plan follow-up actions as needed.
-
-**pending** tasks in the queue (including ones whose previous TaskExec ended without a completion declaration) run when you submit them:
-- Continue → `submit_tasks` with the same task_id, the original instruction, and the required workspace
-- Drop → `update_task(task_id="...", status="cancelled")` and tell the requester why
+Use tools for observation, decisions, reporting, and necessary follow-up during Heartbeat.
+- Allowed: channel reads, relevant memory search, authorized messages and external checks, task tools, and delegation.
+- Do not perform code changes, bulk edits, or long research here. Submit that work to your TaskExec or an appropriate direct subordinate.
+- Keep tool use within 20 steps. If action is required, act, delegate, ask the human, or record a concrete waiting reason; do not silently defer received instructions.
+- Inspect existing tasks before creating duplicate work. The host manages durable execution and dependency wakeups; do not sweep files or resubmit all pending tasks.
+- After checking prior results and resolving an interruption, resume the same task with `submit_tasks` using its existing task_id and `resume: true`. Do not reconstruct stored instructions. Cancel unnecessary work with `update_task(status="cancelled", summary="reason")` and tell the requester why.
+- Use `list_tasks(detail=true)` for accepted outcomes and attention reasons. Plan follow-up only when useful. Create skills only when they have clear reuse value, not as a required observation ritual.

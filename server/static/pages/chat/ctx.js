@@ -24,6 +24,9 @@ export const CONSTANTS = Object.freeze({
   TOOL_RESULT_TRUNCATE: 500,
   THREAD_VISIBLE_NON_DEFAULT: 5,
   CHAT_POLL_INTERVAL_MS: 5000,
+  // Fail-safe: once a stream has been "in progress" this long, history polling
+  // ignores the streaming guard so a stuck SSE read cannot freeze the chat view.
+  STREAMING_GUARD_MAX_MS: 120000,
 });
 
 export function createChatContext() {
@@ -64,6 +67,7 @@ export function createChatContext() {
     chatPollingInFlight: false,
     rightPaneVisible: true,
     paneIdx: 0,
+    modelByThread: {},
     /** @type {ChatSessionManager} */
     manager: mgr,
   };
@@ -175,6 +179,8 @@ export function serializeChatUiState(ctx) {
       threads: list.map(th => {
         const o = { id: th.id, label: th.label, unread: Boolean(th.unread) };
         if (th.archived) o.archived = true;
+        const m = ctx.state.modelByThread[`${name}|${th.id}`];
+        if (m) o.model = m;
         return o;
       }),
     };
@@ -215,4 +221,24 @@ export async function fetchChatUiState(ctx) {
   } catch {
     return null;
   }
+}
+
+// ── Per-Thread Model Selection ──
+export function modelKey(anima, threadId) {
+  return `${anima}|${threadId}`;
+}
+
+/**
+ * Align the pane's model select with the model stored for the current
+ * anima/thread (or the anima default). Call after anima/thread switching;
+ * never reset the selection (thread memory is not discarded).
+ */
+export function syncModelSelect(ctx) {
+  const select = ctx.$("chatPageModel");
+  if (!select) return;
+  const { selectedAnima, selectedThreadId, modelByThread } = ctx.state;
+  const value = selectedAnima
+    ? (modelByThread[modelKey(selectedAnima, selectedThreadId)] || "")
+    : "";
+  select.value = value;
 }

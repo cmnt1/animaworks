@@ -95,7 +95,6 @@ EXPECTED_BUILTIN_TOOLS = frozenset(
         "backlog_task",
         "update_task",
         "list_tasks",
-        "goal",
         "create_skill",
         "trust_skill",
         "promote_procedure_to_skill",

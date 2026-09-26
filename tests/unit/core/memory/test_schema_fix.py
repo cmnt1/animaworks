@@ -4,7 +4,7 @@ Covers:
 - fact_fulltext index in schema.py
 - entity_type in CREATE_ENTITY
 - expired_at in search queries
-- EXPIRE_FACT query and EdgeInvalidator.expire_fact()
+- EXPIRE_FACT query
 - SCHEMA_VERSION constant
 """
 
@@ -189,47 +189,6 @@ class TestExpireFactQuery:
         from core.memory.graph.queries import EXPIRE_FACT
 
         assert "$group_id" in EXPIRE_FACT
-
-
-# ── TestEdgeInvalidatorExpireFact ────────────────────────────
-
-
-class TestEdgeInvalidatorExpireFact:
-    @pytest.fixture
-    def mock_driver(self) -> AsyncMock:
-        driver = AsyncMock()
-        driver.execute_write = AsyncMock()
-        return driver
-
-    @pytest.fixture
-    def invalidator(self, mock_driver: AsyncMock):
-        from core.memory.extraction.invalidator import EdgeInvalidator
-
-        return EdgeInvalidator(mock_driver, "test_group", model="test-model")
-
-    @pytest.mark.asyncio
-    async def test_expire_fact_success(self, invalidator, mock_driver: AsyncMock) -> None:
-        result = await invalidator.expire_fact("fact-123", "2026-06-01T00:00:00")
-        assert result is True
-        mock_driver.execute_write.assert_called_once()
-        args = mock_driver.execute_write.call_args[0]
-        assert args[1]["uuid"] == "fact-123"
-        assert args[1]["expired_at"] == "2026-06-01T00:00:00"
-        assert args[1]["group_id"] == "test_group"
-
-    @pytest.mark.asyncio
-    async def test_expire_fact_failure_returns_false(self, invalidator, mock_driver: AsyncMock) -> None:
-        mock_driver.execute_write = AsyncMock(side_effect=RuntimeError("Neo4j down"))
-        result = await invalidator.expire_fact("fact-123", "2026-06-01T00:00:00")
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_expire_fact_uses_expire_query(self, invalidator, mock_driver: AsyncMock) -> None:
-        from core.memory.graph.queries import EXPIRE_FACT
-
-        await invalidator.expire_fact("fact-x", "2026-01-01T00:00:00")
-        call_args = mock_driver.execute_write.call_args[0]
-        assert call_args[0] is EXPIRE_FACT
 
 
 # ── TestSchemaIdempotency ────────────────────────────────────

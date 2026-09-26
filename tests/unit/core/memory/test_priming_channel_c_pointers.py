@@ -4,7 +4,7 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for Channel C pointer output and trust separation."""
+"""Tests for Channel C pointer output (score / path / one-line summary) and trust separation."""
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.memory.priming import PrimingEngine
+from core.memory.priming.channel_c import format_pointer_result
 
 
 @dataclass
@@ -28,6 +29,32 @@ class FakeSearchResult:
         self.metadata.setdefault("source_file", "knowledge/test.md")
 
 
+class TestFormatPointerResult:
+    def test_one_line_score_path_summary(self) -> None:
+        result = format_pointer_result(
+            content="# 顧客A\n本文",
+            metadata={},
+            path="knowledge/a.md",
+            score=0.87,
+        )
+        assert result == "📌 [0.87] knowledge/a.md — 顧客A"
+
+    def test_summary_falls_back_to_filename_stem(self) -> None:
+        result = format_pointer_result(content="no heading here", metadata={}, path="knowledge/acme.md", score=0.5)
+        assert result == "📌 [0.50] knowledge/acme.md — acme"
+
+    def test_summary_is_capped_at_60_chars(self) -> None:
+        result = format_pointer_result(
+            content="# " + "長い見出し" * 20,
+            metadata={},
+            path="knowledge/long.md",
+            score=0.99,
+        )
+        assert "📌 [0.99] knowledge/long.md —" in result
+        before_dash = result.split("—")[1]
+        assert len(before_dash.strip()) <= 60
+
+
 class TestChannelCTrustSeparation:
     """_channel_c_related_knowledge separates pointer cues by trust."""
 
@@ -36,13 +63,10 @@ class TestChannelCTrustSeparation:
         anima_dir = tmp_path / "animas" / "test-anima"
         (anima_dir / "knowledge").mkdir(parents=True)
         (anima_dir / "episodes").mkdir(parents=True)
-        return PrimingEngine(anima_dir, tmp_path / "shared")
-
-    def _make_retriever(self, results: list):
-        mock_retriever = MagicMock()
-        mock_retriever.search = MagicMock(return_value=results)
-        mock_retriever.record_access = MagicMock()
-        return mock_retriever
+        engine = PrimingEngine(anima_dir, tmp_path / "shared")
+        engine._retriever = MagicMock()
+        engine._retriever.indexer = MagicMock()
+        return engine
 
     def _patch_unified_search(self, results: list, meta: dict | None = None):
         searcher = MagicMock()
@@ -67,15 +91,25 @@ class TestChannelCTrustSeparation:
             FakeSearchResult(
                 content="Trusted knowledge",
                 score=0.95,
-                metadata={"anima": "test-anima", "origin": "consolidation"},
+                metadata={
+                    "anima": "test-anima",
+                    "origin": "consolidation",
+                    "updated_at": "2026-09-08T09:00:00+09:00",
+                },
             ),
         ]
         patcher, _searcher = self._patch_unified_search(results)
         with patcher:
             medium, untrusted = await engine._channel_c_related_knowledge(["test"])
-        assert 'read_memory_file(path="knowledge/test.md")' in medium
+        assert "📌 [0.95] knowledge/test.md" in medium
         assert "Trusted knowledge" not in medium
         assert untrusted == ""
+        assert len(medium.items) == 1
+        assert medium.items[0].source == "related_knowledge"
+        assert medium.items[0].key == "knowledge/test.md"
+        assert medium.items[0].ref == "knowledge/test.md"
+        assert medium.items[0].updated == "2026-09-08T09:00:00+09:00"
+        assert medium.items[0].rank == 0.95
 
     @pytest.mark.asyncio
     async def test_all_untrusted_results(self, engine: PrimingEngine) -> None:
@@ -91,8 +125,9 @@ class TestChannelCTrustSeparation:
         with patcher:
             medium, untrusted = await engine._channel_c_related_knowledge(["test"])
         assert medium == ""
-        assert 'read_memory_file(path="knowledge/test.md")' in untrusted
+        assert "📌 [0.90] knowledge/test.md" in untrusted
         assert "External data" not in untrusted
+        assert untrusted.items[0].source == "related_knowledge_untrusted"
 
     @pytest.mark.asyncio
     async def test_mixed_trust_results(self, engine: PrimingEngine) -> None:
@@ -114,14 +149,14 @@ class TestChannelCTrustSeparation:
         patcher, _searcher = self._patch_unified_search(results)
         with patcher:
             medium, untrusted = await engine._channel_c_related_knowledge(["test"])
-        assert 'read_memory_file(path="knowledge/test.md")' in medium
-        assert 'read_memory_file(path="knowledge/test.md")' in untrusted
+        assert "📌 [0.95] knowledge/test.md" in medium
+        assert "📌 [0.85] knowledge/test.md" in untrusted
         assert "Consolidated knowledge" not in medium
         assert "External data from Slack" not in untrusted
 
     @pytest.mark.asyncio
-    async def test_missing_origin_treated_as_untrusted(self, engine: PrimingEngine) -> None:
-        """Results without origin metadata are untrusted."""
+    async def test_missing_origin_on_personal_knowledge_is_medium(self, engine: PrimingEngine) -> None:
+        """Clearly owned legacy knowledge is medium despite missing origin."""
         results = [
             FakeSearchResult(
                 content="Legacy chunk without origin",
@@ -132,9 +167,9 @@ class TestChannelCTrustSeparation:
         patcher, _searcher = self._patch_unified_search(results)
         with patcher:
             medium, untrusted = await engine._channel_c_related_knowledge(["test"])
-        assert medium == ""
-        assert 'read_memory_file(path="knowledge/test.md")' in untrusted
-        assert "Legacy chunk without origin" not in untrusted
+        assert "📌 [0.90] knowledge/test.md" in medium
+        assert "Legacy chunk without origin" not in medium
+        assert untrusted == ""
 
     @pytest.mark.asyncio
     async def test_system_origin_is_trusted(self, engine: PrimingEngine) -> None:
@@ -149,7 +184,7 @@ class TestChannelCTrustSeparation:
         patcher, _searcher = self._patch_unified_search(results)
         with patcher:
             medium, untrusted = await engine._channel_c_related_knowledge(["test"])
-        assert 'read_memory_file(path="knowledge/test.md")' in medium
+        assert "📌 [0.90] knowledge/test.md" in medium
         assert "System knowledge" not in medium
         assert untrusted == ""
 
@@ -166,7 +201,7 @@ class TestChannelCTrustSeparation:
         patcher, _searcher = self._patch_unified_search(results)
         with patcher:
             medium, untrusted = await engine._channel_c_related_knowledge(["test"])
-        assert 'read_memory_file(path="knowledge/test.md")' in medium
+        assert "📌 [0.90] knowledge/test.md" in medium
         assert "Human-provided knowledge" not in medium
         assert untrusted == ""
 
@@ -187,7 +222,7 @@ class TestChannelCTrustSeparation:
 
     @pytest.mark.asyncio
     async def test_shared_label_preserved(self, engine: PrimingEngine) -> None:
-        """Shared chunks retain [shared] label and common_knowledge pointer."""
+        """Shared chunks retain a common_knowledge pointer path."""
         results = [
             FakeSearchResult(
                 content="Shared common knowledge",
@@ -202,8 +237,7 @@ class TestChannelCTrustSeparation:
         patcher, _searcher = self._patch_unified_search(results)
         with patcher:
             medium, untrusted = await engine._channel_c_related_knowledge(["test"])
-        assert "[shared]" in medium
-        assert 'read_memory_file(path="common_knowledge/shared-test.md")' in medium
+        assert "common_knowledge/shared-test.md" in medium
         assert "Shared common knowledge" not in medium
 
     @pytest.mark.asyncio
@@ -220,7 +254,7 @@ class TestChannelCTrustSeparation:
         patcher, _searcher = self._patch_unified_search(results)
         with patcher:
             medium, untrusted = await engine._channel_c_related_knowledge(["test"])
-        assert 'read_memory_file(path="knowledge/from-docid.md")' in medium
+        assert "knowledge/from-docid.md" in medium
         assert "Doc id fallback body" not in medium
         assert untrusted == ""
 
@@ -241,8 +275,7 @@ class TestChannelCTrustSeparation:
         patcher, _searcher = self._patch_unified_search(results)
         with patcher:
             medium, untrusted = await engine._channel_c_related_knowledge(["deploy"])
-        assert "Deploy Checklist - Run the deploy verifier before release." in medium
-        assert 'read_memory_file(path="knowledge/deploy.md")' in medium
+        assert "📌 [0.90] knowledge/deploy.md — Deploy Checklist" in medium
         assert untrusted == ""
 
     @pytest.mark.asyncio
@@ -262,13 +295,13 @@ class TestChannelCTrustSeparation:
         patcher, _searcher = self._patch_unified_search(results)
         with patcher:
             medium, untrusted = await engine._channel_c_related_knowledge(["test"])
-        assert 'read_memory_file(path="common_knowledge/from-docid.md")' in medium
+        assert "common_knowledge/from-docid.md" in medium
         assert "Shared doc id fallback body" not in medium
         assert untrusted == ""
 
     @pytest.mark.asyncio
-    async def test_pathless_results_are_not_recorded_as_accessed(self, engine: PrimingEngine) -> None:
-        """Only emitted pointer results are counted as accessed."""
+    async def test_pathless_results_are_not_emitted(self, engine: PrimingEngine) -> None:
+        """Only readable pointer results are emitted."""
         pathless = FakeSearchResult(
             doc_id="opaque-id",
             content="Pathless body",
@@ -284,13 +317,12 @@ class TestChannelCTrustSeparation:
         patcher, _searcher = self._patch_unified_search([pathless, readable])
         with patcher:
             medium, untrusted = await engine._channel_c_related_knowledge(["test"])
-        assert "--- Result 1" in medium
-        assert "--- Result 2" not in medium
-        assert 'read_memory_file(path="knowledge/readable.md")' in medium
+        assert medium.count("📌") == 1
+        assert "knowledge/readable.md" in medium
         assert untrusted == ""
 
     @pytest.mark.asyncio
-    async def test_quotes_path_and_collapses_summary(self, engine: PrimingEngine) -> None:
+    async def test_keeps_heading_and_collapses_body(self, engine: PrimingEngine) -> None:
         """Pointer fields are rendered as safe one-line cues."""
         results = [
             FakeSearchResult(
@@ -306,7 +338,7 @@ class TestChannelCTrustSeparation:
         patcher, _searcher = self._patch_unified_search(results)
         with patcher:
             medium, untrusted = await engine._channel_c_related_knowledge(["test"])
-        assert 'read_memory_file(path="knowledge/weird\\"name.md")' in medium
-        assert 'Bad "heading" - body should not leak' in medium
+        assert 'Bad "heading"' in medium
+        assert "knowledge/weird\"name.md" in medium
         assert "\nbody should not leak" not in medium
         assert untrusted == ""

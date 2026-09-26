@@ -11,7 +11,7 @@ from core.taskboard.store import TaskBoardStore
 pytestmark = pytest.mark.e2e
 
 
-async def test_taskboard_attention_filters_channel_e_end_to_end(tmp_path: Path) -> None:
+async def test_taskboard_surfaces_all_channel_e_tasks_end_to_end(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     anima_dir = data_dir / "animas" / "sakura"
     for subdir in ["episodes", "knowledge", "skills", "state"]:
@@ -27,9 +27,9 @@ async def test_taskboard_attention_filters_channel_e_end_to_end(tmp_path: Path) 
     )
     queue.add_task(
         source="human",
-        original_instruction="do not resurface",
+        original_instruction="pending archive task",
         assignee="sakura",
-        summary="do not resurface",
+        summary="pending archive task",
         task_id="hidden1234",
     )
 
@@ -44,6 +44,6 @@ async def test_taskboard_attention_filters_channel_e_end_to_end(tmp_path: Path) 
     output = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
 
     assert "ship visible work" in output
-    assert "do not resurface" not in output
-    assert "hidden completed result" not in output
+    assert "pending archive task" in output
+    assert "hidden completed result" in output
     assert "fresh completed result" in output

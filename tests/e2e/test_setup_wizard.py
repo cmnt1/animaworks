@@ -972,7 +972,7 @@ class TestSetupWithUserInfo:
         ("cursor_agent", {}, "cursor/claude-sonnet-4-6", "D", "cursor_agent"),
         ("gemini_cli", {}, "gemini/2.5-pro", "G", "gemini_cli"),
         ("claude_code", {}, "claude-opus-4-6", "S", "anthropic"),
-        ("ollama", {}, "ollama/glm4:9b", "B", "ollama"),
+        ("ollama", {}, "ollama/glm4:9b", "A", "ollama"),
     ],
 )
 async def test_setup_first_anima_uses_selected_provider(data_dir, provider, credentials, model, mode, credential):

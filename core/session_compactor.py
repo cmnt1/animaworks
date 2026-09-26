@@ -19,6 +19,7 @@ import contextvars
 import json
 import logging
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -44,6 +45,20 @@ _SCAN_DAYS = 2
 
 # LRU limit for _timers (same as conversation_locks).
 _MAX_TIMERS = 20
+_SWEEP_INTERVAL_SEC = 60.0
+
+
+def _already_swept(swept_at: str, updated: datetime) -> bool:
+    """True when the sweep already handled this exact measurement."""
+    if not swept_at:
+        return False
+    try:
+        marked = datetime.fromisoformat(swept_at)
+    except ValueError:
+        return False
+    if marked.tzinfo is None:
+        marked = marked.replace(tzinfo=UTC)
+    return marked >= updated
 
 
 # ── SessionCompactor ──────────────────────────────────────────
@@ -61,6 +76,8 @@ class SessionCompactor:
         self._idle_minutes = idle_minutes
         # key: (anima_name, thread_id) → asyncio.Handle
         self._timers: dict[tuple[str, str], asyncio.Handle] = {}
+        self._sweep_task: asyncio.Task[None] | None = None
+        self._sweep_anima: DigitalAnima | None = None
 
     def schedule(
         self,
@@ -80,9 +97,9 @@ class SessionCompactor:
         if key in self._timers:
             self._timers[key].cancel()
             del self._timers[key]
-            logger.debug("SessionCompactor rescheduled: %s (%.1f min)", key, self._idle_minutes)
+            logger.info("SessionCompactor rescheduled: %s (%.1f min)", key, self._idle_minutes)
         else:
-            logger.debug("SessionCompactor scheduled: %s (%.1f min)", key, self._idle_minutes)
+            logger.info("SessionCompactor scheduled: %s (%.1f min)", key, self._idle_minutes)
 
         while len(self._timers) >= _MAX_TIMERS:
             oldest = next(iter(self._timers))
@@ -119,7 +136,81 @@ class SessionCompactor:
         if key in self._timers:
             self._timers[key].cancel()
             del self._timers[key]
-            logger.debug("SessionCompactor cancelled: %s", key)
+            logger.info("SessionCompactor cancelled: %s", key)
+
+    def start(self, anima: DigitalAnima) -> None:
+        """Start the persistent sweep that does not depend on call_later."""
+        if self._sweep_task is not None and not self._sweep_task.done():
+            return
+        self._sweep_anima = anima
+        self._sweep_task = asyncio.create_task(
+            self._sweep_loop(),
+            name=f"session-compaction-sweep-{anima.name}",
+        )
+        logger.info("SessionCompactor sweep started: %s", anima.name)
+
+    async def _sweep_once(self, anima: DigitalAnima | None = None) -> None:
+        """Compact every stale persisted chat session found on disk."""
+        target = anima or self._sweep_anima
+        if target is None:
+            return
+        from core.execution._sdk_session import load_session_state, mark_session_swept
+
+        state_dir = target.anima_dir / "state"
+        prefix = "current_session_chat"
+        try:
+            paths = tuple(state_dir.glob(f"{prefix}*.json"))
+        except OSError:
+            logger.exception("SessionCompactor sweep could not list %s", state_dir)
+            return
+        now = datetime.now(UTC)
+        for path in paths:
+            stem = path.stem
+            if stem == prefix:
+                thread_id = "default"
+            elif stem.startswith(f"{prefix}_"):
+                thread_id = stem[len(prefix) + 1 :]
+            else:
+                continue
+            try:
+                state = load_session_state(target.anima_dir, "chat", thread_id)
+                if state is None or not state.session_id:
+                    continue
+                updated = datetime.fromisoformat(state.updated_at)
+                if updated.tzinfo is None:
+                    updated = updated.replace(tzinfo=UTC)
+                if (now - updated).total_seconds() < self._idle_minutes * 60:
+                    continue
+                if _already_swept(state.swept_at, updated):
+                    continue
+                logger.info(
+                    "SessionCompactor sweep firing: anima=%s thread=%s idle=%.1f min",
+                    target.name,
+                    thread_id,
+                    (now - updated).total_seconds() / 60,
+                )
+                await run_idle_compaction(target, thread_id)
+                # Only Mode S deletes the state file. For every other mode the
+                # file survives with the same ``updated_at``, so without this
+                # marker the sweep would recompact it on every tick.
+                mark_session_swept(target.anima_dir, "chat", thread_id)
+            except Exception:
+                logger.exception(
+                    "SessionCompactor sweep failed for %s/%s; continuing",
+                    target.name,
+                    thread_id,
+                )
+
+    async def _sweep_loop(self) -> None:
+        """Run periodic disk-backed session checks until cancelled."""
+        while True:
+            try:
+                await asyncio.sleep(_SWEEP_INTERVAL_SEC)
+                await self._sweep_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("SessionCompactor sweep loop failed; continuing")
 
     def cancel_all_for_anima(self, anima_name: str) -> None:
         """Cancel all timers for an anima (e.g. on anima stop)."""
@@ -129,10 +220,14 @@ class SessionCompactor:
             del self._timers[key]
 
     def shutdown(self) -> None:
-        """Cancel all timers (e.g. on server shutdown)."""
+        """Cancel all timers and the disk-backed sweep."""
         for handle in self._timers.values():
             handle.cancel()
         self._timers.clear()
+        if self._sweep_task is not None:
+            self._sweep_task.cancel()
+            self._sweep_task = None
+        self._sweep_anima = None
 
 
 # ── Activity-log based context extraction ─────────────────────
@@ -297,41 +392,41 @@ def _extract_recent_chat_context(
 # ── Mode-specific compaction ──────────────────────────────────
 
 
-async def _compact_mode_s(anima: DigitalAnima, thread_id: str) -> bool:
-    """Mode S: activity_log extraction → shortterm save → session_id clear.
-
-    Extracts recent chat context from the activity_log, saves it to
-    ShortTermMemory, and clears the SDK session_id. The next chat
-    starts as a fresh session with shortterm injected into the system
-    prompt via ``inject_shortterm``.
-
-    Does NOT send ``/compact`` to the SDK — the session is discarded,
-    not compacted, ensuring predictable post-compaction context size.
-    """
+async def _compact_mode_s_shared(
+    anima_dir: Path,
+    anima_name: str,
+    thread_id: str,
+    *,
+    trigger: str = "idle_compaction",
+    notes: str = "",
+) -> bool:
+    """Extract context, save shortterm, and discard a Mode S session."""
     from core.execution._sdk_session import SESSION_TYPE_CHAT, _clear_session_id
     from core.memory.shortterm import SessionState, ShortTermMemory
 
-    logger.debug("_compact_mode_s: entry (anima=%s, thread=%s)", anima.name, thread_id)
-
-    ctx = _extract_recent_chat_context(anima.anima_dir, thread_id=thread_id)
-
+    logger.debug("_compact_mode_s: entry (anima=%s, thread=%s)", anima_name, thread_id)
+    ctx = _extract_recent_chat_context(anima_dir, thread_id=thread_id)
     if ctx.get("accumulated_response") or ctx.get("tool_uses"):
-        shortterm = ShortTermMemory(anima.anima_dir, session_type="chat", thread_id=thread_id)
+        shortterm = ShortTermMemory(anima_dir, session_type="chat", thread_id=thread_id)
         shortterm.save(
             SessionState(
                 accumulated_response=ctx.get("accumulated_response", ""),
                 tool_uses=ctx.get("tool_uses", []),
                 original_prompt=ctx.get("original_prompt", ""),
                 timestamp=ctx.get("timestamp", ""),
-                trigger=ctx.get("trigger", "idle_compaction"),
-                notes=ctx.get("notes", ""),
+                trigger=trigger,
+                notes=notes or ctx.get("notes", ""),
             )
         )
         logger.info("_compact_mode_s: shortterm saved from activity_log")
-
-    _clear_session_id(anima.anima_dir, SESSION_TYPE_CHAT, thread_id)
-    logger.info("_compact_mode_s: session_id cleared (anima=%s, thread=%s)", anima.name, thread_id)
+    _clear_session_id(anima_dir, SESSION_TYPE_CHAT, thread_id)
+    logger.info("_compact_mode_s: session_id cleared (anima=%s, thread=%s)", anima_name, thread_id)
     return True
+
+
+async def _compact_mode_s(anima: DigitalAnima, thread_id: str) -> bool:
+    """Mode S: activity_log extraction → shortterm save → session_id clear."""
+    return await _compact_mode_s_shared(anima.anima_dir, anima.name, thread_id)
 
 
 async def _compact_mode_a(anima: DigitalAnima, thread_id: str) -> dict[str, Any]:
@@ -435,12 +530,13 @@ async def _compact_mode_c(anima: DigitalAnima, thread_id: str) -> dict[str, Any]
 # ── Public API ────────────────────────────────────────────────
 
 
-async def run_idle_compaction(anima: DigitalAnima, thread_id: str) -> None:
+async def run_idle_compaction(anima: DigitalAnima, thread_id: str) -> bool:
     """Run mode-specific idle compaction for the given anima and thread.
 
     Acquires the thread lock with a 30-second timeout. If the lock cannot
-    be acquired, compaction is skipped. Logs an "idle_compaction" activity
-    event on success.
+    be acquired (or compaction otherwise fails), compaction is skipped and
+    ``False`` is returned. On success logs an "idle_compaction" activity
+    event and returns ``True``.
     """
     mode = anima.agent.execution_mode
     logger.info(
@@ -459,7 +555,7 @@ async def run_idle_compaction(anima: DigitalAnima, thread_id: str) -> None:
             anima.name,
             thread_id,
         )
-        return
+        return False
 
     try:
         compaction_meta: dict[str, Any] = {
@@ -494,7 +590,7 @@ async def run_idle_compaction(anima: DigitalAnima, thread_id: str) -> None:
             _record_result(await _compact_mode_a(anima, thread_id))
     except Exception:
         logger.exception("Idle compaction failed for %s/%s", anima.name, thread_id)
-        return
+        return False
     finally:
         lock.release()
 
@@ -515,3 +611,4 @@ async def run_idle_compaction(anima: DigitalAnima, thread_id: str) -> None:
         )
     except Exception:
         logger.warning("Failed to log idle_compaction activity", exc_info=True)
+    return True

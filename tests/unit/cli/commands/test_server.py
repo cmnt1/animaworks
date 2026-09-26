@@ -601,6 +601,29 @@ class TestCmdStart:
         assert exc.value.code == EXIT_ALREADY_RUNNING
         mock_find.assert_called_once_with(port=18500)
 
+    @patch("cli.commands.server._start_foreground")
+    @patch("cli.commands.server._spawn_daemon")
+    def test_pid1_runs_foreground(self, mock_daemon, mock_fg, monkeypatch):
+        """As PID 1 (container) daemonize is impossible; fall back to foreground."""
+        from cli.commands.server import cmd_start
+
+        monkeypatch.setattr("os.getpid", lambda: 1)
+        args = argparse.Namespace(host="0.0.0.0", port=18500)
+        cmd_start(args)
+        mock_fg.assert_called_once_with(args)
+        mock_daemon.assert_not_called()
+
+    @patch("cli.commands.server._start_foreground")
+    @patch("cli.commands.server._spawn_daemon")
+    def test_normal_pid_daemonizes(self, mock_daemon, mock_fg):
+        """A normal (non-PID-1) process still daemonizes by default."""
+        from cli.commands.server import cmd_start
+
+        args = argparse.Namespace(host="0.0.0.0", port=18500)
+        cmd_start(args)
+        mock_daemon.assert_called_once_with(args)
+        mock_fg.assert_not_called()
+
     @patch("cli.commands.server._remove_pid_file")
     @patch("cli.commands.server._start_pid_watchdog")
     @patch("uvicorn.run")

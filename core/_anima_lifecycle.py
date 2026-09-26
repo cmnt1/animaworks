@@ -23,7 +23,6 @@ from core.config.opencode_go import OPENCODE_GO_API_KEY_ENV, OPENCODE_GO_PROVIDE
 from core.execution._sanitize import ORIGIN_SYSTEM
 from core.execution.fallback_activity import run_with_model_fallback
 from core.i18n import t
-from core.memory.hygiene import scan_memory_hygiene
 from core.paths import load_prompt
 from core.schemas import CycleResult
 from core.time_utils import now_local
@@ -178,6 +177,36 @@ def _format_merge_candidates(candidates: list[tuple[str, str, float]]) -> str:
     lines: list[str] = []
     for a, b, sim in candidates:
         lines.append(f"- {a} ↔ {b} (similarity: {sim:.2f})")
+    return "\n".join(lines)
+
+
+def _format_conflict_candidates(candidates: list[tuple[str, str, str]]) -> str:
+    """Format conflicting-fact candidate pairs for prompt injection.
+
+    Mirrors ``_format_merge_candidates``: when there are no candidates a
+    short "no candidates" line is shown (rather than rendering an empty
+    section), so the placeholder always resolves to something.
+    """
+    if not candidates:
+        return "（食い違い候補なし / No conflict candidates）"
+    lines: list[str] = []
+    for older, newer, desc in candidates:
+        lines.append(f"- {older} ↔ {newer}: {desc}")
+    return "\n".join(lines)
+
+
+def _format_forgetting_candidates(candidates: list[Any]) -> str:
+    """Format forgetting candidates for prompt injection.
+
+    Returns a bullet list of ``- path — reason`` lines, or a short
+    "no candidates" line when there is nothing to review (so the
+    placeholder always resolves to something).
+    """
+    if not candidates:
+        return "（忘却候補なし / No forgetting candidates）"
+    lines: list[str] = []
+    for candidate in candidates:
+        lines.append(f"- {candidate.path} — {candidate.reason}")
     return "\n".join(lines)
 
 
@@ -667,6 +696,9 @@ class LifecycleMixin:
             else []
         )
         episode_parts: list[str] = []
+        completed_chunks: list[str] = []
+        if project is None:
+            chunks = engine.unprocessed_activity_chunks(target_date, chunks)
 
         if chunks:
             from core.memory._llm_utils import one_shot_completion
@@ -727,7 +759,12 @@ class LifecycleMixin:
                         )
 
                 if raw:
-                    episode_parts.append(engine._sanitize_llm_output(raw))
+                    sanitized = engine._sanitize_llm_output(raw)
+                    if not sanitized.strip():
+                        logger.warning("[%s] Phase A produced no usable episode; input remains unprocessed", self.name)
+                        continue
+                    episode_parts.append(sanitized)
+                    completed_chunks.append(chunk)
                     logger.debug(
                         "[%s] Phase A chunk %d/%d: %d chars extracted",
                         self.name,
@@ -740,6 +777,12 @@ class LifecycleMixin:
         if episode_parts:
             merged_episodes = engine.merge_timeline_parts(episode_parts)
             episode_path = engine.write_consolidated_episode(target_date, merged_episodes)
+            if cfg.consolidation.knowledge_mutation_enabled:
+                # Publish resumable Phase B input before acknowledging Phase A.
+                engine.record_phase_b_carryover(
+                    merged_episodes, target_date=target_date, reason="phase_b_pending", incremental=True
+                )
+            engine.record_consolidated_chunks(target_date, completed_chunks)
             facts_extracted = 0
             facts_failed = 0
             try:
@@ -771,10 +814,27 @@ class LifecycleMixin:
             )
 
         # ── Phase B: Knowledge extraction ───────────────────────
-        episodes = engine._collect_recent_episodes(hours=24)
-        current_episodes_summary = ""
-        if episodes:
+        if project is None and not cfg.consolidation.knowledge_mutation_enabled:
+            return CycleResult(
+                trigger="consolidation:daily",
+                action="completed" if episode_parts else "skipped",
+                summary=t("anima.no_episodes_today") if not episode_parts else merged_episodes,
+                duration_ms=int((_time.monotonic() - start_mono) * 1000),
+            )
+        if project is None and not episode_parts and not engine.load_phase_b_carryover():
+            return CycleResult(
+                trigger="consolidation:daily",
+                action="skipped",
+                summary=t("anima.no_episodes_today"),
+                duration_ms=int((_time.monotonic() - start_mono) * 1000),
+            )
+        # Automatic extraction consumes only the newly processed input. An
+        # explicit project consolidation may still review its scoped history.
+        current_episodes_summary = merged_episodes if episode_parts else ""
+        if project is not None:
+            episodes = engine._collect_recent_episodes(hours=24)
             current_episodes_summary = "\n\n".join(f"## {e['date']} {e['time']}\n{e['content']}" for e in episodes)
+        if current_episodes_summary and project is not None:
             engine.record_phase_b_carryover(
                 current_episodes_summary,
                 target_date=target_date,
@@ -789,41 +849,16 @@ class LifecycleMixin:
         else:
             episodes_summary = t("anima.no_episodes_today")
 
-        reflections_text = engine._extract_reflections_from_episodes(episodes_summary)
-        reflections_section = ""
-        if reflections_text:
-            reflections_section = (
-                "## "
-                + t("anima.reflections_header")
-                + "\n\n"
-                + t("anima.reflections_intro")
-                + "\n\n"
-                + reflections_text
-            )
-
-        resolved = engine._collect_resolved_events(hours=24) if project is None else []
-        resolved_text = "\n".join(f"- {r['ts'][:16]}: {r['content']}" for r in resolved) if resolved else ""
-
-        error_patterns = engine._collect_error_entries(hours=24) if project is None else ""
-        knowledge_files = engine._list_knowledge_files_with_meta()
-        knowledge_list_text = _format_knowledge_list(knowledge_files)
-
-        try:
-            merge_candidates = engine._find_merge_candidates(max_pairs=20)
-        except Exception:
-            logger.debug("[%s] merge candidate detection failed", self.name, exc_info=True)
-            merge_candidates = []
-        merge_candidates_text = _format_merge_candidates(merge_candidates)
-
         prompt = load_prompt(
             "memory/consolidation_instruction",
             anima_name=self.name,
             episodes_summary=episodes_summary,
-            resolved_events_summary=resolved_text,
-            reflections_summary=reflections_section,
-            knowledge_files_list=knowledge_list_text,
-            merge_candidates=merge_candidates_text,
-            error_patterns_summary=error_patterns,
+            # Retain formatting compatibility with previously installed templates.
+            resolved_events_summary="",
+            reflections_summary="",
+            knowledge_files_list="",
+            merge_candidates="",
+            error_patterns_summary="",
         )
         if project is not None:
             prompt += (
@@ -902,9 +937,6 @@ class LifecycleMixin:
         start_mono = _time.monotonic()
         project = getattr(engine, "project", None)
 
-        knowledge_files = engine._list_knowledge_files_with_meta()
-        knowledge_list_text = _format_knowledge_list(knowledge_files)
-
         try:
             merge_candidates = engine._find_merge_candidates(max_pairs=30)
         except Exception:
@@ -913,25 +945,30 @@ class LifecycleMixin:
         merge_candidates_text = _format_merge_candidates(merge_candidates)
 
         try:
-            if project is None:
-                hygiene_report = scan_memory_hygiene(self.anima_dir)
-                hygiene_section = _format_hygiene_section(
-                    hygiene_report,
-                    locale=getattr(cfg, "locale", None),
-                )
-            else:
-                hygiene_section = ""
+            conflict_candidates = engine._find_conflicting_fact_candidates(max_pairs=20)
         except Exception:
-            logger.warning("[%s] memory hygiene scan failed", self.name, exc_info=True)
-            hygiene_section = ""
+            logger.debug("[%s] conflicting-fact candidate detection failed", self.name, exc_info=True)
+            conflict_candidates = []
+        conflict_candidates_text = _format_conflict_candidates(conflict_candidates)
+
+        try:
+            from core.memory.forgetting import ForgettingEngine
+
+            forgetting_candidates = ForgettingEngine(self.anima_dir, self.name).list_forgetting_candidates(max_items=20)
+        except Exception:
+            logger.debug("[%s] forgetting candidate detection failed", self.name, exc_info=True)
+            forgetting_candidates = []
+        forgetting_candidates_text = _format_forgetting_candidates(forgetting_candidates)
 
         prompt = load_prompt(
             "memory/weekly_consolidation_instruction",
             anima_name=self.name,
-            knowledge_files_list=knowledge_list_text,
+            knowledge_files_list="",
             merge_candidates=merge_candidates_text,
-            total_knowledge_count=len(knowledge_files),
-            hygiene_section=hygiene_section,
+            conflict_candidates=conflict_candidates_text,
+            forgetting_candidates=forgetting_candidates_text,
+            total_knowledge_count=0,
+            hygiene_section="",
         )
         if project is not None:
             prompt += (
@@ -1031,6 +1068,10 @@ class LifecycleMixin:
 
     def _run_autonomous_skill_learning(self):
         """Run deterministic skill auto-learning after successful consolidation."""
+        from core.config import load_config
+
+        if not load_config().consolidation.skill_autolearn_enabled:
+            return None
         from core.skills.autolearn_lifecycle import run_autonomous_skill_learning_for
 
         return run_autonomous_skill_learning_for(self)
@@ -1159,6 +1200,9 @@ class LifecycleMixin:
                         meta={
                             "task_name": task_name,
                             "duration_ms": result.duration_ms if result else 0,
+                            "status": "failed" if result.action == "error" else "completed",
+                            "reason": result.reason,
+                            "stop_kind": result.stop_kind,
                             "skill_rejections": rejection_dicts,
                             "skill_warnings": warning_dicts,
                         },

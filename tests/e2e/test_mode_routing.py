@@ -4,15 +4,33 @@
 """Tests for execution mode routing logic.
 
 Verifies that AgentCore._resolve_execution_mode() correctly routes
-to S, C, D, G, X, A, or B based on model name, SDK availability, and config.
+to S, C, D, G, X, or A based on model name, SDK availability, and config.
 No API calls are made in these tests.
 """
 
 from __future__ import annotations
 
+import pytest
+
+from core.exceptions import ExecutorUnavailableError
+
+_OPTIONAL_ADAPTERS = (
+    ("core.execution.codex_sdk.is_codex_sdk_available", "codex/o4-mini"),
+    ("core.execution.cursor_agent.is_cursor_agent_available", "cursor/auto"),
+    ("core.execution.gemini_cli.is_gemini_cli_available", "gemini/gemini-2.5-pro"),
+    ("core.execution.grok_cli.is_grok_cli_available", "grok/grok-4.5"),
+)
+
 
 class TestModeRouting:
     """Mode detection: _resolve_execution_mode()."""
+
+    @pytest.fixture(autouse=True)
+    def _optional_adapters_available(self, monkeypatch):
+        # These tests select a mode, not discover locally installed CLIs.
+        # Missing adapters are tested separately without this fixture.
+        for availability, _ in _OPTIONAL_ADAPTERS:
+            monkeypatch.setattr(availability, lambda: True)
 
     def test_claude_model_with_sdk_routes_to_s(self, make_agent_core):
         """Claude model + SDK available → Mode S."""
@@ -22,14 +40,14 @@ class TestModeRouting:
         )
         assert agent._resolve_execution_mode() == "s"
 
-    def test_claude_model_explicit_assisted_routes_to_b(self, make_agent_core):
-        """Claude model + execution_mode='assisted' → Mode B."""
+    def test_claude_model_legacy_assisted_routes_to_a(self, make_agent_core):
+        """The legacy assisted alias resolves to Mode A."""
         agent = make_agent_core(
             name="claude-b",
             model="claude-sonnet-4-6",
             execution_mode="assisted",
         )
-        assert agent._resolve_execution_mode() == "b"
+        assert agent._resolve_execution_mode() == "a"
 
     def test_openai_model_routes_to_a(self, make_agent_core):
         """Non-Claude model (OpenAI) → Mode A."""
@@ -71,22 +89,22 @@ class TestModeRouting:
         )
         assert agent._resolve_execution_mode() == "a"
 
-    def test_ollama_model_explicit_assisted_routes_to_b(self, make_agent_core):
-        """Ollama model + execution_mode='assisted' → Mode B."""
+    def test_ollama_model_legacy_assisted_routes_to_a(self, make_agent_core):
+        """The legacy assisted alias resolves to Mode A for Ollama."""
         agent = make_agent_core(
             name="ollama-b",
             model="ollama/qwen3:14b",
             execution_mode="assisted",
         )
-        assert agent._resolve_execution_mode() == "b"
+        assert agent._resolve_execution_mode() == "a"
 
-    def test_ollama_non_tool_model_routes_to_b(self, make_agent_core):
-        """Ollama model without reliable tool_use → Mode B."""
+    def test_ollama_non_tool_model_routes_to_a(self, make_agent_core):
+        """Ollama models use the unified Mode A loop."""
         agent = make_agent_core(
             name="ollama-gemma-b",
             model="ollama/gemma3:27b",
         )
-        assert agent._resolve_execution_mode() == "b"
+        assert agent._resolve_execution_mode() == "a"
 
     def test_claude_model_without_sdk_still_routes_to_s(self, make_agent_core):
         """Claude model + SDK unavailable → still Mode S (executor handles fallback)."""
@@ -131,3 +149,12 @@ class TestModeRouting:
             execution_mode="A",
         )
         assert agent._resolve_execution_mode() == "a"
+
+
+@pytest.mark.parametrize("availability,model", _OPTIONAL_ADAPTERS)
+def test_missing_optional_adapter_without_configured_fallback_fails_closed(
+    availability, model, make_agent_core, monkeypatch
+):
+    monkeypatch.setattr(availability, lambda: False)
+    with pytest.raises(ExecutorUnavailableError):
+        make_agent_core(name="missing-adapter", model=model)

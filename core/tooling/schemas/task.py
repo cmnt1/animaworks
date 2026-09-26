@@ -33,7 +33,12 @@ def _submit_tasks_tools() -> list[dict[str, Any]]:
                             "type": "object",
                             "properties": {
                                 "task_id": {"type": "string"},
-                                "title": {"type": "string", "description": _t("schema.submit_tasks.title")},
+                                "resume": {
+                                    "type": "boolean",
+                                    "default": False,
+                                    "description": _t("schema.submit_tasks.resume"),
+                                },
+                                "title": {"type": "string"},
                                 "description": {"type": "string"},
                                 "parallel": {"type": "boolean", "default": False},
                                 "depends_on": {
@@ -80,7 +85,7 @@ def _submit_tasks_tools() -> list[dict[str, Any]]:
                                     "default": False,
                                 },
                             },
-                            "required": ["task_id", "title", "description"],
+                            "required": ["task_id"],
                         },
                         "minItems": 1,
                     },
@@ -140,8 +145,12 @@ def _task_tools() -> list[dict[str, Any]]:
                     },
                     "status": {
                         "type": "string",
-                        "enum": ["pending", "in_progress", "done", "cancelled"],
+                        "enum": ["pending", "done", "cancelled"],
                         "description": _t("schema.update_task.status"),
+                    },
+                    "resume": {
+                        "type": "boolean",
+                        "description": _t("schema.update_task.resume"),
                     },
                     "summary": {
                         "type": "string",

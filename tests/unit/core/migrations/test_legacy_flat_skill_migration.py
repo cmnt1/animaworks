@@ -111,9 +111,16 @@ def test_migrates_common_flat_skill_and_rewrites_common_refs_for_animas(tmp_path
     common_dir.mkdir()
     flat = common_dir / "shared.md"
     flat.write_text("# Shared\n\nA shared legacy skill.\n", encoding="utf-8")
-    (anima_dir / "state" / "task_queue.jsonl").write_text(
-        json.dumps({"title": "Use shared", "skills": ["common_skills/shared.md"]}) + "\n",
-        encoding="utf-8",
+    from core.memory.task_queue import TaskQueueManager
+
+    queue = TaskQueueManager(anima_dir)
+    queue.submit(
+        {
+            "task_id": "shared-skill",
+            "title": "Use shared",
+            "description": "Use the shared skill",
+            "skills": ["common_skills/shared.md"],
+        }
     )
 
     result = step_legacy_flat_skill_migration(data_dir, dry_run=False, verbose=True)
@@ -127,8 +134,10 @@ def test_migrates_common_flat_skill_and_rewrites_common_refs_for_animas(tmp_path
     assert meta.trust_level == SkillTrustLevel.trusted
     assert meta.source.identifier == "common_skills/shared.md"
     assert meta.source.owner_anima is None
-    task = json.loads((anima_dir / "state" / "task_queue.jsonl").read_text(encoding="utf-8"))
+    task = queue.store.get_input(anima_dir.name, "shared-skill")
     assert task["skills"] == ["common_skills/shared/SKILL.md"]
+    assert task["description"] == "Use the shared skill"
+    assert not queue.queue_path.exists()
 
 
 def test_destination_collision_keeps_existing_bundle_and_removes_flat_source(tmp_path: Path) -> None:

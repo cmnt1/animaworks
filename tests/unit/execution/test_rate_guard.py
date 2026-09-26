@@ -97,13 +97,72 @@ class TestQuotaEscalation:
             max_quota_block_seconds=7200,
         )
 
+        # Each report lands just after the previous window expired (within the
+        # recurrence grace): that is the only case that escalates.
         expected = [(1800, 1), (3600, 2), (7200, 3), (7200, 4)]
         for seconds, consecutive in expected:
             guard.report_block("openai:codex", 1800, "quota_exhausted")
             entry = json.loads((tmp_path / "llm_rate_guard.json").read_text())["openai:codex"]
             assert entry["seconds"] == seconds
             assert entry["consecutive"] == consecutive
+            now += seconds + 1
+
+    def test_concurrent_reports_inside_live_window_do_not_escalate(self, tmp_path: Path, monkeypatch) -> None:
+        # 2026-09-21: four Animas with in-flight Codex calls reported within the
+        # same minute and pushed 1800s → 14400s instantly, so nobody probed the
+        # engine for four hours after its 5h cap had already reset.
+        now = 1_000.0
+        monkeypatch.setattr(rate_guard.time, "time", lambda: now)
+        guard = _guard(tmp_path, quota_block_seconds=1800, max_quota_block_seconds=14400)
+        guard.report_block("openai:codex", 1800, "quota_exhausted")
+        first_until = guard.blocked_until("openai:codex")
+
+        for _ in range(4):
             now += 1
+            guard.report_block("openai:codex", 1800, "quota_exhausted")
+
+        entry = json.loads((tmp_path / "llm_rate_guard.json").read_text())["openai:codex"]
+        assert entry["seconds"] == 1800
+        assert entry["consecutive"] == 1
+        assert guard.blocked_until("openai:codex") == first_until
+
+    def test_provider_reset_time_replaces_escalation_window(self, tmp_path: Path, monkeypatch) -> None:
+        now = 1_000.0
+        monkeypatch.setattr(rate_guard.time, "time", lambda: now)
+        guard = _guard(tmp_path, quota_block_seconds=1800, max_quota_block_seconds=14400)
+        guard.report_block("openai:codex", 1800, "quota_exhausted", reset_in_s=5400)
+        entry = json.loads((tmp_path / "llm_rate_guard.json").read_text())["openai:codex"]
+        assert entry["seconds"] == 5400 + rate_guard._RESET_MARGIN_S
+
+        # A recurrence after expiry keeps the provider's window, not 2x.
+        now += entry["seconds"] + 1
+        guard.report_block("openai:codex", 1800, "quota_exhausted", reset_in_s=600)
+        entry = json.loads((tmp_path / "llm_rate_guard.json").read_text())["openai:codex"]
+        assert entry["seconds"] == 600 + rate_guard._RESET_MARGIN_S
+        assert entry["consecutive"] == 2
+
+    def test_provider_reset_time_is_capped(self, tmp_path: Path) -> None:
+        guard = _guard(tmp_path, quota_block_seconds=1800, max_quota_block_seconds=14400)
+        guard.report_block("openai:codex", 1800, "quota_exhausted", reset_in_s=86400)
+        entry = json.loads((tmp_path / "llm_rate_guard.json").read_text())["openai:codex"]
+        assert entry["seconds"] == 14400
+
+    def test_later_provider_reset_extends_live_window(self, tmp_path: Path, monkeypatch) -> None:
+        now = 1_000.0
+        monkeypatch.setattr(rate_guard.time, "time", lambda: now)
+        guard = _guard(tmp_path, quota_block_seconds=1800, max_quota_block_seconds=14400)
+        guard.report_block("openai:codex", 1800, "quota_exhausted")
+
+        now += 10
+        guard.report_block("openai:codex", 1800, "quota_exhausted", reset_in_s=7200)
+        entry = json.loads((tmp_path / "llm_rate_guard.json").read_text())["openai:codex"]
+        assert entry["blocked_until"] == now + 7200 + rate_guard._RESET_MARGIN_S
+        assert entry["consecutive"] == 1
+
+        # An earlier stated reset never shortens a window another process set.
+        now += 10
+        guard.report_block("openai:codex", 1800, "quota_exhausted", reset_in_s=60)
+        assert json.loads((tmp_path / "llm_rate_guard.json").read_text())["openai:codex"] == entry
 
     def test_quota_escalation_resets_after_expiry_grace(self, tmp_path: Path, monkeypatch) -> None:
         now = 1_000.0

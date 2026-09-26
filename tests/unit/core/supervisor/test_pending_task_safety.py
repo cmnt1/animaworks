@@ -57,6 +57,8 @@ def _stop_after_first(executor: PendingTaskExecutor):
     """Return a mock for asyncio.wait_for that stops the loop after one iteration."""
 
     async def _mock(coro, *, timeout):
+        if hasattr(coro, "close"):
+            coro.close()
         executor._shutdown_event.set()
         raise TimeoutError
 
@@ -126,49 +128,32 @@ class TestCommandPendingFileLifecycle:
 # ── TestLLMPendingFileLifecycle ──────────────────────────────
 
 
-class TestLLMPendingFileLifecycle:
-    """LLM-type pending tasks use the pending/ → processing/ → gone lifecycle."""
-
+class TestLLMCanonicalLifecycle:
     @pytest.mark.asyncio
-    async def test_success_removes_processing_file(self, tmp_path: Path) -> None:
-        """On success, LLM pending processing/ file is deleted."""
+    @pytest.mark.parametrize("outcome", ["done", "crash"])
+    async def test_attempt_ends_without_destroying_input(self, tmp_path, outcome):
+        from core.memory.task_queue import TaskQueueManager
+
         executor = _make_executor(tmp_path)
-        llm_dir = executor._anima_dir / "state" / "pending"
-        llm_dir.mkdir(parents=True, exist_ok=True)
+        queue = TaskQueueManager(executor._anima_dir)
+        payload = {"task_type": "llm", "task_id": "llm-1", "title": "test", "description": "complete input"}
+        queue.submit(payload)
 
-        task = {"task_type": "llm", "task_id": "llm-1", "description": "test"}
-        (llm_dir / "llm-1.json").write_text(json.dumps(task))
+        async def execute(task_desc):
+            if outcome == "crash":
+                raise RuntimeError("LLM failure")
+            queue.update_status(task_desc["task_id"], "done")
 
-        with (
-            patch.object(executor, "execute_pending_task", new_callable=AsyncMock),
-            patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)),
-        ):
-            await executor.watcher_loop()
-
-        assert not (llm_dir / "llm-1.json").exists()
-        assert not (llm_dir / "processing" / "llm-1.json").exists()
-
-    @pytest.mark.asyncio
-    async def test_failure_drops_the_descriptor(self, tmp_path: Path) -> None:
-        """On LLM execution failure, the descriptor is deleted, not quarantined."""
-        executor = _make_executor(tmp_path)
-        llm_dir = executor._anima_dir / "state" / "pending"
-        llm_dir.mkdir(parents=True, exist_ok=True)
-
-        task = {"task_type": "llm", "task_id": "llm-fail", "description": "failing task"}
-        (llm_dir / "llm-fail.json").write_text(json.dumps(task))
-
-        async def failing_execute(task_desc, **_kwargs):
-            raise RuntimeError("LLM failure")
-
-        executor.execute_pending_task = failing_execute  # type: ignore[assignment]
-
+        executor.execute_pending_task = execute
         with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)):
             await executor.watcher_loop()
-
-        assert not (llm_dir / "llm-fail.json").exists()
-        assert not (llm_dir / "processing" / "llm-fail.json").exists()
-        assert not (llm_dir / "failed").exists()
+        assert queue.get_task_by_id("llm-1").status == ("done" if outcome == "done" else "pending")
+        assert queue.store.active_attempts("test-anima") == []
+        assert queue.store.pending("test-anima") == []
+        assert queue.store.get_input("test-anima", "llm-1") == payload
+        assert not (executor._anima_dir / "state" / "pending").exists()
+        if outcome == "crash":
+            assert len(queue.store.wakeups("test-anima")) == 1
 
 
 # ── TestRecoverProcessing ────────────────────────────────────
@@ -343,6 +328,10 @@ class TestRecoverProcessing:
         cmd_processing.mkdir(parents=True)
         (cmd_processing / "orphan-cmd.json").write_text('{"task_id":"oc"}')
 
+        from core.memory.task_queue import TaskQueueManager
+
+        _ = TaskQueueManager(executor._anima_dir).store
+
         llm_processing = executor._anima_dir / "state" / "pending" / "processing"
         llm_processing.mkdir(parents=True)
         (llm_processing / "orphan-llm.json").write_text('{"task_id":"ol"}')
@@ -351,7 +340,7 @@ class TestRecoverProcessing:
             await executor.watcher_loop()
 
         assert not list(cmd_processing.glob("*.json"))
-        assert not list(llm_processing.glob("*.json"))
+        assert (llm_processing / "orphan-llm.json").exists()  # legacy evidence is not guessed/replayed
 
 
 @pytest.mark.asyncio
@@ -474,95 +463,66 @@ class TestExecuteLLMTaskFailureHandling:
         assert result_path.exists()
 
     @pytest.mark.asyncio
-    async def test_non_shutdown_cancel_fails_and_notifies_reply_to(self, tmp_path: Path) -> None:
-        executor = _make_executor(tmp_path)
-        task_desc = {
-            "task_type": "llm",
-            "task_id": "cancelled",
-            "title": "Cancelled task",
-            "reply_to": "manager-anima",
-        }
-        processing = executor._anima_dir / "state" / "pending" / "processing"
-        processing.mkdir(parents=True)
-        processing_path = processing / "cancelled.json"
-        processing_path.write_text(json.dumps(task_desc), encoding="utf-8")
-
+    async def test_non_shutdown_cancel_records_durable_attention(self, tmp_path):
         from core.memory.task_queue import TaskQueueManager
+        from core.taskboard.tasks import process_identity
 
+        executor = _make_executor(tmp_path)
         queue = TaskQueueManager(executor._anima_dir)
-        queue.add_task(
-            source="anima",
-            original_instruction="work",
-            assignee="test-anima",
-            summary="work",
-            status="in_progress",
-            task_id="cancelled",
+        queue.submit(
+            {
+                "task_type": "llm",
+                "task_id": "cancelled",
+                "title": "Cancelled task",
+                "description": "work",
+                "reply_to": "manager-anima",
+            }
         )
+        claim = queue.store.claim("test-anima", "cancelled", process_identity())
         executor.execute_pending_task = AsyncMock(side_effect=asyncio.CancelledError)
-
         with pytest.raises(asyncio.CancelledError):
-            await executor._execute_claimed_llm_task(task_desc, processing_path, None)
-
-        assert not processing_path.exists()
+            await executor._execute_canonical_task(claim)
         assert queue.get_task_by_id("cancelled").status == "pending"
-        assert executor._anima.messenger.send.call_args.kwargs["to"] == "manager-anima"
+        assert len(queue.store.wakeups("test-anima")) == 1
+        executor._deliver_task_wakeups(queue.store)
+        assert any(call.kwargs["to"] == "manager-anima" for call in executor._anima.messenger.send.call_args_list)
+        assert not (executor._anima_dir / "state" / "pending").exists()
 
     @pytest.mark.asyncio
-    async def test_shutdown_preserves_live_lease_before_restart_recovery(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("shutdown", [True, False])
+    async def test_live_child_keeps_claim_until_proven_dead(self, tmp_path, shutdown):
+        from core.memory.task_queue import TaskQueueManager
+
         executor = _make_executor(tmp_path)
-        task_desc = {
+        queue = TaskQueueManager(executor._anima_dir)
+        payload = {
             "task_type": "llm",
             "task_id": "shutdown",
             "title": "Restarted task",
+            "description": "work",
             "context": "original",
         }
-        pending = executor._anima_dir / "state" / "pending"
-        processing = pending / "processing"
-        processing.mkdir(parents=True)
-        processing_path = processing / "shutdown.json"
-        processing_path.write_text(json.dumps(task_desc), encoding="utf-8")
-        write_processing_lease(
-            processing_path,
-            anima="test-anima",
-            task_id="shutdown",
-        )
-
-        from core.memory.task_queue import TaskQueueManager
-
-        queue = TaskQueueManager(executor._anima_dir)
-        queue.add_task(
-            source="anima",
-            original_instruction="work",
-            assignee="test-anima",
-            summary="work",
-            status="in_progress",
-            task_id="shutdown",
-        )
+        queue.submit(payload)
+        claim = queue.store.claim("test-anima", "shutdown", {"pid": 123456, "process_start_time": 1})
         executor.execute_pending_task = AsyncMock(side_effect=asyncio.CancelledError)
-        executor._shutdown_event.set()
-
-        with pytest.raises(asyncio.CancelledError):
-            await executor._execute_claimed_llm_task(task_desc, processing_path, None)
-
-        assert processing_path.exists()
-        assert processing_lease_path(processing_path).exists()
+        if shutdown:
+            executor._shutdown_event.set()
+        with (
+            patch("core.taskboard.tasks.identity_liveness", return_value="live"),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await executor._execute_canonical_task(claim)
         assert queue.get_task_by_id("shutdown").status == "in_progress"
+        assert len(queue.store.active_attempts("test-anima")) == 1
         executor._anima.messenger.send.assert_not_called()
-
-        with patch("core.supervisor.pending_executor.is_processing_lease_live", return_value=True):
-            PendingTaskExecutor._recover_processing(processing, executor._anima_dir)
-
-        assert processing_path.exists()
-
-        with patch("core.supervisor.pending_executor.is_processing_lease_live", return_value=False):
-            PendingTaskExecutor._recover_processing(processing, executor._anima_dir)
-
-        assert not processing_path.exists()
-        # No descriptor is regenerated; the entry simply becomes pending again.
-        assert not (pending / "shutdown.json").exists()
-        recovered = queue.get_task_by_id("shutdown")
-        assert recovered.status == "pending"
-        assert recovered.meta["last_run_stop_kind"] == "crash"
+        with patch("core.taskboard.tasks.identity_liveness", return_value="live"):
+            executor._recover_task_attempts(queue.store)
+        assert len(queue.store.active_attempts("test-anima")) == 1
+        with patch("core.taskboard.tasks.identity_liveness", return_value="dead"):
+            executor._recover_task_attempts(queue.store)
+        assert queue.get_task_by_id("shutdown").status == "pending"
+        assert queue.store.pending("test-anima") == []
+        assert queue.store.get_input("test-anima", "shutdown") == payload
 
     @pytest.mark.asyncio
     async def test_notification_failure_does_not_propagate(self, tmp_path: Path) -> None:
@@ -647,7 +607,7 @@ class TestI18nTemplate:
         assert "test-123" in result
         assert "テストタスク" in result
         assert "RuntimeError: boom" in result
-        assert "再委譲" in result
+        assert "元の入力は保存" in result
 
     def test_en_template(self) -> None:
         from core.i18n import t
@@ -662,7 +622,7 @@ class TestI18nTemplate:
         assert "test-456" in result
         assert "Test Task" in result
         assert "ValueError: bad" in result
-        assert "re-delegate" in result
+        assert "Original input is retained" in result
 
     def test_ko_template(self) -> None:
         from core.i18n import t
@@ -676,4 +636,4 @@ class TestI18nTemplate:
         )
         assert "test-789" in result
         assert "테스트 작업" in result
-        assert "재위임" in result
+        assert "원래 입력은 보존" in result

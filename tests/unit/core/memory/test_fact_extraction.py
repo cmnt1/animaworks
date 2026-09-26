@@ -218,6 +218,47 @@ class TestFactExtractorExtractEntities:
         assert entities[0].name == "Valid"
 
 
+# ── TestParseJsonResponse ──────────────────────────────────────────────
+# Verifies the LLM JSON parser handles the three response forms:
+# (a) raw JSON, (b) ```json fenced, (c) fence with explanation text around it.
+
+
+class TestParseJsonResponse:
+    _PAYLOAD = json.dumps({"entities": [{"name": "田中", "entity_type": "Person"}]}, ensure_ascii=False)
+
+    def _parse(self, text: str) -> EntityExtractionResult:
+        from core.memory.extraction.extractor import FactExtractor
+
+        ext = FactExtractor(model="test-model")
+        result = ext._parse_json_response(text, EntityExtractionResult, stage="entity")
+        assert isinstance(result, EntityExtractionResult)
+        return result
+
+    def test_parses_raw_json(self):
+        result = self._parse(self._PAYLOAD)
+        assert len(result.entities) == 1
+        assert result.entities[0].name == "田中"
+
+    def test_parses_code_fenced_json(self):
+        result = self._parse(f"```json\n{self._PAYLOAD}\n```")
+        assert len(result.entities) == 1
+        assert result.entities[0].name == "田中"
+
+    def test_parses_fence_with_surrounding_explanation(self):
+        text = (
+            "以下が抽出結果です。\n"
+            f"```json\n{self._PAYLOAD}\n```\n"
+            "（以上）"
+        )
+        result = self._parse(text)
+        assert len(result.entities) == 1
+        assert result.entities[0].name == "田中"
+
+    def test_parses_unlabeled_fence(self):
+        result = self._parse(f"```\n{self._PAYLOAD}\n```")
+        assert len(result.entities) == 1
+
+
 # ── TestFactExtractorExtractFacts ──────────────────────────────────────────
 
 

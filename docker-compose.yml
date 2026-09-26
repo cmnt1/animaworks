@@ -1,12 +1,27 @@
+# AnimaWorks Docker Compose.
+#
+# Place a `.env` file next to this repository's root and compose reads it
+# automatically. Credentials it accepts:
+#   ANTHROPIC_API_KEY=...            # API key auth
+#   CLAUDE_CODE_OAUTH_TOKEN=...      # or subscription auth: `claude setup-token` (needs a TTY)
+#   GH_TOKEN=...                     # optional: lets animas clone/push and open PRs
+#   GIT_AUTHOR_NAME=... / GIT_AUTHOR_EMAIL=...   # optional git identity for commits
+#
+# `command` is left to the Dockerfile's CMD (start --foreground).
 services:
   animaworks:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "18500:18500"
     environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      GH_TOKEN: ${GH_TOKEN:-}
+      GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-}
+      GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-}
       TZ: Asia/Tokyo
     volumes:
       - animaworks-data:/root/.animaworks

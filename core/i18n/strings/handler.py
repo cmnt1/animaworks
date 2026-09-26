@@ -309,6 +309,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": ("[タスク委譲]\n{instruction}\n\nタスクID: {task_id}"),
         "en": ("[Task delegation]\n{instruction}\n\nTask ID: {task_id}"),
     },
+    "handler.delegation_dm_skipped": {
+        "ja": "DM は送っていません（タスクは相手の実行キューに登録済みです）",
+        "en": "DM skipped (the task is already in the assignee's execution queue)",
+        "ko": "DM을 보내지 않았습니다 (담당자의 실행 큐에 작업이 등록되어 있습니다)",
+    },
     "handler.delegation_intent_deprecated": {
         "ja": (
             "Error: intent='delegation' は廃止されました。タスクを委任するには delegate_task ツールを使用してください。send_message は report / question のみ対応しています。"

@@ -64,7 +64,6 @@ from core.tooling.handler_base import (  # noqa: F401
 # ── Import Mixins ──
 from core.tooling.handler_comms import CommsToolsMixin
 from core.tooling.handler_files import FileToolsMixin
-from core.tooling.handler_goals import GoalsToolsMixin
 from core.tooling.handler_memory import MemoryToolsMixin
 from core.tooling.handler_org import OrgToolsMixin
 from core.tooling.handler_perms import PermissionsMixin
@@ -97,7 +96,6 @@ class ToolHandler(
     CommsToolsMixin,
     OrgToolsMixin,
     SkillsToolsMixin,
-    GoalsToolsMixin,
     WorkspaceToolsMixin,
     FileToolsMixin,
     PermissionsMixin,
@@ -294,7 +292,6 @@ class ToolHandler(
             "unblock_skill": self._handle_unblock_skill,
             "delete_skill": self._handle_delete_skill,
             "set_skill_lifecycle": self._handle_set_skill_lifecycle,
-            "goal": self._handle_goal,
             "backlog_task": self._handle_backlog_task,
             "update_task": self._handle_update_task,
             "list_tasks": self._handle_list_tasks,
@@ -592,6 +589,26 @@ class ToolHandler(
 
     _MAX_TOOL_OUTPUT_BYTES = 50_000
 
+    def _attach_action_rules(self, name: str, args: dict[str, Any], result: str) -> str:
+        """Append any relevant ACTION-RULE bodies to a side-effect tool result."""
+        try:
+            from core.memory.action_gate import (
+                action_tool_name_for_handler,
+                find_action_rules,
+                format_action_rules,
+            )
+
+            action_tool_name = action_tool_name_for_handler(name)
+            if not action_tool_name or not result:
+                return result
+            rules = find_action_rules(self._anima_dir, action_tool_name, args)
+            rendered = format_action_rules(rules)
+            if rendered:
+                return result + "\n\n" + rendered
+        except Exception:
+            logger.debug("Failed to attach action rules for %s", name, exc_info=True)
+        return result
+
     def handle(self, name: str, args: dict[str, Any], tool_use_id: str | None = None) -> str:
         """Synchronous tool call dispatch.
 
@@ -604,19 +621,6 @@ class ToolHandler(
             if meeting_mode.get() and name in _MEETING_BLOCKED_TOOLS:
                 return t("handler.meeting_tool_blocked", tool=name)
             logger.debug("tool_call name=%s args_keys=%s", name, list(args.keys()))
-
-            from core.memory.action_gate import action_tool_name_for_handler, check_action
-
-            action_tool_name = action_tool_name_for_handler(name)
-            if action_tool_name:
-                gate_decision = check_action(
-                    self._anima_dir,
-                    action_tool_name,
-                    args,
-                    session_key=self._session_id,
-                )
-                if not gate_decision.allowed:
-                    return gate_decision.to_json()
 
             handler = self._dispatch.get(name)
             if handler is not None:
@@ -645,6 +649,7 @@ class ToolHandler(
                         logger.warning("Unknown tool requested: %s", name)
                         result = f"Unknown tool: {name}"
 
+            result = self._attach_action_rules(name, args, result)
             self._log_tool_activity(name, args, tool_use_id=tool_use_id)
             self._log_tool_result_activity(name, result, tool_use_id=tool_use_id)
             result = self._compress_if_enabled(result, name)
@@ -730,7 +735,7 @@ class ToolHandler(
                     meta=meta or None,
                 )
             elif name == "call_human":
-                from core.taskboard.attention_resolver import notification_key_for
+                from core.notification import notification_key_for
 
                 body = args.get("body", "")
                 subject = args.get("subject", "")
@@ -837,18 +842,6 @@ class ToolHandler(
                 t("tooling.gated_action_denied", tool=tool_name, action=action),
             )
 
-        from core.memory.action_gate import action_tool_name_for_handler, check_action
-
-        if action_tool_name_for_handler(schema_name):
-            gate_decision = check_action(
-                self._anima_dir,
-                schema_name,
-                tool_args,
-                session_key=self._session_id,
-            )
-            if not gate_decision.allowed:
-                return gate_decision.to_json()
-
         dispatch_args = {**tool_args, "anima_dir": str(self._anima_dir)}
 
         try:
@@ -875,7 +868,7 @@ class ToolHandler(
                 mod = importlib.import_module(TOOL_MODULES[tool_name])
 
             result = ExternalToolDispatcher._call_module(mod, schema_name, dispatch_args)
-            return result
+            return self._attach_action_rules(schema_name, tool_args, result)
         except AnimaWorksError:
             raise
         except Exception as e:

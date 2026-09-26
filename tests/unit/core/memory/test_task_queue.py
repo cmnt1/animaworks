@@ -6,6 +6,7 @@ from __future__ import annotations
 
 """Unit tests for core.memory.task_queue — TaskQueueManager and task lifecycle."""
 
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,10 +18,12 @@ from core.memory.task_queue import (
     TaskPersistenceError,
     TaskQueueManager,
 )
+from core.taskboard.tasks import TaskStore, task_database_path
 
 # ── Test 1: _append raises TaskPersistenceError on OSError ─────────────
 
 
+@pytest.mark.skipif(os.name == "nt", reason="chmod does not make directories read-only on Windows")
 def test_append_raises_task_persistence_error_on_oserror(tmp_path: Path) -> None:
     """Test that _append raises TaskPersistenceError when file write fails.
 
@@ -33,20 +36,18 @@ def test_append_raises_task_persistence_error_on_oserror(tmp_path: Path) -> None
 
     tqm = TaskQueueManager(anima_dir)
 
-    original_open = Path.open
-
-    def fail_queue_open(path: Path, *args, **kwargs):
-        if path == tqm.queue_path:
-            raise OSError("simulated queue write failure")
-        return original_open(path, *args, **kwargs)
-
-    with patch.object(Path, "open", fail_queue_open), pytest.raises(TaskPersistenceError):
-        tqm.add_task(
-            source="human",
-            original_instruction="test task",
-            assignee="anima",
-            summary="test",
-        )
+    state_dir = anima_dir / "state"
+    state_dir.chmod(0o444)
+    try:
+        with pytest.raises(TaskPersistenceError):
+            tqm.add_task(
+                source="human",
+                original_instruction="test task",
+                assignee="anima",
+                summary="test",
+            )
+    finally:
+        state_dir.chmod(0o755)
 
 
 # ── Test 2: "blocked"/"failed" statuses are retired ─────────────────────
@@ -315,8 +316,8 @@ def _make_tasks_with_statuses(tqm: TaskQueueManager) -> dict[str, str]:
     return ids
 
 
-def test_compact_creates_archive_file(tmp_path: Path) -> None:
-    """compact() should create task_queue_archive.jsonl with terminal tasks."""
+def test_compact_archives_records_without_second_ledger(tmp_path: Path) -> None:
+    """Archive is a view of canonical records, not a second file authority."""
     anima_dir = tmp_path / "anima"
     (anima_dir / "state").mkdir(parents=True)
     tqm = TaskQueueManager(anima_dir)
@@ -327,12 +328,12 @@ def test_compact_creates_archive_file(tmp_path: Path) -> None:
     removed = tqm.compact()
 
     assert removed == 2  # done, cancelled
-    assert tqm.archive_path.exists()
+    assert not tqm.archive_path.exists()
+    assert len(tqm._load_all(include_archived=True)) - len(tqm._load_all()) == 2
 
 
 def test_compact_archive_contains_correct_tasks(tmp_path: Path) -> None:
     """Archive should contain exactly the terminal tasks with correct fields."""
-    import json
 
     anima_dir = tmp_path / "anima"
     (anima_dir / "state").mkdir(parents=True)
@@ -341,10 +342,10 @@ def test_compact_archive_contains_correct_tasks(tmp_path: Path) -> None:
     ids = _make_tasks_with_statuses(tqm)
     tqm.compact()
 
-    archived = []
-    for line in tqm.archive_path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            archived.append(json.loads(line))
+    active_ids = set(tqm._load_all())
+    archived = [
+        entry.model_dump() for tid, entry in tqm._load_all(include_archived=True).items() if tid not in active_ids
+    ]
 
     archived_ids = {a["task_id"] for a in archived}
     for tid, status in ids.items():
@@ -376,7 +377,6 @@ def test_compact_queue_retains_only_active(tmp_path: Path) -> None:
 
 def test_compact_appends_to_existing_archive(tmp_path: Path) -> None:
     """Multiple compact() calls should append to archive, not overwrite."""
-    import json
 
     anima_dir = tmp_path / "anima"
     (anima_dir / "state").mkdir(parents=True)
@@ -390,9 +390,8 @@ def test_compact_appends_to_existing_archive(tmp_path: Path) -> None:
     tqm.update_status(e2.task_id, "cancelled")
     tqm.compact()
 
-    lines = [ln for ln in tqm.archive_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
-    assert len(lines) == 2
-    archived_ids = {json.loads(ln)["task_id"] for ln in lines}
+    archived_ids = set(tqm._load_all(include_archived=True))
+    assert len(archived_ids) == 2
     assert e1.task_id in archived_ids
     assert e2.task_id in archived_ids
 
@@ -855,6 +854,7 @@ def test_load_all_remaps_legacy_blocked_creation_row_to_pending(tmp_path: Path) 
     }
     queue_path.write_text(json.dumps(legacy_row, ensure_ascii=False) + "\n", encoding="utf-8")
 
+    TaskStore(task_database_path(anima_dir)).import_legacy(anima_dir)
     tqm = TaskQueueManager(anima_dir)
     entry = tqm.get_task_by_id("legacy-blocked-1")
 
@@ -865,9 +865,8 @@ def test_load_all_remaps_legacy_blocked_creation_row_to_pending(tmp_path: Path) 
     assert entry.meta.get("unblock_check") == "test -w ."
 
 
-def test_load_all_remaps_legacy_failed_update_event_to_pending(tmp_path: Path) -> None:
-    """A pre-teardown update event with status='failed' must not raise and
-    must be read back as 'pending'."""
+def test_post_migration_jsonl_writes_cannot_change_canonical_state(tmp_path: Path) -> None:
+    """Old writers cannot compete with the canonical task authority."""
     import json
 
     anima_dir = tmp_path / "anima"
@@ -896,7 +895,7 @@ def test_load_all_remaps_legacy_failed_update_event_to_pending(tmp_path: Path) -
     reloaded = tqm.get_task_by_id(entry.task_id)
     assert reloaded is not None
     assert reloaded.status == "pending"
-    assert reloaded.summary == "crashed: OOM"
+    assert reloaded.summary == "do a thing"
 
     # The queue must remain usable — no exception building the priming view either.
     assert isinstance(tqm.format_for_priming(), str)
@@ -924,6 +923,7 @@ def test_update_status_pending_on_legacy_blocked_task_succeeds(tmp_path: Path) -
     }
     queue_path.write_text(json.dumps(legacy_row, ensure_ascii=False) + "\n", encoding="utf-8")
 
+    TaskStore(task_database_path(anima_dir)).import_legacy(anima_dir)
     tqm = TaskQueueManager(anima_dir)
     result = tqm.update_status("legacy-blocked-2", "cancelled", summary="won't proceed")
     assert result is not None

@@ -124,6 +124,8 @@ class AnimaDefaults(BaseModel):
     max_tokens: int = 8192
     credential: str = "anthropic"
     context_threshold: float = 0.50
+    context_absolute_ceiling: float = 0.75
+    max_session_age_hours: float = 24.0
     max_chains: int = 2
     conversation_history_threshold: float = 0.30
     execution_mode: str | None = None  # None = auto-detect from model
@@ -441,25 +443,12 @@ class MemoryConfig(BaseModel):
     neo4j_edge_types: list[Neo4jEdgeTypeConfig] = Field(default_factory=list)
 
 
-class ActionGateConfig(BaseModel):
-    """Action Memory Gate failure mode (pi-fix3).
-
-    Default is ``open`` because this fleet has frequent vector-search
-    outages (FD exhaustion, repair loops, CUDA failures). Immediate
-    fail-close would halt all external sends during infrastructure
-    incidents. Observe structured logs, then migrate open → middle → close.
-    """
-
-    fail_mode: Literal["open", "middle", "close"] = "open"
-    # Cooldown for no_matching_rule human notifications (seconds).
-    # Prevents spam while allowing re-alert so holds cannot freeze silently forever.
-    no_rule_notify_cooldown_seconds: int = Field(default=21600, ge=0)  # 6h
-
-
 class PromptConfig(BaseModel):
     """Configuration for system prompt building."""
 
     injection_size_warning_chars: int = 2000
+    system_prompt_target_tokens: int = Field(default=6000, ge=2000)
+    system_prompt_ceiling_pct: float = Field(default=0.35, gt=0.0, le=1.0)
     skill_catalog_router_enabled: bool = True
     skill_catalog_router_top_k: int = Field(default=5, ge=1)
     skill_catalog_router_min_score: float = Field(default=1.15, ge=0.0)
@@ -471,19 +460,20 @@ class PromptConfig(BaseModel):
 class PrimingConfig(BaseModel):
     """Configuration for priming layer (automatic memory retrieval)."""
 
-    dynamic_budget: bool = True
+    profile: Literal["compact", "full"] = "compact"
+    max_tokens: int = Field(default=2000, ge=200)
     channel_timeout_seconds: float = Field(default=60.0, ge=0.1)
-    budget_greeting: int = 500
-    budget_question: int = 2000
-    budget_request: int = 3000
-    budget_heartbeat: int = 200  # fallback when context_window is unknown
-    heartbeat_context_pct: float = 0.05  # fraction of context_window for HB budget
 
 
 class ConsolidationConfig(BaseModel):
     """Configuration for memory consolidation processes."""
 
     daily_enabled: bool = True
+    knowledge_mutation_enabled: bool = False
+    weekly_distillation_enabled: bool = True
+    synaptic_downscaling_enabled: bool = True
+    skill_autolearn_enabled: bool = True
+    curator_auto_apply_enabled: bool = False
     daily_time: str = "02:00"  # Format: HH:MM
     min_episodes_threshold: int = 1
     llm_model: str = DEFAULT_CONSOLIDATION_MODEL
@@ -496,11 +486,9 @@ class ConsolidationConfig(BaseModel):
     ipc_timeout_max_seconds: int = Field(default=7200, ge=60)
     weekly_ipc_timeout_seconds: int = Field(default=3600, ge=60)
     weekly_max_concurrency: int = Field(default=3, ge=1, le=8)
-    weekly_enabled: bool = True  # Phase 3 implementation
+    weekly_enabled: bool = False
     weekly_time: str = "sun:03:00"  # Format: day:HH:MM
     duplicate_threshold: float = 0.85  # Similarity threshold for duplicate detection
-    monthly_enabled: bool = True  # Monthly forgetting toggle
-    monthly_time: str = "1:04:00"  # Format: day:HH:MM (day of month)
     indexing_enabled: bool = True  # Daily RAG indexing toggle
     indexing_time: str = "04:00"  # Format: HH:MM
     knowledge_self_correction_enabled: bool = True
@@ -514,7 +502,7 @@ class ConsolidationConfig(BaseModel):
 class ImageGenConfig(BaseModel):
     """Configuration for image generation and style consistency."""
 
-    backend: Literal["api", "diffusers"] = "api"
+    backend: Literal["api", "diffusers", "atlascloud"] = "api"
     image_style: Literal["anime", "realistic"] = "realistic"
     prefer_codex: bool = True  # codex CLIがあれば画像生成に最優先で使う
     style_reference: str | None = None  # Path to organization-wide style reference image
@@ -610,7 +598,7 @@ class ExternalMessagingChannelConfig(BaseModel):
 
     enabled: bool = False
     mode: str = "socket"  # "socket" | "webhook"
-    anima_mapping: dict[str, str] = {}  # channel_id → anima_name
+    anima_mapping: dict[str, str] = {}  # channel_id → anima_name ("" = ignore this channel)
     default_anima: str = ""  # fallback anima for unmapped channels
     app_id_mapping: dict[str, str] = {}  # api_app_id → anima_name (per-Anima webhook routing)
     auto_response: bool = False  # auto-post LLM responses back to originating platform
@@ -621,6 +609,17 @@ class ExternalMessagingChannelConfig(BaseModel):
     channel_members: dict[str, list[str]] = {}  # channel_id → [anima_name, ...] (Discord only)
     system_agents: dict[str, SystemAgentConfig] = {}  # external_user_id -> SystemAgentConfig
     default_channel_company: str = ""  # company for auto-created boards (empty = no attribution)
+
+    def resolve_anima(self, channel_id: str) -> str:
+        """Return the anima that handles *channel_id*, or ``""`` to ignore it.
+
+        An explicit entry in ``anima_mapping`` always wins, including an empty
+        value, which opts the channel out of routing entirely.  Only channels
+        with no entry at all fall back to ``default_anima``.
+        """
+        if channel_id in self.anima_mapping:
+            return self.anima_mapping[channel_id] or ""
+        return self.default_anima
 
 
 class ZoomRTMSConfig(BaseModel):
@@ -931,10 +930,34 @@ class HeartbeatConfig(BaseModel):
     interval_minutes: int = Field(
         default=30, ge=1, le=1440
     )  # heartbeat interval (config-driven, not parsed from heartbeat.md)
+    # Orphan reaper: grace period before a descriptor-less pending row is
+    # cancelled. Must always be longer than this anima's heartbeat so a run
+    # that ended without a completion declaration can be re-submitted by the
+    # anima's own heartbeat before it gets reaped. grace = heartbeat interval
+    # (minutes) * orphan_grace_multiplier, floored at orphan_grace_min_seconds.
+    orphan_grace_multiplier: float = Field(
+        default=3.0,
+        ge=1.0,
+        le=24.0,
+        description="Orphan reaper grace = heartbeat interval (min) * this multiplier",
+    )
+    orphan_grace_min_seconds: int = Field(
+        default=1800,
+        ge=60,
+        description="Lower bound for the orphan reaper grace, in seconds",
+    )
     current_state_max_chars: int = Field(
         default=8000,
         ge=0,
         description="Max chars for current_state.md before trim; 0 = disabled",
+    )
+    heartbeat_md_max_bytes: int = Field(
+        default=20000,
+        ge=0,
+        description=(
+            "Max bytes of heartbeat.md before a compaction instruction is "
+            "injected into the heartbeat prompt; 0 = disabled"
+        ),
     )
     soft_timeout_seconds: int = Field(
         default=300,
@@ -969,9 +992,15 @@ class HeartbeatConfig(BaseModel):
         False  # Send read-receipt ACK to message senders (disabled by default to prevent gratitude loops)
     )
     channel_post_cooldown_s: int = 300  # Min seconds between board posts per Anima (0 = no limit)
+    delegation_dm_enabled: bool = Field(
+        default=True,
+        description=(
+            "delegate_task already writes the pending descriptor for the target; "
+            "the DM only wakes an extra inbox run. Set false to skip it."
+        ),
+    )
     outbound_limit_enabled: bool = True  # False disables the global hourly/daily outbound message caps
-    max_messages_per_hour: int = 30  # Deprecated: use ROLE_OUTBOUND_DEFAULTS + status.json override
-    max_messages_per_day: int = 100  # Deprecated: use ROLE_OUTBOUND_DEFAULTS + status.json override
+
     idle_compaction_minutes: float = Field(
         default=10.0,
         ge=1.0,
@@ -1298,12 +1327,6 @@ class SkillPromotionConfig(BaseModel):
     confidence_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
     failure_count_max: int = Field(default=1, ge=0)
     last_used_within_days: int = Field(default=180, ge=1)
-    # DEPRECATED no-op flags. Retained only for config.json backward compat so
-    # existing files validate. They are never read: promotion always writes to
-    # quarantine and requires human approval before activation. A warning is
-    # emitted at load time (see core.config.io) when set to a non-default value.
-    auto_activate: bool = False
-    require_approval_on_warn: bool = True
 
 
 class SkillCronConfig(BaseModel):
@@ -1412,7 +1435,6 @@ class AnimaWorksConfig(BaseModel):
     rag: RAGConfig = RAGConfig()
     gpu: GPUConfig = GPUConfig()
     memory: MemoryConfig = MemoryConfig()
-    action_gate: ActionGateConfig = ActionGateConfig()
     skills: SkillsConfig = SkillsConfig()
     chatwork_tool: ChatworkToolConfig = ChatworkToolConfig()
     prompt: PromptConfig = PromptConfig()
@@ -1466,7 +1488,6 @@ class AnimaWorksConfig(BaseModel):
 
 
 __all__ = [
-    "ActionGateConfig",
     "ActivityLogConfig",
     "ActivityScheduleEntry",
     "AnimaDefaults",

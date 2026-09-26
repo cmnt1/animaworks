@@ -234,7 +234,7 @@ class SchedulerMixin:
         except Exception:
             logger.debug("Housekeeping schedule setup failed", exc_info=True)
 
-        # DM log rotation (mirrors LifecycleManager registration)
+        # DM log rotation
         self.scheduler.add_job(
             self._run_dm_log_rotation,
             CronTrigger(hour=4, minute=30),
@@ -1009,28 +1009,17 @@ class SchedulerMixin:
         current_e5_prefix = get_embedding_e5_prefix_enabled()
         global_meta_path = base_dir / "index_meta.json"
         if global_meta_path.is_file():
+            from core.i18n import t
+            from core.memory.rag.index_signature import index_signature_error
+
             try:
                 meta = json.loads(global_meta_path.read_text(encoding="utf-8"))
-                previous_model = meta.get("embedding_model")
-                previous_e5_prefix = bool(meta.get("embedding_e5_prefix", False))
-                if previous_model and previous_model != current_model:
-                    logger.warning(
-                        "Embedding model changed: %s -> %s. "
-                        "Skipping daily indexing — run 'animaworks index --full' to rebuild.",
-                        previous_model,
-                        current_model,
-                    )
-                    return
-                if previous_e5_prefix != current_e5_prefix:
-                    logger.warning(
-                        "Embedding E5 prefix setting changed: %s -> %s. "
-                        "Skipping daily indexing — run 'animaworks index --full' to rebuild.",
-                        previous_e5_prefix,
-                        current_e5_prefix,
-                    )
-                    return
+                signature_error = index_signature_error(meta, current_model, current_e5_prefix)
             except (json.JSONDecodeError, OSError):
-                pass
+                signature_error = t("rag.signature_unreadable")
+            if signature_error:
+                logger.warning(t("rag.daily_indexing_blocked", reason=signature_error))
+                return
 
         from core.memory.rag.shared_meta import read_shared_hash, write_shared_hash
         from core.memory.rag_search import _compute_dir_hash
@@ -1436,7 +1425,6 @@ class SchedulerMixin:
 
         daily_enabled = getattr(consolidation_cfg, "daily_enabled", True) if consolidation_cfg else True
         weekly_enabled = getattr(consolidation_cfg, "weekly_enabled", True) if consolidation_cfg else True
-        monthly_enabled = getattr(consolidation_cfg, "monthly_enabled", True) if consolidation_cfg else True
 
         if daily_enabled:
             last = _read_marker(mdir / "last_daily_consolidation")
@@ -1455,15 +1443,6 @@ class SchedulerMixin:
                     last,
                 )
                 await self._run_weekly_integration()
-
-        if monthly_enabled:
-            last = _read_marker(mdir / "last_monthly_forgetting")
-            if last is None or (now - last) > timedelta(days=35):
-                logger.info(
-                    "Catch-up: monthly forgetting missed (last=%s), running now",
-                    last,
-                )
-                await self._run_monthly_forgetting()
 
         indexing_enabled = getattr(consolidation_cfg, "indexing_enabled", True) if consolidation_cfg else True
         if indexing_enabled:

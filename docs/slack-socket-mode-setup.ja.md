@@ -173,7 +173,7 @@ Anima 表示名・アイコン付きで `chat.postMessage` する場合は、ワ
 |------|----|-----------|------|
 | `enabled` | bool | `false` | Slack受信の有効/無効 |
 | `mode` | string | `"socket"` | `"socket"`（推奨）または `"webhook"` |
-| `anima_mapping` | object | `{}` | SlackチャンネルID → Anima名のマッピング（共有Bot用） |
+| `anima_mapping` | object | `{}` | SlackチャンネルID → Anima名のマッピング（共有Bot用）。値を空文字（`""`）にするとそのチャンネルは `default_anima` に落とさず無視する |
 | `default_anima` | string | `""` | チャンネルが anima_mapping にない場合のフォールバックAnima |
 | `app_id_mapping` | object | `{}` | Slack API App ID → Anima名（Webhook モードで複数Appを使う場合） |
 
@@ -271,8 +271,8 @@ Per-Anima の `SLACK_*__name` キーを増減したり credential を更新し�
 4. **call_human スレッド返信**: メッセージがスレッド返信かつ `route_thread_reply` でマッピング済みの場合、元の通知を送ったAnimaのinboxにルーティング（`core/notification/reply_routing.py`）
 5. **ルーティング解決**:
    - **Socket Mode Per-Anima Bot**: そのBotの全メッセージを対応Animaに直接配送
-   - **Socket Mode 共有Bot**: 受信のたびに `anima_mapping.get(channel_id) or default_anima`（設定ホット反映）
-   - **Webhook**: `app_id_mapping.get(api_app_id)` でAnimaを取得 → なければ `anima_mapping.get(channel_id) or default_anima`
+   - **Socket Mode 共有Bot**: 受信のたびに、チャンネルが `anima_mapping` にあればその値（空文字なら無視）、なければ `default_anima`（設定ホット反映）
+   - **Webhook**: `app_id_mapping.get(api_app_id)` でAnimaを取得 → なければ上と同じ `anima_mapping` / `default_anima` の規則
 6. **スレッドコンテキスト**: `thread_ts` がある場合、親メッセージの一行要約と返信数を `[Thread context]` ブロックとして本文先頭に付与（`conversations.replies`、最大10件相当の取得ロジック）
 7. **本文整形**: `<@U...>` を表示名に展開し、Slack マークアップを平文化（`core/tools/_slack_markdown.py` の `clean_slack_markup`）
 8. **アノテーション**: `[slack:DM]` またはチャンネルで Bot/エイリアスへのメンション有無を示す行を先頭に付与（`_build_slack_annotation`）

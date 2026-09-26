@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.i18n import t
 from core.supervisor.pending_executor import (
     _SENTINEL_CANCELLED,
     _SENTINEL_EXPIRED,
@@ -82,7 +83,7 @@ class TestClassifyTaskResult:
     def test_cancelled(self):
         status, summary = _classify_task_result(_SENTINEL_CANCELLED)
         assert status == "cancelled"
-        assert "cancelled" in summary.lower()
+        assert summary == t("pending_executor.task_cancelled")
 
     def test_expired(self):
         status, summary = _classify_task_result(_SENTINEL_EXPIRED)
@@ -292,7 +293,7 @@ class TestExecuteLlmTaskStatusMapping:
             patch.object(executor, "_sync_task_queue") as mock_sync,
         ):
             await executor._execute_llm_task(task)
-            mock_sync.assert_called_once_with("test-task-1", "cancelled", summary="cancelled before execution")
+            mock_sync.assert_called_once_with("test-task-1", "cancelled", summary=t("pending_executor.task_cancelled"))
 
     @pytest.mark.asyncio
     async def test_expired_maps_to_cancelled_status(self, tmp_path):
@@ -364,21 +365,85 @@ class TestExecuteLlmTaskStatusMapping:
 class TestSerialBatchUnfinishedDependency:
     @pytest.mark.asyncio
     async def test_unfinished_dependency_syncs_to_queue(self, tmp_path):
-        """A serial batch whose dependency never finished returns both to pending."""
+        """An ended incomplete predecessor never releases or reruns its child."""
+        from core.memory.task_queue import TaskQueueManager
+        from core.taskboard.tasks import process_identity
+        from core.tasks_dispatch import publish_tasks
+
         executor = _make_executor(tmp_path)
-
         tasks = [
-            {"task_id": "dep1", "description": "dep", "depends_on": [], "parallel": False},
-            {"task_id": "child1", "description": "child", "depends_on": ["dep1"], "parallel": False},
+            {
+                "task_id": "dep1",
+                "title": "Dependency",
+                "description": "dep",
+                "depends_on": [],
+                "parallel": False,
+                "batch_id": "test-batch",
+            },
+            {
+                "task_id": "child1",
+                "title": "Child",
+                "description": "child",
+                "depends_on": ["dep1"],
+                "parallel": False,
+                "batch_id": "test-batch",
+            },
         ]
-
+        publish_tasks(executor._anima_dir, tasks)
+        store = TaskQueueManager(executor._anima_dir).store
+        claim = store.claim("test-anima", "dep1", process_identity())
+        assert claim is not None
+        assert store.claim("test-anima", "child1", process_identity()) is None
         with (
-            patch.object(executor, "_run_llm_task", side_effect=RuntimeError("dep failed")),
-            patch.object(executor, "_sync_task_queue") as mock_sync,
-            patch.object(executor, "_get_semaphore", return_value=asyncio.Lock()),
+            patch.object(
+                executor, "execute_pending_task", new=AsyncMock(side_effect=RuntimeError("dep failed"))
+            ) as execute,
         ):
-            await executor._dispatch_batch("test-batch", tasks)
+            await executor._execute_canonical_task(claim)
+        execute.assert_awaited_once()
+        assert store.get("test-anima", "dep1").status == "pending"
+        assert store.get("test-anima", "child1").status == "pending"
+        assert store.active_attempts("test-anima") == []
+        assert store.claim("test-anima", "dep1", process_identity()) is None
+        assert store.claim("test-anima", "child1", process_identity()) is None
+        assert [event["task_id"] for event in store.wakeups("test-anima")] == ["dep1"]
+        assert store.get_input("test-anima", "child1")["depends_on"] == ["dep1"]
 
-            sync_calls = {call[0][0]: call[0][1] for call in mock_sync.call_args_list}
-            assert sync_calls["dep1"] == "pending"
-            assert sync_calls["child1"] == "pending"
+
+# ── TTL gate: resume keeps submitted_at, so age follows the last queue touch ──
+
+
+class _PastExpiryGate(Exception):
+    pass
+
+
+class TestTtlGateAfterResume:
+    @staticmethod
+    def _iso(hours_ago: float) -> str:
+        from datetime import UTC, datetime, timedelta
+
+        return (datetime.now(UTC) - timedelta(hours=hours_ago)).isoformat()
+
+    async def _run(self, tmp_path, *, submitted_hours_ago, entry):
+        executor = _make_executor(tmp_path)
+        task = _make_task_desc(submitted_at=self._iso(submitted_hours_ago))
+        with (
+            patch("core.memory.task_queue.TaskQueueManager.get_task_by_id", return_value=entry),
+            patch.object(executor, "_sync_task_queue", side_effect=_PastExpiryGate),
+        ):
+            return await executor._run_llm_task(task)
+
+    @pytest.mark.asyncio
+    async def test_untouched_old_task_expires(self, tmp_path):
+        entry = MagicMock(status="pending", updated_at=self._iso(30))
+        assert await self._run(tmp_path, submitted_hours_ago=38, entry=entry) == _SENTINEL_EXPIRED
+
+    @pytest.mark.asyncio
+    async def test_old_task_without_queue_entry_expires(self, tmp_path):
+        assert await self._run(tmp_path, submitted_hours_ago=38, entry=None) == _SENTINEL_EXPIRED
+
+    @pytest.mark.asyncio
+    async def test_recently_resumed_old_task_is_not_expired(self, tmp_path):
+        entry = MagicMock(status="pending", updated_at=self._iso(0.01))
+        with pytest.raises(_PastExpiryGate):
+            await self._run(tmp_path, submitted_hours_ago=63, entry=entry)

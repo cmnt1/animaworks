@@ -135,6 +135,72 @@ class TestExecutionSdkPreflight:
         assert "Mode C anima" in caplog.text
         assert "codex-bot" in caplog.text
 
+    def test_critical_when_mode_s_present_but_cli_missing(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        from cli.commands.server import _run_execution_sdk_preflight
+
+        animas = tmp_path / "animas"
+        _write_status(animas, "kotoha", model="claude-sonnet-5", execution_mode="S")
+
+        with (
+            patch("cli.commands.server._package_importable", return_value=True),
+            patch("core.platform.claude_code.get_claude_executable", return_value=None),
+            patch("cli.commands.server.os.geteuid", return_value=1000),
+            caplog.at_level(logging.CRITICAL, logger="animaworks"),
+        ):
+            _run_execution_sdk_preflight(animas)
+
+        assert any(
+            "Mode S anima" in r.message
+            and "Claude Code CLI" in r.message
+            and r.levelno >= logging.CRITICAL
+            for r in caplog.records
+        )
+
+    def test_critical_when_root_and_sandbox_unset(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cli.commands.server import _run_execution_sdk_preflight
+
+        animas = tmp_path / "animas"
+        _write_status(animas, "kotoha", model="claude-sonnet-5", execution_mode="S")
+        monkeypatch.delenv("IS_SANDBOX", raising=False)
+
+        with (
+            patch("cli.commands.server._package_importable", return_value=True),
+            patch("core.platform.claude_code.get_claude_executable", return_value="/usr/local/bin/claude"),
+            patch("cli.commands.server.os.geteuid", return_value=0),
+            caplog.at_level(logging.CRITICAL, logger="animaworks"),
+        ):
+            _run_execution_sdk_preflight(animas)
+
+        assert any(
+            "root" in r.message and "IS_SANDBOX" in r.message and r.levelno >= logging.CRITICAL
+            for r in caplog.records
+        )
+
+    def test_no_root_critical_when_sandbox_set(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cli.commands.server import _run_execution_sdk_preflight
+
+        animas = tmp_path / "animas"
+        _write_status(animas, "kotoha", model="claude-sonnet-5", execution_mode="S")
+        monkeypatch.setenv("IS_SANDBOX", "1")
+
+        with (
+            patch("cli.commands.server._package_importable", return_value=True),
+            patch("core.platform.claude_code.get_claude_executable", return_value="/usr/local/bin/claude"),
+            patch("cli.commands.server.os.geteuid", return_value=0),
+            caplog.at_level(logging.CRITICAL, logger="animaworks"),
+        ):
+            _run_execution_sdk_preflight(animas)
+
+        assert not any(
+            "root" in r.message and "IS_SANDBOX" in r.message for r in caplog.records
+        )
+
 
 # ── (b) Fallback credential guard ────────────────────────────
 
@@ -148,35 +214,39 @@ class TestModeCFallbackCredentialGuard:
 
         with (
             patch("core.execution.codex_sdk.is_codex_sdk_available", return_value=False),
-            pytest.raises(ExecutorUnavailableError, match="openai"),
+            pytest.raises(ExecutorUnavailableError, match="fallback_models"),
         ):
             agent._create_executor()
 
     def test_returns_litellm_when_api_key_present(self, tmp_path: Path) -> None:
         agent = _make_mode_c_agent(tmp_path, api_key="sk-test")
+        agent.model_config.fallback_model = "a:openai/gpt-4.1"
+        from core.config.schemas import AnimaWorksConfig, CredentialConfig
+
+        config = AnimaWorksConfig(credentials={"openai": CredentialConfig(api_key="configured-key")})
         sentinel = MagicMock(name="litellm_executor")
 
         with (
+            patch("core.config.io.load_config", return_value=config),
             patch("core.execution.codex_sdk.is_codex_sdk_available", return_value=False),
             patch("core.execution.LiteLLMExecutor", return_value=sentinel) as mock_litellm,
         ):
             created = agent._create_executor()
 
         assert created is sentinel
-        assert mock_litellm.call_args.kwargs["model_config"].model == "openai/gpt-5.3-codex"
+        assert mock_litellm.call_args.kwargs["model_config"].model == "openai/gpt-4.1"
+        assert mock_litellm.call_args.kwargs["model_config"].api_key == "configured-key"
 
     def test_returns_litellm_when_openai_env_present(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         agent = _make_mode_c_agent(tmp_path, api_key=None)
         monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
-        sentinel = MagicMock(name="litellm_executor")
-
         with (
             patch("core.execution.codex_sdk.is_codex_sdk_available", return_value=False),
-            patch("core.execution.LiteLLMExecutor", return_value=sentinel),
+            patch("core.execution.LiteLLMExecutor") as litellm,
+            pytest.raises(ExecutorUnavailableError),
         ):
-            created = agent._create_executor()
-
-        assert created is sentinel
+            agent._create_executor()
+        litellm.assert_not_called()
 
     def test_executor_unavailable_is_non_retryable(self) -> None:
         assert ExecutorUnavailableError.retryable is False

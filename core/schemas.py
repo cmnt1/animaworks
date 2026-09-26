@@ -86,6 +86,8 @@ class ModelConfig(BaseModel):
     api_base_url: str | None = None  # e.g. http://localhost:11434/v1
     credential_type: str = "api_key"  # api_key, codex_login, claude_code_login, etc.
     context_threshold: float = 0.50  # short-term memory externalization threshold
+    context_absolute_ceiling: float = 0.75
+    max_session_age_hours: float = 24.0
     max_chains: int = 2  # max auto-continuation sessions
     conversation_history_threshold: float = 0.30  # conversation compression trigger
     execution_mode: str | None = None  # Canonical mode letter (S/C/D/G/X/A/B) or None for auto-resolve
@@ -219,6 +221,9 @@ class CycleResult(BaseModel):
     total_turns: int = 0
     truncated: bool = False
     tool_call_records: list[ToolCallRecordDict] = Field(default_factory=list)
+    # Older stored results omit this field; their tool records remain an
+    # independent replay guard. Streaming may start work before records exist.
+    fallback_safe: bool = True
     images: list[dict[str, str]] = Field(default_factory=list)
     meeting_redirects: list[dict[str, str]] = Field(default_factory=list)
     cron_skill_rejections: list[dict[str, str]] = Field(default_factory=list)

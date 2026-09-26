@@ -153,7 +153,7 @@ def create_webhooks_router() -> APIRouter:
             if anima_from_app:
                 anima_name = anima_from_app
             else:
-                anima_name = slack_config.anima_mapping.get(channel_id) or slack_config.default_anima
+                anima_name = slack_config.resolve_anima(channel_id)
 
             text = event.get("text", "")
             user_id = event.get("user", "")

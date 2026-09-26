@@ -582,6 +582,8 @@ def _create_status_json(
         "model",
         "background_model",
         "context_threshold",
+        "context_absolute_ceiling",
+        "max_session_age_hours",
         "max_chains",
         "conversation_history_threshold",
         "max_outbound_per_hour",

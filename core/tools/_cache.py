@@ -13,6 +13,12 @@ import logging
 import sqlite3
 from pathlib import Path
 
+# Several collectors (5-min mention watch, 15-min unreplied tracker, heartbeat
+# sessions) sync the same cache concurrently.  In DELETE journal mode every
+# commit takes the exclusive lock, so a sibling process must wait longer than
+# sqlite's 5s default or it dies with "database is locked".
+BUSY_TIMEOUT_S = 30.0
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,7 +45,7 @@ class BaseMessageCache:
         conn: sqlite3.Connection | None = None
         try:
             db_path.parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(str(db_path))
+            conn = sqlite3.connect(str(db_path), timeout=BUSY_TIMEOUT_S)
             # DELETE, not WAL: sandboxed animas mount the cache dir read-only
             # (write-access charter) and a WAL database cannot even be *read*
             # there, because SQLite must create a -shm file alongside it.
@@ -55,7 +61,7 @@ class BaseMessageCache:
             # so read-only access still answers search/unreplied/mentions.
             # Writes fail loudly on this connection -- never silently.
             logger.warning("Cache DB %s is not writable, opening read-only: %s", db_path, exc)
-            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=BUSY_TIMEOUT_S)
             self.readonly = True
         self.conn = conn
         self.conn.row_factory = sqlite3.Row

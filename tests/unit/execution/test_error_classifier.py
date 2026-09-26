@@ -6,8 +6,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import pytest
 
+from core.execution import error_classifier
 from core.execution.error_classifier import (
     FailoverReason,
     classify_llm_error,
@@ -139,6 +143,7 @@ class TestClassificationMatrix:
             "Usage limit reached for this account",
             "API error (status 402 Payment Required): Grok Build usage balance exhausted",
             "You have reached your weekly limit",
+            "You’ve hit your usage limit. Visit https://chatgpt.com/codex/settings/usage or try again at 10:16 AM.",
             "code=usage_limit_reached",
             "quota exceeded",
             "insufficient_quota",
@@ -339,6 +344,53 @@ class TestRetryAfter:
     def test_text_retry_after_minutes(self) -> None:
         _, hint = classify_llm_error(_ApiError("rate limit; try again in 2 minutes"))
         assert hint.backoff_s == 120.0
+
+
+class TestQuotaResetTime:
+    """Subscription caps state a wall-clock reset; the guard needs it as seconds."""
+
+    # 2026-09-21 03:45:00 JST
+    NOW = datetime(2026, 9, 21, 3, 45, tzinfo=ZoneInfo("Asia/Tokyo")).timestamp()
+
+    def test_codex_try_again_at_local_time(self, monkeypatch) -> None:
+        monkeypatch.setattr(error_classifier, "_zone_for", lambda _name: ZoneInfo("Asia/Tokyo"))
+        msg = "You’ve hit your usage limit. Visit https://chatgpt.com/codex/settings/usage or try again at 10:16 AM."
+        assert error_classifier._extract_reset_in_s(msg.lower(), now=self.NOW) == (6 * 3600 + 31 * 60)
+
+    def test_claude_resets_with_explicit_zone(self) -> None:
+        msg = "You've hit your limit · resets 10:50pm (Asia/Tokyo)"
+        assert error_classifier._extract_reset_in_s(msg.lower(), now=self.NOW) == (19 * 3600 + 5 * 60)
+
+    def test_zone_name_is_case_insensitive(self) -> None:
+        assert error_classifier._zone_for("asia/tokyo") == ZoneInfo("Asia/Tokyo")
+        assert error_classifier._zone_for("america/new_york") == ZoneInfo("America/New_York")
+        assert error_classifier._zone_for("no/such_zone") is None
+
+    def test_reset_earlier_today_means_tomorrow(self) -> None:
+        assert error_classifier._extract_reset_in_s("resets 1:00am (asia/tokyo)", now=self.NOW) == (21 * 3600 + 15 * 60)
+
+    def test_reset_just_passed_is_short_wait(self) -> None:
+        assert (
+            error_classifier._extract_reset_in_s("try again at 3:43 am (asia/tokyo)", now=self.NOW)
+            == error_classifier._RESET_JUST_PASSED_WAIT_S
+        )
+
+    def test_no_clock_time_is_none(self) -> None:
+        assert error_classifier._extract_reset_in_s("you have reached your weekly limit") is None
+
+    def test_quota_hint_carries_reset(self) -> None:
+        reason, hint = classify_llm_error_message("usage limit exceeded, try again at 10:16 AM")
+        assert reason is FailoverReason.QUOTA_EXHAUSTED
+        assert hint.reset_in_s is not None and 0 < hint.reset_in_s <= 86400
+        assert hint.backoff_s == 1800.0
+
+    def test_exception_path_carries_reset(self) -> None:
+        _, hint = classify_llm_error(_ApiError("usageLimitExceeded: try again at 10:16 AM", status_code=429))
+        assert hint.reset_in_s is not None
+
+    def test_non_quota_hint_has_no_reset(self) -> None:
+        _, hint = classify_llm_error_message("rate limit; try again at 10:16 AM")
+        assert hint.reset_in_s is None
 
 
 # ── classifier never raises ──────────────────────────────────────────────────

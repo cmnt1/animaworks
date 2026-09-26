@@ -140,7 +140,7 @@ There is no "waiting for conditions" or "blocked" state (`blocked` has been reti
 
 5. **Look for work you can still do in the meantime**
    - Persistent task queue: if tools are available, use `list_tasks` or `Bash: animaworks-tool task list`
-   - Check Heartbeat-emitted LLM tasks under `state/pending/*.json` for other work
+   - Use `list_tasks(detail=true)` to inspect pending work, dependencies, and attention reasons; do not duplicate or manually resubmit existing work
    - Start another task
 
 ---

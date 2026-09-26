@@ -54,8 +54,7 @@ def _sync_rooms(
     (total messages fetched).
     """
     rooms_data = client.rooms()
-    for room in rooms_data:
-        cache.upsert_room(room)
+    cache.upsert_rooms(rooms_data)
 
     rooms_data.sort(key=lambda r: r.get("last_update_time", 0), reverse=True)
     total_msgs = 0
@@ -409,8 +408,7 @@ def cli_main(argv: list[str] | None = None) -> None:
                         print("0 messages")
                 else:
                     rooms_data = client.rooms()
-                    for room in rooms_data:
-                        cache.upsert_room(room)
+                    cache.upsert_rooms(rooms_data)
                     rooms_data.sort(key=lambda r: r.get("last_update_time", 0), reverse=True)
                     rooms_to_sync = rooms_data[: args.limit]
                     print(f"Syncing {len(rooms_to_sync)} rooms (metadata: {len(rooms_data)} rooms saved)...\n")

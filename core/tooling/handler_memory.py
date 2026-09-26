@@ -46,8 +46,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("animaworks.tool_handler")
 
-_SEARCH_MAX_TOKENS = 25_000
-_SEARCH_MAX_LINES = 2_000
+_SEARCH_MAX_TOKENS = 8_000
+_SEARCH_MAX_LINES = 600
 _SEARCH_CONTEXT_BASE = 128_000
 _SEARCH_MIN_RESULTS = 3
 _PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -968,12 +968,6 @@ class MemoryToolsMixin:
 
             logger.debug("read_memory_file path=%s", rel)
             self._read_paths.add(rel)
-            try:
-                from core.memory.action_gate import record_memory_read
-
-                record_memory_read(self._anima_dir, rel, session_key=getattr(self, "_session_id", None))
-            except Exception:
-                logger.debug("Failed to record action-gate memory read for %s", rel, exc_info=True)
 
             # Record skill view event
             self._record_skill_view_if_applicable(rel)

@@ -119,3 +119,21 @@ class TestEmitLiveEvent:
         log_dir = activity_logger._log_dir
         files = list(log_dir.glob("*.jsonl"))
         assert len(files) == 1
+
+
+@pytest.mark.parametrize("event_type", ["task_created", "task_updated", "task_exec_start", "task_exec_end"])
+def test_task_lifecycle_survives_tool_rate_limit(activity_logger, tmp_path, event_type):
+    """A task completion must reach observers even when tool traffic is limited."""
+    with (
+        patch("core.memory.activity.get_data_dir", return_value=tmp_path),
+        patch("core.memory.activity.time.monotonic", return_value=100.0),
+    ):
+        for _ in range(7):
+            activity_logger.log("tool_use", tool="Read")
+        activity_logger.log(event_type, ctx="task:job", meta={"task_id": "job", "status": "completed"})
+    events = [json.loads(p.read_text()) for p in (tmp_path / "run/events/testanima").glob("ta_*.json")]
+    lifecycle = [event for event in events if event["data"]["type"] == event_type]
+    assert len(lifecycle) == 1
+    assert lifecycle[0]["event"] == "anima.tool_activity"
+    assert lifecycle[0]["data"]["ctx"] == "task:job"
+    assert lifecycle[0]["data"]["meta"] == {"task_id": "job", "status": "completed"}

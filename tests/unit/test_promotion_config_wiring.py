@@ -92,38 +92,20 @@ def test_explicit_converter_takes_precedence(tmp_path: Path) -> None:
     assert learner.converter.policy.success_count_threshold == 99
 
 
-def test_deprecated_flag_warns_once_and_continues(tmp_path: Path, caplog) -> None:
+def test_removed_deprecated_flags_are_ignored(tmp_path: Path, caplog) -> None:
+    """Legacy config files with removed no-op flags still load (keys dropped)."""
     import core.config.io as io
 
     config_path = tmp_path / "config.json"
     data = AnimaWorksConfig().model_dump(mode="json")
     data["skills"]["promotion"]["auto_activate"] = True
+    data["skills"]["promotion"]["require_approval_on_warn"] = False
     config_path.write_text(json.dumps(data), encoding="utf-8")
 
     io.invalidate_cache()
     with caplog.at_level(logging.WARNING, logger="animaworks.config"):
         config = io.load_config(config_path)
-    # Startup continues: config is loaded normally, flag value preserved but no-op.
-    assert config.skills.promotion.auto_activate is True
-    warnings = [r for r in caplog.records if "deprecated no-op" in r.getMessage()]
-    assert len(warnings) == 1
-
-    # Second load (same process, cache hit) must not re-warn.
-    caplog.clear()
-    with caplog.at_level(logging.WARNING, logger="animaworks.config"):
-        io.load_config(config_path)
-    assert not [r for r in caplog.records if "deprecated no-op" in r.getMessage()]
-    io.invalidate_cache()
-
-
-def test_default_flags_do_not_warn(tmp_path: Path, caplog) -> None:
-    import core.config.io as io
-
-    config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps(AnimaWorksConfig().model_dump(mode="json")), encoding="utf-8")
-
-    io.invalidate_cache()
-    with caplog.at_level(logging.WARNING, logger="animaworks.config"):
-        io.load_config(config_path)
-    assert not [r for r in caplog.records if "deprecated no-op" in r.getMessage()]
+    # Removed keys are no longer modeled; loading still succeeds and no warning.
+    assert not hasattr(config.skills.promotion, "auto_activate")
+    assert not hasattr(config.skills.promotion, "require_approval_on_warn")
     io.invalidate_cache()

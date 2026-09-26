@@ -10,6 +10,11 @@
 from __future__ import annotations
 
 STRINGS: dict[str, dict[str, str]] = {
+    "agent.context_cannot_fit_safely": {
+        "ja": "必須の指示・権限・タスク文脈を保持すると入力上限を超えるため実行を停止しました（推定 {estimated} / 上限 {limit} トークン）。入力を短くするか、より大きなコンテキストのモデルを設定してください。",
+        "en": "Execution stopped because required instructions, permissions, and task context cannot fit safely ({estimated} estimated tokens / {limit} limit). Shorten the input or configure a model with a larger context window.",
+        "ko": "필수 지시, 권한, 태스크 맥락을 보존하면 입력 한도를 초과하여 실행을 중지했습니다(추정 {estimated} / 한도 {limit} 토큰). 입력을 줄이거나 컨텍스트가 더 큰 모델을 설정하세요.",
+    },
     "agent.omitted_rest": {
         "ja": ("\n\n（以降省略）"),
         "en": ("\n\n(omitted)"),
@@ -65,14 +70,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "assisted.tool_exec_error": {
         "ja": "ツール実行エラー: {error}",
         "en": "Tool execution error: {error}",
-    },
-    "assisted.tool_result_header": {
-        "ja": "ツール実行結果:",
-        "en": "Tool execution result:",
-    },
-    "assisted.unknown_tool": {
-        "ja": "エラー: 不明なツール '{tool_name}' です。利用可能なツール: {available}",
-        "en": "Error: Unknown tool '{tool_name}'. Available tools: {available}",
     },
     "litellm_context.compact_system": {
         "ja": "以下のAIアシスタントと人間の作業会話を簡潔に要約してください。主要な発見、決定事項、ツール結果、未完了の項目をすべて保持してください。要約のみを出力してください。",
@@ -185,13 +182,27 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "action_rule.system_message": {
         "ja": (
-            "<action-rule>\n{rule_content}\n</action-rule>\n\n"
-            "上記ルールを確認した上で、必要な事前アクションを実行してから再試行してください。"
+            "成功: submit_tasks でタスク {task_ids} をキューに投入した。"
+            "これらは自分の TaskExecutor が後で実行するため、このターンではそれ以上手を出さない。"
         ),
         "en": (
-            "<action-rule>\n{rule_content}\n</action-rule>\n\n"
-            "Please review the rule above, take any required pre-actions, then retry."
+            "Success: tasks {task_ids} are queued in your TaskExecutor for later execution. "
+            "Do not touch them further in this turn."
         ),
+        "ko": (
+            "성공: submit_tasks로 작업 {task_ids}을(를) 큐에 넣었습니다. "
+            "이는 나중에 자신의 TaskExecutor가 실행하므로 이번 턴에서는 더 이상 다루지 마세요."
+        ),
+    },
+    "action_rule.attached": {
+        "ja": "この操作に関係する行動ルール。内容に反していたら、いま是正すること。",
+        "en": "Action rules related to this call. If the action conflicted with them, correct it now.",
+        "ko": "이 작업과 관련된 행동 규칙입니다. 내용에 위배된다면 지금 바로 잡으십시오.",
+    },
+    "executor.unavailable_no_configured_fallback": {
+        "ja": "実行方式 {mode}（{model}）を利用できません。利用可能な fallback_models を設定してください。",
+        "en": "Execution mode {mode} ({model}) is unavailable. Configure an available fallback_models route.",
+        "ko": "실행 모드 {mode} ({model})를 사용할 수 없습니다. 사용 가능한 fallback_models 경로를 설정하세요.",
     },
     "executor.codex_unavailable_no_openai_cred": {
         "ja": (

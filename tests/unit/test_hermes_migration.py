@@ -163,7 +163,10 @@ def test_hermes_apply_imports_safe_skill_usage_hub_lock_tasks_and_is_idempotent(
     assert "skills:" in (
         data_dir / "animas" / "mei" / "state" / "migrations" / "proposals" / "hermes_cron_patch.md"
     ).read_text(encoding="utf-8")
-    assert (data_dir / "animas" / "mei" / "state" / "task_queue.jsonl").is_file()
+    from core.memory.task_queue import TaskQueueManager
+
+    assert TaskQueueManager(data_dir / "animas" / "mei").list_tasks()
+    assert (data_dir / "shared" / "taskboard.sqlite3").is_file()
     assert (data_dir / "animas" / "mei" / "state" / "skill_hub_lock.jsonl").is_file()
     assert report.backup_manifest_path is not None
     assert any(item.status == "skipped" for item in second.items)

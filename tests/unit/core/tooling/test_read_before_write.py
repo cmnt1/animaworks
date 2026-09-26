@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.action_gate import ActionMemoryGateDecision
 from core.tooling.handler import ToolHandler
 
 
@@ -39,10 +38,7 @@ def handler(anima_dir):
 def allow_action_gate(monkeypatch):
     """Keep these file-guard tests independent from RAG-backed action rules."""
 
-    def _allow(_anima_dir, tool_name, _args, **_kwargs):
-        return ActionMemoryGateDecision(allowed=True, tool=tool_name)
-
-    monkeypatch.setattr("core.memory.action_gate.check_action", _allow)
+    monkeypatch.setattr("core.memory.action_gate.find_action_rules", lambda *a, **k: [])
 
 
 # ── Read-before-write guard ─────────────────────────────

@@ -62,6 +62,8 @@ class ConfigReader:
                 api_key_env=api_key_env,
                 api_base_url=credential.base_url,
                 context_threshold=resolved.context_threshold,
+                context_absolute_ceiling=resolved.context_absolute_ceiling,
+                max_session_age_hours=resolved.max_session_age_hours,
                 max_chains=resolved.max_chains,
                 conversation_history_threshold=resolved.conversation_history_threshold,
                 execution_mode=resolved.execution_mode,

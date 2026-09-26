@@ -187,6 +187,8 @@ class TestTaskExecLaneIsolation:
             "task_id": "unknown",
             "title": "Synthetic task title",
             "submitted_by": "unknown",
+            "attempt_token": "",
+            "attempt": None,
         }
         assert end_call.args == ("task_exec_end",)
         assert end_call.kwargs["ctx"] == "task:unknown"
@@ -251,6 +253,7 @@ class TestWatcherLoop:
         (pending_dir / "task1.json").write_text(json.dumps(task))
 
         async def stop_after_first(coro, *, timeout):
+            coro.close()
             executor._shutdown_event.set()
             raise TimeoutError
 
@@ -270,6 +273,7 @@ class TestWatcherLoop:
         (pending_dir / "bad.json").write_text("not json")
 
         async def stop_after_first(coro, *, timeout):
+            coro.close()
             executor._shutdown_event.set()
             raise TimeoutError
 

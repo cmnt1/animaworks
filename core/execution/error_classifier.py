@@ -25,7 +25,10 @@ from __future__ import annotations
 import enum
 import logging
 import re
+import time
 from dataclasses import dataclass
+from datetime import datetime, tzinfo
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger("animaworks.execution.error_classifier")
 
@@ -65,12 +68,18 @@ class RecoveryHint:
             ``None`` — the caller computes jitter when this is ``None``.
         is_terminal: Whether the request is deterministically rejected on the
             same provider (retrying unchanged reproduces the failure).
+        reset_in_s: Seconds until the provider-stated quota reset (parsed from
+            "try again at 10:16 AM" / "resets 10:50pm (Asia/Tokyo)"), else
+            ``None``.  Only set for ``QUOTA_EXHAUSTED``; the rate guard uses it
+            instead of its fixed doubling window so the fleet returns to the
+            engine when the cap actually lifts.
     """
 
     retryable: bool
     fallback_ok: bool
     backoff_s: float | None
     is_terminal: bool
+    reset_in_s: float | None = None
 
 
 # Per-reason hint templates.  ``backoff_s`` is filled in by the classifier when
@@ -180,6 +189,8 @@ def provider_family_of(model: str) -> str:
 _QUOTA_EXHAUSTED_PATTERNS = (
     "usagelimitexceeded",
     "usage limit exceeded",
+    # Codex turn/completed carries only the human text of usageLimitExceeded.
+    "hit your usage limit",
     "usage limit reached",
     "usage balance exhausted",
     "weekly limit",
@@ -297,6 +308,8 @@ _TIMEOUT_PATTERNS = (
 )
 
 _NETWORK_PATTERNS = (
+    "connectionrefused",
+    "econnrefused",
     "connection reset",
     "connection refused",
     "connection aborted",
@@ -308,6 +321,24 @@ _NETWORK_PATTERNS = (
     "name resolution",
     "temporary failure in name resolution",
 )
+
+
+def detect_cli_error_envelope(text: str) -> str | None:
+    """Recognize synthetic CLI provider failures, never arbitrary error prose."""
+    body = (text or "").strip()
+    if re.match(
+        r"^API Error:\s*(?:ConnectionRefused\b|ECONNREFUSED\b|Connection error\b|"
+        r"Unable to connect\b|[45]\d\d\b)",
+        body,
+        re.IGNORECASE,
+    ):
+        return body
+    if body.startswith("Failed to authenticate.") and "API Error:" in body:
+        return body
+    if re.fullmatch(r"You've reached your [^\n]{1,64} limit\. Switch to another model\.", body):
+        return body
+    return None
+
 
 _TRANSPORT_ERROR_TYPES = frozenset(
     {
@@ -369,7 +400,8 @@ def classify_llm_error(
         ``(reason, hint)`` — the caller applies the hint without re-classifying.
     """
     try:
-        return _classify(error, provider_family)
+        reason, hint = _classify(error, provider_family)
+        return reason, _with_quota_reset(reason, hint, _build_message(error))
     except Exception:
         logger.debug("error classifier raised; degrading to unknown", exc_info=True)
         return FailoverReason.UNKNOWN, _hint_for(FailoverReason.UNKNOWN)
@@ -385,15 +417,37 @@ def classify_llm_error_message(message: str) -> tuple[FailoverReason, RecoveryHi
     """
     try:
         msg = message.lower()
+        status = re.match(r"^\s*API Error:\s*([45]\d\d)\b", message, re.IGNORECASE)
+        if status:
+            error = Exception(message)
+            error.status_code = int(status.group(1))
+            return classify_llm_error(error)
         if any(p in msg for p in _CONTENT_POLICY_PATTERNS):
             return FailoverReason.CONTENT_POLICY, _hint_for(FailoverReason.CONTENT_POLICY)
         retry_after = _extract_retry_after(Exception(message), msg)
         classified = _classify_by_message(msg, retry_after)
         if classified is not None:
-            return classified
+            reason, hint = classified
+            return reason, _with_quota_reset(reason, hint, msg)
     except Exception:
         logger.debug("message classifier raised; degrading to unknown", exc_info=True)
     return FailoverReason.UNKNOWN, _hint_for(FailoverReason.UNKNOWN)
+
+
+def _with_quota_reset(reason: FailoverReason, hint: RecoveryHint, msg: str) -> RecoveryHint:
+    """Attach the provider-stated reset time to a quota-exhausted hint."""
+    if reason is not FailoverReason.QUOTA_EXHAUSTED:
+        return hint
+    reset_in_s = _extract_reset_in_s(msg)
+    if reset_in_s is None:
+        return hint
+    return RecoveryHint(
+        retryable=hint.retryable,
+        fallback_ok=hint.fallback_ok,
+        backoff_s=hint.backoff_s,
+        is_terminal=hint.is_terminal,
+        reset_in_s=reset_in_s,
+    )
 
 
 def _classify(error: Exception, provider_family: str) -> tuple[FailoverReason, RecoveryHint]:
@@ -651,6 +705,58 @@ def _extract_retry_after(error: Exception, msg: str) -> float | None:
             if unit.startswith("ms"):
                 return val / 1000.0
             return val
+    return None
+
+
+# Subscription caps state a wall-clock reset rather than a wait: Codex CLI
+# says "try again at 10:16 AM" (local time, no zone), Claude CLI says
+# "resets 10:50pm (Asia/Tokyo)".
+_RESET_AT_RE = re.compile(
+    r"(?:try again at|resets?(?: at)?)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?"
+    r"(?:\s*\(([a-z_+\-]+(?:/[a-z_+\-]+)+)\))?",
+    re.IGNORECASE,
+)
+# A stated time slightly in the past is a stale message about a reset that
+# just happened; further back it means the next occurrence tomorrow.
+_RESET_PAST_TOLERANCE_S = 300.0
+_RESET_JUST_PASSED_WAIT_S = 60.0
+
+
+def _extract_reset_in_s(msg: str, *, now: float | None = None) -> float | None:
+    """Return seconds until the wall-clock reset stated in *msg*, or ``None``."""
+    match = _RESET_AT_RE.search(msg)
+    if not match:
+        return None
+    hour = int(match.group(1))
+    minute = int(match.group(2) or 0)
+    meridiem = (match.group(3) or "").lower()
+    if meridiem == "pm" and hour < 12:
+        hour += 12
+    elif meridiem == "am" and hour == 12:
+        hour = 0
+    if not (0 <= hour < 24 and 0 <= minute < 60):
+        return None
+    tz = _zone_for(match.group(4))
+    current = datetime.fromtimestamp(time.time() if now is None else now, tz)
+    target = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    delta = (target - current).total_seconds()
+    if delta < -_RESET_PAST_TOLERANCE_S:
+        delta += 86400.0
+    elif delta <= 0:
+        delta = _RESET_JUST_PASSED_WAIT_S
+    return delta
+
+
+def _zone_for(name: str | None) -> tzinfo | None:
+    """Resolve an IANA zone name (any case) to a tzinfo; ``None`` = local time."""
+    if not name:
+        return None
+    normalized = "/".join("_".join(p.capitalize() for p in seg.split("_")) for seg in name.split("/"))
+    for candidate in (name, normalized):
+        try:
+            return ZoneInfo(candidate)
+        except Exception:  # noqa: BLE001 - unknown zone falls back to local
+            continue
     return None
 
 

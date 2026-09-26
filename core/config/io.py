@@ -30,7 +30,6 @@ _config: AnimaWorksConfig | None = None
 _config_path: Path | None = None
 _config_mtime: float = 0.0
 _config_vault_values: dict[tuple[str | int, ...], Any] = {}
-_promotion_flag_warned: bool = False
 
 # Guard so stale-activity-level repair runs at most once per process.
 _stale_activity_level_checked: bool = False
@@ -236,7 +235,6 @@ def load_config(path: Path | None = None) -> AnimaWorksConfig:
         _config_mtime = path.stat().st_mtime
     except OSError:
         _config_mtime = 0.0
-    _warn_deprecated_promotion_flags(config)
     return config
 
 

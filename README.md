@@ -73,8 +73,10 @@ macOS / Linux / WSL:
 curl -sSL https://raw.githubusercontent.com/xuiltul/animaworks/main/scripts/setup.sh | bash
 cd animaworks
 uv sync --all-extras        # adds the codex/claude execution extras
-uv run animaworks start     # start server — setup wizard opens on first run
+animaworks start            # start server — setup wizard opens on first run
 ```
+
+> **`animaworks` from any directory.** `setup.sh` symlinks the CLI into `~/.local/bin`, so you can drop the `uv run` prefix once that directory is on your `PATH` (add `export PATH="$HOME/.local/bin:$PATH"` to your shell rc if it is not). The console script pins this repo's `.venv` interpreter by absolute path, so `animaworks` and `uv run animaworks` always use the same environment. Installing manually? Link it yourself: `ln -sfn "$PWD/.venv/bin/animaworks" ~/.local/bin/animaworks`.
 
 Windows (PowerShell):
 
@@ -97,7 +99,7 @@ Open **http://localhost:18500/** — the setup wizard walks you through five ste
 
 You do not need to hand-edit `.env`. The wizard saves settings to `config.json` automatically.
 
-The setup script installs [uv](https://docs.astral.sh/uv/), clones the repository, and installs dependencies. **macOS, Linux, and WSL** work without a pre-installed Python. On **Windows**, use the PowerShell steps above; note that Mode S (Claude Agent SDK) is not available on Windows — use Codex, Gemini, or API-based modes there.
+The setup script installs [uv](https://docs.astral.sh/uv/), clones the repository, installs dependencies, and symlinks the `animaworks` CLI into `~/.local/bin`. **macOS, Linux, and WSL** work without a pre-installed Python. On **Windows**, use the PowerShell steps above; note that Mode S (Claude Agent SDK) is not available on Windows — use Codex, Gemini, or API-based modes there.
 
 > **Always use `--all-extras` with `uv sync`.** The plain `uv sync` that `setup.sh` runs is enough for the core, but Mode C (Codex) needs the `codex` extra, and a later filtered sync can remove the `codex` / `claude` execution packages from the venv and break those modes across the fleet.
 
@@ -131,6 +133,33 @@ uv sync --all-extras    # downloads Python 3.12+ and all dependencies (including
 # Start
 uv run animaworks start
 ```
+
+</details>
+
+<details>
+<summary><strong>Alternative: Docker</strong></summary>
+
+```bash
+git clone https://github.com/xuiltul/animaworks.git && cd animaworks
+# Put credentials in .env (kept out of git):
+#   ANTHROPIC_API_KEY=...            # API key auth
+#   CLAUDE_CODE_OAUTH_TOKEN=...      # or subscription auth: `claude setup-token` (needs a TTY)
+#   GH_TOKEN=...                     # optional: lets animas clone/push and open PRs
+docker compose up -d --build
+```
+
+Headless setup (skip the browser setup wizard):
+
+```bash
+docker exec -it <container> animaworks init --skip-anima
+docker exec -it <container> animaworks anima create --name alice --template dev-lead
+docker exec -it <container> animaworks config set setup_complete true
+docker exec -it <container> animaworks send <your-name> alice "hello"
+```
+
+- The image ships git / GitHub CLI / Node.js 22 / the Claude Code CLI, with `IS_SANDBOX=1` and `--foreground` baked in. Data lives in a named volume `animaworks-data` (`/root/.animaworks`).
+- Hand work to an anima from outside with `animaworks send`. `animaworks-tool task add` is for an anima's tool context only.
+- Homebrew's docker-compose needs a symlink at `~/.docker/cli-plugins/docker-compose` to be recognized as a `docker compose` subcommand.
 
 </details>
 
@@ -325,6 +354,18 @@ Credentials resolve through a cascade: `config.json` `credentials` → vault →
 | `NOVELAI_TOKEN` | NovelAI | Anime-style character art | [novelai.net](https://novelai.net/) |
 | `FAL_KEY` | fal.ai (Flux) | Stylized / photorealistic | [fal.ai/dashboard/keys](https://fal.ai/dashboard/keys) |
 | `MESHY_API_KEY` | Meshy | 3D character models | [meshy.ai](https://www.meshy.ai/) |
+| `ATLASCLOUD_API_KEY` | Atlas Cloud (Seedream 4.5) | Character images and reference edits | [atlascloud.ai/console/api-keys](https://www.atlascloud.ai/console/api-keys) |
+
+To use Atlas Cloud for character images, set `image_gen.backend` to `"atlascloud"`
+in `config.json` and configure `ATLASCLOUD_API_KEY` (or `credentials.atlascloud.api_key`).
+This explicit backend uses Seedream 4.5 for full-body images and its edit model
+for bust-ups, icons, and other reference-based images. It bypasses Codex/Fal
+image selection; Meshy remains responsible for 3D assets.
+Outputs use the closest supported 2K aspect ratio and are encoded as PNG by default.
+Seed, negative prompt, guidance, and NovelAI sampler/vibe-strength settings are not
+supported by these models. Each generation is submitted once, followed by bounded
+prediction polling; failed or timed-out submissions are not automatically resubmitted
+by the client.
 
 #### Voice chat (optional)
 

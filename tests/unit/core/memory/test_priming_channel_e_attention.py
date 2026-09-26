@@ -48,10 +48,16 @@ def _append_task_entry(
     }
     with queue_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    from core.taskboard.tasks import TaskStore, task_database_path
+
+    TaskStore(task_database_path(anima_dir)).import_legacy(anima_dir)
 
 
 @pytest.mark.asyncio
-async def test_channel_e_filters_suppressed_tasks(attention_env: tuple[Path, TaskBoardStore]) -> None:
+async def test_channel_e_surfaces_all_projected_tasks(
+    attention_env: tuple[Path, TaskBoardStore],
+) -> None:
+    """All projected tasks appear in Channel E; visibility metadata does not filter."""
     anima_dir, store = attention_env
     queue = TaskQueueManager(anima_dir)
     queue.add_task(
@@ -73,11 +79,14 @@ async def test_channel_e_filters_suppressed_tasks(attention_env: tuple[Path, Tas
     result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
 
     assert "visible work" in result
-    assert "archived work" not in result
+    assert "archived work" in result
 
 
 @pytest.mark.asyncio
-async def test_channel_e_filters_snoozed_tasks(attention_env: tuple[Path, TaskBoardStore]) -> None:
+async def test_channel_e_surfaces_snoozed_tasks(
+    attention_env: tuple[Path, TaskBoardStore],
+) -> None:
+    """Snoozed tasks still appear in Channel E; visibility metadata does not filter."""
     anima_dir, store = attention_env
     queue = TaskQueueManager(anima_dir)
     queue.add_task(
@@ -96,11 +105,14 @@ async def test_channel_e_filters_snoozed_tasks(attention_env: tuple[Path, TaskBo
 
     result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
 
-    assert "snoozed work" not in result
+    assert "snoozed work" in result
 
 
 @pytest.mark.asyncio
-async def test_channel_e_filters_task_results(attention_env: tuple[Path, TaskBoardStore]) -> None:
+async def test_channel_e_task_results_freshness_only(
+    attention_env: tuple[Path, TaskBoardStore],
+) -> None:
+    """Channel E task_results gate is purely freshness-based; visibility metadata does not filter."""
     anima_dir, store = attention_env
     results_dir = anima_dir / "state" / "task_results"
     results_dir.mkdir(parents=True)
@@ -115,7 +127,7 @@ async def test_channel_e_filters_task_results(attention_env: tuple[Path, TaskBoa
     result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
 
     assert "recent result" in result
-    assert "hidden result" not in result
+    assert "hidden result" in result
     assert "old orphan result" not in result
 
 
@@ -181,20 +193,19 @@ async def test_channel_e_preserves_delegated_status_section(tmp_path: Path) -> N
 
     result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
 
-    assert "delegated board work" in result
+    assert "subordinate work" in result  # alias reflects the canonical child record
     assert "hinata: pending" in result
     assert "⏳" in result
 
 
 @pytest.mark.asyncio
-async def test_channel_e_falls_back_when_taskboard_db_is_corrupt(tmp_path: Path) -> None:
+async def test_channel_e_reads_sqlite_without_jsonl_projection(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     anima_dir = data_dir / "animas" / "sakura"
     for subdir in ["episodes", "knowledge", "skills", "state"]:
         (anima_dir / subdir).mkdir(parents=True, exist_ok=True)
     shared_dir = data_dir / "shared"
     shared_dir.mkdir()
-    (shared_dir / "taskboard.sqlite3").write_text("not sqlite", encoding="utf-8")
 
     queue = TaskQueueManager(anima_dir)
     queue.add_task(
@@ -207,4 +218,23 @@ async def test_channel_e_falls_back_when_taskboard_db_is_corrupt(tmp_path: Path)
 
     result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
 
+    assert not (anima_dir / "state" / "task_queue.jsonl").exists()
     assert "fallback visible work" in result
+
+
+@pytest.mark.asyncio
+async def test_channel_e_reads_only_current_completed_attempt_result(tmp_path: Path):
+    anima_dir = tmp_path / "runtime" / "animas" / "fixture"
+    anima_dir.mkdir(parents=True)
+    queue = TaskQueueManager(anima_dir)
+    queue.submit({"task_id": "job", "title": "job", "description": "work"})
+    attempt = queue.store.claim("fixture", "job", {"pid": 1, "process_start_time": 1})
+    token = attempt["_attempt_token"]
+    queue.store.finish(token, status="done", stop_kind="completed")
+    result_dir = anima_dir / "state/task_results/job"
+    result_dir.mkdir(parents=True)
+    (result_dir / f"{token}.md").write_text("current completed result")
+    (result_dir / "obsolete.md").write_text("stale result must not return")
+    result = await PrimingEngine(anima_dir)._channel_e_pending_tasks()
+    assert "[job] current completed result" in result
+    assert "stale result" not in result

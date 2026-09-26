@@ -50,11 +50,6 @@ class _StubExtractor:
         ]
 
 
-class _StubInvalidator:
-    async def find_and_invalidate(self, **kwargs: object) -> list[dict]:
-        return []
-
-
 def _require_live_neo4j() -> None:
     if os.environ.get("ANIMAWORKS_TEST_NEO4J") != "1":
         pytest.skip("Set ANIMAWORKS_TEST_NEO4J=1 to run live Neo4j tests")
@@ -84,7 +79,6 @@ async def test_neo4j_backend_live_ingest_and_cleanup(tmp_path: Path, monkeypatch
         return [[] for _ in texts]
 
     monkeypatch.setattr(backend, "_get_extractor", lambda: _StubExtractor())
-    monkeypatch.setattr(backend, "_get_invalidator", lambda: _StubInvalidator())
     monkeypatch.setattr(backend, "_embed_texts", _empty_embeddings)
 
     try:

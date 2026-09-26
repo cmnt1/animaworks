@@ -309,23 +309,36 @@ class TestOpenAIAuthSettings:
         assert resp.status_code == 400
 
     async def test_available_models_include_codex_subscription_models(self):
-        config = AnimaWorksConfig(
-            credentials={
-                "openai": CredentialConfig(type="codex_login"),
-            }
-        )
+        config = AnimaWorksConfig(credentials={"openai": CredentialConfig(type="codex_login")})
         app = _make_test_app()
         transport = ASGITransport(app=app)
+        from core.config.model_discovery import DiscoveredModel
 
+        stub = [
+            DiscoveredModel("c:codex/gpt-5.4", "c", "codex/gpt-5.4", "GPT-5.4", "Codex", note="", source="codex-cli"),
+            DiscoveredModel(
+                "c:codex/gpt-5.4-mini", "c", "codex/gpt-5.4-mini", "GPT-5.4-Mini", "Codex", note="", source="codex-cli"
+            ),
+            DiscoveredModel(
+                "c:codex/gpt-5.3-codex",
+                "c",
+                "codex/gpt-5.3-codex",
+                "GPT-5.3-Codex",
+                "Codex",
+                note="",
+                source="codex-cli",
+            ),
+        ]
         with (
             patch("server.routes.config_routes.load_config", return_value=config),
-            patch("core.config.model_catalog.is_codex_login_available", return_value=True),
+            patch("server.routes.config_routes.discover_models", return_value=stub),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.get("/api/system/available-models")
 
         assert resp.status_code == 200
-        models = resp.json()["models"]
+        data = resp.json()
+        models = data["models"]
         ids = {item["id"] for item in models}
 
         assert "codex/gpt-5.6-sol" in ids
@@ -557,7 +570,19 @@ class TestOpenAIAuthSettings:
         config = AnimaWorksConfig()
         app = _make_test_app()
         transport = ASGITransport(app=app)
+        from core.config.model_discovery import DiscoveredModel
 
+        stub = [
+            DiscoveredModel("x:grok/grok-4.5", "x", "grok/grok-4.5", "grok-4.5", "Grok", source="grok-cli"),
+            DiscoveredModel(
+                "x:grok/grok-composer-2.5-fast",
+                "x",
+                "grok/grok-composer-2.5-fast",
+                "grok-composer-2.5-fast",
+                "Grok",
+                source="grok-cli",
+            ),
+        ]
         with (
             patch("server.routes.config_routes.load_config", return_value=config),
             patch("server.routes.config_routes._list_ollama_models", return_value=[]),
@@ -569,7 +594,7 @@ class TestOpenAIAuthSettings:
 
         assert resp.status_code == 200
         models = resp.json()["models"]
-        grok_models = {item["id"]: item for item in models if item["credential"] == "grok"}
+        grok_models = {item["id"]: item for item in models if item["group"] == "Grok"}
 
         assert set(grok_models) == {"grok/grok-4.5", "grok/grok-composer-2.5-fast"}
         assert all(item["provider"] == "Grok" for item in grok_models.values())

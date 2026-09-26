@@ -17,7 +17,6 @@ from __future__ import annotations
 
 # Load submodules first so engine can import them without circular import
 from core.memory.priming import (
-    budget,
     channel_a,
     channel_b,
     channel_c,
@@ -38,7 +37,6 @@ from core.memory.priming.constants import (
     _BUDGET_RELATED_KNOWLEDGE,
     _BUDGET_REQUEST,
     _BUDGET_SENDER_PROFILE,
-    _CHARS_PER_TOKEN,
     _DEFAULT_MAX_PRIMING_TOKENS,
     _MAX_KEYWORD_INPUT_LEN,
     _MINIMAL_STOPWORDS,
@@ -46,11 +44,15 @@ from core.memory.priming.constants import (
 )
 from core.memory.priming.engine import PrimingEngine, PrimingResult
 from core.memory.priming.format import format_priming_section
+from core.memory.priming.items import MemoryItem, render_items, select_within_budget
 
 __all__ = [
     "PrimingEngine",
     "PrimingResult",
+    "MemoryItem",
     "format_priming_section",
+    "render_items",
+    "select_within_budget",
     "_BUDGET_GRAPH_CONTEXT",
     "_BUDGET_GREETING",
     "_BUDGET_HEARTBEAT",
@@ -62,7 +64,6 @@ __all__ = [
     "_BUDGET_RELATED_EPISODES",
     "_BUDGET_RELATED_KNOWLEDGE",
     "_BUDGET_SENDER_PROFILE",
-    "_CHARS_PER_TOKEN",
     "_DEFAULT_MAX_PRIMING_TOKENS",
     "_MAX_KEYWORD_INPUT_LEN",
     "_MINIMAL_STOPWORDS",

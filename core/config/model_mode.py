@@ -76,16 +76,16 @@ DEFAULT_MODEL_MODE_PATTERNS: dict[str, str] = {
     "ollama/gemma4*": "A",
     "ollama/kimi-k2*": "A",
     "ollama/gpt-oss*": "A",
-    # ── B: No reliable tool_use ───────────────────────────
-    "ollama/qwen3:0.6b": "B",
-    "ollama/qwen3:1.7b": "B",
-    "ollama/qwen3:4b": "B",
-    "ollama/qwen3:8b": "B",
-    "ollama/gemma3*": "B",
-    "ollama/deepseek-r1*": "B",
-    "ollama/deepseek-v3*": "B",
-    "ollama/phi4*": "B",
-    "ollama/*": "B",
+    # ── A: No reliable tool_use (treated as A) ────────────
+    "ollama/qwen3:0.6b": "A",
+    "ollama/qwen3:1.7b": "A",
+    "ollama/qwen3:4b": "A",
+    "ollama/qwen3:8b": "A",
+    "ollama/gemma3*": "A",
+    "ollama/deepseek-r1*": "A",
+    "ollama/deepseek-v3*": "A",
+    "ollama/phi4*": "A",
+    "ollama/*": "A",
 }
 
 # Backward-compatible alias
@@ -96,6 +96,12 @@ DEFAULT_MODEL_MODES = DEFAULT_MODEL_MODE_PATTERNS
 # Mode is determined by DEFAULT_MODEL_MODE_PATTERNS at runtime; this list is
 # informational and does NOT restrict which models can be used.
 KNOWN_MODELS: list[dict[str, str]] = [
+    # Compatibility picker IDs live here, not in a second provider catalog.
+    {"name": "claude-haiku-4-5", "mode": "S", "note": ""},
+    {"name": "openai/gpt-4o-mini", "mode": "A", "note": ""},
+    {"name": "openai/o3", "mode": "A", "note": ""},
+    {"name": "openai/o4-mini", "mode": "A", "note": ""},
+    {"name": "gemini/gemini-2.5-flash", "mode": "G", "note": ""},
     # ── Claude / Anthropic (Mode S) ──────────────────────────────────────────
     {"name": "claude-opus-5-5", "mode": "S", "note": "Opus 5.5・最新"},
     {"name": "claude-fable-5-1", "mode": "S", "note": "Fable 5.1・長時間エージェント処理"},
@@ -170,9 +176,9 @@ KNOWN_MODELS: list[dict[str, str]] = [
     # ── Grok Build (Mode X) ─────────────────────────────────────────────────
     {"name": "grok/grok-4.5", "mode": "X", "note": "Grok Build CLI経由・500Kコンテキスト"},
     {"name": "grok/grok-composer-2.5-fast", "mode": "X", "note": "Grok Build CLI経由・高速"},
-    # ── Ollama Local (Mode B: tool_use 非対応) ────────────────────────────────
-    {"name": "ollama/gemma3:4b", "mode": "B", "note": "軽量ローカル"},
-    {"name": "ollama/gemma3:12b", "mode": "B", "note": "中型ローカル"},
+    # ── Ollama Local (tool_use 非対応も A で実行) ────────────────────────────────
+    {"name": "ollama/gemma3:4b", "mode": "A", "note": "軽量ローカル"},
+    {"name": "ollama/gemma3:12b", "mode": "A", "note": "中型ローカル"},
 ]
 
 # ── Tool-use capability ─────────────────────────────────────
@@ -267,10 +273,10 @@ def resolve_tool_use_capability(model_name: str) -> str:
 
 
 # ── Legacy mode value mapping ──────────────────────────────
-# Maps legacy A1/A1F/A2 and text-based values to canonical S/C/D/G/X/A/B scheme.
+# Maps legacy A1/A1F/A2 and text-based values to canonical S/C/D/G/X/A scheme.
 _LEGACY_MODE_MAP: dict[str, str] = {
     "autonomous": "A",
-    "assisted": "B",
+    "assisted": "A",
     "a1": "S",
     "a1f": "A",
     "a1_fallback": "A",
@@ -399,17 +405,17 @@ def _match_pattern_table(
 
 
 def _normalise_mode(raw: str) -> str:
-    """Normalise a mode value to S/C/D/G/X/A/B, applying legacy mapping if needed.
+    """Normalise a mode value to S/C/D/G/X/A, applying legacy mapping if needed.
 
     Accepts legacy values (``"A1"``, ``"A2"``, ``"autonomous"``, etc.) and
-    canonical values (``"S"``, ``"C"``, ``"D"``, ``"G"``, ``"X"``, ``"A"``, ``"B"``).
+    canonical values (``"S"``, ``"C"``, ``"D"``, ``"G"``, ``"X"``, ``"A"``).
     """
     lower = raw.strip().lower()
     mapped = _LEGACY_MODE_MAP.get(lower)
     if mapped:
         return mapped
     upper = raw.strip().upper()
-    if upper in ("S", "C", "A", "B", "D", "G", "X"):
+    if upper in ("S", "C", "A", "D", "G", "X"):
         return upper
     # Unrecognised — return as-is (upper) for forward compat
     logger.warning("Unrecognised execution mode '%s'; passing through as '%s'", raw, upper)
@@ -458,7 +464,7 @@ def resolve_execution_mode(
       2. models.json user table (``~/.animaworks/models.json``)
       3. config.json model_modes (deprecated fallback, with legacy mapping)
       4. DEFAULT_MODEL_MODE_PATTERNS (code defaults, e.g. ``"claude-*"`` → S)
-      5. Default ``"B"`` (safe side)
+      5. Default ``"A"`` (safe side)
 
     Args:
         config: Global AnimaWorks configuration.
@@ -470,7 +476,7 @@ def resolve_execution_mode(
     Returns:
         One of ``"S"`` (SDK), ``"C"`` (Codex), ``"D"`` (Cursor Agent),
         ``"G"`` (Gemini CLI), ``"X"`` (Grok Build CLI),
-        ``"A"`` (Autonomous), or ``"B"`` (Basic).
+        ``"A"`` (Autonomous).
     """
     # 1. Per-anima explicit override
     if explicit_override:
@@ -493,9 +499,9 @@ def resolve_execution_mode(
     # 4. Code defaults
     result = _match_pattern_table(model_name, DEFAULT_MODEL_MODE_PATTERNS)
     if result is not None:
-        return result  # Already S/C/D/G/X/A/B in the table
+        return result  # Already S/C/D/G/X/A in the table
 
-    return "B"  # unknown model → safe side
+    return "A"  # unknown model → safe side
 
 
 def parse_fallback_entry(
@@ -523,7 +529,7 @@ def parse_fallback_entry(
     if len(value) >= 2 and value[1] == ":":
         mode = value[0]
         model = value[2:].strip()
-        if mode not in {"s", "c", "d", "g", "x", "a", "b"}:
+        if mode not in {"s", "c", "d", "g", "x", "a"}:
             logger.warning("Skipping fallback model entry with invalid mode: %r", entry)
             return None
         if not model:
@@ -532,7 +538,7 @@ def parse_fallback_entry(
         return mode, model
 
     mode = resolve_execution_mode(config, value).lower()
-    if mode not in {"s", "c", "d", "g", "x", "a", "b"}:
+    if mode not in {"s", "c", "d", "g", "x", "a"}:
         logger.warning(
             "Skipping fallback model entry with unresolved mode %r: %r",
             mode,

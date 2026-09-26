@@ -21,11 +21,10 @@ from core.config.local_llm import (
     normalize_ollama_model_name,
 )
 from core.config.model_catalog import (  # noqa: F401
-    _build_static_model_catalog,
-    available_model_id_set,
     validate_chat_model,
     validate_model_override,
 )
+from core.config.model_discovery import discover_models  # noqa: F401 - compatibility patch point
 from core.config.models import (
     DEFAULT_LOCAL_LLM_BASE_URL,
     DEFAULT_LOCAL_LLM_PRESETS,
@@ -661,6 +660,11 @@ def _available_models_payload(config) -> list[dict[str, str]]:
                 "route": route,
                 "provider": provider_label,
                 "model_name": display_name,
+                "mode": route,
+                "model": model_id,
+                "group": provider_label,
+                "note": "",
+                "source": "configured",
             }
         )
         seen.add(model_id)
@@ -884,19 +888,27 @@ def create_config_router() -> APIRouter:
         return _serialize_local_llm()
 
     @router.get("/system/available-models")
-    def get_available_models(request: Request):
+    def get_available_models(request: Request, refresh: bool = False):
         """Return all available models (cloud + local) for UI dropdowns.
 
-        Sync (non-async) so FastAPI runs it in a threadpool: the nanoGPT/Ollama
-        reachability probes below use blocking ``httpx`` calls that would otherwise
-        stall the whole event loop for up to the (shortened) 5 s timeout.
+        Sync (non-async) so FastAPI runs it in a threadpool: model discovery
+        uses blocking subprocess / ``httpx`` calls that would otherwise stall
+        the whole event loop for up to the per-probe timeout.
+
+        ``refresh`` forces a fresh probe instead of the cached catalog.
         """
         config = load_config()
-        return {"models": _available_models_payload(config)}
+        payload = _available_models_payload(config)
+        groups = list(dict.fromkeys(item["group"] for item in payload))
+        return {
+            "models": payload,
+            "groups": groups,
+            "generated_at": datetime.now(UTC).astimezone().isoformat(),
+        }
 
     @router.post("/system/available-models/refresh")
     async def refresh_available_models(body: RefreshAvailableModelsRequest | None = None):
-        """Refresh provider model catalogs and return the updated dropdown payload."""
+        """Refresh provider catalogs and return the combined picker payload."""
         config = load_config()
         body = body or RefreshAvailableModelsRequest()
         requested = body.providers or list(MODEL_CATALOG_PROVIDERS)
@@ -917,9 +929,12 @@ def create_config_router() -> APIRouter:
             elif provider == "google":
                 results.append(_refresh_google_models(config))
 
+        payload = _available_models_payload(config)
         return {
             "providers": results,
-            "models": _available_models_payload(config),
+            "models": payload,
+            "groups": list(dict.fromkeys(item["group"] for item in payload)),
+            "generated_at": datetime.now(UTC).astimezone().isoformat(),
         }
 
     @router.get("/system/available-tools")

@@ -145,7 +145,7 @@ def test_knowledge_lifecycle_report_and_protection(anima_dir):
 
 @pytest.mark.asyncio
 async def test_reconsolidation_targets_e2e(anima_dir):
-    """Files with failure_count >= 2 and confidence < 0.6 become targets."""
+    """Files with any failure or confidence < 0.6 become targets."""
     from core.memory.activity import ActivityLogger
     from core.memory.manager import MemoryManager
     from core.memory.reconsolidation import ReconsolidationEngine
@@ -182,7 +182,7 @@ async def test_reconsolidation_targets_e2e(anima_dir):
 
     assert "failing.md" in names
     assert "healthy.md" not in names
-    assert "borderline.md" not in names
+    assert "borderline.md" in names
 
 
 # ── Test 3: Backward Compatibility ─────────────────────────────

@@ -332,7 +332,9 @@ class TestKnowledgeReconsolidation:
         assert "good.md" not in names
 
     @pytest.mark.asyncio
-    async def test_ignores_below_threshold(self, anima_dir: Path, engine) -> None:
+    async def test_triggers_below_threshold(self, anima_dir: Path, engine) -> None:
+        # With the relaxed condition (failure_count >= 1 or confidence < 0.6),
+        # a single failure at low confidence is now a target.
         _write_knowledge(
             anima_dir,
             "borderline.md",
@@ -346,7 +348,8 @@ class TestKnowledgeReconsolidation:
         )
 
         targets = await engine.find_knowledge_reconsolidation_targets()
-        assert len(targets) == 0
+        assert len(targets) == 1
+        assert targets[0].name == "borderline.md"
 
     @pytest.mark.asyncio
     async def test_defaults_when_no_metadata(self, anima_dir: Path, engine) -> None:

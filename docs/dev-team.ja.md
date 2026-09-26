@@ -3,7 +3,7 @@
 **[English version](dev-team.md)**
 
 AnimaWorks には、GitHub のプルリクエストワークフローを支える社内開発チーム向けの
-anima テンプレートが同梱されています。既存の `animaworks create <名前> --template <テンプレート名>`
+anima テンプレートが同梱されています。既存の `animaworks anima create --name <名前> --template <テンプレート名>`
 機構からそのまま注入できるため、フレームワーク本体のコード変更は不要です。
 
 > これらのテンプレートは**出発点**です。記憶や知識、手順は実運用の中で育つものです。
@@ -25,12 +25,13 @@ anima テンプレートが同梱されています。既存の `animaworks crea
 ## チームの作成
 
 ```bash
-animaworks create alice --template dev-lead
-animaworks create bob   --template dev-engineer
-animaworks create carol --template dev-engineer
-animaworks create dave  --template dev-researcher
+animaworks anima create --name alice --template dev-lead
+animaworks anima create --name bob   --template dev-engineer --supervisor alice
+animaworks anima create --name carol --template dev-engineer --supervisor alice
+animaworks anima create --name dave  --template dev-researcher --supervisor alice
 ```
 
+`--supervisor alice` を渡すと組織図が作られます（全員が lead の直下になります）。
 各コマンドは `identity.md` / `heartbeat.md` / `cron.md` / `injection.md` /
 `permissions.json` / `status.json` を持つ anima を作成します。個体名は作成時に与えられます。
 テンプレート自体はロールベースかつエンジン非依存です（モデル名・エンジン名はハードコードしません）。

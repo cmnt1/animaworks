@@ -42,18 +42,11 @@ class TestCommunicationRulesTemplate:
 
 
 class TestBehaviorRulesTemplate:
-    def test_has_task_recording_section(self):
-        path = TEMPLATES_DIR / "behavior_rules.md"
-        content = path.read_text(encoding="utf-8")
-        assert "### タスク記録と報告" in content
-
     def test_task_recording_rules(self):
-        path = TEMPLATES_DIR / "behavior_rules.md"
-        content = path.read_text(encoding="utf-8")
-        assert "通常チャットでは `submit_tasks` を使わない" in content
-        assert "`backlog_task` で登録" in content
-        assert "完了条件の達成" in content
-        assert "解決済み案件の再報告禁止" in content
+        behavior = (TEMPLATES_DIR / "behavior_rules.md").read_text(encoding="utf-8")
+        assert "backlog_task" in behavior
+        assert "完了条件の証跡" in behavior
+        assert "resume" in behavior
 
     def test_existing_sections_preserved(self):
         path = TEMPLATES_DIR / "behavior_rules.md"
@@ -72,11 +65,22 @@ class TestBehaviorRulesTemplate:
             "create_skill",
         ]
         for locale in LOCALES:
-            content = (TEMPLATES_ROOT / locale / "prompts" / "behavior_rules.md").read_text(encoding="utf-8")
+            locale_root = TEMPLATES_ROOT / locale
+            content = "\n".join(
+                (
+                    (locale_root / "prompts" / "behavior_rules.md").read_text(encoding="utf-8"),
+                    (locale_root / "reference" / "operations" / "memory-writing-guide.md").read_text(encoding="utf-8"),
+                    (
+                        locale_root / "common_knowledge" / "operations" / "action-rule-memory-write-destination.md"
+                    ).read_text(encoding="utf-8"),
+                )
+            )
             for token in required:
                 assert token in content, f"{locale} behavior_rules missing {token}"
-            assert "backlog_task" in content
-            assert 'update_task(status="in_progress")' in content
+            behavior = (locale_root / "prompts" / "behavior_rules.md").read_text(encoding="utf-8")
+            assert "backlog_task" in behavior
+            assert "update_task" in behavior
+            assert 'update_task(status="in_progress")' not in content
             assert "must be registered with `submit_tasks`" not in content
             assert "必ず `submit_tasks` でタスクキューに登録" not in content
             assert "반드시 `submit_tasks`로 태스크 큐에 등록" not in content
@@ -118,15 +122,15 @@ class TestActionRulesGuideTemplate:
             for cli in cli_mappings:
                 assert cli in content, f"{locale} action-rules-guide missing {cli}"
 
-    def test_indexes_and_hints_point_to_action_rules_and_skill_creator(self):
+    def test_indexes_and_hints_point_to_action_rules_without_skill_creator_duplication(self):
         for locale in LOCALES:
             index = (TEMPLATES_ROOT / locale / "common_knowledge" / "00_index.md").read_text(encoding="utf-8")
             hint = (TEMPLATES_ROOT / locale / "prompts" / "builder" / "common_knowledge_hint.md").read_text(
                 encoding="utf-8"
             )
-            for content in (index, hint):
-                assert "operations/action-rules-guide.md" in content
-                assert "common_skills/skill-creator/SKILL.md" in content
+            assert "operations/action-rules-guide.md" in index
+            assert "operations/action-rules-guide.md" in hint
+            assert "common_skills/skill-creator/SKILL.md" not in hint
 
 
 class TestHeartbeatObserveTemplate:
@@ -238,13 +242,14 @@ class TestPrimingChannelsReference:
 
 
 class TestHeartbeatToolInstructionTemplate:
-    def test_heartbeat_mentions_lightweight_skill_authoring_all_locales(self):
+    def test_heartbeat_uses_explicit_resume_and_authoritative_task_read_all_locales(self):
         for locale in LOCALES:
             content = (TEMPLATES_ROOT / locale / "prompts" / "builder" / "heartbeat_tool_instruction.md").read_text(
                 encoding="utf-8"
             )
-            assert "create_skill" in content
             assert "submit_tasks" in content
+            assert "resume" in content
+            assert "list_tasks(detail=true)" in content
 
 
 class TestSkillCreatorTemplate:
@@ -273,17 +278,6 @@ class TestSkillCreatorTemplate:
 
 
 class TestUnreadMessagesTemplate:
-    def test_has_task_delegation_receipt(self):
-        path = TEMPLATES_DIR / "unread_messages.md"
-        content = path.read_text(encoding="utf-8")
-        assert "### タスク委任の受領" in content
-
-    def test_delegation_receipt_steps(self):
-        path = TEMPLATES_DIR / "unread_messages.md"
-        content = path.read_text(encoding="utf-8")
-        assert "パラフレーズ確認" in content
-        assert "不明点の質問" in content
-
     def test_existing_sections_preserved(self):
         path = TEMPLATES_DIR / "unread_messages.md"
         content = path.read_text(encoding="utf-8")

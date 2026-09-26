@@ -14,7 +14,6 @@ _MODE_LABELS: dict[str, str] = {
     "G": "G (Gemini CLI)",
     "X": "X (Grok Build CLI)",
     "A": "A (Autonomous)",
-    "B": "B (Basic)",
 }
 
 

@@ -256,7 +256,6 @@ class TestBaseToolCount:
         assert "submit_tasks" not in names
         assert "update_task" in names
         assert "list_tasks" in names
-        assert "goal" in names
         # AW-essential: create_skill
         assert "create_skill" in names
         assert "trust_skill" in names

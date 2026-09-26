@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Unit tests for catch-up logic in SchedulerMixin.
 
-Verifies that missed daily/weekly/monthly jobs are detected on startup
+Verifies that missed daily/weekly jobs are detected on startup
 and that marker files are read/written correctly.
 """
 
@@ -95,17 +95,6 @@ class TestCatchupDetection:
         assert last is not None
         assert (datetime.now(_TEST_TZ) - last) <= timedelta(days=9)
 
-    def test_monthly_missed_when_no_marker(self, tmp_path: Path) -> None:
-        last = _read_marker(tmp_path / "last_monthly_forgetting")
-        assert last is None
-
-    def test_monthly_not_missed_when_recent(self, tmp_path: Path) -> None:
-        marker = tmp_path / "last_monthly_forgetting"
-        _write_marker(marker, datetime.now(_TEST_TZ) - timedelta(days=20))
-        last = _read_marker(marker)
-        assert last is not None
-        assert (datetime.now(_TEST_TZ) - last) <= timedelta(days=35)
-
 
 # ── Catch-up execution ──────────────────────────────────────────────
 
@@ -141,7 +130,6 @@ async def test_catchup_daily_indexing_when_missed(tmp_path: Path) -> None:
     mdir = _marker_dir(sup._get_data_dir())
     _write_marker(mdir / "last_daily_consolidation", datetime.now(_TEST_TZ) - timedelta(hours=1))
     _write_marker(mdir / "last_weekly_integration", datetime.now(_TEST_TZ) - timedelta(days=1))
-    _write_marker(mdir / "last_monthly_forgetting", datetime.now(_TEST_TZ) - timedelta(days=1))
     _write_marker(mdir / "last_housekeeping", datetime.now(_TEST_TZ) - timedelta(hours=1))
     _write_marker(mdir / "last_daily_indexing", datetime.now(_TEST_TZ) - timedelta(hours=40))
 
@@ -160,7 +148,6 @@ async def test_catchup_daily_indexing_when_missed(tmp_path: Path) -> None:
                         {
                             "daily_enabled": True,
                             "weekly_enabled": True,
-                            "monthly_enabled": True,
                             "indexing_enabled": True,
                         },
                     )()

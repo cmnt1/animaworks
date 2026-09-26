@@ -12,23 +12,26 @@ from unittest.mock import MagicMock
 
 import pytest
 
+
 # ── Mock claude_agent_sdk before importing ───
-_mock_sdk = MagicMock()
-_mock_types = MagicMock()
-
-
 def _sync_hook_json_output(**kwargs: Any) -> dict[str, Any]:
     """Mimic SyncHookJSONOutput as a plain dict."""
     return dict(kwargs)
 
 
-_mock_types.SyncHookJSONOutput = _sync_hook_json_output
-_mock_types.PreToolUseHookSpecificOutput = dict
-_mock_types.HookInput = dict
-_mock_types.HookContext = dict
+try:
+    import claude_agent_sdk.types  # noqa: F401
+except ModuleNotFoundError:
+    _mock_sdk = MagicMock()
+    _mock_types = MagicMock()
 
-sys.modules.setdefault("claude_agent_sdk", _mock_sdk)
-sys.modules.setdefault("claude_agent_sdk.types", _mock_types)
+    _mock_types.SyncHookJSONOutput = _sync_hook_json_output
+    _mock_types.PreToolUseHookSpecificOutput = dict
+    _mock_types.HookInput = dict
+    _mock_types.HookContext = dict
+
+    sys.modules["claude_agent_sdk"] = _mock_sdk
+    sys.modules["claude_agent_sdk.types"] = _mock_types
 
 from core.execution._sdk_hooks import (  # noqa: E402
     _build_pre_compact_hook,

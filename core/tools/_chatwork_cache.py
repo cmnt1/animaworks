@@ -116,9 +116,18 @@ class MessageCache(BaseMessageCache):
         super().__init__(db_path, _CHATWORK_SCHEMA_SQL)
 
     def upsert_room(self, room: dict):
-        self.conn.execute(
+        self.upsert_rooms([room])
+
+    def upsert_rooms(self, rooms: list[dict]):
+        """Upsert room metadata in one transaction.
+
+        One commit per room (600+ rooms, fsync each) held the exclusive lock
+        for 10s+ and starved every other collector sharing the cache.
+        """
+        now = datetime.now(JST).isoformat()
+        self.conn.executemany(
             "INSERT OR REPLACE INTO rooms (room_id, name, type, updated_at) VALUES (?,?,?,?)",
-            (str(room["room_id"]), room["name"], room.get("type", ""), datetime.now(JST).isoformat()),
+            [(str(room["room_id"]), room["name"], room.get("type", ""), now) for room in rooms],
         )
         self.conn.commit()
 

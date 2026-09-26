@@ -51,6 +51,8 @@ logger = logging.getLogger("animaworks.execution.rate_guard")
 _STATE_FILENAME = "llm_rate_guard.json"
 _HISTORY_FILENAME = "llm_rate_guard_history.jsonl"
 _QUOTA_RECURRENCE_GRACE_S = 600.0
+# Probe slightly after the provider-stated reset, not on the exact minute.
+_RESET_MARGIN_S = 30.0
 # Auto-resolved config is refreshed at most this often so the ``enabled: false``
 # emergency switch takes effect within a few seconds (not at process restart),
 # while avoiding a config lookup on every async-loop query.
@@ -162,7 +164,14 @@ class LlmRateGuard:
         reason = entry.get("reason")
         return reason if isinstance(reason, str) else None
 
-    def report_block(self, provider_family: str, seconds: float, reason: str) -> None:
+    def report_block(
+        self,
+        provider_family: str,
+        seconds: float,
+        reason: str,
+        *,
+        reset_in_s: float | None = None,
+    ) -> None:
         """Record a block for *provider_family* lasting *seconds*.
 
         ``seconds`` is clamped to ``[0, max_block_seconds]``; quota exhaustion
@@ -171,6 +180,14 @@ class LlmRateGuard:
         ``default_block_seconds``.  The read-modify-write is serialized with
         an advisory lock and the JSON body is replaced atomically; any failure
         is swallowed (fail-open).
+
+        Quota reports are only a *recurrence* (and only escalate) when the
+        previous window has already expired: reports arriving while a window
+        is still live come from calls that were in flight when it was set and
+        leave the entry untouched.  ``reset_in_s`` — the provider-stated time
+        until its cap lifts — replaces the escalating window (clamped to
+        ``max_quota_block_seconds`` plus a small margin) so the fleet probes
+        the engine right after the reset instead of hours later.
         """
         cfg = self.config
         if not cfg.enabled:
@@ -188,6 +205,10 @@ class LlmRateGuard:
             min(cfg.quota_block_seconds, cfg.max_quota_block_seconds) if uses_quota_window else cfg.max_block_seconds
         )
         block_s = min(block_s, float(clamp_s))
+        provider_window = False
+        if is_quota and isinstance(reset_in_s, (int, float)) and reset_in_s > 0:
+            block_s = min(float(reset_in_s) + _RESET_MARGIN_S, float(cfg.max_quota_block_seconds))
+            provider_window = True
         now = time.time()
         updated_by = _current_anima_name()
         consecutive = 1
@@ -200,21 +221,30 @@ class LlmRateGuard:
                     logger.debug("rate guard read-before-write failed; starting fresh", exc_info=True)
                     state = {}
                 previous = state.get(provider_family)
-                if is_quota and isinstance(previous, dict):
+                if is_quota and isinstance(previous, dict) and previous.get("reason") == reason:
                     previous_until = previous.get("blocked_until")
-                    if (
-                        previous.get("reason") == reason
-                        and isinstance(previous_until, (int, float))
-                        and now <= float(previous_until) + _QUOTA_RECURRENCE_GRACE_S
-                    ):
+                    if not isinstance(previous_until, (int, float)):
+                        previous_until = 0.0
+                    previous_consecutive = previous.get("consecutive", 1)
+                    if not isinstance(previous_consecutive, int) or previous_consecutive < 1:
+                        previous_consecutive = 1
+                    if now <= float(previous_until):
+                        if not (provider_window and now + block_s > float(previous_until)):
+                            logger.debug(
+                                "LLM rate guard: %s already blocked (%.0fs left); concurrent %s report ignored",
+                                provider_family,
+                                float(previous_until) - now,
+                                reason,
+                            )
+                            return
+                        consecutive = previous_consecutive
+                    elif now <= float(previous_until) + _QUOTA_RECURRENCE_GRACE_S:
                         previous_seconds = previous.get("seconds", block_s)
                         if not isinstance(previous_seconds, (int, float)):
                             previous_seconds = block_s
-                        previous_consecutive = previous.get("consecutive", 1)
-                        if not isinstance(previous_consecutive, int) or previous_consecutive < 1:
-                            previous_consecutive = 1
                         consecutive = previous_consecutive + 1
-                        block_s = min(float(previous_seconds) * 2, float(cfg.max_quota_block_seconds))
+                        if not provider_window:
+                            block_s = min(float(previous_seconds) * 2, float(cfg.max_quota_block_seconds))
                 state[provider_family] = {
                     "blocked_until": now + block_s,
                     "reason": reason,

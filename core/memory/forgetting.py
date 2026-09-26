@@ -12,14 +12,18 @@ from __future__ import annotations
 
 Implements two stages of memory forgetting:
 1. Synaptic downscaling (daily): Mark low-activation chunks
-2. Complete forgetting (monthly): Archive and delete forgotten memories
+2. Forgetting candidates (weekly): List low-activation chunks for the model to review
+
+Mechanical deletion/archival was removed (harness diet PR-7): the weekly
+consolidation now shows candidates to the model, which decides via the
+``archive_memory_file`` tool.
 
 Based on:
 - Tononi & Cirelli (2003, 2006): Synaptic homeostasis hypothesis
 """
 
 import logging
-import shutil
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -52,6 +56,28 @@ PROCEDURE_MIN_USAGE = 3  # Minimum total usage to avoid downscaling
 PROCEDURE_LOW_UTILITY_THRESHOLD = 0.3  # Utility score below this is low
 PROCEDURE_LOW_UTILITY_MIN_FAILURES = 3  # Min failures for utility check
 PROCEDURE_ARCHIVE_KEEP_VERSIONS = 5  # Keep N most recent archive versions
+
+# ── ForgettingCandidate ────────────────────────────────────────────
+
+
+@dataclass
+class ForgettingCandidate:
+    """A single forgetting candidate shown to the model for review.
+
+    Attributes:
+        path: Relative path (passable to ``read_memory_file``).
+        days_low: Days the memory has been in low activation (integer).
+        used_count: Total usage count (explicit uses + auto recalls).
+        last_used_at: Most recent usage timestamp or empty string.
+        reason: Short one-line human-readable explanation.
+    """
+
+    path: str
+    days_low: int
+    used_count: int
+    last_used_at: str
+    reason: str
+
 
 # ── ForgettingEngine ───────────────────────────────────────────────
 
@@ -395,39 +421,36 @@ class ForgettingEngine:
         )
         return result
 
-    # ── Stage 2: Complete Forgetting (Monthly) ─────────────────────
+    # ── Stage 2: Forgetting Candidates (weekly, model-driven) ───────
 
-    def complete_forgetting(self) -> dict[str, Any]:
-        """Archive and delete chunks that remain low-activation (monthly).
+    def list_forgetting_candidates(self, max_items: int = 20) -> list[ForgettingCandidate]:
+        """Return low-activation memory candidates for the model to review.
 
-        Criteria: low_activation_since > 90 days ago AND access_count <= 2
-        Action: Move source file to archive/forgotten/, delete from vector index
+        Uses the same eligibility criteria as the former mechanical forgetting
+        (low activation for ``FORGETTING_LOW_ACTIVATION_DAYS`` with usage
+        ``<= FORGETTING_MAX_ACCESS_COUNT``, honoring protection rules).  It only
+        **lists** candidates (sorted by low-activation days, descending) and does
+        NOT delete from the index or move files; the model decides via the
+        ``archive_memory_file`` tool during weekly consolidation.
+
+        Chunks sharing the same source file are collapsed into a single
+        candidate.  Returns an empty list when RAG is unavailable.
         """
-        logger.info("Starting complete forgetting for anima=%s", self.anima_name)
-        now = now_local()
         store = self._get_vector_store()
-
         if store is None:
             logger.warning(
-                "Skipping complete forgetting for anima=%s: RAG/ChromaDB unavailable",
+                "Skipping forgetting candidate scan for anima=%s: RAG/ChromaDB unavailable",
                 self.anima_name,
             )
-            return {"forgotten_chunks": 0, "archived_files": [], "skipped_reason": "rag_unavailable"}
+            return []
 
-        total_forgotten = 0
-        total_scanned = 0
-        total_marked = 0
-        archived_files: list[str] = []
+        now = now_local()
+        # source_file -> candidate accumulator (highest days_low wins)
+        grouped: dict[str, ForgettingCandidate] = {}
 
         for memory_type in ("knowledge", "episodes", "procedures"):
             collection_name = f"{self.anima_name}_{memory_type}"
-            chunks = self._get_all_chunks(collection_name)
-            total_scanned += len(chunks)
-
-            ids_to_delete: list[str] = []
-            source_files_to_archive: set[str] = set()
-
-            for chunk in chunks:
+            for chunk in self._get_all_chunks(collection_name):
                 meta = chunk["metadata"]
 
                 # Skip protected
@@ -437,149 +460,41 @@ class ForgettingEngine:
                 # Must be low activation
                 if meta.get("activation_level") != "low":
                     continue
-                total_marked += 1
 
                 # Check duration of low activation
                 low_since_str = meta.get("low_activation_since", "")
                 if not low_since_str:
                     continue
-
                 try:
                     low_since = ensure_aware(datetime.fromisoformat(str(low_since_str)))
-                    days_low = (now - low_since).total_seconds() / 86400.0
+                    days_low = int((now - low_since).total_seconds() / 86400.0)
                 except (ValueError, TypeError):
                     continue
 
-                # Check criteria
-                used_count = self._used_count(meta)
-                if days_low > FORGETTING_LOW_ACTIVATION_DAYS and used_count <= FORGETTING_MAX_ACCESS_COUNT:
-                    ids_to_delete.append(chunk["id"])
-                    source_file = meta.get("source_file", "")
-                    if source_file and source_file != "merged":
-                        source_files_to_archive.add(source_file)
+                # Check eligibility criteria
+                used_count = int(self._used_count(meta))
+                if not (days_low > FORGETTING_LOW_ACTIVATION_DAYS and used_count <= FORGETTING_MAX_ACCESS_COUNT):
+                    continue
 
-            # Delete from vector index FIRST — if this fails, skip archiving
-            # to avoid orphaned state (files archived but chunks still present)
-            if ids_to_delete:
-                try:
-                    store.delete_documents(collection_name, ids_to_delete)
-                    total_forgotten += len(ids_to_delete)
-                    logger.info(
-                        "Deleted %d forgotten chunks from %s",
-                        len(ids_to_delete),
-                        collection_name,
+                source_file = meta.get("source_file", "")
+                if not source_file or source_file == "merged":
+                    continue
+
+                existing = grouped.get(source_file)
+                if existing is None or days_low > existing.days_low:
+                    grouped[source_file] = ForgettingCandidate(
+                        path=source_file,
+                        days_low=days_low,
+                        used_count=used_count,
+                        last_used_at=self._last_used_at(meta),
+                        reason=f"{days_low}日間低活性・参照{used_count}回",
                     )
-                except Exception as e:
-                    logger.warning(
-                        "Failed to delete chunks from %s: %s",
-                        collection_name,
-                        e,
-                    )
-                    continue  # Skip archiving if vector deletion failed
 
-            # Archive source files AFTER successful vector deletion
-            for source_file in source_files_to_archive:
-                self._archive_source_file(source_file)
-                archived_files.append(source_file)
-
-        result = {
-            "forgotten_chunks": total_forgotten,
-            "archived_files": archived_files,
-            "funnel": {
-                "scanned": total_scanned,
-                "marked": total_marked,
-                "merged": 0,
-                "forgotten": total_forgotten,
-            },
-        }
+        candidates = sorted(grouped.values(), key=lambda c: c.days_low, reverse=True)
         logger.info(
-            "Complete forgetting done for anima=%s: forgotten=%d, archived=%d files",
+            "Forgetting candidates for anima=%s: found=%d (max_items=%d)",
             self.anima_name,
-            total_forgotten,
-            len(archived_files),
+            len(candidates),
+            max_items,
         )
-        logger.info(
-            "forgetting_funnel: anima=%s stage=complete scanned=%d marked=%d merged=0 forgotten=%d",
-            self.anima_name,
-            total_scanned,
-            total_marked,
-            total_forgotten,
-        )
-        return result
-
-    def _archive_source_file(self, relative_path: str) -> None:
-        """Move source file to archive/forgotten/ directory."""
-        source_path = self.anima_dir / relative_path
-        if not source_path.exists():
-            return
-
-        self.archive_dir.mkdir(parents=True, exist_ok=True)
-        dest_path = self.archive_dir / source_path.name
-
-        # Add timestamp suffix if destination exists
-        if dest_path.exists():
-            timestamp = now_local().strftime("%Y%m%d_%H%M%S")
-            dest_path = self.archive_dir / f"{source_path.stem}_{timestamp}{source_path.suffix}"
-
-        try:
-            shutil.move(str(source_path), str(dest_path))
-            logger.info("Archived forgotten file: %s -> %s", relative_path, dest_path.name)
-        except Exception as e:
-            logger.warning("Failed to archive %s: %s", relative_path, e)
-
-    def cleanup_procedure_archives(self) -> dict[str, Any]:
-        """Clean up old procedure version archives (monthly).
-
-        Keeps only the ``PROCEDURE_ARCHIVE_KEEP_VERSIONS`` most recent
-        versions per procedure stem in ``archive/versions/``.
-
-        Returns:
-            Dict with ``deleted_count`` and ``kept_count`` keys.
-        """
-        archive_dir = self.anima_dir / "archive" / "versions"
-        if not archive_dir.exists():
-            return {"deleted_count": 0, "kept_count": 0}
-
-        import re
-
-        # Group archived files by procedure stem.
-        # Naming convention from reconsolidation: {stem}_v{N}_{timestamp}.md
-        stem_files: dict[str, list[Path]] = {}
-        pattern = re.compile(r"^(.+?)_v\d+_\d{8}_\d{6}\.md$")
-
-        for path in archive_dir.iterdir():
-            if not path.is_file():
-                continue
-            m = pattern.match(path.name)
-            if m:
-                stem = m.group(1)
-                stem_files.setdefault(stem, []).append(path)
-
-        deleted_count = 0
-        kept_count = 0
-
-        for _, files in stem_files.items():
-            # Sort by modification time descending (newest first)
-            files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-
-            keep = files[:PROCEDURE_ARCHIVE_KEEP_VERSIONS]
-            delete = files[PROCEDURE_ARCHIVE_KEEP_VERSIONS:]
-
-            kept_count += len(keep)
-            for path in delete:
-                try:
-                    path.unlink()
-                    deleted_count += 1
-                    logger.debug("Deleted old procedure archive: %s", path.name)
-                except Exception as e:
-                    logger.warning("Failed to delete archive %s: %s", path.name, e)
-
-        if deleted_count > 0:
-            logger.info(
-                "Procedure archive cleanup for anima=%s: deleted=%d, kept=%d",
-                self.anima_name,
-                deleted_count,
-                kept_count,
-            )
-
-        return {"deleted_count": deleted_count, "kept_count": kept_count}
+        return candidates[:max_items]

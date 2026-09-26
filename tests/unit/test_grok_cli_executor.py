@@ -1164,6 +1164,7 @@ class TestTerminalPaths:
             "grok:grok",
             1800,
             "quota_exhausted",
+            reset_in_s=None,
         )
 
     @pytest.mark.asyncio

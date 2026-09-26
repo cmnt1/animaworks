@@ -22,7 +22,7 @@ from core.voice.session import (
     read_memory_snippets,
 )
 
-pytestmark = [pytest.mark.e2e, pytest.mark.timeout(900)]
+pytestmark = [pytest.mark.e2e, pytest.mark.live, pytest.mark.timeout(900)]
 
 _API_BASE = "http://xserverng2:8000/v1"
 _EMOTION_TAG = re.compile(r"\s*<!--\s*emotion:.*?-->\s*", re.DOTALL)

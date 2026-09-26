@@ -11,6 +11,13 @@ notifications from top-level Animas to human administrators via
 external messaging services (Slack, LINE, Telegram, Chatwork, ntfy).
 """
 
+import hashlib
+
 from core.notification.notifier import HumanNotifier, NotificationChannel
 
 __all__ = ["HumanNotifier", "NotificationChannel"]
+
+
+def notification_key_for(subject: str, body: str) -> str:
+    """Return the fallback human notification key."""
+    return hashlib.sha256(f"{subject}\n{body}".encode()).hexdigest()

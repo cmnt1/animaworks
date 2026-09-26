@@ -10,14 +10,14 @@
 
 ### 重要: ハートビートは「確認と計画」のみ
 
-ハートビートの役割は **Observe（観察）→ Plan（計画）→ Reflect（振り返り）** の3フェーズに限定される。
+Heartbeat は意味のある変化を確認し、必要な次の対応を判断する。儀式的な振り返り報告は不要。
 
-- MUST: ハートビート内では状況確認・計画立案・振り返りのみを行う
+- MUST: Heartbeat は状況確認と判断に絞る
 - MUST NOT: ハートビート内で長時間の実行タスク（コーディング、大量のツール呼び出し等）を行わない
 - MUST: 実行が必要なタスクを発見したら、部下がいれば `delegate_task` で委任するか、`submit_tasks` でタスク投入する
 
-書き出されたタスクは **TaskExec パス**（`PendingTaskExecutor`）がポーリングで取得・実行する。
-`submit_tasks` が書く LLM タスクは `state/pending/` を監視し、最大約3秒の間隔で拾われる（同一ループが `state/background_tasks/pending/` の CLI 投入タスクも処理する）。
+投入済みタスクは **TaskExec パス**が、定期 Heartbeat とは独立に実行する。
+TaskExec は正本 TaskStore から実行可能な永続タスクを取得する。起床通知と復旧はホストが管理し、旧 LLM JSON ファイルは監視しない。
 
 ### ハートビートと会話の並行動作
 
@@ -35,12 +35,12 @@ submit_tasks(batch_id="hb-20260301-api-test", tasks=[
 ])
 ```
 
-`submit_tasks` は Layer 1（実行キュー `state/pending/`）と Layer 2（タスクレジストリ `task_queue.jsonl`）の両方に同時登録する。
-TaskExec が JSON を `processing/` へ移動したうえで LLM セッションで実行する。失敗時は `state/pending/failed/` に退避される。
+`submit_tasks` は検証後、タスクと完全な実行入力を一つの正本 TaskStore に一括保存する。
+実行権の取得と試行履歴はホストが管理する。`in_progress` は閲覧用で、エージェントは `update_task` で `done` / `pending` / `cancelled` を宣言する。中断した pending タスクは同じ ID に `resume: true` を指定して明示的に再開し、別タスクで置き換えない。
 
 **長時間 CLI ツール**（`animaworks-tool submit …`）は別経路で `state/background_tasks/pending/` に書かれ、`BackgroundTaskManager`（`core/background.py`）がバックグラウンド実行する。詳細は `operations/background-tasks.md` を参照。
 
-**注意**: `state/pending/` に手動で JSON を置くのは非推奨。`submit_tasks` ツール経由で投入すること（バリデーションとキュー同期が省略されるため）。
+**注意**: 保存先を直接編集しない。旧 `state/task_queue.jsonl` と `state/pending/` は移行・エクスポート用の証跡として保存し、稼働中の投入先にしない。
 
 単一タスクでも `submit_tasks`（tasks配列1件）を使う。
 複数の独立タスクは `parallel: true` で並列実行、依存関係がある場合は `depends_on` を指定する。
@@ -343,7 +343,7 @@ type: llm
 昨日の episodes/ を読み返し、今日のタスクを計画する。
 優先順位は理念と目標に照らして判断する。
 結果は state/current_state.md に書き出す。
-task_queue.jsonl の未着手タスクも確認し、必要なら優先度を見直す。
+正本タスク一覧（`list_tasks`） の未着手タスクも確認し、必要なら優先度を見直す。
 ```
 
 description（`type:` 行の後の本文）には以下を含めるべき（SHOULD）:
@@ -480,7 +480,7 @@ LLM 型タスクの結果は `CycleResult` として記録され、以下の情�
 ## 毎朝の業務計画
 schedule: 0 9 * * *
 type: llm
-episodes/ から昨日の行動を確認し、task_queue.jsonl の未着手タスクを見直す。
+episodes/ から昨日の行動を確認し、正本タスク一覧（`list_tasks`） の未着手タスクを見直す。
 今日の優先タスクを決め、state/current_state.md を更新する。
 
 ## 週次振り返り
