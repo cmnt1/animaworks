@@ -122,7 +122,6 @@ class SchedulerMixin:
             )
             logger.info("System cron: Weekly integration on %s at %s:%s", day_of_week, time_parts[0], time_parts[1])
 
-
         indexing_enabled = True
         indexing_time = "04:00"
         if consolidation_cfg:
@@ -870,7 +869,6 @@ class SchedulerMixin:
                 raise RuntimeError(f"weekly integration worker failures: {len(failures)}") from failures[0]
 
         _write_marker(_marker_dir(self._get_data_dir()) / "last_weekly_integration")
-
 
     async def _run_daily_indexing(self) -> None:
         """Run daily RAG indexing for all animas.
