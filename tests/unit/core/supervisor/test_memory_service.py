@@ -68,6 +68,39 @@ async def test_memory_service_checked_reads(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_memory_service_reads_missing_collection_as_empty(tmp_path: Path) -> None:
+    """A collection that was never created reads as empty instead of failing (no retry, no ERROR)."""
+    store = _store()
+    missing = RuntimeError("Collection [sakura_entities] does not exist")
+    store._query_once.side_effect = missing
+    store._get_by_metadata_once.side_effect = missing
+    store._get_by_ids_once.side_effect = missing
+    service = MemoryService("sakura", tmp_path / "sakura", opener=lambda: store)
+
+    query = await service.handle("memory.query", {"collection": "sakura_entities", "embedding": [0.1], "top_k": 3})
+    metadata = await service.handle(
+        "memory.get_by_metadata", {"collection": "sakura_entities", "where": {"kind": "x"}, "limit": 2}
+    )
+    documents = await service.handle("memory.get_by_ids", {"collection": "sakura_entities", "ids": ["a"]})
+
+    assert query == {"results": []}
+    assert metadata == {"results": []}
+    assert documents == {"documents": []}
+    await service.close()
+
+
+@pytest.mark.asyncio
+async def test_memory_service_other_read_errors_still_raise(tmp_path: Path) -> None:
+    store = _store()
+    store._query_once.side_effect = RuntimeError("database disk image is malformed")
+    service = MemoryService("sakura", tmp_path / "sakura", opener=lambda: store)
+
+    with pytest.raises(RuntimeError, match="malformed"):
+        await service.handle("memory.query", {"collection": "sakura_knowledge", "embedding": [0.1], "top_k": 3})
+    await service.close()
+
+
+@pytest.mark.asyncio
 async def test_memory_service_logs_queue_and_execution_times(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     service = MemoryService("sakura", tmp_path / "sakura", opener=_store)
 
