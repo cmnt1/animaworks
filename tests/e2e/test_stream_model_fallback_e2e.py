@@ -78,7 +78,6 @@ async def test_terminal_quota_error_swaps_to_fallback_model(make_agent_core, mon
         "core._agent_cycle.build_system_prompt",
         lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
     )
-    monkeypatch.setattr("core._agent_cycle.inject_shortterm", lambda sp, st: sp)
     # The primary is "blocked": preflight is a no-op here so the in-flight swap
     # is what gets exercised.
     monkeypatch.setattr(
@@ -116,7 +115,6 @@ async def test_terminal_error_surfaces_when_no_fallback_available(make_agent_cor
         "core._agent_cycle.build_system_prompt",
         lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
     )
-    monkeypatch.setattr("core._agent_cycle.inject_shortterm", lambda sp, st: sp)
     monkeypatch.setattr(
         "core.execution.fallback_activity.preflight_fallback_config",
         lambda anima_dir, cfg, **kwargs: cfg,
@@ -161,7 +159,6 @@ async def test_partial_tool_work_is_not_replayed_on_another_engine(make_agent_co
         "core._agent_cycle.build_system_prompt",
         lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
     )
-    monkeypatch.setattr("core._agent_cycle.inject_shortterm", lambda sp, st: sp)
     monkeypatch.setattr("core.execution.fallback_activity.preflight_fallback_config", lambda anima_dir, cfg, **kw: cfg)
 
     events = [chunk async for chunk in agent.run_cycle_streaming("send the report", trigger="task:delivery")]

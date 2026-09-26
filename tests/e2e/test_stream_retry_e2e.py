@@ -162,10 +162,6 @@ class TestStreamRetryFullFlow:
             "core._agent_cycle.build_system_prompt",
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
         )
-        monkeypatch.setattr(
-            "core._agent_cycle.inject_shortterm",
-            lambda sp, st: sp,
-        )
 
         # Collect all streamed events
         events: list[dict[str, Any]] = []
@@ -233,10 +229,6 @@ class TestStreamRetryMaxExceeded:
             "core._agent_cycle.build_system_prompt",
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
         )
-        monkeypatch.setattr(
-            "core._agent_cycle.inject_shortterm",
-            lambda sp, st: sp,
-        )
 
         events: list[dict[str, Any]] = []
         async for chunk in agent.run_cycle_streaming("Test prompt", trigger="test"):
@@ -292,10 +284,6 @@ class TestStreamRetryMaxExceeded:
             "core._agent_cycle.build_system_prompt",
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
         )
-        monkeypatch.setattr(
-            "core._agent_cycle.inject_shortterm",
-            lambda sp, st: sp,
-        )
 
         events: list[dict[str, Any]] = []
         async for chunk in agent.run_cycle_streaming("Test prompt", trigger="test"):
@@ -339,10 +327,6 @@ class TestCheckpointClearedOnSuccess:
         monkeypatch.setattr(
             "core._agent_cycle.build_system_prompt",
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
-        )
-        monkeypatch.setattr(
-            "core._agent_cycle.inject_shortterm",
-            lambda sp, st: sp,
         )
 
         # Consume all events
@@ -424,10 +408,6 @@ class TestCheckpointClearedOnSuccess:
         monkeypatch.setattr(
             "core._agent_cycle.build_system_prompt",
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
-        )
-        monkeypatch.setattr(
-            "core._agent_cycle.inject_shortterm",
-            lambda sp, st: sp,
         )
 
         events: list[dict[str, Any]] = []

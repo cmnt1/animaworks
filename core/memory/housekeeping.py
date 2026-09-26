@@ -319,7 +319,6 @@ async def run_housekeeping(
             background_running_stale_hours,
             current_state_stale_hours,
             taskboard_suppressed_retention_days,
-            cron_queue_stale_minutes,
             taskboard_orphan_metadata_stale_hours,
         )
         results["taskboard_stale"] = r
