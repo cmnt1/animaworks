@@ -412,6 +412,19 @@ class MemoryService:
         )
         logger.warning("Marked phase3 root RAG for background repair after open failure: %s", error)
 
+    @staticmethod
+    def _read_or_empty(collection: str, read: Callable[[], list[Any]]) -> list[Any]:
+        """Run a read; a collection that does not exist yet reads as empty, like the vector worker."""
+        from core.memory.rag.store import _is_missing_collection_error, log_missing_collection_once
+
+        try:
+            return read()
+        except Exception as exc:
+            if not _is_missing_collection_error(exc):
+                raise
+            log_missing_collection_once(collection, "Collection %s does not exist yet; reading as empty", collection)
+            return []
+
     def _dispatch(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         store = self._store
         if store is None:
@@ -428,7 +441,11 @@ class MemoryService:
             if filter_metadata is not None and not isinstance(filter_metadata, dict):
                 raise ValueError("filter_metadata must be an object or null")
             query = getattr(store, "_query_once", store.query)
-            return {"results": self._search_results(query(collection, embedding, top_k, filter_metadata))}
+            return {
+                "results": self._search_results(
+                    self._read_or_empty(collection, lambda: query(collection, embedding, top_k, filter_metadata))
+                )
+            }
         if method == "memory.list_collections_checked":
             listing = getattr(store, "_list_collections_once", store.list_collections)
             return {"collections": list(listing())}
@@ -441,14 +458,16 @@ class MemoryService:
             if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
                 raise ValueError("limit must be an integer >= 1")
             get = getattr(store, "_get_by_metadata_once", store.get_by_metadata)
-            return {"results": self._search_results(get(collection, where, limit))}
+            return {
+                "results": self._search_results(self._read_or_empty(collection, lambda: get(collection, where, limit)))
+            }
         if method == "memory.get_by_ids":
             collection = self._string(params, "collection")
             ids = params.get("ids")
             if not isinstance(ids, list) or not all(isinstance(value, str) for value in ids):
                 raise ValueError("ids must be a list of strings")
             get = getattr(store, "_get_by_ids_once", store.get_by_ids)
-            return {"documents": self._documents(get(collection, ids))}
+            return {"documents": self._documents(self._read_or_empty(collection, lambda: get(collection, ids)))}
         if method == "memory.create_collection":
             collection = self._string(params, "collection")
             create = getattr(store, "_create_collection_once", store.create_collection)
