@@ -30,13 +30,8 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
-from core.execution.base import (
-    BaseExecutor,
-    ExecutionResult,
-    TokenUsage,
-    ToolCallRecord,
-    _truncate_for_record,
-)
+from core.execution.base import TokenUsage, ToolCallRecord, _truncate_for_record
+from core.execution.cli_stream import CLIStreamExecutor
 from core.execution.error_classifier import (
     FailoverReason,
     classify_llm_error_message,
@@ -46,9 +41,8 @@ from core.execution.error_classifier import (
 from core.execution.events import stream_events
 from core.execution.process_runner import ProcessRunner
 from core.execution.rate_guard import get_rate_guard
-from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS, wait_for_engine_event
+from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS
 from core.i18n import t
-from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
 
@@ -135,7 +129,7 @@ def _resolve_gemini_model(model: str) -> str:
 # ── Executor ───────────────────────────────────────────────────
 
 
-class GeminiCLIExecutor(BaseExecutor):
+class GeminiCLIExecutor(CLIStreamExecutor):
     """Execute via Gemini CLI (Mode G).
 
     Spawns gemini CLI as a subprocess with stream-json NDJSON output.
@@ -300,11 +294,7 @@ class GeminiCLIExecutor(BaseExecutor):
         line = stdout_line.strip()
         if not line:
             return None
-        try:
-            return json.loads(line)
-        except json.JSONDecodeError as e:
-            logger.debug("Failed to parse NDJSON line: %s — %s", line[:200], e)
-            return None
+        return self.parse_json_line(line)
 
     async def _kill_process(self, proc: asyncio.subprocess.Process, timeout: float = _GRACEFUL_KILL_WAIT) -> None:
         """Delegate process-tree shutdown to the shared process runner."""
@@ -345,154 +335,6 @@ class GeminiCLIExecutor(BaseExecutor):
             input_tokens=stats.get("input_tokens", 0),
             output_tokens=stats.get("output_tokens", 0),
             cache_read_tokens=stats.get("cached", 0),
-        )
-
-    # ── Execution ───────────────────────────────────────────────
-
-    async def execute(
-        self,
-        prompt: str,
-        system_prompt: str = "",
-        tracker: ContextTracker | None = None,
-        shortterm: ShortTermMemory | None = None,
-        trigger: str = "",
-        images: list[ImageData] | None = None,
-        prior_messages: list[dict[str, Any]] | None = None,
-        thread_id: str = "default",
-    ) -> ExecutionResult:
-        """Run gemini CLI subprocess and parse stream-json output."""
-        if self._check_interrupted():
-            return ExecutionResult(text="[Session interrupted by user]")
-
-        binary = _find_gemini_binary()
-        if not binary:
-            return ExecutionResult(text=t("gemini_cli.not_installed"))
-
-        self._ensure_workspace()
-        self._write_settings()
-
-        sys_prompt_path: Path | None = None
-        if system_prompt:
-            sys_prompt_path = self._write_system_prompt(system_prompt)
-
-        cmd = self._build_command(prompt)
-        env = self._build_env(sys_prompt_path)
-
-        accumulated_text = ""
-        tool_records: list[ToolCallRecord] = []
-        pending_tools: dict[str, dict[str, Any]] = {}
-        usage: TokenUsage | None = None
-
-        proc: asyncio.subprocess.Process | None = None
-        process_runner = ProcessRunner(graceful_timeout=_GRACEFUL_KILL_WAIT)
-        try:
-            proc = await process_runner.start(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env,
-                cwd=str(self._workspace),
-            )
-
-            try:
-                async with asyncio.timeout(None):
-                    assert proc.stdout is not None
-                    while True:
-                        line = await wait_for_engine_event(proc.stdout.readline())
-                        if not line:
-                            break
-                        if self._check_interrupted():
-                            await self._kill_process(proc)
-                            return ExecutionResult(
-                                text=accumulated_text or "[Session interrupted by user]",
-                                tool_call_records=tool_records,
-                            )
-
-                        event = self._parse_ndjson_event(line.decode("utf-8", errors="replace"))
-                        if event is None:
-                            continue
-
-                        etype = event.get("type", "")
-
-                        if etype == "message" and event.get("role") == "assistant":
-                            content = event.get("content", "")
-                            if event.get("delta"):
-                                accumulated_text += content
-                            else:
-                                accumulated_text = content
-
-                        elif etype == "tool_use":
-                            tid = event.get("tool_id", "")
-                            pending_tools[tid] = event
-
-                        elif etype == "tool_result":
-                            tid = event.get("tool_id", "")
-                            tool_use_evt = pending_tools.pop(tid, None)
-                            if tool_use_evt:
-                                record = self._extract_tool_record(tool_use_evt, event)
-                                tool_records.append(record)
-
-                        elif etype == "result":
-                            usage = self._parse_stats(event.get("stats"))
-                            if event.get("status") == "error":
-                                err = event.get("error", {})
-                                err_msg = err.get("message", "") if isinstance(err, dict) else str(err)
-                                if err_msg and not accumulated_text:
-                                    _gemini_error_metadata(err_msg, _resolve_gemini_model(self._model_config.model))
-                                    accumulated_text = f"[Gemini CLI Error: {err_msg}]"
-
-                        elif etype == "error":
-                            severity = event.get("severity", "warning")
-                            msg = event.get("message", "")
-                            if severity == "error":
-                                logger.warning("Gemini CLI error event: %s", msg)
-                            else:
-                                logger.debug("Gemini CLI warning: %s", msg)
-
-            except TimeoutError:
-                logger.warning("Gemini CLI idle timeout after %ds", _EVENT_IDLE_TIMEOUT_SECONDS)
-                await self._kill_process(proc)
-                timeout_msg = t("gemini_cli.timeout", timeout=_EVENT_IDLE_TIMEOUT_SECONDS)
-                return ExecutionResult(
-                    text=accumulated_text + f"\n\n{timeout_msg}" if accumulated_text else timeout_msg,
-                    tool_call_records=tool_records,
-                    usage=usage,
-                )
-
-            await proc.wait()
-            await process_runner.close()
-            stderr_bytes = await process_runner.stderr()
-
-            if proc.returncode != 0:
-                stderr_text = stderr_bytes.decode("utf-8", errors="replace")
-                logger.warning(
-                    "Gemini CLI exited with code %d: %s",
-                    proc.returncode,
-                    stderr_text[:500],
-                )
-                _gemini_error_metadata(stderr_text, _resolve_gemini_model(self._model_config.model))
-                if any(kw in stderr_text.lower() for kw in ("auth", "login", "unauthorized", "unauthenticated")):
-                    return ExecutionResult(text=t("gemini_cli.not_authenticated"))
-                if not accumulated_text:
-                    accumulated_text = f"[Gemini CLI Error (exit {proc.returncode}): {stderr_text[:500]}]"
-
-        except FileNotFoundError:
-            return ExecutionResult(text=t("gemini_cli.not_installed"))
-        except Exception as e:
-            logger.exception("Gemini CLI execution error")
-            _gemini_error_metadata(str(e), _resolve_gemini_model(self._model_config.model))
-            return ExecutionResult(text=f"[Gemini CLI Error: {e}]")
-        finally:
-            # Ensure the subprocess is killed on CancelledError or any
-            # other exception that bypasses the normal exit path.
-            if proc is not None:
-                await process_runner.close()
-            self._cleanup_prompt_files()
-
-        return ExecutionResult(
-            text=accumulated_text,
-            tool_call_records=tool_records,
-            usage=usage,
         )
 
     # ── Streaming ───────────────────────────────────────────────
@@ -555,10 +397,7 @@ class GeminiCLIExecutor(BaseExecutor):
             try:
                 async with asyncio.timeout(None):
                     assert proc.stdout is not None
-                    while True:
-                        line = await wait_for_engine_event(proc.stdout.readline())
-                        if not line:
-                            break
+                    async for line in self.iter_lines(proc.stdout):
                         if self._check_interrupted():
                             await self._kill_process(proc)
                             yield {
@@ -614,6 +453,16 @@ class GeminiCLIExecutor(BaseExecutor):
 
                         elif etype == "result":
                             usage = self._parse_stats(event.get("stats"))
+                            if event.get("status") == "error" and not accumulated_text:
+                                err = event.get("error", {})
+                                err_msg = err.get("message", "") if isinstance(err, dict) else str(err)
+                                if err_msg:
+                                    _gemini_error_metadata(
+                                        err_msg,
+                                        _resolve_gemini_model(self._model_config.model),
+                                    )
+                                    accumulated_text = f"[Gemini CLI Error: {err_msg}]"
+                                    yield {"type": "text_delta", "text": accumulated_text}
 
                         elif etype == "error":
                             severity = event.get("severity", "warning")
@@ -625,7 +474,9 @@ class GeminiCLIExecutor(BaseExecutor):
                 logger.warning("Gemini CLI idle timeout after %ds", _EVENT_IDLE_TIMEOUT_SECONDS)
                 await self._kill_process(proc)
                 timeout_msg = t("gemini_cli.timeout", timeout=_EVENT_IDLE_TIMEOUT_SECONDS)
-                yield {"type": "text_delta", "text": f"\n\n{timeout_msg}"}
+                timeout_text = f"\n\n{timeout_msg}" if accumulated_text else timeout_msg
+                accumulated_text += timeout_text
+                yield {"type": "text_delta", "text": timeout_text}
 
             await proc.wait()
             await process_runner.close()
@@ -637,9 +488,11 @@ class GeminiCLIExecutor(BaseExecutor):
                 _gemini_error_metadata(stderr_text, _resolve_gemini_model(self._model_config.model))
                 if any(kw in stderr_text.lower() for kw in ("auth", "login", "unauthorized", "unauthenticated")):
                     err_text = t("gemini_cli.not_authenticated")
-                    if not accumulated_text:
-                        accumulated_text = err_text
+                    accumulated_text = err_text
                     yield {"type": "text_delta", "text": err_text}
+                elif not accumulated_text:
+                    accumulated_text = f"[Gemini CLI Error (exit {proc.returncode}): {stderr_text[:500]}]"
+                    yield {"type": "text_delta", "text": accumulated_text}
 
         except FileNotFoundError:
             text = t("gemini_cli.not_installed")

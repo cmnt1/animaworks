@@ -13,10 +13,10 @@ provides where applicable:
 * ``execute()`` — captured as the serialised ``ExecutionResult`` (text,
   tool_call_records, usage, session_id, num_turns, error, reason …).
 * ``execute_streaming()`` — for engines where ``supports_streaming`` is true
-  (S, C, G, X, A), captured as the emitted event sequence plus the final
+  (S, C, D, G, X, A), captured as the emitted event sequence plus the final
   result carried on the terminal ``done`` event.
-* ``cursor`` (D) reports ``supports_streaming == False`` — that fact is
-  recorded in the golden as well.
+* ``cursor`` (D) reports ``supports_streaming == True`` and its stream path
+  is captured alongside the other CLI engines.
 
 Activity (what the executor writes to the anima's ``activity_log``) is
 captured per path so E5 can detect double-logging or missed logging.
@@ -74,6 +74,7 @@ _SCENARIOS: list[tuple[str, str, str]] = [
     ("codex", "execute", "error"),
     ("cursor", "execute", "happy"),
     ("cursor", "execute", "error"),
+    ("cursor", "stream", "happy"),
     ("gemini", "execute", "happy"),
     ("gemini", "stream", "happy"),
     ("gemini", "execute", "error"),
@@ -322,6 +323,29 @@ async def _drive_cursor_execute(anima_dir: Path, golden_id: str, path: str | Non
     ):
         result = await executor.execute(prompt="use a tool", system_prompt="You are helpful")
     return {"events": None, "result": _serialise_result(result), "activity": _read_activity(anima_dir)}
+
+
+async def _drive_cursor_stream(anima_dir: Path, golden_id: str, path: str | None = None) -> dict:
+    lines = _load_input(golden_id)
+    executor = _cursor_executor(anima_dir)
+    proc = _cursor_proc(lines)
+    tracker = ContextTracker(model="cursor/claude-4-sonnet", threshold=0.5)
+    with (
+        patch.object(executor, "_find_binary", return_value="/usr/bin/agent"),
+        patch.object(executor, "_ensure_workspace"),
+        patch.object(executor, "_write_mcp_config"),
+        patch.object(executor, "_write_cursor_rules"),
+        patch("asyncio.create_subprocess_exec", return_value=proc),
+    ):
+        events = [
+            event
+            async for event in executor.execute_streaming(
+                system_prompt="You are helpful",
+                prompt="use a tool",
+                tracker=tracker,
+            )
+        ]
+    return {"events": _norm(events), "result": None, "activity": _read_activity(anima_dir)}
 
 
 # ── Grok (X) driver ────────────────────────────────────────
@@ -939,7 +963,7 @@ def _build_stream_chunks(lines: list[dict]) -> list[list]:
 _ENGINE_PATHS = {
     "agent_sdk": {"execute": _drive_agent_sdk, "stream": _drive_agent_sdk},
     "codex": {"execute": _drive_codex, "stream": _drive_codex},
-    "cursor": {"execute": _drive_cursor_execute},
+    "cursor": {"execute": _drive_cursor_execute, "stream": _drive_cursor_stream},
     "gemini": {"execute": _drive_gemini_execute, "stream": _drive_gemini_stream},
     "grok": {"execute": _drive_grok, "stream": _drive_grok},
     "litellm": {"execute": _drive_litellm, "stream": _drive_litellm},
@@ -948,7 +972,7 @@ _ENGINE_PATHS = {
 _SUPPORTS_STREAMING = {
     "agent_sdk": True,
     "codex": True,
-    "cursor": False,
+    "cursor": True,
     "gemini": True,
     "grok": True,
     "litellm": True,

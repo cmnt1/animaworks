@@ -1,0 +1,5 @@
+{"type": "system", "subtype": "init", "session_id": "s1"}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "Context before the tool call."}]}}
+{"type": "tool_call", "subtype": "completed", "tool_call": {"readToolCall": {"args": {"path": "README.md"}, "result": {"success": {"content": "contents"}}}}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "Final answer after the tool call."}]}}
+{"type": "result", "subtype": "success", "result": "combined"}
