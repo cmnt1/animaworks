@@ -9,10 +9,17 @@ from __future__ import annotations
 from core.execution.backoff import decorrelated_jitter
 
 
-def test_first_backoff_within_base_and_cap() -> None:
+def test_first_backoff_within_default_range() -> None:
     for _ in range(200):
-        delay = decorrelated_jitter(0.0, base=5.0, cap=120.0)
-        assert 5.0 <= delay <= 120.0
+        delay = decorrelated_jitter(0.0)
+        assert 5.0 <= delay <= 15.0
+
+
+def test_default_retry_jitter_stays_within_five_to_fifteen_seconds() -> None:
+    for prev in (0.0, 5.0, 15.0, 1200.0):
+        for _ in range(20):
+            delay = decorrelated_jitter(prev)
+            assert 5.0 <= delay <= 15.0
 
 
 def test_never_exceeds_cap() -> None:

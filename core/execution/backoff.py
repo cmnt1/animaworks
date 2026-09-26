@@ -17,7 +17,7 @@ from __future__ import annotations
 import random
 
 
-def decorrelated_jitter(prev: float, base: float = 5.0, cap: float = 120.0) -> float:
+def decorrelated_jitter(prev: float, base: float = 5.0, cap: float = 15.0) -> float:
     """Return the next decorrelated-jitter backoff delay in seconds.
 
     Uses the AWS "decorrelated jitter" recurrence
@@ -27,7 +27,7 @@ def decorrelated_jitter(prev: float, base: float = 5.0, cap: float = 120.0) -> f
     Args:
         prev: The previous backoff delay in seconds.
         base: Lower bound / initial delay in seconds.
-        cap: Maximum delay in seconds.
+        cap: Maximum delay in seconds (15 seconds by default for engine retries).
     """
     if base <= 0:
         base = 0.0

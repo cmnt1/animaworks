@@ -146,6 +146,9 @@ class StreamingMixin:
         all_response_text: list[str] = []
         all_tool_records: list[ToolCallRecord] = []
         llm_kwargs = self._build_llm_kwargs()
+        # call_llm_with_retry is the single retry authority; never let LiteLLM
+        # hide additional retries inside a request, especially after streaming starts.
+        llm_kwargs["num_retries"] = 0
         _usage_acc = TokenUsage()
         _repetition_detector = RepetitionDetector()
         _repetition_detected = False
@@ -304,6 +307,9 @@ class StreamingMixin:
                         }
                         return
                 else:
+                    # Later iterations are fresh requests: a context overflow is
+                    # rejected before any chunk streams, so compacting and sending
+                    # once more cannot duplicate output. Other errors are not retried.
                     try:
                         response = cast(Any, await litellm.acompletion(**call_kwargs))
                     except Exception as _exc:
@@ -920,6 +926,9 @@ class StreamingMixin:
         all_response_text: list[str] = []
         all_tool_records: list[ToolCallRecord] = []
         llm_kwargs = self._build_llm_kwargs()
+        # Keep retries in the shared, interruptible loop guard instead of
+        # LiteLLM's internal retry layer.
+        llm_kwargs["num_retries"] = 0
         _usage_acc_ol = TokenUsage()
         _repetition_detector = RepetitionDetector()
         _runaway_guard_ol = RunawayGuard()
@@ -1000,46 +1009,31 @@ class StreamingMixin:
                     call_kwargs["tools"] = tools
 
                 # Optional hard total-request timeout for frozen Ollama
-                # instances (OOM/GPU stall).  Disabled by default (0).
+                # instances (OOM/GPU stall). Disabled by default (0).
                 try:
                     from core.config import load_config as _lc_ot
 
                     _total_timeout_s = float(_lc_ot().server.ollama_total_timeout)
                 except Exception:
                     _total_timeout_s = 0.0
-                if _total_timeout_s > 0:
-                    try:
-                        response = cast(
-                            Any,
-                            await asyncio.wait_for(
-                                litellm.acompletion(**call_kwargs),
-                                timeout=_total_timeout_s,
-                            ),
-                        )
-                    except TimeoutError:
-                        logger.warning(
-                            "Ollama LLM call hard-timeout after %.0fs (trigger=%s model=%s)",
-                            _total_timeout_s,
-                            trigger,
-                            self._model_config.model,
-                        )
-                        from core.exceptions import LLMAPIError
 
-                        raise LLMAPIError(
-                            f"Ollama request timed out after {_total_timeout_s:.0f}s (model={self._model_config.model})"
-                        ) from None
-                elif iteration == 0:
-                    # In-loop retry only before the first event is yielded
-                    # (iteration 0) — same rule as token-level streaming.
-                    # num_retries=0: in-loop retry is the single retry
-                    # authority on the wrapped call.
+                async def _call_completion(
+                    _call_kwargs: dict[str, Any] = call_kwargs,
+                    _timeout_s: float = _total_timeout_s,
+                ) -> Any:
+                    call = litellm.acompletion(**_call_kwargs)
+                    if _timeout_s > 0:
+                        return await asyncio.wait_for(call, timeout=_timeout_s)
+                    return await call
+
+                if iteration == 0:
                     _guard_family_ol = provider_family_of(self._model_config.model)
                     _guard_key_ol = guard_key(_guard_family_ol, litellm_realm_of(self._model_config.model))
                     try:
                         response = cast(
                             Any,
                             await call_llm_with_retry(
-                                partial(litellm.acompletion, **{**call_kwargs, "num_retries": 0}),
+                                _call_completion,
                                 classify=partial(classify_llm_error, provider_family=_guard_family_ol),
                                 next_backoff=decorrelated_jitter,
                                 interrupt_check=self._check_interrupted,
@@ -1047,6 +1041,12 @@ class StreamingMixin:
                                     get_rate_guard(),
                                     _guard_key_ol,
                                     "A ollama stream",
+                                ),
+                                on_context_overflow=partial(
+                                    self._try_compact_messages,
+                                    iteration_messages_ol,
+                                    llm_kwargs,
+                                    litellm,
                                 ),
                             ),
                         )
@@ -1062,26 +1062,57 @@ class StreamingMixin:
                             "truncated": True,
                         }
                         return
+                    except TimeoutError:
+                        if _total_timeout_s <= 0:
+                            raise
+                        logger.warning(
+                            "Ollama LLM call hard-timeout after %.0fs (trigger=%s model=%s)",
+                            _total_timeout_s,
+                            trigger,
+                            self._model_config.model,
+                        )
+                        from core.exceptions import LLMAPIError
+
+                        raise LLMAPIError(
+                            f"Ollama request timed out after {_total_timeout_s:.0f}s (model={self._model_config.model})"
+                        ) from None
                 else:
                     try:
-                        response = cast(Any, await litellm.acompletion(**call_kwargs))
-                    except Exception as _exc:
-                        _reason_ol, _ = classify_llm_error(
-                            _exc,
-                            provider_family=provider_family_of(self._model_config.model),
-                        )
-                        if getattr(
-                            _reason_ol, "value", None
-                        ) == "context_overflow" and await self._try_compact_messages(
-                            iteration_messages_ol, llm_kwargs, litellm
-                        ):
-                            logger.warning(
-                                "A ollama stream: context overflow at iteration=%d; compacted, retrying once",
-                                iteration,
-                            )
-                            response = cast(Any, await litellm.acompletion(**call_kwargs))
-                        else:
+                        try:
+                            response = cast(Any, await _call_completion())
+                        except TimeoutError:
                             raise
+                        except Exception as _exc:
+                            _reason_ol, _ = classify_llm_error(
+                                _exc,
+                                provider_family=provider_family_of(self._model_config.model),
+                            )
+                            if getattr(
+                                _reason_ol, "value", None
+                            ) == "context_overflow" and await self._try_compact_messages(
+                                iteration_messages_ol, llm_kwargs, litellm
+                            ):
+                                logger.warning(
+                                    "A ollama stream: context overflow at iteration=%d; compacted, retrying once",
+                                    iteration,
+                                )
+                                response = cast(Any, await _call_completion())
+                            else:
+                                raise
+                    except TimeoutError:
+                        if _total_timeout_s <= 0:
+                            raise
+                        logger.warning(
+                            "Ollama LLM call hard-timeout after %.0fs (trigger=%s model=%s)",
+                            _total_timeout_s,
+                            trigger,
+                            self._model_config.model,
+                        )
+                        from core.exceptions import LLMAPIError
+
+                        raise LLMAPIError(
+                            f"Ollama request timed out after {_total_timeout_s:.0f}s (model={self._model_config.model})"
+                        ) from None
 
                 choice = response.choices[0]
                 message = choice.message
