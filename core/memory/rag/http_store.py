@@ -63,7 +63,6 @@ def _retry_after_ms(exc: BaseException) -> int | None:
     return None
 
 
-
 def _response_retry_after_ms(resp: Any, retry_after_header: str) -> int:
     """Read ``retry_after_ms`` from a 503 body, else convert the Retry-After seconds header."""
     try:
@@ -76,6 +75,7 @@ def _response_retry_after_ms(resp: Any, retry_after_header: str) -> int:
         return int(float(retry_after_header) * 1000)
     except (TypeError, ValueError):
         return _DEFAULT_RETRY_AFTER_MS
+
 
 def _parse_search_results(data: list[dict[str, Any]]) -> list[SearchResult]:
     """Convert JSON dicts to SearchResult objects.

@@ -73,13 +73,10 @@ def test_http_read_second_failure_returns_empty(monkeypatch) -> None:
 def test_http_retry_after_ms_capped_at_500(monkeypatch) -> None:
     slept: list[float] = []
     monkeypatch.setattr("core.memory.rag.http_store.time.sleep", lambda s: slept.append(s))
-    client = _FakeClient(
-        [_FakeResp(503, headers={"Retry-After": "9"}), _FakeResp(503, headers={"Retry-After": "9"})]
-    )
+    client = _FakeClient([_FakeResp(503, headers={"Retry-After": "9"}), _FakeResp(503, headers={"Retry-After": "9"})])
     assert _http_store(client).query("sakura_knowledge", [0.1]) == []
     assert slept == [0.5]
     assert client.calls == 2
-
 
 
 def test_http_retry_waits_body_retry_after_ms(monkeypatch) -> None:
@@ -98,6 +95,7 @@ def test_http_retry_after_header_is_seconds(monkeypatch) -> None:
     client = _FakeClient([_FakeResp(503, headers={"Retry-After": "0.2"}), _FakeResp(200, _RESULTS)])
     assert len(_http_store(client).query("sakura_knowledge", [0.1])) == 1
     assert slept == [0.2]
+
 
 def test_http_non_retryable_failure_does_not_retry(monkeypatch) -> None:
     # 400 without Retry-After is an ordinary error, not a retryable owner signal.
