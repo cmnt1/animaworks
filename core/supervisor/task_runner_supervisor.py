@@ -161,6 +161,45 @@ class TaskRunnerSupervisor:
             raise TaskRunnerError("required task runner URL is missing: ANIMAWORKS_EMBED_URL")
         return values
 
+    def _build_child_environment(
+        self,
+        url_env: dict[str, str],
+        *,
+        attempt: int,
+        display_lane: str,
+    ) -> dict[str, str]:
+        """Produce the task runner child's environment.
+
+        Phase3 children reach the vector store owner over HTTP via
+        ``ANIMAWORKS_VECTOR_URL`` (propagated through ``url_env``); only the
+        root itself uses its in-process owner transport.
+        """
+        env = os.environ.copy()
+        for name in tuple(env):
+            if name.startswith("ANIMAWORKS_") and name.endswith("_URL"):
+                env.pop(name)
+        # Direct-chroma ownership must NOT leak into task runners: the root
+        # process self-enables ANIMAWORKS_ALLOW_DIRECT_CHROMA via
+        # enable_direct_chroma_for_process(), and a child inheriting it opens
+        # the same chroma.sqlite3, then deletes the WAL on close — leaving the
+        # root's live connections on stale (deleted) WAL fds ("file is not a
+        # database" storms; 2026-08-11 incident).
+        env.pop("ANIMAWORKS_ALLOW_DIRECT_CHROMA", None)
+        env.update(url_env)
+        env.update(
+            {
+                "ANIMAWORKS_DATA_DIR": str(self.shared_dir.parent),
+                "ANIMAWORKS_ANIMA_NAME": self.anima_name,
+                "ANIMAWORKS_ANIMA_DIR": str(self.anima_dir),
+                "ANIMAWORKS_TASK_IPC_PATH": str(self.socket_path),
+                "ANIMAWORKS_TASK_ROOT_EPOCH": self.root_epoch,
+                "ANIMAWORKS_TASK_ATTEMPT": str(attempt),
+                "ANIMAWORKS_TASK_DISPLAY_LANE": display_lane,
+                "ANIMAWORKS_TASK_ROOT_PID": str(os.getpid()),
+            }
+        )
+        return env
+
     async def run_cron(self, task: CronTask) -> dict[str, Any]:
         """Spawn one cron task runner and return its terminal result."""
         return await self._run_isolated_job(
@@ -477,32 +516,11 @@ class TaskRunnerSupervisor:
         async with self._journal_recovery_lock:
             self._jobs[job_id] = job
 
-        env = os.environ.copy()
-        for name in tuple(env):
-            if name.startswith("ANIMAWORKS_") and name.endswith("_URL"):
-                env.pop(name)
-        # Direct-chroma ownership must NOT leak into task runners: the root
-        # process self-enables ANIMAWORKS_ALLOW_DIRECT_CHROMA via
-        # enable_direct_chroma_for_process(), and a child inheriting it opens
-        # the same chroma.sqlite3, then deletes the WAL on close — leaving the
-        # root's live connections on stale (deleted) WAL fds ("file is not a
-        # database" storms; 2026-08-11 incident).
-        env.pop("ANIMAWORKS_ALLOW_DIRECT_CHROMA", None)
-        env.update(url_env)
-        env.update(
-            {
-                "ANIMAWORKS_DATA_DIR": str(self.shared_dir.parent),
-                "ANIMAWORKS_ANIMA_NAME": self.anima_name,
-                "ANIMAWORKS_ANIMA_DIR": str(self.anima_dir),
-                "ANIMAWORKS_TASK_IPC_PATH": str(self.socket_path),
-                "ANIMAWORKS_TASK_ROOT_EPOCH": self.root_epoch,
-                "ANIMAWORKS_TASK_ATTEMPT": str(attempt),
-                "ANIMAWORKS_TASK_DISPLAY_LANE": display_lane,
-                "ANIMAWORKS_TASK_ROOT_PID": str(os.getpid()),
-            }
+        env = self._build_child_environment(
+            url_env,
+            attempt=attempt,
+            display_lane=display_lane,
         )
-        if self._memory_service is not None:
-            env["ANIMAWORKS_MEMORY_VIA_ROOT"] = "1"
 
         hang_watch: asyncio.Task[None] | None = None
         stderr_file = None
@@ -901,7 +919,12 @@ class TaskRunnerSupervisor:
                         break  # superseded by a reconnect, or the job is gone
                     continue
                 if envelope.kind == "request":
-                    await self._handle_memory_request(connection, envelope)
+                    # Task runners no longer send IPC requests (memory access now
+                    # goes over HTTP); reject any that nonetheless arrive.
+                    await connection.send_response(
+                        envelope.body["request_id"],
+                        error=ipc_v2_error("PROTOCOL_ERROR", "unsupported task request", retryable=False),
+                    )
                     continue
                 if envelope.kind == "response":
                     if envelope.body["request_id"] != job.request_id:
@@ -955,36 +978,6 @@ class TaskRunnerSupervisor:
             else:
                 writer.close()
                 await writer.wait_closed()
-
-    async def _handle_memory_request(self, connection: IPCV2Connection, envelope: Any) -> None:
-        request_id = envelope.body["request_id"]
-        method = envelope.body["method"]
-        params = envelope.body["params"]
-        if not method.startswith("memory."):
-            await connection.send_response(
-                request_id,
-                error=ipc_v2_error("PROTOCOL_ERROR", f"unsupported task request: {method}", retryable=False),
-            )
-            return
-        try:
-            result = await self.handle_memory(method, params)
-        except MemoryServiceUnavailable as exc:
-            await connection.send_response(
-                request_id,
-                error=ipc_v2_error(
-                    "UNAVAILABLE",
-                    str(exc),
-                    retryable=True,
-                    retry_after_ms=250,
-                ),
-            )
-        except ValueError as exc:
-            await connection.send_response(
-                request_id,
-                error=ipc_v2_error("PROTOCOL_ERROR", str(exc), retryable=False),
-            )
-        else:
-            await connection.send_response(request_id, result=result)
 
     async def handle_memory(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         """Serve root-local and IPC callers through the same memory queue."""

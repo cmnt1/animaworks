@@ -20,6 +20,9 @@ from server.events import emit
 
 logger = logging.getLogger("animaworks.routes.internal")
 
+# Owner-unavailable 503s tell vector clients how long to wait before their single retry.
+_ROOT_RETRY_AFTER_MS = 250
+
 _native_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=4,
     thread_name_prefix="native-ops",
@@ -410,19 +413,11 @@ def create_internal_router() -> APIRouter:
                 # MCP/CLI subprocesses cannot share a task runner's Python IPC
                 # requester. This is transport forwarding only: the phase3
                 # root retains the sole native handle, queue and repair fence.
-                methods = {
-                    "/query": "memory.query",
-                    "/upsert": "memory.upsert",
-                    "/update-metadata": "memory.update_metadata",
-                    "/delete-documents": "memory.delete_documents",
-                    "/get-by-metadata": "memory.get_by_metadata",
-                    "/get-by-ids": "memory.get_by_ids",
-                    "/create-collection": "memory.create_collection",
-                    "/delete-collection": "memory.delete_collection",
-                    "/list-collections": "memory.list_collections_checked",
-                }
-                method = methods.get(path)
-                if method is None:
+                from core.memory.rag.vector_ops import UnsupportedVectorPath, to_owner_interaction
+
+                try:
+                    method, params = to_owner_interaction(path, _body_payload(body))
+                except UnsupportedVectorPath:
                     # Reset/repair/health must not open a second native owner.
                     return JSONResponse(
                         status_code=409,
@@ -432,16 +427,14 @@ def create_internal_router() -> APIRouter:
                 if supervisor is None:
                     return JSONResponse(
                         status_code=503,
-                        content={"detail": t("rag.root_unavailable")},
+                        content={"detail": t("rag.root_unavailable"), "retry_after_ms": _ROOT_RETRY_AFTER_MS},
                         headers={"Retry-After": "1"},
                     )
-                payload = _body_payload(body)
-                payload.pop("anima_name", None)
                 try:
                     result = await supervisor.send_request(
                         anima_name,
                         "memory",
-                        {"method": method, "params": payload},
+                        {"method": method, "params": params},
                         timeout=120.0,
                     )
                 except Exception:
@@ -450,13 +443,13 @@ def create_internal_router() -> APIRouter:
                     )
                     return JSONResponse(
                         status_code=503,
-                        content={"detail": t("rag.root_unavailable")},
+                        content={"detail": t("rag.root_unavailable"), "retry_after_ms": _ROOT_RETRY_AFTER_MS},
                         headers={"Retry-After": "1"},
                     )
                 if not isinstance(result, dict) or result.get("ok") is False:
                     return JSONResponse(
                         status_code=503,
-                        content={"detail": t("rag.root_operation_failed")},
+                        content={"detail": t("rag.root_operation_failed"), "retry_after_ms": _ROOT_RETRY_AFTER_MS},
                         headers={"Retry-After": "1"},
                     )
                 return result

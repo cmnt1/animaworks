@@ -13,6 +13,7 @@ Delegates all VectorStore operations to the server's
 
 import logging
 import time
+from collections.abc import Callable
 from typing import Any
 
 from core.memory.rag.store import Document, SearchResult, VectorStore
@@ -22,6 +23,59 @@ logger = logging.getLogger(__name__)
 _UPSERT_BATCH_LIMIT = 500
 _FAILURE_LOG_INTERVAL_SECONDS = 60.0
 
+# A VectorTransport receives an endpoint path and JSON payload and returns a
+# JSON response (or None on unrecoverable failure). The default is the HTTP
+# POST below; the owner (and server) transports swap only this callable.
+VectorTransport = Callable[[str, dict[str, Any]], dict[str, Any] | None]
+
+# Cap matches the old root-IPC path: never sleep longer than 500ms on a retry.
+_MAX_RETRY_AFTER_MS = 500
+_DEFAULT_RETRY_AFTER_MS = 250
+
+
+class VectorStoreRetryableError(Exception):
+    """Raised by a transport when the owner is unavailable and a retry may help."""
+
+    def __init__(self, message: str = "", *, retry_after_ms: int = _DEFAULT_RETRY_AFTER_MS) -> None:
+        super().__init__(message)
+        self.retryable = True
+        self.retry_after_ms = retry_after_ms
+
+
+def _retry_after_ms(exc: BaseException) -> int | None:
+    """Return the sleep ms for an explicit retryable failure, else None."""
+    if getattr(exc, "retryable", None) is True:
+        raw = getattr(exc, "retry_after_ms", _DEFAULT_RETRY_AFTER_MS)
+        try:
+            ms = int(raw)
+        except (TypeError, ValueError):
+            ms = _DEFAULT_RETRY_AFTER_MS
+        return max(0, min(ms, _MAX_RETRY_AFTER_MS))
+
+    message = str(exc)
+    if message.startswith("UNAVAILABLE:") or message.startswith("UNAVAILABLE "):
+        # Deterministic failures never heal within one retry window — waiting
+        # 250ms per query for a permanently missing collection just burns the
+        # priming budget.
+        if "does not exist" in message or "already exists" in message:
+            return None
+        return _DEFAULT_RETRY_AFTER_MS
+    return None
+
+
+
+def _response_retry_after_ms(resp: Any, retry_after_header: str) -> int:
+    """Read ``retry_after_ms`` from a 503 body, else convert the Retry-After seconds header."""
+    try:
+        body = resp.json()
+        if isinstance(body, dict) and body.get("retry_after_ms") is not None:
+            return int(body["retry_after_ms"])
+    except Exception:
+        pass
+    try:
+        return int(float(retry_after_header) * 1000)
+    except (TypeError, ValueError):
+        return _DEFAULT_RETRY_AFTER_MS
 
 def _parse_search_results(data: list[dict[str, Any]]) -> list[SearchResult]:
     """Convert JSON dicts to SearchResult objects.
@@ -59,15 +113,22 @@ def _parse_documents(data: list[dict[str, Any]]) -> list[Document]:
 class HttpVectorStore(VectorStore):
     """VectorStore that delegates to server via HTTP."""
 
-    def __init__(self, base_url: str, anima_name: str | None = None) -> None:
-        """Initialize HTTP vector store.
+    def __init__(
+        self, base_url: str, anima_name: str | None = None, *, transport: VectorTransport | None = None
+    ) -> None:
+        """Initialize the vector store.
 
         Args:
-            base_url: Base URL for vector API (e.g., http://localhost:8000/api/internal/vector)
+            base_url: Base URL for the vector API (e.g., http://localhost:8000/api/internal/vector).
+                Ignored when a non-HTTP ``transport`` is supplied.
             anima_name: Anima name for server-side routing.
+            transport: Optional backend. Defaults to HTTP POST; an owner or
+                server transport swaps only the destination.
         """
         self._base_url = base_url.rstrip("/")
         self._anima_name = anima_name
+        self._is_http_default = transport is None
+        self._transport: VectorTransport = transport if transport is not None else self._post
         self._client: Any = None
         self._write_circuit_retry_at: dict[str, float] = {}
         self._write_circuit_warned: set[str] = set()
@@ -176,6 +237,69 @@ class HttpVectorStore(VectorStore):
         state["last_logged_at"] = now
         state["suppressed_count"] = 0
 
+    def _request(
+        self,
+        path: str,
+        payload: dict[str, Any],
+        *,
+        write_collection: str | None = None,
+        allow_retry: bool = False,
+    ) -> dict[str, Any] | None:
+        """Dispatch to the configured transport with a single retry on reads.
+
+        Reads (``allow_retry=True``) retry once after the owner's reported
+        ``retry_after_ms`` when it answers UNAVAILABLE; writes return False
+        immediately so callers can mark transient write failures.
+        """
+
+        def dispatch() -> dict[str, Any] | None:
+            # The default HTTP transport owns the write-circuit lifecycle, so it
+            # needs the write collection; other transports do not.
+            if self._is_http_default:
+                return self._post(path, payload, write_collection=write_collection)
+            return self._transport(path, payload)
+
+        try:
+            return dispatch()
+        except VectorStoreRetryableError as exc:
+            delay_ms = _retry_after_ms(exc) if allow_retry else None
+            if delay_ms is None:
+                if write_collection is not None:
+                    self._record_write_circuit(
+                        write_collection, str(getattr(exc, "retry_after_ms", _DEFAULT_RETRY_AFTER_MS))
+                    )
+                return None
+            logger.warning(
+                "Vector request retryable: path=%s anima=%s retry_after_ms=%s error=%s",
+                path,
+                self._anima_name or "shared",
+                delay_ms,
+                exc,
+            )
+            if delay_ms:
+                time.sleep(delay_ms / 1000.0)
+            try:
+                return dispatch()
+            except VectorStoreRetryableError as retry_exc:
+                logger.warning(
+                    "Vector request failed after retry: path=%s anima=%s error=%s",
+                    path,
+                    self._anima_name or "shared",
+                    retry_exc,
+                )
+                return None
+            except Exception as retry_exc:
+                logger.warning(
+                    "Vector request failed after retry: path=%s anima=%s error=%s",
+                    path,
+                    self._anima_name or "shared",
+                    retry_exc,
+                )
+                return None
+        except Exception as exc:
+            logger.warning("Vector request failed: path=%s anima=%s error=%s", path, self._anima_name or "shared", exc)
+            return None
+
     def _post(
         self,
         path: str,
@@ -191,12 +315,21 @@ class HttpVectorStore(VectorStore):
         try:
             resp = self._get_client().post(path, json=payload)
             retry_after = resp.headers.get("Retry-After")
+            if resp.status_code == 503 and retry_after is not None:
+                # Owner (phase3 root) is unavailable; let the shared retry
+                # logic wait once before giving up.
+                raise VectorStoreRetryableError(
+                    f"owner unavailable ({resp.status_code})",
+                    retry_after_ms=_response_retry_after_ms(resp, retry_after),
+                )
             if write_collection and (resp.status_code in {429, 503} or (resp.status_code == 500 and retry_after)):
                 self._record_write_circuit(write_collection, retry_after)
             resp.raise_for_status()
             data = resp.json()
             self._clear_post_failures(path, write_collection or "")
             return data
+        except VectorStoreRetryableError:
+            raise
         except Exception as e:
             status: int | str = getattr(resp, "status_code", "exception") if resp is not None else "exception"
             self._log_post_failure(path, status, write_collection or "", retry_after, e)
@@ -205,7 +338,7 @@ class HttpVectorStore(VectorStore):
     def create_collection(self, name: str) -> bool:
         """Create a new collection."""
         return (
-            self._post(
+            self._request(
                 "/create-collection",
                 {"anima_name": self._anima_name, "collection": name},
                 write_collection=name,
@@ -215,7 +348,7 @@ class HttpVectorStore(VectorStore):
 
     def reset_store(self) -> bool:
         """Ask the worker to drop cached handles for this store's owner."""
-        data = self._post("/reset-store", {"anima_name": self._anima_name})
+        data = self._request("/reset-store", {"anima_name": self._anima_name})
         if data is None:
             return False
         self._write_circuit_retry_at.clear()
@@ -225,7 +358,7 @@ class HttpVectorStore(VectorStore):
 
     def verify_repair(self, repair_nonce: str, *, expected_chunks: int) -> bool:
         """Verify a swapped DB through the worker while its repair fence is active."""
-        data = self._post(
+        data = self._request(
             "/verify-repair",
             {
                 "anima_name": self._anima_name,
@@ -238,7 +371,7 @@ class HttpVectorStore(VectorStore):
     def delete_collection(self, name: str) -> bool:
         """Delete a collection."""
         return (
-            self._post(
+            self._request(
                 "/delete-collection",
                 {"anima_name": self._anima_name, "collection": name},
                 write_collection=name,
@@ -248,14 +381,22 @@ class HttpVectorStore(VectorStore):
 
     def list_collections(self) -> list[str]:
         """List all collection names."""
-        data = self._post("/list-collections", {"anima_name": self._anima_name})
+        data = self._request(
+            "/list-collections",
+            {"anima_name": self._anima_name},
+            allow_retry=True,
+        )
         if data and "collections" in data:
             return list(data["collections"])
         return []
 
     def list_collections_checked(self) -> list[str] | None:
         """List collections while preserving transport/service failures."""
-        data = self._post("/list-collections", {"anima_name": self._anima_name})
+        data = self._request(
+            "/list-collections",
+            {"anima_name": self._anima_name},
+            allow_retry=True,
+        )
         if data is None or "collections" not in data:
             return None
         collections = data["collections"]
@@ -283,7 +424,7 @@ class HttpVectorStore(VectorStore):
                     for d in batch
                 ],
             }
-            if self._post("/upsert", payload, write_collection=collection) is None:
+            if self._request("/upsert", payload, write_collection=collection) is None:
                 ok = False
         return ok
 
@@ -303,7 +444,7 @@ class HttpVectorStore(VectorStore):
         }
         if filter_metadata:
             payload["filter_metadata"] = filter_metadata
-        data = self._post("/query", payload)
+        data = self._request("/query", payload, allow_retry=True)
         if data and "results" in data:
             return _parse_search_results(data["results"])
         return []
@@ -313,7 +454,7 @@ class HttpVectorStore(VectorStore):
         if not ids:
             return True
         return (
-            self._post(
+            self._request(
                 "/delete-documents",
                 {"anima_name": self._anima_name, "collection": collection, "ids": ids},
                 write_collection=collection,
@@ -326,7 +467,7 @@ class HttpVectorStore(VectorStore):
         if not ids:
             return True
         return (
-            self._post(
+            self._request(
                 "/update-metadata",
                 {"anima_name": self._anima_name, "collection": collection, "ids": ids, "metadatas": metadatas},
                 write_collection=collection,
@@ -341,9 +482,10 @@ class HttpVectorStore(VectorStore):
         limit: int = 20,
     ) -> list[SearchResult]:
         """Retrieve documents by metadata filter without embedding search."""
-        data = self._post(
+        data = self._request(
             "/get-by-metadata",
             {"anima_name": self._anima_name, "collection": collection, "where": where, "limit": limit},
+            allow_retry=True,
         )
         if data and "results" in data:
             return _parse_search_results(data["results"])
@@ -353,7 +495,11 @@ class HttpVectorStore(VectorStore):
         """Fetch documents (with metadata) by their IDs."""
         if not ids:
             return []
-        data = self._post("/get-by-ids", {"anima_name": self._anima_name, "collection": collection, "ids": ids})
+        data = self._request(
+            "/get-by-ids",
+            {"anima_name": self._anima_name, "collection": collection, "ids": ids},
+            allow_retry=True,
+        )
         if data and "documents" in data:
             return _parse_documents(data["documents"])
         return []

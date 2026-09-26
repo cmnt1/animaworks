@@ -816,10 +816,9 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
 
 async def main() -> None:
     """Run the MCP stdio server."""
-    # The parent task runner owns its IPC connection and Python requester;
-    # neither survives exec into this MCP process. Keep the server URLs and
-    # route via the host proxy, which forwards phase3 requests to that owner.
-    os.environ.pop("ANIMAWORKS_MEMORY_VIA_ROOT", None)
+    # The parent task runner owns its IPC connection; this MCP process keeps
+    # the server URLs and routes via the host proxy, which forwards phase3
+    # requests to that owner.
     logger.info("AnimaWorks MCP server starting (name=aw)")
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
