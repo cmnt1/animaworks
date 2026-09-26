@@ -33,9 +33,9 @@ python scripts/scan_gated_tool_usage.py \
 3. Dry-run the allow migration:
 
 ```bash
-python scripts/migrate_pi_fix2_gated_allows.py
+python scripts/migrations/migrate_pi_fix2_gated_allows.py
 # or explicit data dir:
-python scripts/migrate_pi_fix2_gated_allows.py --data-dir ~/.animaworks
+python scripts/migrations/migrate_pi_fix2_gated_allows.py --data-dir ~/.animaworks
 ```
 
 Confirm the planned `WOULD ADD` lines match production needs.
@@ -43,7 +43,7 @@ Confirm the planned `WOULD ADD` lines match production needs.
 ## Apply (production)
 
 ```bash
-python scripts/migrate_pi_fix2_gated_allows.py --apply
+python scripts/migrations/migrate_pi_fix2_gated_allows.py --apply
 ```
 
 - Idempotent: re-running does not duplicate allows.
@@ -87,4 +87,4 @@ the code gate must stay.
 
 - Issue: pi-fix2 (prompt-injection audit follow-up)
 - Scan helper: `scripts/scan_gated_tool_usage.py`
-- Migration: `scripts/migrate_pi_fix2_gated_allows.py`
+- Migration: `scripts/migrations/migrate_pi_fix2_gated_allows.py`

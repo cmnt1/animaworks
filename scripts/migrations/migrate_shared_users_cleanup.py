@@ -9,8 +9,8 @@ from __future__ import annotations
 
 Usage (never run against production from automated tests)::
 
-    python scripts/migrate_shared_users_cleanup.py --dry-run
-    python scripts/migrate_shared_users_cleanup.py --extra-names oldbot,legacy
+    python scripts/migrations/migrate_shared_users_cleanup.py --dry-run
+    python scripts/migrations/migrate_shared_users_cleanup.py --extra-names oldbot,legacy
 
 Directories under shared/users/ whose names exactly match the anima roster
 (active + on-disk tombstones + --extra-names) are **moved** (not deleted) to

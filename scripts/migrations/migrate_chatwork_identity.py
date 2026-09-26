@@ -15,10 +15,10 @@ Site-specific copies, grants, and token-file registration are opt-in via CLI.
 
 Usage::
 
-    python scripts/migrate_chatwork_identity.py            # dry-run (default)
-    python scripts/migrate_chatwork_identity.py --apply
-    python scripts/migrate_chatwork_identity.py --apply --finalize
-    python scripts/migrate_chatwork_identity.py --apply \\
+    python scripts/migrations/migrate_chatwork_identity.py            # dry-run (default)
+    python scripts/migrations/migrate_chatwork_identity.py --apply
+    python scripts/migrations/migrate_chatwork_identity.py --apply --finalize
+    python scripts/migrations/migrate_chatwork_identity.py --apply \\
         --copy-key CHATWORK_API_TOKEN_WRITE=CHATWORK_API_TOKEN__alice \\
         --grant bob=owner:read \\
         --register-token-file bot=credentials/bot-token

@@ -1,18 +1,17 @@
-"""Unit tests for scripts/migrate_chatwork_identity.py (temp dirs only)."""
+"""Unit tests for scripts/migrations/migrate_chatwork_identity.py (temp dirs only)."""
 
 from __future__ import annotations
 
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-
 import hashlib
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from core.config.vault import VaultManager
-from scripts.migrate_chatwork_identity import (
+from scripts.migrations.migrate_chatwork_identity import (
     _DEFAULT_GRANTS,
     _VAULT_KEY_COPIES,
     main,
@@ -60,9 +59,7 @@ def test_default_dry_run_owner_copy_only_no_grants(tmp_path: Path) -> None:
     )
     assert rc == 0
 
-    assert _VAULT_KEY_COPIES == (
-        ("CHATWORK_API_TOKEN", "CHATWORK_API_TOKEN__owner"),
-    )
+    assert _VAULT_KEY_COPIES == (("CHATWORK_API_TOKEN", "CHATWORK_API_TOKEN__owner"),)
     assert _DEFAULT_GRANTS == {}
     assert vault.get("shared", "CHATWORK_API_TOKEN__owner") is None
     assert vault.get("shared", "CHATWORK_API_TOKEN__bot") is None
@@ -108,15 +105,10 @@ def test_apply_default_owner_copy_idempotent(tmp_path: Path) -> None:
     assert dest.is_file()
     assert dest.read_text(encoding="utf-8") == "legacy-db"
     assert not (cache_dir / "messages.db").exists()
-    identity_map = json.loads(
-        (cache_dir / "identity_map.json").read_text(encoding="utf-8")
-    )
+    identity_map = json.loads((cache_dir / "identity_map.json").read_text(encoding="utf-8"))
     assert identity_map[_fp("legacy-owner-token")] == "4242"
 
-    vault_snapshot = {
-        k: vault.get("shared", k)
-        for k in ("CHATWORK_API_TOKEN", "CHATWORK_API_TOKEN__owner")
-    }
+    vault_snapshot = {k: vault.get("shared", k) for k in ("CHATWORK_API_TOKEN", "CHATWORK_API_TOKEN__owner")}
     config_snapshot = config_path.read_text(encoding="utf-8")
     map_snapshot = (cache_dir / "identity_map.json").read_text(encoding="utf-8")
     db_snapshot = dest.read_text(encoding="utf-8")

@@ -17,14 +17,13 @@ Does **not** modify permissions.py semantics, EXECUTION_PROFILE, or templates.
 
 Usage::
 
-    python scripts/migrate_pi_fix2_gated_allows.py
-    python scripts/migrate_pi_fix2_gated_allows.py --apply
-    python scripts/migrate_pi_fix2_gated_allows.py --data-dir ~/.animaworks --apply
+    python scripts/migrations/migrate_pi_fix2_gated_allows.py
+    python scripts/migrations/migrate_pi_fix2_gated_allows.py --apply
+    python scripts/migrations/migrate_pi_fix2_gated_allows.py --data-dir ~/.animaworks --apply
 """
 
 import argparse
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
