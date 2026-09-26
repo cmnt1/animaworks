@@ -34,6 +34,9 @@ _MAX_TOOL_ENTRIES = 10
 _TOOL_INPUT_TRUNCATE = 500
 _TOOL_RESULT_TRUNCATE = 500
 _SCAN_DAYS = 2
+_TOOL_EVENT_TYPES = frozenset({"tool_use", "tool_result"})
+# Activity ``ctx`` labels a chat-session tool may carry ("" = mode without ctx).
+_CHAT_TOOL_CONTEXTS = frozenset({"chat", ""})
 
 # LRU limit for _timers (same as conversation_locks).
 _MAX_TIMERS = 20
@@ -242,6 +245,7 @@ def _extract_recent_chat_context(
     now = now_local()
 
     raw_entries: list[ActivityEntry] = []
+    in_turn = False
     for entry in iter_entries(
         anima_dir,
         days=_SCAN_DAYS,
@@ -256,11 +260,24 @@ def _extract_recent_chat_context(
             or (isinstance(trigger, str) and trigger.startswith("inbox:"))
         ):
             continue
+        if entry.type in _TOOL_EVENT_TYPES:
+            # Tool events carry no thread_id, so cron/heartbeat/task tools would
+            # otherwise land in the default chat handover. Keep only chat-context
+            # tools emitted while a human turn on this thread was open.
+            if not in_turn or entry.ctx not in _CHAT_TOOL_CONTEXTS:
+                continue
+            if meta.get("thread_id", thread_id) != thread_id:
+                continue
+            raw_entries.append(entry)
+            continue
         if meta.get("thread_id", "default") != thread_id:
             continue
         if entry.type == "message_received":
             if meta.get("from_type", "") != "human":
                 continue
+            in_turn = True
+        elif entry.type == "response_sent":
+            in_turn = False
         raw_entries.append(entry)
 
     if not raw_entries:

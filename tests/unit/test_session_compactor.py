@@ -796,6 +796,37 @@ class TestExtractRecentChatContext:
         assert result["trigger"] == "idle_compaction"
         assert "activity_log" in result["notes"]
 
+    def test_excludes_background_tools_from_chat_handover(self, anima_dir: Path) -> None:
+        """Cron/heartbeat tools (no thread_id) never masquerade as chat tools."""
+        entries = [
+            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "Fix calendar", "meta": {"from_type": "human", "thread_id": "default"}},
+            {"ts": "2026-04-13T10:00:05+09:00", "type": "tool_use", "tool": "ChatTool", "content": "cal", "ctx": "chat", "meta": {"args": {}, "tool_use_id": "c1"}},
+            {"ts": "2026-04-13T10:00:06+09:00", "type": "tool_use", "tool": "CronDuringTurn", "content": "cw", "ctx": "cron:Chatwork監視", "meta": {"args": {}, "tool_use_id": "x1"}},
+            {"ts": "2026-04-13T10:00:30+09:00", "type": "response_sent", "content": "Done", "ctx": "chat", "meta": {"thread_id": "default"}},
+            {"ts": "2026-04-13T10:05:00+09:00", "type": "tool_use", "tool": "CronAfterTurn", "content": "cw", "ctx": "cron:Chatwork監視", "meta": {"args": {}, "tool_use_id": "x2"}},
+            {"ts": "2026-04-13T10:06:00+09:00", "type": "tool_use", "tool": "HeartbeatTool", "content": "hb", "ctx": "heartbeat", "meta": {"args": {}, "tool_use_id": "x3"}},
+            {"ts": "2026-04-13T10:07:00+09:00", "type": "tool_use", "tool": "NoCtxOutsideTurn", "content": "n", "meta": {"args": {}, "tool_use_id": "x4"}},
+        ]
+        self._write_log(anima_dir, entries)
+
+        result = _extract_recent_chat_context(anima_dir)
+
+        names = [t["name"] for t in result["tool_uses"]]
+        assert names == ["ChatTool"]
+
+    def test_keeps_ctxless_tools_inside_turn(self, anima_dir: Path) -> None:
+        """Modes that log no ctx still hand over tools used during the turn."""
+        entries = [
+            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "Go", "meta": {"from_type": "human", "thread_id": "default"}},
+            {"ts": "2026-04-13T10:00:05+09:00", "type": "tool_use", "tool": "Bash", "content": "ls", "meta": {"args": {}, "tool_use_id": "t1"}},
+            {"ts": "2026-04-13T10:00:30+09:00", "type": "response_sent", "content": "Done", "meta": {"thread_id": "default"}},
+        ]
+        self._write_log(anima_dir, entries)
+
+        result = _extract_recent_chat_context(anima_dir)
+
+        assert [t["name"] for t in result["tool_uses"]] == ["Bash"]
+
     def test_filters_by_thread_id(self, anima_dir: Path) -> None:
         """Only entries matching the specified thread_id are included."""
         entries = [
