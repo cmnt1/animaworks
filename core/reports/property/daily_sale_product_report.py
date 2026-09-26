@@ -11,6 +11,7 @@ import py_compile
 import re
 import shutil
 import sys
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -144,8 +145,28 @@ def load_sale_history(before_date: str, root: Path | None = None) -> list[Observ
     return history
 
 
+def sale_identity(row: dict) -> tuple | None:
+    """Same property across a portal re-issuing its listing ID: title, price and yield.
+
+    The title is NFKC-normalized without spaces, the photo-count/price suffix
+    ("3枚 価格") and the "New" badge. Rows without a title never match.
+    """
+    title = "" if _is_missing(row.get("title")) else str(row.get("title"))
+    title = re.sub(r"\s+", "", unicodedata.normalize("NFKC", title)).replace("New", "")
+    title = re.sub(r"(\d+枚)?価格$", "", title)
+    if not title:
+        return None
+    price = None if _is_missing(row.get("price_jpy")) else row.get("price_jpy")
+    gross_yield = None if _is_missing(row.get("gross_yield_percent")) else row.get("gross_yield_percent")
+    return title, price, gross_yield
+
+
 def _listing_start(row: dict) -> str:
-    return escape_md_cell(row.get("listing_start"))
+    start = escape_md_cell(row.get("listing_start"))
+    old_urls = [key.split("||", 1)[0] for key in row.get("relisted_from") or []]
+    if not old_urls:
+        return start
+    return start + " ※ID変更（" + "、".join(f"[旧URL]({url})" for url in old_urls) + "）"
 
 
 _DAY_COLUMNS = {
@@ -203,8 +224,9 @@ def build_url_diff_report(
     }
     if not history:
         return {**base, "comparison_available": False, "message": "過去データなしのため比較不可"}
-    rows = classify_listings(history, today)
+    rows = classify_listings(history, today, identity=sale_identity)
     counts = {name.replace("_rows", "_count"): len(value) for name, value in rows.items()}
+    counts["relisted_count"] = sum(row["relisted_today"] for row in rows["continued_rows"])
     return {**base, "comparison_available": True, "previous_date": history[-1][0], **counts, **rows}
 
 
@@ -414,6 +436,11 @@ def render_product(
                 "- 前回から消えた物件: **" + str(comparison.get("deleted_count")) + "件**",
             ]
         )
+        if comparison.get("relisted_count"):
+            diff_section.append(
+                f"- うちID付け替え（同一媒体・同じタイトル/価格/利回りで再掲載）を継続と判定: "
+                f"**{comparison['relisted_count']}件**（掲載開始に「※ID変更」）"
+            )
         if unconfirmed:
             diff_section.append(
                 f"- 当日取得に失敗した媒体のため判定保留: **{len(unconfirmed)}件**（取り下げとはみなさない）"

@@ -151,3 +151,49 @@ def test_sale_diff_without_history_is_unavailable(tmp_path: Path) -> None:
     cur = _put_day(tmp_path, "20260924", [("楽待", "b")], ["楽待"])
     diff = _classify(tmp_path, "2026-09-24", cur, {"楽待"})
     assert diff["comparison_available"] is False and diff["current_count"] == 1
+
+
+def _put_rows(root: Path, ymd: str, rows: list[tuple[str, str, str, int, float]]) -> Path:
+    """rows: (portal, url_id, title, price_jpy, gross_yield_percent)."""
+    import json
+
+    day = root / ymd[:4] / ymd[4:6] / ymd[6:]
+    csv_path = day / f"P-{ymd[4:]}_{report.SLUG_PREFIX}-{ymd}.csv"
+    body = "".join(f"{p},{t},,,{price},{y},,https://example.test/{u}\n" for p, u, t, price, y in rows)
+    write_text(csv_path, CSV_HEAD + body)
+    portals = sorted({p for p, *_ in rows})
+    write_text(csv_path.with_suffix(".json"), json.dumps({"portal_runs": [{"portal_label": p, "fetched": True} for p in portals]}))
+    return csv_path
+
+
+def test_relisting_under_new_id_continues_the_same_listing(tmp_path: Path) -> None:
+    old = ("楽待", "a1", "①結論 利回り11.67％ 3枚 価格", 60000000, 11.67)
+    other = ("楽待", "b", "別物件", 30000000, 8.0)
+    _put_rows(tmp_path, "20260920", [old, other])
+    _put_rows(tmp_path, "20260921", [old, other])
+    cur = _put_rows(tmp_path, "20260922", [("楽待", "a2", "①結論 利回り11.67％ 5枚 価格 New", 60000000, 11.67), other])
+
+    diff = _classify(tmp_path, "2026-09-22", cur, {"楽待"})
+    assert diff["new_rows"] == [] and diff["deleted_rows"] == []
+    relisted = next(r for r in diff["continued_rows"] if r["url"].endswith("/a2"))
+    assert relisted["listing_start"] == "2026-09-20" and relisted["listing_day"] == 3
+    assert relisted["relisted_today"] is True and diff["relisted_count"] == 1
+    assert relisted["relisted_from"] == ["https://example.test/a1||1"]
+    md = report.diff_rows_to_markdown(diff["continued_rows"], days="listed")
+    assert "※ID変更（[旧URL](https://example.test/a1)）" in md
+
+
+def test_relisting_requires_same_price_and_recent_withdrawal(tmp_path: Path) -> None:
+    title = "①結論 利回り11.67％ 3枚 価格"
+    _put_rows(tmp_path, "20260901", [("楽待", "a1", title, 60000000, 11.67), ("楽待", "z", "他", 1, 1.0)])
+    _put_rows(tmp_path, "20260910", [("楽待", "z", "他", 1, 1.0)])  # a1 withdrawn 09-10
+    # 09-20: same title again, but last seen 09-01 is far beyond the gap -> a new listing
+    cur = _put_rows(tmp_path, "20260920", [("楽待", "a2", title, 60000000, 11.67), ("楽待", "z", "他", 1, 1.0)])
+    diff = _classify(tmp_path, "2026-09-20", cur, {"楽待"})
+    assert [r["url"] for r in diff["new_rows"]] == ["https://example.test/a2"]
+
+    _put_rows(tmp_path, "20260921", [("楽待", "a2", title, 60000000, 11.67), ("楽待", "z", "他", 1, 1.0)])
+    cur = _put_rows(tmp_path, "20260922", [("楽待", "a3", title, 55000000, 11.67), ("楽待", "z", "他", 1, 1.0)])
+    diff = _classify(tmp_path, "2026-09-22", cur, {"楽待"})  # price changed -> not the same listing
+    assert [r["url"] for r in diff["new_rows"]] == ["https://example.test/a3"]
+    assert [r["url"] for r in diff["deleted_rows"]] == ["https://example.test/a2"]

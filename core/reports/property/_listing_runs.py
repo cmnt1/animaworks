@@ -10,6 +10,7 @@ earlier: its day count is a floor ("以上").
 
 from __future__ import annotations
 
+from collections.abc import Callable, Hashable
 from datetime import datetime
 
 # The normal Sun/Mon no-capture gap for minimini is 3 days.
@@ -29,18 +30,42 @@ def days_cell(days: int | None, uncertain: bool, unit: str) -> str:
     return f"{days}{unit}以上" if uncertain else f"{days}{unit}"
 
 
-def track_listing_runs(observations: list[Observation]) -> tuple[dict[str, dict], dict[str, dict]]:
-    """Return (open runs, ended runs) keyed by listing key; each run keeps its latest row."""
+Identity = Callable[[dict], Hashable | None]
+
+
+def track_listing_runs(
+    observations: list[Observation], identity: Identity | None = None
+) -> tuple[dict[str, dict], dict[str, dict]]:
+    """Return (open runs, ended runs) keyed by listing key; each run keeps its latest row.
+
+    With `identity`, a new key whose row has the same identity as a run of the
+    same source last seen within MAX_OBSERVATION_GAP_DAYS continues that run
+    (a portal re-issuing a listing ID): the old run is not reported as ended,
+    and the new run records the old keys in `relisted_from` and `relisted_on`.
+    """
     runs: dict[str, dict] = {}
     ended: dict[str, dict] = {}
+    ended_by_identity: dict[tuple[str, Hashable], str] = {}
     last_observed: dict[str, str] = {}
     for date, items, observed in observations:
         observed = observed | {source for source, _ in items.values()}
         for key in [k for k, run in runs.items() if run["source"] in observed and k not in items]:
-            ended[key] = {**runs.pop(key), "ended_on": date}
+            run = ended[key] = {**runs.pop(key), "ended_on": date}
+            ident = identity(run["row"]) if identity else None
+            if ident is not None:
+                ended_by_identity[(run["source"], ident)] = key
         for key, (source, row) in items.items():
             if key in runs:
                 runs[key].update(last=date, row=row)
+                continue
+            ident = identity(row) if identity else None
+            old_key = ended_by_identity.pop((source, ident), None) if ident is not None else None
+            old = ended.get(old_key) if old_key else None
+            if old and days_between(old["last"], date) <= MAX_OBSERVATION_GAP_DAYS:
+                del ended[old_key]
+                runs[key] = {**old, "last": date, "row": row, "relisted_on": date,
+                             "relisted_from": [*old.get("relisted_from", []), old_key]}
+                runs[key].pop("ended_on")
                 continue
             prev = last_observed.get(source)
             runs[key] = {
@@ -55,19 +80,21 @@ def track_listing_runs(observations: list[Observation]) -> tuple[dict[str, dict]
     return runs, ended
 
 
-def classify_listings(history: list[Observation], today: Observation) -> dict:
+def classify_listings(history: list[Observation], today: Observation, identity: Identity | None = None) -> dict:
     """Split today's listings into new / continued / unconfirmed / deleted rows with day counts.
 
-    - new / continued: listed today (continued = run started before today)
+    - new / continued: listed today (continued = run started before today,
+      including a listing re-issued under a new ID; see track_listing_runs)
     - unconfirmed: open run whose source was not observed today
     - deleted: run whose end was detected today (listing_days = first to last seen)
     """
     date, items, _ = today
-    runs, ended = track_listing_runs([*history, today])
+    runs, ended = track_listing_runs([*history, today], identity)
 
     def listed(run: dict) -> dict:
         return {**run["row"], "listing_start": run["start"], "start_uncertain": run["start_uncertain"],
-                "listing_day": days_between(run["start"], date) + 1}
+                "listing_day": days_between(run["start"], date) + 1,
+                "relisted_from": run.get("relisted_from", []), "relisted_today": run.get("relisted_on") == date}
 
     def withdrawn(run: dict) -> dict:
         return {**run["row"], "listing_start": run["start"], "start_uncertain": run["start_uncertain"],
