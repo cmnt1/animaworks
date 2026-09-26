@@ -7,6 +7,7 @@ Covers:
 - TelegramChannel truncate-before-escape
 - All channels: vault/shared credential resolution via _resolve_credential_with_vault
 """
+
 from __future__ import annotations
 
 import logging
@@ -49,8 +50,10 @@ class TestResolveCredentialWithVault:
         monkeypatch.delenv("MY_TOKEN", raising=False)
         ch = _DummyChannel({"token_env": "MY_TOKEN"})
 
-        with patch("core.tools._base._lookup_vault_credential") as mock_vault, \
-             patch("core.tools._base._lookup_shared_credentials", return_value=None):
+        with (
+            patch("core.integrations._base._lookup_vault_credential") as mock_vault,
+            patch("core.integrations._base._lookup_shared_credentials", return_value=None),
+        ):
             mock_vault.side_effect = lambda k: "vault-val" if k == "MY_TOKEN__alice" else None
             result = ch._resolve_credential_with_vault("token_env", anima_name="alice")
         assert result == "vault-val"
@@ -59,8 +62,10 @@ class TestResolveCredentialWithVault:
         monkeypatch.delenv("MY_TOKEN", raising=False)
         ch = _DummyChannel({"token_env": "MY_TOKEN"})
 
-        with patch("core.tools._base._lookup_vault_credential") as mock_vault, \
-             patch("core.tools._base._lookup_shared_credentials", return_value=None):
+        with (
+            patch("core.integrations._base._lookup_vault_credential") as mock_vault,
+            patch("core.integrations._base._lookup_shared_credentials", return_value=None),
+        ):
             mock_vault.side_effect = lambda k: "generic-vault" if k == "MY_TOKEN" else None
             result = ch._resolve_credential_with_vault("token_env", anima_name="alice")
         assert result == "generic-vault"
@@ -69,8 +74,10 @@ class TestResolveCredentialWithVault:
         monkeypatch.delenv("MY_TOKEN", raising=False)
         ch = _DummyChannel({"token_env": "MY_TOKEN"})
 
-        with patch("core.tools._base._lookup_vault_credential", return_value=None), \
-             patch("core.tools._base._lookup_shared_credentials") as mock_shared:
+        with (
+            patch("core.integrations._base._lookup_vault_credential", return_value=None),
+            patch("core.integrations._base._lookup_shared_credentials") as mock_shared,
+        ):
             mock_shared.side_effect = lambda k: "shared-val" if k == "MY_TOKEN__alice" else None
             result = ch._resolve_credential_with_vault("token_env", anima_name="alice")
         assert result == "shared-val"
@@ -79,8 +86,10 @@ class TestResolveCredentialWithVault:
         monkeypatch.delenv("MY_TOKEN", raising=False)
         ch = _DummyChannel({"token_env": "MY_TOKEN"})
 
-        with patch("core.tools._base._lookup_vault_credential", return_value=None), \
-             patch("core.tools._base._lookup_shared_credentials", return_value=None):
+        with (
+            patch("core.integrations._base._lookup_vault_credential", return_value=None),
+            patch("core.integrations._base._lookup_shared_credentials", return_value=None),
+        ):
             result = ch._resolve_credential_with_vault("token_env", anima_name="alice")
         assert result == ""
 
@@ -88,11 +97,14 @@ class TestResolveCredentialWithVault:
         monkeypatch.delenv("FALLBACK", raising=False)
         ch = _DummyChannel({})
 
-        with patch("core.tools._base._lookup_vault_credential") as mock_vault, \
-             patch("core.tools._base._lookup_shared_credentials", return_value=None):
+        with (
+            patch("core.integrations._base._lookup_vault_credential") as mock_vault,
+            patch("core.integrations._base._lookup_shared_credentials", return_value=None),
+        ):
             mock_vault.side_effect = lambda k: "fb-vault" if k == "FALLBACK" else None
             result = ch._resolve_credential_with_vault(
-                "nonexistent_key", fallback_env="FALLBACK",
+                "nonexistent_key",
+                fallback_env="FALLBACK",
             )
         assert result == "fb-vault"
 
@@ -100,8 +112,10 @@ class TestResolveCredentialWithVault:
         monkeypatch.delenv("MY_TOKEN", raising=False)
         ch = _DummyChannel({"token_env": "MY_TOKEN"})
 
-        with patch("core.tools._base._lookup_vault_credential") as mock_vault, \
-             patch("core.tools._base._lookup_shared_credentials", return_value=None):
+        with (
+            patch("core.integrations._base._lookup_vault_credential") as mock_vault,
+            patch("core.integrations._base._lookup_shared_credentials", return_value=None),
+        ):
             mock_vault.side_effect = lambda k: "generic" if k == "MY_TOKEN" else None
             result = ch._resolve_credential_with_vault("token_env", anima_name="")
         assert result == "generic"
@@ -303,42 +317,46 @@ class TestTelegramTruncateBeforeEscape:
 
 class TestCallHumanGetBotToken:
     def test_direct_token_returned(self):
-        from core.tools.call_human import _get_bot_token
+        from core.integrations.call_human import _get_bot_token
 
         assert _get_bot_token({"bot_token": "xoxb-direct"}) == "xoxb-direct"
 
     def test_env_var_returned(self, monkeypatch):
-        from core.tools.call_human import _get_bot_token
+        from core.integrations.call_human import _get_bot_token
 
         monkeypatch.setenv("MY_SLACK_TOKEN", "xoxb-env")
         assert _get_bot_token({"bot_token_env": "MY_SLACK_TOKEN"}) == "xoxb-env"
 
     def test_vault_per_anima_returned(self, monkeypatch, tmp_path):
-        from core.tools.call_human import _get_bot_token
+        from core.integrations.call_human import _get_bot_token
 
         anima_dir = tmp_path / "animas" / "alice"
         anima_dir.mkdir(parents=True)
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
         monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
 
-        with patch("core.tools._base._lookup_vault_credential") as mock_vault, \
-             patch("core.tools._base._lookup_shared_credentials", return_value=None), \
-             patch("core.tools._base.get_credential", side_effect=Exception("no cred")):
+        with (
+            patch("core.integrations._base._lookup_vault_credential") as mock_vault,
+            patch("core.integrations._base._lookup_shared_credentials", return_value=None),
+            patch("core.integrations._base.get_credential", side_effect=Exception("no cred")),
+        ):
             mock_vault.side_effect = lambda k: "xoxb-vault" if k == "SLACK_BOT_TOKEN__alice" else None
             result = _get_bot_token({})
 
         assert result == "xoxb-vault"
 
     def test_vault_not_found_falls_back_to_get_credential(self, monkeypatch, tmp_path):
-        from core.tools.call_human import _get_bot_token
+        from core.integrations.call_human import _get_bot_token
 
         anima_dir = tmp_path / "animas" / "bob"
         anima_dir.mkdir(parents=True)
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
-        with patch("core.tools._base._lookup_vault_credential", return_value=None), \
-             patch("core.tools._base._lookup_shared_credentials", return_value=None), \
-             patch("core.tools._base.get_credential", return_value="xoxb-cred"):
+        with (
+            patch("core.integrations._base._lookup_vault_credential", return_value=None),
+            patch("core.integrations._base._lookup_shared_credentials", return_value=None),
+            patch("core.integrations._base.get_credential", return_value="xoxb-cred"),
+        ):
             result = _get_bot_token({})
 
         assert result == "xoxb-cred"
@@ -355,13 +373,17 @@ class TestChannelVaultIntegration:
         monkeypatch.delenv("LINE_TOKEN", raising=False)
         from core.notification.channels.line import LineChannel
 
-        ch = LineChannel({
-            "channel_access_token_env": "LINE_TOKEN",
-            "user_id": "U123",
-        })
+        ch = LineChannel(
+            {
+                "channel_access_token_env": "LINE_TOKEN",
+                "user_id": "U123",
+            }
+        )
 
-        with patch.object(ch, "_resolve_credential_with_vault", return_value="vault-token") as mock_rcv, \
-             patch("core.notification.channels.line.httpx.AsyncClient") as mock_cls:
+        with (
+            patch.object(ch, "_resolve_credential_with_vault", return_value="vault-token") as mock_rcv,
+            patch("core.notification.channels.line.httpx.AsyncClient") as mock_cls,
+        ):
             mock_client = AsyncMock()
             mock_resp = MagicMock()
             mock_resp.raise_for_status = MagicMock()
@@ -384,13 +406,17 @@ class TestChannelVaultIntegration:
         monkeypatch.delenv("TG_TOKEN", raising=False)
         from core.notification.channels.telegram import TelegramChannel
 
-        ch = TelegramChannel({
-            "bot_token_env": "TG_TOKEN",
-            "chat_id": "123",
-        })
+        ch = TelegramChannel(
+            {
+                "bot_token_env": "TG_TOKEN",
+                "chat_id": "123",
+            }
+        )
 
-        with patch.object(ch, "_resolve_credential_with_vault", return_value="vault-token") as mock_rcv, \
-             patch("core.notification.channels.telegram.httpx.AsyncClient") as mock_cls:
+        with (
+            patch.object(ch, "_resolve_credential_with_vault", return_value="vault-token") as mock_rcv,
+            patch("core.notification.channels.telegram.httpx.AsyncClient") as mock_cls,
+        ):
             mock_client = AsyncMock()
             mock_resp = MagicMock()
             mock_resp.raise_for_status = MagicMock()
@@ -403,7 +429,9 @@ class TestChannelVaultIntegration:
 
         assert result == "telegram: OK"
         mock_rcv.assert_called_once_with(
-            "bot_token_env", anima_name="bob", fallback_env="TELEGRAM_BOT_TOKEN",
+            "bot_token_env",
+            anima_name="bob",
+            fallback_env="TELEGRAM_BOT_TOKEN",
         )
 
     @pytest.mark.asyncio
@@ -411,13 +439,17 @@ class TestChannelVaultIntegration:
         monkeypatch.delenv("CW_TOKEN", raising=False)
         from core.notification.channels.chatwork import ChatworkChannel
 
-        ch = ChatworkChannel({
-            "api_token_env": "CW_TOKEN",
-            "room_id": "999",
-        })
+        ch = ChatworkChannel(
+            {
+                "api_token_env": "CW_TOKEN",
+                "room_id": "999",
+            }
+        )
 
-        with patch.object(ch, "_resolve_credential_with_vault", return_value="vault-token") as mock_rcv, \
-             patch("core.notification.channels.chatwork.httpx.AsyncClient") as mock_cls:
+        with (
+            patch.object(ch, "_resolve_credential_with_vault", return_value="vault-token") as mock_rcv,
+            patch("core.notification.channels.chatwork.httpx.AsyncClient") as mock_cls,
+        ):
             mock_client = AsyncMock()
             mock_resp = MagicMock()
             mock_resp.raise_for_status = MagicMock()
@@ -430,7 +462,9 @@ class TestChannelVaultIntegration:
 
         assert result == "chatwork: OK"
         mock_rcv.assert_called_once_with(
-            "api_token_env", anima_name="charlie", fallback_env="CHATWORK_API_TOKEN__kotoha",
+            "api_token_env",
+            anima_name="charlie",
+            fallback_env="CHATWORK_API_TOKEN__kotoha",
         )
 
     @pytest.mark.asyncio
@@ -438,14 +472,18 @@ class TestChannelVaultIntegration:
         monkeypatch.delenv("NTFY_TOKEN", raising=False)
         from core.notification.channels.ntfy import NtfyChannel
 
-        ch = NtfyChannel({
-            "server_url": "https://ntfy.sh",
-            "topic": "test",
-            "token_env": "NTFY_TOKEN",
-        })
+        ch = NtfyChannel(
+            {
+                "server_url": "https://ntfy.sh",
+                "topic": "test",
+                "token_env": "NTFY_TOKEN",
+            }
+        )
 
-        with patch.object(ch, "_resolve_credential_with_vault", return_value="vault-token") as mock_rcv, \
-             patch("core.notification.channels.ntfy.httpx.AsyncClient") as mock_cls:
+        with (
+            patch.object(ch, "_resolve_credential_with_vault", return_value="vault-token") as mock_rcv,
+            patch("core.notification.channels.ntfy.httpx.AsyncClient") as mock_cls,
+        ):
             mock_client = AsyncMock()
             mock_resp = MagicMock()
             mock_resp.raise_for_status = MagicMock()
@@ -458,5 +496,7 @@ class TestChannelVaultIntegration:
 
         assert result == "ntfy: OK"
         mock_rcv.assert_called_once_with(
-            "token_env", anima_name="dave", fallback_env="NTFY_TOKEN",
+            "token_env",
+            anima_name="dave",
+            fallback_env="NTFY_TOKEN",
         )

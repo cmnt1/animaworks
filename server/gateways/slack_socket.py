@@ -21,6 +21,7 @@ from typing import Any
 
 from core.config.models import load_config
 from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
+from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential, get_credential
 from core.messenger import Messenger
 from core.notification.slack_names import (
     cache_user_name,
@@ -29,7 +30,6 @@ from core.notification.slack_names import (
     user_name_snapshot,
 )
 from core.paths import get_data_dir
-from core.tools._base import _lookup_shared_credentials, _lookup_vault_credential, get_credential
 from server.gateways.slack_interactive import register_interactive_handlers
 
 try:
@@ -167,7 +167,7 @@ def _detect_external_addressees(
             names.append(cached)
         elif token:
             try:
-                from core.tools.slack import SlackClient
+                from core.integrations.slack import SlackClient
 
                 client = SlackClient(token=token)
                 display = client.resolve_user_name(uid)
@@ -316,8 +316,8 @@ def _fetch_thread_context(token: str, channel_id: str, thread_ts: str, *, limit:
     if not thread_ts or not token:
         return ""
     try:
-        from core.tools._slack_markdown import clean_slack_markup
-        from core.tools.slack import SlackClient
+        from core.integrations._slack_markdown import clean_slack_markup
+        from core.integrations.slack import SlackClient
 
         client = SlackClient(token=token)
         replies = client.thread_replies(channel_id, thread_ts)

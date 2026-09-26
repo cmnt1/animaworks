@@ -2,7 +2,7 @@
 name: tool-creator
 description: >-
   Meta-skill for building AnimaWorks Python external tools: ExternalToolDispatcher, get_credential, and permissions.
-  Use when: adding a module under core/tools, wrapping a Web API, or exposing commands via animaworks-tool.
+  Use when: adding a module under core/integrations, wrapping a Web API, or exposing commands via animaworks-tool.
 ---
 
 # tool-creator
@@ -13,7 +13,7 @@ AnimaWorks tools are categorized into three types:
 
 | Type | Location | Discovery |
 |------|----------|-----------|
-| **Core tools** | `core/tools/*.py` | `discover_core_tools()` → TOOL_MODULES (fixed at startup) |
+| **Core tools** | `core/integrations/*.py` | `discover_core_tools()` → TOOL_MODULES (fixed at startup) |
 | **Shared tools** | `{data_dir}/common_tools/*.py` | discover_common_tools() |
 | **Personal tools** | `{anima_dir}/tools/*.py` | discover_personal_tools() |
 
@@ -133,7 +133,7 @@ class MyAPIClient:
     """API client."""
 
     def __init__(self) -> None:
-        from core.tools._base import get_credential
+        from core.integrations._base import get_credential
         self._api_key = get_credential(
             "myapi", "myapi_tool", env_var="MYAPI_KEY",
         )
@@ -245,7 +245,7 @@ Both `input_schema` and `parameters` are supported and normalized (`core/tooling
 Obtain API keys etc. via `get_credential()`. Never hardcode.
 
 ```python
-from core.tools._base import get_credential
+from core.integrations._base import get_credential
 
 api_key = get_credential(
     credential_name="myapi",   # Key in config.json credentials
@@ -296,7 +296,7 @@ Add the following to permissions.json for tool creation and sharing:
 
 ## Mode S (MCP) exposure for core tools
 
-When adding a module under `core/tools/`, only names listed in `core/mcp/server.py` `_EXPOSED_TOOL_NAMES` are exposed to Claude Code via MCP (curated subset). As of 2026-03, that set includes: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `send_message`, `post_channel`, `call_human`, `delegate_task`, `submit_tasks`, `update_task`, `create_skill`. External-service core tools such as Slack, Gmail, and `web_search` are **not** on the MCP list; they are reached via `use_tool`, Bash (`animaworks-tool`), or skills.
+When adding a module under `core/integrations/`, only names listed in `core/mcp/server.py` `_EXPOSED_TOOL_NAMES` are exposed to Claude Code via MCP (curated subset). As of 2026-03, that set includes: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `send_message`, `post_channel`, `call_human`, `delegate_task`, `submit_tasks`, `update_task`, `create_skill`. External-service core tools such as Slack, Gmail, and `web_search` are **not** on the MCP list; they are reached via `use_tool`, Bash (`animaworks-tool`), or skills.
 
 ## Notes
 
@@ -306,4 +306,4 @@ When adding a module under `core/tools/`, only names listed in `core/mcp/server.
 - Created tools are discovered immediately on `refresh_tools` call (hot reload)
 - Personal tools do not need to be in permissions.json external_tools; once discovered, they are available via **Bash** with `animaworks-tool <tool> <subcommand>`
 - Schema names use `{tool_name}_{action}` format; keep them unique across tools
-- Personal or shared tools with the same name as core tools are shadowed and skipped (`core/tools/__init__.py`)
+- Personal or shared tools with the same name as core tools are shadowed and skipped (`core/integrations/__init__.py`)

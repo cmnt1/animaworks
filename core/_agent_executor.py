@@ -40,7 +40,7 @@ class ExecutorFactoryMixin:
     def _discover_personal_tools(self) -> dict[str, str]:
         """Discover common and personal tool modules."""
         try:
-            from core.tools import discover_common_tools, discover_personal_tools
+            from core.integrations import discover_common_tools, discover_personal_tools
 
             common = discover_common_tools()
             personal = discover_personal_tools(self.anima_dir)

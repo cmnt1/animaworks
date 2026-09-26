@@ -309,8 +309,8 @@ def create_config_router() -> APIRouter:
     async def get_available_tools(request: Request):
         """Return available external tool module names (minus disabled services)."""
         try:
+            from core.integrations import TOOL_MODULES
             from core.tooling.permissions import _disabled_service_tools
-            from core.tools import TOOL_MODULES
 
             tools = sorted(set(TOOL_MODULES.keys()) - _disabled_service_tools())
         except Exception:
@@ -489,8 +489,8 @@ def create_config_router() -> APIRouter:
             return {"channels": [], "error": "guild_id not configured"}
 
         try:
-            from core.tools._base import get_credential
-            from core.tools._discord_client import DiscordClient
+            from core.integrations._base import get_credential
+            from core.integrations._discord_client import DiscordClient
 
             token = get_credential("discord", "discord", env_var="DISCORD_BOT_TOKEN")
             client = DiscordClient(token=token)

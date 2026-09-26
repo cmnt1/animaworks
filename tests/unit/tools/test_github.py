@@ -1,4 +1,4 @@
-"""Tests for core/tools/github.py — GitHub integration via gh CLI."""
+"""Tests for core/integrations/github.py — GitHub integration via gh CLI."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,8 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.tools.github import GitHubClient, get_tool_schemas
-
+from core.integrations.github import GitHubClient, get_tool_schemas
 
 # ── GitHubClient ──────────────────────────────────────────────────
 
@@ -23,8 +22,10 @@ class TestGitHubClient:
         """Mock gh auth status so GitHubClient.__init__ succeeds."""
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
-                args=["gh", "auth", "status"], returncode=0,
-                stdout="", stderr="",
+                args=["gh", "auth", "status"],
+                returncode=0,
+                stdout="",
+                stderr="",
             )
             yield mock_run
 
@@ -53,8 +54,10 @@ class TestGitHubClientRun:
         with patch("subprocess.run") as mock_run:
             # First call = auth check
             auth_result = subprocess.CompletedProcess(
-                args=["gh", "auth", "status"], returncode=0,
-                stdout="", stderr="",
+                args=["gh", "auth", "status"],
+                returncode=0,
+                stdout="",
+                stderr="",
             )
             mock_run.return_value = auth_result
             self._mock_run = mock_run
@@ -68,7 +71,7 @@ class TestGitHubClientRun:
         self._mock_run.side_effect = results
 
     def test_run_appends_repo_flag(self):
-        self._set_run_output('[]')
+        self._set_run_output("[]")
         client = GitHubClient(repo="owner/repo")
         client._run(["issue", "list"])
         call_args = self._mock_run.call_args_list[-1]
@@ -77,7 +80,7 @@ class TestGitHubClientRun:
         assert "owner/repo" in cmd
 
     def test_run_no_repo_flag(self):
-        self._set_run_output('[]')
+        self._set_run_output("[]")
         client = GitHubClient()
         client._run(["issue", "list"])
         call_args = self._mock_run.call_args_list[-1]
@@ -158,8 +161,10 @@ class TestCreateIssue:
         results = [
             subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
             subprocess.CompletedProcess(
-                args=[], returncode=0,
-                stdout="https://github.com/owner/repo/issues/99", stderr="",
+                args=[],
+                returncode=0,
+                stdout="https://github.com/owner/repo/issues/99",
+                stderr="",
             ),
         ]
         self._mock_run.side_effect = results
@@ -203,14 +208,18 @@ class TestCreatePr:
         results = [
             subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
             subprocess.CompletedProcess(
-                args=[], returncode=0,
-                stdout="https://github.com/owner/repo/pull/50", stderr="",
+                args=[],
+                returncode=0,
+                stdout="https://github.com/owner/repo/pull/50",
+                stderr="",
             ),
         ]
         self._mock_run.side_effect = results
         client = GitHubClient()
         result = client.create_pr(
-            title="New PR", body="PR body", head="feature-branch",
+            title="New PR",
+            body="PR body",
+            head="feature-branch",
         )
         assert result["number"] == 50
 
@@ -218,8 +227,10 @@ class TestCreatePr:
         results = [
             subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
             subprocess.CompletedProcess(
-                args=[], returncode=0,
-                stdout="https://github.com/owner/repo/pull/51", stderr="",
+                args=[],
+                returncode=0,
+                stdout="https://github.com/owner/repo/pull/51",
+                stderr="",
             ),
         ]
         self._mock_run.side_effect = results

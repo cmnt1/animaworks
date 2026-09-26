@@ -16,5 +16,5 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _disable_codex_image_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("core.tools.image_gen.codex_available", lambda: False)
-    monkeypatch.setattr("core.tools.image.codex.codex_available", lambda: False)
+    monkeypatch.setattr("core.integrations.image_gen.codex_available", lambda: False)
+    monkeypatch.setattr("core.integrations.image.codex.codex_available", lambda: False)

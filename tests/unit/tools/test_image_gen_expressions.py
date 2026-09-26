@@ -1,4 +1,4 @@
-"""Unit tests for expression generation in core/tools/image_gen.py."""
+"""Unit tests for expression generation in core/integrations/image_gen.py."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -7,8 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
-from core.tools.image_gen import (
+from core.integrations.image_gen import (
     _EXPRESSION_PROMPTS,
     _VALID_EXPRESSION_NAMES,
     PipelineResult,
@@ -19,12 +18,11 @@ class TestExpressionPrompts:
     """Tests for expression prompt definitions."""
 
     def test_all_expressions_have_prompts(self):
-        expected = {"neutral", "smile", "laugh", "troubled",
-                    "surprised", "thinking", "embarrassed"}
+        expected = {"neutral", "smile", "laugh", "troubled", "surprised", "thinking", "embarrassed"}
         assert set(_EXPRESSION_PROMPTS.keys()) == expected
 
     def test_valid_names_match_prompts(self):
-        assert _VALID_EXPRESSION_NAMES == frozenset(_EXPRESSION_PROMPTS.keys())
+        assert frozenset(_EXPRESSION_PROMPTS.keys()) == _VALID_EXPRESSION_NAMES
 
     def test_prompts_are_non_empty_strings(self):
         for name, prompt in _EXPRESSION_PROMPTS.items():
@@ -34,15 +32,11 @@ class TestExpressionPrompts:
     def test_prompts_contain_character_reference(self):
         """All prompts should reference 'same character' for consistency."""
         for name, prompt in _EXPRESSION_PROMPTS.items():
-            assert "same character" in prompt.lower(), (
-                f"{name} prompt missing character reference"
-            )
+            assert "same character" in prompt.lower(), f"{name} prompt missing character reference"
 
     def test_prompts_specify_anime_style(self):
         for name, prompt in _EXPRESSION_PROMPTS.items():
-            assert "anime" in prompt.lower(), (
-                f"{name} prompt missing anime style"
-            )
+            assert "anime" in prompt.lower(), f"{name} prompt missing anime style"
 
 
 class TestPipelineResultExpressions:

@@ -880,7 +880,7 @@ class VoiceSession:
         # LocalAgreement-committed transcript is used as-is, per plan PR-1).
         if not streaming_used and getattr(self._voice_config, "stt_refine_enabled", False):
             try:
-                from core.tools.transcribe import refine_with_llm
+                from core.integrations.transcribe import refine_with_llm
 
                 loop = asyncio.get_running_loop()
                 refined = await loop.run_in_executor(

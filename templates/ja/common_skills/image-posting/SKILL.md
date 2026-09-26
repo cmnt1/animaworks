@@ -30,9 +30,9 @@ description: >-
 
 ### image_gen ツールの実装とパイプライン
 
-- **エントリ**: `core/tools/image_gen.py` の `dispatch()` が `generate_character_assets` ほか各ツール名を処理する。GLB 周りのテスト用可変属性（`_FBX2GLTF_PATH` 等）は `_image_glb` へプロキシされるファサードでもある。
-- **一括生成の本体**: `core/tools/_image_pipeline.py` の `ImageGenPipeline.generate_all()` が7ステップをオーケストする。
-- **APIクライアント・定数・プロンプト**: `core/tools/image/`（例: `novelai.py`, `fal.py`, `meshy.py`, `constants.py` の `NOVELAI_MODEL` / `_DEFAULT_ANIMATIONS`, `prompts.py` の表情用プロンプト）。
+- **エントリ**: `core/integrations/image_gen.py` の `dispatch()` が `generate_character_assets` ほか各ツール名を処理する。GLB 周りのテスト用可変属性（`_FBX2GLTF_PATH` 等）は `_image_glb` へプロキシされるファサードでもある。
+- **一括生成の本体**: `core/integrations/_image_pipeline.py` の `ImageGenPipeline.generate_all()` が7ステップをオーケストする。
+- **APIクライアント・定数・プロンプト**: `core/integrations/image/`（例: `novelai.py`, `fal.py`, `meshy.py`, `constants.py` の `NOVELAI_MODEL` / `_DEFAULT_ANIMATIONS`, `prompts.py` の表情用プロンプト）。
 
 **7ステップの内容**（アニメ系で `steps` 未指定のフルパイプライン時）:
 

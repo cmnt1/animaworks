@@ -23,7 +23,7 @@ class TestFetchThreadContext:
 
         assert _fetch_thread_context("", "C123", "1234.5678") == ""
 
-    @patch("core.tools.slack.SlackClient", autospec=True)
+    @patch("core.integrations.slack.SlackClient", autospec=True)
     def test_returns_empty_when_single_reply(self, mock_cls):
         """Single message (root only, no replies) should return empty."""
         from server.gateways.slack_socket import _fetch_thread_context
@@ -35,7 +35,7 @@ class TestFetchThreadContext:
         result = _fetch_thread_context("xoxb-token", "C123", "1000.0")
         assert result == ""
 
-    @patch("core.tools.slack.SlackClient", autospec=True)
+    @patch("core.integrations.slack.SlackClient", autospec=True)
     def test_formats_thread_context(self, mock_cls):
         """Normal thread with root + 2 replies: parent summary + reply count."""
         from core.notification.slack_names import user_name_cache
@@ -56,7 +56,7 @@ class TestFetchThreadContext:
         assert "(2 replies in thread)" in result
         assert "[/Thread context]" in result
 
-    @patch("core.tools.slack.SlackClient", autospec=True)
+    @patch("core.integrations.slack.SlackClient", autospec=True)
     def test_summary_includes_parent_and_reply_count(self, mock_cls):
         """Concise summary: parent message (truncated) + reply count only."""
         from core.notification.slack_names import user_name_cache
@@ -73,7 +73,7 @@ class TestFetchThreadContext:
         assert "@User0: msg 0" in result
         assert "(14 replies in thread)" in result
 
-    @patch("core.tools.slack.SlackClient", autospec=True)
+    @patch("core.integrations.slack.SlackClient", autospec=True)
     def test_api_failure_returns_empty(self, mock_cls):
         """API errors are caught and return empty string."""
         from server.gateways.slack_socket import _fetch_thread_context

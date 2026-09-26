@@ -38,7 +38,7 @@ def collect_github() -> list[ExternalTask]:
 def _ensure_gh() -> None:
     """Verify ``gh`` is installed and authenticated.
 
-    Mirrors :meth:`core.tools.github.GitHubClient._check_gh` but raises
+    Mirrors :meth:`core.integrations.github.GitHubClient._check_gh` but raises
     :class:`CredentialNotFoundError` so the collector can mark the source
     unavailable without treating missing tooling as a hard failure.
     """

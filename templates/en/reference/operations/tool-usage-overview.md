@@ -9,7 +9,7 @@ description: "Tool system overview and usage guide"
 Tools are organized in three layers:
 
 1. **Framework built-in tools** — Dispatched by name in `ToolHandler` (memory, messaging, tasks, file operations, etc.). The canonical source is `_dispatch` in `core/tooling/handler.py`.
-2. **External tool modules** — Public modules under `core/tools/` (files starting with `_*` are excluded). They expose `get_tool_schemas()` / `dispatch()` / `cli_main()` and can be invoked via `animaworks-tool <module_name> …`. At runtime, `~/.animaworks/common_tools/` and each Anima’s `tools/*.py` (personal) are also loaded (`discover_*` in `core/tools/__init__.py`).
+2. **External tool modules** — Public modules under `core/integrations/` (files starting with `_*` are excluded). They expose `get_tool_schemas()` / `dispatch()` / `cli_main()` and can be invoked via `animaworks-tool <module_name> …`. At runtime, `~/.animaworks/common_tools/` and each Anima’s `tools/*.py` (personal) are also loaded (`discover_*` in `core/integrations/__init__.py`).
 3. **`animaworks-tool` CLI** — Runs subcommands of the above modules, `submit` for long-running work, and fallback forwarding to some main CLI commands.
 
 **The set of tools exposed to the LLM depends on execution mode.** The same handler implementation may be wrapped with different schema bundles.
@@ -153,9 +153,9 @@ Action names are `call_human`, `send_message`, `post_channel`, `write_memory_fil
 | **check_background_task** / **list_background_tasks** | Inspect background tool runs |
 | **use_tool** | Unified dispatch by external tool name + action (only when the schema configuration enables it) |
 
-## External modules under `core/tools/` (for CLI / dispatch)
+## External modules under `core/integrations/` (for CLI / dispatch)
 
-`discover_core_tools()` in `core/tools/__init__.py` scans `core/tools/*.py` and registers each file whose name does not start with `_` as a module name (for additions/renames, see the latest `core/tools/*.py` in the repo).
+`discover_core_tools()` in `core/integrations/__init__.py` scans `core/integrations/*.py` and registers each file whose name does not start with `_` as a module name (for additions/renames, see the latest `core/integrations/*.py` in the repo).
 
 | Module | Primary use |
 |--------|-------------|
@@ -183,8 +183,8 @@ Allow/deny is driven by external tool settings in **`permissions.json`** (migrat
 animaworks-tool <tool_name> <subcommand> [args…]
 ```
 
-- **`animaworks-tool submit <tool_name> [args…]`** — Enqueue long-running work in the background. Descriptors are stored under **`state/background_tasks/pending/`** and a watcher runs them (`_handle_submit` in `core/tools/__init__.py`). If the target subcommand is not `background_eligible` in `EXECUTION_PROFILE`, only a warning is issued (the job is still enqueued).
-- Available names are the **union** of **`core/tools` core modules** + **`~/.animaworks/common_tools/`** + **`tools/`** under **`ANIMAWORKS_ANIMA_DIR`**. Run `--help` for a list.
+- **`animaworks-tool submit <tool_name> [args…]`** — Enqueue long-running work in the background. Descriptors are stored under **`state/background_tasks/pending/`** and a watcher runs them (`_handle_submit` in `core/integrations/__init__.py`). If the target subcommand is not `background_eligible` in `EXECUTION_PROFILE`, only a warning is issued (the job is still enqueued).
+- Available names are the **union** of **`core/integrations` core modules** + **`~/.animaworks/common_tools/`** + **`tools/`** under **`ANIMAWORKS_ANIMA_DIR`**. Run `--help` for a list.
 - When `ANIMAWORKS_ANIMA_DIR` is set, subcommands may be denied via **`load_permissions` + `is_action_gated`** (e.g. Discord `channel_post`).
 - An undefined first argument may fall back to main CLI subcommands (`anima`, `vault`, etc.).
 

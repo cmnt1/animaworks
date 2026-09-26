@@ -973,7 +973,7 @@ Including "Making decisions without searching memory is prohibited" in `behavior
 - **Supervisor tools** — Auto-enabled for Animas with subordinates (see tool list below)
 - **Unified configuration** — config.json + Pydantic validation. status.json SSoT; models.json for execution mode override
 - **Credential Vault** — `vault.json` + `vault.key` (PyNaCl SealedBox, `core/config/vault.py`). Tools: `vault_get` / `vault_store` / `vault_list`
-- **Common tools directory** — Scans `~/.animaworks/common_tools/*.py` and loads when names do not collide with core tools (`core/tools/__init__.py`)
+- **Common tools directory** — Scans `~/.animaworks/common_tools/*.py` and loads when names do not collide with core tools (`core/integrations/__init__.py`)
 - **Skill Hub / Curator** — Skill installation, activation, quarantine, promotion from procedures, and usage-based review
 - **FastAPI server** — REST (`/api`) + dashboard WebSocket (`/ws`) + voice (`/ws/voice/{name}`) + first-run setup wizard (`/setup`) + SPA (`#/chat`, etc.) + Workspace (`/workspace`). Internal embed/vector API centralizes child-process RAG; meeting room API + SSE; `StreamRegistry` / `ConfigReloadManager`; Slack Socket Mode integration
 - **Voice chat** — WebSocket /ws/voice/{name}. STT (faster-whisper) → Chat IPC → TTS (VOICEVOX/ElevenLabs/SBV2)

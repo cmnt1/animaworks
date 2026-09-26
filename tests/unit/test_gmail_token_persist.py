@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from core.tools.gmail import GmailClient
+from core.integrations.gmail import GmailClient
 
 
 def _client(tmp_path: Path) -> GmailClient:
@@ -39,8 +39,8 @@ def test_get_credentials_survives_readonly_token_store(tmp_path: Path) -> None:
     creds.refresh_token = "present"
 
     with (
-        patch("core.tools.gmail.Credentials") as cred_cls,
-        patch("core.tools.gmail.Request"),
+        patch("core.integrations.gmail.Credentials") as cred_cls,
+        patch("core.integrations.gmail.Request"),
         patch.object(Path, "write_text", side_effect=_EROFS),
     ):
         cred_cls.from_authorized_user_file.return_value = creds

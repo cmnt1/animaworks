@@ -13,13 +13,12 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from core.tools.image_gen import (
+from core.integrations.image_gen import (
     NOVELAI_API_URL,
     NOVELAI_ENCODE_URL,
     NOVELAI_MODEL,
     NovelAIClient,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────
 
@@ -57,7 +56,9 @@ def _make_error_response(
     req = MagicMock()
     req.url = "http://test"
     error = httpx.HTTPStatusError(
-        f"{status_code}", request=req, response=resp,
+        f"{status_code}",
+        request=req,
+        response=resp,
     )
     resp.raise_for_status.side_effect = error
     resp.content = text.encode()
@@ -80,7 +81,7 @@ class TestEncodeVibe:
         vibe_data = b"\x00\x01\x02VIBE_ENCODED_DATA"
         mock_resp = _make_ok_response(content=vibe_data)
 
-        with patch("core.tools.image_gen.httpx.post", return_value=mock_resp):
+        with patch("core.integrations.image_gen.httpx.post", return_value=mock_resp):
             client = NovelAIClient()
             result = client.encode_vibe(b"FAKE_IMAGE_BYTES")
 
@@ -90,7 +91,7 @@ class TestEncodeVibe:
         """encode_vibe should POST to NOVELAI_ENCODE_URL."""
         mock_resp = _make_ok_response(content=b"vibe")
 
-        with patch("core.tools.image_gen.httpx.post", return_value=mock_resp) as mock_post:
+        with patch("core.integrations.image_gen.httpx.post", return_value=mock_resp) as mock_post:
             client = NovelAIClient()
             client.encode_vibe(b"IMG")
 
@@ -103,7 +104,7 @@ class TestEncodeVibe:
         expected_b64 = base64.b64encode(image_bytes).decode()
         mock_resp = _make_ok_response(content=b"vibe")
 
-        with patch("core.tools.image_gen.httpx.post", return_value=mock_resp) as mock_post:
+        with patch("core.integrations.image_gen.httpx.post", return_value=mock_resp) as mock_post:
             client = NovelAIClient()
             client.encode_vibe(image_bytes)
 
@@ -114,7 +115,7 @@ class TestEncodeVibe:
         """encode_vibe should include the model name in the request body."""
         mock_resp = _make_ok_response(content=b"vibe")
 
-        with patch("core.tools.image_gen.httpx.post", return_value=mock_resp) as mock_post:
+        with patch("core.integrations.image_gen.httpx.post", return_value=mock_resp) as mock_post:
             client = NovelAIClient()
             client.encode_vibe(b"IMG")
 
@@ -125,7 +126,7 @@ class TestEncodeVibe:
         """encode_vibe should include information_extracted in the body."""
         mock_resp = _make_ok_response(content=b"vibe")
 
-        with patch("core.tools.image_gen.httpx.post", return_value=mock_resp) as mock_post:
+        with patch("core.integrations.image_gen.httpx.post", return_value=mock_resp) as mock_post:
             client = NovelAIClient()
             client.encode_vibe(b"IMG", information_extracted=0.5)
 
@@ -136,7 +137,7 @@ class TestEncodeVibe:
         """Default information_extracted should be 0.8."""
         mock_resp = _make_ok_response(content=b"vibe")
 
-        with patch("core.tools.image_gen.httpx.post", return_value=mock_resp) as mock_post:
+        with patch("core.integrations.image_gen.httpx.post", return_value=mock_resp) as mock_post:
             client = NovelAIClient()
             client.encode_vibe(b"IMG")
 
@@ -147,7 +148,7 @@ class TestEncodeVibe:
         """encode_vibe should send Bearer token in Authorization header."""
         mock_resp = _make_ok_response(content=b"vibe")
 
-        with patch("core.tools.image_gen.httpx.post", return_value=mock_resp) as mock_post:
+        with patch("core.integrations.image_gen.httpx.post", return_value=mock_resp) as mock_post:
             client = NovelAIClient()
             client.encode_vibe(b"IMG")
 
@@ -162,8 +163,8 @@ class TestEncodeVibe:
         resp_500 = _make_error_response(status_code=500, text="Server Error Detail")
 
         with (
-            patch("core.tools.image_gen.httpx.post", return_value=resp_500),
-            patch("core.tools.image_gen.time.sleep"),
+            patch("core.integrations.image_gen.httpx.post", return_value=resp_500),
+            patch("core.integrations.image_gen.time.sleep"),
             caplog.at_level(logging.ERROR, logger="animaworks.tools"),
         ):
             client = NovelAIClient()
@@ -171,10 +172,7 @@ class TestEncodeVibe:
                 client.encode_vibe(b"IMG")
 
         # The error should have been logged with status code and body text
-        assert any(
-            "encode-vibe error" in r.message and "500" in r.message
-            for r in caplog.records
-        )
+        assert any("encode-vibe error" in r.message and "500" in r.message for r in caplog.records)
 
     def test_retries_on_429(self):
         """encode_vibe should retry on 429 (rate limit) via _retry."""
@@ -198,8 +196,8 @@ class TestEncodeVibe:
             return ok_resp
 
         with (
-            patch("core.tools.image_gen.httpx.post", side_effect=_side_effect),
-            patch("core.tools.image_gen.time.sleep"),
+            patch("core.integrations.image_gen.httpx.post", side_effect=_side_effect),
+            patch("core.integrations.image_gen.time.sleep"),
         ):
             client = NovelAIClient()
             result = client.encode_vibe(b"IMG")
@@ -229,8 +227,8 @@ class TestEncodeVibe:
             return ok_resp
 
         with (
-            patch("core.tools.image_gen.httpx.post", side_effect=_side_effect),
-            patch("core.tools.image_gen.time.sleep"),
+            patch("core.integrations.image_gen.httpx.post", side_effect=_side_effect),
+            patch("core.integrations.image_gen.time.sleep"),
         ):
             client = NovelAIClient()
             result = client.encode_vibe(b"IMG")
@@ -242,7 +240,7 @@ class TestEncodeVibe:
         """encode_vibe should NOT retry on 400 (bad request)."""
         resp_400 = _make_error_response(status_code=400, text="Bad Request")
 
-        with patch("core.tools.image_gen.httpx.post", return_value=resp_400):
+        with patch("core.integrations.image_gen.httpx.post", return_value=resp_400):
             client = NovelAIClient()
             with pytest.raises(httpx.HTTPStatusError):
                 client.encode_vibe(b"IMG")
@@ -278,7 +276,7 @@ class TestGenerateFullbodyVibeTransfer:
 
         with (
             patch.object(client, "encode_vibe", return_value=encoded_vibe) as mock_encode,
-            patch("core.tools.image_gen.httpx.post", return_value=generate_resp),
+            patch("core.integrations.image_gen.httpx.post", return_value=generate_resp),
         ):
             result = client.generate_fullbody(
                 prompt="1girl, test",
@@ -297,7 +295,7 @@ class TestGenerateFullbodyVibeTransfer:
 
         with (
             patch.object(client, "encode_vibe") as mock_encode,
-            patch("core.tools.image_gen.httpx.post", return_value=generate_resp),
+            patch("core.integrations.image_gen.httpx.post", return_value=generate_resp),
         ):
             client.generate_fullbody(prompt="1girl, test", vibe_image=None)
 
@@ -314,7 +312,7 @@ class TestGenerateFullbodyVibeTransfer:
 
         with (
             patch.object(client, "encode_vibe", return_value=encoded_vibe),
-            patch("core.tools.image_gen.httpx.post", return_value=generate_resp) as mock_post,
+            patch("core.integrations.image_gen.httpx.post", return_value=generate_resp) as mock_post,
         ):
             client.generate_fullbody(
                 prompt="1girl, test",
@@ -335,7 +333,7 @@ class TestGenerateFullbodyVibeTransfer:
 
         with (
             patch.object(client, "encode_vibe", return_value=b"encoded"),
-            patch("core.tools.image_gen.httpx.post", return_value=generate_resp) as mock_post,
+            patch("core.integrations.image_gen.httpx.post", return_value=generate_resp) as mock_post,
         ):
             client.generate_fullbody(
                 prompt="1girl",
@@ -354,7 +352,7 @@ class TestGenerateFullbodyVibeTransfer:
         client = NovelAIClient()
         generate_resp = self._make_generate_response()
 
-        with patch("core.tools.image_gen.httpx.post", return_value=generate_resp) as mock_post:
+        with patch("core.integrations.image_gen.httpx.post", return_value=generate_resp) as mock_post:
             client.generate_fullbody(prompt="1girl, test")
 
         body = mock_post.call_args[1]["json"]
@@ -371,24 +369,21 @@ class TestGenerateFullbodyVibeTransfer:
         resp_500 = _make_error_response(status_code=500, text="Generation failed")
 
         with (
-            patch("core.tools.image_gen.httpx.post", return_value=resp_500),
-            patch("core.tools.image_gen.time.sleep"),
+            patch("core.integrations.image_gen.httpx.post", return_value=resp_500),
+            patch("core.integrations.image_gen.time.sleep"),
             caplog.at_level(logging.ERROR, logger="animaworks.tools"),
+            pytest.raises(httpx.HTTPStatusError),
         ):
-            with pytest.raises(httpx.HTTPStatusError):
-                client.generate_fullbody(prompt="1girl, test")
+            client.generate_fullbody(prompt="1girl, test")
 
-        assert any(
-            "generate error" in r.message and "500" in r.message
-            for r in caplog.records
-        )
+        assert any("generate error" in r.message and "500" in r.message for r in caplog.records)
 
     def test_generate_sends_to_api_url(self):
         """generate_fullbody should POST to NOVELAI_API_URL."""
         client = NovelAIClient()
         generate_resp = self._make_generate_response()
 
-        with patch("core.tools.image_gen.httpx.post", return_value=generate_resp) as mock_post:
+        with patch("core.integrations.image_gen.httpx.post", return_value=generate_resp) as mock_post:
             client.generate_fullbody(prompt="test")
 
         actual_url = mock_post.call_args[0][0]
@@ -399,7 +394,7 @@ class TestGenerateFullbodyVibeTransfer:
         client = NovelAIClient()
         generate_resp = self._make_generate_response()
 
-        with patch("core.tools.image_gen.httpx.post", return_value=generate_resp) as mock_post:
+        with patch("core.integrations.image_gen.httpx.post", return_value=generate_resp) as mock_post:
             client.generate_fullbody(prompt="test", seed=42)
 
         body = mock_post.call_args[1]["json"]
@@ -410,7 +405,7 @@ class TestGenerateFullbodyVibeTransfer:
         client = NovelAIClient()
         generate_resp = self._make_generate_response()
 
-        with patch("core.tools.image_gen.httpx.post", return_value=generate_resp) as mock_post:
+        with patch("core.integrations.image_gen.httpx.post", return_value=generate_resp) as mock_post:
             client.generate_fullbody(prompt="test", seed=None)
 
         body = mock_post.call_args[1]["json"]
@@ -421,7 +416,7 @@ class TestGenerateFullbodyVibeTransfer:
         client = NovelAIClient()
         generate_resp = self._make_generate_response()
 
-        with patch("core.tools.image_gen.httpx.post", return_value=generate_resp) as mock_post:
+        with patch("core.integrations.image_gen.httpx.post", return_value=generate_resp) as mock_post:
             client.generate_fullbody(prompt="1girl, black hair")
 
         body = mock_post.call_args[1]["json"]
@@ -456,7 +451,7 @@ class TestGenerateFullbodyVibeTransfer:
                 return encode_resp
             return generate_resp
 
-        with patch("core.tools.image_gen.httpx.post", side_effect=_mock_post):
+        with patch("core.integrations.image_gen.httpx.post", side_effect=_mock_post):
             result = client.generate_fullbody(
                 prompt="1girl, test",
                 vibe_image=vibe_image,
@@ -488,7 +483,7 @@ class TestGenerateFullbodyVibeTransfer:
                 return encode_resp
             return generate_resp
 
-        with patch("core.tools.image_gen.httpx.post", side_effect=_mock_post):
+        with patch("core.integrations.image_gen.httpx.post", side_effect=_mock_post):
             client.generate_fullbody(
                 prompt="1girl",
                 vibe_image=vibe_image,

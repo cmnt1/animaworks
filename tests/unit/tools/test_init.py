@@ -1,4 +1,4 @@
-"""Tests for core/tools/__init__.py — tool registry and CLI dispatch."""
+"""Tests for core/integrations/__init__.py — tool registry and CLI dispatch."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,14 +11,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.tools import (
+from core.integrations import (
     TOOL_MODULES,
-    discover_core_tools,
-    discover_common_tools,
-    discover_personal_tools,
     cli_dispatch,
+    discover_common_tools,
+    discover_core_tools,
+    discover_personal_tools,
 )
-
 
 # ── TOOL_MODULES registry ─────────────────────────────────────────
 
@@ -31,18 +30,30 @@ class TestToolModules:
 
     def test_contains_expected_tools(self):
         expected = {
-            "web_search", "x_search", "chatwork", "slack", "gmail",
-            "local_llm", "transcribe", "aws_collector", "github", "image_gen",
-            "call_human", "google_calendar", "google_tasks", "google_sheets",
-            "notion", "discord",
+            "web_search",
+            "x_search",
+            "chatwork",
+            "slack",
+            "gmail",
+            "local_llm",
+            "transcribe",
+            "aws_collector",
+            "github",
+            "image_gen",
+            "call_human",
+            "google_calendar",
+            "google_tasks",
+            "google_sheets",
+            "notion",
+            "discord",
         }
         assert expected == set(TOOL_MODULES.keys())
 
     def test_module_paths_are_strings(self):
         for name, module_path in TOOL_MODULES.items():
             assert isinstance(module_path, str), f"{name} module path is not a string"
-            assert module_path.startswith("core.tools."), (
-                f"{name} module path does not start with 'core.tools.'"
+            assert module_path.startswith("core.integrations."), (
+                f"{name} module path does not start with 'core.integrations.'"
             )
 
 
@@ -157,9 +168,7 @@ class TestCliDispatch:
         tools_dir = tmp_path / "tools"
         tools_dir.mkdir()
         tool_file = tools_dir / "my_personal.py"
-        tool_file.write_text(
-            "called = False\ndef cli_main(argv):\n    global called; called = True\n"
-        )
+        tool_file.write_text("called = False\ndef cli_main(argv):\n    global called; called = True\n")
 
         with patch.dict("os.environ", {"ANIMAWORKS_ANIMA_DIR": str(tmp_path)}):
             with patch.object(sys, "argv", ["animaworks-tool", "my_personal"]):
@@ -229,9 +238,8 @@ class TestCliDispatchFallback:
         def capture_cli_main():
             captured_argv.extend(sys.argv)
 
-        with patch.object(sys, "argv", ["animaworks-tool", "start"]):
-            with patch("cli.cli_main", capture_cli_main):
-                cli_dispatch()
+        with patch.object(sys, "argv", ["animaworks-tool", "start"]), patch("cli.cli_main", capture_cli_main):
+            cli_dispatch()
         assert captured_argv == ["animaworks", "start"]
 
     def test_tool_takes_priority_over_fallback(self):
@@ -273,16 +281,14 @@ class TestDiscoverCoreTools:
     def test_module_paths_start_with_core_tools(self):
         result = discover_core_tools()
         for name, module_path in result.items():
-            assert module_path.startswith("core.tools."), (
-                f"Tool '{name}' module path '{module_path}' does not start with 'core.tools.'"
+            assert module_path.startswith("core.integrations."), (
+                f"Tool '{name}' module path '{module_path}' does not start with 'core.integrations.'"
             )
 
     def test_skips_underscore_prefixed_files(self):
         result = discover_core_tools()
         for name in result:
-            assert not name.startswith("_"), (
-                f"Tool '{name}' starts with underscore and should have been skipped"
-            )
+            assert not name.startswith("_"), f"Tool '{name}' starts with underscore and should have been skipped"
 
     def test_matches_tool_modules(self):
         """discover_core_tools() should produce the same result as TOOL_MODULES."""
@@ -341,6 +347,4 @@ class TestDiscoverCommonTools:
 
         result = discover_common_tools(data_dir=tmp_path)
         for name, file_path in result.items():
-            assert Path(file_path).is_absolute(), (
-                f"Tool '{name}' path '{file_path}' is not absolute"
-            )
+            assert Path(file_path).is_absolute(), f"Tool '{name}' path '{file_path}' is not absolute"

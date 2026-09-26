@@ -13,7 +13,7 @@ AnimaWorksのツールは3種類に分かれる:
 
 | 種類 | 配置先 | 発見方法 |
 |------|--------|----------|
-| **コアツール** | `core/tools/*.py`（`_` 接頭辞のファイルは除外） | `discover_core_tools()` → `TOOL_MODULES`（パッケージ import） |
+| **コアツール** | `core/integrations/*.py`（`_` 接頭辞のファイルは除外） | `discover_core_tools()` → `TOOL_MODULES`（パッケージ import） |
 | **共有ツール** | `{data_dir}/common_tools/*.py` | `discover_common_tools()` |
 | **個人ツール** | `{anima_dir}/tools/*.py` | `discover_personal_tools()` |
 
@@ -99,7 +99,7 @@ def _do_action(param1: str, param2: int = 10) -> dict[str, Any]:
 
 #### 複数アクション + 認証（API 連携）
 
-`get_credential(credential_name, tool_name, key_name="api_key", env_var=...)` の解決順序は **`config.json` の `credentials.{credential_name}`**（`api_key` または `keys[key_name]`）→ **`vault.json` の `shared` セクション**（キー名は引数 `env_var` で渡した文字列）→ **`shared/credentials.json`（レガシー、キーは `env_var`）** → **環境変数 `env_var`**（`core/tools/_base.py`）。
+`get_credential(credential_name, tool_name, key_name="api_key", env_var=...)` の解決順序は **`config.json` の `credentials.{credential_name}`**（`api_key` または `keys[key_name]`）→ **`vault.json` の `shared` セクション**（キー名は引数 `env_var` で渡した文字列）→ **`shared/credentials.json`（レガシー、キーは `env_var`）** → **環境変数 `env_var`**（`core/integrations/_base.py`）。
 
 ```python
 from __future__ import annotations
@@ -140,7 +140,7 @@ def get_tool_schemas() -> list[dict]:
 
 class MyAPIClient:
     def __init__(self) -> None:
-        from core.tools._base import get_credential
+        from core.integrations._base import get_credential
 
         self._api_key = get_credential(
             "myapi",
@@ -183,11 +183,11 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
     raise ValueError(f"Unknown tool: {name}")
 ```
 
-**Per-Anima 認証**（Chatwork 等）: `args.get("anima_dir")` から Anima 名を取り、`CHATWORK_API_TOKEN__{anima_name}` のような **Anima 専用キー**を `resolve_env_style_credential(...)` で解決するパターンがある（`core/tools/_chatwork_identity.py` の `resolve_identity` 等。未登録ならフォールバックせずエラーにする）。同様のキー命名をカスタムツールでも使える。
+**Per-Anima 認証**（Chatwork 等）: `args.get("anima_dir")` から Anima 名を取り、`CHATWORK_API_TOKEN__{anima_name}` のような **Anima 専用キー**を `resolve_env_style_credential(...)` で解決するパターンがある（`core/integrations/_chatwork_identity.py` の `resolve_identity` 等。未登録ならフォールバックせずエラーにする）。同様のキー命名をカスタムツールでも使える。
 
 #### `cli_main`（animaworks-tool 用）
 
-`animaworks-tool <tool_name> …` はコア・共通・個人いずれも **モジュールに `cli_main` が無いと CLI 実行不可**（`core/tools/__init__.py` の `cli_dispatch`）。`argparse` でサブコマンドをパースし、内部で `dispatch(f"{tool}_{action}", args_dict)` を呼ぶ形が一般的。スキーマから用法を生成したい場合は `core/tools/_base.py` の `auto_cli_guide` も参照。
+`animaworks-tool <tool_name> …` はコア・共通・個人いずれも **モジュールに `cli_main` が無いと CLI 実行不可**（`core/integrations/__init__.py` の `cli_dispatch`）。`argparse` でサブコマンドをパースし、内部で `dispatch(f"{tool}_{action}", args_dict)` を呼ぶ形が一般的。スキーマから用法を生成したい場合は `core/integrations/_base.py` の `auto_cli_guide` も参照。
 
 ### Step 3: ファイルの保存
 
@@ -230,7 +230,7 @@ share_tool(tool_name="my_tool")
 ## 呼び出しとスキーマ名
 
 - **`use_tool`**: `schema_name = f"{tool_name}_{action}"` でモジュールの `dispatch`（または同名関数）に渡る。許可判定は **コア**: `tool_registry`（`get_permitted_tools` の結果に `tool_name` が含まれること）、**ファイルベース（共通・個人）**: マージ済み `_personal_tools` に `tool_name` があること（`core/tooling/handler.py` の `_handle_use_tool`）。拒否メッセージに `permissions.md` と出ることがあるが、実体は **`load_permissions`（JSON 優先）** の `external_tools`。
-- **`animaworks-tool`**: 第1トークンが `submit` の場合はバックグラウンド投入（下記）。**コア**は `TOOL_MODULES` から import して `cli_main`、**共通・個人**はファイルからロードして `cli_main`。未知の第1引数はメイン CLI（`animaworks`）へフォールバックする場合あり（`core/tools/__init__.py` の `_MAIN_CLI_COMMANDS` / `_ANIMA_SUBCOMMANDS`）。
+- **`animaworks-tool`**: 第1トークンが `submit` の場合はバックグラウンド投入（下記）。**コア**は `TOOL_MODULES` から import して `cli_main`、**共通・個人**はファイルからロードして `cli_main`。未知の第1引数はメイン CLI（`animaworks`）へフォールバックする場合あり（`core/integrations/__init__.py` の `_MAIN_CLI_COMMANDS` / `_ANIMA_SUBCOMMANDS`）。
 - **ゲート付きサブコマンド（コアのみ）**: `EXECUTION_PROFILE` の該当アクションに `"gated": True` があると、`permissions` の許可集合に **`{tool_name}_{action}`**（例: `gmail_send`）が含まれていないと CLI / ディスパッチの両方でブロックされる。**ファイルベースの個人・共有ツール**は `TOOL_MODULES` に無いため、このゲート機構の対象外。
 
 ## スキーマ正規化
@@ -258,7 +258,7 @@ Markdown の「ツール作成」セクション（`個人ツール` / `共有�
 
 ## EXECUTION_PROFILE
 
-- **`background_eligible: True`**: `animaworks-tool submit <tool> <subcommand> …` で `state/background_tasks/pending/` に JSON が書かれ、`PendingTaskExecutor` が拾う（`core/tools/__init__.py` の `_handle_submit`）。プロファイル参照は **import 可能なコアモジュール**に対してのみ実施（ファイルツールは submit 時の警告対象外になりやすい）。
+- **`background_eligible: True`**: `animaworks-tool submit <tool> <subcommand> …` で `state/background_tasks/pending/` に JSON が書かれ、`PendingTaskExecutor` が拾う（`core/integrations/__init__.py` の `_handle_submit`）。プロファイル参照は **import 可能なコアモジュール**に対してのみ実施（ファイルツールは submit 時の警告対象外になりやすい）。
 - **`gated: True`**: コアツールの該当アクションに対し、permissions で `tool_action` の明示許可が必要。
 
 ```python
@@ -270,8 +270,8 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
 
 ## コアツールをリポジトリに追加する場合
 
-1. `core/tools/{name}.py` を追加（`_` 始まりはスキャン対象外）。
-2. `TOOL_MODULES` は `discover_core_tools()` で自動登録。`core/tools/__init__.py` の手動リストは不要。
+1. `core/integrations/{name}.py` を追加（`_` 始まりはスキャン対象外）。
+2. `TOOL_MODULES` は `discover_core_tools()` で自動登録。`core/integrations/__init__.py` の手動リストは不要。
 3. **Mode S（MCP）** に載せるのは `core/mcp/server.py` の `_EXPOSED_TOOL_NAMES` のみ（厳選）。2026-03 時点の例: `search_memory`, `read_memory_file`, `write_memory_file`, `archive_memory_file`, `send_message`, `post_channel`, `call_human`, `delegate_task`, `submit_tasks`, `update_task`, `create_skill`。**Slack / Gmail / `web_search` 等の外部サービス系コアツールは MCP に出ない** — 通常は **`use_tool` / Bash（`animaworks-tool`）/ スキル** 経路。
 4. テストを `tests/` に追加。スキーマやリファレンス文書を自動生成している場合は `scripts/generate_reference.py` の対象も確認。
 5. 破壊的操作は `gated: True` と permissions 側の説明更新を検討。
@@ -296,11 +296,11 @@ EXECUTION_PROFILE: dict[str, dict[str, object]] = {
 
 ## 参考実装
 
-- 薄いエントリ + `_client` / `_cli` 分割: `core/tools/chatwork.py`, `slack.py`, `discord.py`
-- 認証・API: `core/tools/gmail.py`, `github.py`, `notion.py`, `google_calendar.py`, `google_tasks.py`
-- 長時間・パイプライン: `core/tools/image_gen.py`（ファサード、`image/` サブパッケージ + `EXECUTION_PROFILE`）
-- 検索・ローカル LLM: `core/tools/web_search.py`（`get_tool_schemas` が空 → `ExternalToolDispatcher.dispatch` のコア経路ではマッチしない。`use_tool` は `dispatch` で可）、`x_search.py`, `local_llm.py`
-- ディスパッチャ・CLI エントリ: `core/tooling/dispatch.py`, `core/tools/__init__.py`（`cli_dispatch` / `_handle_submit`）
+- 薄いエントリ + `_client` / `_cli` 分割: `core/integrations/chatwork.py`, `slack.py`, `discord.py`
+- 認証・API: `core/integrations/gmail.py`, `github.py`, `notion.py`, `google_calendar.py`, `google_tasks.py`
+- 長時間・パイプライン: `core/integrations/image_gen.py`（ファサード、`image/` サブパッケージ + `EXECUTION_PROFILE`）
+- 検索・ローカル LLM: `core/integrations/web_search.py`（`get_tool_schemas` が空 → `ExternalToolDispatcher.dispatch` のコア経路ではマッチしない。`use_tool` は `dispatch` で可）、`x_search.py`, `local_llm.py`
+- ディスパッチャ・CLI エントリ: `core/tooling/dispatch.py`, `core/integrations/__init__.py`（`cli_dispatch` / `_handle_submit`）
 
 ## 注意事項
 

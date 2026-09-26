@@ -33,7 +33,7 @@ Refer to this when send errors occur or when you need to understand how the limi
 - Attempt order follows `_build_channel_order`: first `ResolvedRecipient.channel`, then append any not-yet-tried channel that has `slack_user_id` / `chatwork_room_id`.
 - If a channel raises an exception, the next channel is tried; if all fail, a JSON string is returned with `status: "error"` and `error_type: "DeliveryFailed"`.
 - If no external channel can be assembled, `NoChannelConfigured` is raised (message indicates insufficient `external_messaging` configuration).
-- **Slack**: If the per-Anima `SLACK_BOT_TOKEN__{anima_name}` (vault / shared) exists, post with the bot token via `chat.postMessage`. Otherwise prefix the body with `[SenderName] `. Display name is `anima_name` (or `sender_name`); `icon_url` comes from `core.tools._anima_icon_url.resolve_anima_icon_url` (`_resolve_outbound_icon` inside `outbound`).
+- **Slack**: If the per-Anima `SLACK_BOT_TOKEN__{anima_name}` (vault / shared) exists, post with the bot token via `chat.postMessage`. Otherwise prefix the body with `[SenderName] `. Display name is `anima_name` (or `sender_name`); `icon_url` comes from `core.integrations._anima_icon_url.resolve_anima_icon_url` (`_resolve_outbound_icon` inside `outbound`).
 - **Chatwork**: Post using the per-Anima token `CHATWORK_API_TOKEN__<anima_name>` (via identity resolution; Animas without an assigned token cannot post). Body may similarly use a `[SenderName] ` prefix. Markdown is converted with `md_to_chatwork`.
 
 ## Unified Outbound Budget (DM + Board)

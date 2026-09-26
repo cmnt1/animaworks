@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.tools._retry import async_retry_with_backoff
+from core.integrations._retry import async_retry_with_backoff
 
 # ── async_retry_with_backoff ──────────────────────────────────
 
@@ -134,7 +134,7 @@ async def test_async_retry_respects_max_delay():
 
     fn = AsyncMock(side_effect=_TransientError("fail"))
 
-    with patch("core.tools._retry.asyncio.sleep", side_effect=_capture_sleep), pytest.raises(_TransientError):
+    with patch("core.integrations._retry.asyncio.sleep", side_effect=_capture_sleep), pytest.raises(_TransientError):
         await async_retry_with_backoff(
             fn,
             max_retries=5,

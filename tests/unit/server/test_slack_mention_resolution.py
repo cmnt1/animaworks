@@ -16,21 +16,21 @@ from core.schemas import EXTERNAL_PLATFORM_SOURCES, Message
 class TestResolveSlackMentions:
     """Tests for :func:`core.notification.slack_names.resolve_slack_mentions`."""
 
-    @patch("core.tools.slack.SlackClient")
+    @patch("core.integrations.slack.SlackClient")
     def test_returns_empty_for_empty_text(self, _mock_slack: MagicMock) -> None:
         from core.notification.slack_names import resolve_slack_mentions, user_name_cache
 
         user_name_cache.clear()
         assert resolve_slack_mentions("", "xoxb-token") == ""
 
-    @patch("core.tools.slack.SlackClient")
+    @patch("core.integrations.slack.SlackClient")
     def test_returns_text_unchanged_without_mentions(self, _mock_slack: MagicMock) -> None:
         from core.notification.slack_names import resolve_slack_mentions, user_name_cache
 
         user_name_cache.clear()
         assert resolve_slack_mentions("hello world", "xoxb-token") == "hello world"
 
-    @patch("core.tools.slack.SlackClient")
+    @patch("core.integrations.slack.SlackClient")
     def test_resolves_single_mention_via_api(self, mock_cls: MagicMock) -> None:
         from core.notification.slack_names import resolve_slack_mentions, user_name_cache
 
@@ -41,7 +41,7 @@ class TestResolveSlackMentions:
         mock_cls.assert_called_once_with(token="xoxb-token")
         mock_cls.return_value.resolve_user_name.assert_called_once_with("U123ABC")
 
-    @patch("core.tools.slack.SlackClient")
+    @patch("core.integrations.slack.SlackClient")
     def test_uses_cache_on_second_call(self, mock_cls: MagicMock) -> None:
         from core.notification.slack_names import resolve_slack_mentions, user_name_cache
 
@@ -51,7 +51,7 @@ class TestResolveSlackMentions:
         resolve_slack_mentions("<@U123ABC> again", "tok")
         assert mock_cls.return_value.resolve_user_name.call_count == 1
 
-    @patch("core.tools.slack.SlackClient")
+    @patch("core.integrations.slack.SlackClient")
     def test_resolves_multiple_mentions(self, mock_cls: MagicMock) -> None:
         from core.notification.slack_names import resolve_slack_mentions, user_name_cache
 
@@ -67,7 +67,7 @@ class TestResolveSlackMentions:
         called_uids = {c.args[0] for c in mock_cls.return_value.resolve_user_name.call_args_list}
         assert called_uids == {"U111", "U222"}
 
-    @patch("core.tools.slack.SlackClient")
+    @patch("core.integrations.slack.SlackClient")
     def test_graceful_on_api_failure(self, mock_cls: MagicMock) -> None:
         from core.notification.slack_names import resolve_slack_mentions, user_name_cache
 
@@ -76,7 +76,7 @@ class TestResolveSlackMentions:
         out = resolve_slack_mentions("ping <@U999ZZZ>", "tok")
         assert out == "ping @U999ZZZ"
 
-    @patch("core.tools.slack.SlackClient")
+    @patch("core.integrations.slack.SlackClient")
     def test_empty_token_still_converts_cached(self, mock_cls: MagicMock) -> None:
         from core.notification.slack_names import resolve_slack_mentions, user_name_cache
 

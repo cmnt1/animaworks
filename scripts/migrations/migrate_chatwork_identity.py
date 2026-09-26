@@ -175,7 +175,7 @@ def _token_fingerprint(token: str) -> str:
 def _fetch_account_id(token: str) -> str | None:
     """Call Chatwork /me; return account_id string or None on failure."""
     try:
-        from core.tools._chatwork_client import ChatworkClient
+        from core.integrations._chatwork_client import ChatworkClient
 
         me = ChatworkClient(api_token=token).me()
     except Exception as exc:
@@ -293,7 +293,7 @@ def run_migration(
         vault = get_vault_manager(data_dir)
 
     if cache_dir is None:
-        from core.tools._chatwork_cache import DEFAULT_CACHE_DIR
+        from core.integrations._chatwork_cache import DEFAULT_CACHE_DIR
 
         cache_dir = DEFAULT_CACHE_DIR
 
@@ -392,7 +392,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--cache-dir",
         type=Path,
         default=None,
-        help="Override Chatwork cache directory (default: core.tools._chatwork_cache.DEFAULT_CACHE_DIR)",
+        help="Override Chatwork cache directory (default: core.integrations._chatwork_cache.DEFAULT_CACHE_DIR)",
     )
     parser.add_argument(
         "--copy-key",

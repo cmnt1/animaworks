@@ -7,14 +7,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-
 from core.config.models import (
     AnimaWorksConfig,
     HumanNotificationConfig,
     NotificationChannelConfig,
 )
-from core.tools.slack import _resolve_slack_identity
-
+from core.integrations.slack import _resolve_slack_identity
 
 # ── _resolve_slack_identity ──────────────────────────────────────
 
@@ -39,9 +37,7 @@ class TestResolveSlackIdentity:
             ),
         )
         with patch("core.config.load_config", return_value=cfg):
-            name, icon = _resolve_slack_identity(
-                {"anima_dir": "/home/user/.animaworks/animas/sakura"}
-            )
+            name, icon = _resolve_slack_identity({"anima_dir": "/home/user/.animaworks/animas/sakura"})
         assert name == "sakura"
         assert icon == "https://cdn.example.com/sakura/icon.png"
 
@@ -59,9 +55,7 @@ class TestResolveSlackIdentity:
             ),
         )
         with patch("core.config.load_config", return_value=cfg):
-            name, icon = _resolve_slack_identity(
-                {"anima_dir": "/home/user/.animaworks/animas/mei"}
-            )
+            name, icon = _resolve_slack_identity({"anima_dir": "/home/user/.animaworks/animas/mei"})
         assert name == "mei"
         assert icon == ""
 
@@ -84,9 +78,7 @@ class TestResolveSlackIdentity:
             ),
         )
         with patch("core.config.load_config", return_value=cfg):
-            name, icon = _resolve_slack_identity(
-                {"anima_dir": "/home/user/.animaworks/animas/rin"}
-            )
+            name, icon = _resolve_slack_identity({"anima_dir": "/home/user/.animaworks/animas/rin"})
         assert name == "rin"
         assert icon == ""
 
@@ -95,9 +87,7 @@ class TestResolveSlackIdentity:
             human_notification=HumanNotificationConfig(enabled=False, channels=[]),
         )
         with patch("core.config.load_config", return_value=cfg):
-            name, icon = _resolve_slack_identity(
-                {"anima_dir": "/home/user/.animaworks/animas/hina"}
-            )
+            name, icon = _resolve_slack_identity({"anima_dir": "/home/user/.animaworks/animas/hina"})
         assert name == "hina"
         assert icon == ""
 
@@ -106,9 +96,7 @@ class TestResolveSlackIdentity:
             "core.config.load_config",
             side_effect=RuntimeError("config broken"),
         ):
-            name, icon = _resolve_slack_identity(
-                {"anima_dir": "/home/user/.animaworks/animas/kotoha"}
-            )
+            name, icon = _resolve_slack_identity({"anima_dir": "/home/user/.animaworks/animas/kotoha"})
         assert name == "kotoha"
         assert icon == ""
 
@@ -137,9 +125,7 @@ class TestResolveSlackIdentity:
             ),
         )
         with patch("core.config.load_config", return_value=cfg):
-            name, icon = _resolve_slack_identity(
-                {"anima_dir": "/home/user/.animaworks/animas/kaede"}
-            )
+            name, icon = _resolve_slack_identity({"anima_dir": "/home/user/.animaworks/animas/kaede"})
         assert name == "kaede"
         assert icon == "https://other.example.com/kaede.png"
 
@@ -151,7 +137,7 @@ class TestPostMessageIdentity:
     """Tests for SlackClient.post_message username/icon_url params."""
 
     def _make_client(self):
-        from core.tools.slack import SlackClient
+        from core.integrations.slack import SlackClient
 
         client = SlackClient.__new__(SlackClient)
         client.client = MagicMock()
@@ -165,9 +151,7 @@ class TestPostMessageIdentity:
         mock_method = MagicMock(return_value={"ok": True, "ts": "1.0"})
         client.client.chat_postMessage = mock_method
 
-        client.post_message(
-            "C123", "hello", username="sakura", icon_url="https://cdn/sakura.png"
-        )
+        client.post_message("C123", "hello", username="sakura", icon_url="https://cdn/sakura.png")
 
         mock_method.assert_called_once()
         kwargs = mock_method.call_args[1]
@@ -245,11 +229,11 @@ class TestDispatchSlackSendIdentity:
         mock_client_instance.post_message.return_value = {"ok": True, "ts": "1.0"}
 
         with (
-            patch("core.tools.slack.SlackClient", return_value=mock_client_instance),
-            patch("core.tools.slack._resolve_slack_token", return_value="xoxb-test"),
+            patch("core.integrations.slack.SlackClient", return_value=mock_client_instance),
+            patch("core.integrations.slack._resolve_slack_token", return_value="xoxb-test"),
             patch("core.config.load_config", return_value=cfg),
         ):
-            from core.tools.slack import dispatch
+            from core.integrations.slack import dispatch
 
             dispatch(
                 "slack_send",
@@ -271,10 +255,10 @@ class TestDispatchSlackSendIdentity:
         mock_client_instance.post_message.return_value = {"ok": True, "ts": "1.0"}
 
         with (
-            patch("core.tools.slack.SlackClient", return_value=mock_client_instance),
-            patch("core.tools.slack._resolve_slack_token", return_value="xoxb-test"),
+            patch("core.integrations.slack.SlackClient", return_value=mock_client_instance),
+            patch("core.integrations.slack._resolve_slack_token", return_value="xoxb-test"),
         ):
-            from core.tools.slack import dispatch
+            from core.integrations.slack import dispatch
 
             dispatch(
                 "slack_send",

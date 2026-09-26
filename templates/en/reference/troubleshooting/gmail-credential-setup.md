@@ -99,4 +99,4 @@ The `client_id` in token.json must match the OAuth client that originally genera
 | `~/.animaworks/credentials/gmail/token.json` | OAuth token (required) |
 | `~/.animaworks/credentials/gmail/credentials.json` | OAuth client info (new flow only) |
 | `~/.animaworks/shared/credentials.json` | Env var settings (`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`) |
-| `core/tools/gmail.py` | Gmail tool implementation |
+| `core/integrations/gmail.py` | Gmail tool implementation |

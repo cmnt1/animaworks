@@ -20,7 +20,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 # ── Constants ────────────────────────────────────────────────────────
@@ -125,7 +125,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     ],
     "reference/operations/tool-usage-overview.md": [
         "core/tooling/",
-        "core/tools/",
+        "core/integrations/",
     ],
     "reference/operations/voice-chat-guide.md": [
         "core/voice/",
@@ -186,7 +186,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/background.py",
     ],
     "common_skills/image-posting/SKILL.md": [
-        "core/tools/image_gen.py",
+        "core/integrations/image_gen.py",
         "core/image_artifacts.py",
     ],
     "common_skills/skill-creator/SKILL.md": [
@@ -207,11 +207,11 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/tooling/handler_org.py",
         "core/tooling/schemas.py",
     ],
-    "common_skills/tool-creator/SKILL.md": ["core/tooling/", "core/tools/"],
+    "common_skills/tool-creator/SKILL.md": ["core/tooling/", "core/integrations/"],
     "common_skills/discord-tool/SKILL.md": [
-        "core/tools/discord.py",
-        "core/tools/_discord_client.py",
-        "core/tools/_discord_cli.py",
+        "core/integrations/discord.py",
+        "core/integrations/_discord_client.py",
+        "core/integrations/_discord_cli.py",
     ],
     # ── docs (OSS公開リポジトリ同期ドキュメント) ──
     # publish.sh で公開リポジトリに同期されるファイル。
@@ -228,7 +228,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/prompt/builder.py",
     ],
     "docs/slack-socket-mode-setup": [
-        "core/tools/slack.py",
+        "core/integrations/slack.py",
         "server/routes/webhooks.py",
     ],
     # ── root-level files ──

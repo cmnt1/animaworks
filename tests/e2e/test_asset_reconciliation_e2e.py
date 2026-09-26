@@ -84,7 +84,7 @@ class TestStartupReconciliation:
 
         mock_result = _make_mock_pipeline_result()
 
-        with patch("core.tools.image_gen.ImageGenPipeline") as mock_cls:
+        with patch("core.integrations.image_gen.ImageGenPipeline") as mock_cls:
             mock_pipeline = MagicMock()
             mock_pipeline.generate_all.return_value = mock_result
             mock_cls.return_value = mock_pipeline
@@ -184,7 +184,7 @@ class TestPeriodicReconciliation:
                 raise RuntimeError("API quota exceeded")
             return mock_result
 
-        with patch("core.tools.image_gen.ImageGenPipeline") as mock_cls:
+        with patch("core.integrations.image_gen.ImageGenPipeline") as mock_cls:
             mock_pipeline = MagicMock()
             mock_pipeline.generate_all.side_effect = _side_effect
             mock_cls.return_value = mock_pipeline
@@ -238,7 +238,7 @@ class TestLockMechanism:
             assert generation_proceed.wait(timeout=5.0)
             return mock_result
 
-        with patch("core.tools.image_gen.ImageGenPipeline") as mock_cls:
+        with patch("core.integrations.image_gen.ImageGenPipeline") as mock_cls:
             mock_pipeline = MagicMock()
             mock_pipeline.generate_all.side_effect = _slow_generate
             mock_cls.return_value = mock_pipeline
@@ -288,7 +288,7 @@ class TestLockMechanism:
 
         mock_result = _make_mock_pipeline_result()
 
-        with patch("core.tools.image_gen.ImageGenPipeline") as mock_cls:
+        with patch("core.integrations.image_gen.ImageGenPipeline") as mock_cls:
             mock_pipeline = MagicMock()
             mock_pipeline.generate_all.return_value = mock_result
             mock_cls.return_value = mock_pipeline
@@ -328,7 +328,7 @@ class TestDifferentialGeneration:
 
         mock_result = _make_mock_pipeline_result()
 
-        with patch("core.tools.image_gen.ImageGenPipeline") as mock_cls:
+        with patch("core.integrations.image_gen.ImageGenPipeline") as mock_cls:
             mock_pipeline = MagicMock()
             mock_pipeline.generate_all.return_value = mock_result
             mock_cls.return_value = mock_pipeline

@@ -12,7 +12,6 @@ import pytest
 
 from core.tooling.dispatch import ExternalToolDispatcher
 
-
 # ── Fixtures ──────────────────────────────────────────────────
 
 
@@ -46,8 +45,10 @@ class TestDispatch:
             tool_registry=[],
             personal_tools={"my_tool": "/path/to/tool.py"},
         )
-        with patch.object(d, "_dispatch_from_registry", return_value=None), \
-             patch.object(d, "_dispatch_from_files", return_value="file result"):
+        with (
+            patch.object(d, "_dispatch_from_registry", return_value=None),
+            patch.object(d, "_dispatch_from_files", return_value="file result"),
+        ):
             result = d.dispatch("my_fn", {})
         assert result == "file result"
 
@@ -56,8 +57,10 @@ class TestDispatch:
             tool_registry=[],
             personal_tools={"my_tool": "/path/to/tool.py"},
         )
-        with patch.object(d, "_dispatch_from_registry", return_value=None), \
-             patch.object(d, "_dispatch_from_files", return_value=None):
+        with (
+            patch.object(d, "_dispatch_from_registry", return_value=None),
+            patch.object(d, "_dispatch_from_files", return_value=None),
+        ):
             result = d.dispatch("unknown", {})
         assert result is None
 
@@ -66,8 +69,10 @@ class TestDispatch:
             tool_registry=["web_search"],
             personal_tools={"my_tool": "/path/to/tool.py"},
         )
-        with patch.object(d, "_dispatch_from_registry", return_value="core result"), \
-             patch.object(d, "_dispatch_from_files") as mock_files:
+        with (
+            patch.object(d, "_dispatch_from_registry", return_value="core result"),
+            patch.object(d, "_dispatch_from_files") as mock_files,
+        ):
             d.dispatch("web_search", {})
         mock_files.assert_not_called()
 
@@ -84,7 +89,7 @@ class TestDispatchFromRegistry:
         d = ExternalToolDispatcher(tool_registry=["web_search"])
         with patch("importlib.import_module") as mock_import:
             mock_import.return_value = MagicMock()
-            with patch("core.tools.TOOL_MODULES", {"slack": "core.tools.slack"}):
+            with patch("core.integrations.TOOL_MODULES", {"slack": "core.integrations.slack"}):
                 result = d._dispatch_from_registry("slack_send", {})
         assert result is None
 
@@ -96,8 +101,10 @@ class TestDispatchFromRegistry:
         mock_mod.dispatch.return_value = "search result"
 
         d = ExternalToolDispatcher(tool_registry=["web_search"])
-        with patch("core.tools.TOOL_MODULES", {"web_search": "core.tools.web_search"}), \
-             patch("importlib.import_module", return_value=mock_mod):
+        with (
+            patch("core.integrations.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch("importlib.import_module", return_value=mock_mod),
+        ):
             result = d._dispatch_from_registry("web_search", {"query": "test"})
 
         assert result == "search result"
@@ -108,8 +115,10 @@ class TestDispatchFromRegistry:
         mock_mod.web_search.return_value = "func result"
 
         d = ExternalToolDispatcher(tool_registry=["web_search"])
-        with patch("core.tools.TOOL_MODULES", {"web_search": "core.tools.web_search"}), \
-             patch("importlib.import_module", return_value=mock_mod):
+        with (
+            patch("core.integrations.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch("importlib.import_module", return_value=mock_mod),
+        ):
             result = d._dispatch_from_registry("web_search", {"query": "test"})
 
         assert result == "func result"
@@ -118,8 +127,10 @@ class TestDispatchFromRegistry:
         mock_mod = MagicMock(spec=[])  # No get_tool_schemas
 
         d = ExternalToolDispatcher(tool_registry=["web_search"])
-        with patch("core.tools.TOOL_MODULES", {"web_search": "core.tools.web_search"}), \
-             patch("importlib.import_module", return_value=mock_mod):
+        with (
+            patch("core.integrations.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch("importlib.import_module", return_value=mock_mod),
+        ):
             result = d._dispatch_from_registry("web_search", {})
 
         assert result is None
@@ -129,8 +140,10 @@ class TestDispatchFromRegistry:
         mock_mod.get_tool_schemas.return_value = [{"name": "other_tool"}]
 
         d = ExternalToolDispatcher(tool_registry=["web_search"])
-        with patch("core.tools.TOOL_MODULES", {"web_search": "core.tools.web_search"}), \
-             patch("importlib.import_module", return_value=mock_mod):
+        with (
+            patch("core.integrations.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch("importlib.import_module", return_value=mock_mod),
+        ):
             result = d._dispatch_from_registry("web_search", {})
 
         assert result is None
@@ -141,8 +154,10 @@ class TestDispatchFromRegistry:
         mock_mod.dispatch.side_effect = RuntimeError("boom")
 
         d = ExternalToolDispatcher(tool_registry=["web_search"])
-        with patch("core.tools.TOOL_MODULES", {"web_search": "core.tools.web_search"}), \
-             patch("importlib.import_module", return_value=mock_mod):
+        with (
+            patch("core.integrations.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch("importlib.import_module", return_value=mock_mod),
+        ):
             result = d._dispatch_from_registry("web_search", {})
 
         assert "Error executing" in result
@@ -150,11 +165,13 @@ class TestDispatchFromRegistry:
 
     def test_handles_import_error(self):
         d = ExternalToolDispatcher(tool_registry=["web_search"])
-        with patch("core.tools.TOOL_MODULES", {"web_search": "core.tools.web_search"}), \
-             patch(
-                 "importlib.import_module",
-                 side_effect=ImportError("no module"),
-             ):
+        with (
+            patch("core.integrations.TOOL_MODULES", {"web_search": "core.integrations.web_search"}),
+            patch(
+                "importlib.import_module",
+                side_effect=ImportError("no module"),
+            ),
+        ):
             result = d._dispatch_from_registry("web_search", {})
 
         assert "Error executing" in result
@@ -166,27 +183,33 @@ class TestDispatchFromRegistry:
         mock_slack.dispatch.return_value = '{"status":"ok"}'
 
         d = ExternalToolDispatcher(tool_registry=["gmail", "slack"])
-        with patch(
-            "core.tools.TOOL_MODULES",
-            {
-                "gmail": "core.tools.gmail",
-                "slack": "core.tools.slack",
-            },
-        ), patch("importlib.import_module", return_value=mock_slack) as mock_import:
+        with (
+            patch(
+                "core.integrations.TOOL_MODULES",
+                {
+                    "gmail": "core.integrations.gmail",
+                    "slack": "core.integrations.slack",
+                },
+            ),
+            patch("importlib.import_module", return_value=mock_slack) as mock_import,
+        ):
             result = d._dispatch_from_registry("slack_channel_post", {"text": "hi"})
 
         assert result == '{"status":"ok"}'
-        mock_import.assert_called_once_with("core.tools.slack")
+        mock_import.assert_called_once_with("core.integrations.slack")
 
     def test_returns_error_when_targeted_tool_import_fails(self):
         d = ExternalToolDispatcher(tool_registry=["gmail", "slack"])
-        with patch(
-            "core.tools.TOOL_MODULES",
-            {
-                "gmail": "core.tools.gmail",
-                "slack": "core.tools.slack",
-            },
-        ), patch("importlib.import_module", side_effect=ImportError("missing slack deps")):
+        with (
+            patch(
+                "core.integrations.TOOL_MODULES",
+                {
+                    "gmail": "core.integrations.gmail",
+                    "slack": "core.integrations.slack",
+                },
+            ),
+            patch("importlib.import_module", side_effect=ImportError("missing slack deps")),
+        ):
             result = d._dispatch_from_registry("slack_channel_post", {})
 
         assert "Error executing" in result
@@ -211,8 +234,10 @@ class TestDispatchFromFiles:
             tool_registry=[],
             personal_tools={"my_tool": "/path/to/tool.py"},
         )
-        with patch("importlib.util.spec_from_file_location", return_value=mock_spec), \
-             patch("importlib.util.module_from_spec", return_value=mock_mod):
+        with (
+            patch("importlib.util.spec_from_file_location", return_value=mock_spec),
+            patch("importlib.util.module_from_spec", return_value=mock_mod),
+        ):
             result = d._dispatch_from_files("my_fn", {"arg": "val"})
 
         assert result == "dispatched result"
@@ -227,8 +252,10 @@ class TestDispatchFromFiles:
             tool_registry=[],
             personal_tools={"my_tool": "/path/to/tool.py"},
         )
-        with patch("importlib.util.spec_from_file_location", return_value=mock_spec), \
-             patch("importlib.util.module_from_spec", return_value=mock_mod):
+        with (
+            patch("importlib.util.spec_from_file_location", return_value=mock_spec),
+            patch("importlib.util.module_from_spec", return_value=mock_mod),
+        ):
             result = d._dispatch_from_files("my_fn", {"arg": "val"})
 
         assert result == "func result"
@@ -265,8 +292,10 @@ class TestDispatchFromFiles:
             tool_registry=[],
             personal_tools={"my_tool": "/path/to/tool.py"},
         )
-        with patch("importlib.util.spec_from_file_location", return_value=mock_spec), \
-             patch("importlib.util.module_from_spec", return_value=mock_mod):
+        with (
+            patch("importlib.util.spec_from_file_location", return_value=mock_spec),
+            patch("importlib.util.module_from_spec", return_value=mock_mod),
+        ):
             result = d._dispatch_from_files("my_fn", {})
 
         assert result is None
@@ -279,8 +308,10 @@ class TestDispatchFromFiles:
             tool_registry=[],
             personal_tools={"my_tool": "/path/to/tool.py"},
         )
-        with patch("importlib.util.spec_from_file_location", return_value=mock_spec), \
-             patch("importlib.util.module_from_spec", return_value=mock_mod):
+        with (
+            patch("importlib.util.spec_from_file_location", return_value=mock_spec),
+            patch("importlib.util.module_from_spec", return_value=mock_mod),
+        ):
             result = d._dispatch_from_files("my_fn", {})
 
         assert result is None
@@ -295,8 +326,10 @@ class TestDispatchFromFiles:
             tool_registry=[],
             personal_tools={"my_tool": "/path/to/tool.py"},
         )
-        with patch("importlib.util.spec_from_file_location", return_value=mock_spec), \
-             patch("importlib.util.module_from_spec", return_value=mock_mod):
+        with (
+            patch("importlib.util.spec_from_file_location", return_value=mock_spec),
+            patch("importlib.util.module_from_spec", return_value=mock_mod),
+        ):
             result = d._dispatch_from_files("my_fn", {})
 
         assert "Error executing" in result
@@ -315,8 +348,10 @@ class TestDispatchFromFiles:
                 "slack": "/path/to/slack.py",
             },
         )
-        with patch("importlib.util.spec_from_file_location", return_value=mock_spec) as mock_spec_from_file, \
-             patch("importlib.util.module_from_spec", return_value=mock_mod):
+        with (
+            patch("importlib.util.spec_from_file_location", return_value=mock_spec) as mock_spec_from_file,
+            patch("importlib.util.module_from_spec", return_value=mock_mod),
+        ):
             result = d._dispatch_from_files("slack_channel_post", {})
 
         assert result == "ok"

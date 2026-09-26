@@ -1,4 +1,4 @@
-"""Tests for core/tools/image_gen.py — Image generation pipeline."""
+"""Tests for core/integrations/image_gen.py — Image generation pipeline."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -14,8 +14,8 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from core.tools._base import ToolConfigError
-from core.tools.image_gen import (
+from core.integrations._base import ToolConfigError
+from core.integrations.image_gen import (
     FluxKontextClient,
     ImageGenPipeline,
     MeshyClient,
@@ -25,7 +25,6 @@ from core.tools.image_gen import (
     _retry,
     get_tool_schemas,
 )
-
 
 # ── _image_to_data_uri ───────────────────────────────────────────
 
@@ -69,7 +68,7 @@ class TestRetry:
                 raise error
             return "ok"
 
-        with patch("core.tools.image_gen.time.sleep"):
+        with patch("core.integrations.image_gen.time.sleep"):
             result = _retry(fn, max_retries=3, delay=0.01)
         assert result == "ok"
         assert call_count == 3
@@ -95,7 +94,7 @@ class TestRetry:
                 raise httpx.ConnectError("connection refused")
             return "ok"
 
-        with patch("core.tools.image_gen.time.sleep"):
+        with patch("core.integrations.image_gen.time.sleep"):
             result = _retry(fn, max_retries=2, delay=0.01)
         assert result == "ok"
 
@@ -144,7 +143,7 @@ class TestNovelAIClient:
         mock_resp.content = zip_buf.getvalue()
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("core.tools.image_gen.httpx.post", return_value=mock_resp):
+        with patch("core.integrations.image_gen.httpx.post", return_value=mock_resp):
             client = NovelAIClient()
             result = client.generate_fullbody("1girl, black hair")
         assert result == b"PNG-BYTES"
@@ -170,8 +169,8 @@ class TestFluxKontextClient:
 
 
 class TestDispatchGenerateIcon:
-    @patch("core.tools._anima_icon_url.persist_anima_icon_path_template")
-    @patch("core.tools.image_gen.FluxKontextClient")
+    @patch("core.integrations._anima_icon_url.persist_anima_icon_path_template")
+    @patch("core.integrations.image_gen.FluxKontextClient")
     @patch("core.config.models.load_config")
     def test_writes_icon_png_with_square_aspect_ratio(
         self,
@@ -194,7 +193,7 @@ class TestDispatchGenerateIcon:
 
         mock_flux_cls.return_value.generate_from_reference.return_value = b"CHAT_ICON_BYTES"
 
-        from core.tools.image_gen import dispatch
+        from core.integrations.image_gen import dispatch
 
         result = dispatch("generate_icon", {"anima_dir": str(tmp_path)})
         assert "error" not in result
@@ -203,8 +202,8 @@ class TestDispatchGenerateIcon:
         kw = mock_flux_cls.return_value.generate_from_reference.call_args[1]
         assert kw["aspect_ratio"] == "1:1"
 
-    @patch("core.tools._anima_icon_url.persist_anima_icon_path_template")
-    @patch("core.tools.image_gen.FluxKontextClient")
+    @patch("core.integrations._anima_icon_url.persist_anima_icon_path_template")
+    @patch("core.integrations.image_gen.FluxKontextClient")
     @patch("core.config.models.load_config")
     def test_writes_icon_realistic_png_when_realistic_style(
         self,
@@ -227,7 +226,7 @@ class TestDispatchGenerateIcon:
 
         mock_flux_cls.return_value.generate_from_reference.return_value = b"ICON_REALISTIC"
 
-        from core.tools.image_gen import dispatch
+        from core.integrations.image_gen import dispatch
 
         result = dispatch("generate_icon", {"anima_dir": str(tmp_path)})
         assert "error" not in result
@@ -366,7 +365,7 @@ class TestImageGenPipeline:
         )
         pipe = ImageGenPipeline(tmp_path, config=cfg)
 
-        with patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls:
+        with patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls:
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"PNG-DATA"
             mock_nai_cls.return_value = mock_client
@@ -387,7 +386,7 @@ class TestImageGenPipeline:
         cfg = ImageGenConfig(image_style="anime", negative_prompt_extra="realistic, 3d render")
         pipe = ImageGenPipeline(tmp_path, config=cfg)
 
-        with patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls:
+        with patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls:
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"PNG-DATA"
             mock_nai_cls.return_value = mock_client
@@ -409,7 +408,7 @@ class TestImageGenPipeline:
         cfg = ImageGenConfig(image_style="anime", negative_prompt_extra="realistic")
         pipe = ImageGenPipeline(tmp_path, config=cfg)
 
-        with patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls:
+        with patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls:
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"PNG-DATA"
             mock_nai_cls.return_value = mock_client
@@ -434,7 +433,7 @@ class TestImageGenPipeline:
         cfg = ImageGenConfig(image_style="anime", style_reference=str(style_ref))
         pipe = ImageGenPipeline(tmp_path, config=cfg)
 
-        with patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls:
+        with patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls:
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"PNG-DATA"
             mock_nai_cls.return_value = mock_client
@@ -451,12 +450,13 @@ class TestImageGenPipeline:
     def test_generate_all_warns_missing_style_reference(self, tmp_path: Path, monkeypatch, caplog):
         monkeypatch.setenv("NOVELAI_TOKEN", "test-token")
         import logging
+
         from core.config.models import ImageGenConfig
 
         cfg = ImageGenConfig(image_style="anime", style_reference="/nonexistent/path/style.png")
         pipe = ImageGenPipeline(tmp_path, config=cfg)
 
-        with patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls:
+        with patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls:
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"PNG-DATA"
             mock_nai_cls.return_value = mock_client
@@ -479,7 +479,7 @@ class TestImageGenPipeline:
         cfg = ImageGenConfig(image_style="anime", vibe_strength=0.3, vibe_info_extracted=0.5)
         pipe = ImageGenPipeline(tmp_path, config=cfg)
 
-        with patch("core.tools.image_gen.NovelAIClient") as mock_nai_cls:
+        with patch("core.integrations.image_gen.NovelAIClient") as mock_nai_cls:
             mock_client = MagicMock()
             mock_client.generate_fullbody.return_value = b"PNG-DATA"
             mock_nai_cls.return_value = mock_client
@@ -494,7 +494,7 @@ class TestImageGenPipeline:
             assert call_kwargs["vibe_strength"] == 0.3
             assert call_kwargs["vibe_info_extracted"] == 0.5
 
-    @patch("core.tools._anima_icon_url.persist_anima_icon_path_template")
+    @patch("core.integrations._anima_icon_url.persist_anima_icon_path_template")
     def test_generate_all_icon_step_uses_square_aspect_ratio(
         self,
         _mock_persist: MagicMock,
@@ -510,7 +510,7 @@ class TestImageGenPipeline:
 
         pipe = ImageGenPipeline(tmp_path, config=ImageGenConfig(image_style="anime"))
 
-        with patch("core.tools.image_gen.FluxKontextClient") as mock_cls:
+        with patch("core.integrations.image_gen.FluxKontextClient") as mock_cls:
             mock_client = MagicMock()
             mock_client.generate_from_reference.return_value = b"ICON-BYTES"
             mock_cls.return_value = mock_client

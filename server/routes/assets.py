@@ -587,7 +587,7 @@ def create_assets_router() -> APIRouter:
         if not body.prompt:
             raise HTTPException(status_code=400, detail="prompt is required")
 
-        from core.tools.image_gen import ImageGenPipeline
+        from core.integrations.image_gen import ImageGenPipeline
 
         pipeline_kwargs: dict = {}
         if body.image_style:
@@ -662,7 +662,7 @@ def create_assets_router() -> APIRouter:
 
         reference_bytes = reference_path.read_bytes()
 
-        from core.tools.image_gen import ImageGenPipeline
+        from core.integrations.image_gen import ImageGenPipeline
 
         style = body.image_style or "anime"
         pipeline = ImageGenPipeline(
@@ -713,7 +713,7 @@ def create_assets_router() -> APIRouter:
 
         style = body.image_style or "anime"
         from core.config.models import ImageGenConfig
-        from core.tools.image_gen import ImageGenPipeline
+        from core.integrations.image_gen import ImageGenPipeline
 
         pipeline = ImageGenPipeline(
             anima_dir,
@@ -963,7 +963,7 @@ def create_assets_router() -> APIRouter:
                 shutil.copytree(assets_dir, backup_dir)
                 logger.info("Backup created: %s", backup_dir)
 
-        from core.tools.image_gen import ImageGenPipeline
+        from core.integrations.image_gen import ImageGenPipeline
 
         pipeline = ImageGenPipeline(
             anima_dir,
@@ -1325,7 +1325,7 @@ def create_assets_router() -> APIRouter:
         else:
             remaining_steps = ["bustup", "chibi", "3d", "rigging", "animations"]
 
-        from core.tools.image_gen import ImageGenPipeline
+        from core.integrations.image_gen import ImageGenPipeline
 
         pipeline = ImageGenPipeline(
             anima_dir,

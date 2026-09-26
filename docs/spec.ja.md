@@ -971,7 +971,7 @@ Group 6: メタ設定
 - **スーパーバイザーツール** — 部下を持つAnimaに自動有効化（下記ツール一覧参照）
 - **統合設定** — config.json + Pydanticバリデーション。status.json SSoT、models.json で実行モードオーバーライド
 - **クレデンシャルVault** — `vault.json` + `vault.key`（PyNaCl SealedBox、`core/config/vault.py`）。ツール: `vault_get` / `vault_store` / `vault_list`
-- **共通ツールディレクトリ** — `~/.animaworks/common_tools/*.py` をスキャンし、コアツールと同名でなければ読み込み（`core/tools/__init__.py`）
+- **共通ツールディレクトリ** — `~/.animaworks/common_tools/*.py` をスキャンし、コアツールと同名でなければ読み込み（`core/integrations/__init__.py`）
 - **FastAPIサーバー** — REST（`/api`）+ ダッシュボード WebSocket（`/ws`）+ 音声（`/ws/voice/{name}`）+ 初回セットアップウィザード（`/setup`）+ SPA（`#/chat` 等）+ Workspace（`/workspace`）。内部 embed/vector API で子プロセス RAG を集約、会議室 API+SSE、`StreamRegistry` / `ConfigReloadManager`、Slack Socket Mode 統合
 - **音声チャット** — WebSocket /ws/voice/{name}。STT（faster-whisper）→ Chat IPC → TTS（VOICEVOX/ElevenLabs/SBV2）
 - **Anima生成** — テンプレート / 空白（_blank）/ MDファイル（create --from-md）からの生成

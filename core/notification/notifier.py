@@ -78,7 +78,7 @@ class NotificationChannel(ABC):
         if not env_key:
             return ""
 
-        from core.tools._base import _lookup_shared_credentials, _lookup_vault_credential
+        from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential
 
         if anima_name:
             per_key = f"{env_key}__{anima_name}"
