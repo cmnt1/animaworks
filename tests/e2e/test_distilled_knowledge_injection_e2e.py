@@ -126,7 +126,7 @@ class TestDKPromptInjectionRemovalE2E:
         results2 = mm.search_memory_text("Prometheus", scope="procedures")
         assert len(results2) > 0
 
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
 
         types = RAGMemorySearch._resolve_search_types("procedures")
         assert types == ["procedures"]

@@ -348,7 +348,7 @@ class TestProactiveRecording:
         sess = _make_session(proactive=True)
         sess._front_lane = _lane_stub()
         mock_conv = MagicMock()
-        with patch("core.memory.conversation.ConversationMemory", return_value=mock_conv):
+        with patch("core.memory.conversation.memory.ConversationMemory", return_value=mock_conv):
             await sess._run_front_turn(
                 sess._front_lane,
                 PROACTIVE_PROMPT,
@@ -374,7 +374,7 @@ class TestProactiveRecording:
 
         assert sess._tts_queue is None
         with (
-            patch("core.memory.conversation.ConversationMemory", return_value=MagicMock()),
+            patch("core.memory.conversation.memory.ConversationMemory", return_value=MagicMock()),
             patch.object(sess, "_enqueue_tts", side_effect=_spy_enqueue),
         ):
             ok = await sess._run_front_turn(
@@ -413,7 +413,7 @@ class TestProactiveRecording:
         sess = _make_session(proactive=True)
         sess._front_lane = _lane_stub()
         mock_conv = MagicMock()
-        with patch("core.memory.conversation.ConversationMemory", return_value=mock_conv):
+        with patch("core.memory.conversation.memory.ConversationMemory", return_value=mock_conv):
             await sess._run_front_turn(sess._front_lane, "こんにちは", "human", True, record_user=True)
         roles = [c.args[0] for c in mock_conv.append_turn.call_args_list]
         assert roles == ["human", "assistant"]
@@ -445,7 +445,7 @@ class TestProactiveConcurrency:
         lane.stream = _slow
         sess._front_lane = lane
         _ready_to_fire(sess)
-        with patch("core.memory.conversation.ConversationMemory", return_value=MagicMock()):
+        with patch("core.memory.conversation.memory.ConversationMemory", return_value=MagicMock()):
             loop_task = asyncio.create_task(sess._idle_watcher_loop(), name="idle-probe")
             await asyncio.wait_for(started.wait(), timeout=2.0)
             assert sess._processing is True
@@ -522,7 +522,7 @@ class TestProactiveConcurrency:
         response_done so the client subtitle starts a fresh bubble (H1)."""
         sess = _make_session(proactive=True)
         sess._front_lane = _lane_stub()
-        with patch("core.memory.conversation.ConversationMemory", return_value=MagicMock()):
+        with patch("core.memory.conversation.memory.ConversationMemory", return_value=MagicMock()):
             ok = await sess._run_front_turn(
                 sess._front_lane,
                 PROACTIVE_PROMPT,
@@ -567,7 +567,7 @@ class TestProactiveConcurrency:
                 drain_results=False,
             )
 
-        with patch("core.memory.conversation.ConversationMemory", return_value=MagicMock()):
+        with patch("core.memory.conversation.memory.ConversationMemory", return_value=MagicMock()):
             task = asyncio.create_task(_run())
             await started.wait()
             await sess.handle_interrupt()
@@ -599,7 +599,7 @@ class TestEmptyTurnAndDiscard:
         lane.stream = _empty
         sess._front_lane = lane
         mock_conv = MagicMock()
-        with patch("core.memory.conversation.ConversationMemory", return_value=mock_conv):
+        with patch("core.memory.conversation.memory.ConversationMemory", return_value=mock_conv):
             ok = await sess._run_front_turn(
                 lane,
                 PROACTIVE_PROMPT,

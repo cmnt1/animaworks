@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.i18n import t
-from core.memory.conversation_models import (
+from core.memory.conversation.models import (
     _MAX_DISPLAY_TURNS,
     _MAX_TURNS_BEFORE_COMPRESS,
     ConversationState,

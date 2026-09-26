@@ -25,7 +25,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.streaming_journal import StreamingJournal
+from core.memory.conversation.streaming_journal import StreamingJournal
 from core.schemas import ModelConfig
 
 if TYPE_CHECKING:
@@ -69,7 +69,7 @@ class TestConversationAtomicSave:
         model_config: ModelConfig,
     ):
         """After save(), the conversation.json file exists and is valid JSON."""
-        from core.memory.conversation import ConversationMemory
+        from core.memory.conversation.memory import ConversationMemory
 
         conv = ConversationMemory(anima_dir, model_config)
         conv.append_turn("human", "Hello!")
@@ -93,7 +93,7 @@ class TestConversationAtomicSave:
         model_config: ModelConfig,
     ):
         """No .tmp files should remain in the state directory after save()."""
-        from core.memory.conversation import ConversationMemory
+        from core.memory.conversation.memory import ConversationMemory
 
         conv = ConversationMemory(anima_dir, model_config)
         conv.append_turn("human", "test message")
@@ -113,7 +113,7 @@ class TestConversationAtomicSave:
         Write initial data, then simulate a crash by patching atomic_write_text
         to raise an exception.  The original file should remain intact.
         """
-        from core.memory.conversation import ConversationMemory
+        from core.memory.conversation.memory import ConversationMemory
 
         # Write initial valid state
         conv1 = ConversationMemory(anima_dir, model_config)
@@ -132,7 +132,7 @@ class TestConversationAtomicSave:
 
         with (
             patch(
-                "core.memory.conversation.atomic_write_text",
+                "core.memory.conversation.memory.atomic_write_text",
                 side_effect=OSError("Simulated disk failure"),
             ),
             pytest.raises(OSError, match="Simulated disk failure"),
@@ -273,7 +273,7 @@ class TestActivityLoggerFsync:
     @pytest.fixture
     def activity_logger(self, anima_dir: Path):
         """Create an ActivityLogger bound to the temp anima directory."""
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         return ActivityLogger(anima_dir)
 
@@ -283,7 +283,7 @@ class TestActivityLoggerFsync:
         anima_dir: Path,
     ):
         """Every single append should trigger fsync."""
-        with patch("core.memory.activity.os.fsync") as mock_fsync:
+        with patch("core.memory.activity.logger.os.fsync") as mock_fsync:
             activity_logger.log("message_received", content="single entry")
 
         mock_fsync.assert_called_once()
@@ -294,7 +294,7 @@ class TestActivityLoggerFsync:
         anima_dir: Path,
     ):
         """Each append call should produce its own fsync."""
-        with patch("core.memory.activity.os.fsync") as mock_fsync:
+        with patch("core.memory.activity.logger.os.fsync") as mock_fsync:
             for i in range(5):
                 activity_logger.log(
                     "message_received",
@@ -328,7 +328,7 @@ class TestStreamingJournalConfirmRecovery:
         the caller to persist data before confirming.
         """
         journal.open(trigger="chat", from_person="tester", session_id="s-1")
-        with patch("core.memory.streaming_journal._FLUSH_SIZE_CHARS", 0):
+        with patch("core.memory.conversation.streaming_journal._FLUSH_SIZE_CHARS", 0):
             journal.write_text("test content")
         journal.close()
 
@@ -351,7 +351,7 @@ class TestStreamingJournalConfirmRecovery:
     ):
         """confirm_recovery() should delete the journal file."""
         journal.open(trigger="chat")
-        with patch("core.memory.streaming_journal._FLUSH_SIZE_CHARS", 0):
+        with patch("core.memory.conversation.streaming_journal._FLUSH_SIZE_CHARS", 0):
             journal.write_text("content to recover")
         journal.close()
 
@@ -372,7 +372,7 @@ class TestStreamingJournalConfirmRecovery:
     ):
         """Full two-step sequence: recover() -> use data -> confirm_recovery()."""
         journal.open(trigger="heartbeat", from_person="cron")
-        with patch("core.memory.streaming_journal._FLUSH_SIZE_CHARS", 0):
+        with patch("core.memory.conversation.streaming_journal._FLUSH_SIZE_CHARS", 0):
             journal.write_text("recovered output")
         journal.write_tool_start("web_search", args_summary="q=test")
         journal.write_tool_end("web_search", result_summary="3 results")
@@ -455,7 +455,7 @@ class TestRunnerToolUseRecovery:
         for each tool call.
         """
         journal.open(trigger="chat", from_person="user")
-        with patch("core.memory.streaming_journal._FLUSH_SIZE_CHARS", 0):
+        with patch("core.memory.conversation.streaming_journal._FLUSH_SIZE_CHARS", 0):
             journal.write_text("some output")
         journal.write_tool_start("web_search", args_summary="q=hello")
         journal.write_tool_end("web_search", result_summary="2 results")
@@ -468,11 +468,11 @@ class TestRunnerToolUseRecovery:
 
         with (
             patch(
-                "core.memory.conversation.ConversationMemory",
+                "core.memory.conversation.memory.ConversationMemory",
                 return_value=MagicMock(),
             ),
             patch(
-                "core.memory.activity.ActivityLogger",
+                "core.memory.activity.logger.ActivityLogger",
                 return_value=mock_activity,
             ),
         ):
@@ -503,7 +503,7 @@ class TestRunnerToolUseRecovery:
         to delete the journal file.
         """
         journal.open(trigger="chat", from_person="tester")
-        with patch("core.memory.streaming_journal._FLUSH_SIZE_CHARS", 0):
+        with patch("core.memory.conversation.streaming_journal._FLUSH_SIZE_CHARS", 0):
             journal.write_text("recovered text")
         journal.close()
 
@@ -512,11 +512,11 @@ class TestRunnerToolUseRecovery:
 
         with (
             patch(
-                "core.memory.conversation.ConversationMemory",
+                "core.memory.conversation.memory.ConversationMemory",
                 return_value=mock_conv,
             ),
             patch(
-                "core.memory.activity.ActivityLogger",
+                "core.memory.activity.logger.ActivityLogger",
                 return_value=MagicMock(),
             ),
             patch.object(
@@ -558,7 +558,7 @@ class TestRunnerToolUseRecovery:
         assert journal_path.exists()
 
         with patch(
-            "core.memory.activity.ActivityLogger",
+            "core.memory.activity.logger.ActivityLogger",
             return_value=MagicMock(),
         ):
             runner._recover_streaming_journal()

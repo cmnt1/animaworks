@@ -28,37 +28,37 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from core.i18n import t
 from core.memory._io import atomic_write_text
-from core.memory.conversation_compression import (
+from core.memory.conversation.compression import (
     CompressionResult,
 )
-from core.memory.conversation_compression import (
+from core.memory.conversation.compression import (
     _call_compression_llm as _call_compression_llm_fn,
 )
-from core.memory.conversation_compression import (
+from core.memory.conversation.compression import (
     _compress as _compress_fn,
 )
-from core.memory.conversation_compression import (
+from core.memory.conversation.compression import (
     _format_turns_for_compression as _format_turns_for_compression_fn,
 )
-from core.memory.conversation_compression import (
+from core.memory.conversation.compression import (
     compress_if_needed as _compress_if_needed,
 )
-from core.memory.conversation_compression import (
+from core.memory.conversation.compression import (
     compress_if_needed_detailed as _compress_if_needed_detailed,
 )
-from core.memory.conversation_compression import (
+from core.memory.conversation.compression import (
     needs_compression as _needs_compression,
 )
-from core.memory.conversation_finalize import (
+from core.memory.conversation.finalize import (
     _parse_session_summary as _parse_session_summary_fn,
 )
-from core.memory.conversation_finalize import (
+from core.memory.conversation.finalize import (
     finalize_if_session_ended as _finalize_if_session_ended,
 )
-from core.memory.conversation_finalize import (
+from core.memory.conversation.finalize import (
     finalize_session as _finalize_session,
 )
-from core.memory.conversation_models import (
+from core.memory.conversation.models import (
     _CHARS_PER_TOKEN,
     _ERROR_PATTERN,
     _MAX_DISPLAY_TURNS,
@@ -76,16 +76,16 @@ from core.memory.conversation_models import (
     ParsedSessionSummary,
     ToolRecord,
 )
-from core.memory.conversation_prompt import (
+from core.memory.conversation.prompt import (
     _format_history as _format_history_fn,
 )
-from core.memory.conversation_prompt import (
+from core.memory.conversation.prompt import (
     build_chat_prompt as _build_chat_prompt,
 )
-from core.memory.conversation_prompt import (
+from core.memory.conversation.prompt import (
     build_structured_messages as _build_structured_messages,
 )
-from core.memory.conversation_state_update import (
+from core.memory.conversation.state_update import (
     _record_resolutions as _record_resolutions_fn,
 )
 from core.schemas import ModelConfig
@@ -130,7 +130,7 @@ class ConversationMemory:
     @staticmethod
     async def _call_llm(system: str, user_content: str, max_tokens: int = 1000) -> str:
         """Delegate to standalone _call_llm for backward compat."""
-        from core.memory.conversation_compression import _call_llm
+        from core.memory.conversation.compression import _call_llm
 
         return await _call_llm(system, user_content, max_tokens=max_tokens)
 
@@ -364,7 +364,7 @@ class ConversationMemory:
 
     async def finalize_if_session_ended(self) -> bool:
         async def _compress_inner() -> CompressionResult:
-            from core.memory.conversation_compression import _compress
+            from core.memory.conversation.compression import _compress
 
             return await _compress(self.load(), self.model_config, self.save, self.anima_name)
 

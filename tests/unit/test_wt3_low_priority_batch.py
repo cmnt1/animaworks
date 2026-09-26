@@ -18,11 +18,12 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from core.time_utils import now_jst
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from core.time_utils import now_jst
 
 # ══════════════════════════════════════════════════════════════════════
 # Fix 8: Board Mention Fanout — running Animas only
@@ -258,13 +259,13 @@ class TestForgettingThresholds:
 
     def test_forgetting_days_threshold_is_90(self):
         """FORGETTING_LOW_ACTIVATION_DAYS should be 90."""
-        from core.memory.forgetting import FORGETTING_LOW_ACTIVATION_DAYS
+        from core.memory.maintenance.forgetting import FORGETTING_LOW_ACTIVATION_DAYS
 
         assert FORGETTING_LOW_ACTIVATION_DAYS == 90
 
     def test_forgetting_max_access_count_is_2(self):
         """FORGETTING_MAX_ACCESS_COUNT should be 2 (relaxed from previous stricter value)."""
-        from core.memory.forgetting import FORGETTING_MAX_ACCESS_COUNT
+        from core.memory.maintenance.forgetting import FORGETTING_MAX_ACCESS_COUNT
 
         assert FORGETTING_MAX_ACCESS_COUNT == 2
 
@@ -276,7 +277,7 @@ class TestForgettingThresholds:
         access_count=1 that has been in low activation for >90 days
         should be eligible.
         """
-        from core.memory.forgetting import (
+        from core.memory.maintenance.forgetting import (
             FORGETTING_LOW_ACTIVATION_DAYS,
             FORGETTING_MAX_ACCESS_COUNT,
         )
@@ -295,7 +296,7 @@ class TestForgettingThresholds:
 
     def test_access_count_3_not_eligible(self):
         """Chunks with access_count=3 should NOT be eligible (above threshold)."""
-        from core.memory.forgetting import (
+        from core.memory.maintenance.forgetting import (
             FORGETTING_LOW_ACTIVATION_DAYS,
             FORGETTING_MAX_ACCESS_COUNT,
         )
@@ -347,7 +348,7 @@ class TestExtractKeywordsTruncatesLongInput:
 
     def test_extract_keywords_truncates_long_input(self, tmp_path):
         """Messages > 5000 chars should be truncated before keyword extraction."""
-        from core.memory.priming import PrimingEngine, _MAX_KEYWORD_INPUT_LEN
+        from core.memory.priming import _MAX_KEYWORD_INPUT_LEN, PrimingEngine
 
         # Create minimal PrimingEngine
         anima_dir = tmp_path / "test-anima"
@@ -411,7 +412,7 @@ class TestJournalOpenRecoversOrphan:
         """If an orphaned journal exists when open() is called,
         it should be recovered before creating the new one.
         """
-        from core.memory.streaming_journal import StreamingJournal
+        from core.memory.conversation.streaming_journal import StreamingJournal
 
         # Create an orphaned journal (simulate previous crash)
         journal_path = journal_anima_dir / "shortterm" / "streaming_journal_chat.jsonl"
@@ -444,7 +445,7 @@ class TestJournalOpenRecoversOrphan:
 
     def test_journal_open_orphan_content_recovered(self, journal_anima_dir):
         """Orphan journal content should be recoverable before overwrite."""
-        from core.memory.streaming_journal import StreamingJournal
+        from core.memory.conversation.streaming_journal import StreamingJournal
 
         # Write an orphan with some text
         journal_path = journal_anima_dir / "shortterm" / "streaming_journal_chat.jsonl"
@@ -470,7 +471,7 @@ class TestJournalOpenRecoversOrphan:
 
     def test_journal_open_no_orphan_normal(self, journal_anima_dir):
         """Opening without existing journal should work normally (no recovery)."""
-        from core.memory.streaming_journal import StreamingJournal
+        from core.memory.conversation.streaming_journal import StreamingJournal
 
         journal_path = journal_anima_dir / "shortterm" / "streaming_journal_chat.jsonl"
         assert not journal_path.exists()

@@ -389,7 +389,7 @@ def test_index_command_rebuilds_longterm_bm25(tmp_path: Path) -> None:
         patch("core.memory.rag.repair.is_repair_locked", return_value=False),
         patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
-        patch("core.memory.bm25.rebuild_longterm_bm25_index") as mock_rebuild,
+        patch("core.memory.retrieval.bm25.rebuild_longterm_bm25_index") as mock_rebuild,
     ):
         mock_indexer = MagicMock()
         mock_indexer.index_directory.return_value = IndexDirectoryResult(chunks_indexed=1, files_indexed=1)
@@ -418,7 +418,7 @@ def test_index_command_full_reindexes_facts(tmp_path: Path) -> None:
         patch("core.memory.rag.repair.is_repair_locked", return_value=False),
         patch("core.memory.rag.singleton.get_vector_store", return_value=mock_store),
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
-        patch("core.memory.bm25.rebuild_longterm_bm25_index") as mock_rebuild,
+        patch("core.memory.retrieval.bm25.rebuild_longterm_bm25_index") as mock_rebuild,
     ):
         mock_indexer = MagicMock()
         mock_indexer.index_directory.return_value = IndexDirectoryResult(chunks_indexed=1, files_indexed=1)

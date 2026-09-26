@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from core.anima import DigitalAnima
-    from core.memory._activity_models import ActivityEntry
+    from core.memory.activity.models import ActivityEntry
 
 logger = logging.getLogger("animaworks.session_compactor")
 
@@ -233,7 +233,7 @@ def _extract_recent_chat_context(
     thread_id: str = "default",
 ) -> dict[str, Any]:
     """Extract recent chat context from the activity_log for idle compaction."""
-    from core.memory.activity_format import (
+    from core.memory.activity.format import (
         EVENT_SETS,
         EntryRole,
         clip,
@@ -382,7 +382,7 @@ async def _compact_mode_s_shared(
 ) -> bool:
     """Extract context, save shortterm, and discard a Mode S session."""
     from core.execution._sdk_session import SESSION_TYPE_CHAT, _clear_session_id
-    from core.memory.shortterm import SessionState, ShortTermMemory
+    from core.memory.conversation.shortterm import SessionState, ShortTermMemory
 
     logger.debug("_compact_mode_s: entry (anima=%s, thread=%s)", anima_name, thread_id)
     ctx = _extract_recent_chat_context(anima_dir, thread_id=thread_id)
@@ -411,8 +411,8 @@ async def _compact_mode_s(anima: DigitalAnima, thread_id: str) -> bool:
 
 async def _compact_mode_a(anima: DigitalAnima, thread_id: str) -> dict[str, Any]:
     """Mode A: conversation compress + shortterm save + finalize."""
-    from core.memory.conversation import ConversationMemory
-    from core.memory.shortterm import SessionState, ShortTermMemory
+    from core.memory.conversation.memory import ConversationMemory
+    from core.memory.conversation.shortterm import SessionState, ShortTermMemory
     from core.time_utils import now_local
 
     logger.debug("_compact_mode_a: entry (anima=%s, thread=%s)", anima.name, thread_id)
@@ -462,8 +462,8 @@ async def _compact_mode_b(anima: DigitalAnima, thread_id: str) -> dict[str, Any]
 async def _compact_mode_c(anima: DigitalAnima, thread_id: str) -> dict[str, Any]:
     """Mode C: conversation compress + shortterm save + codex thread discard."""
     from core.execution.codex_sdk import _clear_thread_id
-    from core.memory.conversation import ConversationMemory
-    from core.memory.shortterm import SessionState, ShortTermMemory
+    from core.memory.conversation.memory import ConversationMemory
+    from core.memory.conversation.shortterm import SessionState, ShortTermMemory
     from core.time_utils import now_local
 
     logger.debug("_compact_mode_c: entry (anima=%s, thread=%s)", anima.name, thread_id)
@@ -581,7 +581,7 @@ async def run_idle_compaction(anima: DigitalAnima, thread_id: str) -> bool:
         thread_id,
     )
     try:
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima.anima_dir)
         activity.log(

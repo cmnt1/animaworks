@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from core.execution.base import BaseExecutor, ExecutionResult, join_answer_parts
-from core.memory.shortterm import ShortTermMemory
+from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ModelConfig
 

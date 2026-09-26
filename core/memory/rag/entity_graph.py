@@ -50,8 +50,8 @@ def add_entity_aware_layers(
 ) -> None:
     """Add active fact/entity nodes and associative edges to a memory graph."""
     try:
-        from core.memory.entity_index import iter_entity_registry_entries, normalize_entity_key
-        from core.memory.facts import fact_entity_names, iter_active_fact_records
+        from core.memory.facts.entity_index import iter_entity_registry_entries, normalize_entity_key
+        from core.memory.facts.store import fact_entity_names, iter_active_fact_records
     except Exception:
         logger.debug("Entity-aware graph dependencies unavailable", exc_info=True)
         return

@@ -21,9 +21,9 @@ from unittest.mock import patch
 
 import pytest
 
-from core.memory.activity import ActivityLogger
-from core.memory.consolidation import ConsolidationEngine
-from core.memory.conversation import ConversationMemory, ConversationTurn
+from core.memory.activity.logger import ActivityLogger
+from core.memory.conversation.memory import ConversationMemory, ConversationTurn
+from core.memory.maintenance.consolidation import ConsolidationEngine
 from core.schemas import ModelConfig
 from tests.helpers.mocks import (
     make_litellm_response,
@@ -44,7 +44,9 @@ class TestSModeConversationToCompressionPipeline:
     """
 
     async def test_s_mode_conversation_to_compression_pipeline(
-        self, make_anima, data_dir,
+        self,
+        make_anima,
+        data_dir,
     ):
         """S mode (claude-sonnet-*) conversation turns accumulate, trigger
         compression, and produce a compressed_summary in conversation.json.
@@ -80,9 +82,7 @@ class TestSModeConversationToCompressionPipeline:
                     f"config.jsonのexternal_messaging.slackセクションを編集し、"
                     f"Bot tokenを設定してください。" + "詳細は..." * 50
                 )
-            state.turns.append(
-                ConversationTurn(role=role, content=content)
-            )
+            state.turns.append(ConversationTurn(role=role, content=content))
         conv_mem.save()
 
         # Verify the turns were saved to disk
@@ -92,9 +92,7 @@ class TestSModeConversationToCompressionPipeline:
         assert len(raw["turns"]) == 25, "All 25 turns should be persisted"
 
         # Verify compression is needed
-        assert conv_mem.needs_compression(), (
-            "With 25 turns and threshold=0.001, compression should be triggered"
-        )
+        assert conv_mem.needs_compression(), "With 25 turns and threshold=0.001, compression should be triggered"
 
         # Mock the LLM compression call and trigger compression
         summary_text = (
@@ -114,21 +112,17 @@ class TestSModeConversationToCompressionPipeline:
         fresh_conv = ConversationMemory(anima_dir, model_config)
         fresh_state = fresh_conv.load()
 
-        assert fresh_state.compressed_summary, (
-            "compressed_summary should be populated after compression"
-        )
-        assert "Slack連携" in fresh_state.compressed_summary, (
-            "Summary should contain key topics from the conversation"
-        )
+        assert fresh_state.compressed_summary, "compressed_summary should be populated after compression"
+        assert "Slack連携" in fresh_state.compressed_summary, "Summary should contain key topics from the conversation"
         assert fresh_state.compressed_turn_count > 0, (
             "compressed_turn_count should reflect the number of compressed turns"
         )
-        assert len(fresh_state.turns) < 25, (
-            "Remaining turns should be fewer than original 25"
-        )
+        assert len(fresh_state.turns) < 25, "Remaining turns should be fewer than original 25"
 
     async def test_incremental_compression_preserves_summary(
-        self, make_anima, data_dir,
+        self,
+        make_anima,
+        data_dir,
     ):
         """When compression runs again on new turns, the existing
         compressed_summary is passed to the LLM for merging.
@@ -161,22 +155,15 @@ class TestSModeConversationToCompressionPipeline:
             )
         conv_mem.save()
 
-        merged_summary = (
-            "前回の要約を含む統合サマリー: "
-            "Slack設定と追加の議論を統合しました。"
-        )
+        merged_summary = "前回の要約を含む統合サマリー: Slack設定と追加の議論を統合しました。"
         with patch_anthropic_compression(summary_text=merged_summary):
             compressed = await conv_mem.compress_if_needed()
 
         assert compressed is True
         fresh = ConversationMemory(anima_dir, model_config)
         state = fresh.load()
-        assert "統合" in state.compressed_summary, (
-            "Summary should reflect merged content"
-        )
-        assert state.compressed_turn_count > 10, (
-            "Turn count should include both old and new compressed turns"
-        )
+        assert "統合" in state.compressed_summary, "Summary should reflect merged content"
+        assert state.compressed_turn_count > 10, "Turn count should include both old and new compressed turns"
 
 
 # ── Test 2: compressed_summary -> RAG index -> search ──────────────
@@ -232,7 +219,7 @@ class TestCompressedSummaryToRAGSearchPipeline:
             encoding="utf-8",
         )
 
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
 
         rag_search = RAGMemorySearch(
             anima_dir=anima_dir,
@@ -251,16 +238,9 @@ class TestCompressedSummaryToRAGSearchPipeline:
         )
 
         # Verify keyword search found matching content
-        summary_results = [
-            r for r in results
-            if r["memory_type"] == "conversation_summary"
-        ]
-        assert len(summary_results) > 0, (
-            "Keyword search should find '返信不要' in conversation_summary"
-        )
-        assert any(
-            "返信不要" in r["content"] for r in summary_results
-        ), "Matched lines should contain the search term"
+        summary_results = [r for r in results if r["memory_type"] == "conversation_summary"]
+        assert len(summary_results) > 0, "Keyword search should find '返信不要' in conversation_summary"
+        assert any("返信不要" in r["content"] for r in summary_results), "Matched lines should contain the search term"
 
     def test_compressed_summary_rag_vector_indexing(self, tmp_path, monkeypatch):
         """RAG vector indexing includes conversation_summary collection.
@@ -323,12 +303,11 @@ class TestCompressedSummaryToRAGSearchPipeline:
 
         # Index the conversation summary
         indexed_count = indexer.index_conversation_summary(
-            state_dir, "test-rag-vec",
+            state_dir,
+            "test-rag-vec",
         )
 
-        assert indexed_count > 0, (
-            "index_conversation_summary should index at least one chunk"
-        )
+        assert indexed_count > 0, "index_conversation_summary should index at least one chunk"
 
         # Verify the collection exists and contains documents
         collection_name = "test-rag-vec_conversation_summary"
@@ -342,9 +321,7 @@ class TestCompressedSummaryToRAGSearchPipeline:
             top_k=5,
         )
 
-        assert len(results) > 0, (
-            "Vector search should find documents in conversation_summary collection"
-        )
+        assert len(results) > 0, "Vector search should find documents in conversation_summary collection"
         # Verify metadata
         for sr in results:
             assert sr.document.metadata.get("memory_type") == "conversation_summary"
@@ -398,19 +375,11 @@ class TestActivityLogToConsolidationPromptPipeline:
         result = engine._collect_activity_entries(hours=24)
 
         assert result, "Activity log collection should return non-empty string"
-        assert "message_received" in result, (
-            "Collected output should contain message_received entries"
-        )
-        assert "response_sent" in result, (
-            "Collected output should contain response_sent entries"
-        )
+        assert "message_received" in result, "Collected output should contain message_received entries"
+        assert "response_sent" in result, "Collected output should contain response_sent entries"
         # tool_use is excluded by smart filtering (only tool_result is kept)
-        assert "tool_use" not in result, (
-            "tool_use should be excluded by smart filtering"
-        )
-        assert "Slack" in result or "slack" in result, (
-            "Collected output should contain content from the entries"
-        )
+        assert "tool_use" not in result, "tool_use should be excluded by smart filtering"
+        assert "Slack" in result or "slack" in result, "Collected output should contain content from the entries"
 
     def test_consolidation_prompt_renders_episodes_summary(self):
         """Phase B consolidation_instruction template renders episodes_summary."""
@@ -427,9 +396,7 @@ class TestActivityLogToConsolidationPromptPipeline:
             error_patterns_summary="（エラーなし）",
         )
 
-        assert "テスト回答" in prompt, (
-            "Template should render the episodes_summary content"
-        )
+        assert "テスト回答" in prompt, "Template should render the episodes_summary content"
 
     def test_activity_log_to_episode_extraction(self, tmp_path):
         """E2E: activity log -> collect_activity_chunks -> formatted output.
@@ -466,20 +433,16 @@ class TestActivityLogToConsolidationPromptPipeline:
         )
 
         engine = ConsolidationEngine(anima_dir, "test-prompt-render")
-        with patch("core.memory.consolidation.ConsolidationEngine.compute_activity_budget", return_value=500_000):
+        with patch(
+            "core.memory.maintenance.consolidation.ConsolidationEngine.compute_activity_budget", return_value=500_000
+        ):
             chunks = engine.collect_activity_chunks(hours=24)
 
         assert chunks, "Should produce at least one chunk"
         combined = "\n".join(chunks)
-        assert "EC2" in combined, (
-            "Chunks should contain activity content about EC2"
-        )
-        assert "aws_collector" in combined, (
-            "Chunks should include tool name from tool_result"
-        )
-        assert "i-12345" in combined, (
-            "Chunks should include full tool_result content"
-        )
+        assert "EC2" in combined, "Chunks should contain activity content about EC2"
+        assert "aws_collector" in combined, "Chunks should include tool name from tool_result"
+        assert "i-12345" in combined, "Chunks should include full tool_result content"
 
     def test_empty_activity_log_produces_empty_string(self, tmp_path):
         """When no activity log exists, _collect_activity_entries returns ''."""
@@ -491,9 +454,7 @@ class TestActivityLogToConsolidationPromptPipeline:
         engine = ConsolidationEngine(anima_dir, "test-empty-activity")
         result = engine._collect_activity_entries(hours=24)
 
-        assert result == "", (
-            "Empty activity log should produce empty string"
-        )
+        assert result == "", "Empty activity log should produce empty string"
 
 
 # ── Test 4: B mode regression ──────────────────────────────────────
@@ -528,24 +489,16 @@ class TestBModeConversationRegression:
 
         # Verify conversation.json has turns
         conv_path = dp.anima_dir / "state" / "conversation.json"
-        assert conv_path.exists(), (
-            "conversation.json should exist after B mode message"
-        )
+        assert conv_path.exists(), "conversation.json should exist after B mode message"
 
         data = json.loads(conv_path.read_text(encoding="utf-8"))
         turns = data.get("turns", [])
 
-        assert len(turns) >= 2, (
-            "Should have at least 2 turns (human + assistant)"
-        )
+        assert len(turns) >= 2, "Should have at least 2 turns (human + assistant)"
         assert turns[0]["role"] == "human", "First turn should be human"
         assert turns[1]["role"] == "assistant", "Second turn should be assistant"
-        assert "テストメッセージ" in turns[0]["content"], (
-            "Human turn should contain the original message"
-        )
-        assert "B mode response" in turns[1]["content"], (
-            "Assistant turn should contain the LLM response"
-        )
+        assert "テストメッセージ" in turns[0]["content"], "Human turn should contain the original message"
+        assert "B mode response" in turns[1]["content"], "Assistant turn should contain the LLM response"
 
     async def test_b_mode_multiple_messages_accumulate(self, make_digital_anima):
         """Multiple B mode messages accumulate turns in conversation.json."""
@@ -571,6 +524,4 @@ class TestBModeConversationRegression:
         turns = data.get("turns", [])
 
         # 3 messages * 2 turns each = 6 turns
-        assert len(turns) == 6, (
-            f"Expected 6 turns (3 human + 3 assistant), got {len(turns)}"
-        )
+        assert len(turns) == 6, f"Expected 6 turns (3 human + 3 assistant), got {len(turns)}"

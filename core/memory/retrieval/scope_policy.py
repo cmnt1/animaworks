@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from core.memory.search_metadata import format_result_metadata_line
+from core.memory.retrieval.search_metadata import format_result_metadata_line
 
 NEO4J_SCOPE_MAP: dict[str, str] = {
     "knowledge": "fact",

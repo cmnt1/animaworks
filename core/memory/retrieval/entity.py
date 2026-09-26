@@ -400,7 +400,7 @@ def _build_alias_index_from_path(path: Path) -> EntityAliasIndex | None:
 
 
 def _build_alias_index(entities: dict[str, Any]) -> EntityAliasIndex:
-    from core.memory.entity_index import normalize_entity_key
+    from core.memory.facts.entity_index import normalize_entity_key
 
     alias_owner: dict[str, str] = {}
     synonyms: dict[str, set[str]] = {}
@@ -489,7 +489,7 @@ def _build_alias_automaton(
 def _resolve_entity_keys(phrases: set[str], index: EntityAliasIndex | None) -> set[str]:
     if not index or not phrases:
         return set()
-    from core.memory.entity_index import normalize_entity_key
+    from core.memory.facts.entity_index import normalize_entity_key
 
     keys: set[str] = set()
     for phrase in phrases:
@@ -512,7 +512,7 @@ def _match_registry_keys_in_text(text: str, index: EntityAliasIndex | None) -> s
     if cached is not None:
         return set(cached)
 
-    from core.memory.entity_index import normalize_entity_key
+    from core.memory.facts.entity_index import normalize_entity_key
 
     haystacks = {
         normalize_entity_key(text),

@@ -15,7 +15,7 @@ import pytest
 from core.config import invalidate_cache, save_config
 from core.config.schemas import AnimaWorksConfig, EventExportConfig
 from core.event_export import reset_event_exporters
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
 from core.usage.token_usage import TokenUsageLogger
 
 pytestmark = [pytest.mark.integration, pytest.mark.e2e]

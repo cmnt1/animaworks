@@ -6,7 +6,7 @@ from pathlib import Path
 
 from core._anima_lifecycle import _format_hygiene_section
 from core.i18n.strings.memory import STRINGS as MEMORY_STRINGS
-from core.memory.hygiene import scan_memory_hygiene
+from core.memory.maintenance.hygiene import scan_memory_hygiene
 
 
 def _paths(report: dict, category: str) -> list[str]:
@@ -33,7 +33,7 @@ def test_scan_detects_all_categories_and_excludes_canonical_archive(
     (knowledge / "archive" / "_merged_ignored.md").write_text("ignored", encoding="utf-8")
     (knowledge / "archive" / "ignored.mdc").write_text("ignored", encoding="utf-8")
 
-    monkeypatch.setattr("core.memory.hygiene.today_local", lambda: date(2026, 7, 18))
+    monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: date(2026, 7, 18))
     report = scan_memory_hygiene(anima_dir)
 
     assert _paths(report, "merged_leftovers") == [
@@ -73,7 +73,7 @@ def test_scan_detects_noncanonical_episodes(tmp_path: Path, monkeypatch) -> None
     (episodes / "notes.json").write_text("{}", encoding="utf-8")
     (archive / "recovered_old.md").write_text("archived legacy", encoding="utf-8")
 
-    monkeypatch.setattr("core.memory.hygiene.today_local", lambda: date(2026, 7, 18))
+    monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: date(2026, 7, 18))
     report = scan_memory_hygiene(anima_dir)
 
     assert set(_paths(report, "noncanonical_episodes")) == {
@@ -92,11 +92,11 @@ def test_scan_retains_first_seen_for_noncanonical_episodes(tmp_path: Path, monke
     legacy = episodes / "recovered_old.md"
     legacy.write_text("old", encoding="utf-8")
 
-    monkeypatch.setattr("core.memory.hygiene.today_local", lambda: date(2026, 7, 1))
+    monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: date(2026, 7, 1))
     first = scan_memory_hygiene(anima_dir)
     assert first["noncanonical_episodes"][0]["first_seen"] == "2026-07-01"
 
-    monkeypatch.setattr("core.memory.hygiene.today_local", lambda: date(2026, 7, 18))
+    monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: date(2026, 7, 18))
     second = scan_memory_hygiene(anima_dir)
     assert second["noncanonical_episodes"][0]["first_seen"] == "2026-07-01"
 
@@ -110,13 +110,13 @@ def test_scan_retains_first_seen_and_removes_resolved_items(tmp_path: Path, monk
     leftover.write_text("old", encoding="utf-8")
     resolved.write_text("legacy", encoding="utf-8")
 
-    monkeypatch.setattr("core.memory.hygiene.today_local", lambda: date(2026, 7, 1))
+    monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: date(2026, 7, 1))
     first = scan_memory_hygiene(anima_dir)
     assert first["merged_leftovers"][0]["first_seen"] == "2026-07-01"
 
     resolved.unlink()
     (knowledge / "new.mdc").write_text("new", encoding="utf-8")
-    monkeypatch.setattr("core.memory.hygiene.today_local", lambda: date(2026, 7, 18))
+    monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: date(2026, 7, 18))
     second = scan_memory_hygiene(anima_dir)
 
     assert second["merged_leftovers"][0]["first_seen"] == "2026-07-01"
@@ -153,7 +153,7 @@ def test_scan_resets_invalid_and_future_first_seen_dates(tmp_path: Path, monkeyp
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr("core.memory.hygiene.today_local", lambda: date(2026, 7, 18))
+    monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: date(2026, 7, 18))
 
     report = scan_memory_hygiene(anima_dir)
 
@@ -169,7 +169,7 @@ def test_scan_recovers_from_broken_hygiene_json(tmp_path: Path, monkeypatch) -> 
     state.mkdir()
     report_path = state / "memory_hygiene.json"
     report_path.write_text("{broken", encoding="utf-8")
-    monkeypatch.setattr("core.memory.hygiene.today_local", lambda: date(2026, 7, 18))
+    monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: date(2026, 7, 18))
 
     report = scan_memory_hygiene(anima_dir)
 

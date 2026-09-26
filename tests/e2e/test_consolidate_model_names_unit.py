@@ -44,8 +44,12 @@ def temp_anima_dir(tmp_path: Path) -> Path:
     """Create a minimal anima directory structure for unit tests."""
     anima_dir = tmp_path / "test_anima"
     for subdir in (
-        "episodes", "knowledge", "procedures",
-        "activity_log", "state", "shortterm",
+        "episodes",
+        "knowledge",
+        "procedures",
+        "activity_log",
+        "state",
+        "shortterm",
     ):
         (anima_dir / subdir).mkdir(parents=True)
     return anima_dir
@@ -66,9 +70,7 @@ def _assert_model_in_acompletion(mock_llm: AsyncMock, expected_model: str) -> No
     """Assert that the *first* call to acompletion used ``expected_model``."""
     assert mock_llm.await_count >= 1, "litellm.acompletion was never called"
     call_kwargs = mock_llm.call_args_list[0].kwargs
-    assert call_kwargs["model"] == expected_model, (
-        f"Expected model={expected_model!r}, got {call_kwargs['model']!r}"
-    )
+    assert call_kwargs["model"] == expected_model, f"Expected model={expected_model!r}, got {call_kwargs['model']!r}"
 
 
 def _current_consolidation_helper_model() -> str:
@@ -97,9 +99,11 @@ class TestProceduralDistillerModelDefault:
 
     @pytest.fixture
     def distiller(self, temp_anima_dir: Path):
-        from core.memory.distillation import ProceduralDistiller
+        from core.memory.maintenance.distillation import ProceduralDistiller
+
         return ProceduralDistiller(
-            anima_dir=temp_anima_dir, anima_name="test_anima",
+            anima_dir=temp_anima_dir,
+            anima_name="test_anima",
         )
 
     # ── classify_and_distill ─────────────────────────────────
@@ -107,13 +111,14 @@ class TestProceduralDistillerModelDefault:
     @pytest.mark.asyncio
     async def test_classify_and_distill_default_model(self, distiller):
         """classify_and_distill(model='') resolves to get_consolidation_llm_kwargs()['model']."""
-        mock_resp = _make_mock_llm_response(
-            "## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)\n"
-        )
-        with patch(
-            "core.memory._llm_utils.get_consolidation_llm_kwargs",
-            return_value={"model": _LITELLM_TEST_CONSOLIDATION_MODEL},
-        ), patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+        mock_resp = _make_mock_llm_response("## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)\n")
+        with (
+            patch(
+                "core.memory._llm_utils.get_consolidation_llm_kwargs",
+                return_value={"model": _LITELLM_TEST_CONSOLIDATION_MODEL},
+            ),
+            patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm,
+        ):
             mock_llm.return_value = mock_resp
             await distiller.classify_and_distill("some episodes")
             _assert_model_in_acompletion(mock_llm, _LITELLM_TEST_CONSOLIDATION_MODEL)
@@ -121,9 +126,7 @@ class TestProceduralDistillerModelDefault:
     @pytest.mark.asyncio
     async def test_classify_and_distill_explicit_model(self, distiller):
         """classify_and_distill(model='custom/m') uses that model."""
-        mock_resp = _make_mock_llm_response(
-            "## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)\n"
-        )
+        mock_resp = _make_mock_llm_response("## knowledge抽出\n(なし)\n\n## procedure抽出\n(なし)\n")
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_resp
             await distiller.classify_and_distill("some episodes", model="custom/m")
@@ -153,16 +156,20 @@ class TestReconsolidationEngineModelDefault:
 
     @pytest.fixture
     def recon_engine(self, temp_anima_dir: Path):
-        from core.memory.reconsolidation import ReconsolidationEngine
+        from core.memory.maintenance.reconsolidation import ReconsolidationEngine
 
         mm = MagicMock()
         mm.read_procedure_metadata.return_value = {
-            "failure_count": 3, "confidence": 0.3, "version": 1,
+            "failure_count": 3,
+            "confidence": 0.3,
+            "version": 1,
             "description": "test",
         }
         mm.read_procedure_content.return_value = "test content"
         mm.read_knowledge_metadata.return_value = {
-            "failure_count": 3, "confidence": 0.3, "version": 1,
+            "failure_count": 3,
+            "confidence": 0.3,
+            "version": 1,
         }
         mm.read_knowledge_content.return_value = "knowledge content"
 
@@ -185,7 +192,9 @@ class TestReconsolidationEngineModelDefault:
 
     @pytest.mark.asyncio
     async def test_apply_reconsolidation_explicit_model(
-        self, recon_engine, temp_anima_dir,
+        self,
+        recon_engine,
+        temp_anima_dir,
     ):
         """apply_reconsolidation(targets, model='x') uses that model."""
         proc_dir = temp_anima_dir / "procedures"
@@ -196,7 +205,8 @@ class TestReconsolidationEngineModelDefault:
         with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = mock_resp
             await recon_engine.apply_reconsolidation(
-                [proc_file], model="google/gemini-2.5-pro",
+                [proc_file],
+                model="google/gemini-2.5-pro",
             )
             _assert_model_in_acompletion(mock_llm, "google/gemini-2.5-pro")
 
@@ -295,6 +305,4 @@ class TestConfigDefaults:
         from core.config.models import AnimaDefaults
 
         defaults = AnimaDefaults()
-        assert "/" not in defaults.model, (
-            "AnimaDefaults.model should not include a provider prefix"
-        )
+        assert "/" not in defaults.model, "AnimaDefaults.model should not include a provider prefix"

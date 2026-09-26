@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
 from core.time_utils import today_local
 
 # ── Fixtures ──────────────────────────────────────────────────
@@ -211,7 +211,7 @@ def test_append_dm_log_restored() -> None:
 
 def test_append_transcript_removed() -> None:
     """_append_transcript method no longer exists on ConversationMemory."""
-    from core.memory.conversation import ConversationMemory
+    from core.memory.conversation.memory import ConversationMemory
 
     assert not hasattr(ConversationMemory, "_append_transcript"), "_append_transcript should have been removed"
 

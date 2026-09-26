@@ -21,7 +21,7 @@ from core.lifecycle.anima_merge import (
     MergePhase,
 )
 from core.lifecycle.anima_merge.verification import source_reference_report
-from core.memory.facts import FactRecord, append_fact_records, iter_fact_records
+from core.memory.facts.store import FactRecord, append_fact_records, iter_fact_records
 from core.tasks.board.store import TaskBoardStore
 from core.time_utils import now_local
 

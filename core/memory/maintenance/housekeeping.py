@@ -385,7 +385,7 @@ def _archive_stale_merge_leftovers(animas_dir: Path, hygiene_grace_days: int) ->
     if not animas_dir.is_dir():
         return {"skipped": True, "scanned_animas": 0, "moved_items": 0}
 
-    from core.memory.hygiene import scan_memory_hygiene
+    from core.memory.maintenance.hygiene import scan_memory_hygiene
 
     scanned_animas = 0
     moved_items = 0

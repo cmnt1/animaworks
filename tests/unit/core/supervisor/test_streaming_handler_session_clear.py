@@ -20,7 +20,6 @@ import pytest
 from core.supervisor.ipc import IPCRequest
 from core.supervisor.streaming_handler import StreamingIPCHandler
 
-
 # ── Helpers ───────────────────────────────────────────────────
 
 
@@ -71,7 +70,7 @@ class TestSessionPreservedOnDoneFalse:
                 "core.execution._sdk_session._clear_session_id",
                 side_effect=fake_clear_session_id,
             ),
-            patch("core.memory.shortterm.ShortTermMemory") as mock_stm_class,
+            patch("core.memory.conversation.shortterm.ShortTermMemory") as mock_stm_class,
         ):
             mock_config.return_value.server.keepalive_interval = 30
             mock_stm_instance = MagicMock()
@@ -102,7 +101,7 @@ class TestSessionPreservedOnDoneFalse:
         with (
             patch("core.config.load_config") as mock_config,
             patch.object(
-                __import__("core.memory.shortterm", fromlist=["ShortTermMemory"]).ShortTermMemory,
+                __import__("core.memory.conversation.shortterm", fromlist=["ShortTermMemory"]).ShortTermMemory,
                 "clear_checkpoint",
                 fake_clear_checkpoint,
             ),
@@ -126,7 +125,7 @@ class TestSessionPreservedOnDoneFalse:
 
         with (
             patch("core.config.load_config") as mock_config,
-            patch("core.memory.shortterm.ShortTermMemory"),
+            patch("core.memory.conversation.shortterm.ShortTermMemory"),
         ):
             mock_config.return_value.server.keepalive_interval = 30
             responses = []
@@ -165,7 +164,7 @@ class TestSessionPreservedOnTimeoutError:
                 "core.execution._sdk_session._clear_session_id",
                 side_effect=fake_clear_session_id,
             ),
-            patch("core.memory.shortterm.ShortTermMemory"),
+            patch("core.memory.conversation.shortterm.ShortTermMemory"),
         ):
             mock_config.return_value.server.keepalive_interval = 30
             responses = []
@@ -187,7 +186,7 @@ class TestSessionPreservedOnTimeoutError:
 
         with (
             patch("core.config.load_config") as mock_config,
-            patch("core.memory.shortterm.ShortTermMemory"),
+            patch("core.memory.conversation.shortterm.ShortTermMemory"),
         ):
             mock_config.return_value.server.keepalive_interval = 30
             responses = []
@@ -227,7 +226,7 @@ class TestSessionPreservedOnException:
                 "core.execution._sdk_session._clear_session_id",
                 side_effect=fake_clear_session_id,
             ),
-            patch("core.memory.shortterm.ShortTermMemory"),
+            patch("core.memory.conversation.shortterm.ShortTermMemory"),
         ):
             mock_config.return_value.server.keepalive_interval = 30
             responses = []
@@ -249,7 +248,7 @@ class TestSessionPreservedOnException:
 
         with (
             patch("core.config.load_config") as mock_config,
-            patch("core.memory.shortterm.ShortTermMemory"),
+            patch("core.memory.conversation.shortterm.ShortTermMemory"),
         ):
             mock_config.return_value.server.keepalive_interval = 30
             responses = []
@@ -279,7 +278,7 @@ class TestSessionPreservedOnException:
         with (
             patch("core.config.load_config") as mock_config,
             patch.object(
-                __import__("core.memory.shortterm", fromlist=["ShortTermMemory"]).ShortTermMemory,
+                __import__("core.memory.conversation.shortterm", fromlist=["ShortTermMemory"]).ShortTermMemory,
                 "clear_checkpoint",
                 fake_clear_checkpoint,
             ),
@@ -320,7 +319,7 @@ class TestNoSessionClearOnSuccess:
                 "core.execution._sdk_session._clear_session_id",
                 side_effect=fake_clear_session_id,
             ),
-            patch("core.memory.shortterm.ShortTermMemory"),
+            patch("core.memory.conversation.shortterm.ShortTermMemory"),
         ):
             mock_config.return_value.server.keepalive_interval = 30
             responses = []

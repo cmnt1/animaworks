@@ -98,7 +98,7 @@ task runnerはthinking/tool/text等の既存chunkを `stream_chunk` eventで送�
 - runner正常完了: §4でrootが送った`run` requestと同じ`request_id`の `job_result` responseを返す。chatではrootが現行 `stream=true, done=true, result={response,replied_to,cycle_result}` へ変換する。
 - runner失敗: `job_result`を空成功にせず、`EXECUTION_ERROR`等のerror responseへ変換する。
 - keepaliveは既存server向けchunk形式を維持するが、v2のhalf-open heartbeatとは別物である。
-- server死は現行同等にSSE再接続時のresponse ID喪失を許容する。root/task死はjournal回復により最大損失1秒または500文字で、表示済みprefixを重複させない（C-05）。根拠となる現行buffer値は `core/memory/streaming_journal.py:38-40`。
+- server死は現行同等にSSE再接続時のresponse ID喪失を許容する。root/task死はjournal回復により最大損失1秒または500文字で、表示済みprefixを重複させない（C-05）。根拠となる現行buffer値は `core/memory/conversation/streaming_journal.py:38-40`。
 
 ## 7. control event、steer、lane規律
 

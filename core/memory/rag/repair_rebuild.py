@@ -196,8 +196,8 @@ def _reindex_into_store(
 ) -> tuple[int, dict[str, str]]:
     """Index an anima's memory (and optionally shared collections) into a store."""
     from core.company_resources import get_company_resources
-    from core.memory.bm25 import rebuild_longterm_bm25_index
     from core.memory.rag import MemoryIndexer
+    from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index
     from core.paths import get_animas_dir, get_common_knowledge_dir, get_common_skills_dir, get_data_dir
 
     anima_dir = Path(anima_dir) if anima_dir is not None else get_animas_dir() / anima_name
@@ -224,7 +224,7 @@ def _reindex_into_store(
     if (state_dir / "conversation.json").is_file():
         total_chunks += indexer.index_conversation_summary(state_dir, anima_name, force=True)
 
-    from core.memory.entity_index import load_entity_registry, rebuild_entity_collection
+    from core.memory.facts.entity_index import load_entity_registry, rebuild_entity_collection
 
     # Resolve one registry snapshot for both the write and its expected count.
     # Each entry creates one entity document. Omitting these documents from the
@@ -291,7 +291,7 @@ def _reindex_into_store(
                     f"failed={result.files_failed} unprocessed={result.files_unprocessed}"
                 )
             total_chunks += result.chunks_indexed
-            from core.memory.rag_search import _compute_dir_hash
+            from core.memory.retrieval.rag_search import _compute_dir_hash
 
             shared_hashes[meta_key] = _compute_dir_hash(src_dir, glob)
     return total_chunks, shared_hashes
@@ -375,8 +375,8 @@ def full_reindex(anima_name: str, *, include_shared: bool) -> int:
 
 
 def _repair_metadata_paths(anima_dir: Path) -> tuple[Path, ...]:
-    from core.memory.bm25 import longterm_bm25_delta_path, longterm_bm25_dirty_path, longterm_bm25_index_path
     from core.memory.rag.shared_meta import shared_index_meta_path
+    from core.memory.retrieval.bm25 import longterm_bm25_delta_path, longterm_bm25_dirty_path, longterm_bm25_index_path
 
     return (
         anima_dir / "index_meta.json",
@@ -491,7 +491,7 @@ def atomic_rebuild_vectordb(
         if not verify_worker_vector_store(anima_name, expected_chunks=chunks):
             raise RebuildVerificationError(f"vector worker verification failed after swap for {anima_name}")
 
-        from core.memory.bm25 import rebuild_longterm_bm25_index
+        from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index
 
         rebuild_longterm_bm25_index(resolved_anima_dir)
         if shared_hashes:

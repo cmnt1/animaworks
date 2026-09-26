@@ -100,7 +100,7 @@ Budget prioritizes trusted/medium content first; untrusted content fills the rem
 
 Daily consolidation reads YAML frontmatter `origin:` from source knowledge files. If any source has external origin (`external_web`, `mixed`, `consolidation_external`), the consolidated output is downgraded to `origin: consolidation_external` (resolves to `untrusted`).
 
-**Key files**: `core/tooling/handler_memory.py` (write_memory_file origin propagation), `core/memory/rag/indexer.py` (origin in chunk metadata), `core/memory/priming.py` (Channel C trust splitting), `core/memory/consolidation.py` (origin chain tracking)
+**Key files**: `core/tooling/handler_memory.py` (write_memory_file origin propagation), `core/memory/rag/indexer.py` (origin in chunk metadata), `core/memory/priming.py` (Channel C trust splitting), `core/memory/maintenance/consolidation.py` (origin chain tracking)
 
 ---
 

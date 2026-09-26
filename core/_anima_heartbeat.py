@@ -23,8 +23,8 @@ from typing import Any
 
 from core.execution.fallback_activity import run_with_model_fallback
 from core.i18n import t
-from core.memory.conversation import ConversationMemory
-from core.memory.streaming_journal import StreamingJournal
+from core.memory.conversation.memory import ConversationMemory
+from core.memory.conversation.streaming_journal import StreamingJournal
 from core.messenger import InboxItem
 from core.paths import load_prompt
 from core.schemas import CycleResult

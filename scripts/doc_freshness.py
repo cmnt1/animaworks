@@ -89,7 +89,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     ],
     "common_knowledge/communication/sending-limits.md": [
         "core/outbound.py",
-        "core/memory/activity.py",
+        "core/memory/activity/logger.py",
     ],
     # ── common_knowledge — operations ──
     "reference/operations/task-management.md": [
@@ -145,10 +145,10 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     ],
     "reference/anatomy/memory-system.md": [
         "core/memory/",
-        "core/memory/bm25.py",
+        "core/memory/retrieval/bm25.py",
         "core/memory/priming.py",
-        "core/memory/consolidation.py",
-        "core/memory/forgetting.py",
+        "core/memory/maintenance/consolidation.py",
+        "core/memory/maintenance/forgetting.py",
         "core/memory/rag/",
     ],
     # ── common_knowledge — organization ──

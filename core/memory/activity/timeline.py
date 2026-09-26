@@ -9,13 +9,13 @@ from __future__ import annotations
 
 """Timeline trigger-based grouping mixin for ActivityLogger.
 
-Internal module — import from :mod:`core.memory.activity` instead.
+Internal module — import from :mod:`core.memory.activity.logger` instead.
 """
 
 from datetime import datetime, timedelta
 from typing import Any
 
-from core.memory._activity_models import ActivityEntry
+from core.memory.activity.models import ActivityEntry
 
 
 class TimelineMixin:
@@ -237,7 +237,7 @@ class TimelineMixin:
         Sets ``_tool_result_data`` on tool_use entries and returns a
         filtered list excluding consumed tool_result entries.
         """
-        from core.memory.activity_format import entry_text, pair_tool_events
+        from core.memory.activity.format import entry_text, pair_tool_events
 
         paired_ids: set[int] = set()
         for exchange in pair_tool_events(entries):

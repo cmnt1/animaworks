@@ -6,6 +6,7 @@
 Covers StreamCheckpoint dataclass, ShortTermMemory checkpoint methods,
 build_stream_retry_prompt helper, and StreamDisconnectedError.
 """
+
 from __future__ import annotations
 
 import json
@@ -15,10 +16,9 @@ from typing import Any
 
 import pytest
 
-from core.memory.shortterm import ShortTermMemory, StreamCheckpoint
 from core.execution._session import build_stream_retry_prompt
 from core.execution.agent_sdk import StreamDisconnectedError
-
+from core.memory.conversation.shortterm import ShortTermMemory, StreamCheckpoint
 
 # ── Fixtures ──────────────────────────────────────────────────
 

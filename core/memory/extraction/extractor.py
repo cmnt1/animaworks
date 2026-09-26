@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Any, get_args
 
-from core.memory.fact_observability import warn_rate_limited
+from core.memory.facts.observability import warn_rate_limited
 from core.memory.ontology.default import (
     ENTITY_TYPES,
     EntityExtractionResult,

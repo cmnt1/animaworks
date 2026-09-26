@@ -26,7 +26,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.streaming_journal import JournalRecovery, StreamingJournal
+from core.memory.conversation.streaming_journal import JournalRecovery, StreamingJournal
 
 if TYPE_CHECKING:
     from core.supervisor.runner import AnimaRunner
@@ -89,7 +89,7 @@ class TestCrashRecovery:
         journal.open(trigger="chat", from_person="tester", session_id="s-crash")
 
         # Force immediate flush by patching the time threshold
-        with patch("core.memory.streaming_journal._FLUSH_SIZE_CHARS", 0):
+        with patch("core.memory.conversation.streaming_journal._FLUSH_SIZE_CHARS", 0):
             journal.write_text("chunk-A ")
             journal.write_text("chunk-B")
 
@@ -123,7 +123,7 @@ class TestCrashRecovery:
         from zoneinfo import ZoneInfo
 
         fixed = datetime(2026, 7, 21, 9, 30, 15, tzinfo=ZoneInfo("Asia/Tokyo"))
-        monkeypatch.setattr("core.memory.streaming_journal.now_local", lambda: fixed)
+        monkeypatch.setattr("core.memory.conversation.streaming_journal.now_local", lambda: fixed)
 
         recovery = JournalRecovery(
             recovered_text="orphan body",
@@ -159,7 +159,7 @@ class TestToolEventsRecovery:
         """
         journal.open(trigger="heartbeat")
 
-        with patch("core.memory.streaming_journal._FLUSH_SIZE_CHARS", 0):
+        with patch("core.memory.conversation.streaming_journal._FLUSH_SIZE_CHARS", 0):
             journal.write_text("before-tool ")
 
         journal.write_tool_start("web_search", args_summary="query=test")
@@ -303,7 +303,7 @@ class TestFinalizeThenClose:
         """
         journal.open(trigger="chat")
 
-        with patch("core.memory.streaming_journal._FLUSH_SIZE_CHARS", 0):
+        with patch("core.memory.conversation.streaming_journal._FLUSH_SIZE_CHARS", 0):
             journal.write_text("some text")
 
         journal.finalize(summary="done")
@@ -330,13 +330,13 @@ class TestDoubleOpen:
         """
         journal.open(trigger="first-session")
 
-        with patch("core.memory.streaming_journal._FLUSH_SIZE_CHARS", 0):
+        with patch("core.memory.conversation.streaming_journal._FLUSH_SIZE_CHARS", 0):
             journal.write_text("first-data")
 
         # Second open overwrites the file (mode="w" in open())
         journal.open(trigger="second-session")
 
-        with patch("core.memory.streaming_journal._FLUSH_SIZE_CHARS", 0):
+        with patch("core.memory.conversation.streaming_journal._FLUSH_SIZE_CHARS", 0):
             journal.write_text("second-data")
 
         journal.close()
@@ -397,7 +397,7 @@ class TestRecoverStreamingJournal:
         """
         # Create orphaned journal
         journal.open(trigger="chat", from_person="tester", session_id="s-1")
-        with patch("core.memory.streaming_journal._FLUSH_SIZE_CHARS", 0):
+        with patch("core.memory.conversation.streaming_journal._FLUSH_SIZE_CHARS", 0):
             journal.write_text("partial response")
         journal.close()
 
@@ -406,11 +406,11 @@ class TestRecoverStreamingJournal:
 
         with (
             patch(
-                "core.memory.conversation.ConversationMemory",
+                "core.memory.conversation.memory.ConversationMemory",
                 return_value=mock_conv,
             ) as conv_cls,
             patch(
-                "core.memory.activity.ActivityLogger",
+                "core.memory.activity.logger.ActivityLogger",
             ),
         ):
             runner._recover_streaming_journal()
@@ -443,7 +443,7 @@ class TestRecoverStreamingJournal:
         """
         # Create orphaned journal with tool call
         journal.open(trigger="heartbeat", from_person="cron")
-        with patch("core.memory.streaming_journal._FLUSH_SIZE_CHARS", 0):
+        with patch("core.memory.conversation.streaming_journal._FLUSH_SIZE_CHARS", 0):
             journal.write_text("some output")
         journal.write_tool_start("web_search", args_summary="q=hello")
         journal.write_tool_end("web_search", result_summary="2 results")
@@ -454,11 +454,11 @@ class TestRecoverStreamingJournal:
 
         with (
             patch(
-                "core.memory.conversation.ConversationMemory",
+                "core.memory.conversation.memory.ConversationMemory",
                 return_value=MagicMock(),
             ),
             patch(
-                "core.memory.activity.ActivityLogger",
+                "core.memory.activity.logger.ActivityLogger",
                 return_value=mock_activity,
             ) as activity_cls,
         ):
@@ -500,10 +500,10 @@ class TestRecoverStreamingJournal:
 
         with (
             patch(
-                "core.memory.conversation.ConversationMemory",
+                "core.memory.conversation.memory.ConversationMemory",
             ) as conv_cls,
             patch(
-                "core.memory.activity.ActivityLogger",
+                "core.memory.activity.logger.ActivityLogger",
             ) as activity_cls,
         ):
             runner._recover_streaming_journal()
@@ -523,10 +523,10 @@ class TestRecoverStreamingJournal:
 
         with (
             patch(
-                "core.memory.conversation.ConversationMemory",
+                "core.memory.conversation.memory.ConversationMemory",
             ) as conv_cls,
             patch(
-                "core.memory.activity.ActivityLogger",
+                "core.memory.activity.logger.ActivityLogger",
             ) as activity_cls,
         ):
             runner._recover_streaming_journal()
@@ -541,13 +541,13 @@ class TestRecoverStreamingJournal:
     ):
         """A repeated recovery pass must not duplicate conversation or activity entries."""
         from core.i18n import t
-        from core.memory.activity import ActivityLogger
-        from core.memory.conversation import ConversationMemory
+        from core.memory.activity.logger import ActivityLogger
+        from core.memory.conversation.memory import ConversationMemory
 
         (anima_dir / "state").mkdir(exist_ok=True)
 
         journal.open(trigger="chat", from_person="tester", session_id="s-1")
-        with patch("core.memory.streaming_journal._FLUSH_SIZE_CHARS", 0):
+        with patch("core.memory.conversation.streaming_journal._FLUSH_SIZE_CHARS", 0):
             journal.write_text("partial response")
         journal.close()
 

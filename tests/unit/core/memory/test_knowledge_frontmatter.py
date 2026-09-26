@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -12,7 +13,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 
 # ── Fixtures ────────────────────────────────────────────────
 
@@ -40,7 +40,7 @@ def memory_manager(temp_anima_dir: Path):
 @pytest.fixture
 def consolidation_engine(temp_anima_dir: Path):
     """Create a ConsolidationEngine instance."""
-    from core.memory.consolidation import ConsolidationEngine
+    from core.memory.maintenance.consolidation import ConsolidationEngine
 
     return ConsolidationEngine(
         anima_dir=temp_anima_dir,
@@ -74,7 +74,9 @@ class TestWriteKnowledgeWithMeta:
         assert "# Test Topic" in text
 
     def test_write_creates_parent_dirs(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """write_knowledge_with_meta creates parent directories if needed."""
         path = temp_anima_dir / "knowledge" / "sub" / "deep" / "file.md"
@@ -83,7 +85,9 @@ class TestWriteKnowledgeWithMeta:
         assert path.exists()
 
     def test_write_unicode_content(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """Japanese content survives round-trip through YAML frontmatter."""
         path = temp_anima_dir / "knowledge" / "unicode.md"
@@ -102,7 +106,9 @@ class TestReadKnowledgeContent:
     """Test read_knowledge_content method."""
 
     def test_with_frontmatter(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """Content is returned without frontmatter."""
         path = temp_anima_dir / "knowledge" / "with-fm.md"
@@ -117,7 +123,9 @@ class TestReadKnowledgeContent:
         assert "confidence" not in result
 
     def test_without_frontmatter(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """Files without frontmatter return full text (backward compat)."""
         path = temp_anima_dir / "knowledge" / "no-fm.md"
@@ -128,7 +136,9 @@ class TestReadKnowledgeContent:
         assert "Legacy content." in result
 
     def test_empty_frontmatter(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """Empty frontmatter block is handled gracefully."""
         path = temp_anima_dir / "knowledge" / "empty-fm.md"
@@ -142,7 +152,9 @@ class TestReadKnowledgeMetadata:
     """Test read_knowledge_metadata method."""
 
     def test_with_frontmatter(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """Metadata dictionary is correctly parsed from YAML frontmatter."""
         path = temp_anima_dir / "knowledge" / "meta.md"
@@ -156,7 +168,9 @@ class TestReadKnowledgeMetadata:
         assert meta["auto_consolidated"] is True
 
     def test_without_frontmatter(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """Files without frontmatter return empty dict."""
         path = temp_anima_dir / "knowledge" / "no-meta.md"
@@ -166,7 +180,9 @@ class TestReadKnowledgeMetadata:
         assert meta == {}
 
     def test_invalid_yaml(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """Invalid YAML frontmatter returns empty dict."""
         path = temp_anima_dir / "knowledge" / "bad-yaml.md"
@@ -180,7 +196,9 @@ class TestRoundTrip:
     """Test write + read round-trip."""
 
     def test_full_roundtrip(
-        self, memory_manager: object, temp_anima_dir: Path,
+        self,
+        memory_manager: object,
+        temp_anima_dir: Path,
     ) -> None:
         """Metadata and content survive a write-then-read round trip."""
         path = temp_anima_dir / "knowledge" / "roundtrip.md"
@@ -252,8 +270,7 @@ class TestLegacyMigration:
         kdir = consolidation_engine.knowledge_dir
         legacy_file = kdir / "old-topic.md"
         legacy_file.write_text(
-            "# Old Topic\n\n[AUTO-CONSOLIDATED: 2026-02-10 09:00]\n\n"
-            "Some legacy knowledge content.",
+            "# Old Topic\n\n[AUTO-CONSOLIDATED: 2026-02-10 09:00]\n\nSome legacy knowledge content.",
             encoding="utf-8",
         )
 
@@ -339,6 +356,7 @@ class TestLegacyMigration:
         consolidation_engine._migrate_legacy_knowledge()
 
         from core.memory.manager import MemoryManager
+
         mm = MemoryManager(consolidation_engine.anima_dir)
         content = mm.read_knowledge_content(legacy_file)
         assert "```" not in content

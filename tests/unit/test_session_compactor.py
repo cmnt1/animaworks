@@ -16,7 +16,7 @@ import pytest
 from core.config.models import HeartbeatConfig
 from core.execution._sdk_session import _load_session_id
 from core.execution.codex_sdk import CodexSDKExecutor
-from core.memory.conversation_compression import CompressionResult
+from core.memory.conversation.compression import CompressionResult
 from core.schemas import ModelConfig
 from core.session_compactor import (
     SessionCompactor,
@@ -374,7 +374,7 @@ class TestModeSpecificCompaction:
     @pytest.mark.asyncio
     async def test_compact_mode_a_calls_compress_and_finalize(self, anima_dir: Path, model_config: ModelConfig) -> None:
         """_compact_mode_a calls compress_if_needed and finalize_if_session_ended."""
-        with patch("core.memory.conversation.ConversationMemory") as mock_conv_cls:
+        with patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls:
             mock_conv = MagicMock()
             mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(True))
             mock_conv.finalize_if_session_ended = AsyncMock()
@@ -402,8 +402,8 @@ class TestModeSpecificCompaction:
         mock_turn.content = "I completed the task."
 
         with (
-            patch("core.memory.conversation.ConversationMemory") as mock_conv_cls,
-            patch("core.memory.shortterm.ShortTermMemory") as mock_stm_cls,
+            patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls,
+            patch("core.memory.conversation.shortterm.ShortTermMemory") as mock_stm_cls,
         ):
             mock_conv = MagicMock()
             mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(False))
@@ -436,8 +436,8 @@ class TestModeSpecificCompaction:
     ) -> None:
         """_compact_mode_a skips shortterm save when conversation state is empty."""
         with (
-            patch("core.memory.conversation.ConversationMemory") as mock_conv_cls,
-            patch("core.memory.shortterm.ShortTermMemory") as mock_stm_cls,
+            patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls,
+            patch("core.memory.conversation.shortterm.ShortTermMemory") as mock_stm_cls,
         ):
             mock_conv = MagicMock()
             mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(False))
@@ -466,8 +466,8 @@ class TestModeSpecificCompaction:
             turns.append(t)
 
         with (
-            patch("core.memory.conversation.ConversationMemory") as mock_conv_cls,
-            patch("core.memory.shortterm.ShortTermMemory") as mock_stm_cls,
+            patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls,
+            patch("core.memory.conversation.shortterm.ShortTermMemory") as mock_stm_cls,
         ):
             mock_conv = MagicMock()
             mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(False))
@@ -512,9 +512,9 @@ class TestModeSpecificCompaction:
     ) -> None:
         """_compact_mode_c calls compress, shortterm save, clear_thread_id, finalize."""
         with (
-            patch("core.memory.conversation.ConversationMemory") as mock_conv_cls,
+            patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls,
             patch("core.execution.codex_sdk._clear_thread_id") as mock_clear,
-            patch("core.memory.shortterm.ShortTermMemory") as mock_stm_cls,
+            patch("core.memory.conversation.shortterm.ShortTermMemory") as mock_stm_cls,
         ):
             mock_conv = MagicMock()
             mock_conv.compress_if_needed_detailed = AsyncMock(return_value=_compression_result(True))
@@ -551,10 +551,31 @@ class TestModeSpecificCompaction:
         log_file = log_dir / f"{now_local().date().isoformat()}.jsonl"
 
         entries = [
-            {"ts": "2026-04-13T12:00:00+09:00", "type": "message_received", "content": "Hello", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T12:00:10+09:00", "type": "tool_use", "tool": "Read", "content": "/tmp/test.md", "meta": {"args": {"path": "/tmp/test.md"}, "tool_use_id": "tu1"}},
-            {"ts": "2026-04-13T12:00:11+09:00", "type": "tool_result", "content": "file contents here", "meta": {"tool_use_id": "tu1", "is_error": False}},
-            {"ts": "2026-04-13T12:00:30+09:00", "type": "response_sent", "content": "I read the file for you.", "meta": {"thread_id": "default"}},
+            {
+                "ts": "2026-04-13T12:00:00+09:00",
+                "type": "message_received",
+                "content": "Hello",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T12:00:10+09:00",
+                "type": "tool_use",
+                "tool": "Read",
+                "content": "/tmp/test.md",
+                "meta": {"args": {"path": "/tmp/test.md"}, "tool_use_id": "tu1"},
+            },
+            {
+                "ts": "2026-04-13T12:00:11+09:00",
+                "type": "tool_result",
+                "content": "file contents here",
+                "meta": {"tool_use_id": "tu1", "is_error": False},
+            },
+            {
+                "ts": "2026-04-13T12:00:30+09:00",
+                "type": "response_sent",
+                "content": "I read the file for you.",
+                "meta": {"thread_id": "default"},
+            },
         ]
         log_file.write_text(
             "\n".join(json.dumps(e, ensure_ascii=False) for e in entries),
@@ -651,10 +672,30 @@ class TestExtractRecentChatContext:
     def test_extracts_user_assistant_rounds(self, anima_dir: Path) -> None:
         """Extracts user/assistant message pairs in chronological order."""
         entries = [
-            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "Question 1", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:30+09:00", "type": "response_sent", "content": "Answer 1", "meta": {"thread_id": "default"}},
-            {"ts": "2026-04-13T10:01:00+09:00", "type": "message_received", "content": "Question 2", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:01:30+09:00", "type": "response_sent", "content": "Answer 2", "meta": {"thread_id": "default"}},
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "Question 1",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:30+09:00",
+                "type": "response_sent",
+                "content": "Answer 1",
+                "meta": {"thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:01:00+09:00",
+                "type": "message_received",
+                "content": "Question 2",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:01:30+09:00",
+                "type": "response_sent",
+                "content": "Answer 2",
+                "meta": {"thread_id": "default"},
+            },
         ]
         self._write_log(anima_dir, entries)
 
@@ -670,8 +711,22 @@ class TestExtractRecentChatContext:
         """Only the most recent 3 user/assistant rounds are kept."""
         entries = []
         for i in range(5):
-            entries.append({"ts": f"2026-04-13T10:{i:02d}:00+09:00", "type": "message_received", "content": f"Q{i}", "meta": {"from_type": "human", "thread_id": "default"}})
-            entries.append({"ts": f"2026-04-13T10:{i:02d}:30+09:00", "type": "response_sent", "content": f"A{i}", "meta": {"thread_id": "default"}})
+            entries.append(
+                {
+                    "ts": f"2026-04-13T10:{i:02d}:00+09:00",
+                    "type": "message_received",
+                    "content": f"Q{i}",
+                    "meta": {"from_type": "human", "thread_id": "default"},
+                }
+            )
+            entries.append(
+                {
+                    "ts": f"2026-04-13T10:{i:02d}:30+09:00",
+                    "type": "response_sent",
+                    "content": f"A{i}",
+                    "meta": {"thread_id": "default"},
+                }
+            )
         self._write_log(anima_dir, entries)
 
         result = _extract_recent_chat_context(anima_dir)
@@ -685,10 +740,31 @@ class TestExtractRecentChatContext:
     def test_extracts_tool_use_and_result_paired(self, anima_dir: Path) -> None:
         """Extracts tool_use and tool_result entries with correct pairing."""
         entries = [
-            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "Read file", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:05+09:00", "type": "tool_use", "tool": "Read", "content": "/tmp/f.md", "meta": {"args": {"path": "/tmp/f.md"}, "tool_use_id": "tu1", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:06+09:00", "type": "tool_result", "content": "file content here", "meta": {"tool_use_id": "tu1", "is_error": False, "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:30+09:00", "type": "response_sent", "content": "Done", "meta": {"thread_id": "default"}},
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "Read file",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:05+09:00",
+                "type": "tool_use",
+                "tool": "Read",
+                "content": "/tmp/f.md",
+                "meta": {"args": {"path": "/tmp/f.md"}, "tool_use_id": "tu1", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:06+09:00",
+                "type": "tool_result",
+                "content": "file content here",
+                "meta": {"tool_use_id": "tu1", "is_error": False, "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:30+09:00",
+                "type": "response_sent",
+                "content": "Done",
+                "meta": {"thread_id": "default"},
+            },
         ]
         self._write_log(anima_dir, entries)
 
@@ -703,11 +779,31 @@ class TestExtractRecentChatContext:
     def test_limits_to_10_tool_entries(self, anima_dir: Path) -> None:
         """Only the most recent 10 tool entries are kept."""
         entries = [
-            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "Go", "meta": {"from_type": "human", "thread_id": "default"}},
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "Go",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
         ]
         for i in range(15):
-            entries.append({"ts": f"2026-04-13T10:00:{i+1:02d}+09:00", "type": "tool_use", "tool": f"Tool{i}", "content": f"arg{i}", "meta": {"args": {}, "tool_use_id": f"tu{i}", "thread_id": "default"}})
-        entries.append({"ts": "2026-04-13T10:01:00+09:00", "type": "response_sent", "content": "Done", "meta": {"thread_id": "default"}})
+            entries.append(
+                {
+                    "ts": f"2026-04-13T10:00:{i + 1:02d}+09:00",
+                    "type": "tool_use",
+                    "tool": f"Tool{i}",
+                    "content": f"arg{i}",
+                    "meta": {"args": {}, "tool_use_id": f"tu{i}", "thread_id": "default"},
+                }
+            )
+        entries.append(
+            {
+                "ts": "2026-04-13T10:01:00+09:00",
+                "type": "response_sent",
+                "content": "Done",
+                "meta": {"thread_id": "default"},
+            }
+        )
         self._write_log(anima_dir, entries)
 
         result = _extract_recent_chat_context(anima_dir)
@@ -717,9 +813,24 @@ class TestExtractRecentChatContext:
     def test_skips_non_human_messages(self, anima_dir: Path) -> None:
         """Skips message_received entries that are not from humans (e.g. inbox)."""
         entries = [
-            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "From another anima", "meta": {"from_type": "anima", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:01:00+09:00", "type": "message_received", "content": "From human", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:01:30+09:00", "type": "response_sent", "content": "Reply", "meta": {"thread_id": "default"}},
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "From another anima",
+                "meta": {"from_type": "anima", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:01:00+09:00",
+                "type": "message_received",
+                "content": "From human",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:01:30+09:00",
+                "type": "response_sent",
+                "content": "Reply",
+                "meta": {"thread_id": "default"},
+            },
         ]
         self._write_log(anima_dir, entries)
 
@@ -773,8 +884,18 @@ class TestExtractRecentChatContext:
         entries = [
             {"ts": "2026-04-13T10:00:00+09:00", "type": "heartbeat_start", "content": "HB start", "meta": {}},
             {"ts": "2026-04-13T10:00:30+09:00", "type": "heartbeat_end", "content": "HB end", "meta": {}},
-            {"ts": "2026-04-13T10:01:00+09:00", "type": "message_received", "content": "Hello", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:01:30+09:00", "type": "response_sent", "content": "Hi", "meta": {"thread_id": "default"}},
+            {
+                "ts": "2026-04-13T10:01:00+09:00",
+                "type": "message_received",
+                "content": "Hello",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:01:30+09:00",
+                "type": "response_sent",
+                "content": "Hi",
+                "meta": {"thread_id": "default"},
+            },
         ]
         self._write_log(anima_dir, entries)
 
@@ -786,8 +907,18 @@ class TestExtractRecentChatContext:
     def test_trigger_and_notes_fields(self, anima_dir: Path) -> None:
         """Result includes idle_compaction trigger and notes."""
         entries = [
-            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "Hi", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:30+09:00", "type": "response_sent", "content": "Hello", "meta": {"thread_id": "default"}},
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "Hi",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:30+09:00",
+                "type": "response_sent",
+                "content": "Hello",
+                "meta": {"thread_id": "default"},
+            },
         ]
         self._write_log(anima_dir, entries)
 
@@ -799,13 +930,58 @@ class TestExtractRecentChatContext:
     def test_excludes_background_tools_from_chat_handover(self, anima_dir: Path) -> None:
         """Cron/heartbeat tools (no thread_id) never masquerade as chat tools."""
         entries = [
-            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "Fix calendar", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:05+09:00", "type": "tool_use", "tool": "ChatTool", "content": "cal", "ctx": "chat", "meta": {"args": {}, "tool_use_id": "c1"}},
-            {"ts": "2026-04-13T10:00:06+09:00", "type": "tool_use", "tool": "CronDuringTurn", "content": "cw", "ctx": "cron:Chatwork監視", "meta": {"args": {}, "tool_use_id": "x1"}},
-            {"ts": "2026-04-13T10:00:30+09:00", "type": "response_sent", "content": "Done", "ctx": "chat", "meta": {"thread_id": "default"}},
-            {"ts": "2026-04-13T10:05:00+09:00", "type": "tool_use", "tool": "CronAfterTurn", "content": "cw", "ctx": "cron:Chatwork監視", "meta": {"args": {}, "tool_use_id": "x2"}},
-            {"ts": "2026-04-13T10:06:00+09:00", "type": "tool_use", "tool": "HeartbeatTool", "content": "hb", "ctx": "heartbeat", "meta": {"args": {}, "tool_use_id": "x3"}},
-            {"ts": "2026-04-13T10:07:00+09:00", "type": "tool_use", "tool": "NoCtxOutsideTurn", "content": "n", "meta": {"args": {}, "tool_use_id": "x4"}},
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "Fix calendar",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:05+09:00",
+                "type": "tool_use",
+                "tool": "ChatTool",
+                "content": "cal",
+                "ctx": "chat",
+                "meta": {"args": {}, "tool_use_id": "c1"},
+            },
+            {
+                "ts": "2026-04-13T10:00:06+09:00",
+                "type": "tool_use",
+                "tool": "CronDuringTurn",
+                "content": "cw",
+                "ctx": "cron:Chatwork監視",
+                "meta": {"args": {}, "tool_use_id": "x1"},
+            },
+            {
+                "ts": "2026-04-13T10:00:30+09:00",
+                "type": "response_sent",
+                "content": "Done",
+                "ctx": "chat",
+                "meta": {"thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:05:00+09:00",
+                "type": "tool_use",
+                "tool": "CronAfterTurn",
+                "content": "cw",
+                "ctx": "cron:Chatwork監視",
+                "meta": {"args": {}, "tool_use_id": "x2"},
+            },
+            {
+                "ts": "2026-04-13T10:06:00+09:00",
+                "type": "tool_use",
+                "tool": "HeartbeatTool",
+                "content": "hb",
+                "ctx": "heartbeat",
+                "meta": {"args": {}, "tool_use_id": "x3"},
+            },
+            {
+                "ts": "2026-04-13T10:07:00+09:00",
+                "type": "tool_use",
+                "tool": "NoCtxOutsideTurn",
+                "content": "n",
+                "meta": {"args": {}, "tool_use_id": "x4"},
+            },
         ]
         self._write_log(anima_dir, entries)
 
@@ -817,9 +993,25 @@ class TestExtractRecentChatContext:
     def test_keeps_ctxless_tools_inside_turn(self, anima_dir: Path) -> None:
         """Modes that log no ctx still hand over tools used during the turn."""
         entries = [
-            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "Go", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:05+09:00", "type": "tool_use", "tool": "Bash", "content": "ls", "meta": {"args": {}, "tool_use_id": "t1"}},
-            {"ts": "2026-04-13T10:00:30+09:00", "type": "response_sent", "content": "Done", "meta": {"thread_id": "default"}},
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "Go",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:05+09:00",
+                "type": "tool_use",
+                "tool": "Bash",
+                "content": "ls",
+                "meta": {"args": {}, "tool_use_id": "t1"},
+            },
+            {
+                "ts": "2026-04-13T10:00:30+09:00",
+                "type": "response_sent",
+                "content": "Done",
+                "meta": {"thread_id": "default"},
+            },
         ]
         self._write_log(anima_dir, entries)
 
@@ -830,10 +1022,30 @@ class TestExtractRecentChatContext:
     def test_filters_by_thread_id(self, anima_dir: Path) -> None:
         """Only entries matching the specified thread_id are included."""
         entries = [
-            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "Thread1 Q", "meta": {"from_type": "human", "thread_id": "thread-1"}},
-            {"ts": "2026-04-13T10:00:30+09:00", "type": "response_sent", "content": "Thread1 A", "meta": {"thread_id": "thread-1"}},
-            {"ts": "2026-04-13T10:01:00+09:00", "type": "message_received", "content": "Default Q", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:01:30+09:00", "type": "response_sent", "content": "Default A", "meta": {"thread_id": "default"}},
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "Thread1 Q",
+                "meta": {"from_type": "human", "thread_id": "thread-1"},
+            },
+            {
+                "ts": "2026-04-13T10:00:30+09:00",
+                "type": "response_sent",
+                "content": "Thread1 A",
+                "meta": {"thread_id": "thread-1"},
+            },
+            {
+                "ts": "2026-04-13T10:01:00+09:00",
+                "type": "message_received",
+                "content": "Default Q",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:01:30+09:00",
+                "type": "response_sent",
+                "content": "Default A",
+                "meta": {"thread_id": "default"},
+            },
         ]
         self._write_log(anima_dir, entries)
 
@@ -849,8 +1061,18 @@ class TestExtractRecentChatContext:
 
         yesterday = (now_local().date() - timedelta(days=1)).isoformat()
         entries = [
-            {"ts": f"{yesterday}T23:55:00+09:00", "type": "message_received", "content": "Late night Q", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": f"{yesterday}T23:55:30+09:00", "type": "response_sent", "content": "Late night A", "meta": {"thread_id": "default"}},
+            {
+                "ts": f"{yesterday}T23:55:00+09:00",
+                "type": "message_received",
+                "content": "Late night Q",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": f"{yesterday}T23:55:30+09:00",
+                "type": "response_sent",
+                "content": "Late night A",
+                "meta": {"thread_id": "default"},
+            },
         ]
         self._write_log(anima_dir, entries, date_str=yesterday)
 
@@ -862,10 +1084,31 @@ class TestExtractRecentChatContext:
     def test_tool_use_id_not_leaked_to_output(self, anima_dir: Path) -> None:
         """tool_use_id is used for pairing but not included in output dict."""
         entries = [
-            {"ts": "2026-04-13T10:00:00+09:00", "type": "message_received", "content": "Go", "meta": {"from_type": "human", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:05+09:00", "type": "tool_use", "tool": "Write", "content": "f.txt", "meta": {"args": {"path": "f.txt"}, "tool_use_id": "tu99", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:06+09:00", "type": "tool_result", "content": "ok", "meta": {"tool_use_id": "tu99", "thread_id": "default"}},
-            {"ts": "2026-04-13T10:00:30+09:00", "type": "response_sent", "content": "Done", "meta": {"thread_id": "default"}},
+            {
+                "ts": "2026-04-13T10:00:00+09:00",
+                "type": "message_received",
+                "content": "Go",
+                "meta": {"from_type": "human", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:05+09:00",
+                "type": "tool_use",
+                "tool": "Write",
+                "content": "f.txt",
+                "meta": {"args": {"path": "f.txt"}, "tool_use_id": "tu99", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:06+09:00",
+                "type": "tool_result",
+                "content": "ok",
+                "meta": {"tool_use_id": "tu99", "thread_id": "default"},
+            },
+            {
+                "ts": "2026-04-13T10:00:30+09:00",
+                "type": "response_sent",
+                "content": "Done",
+                "meta": {"thread_id": "default"},
+            },
         ]
         self._write_log(anima_dir, entries)
 
@@ -913,7 +1156,7 @@ class TestRunIdleCompaction:
             new_callable=AsyncMock,
         ) as mock_compact:
             mock_compact.return_value = {"compression_performed": False}
-            with patch("core.memory.activity.ActivityLogger"):
+            with patch("core.memory.activity.logger.ActivityLogger"):
                 await run_idle_compaction(anima, "thread-1")
 
             mock_compact.assert_awaited_once_with(anima, "thread-1")
@@ -943,7 +1186,7 @@ class TestRunIdleCompaction:
             ) as mock_a,
         ):
             mock_a.return_value = {"compression_performed": False}
-            with patch("core.memory.activity.ActivityLogger"):
+            with patch("core.memory.activity.logger.ActivityLogger"):
                 await run_idle_compaction(anima, "thread-1")
 
             mock_s.assert_awaited_once()
@@ -966,7 +1209,7 @@ class TestRunIdleCompaction:
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("compaction failed"),
             ),
-            patch("core.memory.activity.ActivityLogger"),
+            patch("core.memory.activity.logger.ActivityLogger"),
         ):
             await run_idle_compaction(anima, "thread-1")
 
@@ -982,7 +1225,7 @@ class TestModeABlockingShorttermClear:
     @pytest.mark.asyncio
     async def test_shortterm_preserved_when_threshold_exceeded(self, tmp_path: Path) -> None:
         """When tracker.threshold_exceeded is True, shortterm.clear() is NOT called."""
-        from core.memory.shortterm import SessionState, ShortTermMemory
+        from core.memory.conversation.shortterm import SessionState, ShortTermMemory
 
         anima_dir = tmp_path / "animas" / "test-mode-a"
         (anima_dir / "shortterm" / "chat").mkdir(parents=True)
@@ -1009,7 +1252,7 @@ class TestModeABlockingShorttermClear:
     @pytest.mark.asyncio
     async def test_shortterm_cleared_when_threshold_not_exceeded(self, tmp_path: Path) -> None:
         """When tracker.threshold_exceeded is False, shortterm.clear() IS called."""
-        from core.memory.shortterm import SessionState, ShortTermMemory
+        from core.memory.conversation.shortterm import SessionState, ShortTermMemory
 
         anima_dir = tmp_path / "animas" / "test-mode-a"
         (anima_dir / "shortterm" / "chat").mkdir(parents=True)

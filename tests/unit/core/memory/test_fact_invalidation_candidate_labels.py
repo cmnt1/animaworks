@@ -4,14 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from core.memory import fact_invalidation as fact_invalidation_module
-from core.memory.fact_invalidation import (
+from core.memory.facts import invalidation as fact_invalidation_module
+from core.memory.facts.invalidation import (
     FactCandidate,
     ReconcileAction,
     ReconcileConfig,
     reconcile_new_fact,
 )
-from core.memory.facts import FactRecord, append_fact_records, fact_file_for_record, read_fact_records
+from core.memory.facts.store import FactRecord, append_fact_records, fact_file_for_record, read_fact_records
 from core.memory.rag.store import Document, SearchResult
 
 

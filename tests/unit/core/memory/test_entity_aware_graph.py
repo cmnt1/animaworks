@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.entity_index import upsert_entities_from_facts
-from core.memory.facts import FactRecord, append_fact_records
+from core.memory.facts.entity_index import upsert_entities_from_facts
+from core.memory.facts.store import FactRecord, append_fact_records
 from core.memory.rag.graph import GRAPH_SCHEMA_VERSION, KnowledgeGraph
 from core.memory.rag.retriever import RetrievalResult
 
@@ -135,11 +135,14 @@ def test_entity_aware_graph_cache_rejects_schema_and_mode_mismatch(tmp_path: Pat
     builder.save_graph(cache_dir)
 
     disabled_loader = KnowledgeGraph(EmptyVectorStore(), MockIndexer(anima_dir))
-    assert disabled_loader.load_graph(
-        cache_dir,
-        expected_schema_version=GRAPH_SCHEMA_VERSION,
-        entity_aware_graph_enabled=False,
-    ) is False
+    assert (
+        disabled_loader.load_graph(
+            cache_dir,
+            expected_schema_version=GRAPH_SCHEMA_VERSION,
+            entity_aware_graph_enabled=False,
+        )
+        is False
+    )
 
     cache_path = cache_dir / "knowledge_graph.json"
     payload = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -147,11 +150,14 @@ def test_entity_aware_graph_cache_rejects_schema_and_mode_mismatch(tmp_path: Pat
     cache_path.write_text(json.dumps(payload), encoding="utf-8")
 
     stale_loader = KnowledgeGraph(EmptyVectorStore(), MockIndexer(anima_dir))
-    assert stale_loader.load_graph(
-        cache_dir,
-        expected_schema_version=GRAPH_SCHEMA_VERSION,
-        entity_aware_graph_enabled=True,
-    ) is False
+    assert (
+        stale_loader.load_graph(
+            cache_dir,
+            expected_schema_version=GRAPH_SCHEMA_VERSION,
+            entity_aware_graph_enabled=True,
+        )
+        is False
+    )
 
 
 def test_entity_activation_maps_to_readable_results_not_bare_entity(tmp_path: Path) -> None:

@@ -55,7 +55,7 @@ async def test_guard_recycles_session(tmp_path: Path, reason: str) -> None:
                 "timestamp": datetime.now(UTC).isoformat(),
             },
         ),
-        patch("core.memory.activity.ActivityLogger.log") as activity_log,
+        patch("core.memory.activity.logger.ActivityLogger.log") as activity_log,
     ):
         result = await CycleMixin._guard_chat_sdk_session(
             owner,

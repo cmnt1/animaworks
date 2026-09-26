@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 from core.company_resources import company_resource_pointer, get_company_resources
 from core.file_access_policy import resolve_memory_source_path
 from core.memory.rag.retriever import MemoryRetriever
-from core.memory.rag_search import RAGMemorySearch
+from core.memory.retrieval.rag_search import RAGMemorySearch
 from core.skills.index import SkillIndex
 from core.tooling.handler import ToolHandler
 
@@ -92,8 +92,7 @@ def test_read_memory_file_allows_own_company_and_rejects_other(tmp_path: Path) -
     anima_dir = tmp_path / "animas" / "alice"
     _assign(anima_dir, "alpha")
     (anima_dir / "permissions.json").write_text(
-        '{"version":1,"file_roots":["/"],"commands":{"allow_all":true},'
-        '"external_tools":{"allow_all":true}}',
+        '{"version":1,"file_roots":["/"],"commands":{"allow_all":true},"external_tools":{"allow_all":true}}',
         encoding="utf-8",
     )
     own = tmp_path / "companies" / "alpha" / "knowledge" / "guide.md"

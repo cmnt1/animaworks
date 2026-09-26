@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 import core.memory.retrieval.entity as entity_module
-from core.memory.entity_index import normalize_entity_key
+from core.memory.facts.entity_index import normalize_entity_key
 from core.memory.retrieval.entity import EntityAliasIndex, EntityBoostConfig, apply_entity_boost
 
 

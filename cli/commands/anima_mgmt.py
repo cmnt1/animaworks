@@ -1122,7 +1122,7 @@ def _parse_since(raw: str | None) -> datetime | None:
         return None
     from datetime import time as _time
 
-    from core.memory.activity import now_local
+    from core.memory.activity.logger import now_local
 
     now = now_local()
     try:
@@ -1146,7 +1146,7 @@ def _parse_date(raw: str | None) -> tuple[datetime, datetime] | None:
     from datetime import time as _time
     from datetime import timedelta
 
-    from core.memory.activity import now_local
+    from core.memory.activity.logger import now_local
 
     now = now_local()
     val = raw.strip().lower()
@@ -1189,7 +1189,7 @@ def cmd_anima_audit(args: argparse.Namespace) -> None:
 
     animas_dir = get_animas_dir()
 
-    from core.memory.audit import AuditAggregator
+    from core.memory.activity.audit import AuditAggregator
 
     if audit_all:
         dirs = sorted([d for d in animas_dir.iterdir() if d.is_dir() and (d / "identity.md").exists()])

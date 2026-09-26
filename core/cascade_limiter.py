@@ -85,7 +85,7 @@ class ConversationDepthLimiter:
             )
 
         try:
-            from core.memory.activity import ActivityLogger
+            from core.memory.activity.logger import ActivityLogger
 
             activity = ActivityLogger(sender_anima_dir)
             entries = activity.recent(
@@ -176,7 +176,7 @@ class ConversationDepthLimiter:
             True if allowed, False if depth exceeded.
         """
         try:
-            from core.memory.activity import ActivityLogger
+            from core.memory.activity.logger import ActivityLogger
 
             activity = ActivityLogger(sender_anima_dir)
             entries = activity.recent(
@@ -228,7 +228,7 @@ class ConversationDepthLimiter:
             anima_dir: Path to Anima ``a``'s directory.
         """
         try:
-            from core.memory.activity import ActivityLogger
+            from core.memory.activity.logger import ActivityLogger
 
             activity = ActivityLogger(anima_dir)
             entries = activity.recent(

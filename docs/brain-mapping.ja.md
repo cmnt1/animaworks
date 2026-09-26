@@ -141,7 +141,7 @@ Cowan (2005) の知見に従い、ワーキングメモリを「活性化され�
 | AnimaWorks | 脳のプロセス | 説明 |
 |---|---|---|
 | **即時符号化**（セッション境界） | 海馬の高速1ショット符号化 | 会話終了時に差分要約をepisodes/に記録 |
-| **日次固定化**（深夜cron） | NREM睡眠の徐波-紡錘波-リップルカスケード | 本質的な要約・抽出は Anima のツールループが実行。`ConsolidationEngine`（`core/memory/consolidation.py`）は **前処理**（エピソード収集、`issue_resolved` 収集）と **後処理**（RAG インデックス更新・再構築、月次忘却の呼び出し、レガシー知識マイグレーション等）のヘルパに特化したモジュールである |
+| **日次固定化**（深夜cron） | NREM睡眠の徐波-紡錘波-リップルカスケード | 本質的な要約・抽出は Anima のツールループが実行。`ConsolidationEngine`（`core/memory/maintenance/consolidation.py`）は **前処理**（エピソード収集、`issue_resolved` 収集）と **後処理**（RAG インデックス更新・再構築、月次忘却の呼び出し、レガシー知識マイグレーション等）のヘルパに特化したモジュールである |
 | **issue_resolved → procedure** | 解決の手続き化 | nightly knowledge self-correction が activity_log の `issue_resolved` イベントをスキャンし、ProceduralDistiller で手順書を生成（`create_procedures_from_resolved`） |
 | **週次統合** | 新皮質の長期統合 | knowledge/の重複排除・マージ、パターン蒸留 |
 | **矛盾スキャン** | 海馬のパターン分離 | knowledge 間の整合性を NLI 補助で確認し、矛盾は LLM で解決 |

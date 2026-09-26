@@ -1,4 +1,4 @@
-"""Unit tests for core/memory/bm25.py — tokenization, activity log search, RRF."""
+"""Unit tests for core/memory/retrieval/bm25.py — tokenization, activity log search, RRF."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from core.memory import bm25 as bm25_module
-from core.memory.bm25 import (
+from core.memory.retrieval import bm25 as bm25_module
+from core.memory.retrieval.bm25 import (
     _MIN_CONTENT_LENGTH,
     _SEARCHABLE_TYPES,
     _should_index_entry,
@@ -855,13 +855,13 @@ class TestBM25RebuildSingleFlight:
     """R5: concurrent dirty rebuilds must not stack."""
 
     def _mark_dirty(self, anima_dir):
-        from core.memory.bm25 import mark_longterm_bm25_dirty
+        from core.memory.retrieval.bm25 import mark_longterm_bm25_dirty
 
         mark_longterm_bm25_dirty(anima_dir)
 
     def test_lock_held_skips_rebuild(self, tmp_path, monkeypatch):
-        from core.memory import bm25 as bm25_mod
-        from core.memory.bm25 import (
+        from core.memory.retrieval import bm25 as bm25_mod
+        from core.memory.retrieval.bm25 import (
             longterm_bm25_rebuild_marker_path,
             maybe_rebuild_dirty_longterm_bm25,
         )
@@ -883,8 +883,8 @@ class TestBM25RebuildSingleFlight:
         import os as _os
         import time as _time
 
-        from core.memory import bm25 as bm25_mod
-        from core.memory.bm25 import (
+        from core.memory.retrieval import bm25 as bm25_mod
+        from core.memory.retrieval.bm25 import (
             longterm_bm25_rebuild_marker_path,
             maybe_rebuild_dirty_longterm_bm25,
         )

@@ -37,7 +37,7 @@ from core.exceptions import (  # noqa: F401
 )
 from core.i18n import t
 from core.memory import MemoryManager
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
 from core.messenger import Messenger
 from core.schemas import AnimaStatus, ModelConfig
 from core.session_compactor import SessionCompactor

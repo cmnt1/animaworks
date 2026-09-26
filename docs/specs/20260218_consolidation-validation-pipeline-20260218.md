@@ -8,30 +8,30 @@
 
 ### Current State
 
-- 日次固定化でLLMが抽出した知識の品質検証が**一切行われていない** — `core/memory/consolidation.py:364-469`
-- LLMプロンプトに既存knowledgeファイルの**名前のみ**渡しており、内容は渡していない — `core/memory/consolidation.py:283-285`。LLMは既存知識との重複・矛盾を判断できない
-- LLMレスポンスのフォーマット検証・リトライがない。パース失敗時はサイレントに空結果 — `core/memory/consolidation.py:461-467`
-- 週次統合で元ファイルを即座に削除しており、ロールバック不可 — `core/memory/consolidation.py:746-747`
+- 日次固定化でLLMが抽出した知識の品質検証が**一切行われていない** — `core/memory/maintenance/consolidation.py:364-469`
+- LLMプロンプトに既存knowledgeファイルの**名前のみ**渡しており、内容は渡していない — `core/memory/maintenance/consolidation.py:283-285`。LLMは既存知識との重複・矛盾を判断できない
+- LLMレスポンスのフォーマット検証・リトライがない。パース失敗時はサイレントに空結果 — `core/memory/maintenance/consolidation.py:461-467`
+- 週次統合で元ファイルを即座に削除しており、ロールバック不可 — `core/memory/maintenance/consolidation.py:746-747`
 - 生成されたknowledgeファイルにMarkdownコードフェンス（` ```markdown `）が残存 — 実ファイル確認済み
 - knowledgeファイルにYAMLフロントマターがなく、メタデータ（作成日時、ソースエピソード、信頼度）がファイル上に構造化されていない
 
 ### Root Cause
 
-1. **品質検証の不在**: 固定化パイプラインに「生成→書き込み」しかなく、「生成→検証→書き込み」のステップが設計されていない — `core/memory/consolidation.py:104-112`
-2. **既存knowledge未参照**: `_summarize_episodes()` のプロンプトがファイル名一覧のみ渡しており、LLMが既存内容を見ずに新規知識を生成する — `core/memory/consolidation.py:283-285`
-3. **サニタイズ不足**: `_merge_to_knowledge()` がLLMの出力をそのまま書き込む。コードフェンスや不正フォーマットの除去がない — `core/memory/consolidation.py:411-412`
+1. **品質検証の不在**: 固定化パイプラインに「生成→書き込み」しかなく、「生成→検証→書き込み」のステップが設計されていない — `core/memory/maintenance/consolidation.py:104-112`
+2. **既存knowledge未参照**: `_summarize_episodes()` のプロンプトがファイル名一覧のみ渡しており、LLMが既存内容を見ずに新規知識を生成する — `core/memory/maintenance/consolidation.py:283-285`
+3. **サニタイズ不足**: `_merge_to_knowledge()` がLLMの出力をそのまま書き込む。コードフェンスや不正フォーマットの除去がない — `core/memory/maintenance/consolidation.py:411-412`
 4. **メタデータの非構造化**: `[AUTO-CONSOLIDATED: ...]` のテキストマーカーのみで、パース可能な構造化メタデータがない
 
 ### Impact
 
 | Component | Impact | Description |
 |-----------|--------|-------------|
-| `core/memory/consolidation.py` | Direct | 固定化の品質改善。バリデーション・サニタイズ追加 |
+| `core/memory/maintenance/consolidation.py` | Direct | 固定化の品質改善。バリデーション・サニタイズ追加 |
 | `core/memory/manager.py` | Direct | knowledge読み書きのフロントマター対応 |
 | `core/memory/rag/indexer.py` | Direct | チャンキング時のフロントマター除去 |
 | `core/memory/rag/retriever.py` | Indirect | confidence メタデータによる検索重み付け（将来拡張） |
 | `core/memory/priming.py` | Indirect | Primingで注入されるknowledgeの品質向上 |
-| `core/memory/forgetting.py` | Indirect | confidence による忘却優先度判定（将来拡張） |
+| `core/memory/maintenance/forgetting.py` | Indirect | confidence による忘却優先度判定（将来拡張） |
 
 ## Decided Approach / 確定方針
 
@@ -61,15 +61,15 @@
 
 | Module | Change Type | Description |
 |--------|------------|-------------|
-| `core/memory/consolidation.py` | Modify | バリデーションステージ追加、既存knowledgeコンテキスト渡し改善、フォーマットサニタイズ、リトライロジック、アーカイブ方式変更、マイグレーション |
+| `core/memory/maintenance/consolidation.py` | Modify | バリデーションステージ追加、既存knowledgeコンテキスト渡し改善、フォーマットサニタイズ、リトライロジック、アーカイブ方式変更、マイグレーション |
 | `core/memory/manager.py` | Modify | knowledge読み書きのフロントマター対応（付与・パース・ストリップ） |
 | `core/memory/rag/indexer.py` | Modify | チャンキング時のフロントマター除去、confidenceメタデータ連携 |
 | `core/memory/validation.py` | New | NLIモデルロード・推論、グラウンディング検証、LLMレビューのロジック |
-| `core/memory/forgetting.py` | No change | 将来的にconfidenceベースの忘却優先度導入可能だが今回はスコープ外 |
+| `core/memory/maintenance/forgetting.py` | No change | 将来的にconfidenceベースの忘却優先度導入可能だが今回はスコープ外 |
 
 #### Change 1: バリデーションステージ追加
 
-**Target**: `core/memory/consolidation.py` — `daily_consolidate()`
+**Target**: `core/memory/maintenance/consolidation.py` — `daily_consolidate()`
 
 ```python
 # Before (L104-112)
@@ -87,7 +87,7 @@ await self._update_rag_index(affected)
 
 #### Change 2: 既存knowledgeコンテキスト追加
 
-**Target**: `core/memory/consolidation.py` — `_summarize_episodes()`
+**Target**: `core/memory/maintenance/consolidation.py` — `_summarize_episodes()`
 
 ```python
 # Before (L283-285): ファイル名一覧のみ
@@ -190,7 +190,7 @@ class KnowledgeValidator:
 |---|------|--------|
 | 1-1 | `manager.py` にフロントマター読み書きメソッド追加（`write_knowledge_with_meta`, `read_knowledge_content`, `read_knowledge_metadata`） | `core/memory/manager.py` |
 | 1-2 | `_chunk_by_markdown_headings()` にフロントマターストリップ処理追加 | `core/memory/rag/indexer.py` |
-| 1-3 | `_migrate_legacy_knowledge()` メソッド実装（バックアップ → パース → フロントマター付与 → クリーニング） | `core/memory/consolidation.py` |
+| 1-3 | `_migrate_legacy_knowledge()` メソッド実装（バックアップ → パース → フロントマター付与 → クリーニング） | `core/memory/maintenance/consolidation.py` |
 | 1-4 | Phase 1のユニットテスト（フロントマター読み書き、マイグレーション、後方互換性） | `tests/` |
 
 **Completion condition**: フロントマター付きknowledgeファイルの読み書きが動作し、レガシーファイルが自動マイグレーションされる
@@ -210,12 +210,12 @@ class KnowledgeValidator:
 
 | # | Task | Target |
 |---|------|--------|
-| 3-1 | `daily_consolidate()` にバリデーションステージを組み込み | `core/memory/consolidation.py` |
-| 3-2 | `_summarize_episodes()` に既存knowledgeコンテキスト（RAG上位3件）を追加 | `core/memory/consolidation.py` |
-| 3-3 | `_sanitize_llm_output()` メソッド追加（コードフェンス除去） | `core/memory/consolidation.py` |
-| 3-4 | `_merge_to_knowledge()` でフロントマター付き書き込みに変更 | `core/memory/consolidation.py` |
-| 3-5 | フォーマット検証リトライ（パース失敗時に1回リトライ）追加 | `core/memory/consolidation.py` |
-| 3-6 | 週次統合の元ファイルを `archive/merged/` に移動する方式に変更 | `core/memory/consolidation.py` |
+| 3-1 | `daily_consolidate()` にバリデーションステージを組み込み | `core/memory/maintenance/consolidation.py` |
+| 3-2 | `_summarize_episodes()` に既存knowledgeコンテキスト（RAG上位3件）を追加 | `core/memory/maintenance/consolidation.py` |
+| 3-3 | `_sanitize_llm_output()` メソッド追加（コードフェンス除去） | `core/memory/maintenance/consolidation.py` |
+| 3-4 | `_merge_to_knowledge()` でフロントマター付き書き込みに変更 | `core/memory/maintenance/consolidation.py` |
+| 3-5 | フォーマット検証リトライ（パース失敗時に1回リトライ）追加 | `core/memory/maintenance/consolidation.py` |
+| 3-6 | 週次統合の元ファイルを `archive/merged/` に移動する方式に変更 | `core/memory/maintenance/consolidation.py` |
 | 3-7 | Phase 3の統合テスト（日次固定化E2E、週次統合E2E） | `tests/` |
 
 **Completion condition**: 日次固定化でNLI+LLMカスケード検証が実行され、検証済みknowledgeファイルにconfidence付きフロントマターが書き込まれる
@@ -265,12 +265,12 @@ class KnowledgeValidator:
 
 ## References
 
-- `core/memory/consolidation.py:53-143` — `daily_consolidate()` 日次固定化メインフロー
-- `core/memory/consolidation.py:258-362` — `_summarize_episodes()` LLM呼出しプロンプト
-- `core/memory/consolidation.py:364-469` — `_merge_to_knowledge()` レスポンスパース・書き込み
-- `core/memory/consolidation.py:500-584` — `weekly_integrate()` 週次統合メインフロー
-- `core/memory/consolidation.py:656-762` — `_merge_knowledge_files()` 週次統合LLM呼出し
-- `core/memory/consolidation.py:746-747` — 元ファイル即時削除箇所
+- `core/memory/maintenance/consolidation.py:53-143` — `daily_consolidate()` 日次固定化メインフロー
+- `core/memory/maintenance/consolidation.py:258-362` — `_summarize_episodes()` LLM呼出しプロンプト
+- `core/memory/maintenance/consolidation.py:364-469` — `_merge_to_knowledge()` レスポンスパース・書き込み
+- `core/memory/maintenance/consolidation.py:500-584` — `weekly_integrate()` 週次統合メインフロー
+- `core/memory/maintenance/consolidation.py:656-762` — `_merge_knowledge_files()` 週次統合LLM呼出し
+- `core/memory/maintenance/consolidation.py:746-747` — 元ファイル即時削除箇所
 - `core/memory/manager.py:789-800` — `write_knowledge()` 現行の書き込み
 - `core/memory/rag/indexer.py:255-309` — `_chunk_by_markdown_headings()` チャンキング
 - `core/memory/rag/indexer.py:377-419` — `_extract_metadata()` メタデータ付与

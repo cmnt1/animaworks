@@ -36,7 +36,7 @@ class TestCallLlmConsolidationModel:
     @pytest.mark.asyncio
     async def test_uses_consolidation_model(self, anima_dir: Path) -> None:
         cfg = ModelConfig(model="bedrock/jp.anthropic.claude-sonnet-4-6")
-        from core.memory.conversation import ConversationMemory
+        from core.memory.conversation.memory import ConversationMemory
 
         conv = ConversationMemory(anima_dir, cfg)
         mock_ac = _make_acompletion_mock()
@@ -64,7 +64,7 @@ class TestCallLlmConsolidationModel:
                 "aws_region_name": "ap-northeast-1",
             },
         )
-        from core.memory.conversation import ConversationMemory
+        from core.memory.conversation.memory import ConversationMemory
 
         conv = ConversationMemory(anima_dir, cfg)
         mock_ac = _make_acompletion_mock()
@@ -78,15 +78,20 @@ class TestCallLlmConsolidationModel:
 
         kw = mock_ac.call_args
         for key in (
-            "aws_access_key_id", "aws_secret_access_key", "aws_region_name",
-            "api_version", "vertex_project", "vertex_location", "vertex_credentials",
+            "aws_access_key_id",
+            "aws_secret_access_key",
+            "aws_region_name",
+            "api_version",
+            "vertex_project",
+            "vertex_location",
+            "vertex_credentials",
         ):
             assert key not in kw.kwargs
 
     @pytest.mark.asyncio
     async def test_consolidation_model_without_api_key(self, anima_dir: Path) -> None:
         cfg = ModelConfig(model="claude-sonnet-4-6")
-        from core.memory.conversation import ConversationMemory
+        from core.memory.conversation.memory import ConversationMemory
 
         conv = ConversationMemory(anima_dir, cfg)
         mock_ac = _make_acompletion_mock()

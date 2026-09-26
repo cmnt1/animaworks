@@ -29,7 +29,7 @@ from core.execution._sanitize import (
 from core.execution.error_classifier import classify_llm_error
 from core.execution.fallback_activity import run_with_model_fallback
 from core.i18n import t
-from core.memory.streaming_journal import StreamingJournal
+from core.memory.conversation.streaming_journal import StreamingJournal
 from core.messenger import InboxItem
 from core.paths import load_prompt
 from core.schemas import CycleResult

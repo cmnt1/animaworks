@@ -152,7 +152,7 @@ ignore = [
 "core/tooling/schemas/__init__.py" = ["F401"]
 "core/i18n/__init__.py" = ["F401"]
 "core/memory/priming/__init__.py" = ["F401"]
-"core/memory/conversation.py" = ["F401"]
+"core/memory/conversation/memory.py" = ["F401"]
 
 [tool.ruff.format]
 quote-style = "double"

@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.rag_search import RAGMemorySearch
 from core.memory.retrieval.pipeline import PipelineResult
+from core.memory.retrieval.rag_search import RAGMemorySearch
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ class TestRAGSearchScopeAllPipeline:
             patch.object(rag_search, "_graph_episodes_search", return_value=[]),
             patch.object(rag_search, "_keyword_search_fallback", return_value=[]),
             patch(
-                "core.memory.rag_search.search_activity_log",
+                "core.memory.retrieval.rag_search.search_activity_log",
                 return_value=[],
             ),
             patch(
@@ -74,7 +74,7 @@ class TestRAGSearchScopeAllPipeline:
             patch.object(rag_search, "_vector_search_primary", return_value=[{"content": "x", "score": 0.01}]),
             patch.object(rag_search, "_graph_episodes_search", return_value=[]),
             patch.object(rag_search, "_keyword_search_fallback", return_value=[]),
-            patch("core.memory.rag_search.search_activity_log", return_value=[]),
+            patch("core.memory.retrieval.rag_search.search_activity_log", return_value=[]),
             patch("core.memory.retrieval.pipeline.RetrievalPipeline", return_value=mock_pipeline),
         ):
             results = rag_search.search_memory_text(
@@ -109,7 +109,7 @@ class TestRAGSearchScopeAllPipeline:
         with (
             patch.object(rag_search, "_vector_search_primary", return_value=[]),
             patch.object(rag_search, "_graph_episodes_search", return_value=[]),
-            patch("core.memory.rag_search.search_activity_log", return_value=[]),
+            patch("core.memory.retrieval.rag_search.search_activity_log", return_value=[]),
             patch("core.memory.retrieval.pipeline.RetrievalPipeline") as pipeline_cls,
         ):
             results = rag_search.search_memory_text(
@@ -157,7 +157,7 @@ class TestRAGSearchScopeAllPipeline:
             patch.object(rag_search, "_vector_search_primary", return_value=[]),
             patch.object(rag_search, "_graph_episodes_search", return_value=[]),
             patch.object(rag_search, "_keyword_search_fallback", side_effect=fake_keyword),
-            patch("core.memory.rag_search.search_activity_log", return_value=[]),
+            patch("core.memory.retrieval.rag_search.search_activity_log", return_value=[]),
         ):
             rag_search.search_memory_text(
                 "Caroline",

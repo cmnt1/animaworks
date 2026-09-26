@@ -20,9 +20,9 @@ from typing import Any
 import psutil
 import pytest
 
-from core.memory.bm25 import rebuild_longterm_bm25_index
 from core.memory.rag.sqlite_health import quick_check_chroma_sqlite
-from core.memory.rag_search import RAGMemorySearch
+from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index
+from core.memory.retrieval.rag_search import RAGMemorySearch
 from core.platform.processing_lease import write_processing_lease
 from core.schemas import CronTask
 from core.supervisor.memory_service import MemoryService

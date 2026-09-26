@@ -24,10 +24,10 @@
 | コンポーネント | 影響 | 説明 |
 |--------------|------|------|
 | `core/schemas.py` | Direct | `Message` に `origin_chain` フィールド追加 |
-| `core/memory/_activity_models.py` | Direct | `ActivityEntry` に `origin`, `origin_chain` フィールド追加 |
+| `core/memory/activity/models.py` | Direct | `ActivityEntry` に `origin`, `origin_chain` フィールド追加 |
 | `core/messenger.py` | Direct | `receive_external()` で origin を設定 |
 | `core/anima.py` | Direct | `_process_inbox_messages()` / `process_message()` で origin を ActivityLog に伝播 |
-| `core/memory/activity.py` | Direct | `log()` に origin 引数追加 |
+| `core/memory/activity/logger.py` | Direct | `log()` に origin 引数追加 |
 | `templates/ja/prompts/tool_data_interpretation.md` | Direct | origin_chain の解釈ルール追記 |
 
 ## Decided Approach / 確定方針
@@ -55,8 +55,8 @@
 | Module | Change Type | Description |
 |--------|------------|-------------|
 | `core/schemas.py` | Modify | `Message` に `origin_chain: list[str] = []` 追加 |
-| `core/memory/_activity_models.py` | Modify | `ActivityEntry` に `origin: str = ""`, `origin_chain: list[str] = field(default_factory=list)` 追加。`to_dict()` で空なら省略 |
-| `core/memory/activity.py` | Modify | `log()` に `origin: str = ""`, `origin_chain: list[str] | None = None` 引数追加 |
+| `core/memory/activity/models.py` | Modify | `ActivityEntry` に `origin: str = ""`, `origin_chain: list[str] = field(default_factory=list)` 追加。`to_dict()` で空なら省略 |
+| `core/memory/activity/logger.py` | Modify | `log()` に `origin: str = ""`, `origin_chain: list[str] | None = None` 引数追加 |
 | `core/messenger.py` | Modify | `receive_external()` で `origin_chain=["external_platform"]` を Message に設定 |
 | `core/anima.py` | Modify | `_process_inbox_messages()` で Message.source → origin 変換し ActivityLog に伝播。`process_message()` で `origin="human"` を設定 |
 | `templates/ja/prompts/tool_data_interpretation.md` | Modify | origin_chain の解釈ルールを追記 |
@@ -86,7 +86,7 @@ class Message(BaseModel):
 
 #### Change 2: ActivityEntry 拡張
 
-**Target**: `core/memory/_activity_models.py`
+**Target**: `core/memory/activity/models.py`
 
 ```python
 # Before (line 53-66)
@@ -114,7 +114,7 @@ class ActivityEntry:
 
 #### Change 3: ActivityLogger.log() 拡張
 
-**Target**: `core/memory/activity.py`
+**Target**: `core/memory/activity/logger.py`
 
 ```python
 # Before
@@ -237,8 +237,8 @@ self._activity.log(
 | # | Task | Target |
 |---|------|--------|
 | 2-1-1 | `Message` に `origin_chain` 追加 | `core/schemas.py` |
-| 2-1-2 | `ActivityEntry` に `origin`, `origin_chain` 追加 | `core/memory/_activity_models.py` |
-| 2-1-3 | `ActivityLogger.log()` に origin 引数追加 | `core/memory/activity.py` |
+| 2-1-2 | `ActivityEntry` に `origin`, `origin_chain` 追加 | `core/memory/activity/models.py` |
+| 2-1-3 | `ActivityLogger.log()` に origin 引数追加 | `core/memory/activity/logger.py` |
 
 **Completion condition**: 既存テストがパスし、新フィールドがシリアライズ/デシリアライズできること
 
@@ -295,7 +295,7 @@ self._activity.log(
 ## References
 
 - `core/schemas.py:102-120` — Message クラス
-- `core/memory/_activity_models.py:53-66` — ActivityEntry クラス
+- `core/memory/activity/models.py:53-66` — ActivityEntry クラス
 - `core/messenger.py:436-470` — receive_external()
 - `core/anima.py:1284-1325` — _process_inbox_messages() の activity.log 呼び出し
 - `core/anima.py:517` — process_message() の activity.log 呼び出し

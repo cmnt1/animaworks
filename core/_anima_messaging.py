@@ -41,8 +41,8 @@ from core.execution.fallback_activity import (
 from core.execution.session_types import resolve_runtime_session_type
 from core.i18n import t
 from core.image_artifacts import extract_image_artifacts_from_tool_records, resolve_local_image_paths
-from core.memory.conversation import ConversationMemory, ToolRecord
-from core.memory.streaming_journal import StreamingJournal
+from core.memory.conversation.memory import ConversationMemory, ToolRecord
+from core.memory.conversation.streaming_journal import StreamingJournal
 from core.paths import load_prompt
 from core.response_normalize import normalize_user_facing_response_text
 from core.schemas import EXTERNAL_PLATFORM_SOURCES, CycleResult, ImageData, ModelConfig

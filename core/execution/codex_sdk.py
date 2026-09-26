@@ -51,7 +51,7 @@ from core.execution.error_classifier import (
 from core.execution.rate_guard import get_rate_guard
 from core.execution.session_context import _resolve_session_type
 from core.execution.session_types import is_persistent_codex_session
-from core.memory.shortterm import ShortTermMemory
+from core.memory.conversation.shortterm import ShortTermMemory
 from core.platform.codex import default_home_dir, get_codex_executable
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig

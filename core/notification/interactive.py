@@ -336,7 +336,7 @@ class InteractionRouter:
 
         # Main-thread conversation view: human_reply card for web/slack/text_reply.
         try:
-            from core.memory.activity import ActivityLogger
+            from core.memory.activity.logger import ActivityLogger
             from core.paths import get_animas_dir
 
             reply_content = f"{decision}: {comment}" if comment else decision

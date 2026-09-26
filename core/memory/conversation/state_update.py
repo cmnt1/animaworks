@@ -24,7 +24,7 @@ def _record_resolutions(
     resolved_items: list[str],
 ) -> None:
     """Record resolution events to ActivityLogger and shared registry."""
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
 
     activity = ActivityLogger(anima_dir)
 

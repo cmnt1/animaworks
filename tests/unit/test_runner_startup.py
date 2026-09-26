@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
 from core.supervisor.ipc import IPCClient, IPCRequest
 
 
@@ -29,6 +29,7 @@ def _isolate_process_global_tool_executors(monkeypatch: pytest.MonkeyPatch) -> N
         "core.execution._litellm_tools.shutdown_tool_executors",
         MagicMock(),
     )
+
 
 # ── AnimaRunner ping readiness ───────────────────────────
 
@@ -353,9 +354,7 @@ class TestConversationContainsRecovery:
         from unittest.mock import MagicMock
 
         conv = MagicMock()
-        conv.load.return_value = SimpleNamespace(
-            turns=[SimpleNamespace(role=r, content=c) for r, c in turns]
-        )
+        conv.load.return_value = SimpleNamespace(turns=[SimpleNamespace(role=r, content=c) for r, c in turns])
         return conv
 
     def test_clean_saved_turn_without_marker_is_deduped(self):

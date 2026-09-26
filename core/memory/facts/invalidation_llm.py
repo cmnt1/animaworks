@@ -11,8 +11,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from core.memory.fact_config import DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS, _coerce_timeout_seconds
-from core.memory.facts import FactRecord
+from core.memory.facts.config import DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS, _coerce_timeout_seconds
+from core.memory.facts.store import FactRecord
 
 logger = logging.getLogger("animaworks.memory.fact_invalidation_llm")
 

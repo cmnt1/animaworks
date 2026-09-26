@@ -17,7 +17,7 @@ from core.i18n import t
 
 logger = logging.getLogger(__name__)
 
-from core.memory.activity_format import EVENT_SETS
+from core.memory.activity.format import EVENT_SETS
 
 # Aliased from the shared event-set registry to keep a single source of truth.
 AUDIT_EVENT_TYPES: list[str] = sorted(EVENT_SETS["audit"])
@@ -58,7 +58,7 @@ class AuditAggregator:
         self._name = anima_dir.name
 
     def _load_entries(self, hours: int, since: datetime | None = None, until: datetime | None = None) -> list[Any]:
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         al = ActivityLogger(self._anima_dir)
         return al._load_entries(hours=hours, types=AUDIT_EVENT_TYPES, since=since, until=until)
@@ -80,7 +80,7 @@ class AuditAggregator:
     @staticmethod
     def _extract_content(entry: Any) -> str:
         """Extract display content from an entry based on its type."""
-        from core.memory.activity_format import clip, entry_text
+        from core.memory.activity.format import clip, entry_text
 
         etype = entry.type
         T = _REPORT_ENTRY_TRUNCATE
@@ -188,7 +188,7 @@ class AuditAggregator:
         Merges events from multiple Animas into a single timeline.
         tool_use events are aggregated per-anima at the bottom.
         """
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         tagged: list[tuple[str, Any]] = []
         per_anima_tool_counts: dict[str, Counter[str]] = {}

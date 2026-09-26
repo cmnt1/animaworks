@@ -351,7 +351,7 @@ class ProceduralDistiller:
     ) -> list[list[dict]]:
         """Cluster activities using vector embeddings (cosine similarity)."""
         # Build text representations
-        from core.memory.activity_format import entry_text
+        from core.memory.activity.format import entry_text
         from core.memory.rag.singleton import generate_embeddings
 
         texts: list[str] = []
@@ -402,7 +402,7 @@ class ProceduralDistiller:
     def _format_clusters_for_prompt(clusters: list[list[dict]]) -> str:
         """Format activity clusters for the weekly pattern prompt."""
         parts: list[str] = []
-        from core.memory.activity_format import entry_text
+        from core.memory.activity.format import entry_text
 
         for i, cluster in enumerate(clusters, 1):
             lines = [t("distillation.pattern_n_repeat", i=i, count=len(cluster))]

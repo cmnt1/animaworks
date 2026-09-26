@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
 from core.time_utils import now_jst
 
 # ── Fixtures ───────────────────────────────────────────────
@@ -72,7 +72,7 @@ class TestVisibleToolEmitsLiveEvent:
         self, activity_logger: ActivityLogger, anima_dir: Path, tmp_path: Path
     ) -> None:
         """Log tool_use with tool=delegate_task and verify event file is created."""
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+        with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
             activity_logger.log(
                 "tool_use",
                 tool="delegate_task",
@@ -95,7 +95,7 @@ class TestAnyToolEmits:
     """ActivityLogger emits arbitrary tool calls for the Now board."""
 
     def test_search_memory_emits(self, activity_logger: ActivityLogger, tmp_path: Path) -> None:
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+        with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
             activity_logger.log(
                 "tool_use",
                 tool="search_memory",
@@ -133,7 +133,7 @@ class TestAllVisibleToolsEmit:
         tool_name: str,
     ) -> None:
         """Each visible tool should emit a live event file."""
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+        with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
             activity_logger.log(
                 "tool_use",
                 tool=tool_name,
@@ -175,7 +175,7 @@ class TestInternalToolsEmit:
         tool_name: str,
     ) -> None:
         """Each tool should create a live event file."""
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+        with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
             activity_logger.log(
                 "tool_use",
                 tool=tool_name,
@@ -211,7 +211,7 @@ class TestNonToolUseEventsStillEmit:
         kwargs: dict,
     ) -> None:
         """message_sent, response_sent, channel_post, task_created, task_updated emit."""
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+        with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
             activity_logger.log(event_type, **kwargs)
 
         events = _read_event_files(tmp_path)
@@ -229,7 +229,7 @@ class TestToolUseStillLoggedToActivityLog:
         self, activity_logger: ActivityLogger, anima_dir: Path, tmp_path: Path
     ) -> None:
         """Non-visible tool_use (search_memory) is written to activity_log even though no live event."""
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+        with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
             activity_logger.log(
                 "tool_use",
                 tool="search_memory",
@@ -246,7 +246,7 @@ class TestToolUseStillLoggedToActivityLog:
         self, activity_logger: ActivityLogger, anima_dir: Path, tmp_path: Path
     ) -> None:
         """Non-visible tool_use (read_memory_file) is written to activity_log."""
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+        with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
             activity_logger.log(
                 "tool_use",
                 tool="read_memory_file",

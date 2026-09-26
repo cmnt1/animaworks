@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from core.memory.fact_observability import warn_rate_limited
+from core.memory.facts.observability import warn_rate_limited
 
 logger = logging.getLogger("animaworks.memory.fact_extraction")
 

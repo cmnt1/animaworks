@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import core.memory.retrieval.entity as entity_module
-from core.memory.entity_index import normalize_entity_key
+from core.memory.facts.entity_index import normalize_entity_key
 from core.memory.retrieval.entity import (
     EntityBoostConfig,
     apply_entity_boost,
@@ -267,7 +267,9 @@ def test_automaton_matches_legacy_for_nested_cjk_casefold_and_shared_surfaces(tm
 
 
 @pytest.mark.unit
-def test_registered_query_defers_content_entity_extraction_until_match(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_registered_query_defers_content_entity_extraction_until_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     anima_dir = tmp_path / "alice"
     _write_registry(
         anima_dir,

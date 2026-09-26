@@ -28,7 +28,7 @@ JST = timezone(timedelta(hours=9))
 
 import pytest
 
-from core.memory.forgetting import (
+from core.memory.maintenance.forgetting import (
     PROCEDURE_INACTIVITY_DAYS,
     PROCEDURE_LOW_UTILITY_MIN_FAILURES,
     PROCEDURE_LOW_UTILITY_THRESHOLD,
@@ -657,7 +657,6 @@ class TestConstants:
 
     def test_low_utility_min_failures(self):
         assert PROCEDURE_LOW_UTILITY_MIN_FAILURES == 3
-
 
 
 if __name__ == "__main__":

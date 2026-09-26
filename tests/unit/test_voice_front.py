@@ -446,7 +446,7 @@ class TestVoiceSessionFrontRouting:
         )
         sess._front_lane = _front_lane_stub(healthy=True)
         mock_conv = MagicMock()
-        with patch("core.memory.conversation.ConversationMemory", return_value=mock_conv):
+        with patch("core.memory.conversation.memory.ConversationMemory", return_value=mock_conv):
             sess._audio_buffer.extend(_audio_frames())
             await sess.handle_speech_end()
         roles = [c.args[0] for c in mock_conv.append_turn.call_args_list]

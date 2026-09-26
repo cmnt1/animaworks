@@ -8,9 +8,9 @@
 
 ### Current State
 
-- 日次固定化で既存knowledgeの**内容をLLMに渡していない**ため、矛盾する知識が独立ファイルとして生成される — `core/memory/consolidation.py:283-285`
-- 既存ファイル更新は**append方式**のため、矛盾する記述が同一ファイル内に共存する — `core/memory/consolidation.py:411-412`
-- 週次統合のマージプロンプトに「矛盾はより新しい方を採用」と記載があるが、ファイル単位のマージ時のみ。セクション間矛盾は未処理 — `core/memory/consolidation.py:693`
+- 日次固定化で既存knowledgeの**内容をLLMに渡していない**ため、矛盾する知識が独立ファイルとして生成される — `core/memory/maintenance/consolidation.py:283-285`
+- 既存ファイル更新は**append方式**のため、矛盾する記述が同一ファイル内に共存する — `core/memory/maintenance/consolidation.py:411-412`
+- 週次統合のマージプロンプトに「矛盾はより新しい方を採用」と記載があるが、ファイル単位のマージ時のみ。セクション間矛盾は未処理 — `core/memory/maintenance/consolidation.py:693`
 - 解決伝播はLLMに「解決済みに更新して」と指示するだけで、反映の検証がない。実ファイルに「未解決」が残存するケースを確認済み
 - 無効化された知識を検索から除外する仕組みがなく、RAGが古い誤った知識を返す可能性がある
 
@@ -24,7 +24,7 @@
 
 | Component | Impact | Description |
 |-----------|--------|-------------|
-| `core/memory/consolidation.py` | Direct | 矛盾検出・解決ステージ追加 |
+| `core/memory/maintenance/consolidation.py` | Direct | 矛盾検出・解決ステージ追加 |
 | `core/memory/validation.py` | Direct | 矛盾検出ロジック（NLI+LLM判定）追加 |
 | `core/memory/manager.py` | Direct | supersedes/superseded_by/valid_until管理メソッド |
 | `core/memory/rag/retriever.py` | Direct | superseded知識のフィルタリング |
@@ -59,7 +59,7 @@
 
 | Module | Change Type | Description |
 |--------|------------|-------------|
-| `core/memory/consolidation.py` | Modify | 矛盾検出・解決ステージを日次固定化パイプラインに追加。初回矛盾スキャンを週次統合に追加 |
+| `core/memory/maintenance/consolidation.py` | Modify | 矛盾検出・解決ステージを日次固定化パイプラインに追加。初回矛盾スキャンを週次統合に追加 |
 | `core/memory/validation.py` | Modify | 矛盾検出ロジック（NLIペア判定 + LLM解決判定）を追加 |
 | `core/memory/manager.py` | Modify | `supersede_knowledge()`, `read_active_knowledge()` メソッド追加 |
 | `core/memory/rag/retriever.py` | Modify | `valid_until` フィルタ追加（superseded知識のデフォルト除外） |
@@ -67,7 +67,7 @@
 
 #### Change 1: 矛盾検出・解決ステージ
 
-**Target**: `core/memory/consolidation.py` — `daily_consolidate()`
+**Target**: `core/memory/maintenance/consolidation.py` — `daily_consolidate()`
 
 ```python
 # After validation (Issue 1), before writing:
@@ -220,8 +220,8 @@ results = collection.query(
 | # | Task | Target |
 |---|------|--------|
 | 2-1 | `supersede_knowledge()` メソッド実装（フロントマター更新） | `core/memory/manager.py` |
-| 2-2 | merge実行ロジック（LLM統合 + 元ファイルアーカイブ + 新ファイル作成） | `core/memory/consolidation.py` |
-| 2-3 | coexist実行ロジック（条件注釈付きで両方保持） | `core/memory/consolidation.py` |
+| 2-2 | merge実行ロジック（LLM統合 + 元ファイルアーカイブ + 新ファイル作成） | `core/memory/maintenance/consolidation.py` |
+| 2-3 | coexist実行ロジック（条件注釈付きで両方保持） | `core/memory/maintenance/consolidation.py` |
 | 2-4 | `retriever.py` にsuperseded知識フィルタ追加 | `core/memory/rag/retriever.py` |
 | 2-5 | `indexer.py` にsupersedes関連メタデータ連携 | `core/memory/rag/indexer.py` |
 | 2-6 | Phase 2のユニットテスト（各解決アクション、RAGフィルタ） | `tests/` |
@@ -232,9 +232,9 @@ results = collection.query(
 
 | # | Task | Target |
 |---|------|--------|
-| 3-1 | `daily_consolidate()` に矛盾検出・解決ステージを組み込み | `core/memory/consolidation.py` |
-| 3-2 | `weekly_integrate()` に初回矛盾スキャンを組み込み（マーカーで1回実行制御） | `core/memory/consolidation.py` |
-| 3-3 | 矛盾解決のアクティビティログ記録（`knowledge_contradiction_resolved` イベント） | `core/memory/consolidation.py` |
+| 3-1 | `daily_consolidate()` に矛盾検出・解決ステージを組み込み | `core/memory/maintenance/consolidation.py` |
+| 3-2 | `weekly_integrate()` に初回矛盾スキャンを組み込み（マーカーで1回実行制御） | `core/memory/maintenance/consolidation.py` |
+| 3-3 | 矛盾解決のアクティビティログ記録（`knowledge_contradiction_resolved` イベント） | `core/memory/maintenance/consolidation.py` |
 | 3-4 | Phase 3の統合テスト（日次固定化E2E、週次統合E2E、初回スキャン） | `tests/` |
 
 **Completion condition**: 日次固定化で矛盾検出・解決が自動実行され、週次統合の初回スキャンで既存矛盾が検出・解決される
@@ -281,11 +281,11 @@ results = collection.query(
 
 ## References
 
-- `core/memory/consolidation.py:53-143` — `daily_consolidate()` 日次固定化メインフロー
-- `core/memory/consolidation.py:283-285` — 既存knowledgeファイル名のみ渡し（矛盾の根本原因）
-- `core/memory/consolidation.py:411-412` — append方式の書き込み
-- `core/memory/consolidation.py:500-584` — `weekly_integrate()` 週次統合メインフロー
-- `core/memory/consolidation.py:656-762` — `_merge_knowledge_files()` 統合プロンプト（L693: 「矛盾はより新しい方を採用」）
+- `core/memory/maintenance/consolidation.py:53-143` — `daily_consolidate()` 日次固定化メインフロー
+- `core/memory/maintenance/consolidation.py:283-285` — 既存knowledgeファイル名のみ渡し（矛盾の根本原因）
+- `core/memory/maintenance/consolidation.py:411-412` — append方式の書き込み
+- `core/memory/maintenance/consolidation.py:500-584` — `weekly_integrate()` 週次統合メインフロー
+- `core/memory/maintenance/consolidation.py:656-762` — `_merge_knowledge_files()` 統合プロンプト（L693: 「矛盾はより新しい方を採用」）
 - `core/memory/rag/retriever.py` — RAG検索（フィルタリング追加対象）
 - `core/memory/rag/indexer.py:377-419` — `_extract_metadata()` メタデータ付与
 - `core/memory/manager.py:789-800` — `write_knowledge()` 現行書き込み

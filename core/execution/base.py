@@ -24,7 +24,7 @@ from typing import Any, Protocol, runtime_checkable
 # ── Streaming error ──────────────────────────────────────────
 from core.exceptions import StreamDisconnectedError  # noqa: F401 – re-export
 from core.execution.reminder import SystemReminderQueue
-from core.memory.shortterm import ShortTermMemory
+from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
 

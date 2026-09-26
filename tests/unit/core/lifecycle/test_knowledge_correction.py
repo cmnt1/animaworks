@@ -53,7 +53,7 @@ async def test_post_consolidation_reconsolidates_failing_knowledge_with_file_cap
     async def fake_revise(self, content, meta, model):  # noqa: ANN001, ARG001
         return f"Revised: {content}"
 
-    monkeypatch.setattr("core.memory.reconsolidation.ReconsolidationEngine._revise_knowledge", fake_revise)
+    monkeypatch.setattr("core.memory.maintenance.reconsolidation.ReconsolidationEngine._revise_knowledge", fake_revise)
 
     summary = await run_post_consolidation_knowledge_correction(
         anima_dir,

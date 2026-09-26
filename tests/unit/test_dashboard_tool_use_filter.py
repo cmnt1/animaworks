@@ -5,7 +5,7 @@ Verifies:
   _loadInitialStreams filter, updateCardActivity guards, _summarizeEvent ⚙ icon
 - app-websocket.js: VISIBLE_TOOL_NAMES import, isStreamingTool check,
   conditional guard before updateCardActivity
-- core/memory/activity.py: _LIVE_EVENT_TYPES excludes tool_use,
+- core/memory/activity/logger.py: _LIVE_EVENT_TYPES excludes tool_use,
   the legacy dashboard tool set remains defined, and log() streams all tools
 """
 # AnimaWorks - Digital Anima Framework
@@ -21,7 +21,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ORG_DASHBOARD_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "org-dashboard.js"
 APP_WEBSOCKET_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "app-websocket.js"
-ACTIVITY_PY = REPO_ROOT / "core" / "memory" / "activity.py"
+ACTIVITY_PY = REPO_ROOT / "core" / "memory" / "activity" / "logger.py"
 
 
 # ── org-dashboard.js: Visibility Filter ──────────────────────
@@ -143,7 +143,7 @@ class TestAppWebSocketFiltering:
         assert guard_pos < update_pos
 
 
-# ── core/memory/activity.py: Backend live stream ──────────────────
+# ── core/memory/activity/logger.py: Backend live stream ──────────────────
 
 
 class TestActivityBackendLiveEventTypes:

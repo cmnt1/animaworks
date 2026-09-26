@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
 from core.notification import notification_key_for
 
 # ── DigitalAnima activity logging ────────────────────────────

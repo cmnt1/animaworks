@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.conversation import (
+from core.memory.conversation.memory import (
     ConversationMemory,
 )
 from core.schemas import ModelConfig

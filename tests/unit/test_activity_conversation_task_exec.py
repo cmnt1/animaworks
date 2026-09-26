@@ -9,8 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.activity import ActivityEntry, ActivityLogger
-
+from core.memory.activity.logger import ActivityEntry, ActivityLogger
 
 # ── Helpers ───────────────────────────────────────────────
 
@@ -58,9 +57,7 @@ class TestConversationTypes:
 class TestEntriesToMessages:
     """_entries_to_messages correctly converts task_exec entries to system messages."""
 
-    def test_task_exec_start_becomes_system_message(
-        self, activity_logger: ActivityLogger
-    ) -> None:
+    def test_task_exec_start_becomes_system_message(self, activity_logger: ActivityLogger) -> None:
         """task_exec_start entry -> system message with _trigger: task."""
         entries = [
             _make_entry("task_exec_start", "2026-03-10T09:00:00+09:00"),
@@ -74,9 +71,7 @@ class TestEntriesToMessages:
         assert msg["tool_calls"] == []
         assert "タスク実行開始" in msg["content"] or "Task execution started" in msg["content"]
 
-    def test_task_exec_start_uses_summary_when_present(
-        self, activity_logger: ActivityLogger
-    ) -> None:
+    def test_task_exec_start_uses_summary_when_present(self, activity_logger: ActivityLogger) -> None:
         """task_exec_start with summary uses summary as content."""
         entries = [
             _make_entry(
@@ -89,9 +84,7 @@ class TestEntriesToMessages:
         assert len(messages) == 1
         assert messages[0]["content"] == "pending/task_abc.json を実行"
 
-    def test_task_exec_end_becomes_system_message(
-        self, activity_logger: ActivityLogger
-    ) -> None:
+    def test_task_exec_end_becomes_system_message(self, activity_logger: ActivityLogger) -> None:
         """task_exec_end entry -> system message with _trigger: task."""
         entries = [
             _make_entry("task_exec_end", "2026-03-10T09:05:00+09:00"),
@@ -105,9 +98,7 @@ class TestEntriesToMessages:
         assert msg["tool_calls"] == []
         assert "タスク実行完了" in msg["content"] or "Task execution completed" in msg["content"]
 
-    def test_task_exec_end_prefers_summary_then_content(
-        self, activity_logger: ActivityLogger
-    ) -> None:
+    def test_task_exec_end_prefers_summary_then_content(self, activity_logger: ActivityLogger) -> None:
         """task_exec_end uses summary > content > i18n label."""
         entries = [
             _make_entry(
@@ -130,9 +121,7 @@ class TestEntriesToMessages:
         messages2 = activity_logger._entries_to_messages(entries2)
         assert messages2[0]["content"] == "Fallback content"
 
-    def test_task_exec_start_end_sequence(
-        self, activity_logger: ActivityLogger
-    ) -> None:
+    def test_task_exec_start_end_sequence(self, activity_logger: ActivityLogger) -> None:
         """task_exec_start -> tool_use -> task_exec_end produces correct messages."""
         entries = [
             _make_entry("task_exec_start", "2026-03-10T09:00:00+09:00"),

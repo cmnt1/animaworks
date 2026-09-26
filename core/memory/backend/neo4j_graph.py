@@ -445,7 +445,7 @@ class Neo4jGraphBackend(MemoryBackend):
     def _resolve_extraction_config(self) -> tuple[str, dict[str, object], str]:
         """Resolve the model, LLM kwargs, and credential for extraction.
 
-        Delegates to the hardened resolver in ``core.memory.fact_config``
+        Delegates to the hardened resolver in ``core.memory.facts.config``
         so both backends share one policy: endpoint override fields
         (api base / api key / extra body) in status.json are deliberately
         NOT trusted — status.json is writable by the anima process itself,
@@ -459,7 +459,7 @@ class Neo4jGraphBackend(MemoryBackend):
             contain ``timeout`` only and *credential* is a name reference
             into the global credentials map ("" for provider default).
         """
-        from core.memory.fact_config import _resolve_extraction_config
+        from core.memory.facts.config import _resolve_extraction_config
 
         model, llm_extra, _locale, timeout, credential = _resolve_extraction_config(self._anima_dir)
         extra: dict[str, object] = dict(llm_extra)

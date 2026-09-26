@@ -1,4 +1,4 @@
-"""Unit tests for core/memory/cron_logger.py — CronLogger."""
+"""Unit tests for core/memory/maintenance/cron_logger.py — CronLogger."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from core.memory.cron_logger import CronLogger
+from core.memory.maintenance.cron_logger import CronLogger
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -161,7 +161,11 @@ class TestAppendCronCommandLog:
         """Output with <=10 lines is included in full."""
         stdout = "\n".join(f"line {i}" for i in range(8))
         cl.append_cron_command_log(
-            "task", exit_code=0, stdout=stdout, stderr="", duration_ms=0,
+            "task",
+            exit_code=0,
+            stdout=stdout,
+            stderr="",
+            duration_ms=0,
         )
         path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         entry = json.loads(path.read_text(encoding="utf-8").strip())
@@ -172,7 +176,11 @@ class TestAppendCronCommandLog:
         """Output with >10 lines shows first 5 + '...' + last 5."""
         stdout = "\n".join(f"line {i}" for i in range(20))
         cl.append_cron_command_log(
-            "task", exit_code=0, stdout=stdout, stderr="", duration_ms=0,
+            "task",
+            exit_code=0,
+            stdout=stdout,
+            stderr="",
+            duration_ms=0,
         )
         path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         entry = json.loads(path.read_text(encoding="utf-8").strip())
@@ -188,7 +196,11 @@ class TestAppendCronCommandLog:
         # Create long lines so preview exceeds 1000 chars
         stdout = "\n".join("A" * 200 for _ in range(20))
         cl.append_cron_command_log(
-            "task", exit_code=0, stdout=stdout, stderr="", duration_ms=0,
+            "task",
+            exit_code=0,
+            stdout=stdout,
+            stderr="",
+            duration_ms=0,
         )
         path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         entry = json.loads(path.read_text(encoding="utf-8").strip())
@@ -196,7 +208,11 @@ class TestAppendCronCommandLog:
 
     def test_empty_stdout_stderr(self, cl: CronLogger, anima_dir: Path) -> None:
         cl.append_cron_command_log(
-            "task", exit_code=0, stdout="", stderr="", duration_ms=0,
+            "task",
+            exit_code=0,
+            stdout="",
+            stderr="",
+            duration_ms=0,
         )
         path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         entry = json.loads(path.read_text(encoding="utf-8").strip())
@@ -222,7 +238,11 @@ class TestAppendCronCommandLog:
     def test_more_than_50_command_entries_are_preserved(self, cl: CronLogger, anima_dir: Path) -> None:
         for i in range(55):
             cl.append_cron_command_log(
-                f"task-{i}", exit_code=0, stdout=f"out-{i}", stderr="", duration_ms=i,
+                f"task-{i}",
+                exit_code=0,
+                stdout=f"out-{i}",
+                stderr="",
+                duration_ms=i,
             )
         path = anima_dir / "state" / "cron_logs" / f"{_jst_today().isoformat()}.jsonl"
         lines = path.read_text(encoding="utf-8").strip().splitlines()
@@ -254,38 +274,47 @@ class TestReadCronLog:
 
         today = _jst_today()
         # Write today's log
-        today_entry = json.dumps({
-            "timestamp": "2026-01-20T10:00:00+09:00",
-            "task": "today-task",
-            "summary": "today summary",
-            "duration_ms": 100,
-        })
+        today_entry = json.dumps(
+            {
+                "timestamp": "2026-01-20T10:00:00+09:00",
+                "task": "today-task",
+                "summary": "today summary",
+                "duration_ms": 100,
+            }
+        )
         (log_dir / f"{today.isoformat()}.jsonl").write_text(
-            today_entry + "\n", encoding="utf-8",
+            today_entry + "\n",
+            encoding="utf-8",
         )
 
         # Write yesterday's log
         yesterday = today - timedelta(days=1)
-        yesterday_entry = json.dumps({
-            "timestamp": "2026-01-19T10:00:00+09:00",
-            "task": "yesterday-task",
-            "summary": "yesterday summary",
-            "duration_ms": 200,
-        })
+        yesterday_entry = json.dumps(
+            {
+                "timestamp": "2026-01-19T10:00:00+09:00",
+                "task": "yesterday-task",
+                "summary": "yesterday summary",
+                "duration_ms": 200,
+            }
+        )
         (log_dir / f"{yesterday.isoformat()}.jsonl").write_text(
-            yesterday_entry + "\n", encoding="utf-8",
+            yesterday_entry + "\n",
+            encoding="utf-8",
         )
 
         # Write 3-days-ago log
         three_days = today - timedelta(days=3)
-        old_entry = json.dumps({
-            "timestamp": "2026-01-17T10:00:00+09:00",
-            "task": "old-task",
-            "summary": "old summary",
-            "duration_ms": 300,
-        })
+        old_entry = json.dumps(
+            {
+                "timestamp": "2026-01-17T10:00:00+09:00",
+                "task": "old-task",
+                "summary": "old summary",
+                "duration_ms": 300,
+            }
+        )
         (log_dir / f"{three_days.isoformat()}.jsonl").write_text(
-            old_entry + "\n", encoding="utf-8",
+            old_entry + "\n",
+            encoding="utf-8",
         )
 
         # days=1 should only get today
@@ -305,12 +334,14 @@ class TestReadCronLog:
         log_dir.mkdir(parents=True, exist_ok=True)
         path = log_dir / f"{_jst_today().isoformat()}.jsonl"
 
-        valid_entry = json.dumps({
-            "timestamp": "2026-01-20T10:00:00+09:00",
-            "task": "good-task",
-            "summary": "good",
-            "duration_ms": 100,
-        })
+        valid_entry = json.dumps(
+            {
+                "timestamp": "2026-01-20T10:00:00+09:00",
+                "task": "good-task",
+                "summary": "good",
+                "duration_ms": 100,
+            }
+        )
         path.write_text(
             "not valid json\n" + valid_entry + "\n",
             encoding="utf-8",
@@ -325,12 +356,14 @@ class TestReadCronLog:
         path = log_dir / f"{_jst_today().isoformat()}.jsonl"
 
         incomplete = json.dumps({"timestamp": "2026-01-20T10:00:00+09:00"})
-        valid = json.dumps({
-            "timestamp": "2026-01-20T11:00:00+09:00",
-            "task": "valid-task",
-            "summary": "ok",
-            "duration_ms": 50,
-        })
+        valid = json.dumps(
+            {
+                "timestamp": "2026-01-20T11:00:00+09:00",
+                "task": "valid-task",
+                "summary": "ok",
+                "duration_ms": 50,
+            }
+        )
         path.write_text(incomplete + "\n" + valid + "\n", encoding="utf-8")
         result = cl.read_cron_log(days=1)
         assert "valid-task" in result
@@ -340,17 +373,24 @@ class TestReadCronLog:
         log_dir = anima_dir / "state" / "cron_logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         (log_dir / f"{_jst_today().isoformat()}.jsonl").write_text(
-            "", encoding="utf-8",
+            "",
+            encoding="utf-8",
         )
         result = cl.read_cron_log(days=1)
         assert result == ""
 
     def test_command_log_entries_included_by_read(
-        self, cl: CronLogger, anima_dir: Path,
+        self,
+        cl: CronLogger,
+        anima_dir: Path,
     ) -> None:
         """Command-type entries (no summary) are formatted with exit_code and preview."""
         cl.append_cron_command_log(
-            "cmd-task", exit_code=0, stdout="hello world", stderr="", duration_ms=10,
+            "cmd-task",
+            exit_code=0,
+            stdout="hello world",
+            stderr="",
+            duration_ms=10,
         )
         result = cl.read_cron_log(days=1)
         assert "cmd-task" in result
@@ -359,11 +399,17 @@ class TestReadCronLog:
         assert "10ms" in result
 
     def test_command_log_stderr_fallback(
-        self, cl: CronLogger, anima_dir: Path,
+        self,
+        cl: CronLogger,
+        anima_dir: Path,
     ) -> None:
         """When stdout_preview is empty, stderr_preview is used instead."""
         cl.append_cron_command_log(
-            "err-task", exit_code=1, stdout="", stderr="fatal error", duration_ms=5,
+            "err-task",
+            exit_code=1,
+            stdout="",
+            stderr="fatal error",
+            duration_ms=5,
         )
         result = cl.read_cron_log(days=1)
         assert "err-task" in result
@@ -371,12 +417,18 @@ class TestReadCronLog:
         assert "fatal error" in result
 
     def test_mixed_llm_and_command_entries(
-        self, cl: CronLogger, anima_dir: Path,
+        self,
+        cl: CronLogger,
+        anima_dir: Path,
     ) -> None:
         """Both LLM (summary) and command entries are read correctly."""
         cl.append_cron_log("llm-task", summary="did something", duration_ms=100)
         cl.append_cron_command_log(
-            "cmd-task", exit_code=0, stdout="ok", stderr="", duration_ms=50,
+            "cmd-task",
+            exit_code=0,
+            stdout="ok",
+            stderr="",
+            duration_ms=50,
         )
         result = cl.read_cron_log(days=1)
         assert "llm-task" in result
@@ -387,7 +439,7 @@ class TestReadCronLog:
     def test_now_local_used_for_date(self, cl: CronLogger, anima_dir: Path) -> None:
         """Verify that now_local() determines the log file date, not date.today()."""
         fake_jst = datetime(2026, 3, 6, 1, 30, 0, tzinfo=JST)
-        with patch("core.memory.cron_logger.now_local", return_value=fake_jst):
+        with patch("core.memory.maintenance.cron_logger.now_local", return_value=fake_jst):
             cl.append_cron_log("jst-task", summary="jst check", duration_ms=1)
 
         path = anima_dir / "state" / "cron_logs" / "2026-03-06.jsonl"

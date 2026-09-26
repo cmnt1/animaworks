@@ -8,18 +8,18 @@ Verifies that:
 2. Legacy dm_logs/ are merged with activity_log without duplicates
 3. AnimaRunner emits anima.interaction events when messages are sent
 """
+
 from __future__ import annotations
 
 import json
 import time
-from core.time_utils import now_jst
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
 
-from core.memory.activity import ActivityLogger
-
+from core.memory.activity.logger import ActivityLogger
+from core.time_utils import now_jst
 
 # ── Helpers ────────────────────────────────────────────────────
 
@@ -27,6 +27,7 @@ from core.memory.activity import ActivityLogger
 def _create_app(shared_dir: Path):
     """Create a test FastAPI app with channels router and real filesystem."""
     from fastapi import FastAPI
+
     from server.routes.channels import create_channels_router
 
     app = FastAPI()
@@ -80,7 +81,9 @@ class TestDMApiReturnsMessagesFromActivityLog:
 
     @patch("core.config.models.load_config", side_effect=Exception("no config"))
     async def test_dm_list_includes_pair_from_activity_log(
-        self, _mock_cfg: MagicMock, tmp_path: Path,
+        self,
+        _mock_cfg: MagicMock,
+        tmp_path: Path,
     ) -> None:
         """GET /api/dm lists pairs discovered from per-Anima activity_log."""
         _data_dir, shared_dir, animas_dir = _setup_data_dir(tmp_path)
@@ -137,7 +140,8 @@ class TestDMApiReturnsMessagesFromActivityLog:
         assert ab["message_count"] >= 2  # At least the messages we logged
 
     async def test_dm_history_returns_messages_from_activity_log(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """GET /api/dm/{pair} returns messages from activity_log entries."""
         _data_dir, shared_dir, animas_dir = _setup_data_dir(tmp_path)
@@ -200,7 +204,8 @@ class TestDMApiReturnsMessagesFromActivityLog:
             assert msg["source"] == "activity_log"
 
     async def test_dm_history_deduplicates_same_content(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Messages logged by both sender and receiver are deduplicated."""
         _data_dir, shared_dir, animas_dir = _setup_data_dir(tmp_path)
@@ -233,10 +238,12 @@ class TestDMApiReturnsMessagesFromActivityLog:
         }
 
         alice_log.write_text(
-            json.dumps(entry_alice, ensure_ascii=False) + "\n", encoding="utf-8",
+            json.dumps(entry_alice, ensure_ascii=False) + "\n",
+            encoding="utf-8",
         )
         bob_log.write_text(
-            json.dumps(entry_bob, ensure_ascii=False) + "\n", encoding="utf-8",
+            json.dumps(entry_bob, ensure_ascii=False) + "\n",
+            encoding="utf-8",
         )
 
         app = _create_app(shared_dir)
@@ -250,9 +257,7 @@ class TestDMApiReturnsMessagesFromActivityLog:
 
         # The dedup key is "ts|content", so identical entries should be merged
         exact_matches = [m for m in messages if m["text"] == "Exact same message"]
-        assert len(exact_matches) == 1, (
-            f"Expected 1 deduplicated message, got {len(exact_matches)}: {exact_matches}"
-        )
+        assert len(exact_matches) == 1, f"Expected 1 deduplicated message, got {len(exact_matches)}: {exact_matches}"
 
 
 # ── Test 2: DM API merges legacy and activity_log ─────────────
@@ -262,7 +267,8 @@ class TestDMApiMergesLegacyAndActivityLog:
     """Legacy dm_logs/ + activity_log messages are merged without duplicates."""
 
     async def test_legacy_and_activity_log_both_appear(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Old messages from dm_logs/ and new messages from activity_log
         are both returned by GET /api/dm/{pair}."""
@@ -317,7 +323,9 @@ class TestDMApiMergesLegacyAndActivityLog:
 
     @patch("core.config.models.load_config", side_effect=Exception("no config"))
     async def test_dm_list_merges_counts_from_both_sources(
-        self, _mock_cfg: MagicMock, tmp_path: Path,
+        self,
+        _mock_cfg: MagicMock,
+        tmp_path: Path,
     ) -> None:
         """GET /api/dm includes counts from both legacy dm_logs/ and activity_log."""
         _data_dir, shared_dir, animas_dir = _setup_data_dir(tmp_path)
@@ -354,7 +362,8 @@ class TestDMApiMergesLegacyAndActivityLog:
         assert ab["message_count"] >= 3
 
     async def test_no_duplicates_when_same_message_in_both(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """If the same ts|content exists in both legacy and activity_log,
         it is not duplicated in the response."""
@@ -367,9 +376,13 @@ class TestDMApiMergesLegacyAndActivityLog:
         shared_content = "This message exists in both sources"
 
         # Write to legacy dm_logs/
-        _write_legacy_dm(shared_dir, "alice-bob", [
-            {"ts": fixed_ts, "from": "alice", "text": shared_content, "source": "anima"},
-        ])
+        _write_legacy_dm(
+            shared_dir,
+            "alice-bob",
+            [
+                {"ts": fixed_ts, "from": "alice", "text": shared_content, "source": "anima"},
+            ],
+        )
 
         # Write identical entry to alice's activity_log
         log_file = alice_dir / "activity_log" / "2026-02-18.jsonl"
@@ -381,7 +394,8 @@ class TestDMApiMergesLegacyAndActivityLog:
             "to": "bob",
         }
         log_file.write_text(
-            json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8",
+            json.dumps(entry, ensure_ascii=False) + "\n",
+            encoding="utf-8",
         )
 
         app = _create_app(shared_dir)
@@ -396,9 +410,7 @@ class TestDMApiMergesLegacyAndActivityLog:
         # The dedup key is "ts|content" (or "ts|text"), so identical entries
         # from both sources should be merged into one
         matching = [m for m in messages if m.get("text") == shared_content]
-        assert len(matching) == 1, (
-            f"Expected 1 deduplicated message, got {len(matching)}: {matching}"
-        )
+        assert len(matching) == 1, f"Expected 1 deduplicated message, got {len(matching)}: {matching}"
 
 
 # ── Test 3: Runner emits interaction event on message_sent ────
@@ -431,7 +443,8 @@ class TestRunnerEmitsInteractionEvent:
         event = {"event": event_type, "data": event_data}
         tmp_file = events_dir / f".{filename}"
         tmp_file.write_text(
-            json.dumps(event, default=str, ensure_ascii=False), encoding="utf-8",
+            json.dumps(event, default=str, ensure_ascii=False),
+            encoding="utf-8",
         )
         tmp_file.rename(events_dir / filename)  # Atomic rename
 
@@ -466,7 +479,8 @@ class TestRunnerEmitsInteractionEvent:
             }
             tmp_file = events_dir / f".{filename}"
             tmp_file.write_text(
-                json.dumps(event, ensure_ascii=False), encoding="utf-8",
+                json.dumps(event, ensure_ascii=False),
+                encoding="utf-8",
             )
             tmp_file.rename(events_dir / filename)
 
@@ -479,7 +493,8 @@ class TestRunnerEmitsInteractionEvent:
         assert len(event_files) == 5
 
     def test_on_message_sent_callback_produces_correct_event(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The on_message_sent callback wired in AnimaRunner produces
         the correct anima.interaction event payload."""
@@ -512,12 +527,15 @@ class TestRunnerEmitsInteractionEvent:
             tmp_file.rename(events_dir / filename)
 
         def on_message_sent(from_name: str, to_name: str, content: str) -> None:
-            _emit_event("anima.interaction", {
-                "from_person": from_name,
-                "to_person": to_name,
-                "type": "message",
-                "summary": content[:200],
-            })
+            _emit_event(
+                "anima.interaction",
+                {
+                    "from_person": from_name,
+                    "to_person": to_name,
+                    "type": "message",
+                    "summary": content[:200],
+                },
+            )
 
         # Trigger the callback as AnimaRunner would
         on_message_sent("sakura", "mio", "This is a test DM from sakura to mio")
@@ -534,7 +552,8 @@ class TestRunnerEmitsInteractionEvent:
         assert event["data"]["summary"] == "This is a test DM from sakura to mio"
 
     def test_on_message_sent_truncates_long_content(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The on_message_sent callback truncates content at 200 characters."""
         shared_dir = tmp_path / "shared"
@@ -556,12 +575,15 @@ class TestRunnerEmitsInteractionEvent:
             tmp_file.rename(events_dir / filename)
 
         def on_message_sent(from_name: str, to_name: str, content: str) -> None:
-            _emit_event("anima.interaction", {
-                "from_person": from_name,
-                "to_person": to_name,
-                "type": "message",
-                "summary": content[:200],
-            })
+            _emit_event(
+                "anima.interaction",
+                {
+                    "from_person": from_name,
+                    "to_person": to_name,
+                    "type": "message",
+                    "summary": content[:200],
+                },
+            )
 
         long_content = "A" * 500
         on_message_sent("sakura", "mio", long_content)

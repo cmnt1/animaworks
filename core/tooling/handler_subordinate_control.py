@@ -16,7 +16,7 @@ from core.tooling.handler_base import _error_result
 from core.tooling.org_helpers import OrgHelpersMixin, resolve_anima_name
 
 if TYPE_CHECKING:
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
 
 logger = logging.getLogger("animaworks.tool_handler")
 

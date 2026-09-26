@@ -15,7 +15,7 @@ import networkx as nx
 from fastapi import APIRouter, HTTPException, Query, Request
 from networkx.readwrite import json_graph
 
-from core.memory.conversation import ConversationMemory
+from core.memory.conversation.memory import ConversationMemory
 from core.memory.frontmatter import parse_frontmatter
 from core.memory.manager import MemoryManager
 from core.time_utils import get_app_timezone

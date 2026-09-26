@@ -193,7 +193,7 @@ class VectorWorkerManager:
         self.log_dir.mkdir(parents=True, exist_ok=True)
         log_path = self.log_dir / "vector-worker.log"
         try:
-            from core.memory.housekeeping import _rotate_daemon_log
+            from core.memory.maintenance.housekeeping import _rotate_daemon_log
 
             _rotate_daemon_log(log_path, max_size_mb=50, keep_generations=5)
         except Exception:

@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.memory.fact_observability import reset_warning_rate_limits
+from core.memory.facts.observability import reset_warning_rate_limits
 from core.memory.ontology.default import (
     EntityExtractionResult,
     ExtractedEntity,
@@ -245,11 +245,7 @@ class TestParseJsonResponse:
         assert result.entities[0].name == "田中"
 
     def test_parses_fence_with_surrounding_explanation(self):
-        text = (
-            "以下が抽出結果です。\n"
-            f"```json\n{self._PAYLOAD}\n```\n"
-            "（以上）"
-        )
+        text = f"以下が抽出結果です。\n```json\n{self._PAYLOAD}\n```\n（以上）"
         result = self._parse(text)
         assert len(result.entities) == 1
         assert result.entities[0].name == "田中"

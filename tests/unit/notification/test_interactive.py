@@ -155,7 +155,7 @@ class TestInteractionRouter:
     @pytest.mark.asyncio
     async def test_resolve_logs_human_reply_activity(self, _patch_dirs, data_dir, tmp_path):
         """Successful resolve writes human_reply to the anima activity_log."""
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
         from core.notification.interactive import get_interaction_router
 
         anima_dir = tmp_path / "animas" / "test_anima"

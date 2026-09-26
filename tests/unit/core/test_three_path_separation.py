@@ -28,7 +28,7 @@ from core.tooling.handler_base import active_session_type
 @pytest.fixture(autouse=True)
 def _disable_rag_indexing(monkeypatch):
     """Keep execution-separation tests focused on routing, not vector indexing."""
-    monkeypatch.setattr("core.memory.rag_search.RAGMemorySearch._get_indexer", lambda self: None)
+    monkeypatch.setattr("core.memory.retrieval.rag_search.RAGMemorySearch._get_indexer", lambda self: None)
 
 
 # ── Lock Structure ──────────────────────────────────────────

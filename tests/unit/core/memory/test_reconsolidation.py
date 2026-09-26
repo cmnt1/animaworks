@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.memory.reconsolidation import ReconsolidationEngine
+from core.memory.maintenance.reconsolidation import ReconsolidationEngine
 from core.time_utils import now_jst
 
 # ── Fixtures ────────────────────────────────────────────────
@@ -50,7 +50,7 @@ def memory_manager(anima_dir: Path):
 @pytest.fixture
 def activity_logger(anima_dir: Path):
     """Create an ActivityLogger for the test anima."""
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
 
     return ActivityLogger(anima_dir)
 
@@ -701,7 +701,7 @@ class TestCreateProceduresFromResolved:
         """No issue_resolved events should return zeros."""
         # ActivityLogger.recent() returns empty list
         with patch(
-            "core.memory.activity.ActivityLogger.recent",
+            "core.memory.activity.logger.ActivityLogger.recent",
             return_value=[],
         ):
             result = await engine.create_procedures_from_resolved(
@@ -749,11 +749,11 @@ class TestCreateProceduresFromResolved:
 
         with (
             patch(
-                "core.memory.activity.ActivityLogger.recent",
+                "core.memory.activity.logger.ActivityLogger.recent",
                 return_value=[fake_entry],
             ),
             patch(
-                "core.memory.distillation.ProceduralDistiller._check_rag_duplicate",
+                "core.memory.maintenance.distillation.ProceduralDistiller._check_rag_duplicate",
                 return_value=None,
             ),
             patch(
@@ -797,7 +797,7 @@ class TestCreateProceduresFromResolved:
         fake_entry = FakeEntry()
 
         with patch(
-            "core.memory.activity.ActivityLogger.recent",
+            "core.memory.activity.logger.ActivityLogger.recent",
             return_value=[fake_entry],
         ):
             result = await engine.create_procedures_from_resolved(
@@ -831,11 +831,11 @@ class TestCreateProceduresFromResolved:
 
         with (
             patch(
-                "core.memory.activity.ActivityLogger.recent",
+                "core.memory.activity.logger.ActivityLogger.recent",
                 return_value=[fake_entry],
             ),
             patch(
-                "core.memory.distillation.ProceduralDistiller._check_rag_duplicate",
+                "core.memory.maintenance.distillation.ProceduralDistiller._check_rag_duplicate",
                 return_value="procedures/existing.md",
             ),
         ):
@@ -869,11 +869,11 @@ class TestCreateProceduresFromResolved:
 
         with (
             patch(
-                "core.memory.activity.ActivityLogger.recent",
+                "core.memory.activity.logger.ActivityLogger.recent",
                 return_value=[fake_entry],
             ),
             patch(
-                "core.memory.distillation.ProceduralDistiller._check_rag_duplicate",
+                "core.memory.maintenance.distillation.ProceduralDistiller._check_rag_duplicate",
                 return_value=None,
             ),
             patch(
@@ -925,11 +925,11 @@ class TestCreateProceduresFromResolved:
 
         with (
             patch(
-                "core.memory.activity.ActivityLogger.recent",
+                "core.memory.activity.logger.ActivityLogger.recent",
                 return_value=[fake_entry],
             ),
             patch(
-                "core.memory.distillation.ProceduralDistiller._check_rag_duplicate",
+                "core.memory.maintenance.distillation.ProceduralDistiller._check_rag_duplicate",
                 return_value=None,
             ),
             patch(

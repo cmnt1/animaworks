@@ -8,22 +8,22 @@
 
 ### Current State
 
-- `PROTECTED_MEMORY_TYPES = frozenset({"procedures", "skills", "shared_users"})` により、procedures/は忘却から**完全に保護**されている — `core/memory/forgetting.py:42-43`
+- `PROTECTED_MEMORY_TYPES = frozenset({"procedures", "skills", "shared_users"})` により、procedures/は忘却から**完全に保護**されている — `core/memory/maintenance/forgetting.py:42-43`
 - 低品質・古い・使われない手順が永久に蓄積する
 - RAGインデックスのS/N比が時間とともに低下する
 - 脳科学的にも手続き記憶は忘却される（宣言的記憶より緩やかだが）
 
 ### Root Cause
 
-1. **完全保護の設計が過剰**: 手続き記憶を一切忘却しない設計は、長期運用で記憶の品質を劣化させる — `core/memory/forgetting.py:57-63`
+1. **完全保護の設計が過剰**: 手続き記憶を一切忘却しない設計は、長期運用で記憶の品質を劣化させる — `core/memory/maintenance/forgetting.py:57-63`
 2. **効用の定量化がない**: 手順の有用性を測る指標がないため、忘却の判断基準がない
 
 ### Impact
 
 | Component | Impact | Description |
 |-----------|--------|-------------|
-| `core/memory/forgetting.py` | Direct | PROTECTED_MEMORY_TYPESからprocedures除外、効用ベース忘却ロジック追加 |
-| `core/memory/consolidation.py` | Indirect | 日次/週次/月次の忘却ステージでprocedures/が処理対象に |
+| `core/memory/maintenance/forgetting.py` | Direct | PROTECTED_MEMORY_TYPESからprocedures除外、効用ベース忘却ロジック追加 |
+| `core/memory/maintenance/consolidation.py` | Indirect | 日次/週次/月次の忘却ステージでprocedures/が処理対象に |
 | `core/memory/rag/indexer.py` | Indirect | 忘却されたproceduresのインデックス削除 |
 
 ## Decided Approach / 確定方針
@@ -59,12 +59,12 @@
 
 | Module | Change Type | Description |
 |--------|------------|-------------|
-| `core/memory/forgetting.py` | Modify | PROTECTED_MEMORY_TYPES変更、`_is_protected_procedure()`追加、procedures専用閾値 |
-| `core/memory/consolidation.py` | Modify | 月次忘却にarchiveクリーンアップ追加 |
+| `core/memory/maintenance/forgetting.py` | Modify | PROTECTED_MEMORY_TYPES変更、`_is_protected_procedure()`追加、procedures専用閾値 |
+| `core/memory/maintenance/consolidation.py` | Modify | 月次忘却にarchiveクリーンアップ追加 |
 
 #### Change 1: PROTECTED_MEMORY_TYPES変更
 
-**Target**: `core/memory/forgetting.py:42-43`
+**Target**: `core/memory/maintenance/forgetting.py:42-43`
 
 ```python
 # Before
@@ -76,7 +76,7 @@ PROTECTED_MEMORY_TYPES = frozenset({"skills", "shared_users"})
 
 #### Change 2: procedures専用の保護判定
 
-**Target**: `core/memory/forgetting.py`
+**Target**: `core/memory/maintenance/forgetting.py`
 
 ```python
 def _is_protected(self, metadata: dict) -> bool:
@@ -105,7 +105,7 @@ def _is_protected_procedure(self, metadata: dict) -> bool:
 
 #### Change 3: procedures専用の忘却閾値
 
-**Target**: `core/memory/forgetting.py` — Stage 1 (Synaptic Downscaling)
+**Target**: `core/memory/maintenance/forgetting.py` — Stage 1 (Synaptic Downscaling)
 
 ```python
 # procedures用の閾値
@@ -150,9 +150,9 @@ async def _should_downscale_procedure(self, metadata: dict) -> bool:
 
 | # | Task | Target |
 |---|------|--------|
-| 1-1 | PROTECTED_MEMORY_TYPESからprocedures除外 | `core/memory/forgetting.py` |
-| 1-2 | `_is_protected_procedure()` 実装（version, protected, IMPORTANT） | `core/memory/forgetting.py` |
-| 1-3 | `_should_downscale_procedure()` 実装（180日/3回/低効用） | `core/memory/forgetting.py` |
+| 1-1 | PROTECTED_MEMORY_TYPESからprocedures除外 | `core/memory/maintenance/forgetting.py` |
+| 1-2 | `_is_protected_procedure()` 実装（version, protected, IMPORTANT） | `core/memory/maintenance/forgetting.py` |
+| 1-3 | `_should_downscale_procedure()` 実装（180日/3回/低効用） | `core/memory/maintenance/forgetting.py` |
 | 1-4 | Phase 1のユニットテスト | `tests/` |
 
 **Completion condition**: procedures/が忘却対象になり、保護例外が正しく動作する
@@ -161,8 +161,8 @@ async def _should_downscale_procedure(self, metadata: dict) -> bool:
 
 | # | Task | Target |
 |---|------|--------|
-| 2-1 | Stage 1-3の既存コードにprocedures専用パスを追加 | `core/memory/forgetting.py` |
-| 2-2 | archive/procedure_versions/のクリーンアップ（月次、直近5保持） | `core/memory/consolidation.py` |
+| 2-1 | Stage 1-3の既存コードにprocedures専用パスを追加 | `core/memory/maintenance/forgetting.py` |
+| 2-2 | archive/procedure_versions/のクリーンアップ（月次、直近5保持） | `core/memory/maintenance/consolidation.py` |
 | 2-3 | Phase 2の統合テスト（日次→週次→月次の全ステージ） | `tests/` |
 
 **Completion condition**: procedures/の忘却が既存3段階モデルに統合され、archiveクリーンアップが動作する
@@ -205,11 +205,11 @@ async def _should_downscale_procedure(self, metadata: dict) -> bool:
 
 ## References
 
-- `core/memory/forgetting.py:42-43` — `PROTECTED_MEMORY_TYPES` 定義
-- `core/memory/forgetting.py:57-63` — `_is_protected()` 保護判定
-- `core/memory/forgetting.py:91-177` — Stage 1: Synaptic Downscaling
-- `core/memory/forgetting.py:180-307` — Stage 2: Neurogenesis Reorganization
-- `core/memory/forgetting.py:392-490` — Stage 3: Complete Forgetting
+- `core/memory/maintenance/forgetting.py:42-43` — `PROTECTED_MEMORY_TYPES` 定義
+- `core/memory/maintenance/forgetting.py:57-63` — `_is_protected()` 保護判定
+- `core/memory/maintenance/forgetting.py:91-177` — Stage 1: Synaptic Downscaling
+- `core/memory/maintenance/forgetting.py:180-307` — Stage 2: Neurogenesis Reorganization
+- `core/memory/maintenance/forgetting.py:392-490` — Stage 3: Complete Forgetting
 - `20260218_procedural-memory-foundation.md` — 前提Issue（メタデータ基盤）
 - `20260218_procedural-memory-reconsolidation.md` — 前提Issue（成功/失敗追跡の活用）
 - [ReMe](https://arxiv.org/abs/2512.10696) — Utility-based Refinement（効用ベース自動剪定）

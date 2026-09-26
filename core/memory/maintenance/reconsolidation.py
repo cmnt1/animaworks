@@ -91,7 +91,7 @@ class ReconsolidationEngine:
         if activity_logger is not None:
             self.activity_logger = activity_logger
         else:
-            from core.memory.activity import ActivityLogger
+            from core.memory.activity.logger import ActivityLogger
 
             self.activity_logger = ActivityLogger(anima_dir)
 
@@ -244,7 +244,7 @@ class ReconsolidationEngine:
 
         # Collect resolved events
         try:
-            from core.memory.activity import ActivityLogger
+            from core.memory.activity.logger import ActivityLogger
 
             activity = ActivityLogger(self.anima_dir)
             entries = activity.recent(days=days, limit=50, types=["issue_resolved"])
@@ -259,7 +259,7 @@ class ReconsolidationEngine:
             )
             return results
 
-        from core.memory.distillation import ProceduralDistiller
+        from core.memory.maintenance.distillation import ProceduralDistiller
 
         distiller = ProceduralDistiller(self.anima_dir, self.anima_name)
         existing_procedures = distiller._load_existing_procedures()
@@ -297,7 +297,7 @@ class ReconsolidationEngine:
                 text = text or ""
 
                 # Sanitize and parse
-                from core.memory.consolidation import ConsolidationEngine
+                from core.memory.maintenance.consolidation import ConsolidationEngine
 
                 text = ConsolidationEngine._sanitize_llm_output(text)
 
@@ -376,7 +376,7 @@ class ReconsolidationEngine:
             text = await one_shot_completion(prompt, model=model, max_tokens=2048) or ""
 
             # Sanitize LLM output
-            from core.memory.consolidation import ConsolidationEngine
+            from core.memory.maintenance.consolidation import ConsolidationEngine
 
             text = ConsolidationEngine._sanitize_llm_output(text)
 
@@ -614,7 +614,7 @@ class ReconsolidationEngine:
             text = await one_shot_completion(prompt, model=model, max_tokens=2048) or ""
 
             # Sanitize LLM output
-            from core.memory.consolidation import ConsolidationEngine
+            from core.memory.maintenance.consolidation import ConsolidationEngine
 
             text = ConsolidationEngine._sanitize_llm_output(text)
 

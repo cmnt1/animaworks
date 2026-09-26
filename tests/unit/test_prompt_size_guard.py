@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.conversation import (
+from core.memory.conversation.memory import (
     _MAX_HUMAN_CHARS_IN_HISTORY,
     _MAX_RESPONSE_CHARS_IN_HISTORY,
     _MAX_STORED_CONTENT_CHARS,

@@ -9,14 +9,12 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-
 from core.messenger import (
     ChannelMeta,
     Messenger,
     load_channel_meta,
     save_channel_meta,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────
 
@@ -52,7 +50,7 @@ def _make_handler(tmp_path: Path, anima_name: str = "alice"):
 
     handler._session_id = uuid.uuid4().hex[:12]
 
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
 
     handler._activity = MagicMock(spec=ActivityLogger)
 

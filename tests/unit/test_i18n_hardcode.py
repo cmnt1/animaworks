@@ -118,7 +118,7 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/memory/extraction/prompts/ja.py": 4,
     # forgetting candidate reason string fed to the weekly consolidation prompt
     # ("N日間低活性・参照M回", plan-specified wording)
-    "core/memory/forgetting.py": 1,
+    "core/memory/maintenance/forgetting.py": 1,
     # voice front lane — ask_anima tool schema wording fed to the front LLM
     "core/voice/front.py": 2,
     # voice front lane — spoken ACK/error phrases voiced to the user via TTS

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from core.memory.rag_search import RAGMemorySearch
+from core.memory.retrieval.rag_search import RAGMemorySearch
 from core.skills.index import SkillIndex
 
 
@@ -27,8 +27,12 @@ def test_assigned_anima_discovers_and_searches_only_own_company_resources(tmp_pa
     beta_knowledge.mkdir(parents=True)
     (alpha_knowledge / "handbook.md").write_text("alpha-exclusive launch protocol", encoding="utf-8")
     (beta_knowledge / "secret.md").write_text("beta-exclusive launch protocol", encoding="utf-8")
-    _write_skill(tmp_path / "companies" / "alpha" / "skills" / "alpha-tool" / "SKILL.md", "alpha-tool", "alpha company tool")
-    _write_skill(tmp_path / "companies" / "beta" / "skills" / "beta-tool" / "SKILL.md", "beta-tool", "beta company tool")
+    _write_skill(
+        tmp_path / "companies" / "alpha" / "skills" / "alpha-tool" / "SKILL.md", "alpha-tool", "alpha company tool"
+    )
+    _write_skill(
+        tmp_path / "companies" / "beta" / "skills" / "beta-tool" / "SKILL.md", "beta-tool", "beta company tool"
+    )
 
     rag = RAGMemorySearch(anima_dir, common_knowledge, common_skills)
     results = rag._keyword_search_fallback(
@@ -44,4 +48,3 @@ def test_assigned_anima_discovers_and_searches_only_own_company_resources(tmp_pa
 
     assert [result["source_file"] for result in results] == ["companies/alpha/knowledge/handbook.md"]
     assert [skill.name for skill in skills] == ["alpha-tool"]
-

@@ -37,50 +37,50 @@ from uuid import uuid4
 from core.exceptions import MemoryWriteError
 
 # ── Mixin imports ────────────────────────────────────────────
-from core.memory._activity_conversation import ConversationMixin
+from core.memory.activity.conversation import ConversationMixin
+from core.memory.activity.format import PrimingMixin
 
 # ── Re-export with legacy private names for test compat ──────
-from core.memory._activity_models import (
+from core.memory.activity.models import (
     CHARS_PER_TOKEN as _CHARS_PER_TOKEN,  # noqa: F401
 )
-from core.memory._activity_models import (
+from core.memory.activity.models import (
     EVENT_TYPE_ALIASES as _EVENT_TYPE_ALIASES,  # noqa: F401
 )
 
 # ── Re-export data models & helpers (public API) ─────────────
-from core.memory._activity_models import (  # noqa: F401
+from core.memory.activity.models import (  # noqa: F401
     ActivityEntry,
     ActivityPage,
     EntryGroup,
 )
-from core.memory._activity_models import (
+from core.memory.activity.models import (
     dm_label as _dm_label,  # noqa: F401
 )
-from core.memory._activity_models import (
+from core.memory.activity.models import (
     find_tool_result_fallback as _find_tool_result_fallback,  # noqa: F401
 )
-from core.memory._activity_models import (
+from core.memory.activity.models import (
     get_peer as _get_peer,  # noqa: F401
 )
-from core.memory._activity_models import (
+from core.memory.activity.models import (
     get_task_name as _get_task_name,  # noqa: F401
 )
-from core.memory._activity_models import (
+from core.memory.activity.models import (
     resolve_type_filter as _resolve_type_filter,  # noqa: F401
 )
-from core.memory._activity_models import (
+from core.memory.activity.models import (
     set_source_lines as _set_source_lines,  # noqa: F401
 )
-from core.memory._activity_models import (
+from core.memory.activity.models import (
     time_diff as _time_diff,  # noqa: F401
 )
-from core.memory._activity_replay import (  # noqa: F401
+from core.memory.activity.replay import (  # noqa: F401
     build_semantic_replay_events,
     resolve_semantic_group_id,
 )
-from core.memory._activity_rotation import RotationMixin
-from core.memory._activity_timeline import TimelineMixin
-from core.memory.activity_format import PrimingMixin
+from core.memory.activity.rotation import RotationMixin
+from core.memory.activity.timeline import TimelineMixin
 from core.paths import get_data_dir
 from core.time_utils import ensure_aware, now_iso, now_local  # noqa: F401
 

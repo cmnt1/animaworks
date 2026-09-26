@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.memory.activity import ActivityEntry
+from core.memory.activity.logger import ActivityEntry
 from core.memory.priming import channel_c, channel_f, outbound
 from core.memory.priming.channel_e import _itemize_pending_tasks
 from core.memory.priming.engine import PrimingEngine
@@ -30,7 +30,7 @@ def test_select_within_budget_keeps_whole_items_in_priority_order() -> None:
 
 
 def test_sentence_boundary_trim_handles_japanese_and_english() -> None:
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
     from core.memory.priming.channel_b import _format_entry_at_sentence_boundary
 
     for prefix, boundary in (("日" * 130, "。"), ("English words " * 11, "!")):
@@ -53,7 +53,7 @@ def test_sentence_boundary_trim_handles_japanese_and_english() -> None:
 
 
 def test_sentence_boundary_trim_uses_ellipsis_when_boundary_is_too_early() -> None:
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
     from core.memory.priming.channel_b import _format_entry_at_sentence_boundary
 
     content = "短い文。" + "続" * 250
@@ -183,7 +183,7 @@ async def test_recent_outbound_returns_one_item_per_activity(tmp_path: Path, mon
         def recent(self, **kwargs):
             return [entry]
 
-    monkeypatch.setattr("core.memory.activity.ActivityLogger", FakeActivityLogger)
+    monkeypatch.setattr("core.memory.activity.logger.ActivityLogger", FakeActivityLogger)
     monkeypatch.setattr(outbound, "now_local", lambda: datetime.fromisoformat(entry.ts))
 
     output = await outbound.collect_recent_outbound(anima_dir)

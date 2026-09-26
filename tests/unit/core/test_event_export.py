@@ -10,7 +10,7 @@ import requests
 
 from core.config.schemas import AnimaWorksConfig, EventExportConfig
 from core.event_export import EventExporter, get_event_exporter, reset_event_exporters
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
 from core.usage.token_usage import TokenUsageLogger
 
 

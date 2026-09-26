@@ -315,7 +315,7 @@ class LifecycleMixin:
     async def _finalize_session_if_ended(self) -> None:
         """Session-boundary finalize; must not be skippable by cycle timeout/cancel."""
         try:
-            from core.memory.conversation import ConversationMemory
+            from core.memory.conversation.memory import ConversationMemory
 
             await ConversationMemory(self.anima_dir, self.model_config).finalize_if_session_ended()
         except Exception:
@@ -362,7 +362,7 @@ class LifecycleMixin:
             If no episodes are found, returns a placeholder message for episodes
             with empty strings for the other summaries.
         """
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(self.anima_dir, self.name)
         episodes = engine._collect_recent_episodes(hours=24)
@@ -397,7 +397,7 @@ class LifecycleMixin:
         Returns:
             Number of episode entries found.
         """
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(self.anima_dir, self.name)
         episodes = engine._collect_recent_episodes(hours=hours)
@@ -454,7 +454,7 @@ class LifecycleMixin:
                     pass
 
                 try:
-                    from core.memory.consolidation import ConsolidationEngine
+                    from core.memory.maintenance.consolidation import ConsolidationEngine
 
                     engine = (
                         ConsolidationEngine(self.anima_dir, self.name, project=project)
@@ -646,7 +646,7 @@ class LifecycleMixin:
                 facts_extracted = fact_outcome.facts_extracted
                 facts_failed = fact_outcome.facts_failed
             except Exception as exc:
-                from core.memory.fact_observability import warn_rate_limited
+                from core.memory.facts.observability import warn_rate_limited
 
                 warn_rate_limited(
                     logger,
@@ -804,7 +804,7 @@ class LifecycleMixin:
         conflict_candidates_text = _format_conflict_candidates(conflict_candidates)
 
         try:
-            from core.memory.forgetting import ForgettingEngine
+            from core.memory.maintenance.forgetting import ForgettingEngine
 
             forgetting_candidates = ForgettingEngine(self.anima_dir, self.name).list_forgetting_candidates(max_items=20)
         except Exception:

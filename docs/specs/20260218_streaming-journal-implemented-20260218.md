@@ -87,7 +87,7 @@ process_message_stream()
 ### 2. StreamingJournal クラス
 
 ```
-core/memory/streaming_journal.py
+core/memory/conversation/streaming_journal.py
 ```
 
 **主要API:**
@@ -218,7 +218,7 @@ AnimaRunner.run()
 
 ### Phase 1: StreamingJournal 基盤
 
-1. `core/memory/streaming_journal.py` — StreamingJournal クラス実装
+1. `core/memory/conversation/streaming_journal.py` — StreamingJournal クラス実装
    - `JournalRecovery` データモデル（dataclass）
    - `open()` / `write_text()` / `write_tool_start()` / `write_tool_end()` — 書き込みAPI
    - `finalize()` / `close()` — ライフサイクル終了
@@ -258,7 +258,7 @@ AnimaRunner.run()
 
 ### In Scope
 
-- StreamingJournal クラスの新規実装（`core/memory/streaming_journal.py`）
+- StreamingJournal クラスの新規実装（`core/memory/conversation/streaming_journal.py`）
 - `process_message_stream()` / `run_cycle_streaming()` へのジャーナル書き込み組み込み
 - AnimaRunner起動時のクラッシュリカバリ（orphanジャーナル検出・復元）
 - heartbeat / cron のジャーナル化

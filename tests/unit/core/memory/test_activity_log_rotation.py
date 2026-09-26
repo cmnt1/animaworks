@@ -6,10 +6,8 @@ import json
 from datetime import timedelta
 from pathlib import Path
 
-
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
 from core.time_utils import today_local
-
 
 # ── Helpers ────────────────────────────────────────────────────────
 
@@ -32,7 +30,7 @@ class TestToolResultFormat:
     """Test that tool_result type is properly formatted in priming output."""
 
     def test_format_entry_tool_result(self, tmp_path: Path) -> None:
-        from core.memory.activity import ActivityEntry
+        from core.memory.activity.logger import ActivityEntry
 
         entry = ActivityEntry(
             ts="2026-02-22T10:00:00+09:00",
@@ -199,7 +197,9 @@ class TestRotateAll:
             _make_log_file(log_dir, old_date, 500)
 
         results = ActivityLogger.rotate_all(
-            animas_dir, mode="time", max_age_days=7,
+            animas_dir,
+            mode="time",
+            max_age_days=7,
         )
         assert "alice" in results
         assert "bob" in results
@@ -211,6 +211,8 @@ class TestRotateAll:
         (animas_dir / "empty_anima").mkdir(parents=True)
 
         results = ActivityLogger.rotate_all(
-            animas_dir, mode="size", max_size_mb=100,
+            animas_dir,
+            mode="size",
+            max_size_mb=100,
         )
         assert len(results) == 0

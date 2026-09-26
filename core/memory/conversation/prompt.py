@@ -13,7 +13,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from core.i18n import t
-from core.memory.conversation_models import (
+from core.memory.conversation.models import (
     _MAX_DISPLAY_TURNS,
     _MAX_HUMAN_CHARS_IN_HISTORY,
     _MAX_RENDERED_TOOL_RECORDS,

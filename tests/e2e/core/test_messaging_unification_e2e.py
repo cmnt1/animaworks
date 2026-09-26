@@ -3,6 +3,7 @@
 Tests the full pipeline: messenger.send() → activity log recording →
 alias-based retrieval → cascade limiter depth counting.
 """
+
 from __future__ import annotations
 
 import json
@@ -10,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
 from core.messenger import Messenger
 
 
@@ -107,10 +108,10 @@ class TestCascadeLimiterMixedLogs:
         for _ in range(3):
             activity.log("dm_sent", content="old", to_person="bob")
         for _ in range(3):
-            activity.log("message_sent", content="new", to_person="bob",
-                         meta={"from_type": "anima"})
+            activity.log("message_sent", content="new", to_person="bob", meta={"from_type": "anima"})
 
         from core.cascade_limiter import ConversationDepthLimiter
+
         limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
 
         allowed = limiter.check_depth("alice", "bob", anima_dir)
@@ -121,10 +122,10 @@ class TestCascadeLimiterMixedLogs:
         activity = ActivityLogger(anima_dir)
 
         activity.log("dm_sent", content="old", to_person="bob")
-        activity.log("message_sent", content="new", to_person="bob",
-                     meta={"from_type": "anima"})
+        activity.log("message_sent", content="new", to_person="bob", meta={"from_type": "anima"})
 
         from core.cascade_limiter import ConversationDepthLimiter
+
         limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
 
         allowed = limiter.check_depth("alice", "bob", anima_dir)
@@ -143,10 +144,14 @@ class TestFormatForPrimingIntegration:
 
         entries_raw = [
             {"ts": now_iso(), "type": "dm_sent", "content": "old msg", "to": "bob"},
-            {"ts": now_iso(), "type": "message_sent", "content": "new msg", "to": "bob",
-             "meta": {"from_type": "anima"}},
-            {"ts": now_iso(), "type": "response_sent", "content": "reply to human",
-             "to": "human"},
+            {
+                "ts": now_iso(),
+                "type": "message_sent",
+                "content": "new msg",
+                "to": "bob",
+                "meta": {"from_type": "anima"},
+            },
+            {"ts": now_iso(), "type": "response_sent", "content": "reply to human", "to": "human"},
         ]
         with log_path.open("a", encoding="utf-8") as f:
             for entry in entries_raw:

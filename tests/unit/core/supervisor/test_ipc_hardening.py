@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory import streaming_journal
+from core.memory.conversation import streaming_journal
 from core.supervisor import task_runner
 from core.supervisor import task_runner_supervisor as trs
 from core.supervisor.ipc_v2 import (

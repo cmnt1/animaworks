@@ -6,9 +6,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.memory import fact_extraction
-from core.memory.fact_config import DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS
-from core.memory.fact_extraction import (
+from core.memory.facts import extraction as fact_extraction
+from core.memory.facts.config import DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS
+from core.memory.facts.extraction import (
     DEFAULT_FACT_CONFIDENCE,
     _resolve_extraction_config,
     extract_and_store_facts,
@@ -18,8 +18,8 @@ from core.memory.fact_extraction import (
     format_turns_for_fact_extraction,
     records_from_extraction,
 )
-from core.memory.fact_observability import reset_warning_rate_limits
-from core.memory.facts import FactRecord
+from core.memory.facts.observability import reset_warning_rate_limits
+from core.memory.facts.store import FactRecord
 from core.memory.ontology.default import ExtractedEntity, ExtractedFact
 
 

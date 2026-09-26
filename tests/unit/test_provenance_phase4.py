@@ -226,7 +226,7 @@ class TestRAGSearchOriginProxy:
     """RAGMemorySearch.index_file passes origin to underlying indexer."""
 
     def test_index_file_passes_origin(self, tmp_path: Path) -> None:
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
 
         rag = RAGMemorySearch(tmp_path, tmp_path / "ck", tmp_path / "cs")
         mock_indexer = MagicMock()
@@ -245,7 +245,7 @@ class TestRAGSearchOriginProxy:
         )
 
     def test_index_file_no_origin(self, tmp_path: Path) -> None:
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
 
         rag = RAGMemorySearch(tmp_path, tmp_path / "ck", tmp_path / "cs")
         mock_indexer = MagicMock()
@@ -364,7 +364,7 @@ class TestConsolidationOrigin:
 
     @pytest.fixture
     def engine(self, tmp_path: Path):
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         anima_dir = tmp_path / "animas" / "test-anima"
         (anima_dir / "episodes").mkdir(parents=True)

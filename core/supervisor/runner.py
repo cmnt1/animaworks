@@ -32,7 +32,7 @@ from core.anima import DigitalAnima
 from core.config.resolver import resolve_process_model_config
 from core.exceptions import AnimaNotRunningError, ExecutionError, MemoryWriteError, ProcessError  # noqa: F401
 from core.i18n import t
-from core.memory.streaming_journal import StreamingJournal
+from core.memory.conversation.streaming_journal import StreamingJournal
 from core.platform.locks import acquire_file_lock, release_file_lock
 from core.supervisor.inbox_rate_limiter import InboxRateLimiter
 from core.supervisor.ipc import IPCRequest, IPCResponse, IPCServer
@@ -488,7 +488,7 @@ class AnimaRunner:
                 # pollute the human↔anima conversation history.
                 if session_type == "chat" and recovery.recovered_text and self.anima:
                     try:
-                        from core.memory.conversation import ConversationMemory
+                        from core.memory.conversation.memory import ConversationMemory
 
                         conv_memory = ConversationMemory(
                             self._anima_dir,
@@ -549,7 +549,7 @@ class AnimaRunner:
                 # Record crash event in activity log
                 recovery_already_logged = False
                 try:
-                    from core.memory.activity import ActivityLogger
+                    from core.memory.activity.logger import ActivityLogger
 
                     activity = ActivityLogger(self._anima_dir)
                     recovery_already_logged = self._activity_contains_recovery(
@@ -603,7 +603,7 @@ class AnimaRunner:
                 # Record tool_use events in activity log
                 if recovery.tool_calls and not recovery_already_logged:
                     try:
-                        from core.memory.activity import ActivityLogger as _AL
+                        from core.memory.activity.logger import ActivityLogger as _AL
 
                         _activity = _AL(self._anima_dir)
                         for tc in recovery.tool_calls:
@@ -640,8 +640,8 @@ class AnimaRunner:
         if not self.anima:
             return
         try:
-            from core.memory.conversation import ConversationMemory
-            from core.memory.conversation_models import SESSION_GAP_MINUTES
+            from core.memory.conversation.memory import ConversationMemory
+            from core.memory.conversation.models import SESSION_GAP_MINUTES
 
             conv = ConversationMemory(self._anima_dir, self.anima.model_config)
             state = conv.load()
@@ -664,7 +664,7 @@ class AnimaRunner:
                 idle_sec,
                 len(state.turns),
             )
-            from core.memory.conversation_compression import compress_if_needed
+            from core.memory.conversation.compression import compress_if_needed
 
             await asyncio.wait_for(
                 compress_if_needed(

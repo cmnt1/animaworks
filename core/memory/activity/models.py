@@ -9,7 +9,7 @@ from __future__ import annotations
 
 """Activity log data models, constants, and shared helpers.
 
-Internal module — import from :mod:`core.memory.activity` instead.
+Internal module — import from :mod:`core.memory.activity.logger` instead.
 """
 
 from dataclasses import asdict, dataclass, field

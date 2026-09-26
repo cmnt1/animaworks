@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.memory.entity_index import upsert_entities_from_facts
-from core.memory.facts import FactRecord, append_fact_records
+from core.memory.facts.entity_index import upsert_entities_from_facts
+from core.memory.facts.store import FactRecord, append_fact_records
 from core.memory.rag.graph import KnowledgeGraph
 from core.memory.rag.retriever import RetrievalResult
 

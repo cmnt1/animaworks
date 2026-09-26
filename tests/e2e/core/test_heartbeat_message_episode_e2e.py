@@ -33,7 +33,7 @@ class TestInboxMessageEpisodeE2E:
 
         with (
             patch("core.anima.AgentCore"),
-            patch("core.memory.rag_search.RAGMemorySearch.index_file", return_value=None),
+            patch("core.memory.retrieval.rag_search.RAGMemorySearch.index_file", return_value=None),
             patch("core._anima_heartbeat.ConversationMemory") as MockConv,
             patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
         ):
@@ -88,7 +88,7 @@ class TestInboxMessageEpisodeE2E:
 
         with (
             patch("core.anima.AgentCore"),
-            patch("core.memory.rag_search.RAGMemorySearch.index_file", return_value=None),
+            patch("core.memory.retrieval.rag_search.RAGMemorySearch.index_file", return_value=None),
             patch("core._anima_heartbeat.ConversationMemory") as MockConv,
             patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
         ):
@@ -162,7 +162,7 @@ class TestInboxMessageEpisodeE2E:
 
         with (
             patch("core.anima.AgentCore"),
-            patch("core.memory.rag_search.RAGMemorySearch.index_file", return_value=None),
+            patch("core.memory.retrieval.rag_search.RAGMemorySearch.index_file", return_value=None),
             patch("core._anima_heartbeat.ConversationMemory") as MockConv,
             patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
         ):
@@ -219,7 +219,7 @@ class TestInboxMessageEpisodeE2E:
 
         with (
             patch("core.anima.AgentCore"),
-            patch("core.memory.rag_search.RAGMemorySearch.index_file", return_value=None),
+            patch("core.memory.retrieval.rag_search.RAGMemorySearch.index_file", return_value=None),
             patch("core._anima_heartbeat.ConversationMemory") as MockConv,
             patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
         ):
@@ -272,7 +272,7 @@ class TestInboxMessageEpisodeE2E:
 
         with (
             patch("core.anima.AgentCore"),
-            patch("core.memory.rag_search.RAGMemorySearch.index_file", return_value=None),
+            patch("core.memory.retrieval.rag_search.RAGMemorySearch.index_file", return_value=None),
             patch("core._anima_heartbeat.ConversationMemory") as MockConv,
             patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
         ):
@@ -320,7 +320,7 @@ class TestHeartbeatNoInboxProcessing:
 
         with (
             patch("core.anima.AgentCore"),
-            patch("core.memory.rag_search.RAGMemorySearch.index_file", return_value=None),
+            patch("core.memory.retrieval.rag_search.RAGMemorySearch.index_file", return_value=None),
             patch("core._anima_heartbeat.ConversationMemory") as MockConv,
             patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
         ):

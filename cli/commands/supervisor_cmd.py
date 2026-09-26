@@ -121,7 +121,7 @@ def _cmd_org_dashboard(args: argparse.Namespace) -> None:
         last_activity_time: str | None = None
         activity_dir = desc_dir / "activity_log"
         if activity_dir.exists():
-            from core.memory.activity import ActivityLogger
+            from core.memory.activity.logger import ActivityLogger
 
             al = ActivityLogger(desc_dir)
             entries = al.recent(days=1, limit=1)

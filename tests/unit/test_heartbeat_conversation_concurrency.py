@@ -357,7 +357,7 @@ class TestStreamingJournalSeparation:
     """Verify streaming journals use separate files per session type."""
 
     def test_journal_file_names(self, tmp_path: Path) -> None:
-        from core.memory.streaming_journal import StreamingJournal
+        from core.memory.conversation.streaming_journal import StreamingJournal
 
         anima_dir = tmp_path / "test-anima"
         (anima_dir / "shortterm").mkdir(parents=True)
@@ -378,7 +378,7 @@ class TestShortTermMemorySeparation:
     """Verify ShortTermMemory uses separate directories per session type."""
 
     def test_separate_directories(self, tmp_path: Path) -> None:
-        from core.memory.shortterm import ShortTermMemory
+        from core.memory.conversation.shortterm import ShortTermMemory
 
         anima_dir = tmp_path / "test-anima"
         anima_dir.mkdir()

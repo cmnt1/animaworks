@@ -380,7 +380,7 @@ def _spawn_daemon(args: argparse.Namespace) -> None:
 
     log_path = _get_daemon_log_path()
     try:
-        from core.memory.housekeeping import _rotate_daemon_log
+        from core.memory.maintenance.housekeeping import _rotate_daemon_log
 
         _rotate_daemon_log(log_path, max_size_mb=50, keep_generations=5)
     except Exception:

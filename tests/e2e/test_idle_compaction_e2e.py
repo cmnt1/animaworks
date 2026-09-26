@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.memory.conversation_compression import CompressionResult
+from core.memory.conversation.compression import CompressionResult
 from core.schemas import CycleResult
 from core.session_compactor import SessionCompactor, run_idle_compaction
 from core.tooling.handler import active_session_type
@@ -98,7 +98,7 @@ async def test_timer_scheduled_after_process_message_and_fires_compaction(anima,
     mock_conv_cls = MagicMock(return_value=mock_conv)
 
     # Patch at source; both process_message and run_idle_compaction import from here
-    with patch("core.memory.conversation.ConversationMemory", mock_conv_cls):
+    with patch("core.memory.conversation.memory.ConversationMemory", mock_conv_cls):
         # Run process_message
         result = await anima.process_message("Hello", from_person="human")
 

@@ -31,7 +31,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.activity import ActivityEntry, ActivityLogger
+from core.memory.activity.logger import ActivityEntry, ActivityLogger
 from core.memory.priming.channel_b import read_shared_channels
 from core.time_utils import now_jst
 
@@ -273,7 +273,7 @@ class TestChannelBRecentActivity:
         engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
 
         with (
-            patch("core.memory.activity.ActivityLogger.recent") as mock_recent,
+            patch("core.memory.activity.logger.ActivityLogger.recent") as mock_recent,
             patch("core.memory.priming.channel_b.read_shared_channels", return_value=[]),
             patch("core.memory.priming.channel_b.fallback_episodes_and_channels", return_value="fallback"),
         ):
@@ -615,7 +615,7 @@ class TestReadDmHistoryTypeFilter:
 
         messenger = Messenger(shared, "alice")
 
-        with patch("core.memory.activity.ActivityLogger.recent") as mock_recent:
+        with patch("core.memory.activity.logger.ActivityLogger.recent") as mock_recent:
             mock_recent.return_value = []
             messenger.read_dm_history("bob", limit=20)
 
@@ -639,7 +639,7 @@ class TestReadDmHistoryTypeFilter:
 
         messenger = Messenger(shared, "alice")
 
-        with patch("core.memory.activity.ActivityLogger.recent") as mock_recent:
+        with patch("core.memory.activity.logger.ActivityLogger.recent") as mock_recent:
             mock_recent.return_value = []
             messenger.read_dm_history("bob", limit=20)
 
@@ -866,7 +866,7 @@ class TestFormatGroupContentTrim:
 
     def test_format_group_passes_content_trim(self, anima_dir: Path):
         """Verify _format_group propagates content_trim to single entries."""
-        from core.memory.activity import EntryGroup
+        from core.memory.activity.logger import EntryGroup
 
         long_content = "D" * 500
         entry = ActivityEntry(

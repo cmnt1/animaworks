@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.memory.conversation import (
+from core.memory.conversation.memory import (
     SESSION_GAP_MINUTES,
     ConversationMemory,
     ConversationTurn,
@@ -253,7 +253,7 @@ class TestFinalizeSession:
         with (
             patch_litellm(summary_resp),
             patch(
-                "core.memory.conversation_finalize._generate_compression_summary",
+                "core.memory.conversation.finalize._generate_compression_summary",
                 side_effect=RuntimeError("LLM API error"),
             ),
         ):
@@ -291,7 +291,7 @@ class TestFinalizeSession:
         with (
             patch_litellm(summary_resp),
             patch(
-                "core.memory.conversation_finalize._generate_compression_summary",
+                "core.memory.conversation.finalize._generate_compression_summary",
                 side_effect=crashing_compress,
             ),
         ):
@@ -339,7 +339,7 @@ class TestFinalizeSession:
 
         with (
             patch_litellm(summary_resp),
-            patch("core.memory.conversation_finalize._generate_compression_summary", side_effect=fake_compress),
+            patch("core.memory.conversation.finalize._generate_compression_summary", side_effect=fake_compress),
         ):
             result = await conv_memory.finalize_session(min_turns=3)
 
@@ -544,7 +544,7 @@ class TestResolutions:
 
     def test_record_resolutions_writes_activity(self, conv_memory, anima_dir, data_dir):
         """_record_resolutions logs issue_resolved events."""
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
         from core.memory.manager import MemoryManager
 
         mm = MemoryManager(anima_dir)
@@ -571,7 +571,7 @@ class TestActivityLogType:
 
     def test_issue_resolved_ascii_label(self, anima_dir):
         """issue_resolved event gets RSLV label in priming format."""
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         activity.log("issue_resolved", content="テスト解決", summary="解決済み: テスト")
@@ -623,8 +623,8 @@ class TestConsolidationResolved:
 
     def test_collect_resolved_events(self, anima_dir):
         """_collect_resolved_events returns issue_resolved entries."""
-        from core.memory.activity import ActivityLogger
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.activity.logger import ActivityLogger
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         activity = ActivityLogger(anima_dir)
         activity.log("issue_resolved", content="問題A解決", summary="解決済み")

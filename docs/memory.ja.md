@@ -224,7 +224,7 @@ Cowan (2005) の知見に従い、ワーキングメモリを「活性化され�
 
 ### 行動前の記憶確認 — action memory gate
 
-自動想起と意図的想起は「思い出す」仕組みだが、外部へ送る・記憶を書き換える・人間に通知するなど、副作用のある行動ではもう一段の確認が必要になる。AnimaWorksは `core/memory/action_gate.py` で、セッション単位の action memory gate を実装する。
+自動想起と意図的想起は「思い出す」仕組みだが、外部へ送る・記憶を書き換える・人間に通知するなど、副作用のある行動ではもう一段の確認が必要になる。AnimaWorksは `core/tooling/action_gate.py` で、セッション単位の action memory gate を実装する。
 
 対象は `send_message`、`post_channel`、`call_human`、`write_memory_file`、Gmail / Slack / Discord / Chatwork 系の送信などである。Mode S / Mode C のツール実行経路では、行動前に関連する `[ACTION-RULE]` チャンクをRAG検索し、必要な記憶パスがある場合は `read_memory_file` 済みかを確認する。読んでいない場合は行動を一度止め、必要な記憶を読むよう促す。
 
@@ -461,7 +461,7 @@ protected: false
 
 ### 日次固定化フロー
 
-> 実装: `core/_anima_lifecycle.py` — `Anima.run_consolidation()`、`core/memory/consolidation.py` — `ConsolidationEngine`（前処理・後処理）
+> 実装: `core/_anima_lifecycle.py` — `Anima.run_consolidation()`、`core/memory/maintenance/consolidation.py` — `ConsolidationEngine`（前処理・後処理）
 > スケジュール: 本番の `ProcessSupervisor` スケジューラ（`core/supervisor/_mgr_scheduler.py`）が `core/lifecycle/system_consolidation.py` の日次ハンドラを登録（時刻は `ConsolidationConfig.daily_time`、既定 02:00 JST）
 
 **1. 前処理**（ConsolidationEngine）: 以下の4種のデータを収集し、`consolidation_instruction` プロンプトに注入する:
@@ -627,7 +627,7 @@ NLI は事前チェックに限定される。記憶を変更する前に、矛�
 
 ## 手続き記憶ライフサイクル
 
-> 実装: `core/memory/distillation.py` — `ProceduralDistiller`, `core/memory/reconsolidation.py` — `ReconsolidationEngine`
+> 実装: `core/memory/maintenance/distillation.py` — `ProceduralDistiller`, `core/memory/maintenance/reconsolidation.py` — `ReconsolidationEngine`
 
 手続き記憶（`procedures/`）は「どうやるか」を保持する記憶で、脳の基底核・小脳に対応する。意味記憶（knowledge/）が「何を知っているか」を静的に保持するのに対し、手続き記憶は繰り返しの実行と結果フィードバックにより動的に強化・修正される。
 
@@ -675,7 +675,7 @@ confidence = success_count / max(1, success_count + failure_count)
 
 ### 予測誤差ベースの再固定化
 
-> 実装: `core/memory/reconsolidation.py` — `ReconsolidationEngine`
+> 実装: `core/memory/maintenance/reconsolidation.py` — `ReconsolidationEngine`
 
 **脳科学的基盤**: Nader et al. (2000) の再固定化理論。想起された記憶は不安定化し、新しい情報と統合された後に再固定化される。予測誤差（期待と実際のギャップ）が再固定化のトリガーとなる。
 
@@ -782,7 +782,7 @@ procedures/ は knowledge/ より緩い閾値を持つ（手続き記憶は脳�
 
 ## 統一アクティビティログ
 
-> 実装: `core/memory/activity.py` — `ActivityLogger` クラス（Mixin構成: `PrimingMixin`, `TimelineMixin`, `ConversationMixin`, `RotationMixin`）
+> 実装: `core/memory/activity/logger.py` — `ActivityLogger` クラス（Mixin構成: `PrimingMixin`, `TimelineMixin`, `ConversationMixin`, `RotationMixin`）
 
 全インタラクションを単一のJSONL時系列に記録する統一ログ基盤。従来 transcript、dm_log、heartbeat_history 等に分散していた記録を一本化し、Primingレイヤーの「直近アクティビティ」チャネル（Channel B）の単一データソースとなる。実装は `_activity_models.py`（データモデル）、`_activity_priming.py`（プライミング整形）、`_activity_timeline.py`（API用タイムライン）、`_activity_conversation.py`（会話ビュー）、`_activity_rotation.py`（ローテーション）に分割されている。
 
@@ -865,7 +865,7 @@ ProcessSupervisor のスケジューラが `rotation_time` に従い、全 Anima
 
 ## ストリーミングジャーナル
 
-> 実装: `core/memory/streaming_journal.py` — `StreamingJournal` クラス
+> 実装: `core/memory/conversation/streaming_journal.py` — `StreamingJournal` クラス
 
 LLMのストリーミング応答出力中に、テキストチャンクを逐次ディスクに書き込むWrite-Ahead Log（WAL）。プロセスのハードクラッシュ（SIGKILL, OOM等）が発生しても、最大約1秒分のテキスト損失に抑える。
 

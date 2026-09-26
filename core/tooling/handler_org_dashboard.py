@@ -15,7 +15,7 @@ from core.i18n import t
 from core.tooling.org_helpers import OrgHelpersMixin
 
 if TYPE_CHECKING:
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
 
 logger = logging.getLogger("animaworks.tool_handler")
 
@@ -144,7 +144,7 @@ class DashboardMixin(OrgHelpersMixin):
 
     def _handle_audit_subordinate(self, args: dict[str, Any]) -> str:
         """Audit subordinate behavior from activity logs."""
-        from core.memory.audit import AuditAggregator
+        from core.memory.activity.audit import AuditAggregator
         from core.paths import get_animas_dir
 
         target_name = args.get("name")

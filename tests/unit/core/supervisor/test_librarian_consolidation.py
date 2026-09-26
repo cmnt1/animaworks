@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from core.anima_factory import TEMPLATES_DIR, create_from_template
-from core.memory.consolidation import ConsolidationEngine, list_project_archives
+from core.memory.maintenance.consolidation import ConsolidationEngine, list_project_archives
 from core.schemas import CycleResult
 from core.supervisor.runner import AnimaRunner
 from core.supervisor.task_runner import execute_background_contract

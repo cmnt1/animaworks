@@ -4,6 +4,7 @@ Tests the ToolRecord dataclass, structured message building,
 tool markers in history, and backward compatibility with
 conversation.json files that lack tool_records.
 """
+
 from __future__ import annotations
 
 import json
@@ -11,12 +12,12 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.conversation import (
+from core.memory.conversation.memory import (
+    _MAX_RENDERED_TOOL_RECORDS,
+    _MAX_TOOL_RECORDS_PER_TURN,
     ConversationMemory,
     ConversationTurn,
     ToolRecord,
-    _MAX_TOOL_RECORDS_PER_TURN,
-    _MAX_RENDERED_TOOL_RECORDS,
 )
 from core.schemas import ModelConfig
 
@@ -76,13 +77,13 @@ class TestToolRecordSerialization:
             ToolRecord(
                 tool_name="mcp__aw__post_channel",
                 tool_id="toolu_abc",
-                input_summary='channel=general',
+                input_summary="channel=general",
                 result_summary="posted",
             ),
             ToolRecord(
                 tool_name="call_human",
                 tool_id="toolu_def",
-                input_summary='subject=test',
+                input_summary="subject=test",
                 result_summary="slack: OK",
             ),
         ]
@@ -153,10 +154,7 @@ class TestAppendTurnToolRecords:
 
     def test_cap_tool_records_per_turn(self, conv: ConversationMemory):
         """More than _MAX_TOOL_RECORDS_PER_TURN records get capped."""
-        records = [
-            ToolRecord(tool_name=f"tool_{i}")
-            for i in range(_MAX_TOOL_RECORDS_PER_TURN + 5)
-        ]
+        records = [ToolRecord(tool_name=f"tool_{i}") for i in range(_MAX_TOOL_RECORDS_PER_TURN + 5)]
         conv.append_turn("assistant", "result", tool_records=records)
         state = conv.load()
         assert len(state.turns[0].tool_records) == _MAX_TOOL_RECORDS_PER_TURN
@@ -231,10 +229,7 @@ class TestBuildStructuredMessages:
         messages = conv.build_structured_messages("次", fmt="openai")
 
         # Find the assistant message with tool_calls
-        assistant_with_tools = [
-            m for m in messages
-            if m["role"] == "assistant" and "tool_calls" in m
-        ]
+        assistant_with_tools = [m for m in messages if m["role"] == "assistant" and "tool_calls" in m]
         assert len(assistant_with_tools) == 1
         tc = assistant_with_tools[0]["tool_calls"][0]
         assert tc["function"]["name"] == "mcp__aw__post_channel"
@@ -254,10 +249,7 @@ class TestBuildStructuredMessages:
         messages = conv.build_structured_messages("次", fmt="anthropic")
 
         # Find the assistant message with content blocks
-        assistant_msgs = [
-            m for m in messages
-            if m["role"] == "assistant" and isinstance(m["content"], list)
-        ]
+        assistant_msgs = [m for m in messages if m["role"] == "assistant" and isinstance(m["content"], list)]
         assert len(assistant_msgs) == 1
 
         content_blocks = assistant_msgs[0]["content"]
@@ -271,7 +263,8 @@ class TestBuildStructuredMessages:
 
         # Find user message with tool_result blocks
         tool_result_msgs = [
-            m for m in messages
+            m
+            for m in messages
             if m["role"] == "user"
             and isinstance(m.get("content"), list)
             and any(b.get("type") == "tool_result" for b in m["content"])
@@ -358,11 +351,13 @@ class TestCompressionFormat:
 class TestExecutionResultToolRecords:
     def test_execution_result_default_empty(self):
         from core.execution.base import ExecutionResult
+
         r = ExecutionResult(text="hello")
         assert r.tool_call_records == []
 
     def test_execution_result_with_records(self):
         from core.execution.base import ExecutionResult, ToolCallRecord
+
         records = [
             ToolCallRecord(tool_name="search", tool_id="t1"),
         ]
@@ -372,18 +367,18 @@ class TestExecutionResultToolRecords:
 
     def test_cycle_result_default_empty(self):
         from core.schemas import CycleResult
+
         r = CycleResult(trigger="test", action="responded")
         assert r.tool_call_records == []
 
     def test_cycle_result_with_records(self):
         from core.schemas import CycleResult
+
         r = CycleResult(
             trigger="test",
             action="responded",
             tool_call_records=[
-                {"tool_name": "search", "tool_id": "t1",
-                 "input_summary": "", "result_summary": "",
-                 "is_error": False},
+                {"tool_name": "search", "tool_id": "t1", "input_summary": "", "result_summary": "", "is_error": False},
             ],
         )
         assert len(r.tool_call_records) == 1
@@ -395,14 +390,16 @@ class TestExecutionResultToolRecords:
 
 class TestToolRecordPostInit:
     def test_input_summary_truncated(self):
-        from core.memory.conversation import _MAX_TOOL_INPUT_SUMMARY
+        from core.memory.conversation.memory import _MAX_TOOL_INPUT_SUMMARY
+
         long_input = "x" * (_MAX_TOOL_INPUT_SUMMARY + 50)
         r = ToolRecord(tool_name="test", input_summary=long_input)
         assert len(r.input_summary) == _MAX_TOOL_INPUT_SUMMARY + 3  # +3 for "..."
         assert r.input_summary.endswith("...")
 
     def test_result_summary_truncated(self):
-        from core.memory.conversation import _MAX_TOOL_RESULT_SUMMARY
+        from core.memory.conversation.memory import _MAX_TOOL_RESULT_SUMMARY
+
         long_result = "y" * (_MAX_TOOL_RESULT_SUMMARY + 50)
         r = ToolRecord(tool_name="test", result_summary=long_result)
         assert len(r.result_summary) == _MAX_TOOL_RESULT_SUMMARY + 3
@@ -471,9 +468,7 @@ class TestAnthropicRoleAlternation:
         prev_role = None
         for m in messages:
             if prev_role == "user":
-                assert m["role"] != "user", (
-                    f"Consecutive user messages found: ...{prev_role}, {m['role']}..."
-                )
+                assert m["role"] != "user", f"Consecutive user messages found: ...{prev_role}, {m['role']}..."
             prev_role = m["role"]
 
     def test_tool_result_merged_with_next_human(self, conv: ConversationMemory):
@@ -482,10 +477,7 @@ class TestAnthropicRoleAlternation:
         messages = conv.build_structured_messages("次の指示", fmt="anthropic")
 
         # Find user messages with list content (merged tool_result + text)
-        merged_user_msgs = [
-            m for m in messages
-            if m["role"] == "user" and isinstance(m.get("content"), list)
-        ]
+        merged_user_msgs = [m for m in messages if m["role"] == "user" and isinstance(m.get("content"), list)]
         assert len(merged_user_msgs) >= 1
         # The merged message should contain both tool_result and text blocks
         first_merged = merged_user_msgs[0]
@@ -539,10 +531,7 @@ class TestOpenAIContentNullWithToolCalls:
         conv.save()
 
         messages = conv.build_structured_messages("次", fmt="openai")
-        assistant_with_tools = [
-            m for m in messages
-            if m["role"] == "assistant" and "tool_calls" in m
-        ]
+        assistant_with_tools = [m for m in messages if m["role"] == "assistant" and "tool_calls" in m]
         assert len(assistant_with_tools) == 1
         assert assistant_with_tools[0]["content"] is None
 
@@ -573,8 +562,7 @@ class TestDeserializationSafety:
                     "token_estimate": 5,
                     "attachments": [],
                     "tool_records": [
-                        {"tool_name": "search", "tool_id": "t1",
-                         "input_summary": "", "result_summary": "ok"},
+                        {"tool_name": "search", "tool_id": "t1", "input_summary": "", "result_summary": "ok"},
                     ],
                 },
             ],
@@ -587,15 +575,14 @@ class TestDeserializationSafety:
 
         # Take a snapshot of the original data
         import copy
+
         original = copy.deepcopy(data)
 
         conv.load()
 
         # Re-read to confirm the file is unchanged
         reloaded = json.loads(state_path.read_text(encoding="utf-8"))
-        assert "tool_records" in reloaded["turns"][0], (
-            "tool_records should still exist in the saved file"
-        )
+        assert "tool_records" in reloaded["turns"][0], "tool_records should still exist in the saved file"
 
 
 # ── ToolCallRecordDict ↔ ToolCallRecord field parity ─────────
@@ -613,9 +600,7 @@ class TestToolCallRecordDictParity:
 
         dc_fields = {f.name for f in dataclasses.fields(ToolCallRecord)}
         td_keys = set(get_type_hints(ToolCallRecordDict).keys())
-        assert dc_fields == td_keys, (
-            f"ToolCallRecord fields {dc_fields} != ToolCallRecordDict keys {td_keys}"
-        )
+        assert dc_fields == td_keys, f"ToolCallRecord fields {dc_fields} != ToolCallRecordDict keys {td_keys}"
 
     def test_asdict_roundtrip(self):
         """asdict(ToolCallRecord(...)) should be valid ToolCallRecordDict."""
@@ -625,11 +610,15 @@ class TestToolCallRecordDictParity:
         from core.schemas import CycleResult
 
         rec = ToolCallRecord(
-            tool_name="test", tool_id="t1",
-            input_summary="in", result_summary="out", is_error=False,
+            tool_name="test",
+            tool_id="t1",
+            input_summary="in",
+            result_summary="out",
+            is_error=False,
         )
         cycle = CycleResult(
-            trigger="test", action="ok",
+            trigger="test",
+            action="ok",
             tool_call_records=[asdict(rec)],
         )
         assert cycle.tool_call_records[0]["tool_name"] == "test"

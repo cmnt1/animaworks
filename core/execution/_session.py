@@ -22,11 +22,11 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from core.memory.shortterm import StreamCheckpoint
+    from core.memory.conversation.shortterm import StreamCheckpoint
 
 from core.i18n import t
 from core.memory import MemoryManager
-from core.memory.shortterm import SessionState, ShortTermMemory
+from core.memory.conversation.shortterm import SessionState, ShortTermMemory
 from core.paths import load_prompt
 from core.prompt.builder import BuildResult
 from core.prompt.context import ContextTracker

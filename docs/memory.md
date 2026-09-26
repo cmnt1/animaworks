@@ -456,7 +456,7 @@ Waking (conversation)                     Sleeping (no conversation)
 
 ### Daily consolidation flow
 
-> Implementation: `core/_anima_lifecycle.py` — `Anima.run_consolidation()`, `core/memory/consolidation.py` — `ConsolidationEngine` (pre/post)
+> Implementation: `core/_anima_lifecycle.py` — `Anima.run_consolidation()`, `core/memory/maintenance/consolidation.py` — `ConsolidationEngine` (pre/post)
 > Schedule: the production `ProcessSupervisor` scheduler (`core/supervisor/_mgr_scheduler.py`) registers the daily handler from `core/lifecycle/system_consolidation.py` (`ConsolidationConfig.daily_time`, default 02:00 JST)
 
 **1. Preprocessing** (ConsolidationEngine): collect four inputs and inject into `consolidation_instruction`:
@@ -572,7 +572,7 @@ Contradictions can appear across `knowledge/` (e.g. “A owns X” vs. “A owns
 
 ## Procedural memory lifecycle
 
-> Implementation: `core/memory/distillation.py` — `ProceduralDistiller`, `core/memory/reconsolidation.py` — `ReconsolidationEngine`
+> Implementation: `core/memory/maintenance/distillation.py` — `ProceduralDistiller`, `core/memory/maintenance/reconsolidation.py` — `ReconsolidationEngine`
 
 Procedural memory (`procedures/`) holds “how to do it” (basal ganglia / cerebellum analog). Semantic memory (`knowledge/`) holds static “what is known”; procedural memory strengthens with execution and feedback.
 
@@ -615,7 +615,7 @@ Initial values (auto-distillation): `confidence: 0.4`, `success_count: 0`, `fail
 
 ### Prediction-error-based reconsolidation
 
-> Implementation: `core/memory/reconsolidation.py` — `ReconsolidationEngine`
+> Implementation: `core/memory/maintenance/reconsolidation.py` — `ReconsolidationEngine`
 
 **Neuroscience basis**: Nader et al. (2000) reconsolidation. Recalled traces destabilize and reconsolidate after new integration. Prediction error triggers reconsolidation.
 
@@ -716,7 +716,7 @@ The monthly pipeline tidies `archive/versions/`. Keep only the five latest versi
 
 ## Unified activity log
 
-> Implementation: `core/memory/activity.py` — `ActivityLogger` (mixins: `PrimingMixin`, `TimelineMixin`, `ConversationMixin`, `RotationMixin`)
+> Implementation: `core/memory/activity/logger.py` — `ActivityLogger` (mixins: `PrimingMixin`, `TimelineMixin`, `ConversationMixin`, `RotationMixin`)
 
 Single JSONL timeline for all interactions. Replaces scattered transcript, dm_log, heartbeat_history, etc., as the sole source for Priming channel B. Split across `_activity_models.py`, `_activity_priming.py`, `_activity_timeline.py`, `_activity_conversation.py`, `_activity_rotation.py`.
 
@@ -799,7 +799,7 @@ ProcessSupervisor’s scheduler runs `ActivityLogger.rotate_all()` for all Anima
 
 ## Streaming journal
 
-> Implementation: `core/memory/streaming_journal.py` — `StreamingJournal`
+> Implementation: `core/memory/conversation/streaming_journal.py` — `StreamingJournal`
 
 Write-ahead log: while the LLM streams, text chunks are flushed to disk incrementally. Hard crashes (SIGKILL, OOM, etc.) limit loss to about one second of text.
 

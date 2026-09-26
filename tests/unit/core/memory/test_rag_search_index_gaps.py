@@ -12,7 +12,7 @@ import pytest
 
 from core.memory.rag.indexer import IndexDirectoryResult, MemoryIndexer
 from core.memory.rag.retriever import _load_skill_document_by_signature
-from core.memory.rag_search import RAGMemorySearch
+from core.memory.retrieval.rag_search import RAGMemorySearch
 from core.skills.curator import SkillCurator
 
 # ── Fixtures ─────────────────────────────────────────────
@@ -59,12 +59,7 @@ def _write_skill(
     skill_dir.mkdir(parents=True, exist_ok=True)
     skill_md = skill_dir / "SKILL.md"
     skill_md.write_text(
-        "---\n"
-        f"name: {name}\n"
-        f"description: {body}\n"
-        f"use_when: [{use_when}]\n"
-        "---\n\n"
-        f"# {name}\n\n{body}\n",
+        f"---\nname: {name}\ndescription: {body}\nuse_when: [{use_when}]\n---\n\n# {name}\n\n{body}\n",
         encoding="utf-8",
     )
     return skill_md
