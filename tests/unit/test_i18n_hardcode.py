@@ -107,8 +107,10 @@ KNOWN_VIOLATIONS: dict[str, int] = {
     "core/tools/github.py": 1,
     # Japanese property portal labels, search terms, and report headings
     "core/tools/property_portal_scraper.py": 30,
-    "core/reports/property/anjo_1k_product_draft.py": 40,
-    "core/reports/property/daily_sale_product_report.py": 24,
+    # Japanese listing-day labels and report text for the property products
+    "core/reports/property/_listing_runs.py": 1,
+    "core/reports/property/anjo_1k_product_draft.py": 52,
+    "core/reports/property/daily_sale_product_report.py": 30,
     # review-surfacer: ja status labels, reminder + Discord-post prompt templates
     "core/reports/pending_review_surfacer.py": 8,
     "core/tools/_slack_cli.py": 1,
