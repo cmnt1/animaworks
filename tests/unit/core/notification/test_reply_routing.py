@@ -484,7 +484,7 @@ class TestRouteThreadReply:
         messenger_mock = MagicMock()
         with (
             patch("core.messenger.Messenger", return_value=messenger_mock),
-            patch("server.slack_socket._get_cached_user_name", return_value="Human"),
+            patch("core.notification.slack_names.get_cached_user_name", return_value="Human"),
         ):
             result = await route_thread_reply(event, shared_dir, slack_token="")
 

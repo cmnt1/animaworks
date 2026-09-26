@@ -169,7 +169,7 @@ def create_webhooks_router() -> APIRouter:
                     from slack_sdk.web.async_client import AsyncWebClient
 
                     if anima_from_app:
-                        from server.slack_socket import SlackSocketModeManager
+                        from server.gateways.slack_socket import SlackSocketModeManager
 
                         _token = SlackSocketModeManager._get_per_anima_credential(
                             "SLACK_BOT_TOKEN",
@@ -188,7 +188,7 @@ def create_webhooks_router() -> APIRouter:
             # Resolve token if not yet resolved (for thread context / reply routing)
             if _token is None:
                 if anima_from_app:
-                    from server.slack_socket import SlackSocketModeManager
+                    from server.gateways.slack_socket import SlackSocketModeManager
 
                     _token = SlackSocketModeManager._get_per_anima_credential(
                         "SLACK_BOT_TOKEN",
@@ -215,7 +215,8 @@ def create_webhooks_router() -> APIRouter:
 
             import asyncio
 
-            from server.slack_socket import (
+            from core.notification.slack_names import resolve_slack_mentions
+            from server.gateways.slack_socket import (
                 _build_slack_annotation,
                 _detect_external_addressees,
                 _detect_mention_intent,
@@ -223,7 +224,6 @@ def create_webhooks_router() -> APIRouter:
                 _fetch_thread_context,
                 _load_alias_user_ids,
                 _resolve_channel_name,
-                _resolve_slack_mentions,
             )
 
             alias_ids = _load_alias_user_ids()
@@ -245,7 +245,7 @@ def create_webhooks_router() -> APIRouter:
                 if ctx:
                     text = ctx + text
 
-            text = await asyncio.to_thread(_resolve_slack_mentions, text, _token or "")
+            text = await asyncio.to_thread(resolve_slack_mentions, text, _token or "")
             has_mention = bool(mention_intent)
             annotation = _build_slack_annotation(
                 channel_id,

@@ -6,16 +6,15 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from server.discord_gateway import (
+from server.gateways.discord_gateway import (
     DiscordGatewayManager,
     _build_discord_annotation,
     _is_duplicate_id,
 )
-
 
 # ── _build_discord_annotation ────────────────────────────
 
@@ -67,7 +66,7 @@ class TestDiscordGatewayManagerRouting:
         mock_cfg.external_messaging.discord.board_mapping = {}
 
         monkeypatch.setattr(
-            "server.discord_gateway.load_config",
+            "server.gateways.discord_gateway.load_config",
             lambda: mock_cfg,
         )
         return mock_cfg

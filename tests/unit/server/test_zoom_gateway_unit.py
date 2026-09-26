@@ -1,4 +1,4 @@
-"""Unit tests for server/zoom_gateway.py — ZoomRTMSManager buffering & routing.
+"""Unit tests for server/gateways/zoom_gateway.py — ZoomRTMSManager buffering & routing.
 
 These tests exercise the transcript buffering, chunk flushing, routing and
 end-of-meeting logic of :class:`ZoomRTMSManager` in isolation.  The Zoom
@@ -19,8 +19,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.config.schemas import ZoomRTMSConfig
-from server import zoom_gateway
-from server.zoom_gateway import (
+from server.gateways import zoom_gateway
+from server.gateways.zoom_gateway import (
     ZoomRTMSManager,
     _extract_media_url,
     _extract_transcript,
@@ -45,8 +45,8 @@ def injections(monkeypatch, tmp_path):
             calls.append({"anima": self._anima, **kwargs})
             return None
 
-    monkeypatch.setattr("server.zoom_gateway.Messenger", _FakeMessenger)
-    monkeypatch.setattr("server.zoom_gateway.get_shared_dir", lambda: tmp_path)
+    monkeypatch.setattr("server.gateways.zoom_gateway.Messenger", _FakeMessenger)
+    monkeypatch.setattr("server.gateways.zoom_gateway.get_shared_dir", lambda: tmp_path)
     return calls
 
 
@@ -193,8 +193,8 @@ class TestInjectFailureRecovery:
             def receive_external(self, **kwargs: Any) -> None:
                 raising(**kwargs)
 
-        monkeypatch.setattr("server.zoom_gateway.Messenger", _RaisingMessenger)
-        monkeypatch.setattr("server.zoom_gateway.get_shared_dir", lambda: tmp_path)
+        monkeypatch.setattr("server.gateways.zoom_gateway.Messenger", _RaisingMessenger)
+        monkeypatch.setattr("server.gateways.zoom_gateway.get_shared_dir", lambda: tmp_path)
 
         mgr = _manager(chunk_max_chars=100_000, chunk_interval_seconds=100_000)
         session = _make_session()
@@ -225,8 +225,8 @@ class TestInjectFailureRecovery:
                     raise RuntimeError("transient failure")
                 calls.append(kwargs)
 
-        monkeypatch.setattr("server.zoom_gateway.Messenger", _FlakyMessenger)
-        monkeypatch.setattr("server.zoom_gateway.get_shared_dir", lambda: tmp_path)
+        monkeypatch.setattr("server.gateways.zoom_gateway.Messenger", _FlakyMessenger)
+        monkeypatch.setattr("server.gateways.zoom_gateway.get_shared_dir", lambda: tmp_path)
 
         mgr = _manager(chunk_max_chars=100_000, chunk_interval_seconds=100_000)
         session = _make_session()
@@ -347,8 +347,8 @@ class TestMeetingEnd:
 
 
 class TestLifecycle:
-    @patch("server.zoom_gateway.get_credential", return_value="")
-    @patch("server.zoom_gateway.load_config")
+    @patch("server.gateways.zoom_gateway.get_credential", return_value="")
+    @patch("server.gateways.zoom_gateway.load_config")
     async def test_start_noop_when_disabled(self, mock_config, mock_cred):
         mock_config.return_value = MagicMock(
             external_messaging=MagicMock(zoom=ZoomRTMSConfig(enabled=False)),
