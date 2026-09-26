@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import py_compile
 import re
@@ -17,6 +18,32 @@ from urllib.parse import urlsplit, urlunsplit
 
 if TYPE_CHECKING:
     import pandas as pd
+
+
+def _is_missing(value: object) -> bool:
+    """Return True for None or a float NaN (e.g. from pandas-read CSV blanks).
+
+    Non-standard JSON/Markdown "nan" / "nan%" output was caused by treating
+    pandas NaN floats as truthy values instead of missing values. Both None
+    and NaN must normalize to "-" in Markdown and null in JSON.
+    """
+    if value is None:
+        return True
+    return isinstance(value, float) and math.isnan(value)
+
+
+def _sanitize_for_json(obj: Any) -> Any:
+    """Recursively replace float NaN/Infinity with None so json.dumps produces
+    strictly standard JSON (no NaN/Infinity/-Infinity literals)."""
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_for_json(v) for v in obj]
+    return obj
 
 
 def _load_pandas() -> Any:
@@ -34,7 +61,7 @@ def normalize_url_for_diff(value: object) -> str:
 
 
 def escape_md_cell(value: object) -> str:
-    text = "-" if value is None else str(value)
+    text = "-" if _is_missing(value) else str(value)
     return text.replace("\n", " ").replace("|", "｜")
 
 
@@ -101,10 +128,15 @@ def diff_rows_to_markdown(rows: list[dict], *, empty_message: str = "該当な�
         portal = escape_md_cell(row.get("portal_label"))
         title = escape_md_cell(row.get("title"))
         url = escape_md_cell(row.get("url"))
-        price = escape_md_cell(row.get("price_text") or yen(row.get("price_jpy")))
+        price_text = row.get("price_text")
+        price_text = None if _is_missing(price_text) else price_text
+        price = escape_md_cell(price_text or yen(row.get("price_jpy")))
         yield_ = escape_md_cell(pct(row.get("gross_yield_percent")))
-        property_type = escape_md_cell(row.get("property_type") or "-")
-        lines.append(f"| {portal} | {title} | `{url}` | {price} | {yield_} | {property_type} |")
+        property_type = row.get("property_type")
+        property_type = None if _is_missing(property_type) else property_type
+        property_type = escape_md_cell(property_type or "-")
+        url_cell = f"[{url}]({url})" if url and url != "-" else "-"
+        lines.append(f"| {portal} | {title} | {url_cell} | {price} | {yield_} | {property_type} |")
     return "\n".join(lines)
 
 
@@ -288,11 +320,11 @@ def data_dir_for_date(root: Path, report_date: str) -> Path:
 
 
 def yen(value: int | None) -> str:
-    return "-" if value is None else f"{value:,}円"
+    return "-" if _is_missing(value) else f"{value:,}円"
 
 
 def pct(value: float | None) -> str:
-    return "-" if value is None else f"{value:g}%"
+    return "-" if _is_missing(value) else f"{value:g}%"
 
 
 def build_candidate_rows(listings: list[dict]) -> str:
@@ -300,14 +332,18 @@ def build_candidate_rows(listings: list[dict]) -> str:
         return "| - | - | - | - | - | - |\n"
     rows: list[str] = []
     for item in listings:
+        price_text = item.get("price_text")
+        price_text = None if _is_missing(price_text) else price_text
+        property_type = item.get("property_type")
+        property_type = None if _is_missing(property_type) else property_type
         rows.append(
             "| {portal} | [{title}]({url}) | {price} | {yield_} | {type_} | {review} |".format(
                 portal=item.get("portal_label", "-"),
                 title=str(item.get("title") or "-").replace("|", " "),
                 url=item.get("url", ""),
-                price=item.get("price_text") or yen(item.get("price_jpy")),
+                price=price_text or yen(item.get("price_jpy")),
                 yield_=pct(item.get("gross_yield_percent")),
-                type_=item.get("property_type") or "-",
+                type_=property_type or "-",
                 review=item.get("review_status") or "-",
             )
         )
@@ -348,10 +384,13 @@ def render_product(
         )
         for run in portal_runs
     )
-    blocked_lines = (
-        "\n".join(f"- {run['portal_label']}: {run.get('error') or '未取得'} ({run.get('url')})" for run in blocked)
-        or "- なし"
-    )
+
+    def _blocked_line(run: dict) -> str:
+        url = run.get("url")
+        url_text = f"[{url}]({url})" if url else "-"
+        return f"- {run['portal_label']}: {run.get('error') or '未取得'} ({url_text})"
+
+    blocked_lines = "\n".join(_blocked_line(run) for run in blocked) or "- なし"
     diff_section: list[str] = []
     if comparison and comparison.get("comparison_available"):
         diff_section.extend(
@@ -543,9 +582,16 @@ def write_evidence(
         "script_py_compile_ok": script_provenance.get("checks", {}).get("py_compile_ok"),
         "script_provenance": script_provenance,
     }
-    evidence_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    payload["evidence_path"] = str(evidence_path)
-    return payload
+    # Sanitize before serializing: pandas-derived NaN floats in comparison
+    # rows must become JSON null, never the non-standard "NaN" literal that
+    # Python's json module emits by default (allow_nan=True).
+    sanitized_payload = _sanitize_for_json(payload)
+    evidence_path.write_text(
+        json.dumps(sanitized_payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )
+    sanitized_payload["evidence_path"] = str(evidence_path)
+    return sanitized_payload
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
