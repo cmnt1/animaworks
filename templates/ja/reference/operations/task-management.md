@@ -67,3 +67,15 @@ TaskExec の結果要約は `state/task_results/{task_id}/{attempt_token}.md` �
 ## 長時間コマンドツールは別経路
 
 画像生成や run_command など対応する長時間外部ツールには `animaworks-tool submit TOOL ...` を使う。これは `submit_tasks` とは別で、コマンド記述子は引き続き `state/background_tasks/pending/` に保存される。BackgroundTaskManager は `state/background_tasks/{task_id}.json` に `running` / `completed` / `failed` を記録する。`list_background_tasks` / `check_background_task` で確認する。このファイル経路と通知を維持する。詳細は `operations/background-tasks.md`。
+
+### プロジェクト管理の正本
+
+プロジェクト管理の正本は **Obsidian Vault** に置く（MUST）。Notion は既定で使用しない。
+
+- プロジェクト計画、進捗、成果物、確認待ち、決定事項は `E:\OneDriveBiz\Obsidian\` 配下の Markdown に読み書きする
+- 成果物・報告書は `common_skills/obsidian-product/SKILL.md` の規約に従い、`E:\OneDriveBiz\Obsidian\_products\` に記録する
+- Anima 内部の TaskStore と `current_state.md` は実行管理用であり、人間が参照するプロジェクト台帳の代替ではない
+- Notion への読み書き、Notion DB を正本にした進捗管理、Notion への成果物提出は行わない
+
+
+TaskBoard の title / summary は案件名・状態・次の一手が分かる短い文にする。内部ID・長い原文・ログ・委任経路は description / instruction に記録する。

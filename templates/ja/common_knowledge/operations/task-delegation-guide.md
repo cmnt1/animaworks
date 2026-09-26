@@ -41,3 +41,5 @@ Heartbeat は判断・投入に使い、長時間の実作業は TaskExec に渡
 必要な承認・独立レビューは保持する。結果は判断が必要な依頼者へ報告し、全階層への
 同内容転送や、別の手書き台帳への二重記録を必須にしない。
 保存の詳細は `common_knowledge/anatomy/task-architecture.md` を参照。
+
+TaskBoard の title / summary は人間が単独で読んで分かる案件名にし、内部ID・ログ・長い原文は description / instruction に記録する。

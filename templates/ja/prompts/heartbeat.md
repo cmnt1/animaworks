@@ -18,3 +18,5 @@
 - 未完実行の通知が来たら、既済の操作や成果を確認してから継続を判断する。継続する場合は `submit_tasks` の tasks に `{{"task_id":"既存ID","resume":true}}` を指定する。元の入力は保存されているため再構築しない。不要な仕事は `update_task(status="cancelled", summary="理由")` で閉じる。
 
 タスクの実行状態やファイルを修復するための巡回・一括再投入は不要です。必要な業務手順や承認条件は参照してください。対応事項がなければ HEARTBEAT_OK のみを返してください。
+
+委譲・報告・エスカレーションの送信前に `common_knowledge/communication/message-quality-protocol.md` を確認する。委譲には `common_knowledge/operations/task-delegation-guide.md` に従う。
