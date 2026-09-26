@@ -37,6 +37,48 @@ _PATCH_LOAD_CONFIG = "core.config.models.load_config"
 
 
 class TestResolveBackgroundConfig:
+    @pytest.mark.parametrize("credential", [None, "missing"])
+    def test_cross_provider_without_auth_rejects_inherited_key(self, credential):
+        from core.config.models import AnimaWorksConfig
+
+        mc = ModelConfig(
+            model="claude-opus-4-6",
+            background_model="openai/gpt-4.1",
+            background_credential=credential,
+            api_key="synthetic-anthropic-key",
+        )
+        mixin = _make_heartbeat_mixin(mc)
+        with (
+            patch(_PATCH_LOAD_CONFIG, return_value=AnimaWorksConfig(credentials={})),
+            pytest.raises(ValueError, match="No credential configured"),
+        ):
+            mixin._resolve_background_config()
+        assert mc.api_key == "synthetic-anthropic-key"
+
+    def test_cli_background_clears_inherited_provider_auth(self):
+        from core.config.models import AnimaWorksConfig
+
+        mc = ModelConfig(
+            model="openai/gpt-4.1",
+            resolved_mode="A",
+            execution_mode="A",
+            background_model="codex/gpt-5.5",
+            credential="openai",
+            api_key="synthetic-openai-key",
+            api_base_url="https://example.invalid",
+            extra_keys={"api_version": "test"},
+        )
+        mixin = _make_heartbeat_mixin(mc)
+        with patch(_PATCH_LOAD_CONFIG, return_value=AnimaWorksConfig(credentials={})):
+            result = mixin._resolve_background_config()
+        assert result.resolved_mode == result.execution_mode == "C"
+        assert result.api_key is None
+        assert result.api_key_env == ""
+        assert result.api_base_url is None
+        assert result.extra_keys == {}
+        assert result.credential is None
+        assert mc.api_key == "synthetic-openai-key"
+
     def test_returns_none_when_no_background_model(self):
         mc = ModelConfig(model="claude-opus-4-6")
         mixin = _make_heartbeat_mixin(mc)

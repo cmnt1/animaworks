@@ -200,9 +200,9 @@ class HeartbeatMixin:
         fallback preflight used by heartbeat, cron, and inbox cycles.
         """
         from core.config.model_config import (
-            _FAMILY_CREDENTIAL_MAP,
             _model_family,
-            infer_mode_s_auth,
+            _resolved_mode_for_config,
+            build_model_override_config,
             resolve_effective_model_config,
         )
         from core.config.models import load_config, resolve_execution_mode
@@ -210,6 +210,9 @@ class HeartbeatMixin:
         from core.schemas import ModelConfig
 
         main_config = self.agent.model_config
+        # Lifecycle test doubles are not model routes and have no credentials.
+        if not isinstance(main_config, ModelConfig):
+            return main_config
         config = load_config()
         bg_model = main_config.background_model
         bg_effort = main_config.background_thinking_effort
@@ -232,44 +235,28 @@ class HeartbeatMixin:
             bg_credential = main_config.background_credential
             bg_family = _model_family(bg_model)
             main_family = _model_family(main_config.model)
-            if not bg_credential and bg_family != main_family:
-                mapped_credential = _FAMILY_CREDENTIAL_MAP.get(bg_family)
-                if mapped_credential in config.credentials:
-                    bg_credential = mapped_credential
-
             updates: dict[str, Any] = {
                 "model": bg_model,
+                "execution_mode": bg_resolved_mode,
                 "resolved_mode": bg_resolved_mode,
             }
             if bg_effort:
                 updates["thinking_effort"] = bg_effort
-            if bg_credential:
-                if bg_credential in config.credentials:
-                    cred = config.credentials[bg_credential]
-                    updates.update(
-                        {
-                            "background_credential": bg_credential,
-                            "api_key": cred.api_key or None,
-                            "api_key_env": f"{bg_credential.upper()}_API_KEY",
-                            "api_base_url": cred.base_url or None,
-                            "extra_keys": dict(cred.keys) if cred.keys else {},
-                        }
-                    )
-                    if bg_resolved_mode == "S" and not main_config.mode_s_auth:
-                        updates["mode_s_auth"] = infer_mode_s_auth(
-                            mode=bg_resolved_mode,
-                            credential_name=bg_credential,
-                            config=config,
-                        )
-                    elif bg_resolved_mode != "S":
-                        updates["mode_s_auth"] = None
-            base_config = main_config.model_copy(update=updates)
-
-        # A few lifecycle unit tests deliberately install a generic MagicMock
-        # model config.  Preserve the pre-existing background resolution result
-        # for those test doubles; runtime AgentCore configs are ModelConfig.
-        if not isinstance(base_config, ModelConfig):
-            return base_config
+            if (
+                bg_credential
+                or bg_family != main_family
+                or bg_resolved_mode != _resolved_mode_for_config(main_config, config)
+            ):
+                base_config = build_model_override_config(
+                    main_config, bg_resolved_mode, bg_model, config, credential_name=bg_credential
+                )
+                if base_config is None:
+                    raise ValueError(f"No credential configured for background model: {bg_model!r}")
+                if base_config.credential:
+                    updates["background_credential"] = base_config.credential
+                base_config = base_config.model_copy(update=updates)
+            else:
+                base_config = main_config.model_copy(update=updates)
 
         effective_config = resolve_effective_model_config(base_config)
         activity = getattr(self, "_activity", None)
