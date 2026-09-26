@@ -63,8 +63,13 @@ def track_listing_runs(
             old = ended.get(old_key) if old_key else None
             if old and days_between(old["last"], date) <= MAX_OBSERVATION_GAP_DAYS:
                 del ended[old_key]
-                runs[key] = {**old, "last": date, "row": row, "relisted_on": date,
-                             "relisted_from": [*old.get("relisted_from", []), old_key]}
+                runs[key] = {
+                    **old,
+                    "last": date,
+                    "row": row,
+                    "relisted_on": date,
+                    "relisted_from": [*old.get("relisted_from", []), old_key],
+                }
                 runs[key].pop("ended_on")
                 continue
             prev = last_observed.get(source)
@@ -92,13 +97,23 @@ def classify_listings(history: list[Observation], today: Observation, identity: 
     runs, ended = track_listing_runs([*history, today], identity)
 
     def listed(run: dict) -> dict:
-        return {**run["row"], "listing_start": run["start"], "start_uncertain": run["start_uncertain"],
-                "listing_day": days_between(run["start"], date) + 1,
-                "relisted_from": run.get("relisted_from", []), "relisted_today": run.get("relisted_on") == date}
+        return {
+            **run["row"],
+            "listing_start": run["start"],
+            "start_uncertain": run["start_uncertain"],
+            "listing_day": days_between(run["start"], date) + 1,
+            "relisted_from": run.get("relisted_from", []),
+            "relisted_today": run.get("relisted_on") == date,
+        }
 
     def withdrawn(run: dict) -> dict:
-        return {**run["row"], "listing_start": run["start"], "start_uncertain": run["start_uncertain"],
-                "last_seen": run["last"], "listing_days": days_between(run["start"], run["last"]) + 1}
+        return {
+            **run["row"],
+            "listing_start": run["start"],
+            "start_uncertain": run["start_uncertain"],
+            "last_seen": run["last"],
+            "listing_days": days_between(run["start"], run["last"]) + 1,
+        }
 
     return {
         "new_rows": [listed(runs[k]) for k in items if runs[k]["start"] == date],
