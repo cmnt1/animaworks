@@ -356,7 +356,7 @@ async def test_priming_with_shared_knowledge(temp_dirs, vector_store, monkeypatc
     Verifies:
     - Channel C searches both personal and shared knowledge (include_shared=True)
     - related_knowledge in PrimingResult contains shared results
-    - [shared] label appears in the formatted output
+    - Shared source paths appear in the formatted output
     """
     anima_dir, common_knowledge_dir, data_dir = temp_dirs
 
@@ -414,8 +414,8 @@ async def test_priming_with_shared_knowledge(temp_dirs, vector_store, monkeypatc
     combined = result.related_knowledge + result.related_knowledge_untrusted
     assert combined, "Priming should return related knowledge from shared collection"
 
-    # Check that [shared] label appears in the output
-    assert "[shared]" in combined, f"Expected [shared] label in knowledge, got:\n{combined}"
+    # Current priming emits source references instead of scope labels.
+    assert "common_knowledge/coding-standards.md" in combined, combined
 
     # Format the priming section and verify structure
     formatted = format_priming_section(result, sender_name="tester")
@@ -480,10 +480,8 @@ async def test_priming_personal_and_shared_merged(temp_dirs, vector_store, monke
     combined = result.related_knowledge + result.related_knowledge_untrusted
     assert combined, "Priming should return related knowledge"
 
-    # Verify both [personal] and [shared] labels appear
-    has_personal = "[personal]" in combined
-    has_shared = "[shared]" in combined
-    assert has_personal or has_shared, f"Priming output should contain at least one labeled result. Got:\n{combined}"
+    assert "knowledge/project-alpha.md" in combined, combined
+    assert "common_knowledge/coding-standards.md" in combined, combined
 
 
 # ── Test 4: read_memory_file with common_knowledge prefix ──────────

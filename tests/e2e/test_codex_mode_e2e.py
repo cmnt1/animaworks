@@ -16,8 +16,17 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _fake_openai_codex_sdk(fake_openai_codex_sdk):
-    pass
+def _fake_openai_codex_sdk(fake_openai_codex_sdk, monkeypatch):
+    # These tests exercise the SDK, including on Windows where background
+    # execution normally prefers CLI exec. Never read real login credentials.
+    monkeypatch.setattr("core.execution.codex_sdk._should_prefer_cli_exec", lambda trigger: False)
+    monkeypatch.setattr("core.execution.codex_sdk._should_cli_exec_fallback", lambda error: False)
+    monkeypatch.setattr("core.execution.codex_sdk.CodexSDKExecutor._propagate_auth", lambda self, **kwargs: None)
+
+    def reject_cli(self):
+        raise AssertionError("SDK E2E tests must not launch the real Codex CLI")
+
+    monkeypatch.setattr("core.execution.codex_sdk.CodexSDKExecutor._build_cli_exec_command", reject_cli)
 
 
 def _mock_codex(start_thread):
