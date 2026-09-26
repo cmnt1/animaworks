@@ -146,7 +146,6 @@ animaworks/
 │   │   ├── cursor_agent.py    #   Mode D: Cursor Agent CLI
 │   │   ├── gemini_cli.py      #   Mode G: Gemini CLI
 │   │   ├── grok_cli.py        #   Mode X: Grok Build CLI（ACP stdio）
-│   │   ├── anthropic_fallback.py # Mode A 内: Anthropic SDK 直接
 │   │   ├── litellm_loop.py    #   Mode A: LiteLLM + tool_use
 │   │   ├── assisted.py        #   Mode B: フレームワーク補助
 │   │   └── _session.py ほか   #   セッション・SDK ストリーム・サニタイズ等

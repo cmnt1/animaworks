@@ -402,10 +402,10 @@ class PrimingMixin:
         pending_human_notifications: str = "",
         thread_id: str = "default",
         shortterm_text: str = "",
-    ) -> tuple[str, str, bool]:
+    ) -> tuple[str, str]:
         """Check combined prompt size and shrink if necessary.
 
-        Returns (system_prompt, prompt, fell_back_to_fallback).
+        Returns (system_prompt, prompt).
         """
         total = len(system_prompt.encode("utf-8")) + len(prompt.encode("utf-8"))
         logger.info(
@@ -416,7 +416,7 @@ class PrimingMixin:
         )
 
         if total <= _PROMPT_SOFT_LIMIT_BYTES:
-            return system_prompt, prompt, False
+            return system_prompt, prompt
 
         # ── Stage 1: Force conversation compression for chat only ──────────
         if conv_memory is not None:
@@ -456,12 +456,11 @@ class PrimingMixin:
         logger.info("Post-compression prompt size: %d bytes", total)
 
         if total <= _PROMPT_HARD_LIMIT_BYTES:
-            return system_prompt, prompt, False
+            return system_prompt, prompt
 
-        # ── Stage 2: Fall back to Anthropic SDK (no JSON buffer limit) ──
         logger.warning(
-            "Prompt size %d still exceeds hard limit %d; switching to S Fallback",
+            "Prompt size %d still exceeds hard limit %d after compression; continuing with the configured executor",
             total,
             _PROMPT_HARD_LIMIT_BYTES,
         )
-        return system_prompt, prompt, True
+        return system_prompt, prompt

@@ -58,7 +58,7 @@ AnimaWorksはツールアクセス・永続記憶・エージェント間通信�
 
 **オリジンチェーン伝播**: データが複数システムを経由する場合（例: Web → RAGインデックス → Priming）、信頼レベルはチェーン中の**最小値**に劣化する。`resolve_trust(origin, origin_chain)` がチェーン全ノード + 現在のオリジンにわたる保守的な最小値を計算する。
 
-**セッションレベル信頼追跡**: `_min_trust_seen` がセッション中の全ツール呼び出しにわたる最小信頼ランク（2=trusted, 1=medium, 0=untrusted）を追跡。Mode S（`PreToolUse` フック + `run/min_trust_seen` ファイル）、Mode A（`litellm_loop` と `anthropic_fallback`）で更新。各インタラクションサイクル開始時にリセット。
+**セッションレベル信頼追跡**: `_min_trust_seen` がセッション中の全ツール呼び出しにわたる最小信頼ランク（2=trusted, 1=medium, 0=untrusted）を追跡。Mode S（`PreToolUse` フック + `run/min_trust_seen` ファイル）と Mode A（`litellm_loop`）で更新。各インタラクションサイクル開始時にリセット。
 
 **トリガー・ティア別の注入条件**（`core/prompt/builder.py`）:
 

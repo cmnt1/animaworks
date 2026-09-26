@@ -8,13 +8,13 @@ from __future__ import annotations
 # See LICENSE for the full license text.
 
 
-"""Shared session-chaining helper for inline executors (Mode A / Fallback).
+"""Shared session-chaining helper for the inline Mode A executor.
 
-Both ``LiteLLMExecutor`` and ``AnthropicFallbackExecutor`` monitor context
-usage mid-conversation and save short-term memory when the configured
-threshold is crossed.  The next incoming message picks up the saved state
-via ``inject_shortterm`` — no in-flight chaining is performed, so the Anima
-does not produce an unnatural "session handoff" message mid-conversation.
+``LiteLLMExecutor`` monitors context usage mid-conversation and saves
+short-term memory when the configured threshold is crossed.  The next
+incoming message picks up the saved state via ``inject_shortterm`` — no
+in-flight chaining is performed, so the Anima does not produce an unnatural
+"session handoff" message mid-conversation.
 """
 
 import logging

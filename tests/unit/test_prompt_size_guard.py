@@ -11,16 +11,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 
 from core.memory.conversation import (
-    ConversationMemory,
-    ConversationTurn,
     _MAX_HUMAN_CHARS_IN_HISTORY,
     _MAX_RESPONSE_CHARS_IN_HISTORY,
     _MAX_STORED_CONTENT_CHARS,
+    ConversationMemory,
+    ConversationTurn,
 )
 from core.schemas import ModelConfig
-
 
 # ── Conversation truncation tests ─────────────────────────────────
 
@@ -38,9 +38,7 @@ class TestHumanTurnTruncation:
         """Human messages under the limit are not truncated."""
         mem = self._make_memory(tmp_path)
         state = mem.load()
-        state.turns.append(
-            ConversationTurn(role="human", content="Hello, how are you?")
-        )
+        state.turns.append(ConversationTurn(role="human", content="Hello, how are you?"))
         history = mem._format_history(state)
         assert "Hello, how are you?" in history
         assert "..." not in history
@@ -63,9 +61,7 @@ class TestHumanTurnTruncation:
         mem = self._make_memory(tmp_path)
         long_resp = "y" * (_MAX_RESPONSE_CHARS_IN_HISTORY + 500)
         state = mem.load()
-        state.turns.append(
-            ConversationTurn(role="assistant", content=long_resp)
-        )
+        state.turns.append(ConversationTurn(role="assistant", content=long_resp))
         history = mem._format_history(state)
         assert "..." in history
         assert long_resp not in history
@@ -120,6 +116,7 @@ class TestAgentSDKBufferSize:
     def test_buffer_size_constant(self):
         """The constant should be 4 MB."""
         from core.execution.agent_sdk import _SDK_MAX_BUFFER_SIZE
+
         assert _SDK_MAX_BUFFER_SIZE == 4 * 1024 * 1024
 
 
@@ -131,10 +128,46 @@ class TestPreflightSizeCheck:
 
     def test_constants_defined(self):
         """Size limit constants should be defined."""
-        from core.agent import _PROMPT_SOFT_LIMIT_BYTES, _PROMPT_HARD_LIMIT_BYTES
+        from core.agent import _PROMPT_HARD_LIMIT_BYTES, _PROMPT_SOFT_LIMIT_BYTES
+
         assert _PROMPT_SOFT_LIMIT_BYTES == 600_000
         assert _PROMPT_HARD_LIMIT_BYTES == 1_200_000
         assert _PROMPT_SOFT_LIMIT_BYTES < _PROMPT_HARD_LIMIT_BYTES
+
+    @pytest.mark.asyncio
+    async def test_hard_limit_warns_and_continues_with_configured_executor(self, tmp_path, caplog):
+        """An oversized prompt warns but is still passed to the selected executor."""
+        import logging
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from core.execution.base import ExecutionResult
+        from core.prompt.builder import BuildResult
+        from tests.unit.core.test_agent import _make_agent
+
+        agent = _make_agent(tmp_path, resolved_mode="S")
+        agent._run_priming = AsyncMock(return_value=("", ""))
+        agent._load_context_window_overrides = MagicMock(return_value={})
+        agent._fit_prompt_to_context_window = MagicMock(
+            side_effect=lambda system_prompt, *args, **kwargs: system_prompt
+        )
+        agent._executor.execute = AsyncMock(return_value=ExecutionResult(text="continued"))
+        oversized_system_prompt = "x" * 1_200_001
+
+        with (
+            patch(
+                "core._agent_cycle.build_system_prompt", return_value=BuildResult(system_prompt=oversized_system_prompt)
+            ),
+            patch("core._agent_cycle._save_prompt_log"),
+            patch("core._agent_cycle._save_prompt_log_end"),
+            patch("core._agent_cycle._log_session_token_usage"),
+            patch("core.tooling.schemas.load_all_tool_schemas", return_value=[]),
+            caplog.at_level(logging.WARNING, logger="animaworks.agent"),
+        ):
+            result = await agent._run_cycle_inner_scoped("prompt", trigger="manual")
+
+        assert result.summary == "continued"
+        agent._executor.execute.assert_awaited_once()
+        assert "continuing with the configured executor" in caplog.text
 
 
 # ── stderr rotation tests ─────────────────────────────────────────

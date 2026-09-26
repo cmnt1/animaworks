@@ -27,7 +27,7 @@ logger = logging.getLogger("animaworks.agent")
 # the hard limit is hit.  JSON framing + tool schemas add ~30-50% overhead
 # on top of the raw text, so we use conservative byte limits.
 _PROMPT_SOFT_LIMIT_BYTES = 600_000  # Force compression
-_PROMPT_HARD_LIMIT_BYTES = 1_200_000  # Fall back to S Fallback
+_PROMPT_HARD_LIMIT_BYTES = 1_200_000  # Warn only; continue with configured executor
 
 
 _PROMPT_LOG_RETENTION_DAYS = 3

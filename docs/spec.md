@@ -14,7 +14,7 @@ Digital Anima is the minimal unit that encapsulates an AI agent as "a single per
 
 **Technical Direction:**
 
-- Agent execution uses **7 modes** (auto-selected from model name patterns via `resolve_execution_mode()`): **S** Claude Agent SDK, **C** Codex CLI, **D** Cursor Agent CLI, **G** Gemini CLI, **X** Grok Build CLI wrapper (ACP stdio), **A** LiteLLM + tool_use (including Anthropic direct fallback), **B** one-shot assisted (framework handles memory I/O)
+- Agent execution uses **7 modes** (auto-selected from model name patterns via `resolve_execution_mode()`): **S** Claude Agent SDK, **C** Codex CLI, **D** Cursor Agent CLI, **G** Gemini CLI, **X** Grok Build CLI wrapper (ACP stdio), **A** LiteLLM + tool_use, **B** one-shot assisted (framework handles memory I/O)
 - Configuration is unified in **config.json** (Pydantic validation); memories are written in **Markdown**
 - User-facing UI strings are resolved via **`core/i18n`** `t()` (hardcoding prohibited)
 - Multiple Animas operate collaboratively in a **hierarchical structure** (hierarchy defined by the `supervisor` field, synchronous delegation)
@@ -143,7 +143,6 @@ animaworks/
 │   │   ├── cursor_agent.py    #   Mode D: Cursor Agent CLI
 │   │   ├── gemini_cli.py      #   Mode G: Gemini CLI
 │   │   ├── grok_cli.py        #   Mode X: Grok Build CLI (ACP stdio)
-│   │   ├── anthropic_fallback.py # Inside Mode A: Anthropic SDK direct
 │   │   ├── litellm_loop.py    #   Mode A: LiteLLM + tool_use
 │   │   ├── assisted.py        #   Mode B: Framework-assisted
 │   │   └── _session.py, etc.  #   Session, SDK stream, sanitization, etc.
@@ -960,7 +959,7 @@ Including "Making decisions without searching memory is prohibited" in `behavior
 ## 11. Implemented Features
 
 - **Digital Anima class** — Encapsulation and autonomous operation. 1 Anima = 1 directory
-- **7 execution modes** — S: Agent SDK / C: Codex CLI / D: Cursor Agent CLI / G: Gemini CLI / X: Grok Build CLI (ACP stdio) / A: LiteLLM + tool_use (including Anthropic direct fallback) / B: Assisted (one-shot)
+- **7 execution modes** — S: Agent SDK / C: Codex CLI / D: Cursor Agent CLI / G: Gemini CLI / X: Grok Build CLI (ACP stdio) / A: LiteLLM + tool_use / B: Assisted (one-shot)
 - **Background model** — heartbeat/inbox/cron can run on a separate lightweight model from the main model (cost optimization)
 - **ProcessSupervisor** — Launches and monitors each Anima as an independent child process with Unix socket
 - **Archive-based memory** — episodes / knowledge / procedures / state. Details in **[memory.md](memory.md)**

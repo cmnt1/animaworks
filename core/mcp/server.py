@@ -388,8 +388,8 @@ def _has_subordinates_for_anima() -> bool:
 def _has_newstaff_skill_for_anima() -> bool:
     """Check if this Anima has the newstaff skill (hire permission).
 
-    Mirrors ``anthropic_fallback._has_newstaff_skill``:
-    ``ANIMAWORKS_ANIMA_DIR/skills/newstaff/SKILL.md`` or ``skills/newstaff.md``.
+    Looks for ``ANIMAWORKS_ANIMA_DIR/skills/newstaff/SKILL.md`` or
+    ``skills/newstaff.md``.
 
     Evaluated once at first call and cached. Falls back to False (safe side —
     hides create_anima when check fails).
