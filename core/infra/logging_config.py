@@ -31,7 +31,7 @@ import structlog
 from core.time_utils import now_local
 
 # Re-export for backward compatibility with existing imports
-# (e.g. ``from core.logging_config import set_request_id``)
+# (e.g. ``from core.infra.logging_config import set_request_id``)
 
 
 def set_request_id(request_id: str) -> None:

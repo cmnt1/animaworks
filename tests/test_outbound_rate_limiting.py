@@ -15,10 +15,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.memory import MemoryManager
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.time_utils import now_jst
 from core.tooling.handler import ToolHandler
-
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -141,7 +140,8 @@ class TestPostChannelCrossRunGuard:
         channel_file = shared_dir / "channels" / "general.jsonl"
         old_ts = (now_jst() - timedelta(seconds=600)).isoformat()
         channel_file.write_text(
-            json.dumps({"ts": old_ts, "from": "alice", "text": "First run", "source": "anima"}, ensure_ascii=False) + "\n",
+            json.dumps({"ts": old_ts, "from": "alice", "text": "First run", "source": "anima"}, ensure_ascii=False)
+            + "\n",
             encoding="utf-8",
         )
 
@@ -199,12 +199,12 @@ class TestCascadeLimiterFileBased:
 
     def test_depth_limiter_blocks_on_exceeded(self, tmp_path: Path) -> None:
         """depth超過でFalseを返す。"""
-        with patch("core.cascade_limiter.load_config") as mock_cfg:
+        with patch("core.messaging.cascade_limiter.load_config") as mock_cfg:
             mock_cfg.return_value = MagicMock()
             mock_cfg.return_value.heartbeat.depth_window_s = 600
             mock_cfg.return_value.heartbeat.max_depth = 3
 
-            from core.cascade_limiter import ConversationDepthLimiter
+            from core.messaging.cascade_limiter import ConversationDepthLimiter
 
             limiter = ConversationDepthLimiter(window_s=600, max_depth=3)
 
@@ -228,12 +228,12 @@ class TestCascadeLimiterFileBased:
 
     def test_depth_limiter_allows_under_limit(self, tmp_path: Path) -> None:
         """limit内でTrueを返す。"""
-        with patch("core.cascade_limiter.load_config") as mock_cfg:
+        with patch("core.messaging.cascade_limiter.load_config") as mock_cfg:
             mock_cfg.return_value = MagicMock()
             mock_cfg.return_value.heartbeat.depth_window_s = 600
             mock_cfg.return_value.heartbeat.max_depth = 6
 
-            from core.cascade_limiter import ConversationDepthLimiter
+            from core.messaging.cascade_limiter import ConversationDepthLimiter
 
             limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
 
@@ -256,12 +256,12 @@ class TestCascadeLimiterFileBased:
 
     def test_depth_limiter_fail_open_on_missing_log(self, tmp_path: Path) -> None:
         """アクティビティログがない場合はTrue（fail-open）を返す。"""
-        with patch("core.cascade_limiter.load_config") as mock_cfg:
+        with patch("core.messaging.cascade_limiter.load_config") as mock_cfg:
             mock_cfg.return_value = MagicMock()
             mock_cfg.return_value.heartbeat.depth_window_s = 600
             mock_cfg.return_value.heartbeat.max_depth = 3
 
-            from core.cascade_limiter import ConversationDepthLimiter
+            from core.messaging.cascade_limiter import ConversationDepthLimiter
 
             limiter = ConversationDepthLimiter(window_s=600, max_depth=3)
 
@@ -295,7 +295,10 @@ class TestCollectRecentOutbound:
         ts2 = (now_jst() - timedelta(minutes=15)).isoformat()
 
         entries = [
-            json.dumps({"ts": ts1, "type": "channel_post", "content": "Hello general", "channel": "general"}, ensure_ascii=False),
+            json.dumps(
+                {"ts": ts1, "type": "channel_post", "content": "Hello general", "channel": "general"},
+                ensure_ascii=False,
+            ),
             json.dumps({"ts": ts2, "type": "message_sent", "content": "Hi bob", "to": "bob"}, ensure_ascii=False),
         ]
         log_file.write_text("\n".join(entries) + "\n", encoding="utf-8")

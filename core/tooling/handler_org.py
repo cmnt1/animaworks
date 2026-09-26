@@ -16,7 +16,7 @@ from core.tooling.handler_subordinate_control import SubordinateControlMixin
 
 if TYPE_CHECKING:
     from core.memory.activity.logger import ActivityLogger
-    from core.messenger import Messenger
+    from core.messaging.messenger import Messenger
 
 
 class OrgToolsMixin(DashboardMixin, DelegationMixin, SubordinateControlMixin, CreateAnimaMixin):

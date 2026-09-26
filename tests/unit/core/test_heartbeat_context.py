@@ -9,6 +9,7 @@ Covers:
 - A-3: Non-HEARTBEAT_OK heartbeat results are recorded to episodes
 - B-1: build_system_prompt() uses emphasized header for non-idle current_state
 """
+
 from __future__ import annotations
 
 import json
@@ -37,11 +38,14 @@ def _make_cycle_result(**kwargs) -> CycleResult:
 
 def _make_digital_anima(anima_dir: Path, shared_dir: Path):
     """Create a DigitalAnima with all heavy deps mocked."""
-    with patch("core.anima.AgentCore"), \
-         patch("core.anima.MemoryManager") as MockMM, \
-         patch("core.anima.Messenger"):
+    with (
+        patch("core.anima.digital_anima.AgentCore"),
+        patch("core.anima.digital_anima.MemoryManager") as MockMM,
+        patch("core.anima.digital_anima.Messenger"),
+    ):
         MockMM.return_value.read_model_config.return_value = MagicMock()
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
+
         return DigitalAnima(anima_dir, shared_dir)
 
 
@@ -111,11 +115,14 @@ class TestLoadRecentHeartbeatSummary:
         anima_dir.mkdir(parents=True)
         (anima_dir / "identity.md").write_text("# Bob", encoding="utf-8")
 
-        with patch("core.memory.manager.get_company_dir", return_value=tmp_path / "company"), \
-             patch("core.memory.manager.get_common_skills_dir", return_value=tmp_path / "common_skills"), \
-             patch("core.memory.manager.get_common_knowledge_dir", return_value=tmp_path / "common_knowledge"), \
-             patch("core.memory.manager.get_shared_dir", return_value=tmp_path / "shared"):
+        with (
+            patch("core.memory.manager.get_company_dir", return_value=tmp_path / "company"),
+            patch("core.memory.manager.get_common_skills_dir", return_value=tmp_path / "common_skills"),
+            patch("core.memory.manager.get_common_knowledge_dir", return_value=tmp_path / "common_knowledge"),
+            patch("core.memory.manager.get_shared_dir", return_value=tmp_path / "shared"),
+        ):
             from core.memory.manager import MemoryManager
+
             mm = MemoryManager(anima_dir)
 
         result = mm.load_recent_heartbeat_summary()
@@ -131,22 +138,31 @@ class TestLoadRecentHeartbeatSummary:
 
         entries = []
         for i in range(3):
-            entries.append(json.dumps({
-                "timestamp": f"2026-02-17T{10 + i:02d}:00:00",
-                "trigger": "heartbeat",
-                "action": "checked",
-                "summary": f"Performed action {i}",
-                "duration_ms": 100 + i,
-            }, ensure_ascii=False))
+            entries.append(
+                json.dumps(
+                    {
+                        "timestamp": f"2026-02-17T{10 + i:02d}:00:00",
+                        "trigger": "heartbeat",
+                        "action": "checked",
+                        "summary": f"Performed action {i}",
+                        "duration_ms": 100 + i,
+                    },
+                    ensure_ascii=False,
+                )
+            )
         (history_dir / f"{today_local().isoformat()}.jsonl").write_text(
-            "\n".join(entries) + "\n", encoding="utf-8",
+            "\n".join(entries) + "\n",
+            encoding="utf-8",
         )
 
-        with patch("core.memory.manager.get_company_dir", return_value=tmp_path / "company"), \
-             patch("core.memory.manager.get_common_skills_dir", return_value=tmp_path / "common_skills"), \
-             patch("core.memory.manager.get_common_knowledge_dir", return_value=tmp_path / "common_knowledge"), \
-             patch("core.memory.manager.get_shared_dir", return_value=tmp_path / "shared"):
+        with (
+            patch("core.memory.manager.get_company_dir", return_value=tmp_path / "company"),
+            patch("core.memory.manager.get_common_skills_dir", return_value=tmp_path / "common_skills"),
+            patch("core.memory.manager.get_common_knowledge_dir", return_value=tmp_path / "common_knowledge"),
+            patch("core.memory.manager.get_shared_dir", return_value=tmp_path / "shared"),
+        ):
             from core.memory.manager import MemoryManager
+
             mm = MemoryManager(anima_dir)
 
         result = mm.load_recent_heartbeat_summary()
@@ -167,31 +183,44 @@ class TestLoadRecentHeartbeatSummary:
         history_dir.mkdir(parents=True)
 
         entries = [
-            json.dumps({
-                "timestamp": "2026-02-17T10:00:00",
-                "action": "checked",
-                "summary": "HEARTBEAT_OK: nothing to do",
-            }, ensure_ascii=False),
-            json.dumps({
-                "timestamp": "2026-02-17T11:00:00",
-                "action": "responded",
-                "summary": "Replied to user message about deployment",
-            }, ensure_ascii=False),
-            json.dumps({
-                "timestamp": "2026-02-17T12:00:00",
-                "action": "checked",
-                "summary": "HEARTBEAT_OK",
-            }, ensure_ascii=False),
+            json.dumps(
+                {
+                    "timestamp": "2026-02-17T10:00:00",
+                    "action": "checked",
+                    "summary": "HEARTBEAT_OK: nothing to do",
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "timestamp": "2026-02-17T11:00:00",
+                    "action": "responded",
+                    "summary": "Replied to user message about deployment",
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "timestamp": "2026-02-17T12:00:00",
+                    "action": "checked",
+                    "summary": "HEARTBEAT_OK",
+                },
+                ensure_ascii=False,
+            ),
         ]
         (history_dir / f"{today_local().isoformat()}.jsonl").write_text(
-            "\n".join(entries) + "\n", encoding="utf-8",
+            "\n".join(entries) + "\n",
+            encoding="utf-8",
         )
 
-        with patch("core.memory.manager.get_company_dir", return_value=tmp_path / "company"), \
-             patch("core.memory.manager.get_common_skills_dir", return_value=tmp_path / "common_skills"), \
-             patch("core.memory.manager.get_common_knowledge_dir", return_value=tmp_path / "common_knowledge"), \
-             patch("core.memory.manager.get_shared_dir", return_value=tmp_path / "shared"):
+        with (
+            patch("core.memory.manager.get_company_dir", return_value=tmp_path / "company"),
+            patch("core.memory.manager.get_common_skills_dir", return_value=tmp_path / "common_skills"),
+            patch("core.memory.manager.get_common_knowledge_dir", return_value=tmp_path / "common_knowledge"),
+            patch("core.memory.manager.get_shared_dir", return_value=tmp_path / "shared"),
+        ):
             from core.memory.manager import MemoryManager
+
             mm = MemoryManager(anima_dir)
 
         result = mm.load_recent_heartbeat_summary()
@@ -212,20 +241,29 @@ class TestLoadRecentHeartbeatSummary:
         # Write 10 entries
         entries = []
         for i in range(10):
-            entries.append(json.dumps({
-                "timestamp": f"2026-02-17T{10 + i:02d}:00:00",
-                "action": "checked",
-                "summary": f"Activity number {i}",
-            }, ensure_ascii=False))
+            entries.append(
+                json.dumps(
+                    {
+                        "timestamp": f"2026-02-17T{10 + i:02d}:00:00",
+                        "action": "checked",
+                        "summary": f"Activity number {i}",
+                    },
+                    ensure_ascii=False,
+                )
+            )
         (history_dir / f"{today_local().isoformat()}.jsonl").write_text(
-            "\n".join(entries) + "\n", encoding="utf-8",
+            "\n".join(entries) + "\n",
+            encoding="utf-8",
         )
 
-        with patch("core.memory.manager.get_company_dir", return_value=tmp_path / "company"), \
-             patch("core.memory.manager.get_common_skills_dir", return_value=tmp_path / "common_skills"), \
-             patch("core.memory.manager.get_common_knowledge_dir", return_value=tmp_path / "common_knowledge"), \
-             patch("core.memory.manager.get_shared_dir", return_value=tmp_path / "shared"):
+        with (
+            patch("core.memory.manager.get_company_dir", return_value=tmp_path / "company"),
+            patch("core.memory.manager.get_common_skills_dir", return_value=tmp_path / "common_skills"),
+            patch("core.memory.manager.get_common_knowledge_dir", return_value=tmp_path / "common_knowledge"),
+            patch("core.memory.manager.get_shared_dir", return_value=tmp_path / "shared"),
+        ):
             from core.memory.manager import MemoryManager
+
             mm = MemoryManager(anima_dir)
 
         # With limit=3, only last 3 entries should appear
@@ -250,20 +288,20 @@ class TestBuildSystemPromptCurrentState:
         """When state is 'status: idle', uses the '## 現在の状態' header."""
         mock_memory.read_current_state.return_value = "status: idle"
 
-        _SECTIONS = (
-            "[current_state_header]: ## 現在の状態\n"
-            "[pending_tasks_header]: ## 未完了タスク\n"
-        )
+        _SECTIONS = "[current_state_header]: ## 現在の状態\n[pending_tasks_header]: ## 未完了タスク\n"
 
         def _mock_lp(name: str, **kwargs) -> str:
             if name == "builder/sections":
                 return _SECTIONS
             return "prompt section"
 
-        with patch("core.prompt.builder.load_prompt", side_effect=_mock_lp), \
-             patch("core.prompt.builder._discover_other_animas", return_value=[]), \
-             patch("core.prompt.builder._build_org_context", return_value=""):
+        with (
+            patch("core.prompt.builder.load_prompt", side_effect=_mock_lp),
+            patch("core.prompt.builder._discover_other_animas", return_value=[]),
+            patch("core.prompt.builder._build_org_context", return_value=""),
+        ):
             from core.prompt.builder import build_system_prompt
+
             result = build_system_prompt(mock_memory)
 
         assert "## 現在の状態" in result
@@ -286,10 +324,13 @@ class TestBuildSystemPromptCurrentState:
                 )
             return "prompt section"
 
-        with patch("core.prompt.builder.load_prompt", side_effect=_mock_lp), \
-             patch("core.prompt.builder._discover_other_animas", return_value=[]), \
-             patch("core.prompt.builder._build_org_context", return_value=""):
+        with (
+            patch("core.prompt.builder.load_prompt", side_effect=_mock_lp),
+            patch("core.prompt.builder._discover_other_animas", return_value=[]),
+            patch("core.prompt.builder._build_org_context", return_value=""),
+        ):
             from core.prompt.builder import build_system_prompt
+
             result = build_system_prompt(mock_memory)
 
         assert "⚠️ 進行中タスク" in result
@@ -314,6 +355,7 @@ class TestBuildSystemPromptHBSummary:
     def test_section9_removed_from_builder(self):
         """_load_recent_activity_summary no longer exists in builder module."""
         import core.prompt.builder as builder_mod
+
         assert not hasattr(builder_mod, "_load_recent_activity_summary")
 
 
@@ -330,11 +372,13 @@ class TestHeartbeatEpisodeRecording:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger") as MockMsg, \
-             patch("core._anima_heartbeat.load_prompt", return_value="prompt"), \
-             patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsg,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMM.return_value.read_heartbeat_config.return_value = "checklist"
             MockMM.return_value.append_episode = MagicMock()
@@ -342,7 +386,8 @@ class TestHeartbeatEpisodeRecording:
             # Mock ConversationMemory.load to return empty state
             MockConv.return_value.load.return_value = MagicMock(turns=[])
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
             dp.agent.replied_to = set()
@@ -372,11 +417,13 @@ class TestHeartbeatEpisodeRecording:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger") as MockMsg, \
-             patch("core._anima_heartbeat.load_prompt", return_value="prompt"), \
-             patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsg,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMM.return_value.read_heartbeat_config.return_value = "checklist"
             MockMM.return_value.append_episode = MagicMock()
@@ -384,7 +431,8 @@ class TestHeartbeatEpisodeRecording:
             # Mock ConversationMemory.load to return empty state
             MockConv.return_value.load.return_value = MagicMock(turns=[])
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
             dp.agent.replied_to = set()
@@ -426,11 +474,13 @@ class TestHeartbeatDialogueContext:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger") as MockMsg, \
-             patch("core._anima_heartbeat.load_prompt", return_value="prompt"), \
-             patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsg,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMM.return_value.read_heartbeat_config.return_value = "checklist"
             MockMM.return_value.append_episode = MagicMock()
@@ -447,7 +497,8 @@ class TestHeartbeatDialogueContext:
             mock_state.turns = [turn1, turn2]
             MockConv.return_value.load.return_value = mock_state
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
             dp.agent.replied_to = set()
@@ -484,11 +535,13 @@ class TestHeartbeatDialogueContext:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger") as MockMsg, \
-             patch("core._anima_heartbeat.load_prompt", return_value="prompt"), \
-             patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsg,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMM.return_value.read_heartbeat_config.return_value = "checklist"
             MockMM.return_value.append_episode = MagicMock()
@@ -499,7 +552,8 @@ class TestHeartbeatDialogueContext:
             mock_state.turns = []
             MockConv.return_value.load.return_value = mock_state
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
             dp.agent.replied_to = set()
@@ -532,11 +586,13 @@ class TestHeartbeatDialogueContext:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger") as MockMsg, \
-             patch("core._anima_heartbeat.load_prompt", return_value="prompt"), \
-             patch("core._anima_heartbeat.ConversationMemory") as MockConv:
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsg,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.heartbeat.ConversationMemory") as MockConv,
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMM.return_value.read_heartbeat_config.return_value = "checklist"
             MockMM.return_value.append_episode = MagicMock()
@@ -553,7 +609,8 @@ class TestHeartbeatDialogueContext:
             mock_state.turns = turns
             MockConv.return_value.load.return_value = mock_state
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.reset_reply_tracking = MagicMock()
             dp.agent.replied_to = set()

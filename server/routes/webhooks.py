@@ -26,7 +26,7 @@ from fastapi.responses import HTMLResponse
 from core.config.models import load_config
 from core.i18n import t
 from core.integrations._base import ToolConfigError, get_credential
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.paths import get_data_dir
 
 logger = logging.getLogger("animaworks.webhooks")

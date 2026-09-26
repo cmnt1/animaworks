@@ -21,8 +21,8 @@ logger = logging.getLogger("animaworks")
 
 def cmd_board_read(args: argparse.Namespace) -> None:
     """Read recent messages from a shared channel."""
-    from core.init import ensure_runtime_dir
-    from core.messenger import Messenger
+    from core.infra.runtime_init import ensure_runtime_dir
+    from core.messaging.messenger import Messenger
     from core.paths import get_shared_dir
 
     ensure_runtime_dir()
@@ -44,8 +44,8 @@ def cmd_board_read(args: argparse.Namespace) -> None:
 def cmd_board_post(args: argparse.Namespace) -> None:
     """Post a message to a shared channel."""
     from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
-    from core.init import ensure_runtime_dir
-    from core.messenger import Messenger
+    from core.infra.runtime_init import ensure_runtime_dir
+    from core.messaging.messenger import Messenger
     from core.paths import get_shared_dir
 
     ensure_runtime_dir()
@@ -72,8 +72,8 @@ def cmd_board_post(args: argparse.Namespace) -> None:
 
 def cmd_board_dm_history(args: argparse.Namespace) -> None:
     """Read DM history with a specific peer."""
-    from core.init import ensure_runtime_dir
-    from core.messenger import Messenger
+    from core.infra.runtime_init import ensure_runtime_dir
+    from core.messaging.messenger import Messenger
     from core.paths import get_shared_dir
 
     ensure_runtime_dir()

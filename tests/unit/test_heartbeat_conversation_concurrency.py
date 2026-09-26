@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 if TYPE_CHECKING:
-    from core.anima import DigitalAnima
+    from core.anima.digital_anima import DigitalAnima
     from core.tooling.handler import ToolHandler
 
 
@@ -64,10 +64,10 @@ def anima(tmp_path: Path) -> DigitalAnima:
         mock_agent._tool_handler = MagicMock()
         return mock_agent
 
-    with patch("core.anima.AgentCore") as mock_agent_cls:
+    with patch("core.anima.digital_anima.AgentCore") as mock_agent_cls:
         mock_agent_cls.side_effect = [_mock_agent(), _mock_agent(), _mock_agent()]
 
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         return DigitalAnima(anima_dir, shared_dir)
 
@@ -290,9 +290,9 @@ class TestConcurrentLockAcquisition:
 
     def test_agent_entrypoints_use_session_lock(self) -> None:
         """Chat/background/inbox entrypoints should guard AgentCore mutable state."""
-        from core._anima_inbox import InboxMixin
-        from core._anima_lifecycle import LifecycleMixin
-        from core._anima_messaging import MessagingMixin
+        from core.anima.inbox import InboxMixin
+        from core.anima.lifecycle import LifecycleMixin
+        from core.anima.messaging import MessagingMixin
         from core.tasks.pending_executor import PendingTaskExecutor
 
         def guarded(obj, *helpers) -> bool:

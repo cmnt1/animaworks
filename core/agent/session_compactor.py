@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from core.anima import DigitalAnima
+    from core.anima.digital_anima import DigitalAnima
     from core.memory.activity.models import ActivityEntry
 
 logger = logging.getLogger("animaworks.session_compactor")

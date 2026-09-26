@@ -40,7 +40,7 @@
 
 1. **送信先の名前・宛先形式を確認する**
    - `send_message` の `to` パラメータが意図した相手に解決されるか確認する
-   - 実装（`core/outbound.py` `resolve_recipient`）の解決順は概ね次のとおり:
+   - 実装（`core/messaging/outbound.py` `resolve_recipient`）の解決順は概ね次のとおり:
      1. 既知 Anima 名との**完全一致**（大文字小文字区別）→ 内部
      2. `config.json` `external_messaging.user_aliases` の**エイリアス**（大文字小文字無視）→ 外部（preferred_channel）
      3. `slack:USERID` / `chatwork:ROOMID` → 外部直接
@@ -387,7 +387,7 @@ send_message(
 
 - `send_message` や `post_channel` を実行したらエラーが返された
 - `GlobalOutboundLimitExceeded: 1時間あたりの送信上限（N通）に到達しています...` または 24 時間版の同種メッセージが表示された
-- `GlobalOutboundLimitExceeded: アクティビティログ読み取り失敗のため送信をブロックしました` と表示された（`core/cascade_limiter.py` — 送信者の `activity_log` が読めないとき）
+- `GlobalOutboundLimitExceeded: アクティビティログ読み取り失敗のため送信をブロックしました` と表示された（`core/messaging/cascade_limiter.py` — 送信者の `activity_log` が読めないとき）
 - `ConversationDepthExceeded: {相手}との会話が10分間に6ターンに達しました...` と表示された
 
 ### 原因
@@ -466,7 +466,7 @@ send_message(
 
 **1. Priming（自動想起）のティア** — `core/prompt/builder.py` の `resolve_prompt_tier(context_window)` が、推定コンテキストウィンドウからティアを決める。ウィンドウの解決順は `core/prompt/context.py` `resolve_context_window`: **`~/.animaworks/models.json`（SSoT）** → 非推奨の `config.json` `model_context_windows` → `MODEL_CONTEXT_WINDOWS` 等のコード内フォールバック → 既定 128k。
 
-| ティア | 条件（`context_window`） | Priming の扱い（`core/_agent_priming.py`） |
+| ティア | 条件（`context_window`） | Priming の扱い（`core/agent/priming.py`） |
 |--------|--------------------------|---------------------------------------------|
 | full | **≥ 128_000** | 6 チャネル分を `format_priming_section` で整形しそのまま載せる |
 | standard | **≥ 32_000 かつ < 128_000** | 上記と同様に取得したうえで、**整形後テキストが 4000 文字を超える場合は先頭 4000 文字 + 省略マーカー** |
@@ -475,7 +475,7 @@ send_message(
 
 ハートビート／cron 用のクエリ文は、直近の `[REFLECTION]` を activity_log から集めたテキストになる（長いテンプレ全文ではない）。
 
-**2. システムプロンプト本体の収縮** — `core/_agent_priming.py` `_fit_prompt_to_context_window`: システム＋ユーザーの推定トークン + ツールスキーマ overhead が **コンテキストウィンドウの約 80%** を超えると、`build_system_prompt` を **システムバジェット 75% → 50% → 25%** と段階的に縮めて再構築する。**25% 以下の段**では **Priming ブロックと人間向け通知ブロックを空にして**から当てる。それでも収まらなければシステムプロンプトを**バイト単位でハードトランケート**する。
+**2. システムプロンプト本体の収縮** — `core/agent/priming.py` `_fit_prompt_to_context_window`: システム＋ユーザーの推定トークン + ツールスキーマ overhead が **コンテキストウィンドウの約 80%** を超えると、`build_system_prompt` を **システムバジェット 75% → 50% → 25%** と段階的に縮めて再構築する。**25% 以下の段**では **Priming ブロックと人間向け通知ブロックを空にして**から当てる。それでも収まらなければシステムプロンプトを**バイト単位でハードトランケート**する。
 
 ### 対処手順
 

@@ -38,13 +38,13 @@ def resolve_denied_roots(roots: Iterable[str | Path]) -> tuple[Path, ...]:
 def company_shared_write_root(anima_dir: Path) -> Path | None:
     """Return the assigned company's canonical writable ``shared`` root.
 
-    Membership is resolved through :func:`core.company.get_company`, matching
+    Membership is resolved through :func:`core.org.company.get_company`, matching
     the company deny policy.  Both the company directory and ``shared`` itself
     must remain direct children of their expected roots so a malformed
     membership or symlink cannot turn this narrow grant into an arbitrary
     filesystem write.
     """
-    from core.company import get_company
+    from core.org.company import get_company
 
     anima_dir = Path(anima_dir)
     company = get_company(anima_dir.name, animas_dir=anima_dir.parent)
@@ -128,7 +128,7 @@ def company_denied_roots(anima_dir: Path) -> tuple[Path, ...]:
     changes take effect without a server restart.  Unassigned Animas retain
     the legacy unrestricted behavior.
     """
-    from core.company import get_company
+    from core.org.company import get_company
 
     company = get_company(anima_dir.name, animas_dir=anima_dir.parent)
     if company is None:
@@ -255,7 +255,7 @@ def resolve_memory_source_path(anima_dir: Path, source: str) -> Path | None:
     if namespace == "shared":
         return (get_data_dir() / path).resolve()
     if namespace == "companies":
-        from core.company_resources import get_company_resources, infer_data_dir
+        from core.org.company_resources import get_company_resources, infer_data_dir
 
         resources = get_company_resources(anima_dir)
         if resources is None or path.parts[:2] != ("companies", resources.name):

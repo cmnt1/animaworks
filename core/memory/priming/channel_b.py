@@ -15,7 +15,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from core.file_access_policy import find_denied_root, load_denied_roots
+from core.config.file_access_policy import find_denied_root, load_denied_roots
 from core.integrations._async_compat import run_sync
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items
 from core.time_utils import ensure_aware, now_local, today_local
@@ -233,7 +233,7 @@ def read_shared_channels(
     result: list[ActivityEntry] = []
 
     try:
-        from core.messenger import is_channel_member
+        from core.messaging.messenger import is_channel_member
 
         for unresolved_channel_file in sorted(resolved_channels_dir.glob("*.jsonl")):
             channel_file = _resolved_readable_path(unresolved_channel_file, effective_denied_roots)

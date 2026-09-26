@@ -107,7 +107,7 @@ def create_users_router() -> APIRouter:
 
         # Reject usernames that collide with anima names (exact match)
         try:
-            from core.anima_roster import is_anima_name, refresh_anima_roster
+            from core.anima.roster import is_anima_name, refresh_anima_roster
 
             refresh_anima_roster()
             if is_anima_name(body.username):

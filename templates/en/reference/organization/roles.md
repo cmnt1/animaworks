@@ -195,7 +195,7 @@ An Anima with neither supervisor nor subordinates; operates autonomously. Suitab
 Specifying a professional role with `--role` when creating an Anima is supported **only via the Markdown character sheet**.
 
 - Example command: `animaworks anima create --from-md PATH [--role ROLE]` (same for the deprecated `create-anima`)
-- With `create_from_template` (`--template`) and `create_blank` (`--name` only), **neither** merging from `_shared/roles/<role>/defaults.json` **nor** overwrite-copying `permissions.json` / `specialty_prompt.md` from `templates/{locale}/roles/<role>/` occurs. The former copies `anima_templates/{name}` as-is; the latter copies `_blank` only. In both cases, if `status.json` is missing after copy, `_ensure_status_json` adds a minimal file `{"enabled": true}` (the current template tree does not bundle `status.json`) (`core/anima_factory.py`).
+- With `create_from_template` (`--template`) and `create_blank` (`--name` only), **neither** merging from `_shared/roles/<role>/defaults.json` **nor** overwrite-copying `permissions.json` / `specialty_prompt.md` from `templates/{locale}/roles/<role>/` occurs. The former copies `anima_templates/{name}` as-is; the latter copies `_blank` only. In both cases, if `status.json` is missing after copy, `_ensure_status_json` adds a minimal file `{"enabled": true}` (the current template tree does not bundle `status.json`) (`core/anima/factory.py`).
 
 ### Character sheet heading aliases (normalization)
 
@@ -217,7 +217,7 @@ Role templates are split between `templates/_shared` and locale-specific paths:
 | `templates/{locale}/roles/{role}/specialty_prompt.md` | Per-role behavioral guidance | ja / en |
 
 `locale` comes from `locale` in `config.json`, defaulting to `ja`.
-`_get_roles_dir()` (`core/anima_factory.py`) looks under `templates/{locale}/roles` and
+`_get_roles_dir()` (`core/anima/factory.py`) looks under `templates/{locale}/roles` and
 **falls back to `en`, then `ja`, if that path does not exist**.
 
 `defaults.json` lives at `templates/_shared/roles/<role>/defaults.json` and is shared across locales. Fields:
@@ -267,7 +267,7 @@ Messaging caps (rate-related keys inside `defaults.json`):
 1. **At creation** (`create_from_md`), order is:
    - `_apply_defaults_from_sheet()` … from the character sheet to `identity.md` / `injection.md` / (if a permissions section exists) `permissions.md` → migrate to `permissions.json`
    - `_apply_role_defaults()` … **overwrite-copy** the role's `permissions.json` and `specialty_prompt.md` (sheet-derived `permissions.json` is overwritten by the role template)
-   - `_create_status_json()` … read all keys in the table above from `SHARED_ROLES_DIR` (`_shared/roles/<role>/defaults.json`), override with sheet "model" / "credential" when present, and write `status.json`. `execution_mode` is written only when the sheet's execution-mode field has a value (`Execution Mode` on English sheets, `実行モード` on Japanese; see `FIELD_NAMES` in `core/anima_factory.py`); if omitted, the key is left out and pattern resolution in `models.json` etc. applies (`_create_status_json` in `core/anima_factory.py`).
+   - `_create_status_json()` … read all keys in the table above from `SHARED_ROLES_DIR` (`_shared/roles/<role>/defaults.json`), override with sheet "model" / "credential" when present, and write `status.json`. `execution_mode` is written only when the sheet's execution-mode field has a value (`Execution Mode` on English sheets, `実行モード` on Japanese; see `FIELD_NAMES` in `core/anima/factory.py`); if omitted, the key is left out and pattern resolution in `models.json` etc. applies (`_create_status_json` in `core/anima/factory.py`).
 2. **On role change** (`animaworks anima set-role`): `_apply_role_defaults()` recopies `permissions.json` and `specialty_prompt.md`. Only `model`, `context_threshold`, `max_turns`, `max_chains`, and `conversation_history_threshold` are merged from `defaults.json` into `status.json`. **`background_model` and `max_outbound_*` are not updated by set-role** (edit `status.json` manually if needed). `--status-only` updates only the `role` field and those numeric keys and does not touch template files. `--no-restart` skips API-triggered automatic restart. The CLI success message mentions `permissions.md`, but what is actually overwritten is **`permissions.json`** (`cmd_anima_set_role` in `cli/commands/anima_mgmt.py`).
 
 ### Prompt injection

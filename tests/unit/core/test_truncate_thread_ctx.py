@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-"""Unit tests for _truncate_with_thread_ctx in core._anima_inbox."""
+"""Unit tests for _truncate_with_thread_ctx in core.anima.inbox."""
 
 import pytest
 
-from core._anima_inbox import (
+from core.anima.inbox import (
     _MSG_BODY_BUDGET,
     _RE_THREAD_CTX,
     _THREAD_CTX_BUDGET,
@@ -182,7 +182,7 @@ class TestRouteThreadReplyFallback:
 
         fake_messenger = MagicMock()
         fake_messenger.return_value.receive_external = lambda **kw: received_content.append(kw["content"])
-        monkeypatch.setattr("core.messenger.Messenger", fake_messenger)
+        monkeypatch.setattr("core.messaging.messenger.Messenger", fake_messenger)
 
         event = {
             "thread_ts": "123.456",

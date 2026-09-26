@@ -166,7 +166,7 @@ def validate_task_payloads(
 ) -> list[dict[str, Any]]:
     """Validate the whole batch before any task becomes visible to a worker."""
     from core.config.model_catalog import validate_model_override
-    from core.workspace import resolve_workspace
+    from core.org.workspace import resolve_workspace
 
     if not payloads:
         raise ValueError("At least one task is required")

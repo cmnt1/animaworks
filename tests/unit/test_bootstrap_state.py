@@ -4,7 +4,7 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
-from core.bootstrap_state import (
+from core.anima.bootstrap_state import (
     STATE_COMPLETED,
     STATE_NEEDS_REPAIR,
     STATE_PENDING_USER_INPUT,
@@ -86,7 +86,7 @@ def test_finalize_keeps_bootstrap_when_identity_incomplete(tmp_path: Path) -> No
 
 def test_interactive_bootstrap_completion_overrides_pending_state(tmp_path: Path) -> None:
     anima_dir = _make_anima_dir(tmp_path)
-    from core.bootstrap_state import initialize_bootstrap_state
+    from core.anima.bootstrap_state import initialize_bootstrap_state
 
     initialize_bootstrap_state(anima_dir)
     (anima_dir / "identity.md").write_text("# Midori\n\nDefined identity\n", encoding="utf-8")
@@ -101,7 +101,7 @@ def test_interactive_bootstrap_completion_overrides_pending_state(tmp_path: Path
 
 def test_missing_interactive_bootstrap_prompt_needs_repair(tmp_path: Path) -> None:
     anima_dir = _make_anima_dir(tmp_path)
-    from core.bootstrap_state import initialize_bootstrap_state
+    from core.anima.bootstrap_state import initialize_bootstrap_state
 
     initialize_bootstrap_state(anima_dir)
     (anima_dir / "bootstrap.md").unlink()
@@ -236,7 +236,7 @@ def test_repair_bootstrap_complete_command_finishes_defined_runtime(tmp_path: Pa
 
 
 def test_interactive_profile_remains_resumable_during_incremental_writes(tmp_path: Path) -> None:
-    from core.bootstrap_state import initialize_bootstrap_state
+    from core.anima.bootstrap_state import initialize_bootstrap_state
 
     anima_dir = _make_anima_dir(tmp_path)
     initialize_bootstrap_state(anima_dir)

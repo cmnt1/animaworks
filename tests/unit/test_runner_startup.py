@@ -238,7 +238,7 @@ class TestAnimaRunnerPingReadiness:
     @pytest.mark.asyncio
     async def test_ipc_ping_stays_responsive_during_slow_startup_inbox(self, tmp_path):
         """Immediate inbox memory/RAG work must not block IPC after startup ack."""
-        from core._anima_inbox import _append_episode_off_loop
+        from core.anima.inbox import _append_episode_off_loop
 
         runner = self._make_runner(tmp_path)
         runner._expects_startup_ack = True

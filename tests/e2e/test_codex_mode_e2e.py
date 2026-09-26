@@ -54,7 +54,7 @@ class TestExecutorCreation:
         mock_executor_instance = MagicMock()
         mock_executor_cls.return_value = mock_executor_instance
 
-        with patch("core.agent.AgentCore._create_executor") as mock_create:
+        with patch("core.agent.agent_core.AgentCore._create_executor") as mock_create:
             mock_create.return_value = mock_executor_instance
             agent._executor = agent._create_executor()
 

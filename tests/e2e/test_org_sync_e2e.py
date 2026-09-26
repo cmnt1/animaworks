@@ -14,6 +14,7 @@ status.json on disk and config.json, including:
 These are integration tests that exercise real filesystem operations and
 the actual code paths without mocking core functionality.
 """
+
 from __future__ import annotations
 
 import json
@@ -22,16 +23,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.anima.factory import create_from_md
 from core.config.models import (
-    AnimaWorksConfig,
     AnimaModelConfig,
+    AnimaWorksConfig,
     invalidate_cache,
     load_config,
     save_config,
 )
-from core.org_sync import sync_org_structure
-from core.anima_factory import create_from_md
-
+from core.org.org_sync import sync_org_structure
 
 # ── Fixtures ─────────────────────────────────────────────────────
 
@@ -75,7 +75,8 @@ def _make_anima(
     (anima_dir / "identity.md").write_text(identity_content, encoding="utf-8")
     if status_json is not None:
         (anima_dir / "status.json").write_text(
-            json.dumps(status_json, ensure_ascii=False), encoding="utf-8",
+            json.dumps(status_json, ensure_ascii=False),
+            encoding="utf-8",
         )
     return anima_dir
 
@@ -87,7 +88,8 @@ class TestRegisterAnimaSupervisor:
     """Verify register_anima_in_config reads supervisor from identity.md."""
 
     def test_register_picks_up_supervisor_from_identity_md(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """When identity.md contains '| 上司 | sakura |',
         register_anima_in_config should set supervisor='sakura' in config.json.
@@ -107,11 +109,7 @@ class TestRegisterAnimaSupervisor:
         anima_dir = animas_dir / "hinata"
         anima_dir.mkdir()
         (anima_dir / "identity.md").write_text(
-            "# hinata\n\n"
-            "| 項目 | 設定 |\n"
-            "|------|------|\n"
-            "| 上司 | sakura |\n"
-            "| 誕生日 | 3月21日 |\n",
+            "# hinata\n\n| 項目 | 設定 |\n|------|------|\n| 上司 | sakura |\n| 誕生日 | 3月21日 |\n",
             encoding="utf-8",
         )
 
@@ -125,7 +123,8 @@ class TestRegisterAnimaSupervisor:
         assert cfg.animas["hinata"].supervisor == "sakura"
 
     def test_register_picks_up_supervisor_from_status_json(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """When status.json has supervisor field,
         register_anima_in_config should read it.
@@ -159,7 +158,8 @@ class TestRegisterAnimaSupervisor:
         assert cfg.animas["kotoha"].supervisor == "sakura"
 
     def test_register_is_noop_for_existing_anima(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """If the anima already exists in config, register should not modify it."""
         from core.config.models import register_anima_in_config
@@ -178,7 +178,8 @@ class TestRegisterAnimaSupervisor:
         anima_dir = animas_dir / "hinata"
         anima_dir.mkdir()
         (anima_dir / "identity.md").write_text(
-            "| 上司 | sakura |\n", encoding="utf-8",
+            "| 上司 | sakura |\n",
+            encoding="utf-8",
         )
 
         register_anima_in_config(data_dir, "hinata")
@@ -189,7 +190,8 @@ class TestRegisterAnimaSupervisor:
         assert cfg.animas["hinata"].supervisor == "rin"
 
     def test_register_with_japanese_supervisor_fullwidth_parens(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Japanese name with full-width parens resolves to English name."""
         from core.config.models import register_anima_in_config
@@ -205,7 +207,8 @@ class TestRegisterAnimaSupervisor:
         anima_dir = animas_dir / "chatbot"
         anima_dir.mkdir()
         (anima_dir / "identity.md").write_text(
-            "| 上司 | 琴葉（kotoha） |\n", encoding="utf-8",
+            "| 上司 | 琴葉（kotoha） |\n",
+            encoding="utf-8",
         )
 
         register_anima_in_config(data_dir, "chatbot")
@@ -263,7 +266,8 @@ class TestSyncOrgStructureRealisticScenario:
 
         # sakura: top-level manager, no supervisor
         _make_anima(
-            animas_dir, "sakura",
+            animas_dir,
+            "sakura",
             "# Identity: sakura\n\n"
             "## 基本プロフィール\n\n"
             "| 項目 | 設定 |\n"
@@ -275,7 +279,8 @@ class TestSyncOrgStructureRealisticScenario:
 
         # kotoha: reports to sakura
         _make_anima(
-            animas_dir, "kotoha",
+            animas_dir,
+            "kotoha",
             "# Identity: kotoha\n\n"
             "## 基本プロフィール\n\n"
             "| 項目 | 設定 |\n"
@@ -286,7 +291,8 @@ class TestSyncOrgStructureRealisticScenario:
 
         # chatwork_checker: reports to kotoha (THIS IS THE BUG - config had null)
         _make_anima(
-            animas_dir, "chatwork_checker",
+            animas_dir,
+            "chatwork_checker",
             "# Identity: chatwork_checker\n\n"
             "| 項目 | 設定 |\n"
             "|------|------|\n"
@@ -296,20 +302,16 @@ class TestSyncOrgStructureRealisticScenario:
 
         # rin: exists on disk but NOT in config.json (no supervisor)
         _make_anima(
-            animas_dir, "rin",
-            "# Identity: rin\n\n"
-            "| 項目 | 設定 |\n"
-            "|------|------|\n"
-            "| 上司 | (なし) |\n"
-            "| 役割 | 総務 |\n",
+            animas_dir,
+            "rin",
+            "# Identity: rin\n\n| 項目 | 設定 |\n|------|------|\n| 上司 | (なし) |\n| 役割 | 総務 |\n",
         )
 
         # aoi: exists on disk but NOT in config.json (no supervisor)
         _make_anima(
-            animas_dir, "aoi",
-            "# Identity: aoi\n\n"
-            "## プロフィール\n"
-            "クリエイティブ担当。\n",
+            animas_dir,
+            "aoi",
+            "# Identity: aoi\n\n## プロフィール\nクリエイティブ担当。\n",
         )
 
         # Act
@@ -317,7 +319,11 @@ class TestSyncOrgStructureRealisticScenario:
 
         # Assert: all animas discovered
         assert set(result.keys()) == {
-            "sakura", "kotoha", "chatwork_checker", "rin", "aoi",
+            "sakura",
+            "kotoha",
+            "chatwork_checker",
+            "rin",
+            "aoi",
         }
 
         # Assert: supervisor values from disk
@@ -349,7 +355,8 @@ class TestSyncOrgStructureRealisticScenario:
         assert cfg.animas["kotoha"].supervisor == "sakura"
 
     def test_sync_updates_config_when_disk_supervisor_differs(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """When disk supervisor differs from config, sync updates config
         because status.json / identity.md is the single source of truth.
@@ -368,7 +375,8 @@ class TestSyncOrgStructureRealisticScenario:
         )
 
         _make_anima(
-            animas_dir, "alice",
+            animas_dir,
+            "alice",
             "| 上司 | new_boss |\n",
         )
 
@@ -396,7 +404,9 @@ class TestServerStartupOrgSync:
     """
 
     def test_create_app_discovers_animas_and_reconciliation_registers_supervisor(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Test that the reconciliation callback in lifespan properly registers
         a new anima with supervisor extracted from identity.md.
@@ -426,10 +436,7 @@ class TestServerStartupOrgSync:
         anima_dir = animas_dir / "newanima"
         anima_dir.mkdir()
         (anima_dir / "identity.md").write_text(
-            "# Identity: newanima\n\n"
-            "| 項目 | 設定 |\n"
-            "|------|------|\n"
-            "| 上司 | sakura |\n",
+            "# Identity: newanima\n\n| 項目 | 設定 |\n|------|------|\n| 上司 | sakura |\n",
             encoding="utf-8",
         )
 
@@ -444,7 +451,9 @@ class TestServerStartupOrgSync:
         assert cfg.animas["newanima"].supervisor == "sakura"
 
     def test_create_app_discovers_existing_animas(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Test that create_app properly discovers animas from the animas directory."""
         data_dir = tmp_path / "animaworks"
@@ -484,7 +493,9 @@ class TestServerStartupOrgSync:
         assert "sakura" in app.state.anima_names
 
     def test_reconciliation_callback_wires_register_anima_in_config(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Verify the lifespan reconciliation callback calls
         register_anima_in_config for newly added animas.
@@ -509,7 +520,8 @@ class TestServerStartupOrgSync:
 
         # Create an anima with supervisor
         _make_anima(
-            animas_dir, "hinata",
+            animas_dir,
+            "hinata",
             "| 上司 | kotoha |\n",
         )
 
@@ -530,6 +542,7 @@ class TestServerStartupOrgSync:
         # registration mechanism directly by calling register_anima_in_config
         # as the callback would.
         from core.config.models import register_anima_in_config
+
         register_anima_in_config(data_dir, "new_hire")
 
         # Since new_hire doesn't exist on disk, supervisor should be None
@@ -541,7 +554,8 @@ class TestServerStartupOrgSync:
         # But for an anima with identity.md on disk, supervisor IS extracted
         invalidate_cache()
         _make_anima(
-            animas_dir, "another_hire",
+            animas_dir,
+            "another_hire",
             "| 上司 | sakura |\n",
         )
         register_anima_in_config(data_dir, "another_hire")
@@ -562,7 +576,9 @@ class TestFullPipelineCreateAndRegister:
     """
 
     def test_create_from_md_then_register_sets_supervisor(
-        self, data_dir: Path, tmp_path: Path,
+        self,
+        data_dir: Path,
+        tmp_path: Path,
     ) -> None:
         """Full pipeline: character sheet with supervisor -> create_from_md ->
         register_anima_in_config -> config.json has supervisor set.
@@ -603,9 +619,7 @@ class TestFullPipelineCreateAndRegister:
         anima_dir = create_from_md(animas_dir, sheet_path)
 
         # Verify status.json was created with supervisor
-        status = json.loads(
-            (anima_dir / "status.json").read_text(encoding="utf-8")
-        )
+        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         assert status["supervisor"] == "sakura"
 
         # Step 2: Register anima in config
@@ -618,7 +632,9 @@ class TestFullPipelineCreateAndRegister:
         assert cfg.animas["testworker"].supervisor == "sakura"
 
     def test_create_from_md_no_supervisor_then_register(
-        self, data_dir: Path, tmp_path: Path,
+        self,
+        data_dir: Path,
+        tmp_path: Path,
     ) -> None:
         """When character sheet has no supervisor (なし),
         register_anima_in_config should set supervisor=None.
@@ -657,9 +673,7 @@ class TestFullPipelineCreateAndRegister:
         anima_dir = create_from_md(animas_dir, sheet_path)
 
         # status.json should have empty string for supervisor (なし -> "")
-        status = json.loads(
-            (anima_dir / "status.json").read_text(encoding="utf-8")
-        )
+        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         assert status["supervisor"] == ""
 
         # Register
@@ -672,7 +686,9 @@ class TestFullPipelineCreateAndRegister:
         assert cfg.animas["toplevel"].supervisor is None
 
     def test_create_from_md_with_japanese_supervisor_fullwidth_parens(
-        self, data_dir: Path, tmp_path: Path,
+        self,
+        data_dir: Path,
+        tmp_path: Path,
     ) -> None:
         """Full pipeline with Japanese supervisor name in full-width parens."""
         from core.config.models import register_anima_in_config
@@ -709,9 +725,7 @@ class TestFullPipelineCreateAndRegister:
         anima_dir = create_from_md(animas_dir, sheet_path)
 
         # status.json stores the raw value
-        status = json.loads(
-            (anima_dir / "status.json").read_text(encoding="utf-8")
-        )
+        status = json.loads((anima_dir / "status.json").read_text(encoding="utf-8"))
         assert status["supervisor"] == "琴葉（kotoha）"
 
         # register_anima_in_config resolves to English name
@@ -723,7 +737,9 @@ class TestFullPipelineCreateAndRegister:
         assert cfg.animas["assistant"].supervisor == "kotoha"
 
     def test_create_multiple_animas_and_sync_builds_full_org(
-        self, data_dir: Path, tmp_path: Path,
+        self,
+        data_dir: Path,
+        tmp_path: Path,
     ) -> None:
         """Create multiple animas from character sheets, register them,
         and verify the full organizational hierarchy in config.json.

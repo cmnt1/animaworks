@@ -21,7 +21,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from core.anima_factory import validate_anima_name
+from core.anima.factory import validate_anima_name
 from core.memory._io import atomic_write_text
 from core.memory.backend.registry import resolve_backend_type
 from core.memory.facts.store import FactRecord, append_fact_records, iter_fact_records

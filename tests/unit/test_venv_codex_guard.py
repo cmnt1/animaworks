@@ -40,15 +40,15 @@ def _make_mode_c_agent(anima_dir: Path, *, api_key: str | None = "test-key"):
     messenger = MagicMock()
 
     with (
-        patch("core.agent.ToolHandler"),
-        patch("core.agent.AgentCore._check_sdk", return_value=False),
-        patch("core.agent.AgentCore._init_tool_registry", return_value=[]),
-        patch("core.agent.AgentCore._discover_personal_tools", return_value={}),
-        patch("core.agent.AgentCore._create_executor") as mock_create,
+        patch("core.agent.agent_core.ToolHandler"),
+        patch("core.agent.agent_core.AgentCore._check_sdk", return_value=False),
+        patch("core.agent.agent_core.AgentCore._init_tool_registry", return_value=[]),
+        patch("core.agent.agent_core.AgentCore._discover_personal_tools", return_value={}),
+        patch("core.agent.agent_core.AgentCore._create_executor") as mock_create,
     ):
         mock_executor = MagicMock()
         mock_create.return_value = mock_executor
-        from core.agent import AgentCore
+        from core.agent.agent_core import AgentCore
 
         agent = AgentCore(anima_dir, memory, mc, messenger)
         agent._executor = mock_executor
@@ -152,9 +152,7 @@ class TestExecutionSdkPreflight:
             _run_execution_sdk_preflight(animas)
 
         assert any(
-            "Mode S anima" in r.message
-            and "Claude Code CLI" in r.message
-            and r.levelno >= logging.CRITICAL
+            "Mode S anima" in r.message and "Claude Code CLI" in r.message and r.levelno >= logging.CRITICAL
             for r in caplog.records
         )
 
@@ -176,8 +174,7 @@ class TestExecutionSdkPreflight:
             _run_execution_sdk_preflight(animas)
 
         assert any(
-            "root" in r.message and "IS_SANDBOX" in r.message and r.levelno >= logging.CRITICAL
-            for r in caplog.records
+            "root" in r.message and "IS_SANDBOX" in r.message and r.levelno >= logging.CRITICAL for r in caplog.records
         )
 
     def test_no_root_critical_when_sandbox_set(
@@ -197,9 +194,7 @@ class TestExecutionSdkPreflight:
         ):
             _run_execution_sdk_preflight(animas)
 
-        assert not any(
-            "root" in r.message and "IS_SANDBOX" in r.message for r in caplog.records
-        )
+        assert not any("root" in r.message and "IS_SANDBOX" in r.message for r in caplog.records)
 
 
 # ── (b) Fallback credential guard ────────────────────────────

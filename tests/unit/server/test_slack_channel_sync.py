@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.messenger import ChannelMeta, load_channel_meta, save_channel_meta
+from core.messaging.messenger import ChannelMeta, load_channel_meta, save_channel_meta
 from server.gateways.slack_channel_sync import SlackChannelSync, _ensure_board
 
 

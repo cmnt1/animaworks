@@ -378,7 +378,7 @@ def _print_bootstrap_status(name: str, status: dict) -> None:
 
 def cmd_anima_repair_bootstrap(args: argparse.Namespace) -> None:
     """Inspect or repair a first-run bootstrap runtime state."""
-    from core.bootstrap_state import (
+    from core.anima.bootstrap_state import (
         get_bootstrap_status,
         repair_bootstrap_complete,
         repair_bootstrap_fresh,
@@ -624,7 +624,7 @@ def cmd_anima_set_role(args: argparse.Namespace) -> None:
     """Change an anima's role."""
     import requests
 
-    from core.anima_factory import SHARED_ROLES_DIR, VALID_ROLES, _apply_role_defaults
+    from core.anima.factory import SHARED_ROLES_DIR, VALID_ROLES, _apply_role_defaults
     from core.config.local_llm import apply_local_llm_role_to_status
     from core.config.models import load_config
     from core.paths import get_animas_dir, get_data_dir
@@ -1213,7 +1213,7 @@ def cmd_anima_rename(args: argparse.Namespace) -> None:
     """Rename an anima (directory, config, references)."""
     import requests
 
-    from core.anima_factory import validate_anima_name
+    from core.anima.factory import validate_anima_name
     from core.config.models import rename_anima_in_config
     from core.paths import get_animas_dir, get_data_dir
 

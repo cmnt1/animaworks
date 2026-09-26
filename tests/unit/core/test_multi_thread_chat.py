@@ -241,32 +241,32 @@ class TestThreadIdValidation:
     """Test thread_id validation prevents path traversal."""
 
     def test_valid_thread_ids(self) -> None:
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         for tid in ["default", "abc123", "a1b2c3d4", "my-thread", "MY_THREAD", "A" * 36]:
             DigitalAnima._validate_thread_id(tid)  # should not raise
 
     def test_path_traversal_rejected(self) -> None:
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         for tid in ["../etc", "../../passwd", "/tmp/evil", "a/b", "a\\b"]:
             with pytest.raises(ValueError, match="Invalid thread_id"):
                 DigitalAnima._validate_thread_id(tid)
 
     def test_empty_rejected(self) -> None:
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         with pytest.raises(ValueError, match="Invalid thread_id"):
             DigitalAnima._validate_thread_id("")
 
     def test_too_long_rejected(self) -> None:
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         with pytest.raises(ValueError, match="Invalid thread_id"):
             DigitalAnima._validate_thread_id("A" * 37)
 
     def test_special_chars_rejected(self) -> None:
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         for tid in ["a.b", "a b", "a@b", "a$b", "a;b"]:
             with pytest.raises(ValueError, match="Invalid thread_id"):

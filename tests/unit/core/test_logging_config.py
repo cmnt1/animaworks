@@ -1,4 +1,4 @@
-"""Unit tests for core/logging_config.py — structlog-based logging setup."""
+"""Unit tests for core/infra/logging_config.py — structlog-based logging setup."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import pytest
 import structlog
 
-from core.logging_config import (
+from core.infra.logging_config import (
     CycleContextFilter,
     SecretRedactionFilter,
     _AnimaDailyFileHandler,
@@ -172,9 +172,7 @@ class TestCycleContext:
         root.setLevel(logging.WARNING)
 
     def _make_record(self) -> logging.LogRecord:
-        return logging.getLogger("test.cycle").makeRecord(
-            "test.cycle", logging.INFO, __file__, 1, "hello", (), None
-        )
+        return logging.getLogger("test.cycle").makeRecord("test.cycle", logging.INFO, __file__, 1, "hello", (), None)
 
     def test_unbound_cycle_id_is_dash_plain(self):
         record = self._make_record()
@@ -191,9 +189,7 @@ class TestCycleContext:
         bind_cycle_context("deadbeef", "cron")
         record = self._make_record()
         CycleContextFilter().filter(record)
-        rendered = logging.Formatter(
-            "%(levelname)s [%(cycle_id)s] %(message)s"
-        ).format(record)
+        rendered = logging.Formatter("%(levelname)s [%(cycle_id)s] %(message)s").format(record)
         assert "[deadbeef]" in rendered
 
     def test_cycle_id_and_trigger_in_json_log(self, tmp_path):
@@ -285,15 +281,13 @@ class TestSecretRedaction:
     def test_filter_leaves_non_string_msg(self):
         # structlog-native records carry a dict in msg; the filter must not touch it.
         payload = {"event": "sk-ant-shouldstayhere123456", "level": "info"}
-        record = logging.getLogger("t").makeRecord(
-            "t", logging.INFO, __file__, 1, payload, (), None
-        )
+        record = logging.getLogger("t").makeRecord("t", logging.INFO, __file__, 1, payload, (), None)
         SecretRedactionFilter().filter(record)
         assert record.msg is payload
 
     def test_filter_passes_through_on_exception(self, monkeypatch):
         monkeypatch.setattr(
-            "core.logging_config._redact_secrets",
+            "core.infra.logging_config._redact_secrets",
             lambda _t: (_ for _ in ()).throw(RuntimeError("boom")),
         )
         record = logging.getLogger("t").makeRecord(
@@ -329,9 +323,7 @@ class TestSecretRedaction:
         assert "sk-ant-msgsecret123456" not in rendered
 
     def test_filter_masks_stack_info(self):
-        record = self._record_with_exc(
-            stack="Stack:\n  call token=stacksecret12345 here"
-        )
+        record = self._record_with_exc(stack="Stack:\n  call token=stacksecret12345 here")
         SecretRedactionFilter().filter(record)
         assert "stacksecret12345" not in record.stack_info
         assert "***REDACTED***" in record.stack_info
@@ -348,7 +340,7 @@ class TestSecretRedaction:
     # ── R1: redaction processor for the structlog rendered line ──
 
     def test_redaction_processor_masks_rendered_string(self):
-        out = _redaction_processor(None, "error", 'msg with token=procsecret12345 x')
+        out = _redaction_processor(None, "error", "msg with token=procsecret12345 x")
         assert "procsecret12345" not in out
         assert "***REDACTED***" in out
 
@@ -360,13 +352,11 @@ class TestSecretRedaction:
 
     def test_keyword_without_assignment_is_passthrough(self):
         # Generic words / metric fields must not trigger the full regex.
-        for benign in ("max_tokens=100", "input_tokens: 512", "the secret meeting",
-                       "password strength is high"):
+        for benign in ("max_tokens=100", "input_tokens: 512", "the secret meeting", "password strength is high"):
             assert _redact_secrets(benign) is benign
 
     def test_keyword_with_assignment_is_masked(self):
-        for text in ("token=realsecretvalue1", "token: realsecretvalue1",
-                     '"token":"realsecretvalue1"'):
+        for text in ("token=realsecretvalue1", "token: realsecretvalue1", '"token":"realsecretvalue1"'):
             assert "***REDACTED***" in _redact_secrets(text)
 
 
@@ -396,17 +386,13 @@ class TestRedactionToggle:
         setup_logging(level="INFO", log_dir=tmp_path, redaction_enabled=False)
         root = logging.getLogger()
         for handler in root.handlers:
-            assert not any(
-                isinstance(f, SecretRedactionFilter) for f in handler.filters
-            )
+            assert not any(isinstance(f, SecretRedactionFilter) for f in handler.filters)
 
     def test_enabled_attaches_filter_to_all_handlers(self, tmp_path):
         setup_logging(level="INFO", log_dir=tmp_path, redaction_enabled=True)
         root = logging.getLogger()
         for handler in root.handlers:
-            assert any(
-                isinstance(f, SecretRedactionFilter) for f in handler.filters
-            )
+            assert any(isinstance(f, SecretRedactionFilter) for f in handler.filters)
 
     def test_disabled_writes_raw_secret(self, tmp_path):
         setup_logging(level="INFO", log_dir=tmp_path, redaction_enabled=False)
@@ -430,9 +416,7 @@ class TestAnimaErrorsLog:
         root.setLevel(logging.WARNING)
 
     def test_per_anima_errors_log_warning_only(self, tmp_path):
-        setup_anima_logging(
-            anima_name="aoi", log_dir=tmp_path, level="INFO", also_to_console=False
-        )
+        setup_anima_logging(anima_name="aoi", log_dir=tmp_path, level="INFO", also_to_console=False)
         logging.getLogger("test.anima.errsplit").info("routine info line")
         logging.getLogger("test.anima.errsplit").warning("a warning worth triage")
         for handler in logging.getLogger().handlers:
@@ -450,15 +434,15 @@ def test_anima_daily_file_handler_switches_to_new_date_without_renaming_old_log(
     day1 = datetime(2026, 6, 11, 23, 59, tzinfo=tz)
     day2 = datetime(2026, 6, 12, 0, 1, tzinfo=tz)
 
-    with patch("core.logging_config.now_local", return_value=day1):
+    with patch("core.infra.logging_config.now_local", return_value=day1):
         handler = _AnimaDailyFileHandler(tmp_path, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(message)s"))
     logger = logging.getLogger("test.anima.daily")
 
     try:
-        with patch("core.logging_config.now_local", return_value=day1):
+        with patch("core.infra.logging_config.now_local", return_value=day1):
             handler.emit(logger.makeRecord(logger.name, logging.INFO, __file__, 1, "before midnight", (), None))
-        with patch("core.logging_config.now_local", return_value=day2):
+        with patch("core.infra.logging_config.now_local", return_value=day2):
             handler.emit(logger.makeRecord(logger.name, logging.INFO, __file__, 1, "after midnight", (), None))
     finally:
         handler.close()
@@ -472,7 +456,7 @@ def test_anima_daily_file_handler_switches_to_new_date_without_renaming_old_log(
 
 
 def test_replace_current_link_creates_and_replaces(tmp_path):
-    from core.logging_config import _replace_current_link
+    from core.infra.logging_config import _replace_current_link
 
     link = tmp_path / "current.log"
     (tmp_path / "a.log").write_text("a")
@@ -493,7 +477,7 @@ def test_replace_current_link_concurrent_calls(tmp_path):
     unlink+symlink_to crashed task-runner startups with FileNotFoundError)."""
     from concurrent.futures import ThreadPoolExecutor
 
-    from core.logging_config import _replace_current_link
+    from core.infra.logging_config import _replace_current_link
 
     link = tmp_path / "current.log"
     (tmp_path / "x.log").write_text("x")

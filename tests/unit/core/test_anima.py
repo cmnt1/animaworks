@@ -1,4 +1,4 @@
-"""Unit tests for core/anima.py — DigitalAnima entity."""
+"""Unit tests for core/anima/digital_anima.py — DigitalAnima entity."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -36,12 +36,12 @@ class TestDigitalAnimaInit:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
 
@@ -61,13 +61,13 @@ class TestDigitalAnimaStatus:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger") as MockMessenger,
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMessenger,
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMessenger.return_value.unread_count.return_value = 5
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
 
@@ -84,9 +84,13 @@ class TestNeedsBootstrap:
         shared_dir = data_dir / "shared"
         (anima_dir / "bootstrap.md").write_text("bootstrap", encoding="utf-8")
 
-        with patch("core.anima.AgentCore"), patch("core.anima.MemoryManager") as MockMM, patch("core.anima.Messenger"):
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             assert dp.needs_bootstrap is True
@@ -99,9 +103,13 @@ class TestNeedsBootstrap:
         if bp.exists():
             bp.unlink()
 
-        with patch("core.anima.AgentCore"), patch("core.anima.MemoryManager") as MockMM, patch("core.anima.Messenger"):
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             assert dp.needs_bootstrap is False
@@ -116,12 +124,12 @@ class TestCallbacks:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             fn = MagicMock()
@@ -132,9 +140,13 @@ class TestCallbacks:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), patch("core.anima.MemoryManager") as MockMM, patch("core.anima.Messenger"):
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             fn = MagicMock()
@@ -147,9 +159,13 @@ class TestNotifyLockReleased:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), patch("core.anima.MemoryManager") as MockMM, patch("core.anima.Messenger"):
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             fn = MagicMock()
@@ -161,9 +177,13 @@ class TestNotifyLockReleased:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), patch("core.anima.MemoryManager") as MockMM, patch("core.anima.Messenger"):
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             dp._on_lock_released = None
@@ -173,9 +193,13 @@ class TestNotifyLockReleased:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore"), patch("core.anima.MemoryManager") as MockMM, patch("core.anima.Messenger"):
+        with (
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             dp._on_lock_released = MagicMock(side_effect=RuntimeError("boom"))
@@ -191,10 +215,10 @@ class TestProcessMessage:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.compress_if_needed = AsyncMock()
@@ -203,7 +227,7 @@ class TestProcessMessage:
             MockConv.return_value.append_turn = MagicMock()
             MockConv.return_value.save = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -220,16 +244,16 @@ class TestProcessMessage:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
             patch("core.config.models.load_config") as mock_load_config,
             patch("core.paths.get_animas_dir", return_value=data_dir / "animas"),
-            patch("core.outbound.resolve_recipient") as mock_resolve_recipient,
-            patch("core.outbound.send_external") as mock_send_external,
+            patch("core.messaging.outbound.resolve_recipient") as mock_resolve_recipient,
+            patch("core.messaging.outbound.send_external") as mock_send_external,
         ):
-            from core.outbound import ResolvedRecipient
+            from core.messaging.outbound import ResolvedRecipient
 
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.compress_if_needed = AsyncMock()
@@ -247,7 +271,7 @@ class TestProcessMessage:
             )
             mock_send_external.return_value = '{"status":"sent","channel":"slack"}'
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -269,10 +293,10 @@ class TestProcessMessage:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.compress_if_needed = AsyncMock()
@@ -281,7 +305,7 @@ class TestProcessMessage:
             MockConv.return_value.append_turn = MagicMock()
             MockConv.return_value.save = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -306,17 +330,17 @@ class TestProcessMessage:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.compress_if_needed = AsyncMock()
             MockConv.return_value.finalize_session = AsyncMock(return_value=False)
             MockConv.return_value.build_chat_prompt.return_value = "prompt"
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -336,16 +360,16 @@ class TestRunHeartbeat:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger") as MockMsg,
-            patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsg,
+            patch("core.anima.heartbeat.load_prompt", return_value="prompt"),
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMM.return_value.read_heartbeat_config.return_value = "checklist"
             MockMsg.return_value.has_unread.return_value = False
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -369,14 +393,14 @@ class TestRunCronTask:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_heartbeat.load_prompt", return_value="cron prompt"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.heartbeat.load_prompt", return_value="cron prompt"),
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -397,17 +421,17 @@ class TestProcessGreet:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
-            patch("core._anima_messaging.load_prompt", return_value="greet prompt"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
+            patch("core.anima.messaging.load_prompt", return_value="greet prompt"),
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.append_turn = MagicMock()
             MockConv.return_value.save = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -427,17 +451,17 @@ class TestProcessGreet:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
-            patch("core._anima_messaging.load_prompt", return_value="greet prompt"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
+            patch("core.anima.messaging.load_prompt", return_value="greet prompt"),
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.append_turn = MagicMock()
             MockConv.return_value.save = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -455,17 +479,17 @@ class TestProcessGreet:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
-            patch("core._anima_messaging.load_prompt", return_value="greet prompt"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
+            patch("core.anima.messaging.load_prompt", return_value="greet prompt"),
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.append_turn = MagicMock()
             MockConv.return_value.save = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -490,17 +514,17 @@ class TestProcessGreet:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
-            patch("core._anima_messaging.load_prompt", return_value="greet prompt"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
+            patch("core.anima.messaging.load_prompt", return_value="greet prompt"),
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.append_turn = MagicMock()
             MockConv.return_value.save = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -530,17 +554,17 @@ class TestProcessGreet:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
-            patch("core._anima_messaging.load_prompt", return_value="greet prompt"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
+            patch("core.anima.messaging.load_prompt", return_value="greet prompt"),
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.append_turn = MagicMock()
             MockConv.return_value.save = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -555,14 +579,14 @@ class TestProcessGreet:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.load_prompt", return_value="greet prompt"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.load_prompt", return_value="greet prompt"),
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -594,10 +618,10 @@ class TestProcessMessageConversationSave:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.compress_if_needed = AsyncMock()
@@ -606,7 +630,7 @@ class TestProcessMessageConversationSave:
             MockConv.return_value.append_turn = MagicMock()
             MockConv.return_value.save = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -645,10 +669,10 @@ class TestProcessMessageConversationSave:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.compress_if_needed = AsyncMock()
@@ -657,7 +681,7 @@ class TestProcessMessageConversationSave:
             MockConv.return_value.append_turn = MagicMock()
             MockConv.return_value.save = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -687,10 +711,10 @@ class TestProcessMessageConversationSave:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.compress_if_needed = AsyncMock()
@@ -699,7 +723,7 @@ class TestProcessMessageConversationSave:
             MockConv.return_value.append_turn = MagicMock()
             MockConv.return_value.save = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -734,10 +758,10 @@ class TestProcessMessageStreamConversationSave:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.compress_if_needed = AsyncMock()
@@ -746,7 +770,7 @@ class TestProcessMessageStreamConversationSave:
             MockConv.return_value.append_turn = MagicMock()
             MockConv.return_value.save = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -785,10 +809,10 @@ class TestProcessMessageStreamConversationSave:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.compress_if_needed = AsyncMock()
@@ -797,7 +821,7 @@ class TestProcessMessageStreamConversationSave:
             MockConv.return_value.append_turn = MagicMock()
             MockConv.return_value.save = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -837,10 +861,10 @@ class TestProcessMessageStreamConversationSave:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.compress_if_needed = AsyncMock()
@@ -849,7 +873,7 @@ class TestProcessMessageStreamConversationSave:
             MockConv.return_value.append_turn = MagicMock()
             MockConv.return_value.save = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -880,10 +904,10 @@ class TestProcessMessageStreamConversationSave:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.compress_if_needed = AsyncMock()
@@ -892,7 +916,7 @@ class TestProcessMessageStreamConversationSave:
             MockConv.return_value.append_turn = MagicMock()
             MockConv.return_value.save = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -935,16 +959,16 @@ class TestProcessMessageStreamConversationSave:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
             patch("core.config.models.load_config") as mock_load_config,
             patch("core.paths.get_animas_dir", return_value=data_dir / "animas"),
-            patch("core.outbound.resolve_recipient") as mock_resolve_recipient,
-            patch("core.outbound.send_external") as mock_send_external,
+            patch("core.messaging.outbound.resolve_recipient") as mock_resolve_recipient,
+            patch("core.messaging.outbound.send_external") as mock_send_external,
         ):
-            from core.outbound import ResolvedRecipient
+            from core.messaging.outbound import ResolvedRecipient
 
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.needs_compression.return_value = False
@@ -961,7 +985,7 @@ class TestProcessMessageStreamConversationSave:
             )
             mock_send_external.return_value = '{"status":"sent","channel":"slack"}'
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)
@@ -997,17 +1021,17 @@ class TestProcessGreetConversationSave:
         shared_dir = data_dir / "shared"
 
         with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
-            patch("core._anima_messaging.load_prompt", return_value="greet prompt"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger"),
+            patch("core.anima.messaging.ConversationMemory") as MockConv,
+            patch("core.anima.messaging.load_prompt", return_value="greet prompt"),
         ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockConv.return_value.append_turn = MagicMock()
             MockConv.return_value.save = MagicMock()
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             dp = DigitalAnima(anima_dir, shared_dir)
             _wire_session_type(dp)

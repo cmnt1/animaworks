@@ -195,9 +195,9 @@ def _reindex_into_store(
     source_file_stats: dict | None = None,
 ) -> tuple[int, dict[str, str]]:
     """Index an anima's memory (and optionally shared collections) into a store."""
-    from core.company_resources import get_company_resources
     from core.memory.rag import MemoryIndexer
     from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index
+    from core.org.company_resources import get_company_resources
     from core.paths import get_animas_dir, get_common_knowledge_dir, get_common_skills_dir, get_data_dir
 
     anima_dir = Path(anima_dir) if anima_dir is not None else get_animas_dir() / anima_name

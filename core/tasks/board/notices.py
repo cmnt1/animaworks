@@ -80,7 +80,7 @@ def format_digest(actor: str, records: list[dict[str, Any]]) -> str:
 
 def _send_digest(actor: str, to: str, records: list[dict[str, Any]]) -> bool:
     from cli.commands.messaging import _resolve_sender_source
-    from core.messenger import Messenger
+    from core.messaging.messenger import Messenger
     from core.paths import get_shared_dir
 
     content = format_digest(actor, records)

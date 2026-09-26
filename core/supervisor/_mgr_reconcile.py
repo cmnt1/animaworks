@@ -270,7 +270,7 @@ class ReconcileMixin:
     async def _reconcile_assets(self) -> None:
         """Check for and generate missing anima assets during reconciliation."""
         try:
-            from core.asset_reconciler import find_animas_with_missing_assets, reconcile_anima_assets
+            from core.anima.asset_reconciler import find_animas_with_missing_assets, reconcile_anima_assets
             from core.config.models import load_config
 
             enable_3d = True

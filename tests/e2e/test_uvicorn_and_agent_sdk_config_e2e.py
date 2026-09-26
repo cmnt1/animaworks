@@ -7,13 +7,12 @@ Validates that:
 - Server startup passes correct timeout/ping settings to uvicorn
 - Agent SDK executor disables skill improvement in child process env
 """
+
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-
 
 # ── Server uvicorn config E2E ─────────────────────────────────
 
@@ -26,16 +25,24 @@ class TestUvicornConfigE2E:
     @patch("server.app.create_app")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
     @patch("core.paths.get_animas_dir", return_value=Path("/tmp/animas"))
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     @patch("cli.commands.server._write_pid_file")
     @patch("cli.commands.server._kill_orphan_runners", return_value=0)
     @patch("cli.commands.server._find_server_pid_by_process", return_value=None)
     @patch("cli.commands.server._is_process_alive", return_value=False)
     @patch("cli.commands.server._read_pid", return_value=None)
     def test_server_start_passes_all_uvicorn_settings(
-        self, mock_pid, mock_alive, mock_find, mock_kill,
+        self,
+        mock_pid,
+        mock_alive,
+        mock_find,
+        mock_kill,
         mock_write_pid,
-        mock_ensure, mock_animas, mock_shared, mock_create, mock_uvicorn,
+        mock_ensure,
+        mock_animas,
+        mock_shared,
+        mock_create,
+        mock_uvicorn,
         mock_remove,
     ):
         """Full integration: cmd_start configures uvicorn for SSE + WebSocket."""
@@ -68,6 +75,7 @@ class TestAgentSDKEnvE2E:
         anima_dir.mkdir(parents=True)
 
         from core.schemas import ModelConfig
+
         config = ModelConfig(
             model="claude-sonnet-4-6",
             api_key="sk-test",
@@ -75,6 +83,7 @@ class TestAgentSDKEnvE2E:
 
         with patch_agent_sdk():
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=config, anima_dir=anima_dir)
             env = executor._build_env()
 
@@ -88,6 +97,7 @@ class TestAgentSDKEnvE2E:
         anima_dir.mkdir(parents=True)
 
         from core.schemas import ModelConfig
+
         config = ModelConfig(
             model="claude-sonnet-4-6",
             api_key="sk-test-key",
@@ -96,6 +106,7 @@ class TestAgentSDKEnvE2E:
 
         with patch_agent_sdk():
             from core.execution.agent_sdk import AgentSDKExecutor
+
             executor = AgentSDKExecutor(model_config=config, anima_dir=anima_dir)
             env = executor._build_env()
 

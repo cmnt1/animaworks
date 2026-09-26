@@ -3,6 +3,7 @@
 Validates Protocol conformance, TypedDict field parity,
 and ImageData type consistency across layers.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -93,12 +94,13 @@ class TestLastRotationDateType:
     def test_initial_value_is_none(self):
         import importlib
 
-        import core._agent_prompt_log as mod
+        import core.agent.prompt_log as mod
+
         importlib.reload(mod)
         assert mod._last_rotation_date is None
 
     def test_rotation_sets_date_string(self, tmp_path):
-        import core._agent_prompt_log as mod
+        import core.agent.prompt_log as mod
 
         mod._last_rotation_date = None
         log_dir = tmp_path / "prompt_logs"

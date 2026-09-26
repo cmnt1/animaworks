@@ -115,7 +115,7 @@ def test_runtime_cuda_encode_failure_falls_back_to_cpu_and_records_status(
     mock_sentence_transformers.side_effect = [gpu_model, cpu_model]
 
     with patch("core.config.load_config", return_value=config):
-        from core.gpu import get_gpu_status
+        from core.infra.gpu import get_gpu_status
         from core.memory.rag.singleton import thread_safe_encode
 
         result = thread_safe_encode(["hello"])

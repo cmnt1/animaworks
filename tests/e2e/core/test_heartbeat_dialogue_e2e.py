@@ -21,7 +21,7 @@ import pytest
 
 from core.memory.conversation.memory import ConversationMemory
 from core.memory.manager import MemoryManager
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.schemas import CycleResult, ModelConfig
 from core.time_utils import now_jst, today_local
 
@@ -38,9 +38,13 @@ def _make_model_config() -> ModelConfig:
 
 def _make_digital_anima(anima_dir: Path, shared_dir: Path):
     """Create a DigitalAnima with heavy deps (AgentCore, MemoryManager, Messenger) mocked."""
-    with patch("core.anima.AgentCore"), patch("core.anima.MemoryManager") as MockMM, patch("core.anima.Messenger"):
+    with (
+        patch("core.anima.digital_anima.AgentCore"),
+        patch("core.anima.digital_anima.MemoryManager") as MockMM,
+        patch("core.anima.digital_anima.Messenger"),
+    ):
         MockMM.return_value.read_model_config.return_value = MagicMock()
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         return DigitalAnima(anima_dir, shared_dir)
 

@@ -456,7 +456,7 @@ Waking (conversation)                     Sleeping (no conversation)
 
 ### Daily consolidation flow
 
-> Implementation: `core/_anima_lifecycle.py` — `Anima.run_consolidation()`, `core/memory/maintenance/consolidation.py` — `ConsolidationEngine` (pre/post)
+> Implementation: `core/anima/lifecycle.py` — `Anima.run_consolidation()`, `core/memory/maintenance/consolidation.py` — `ConsolidationEngine` (pre/post)
 > Schedule: the production `ProcessSupervisor` scheduler (`core/supervisor/_mgr_scheduler.py`) registers the daily handler from `core/lifecycle/system_consolidation.py` (`ConsolidationConfig.daily_time`, default 02:00 JST)
 
 **1. Preprocessing** (ConsolidationEngine): collect four inputs and inject into `consolidation_instruction`:
@@ -874,7 +874,7 @@ The memory subsystem is implemented under `core/memory/`.
 | `priming/outbound.py` | Recent Outbound, pending `human_notify` |
 | `priming/channel_a.py` … `channel_g.py` | Source collectors for sender, activity, knowledge, tasks, episodes, and graph context; auxiliary collectors add outbound/notification context |
 
-Public API: `from core.memory.priming import PrimingEngine, PrimingResult, format_priming_section` (re-exported from `core/memory/__init__.py`). Chat path calls `prime_memories` from `core/_agent_priming.py`.
+Public API: `from core.memory.priming import PrimingEngine, PrimingResult, format_priming_section` (re-exported from `core/memory/__init__.py`). Chat path calls `prime_memories` from `core/agent/priming.py`.
 
 ### Conversation memory (split modules)
 

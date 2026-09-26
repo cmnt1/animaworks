@@ -35,7 +35,7 @@ def test_heartbeat_enabled_defaults_are_backward_compatible() -> None:
 
 
 def test_heartbeat_enabled_is_preserved_by_bootstrap_repair() -> None:
-    from core.bootstrap_state import PRESERVED_STATUS_KEYS
+    from core.anima.bootstrap_state import PRESERVED_STATUS_KEYS
 
     assert "heartbeat_enabled" in PRESERVED_STATUS_KEYS
 

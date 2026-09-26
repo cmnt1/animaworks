@@ -51,7 +51,7 @@ def _credentials_dir() -> Path:
     """Prefer credentials isolated to the running Anima's company."""
     anima_dir_value = os.environ.get("ANIMAWORKS_ANIMA_DIR")
     if anima_dir_value:
-        from core.company import get_company
+        from core.org.company import get_company
 
         anima_dir = Path(anima_dir_value).resolve()
         company = get_company(anima_dir.name, animas_dir=anima_dir.parent)

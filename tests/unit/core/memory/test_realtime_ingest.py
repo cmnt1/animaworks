@@ -126,7 +126,7 @@ class TestEpisodeDeduplication:
 
 class TestMaybeNeo4jRealtimeIngest:
     def _make_mixin(self):
-        from core._anima_messaging import MessagingMixin
+        from core.anima.messaging import MessagingMixin
 
         class FakeAnima(MessagingMixin):
             pass
@@ -264,7 +264,7 @@ class TestMaybeNeo4jRealtimeIngest:
 class TestNeo4jIngestTurn:
     @pytest.mark.asyncio
     async def test_calls_ingest_text(self) -> None:
-        from core._anima_messaging import MessagingMixin
+        from core.anima.messaging import MessagingMixin
 
         class FakeAnima(MessagingMixin):
             pass
@@ -289,7 +289,7 @@ class TestNeo4jIngestTurn:
 
     @pytest.mark.asyncio
     async def test_failure_doesnt_propagate(self) -> None:
-        from core._anima_messaging import MessagingMixin
+        from core.anima.messaging import MessagingMixin
 
         class FakeAnima(MessagingMixin):
             pass
@@ -308,7 +308,7 @@ class TestNeo4jIngestTurn:
 
     @pytest.mark.asyncio
     async def test_skips_non_neo4j_backend(self) -> None:
-        from core._anima_messaging import MessagingMixin
+        from core.anima.messaging import MessagingMixin
 
         class FakeAnima(MessagingMixin):
             pass

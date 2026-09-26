@@ -13,14 +13,14 @@ import shlex
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from core.config.models import PermissionsConfig, load_permissions
-from core.config.schemas import command_deny_matches
-from core.file_access_policy import (
+from core.config.file_access_policy import (
     effective_write_roots,
     find_denied_root,
     find_internal_cache_root,
     resolve_effective_denied_roots,
 )
+from core.config.models import PermissionsConfig, load_permissions
+from core.config.schemas import command_deny_matches
 from core.i18n import t
 from core.tooling.handler_base import (
     _error_result,

@@ -1,4 +1,4 @@
-"""Unit tests for core/workspace.py — workspace registry and resolution."""
+"""Unit tests for core/org/workspace.py — workspace registry and resolution."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from core.config.models import AnimaWorksConfig
-from core.workspace import (
+from core.org.workspace import (
     list_workspaces,
     qualified_alias,
     register_workspace,
@@ -74,18 +74,14 @@ class TestResolveWorkspace:
         cfg.workspaces = {"myproject": str(tmp_path)}
         return cfg
 
-    def test_alias_hash_exact_match_succeeds(
-        self, tmp_path: Path, mock_config: AnimaWorksConfig
-    ) -> None:
+    def test_alias_hash_exact_match_succeeds(self, tmp_path: Path, mock_config: AnimaWorksConfig) -> None:
         """alias#hash exact match resolves to Path."""
         qa = qualified_alias("myproject", str(tmp_path))
         with patch("core.config.models.load_config", return_value=mock_config):
             result = resolve_workspace(qa)
         assert result == tmp_path.resolve()
 
-    def test_alias_hash_wrong_hash_fails(
-        self, tmp_path: Path, mock_config: AnimaWorksConfig
-    ) -> None:
+    def test_alias_hash_wrong_hash_fails(self, tmp_path: Path, mock_config: AnimaWorksConfig) -> None:
         """alias#wronghash raises ValueError."""
         wrong_qa = "myproject#deadbeef"  # wrong hash
         with (
@@ -95,17 +91,13 @@ class TestResolveWorkspace:
             resolve_workspace(wrong_qa)
         assert "deadbeef" in str(excinfo.value) or "not found" in str(excinfo.value).lower()
 
-    def test_alias_only_exact_match(
-        self, tmp_path: Path, mock_config: AnimaWorksConfig
-    ) -> None:
+    def test_alias_only_exact_match(self, tmp_path: Path, mock_config: AnimaWorksConfig) -> None:
         """alias-only exact match resolves."""
         with patch("core.config.models.load_config", return_value=mock_config):
             result = resolve_workspace("myproject")
         assert result == tmp_path.resolve()
 
-    def test_hash_only_resolves(
-        self, tmp_path: Path, mock_config: AnimaWorksConfig
-    ) -> None:
+    def test_hash_only_resolves(self, tmp_path: Path, mock_config: AnimaWorksConfig) -> None:
         """8-char hex hash search across registry resolves."""
         h = workspace_hash(str(tmp_path))
         with patch("core.config.models.load_config", return_value=mock_config):
@@ -138,9 +130,7 @@ class TestResolveWorkspace:
             resolve_workspace("nonexistent")
         assert "nonexistent" in str(excinfo.value)
 
-    def test_resolve_workspace_normalized_hyphen_accepted(
-        self, tmp_path: Path
-    ) -> None:
+    def test_resolve_workspace_normalized_hyphen_accepted(self, tmp_path: Path) -> None:
         """Hyphenated form is accepted via alnum normalization (my-project → myproject)."""
         cfg = AnimaWorksConfig()
         cfg.workspaces = {"myproject": str(tmp_path)}
@@ -148,9 +138,7 @@ class TestResolveWorkspace:
             result = resolve_workspace("my-project")
         assert result == tmp_path.resolve()
 
-    def test_resolve_workspace_normalized_variants(
-        self, tmp_path: Path
-    ) -> None:
+    def test_resolve_workspace_normalized_variants(self, tmp_path: Path) -> None:
         """AI-Schreiber / ai_schreiber / AISCHREIBER resolve to aischreiber."""
         cfg = AnimaWorksConfig()
         cfg.workspaces = {"aischreiber": str(tmp_path)}
@@ -177,9 +165,7 @@ class TestResolveWorkspace:
         assert "my-project" in msg or "myproject" in msg
         assert "登録済み" in msg or "Available" in msg or "available" in msg.lower()
 
-    def test_resolve_workspace_not_found_includes_registered_list(
-        self, tmp_path: Path
-    ) -> None:
+    def test_resolve_workspace_not_found_includes_registered_list(self, tmp_path: Path) -> None:
         """Not-found errors always include the registered alias list."""
         cfg = AnimaWorksConfig()
         cfg.workspaces = {"myproject": str(tmp_path)}
@@ -191,9 +177,7 @@ class TestResolveWorkspace:
         msg = str(excinfo.value)
         assert "myproject" in msg
 
-    def test_resolve_workspace_lists_all_when_no_match(
-        self, tmp_path: Path
-    ) -> None:
+    def test_resolve_workspace_lists_all_when_no_match(self, tmp_path: Path) -> None:
         """When no fuzzy match, ValueError lists all registered workspaces."""
         cfg = AnimaWorksConfig()
         cfg.workspaces = {"myproject": str(tmp_path)}
@@ -211,9 +195,7 @@ class TestResolveWorkspace:
         msg = str(excinfo.value)
         assert "(none)" in msg
 
-    def test_registered_path_deleted_raises_value_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_registered_path_deleted_raises_value_error(self, tmp_path: Path) -> None:
         """Registered path that no longer exists raises ValueError."""
         deleted_dir = tmp_path / "deleted"
         deleted_dir.mkdir()
@@ -232,9 +214,7 @@ class TestResolveWorkspace:
 class TestRegisterWorkspace:
     """Tests for register_workspace()."""
 
-    def test_creates_entry_returns_qualified(
-        self, tmp_path: Path
-    ) -> None:
+    def test_creates_entry_returns_qualified(self, tmp_path: Path) -> None:
         """Registration adds entry and returns qualified alias."""
         cfg = AnimaWorksConfig()
         cfg.workspaces = {}

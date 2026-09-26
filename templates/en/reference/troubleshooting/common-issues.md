@@ -40,7 +40,7 @@ If that does not resolve the issue, see `troubleshooting/escalation-flowchart.md
 
 1. **Verify recipient name and address format**
    - Confirm the `send_message` `to` parameter resolves to the intended party
-   - Resolution order in `core/outbound.py` `resolve_recipient` is roughly:
+   - Resolution order in `core/messaging/outbound.py` `resolve_recipient` is roughly:
      1. **Exact** match with a known Anima name (case-sensitive) → internal
      2. **Alias** from `config.json` `external_messaging.user_aliases` (case-insensitive) → external (`preferred_channel`)
      3. `slack:USERID` / `chatwork:ROOMID` → external direct
@@ -387,7 +387,7 @@ See `operations/tool-usage-overview.md` for the full tool picture.
 
 - `send_message` or `post_channel` returns an error
 - `GlobalOutboundLimitExceeded: Hourly send limit (N messages) reached...` or the 24-hour variant
-- `GlobalOutboundLimitExceeded: Sending blocked because activity log could not be read` (`core/cascade_limiter.py` — when the sender’s `activity_log` cannot be read)
+- `GlobalOutboundLimitExceeded: Sending blocked because activity log could not be read` (`core/messaging/cascade_limiter.py` — when the sender’s `activity_log` cannot be read)
 - `ConversationDepthExceeded: Conversation with {recipient} reached 6 turns in 10 minutes...`
 
 ### Causes
@@ -466,7 +466,7 @@ There are two major layers.
 
 **1. Priming (auto-recall) tier** — `resolve_prompt_tier(context_window)` in `core/prompt/builder.py` chooses the tier from the estimated context window. Resolution order is `core/prompt/context.py` `resolve_context_window`: **`~/.animaworks/models.json` (SSoT)** → deprecated `config.json` `model_context_windows` → in-code fallbacks such as `MODEL_CONTEXT_WINDOWS` → default 128k.
 
-| Tier | Condition (`context_window`) | Priming handling (`core/_agent_priming.py`) |
+| Tier | Condition (`context_window`) | Priming handling (`core/agent/priming.py`) |
 |------|------------------------------|---------------------------------------------|
 | full | **≥ 128_000** | All six channels formatted with `format_priming_section` and included as-is |
 | standard | **≥ 32_000 and < 128_000** | Same fetch as above; **if formatted text exceeds 4000 characters, keep first 4000 + ellipsis marker** |
@@ -475,7 +475,7 @@ There are two major layers.
 
 Heartbeat/cron query text is built from recent `[REFLECTION]` blocks in `activity_log` (not the full long template).
 
-**2. System prompt body shrink** — `core/_agent_priming.py` `_fit_prompt_to_context_window`: when estimated system + user tokens plus tool schema overhead exceed **~80%** of the context window, `build_system_prompt` is rebuilt with system budget stepped **75% → 50% → 25%**. At the **≤25%** step, **Priming and human-notification blocks are cleared** before fitting. If it still does not fit, the system prompt is **hard-truncated by bytes**.
+**2. System prompt body shrink** — `core/agent/priming.py` `_fit_prompt_to_context_window`: when estimated system + user tokens plus tool schema overhead exceed **~80%** of the context window, `build_system_prompt` is rebuilt with system budget stepped **75% → 50% → 25%**. At the **≤25%** step, **Priming and human-notification blocks are cleared** before fitting. If it still does not fit, the system prompt is **hard-truncated by bytes**.
 
 ### Steps
 

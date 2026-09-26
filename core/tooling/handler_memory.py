@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from core.file_access_policy import load_denied_roots, memory_source_is_allowed, resolve_memory_source_path
+from core.config.file_access_policy import load_denied_roots, memory_source_is_allowed, resolve_memory_source_path
 from core.i18n import t
 from core.memory._io import archive_episode_before_write
 from core.memory.retrieval.scope_policy import (
@@ -170,7 +170,7 @@ def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
         except ValueError:
             pass
 
-    from core.company_resources import company_resource_pointer, get_company_resources
+    from core.org.company_resources import company_resource_pointer, get_company_resources
 
     company_resources = get_company_resources(anima_dir)
     if company_resources is not None and resolved.is_relative_to(company_resources.root):
@@ -882,7 +882,7 @@ class MemoryToolsMixin:
                     "Path traversal detected — access denied.",
                 )
         elif rel.startswith("companies/"):
-            from core.company_resources import get_company_resources
+            from core.org.company_resources import get_company_resources
 
             resources = get_company_resources(self._anima_dir)
             path = (resources.root.parent.parent / rel).resolve() if resources is not None else None

@@ -33,7 +33,7 @@ from core.execution.session_context import RuntimeSessionContext, current_runtim
 from core.i18n import t
 from core.memory import MemoryManager
 from core.memory.activity.logger import ActivityLogger
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.notification.notifier import HumanNotifier
 from core.tasks.background import BackgroundTaskManager
 from core.tooling.dispatch import ExternalToolDispatcher

@@ -329,7 +329,7 @@ class TestPromptLogExtendedFields:
 
     def test_prompt_log_contains_extended_fields(self, tmp_path: Path):
         """Written JSONL entry includes all extended fields."""
-        from core.agent import _save_prompt_log
+        from core.agent.agent_core import _save_prompt_log
 
         anima_dir = tmp_path / "animas" / "log-fields"
         (anima_dir / "prompt_logs").mkdir(parents=True, exist_ok=True)
@@ -380,7 +380,7 @@ class TestPromptLogExtendedFields:
     def test_prompt_log_handles_none_optional_fields(self, tmp_path: Path):
         """When prior_messages and tool_schemas are None, the entry still
         contains the fields with None/0 values."""
-        from core.agent import _save_prompt_log
+        from core.agent.agent_core import _save_prompt_log
 
         anima_dir = tmp_path / "animas" / "log-none"
         (anima_dir / "prompt_logs").mkdir(parents=True, exist_ok=True)
@@ -422,8 +422,8 @@ class TestPromptLogRotation:
 
     def test_old_files_deleted_recent_kept(self, tmp_path: Path):
         """Log files older than _PROMPT_LOG_RETENTION_DAYS are deleted."""
-        import core._agent_prompt_log as _prompt_log_mod
-        from core.agent import _rotate_prompt_logs
+        import core.agent.prompt_log as _prompt_log_mod
+        from core.agent.agent_core import _rotate_prompt_logs
 
         log_dir = tmp_path / "prompt_logs"
         log_dir.mkdir()
@@ -468,8 +468,8 @@ class TestPromptLogRotation:
 
     def test_rotation_runs_once_per_day(self, tmp_path: Path):
         """After rotation runs once, a second call on the same day is a no-op."""
-        import core._agent_prompt_log as _prompt_log_mod
-        from core.agent import _rotate_prompt_logs
+        import core.agent.prompt_log as _prompt_log_mod
+        from core.agent.agent_core import _rotate_prompt_logs
 
         log_dir = tmp_path / "prompt_logs"
         log_dir.mkdir()
@@ -503,8 +503,8 @@ class TestPromptLogRotation:
 
     def test_rotation_ignores_non_date_files(self, tmp_path: Path):
         """Files that do not match YYYY-MM-DD.jsonl pattern are not deleted."""
-        import core._agent_prompt_log as _prompt_log_mod
-        from core.agent import _rotate_prompt_logs
+        import core.agent.prompt_log as _prompt_log_mod
+        from core.agent.agent_core import _rotate_prompt_logs
 
         log_dir = tmp_path / "prompt_logs"
         log_dir.mkdir()

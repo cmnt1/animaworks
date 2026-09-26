@@ -108,7 +108,7 @@ task runnerはthinking/tool/text等の既存chunkを `stream_chunk` eventで送�
 - `grace`: root→runner。§9のflushを要求する。
 - `heartbeat`: idle時のhalf-open検知専用。
 
-steer capabilityはengine別にnegotiationする。Mode SはPR-9b冒頭でadapterが同一clientを公開する改修とSDK並行`query()`の実機検証を行う。Mode C/Xを含め、active turn注入を保証できないengineは `steer=false` とする。fallbackは単純なFIFO待ちへ変えず、現行どおり二件目がinterrupt eventを設定してconversation lockを待つ（現行経路 `core/_anima_messaging.py:882-927,940-955`）（B-09）。
+steer capabilityはengine別にnegotiationする。Mode SはPR-9b冒頭でadapterが同一clientを公開する改修とSDK並行`query()`の実機検証を行う。Mode C/Xを含め、active turn注入を保証できないengineは `steer=false` とする。fallbackは単純なFIFO待ちへ変えず、現行どおり二件目がinterrupt eventを設定してconversation lockを待つ（現行経路 `core/anima/messaging.py:882-927,940-955`）（B-09）。
 
 cronは同一task名だけ直列、異なるtask名は並行可能、missed runはskipとする。現行の同名skipと独立spawnは `core/supervisor/scheduler_manager.py:849-876` にある（B-06）。
 

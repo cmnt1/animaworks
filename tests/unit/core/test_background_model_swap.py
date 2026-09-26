@@ -22,7 +22,7 @@ from core.schemas import ModelConfig
 
 def _make_heartbeat_mixin(model_config: ModelConfig) -> object:
     """Create a minimal HeartbeatMixin-like object for testing."""
-    from core._anima_heartbeat import HeartbeatMixin
+    from core.anima.heartbeat import HeartbeatMixin
 
     class FakeMixin(HeartbeatMixin):
         pass
@@ -294,8 +294,8 @@ class TestHeartbeatModelSwap:
 
 def _make_inbox_mixin(model_config: ModelConfig) -> object:
     """Create a minimal InboxMixin-like object that also has _resolve_background_config."""
-    from core._anima_heartbeat import HeartbeatMixin
-    from core._anima_inbox import InboxMixin
+    from core.anima.heartbeat import HeartbeatMixin
+    from core.anima.inbox import InboxMixin
 
     class FakeAnima(HeartbeatMixin, InboxMixin):
         pass

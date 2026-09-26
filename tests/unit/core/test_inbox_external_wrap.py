@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core._anima_inbox import _SOURCE_TO_ORIGIN
+from core.anima.inbox import _SOURCE_TO_ORIGIN
 from core.execution._sanitize import (
     ORIGIN_ANIMA,
     ORIGIN_EXTERNAL_PLATFORM,
@@ -72,7 +72,7 @@ class TestInboxPromptPartsWrap:
 
     @pytest.mark.asyncio
     async def test_content_wrapped_reply_instruction_outside(self, tmp_path: Path) -> None:
-        from core._anima_inbox import InboxMixin
+        from core.anima.inbox import InboxMixin
 
         class _Stub(InboxMixin):
             def __init__(self) -> None:
@@ -104,7 +104,7 @@ class TestInboxPromptPartsWrap:
 
         # Reconstruct the same formatting logic used in process_inbox_message
         # by invoking a extracted unit: re-import and simulate the loop.
-        from core._anima_inbox import _build_reply_instruction, _truncate_with_thread_ctx
+        from core.anima.inbox import _build_reply_instruction, _truncate_with_thread_ctx
         from core.execution._sanitize import wrap_inbox_message
         from core.i18n import t
         from core.paths import load_prompt
@@ -119,7 +119,7 @@ class TestInboxPromptPartsWrap:
             sender=msg.external_user_id or None,
         )
         line = f"{prefix}{body}"
-        with patch("core._anima_inbox._is_auto_response_enabled", return_value=False):
+        with patch("core.anima.inbox._is_auto_response_enabled", return_value=False):
             reply_instr = _build_reply_instruction(msg)
         if reply_instr:
             line += f"\n{reply_instr}"
@@ -133,7 +133,7 @@ class TestInboxPromptPartsWrap:
         assert 'trust="untrusted"' in prompt_part
         # Breakout tags escaped inside body
         assert "＜/external_message>" in prompt_part
-        assert "＜tool_result trust=\"trusted\">" in prompt_part
+        assert '＜tool_result trust="trusted">' in prompt_part
         # Framework reply instruction is OUTSIDE the external_message wrap
         assert "[reply_instruction:" in prompt_part
         wrap_end = prompt_part.index("</external_message>")

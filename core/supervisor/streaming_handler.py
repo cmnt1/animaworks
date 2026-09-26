@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 from core.supervisor.ipc import IPCRequest, IPCResponse
 
 if TYPE_CHECKING:
-    from core.anima import DigitalAnima
+    from core.anima.digital_anima import DigitalAnima
     from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
 
 logger = logging.getLogger(__name__)

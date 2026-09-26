@@ -503,7 +503,7 @@ def step_split_board_by_company(data_dir: Path, dry_run: bool, verbose: bool) ->
     try:
         from core.config.models import read_anima_company
         from core.exceptions import RecipientNotFoundError
-        from core.messenger import _validate_name
+        from core.messaging.messenger import _validate_name
 
         legacy_meta = json.loads(legacy_meta_path.read_text(encoding="utf-8"))
         if not isinstance(legacy_meta, dict):
@@ -995,7 +995,7 @@ def step_prompt_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResu
             details.append("Would run merge_templates (prompts/ overwritten)")
             return StepResult(changed=1, skipped=0, details=details)
         _prime_tooling_imports()
-        from core.init import merge_templates
+        from core.infra.runtime_init import merge_templates
 
         added = merge_templates(data_dir)
         details.append(f"Merged {len(added)} template file(s)")

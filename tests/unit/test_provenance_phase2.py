@@ -277,7 +277,7 @@ class TestReceiveExternalOrigin:
 
     @pytest.fixture
     def messenger(self, tmp_path: Path) -> Any:
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         shared.mkdir(parents=True)
@@ -333,27 +333,27 @@ class TestSourceToOriginMapping:
     """_SOURCE_TO_ORIGIN in _anima_inbox.py maps correctly."""
 
     def test_slack_maps_to_external_platform(self) -> None:
-        from core._anima_inbox import _SOURCE_TO_ORIGIN
+        from core.anima.inbox import _SOURCE_TO_ORIGIN
 
         assert _SOURCE_TO_ORIGIN["slack"] == ORIGIN_EXTERNAL_PLATFORM
 
     def test_chatwork_maps_to_external_platform(self) -> None:
-        from core._anima_inbox import _SOURCE_TO_ORIGIN
+        from core.anima.inbox import _SOURCE_TO_ORIGIN
 
         assert _SOURCE_TO_ORIGIN["chatwork"] == ORIGIN_EXTERNAL_PLATFORM
 
     def test_human_maps_to_human(self) -> None:
-        from core._anima_inbox import _SOURCE_TO_ORIGIN
+        from core.anima.inbox import _SOURCE_TO_ORIGIN
 
         assert _SOURCE_TO_ORIGIN["human"] == ORIGIN_HUMAN
 
     def test_anima_maps_to_anima(self) -> None:
-        from core._anima_inbox import _SOURCE_TO_ORIGIN
+        from core.anima.inbox import _SOURCE_TO_ORIGIN
 
         assert _SOURCE_TO_ORIGIN["anima"] == ORIGIN_ANIMA
 
     def test_unknown_source_fallback(self) -> None:
-        from core._anima_inbox import _SOURCE_TO_ORIGIN
+        from core.anima.inbox import _SOURCE_TO_ORIGIN
 
         assert _SOURCE_TO_ORIGIN.get("future_platform", ORIGIN_UNKNOWN) == ORIGIN_UNKNOWN
 

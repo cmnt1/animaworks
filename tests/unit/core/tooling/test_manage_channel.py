@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from core.messenger import (
+from core.messaging.messenger import (
     ChannelMeta,
     Messenger,
     load_channel_meta,
@@ -426,7 +426,7 @@ class TestHandlerPostReadACL:
         assert not (shared_dir / "channels" / "tombstone.jsonl").exists()
 
         with (
-            patch("core.messenger.is_channel_member", return_value=True),
+            patch("core.messaging.messenger.is_channel_member", return_value=True),
             patch("core.config.models.load_config") as mock_cfg,
         ):
             mock_cfg.return_value = MagicMock()

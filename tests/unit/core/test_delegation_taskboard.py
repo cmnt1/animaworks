@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.tasks.board.models import BoardColumn
 from core.tasks.board.store import TaskBoardStore
 from core.tooling.handler_delegation import DelegationMixin

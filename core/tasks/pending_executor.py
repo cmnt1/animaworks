@@ -34,7 +34,7 @@ from core.platform.processing_lease import (
 from core.time_utils import now_iso
 
 if TYPE_CHECKING:
-    from core.anima import BackgroundWorkerSlot, DigitalAnima
+    from core.anima.digital_anima import BackgroundWorkerSlot, DigitalAnima
     from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
 
 logger = logging.getLogger(__name__)
@@ -141,7 +141,7 @@ def _resolve_default_workspace(anima_dir: Path) -> str:
 
     Returns absolute path string, or empty string if not set or resolution fails.
     """
-    from core.workspace import resolve_default_workspace
+    from core.org.workspace import resolve_default_workspace
 
     resolved, _alias = resolve_default_workspace(anima_dir)
     return str(resolved) if resolved else ""

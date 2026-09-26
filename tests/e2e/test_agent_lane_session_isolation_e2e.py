@@ -61,8 +61,8 @@ async def test_taskexec_runs_on_background_lane_while_chat_session_lock_is_held(
 
     background_agent.run_cycle_streaming = MagicMock(side_effect=lambda *a, **kw: _background_stream(*a, **kw))
 
-    with patch("core.anima.AgentCore", side_effect=[chat_agent, background_agent, inbox_agent]):
-        from core.anima import DigitalAnima
+    with patch("core.anima.digital_anima.AgentCore", side_effect=[chat_agent, background_agent, inbox_agent]):
+        from core.anima.digital_anima import DigitalAnima
 
         anima = DigitalAnima(anima_dir, shared_dir)
 

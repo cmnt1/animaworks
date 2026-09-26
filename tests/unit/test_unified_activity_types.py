@@ -216,7 +216,10 @@ class TestBackendActivityLogSummary:
     plus all core/_anima_*.py files.
     """
 
-    _ANIMA_FILES = [_WORKTREE / "core" / "anima.py", *(_WORKTREE / "core").glob("_anima_*.py")]
+    _ANIMA_FILES = [
+        _WORKTREE / "core" / "anima" / f"{name}.py"
+        for name in ("digital_anima", "lifecycle", "messaging", "inbox", "heartbeat")
+    ]
 
     @classmethod
     def _read_all(cls) -> str:
@@ -233,7 +236,9 @@ class TestBackendActivityLogSummary:
         content = self._read_all()
         pattern = r'activity\.log\(\s*"message_received",\s*content=content,\s*summary=content\[:100\]'
         matches = re.findall(pattern, content)
-        assert len(matches) == 3, f"Expected 3 message_received calls with summary (chat, inbox, steer injection), found {len(matches)}"
+        assert len(matches) == 3, (
+            f"Expected 3 message_received calls with summary (chat, inbox, steer injection), found {len(matches)}"
+        )
 
     def test_message_received_from_anima_has_summary(self) -> None:
         content = self._read_all()

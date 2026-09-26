@@ -171,15 +171,13 @@ class TestAuthenticatedResolveApi:
         from core.notification.interactive import get_interaction_router
 
         async def setup():
-            return await get_interaction_router().create(
-                "ui_anima", "approval", ["approve", "reject"]
-            )
+            return await get_interaction_router().create("ui_anima", "approval", ["approve", "reject"])
 
         import asyncio
 
         req = asyncio.run(setup())
         with (
-            patch("core.messenger.Messenger"),
+            patch("core.messaging.messenger.Messenger"),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         ):
             (tmp_path / "animas" / "ui_anima" / "activity_log").mkdir(parents=True)
@@ -216,7 +214,7 @@ class TestAuthenticatedResolveApi:
 
         req = asyncio.run(setup())
         with (
-            patch("core.messenger.Messenger"),
+            patch("core.messaging.messenger.Messenger"),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         ):
             (tmp_path / "animas" / "ui_anima" / "activity_log").mkdir(parents=True)

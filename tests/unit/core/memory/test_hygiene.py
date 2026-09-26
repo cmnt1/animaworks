@@ -4,7 +4,7 @@ import json
 from datetime import date
 from pathlib import Path
 
-from core._anima_lifecycle import _format_hygiene_section
+from core.anima.lifecycle import _format_hygiene_section
 from core.i18n.strings.memory import STRINGS as MEMORY_STRINGS
 from core.memory.maintenance.hygiene import scan_memory_hygiene
 

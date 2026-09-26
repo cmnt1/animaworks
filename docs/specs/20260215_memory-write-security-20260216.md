@@ -31,7 +31,7 @@ A1モード（Claude Agent SDK native tools）の両方で対策が必要。
 | Bash | **システムプロンプトのみ** | 同上。コマンド経由であらゆるファイル操作が可能 |
 | Read | **システムプロンプトのみ** | 他者の記憶を含む任意ファイルを読み取り可能 |
 
-A1モードでは ToolHandler を一切経由しない（`core/agent.py:186-195` で AgentSDKExecutor に
+A1モードでは ToolHandler を一切経由しない（`core/agent/agent_core.py:186-195` で AgentSDKExecutor に
 `tool_handler` は渡されていない）。制限はシステムプロンプト（`environment.md`）の記述のみ。
 
 ### 攻撃シナリオ
@@ -426,7 +426,7 @@ options = ClaudeAgentOptions(
 - `core/tooling/handler.py:266-295` — _handle_execute_command
 - `core/tooling/handler.py:454-487` — _check_file_permission（person_dir内は全許可）
 - `core/execution/agent_sdk.py:168-179` — ClaudeAgentOptions（PostToolUseフックのみ）
-- `core/agent.py:186-195` — AgentSDKExecutor生成（ToolHandler未使用）
-- `core/agent.py:230-238` — LiteLLMExecutor生成（ToolHandler使用）
+- `core/agent/agent_core.py:186-195` — AgentSDKExecutor生成（ToolHandler未使用）
+- `core/agent/agent_core.py:230-238` — LiteLLMExecutor生成（ToolHandler使用）
 - `claude_agent_sdk/types.py` — PreToolUseHookSpecificOutput, permissionDecision
 - `templates/prompts/environment.md` — 活動範囲ルール（プロンプトのみ）

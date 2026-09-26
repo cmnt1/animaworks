@@ -559,7 +559,7 @@ def preserved_status_settings(status_data: dict[str, Any]) -> dict[str, Any]:
 
 def repair_bootstrap_fresh(animas_dir: Path, name: str, *, archive_root: Path) -> tuple[Path, Path]:
     """Archive and recreate a blank Anima, preserving model credential settings."""
-    from core.anima_factory import create_blank
+    from core.anima.factory import create_blank
 
     anima_dir = animas_dir / name
     if not anima_dir.exists():

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 """InboxMixin -- Anima-to-Anima message (inbox) processing.
 
-Extracted from ``core.anima.DigitalAnima`` as a Mixin.  All ``self``
+Extracted from ``core.anima.digital_anima.DigitalAnima`` as a Mixin.  All ``self``
 references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 """
 
@@ -30,7 +30,7 @@ from core.execution.error_classifier import classify_llm_error
 from core.execution.fallback_activity import run_with_model_fallback
 from core.i18n import t
 from core.memory.conversation.streaming_journal import StreamingJournal
-from core.messenger import InboxItem
+from core.messaging.messenger import InboxItem
 from core.paths import load_prompt
 from core.schemas import CycleResult
 from core.time_utils import now_local
@@ -566,7 +566,7 @@ class InboxMixin:
                     # ── Slack auto-response: post LLM reply back to Slack ──
                     if not cycle_failed and accumulated_text.strip() and _is_auto_response_enabled():
                         try:
-                            from core.outbound_auto import SlackAutoResponder
+                            from core.messaging.outbound_auto import SlackAutoResponder
 
                             _auto = SlackAutoResponder()
                             # Build set of channels the LLM already posted to
@@ -589,7 +589,7 @@ class InboxMixin:
                     # ── Discord auto-response: post LLM reply back to Discord ──
                     if not cycle_failed and accumulated_text.strip() and _is_auto_response_enabled_discord():
                         try:
-                            from core.outbound_auto import DiscordAutoResponder
+                            from core.messaging.outbound_auto import DiscordAutoResponder
 
                             _discord_auto = DiscordAutoResponder()
                             _already_discord: set[str] = set()
@@ -750,7 +750,7 @@ class InboxMixin:
         # ── Message overflow handling ──
         if track_retries:
             try:
-                from core.memory.dedup import MessageDeduplicator
+                from core.anima.inbox_overflow import MessageDeduplicator
 
                 dedup = MessageDeduplicator(self.anima_dir)
 
@@ -838,7 +838,7 @@ class InboxMixin:
 
         if _stale_items:
             try:
-                from core.memory.dedup import MessageDeduplicator
+                from core.anima.inbox_overflow import MessageDeduplicator
 
                 dedup_stale = MessageDeduplicator(self.anima_dir)
                 for item in _stale_items:

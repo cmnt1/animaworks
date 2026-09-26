@@ -18,10 +18,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.memory import MemoryManager
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.time_utils import now_jst
 from core.tooling.handler import ToolHandler
-
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -31,7 +30,8 @@ def _make_anima_dir(tmp_path: Path, name: str) -> Path:
     anima_dir = tmp_path / "animas" / name
     anima_dir.mkdir(parents=True, exist_ok=True)
     (anima_dir / "identity.md").write_text(
-        f"# {name}\n\nテスト用Anima。\n", encoding="utf-8",
+        f"# {name}\n\nテスト用Anima。\n",
+        encoding="utf-8",
     )
     (anima_dir / "status.json").write_text("{}", encoding="utf-8")
     (anima_dir / "permissions.md").write_text(
@@ -92,25 +92,34 @@ class TestPostChannelRateLimitingE2E:
         handler1 = _make_tool_handler(alice_dir, shared_dir)
 
         # ── Per-run guard: 1回目は成功 ──
-        result1 = handler1.handle("post_channel", {
-            "channel": "general",
-            "text": "Hello from first post",
-        })
+        result1 = handler1.handle(
+            "post_channel",
+            {
+                "channel": "general",
+                "text": "Hello from first post",
+            },
+        )
         assert "Posted to #general" in result1
 
         # ── Per-run guard: 同一チャネルへの2回目はブロック ──
-        result2 = handler1.handle("post_channel", {
-            "channel": "general",
-            "text": "Second post attempt",
-        })
+        result2 = handler1.handle(
+            "post_channel",
+            {
+                "channel": "general",
+                "text": "Second post attempt",
+            },
+        )
         assert "Error" in result2
         assert "投稿済み" in result2
 
         # ── Per-run guard: 異なるチャネルは許可 ──
-        result3 = handler1.handle("post_channel", {
-            "channel": "ops",
-            "text": "Ops message",
-        })
+        result3 = handler1.handle(
+            "post_channel",
+            {
+                "channel": "ops",
+                "text": "Ops message",
+            },
+        )
         assert "Posted to #ops" in result3
 
         # ── Cross-run guard: 新しいハンドラ（新しいrun）でも cooldown 内はブロック ──
@@ -120,10 +129,13 @@ class TestPostChannelRateLimitingE2E:
             mock_cfg.return_value = MagicMock()
             mock_cfg.return_value.locale = "ja"
             mock_cfg.return_value.heartbeat.channel_post_cooldown_s = 300
-            result4 = handler2.handle("post_channel", {
-                "channel": "general",
-                "text": "New run post",
-            })
+            result4 = handler2.handle(
+                "post_channel",
+                {
+                    "channel": "general",
+                    "text": "New run post",
+                },
+            )
         assert "Error" in result4
         assert "クールダウン" in result4
 
@@ -171,12 +183,12 @@ class TestCascadeLimiterFileBasedE2E:
         log_file.write_text("\n".join(entries) + "\n", encoding="utf-8")
 
         # Create limiter with low max_depth
-        with patch("core.cascade_limiter.load_config") as mock_cfg:
+        with patch("core.messaging.cascade_limiter.load_config") as mock_cfg:
             mock_cfg.return_value = MagicMock()
             mock_cfg.return_value.heartbeat.depth_window_s = 600
             mock_cfg.return_value.heartbeat.max_depth = max_depth
 
-            from core.cascade_limiter import ConversationDepthLimiter
+            from core.messaging.cascade_limiter import ConversationDepthLimiter
 
             limiter = ConversationDepthLimiter(window_s=600, max_depth=max_depth)
 
@@ -188,13 +200,14 @@ class TestCascadeLimiterFileBasedE2E:
         assert depth == max_depth
 
         # ── With higher limit, should allow ──
-        with patch("core.cascade_limiter.load_config") as mock_cfg:
+        with patch("core.messaging.cascade_limiter.load_config") as mock_cfg:
             mock_cfg.return_value = MagicMock()
             mock_cfg.return_value.heartbeat.depth_window_s = 600
             mock_cfg.return_value.heartbeat.max_depth = max_depth + 10
 
             limiter_lenient = ConversationDepthLimiter(
-                window_s=600, max_depth=max_depth + 10,
+                window_s=600,
+                max_depth=max_depth + 10,
             )
 
         assert limiter_lenient.check_depth("alice", "bob", anima_dir) is True
@@ -242,24 +255,33 @@ class TestPrimingOutboundSectionE2E:
         ts3 = (now_jst() - timedelta(minutes=10)).isoformat()
 
         entries = [
-            json.dumps({
-                "ts": ts1,
-                "type": "channel_post",
-                "content": "進捗報告です",
-                "channel": "general",
-            }, ensure_ascii=False),
-            json.dumps({
-                "ts": ts2,
-                "type": "message_sent",
-                "content": "確認お願いします",
-                "to": "bob",
-            }, ensure_ascii=False),
-            json.dumps({
-                "ts": ts3,
-                "type": "message_sent",
-                "content": "ありがとうございました",
-                "to": "charlie",
-            }, ensure_ascii=False),
+            json.dumps(
+                {
+                    "ts": ts1,
+                    "type": "channel_post",
+                    "content": "進捗報告です",
+                    "channel": "general",
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "ts": ts2,
+                    "type": "message_sent",
+                    "content": "確認お願いします",
+                    "to": "bob",
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "ts": ts3,
+                    "type": "message_sent",
+                    "content": "ありがとうございました",
+                    "to": "charlie",
+                },
+                ensure_ascii=False,
+            ),
         ]
         log_file.write_text("\n".join(entries) + "\n", encoding="utf-8")
 
@@ -293,12 +315,15 @@ class TestPrimingOutboundSectionE2E:
 
         old_ts = (now_jst() - timedelta(hours=3)).isoformat()
         entries = [
-            json.dumps({
-                "ts": old_ts,
-                "type": "channel_post",
-                "content": "Ancient post",
-                "channel": "general",
-            }, ensure_ascii=False),
+            json.dumps(
+                {
+                    "ts": old_ts,
+                    "type": "channel_post",
+                    "content": "Ancient post",
+                    "channel": "general",
+                },
+                ensure_ascii=False,
+            ),
         ]
         log_file.write_text("\n".join(entries) + "\n", encoding="utf-8")
 

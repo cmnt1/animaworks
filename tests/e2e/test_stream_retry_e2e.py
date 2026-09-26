@@ -154,11 +154,11 @@ class TestStreamRetryFullFlow:
 
         # Mock prompt building to avoid filesystem reads
         monkeypatch.setattr(
-            "core._agent_cycle.build_system_prompt",
+            "core.agent.cycle.build_system_prompt",
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
         )
         monkeypatch.setattr(
-            "core._agent_cycle.inject_shortterm",
+            "core.agent.cycle.inject_shortterm",
             lambda sp, st: sp,
         )
 
@@ -225,11 +225,11 @@ class TestStreamRetryMaxExceeded:
         )
 
         monkeypatch.setattr(
-            "core._agent_cycle.build_system_prompt",
+            "core.agent.cycle.build_system_prompt",
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
         )
         monkeypatch.setattr(
-            "core._agent_cycle.inject_shortterm",
+            "core.agent.cycle.inject_shortterm",
             lambda sp, st: sp,
         )
 
@@ -286,11 +286,11 @@ class TestCheckpointClearedOnSuccess:
             },
         )
         monkeypatch.setattr(
-            "core._agent_cycle.build_system_prompt",
+            "core.agent.cycle.build_system_prompt",
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
         )
         monkeypatch.setattr(
-            "core._agent_cycle.inject_shortterm",
+            "core.agent.cycle.inject_shortterm",
             lambda sp, st: sp,
         )
 
@@ -371,11 +371,11 @@ class TestCheckpointClearedOnSuccess:
             },
         )
         monkeypatch.setattr(
-            "core._agent_cycle.build_system_prompt",
+            "core.agent.cycle.build_system_prompt",
             lambda *args, **kwargs: BuildResult(system_prompt="mock system prompt"),
         )
         monkeypatch.setattr(
-            "core._agent_cycle.inject_shortterm",
+            "core.agent.cycle.inject_shortterm",
             lambda sp, st: sp,
         )
 

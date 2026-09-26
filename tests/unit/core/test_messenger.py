@@ -1,4 +1,4 @@
-"""Unit tests for core/messenger.py — file-system messaging."""
+"""Unit tests for core/messaging/messenger.py — file-system messaging."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -16,7 +16,7 @@ import pytest
 
 from core.exceptions import DeliveryError
 from core.i18n import t
-from core.messenger import InboxItem, Messenger
+from core.messaging.messenger import InboxItem, Messenger
 from core.schemas import Message
 from core.time_utils import now_local
 from core.tooling.handler_comms import CommsToolsMixin

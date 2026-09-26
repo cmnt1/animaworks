@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from core.company import (
+from core.org.company import (
     CompanyError,
     SplitExecutionError,
     adopt_assets,

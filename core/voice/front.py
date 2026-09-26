@@ -96,7 +96,7 @@ def _is_repeating(text: str, window: int = _REPEAT_WINDOW) -> bool:
 
 def extract_emotion(full_text: str) -> str:
     """Parse the emotion tag from a front response; default to ``neutral``."""
-    from core.emotion_tag import parse_emotion_value
+    from core.anima.emotion_tag import parse_emotion_value
 
     return parse_emotion_value(full_text)
 

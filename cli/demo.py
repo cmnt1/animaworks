@@ -248,9 +248,9 @@ def _copy_examples(examples: Path, data_dir: Path, repo_root: Path) -> None:
 def initialize_demo(data_dir: Path, preset_dir: Path, repo_root: Path, auth: dict) -> None:
     """Run first-run initialization (port of entrypoint steps 1-10)."""
     from cli.commands.init_cmd import _register_anima_in_config
-    from core.anima_factory import create_from_md
+    from core.anima.factory import create_from_md
     from core.config import invalidate_cache
-    from core.init import ensure_runtime_dir, merge_templates
+    from core.infra.runtime_init import ensure_runtime_dir, merge_templates
 
     # 1. Initialize infrastructure (no default anima)
     ensure_runtime_dir(skip_animas=True)

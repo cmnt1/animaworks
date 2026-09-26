@@ -238,7 +238,7 @@ def test_search_memory_all_scope_combines_graph_and_legacy_only_scopes_e2e(tmp_p
 @pytest.mark.e2e
 def test_realtime_neo4j_ingest_records_user_and_assistant_turn(tmp_path) -> None:
     """Realtime chat ingest should store the full turn body with stable metadata."""
-    from core._anima_messaging import MessagingMixin
+    from core.anima.messaging import MessagingMixin
 
     class FakeAnima(MessagingMixin):
         pass

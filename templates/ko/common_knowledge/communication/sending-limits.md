@@ -3,7 +3,7 @@
 메시지 과다 전송 (메시지 스톰)을 방지하기 위한 3계층 레이트 제한 시스템의 상세입니다.
 전송 오류 발생 시나 제한 구조를 이해하고 싶을 때 참조하세요.
 
-**구현**: `core/cascade_limiter.py` (깊이 및 글로벌 제한), `core/messenger.py` (전송 전 체크), `core/tooling/handler_comms.py` (per-run 및 Board 제한), `core/outbound.py` (수신자 해결 및 외부 전달)
+**구현**: `core/messaging/cascade_limiter.py` (깊이 및 글로벌 제한), `core/messaging/messenger.py` (전송 전 체크), `core/tooling/handler_comms.py` (per-run 및 Board 제한), `core/messaging/outbound.py` (수신자 해결 및 외부 전달)
 
 ## 3계층 레이트 제한
 

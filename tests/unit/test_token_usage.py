@@ -317,7 +317,7 @@ class TestSummarize:
 
 class TestMergeStreamUsage:
     def test_merge(self):
-        from core._agent_cycle import _merge_stream_usage
+        from core.agent.cycle import _merge_stream_usage
 
         acc = {"input_tokens": 100, "output_tokens": 50, "cache_read_tokens": 0, "cache_write_tokens": 0}
         _merge_stream_usage(acc, {"input_tokens": 200, "output_tokens": 100, "cache_read_tokens": 10})
@@ -326,14 +326,14 @@ class TestMergeStreamUsage:
         assert acc["cache_read_tokens"] == 10
 
     def test_merge_none(self):
-        from core._agent_cycle import _merge_stream_usage
+        from core.agent.cycle import _merge_stream_usage
 
         acc = {"input_tokens": 100, "output_tokens": 50, "cache_read_tokens": 0, "cache_write_tokens": 0}
         _merge_stream_usage(acc, None)
         assert acc["input_tokens"] == 100
 
     def test_merge_empty(self):
-        from core._agent_cycle import _merge_stream_usage
+        from core.agent.cycle import _merge_stream_usage
 
         acc = {"input_tokens": 100, "output_tokens": 50, "cache_read_tokens": 0, "cache_write_tokens": 0}
         _merge_stream_usage(acc, {})

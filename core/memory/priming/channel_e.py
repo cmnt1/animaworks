@@ -16,7 +16,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from core.file_access_policy import find_denied_root, load_denied_roots
+from core.config.file_access_policy import find_denied_root, load_denied_roots
 from core.i18n import t
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items
 from core.paths import get_animas_dir

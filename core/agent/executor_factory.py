@@ -6,7 +6,7 @@ from __future__ import annotations
 
 """ExecutorFactoryMixin -- tool registry, executor factory, API key helpers.
 
-Extracted from ``core.agent.AgentCore`` as a Mixin.  All ``self`` references
+Extracted from ``core.agent.agent_core.AgentCore`` as a Mixin.  All ``self`` references
 are resolved at runtime via MRO when mixed into ``AgentCore``.
 """
 

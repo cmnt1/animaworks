@@ -6,7 +6,7 @@ from __future__ import annotations
 
 """MessagingMixin -- human chat processing (blocking/streaming), bootstrap, greeting.
 
-Extracted from ``core.anima.DigitalAnima`` as a Mixin.  All ``self``
+Extracted from ``core.anima.digital_anima.DigitalAnima`` as a Mixin.  All ``self``
 references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 """
 
@@ -19,8 +19,10 @@ from contextlib import nullcontext
 from hashlib import sha256
 from typing import Any
 
+from core.anima.emotion_tag import extract_emotion as _extract_emotion_from_tag
+from core.anima.image_artifacts import extract_image_artifacts_from_tool_records, resolve_local_image_paths
+from core.anima.response_normalize import normalize_user_facing_response_text
 from core.config.model_config import resolve_effective_model_config
-from core.emotion_tag import extract_emotion as _extract_emotion_from_tag
 from core.exceptions import (
     ExecutionError,
     LLMAPIError,
@@ -40,11 +42,9 @@ from core.execution.fallback_activity import (
 )
 from core.execution.session_types import resolve_runtime_session_type
 from core.i18n import t
-from core.image_artifacts import extract_image_artifacts_from_tool_records, resolve_local_image_paths
 from core.memory.conversation.memory import ConversationMemory, ToolRecord
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.paths import load_prompt
-from core.response_normalize import normalize_user_facing_response_text
 from core.schemas import EXTERNAL_PLATFORM_SOURCES, CycleResult, ImageData, ModelConfig
 from core.time_utils import now_local, today_local
 
@@ -530,7 +530,7 @@ class MessagingMixin:
     def _sync_interactive_bootstrap_state(self) -> None:
         """Persist completed/repair state after chat-driven bootstrap changes."""
         try:
-            from core.bootstrap_state import get_bootstrap_status, write_bootstrap_state
+            from core.anima.bootstrap_state import get_bootstrap_status, write_bootstrap_state
 
             status = get_bootstrap_status(self.anima_dir)
             if status.get("state") in {"completed", "needs_repair"}:
@@ -556,7 +556,7 @@ class MessagingMixin:
         if from_person in ("system", "") or from_person == self.name:
             return
         try:
-            from core.anima_roster import is_anima_name
+            from core.anima.roster import is_anima_name
 
             if is_anima_name(from_person):
                 logger.info(
@@ -606,7 +606,7 @@ class MessagingMixin:
             return None
         try:
             from core.config.models import load_config
-            from core.outbound import resolve_recipient
+            from core.messaging.outbound import resolve_recipient
             from core.paths import get_animas_dir
 
             config = load_config()
@@ -643,7 +643,7 @@ class MessagingMixin:
         content: str,
     ) -> tuple[str, dict[str, Any]]:
         """Deliver a chat reply via external DM and return a chat-safe notice."""
-        from core.outbound import send_external
+        from core.messaging.outbound import send_external
 
         raw = send_external(
             resolved,
@@ -702,7 +702,7 @@ class MessagingMixin:
             )
 
         logger.info("[%s] run_bootstrap START", self.name)
-        from core.bootstrap_state import finalize_bootstrap_run, mark_bootstrap_failed, mark_bootstrap_running
+        from core.anima.bootstrap_state import finalize_bootstrap_run, mark_bootstrap_failed, mark_bootstrap_running
         from core.tooling.handler import active_session_type
 
         try:
@@ -1056,7 +1056,7 @@ class MessagingMixin:
                     def _fire_compaction_b(_anima=self, _tid=_sched_thread_b):
                         import asyncio as _aio
 
-                        from core.session_compactor import (
+                        from core.agent.session_compactor import (
                             run_idle_compaction,
                         )
 
@@ -1421,7 +1421,7 @@ class MessagingMixin:
                             def _fire_compaction(_anima=self, _tid=_sched_thread):
                                 import asyncio as _aio
 
-                                from core.session_compactor import (
+                                from core.agent.session_compactor import (
                                     run_idle_compaction,
                                 )
 

@@ -26,7 +26,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.cascade_limiter import ConversationDepthLimiter
+from core.messaging.cascade_limiter import ConversationDepthLimiter
 from core.time_utils import now_jst
 
 
@@ -64,7 +64,7 @@ def _make_dm_entry(
 @pytest.fixture
 def _patch_config():
     """Patch load_config for ConversationDepthLimiter.__init__."""
-    with patch("core.cascade_limiter.load_config") as mock_cfg:
+    with patch("core.messaging.cascade_limiter.load_config") as mock_cfg:
         mock_cfg.return_value.heartbeat.depth_window_s = 600
         mock_cfg.return_value.heartbeat.max_depth = 6
         yield mock_cfg
@@ -404,14 +404,14 @@ class TestModuleSingleton:
 
     def test_get_depth_limiter_returns_instance(self):
         """get_depth_limiter() returns a ConversationDepthLimiter."""
-        from core.cascade_limiter import get_depth_limiter
+        from core.messaging.cascade_limiter import get_depth_limiter
 
         limiter = get_depth_limiter()
         assert isinstance(limiter, ConversationDepthLimiter)
 
     def test_backward_compat_alias_exists(self):
         """Module-level depth_limiter alias still exists."""
-        from core.cascade_limiter import depth_limiter
+        from core.messaging.cascade_limiter import depth_limiter
 
         assert isinstance(depth_limiter, ConversationDepthLimiter)
 

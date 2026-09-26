@@ -238,13 +238,13 @@ class TestFormatHelpers:
     """Tests for _format_knowledge_list and _format_merge_candidates."""
 
     def test_format_knowledge_list_empty(self) -> None:
-        from core._anima_lifecycle import _format_knowledge_list
+        from core.anima.lifecycle import _format_knowledge_list
 
         result = _format_knowledge_list([])
         assert "knowledgeファイルなし" in result
 
     def test_format_knowledge_list_with_data(self) -> None:
-        from core._anima_lifecycle import _format_knowledge_list
+        from core.anima.lifecycle import _format_knowledge_list
 
         files = [
             {
@@ -258,13 +258,13 @@ class TestFormatHelpers:
         assert "0.8" in result
 
     def test_format_merge_candidates_empty(self) -> None:
-        from core._anima_lifecycle import _format_merge_candidates
+        from core.anima.lifecycle import _format_merge_candidates
 
         result = _format_merge_candidates([])
         assert "マージ候補なし" in result
 
     def test_format_merge_candidates_with_data(self) -> None:
-        from core._anima_lifecycle import _format_merge_candidates
+        from core.anima.lifecycle import _format_merge_candidates
 
         candidates = [("a.md", "b.md", 0.85)]
         result = _format_merge_candidates(candidates)

@@ -25,12 +25,12 @@ from core.time_utils import now_jst
 def _make_digital_anima(anima_dir, shared_dir):
     """Create a DigitalAnima with mocked dependencies."""
     with (
-        patch("core.anima.AgentCore"),
-        patch("core.anima.MemoryManager") as MockMM,
-        patch("core.anima.Messenger"),
+        patch("core.anima.digital_anima.AgentCore"),
+        patch("core.anima.digital_anima.MemoryManager") as MockMM,
+        patch("core.anima.digital_anima.Messenger"),
     ):
         MockMM.return_value.read_model_config.return_value = MagicMock()
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         return DigitalAnima(anima_dir, shared_dir)
 

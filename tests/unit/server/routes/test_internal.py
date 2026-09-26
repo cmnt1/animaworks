@@ -33,7 +33,7 @@ class TestInternalCompanyBoundary:
         app = _make_test_app()
         transport = ASGITransport(app=app)
         with (
-            patch("core.company.get_company_display_name", return_value="Beta Corporation"),
+            patch("core.org.company.get_company_display_name", return_value="Beta Corporation"),
             patch(
                 "core.config.models.read_anima_company_checked",
                 side_effect=[(True, "alpha"), (True, "beta")],

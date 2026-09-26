@@ -13,8 +13,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from core.config.file_access_policy import find_denied_root, load_denied_roots
 from core.config.models import read_anima_company
-from core.file_access_policy import find_denied_root, load_denied_roots
 from core.paths import get_data_dir, load_prompt, load_prompt_text
 from core.prompt.sections import _load_fallback_strings, _load_section_strings
 

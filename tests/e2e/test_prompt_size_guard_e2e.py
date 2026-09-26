@@ -103,12 +103,12 @@ class TestPreflightConstants:
     """Pre-flight size check constants are properly defined."""
 
     def test_soft_limit_exists(self):
-        from core.agent import _PROMPT_SOFT_LIMIT_BYTES
+        from core.agent.agent_core import _PROMPT_SOFT_LIMIT_BYTES
 
         assert _PROMPT_SOFT_LIMIT_BYTES > 0
 
     def test_hard_limit_exists(self):
-        from core.agent import _PROMPT_HARD_LIMIT_BYTES
+        from core.agent.agent_core import _PROMPT_HARD_LIMIT_BYTES
 
         assert _PROMPT_HARD_LIMIT_BYTES > 0
 
@@ -119,7 +119,7 @@ class TestPreflightConstants:
 
     def test_limits_ordering(self):
         """Soft < Hard < SDK buffer."""
-        from core.agent import _PROMPT_HARD_LIMIT_BYTES, _PROMPT_SOFT_LIMIT_BYTES
+        from core.agent.agent_core import _PROMPT_HARD_LIMIT_BYTES, _PROMPT_SOFT_LIMIT_BYTES
         from core.execution.agent_sdk import _SDK_MAX_BUFFER_SIZE
 
         assert _PROMPT_SOFT_LIMIT_BYTES < _PROMPT_HARD_LIMIT_BYTES < _SDK_MAX_BUFFER_SIZE

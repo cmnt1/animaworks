@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from core.memory.activity.logger import ActivityLogger
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 
 
 @pytest.fixture
@@ -110,7 +110,7 @@ class TestCascadeLimiterMixedLogs:
         for _ in range(3):
             activity.log("message_sent", content="new", to_person="bob", meta={"from_type": "anima"})
 
-        from core.cascade_limiter import ConversationDepthLimiter
+        from core.messaging.cascade_limiter import ConversationDepthLimiter
 
         limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
 
@@ -124,7 +124,7 @@ class TestCascadeLimiterMixedLogs:
         activity.log("dm_sent", content="old", to_person="bob")
         activity.log("message_sent", content="new", to_person="bob", meta={"from_type": "anima"})
 
-        from core.cascade_limiter import ConversationDepthLimiter
+        from core.messaging.cascade_limiter import ConversationDepthLimiter
 
         limiter = ConversationDepthLimiter(window_s=600, max_depth=6)
 

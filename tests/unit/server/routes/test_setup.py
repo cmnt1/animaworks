@@ -631,7 +631,7 @@ class TestCompleteSetup:
             patch("core.config.save_config"),
             patch("core.config.invalidate_cache"),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
-            patch("core.anima_factory.create_blank", return_value=anima_dir),
+            patch("core.anima.factory.create_blank", return_value=anima_dir),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -684,7 +684,7 @@ class TestCompleteSetup:
             patch("core.config.save_config"),
             patch("core.config.invalidate_cache"),
             patch("core.paths.get_animas_dir", return_value=Path("/tmp/test/animas")),
-            patch("core.anima_factory.create_blank", side_effect=FileExistsError("already exists")),
+            patch("core.anima.factory.create_blank", side_effect=FileExistsError("already exists")),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -715,7 +715,7 @@ class TestCompleteSetup:
             patch("core.config.save_config"),
             patch("core.config.invalidate_cache"),
             patch("core.paths.get_animas_dir", return_value=Path("/tmp/test/animas")),
-            patch("core.anima_factory.create_blank", side_effect=RuntimeError("disk error")),
+            patch("core.anima.factory.create_blank", side_effect=RuntimeError("disk error")),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -746,7 +746,7 @@ class TestCompleteSetup:
             patch("core.config.save_config"),
             patch("core.config.invalidate_cache"),
             patch("core.paths.get_animas_dir", return_value=Path("/tmp/test/animas")),
-            patch("core.anima_factory.create_blank") as mock_create,
+            patch("core.anima.factory.create_blank") as mock_create,
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -905,7 +905,7 @@ class TestCompleteSetup:
             patch("core.config.save_config"),
             patch("core.config.invalidate_cache"),
             patch("core.paths.get_animas_dir", return_value=animas_dir),
-            patch("core.anima_factory.create_blank"),
+            patch("core.anima.factory.create_blank"),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(

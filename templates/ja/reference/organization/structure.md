@@ -1,7 +1,7 @@
 # 組織構造の仕組み
 
 AnimaWorks における組織構造は、各 Anima の `status.json`（または `identity.md`）を Single Source of Truth（SSoT）として構築される。
-`core/org_sync.py` がディスク上の **supervisor** を `config.json` に同期し、プロンプト構築時に利用される。
+`core/org/org_sync.py` がディスク上の **supervisor** を `config.json` に同期し、プロンプト構築時に利用される。
 本ドキュメントでは、組織構造がどのように定義・解釈・表示されるかを説明する。
 
 ## データソースと優先順位
@@ -30,7 +30,7 @@ AnimaWorks における組織構造は、各 Anima の `status.json`（または
 
 ## org_sync による config.json 同期
 
-`core/org_sync.py` の `sync_org_structure()` が以下を行う:
+`core/org/org_sync.py` の `sync_org_structure()` が以下を行う:
 
 1. 各 Anima ディレクトリ（`identity.md` が存在するもののみ）から `status.json` / `identity.md` を読み、supervisor を抽出（`read_anima_supervisor`）
 2. 循環参照を検出（検出された Anima は同期対象外）
@@ -201,7 +201,7 @@ manager（プロジェクト管理）
 - 他の Anima がタスクの相談先や委任先を判断する手がかりになる
 - 未設定の場合は「(未設定)」と表示される
 
-**Anima 作成時の挙動（`core/anima_factory.py`）:**
+**Anima 作成時の挙動（`core/anima/factory.py`）:**
 - `animaworks anima create --from-md PATH [--role ROLE] [--supervisor NAME] [--name NAME]` で作成すると、`status.json` に `supervisor` と `role` が書き込まれる
 - **supervisor**: `--supervisor` オプションが指定されていればそれを優先。未指定の場合はキャラクターシートの基本情報テーブル（`| 上司 | name |`）から解析
 - **speciality**: キャラクターシートの基本情報テーブルには含まれず、`_create_status_json` も speciality を書き込まないため、作成時に自動設定されない

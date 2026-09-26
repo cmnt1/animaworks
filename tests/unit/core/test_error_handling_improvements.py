@@ -57,7 +57,7 @@ class TestMessengerErrorHandling:
     @pytest.fixture
     def messenger(self, data_dir: Path, make_anima):
         make_anima("msg-test")
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         return Messenger(
             shared_dir=data_dir / "shared",
@@ -218,7 +218,7 @@ class TestAnimaErrorHandling:
 
     def test_read_notifications_handles_os_error(self, tmp_path):
         """OSError in notification read should be handled gracefully."""
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = DigitalAnima.__new__(DigitalAnima)
         agent_mock = MagicMock()
@@ -238,7 +238,7 @@ class TestAnimaErrorHandling:
 
     def test_read_notifications_handles_decode_error(self, tmp_path):
         """UnicodeDecodeError in notification read should be handled."""
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = DigitalAnima.__new__(DigitalAnima)
         agent_mock = MagicMock()

@@ -72,23 +72,23 @@ _JA_ONLY: frozenset[str] = frozenset(
 DOC_SOURCE_MAP: dict[str, list[str]] = {
     # ── common_knowledge — communication ──
     "reference/communication/messaging-guide.md": [
-        "core/messenger.py",
-        "core/outbound.py",
+        "core/messaging/messenger.py",
+        "core/messaging/outbound.py",
     ],
     "common_knowledge/communication/board-guide.md": [
-        "core/messenger.py",
+        "core/messaging/messenger.py",
         "server/routes/channels.py",
     ],
     "reference/communication/instruction-patterns.md": [
-        "core/messenger.py",
+        "core/messaging/messenger.py",
         "core/tooling/handler_comms.py",
     ],
     "reference/communication/reporting-guide.md": [
-        "core/messenger.py",
-        "core/outbound.py",
+        "core/messaging/messenger.py",
+        "core/messaging/outbound.py",
     ],
     "common_knowledge/communication/sending-limits.md": [
-        "core/outbound.py",
+        "core/messaging/outbound.py",
         "core/memory/activity/logger.py",
     ],
     # ── common_knowledge — operations ──
@@ -100,13 +100,13 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     "common_knowledge/operations/task-delegation-guide.md": [
         "core/tooling/handler_delegation.py",
         "core/tasks/queue.py",
-        "core/_anima_heartbeat.py",
+        "core/anima/heartbeat.py",
         "core/execution/_sdk_hooks.py",
     ],
     "reference/operations/heartbeat-cron-guide.md": [
         "core/tasks/background.py",
-        "core/schedule_parser.py",
-        "core/_anima_heartbeat.py",
+        "core/supervisor/schedule_parser.py",
+        "core/anima/heartbeat.py",
     ],
     "common_knowledge/operations/background-tasks.md": [
         "core/tasks/background.py",
@@ -120,7 +120,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/execution/_sdk_security.py",
     ],
     "reference/operations/project-setup.md": [
-        "core/init.py",
+        "core/infra/runtime_init.py",
         "cli/commands/init_cmd.py",
     ],
     "reference/operations/tool-usage-overview.md": [
@@ -133,15 +133,15 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     ],
     # ── common_knowledge — anatomy ──
     "common_knowledge/anatomy/what-is-anima.md": [
-        "core/anima.py",
+        "core/anima/digital_anima.py",
         "core/tasks/background.py",
         "core/lifecycle.py",
     ],
     "reference/anatomy/anima-anatomy.md": [
-        "core/anima_factory.py",
-        "core/init.py",
+        "core/anima/factory.py",
+        "core/infra/runtime_init.py",
         "core/prompt/builder.py",
-        "core/schedule_parser.py",
+        "core/supervisor/schedule_parser.py",
     ],
     "reference/anatomy/memory-system.md": [
         "core/memory/",
@@ -158,11 +158,11 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     ],
     "reference/organization/roles.md": [
         "templates/_shared/",
-        "core/anima_factory.py",
+        "core/anima/factory.py",
     ],
     "reference/organization/structure.md": [
-        "core/org_sync.py",
-        "core/anima_factory.py",
+        "core/org/org_sync.py",
+        "core/anima/factory.py",
     ],
     # ── common_knowledge — security ──
     "common_knowledge/security/prompt-injection-awareness.md": [
@@ -182,12 +182,12 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/memory/",
     ],
     "common_skills/cron-management/SKILL.md": [
-        "core/schedule_parser.py",
+        "core/supervisor/schedule_parser.py",
         "core/tasks/background.py",
     ],
     "common_skills/image-posting/SKILL.md": [
         "core/integrations/image_gen.py",
-        "core/image_artifacts.py",
+        "core/anima/image_artifacts.py",
     ],
     "common_skills/skill-creator/SKILL.md": [
         "core/tooling/skill_creator.py",

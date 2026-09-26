@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 if TYPE_CHECKING:
-    from core.messenger import Messenger
+    from core.messaging.messenger import Messenger
     from core.tooling.handler import ToolHandler
 
 
@@ -47,7 +47,7 @@ class TestBoardMentionDepthCheck:
 
     @pytest.fixture
     def messenger(self, shared_dir: Path) -> Messenger:
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         return Messenger(shared_dir=shared_dir, anima_name="sender-anima")
 
@@ -59,7 +59,7 @@ class TestBoardMentionDepthCheck:
 
         with (
             patch("core.paths.get_animas_dir", return_value=animas_dir),
-            patch("core.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
+            patch("core.messaging.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
         ):
             messenger.send(to="target-anima", content="Great job!", msg_type="board_mention")
 
@@ -77,7 +77,7 @@ class TestBoardMentionDepthCheck:
 
         with (
             patch("core.paths.get_animas_dir", return_value=animas_dir),
-            patch("core.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
+            patch("core.messaging.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
         ):
             result = messenger.send(
                 to="target-anima",
@@ -99,7 +99,7 @@ class TestBoardMentionDepthCheck:
 
         with (
             patch("core.paths.get_animas_dir", return_value=animas_dir),
-            patch("core.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
+            patch("core.messaging.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
         ):
             result = messenger.send(to="target-anima", content="ok", msg_type="ack")
 
@@ -115,7 +115,7 @@ class TestBoardMentionDepthCheck:
 
         with (
             patch("core.paths.get_animas_dir", return_value=animas_dir),
-            patch("core.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
+            patch("core.messaging.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
         ):
             result = messenger.send(to="target-anima", content="err", msg_type="error")
 
@@ -131,7 +131,7 @@ class TestBoardMentionDepthCheck:
 
         with (
             patch("core.paths.get_animas_dir", return_value=animas_dir),
-            patch("core.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
+            patch("core.messaging.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
         ):
             result = messenger.send(
                 to="target-anima",
@@ -150,7 +150,7 @@ class TestBoardMentionDepthCheck:
 
         with (
             patch("core.paths.get_animas_dir", return_value=animas_dir),
-            patch("core.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
+            patch("core.messaging.cascade_limiter.get_depth_limiter", return_value=mock_limiter),
         ):
             messenger.send(to="target-anima", content="hello", msg_type="message")
 
@@ -171,7 +171,7 @@ class TestSuppressBoardFanout:
     @pytest.fixture(autouse=True)
     def _bypass_acl(self):
         """Bypass channel ACL checks — these tests use MagicMock messenger."""
-        with patch("core.messenger.is_channel_member", return_value=True):
+        with patch("core.messaging.messenger.is_channel_member", return_value=True):
             yield
 
     @pytest.fixture

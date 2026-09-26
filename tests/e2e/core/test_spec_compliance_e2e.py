@@ -148,7 +148,7 @@ def test_error_events_across_phases(anima_dir: Path) -> None:
 def test_heartbeat_history_from_activity_log(anima_dir: Path) -> None:
     """_load_heartbeat_history reads from activity_log, not legacy files."""
     # Import Anima dependencies minimally
-    from core.anima import DigitalAnima
+    from core.anima.digital_anima import DigitalAnima
 
     # Record heartbeat_end events to activity log
     al = ActivityLogger(anima_dir)
@@ -204,7 +204,7 @@ def test_heartbeat_history_from_activity_log(anima_dir: Path) -> None:
 
 def test_append_dm_log_restored() -> None:
     """_append_dm_log method restored on Messenger for legacy fallback writes."""
-    from core.messenger import Messenger
+    from core.messaging.messenger import Messenger
 
     assert hasattr(Messenger, "_append_dm_log"), "_append_dm_log should exist for parallel dm_logs/ writes"
 

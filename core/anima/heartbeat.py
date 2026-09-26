@@ -6,7 +6,7 @@ from __future__ import annotations
 
 """HeartbeatMixin -- heartbeat/cron prompt construction and cycle execution.
 
-Extracted from ``core.anima.DigitalAnima`` as a Mixin.  All ``self``
+Extracted from ``core.anima.digital_anima.DigitalAnima`` as a Mixin.  All ``self``
 references are resolved at runtime via MRO when mixed into ``DigitalAnima``.
 """
 
@@ -25,7 +25,7 @@ from core.execution.fallback_activity import run_with_model_fallback
 from core.i18n import t
 from core.memory.conversation.memory import ConversationMemory
 from core.memory.conversation.streaming_journal import StreamingJournal
-from core.messenger import InboxItem
+from core.messaging.messenger import InboxItem
 from core.paths import load_prompt
 from core.schemas import CycleResult
 from core.skills.cron_context import SkillContextRejection, SkillContextWarning

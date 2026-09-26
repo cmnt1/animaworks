@@ -6,7 +6,7 @@ from __future__ import annotations
 
 """CycleMixin -- blocking and streaming execution cycles.
 
-Extracted from ``core.agent.AgentCore`` as a Mixin.  All ``self`` references
+Extracted from ``core.agent.agent_core.AgentCore`` as a Mixin.  All ``self`` references
 are resolved at runtime via MRO when mixed into ``AgentCore``.
 """
 
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
     from core.execution.base import ExecutionResult
 
-from core._agent_prompt_log import _save_prompt_log, _save_prompt_log_end
+from core.agent.prompt_log import _save_prompt_log, _save_prompt_log_end
 from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
 from core.execution.session_types import is_clean_start_session, resolve_runtime_session_type, trigger_uses_chat_session
 from core.i18n import t
@@ -153,7 +153,7 @@ class CycleMixin:
         if not reasons:
             return state
 
-        from core.session_compactor import _compact_mode_s_shared
+        from core.agent.session_compactor import _compact_mode_s_shared
 
         reason = "+".join(reasons)
         logger.info(
@@ -434,7 +434,7 @@ class CycleMixin:
         externalized to short-term memory and automatically continued.
         SDK and CLI modes use executor-specific session management.
         """
-        from core.logging_config import bind_cycle_context, clear_cycle_context
+        from core.infra.logging_config import bind_cycle_context, clear_cycle_context
 
         # Correlate every log line emitted during this cycle. Tokens restore any
         # outer cycle's context so nested cycles don't leak their id upward.
@@ -1105,7 +1105,7 @@ class CycleMixin:
         Yields stream chunks. Session chaining is handled seamlessly.
         Final event is ``{"type": "cycle_done", "cycle_result": {...}}``.
         """
-        from core.logging_config import bind_cycle_context, clear_cycle_context
+        from core.infra.logging_config import bind_cycle_context, clear_cycle_context
 
         # Correlate every log line emitted during this cycle. Tokens restore any
         # outer cycle's context so nested cycles don't leak their id upward.

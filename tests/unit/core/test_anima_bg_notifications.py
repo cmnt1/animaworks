@@ -20,7 +20,7 @@ class TestDrainBackgroundNotifications:
         Uses object.__new__ to bypass __init__ and sets only the fields
         needed by drain_background_notifications().
         """
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = object.__new__(DigitalAnima)
         # drain_background_notifications accesses self.agent.anima_dir
@@ -228,7 +228,7 @@ class TestOnBackgroundTaskComplete:
         Uses object.__new__ to bypass __init__ and sets only the fields
         needed by _on_background_task_complete().
         """
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = object.__new__(DigitalAnima)
         mock_agent = MagicMock()
@@ -352,7 +352,7 @@ class TestHeartbeatDrainIntegration:
 
     async def test_heartbeat_drains_background_notifications(self, tmp_path):
         """Verify run_heartbeat calls drain_background_notifications."""
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = object.__new__(DigitalAnima)
         # Setup minimal mock state for heartbeat

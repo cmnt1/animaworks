@@ -64,7 +64,7 @@ Anima의 워킹 메모리입니다. "지금 무엇을 하고 있는지", "무엇
 
 ### 잠금 제어
 
-`core/anima.py`의 `_state_file_lock` (`asyncio.Lock`)이 `current_state.md`에 대한 동시 쓰기를 방지합니다.
+`core/anima/digital_anima.py`의 `_state_file_lock` (`asyncio.Lock`)이 `current_state.md`에 대한 동시 쓰기를 방지합니다.
 
 `_is_state_file(path)`는 `state/current_state.md`에 대해서만 `True`를 반환합니다. `write_memory_file` 경유 쓰기 시 이 파일에 대해 잠금이 자동 획득됩니다.
 

@@ -261,7 +261,7 @@ class RoomManager:
             text: Message text.
             meta: Optional machine-readable metadata for non-standard entries.
         """
-        from core.meeting_room_store import append_room_message
+        from core.messaging.meeting_room_store import append_room_message
 
         if self.get_room(room_id) is None:
             raise ValueError(t("room_manager.room_not_found", room_id=room_id))
@@ -286,7 +286,7 @@ class RoomManager:
         redirect_id: str = "",
     ) -> None:
         """Append a meeting-local redirect to the room's conversation history."""
-        from core.meeting_room_store import append_meeting_redirect
+        from core.messaging.meeting_room_store import append_meeting_redirect
 
         if self.get_room(room_id) is None:
             raise ValueError(t("room_manager.room_not_found", room_id=room_id))

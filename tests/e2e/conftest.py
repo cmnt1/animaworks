@@ -14,10 +14,10 @@ from typing import Any
 import numpy as np
 import pytest
 
-from core.agent import AgentCore
-from core.anima import DigitalAnima
+from core.agent.agent_core import AgentCore
+from core.anima.digital_anima import DigitalAnima
 from core.memory import MemoryManager
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 
 
 class _DeterministicEmbeddingModel:

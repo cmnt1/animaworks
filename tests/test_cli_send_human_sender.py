@@ -15,8 +15,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from core.messenger import Messenger
-
+from core.messaging.messenger import Messenger
 
 # ── Messenger.send source passthrough ─────────────────────────
 
@@ -52,7 +51,7 @@ def test_messenger_human_source_skips_cascade_limiter(tmp_path: Path) -> None:
     # branch would be reached for anima-sourced messages.
     (tmp_path / "animas" / "bob").mkdir(parents=True)
     messenger = Messenger(shared_dir, "someuser")
-    with patch("core.cascade_limiter.get_depth_limiter") as get_limiter:
+    with patch("core.messaging.cascade_limiter.get_depth_limiter") as get_limiter:
         msg = messenger.send(to="bob", content="hello", source="human")
     get_limiter.assert_not_called()
     assert msg.type == "message"

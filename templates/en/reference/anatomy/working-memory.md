@@ -64,7 +64,7 @@ Otherwise it is injected with an emphasized header via the `builder/task_in_prog
 
 ### Lock Control
 
-`_state_file_lock` (`asyncio.Lock`) in `core/anima.py` prevents concurrent writes to `current_state.md`.
+`_state_file_lock` (`asyncio.Lock`) in `core/anima/digital_anima.py` prevents concurrent writes to `current_state.md`.
 
 `_is_state_file(path)` returns `True` only for `state/current_state.md`. Writes via `write_memory_file` automatically acquire this lock for that file.
 

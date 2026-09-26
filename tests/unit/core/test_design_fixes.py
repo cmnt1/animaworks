@@ -26,10 +26,10 @@ from core.config.schemas import LocalLLMConfig
 
 
 class TestNoServerImportInHeartbeat:
-    """core/_anima_heartbeat.py must not import from server.*."""
+    """core/anima/heartbeat.py must not import from server.*."""
 
     def test_no_server_import(self):
-        src_path = Path(__file__).resolve().parents[3] / "core" / "_anima_heartbeat.py"
+        src_path = Path(__file__).resolve().parents[3] / "core" / "anima" / "heartbeat.py"
         source = src_path.read_text(encoding="utf-8")
         tree = ast.parse(source)
 
@@ -73,7 +73,7 @@ class TestGovernorNotifySupervisor:
         self._create_anima_status(animas_dir, "worker", supervisor="boss")
         self._create_anima_status(animas_dir, "boss", enabled=True)
 
-        with patch("core.messenger.Messenger") as MockMessenger:
+        with patch("core.messaging.messenger.Messenger") as MockMessenger:
             mock_instance = MagicMock()
             mock_instance.send = MagicMock()
             MockMessenger.return_value = mock_instance

@@ -99,13 +99,13 @@ class TestGetDepthLimiterReloadsConfig:
 
     def test_returns_new_instance_each_call(self):
         """Each call returns a different instance."""
-        with patch("core.cascade_limiter.load_config") as mock_cfg:
+        with patch("core.messaging.cascade_limiter.load_config") as mock_cfg:
             mock_cfg.return_value.heartbeat.depth_window_s = 600
             mock_cfg.return_value.heartbeat.max_depth = 6
             mock_cfg.return_value.heartbeat.max_messages_per_hour = 30
             mock_cfg.return_value.heartbeat.max_messages_per_day = 100
 
-            from core.cascade_limiter import get_depth_limiter
+            from core.messaging.cascade_limiter import get_depth_limiter
 
             a = get_depth_limiter()
             b = get_depth_limiter()
@@ -113,14 +113,14 @@ class TestGetDepthLimiterReloadsConfig:
 
     def test_calls_load_config(self):
         """get_depth_limiter() triggers load_config() via __init__."""
-        with patch("core.cascade_limiter.load_config") as mock_cfg:
+        with patch("core.messaging.cascade_limiter.load_config") as mock_cfg:
             mock_cfg.return_value.heartbeat.depth_window_s = 600
             mock_cfg.return_value.heartbeat.max_depth = 6
             mock_cfg.return_value.heartbeat.max_messages_per_hour = 30
             mock_cfg.return_value.heartbeat.max_messages_per_day = 100
 
             initial_count = mock_cfg.call_count
-            from core.cascade_limiter import get_depth_limiter
+            from core.messaging.cascade_limiter import get_depth_limiter
 
             get_depth_limiter()
             assert mock_cfg.call_count > initial_count
@@ -131,7 +131,7 @@ class TestCheckAndRecordDeprecationWarning:
     """check_and_record emits DeprecationWarning."""
 
     def test_emits_deprecation_warning(self):
-        with patch("core.cascade_limiter.load_config") as mock_cfg:
+        with patch("core.messaging.cascade_limiter.load_config") as mock_cfg:
             mock_heartbeat = MagicMock()
             mock_heartbeat.depth_window_s = 600
             mock_heartbeat.max_depth = 6
@@ -139,7 +139,7 @@ class TestCheckAndRecordDeprecationWarning:
             mock_heartbeat.max_messages_per_day = 100
             mock_cfg.return_value.heartbeat = mock_heartbeat
 
-            from core.cascade_limiter import ConversationDepthLimiter
+            from core.messaging.cascade_limiter import ConversationDepthLimiter
 
             limiter = ConversationDepthLimiter()
 

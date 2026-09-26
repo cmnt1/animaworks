@@ -111,7 +111,9 @@ class TestReconciliationStatusJsonGuard:
 
     @pytest.mark.asyncio
     async def test_reconcile_skips_anima_without_status_json(
-        self, supervisor, temp_dirs,
+        self,
+        supervisor,
+        temp_dirs,
     ) -> None:
         """identity.md exists but status.json missing -> creation in progress, skip."""
         animas_dir = temp_dirs["animas_dir"]
@@ -133,7 +135,9 @@ class TestReconciliationStatusJsonGuard:
 
     @pytest.mark.asyncio
     async def test_reconcile_starts_anima_with_both_files(
-        self, supervisor, temp_dirs,
+        self,
+        supervisor,
+        temp_dirs,
     ) -> None:
         """identity.md AND status.json exist -> start normally."""
         animas_dir = temp_dirs["animas_dir"]
@@ -142,7 +146,8 @@ class TestReconciliationStatusJsonGuard:
         alice_dir.mkdir()
         (alice_dir / "identity.md").write_text("Alice identity", encoding="utf-8")
         (alice_dir / "status.json").write_text(
-            json.dumps({"enabled": True}), encoding="utf-8",
+            json.dumps({"enabled": True}),
+            encoding="utf-8",
         )
 
         supervisor.start_anima = AsyncMock()
@@ -163,7 +168,9 @@ class TestCreateAnimaCLISupervisor:
     """Test that cmd_create_anima forwards --supervisor to create_from_md."""
 
     def test_supervisor_passed_to_create_from_md(
-        self, data_dir: Path, tmp_path: Path,
+        self,
+        data_dir: Path,
+        tmp_path: Path,
     ) -> None:
         """--supervisor flag should be forwarded to create_from_md."""
         # Create a dummy character sheet MD file
@@ -187,14 +194,17 @@ class TestCreateAnimaCLISupervisor:
         )
 
         # Patch at the source module because cmd_create_anima uses local imports
-        with patch("core.anima_factory.create_from_md") as mock_create, \
-             patch("core.init.ensure_runtime_dir"), \
-             patch("core.paths.get_data_dir", return_value=data_dir), \
-             patch("core.paths.get_animas_dir", return_value=data_dir / "animas"), \
-             patch("cli.commands.init_cmd._register_anima_in_config"):
+        with (
+            patch("core.anima.factory.create_from_md") as mock_create,
+            patch("core.infra.runtime_init.ensure_runtime_dir"),
+            patch("core.paths.get_data_dir", return_value=data_dir),
+            patch("core.paths.get_animas_dir", return_value=data_dir / "animas"),
+            patch("cli.commands.init_cmd._register_anima_in_config"),
+        ):
             mock_create.return_value = data_dir / "animas" / "test-subordinate"
 
             from cli.commands.anima import cmd_create_anima
+
             cmd_create_anima(args)
 
             mock_create.assert_called_once()
@@ -203,7 +213,9 @@ class TestCreateAnimaCLISupervisor:
             assert call_kwargs.kwargs.get("supervisor") == "boss-anima"
 
     def test_supervisor_none_when_not_specified(
-        self, data_dir: Path, tmp_path: Path,
+        self,
+        data_dir: Path,
+        tmp_path: Path,
     ) -> None:
         """Without --supervisor flag, supervisor should be None."""
         md_path = tmp_path / "test_char2.md"
@@ -226,14 +238,17 @@ class TestCreateAnimaCLISupervisor:
         )
 
         # Patch at the source module because cmd_create_anima uses local imports
-        with patch("core.anima_factory.create_from_md") as mock_create, \
-             patch("core.init.ensure_runtime_dir"), \
-             patch("core.paths.get_data_dir", return_value=data_dir), \
-             patch("core.paths.get_animas_dir", return_value=data_dir / "animas"), \
-             patch("cli.commands.init_cmd._register_anima_in_config"):
+        with (
+            patch("core.anima.factory.create_from_md") as mock_create,
+            patch("core.infra.runtime_init.ensure_runtime_dir"),
+            patch("core.paths.get_data_dir", return_value=data_dir),
+            patch("core.paths.get_animas_dir", return_value=data_dir / "animas"),
+            patch("cli.commands.init_cmd._register_anima_in_config"),
+        ):
             mock_create.return_value = data_dir / "animas" / "test-worker"
 
             from cli.commands.anima import cmd_create_anima
+
             cmd_create_anima(args)
 
             mock_create.assert_called_once()

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.anima_factory import (
+from core.anima.factory import (
     _detect_sheet_locale,
     _extract_name_from_md,
     _get_anima_templates_dir,
@@ -248,7 +248,7 @@ class TestAnimaFactoryFallbackChain:
         ja_dir = tmp_path / "ja" / "anima_templates"
         ja_dir.mkdir(parents=True)
 
-        with patch("core.anima_factory.TEMPLATES_DIR", tmp_path), patch("core.paths._get_locale", return_value="fr"):
+        with patch("core.anima.factory.TEMPLATES_DIR", tmp_path), patch("core.paths._get_locale", return_value="fr"):
             result = _get_anima_templates_dir(locale="fr")
         assert result == en_dir
 
@@ -257,7 +257,7 @@ class TestAnimaFactoryFallbackChain:
         ja_dir = tmp_path / "ja" / "anima_templates"
         ja_dir.mkdir(parents=True)
 
-        with patch("core.anima_factory.TEMPLATES_DIR", tmp_path), patch("core.paths._get_locale", return_value="fr"):
+        with patch("core.anima.factory.TEMPLATES_DIR", tmp_path), patch("core.paths._get_locale", return_value="fr"):
             result = _get_anima_templates_dir(locale="fr")
         assert result == ja_dir
 
@@ -270,7 +270,7 @@ class TestAnimaFactoryFallbackChain:
         ja_file.parent.mkdir(parents=True)
         ja_file.write_text("Japanese bootstrap", encoding="utf-8")
 
-        with patch("core.anima_factory.TEMPLATES_DIR", tmp_path), patch("core.paths._get_locale", return_value="fr"):
+        with patch("core.anima.factory.TEMPLATES_DIR", tmp_path), patch("core.paths._get_locale", return_value="fr"):
             result = _get_bootstrap_template(locale="fr")
         assert result == en_file
 
@@ -280,7 +280,7 @@ class TestAnimaFactoryFallbackChain:
         ja_file.parent.mkdir(parents=True)
         ja_file.write_text("Japanese bootstrap", encoding="utf-8")
 
-        with patch("core.anima_factory.TEMPLATES_DIR", tmp_path), patch("core.paths._get_locale", return_value="fr"):
+        with patch("core.anima.factory.TEMPLATES_DIR", tmp_path), patch("core.paths._get_locale", return_value="fr"):
             result = _get_bootstrap_template(locale="fr")
         assert result == ja_file
 
@@ -291,7 +291,7 @@ class TestAnimaFactoryFallbackChain:
         ja_dir = tmp_path / "ja" / "roles"
         ja_dir.mkdir(parents=True)
 
-        with patch("core.anima_factory.TEMPLATES_DIR", tmp_path), patch("core.paths._get_locale", return_value="fr"):
+        with patch("core.anima.factory.TEMPLATES_DIR", tmp_path), patch("core.paths._get_locale", return_value="fr"):
             result = _get_roles_dir(locale="fr")
         assert result == en_dir
 
@@ -300,7 +300,7 @@ class TestAnimaFactoryFallbackChain:
         ja_dir = tmp_path / "ja" / "roles"
         ja_dir.mkdir(parents=True)
 
-        with patch("core.anima_factory.TEMPLATES_DIR", tmp_path), patch("core.paths._get_locale", return_value="fr"):
+        with patch("core.anima.factory.TEMPLATES_DIR", tmp_path), patch("core.paths._get_locale", return_value="fr"):
             result = _get_roles_dir(locale="fr")
         assert result == ja_dir
 
@@ -311,7 +311,7 @@ class TestAnimaFactoryFallbackChain:
         ja_dir = tmp_path / "ja" / "anima_templates"
         ja_dir.mkdir(parents=True)
 
-        with patch("core.anima_factory.TEMPLATES_DIR", tmp_path), patch("core.paths._get_locale", return_value="en"):
+        with patch("core.anima.factory.TEMPLATES_DIR", tmp_path), patch("core.paths._get_locale", return_value="en"):
             result = _get_anima_templates_dir(locale="en")
         assert result == en_dir
 

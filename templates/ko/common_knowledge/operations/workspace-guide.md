@@ -55,7 +55,7 @@ delegate_task(name="aoi", instruction="API 테스트를 실행해 줘", deadline
 요점:
 
 1. `config.json`의 `workspaces` 섹션에 별칭과 경로를 추가
-2. 또는 `core.workspace.register_workspace`를 Python에서 호출
+2. 또는 `core.org.workspace.register_workspace`를 Python에서 호출
 3. 디렉터리는 등록 시 존재 여부가 확인됩니다 (존재하지 않으면 에러)
 
 ### 부하에게 할당

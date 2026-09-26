@@ -55,7 +55,7 @@ See the `common_skills/workspace-manager` skill for details.
 Summary:
 
 1. Add alias and path to the `workspaces` section in `config.json`
-2. Or call `core.workspace.register_workspace` from Python
+2. Or call `core.org.workspace.register_workspace` from Python
 3. Directory existence is verified at registration (error if it does not exist)
 
 ### Assigning to Subordinates

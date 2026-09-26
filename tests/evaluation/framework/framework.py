@@ -162,7 +162,7 @@ class MemoryExperiment:
             AnimaWorks DigitalAnima initialization in integration testing.
         """
         # TODO: Replace with actual DigitalAnima initialization
-        # from core.anima import DigitalAnima
+        # from core.anima.digital_anima import DigitalAnima
         # anima_dir = self._create_anima_environment(participant_id)
         # agent = DigitalAnima(
         #     anima_dir=anima_dir,
@@ -407,8 +407,7 @@ class MemoryExperiment:
             Summary results for this participant
         """
         logger.info(
-            f"Running participant {participant_id}/{self.config.participants} "
-            f"(condition={self.config.condition})"
+            f"Running participant {participant_id}/{self.config.participants} (condition={self.config.condition})"
         )
 
         # Initialize logger

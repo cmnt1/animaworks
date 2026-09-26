@@ -132,7 +132,7 @@ def mock_agent_core():
     Returns:
         Mock instance with run_cycle() that returns a predefined response
     """
-    with patch("core.agent.AgentCore") as mock:
+    with patch("core.agent.agent_core.AgentCore") as mock:
         instance = mock.return_value
 
         # Mock run_cycle to return a realistic CycleResult

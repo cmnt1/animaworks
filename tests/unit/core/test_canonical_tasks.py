@@ -283,7 +283,7 @@ def test_completion_notification_failure_does_not_undo_completion(queue):
 
 
 def test_durable_inbox_delivery_deduplicates_after_archive(queue):
-    from core.messenger import Messenger
+    from core.messaging.messenger import Messenger
 
     shared = queue.anima_dir.parent.parent / "shared"
     messenger = Messenger(shared, "worker")

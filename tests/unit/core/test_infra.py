@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Tests for core.infra — infrastructure auto-start logic."""
+"""Tests for core.infra.services — infrastructure auto-start logic."""
 
 import json
 from pathlib import Path
@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.infra import (
+from core.infra.services import (
     _animas_need_neo4j,
     _is_port_open,
     _resolve_compose_command,
@@ -60,7 +60,7 @@ class TestIsPortOpen:
     def test_closed_port(self):
         assert _is_port_open("127.0.0.1", 19999, timeout=0.5) is False
 
-    @patch("core.infra.socket.create_connection")
+    @patch("core.infra.services.socket.create_connection")
     def test_open_port(self, mock_conn: MagicMock):
         mock_conn.return_value.__enter__ = MagicMock()
         mock_conn.return_value.__exit__ = MagicMock(return_value=False)
@@ -95,7 +95,7 @@ class TestEnsureInfraServices:
     async def test_no_neo4j_animas_is_noop(self, tmp_path: Path):
         (tmp_path / "animas" / "alice").mkdir(parents=True)
         (tmp_path / "animas" / "alice" / "status.json").write_text(json.dumps({"enabled": True}))
-        with patch("core.infra._is_port_open") as mock_port:
+        with patch("core.infra.services._is_port_open") as mock_port:
             await ensure_infra_services(tmp_path / "animas", ["alice"], tmp_path)
             mock_port.assert_not_called()
 
@@ -104,8 +104,8 @@ class TestEnsureInfraServices:
         (tmp_path / "animas" / "sakura").mkdir(parents=True)
         (tmp_path / "animas" / "sakura" / "status.json").write_text(json.dumps({"memory_backend": "neo4j"}))
         with (
-            patch("core.infra._is_port_open", return_value=True) as mock_port,
-            patch("core.infra._run_docker_compose") as mock_compose,
+            patch("core.infra.services._is_port_open", return_value=True) as mock_port,
+            patch("core.infra.services._run_docker_compose") as mock_compose,
         ):
             await ensure_infra_services(tmp_path / "animas", ["sakura"], tmp_path)
             assert mock_port.call_count >= 1
@@ -119,9 +119,9 @@ class TestEnsureInfraServices:
         compose_file.write_text("services:\n  neo4j:\n    image: neo4j:5\n")
 
         with (
-            patch("core.infra._is_port_open", return_value=False),
-            patch("core.infra._run_docker_compose", new_callable=AsyncMock, return_value=True) as mock_compose,
-            patch("core.infra._wait_for_neo4j", new_callable=AsyncMock, return_value=True),
+            patch("core.infra.services._is_port_open", return_value=False),
+            patch("core.infra.services._run_docker_compose", new_callable=AsyncMock, return_value=True) as mock_compose,
+            patch("core.infra.services._wait_for_neo4j", new_callable=AsyncMock, return_value=True),
         ):
             await ensure_infra_services(tmp_path / "animas", ["sakura"], tmp_path)
             mock_compose.assert_called_once_with(compose_file)
@@ -130,7 +130,7 @@ class TestEnsureInfraServices:
     async def test_missing_compose_file_warns(self, tmp_path: Path):
         (tmp_path / "animas" / "sakura").mkdir(parents=True)
         (tmp_path / "animas" / "sakura" / "status.json").write_text(json.dumps({"memory_backend": "neo4j"}))
-        with patch("core.infra._is_port_open", return_value=False):
+        with patch("core.infra.services._is_port_open", return_value=False):
             await ensure_infra_services(tmp_path / "animas", ["sakura"], tmp_path)
 
     @pytest.mark.asyncio
@@ -141,8 +141,8 @@ class TestEnsureInfraServices:
         compose_file.write_text("services:\n  neo4j:\n    image: neo4j:5\n")
 
         with (
-            patch("core.infra._is_port_open", return_value=False),
-            patch("core.infra._run_docker_compose", new_callable=AsyncMock, return_value=False),
+            patch("core.infra.services._is_port_open", return_value=False),
+            patch("core.infra.services._run_docker_compose", new_callable=AsyncMock, return_value=False),
         ):
             await ensure_infra_services(tmp_path / "animas", ["sakura"], tmp_path)
 
@@ -153,13 +153,13 @@ class TestEnsureInfraServices:
 class TestWaitForNeo4j:
     @pytest.mark.asyncio
     async def test_immediately_ready(self):
-        with patch("core.infra._is_port_open", return_value=True):
+        with patch("core.infra.services._is_port_open", return_value=True):
             assert await _wait_for_neo4j(timeout=5) is True
 
     @pytest.mark.asyncio
     async def test_timeout(self):
         with (
-            patch("core.infra._is_port_open", return_value=False),
-            patch("core.infra.asyncio.sleep", new_callable=AsyncMock),
+            patch("core.infra.services._is_port_open", return_value=False),
+            patch("core.infra.services.asyncio.sleep", new_callable=AsyncMock),
         ):
             assert await _wait_for_neo4j(timeout=1) is False

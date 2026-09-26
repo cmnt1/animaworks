@@ -17,7 +17,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from core.file_access_policy import load_denied_roots, memory_source_is_allowed
+from core.config.file_access_policy import load_denied_roots, memory_source_is_allowed
 from core.memory.priming.utils import normalize_trigger, truncate_tail
 
 if TYPE_CHECKING:

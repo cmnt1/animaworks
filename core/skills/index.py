@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from core.company_resources import get_company_resources
+from core.org.company_resources import get_company_resources
 from core.skills.loader import load_skill_metadata
 from core.skills.models import SkillMetadata, SkillScanVerdict, SkillSource, SkillTrustLevel
 

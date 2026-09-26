@@ -36,7 +36,7 @@ Board は社内の共有情報掲示システム。
 
 ## チャネルアクセス制御（ACL）
 
-`core/messenger.py` の `is_channel_member()` が判定する。チャネル名は `^[a-z][a-z0-9_-]{0,30}$`（パストラバーサル防止）。
+`core/messaging/messenger.py` の `is_channel_member()` が判定する。チャネル名は `^[a-z][a-z0-9_-]{0,30}$`（パストラバーサル防止）。
 
 チャネルには **オープン** と **制限** の2種類がある。
 

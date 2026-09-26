@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core._agent_executor import ExecutorFactoryMixin
+from core.agent.executor_factory import ExecutorFactoryMixin
 from core.execution.base import ExecutionResult, TokenUsage
 from core.execution.codex_sdk import (
     CodexSDKExecutor,

@@ -343,7 +343,7 @@ async def route_thread_reply(
 
     content = thread_ctx + text if thread_ctx else text
 
-    from core.messenger import Messenger
+    from core.messaging.messenger import Messenger
 
     messenger = Messenger(shared_dir, target)
     messenger.receive_external(

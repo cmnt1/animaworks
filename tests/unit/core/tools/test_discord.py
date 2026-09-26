@@ -454,7 +454,7 @@ class TestDiscordDispatch:
             mock_inst.guilds.assert_called_once_with()
 
     def test_dispatch_discord_channel_post_via_webhook(self) -> None:
-        with patch("core.discord_webhooks.get_webhook_manager") as mock_gwm:
+        with patch("core.messaging.discord_webhooks.get_webhook_manager") as mock_gwm:
             mock_wm = mock_gwm.return_value
             mock_wm.send_as_anima.return_value = "mid"
             result = dispatch(

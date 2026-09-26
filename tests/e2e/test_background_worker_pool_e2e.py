@@ -113,8 +113,8 @@ async def test_three_single_pending_llm_tasks_overlap_across_worker_slots(
         return agent
 
     try:
-        with patch("core.anima.AgentCore", side_effect=_create_mock_agent):
-            from core.anima import DigitalAnima
+        with patch("core.anima.digital_anima.AgentCore", side_effect=_create_mock_agent):
+            from core.anima.digital_anima import DigitalAnima
 
             anima = DigitalAnima(anima_dir, data_dir / "shared")
 

@@ -266,7 +266,7 @@ class TestSlackSocketModeE2E:
             say=AsyncMock(),
         )
 
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         messenger = Messenger(data_dir / "shared", "sakura")
         messages = messenger.receive()

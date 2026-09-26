@@ -158,7 +158,7 @@ Cowan (2005) の知見に従い、ワーキングメモリを「活性化され�
 
 プライミングは `core/memory/priming/` パッケージ（`engine.py` の `PrimingEngine`）で実装する。`prime_memories()` は `asyncio.gather` で **9 本のコルーチンを並列**実行する。現在の取得系は、送信者 A、直近活動 B、C0: [IMPORTANT] 知識、関連知識 C、保留タスク E、Recent Outbound、エピソード F、保留中人間通知、グラフ文脈 G である。旧設計にあったスキルの自動注入系は現在の priming にはなく、スキルは後述の Skill Hub / activation / router 側で扱う。
 
-**動的バジェットの実際のスイッチ**は `PrimingConfig.dynamic_budget` ではなく、`prime_memories(..., enable_dynamic_budget=...)` 引数である（`config.json` の `priming.dynamic_budget` は現状スキーマ定義のみでエンジンからは参照されない）。チャット等の通常経路では `core/_agent_priming.py` が **`enable_dynamic_budget=True`** を渡す。`False` のとき全体上限は `_DEFAULT_MAX_PRIMING_TOKENS`（2000 相当）固定。
+**動的バジェットの実際のスイッチ**は `PrimingConfig.dynamic_budget` ではなく、`prime_memories(..., enable_dynamic_budget=...)` 引数である（`config.json` の `priming.dynamic_budget` は現状スキーマ定義のみでエンジンからは参照されない）。チャット等の通常経路では `core/agent/priming.py` が **`enable_dynamic_budget=True`** を渡す。`False` のとき全体上限は `_DEFAULT_MAX_PRIMING_TOKENS`（2000 相当）固定。
 
 **主なデータソースと既定バジェット**（`priming/constants.py` の配分 × 動的バジェット比。全体上限は `dynamic_budget` 無効時 2000 トークン相当）:
 
@@ -461,7 +461,7 @@ protected: false
 
 ### 日次固定化フロー
 
-> 実装: `core/_anima_lifecycle.py` — `Anima.run_consolidation()`、`core/memory/maintenance/consolidation.py` — `ConsolidationEngine`（前処理・後処理）
+> 実装: `core/anima/lifecycle.py` — `Anima.run_consolidation()`、`core/memory/maintenance/consolidation.py` — `ConsolidationEngine`（前処理・後処理）
 > スケジュール: 本番の `ProcessSupervisor` スケジューラ（`core/supervisor/_mgr_scheduler.py`）が `core/lifecycle/system_consolidation.py` の日次ハンドラを登録（時刻は `ConsolidationConfig.daily_time`、既定 02:00 JST）
 
 **1. 前処理**（ConsolidationEngine）: 以下の4種のデータを収集し、`consolidation_instruction` プロンプトに注入する:
@@ -951,7 +951,7 @@ LLMのストリーミング応答出力中に、テキストチャンクを逐�
 | `priming/channel_f.py` | エピソード記憶のポインタ検索 |
 | `priming/channel_g.py` | MemoryBackend 由来の community context と recent facts |
 
-公開 API は `from core.memory.priming import PrimingEngine, PrimingResult, format_priming_section`（`core/memory/__init__.py` から再エクスポート）。チャット経路での `prime_memories` 呼び出しは `core/_agent_priming.py`。
+公開 API は `from core.memory.priming import PrimingEngine, PrimingResult, format_priming_section`（`core/memory/__init__.py` から再エクスポート）。チャット経路での `prime_memories` 呼び出しは `core/agent/priming.py`。
 
 ### 会話記憶（分割モジュール）
 

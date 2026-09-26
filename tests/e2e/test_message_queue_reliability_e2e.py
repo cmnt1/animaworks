@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 
 
 @pytest.fixture

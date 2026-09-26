@@ -14,13 +14,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from core.company_resources import (
-    CompanyResources,
-    company_resource_pointer,
-    get_company_resources,
-    get_company_resources_for_company,
-    infer_data_dir,
-)
 from core.config.models import read_anima_company_checked
 from core.memory.facts.observability import warn_rate_limited
 from core.memory.rag.shared_check_registry import (
@@ -30,6 +23,13 @@ from core.memory.rag.shared_check_registry import (
 )
 from core.memory.rag.shared_meta import read_shared_hash, reset_shared_for_company_change, write_shared_hash
 from core.memory.rag.store import CollectionExistence
+from core.org.company_resources import (
+    CompanyResources,
+    company_resource_pointer,
+    get_company_resources,
+    get_company_resources_for_company,
+    infer_data_dir,
+)
 
 logger = logging.getLogger("animaworks.memory")
 

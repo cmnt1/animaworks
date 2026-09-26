@@ -19,7 +19,7 @@ from typing import Any
 import httpx
 
 from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential
-from core.messenger import InboxItem
+from core.messaging.messenger import InboxItem
 
 logger = logging.getLogger("animaworks.outbound_auto")
 
@@ -237,7 +237,7 @@ class DiscordAutoResponder:
             return []
 
         try:
-            from core.discord_webhooks import get_webhook_manager
+            from core.messaging.discord_webhooks import get_webhook_manager
 
             wm = get_webhook_manager()
         except Exception:

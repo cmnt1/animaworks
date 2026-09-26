@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core._anima_messaging import _inject_chat_message
+from core.anima.messaging import _inject_chat_message
 from core.execution.agent_sdk import AgentSDKExecutor
 from core.execution.base import BaseExecutor, ExecutionResult
 from core.memory.conversation.memory import ConversationMemory

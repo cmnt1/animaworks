@@ -1,7 +1,7 @@
 # 조직 구조의 동작 방식
 
 AnimaWorks의 조직 구조는 각 Anima의 `status.json` (또는 `identity.md`)을 Single Source of Truth (SSoT)로 하여 구축됩니다.
-`core/org_sync.py`가 디스크 상의 **supervisor**를 `config.json`에 동기화하고, 프롬프트 구축 시 활용됩니다.
+`core/org/org_sync.py`가 디스크 상의 **supervisor**를 `config.json`에 동기화하고, 프롬프트 구축 시 활용됩니다.
 본 문서에서는 조직 구조가 어떻게 정의, 해석, 표시되는지를 설명합니다.
 
 ## 데이터 소스와 우선순위
@@ -30,7 +30,7 @@ AnimaWorks의 조직 구조는 각 Anima의 `status.json` (또는 `identity.md`)
 
 ## org_sync를 통한 config.json 동기화
 
-`core/org_sync.py`의 `sync_org_structure()`가 다음을 수행합니다:
+`core/org/org_sync.py`의 `sync_org_structure()`가 다음을 수행합니다:
 
 1. 각 Anima 디렉토리(`identity.md`가 존재하는 것만)에서 `status.json` / `identity.md`를 읽어 supervisor를 추출 (`read_anima_supervisor`)
 2. 순환 참조를 감지 (감지된 Anima는 동기화 대상에서 제외)
@@ -201,7 +201,7 @@ manager (프로젝트 관리)
 - 다른 Anima가 작업의 상담 상대나 위임 대상을 판단하는 단서가 됩니다
 - 미설정 시 "(미설정)"으로 표시됩니다
 
-**Anima 생성 시 동작 (`core/anima_factory.py`):**
+**Anima 생성 시 동작 (`core/anima/factory.py`):**
 - `animaworks anima create --from-md PATH [--role ROLE] [--supervisor NAME] [--name NAME]`으로 생성하면, `status.json`에 `supervisor`와 `role`이 기록됩니다
 - **supervisor**: `--supervisor` 옵션이 지정되어 있으면 그것을 우선. 미지정 시 캐릭터 시트의 기본 정보 테이블(`| 上司 | name |`)에서 해석
 - **speciality**: 캐릭터 시트의 기본 정보 테이블에는 포함되지 않으며, `_create_status_json`도 speciality를 기록하지 않으므로 생성 시 자동 설정되지 않음

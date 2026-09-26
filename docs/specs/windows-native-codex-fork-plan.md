@@ -107,7 +107,7 @@ Several features assume Bash behavior.
 Primary files:
 
 - `core/tooling/handler_files.py`
-- `core/_anima_lifecycle.py`
+- `core/anima/lifecycle.py`
 - templates and documentation that emit `bash` commands
 
 Phase 1 recommendation:

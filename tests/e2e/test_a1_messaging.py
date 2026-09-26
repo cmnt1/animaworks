@@ -12,8 +12,6 @@ Verifies that:
 
 from __future__ import annotations
 
-
-
 from core.memory.manager import MemoryManager
 from core.prompt.builder import build_system_prompt
 
@@ -62,7 +60,7 @@ class TestSendScriptRemoved:
 
     def test_create_blank_does_not_place_send_script(self, tmp_path):
         """create_blank should NOT place the send script (MCP replaces it)."""
-        from core.anima_factory import create_blank
+        from core.anima.factory import create_blank
 
         animas_dir = tmp_path / "animas"
         animas_dir.mkdir()
@@ -70,9 +68,7 @@ class TestSendScriptRemoved:
         anima_dir = create_blank(animas_dir, "testanima")
         send_script = anima_dir / "send"
 
-        assert not send_script.exists(), (
-            "send script should NOT exist — MCP tools replaced bash send"
-        )
+        assert not send_script.exists(), "send script should NOT exist — MCP tools replaced bash send"
 
 
 class TestHeartbeatEscalation:

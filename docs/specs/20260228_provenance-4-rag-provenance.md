@@ -268,7 +268,7 @@ class PrimingResult:
 
 | # | Task | Target |
 |---|------|--------|
-| 4-2-1 | `_process_inbox_messages()` で `append_episode(entry, origin=msg_origin)` | `core/anima.py` |
+| 4-2-1 | `_process_inbox_messages()` で `append_episode(entry, origin=msg_origin)` | `core/anima/digital_anima.py` |
 | 4-2-2 | Consolidation で `write_knowledge(..., origin="consolidation")` | `core/memory/maintenance/consolidation.py` |
 
 **Completion condition**: 外部メッセージ由来の episode チャンクに `origin="external_platform"` が付くこと

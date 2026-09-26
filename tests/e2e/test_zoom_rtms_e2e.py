@@ -40,7 +40,7 @@ from typing import Any
 
 import pytest
 
-import core.messenger as messenger_mod
+import core.messaging.messenger as messenger_mod
 from core.config import invalidate_cache
 from server.gateways.zoom_gateway import ZoomRTMSManager
 
@@ -523,7 +523,7 @@ async def test_reconnect_recovers_and_dedup_prevents_duplicates(harness):
     # A re-delivered chunk (identical source_message_id) is dropped by the
     # dedup guard the gateway relies on — no new inbox file appears.
     before = len(_read_inbox(harness.shared_dir, "kotoha"))
-    from core.messenger import Messenger
+    from core.messaging.messenger import Messenger
     from core.paths import get_shared_dir
 
     duplicate = Messenger(get_shared_dir(), "kotoha").receive_external(

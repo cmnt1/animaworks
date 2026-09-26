@@ -99,7 +99,7 @@ EMOTION_INSTRUCTION = _build_emotion_instruction()
 
 def _read_default_workspace(anima_dir: Path) -> str:
     """Read default_workspace from status.json and resolve via workspace registry."""
-    from core.workspace import resolve_default_workspace
+    from core.org.workspace import resolve_default_workspace
 
     resolved, alias = resolve_default_workspace(anima_dir)
     if not alias:

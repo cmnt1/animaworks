@@ -14,7 +14,7 @@ from core.config.models import (
     ExternalMessagingChannelConfig,
     ExternalMessagingConfig,
 )
-from core.outbound_auto import BoardSlackSync
+from core.messaging.outbound_auto import BoardSlackSync
 
 
 class _FakeSlackResponse:
@@ -65,8 +65,8 @@ class TestBoardSlackSync:
 
         with (
             patch("core.config.models.load_config", return_value=cfg),
-            patch("core.outbound_auto._resolve_bot_token") as mock_token,
-            patch("core.outbound_auto.httpx.AsyncClient") as mock_client,
+            patch("core.messaging.outbound_auto._resolve_bot_token") as mock_token,
+            patch("core.messaging.outbound_auto.httpx.AsyncClient") as mock_client,
         ):
             result = await BoardSlackSync().sync_board_post("general", "hello", "sakura")
 
@@ -81,9 +81,9 @@ class TestBoardSlackSync:
 
         with (
             patch("core.config.models.load_config", return_value=cfg),
-            patch("core.outbound_auto._resolve_bot_token", return_value="xoxb-test"),
-            patch("core.outbound_auto._resolve_avatar_url", return_value=""),
-            patch("core.outbound_auto.httpx.AsyncClient", return_value=client),
+            patch("core.messaging.outbound_auto._resolve_bot_token", return_value="xoxb-test"),
+            patch("core.messaging.outbound_auto._resolve_avatar_url", return_value=""),
+            patch("core.messaging.outbound_auto.httpx.AsyncClient", return_value=client),
         ):
             result = await BoardSlackSync().sync_board_post("general", "hello", "sakura")
 
@@ -97,9 +97,9 @@ class TestBoardSlackSync:
 
         with (
             patch("core.config.models.load_config", return_value=cfg),
-            patch("core.outbound_auto._resolve_bot_token", return_value="xoxb-test"),
-            patch("core.outbound_auto._resolve_avatar_url", return_value=""),
-            patch("core.outbound_auto.httpx.AsyncClient", return_value=client),
+            patch("core.messaging.outbound_auto._resolve_bot_token", return_value="xoxb-test"),
+            patch("core.messaging.outbound_auto._resolve_avatar_url", return_value=""),
+            patch("core.messaging.outbound_auto.httpx.AsyncClient", return_value=client),
         ):
             result = await BoardSlackSync().sync_board_post("ops", "hello", "sakura")
 
@@ -112,8 +112,8 @@ class TestBoardSlackSync:
 
         with (
             patch("core.config.models.load_config", return_value=cfg),
-            patch("core.outbound_auto._resolve_bot_token") as mock_token,
-            patch("core.outbound_auto.httpx.AsyncClient") as mock_client,
+            patch("core.messaging.outbound_auto._resolve_bot_token") as mock_token,
+            patch("core.messaging.outbound_auto.httpx.AsyncClient") as mock_client,
         ):
             result = await BoardSlackSync().sync_board_post("general", "hello", "sakura")
 
@@ -127,7 +127,7 @@ class TestBoardSlackSync:
 
         with (
             patch("core.config.models.load_config", return_value=cfg) as mock_config,
-            patch("core.outbound_auto._resolve_bot_token") as mock_token,
+            patch("core.messaging.outbound_auto._resolve_bot_token") as mock_token,
         ):
             result = await BoardSlackSync().sync_board_post(
                 "general",

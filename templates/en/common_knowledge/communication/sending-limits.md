@@ -7,14 +7,14 @@ Refer to this when send errors occur or when you need to understand how the limi
 
 | Role | Module |
 |------|--------|
-| Recipient resolution and external delivery to Slack/Chatwork | `core/outbound.py` (`resolve_recipient`, `send_external`) |
-| Global budget and conversation depth (activity_log–based) | `core/cascade_limiter.py` (`ConversationDepthLimiter`) |
-| Internal DM delivery and logging | `core/messenger.py` (`Messenger.send`) |
+| Recipient resolution and external delivery to Slack/Chatwork | `core/messaging/outbound.py` (`resolve_recipient`, `send_external`) |
+| Global budget and conversation depth (activity_log–based) | `core/messaging/cascade_limiter.py` (`ConversationDepthLimiter`) |
+| Internal DM delivery and logging | `core/messaging/messenger.py` (`Messenger.send`) |
 | `send_message` / `post_channel` per-run limits and external routing entry | `core/tooling/handler_comms.py` |
 | Message-triggered heartbeat cooldown and cascade detection | `core/supervisor/inbox_rate_limiter.py` (`InboxRateLimiter`), `core/lifecycle/inbox_watcher.py` |
 | Recent-send priming (behavior awareness) | `core/memory/priming/outbound.py` (`collect_recent_outbound`) |
 
-### `core/outbound.py` (recipient resolution and external delivery)
+### `core/messaging/outbound.py` (recipient resolution and external delivery)
 
 `send_message` resolves the recipient via `resolve_recipient()` from `handler_comms`: internal Anima → `Messenger.send`; otherwise → `send_external()` to Slack / Chatwork. The set of known Anima names is built from directory names under `~/.animaworks/animas/`.
 

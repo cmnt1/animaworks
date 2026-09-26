@@ -439,7 +439,7 @@ class RAGRepairService:
         results: dict[str, RepairResult] = {}
         targets = sorted(dict.fromkeys(anima_names))
         try:
-            from core import startup_progress
+            from core.infra import startup_progress
 
             track_startup = startup_progress.is_active()
         except Exception:
@@ -740,7 +740,7 @@ class RAGRepairService:
         include_shared: bool = False,
     ) -> RepairResult:
         """Synchronously quarantine and rebuild one anima's RAG index."""
-        from core import startup_progress
+        from core.infra import startup_progress
         from core.paths import get_animas_dir
 
         startup_progress.raise_if_cancelled()

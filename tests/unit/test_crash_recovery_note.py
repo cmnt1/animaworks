@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from core._anima_lifecycle import LifecycleMixin
+from core.anima.lifecycle import LifecycleMixin
 
 # ── i18n template tests ──────────────────────────────────────────
 

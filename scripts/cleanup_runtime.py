@@ -20,9 +20,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from core.infra.tmp_cleanup import format_size
 from core.paths import get_data_dir
 from core.time_utils import now_local, today_local
-from core.tmp_cleanup import format_size
 
 logger = logging.getLogger("animaworks.cleanup_runtime")
 _CORRUPT_VECTORDB_RE = re.compile(r"^(?:vectordb-corrupt|corrupt-vectordb)[-_](?P<stamp>\d{8}[-_]?\d{6}|\d{14})")

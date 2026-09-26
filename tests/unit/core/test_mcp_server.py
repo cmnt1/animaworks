@@ -693,7 +693,7 @@ class TestGetToolHandler:
         with (
             patch("core.memory.MemoryManager", return_value=mock_memory),
             patch("core.paths.get_shared_dir", return_value=mock_shared_dir),
-            patch("core.messenger.Messenger", return_value=mock_messenger),
+            patch("core.messaging.messenger.Messenger", return_value=mock_messenger),
             patch("core.tooling.handler.ToolHandler", return_value=mock_tool_handler) as mock_th_cls,
             patch("core.config.models.load_config"),
             patch("core.notification.notifier.HumanNotifier") as mock_hn_cls,
@@ -743,7 +743,7 @@ class TestGetToolHandler:
         with (
             patch("core.memory.MemoryManager", return_value=mock_memory),
             patch("core.paths.get_shared_dir", return_value=mock_shared_dir),
-            patch("core.messenger.Messenger", return_value=mock_messenger),
+            patch("core.messaging.messenger.Messenger", return_value=mock_messenger),
             patch("core.tooling.handler.ToolHandler", return_value=mock_tool_handler) as mock_th_cls,
             patch("core.config.models.load_config"),
             patch("core.notification.notifier.HumanNotifier") as mock_hn_cls,
@@ -780,7 +780,7 @@ class TestGetToolHandler:
         with (
             patch("core.memory.MemoryManager", return_value=mock_memory),
             patch("core.paths.get_shared_dir", return_value=mock_shared_dir),
-            patch("core.messenger.Messenger", return_value=mock_messenger),
+            patch("core.messaging.messenger.Messenger", return_value=mock_messenger),
             patch("core.tooling.handler.ToolHandler", return_value=mock_tool_handler) as mock_th_cls,
             patch("core.config.models.load_config", side_effect=RuntimeError("no config")),
             patch("core.integrations.TOOL_MODULES", {}),
@@ -814,7 +814,7 @@ class TestGetToolHandler:
         with (
             patch("core.memory.MemoryManager", return_value=mock_memory),
             patch("core.paths.get_shared_dir", return_value=mock_shared_dir),
-            patch("core.messenger.Messenger", return_value=mock_messenger),
+            patch("core.messaging.messenger.Messenger", return_value=mock_messenger),
             patch("core.tooling.handler.ToolHandler", return_value=mock_tool_handler) as mock_th_cls,
             patch("core.config.models.load_config"),
             patch("core.notification.notifier.HumanNotifier") as mock_hn_cls,

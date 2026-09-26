@@ -3,12 +3,12 @@
 Verifies that external platform source info is injected into the LLM prompt
 so the Anima knows not to attempt send_message via other channels (Issue #38).
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
-from core.schemas import CycleResult, EXTERNAL_PLATFORM_SOURCES
+from core.schemas import EXTERNAL_PLATFORM_SOURCES, CycleResult
 from core.tooling.handler import active_session_type
 
 
@@ -27,10 +27,12 @@ def _setup_anima(make_anima, data_dir):
     anima_dir = make_anima("alice")
     shared_dir = data_dir / "shared"
 
-    with patch("core.anima.AgentCore") as MockAgent, \
-         patch("core.anima.MemoryManager") as MockMM, \
-         patch("core.anima.Messenger"), \
-         patch("core._anima_messaging.ConversationMemory") as MockConv:
+    with (
+        patch("core.anima.digital_anima.AgentCore") as MockAgent,
+        patch("core.anima.digital_anima.MemoryManager") as MockMM,
+        patch("core.anima.digital_anima.Messenger"),
+        patch("core.anima.messaging.ConversationMemory") as MockConv,
+    ):
         MockMM.return_value.read_model_config.return_value = MagicMock()
         MockConv.return_value.compress_if_needed = AsyncMock()
         MockConv.return_value.finalize_session = AsyncMock(return_value=False)
@@ -40,7 +42,8 @@ def _setup_anima(make_anima, data_dir):
         MockConv.return_value.write_transcript = MagicMock()
         MockConv.return_value.needs_compression = MagicMock(return_value=False)
 
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
+
         dp = DigitalAnima(anima_dir, shared_dir)
         _wire_session_type(dp)
         return dp

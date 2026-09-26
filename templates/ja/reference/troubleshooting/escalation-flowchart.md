@@ -117,7 +117,7 @@
 - **LINE**: Push API。テキストは最大 5000 文字に切り詰め
 - **Telegram**: `parse_mode=HTML`。件名は `<b>…</b>`、全体 4096 文字以内に調整（エスケープ後に切り詰め）
 - **クレデンシャル**: 基底 `NotificationChannel._resolve_credential_with_vault` は **設定キーの env → `{キー}__{anima_name}`（vault/shared）→ 素のキー**の順。Slack Bot はこれに加え `get_credential("slack", "notification", …)` のフォールバックあり（各 `channels/*.py` 参照）
-- **チャット UI**: ストリーミング応答で **`notification_sent`** イベントが送られる（`core/_anima_messaging.py` 経由。外部チャネルとは別経路）
+- **チャット UI**: ストリーミング応答で **`notification_sent`** イベントが送られる（`core/anima/messaging.py` 経由。外部チャネルとは別経路）
 - **記録**: `call_human` 実行時、統一アクティビティログに **`human_notify`**（`via` は実装上固定で `configured_channels`）。あわせて `tool_result` も残る。Priming の「Pending Human Notifications」は **過去24時間・最大10件**の `human_notify` を集約（`core/memory/priming/outbound.py`）
 - **その他の HumanNotifier 利用**: バックグラウンドツール完了など、**同一の `HumanNotifier`** でフレームワークが人間へ送る経路がある（`call_human` ツール以外。トップレベル Anima に限る点は同じ）
 - **Mode S（CLI）**: `animaworks-tool call_human "件名" "本文" [--priority …]` でも同系統の通知を送れる

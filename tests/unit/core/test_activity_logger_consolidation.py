@@ -17,7 +17,6 @@ from __future__ import annotations
 import inspect
 from pathlib import Path
 
-
 # ── Source inspection: DigitalAnima ──────────────────────────
 
 
@@ -26,14 +25,14 @@ class TestDigitalAnimaActivityConsolidation:
 
     def test_init_assigns_self_activity(self):
         """DigitalAnima.__init__ assigns self._activity = ActivityLogger(anima_dir)."""
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         source = inspect.getsource(DigitalAnima.__init__)
         assert "self._activity = ActivityLogger(anima_dir)" in source
 
     def test_no_inline_activity_logger_outside_init(self):
-        """core/anima.py has no inline ActivityLogger(...) outside __init__."""
-        source_path = Path("core/anima.py")
+        """core/anima/digital_anima.py has no inline ActivityLogger(...) outside __init__."""
+        source_path = Path("core/anima/digital_anima.py")
         source = source_path.read_text(encoding="utf-8")
         lines = source.splitlines()
 
@@ -46,14 +45,11 @@ class TestDigitalAnimaActivityConsolidation:
                     continue
                 occurrences.append((i, stripped))
 
-        assert occurrences == [], (
-            f"Inline ActivityLogger instantiation(s) found outside __init__: "
-            f"{occurrences}"
-        )
+        assert occurrences == [], f"Inline ActivityLogger instantiation(s) found outside __init__: {occurrences}"
 
     def test_self_activity_is_activity_logger_type(self):
         """DigitalAnima.__init__ imports and uses ActivityLogger for self._activity."""
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         source = inspect.getsource(DigitalAnima.__init__)
         assert "ActivityLogger" in source
@@ -64,7 +60,7 @@ class TestDigitalAnimaActivityConsolidation:
         The ``self._activity.log("message_received", ...)`` call should appear
         outside any ``try:`` block that is specifically guarding it.
         """
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         source = inspect.getsource(DigitalAnima.process_message)
         lines = source.splitlines()
@@ -95,14 +91,13 @@ class TestDigitalAnimaActivityConsolidation:
                                 break
                         break
                 assert not found_try_guard, (
-                    "Activity log 'message_received' write call is still "
-                    "wrapped in a dedicated try/except: pass guard"
+                    "Activity log 'message_received' write call is still wrapped in a dedicated try/except: pass guard"
                 )
                 break
 
     def test_load_heartbeat_history_retains_try_except(self):
         """_load_heartbeat_history still has try/except wrapping for recovery."""
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         source = inspect.getsource(DigitalAnima._load_heartbeat_history)
         assert "try:" in source
@@ -111,7 +106,7 @@ class TestDigitalAnimaActivityConsolidation:
 
     def test_load_recent_reflections_retains_try_except(self):
         """_load_recent_reflections still has try/except wrapping for recovery."""
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         source = inspect.getsource(DigitalAnima._load_recent_reflections)
         assert "try:" in source
@@ -159,10 +154,7 @@ class TestToolHandlerActivityConsolidation:
                     continue
                 occurrences.append((i, stripped))
 
-        assert occurrences == [], (
-            f"Inline ActivityLogger instantiation(s) found outside __init__: "
-            f"{occurrences}"
-        )
+        assert occurrences == [], f"Inline ActivityLogger instantiation(s) found outside __init__: {occurrences}"
 
     def test_self_activity_is_activity_logger_type(self):
         """ToolHandler.__init__ imports and uses ActivityLogger for self._activity."""
@@ -182,24 +174,22 @@ class TestActivityLoggerUsageCount:
         """All activity log calls in anima modules use self._activity.
 
         DigitalAnima is split into Mixin sub-modules; check the facade
-        plus all _anima_*.py mixin files.
+        plus its mixin modules in core/anima/.
         """
         anima_files = [
-            Path("core/anima.py"),
-            *Path("core").glob("_anima_*.py"),
+            Path("core/anima") / f"{name}.py"
+            for name in ("digital_anima", "lifecycle", "messaging", "inbox", "heartbeat")
         ]
         total_source = "\n".join(p.read_text(encoding="utf-8") for p in anima_files)
 
         activity_calls = total_source.count("self._activity.log(")
         assert activity_calls > 0, (
-            f"Expected self._activity.log() calls in anima modules: "
-            f"{[str(p) for p in anima_files]}"
+            f"Expected self._activity.log() calls in anima modules: {[str(p) for p in anima_files]}"
         )
 
         recent_calls = total_source.count("self._activity.recent(")
         assert recent_calls > 0, (
-            f"Expected self._activity.recent() calls in anima modules: "
-            f"{[str(p) for p in anima_files]}"
+            f"Expected self._activity.recent() calls in anima modules: {[str(p) for p in anima_files]}"
         )
 
     def test_handler_uses_self_activity_for_all_log_calls(self):
@@ -209,6 +199,4 @@ class TestActivityLoggerUsageCount:
 
         # Count self._activity.log calls
         activity_calls = source.count("self._activity.log(")
-        assert activity_calls > 0, (
-            "Expected self._activity.log() calls in core/tooling/handler.py"
-        )
+        assert activity_calls > 0, "Expected self._activity.log() calls in core/tooling/handler.py"

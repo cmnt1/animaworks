@@ -115,10 +115,10 @@ class TestTailAllLogsServerPath:
 class TestLocalDeprecation:
     """Tests for --local deprecation warning in cmd_chat and cmd_heartbeat."""
 
-    @patch("core.anima.DigitalAnima")
+    @patch("core.anima.digital_anima.DigitalAnima")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
     @patch("core.paths.get_animas_dir")
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_cmd_chat_local_emits_deprecation_warning(
         self,
         mock_ensure: MagicMock,
@@ -150,10 +150,10 @@ class TestLocalDeprecation:
         with pytest.warns(DeprecationWarning, match="--local is deprecated"):
             cmd_chat(args)
 
-    @patch("core.anima.DigitalAnima")
+    @patch("core.anima.digital_anima.DigitalAnima")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
     @patch("core.paths.get_animas_dir")
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_cmd_heartbeat_local_emits_deprecation_warning(
         self,
         mock_ensure: MagicMock,

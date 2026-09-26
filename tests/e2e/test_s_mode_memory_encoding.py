@@ -96,17 +96,17 @@ class TestSModeAppendTurn:
         S-mode from saving conversation turns are no longer present in
         the source code.
         """
-        import core.anima as anima_module
+        import core.anima.digital_anima as anima_module
 
         source = inspect.getsource(anima_module)
 
         # The old guard patterns that should no longer exist
         assert 'if mode != "s":' not in source, (
-            "Found 'if mode != \"s\":' guard in core/anima.py -- "
+            "Found 'if mode != \"s\":' guard in core/anima/digital_anima.py -- "
             "this should have been removed to allow S-mode memory encoding"
         )
         assert "if mode != 's':" not in source, (
-            "Found \"if mode != 's':\" guard in core/anima.py -- "
+            "Found \"if mode != 's':\" guard in core/anima/digital_anima.py -- "
             "this should have been removed to allow S-mode memory encoding"
         )
 
@@ -120,7 +120,7 @@ class TestSModeAppendTurn:
         Inspects the process_message method source to confirm that
         append_turn calls are not guarded by mode checks.
         """
-        import core.anima as anima_module
+        import core.anima.digital_anima as anima_module
 
         source = inspect.getsource(anima_module.DigitalAnima.process_message)
 
@@ -130,7 +130,7 @@ class TestSModeAppendTurn:
 
     def test_s_mode_streaming_saves_turns(self) -> None:
         """Verify process_message_stream code path saves turns for S-mode."""
-        import core.anima as anima_module
+        import core.anima.digital_anima as anima_module
 
         source = inspect.getsource(anima_module.DigitalAnima.process_message_stream)
 
@@ -633,7 +633,7 @@ class TestActivityLogConsolidation:
         This meta-test ensures the activity log is wired into the
         consolidation prompt pipeline.
         """
-        import core.anima as anima_module
+        import core.anima.digital_anima as anima_module
 
         source = inspect.getsource(
             anima_module.DigitalAnima._collect_episodes_summary,
@@ -646,7 +646,7 @@ class TestActivityLogConsolidation:
 
     def test_consolidation_uses_2phase_pipeline(self) -> None:
         """Verify daily consolidation uses Phase A + Phase B pipeline."""
-        import core.anima as anima_module
+        import core.anima.digital_anima as anima_module
 
         source = inspect.getsource(
             anima_module.DigitalAnima._run_daily_consolidation,
