@@ -155,6 +155,8 @@ def _use_diffusers_backend(image_config: Any) -> bool:
 
 def _build_fullbody_api_client(image_config: Any) -> Any:
     """Select the API fullbody client (NovelAI / Fal). Used as codex fallback."""
+    if getattr(image_config, "backend", "api") == "atlascloud":
+        return AtlasCloudImageClient()
     if getattr(image_config, "image_style", "anime") == "realistic":
         if not os.environ.get("FAL_KEY"):
             raise RuntimeError("FAL_KEY required for realistic image generation.")
@@ -175,6 +177,8 @@ def _build_fullbody_client(image_config: Any, *, generation_model: str | None = 
         from core.tools.image.openai import OpenAIImageClient as SelectedOpenAIImageClient
 
         return SelectedOpenAIImageClient(model=generation_model.split(":", 1)[1])
+    if getattr(image_config, "backend", "api") == "atlascloud":
+        return AtlasCloudImageClient()
     if _use_diffusers_backend(image_config):
         return LocalDiffusersClient(image_config)
     if getattr(image_config, "prefer_codex", True) and codex_available():

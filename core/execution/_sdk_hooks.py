@@ -200,6 +200,32 @@ def _build_pre_tool_hook(
                     )
                 )
 
+        # ── Task context compaction — end the current SDK turn for same-session resume ──
+        if session_stats is not None and str(session_stats.get("trigger", "")).startswith("task:"):
+            compaction_limit = session_stats.get("task_compaction_tokens", 0)
+            compaction_count = session_stats.get("task_compaction_count", 0)
+            compaction_max = session_stats.get("task_compaction_max", 0)
+            context_tokens = session_stats.get("last_context_tokens", 0)
+            if (
+                isinstance(compaction_limit, int)
+                and compaction_limit > 0
+                and isinstance(compaction_count, int)
+                and isinstance(compaction_max, int)
+                and compaction_count < compaction_max
+                and isinstance(context_tokens, int)
+                and context_tokens >= compaction_limit
+            ):
+                session_stats["task_compact_requested"] = True
+                logger.info(
+                    "Task context threshold reached (task_id=%s, tokens=%d, threshold=%d, next_compaction=%d/%d)",
+                    str(session_stats.get("trigger", "")).removeprefix("task:"),
+                    context_tokens,
+                    compaction_limit,
+                    compaction_count + 1,
+                    compaction_max,
+                )
+                return SyncHookJSONOutput(continue_=False)
+
         # ── Compaction blocked — end session for AnimaWorks chaining ──
         if session_stats is not None and session_stats.get("compaction_blocked"):
             session_stats["compaction_blocked"] = False
@@ -604,7 +630,7 @@ def _build_post_tool_hook(anima_dir: Path) -> Callable:
     """Build a PostToolUse hook that attaches ACTION-RULE bodies to side-effect
     tool results and updates knowledge frontmatter after Write/Edit."""
 
-    knowledge_dir_str = str(anima_dir / "knowledge")
+    knowledge_dir = (anima_dir / "knowledge").resolve()
 
     async def _post_tool_hook(
         input_data: dict,
@@ -616,33 +642,43 @@ def _build_post_tool_hook(anima_dir: Path) -> Callable:
         tool_input = raw_input if isinstance(raw_input, dict) else {}
 
         # Attach relevant ACTION-RULE bodies to side-effect tool results.
-        try:
-            from core.memory.action_gate import (
-                action_tool_name_for_sdk,
-                find_action_rules,
-                format_action_rules,
-            )
+        #
+        # MCP aw tools (``mcp__aw__*``) already have their rules attached by
+        # the handler itself (core.tooling.handler._attach_action_rules);
+        # attaching again here would duplicate the rule body in the result.
+        # Attach here only for SDK-native tool names (Bash, Write, ...).
+        if not tool_name.startswith("mcp__aw__"):
+            try:
+                from core.memory.action_gate import (
+                    action_tool_name_for_sdk,
+                    find_action_rules,
+                    format_action_rules,
+                )
 
-            action_tool = action_tool_name_for_sdk(tool_name)
-            if action_tool is not None:
-                rules = await asyncio.to_thread(find_action_rules, anima_dir, action_tool, tool_input)
-                rendered = format_action_rules(rules)
-                if rendered:
-                    return {
-                        "hookSpecificOutput": {
-                            "hookEventName": "PostToolUse",
-                            "additionalContext": rendered,
+                action_tool = action_tool_name_for_sdk(tool_name)
+                if action_tool is not None:
+                    rules = await asyncio.to_thread(find_action_rules, anima_dir, action_tool, tool_input)
+                    rendered = format_action_rules(rules)
+                    if rendered:
+                        return {
+                            "hookSpecificOutput": {
+                                "hookEventName": "PostToolUse",
+                                "additionalContext": rendered,
+                            }
                         }
-                    }
-                return {}
-        except Exception:
-            logger.debug("Failed to attach action rules in PostToolUse for %s", tool_name, exc_info=True)
+                    return {}
+            except Exception:
+                logger.debug("Failed to attach action rules in PostToolUse for %s", tool_name, exc_info=True)
 
         if tool_name not in ("Write", "Edit"):
             return {}
 
         file_path = tool_input.get("file_path", "")
-        if not file_path.startswith(knowledge_dir_str + "/") or not file_path.endswith(".md"):
+        try:
+            knowledge_path = Path(file_path).resolve()
+        except (OSError, RuntimeError, TypeError):
+            return {}
+        if knowledge_path.suffix.lower() != ".md" or not knowledge_path.is_relative_to(knowledge_dir):
             return {}
 
         # Cycle-context inheritance is intentional here: this task is spawned
@@ -650,7 +686,7 @@ def _build_post_tool_hook(anima_dir: Path) -> Callable:
         # tool action the agent just took (updating frontmatter for a knowledge
         # file it wrote this cycle). It runs near-immediately and its logs belong
         # to this cycle, so we let it inherit the cycle_id rather than detach.
-        asyncio.create_task(_update_knowledge_frontmatter(Path(file_path)))
+        asyncio.create_task(_update_knowledge_frontmatter(knowledge_path))
         return {"async_": True}
 
     return _post_tool_hook

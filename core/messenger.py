@@ -291,9 +291,11 @@ class Messenger:
             msg.thread_id = msg.id
         target_dir = self.shared_dir / "inbox" / to
         try:
+            from core.memory._io import atomic_write_text
+
             target_dir.mkdir(parents=True, exist_ok=True)
             filepath = _unique_message_path(target_dir, msg, new_thread=new_thread)
-            filepath.write_text(msg.model_dump_json(indent=2), encoding="utf-8")
+            atomic_write_text(filepath, msg.model_dump_json(indent=2))
             if not filepath.exists():
                 raise DeliveryError(
                     f"Message delivery failed: file not created at {filepath} ({self.anima_name} -> {to})"
@@ -325,7 +327,7 @@ class Messenger:
                 )
                 if autocreated_task_id:
                     msg.meta = {**msg.meta, "autocreated_task_id": autocreated_task_id}
-                    filepath.write_text(msg.model_dump_json(indent=2), encoding="utf-8")
+                    atomic_write_text(filepath, msg.model_dump_json(indent=2))
             except Exception as e:
                 logger.warning(
                     "Task request capture failed for message_sent (%s -> %s): %s",

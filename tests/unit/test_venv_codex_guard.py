@@ -146,7 +146,7 @@ class TestExecutionSdkPreflight:
         with (
             patch("cli.commands.server._package_importable", return_value=True),
             patch("core.platform.claude_code.get_claude_executable", return_value=None),
-            patch("cli.commands.server.os.geteuid", return_value=1000),
+            patch("cli.commands.server.os.geteuid", return_value=1000, create=True),
             caplog.at_level(logging.CRITICAL, logger="animaworks"),
         ):
             _run_execution_sdk_preflight(animas)
@@ -170,7 +170,7 @@ class TestExecutionSdkPreflight:
         with (
             patch("cli.commands.server._package_importable", return_value=True),
             patch("core.platform.claude_code.get_claude_executable", return_value="/usr/local/bin/claude"),
-            patch("cli.commands.server.os.geteuid", return_value=0),
+            patch("cli.commands.server.os.geteuid", return_value=0, create=True),
             caplog.at_level(logging.CRITICAL, logger="animaworks"),
         ):
             _run_execution_sdk_preflight(animas)
@@ -192,7 +192,7 @@ class TestExecutionSdkPreflight:
         with (
             patch("cli.commands.server._package_importable", return_value=True),
             patch("core.platform.claude_code.get_claude_executable", return_value="/usr/local/bin/claude"),
-            patch("cli.commands.server.os.geteuid", return_value=0),
+            patch("cli.commands.server.os.geteuid", return_value=0, create=True),
             caplog.at_level(logging.CRITICAL, logger="animaworks"),
         ):
             _run_execution_sdk_preflight(animas)

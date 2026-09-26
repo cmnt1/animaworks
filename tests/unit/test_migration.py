@@ -682,3 +682,73 @@ class TestRegisterAllSteps:
         assert "per_anima" in categories
         assert "template_sync" in categories
         assert "version" in categories
+
+    def test_step_v0141_resyncs_task_exec_prompt(self, data_dir: Path) -> None:
+        from core.migrations.steps import register_all_steps, step_v0141_harness_diet_r2_resync
+
+        prompts_dir = data_dir / "prompts"
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+        (prompts_dir / "task_exec.md").write_text("stale", encoding="utf-8")
+
+        result = step_v0141_harness_diet_r2_resync(data_dir, dry_run=False, verbose=True)
+
+        assert result.error is None
+        assert "{submission_line}" in (prompts_dir / "task_exec.md").read_text(encoding="utf-8")
+        runner = MigrationRunner(data_dir)
+        register_all_steps(runner)
+        ids = [item["id"] for item in runner.list_steps()]
+        assert (
+            ids.index("v0140_harness_diet_resync")
+            < ids.index("v0141_harness_diet_r2_resync")
+            < ids.index("update_version")
+        )
+
+    def test_step_v0142_resyncs_heartbeat_and_task_board_guide(self, data_dir: Path) -> None:
+        from core.migrations.steps import register_all_steps, step_v0142_task_board_cli_resync
+
+        (data_dir / "prompts").mkdir(parents=True, exist_ok=True)
+        (data_dir / "prompts" / "heartbeat.md").write_text("stale", encoding="utf-8")
+        guide = data_dir / "common_knowledge" / "operations" / "task-board-guide.md"
+        guide.parent.mkdir(parents=True, exist_ok=True)
+        guide.write_text("stale", encoding="utf-8")
+
+        result = step_v0142_task_board_cli_resync(data_dir, dry_run=False, verbose=True)
+
+        assert result.error is None
+        assert "task board" in (data_dir / "prompts" / "heartbeat.md").read_text(encoding="utf-8")
+        assert "task claim" in guide.read_text(encoding="utf-8")
+        runner = MigrationRunner(data_dir)
+        register_all_steps(runner)
+        ids = [item["id"] for item in runner.list_steps()]
+        assert (
+            ids.index("v0141_harness_diet_r2_resync")
+            < ids.index("v0142_task_board_cli_resync")
+            < ids.index("update_version")
+        )
+
+    def test_step_v0143_resyncs_owner_led_triage(self, data_dir: Path) -> None:
+        from core.migrations.steps import register_all_steps, step_v0143_task_board_self_triage_resync
+
+        (data_dir / "prompts").mkdir(parents=True, exist_ok=True)
+        (data_dir / "prompts" / "heartbeat.md").write_text("stale", encoding="utf-8")
+
+        result = step_v0143_task_board_self_triage_resync(data_dir, dry_run=False, verbose=True)
+
+        assert result.error is None
+        assert "task done ID" in (data_dir / "prompts" / "heartbeat.md").read_text(encoding="utf-8")
+        runner = MigrationRunner(data_dir)
+        register_all_steps(runner)
+        ids = [item["id"] for item in runner.list_steps()]
+        assert (
+            ids.index("v0142_task_board_cli_resync")
+            < ids.index("v0143_task_board_self_triage_resync")
+            < ids.index("update_version")
+        )
+
+    def test_step_v0144_tool_guide_dedup_registered_last(self, tmp_path: Path) -> None:
+        from core.migrations.steps import register_all_steps
+
+        runner = MigrationRunner(tmp_path)
+        register_all_steps(runner)
+        ids = [item["id"] for item in runner.list_steps()]
+        assert ids.index("v0144_tool_guide_dedup_resync") == ids.index("update_version") - 1

@@ -21,7 +21,7 @@ import os
 import random
 import string
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 MAX_SESSIONS = 50
@@ -137,11 +137,41 @@ def save_session(session: SessionInfo, *, base_dir: Path | None = None) -> Path:
     """Persist a session and rotate old ones (returns the written path)."""
     d = base_dir if base_dir is not None else session_dir_path()
     d.mkdir(parents=True, exist_ok=True, mode=0o700)
-    session.updated_at = _now_iso()
+    session.updated_at = _next_updated_at(d, session.updated_at)
     path = d / f"{session.session_id}.json"
     path.write_text(json.dumps(asdict(session), ensure_ascii=False, indent=2), encoding="utf-8")
     _rotate(d)
     return path
+
+
+def _next_updated_at(d: Path, current: str) -> str:
+    """Return a timestamp newer than every saved session.
+
+    Windows wall-clock reads can repeat within one scheduler tick. Without a
+    deterministic tie-breaker, rapid saves make ``latest_session()`` depend on
+    random session filenames instead of save order.
+    """
+    candidates = [_parse_timestamp(_now_iso()), _parse_timestamp(current)]
+    latest = max((value for value in candidates if value is not None), default=datetime.now(UTC))
+    for path in d.glob("*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            saved = _parse_timestamp(data.get("updated_at", "")) if isinstance(data, dict) else None
+        except (OSError, json.JSONDecodeError):
+            continue
+        if saved is not None and saved >= latest:
+            latest = saved + timedelta(microseconds=1)
+    return latest.isoformat()
+
+
+def _parse_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
 
 
 def load_session(session_id: str, *, base_dir: Path | None = None) -> SessionInfo | None:

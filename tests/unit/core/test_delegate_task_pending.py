@@ -163,12 +163,15 @@ class TestDelegateTaskWritesPending:
                 },
             )
 
-        pending_task = json.loads(next((alice_dir / "state" / "pending").glob("*.json")).read_text(encoding="utf-8"))
-        task = TaskQueueManager(alice_dir).get_task_by_id(pending_task["task_id"])
+        manager = TaskQueueManager(alice_dir)
+        pending_task = manager.store.pending("alice")[0]
+        task_input = manager.store.get_input("alice", pending_task["task_id"])
+        task = manager.get_task_by_id(pending_task["task_id"])
         assert task is not None
+        assert task_input is not None
         assert "task_desc" not in task.meta
-        assert pending_task["description"] == "Fix the blocked Obsidian reflection"
-        assert pending_task["working_directory"] == ""
+        assert task_input["description"] == "Fix the blocked Obsidian reflection"
+        assert task_input["working_directory"] == ""
 
     def test_pending_file_has_required_fields(self, handler_with_sub):
         """All fields required by PendingTaskExecutor are present."""

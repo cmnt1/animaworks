@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -423,7 +422,7 @@ class TestProcessGreet:
             assert result["emotion"] == "smile"
             assert result["cached"] is False
 
-    async def test_greet_caches_response(self, data_dir, make_anima):
+    async def test_greet_always_runs_llm_no_cache(self, data_dir, make_anima):
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
@@ -444,47 +443,11 @@ class TestProcessGreet:
             _wire_session_type(dp)
             dp.agent.run_cycle = AsyncMock(return_value=_make_cycle_result(summary="Hello!"))
 
-            # First call
+            # Repeated greets each run the LLM; no response caching anymore.
             result1 = await dp.process_greet()
-            assert result1["cached"] is False
-
-            # Second call within cooldown
             result2 = await dp.process_greet()
-            assert result2["cached"] is True
-            assert result2["response"] == result1["response"]
-            # LLM should only be called once
-            assert dp.agent.run_cycle.await_count == 1
-
-    async def test_greet_cache_expires(self, data_dir, make_anima):
-        anima_dir = make_anima("alice")
-        shared_dir = data_dir / "shared"
-
-        with (
-            patch("core.anima.AgentCore"),
-            patch("core.anima.MemoryManager") as MockMM,
-            patch("core.anima.Messenger"),
-            patch("core._anima_messaging.ConversationMemory") as MockConv,
-            patch("core._anima_messaging.load_prompt", return_value="greet prompt"),
-        ):
-            MockMM.return_value.read_model_config.return_value = MagicMock()
-            MockConv.return_value.append_turn = MagicMock()
-            MockConv.return_value.save = MagicMock()
-
-            from core.anima import DigitalAnima
-
-            dp = DigitalAnima(anima_dir, shared_dir)
-            _wire_session_type(dp)
-            dp.agent.run_cycle = AsyncMock(return_value=_make_cycle_result(summary="Hello!"))
-
-            # First call
-            await dp.process_greet()
-
-            # Simulate cache expiry (must exceed _GREET_COOLDOWN of 3600s)
-            dp._last_greet_at = time.time() - 3601
-
-            # Second call after expiry
-            result = await dp.process_greet()
-            assert result["cached"] is False
+            assert result1["cached"] is False
+            assert result2["cached"] is False
             assert dp.agent.run_cycle.await_count == 2
 
     async def test_greet_records_visit_and_assistant_turns(self, data_dir, make_anima):

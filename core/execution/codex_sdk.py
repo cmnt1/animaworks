@@ -50,7 +50,8 @@ from core.execution.error_classifier import (
     provider_family_of,
 )
 from core.execution.rate_guard import get_rate_guard
-from core.execution.session_types import is_persistent_codex_session, resolve_runtime_session_type
+from core.execution.session_context import _resolve_session_type
+from core.execution.session_types import is_persistent_codex_session
 from core.memory.shortterm import ShortTermMemory
 from core.platform.codex import default_home_dir, get_codex_executable, is_codex_login_available
 from core.prompt.context import ContextTracker
@@ -505,10 +506,6 @@ def _get_thread_id(thread: Any) -> str | None:
         if val:
             return str(val)
     return None
-
-
-def _resolve_session_type(trigger: str) -> str:
-    return resolve_runtime_session_type(trigger)
 
 
 def _event_idle_timeout_seconds(trigger: str) -> float:
@@ -1433,6 +1430,14 @@ class CodexSDKExecutor(BaseExecutor):
             "ANIMAWORKS_SERVER_URL": _resolve_animaworks_server_url(),
         }
         _set_process_path_env(env, _default_path_env())
+        for key in (
+            "ANIMAWORKS_EMBED_URL",
+            "ANIMAWORKS_VECTOR_URL",
+            "ANIMAWORKS_RERANK_URL",
+        ):
+            value = os.environ.get(key)
+            if value:
+                env[key] = value
         ctx = current_runtime_session()
         if ctx is not None:
             env.update(ctx.to_env())
@@ -1811,6 +1816,10 @@ class CodexSDKExecutor(BaseExecutor):
             "codex_reasoning_effort"
         ) or self._model_config.thinking_effort
         effort_line = f'model_reasoning_effort = "{esc(reasoning_effort)}"\n' if reasoning_effort else ""
+        task_compaction_tokens = self._model_config.task_compaction_tokens
+        task_compaction_line = (
+            f"model_auto_compact_token_limit = {task_compaction_tokens}\n" if task_compaction_tokens > 0 else ""
+        )
 
         # Heartbeat depends on the aw catalog. Making it required prevents
         # Codex's short optional-server grace period from silently omitting
@@ -1818,6 +1827,7 @@ class CodexSDKExecutor(BaseExecutor):
         config_toml = (
             f'model = "{esc(provider_config.model)}"\n'
             f"{effort_line}"
+            f"{task_compaction_line}"
             f'model_provider = "{esc(provider_config.provider)}"\n'
             f"{auth_method_line}"
             f'model_instructions_file = "{esc(str(instructions_file))}"\n'

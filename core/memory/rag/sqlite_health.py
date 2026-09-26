@@ -220,7 +220,7 @@ def configure_chroma_sqlite_pragmas(
 
     try:
         mode = "rwc" if create_if_missing else "rw"
-        with _connect(db_path, timeout_seconds, mode=mode) as conn:
+        with closing(_connect(db_path, timeout_seconds, mode=mode)) as conn, conn:
             current_journal_mode = str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower()
             conn.execute(f"PRAGMA busy_timeout = {int(timeout_seconds * 1000)}")
             journal_mode = current_journal_mode

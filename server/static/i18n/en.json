@@ -773,6 +773,7 @@
   "taskboard.filter_suppressed": "Suppressed",
   "taskboard.load_failed": "Failed to load TaskBoard",
   "taskboard.loaded_count": "{count} tasks loaded.",
+  "taskboard.history_truncated": "Hidden tasks: showing the latest {count} only.",
   "taskboard.loading": "Loading TaskBoard...",
   "taskboard.modal_archive": "Archive Task",
   "taskboard.modal_expire": "Expire Task",

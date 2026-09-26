@@ -437,14 +437,15 @@ class TestLockPreventsDoubleExecution:
     @pytest.mark.asyncio
     async def test_lock_prevents_concurrent_run(self, status_dir):
         """Verify that a locked job is skipped rather than blocked."""
-        from core.lifecycle import LifecycleManager
+        from core.supervisor._mgr_scheduler import SchedulerMixin
 
-        mgr = LifecycleManager.__new__(LifecycleManager)
+        mgr = SchedulerMixin.__new__(SchedulerMixin)
         mgr._system_job_locks = {
             "daily": asyncio.Lock(),
             "weekly": asyncio.Lock(),
             "monthly": asyncio.Lock(),
         }
+        mgr._system_memory_maintenance_lock = asyncio.Lock()
         mgr.animas = {}
         mgr._ws_broadcast = None
 
@@ -454,15 +455,16 @@ class TestLockPreventsDoubleExecution:
             nonlocal call_count
             call_count += 1
             await asyncio.sleep(0.1)
+            return {"marker_written": True}
 
-        mgr._handle_daily_consolidation_inner = fake_inner
+        mgr._run_daily_consolidation_inner = fake_inner
 
         # Start first call in background
-        task1 = asyncio.create_task(mgr._handle_daily_consolidation())
+        task1 = asyncio.create_task(mgr._run_daily_consolidation())
         await asyncio.sleep(0.01)  # Let it acquire the lock
 
         # Second call should skip
-        await mgr._handle_daily_consolidation()
+        await mgr._run_daily_consolidation()
 
         await task1
         assert call_count == 1  # Only the first call executed

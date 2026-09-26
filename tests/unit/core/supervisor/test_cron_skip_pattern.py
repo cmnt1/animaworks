@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -304,9 +305,9 @@ class TestSkipPatternFiltering:
 
         mgr._anima.run_cron_task.assert_called_once()
         _, _, kwargs = mgr._anima.run_cron_task.mock_calls[0]
-        assert "COMMAND_CRON_FAILED" in kwargs["command_output"]
-        assert "stderr:" in kwargs["command_output"]
-        assert "some error" in kwargs["command_output"]
+        command_output = json.loads(kwargs["command_output"])
+        assert command_output["exit_code"] == 1
+        assert command_output["stderr"] == "some error"
 
     @pytest.mark.asyncio
     async def test_nonzero_exit_code_respects_trigger_heartbeat_false(self):

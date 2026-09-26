@@ -312,7 +312,6 @@ class TestRunCycle:
         mock_build_result = BuildResult(system_prompt="sysprompt")
         with (
             patch("core._agent_cycle.build_system_prompt", return_value=mock_build_result),
-            patch("core._agent_cycle.inject_shortterm", return_value="sysprompt"),
             patch("core._agent_cycle.ShortTermMemory") as MockST,
         ):
             MockST.return_value.has_pending.return_value = False
@@ -333,7 +332,6 @@ class TestRunCycle:
         mock_build_result = BuildResult(system_prompt="sysprompt")
         with (
             patch("core._agent_cycle.build_system_prompt", return_value=mock_build_result),
-            patch("core._agent_cycle.inject_shortterm", return_value="sysprompt"),
             patch("core._agent_cycle.ShortTermMemory") as MockST,
         ):
             MockST.return_value.has_pending.return_value = False
@@ -361,7 +359,6 @@ class TestRunCycle:
         mock_build_result = BuildResult(system_prompt="sysprompt")
         with (
             patch("core._agent_cycle.build_system_prompt", return_value=mock_build_result),
-            patch("core._agent_cycle.inject_shortterm", return_value="sysprompt"),
             patch("core._agent_cycle.ShortTermMemory") as MockST,
             patch("core._agent_cycle.ContextTracker") as MockCT,
         ):

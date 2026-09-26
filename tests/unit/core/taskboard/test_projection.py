@@ -303,3 +303,33 @@ def test_integration_stale_metadata_hidden_from_default_board_view(tmp_path: Pat
     assert len(projected) == 1
     assert projected[0].visibility == AttentionVisibility.ARCHIVED
     assert projected[0].column == BoardColumn.DONE
+
+
+def test_project_task_matches_full_projection(tmp_path: Path) -> None:
+    from core.taskboard.projector import project_task
+
+    sakura = _queue(tmp_path, "sakura")
+    rin = _queue(tmp_path, "rin")
+    store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
+    sakura.add_task(source="human", original_instruction="live", assignee="sakura", summary="live", task_id="t-live")
+    done = sakura.add_task(
+        source="human", original_instruction="old", assignee="sakura", summary="old", task_id="t-old"
+    )
+    sakura.update_status(done.task_id, "done")
+    with sakura.store.transaction() as db:
+        db.execute("UPDATE tasks SET archived=1 WHERE anima='sakura' AND task_id='t-old'")
+    rin.add_task(source="anima", original_instruction="work", assignee="rin", summary="work", task_id="t-rin")
+    with rin.store.transaction() as db:
+        db.execute("INSERT INTO task_aliases(viewer, alias, anima, task_id) VALUES ('sakura', 'a-rin', 'rin', 't-rin')")
+    store.upsert_metadata(anima_name="sakura", task_id="t-old", actor="planner", position=3.0)
+    store.upsert_metadata(anima_name="sakura", task_id="t-gone", actor="planner", visibility="snoozed")
+
+    full = {
+        task.task_id: task
+        for task in project_anima(sakura.anima_dir, store, include_missing=True, include_archived=True)
+    }
+
+    assert set(full) == {"t-live", "t-old", "a-rin", "t-gone"}
+    for task_id, expected in full.items():
+        assert project_task(sakura.anima_dir, store, task_id) == expected
+    assert project_task(sakura.anima_dir, store, "t-unknown") is None

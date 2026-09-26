@@ -14,7 +14,6 @@ import asyncio
 import contextvars
 import json
 import logging
-import time
 from collections.abc import AsyncGenerator
 from contextlib import nullcontext
 from hashlib import sha256
@@ -1523,29 +1522,12 @@ class MessagingMixin:
     async def process_greet(self) -> dict[str, str | bool]:
         """Generate a greeting response when user clicks the character.
 
-        Returns a cached response if called within the cooldown period.
+        Always runs the LLM; no response caching.  ``cached`` is kept as
+        ``False`` for API compatibility.
 
         Returns:
             Dict with keys: response, emotion, cached.
         """
-        # Check cooldown
-        now = time.time()
-        if (
-            self._last_greet_at is not None
-            and (now - self._last_greet_at) < self._GREET_COOLDOWN
-            and self._last_greet_text is not None
-        ):
-            logger.info(
-                "[%s] process_greet CACHED (%.0fs since last)",
-                self.name,
-                now - self._last_greet_at,
-            )
-            return {
-                "response": self._last_greet_text,
-                "emotion": self._last_greet_emotion,
-                "cached": True,
-            }
-
         logger.info("[%s] process_greet START", self.name)
         from core.tooling.handler import active_session_type
 
@@ -1591,11 +1573,6 @@ class MessagingMixin:
                 # Record assistant turn in conversation memory
                 conv_memory.append_turn("assistant", clean_text)
                 conv_memory.save()
-
-                # Update greet cache
-                self._last_greet_at = time.time()
-                self._last_greet_text = clean_text
-                self._last_greet_emotion = emotion
 
                 logger.info(
                     "[%s] process_greet END duration_ms=%d",

@@ -147,7 +147,7 @@ class TestSearchMemoryCountHeader:
 
         assert output == "No results for 'missing'"
 
-    def test_abstain_meta_in_no_results_message(self) -> None:
+    def test_abstain_meta_keeps_plain_no_results_message(self) -> None:
         handler = _FakeHandler([])
         handler._memory.last_search_meta = {
             "abstain": True,
@@ -156,8 +156,24 @@ class TestSearchMemoryCountHeader:
 
         output = handler._handle_search_memory({"query": "missing"})
 
-        assert "abstain=true" in output
-        assert "low_confidence" in output
+        assert output == "No results for 'missing'"
+
+    def test_low_confidence_marker_added_to_header(self) -> None:
+        handler = _FakeHandler([_make_result("knowledge/a.md", "content")])
+        handler._memory.last_search_meta = {"low_confidence": True}
+
+        output = handler._handle_search_memory({"query": "weak"})
+
+        assert "[low-confidence]" in output
+        assert "Search results for" in output
+
+    def test_no_low_confidence_marker_by_default(self) -> None:
+        handler = _FakeHandler([_make_result("knowledge/a.md", "content")])
+        handler._memory.last_search_meta = {"low_confidence": False}
+
+        output = handler._handle_search_memory({"query": "strong"})
+
+        assert "[low-confidence]" not in output
 
     def test_no_more_results_at_offset(self) -> None:
         handler = _FakeHandler([])

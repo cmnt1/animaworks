@@ -28,7 +28,7 @@ import httpx
 
 from core.exceptions import AnimaWorksError, LLMAPIError, ToolExecutionError  # noqa: F401
 from core.execution._sanitize import TOOL_TRUST_LEVELS, wrap_tool_result
-from core.execution._session import build_continuation_prompt, handle_session_chaining
+from core.execution._session import handle_session_chaining
 from core.execution._streaming import stream_error_boundary
 from core.execution._tool_summary import make_tool_detail_chunk
 from core.execution.base import (
@@ -390,9 +390,8 @@ class AnthropicFallbackExecutor(BaseExecutor):
                     self.reminder_queue.push_sync(msg_context_threshold(ratio=ratio))
 
                 current_text = "\n".join(b.text for b in response.content if b.type == "text")
-                new_sys = None
                 if not is_final_iteration:
-                    new_sys, chain_count = await handle_session_chaining(
+                    await handle_session_chaining(
                         tracker=tracker,
                         shortterm=shortterm,
                         memory=self._memory,
@@ -413,11 +412,6 @@ class AnthropicFallbackExecutor(BaseExecutor):
                         turn_count=iteration,
                         tool_uses=_extract_tool_uses_from_messages(messages),
                     )
-                if new_sys is not None:
-                    all_response_text.append(current_text)
-                    system_prompt = new_sys
-                    messages: list[dict[str, Any]] = [{"role": "user", "content": build_continuation_prompt()}]
-                    continue
 
             # ── P1-2: output truncation reminder ─────────────────
             if response.stop_reason == "max_tokens":

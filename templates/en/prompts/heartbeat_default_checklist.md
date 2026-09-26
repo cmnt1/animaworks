@@ -1,3 +1,4 @@
+- Use a `Current Pre-Observed Heartbeat Snapshot` with `status: ok` as evidence; call `heartbeat_observe_snapshot` only when it is absent
 - Check in-progress tasks in current_state.md and STALE / 24-hour-old waiting tasks in list_tasks, and state your evidence
 - Check your restricted channel (or general if none) with read_channel and state whether there are mentions for you. Do not post praise or acknowledgement only
 - Check whether required external tools are accessible and whether in-progress tasks have blockers

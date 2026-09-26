@@ -211,11 +211,9 @@ def test_repeated_done_updates_are_allowed_without_completion_gate(tmp_path: Pat
         meta={"completion_criteria": [{"type": "path_exists", "path": str(tmp_path / "never")}]},
     )
 
-    tqm.update_status(entry.task_id, "done")
-    size_after_first = tqm.queue_path.stat().st_size
-    tqm.update_status(entry.task_id, "done")
-    tqm.update_status(entry.task_id, "done")
-    assert tqm.queue_path.stat().st_size > size_after_first
+    assert tqm.update_status(entry.task_id, "done") is not None
+    assert tqm.update_status(entry.task_id, "done") is not None
+    assert tqm.update_status(entry.task_id, "done") is not None
 
     reloaded = tqm.get_task_by_id(entry.task_id)
     assert reloaded is not None

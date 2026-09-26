@@ -1262,6 +1262,7 @@ class CycleMixin:
     ) -> AsyncGenerator[dict, None]:
         """Streaming implementation scoped by ``run_cycle_streaming``."""
         start = time.monotonic()
+        original_task_prompt = prompt
         active_model_config = model_config_override or self.model_config
         if primary_config is None:
             primary_config = active_model_config
@@ -1501,6 +1502,10 @@ class CycleMixin:
         current_prompt = prompt
         current_system_prompt = system_prompt
         retry_count = 0
+        task_compaction_enabled = trigger.startswith("task:") and active_model_config.task_compaction_tokens > 0
+        task_compaction_count = 0
+        task_resume_session_id: str | None = None
+        task_compaction_after_pending: int | None = None
 
         # Meeting turns hide the completion sentinel from the live stream. The
         # sentinel can arrive split across text_delta chunks, so we hold back a
@@ -1531,6 +1536,7 @@ class CycleMixin:
             attempt_usage: dict[str, int] = {}
             attempt_started = time.monotonic()
             attempt_turns = 0
+            attempt_task_compact_requested = False
 
             def record_usage(usage: dict[str, int] | None, acc: dict[str, int] = attempt_usage) -> None:
                 _merge_stream_usage(_stream_usage, usage)
@@ -1539,6 +1545,16 @@ class CycleMixin:
             try:
                 self._active_streaming_executor = active_executor
                 try:
+                    stream_kwargs: dict[str, Any] = {}
+                    if (
+                        task_compaction_enabled
+                        and mode == "s"
+                        and callable(getattr(active_executor, "compact_session_by_id", None))
+                    ):
+                        stream_kwargs = {
+                            "task_compaction_count": task_compaction_count,
+                            "resume_session_id": task_resume_session_id,
+                        }
                     async for chunk in active_executor.execute_streaming(
                         current_system_prompt,
                         current_prompt,
@@ -1547,6 +1563,7 @@ class CycleMixin:
                         prior_messages=prior_messages,
                         trigger=trigger,
                         thread_id=thread_id,
+                        **stream_kwargs,
                     ):
                         if chunk["type"] in {"tool_start", "tool_end"} or (
                             chunk["type"] == "text_delta" and chunk.get("text")
@@ -1573,6 +1590,8 @@ class CycleMixin:
                                 self._tool_handler.merge_replied_to(transcript_replied)
                             if chunk.get("force_chain", False):
                                 _stream_force_chain = True
+                            if chunk.get("task_compact_requested", False):
+                                attempt_task_compact_requested = True
                             if chunk.get("truncated", False):
                                 stream_truncated = True
                             stream_stop_kind = str(chunk.get("stop_kind") or "normal")
@@ -1622,6 +1641,26 @@ class CycleMixin:
                                     continue
                             elif chunk["type"] == "thinking_delta":
                                 thinking_text_parts.append(chunk.get("text", ""))
+                            if chunk["type"] == "context_update" and task_compaction_after_pending is not None:
+                                from core.memory.activity import ActivityLogger
+
+                                ActivityLogger(self.anima_dir).log(
+                                    "task_compacted_after",
+                                    summary=t("task.compacted_after_activity_summary"),
+                                    meta={
+                                        "task_id": trigger.removeprefix("task:"),
+                                        "tokens_after": chunk.get("input_tokens", 0),
+                                        "compaction_number": task_compaction_after_pending,
+                                    },
+                                    safe=True,
+                                )
+                                logger.info(
+                                    "Task context compaction resumed (task_id=%s, compaction=%d, tokens_after=%d)",
+                                    trigger.removeprefix("task:"),
+                                    task_compaction_after_pending,
+                                    chunk.get("input_tokens", 0),
+                                )
+                                task_compaction_after_pending = None
                             yield chunk
                 finally:
                     if self._active_streaming_executor is active_executor:
@@ -1642,6 +1681,7 @@ class CycleMixin:
                 from core.execution.base import StreamDisconnectedError
 
                 is_stream_error = isinstance(e, StreamDisconnectedError)
+                fallback_eligible = True
                 if is_stream_error:
                     from core.execution.error_classifier import FailoverReason, classify_llm_error
 
@@ -1660,10 +1700,61 @@ class CycleMixin:
                     if classified != FailoverReason.UNKNOWN and (hint.is_terminal or can_route):
                         is_stream_error = False
                         terminal_error_reason = classified.value
+                        fallback_eligible = hint.fallback_ok
                 if not is_stream_error:
                     # Non-stream errors are not eligible for stream retries.
                     logger.exception("Agent SDK streaming error (non-retryable)")
                     terminal_error_message = f"[Agent SDK Error: {e}]"
+                    if fallback_eligible and not fallback_swapped and getattr(primary_config, "fallback_models", None):
+                        from core.execution.fallback_activity import runtime_fallback_config
+
+                        swap_config = runtime_fallback_config(
+                            self.anima_dir,
+                            primary_config,
+                            active_model_config,
+                            error_text=terminal_error_message,
+                            reason=terminal_error_reason,
+                            channel=self._cycle_fallback_channel(trigger),
+                            partial_execution=stream_started_work or bool(all_tool_call_records),
+                        )
+                        if swap_config is not None:
+                            logger.warning(
+                                "Terminal LLM error on %s → retrying with fallback %s",
+                                active_model_config.model,
+                                swap_config.model,
+                            )
+                            fallback_swapped = True
+                            active_model_config = swap_config
+                            active_executor = self._create_executor(swap_config)
+                            mode = self._resolve_execution_mode(active_model_config)
+                            provider_key = provider_key_for_model_config(active_model_config)
+                            terminal_error_message = ""
+                            terminal_error_reason = ""
+                            current_prompt = prompt
+                            tracker.reset()
+                            current_system_prompt = build_system_prompt(
+                                self.memory,
+                                tool_registry=self._tool_registry,
+                                personal_tools=self._personal_tools,
+                                priming_section=priming_section,
+                                execution_mode=mode,
+                                message=prompt,
+                                retriever=self._get_retriever(),
+                                trigger=trigger,
+                                context_window=_ctx_window_s,
+                                pending_human_notifications=pending_human_notifications,
+                                thread_id=thread_id,
+                                prompt_tier=_prompt_tier_s,
+                                prompt_profile=_prompt_profile_s,
+                                shortterm_text=shortterm_text,
+                            ).system_prompt
+                            yield {
+                                "type": "retry_start",
+                                "retry": retry_count,
+                                "max_retries": max_retries,
+                                "fallback_model": swap_config.model,
+                            }
+                            continue
                     yield {"type": "error", "message": terminal_error_message}
                     break
 
@@ -1833,6 +1924,68 @@ class CycleMixin:
                     usage=attempt_usage,
                     duration_ms=int((time.monotonic() - attempt_started) * 1000),
                     turns=attempt_turns,
+                )
+
+            if (
+                attempt_task_compact_requested
+                and stream_succeeded
+                and task_compaction_enabled
+                and task_compaction_count < active_model_config.task_compaction_max
+            ):
+                task_compaction_count += 1
+                session_id = getattr(result_message, "session_id", None) or chunk.get("session_id")
+                compacted = False
+                compact_fn = getattr(active_executor, "compact_session_by_id", None)
+                if session_id and callable(compact_fn):
+                    try:
+                        compacted = await compact_fn(
+                            session_id,
+                            system_prompt=current_system_prompt,
+                            trigger=trigger,
+                            summary_instructions=t("task.compaction_summary_instructions"),
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Task context compaction call failed (task_id=%s, compaction=%d)",
+                            trigger.removeprefix("task:"),
+                            task_compaction_count,
+                        )
+                logger.info(
+                    "Task context compaction attempt %s (task_id=%s, compaction=%d, tokens_before=%d)",
+                    "succeeded" if compacted else "failed",
+                    trigger.removeprefix("task:"),
+                    task_compaction_count,
+                    tracker._input_tokens,
+                )
+                try:
+                    from core.memory.activity import ActivityLogger
+
+                    ActivityLogger(self.anima_dir).log(
+                        "task_compacted",
+                        summary=t("task.compacted_activity_summary"),
+                        meta={
+                            "task_id": trigger.removeprefix("task:"),
+                            "tokens_before": tracker._input_tokens,
+                            "compaction_number": task_compaction_count,
+                            "success": compacted,
+                        },
+                        safe=True,
+                    )
+                except Exception:
+                    logger.warning("Failed to record task_compacted activity", exc_info=True)
+
+                if session_id:
+                    task_resume_session_id = session_id
+                    current_prompt = t(
+                        "task.compaction_continue_prompt",
+                        original_prompt=original_task_prompt,
+                    )
+                    tracker.reset()
+                    task_compaction_after_pending = task_compaction_count
+                    continue
+                logger.warning(
+                    "Cannot resume task after compaction request because SDK session id is missing (task_id=%s)",
+                    trigger.removeprefix("task:"),
                 )
 
             if terminal_error_message and not fallback_swapped and getattr(primary_config, "fallback_models", None):

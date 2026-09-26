@@ -134,8 +134,14 @@ def project_anima(
     include_missing: bool = False,
     include_archived: bool = False,
     attach_relations: bool = True,
+    archived_limit: int | None = None,
 ) -> list[BoardTask]:
-    """Project one Anima's canonical tasks into BoardTask rows."""
+    """Project one Anima's canonical tasks into BoardTask rows.
+
+    ``include_archived`` keeps non-active visibilities. Archived ledger rows are
+    loaded in full only when ``archived_limit`` is None; otherwise at most that
+    many of the most recent ones are loaded (0 = live ledger rows only).
+    """
     resolved_anima_dir = Path(anima_dir)
     resolved_anima_name = anima_name or resolved_anima_dir.name
     resolved_store = store or TaskBoardStore()
@@ -143,7 +149,12 @@ def project_anima(
     metadata_rows = resolved_store.list_metadata(anima_name=resolved_anima_name)
     metadata_by_task_id = {metadata.task_id: metadata for metadata in metadata_rows}
 
-    tasks = _load_queue_tasks(resolved_anima_dir, include_archived=include_archived)
+    full_history = include_archived and archived_limit is None
+    tasks = _load_queue_tasks(
+        resolved_anima_dir,
+        include_archived=full_history,
+        archived_limit=archived_limit if include_archived else 0,
+    )
     projected: list[BoardTask] = []
     seen_task_ids: set[str] = set()
     for task in tasks:
@@ -157,8 +168,10 @@ def project_anima(
             projected.append(board_task)
 
     if include_missing:
+        # Cards for ledger rows that were not loaded belong to history, not to missing tasks.
+        known_task_ids = seen_task_ids if full_history else _known_task_ids(resolved_anima_dir) | seen_task_ids
         for metadata in metadata_rows:
-            if metadata.task_id in seen_task_ids:
+            if metadata.task_id in known_task_ids:
                 continue
             board_task = _project_missing_task(metadata)
             if _should_include(board_task, include_archived=include_archived):
@@ -180,6 +193,33 @@ def project_anima(
     )
 
 
+def project_task(
+    anima_dir: Path | str,
+    store: TaskBoardStore | None,
+    task_id: str,
+    *,
+    anima_name: str | None = None,
+) -> BoardTask | None:
+    """Project a single task (archived rows and missing-queue cards included) by primary key."""
+    resolved_anima_dir = Path(anima_dir)
+    resolved_anima_name = anima_name or resolved_anima_dir.name
+    resolved_store = store or TaskBoardStore()
+    metadata = resolved_store.get_metadata(resolved_anima_name, task_id)
+    entry = TaskQueueManager(resolved_anima_dir).get_task_by_id(task_id)
+    if entry is not None:
+        projected = _project_queue_task(task=entry, anima_name=resolved_anima_name, metadata=metadata)
+    elif metadata is not None:
+        projected = _project_missing_task(metadata)
+    else:
+        return None
+
+    _attach_related_tasks(
+        [projected],
+        _build_task_index(resolved_anima_dir.parent, [resolved_anima_name], resolved_store),
+    )
+    return projected
+
+
 def project_all(
     animas_dir: Path | str | None = None,
     store: TaskBoardStore | None = None,
@@ -188,6 +228,7 @@ def project_all(
     relation_anima_names: Iterable[str] | None = None,
     include_missing: bool = False,
     include_archived: bool = False,
+    archived_limit: int | None = None,
 ) -> list[BoardTask]:
     """Project all selected Anima task queues into BoardTask rows."""
     resolved_animas_dir = Path(animas_dir) if animas_dir is not None else get_animas_dir()
@@ -207,6 +248,7 @@ def project_all(
                 include_missing=include_missing,
                 include_archived=include_archived,
                 attach_relations=False,
+                archived_limit=archived_limit,
             )
         )
     relation_names = set(relation_anima_names) if relation_anima_names is not None else names
@@ -228,11 +270,28 @@ def _discover_anima_names(animas_dir: Path) -> set[str]:
     return {path.name for path in animas_dir.iterdir() if path.is_dir()}
 
 
-def _load_queue_tasks(anima_dir: Path, *, include_archived: bool = False) -> list[TaskEntry]:
+def _load_queue_tasks(
+    anima_dir: Path,
+    *,
+    include_archived: bool = False,
+    archived_limit: int | None = None,
+) -> list[TaskEntry]:
     manager = TaskQueueManager(anima_dir)
     # list_tasks() intentionally hides terminal tasks; TaskBoard needs a full
     # replay to decide whether those entries should be archived.
-    return list(manager._load_all(include_archived=include_archived).values())
+    tasks = manager._load_all(include_archived=include_archived)
+    if not include_archived and archived_limit:
+        recent = manager.store.read_recent_archived(anima_dir.name, archived_limit)
+        tasks = {**recent, **tasks}
+    return list(tasks.values())
+
+
+def _known_task_ids(anima_dir: Path) -> set[str]:
+    try:
+        return TaskQueueManager(anima_dir).store.known_task_ids(anima_dir.name)
+    except Exception:
+        # Sandboxed readers cannot open the ledger directly; fall back to loaded rows only.
+        return set()
 
 
 def _load_archived_queue_tasks(anima_dir: Path) -> list[TaskEntry]:

@@ -106,6 +106,11 @@ def test_refuses_production_and_escaping_config(tmp_path: Path):
     root.mkdir()
     source = tmp_path / "outside.json"
     source.write_text("{}")
-    (root / "config.json").symlink_to(source)
+    try:
+        (root / "config.json").symlink_to(source)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows symlink privilege is unavailable")
+        raise
     with pytest.raises(ValueError, match="link"):
         validate_sandbox(root)

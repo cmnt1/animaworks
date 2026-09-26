@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from core.memory.priming import PrimingEngine, PrimingResult, format_priming_section
+from core.memory.priming.channel_b import read_old_channels
 from core.time_utils import now_jst
 
 
@@ -70,16 +71,14 @@ class TestPrimingResultRecentActivity:
 
 class TestFallbackChannels:
     async def test_empty_when_no_shared_dir(self, anima_dir):
-        engine = PrimingEngine(anima_dir, shared_dir=None)
-        result = await engine._read_old_channels()
+        result = await read_old_channels(anima_dir, None)
         assert result == ""
 
     async def test_empty_when_no_channels_dir(self, anima_dir, tmp_path):
         # shared_dir exists but no channels subdir
         empty_shared = tmp_path / "empty_shared"
         empty_shared.mkdir()
-        engine = PrimingEngine(anima_dir, shared_dir=empty_shared)
-        result = await engine._read_old_channels()
+        result = await read_old_channels(anima_dir, empty_shared)
         assert result == ""
 
     async def test_reads_general_channel(self, anima_dir, shared_dir):
@@ -91,20 +90,22 @@ class TestFallbackChannels:
                 {"ts": now.isoformat(), "from": "kotoha", "text": "Hello!", "source": "anima"},
             ],
         )
-        engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
-        result = await engine._read_old_channels()
+        result = await read_old_channels(anima_dir, shared_dir)
         assert "kotoha" in result
         assert "Hello!" in result
         assert "#general" in result
 
     async def test_reads_ops_channel_only_when_mentioned(self, anima_dir, shared_dir):
         now = now_jst()
-        _write_channel(shared_dir, "ops", [
-            {"ts": now.isoformat(), "from": "yuki", "text": "Server down", "source": "anima"},
-            {"ts": now.isoformat(), "from": "yuki", "text": "@sakura Server down", "source": "anima"},
-        ])
-        engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
-        result = await engine._read_old_channels()
+        _write_channel(
+            shared_dir,
+            "ops",
+            [
+                {"ts": now.isoformat(), "from": "yuki", "text": "Server down", "source": "anima"},
+                {"ts": now.isoformat(), "from": "yuki", "text": "@sakura Server down", "source": "anima"},
+            ],
+        )
+        result = await read_old_channels(anima_dir, shared_dir)
         assert "#ops" in result
         assert "@sakura Server down" in result
         assert "yuki: Server down" not in result
@@ -121,8 +122,7 @@ class TestFallbackChannels:
             for i in range(10)
         ]
         _write_channel(shared_dir, "general", entries)
-        engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
-        result = await engine._read_old_channels()
+        result = await read_old_channels(anima_dir, shared_dir)
         # Should include at least the last 5
         assert "msg5" in result
         assert "msg9" in result
@@ -139,8 +139,7 @@ class TestFallbackChannels:
             {"ts": (now - timedelta(hours=30)).isoformat(), "from": "owner", "text": "Old message", "source": "human"},
         ]
         _write_channel(shared_dir, "general", entries)
-        engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
-        result = await engine._read_old_channels()
+        result = await read_old_channels(anima_dir, shared_dir)
         assert "Error resolved" in result
         assert "[human]" in result
 
@@ -159,14 +158,12 @@ class TestFallbackChannels:
             for i in range(10)
         ]
         _write_channel(shared_dir, "general", entries)
-        engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
-        result = await engine._read_old_channels()
+        result = await read_old_channels(anima_dir, shared_dir)
         assert "@sakura please check" in result
 
     async def test_empty_channel_files(self, anima_dir, shared_dir):
         (shared_dir / "channels" / "general.jsonl").touch()
-        engine = PrimingEngine(anima_dir, shared_dir=shared_dir)
-        result = await engine._read_old_channels()
+        result = await read_old_channels(anima_dir, shared_dir)
         assert result == ""
 
 
@@ -222,7 +219,9 @@ class TestPrimeMemoriesWithActivity:
 
         # Stub _channel_b to simulate the fallback path returning old channel data
         async def _stub_b_fallback(self, sender_name, keywords, *, channel=""):
-            return await self._fallback_episodes_and_channels()
+            from core.memory.priming.channel_b import fallback_episodes_and_channels
+
+            return await fallback_episodes_and_channels(self.anima_dir, self.shared_dir)
 
         monkeypatch.setattr("core.memory.priming.PrimingEngine._channel_a_sender_profile", _stub_a)
         monkeypatch.setattr("core.memory.priming.PrimingEngine._channel_b_recent_activity", _stub_b_fallback)

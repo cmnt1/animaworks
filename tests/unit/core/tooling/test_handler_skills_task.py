@@ -76,7 +76,7 @@ def test_submit_tasks_sets_reply_to(tmp_path: Path) -> None:
         assert data.get("batch_id") == "test-batch-1"
 
 
-def test_submit_tasks_lightweight_model_rejects_japanese_multistage_task(tmp_path: Path) -> None:
+def test_submit_tasks_leaves_multistage_judgment_to_lightweight_anima(tmp_path: Path) -> None:
     anima_dir = tmp_path / "animas" / "kanna"
     anima_dir.mkdir(parents=True)
     (anima_dir / "permissions.md").write_text("", encoding="utf-8")
@@ -113,6 +113,10 @@ def test_submit_tasks_lightweight_model_rejects_japanese_multistage_task(tmp_pat
             },
         )
 
-    assert "TaskTooBroadForModel" in result
-    assert "one concrete phase per task" in result
-    assert not (anima_dir / "state" / "pending" / "too-broad.json").exists()
+    parsed = json.loads(result)
+    assert parsed["status"] == "submitted"
+    assert parsed["task_ids"] == ["too-broad"]
+
+    from core.memory.task_queue import TaskQueueManager
+
+    assert TaskQueueManager(anima_dir).get_task_by_id("too-broad") is not None

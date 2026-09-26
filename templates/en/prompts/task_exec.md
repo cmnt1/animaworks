@@ -5,6 +5,7 @@ You are a task execution agent. Carry out the task below.
 - **Title**: {title}
 - **Submitted by**: {submitted_by}
 - **Working directory**: {workspace}
+{submission_line}
 
 ## Work
 {description}

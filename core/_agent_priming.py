@@ -178,6 +178,7 @@ class PrimingMixin:
         if trigger.startswith("inbox:"):
             try:
                 from core.memory.activity import ActivityLogger
+                from core.memory.activity_format import entry_text
 
                 animas_dir = self.anima_dir.parent
                 anima_names = {path.name.casefold() for path in animas_dir.iterdir() if path.is_dir()}
@@ -191,7 +192,7 @@ class PrimingMixin:
                     sender = str(entry.from_person or "").strip()
                     if not sender or sender.casefold() == "system" or sender.casefold() in anima_names:
                         continue
-                    content = str(entry.content or entry.summary or "").strip()
+                    content = str(entry_text(entry)).strip()
                     if content:
                         messages.append(content[:200])
                     if len(messages) == 3:
@@ -225,6 +226,7 @@ class PrimingMixin:
         """
         try:
             from core.memory.activity import ActivityLogger
+            from core.memory.activity_format import entry_text
 
             activity = ActivityLogger(self.anima_dir)
             entries = activity.recent(
@@ -236,7 +238,7 @@ class PrimingMixin:
                 return ""
             parts = []
             for e in entries:
-                content = e.content or e.summary
+                content = entry_text(e)
                 if content:
                     parts.append(content[:500])
             return "\n".join(parts)

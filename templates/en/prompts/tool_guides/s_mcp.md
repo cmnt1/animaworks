@@ -36,7 +36,3 @@ For supervisor management, vault, channel management, background tasks, and exte
 Bash: animaworks-tool <tool> <subcommand> [args]
 ```
 Run `animaworks-tool --help` to see available CLI commands.
-
-### Background Command Output
-Long-running commands write output to `state/cmd_output/`.
-Use `Read(path="state/cmd_output/{id}.txt")` to check intermediate output.

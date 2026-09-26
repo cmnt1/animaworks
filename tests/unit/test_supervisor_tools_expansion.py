@@ -454,8 +454,9 @@ class TestDelegateTask:
             )
 
         assert "委譲しました" in result
-        sub_queue = tmp_path / "animas" / "hinata" / "state" / "task_queue.jsonl"
-        assert sub_queue.exists()
+        from core.memory.task_queue import TaskQueueManager
+
+        assert len(TaskQueueManager(tmp_path / "animas" / "hinata").list_tasks()) == 1
 
     def test_delegate_to_non_descendant(self, tmp_path):
         handler = _make_handler(tmp_path, "sakura")

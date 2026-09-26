@@ -25,6 +25,7 @@ class PipelineResult:
     items: list[dict[str, Any]]
     abstain: bool = False
     abstain_reason: str = ""
+    low_confidence: bool = False
 
 
 class RetrievalPipeline:
@@ -50,24 +51,16 @@ class RetrievalPipeline:
         rerank_enabled: bool = True,
         rerank_text_field: str | Callable[[dict], str] = "content",
         min_candidates_for_rerank: int = 2,
-        abstain_on_low_confidence: bool = True,
         confidence_threshold: float = 0.35,
         rrf_confidence_threshold: float = 0.02,
         temporal_boost: TemporalBoostConfig | None = None,
         entity_boost: EntityBoostConfig | None = None,
         access_boost: AccessBoostConfig | None = None,
     ) -> PipelineResult:
-        """Merge, rerank, and optionally gate candidates."""
+        """Merge, rerank, and mark candidates by confidence."""
         non_empty = [lst for lst in ranked_lists if lst]
         if not non_empty:
-            if abstain_on_low_confidence:
-                gated = apply_confidence_gate([], threshold=confidence_threshold)
-                return PipelineResult(
-                    items=gated.candidates,
-                    abstain=gated.abstain,
-                    abstain_reason=gated.reason,
-                )
-            return PipelineResult(items=[])
+            return PipelineResult(items=[], abstain=True, abstain_reason="no_candidates")
 
         merged = rrf_merge(
             non_empty,
@@ -103,15 +96,13 @@ class RetrievalPipeline:
             candidates = apply_access_boost(candidates, access_boost)
         candidates = candidates[:limit]
 
-        if abstain_on_low_confidence:
-            threshold = confidence_threshold if used_rerank else rrf_confidence_threshold
-            if not used_rerank:
-                threshold = min(threshold, len(non_empty) / float(rrf_k + 1))
-            gated = apply_confidence_gate(candidates, threshold=threshold)
-            return PipelineResult(
-                items=gated.candidates[:limit],
-                abstain=gated.abstain,
-                abstain_reason=gated.reason,
-            )
-
-        return PipelineResult(items=candidates)
+        threshold = confidence_threshold if used_rerank else rrf_confidence_threshold
+        if not used_rerank:
+            threshold = min(threshold, len(non_empty) / float(rrf_k + 1))
+        gated = apply_confidence_gate(candidates, threshold=threshold)
+        return PipelineResult(
+            items=gated.candidates[:limit],
+            abstain=gated.abstain,
+            abstain_reason=gated.reason,
+            low_confidence=gated.low_confidence,
+        )

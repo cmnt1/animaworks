@@ -15,7 +15,7 @@ Internal module — import from :mod:`core.memory.activity` instead.
 from datetime import datetime, timedelta
 from typing import Any
 
-from core.memory._activity_models import ActivityEntry, find_tool_result_fallback
+from core.memory._activity_models import ActivityEntry
 
 
 class TimelineMixin:
@@ -109,23 +109,7 @@ class TimelineMixin:
     def group_by_trigger(
         entries: list[ActivityEntry],
     ) -> list[dict[str, Any]]:
-        """Group entries by trigger events for timeline display.
-
-        Trigger events (heartbeat_start, message_received, cron_executed,
-        task_created, inbox_processing_start, task_exec_start) open a new
-        group.  Subsequent events are absorbed into the open group until a
-        closing event or the next trigger for the same ``(anima, ctx)`` key.
-
-        Open groups are tracked by ``(anima, ctx)`` so parallel task
-        execution (distinct non-empty ``ctx`` values) can overlap in time
-        without forcing earlier groups closed.  Empty ``ctx`` keeps the
-        historical anima-level serial behaviour via the key ``(anima, "")``.
-
-        tool_use / tool_result pairs are merged into a single entry
-        with ``tool_result`` field attached.
-
-        This is a static method — no ``ActivityLogger`` instance is needed.
-        """
+        """Group entries by trigger events for timeline display (open/close/merge)."""
         _TM = TimelineMixin
         paired = _TM._pair_tool_results(entries)
         groups: list[dict[str, Any]] = []
@@ -237,14 +221,7 @@ class TimelineMixin:
         ctx: str,
         gtype: str | None = None,
     ) -> tuple[tuple[str, str] | None, dict[str, Any] | None]:
-        """Resolve the open group for an event.
-
-        Matches only the exact ``(anima, ctx)`` slot (empty ``ctx`` uses
-        ``(anima, "")``).  Non-empty parallel slots are never mixed with
-        empty-ctx events on lookup — those fall through to retro-match or
-        single-group handling so legacy streams stay serial while modern
-        task contexts stay isolated.
-        """
+        """Resolve the open group for an event (exact ``(anima, ctx)`` slot match)."""
         key = (anima, ctx)
         cur = current_by_key.get(key)
         if cur is not None and (gtype is None or cur["type"] == gtype):
@@ -260,31 +237,21 @@ class TimelineMixin:
         Sets ``_tool_result_data`` on tool_use entries and returns a
         filtered list excluding consumed tool_result entries.
         """
-        result_by_id: dict[str, ActivityEntry] = {}
-        for e in entries:
-            if e.type == "tool_result":
-                tid = e.meta.get("tool_use_id", "")
-                if tid:
-                    result_by_id[tid] = e
+        from core.memory.activity_format import entry_text, pair_tool_events
 
         paired_ids: set[int] = set()
-        for e in entries:
-            if e.type == "tool_use":
-                tid = e.meta.get("tool_use_id", "")
-                result_entry = result_by_id.get(tid) if tid else None
-                if not result_entry:
-                    result_entry = find_tool_result_fallback(entries, e)
-                if result_entry:
-                    e._tool_result_data = {
-                        "id": result_entry.to_api_dict().get("id", ""),
-                        "ts": result_entry.ts,
-                        "type": result_entry.type,
-                        "content": result_entry.content or result_entry.summary,
-                        "is_error": bool(
-                            result_entry.meta.get("is_error", False) or result_entry.meta.get("result_status") == "fail"
-                        ),
-                    }
-                    paired_ids.add(id(result_entry))
+        for exchange in pair_tool_events(entries):
+            result = exchange.result
+            if result is None:
+                continue
+            exchange.tool_use._tool_result_data = {
+                "id": result.to_api_dict().get("id", ""),
+                "ts": result.ts,
+                "type": result.type,
+                "content": entry_text(result),
+                "is_error": bool(result.meta.get("is_error", False) or result.meta.get("result_status") == "fail"),
+            }
+            paired_ids.add(id(result))
 
         return [e for e in entries if id(e) not in paired_ids]
 
@@ -359,14 +326,7 @@ class TimelineMixin:
         gtype: str | None = None,
         preferred_ctx: str | None = None,
     ) -> dict[str, Any] | None:
-        """Find the most recently finalized group for *anima*.
-
-        Searches *groups* in reverse.  If *gtype* is given, only groups of
-        that type are considered.  When *preferred_ctx* is non-empty, a
-        matching ``ctx`` is preferred; otherwise (or when no match exists)
-        the most recent same-anima group is returned so empty-ctx legacy
-        events still attach to nearby activity.
-        """
+        """Return the most recently finalized group for *anima* (retro-match)."""
         fallback: dict[str, Any] | None = None
         prefer = preferred_ctx or ""
         for grp in reversed(groups):

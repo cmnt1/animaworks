@@ -1,3 +1,4 @@
+- `status: ok`인 `Current Pre-Observed Heartbeat Snapshot`을 근거로 사용하고, 없으면 `heartbeat_observe_snapshot`을 호출하세요
 - current_state.md의 진행 중 태스크와 list_tasks의 STALE / 24시간 초과 대기 태스크를 확인하고 근거를 제시한다
 - 소속된 제한 채널(없으면 general)을 read_channel로 확인하고 자신에게 온 멘션의 유무를 말한다. 칭찬·수락만 하는 게시는 하지 않는다
 - 필요한 외부 도구에 접근할 수 있는지, 진행 중 태스크에 블로커가 없는지 확인한다

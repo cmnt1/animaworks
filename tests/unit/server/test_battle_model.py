@@ -18,7 +18,6 @@ def test_battle_model_behaviors():
     result = subprocess.run(
         [
             node,
-            "--experimental-default-type=module",
             "--test",
             "tests/unit/server/battle_model.test.mjs",
             "tests/unit/server/battle_combat.test.mjs",
@@ -26,6 +25,7 @@ def test_battle_model_behaviors():
         cwd=ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=30,
     )
     assert result.returncode == 0, result.stdout + result.stderr

@@ -127,21 +127,6 @@ class TestDelegateTaskErofsFallback:
         assert post.call_count == 2
         assert post.call_args_list[0].kwargs["json"] == post.call_args_list[1].kwargs["json"]
 
-        assert "natsume" in result
-        mock_post.assert_not_called()
-        mock_tb.assert_called_once()
-
-        sub_queue = tmp_path / "animas" / "natsume" / "state" / "task_queue.jsonl"
-        own_queue = tmp_path / "animas" / "rin" / "state" / "task_queue.jsonl"
-        assert sub_queue.exists()
-        assert own_queue.exists()
-        sub_task_id = json.loads(sub_queue.read_text(encoding="utf-8").strip().split("\n")[0])["task_id"]
-        own_task_id = json.loads(own_queue.read_text(encoding="utf-8").strip().split("\n")[0])["task_id"]
-        assert TaskQueueManager(tmp_path / "animas" / "natsume").get_task_by_id(sub_task_id).status == "pending"
-        assert TaskQueueManager(tmp_path / "animas" / "rin").get_task_by_id(own_task_id).status == "delegated"
-        pending = list((tmp_path / "animas" / "natsume" / "state" / "pending").glob("*.json"))
-        assert len(pending) == 1
-
     def test_read_timeout_retries_then_succeeds(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

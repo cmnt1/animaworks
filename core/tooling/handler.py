@@ -649,10 +649,10 @@ class ToolHandler(
                         logger.warning("Unknown tool requested: %s", name)
                         result = f"Unknown tool: {name}"
 
-            result = self._attach_action_rules(name, args, result)
             self._log_tool_activity(name, args, tool_use_id=tool_use_id)
-            self._log_tool_result_activity(name, result, tool_use_id=tool_use_id)
             result = self._compress_if_enabled(result, name)
+            result = self._attach_action_rules(name, args, result)
+            self._log_tool_result_activity(name, result, tool_use_id=tool_use_id)
             return self._truncate_output(result)
 
         except ToolExecutionError:

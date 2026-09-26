@@ -669,10 +669,7 @@ class MemoryToolsMixin:
             len(results),
         )
         if not results:
-            meta = getattr(self._memory, "last_search_meta", {}) or {}
-            if meta.get("abstain"):
-                base = f'No results for "{query}" [abstain=true reason={meta.get("abstain_reason", "low_confidence")}]'
-            elif offset > 0:
+            if offset > 0:
                 base = f"No more results for '{query}' at offset={offset}."
             else:
                 base = f"No results for '{query}'"
@@ -686,6 +683,9 @@ class MemoryToolsMixin:
 
         search_method = results[0].get("search_method", "vector") if results else "vector"
         header = f'Search results for "{query}" ({search_method}, {scope}, {offset + 1}-{offset + len(results)}):\n'
+        meta = getattr(self._memory, "last_search_meta", {}) or {}
+        if meta.get("low_confidence"):
+            header = header.strip() + " [low-confidence]\n"
 
         output_parts: list[str] = [header]
         total_tokens = len(header) // 4

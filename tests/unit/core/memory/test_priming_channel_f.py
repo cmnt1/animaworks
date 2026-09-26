@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -70,6 +70,27 @@ class TestFormatEpisodePointer:
         )
         assert out.startswith("# リリース")
         assert "📌 [0.81] episodes/2026-09-03.md — リリース" in out
+
+    def test_low_confidence_marker_omitted_by_default(self) -> None:
+        out = format_episode_pointer(
+            index=1,
+            score=0.81,
+            source="episodes/2026-09-03.md",
+            content="# リリース",
+            path="episodes/2026-09-03.md",
+        )
+        assert "[low-confidence]" not in out
+
+    def test_low_confidence_marker_appended(self) -> None:
+        out = format_episode_pointer(
+            index=1,
+            score=0.81,
+            source="episodes/2026-09-03.md",
+            content="# リリース",
+            path="episodes/2026-09-03.md",
+            low_confidence=True,
+        )
+        assert out == "📌 [0.81] episodes/2026-09-03.md — リリース [low-confidence]"
 
 
 class TestExcludeEpisodesForDates:
@@ -423,7 +444,7 @@ class TestPrimeMemoriesIncludesChannelF:
         mock_result.metadata = {"source_file": "episodes/2026-02-01.md"}
 
         patcher, _searcher = self._patch_unified_search([mock_result])
-        with patcher:
+        with patcher, patch.object(engine, "_channel_e_pending_tasks", AsyncMock(return_value="")):
             result = await engine.prime_memories(
                 message="What happened with the deploy?",
                 sender_name="human",

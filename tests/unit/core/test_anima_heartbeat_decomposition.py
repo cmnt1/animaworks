@@ -826,38 +826,14 @@ class TestProcessInboxMessages:
 
 
 class TestProcessInboxFastPath:
-    async def test_slack_probe_fast_reply_is_disabled(self, data_dir, make_anima):
-        """Slack probe fast replies are disabled during the Discord migration."""
-        anima_dir = make_anima("alice")
-        shared_dir = data_dir / "shared"
+    async def test_slack_fast_reply_helpers_removed(self):
+        """The canned Slack probe reply was removed; probes go through the LLM."""
+        import core._anima_inbox as inbox_mod
+        from core._anima_inbox import InboxMixin
 
-        inbox_dir = shared_dir / "inbox" / "alice"
-        inbox_dir.mkdir(parents=True, exist_ok=True)
-        slack_file = inbox_dir / "msg_slack.json"
-        slack_file.write_text("{}", encoding="utf-8")
-
-        dp, mocks = _create_anima(anima_dir, shared_dir)
-        try:
-            slack_item = _make_inbox_item("slack:U1", "テスト", slack_file)
-            slack_item.msg.source = "slack"
-            slack_item.msg.external_channel_id = "D1"
-            slack_item.msg.external_user_id = "U1"
-            slack_item.msg.source_message_id = "1774615394.245749"
-
-            from core.anima import InboxResult
-            from core.time_utils import now_local
-
-            inbox_result = InboxResult(
-                inbox_items=[slack_item],
-                messages=[slack_item.msg],
-                senders={"slack:U1"},
-                unread_count=1,
-                prompt_parts=["テスト"],
-            )
-
-            assert dp._maybe_fast_reply_external_probe(inbox_result, started_at=now_local()) is None
-        finally:
-            _stop_patches(mocks)
+        assert not hasattr(inbox_mod, "_is_fast_slack_probe")
+        assert not hasattr(inbox_mod, "_build_fast_slack_reply")
+        assert not hasattr(InboxMixin, "_maybe_fast_reply_external_probe")
 
 
 # ── _execute_heartbeat_cycle ─────────────────────────────

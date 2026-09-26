@@ -174,6 +174,14 @@ class UpdateTaskPersistRequest(BaseModel):
     resume: bool = False
 
 
+class TaskBoardActionRequest(BaseModel):
+    actor: str
+    action: Literal["claim", "release", "done", "cancel", "note"]
+    task_id: str
+    ttl_seconds: int | None = None
+    text: str | None = None
+
+
 class SubmitTasksPersistRequest(BaseModel):
     anima_name: str
     tasks: list[dict[str, Any]]
@@ -880,6 +888,28 @@ def create_internal_router() -> APIRouter:
             "sub_task_id": ids["sub_task_id"],
             "tracking_task_id": ids["tracking_task_id"],
         }
+
+    @router.post("/internal/task-board-action")
+    async def internal_task_board_action(body: TaskBoardActionRequest):
+        """Run a lease-guarded task board write for a sandboxed anima CLI."""
+        from core.anima_factory import validate_anima_name
+        from core.taskboard.board_actions import BoardActionError, run_board_action
+
+        if body.actor != "human" and validate_anima_name(body.actor):
+            return JSONResponse(status_code=400, content={"detail": "Invalid actor"})
+
+        def _run() -> dict[str, Any]:
+            try:
+                result = run_board_action(**body.model_dump())
+            except BoardActionError as exc:
+                return {"ok": False, "error": exc.message, "exit_code": exc.exit_code, "payload": exc.payload}
+            return {"ok": True, "result": result}
+
+        try:
+            return await asyncio.get_running_loop().run_in_executor(_native_executor, _run)
+        except Exception as exc:
+            logger.exception("internal task-board-action failed")
+            return JSONResponse(status_code=500, content={"detail": str(exc)})
 
     @router.post("/internal/update-task")
     async def internal_update_task(body: UpdateTaskPersistRequest):

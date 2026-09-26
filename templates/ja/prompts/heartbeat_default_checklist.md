@@ -1,3 +1,4 @@
+- `status: ok` の `Current Pre-Observed Heartbeat Snapshot` を確認根拠に使う。なければ `heartbeat_observe_snapshot` を呼ぶ
 - current_state.md の進行中タスクと、list_tasks の STALE / 24 時間超の待機タスクを確認し、根拠を示す
 - 所属する制限チャネル（なければ general）を read_channel で確認し、自分宛メンションの有無を述べる。称賛・承認だけの投稿はしない
 - 必要な外部ツールにアクセスできるか、進行中タスクにブロッカーがないかを確認する

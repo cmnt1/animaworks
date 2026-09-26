@@ -18,3 +18,18 @@ TaskBoard는 정본 태스크와 표시용 metadata를 투영합니다.
 Slack 게시·수정은 사람의 요청이나 기존에 허용된 운영이 있을 때만 수행합니다.
 `slack_channel_post` / `slack_channel_update` 권한과 승인 조건을 지키고 회사 경계, 기밀 범위,
 이미 게시한 내용을 확인합니다. 자동 게시나 알림을 새로 늘리지 않습니다.
+
+## CLI 읽기 및 쓰기
+
+`animaworks-tool task board [--anima NAME | --all] [--stale DAYS] [--limit N]`으로 진행 중인 작업을 나열하고,
+`task show ID`로 상세 정보를 확인합니다. `task claim ID [--ttl 30m]`로 lease를 획득하고,
+`task note ID TEXT`로 메모를 추가하고, `task done ID --note TEXT`로 완료 처리하고,
+`task cancel ID --reason REASON`으로 취소하고, `task release ID`로 lease를 해제합니다.
+기계가 읽을 출력이 필요하면 `board` 또는 `show`에 `--json`을 붙이세요.
+
+lease는 보유자가 다른 anima의 작업을 종료하거나 메모를 남길 수 있게 하는 시간 제한 잠금입니다.
+보유 중에만 변경할 수 있으며 기본 30분 후 자동 만료됩니다. 다른 사람이 lease를 보유하지 않았다면
+담당자는 lease 없이 자신의 작업을 변경할 수 있습니다.
+판단은 anima가 하며, 기계가 작업을 자동으로 종료하지 않습니다.
+담당자의 현재 판단은 작업 본문의 "취소 없음", "pending 유지" 같은 과거 지정보다 우선합니다.
+담당자가 자신의 작업을 `done` / `cancel` 하면 위임한 anima에게 사유와 함께 자동 통지됩니다. 위임자는 같은 일을 다시 보내기 전에 이 통지를 확인합니다.

@@ -173,12 +173,6 @@ class DigitalAnima(
         _idle_min = load_config().heartbeat.idle_compaction_minutes
         self._session_compactor = SessionCompactor(idle_minutes=_idle_min)
 
-        # Greet cache (1-hour cooldown)
-        self._last_greet_at: float | None = None
-        self._last_greet_text: str | None = None
-        self._last_greet_emotion: str = "neutral"
-        self._GREET_COOLDOWN = 3600  # seconds
-
         # Wire background task completion callback
         for agent in self._iter_lane_agents():
             if agent.background_manager:

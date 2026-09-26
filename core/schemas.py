@@ -87,6 +87,8 @@ class ModelConfig(BaseModel):
     credential_type: str = "api_key"  # api_key, codex_login, claude_code_login, etc.
     context_threshold: float = 0.50  # short-term memory externalization threshold
     context_absolute_ceiling: float = 0.75
+    task_compaction_tokens: int = 0
+    task_compaction_max: int = 6
     max_session_age_hours: float = 24.0
     max_chains: int = 2  # max auto-continuation sessions
     conversation_history_threshold: float = 0.30  # conversation compression trigger

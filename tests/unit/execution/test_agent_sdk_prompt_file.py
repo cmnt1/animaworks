@@ -9,6 +9,7 @@ to a temp file and passed via --system-prompt-file instead of --system-prompt.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -275,7 +276,11 @@ class TestMcpIsolation:
         # land on the returned instance as attributes.
         assert "strict-mcp-config" in options.extra_args
         assert options.extra_args["strict-mcp-config"] is None  # boolean flag
-        assert set(options.mcp_servers) == {"aw"}
+        if isinstance(options.mcp_servers, str):
+            mcp_config = json.loads(Path(options.mcp_servers).read_text(encoding="utf-8"))
+            assert set(mcp_config["mcpServers"]) == {"aw"}
+        else:
+            assert set(options.mcp_servers) == {"aw"}
         for f in temp_files:
             f.unlink(missing_ok=True)
 
@@ -296,10 +301,13 @@ class TestMcpIsolation:
                 {},
             )
         assert options.extra_args["tools"] == ",".join(BUILTIN_TOOLS)
-        # Bash carries almost all real tool traffic; Skill is what the
-        # skill loader needs.  Losing either would be silent.
+        # Bash carries almost all real tool traffic. Skill has almost no
+        # usage; SendMessage/ListAgents are Claude-session tools, not anima
+        # communication (which uses aw MCP send_message).
         assert "Bash" in BUILTIN_TOOLS
-        assert "Skill" in BUILTIN_TOOLS
+        assert "Skill" not in BUILTIN_TOOLS
+        assert "SendMessage" not in BUILTIN_TOOLS
+        assert "ListAgents" not in BUILTIN_TOOLS
         # Losing ToolSearch re-sends every schema in full (+11K measured).
         assert "ToolSearch" in BUILTIN_TOOLS
         # Subagents are off for animas; delegation goes through aw MCP.

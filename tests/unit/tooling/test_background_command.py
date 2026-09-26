@@ -5,6 +5,10 @@ from __future__ import annotations
 import io
 import json
 import os
+import shlex
+import socket
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -136,7 +140,9 @@ class TestCommandRunnerStart:
                 "assert s.recv(1) == b'!'; "
                 "s.close(); print('fast', flush=True)"
             )
-            runner = CommandRunner(shlex.join([sys.executable, "-c", child_code]), tmp_path, timeout=10)
+            argv = [sys.executable, "-c", child_code]
+            command = subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
+            runner = CommandRunner(command, tmp_path, timeout=10)
             cmd_id = runner.start(output_dir)
             waiter = next(t for t in threading.enumerate() if t.name == f"cmd-wait-{cmd_id}")
             try:

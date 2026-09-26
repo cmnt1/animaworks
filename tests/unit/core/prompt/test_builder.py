@@ -56,9 +56,6 @@ def _mock_load_prompt_with_builder(default: str = "section"):
             return f"## ⚠️ 進行中タスク\n\n{kwargs.get('state', '')}"
         if name == "builder/task_queue":
             return f"## 未完了タスク\n\n{kwargs.get('task_summary', '')}"
-        if name == "builder/external_tools_guide":
-            cats = kwargs.get("categories", "")
-            return f"外部ツールを使うには `discover_tools` を呼んでください。\nカテゴリ: {cats}"
         if name == "skills_guide":
             return "## スキルと手順書\n\nスキルと手順書はあなたが持つ能力・作業手順です。\n使用する際はskillツールで読み込んでから実行してください。"
         return default

@@ -1531,6 +1531,40 @@ def step_v0140_harness_diet_resync(data_dir: Path, dry_run: bool, verbose: bool)
     return StepResult(changed=total, skipped=skipped, details=details, error=error)
 
 
+def step_v0141_harness_diet_r2_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """v0.14.1: Resync prompts (task_exec submission line, tool guide wording)."""
+    r = step_prompt_resync(data_dir, dry_run, verbose)
+    error = f"step_prompt_resync: {r.error}" if r.error else None
+    return StepResult(changed=r.changed, skipped=r.skipped, details=list(r.details), error=error)
+
+
+def step_v0143_task_board_self_triage_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """v0.14.3: Resync heartbeat prompt and task-board guide (owner-led task triage)."""
+    return step_v0142_task_board_cli_resync(data_dir, dry_run, verbose)
+
+
+def step_v0142_task_board_cli_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """v0.14.2: Resync heartbeat prompt and task-board guide (task board CLI triage)."""
+    results = {
+        "step_prompt_resync": step_prompt_resync(data_dir, dry_run, verbose),
+        "step_common_knowledge_resync": step_common_knowledge_resync(data_dir, dry_run, verbose),
+    }
+    errors = [f"{name}: {r.error}" for name, r in results.items() if r.error]
+    return StepResult(
+        changed=sum(r.changed for r in results.values()),
+        skipped=sum(r.skipped for r in results.values()),
+        details=[d for r in results.values() for d in r.details],
+        error="; ".join(errors) or None,
+    )
+
+
+def step_v0144_tool_guide_dedup_resync(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """v0.14.4: Resync prompts (drop the Background Command Output block duplicated in s_mcp)."""
+    r = step_prompt_resync(data_dir, dry_run, verbose)
+    error = f"step_prompt_resync: {r.error}" if r.error else None
+    return StepResult(changed=r.changed, skipped=r.skipped, details=list(r.details), error=error)
+
+
 # ── Category 4: Database sync ────────────────────────────────────
 
 
@@ -1736,6 +1770,30 @@ def register_all_steps(runner: Any) -> None:
             "v0.14.0: Resync prompts/common_knowledge, drop retired prompts, map Mode B to A",
             "template_sync",
             step_v0140_harness_diet_resync,
+        ),
+        MigrationStep(
+            "v0141_harness_diet_r2_resync",
+            "v0.14.1: Resync prompts (task submission time line, tool guide wording)",
+            "template_sync",
+            step_v0141_harness_diet_r2_resync,
+        ),
+        MigrationStep(
+            "v0142_task_board_cli_resync",
+            "v0.14.2: Resync heartbeat prompt and task-board guide (task board CLI)",
+            "template_sync",
+            step_v0142_task_board_cli_resync,
+        ),
+        MigrationStep(
+            "v0143_task_board_self_triage_resync",
+            "v0.14.3: Resync heartbeat prompt and task-board guide (owner-led task triage)",
+            "template_sync",
+            step_v0143_task_board_self_triage_resync,
+        ),
+        MigrationStep(
+            "v0144_tool_guide_dedup_resync",
+            "v0.14.4: Resync prompts (dedupe tool guide background-command block)",
+            "template_sync",
+            step_v0144_tool_guide_dedup_resync,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

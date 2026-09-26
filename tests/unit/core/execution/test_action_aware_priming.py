@@ -27,7 +27,9 @@ class TestPostToolUseActionAttachment:
     """PostToolUse attaches relevant ACTION-RULE bodies via additionalContext."""
 
     @pytest.mark.asyncio
-    async def test_action_tool_attaches_rule_body(self, anima_dir, monkeypatch):
+    async def test_mcp_tool_rule_attached_only_handler_side(self, anima_dir, monkeypatch):
+        """MCP aw tools attach ACTION-RULE bodies handler-side, so PostToolUse
+        must NOT add them again (single attachment)."""
         from core.execution._sdk_hooks import _build_post_tool_hook
         from core.memory import action_gate
 
@@ -50,11 +52,7 @@ class TestPostToolUseActionAttachment:
             {"signal": None},
         )
 
-        assert result["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
-        additional = result["hookSpecificOutput"]["additionalContext"]
-        assert "## [ACTION-RULE] Send check" in additional
-        assert "<action-rule path=" in additional
-        assert "Confirm first." in additional
+        assert result == {}
 
     @pytest.mark.asyncio
     async def test_action_tool_with_no_rules_returns_empty(self, anima_dir, monkeypatch):
@@ -90,6 +88,7 @@ class TestPostToolUseActionAttachment:
 
         # Stub RAG-backed rule search so the test does not reach HuggingFace.
         monkeypatch.setattr(action_gate, "_search_action_rules", lambda *_a, **_k: [])
+        hook = _build_post_tool_hook(anima_dir)
 
         result = await hook(
             {"hook_event_name": "PostToolUse", "tool_name": "mcp__aw__send_message", "tool_input": {"content": "hi"}},

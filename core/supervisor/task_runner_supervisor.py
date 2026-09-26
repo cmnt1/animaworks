@@ -120,7 +120,6 @@ class TaskRunnerSupervisor:
         self._max_concurrent = pool
         self._spawn_semaphore = asyncio.Semaphore(pool) if pool is not None else None
         self._chat_lock = asyncio.Lock()
-        self._greet_cache: tuple[float, dict[str, Any]] | None = None
 
     @property
     def jobs(self) -> dict[str, TaskRunnerJob]:
@@ -242,11 +241,6 @@ class TaskRunnerSupervisor:
 
     async def run_chat(self, *, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Run a chat contract, steering an active Mode S stream when possible."""
-        if kind == "greet" and self._greet_cache is not None:
-            cached_at, cached = self._greet_cache
-            if asyncio.get_running_loop().time() - cached_at < 3600:
-                return {**cached, "cached": True}
-
         active = None
         if kind == "message":
             found, active, _ = await self._try_inject_active_chat(payload)
@@ -267,8 +261,6 @@ class TaskRunnerSupervisor:
                 log_context=f"kind={kind}",
                 display_lane="chat",
             )
-            if kind == "greet" and not result.get("cached"):
-                self._greet_cache = (asyncio.get_running_loop().time(), result)
             return result
 
     async def run_chat_stream(self, payload: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:

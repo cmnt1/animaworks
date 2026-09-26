@@ -125,6 +125,8 @@ class AnimaDefaults(BaseModel):
     credential: str = "anthropic"
     context_threshold: float = 0.50
     context_absolute_ceiling: float = 0.75
+    task_compaction_tokens: int = 0
+    task_compaction_max: int = 6
     max_session_age_hours: float = 24.0
     max_chains: int = 2
     conversation_history_threshold: float = 0.30
@@ -342,11 +344,8 @@ class RAGConfig(BaseModel):
     rerank_enabled: bool = True
     rerank_candidate_pool: int = 50
     cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-12-v2"
-    abstain_on_low_confidence: bool = True
     confidence_threshold: float = 0.35
     rrf_confidence_threshold: float = 0.02
-    iterative_retrieval_enabled: bool = True
-    iterative_min_results: int = 2
     facts_extraction_enabled: bool = True
     fact_extraction_timeout_seconds: int = Field(
         default=120,
@@ -951,8 +950,13 @@ class HeartbeatConfig(BaseModel):
         ge=0,
         description="Max chars for current_state.md before trim; 0 = disabled",
     )
+    current_state_cleanup_chars: int = Field(
+        default=2000,
+        ge=0,
+        description="Soft cleanup threshold for current_state.md; 0 = 80% of current_state_max_chars",
+    )
     heartbeat_md_max_bytes: int = Field(
-        default=20000,
+        default=8000,
         ge=0,
         description=(
             "Max bytes of heartbeat.md before a compaction instruction is "
@@ -1053,6 +1057,15 @@ class IrodoriConfig(BaseModel):
     base_url: str = "http://localhost:7861"
 
 
+class GeminiTTSVoiceConfig(BaseModel):
+    """Gemini API TTS settings (key: env var, then vault ``shared`` section)."""
+
+    model: str = "gemini-3.8-flash-tts"
+    api_key_env: str = "GEMINI_API_KEY"
+    vault_key: str = "GEMINI_API_KEY"
+    chunk_seconds: float = 1.0
+
+
 class VoiceConfig(BaseModel):
     """Voice chat configuration."""
 
@@ -1078,6 +1091,7 @@ class VoiceConfig(BaseModel):
     elevenlabs: ElevenLabsVoiceConfig = ElevenLabsVoiceConfig()
     style_bert_vits2: StyleBertVits2Config = StyleBertVits2Config()
     irodori: IrodoriConfig = IrodoriConfig()
+    gemini: GeminiTTSVoiceConfig = GeminiTTSVoiceConfig()
 
 
 # ── UI Config ────────────────────────────────────────────────────────────────
@@ -1522,6 +1536,7 @@ __all__ = [
     "JevConfig",
     "InteractionConfig",
     "IrodoriConfig",
+    "GeminiTTSVoiceConfig",
     "LlmRateGuardConfig",
     "LocalLLMConfig",
     "LoggingConfig",

@@ -203,7 +203,10 @@ async def test_publication_failure_restores_db_index_shared_and_bm25_metadata(so
 def test_snapshot_rejects_symlink_inputs(sources, tmp_path):
     outside = tmp_path / "outside.md"
     outside.write_text("outside the selected input scope")
-    (sources / "knowledge" / "link.md").symlink_to(outside)
+    try:
+        (sources / "knowledge" / "link.md").symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
     message = t("rag.rebuild_symlink_input", path=sources / "knowledge" / "link.md")
     with pytest.raises(ValueError, match=re.escape(message)):
         _build(sources)

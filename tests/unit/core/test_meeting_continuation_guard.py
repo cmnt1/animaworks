@@ -73,7 +73,6 @@ def _done_chunk(full_text: str) -> dict:
 async def _run(agent, *, trigger: str, prompt_tier_override: str | None):
     with (
         patch("core._agent_cycle.build_system_prompt", return_value=_build_result_mock()),
-        patch("core._agent_cycle.inject_shortterm", side_effect=lambda sp, _stm: sp),
         patch("core.agent.AgentCore._resolve_execution_mode", return_value="s"),
         patch("core.agent.AgentCore._preflight_size_check") as mock_preflight,
         patch("core.agent.AgentCore._load_stream_retry_config") as mock_retry_cfg,

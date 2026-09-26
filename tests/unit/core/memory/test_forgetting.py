@@ -433,13 +433,13 @@ class TestListForgettingCandidates:
                 doc_id="forget_me",
                 access_count=0,
                 activation_level="low",
-                low_activation_since=old_low,
+                low_activation_since=old_low_since,
                 source_file="knowledge/forgotten-topic.md",
             ),
         ]
         with (
             patch.object(forgetting_engine, "_get_vector_store", return_value=MagicMock()),
-            patch.object(forgetting_engine, "_get_all_chunks", return_value=chunks),
+            patch.object(forgetting_engine, "_get_all_chunks", return_value=knowledge_chunks),
         ):
             result = forgetting_engine.list_forgetting_candidates()
         assert len(result) == 1

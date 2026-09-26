@@ -7,13 +7,24 @@ from __future__ import annotations
 # This file is part of AnimaWorks core/server, licensed under Apache-2.0.
 # See LICENSE for the full license text.
 
-"""Priming formatter mixin for ActivityLogger.
+"""Shared interpretation helpers for activity-log entries.
 
-Internal module — import from :mod:`core.memory.activity` instead.
+Centralises the *parsing* of activity entries so callers (priming,
+conversation view, timeline, compaction, audit, search, health,
+distillation) need not re-implement it: reading (:func:`iter_entries`),
+display text (:func:`entry_text`), conversation role
+(:func:`entry_role`), ``tool_use``⇄``tool_result`` pairing
+(:func:`pair_tool_events`), truncation (:func:`clip`) and the canonical
+event-type sets (:data:`EVENT_SETS`).  Priming rendering lives in
+:class:`PrimingMixin`.
 """
 
-
 import re
+from collections.abc import Iterator
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 from core.i18n import t
 from core.memory._activity_models import (
@@ -21,11 +32,199 @@ from core.memory._activity_models import (
     ActivityEntry,
     EntryGroup,
     dm_label,
+    find_tool_result_fallback,
     get_peer,
     get_task_name,
     set_source_lines,
     time_diff,
 )
+
+
+class EntryRole:
+    """Canonical conversation roles used across activity consumers."""
+
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+    TOOL = "tool"
+
+
+#: Recurring “which event types count” sets shared by consumers.
+EVENT_SETS: dict[str, frozenset[str]] = {
+    # Timeline-view / audit-style report set (excludes raw tool pairs).
+    "audit": frozenset(
+        {
+            "heartbeat_end",
+            "heartbeat_reflection",
+            "response_sent",
+            "cron_executed",
+            "tool_use",
+            "message_sent",
+            "task_exec_end",
+            "issue_resolved",
+            "error",
+        }
+    ),
+    # Conversation-view set: everything rendered as a timeline message.
+    "chat": frozenset(
+        {
+            "message_received",
+            "message_sent",
+            "response_sent",
+            "tool_use",
+            "tool_result",
+            "heartbeat_start",
+            "heartbeat_end",
+            "cron_executed",
+            "task_exec_start",
+            "task_exec_end",
+            "error",
+            "human_notify",
+            "human_reply",
+        }
+    ),
+    # Idle-compaction context set (session summary extraction).
+    "compaction": frozenset(
+        {
+            "message_received",
+            "response_sent",
+            "tool_use",
+            "tool_result",
+        }
+    ),
+}
+
+
+def _field(entry: ActivityEntry | dict[str, Any], name: str) -> str:
+    """Return entry field *name* as a string (works for dicts too)."""
+    if isinstance(entry, dict):
+        return entry.get(name) or ""
+    return getattr(entry, name) or ""
+
+
+def entry_text(
+    entry: ActivityEntry | dict[str, Any],
+    prefer: str = "content",
+) -> str:
+    """Display text of *entry* (content preferred; pass ``prefer="summary"`` for the reverse)."""
+    content = _field(entry, "content")
+    summary = _field(entry, "summary")
+    if prefer == "summary":
+        return summary or content
+    return content or summary
+
+
+def entry_role(entry: ActivityEntry, self_name: str = "") -> str | None:
+    """Conversation role of *entry* (user/assistant/system/tool), or ``None``."""
+    etype = entry.type
+
+    if etype in ("response_sent", "message_sent", "dm_sent"):
+        return EntryRole.ASSISTANT
+    if etype in ("message_received", "dm_received"):
+        if entry.meta.get("from_type") == "anima":
+            return EntryRole.ASSISTANT
+        if self_name and (entry.from_person or "") == self_name:
+            return EntryRole.ASSISTANT
+        return EntryRole.USER
+    if etype == "human_reply":
+        return EntryRole.USER
+    if etype == "human_notify":
+        return EntryRole.SYSTEM
+    if etype in (
+        "heartbeat_start",
+        "heartbeat_end",
+        "cron_executed",
+        "task_exec_start",
+        "task_exec_end",
+        "error",
+    ):
+        return EntryRole.SYSTEM
+    if etype in ("tool_use", "tool_result"):
+        return EntryRole.TOOL
+    return None
+
+
+def clip(text: str, limit: int) -> str:
+    """Truncate *text* to *limit* chars (matching the inline ``text[:limit]`` pattern)."""
+    if limit <= 0:
+        return ""
+    if text is None:
+        return ""
+    if len(text) <= limit:
+        return text
+    return text[:limit]
+
+
+@dataclass
+class ToolExchange:
+    """A ``tool_use`` entry and its matched ``tool_result`` (if any)."""
+
+    tool_use: ActivityEntry
+    result: ActivityEntry | None
+
+
+def pair_tool_events(entries: list[ActivityEntry]) -> list[ToolExchange]:
+    """Pair each ``tool_use`` entry with its ``tool_result`` (by id, else proximity)."""
+    result_by_id: dict[str, ActivityEntry] = {}
+    for e in entries:
+        if e.type == "tool_result":
+            tid = e.meta.get("tool_use_id", "")
+            if tid:
+                result_by_id[tid] = e
+
+    exchanges: list[ToolExchange] = []
+    for e in entries:
+        if e.type != "tool_use":
+            continue
+        tid = e.meta.get("tool_use_id", "")
+        result = result_by_id.get(tid) if tid else None
+        if not result:
+            result = find_tool_result_fallback(entries, e)
+        exchanges.append(ToolExchange(tool_use=e, result=result))
+    return exchanges
+
+
+def iter_entries(
+    anima_dir: Path,
+    *,
+    days: int = 2,
+    since: datetime | None = None,
+    types: list[str] | None = None,
+    involving: str | None = None,
+    limit: int = 10000,
+) -> Iterator[ActivityEntry]:
+    """Yield chronological activity entries through :class:`ActivityLogger`.
+
+    Centralises JSONL reading so callers need not open ``activity_log/*.jsonl``
+    themselves.  Args mirror :meth:`ActivityLogger.recent`.
+    """
+    from core.memory.activity import ActivityLogger
+
+    logger = ActivityLogger(anima_dir)
+    entries = logger.recent(
+        days=days,
+        types=types,
+        involving=involving,
+        limit=limit,
+    )
+    if since is not None:
+        entries = [e for e in entries if _ts_ge(e.ts, since)]
+    yield from entries
+
+
+def _ts_ge(ts: str, since: datetime) -> bool:
+    try:
+        from core.time_utils import ensure_aware
+
+        val = datetime.fromisoformat(ts)
+        if val.tzinfo is None and since.tzinfo is not None:
+            val = val.replace(tzinfo=since.tzinfo)
+        return ensure_aware(val) >= ensure_aware(since)
+    except Exception:
+        return False
+
+
+# ── Priming formatting ──────────────────────────────────────
 
 
 class PrimingMixin:
@@ -37,20 +236,7 @@ class PrimingMixin:
         budget_tokens: int = 1300,
         content_trim: int = 200,
     ) -> str:
-        """Format activity entries for system prompt injection.
-
-        Groups related entries (DM conversations, heartbeats, cron tasks)
-        and renders a compact timeline, truncated to *budget_tokens*.
-
-        Args:
-            entries: Entries to format (should be chronological).
-            budget_tokens: Target token budget.
-            content_trim: Maximum characters for content display in
-                each entry.  Set to ``0`` for no trim.
-
-        Returns:
-            Formatted string.
-        """
+        """Render activity entries as a compact, budget-limited timeline."""
         if not entries:
             return ""
 
@@ -86,7 +272,7 @@ class PrimingMixin:
         if entry.type == "human_notify":
             return PrimingMixin._format_human_notify_entry(entry, ts)
 
-        text = entry.summary or entry.content
+        text = entry_text(entry, prefer="summary")
 
         if content_trim > 0 and len(text) > content_trim:
             date_str = entry.ts[:10] if len(entry.ts) >= 10 else "unknown"
@@ -164,11 +350,7 @@ class PrimingMixin:
 
     @staticmethod
     def _format_tool_result_entry(entry: ActivityEntry, ts: str) -> str:
-        """Format tool_result as compact meta-only line for consolidation.
-
-        Output: ``[HH:MM] TRES tool_name → ok (12件, 3.2KB)``
-        Avoids injecting raw result content (which can be huge).
-        """
+        """Format ``tool_result`` as a compact meta-only line."""
         tool = entry.tool or "unknown"
         meta = entry.meta or {}
         status = meta.get("result_status", "ok")
@@ -194,10 +376,7 @@ class PrimingMixin:
 
     @staticmethod
     def _format_heartbeat_reflection(entry: ActivityEntry, ts: str) -> str:
-        """Extract [REFLECTION] block from heartbeat_end and format compactly.
-
-        Returns empty string if no REFLECTION block found.
-        """
+        """Extract a ``[REFLECTION]`` block from heartbeat_end and format it."""
         text = entry.summary or entry.content or ""
         match = re.search(r"\[REFLECTION\](.*?)\[/REFLECTION\]", text, re.DOTALL)
         if not match:
@@ -217,14 +396,7 @@ class PrimingMixin:
         entries: list[ActivityEntry],
         time_gap_minutes: int = 30,
     ) -> list[EntryGroup]:
-        """Group related activity entries for compact display.
-
-        Grouping rules:
-        1. DM: Same peer, within time_gap_minutes → 1 group
-        2. HB: Consecutive heartbeat_start/heartbeat_end only
-        3. CRON: Same task_name → 1 group
-        4. Others: Single-entry group
-        """
+        """Group related entries (DM/HB/cron/channel) for compact display."""
         groups: list[EntryGroup] = []
         current_group: EntryGroup | None = None
         gap_seconds = time_gap_minutes * 60
@@ -351,9 +523,7 @@ class PrimingMixin:
             lines = [f"{time_range} DM {peer}:"]
             for e in group.entries:
                 direction = "MSG<" if e.type in ("dm_received", "message_received") else "MSG>"
-                text = e.summary or e.content[:100]
-                if len(text) > 100:
-                    text = text[:100]
+                text = entry_text(e, prefer="summary")[:100]
                 lines.append(f"  {direction} {text}")
             if group.source_lines:
                 lines.append(f"  -> {group.source_lines}")
@@ -366,7 +536,7 @@ class PrimingMixin:
                     reflection = PrimingMixin._format_heartbeat_reflection(e, ts)
                     if reflection:
                         return reflection
-                    hb_summary = (e.summary or e.content or "")[:50]
+                    hb_summary = entry_text(e, prefer="summary")[:50]
                     if hb_summary:
                         return f"{time_range} HB: {hb_summary}"
             return f"{time_range} HB"
@@ -386,7 +556,7 @@ class PrimingMixin:
             snippets: list[str] = []
             for e in group.entries:
                 who = e.from_person or "?"
-                text = (e.summary or e.content or "")[:50].replace("\n", " ")
+                text = entry_text(e, prefer="summary")[:50].replace("\n", " ")
                 snippets.append(f"{who}→{text}")
             body = ", ".join(snippets)
             lines = [f"{time_range} #{ch_name} ({t('activity.items_count', count=count)}): {body}"]
