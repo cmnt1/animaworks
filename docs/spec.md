@@ -169,7 +169,6 @@ animaworks/
 │   ├── room_manager.py        # Meeting rooms (MeetingRoom / RoomManager, `shared/meetings`)
 │   ├── localhost.py           # Localhost trust detection (auth bypass)
 │   ├── events.py              # Dashboard event emit (WebSocket)
-│   ├── dependencies.py        # Compatibility stubs (IPC after process isolation)
 │   ├── routes/                # API routes (included under `/api` prefix)
 │   │   ├── animas.py, chat.py, sessions.py
 │   │   ├── chat_*.py          # Chat handling split (chunk_handler, emotion, images, producer, resume, etc.)

@@ -170,7 +170,6 @@ animaworks/
 │   ├── room_manager.py        # 会議室（MeetingRoom / RoomManager、`shared/meetings`）
 │   ├── localhost.py           # ローカルホスト信頼判定（認証バイパス用）
 │   ├── events.py              # ダッシュボード向けイベント emit（WebSocket）
-│   ├── dependencies.py        # 互換スタブ（プロセス分離後は IPC 利用）
 │   ├── routes/                # API ルート（`/api` プレフィックスで include）
 │   │   ├── animas.py, chat.py, sessions.py
 │   │   ├── chat_*.py          # チャット処理分割（chunk_handler, emotion, images, producer, resume 等）
