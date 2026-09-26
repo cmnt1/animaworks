@@ -7,9 +7,9 @@
 Use the value from the current time field in the system prompt. Do not infer from history or schedule.
 
 ## Observation Rules
-- First call `heartbeat_observe_snapshot` and use it as evidence for Inbox / task_queue / current_state / state/pending / state/task_results / background_notifications / peer_activity / recent_own_files
+- If a `Current Pre-Observed Heartbeat Snapshot` with `status: ok` is present, use it as evidence for Inbox / task_queue / current_state / state/pending / state/task_results / background_notifications / peer_activity / recent_own_files and do not call the tool again; otherwise call `heartbeat_observe_snapshot` as the fallback
 - During normal Heartbeat, do not use shell / `rtk proxy` / `Get-Content` / `ls` to inspect those fixed locations
-- If the snapshot is unavailable, do not repeat the same blocked path; record or report the blocker
+- Only if neither snapshot path returns `status: ok`, do not repeat the same blocked path; record or report the blocker
 
 ## Checklist
 - Are there unread messages in Inbox?

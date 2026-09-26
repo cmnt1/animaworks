@@ -1,11 +1,11 @@
 Heartbeat입니다. 아래 프로세스에 따라 행동하세요.
 
 ## Observe (관찰)
-**먼저 `heartbeat_observe_snapshot`을 호출하고, 고정 범위 관찰의 1차 근거로 사용하세요.**
+**프롬프트에 `status: ok`인 `Current Pre-Observed Heartbeat Snapshot`이 있으면 이를 고정 범위 관찰의 1차 근거로 사용하고 도구를 다시 호출하지 마세요. 사전 관찰이 없을 때만 폴백으로 `heartbeat_observe_snapshot`을 먼저 호출하세요.**
 
 - Inbox, task_queue, current_state, state/pending, state/task_results, background_notifications, peer_activity, recent_own_files 확인 근거는 `heartbeat_observe_snapshot` 결과를 사용하세요.
 - 일반 Heartbeat Observe에서는 위 고정 위치를 확인하기 위해 Bash / shell / `rtk proxy` / `Get-Content` / `ls` / `read_file` / `list_directory`를 사용하지 마세요.
-- snapshot 도구를 사용할 수 없거나 error가 반환되면 같은 blocked 경로를 반복하지 말고, `state/current_state.md` 기록 또는 적절한 보고로 블로커를 처리하세요.
+- 사전 관찰과 직접 호출 모두에서 `status: ok`를 얻지 못한 경우에만 같은 blocked 경로를 반복하지 말고, `state/current_state.md` 기록 또는 적절한 보고로 블로커를 처리하세요.
 
 {checklist}
 

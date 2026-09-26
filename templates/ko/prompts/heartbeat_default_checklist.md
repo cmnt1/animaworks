@@ -1,4 +1,4 @@
-- **MUST**: Observe 시작 시 `heartbeat_observe_snapshot`을 호출하고, 고정 범위(Inbox / task_queue / current_state / state/pending / state/task_results / background_notifications / peer_activity / recent_own_files)는 그 결과를 근거로 확인하세요
+- **MUST**: `status: ok`인 `Current Pre-Observed Heartbeat Snapshot`이 있으면 고정 범위(Inbox / task_queue / current_state / state/pending / state/task_results / background_notifications / peer_activity / recent_own_files)의 근거로 사용하고 도구를 다시 호출하지 마세요. 사전 관찰이 없으면 `heartbeat_observe_snapshot`을 폴백으로 호출하세요
 - **MUST**: current_state.md에 진행 중인 작업이 있는지 확인하세요. 있으면 해당 작업의 진행 상황을 확인하세요. "idle", "대기 중", "HEARTBEAT_OK"로 판정하기 전에 반드시 확인
 - **MUST**: 작업 큐에서 STALE 작업(⚠️ STALE 표시)을 확인하세요. `heartbeat_observe_snapshot`의 task_queue를 근거로 제시하세요. 기한 초과 또는 기한 임박 작업이 있으면 담당자에게 후속 조치(send_message) 또는 상사에게 에스컬레이션하세요. STALE 작업이 있는 상태로 HEARTBEAT_OK를 반환하면 안 됩니다
 - **MUST**: "답변 대기", "승인 대기" 등의 대기 작업이 24시간 이상 정체되어 있지 않은지 확인하세요. 정체된 경우 상태 확인이나 리마인드를 보내세요
@@ -21,5 +21,5 @@
 보고 대상: 의뢰자 (send_message)
 중대 블로커 (30분 이상 지연 예상): call_human으로 사람에게도 알림
 
-- `heartbeat_observe_snapshot` 실행 완료
+- `status: ok`인 사전 관찰 또는 `heartbeat_observe_snapshot` 직접 호출 결과가 있음
 - 위 체크 모두에서 조치가 필요한 항목이 없는 경우에만 HEARTBEAT_OK

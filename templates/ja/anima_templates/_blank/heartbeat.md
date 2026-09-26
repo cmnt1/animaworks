@@ -7,9 +7,9 @@
 システムプロンプトの `現在時刻` フィールドの値を使うこと。履歴やスケジュールから推測しない。
 
 ## 観察ルール
-- 最初に `heartbeat_observe_snapshot` を呼び、Inbox / task_queue / current_state / state/pending / state/task_results / background_notifications / peer_activity / recent_own_files の確認根拠にする
+- `status: ok` の `Current Pre-Observed Heartbeat Snapshot` があれば、Inbox / task_queue / current_state / state/pending / state/task_results / background_notifications / peer_activity / recent_own_files の確認根拠としてツールを重ねて呼ばない。事前観測がなければ `heartbeat_observe_snapshot` をフォールバックとして呼ぶ
 - 通常のHeartbeatでは、上記固定スコープ確認のために shell / `rtk proxy` / `Get-Content` / `ls` を使わない
-- snapshot が使えない場合は同じ blocked 経路を繰り返さず、ブロッカーとして記録または報告する
+- どちらの snapshot 経路からも `status: ok` を得られない場合に限り、同じ blocked 経路を繰り返さず、ブロッカーとして記録または報告する
 
 ## チェックリスト
 - Inboxに未読メッセージがあるか

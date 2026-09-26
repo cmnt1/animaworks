@@ -512,8 +512,11 @@ class HeartbeatMixin:
             return (
                 "## Current Pre-Observed Heartbeat Snapshot\n\n"
                 "The scheduler already collected this read-only `heartbeat_observe_snapshot` before the LLM turn. "
-                "Use it as the authoritative current Observe evidence. Do not infer current tool unavailability "
-                "from older heartbeat history or reflections when this section is present.\n\n"
+                "A snapshot in this section with `status: ok` already satisfies the fixed-scope Observe requirement. "
+                "Use it as the authoritative current Observe evidence; do not call the tool again or report the "
+                "direct tool as unavailable. Only use the direct tool as a fallback when this section is absent. "
+                "Do not infer current tool unavailability from older heartbeat history or reflections when this "
+                "section is present.\n\n"
                 "```json\n"
                 f"{snapshot_json}\n"
                 "```"

@@ -130,10 +130,12 @@ class TestActionRulesGuideTemplate:
 
 
 class TestHeartbeatObserveTemplate:
-    def test_heartbeat_prompt_requires_snapshot_first(self):
+    def test_heartbeat_prompt_prefers_preobserved_snapshot_with_direct_fallback(self):
         for locale in LOCALES:
             content = (TEMPLATES_ROOT / locale / "prompts" / "heartbeat.md").read_text(encoding="utf-8")
             assert "heartbeat_observe_snapshot" in content
+            assert "Current Pre-Observed Heartbeat Snapshot" in content
+            assert "status: ok" in content
             assert "rtk proxy" in content
             assert "list_directory" in content
 
@@ -143,6 +145,8 @@ class TestHeartbeatObserveTemplate:
                 encoding="utf-8"
             )
             assert "heartbeat_observe_snapshot" in content
+            assert "Current Pre-Observed Heartbeat Snapshot" in content
+            assert "status: ok" in content
             assert "list_tasks()" not in content
 
     def test_common_knowledge_observe_guide_indexed(self):
@@ -152,6 +156,8 @@ class TestHeartbeatObserveTemplate:
             ).read_text(encoding="utf-8")
             index = (TEMPLATES_ROOT / locale / "common_knowledge" / "00_index.md").read_text(encoding="utf-8")
             assert "heartbeat_observe_snapshot" in guide
+            assert "Current Pre-Observed Heartbeat Snapshot" in guide
+            assert "status: ok" in guide
             assert "heartbeat-observe-guide.md" in index
 
 

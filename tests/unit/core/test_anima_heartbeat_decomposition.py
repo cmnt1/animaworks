@@ -380,6 +380,9 @@ class TestBuildHeartbeatPrompt:
             assert snapshot_idx > history_idx
             assert '"tool": "heartbeat_observe_snapshot"' in snapshot_part
             assert '"unread_count": 0' in snapshot_part
+            assert "already satisfies the fixed-scope Observe requirement" in snapshot_part
+            assert "do not call the tool again" in snapshot_part
+            assert "Only use the direct tool as a fallback" in snapshot_part
             assert "Do not infer current tool unavailability" in snapshot_part
         finally:
             _stop_patches(mocks)

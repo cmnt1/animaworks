@@ -1,4 +1,4 @@
-- **MUST**: Observeの最初に `heartbeat_observe_snapshot` を呼び、固定スコープ（Inbox / task_queue / current_state / state/pending / state/task_results / background_notifications / peer_activity / recent_own_files）はその結果を根拠に確認すること
+- **MUST**: `status: ok` の `Current Pre-Observed Heartbeat Snapshot` があれば固定スコープ（Inbox / task_queue / current_state / state/pending / state/task_results / background_notifications / peer_activity / recent_own_files）の根拠としてツールを重ねて呼ばない。事前観測がなければ `heartbeat_observe_snapshot` をフォールバックとして呼ぶ
 - **MUST**: current_state.mdに進行中タスクがあるか確認し、確認結果を根拠として述べること。「idle」「待機中」と判定する前に必ず確認
 - **MUST**: タスクキューのSTALEタスク（⚠️ STALE表示）を確認。`heartbeat_observe_snapshot` の task_queue を根拠として示すこと。STALEタスクを放置してHEARTBEAT_OKとしてはならない
 - **MUST**: 待機タスクが24時間以上経過していないか確認。長期停滞があれば状況確認やリマインドを行う
@@ -23,6 +23,6 @@
 - `read_channel` 実行済みで自分宛メンションなし
 - STALE / OVERDUEタスクが0件
 - current_state.md に未対応の自分担当タスクなし
-- `heartbeat_observe_snapshot` 実行済み
+- `status: ok` の事前観測または `heartbeat_observe_snapshot` の直接呼出し結果がある
 
 いずれかが満たされなければ、対応アクションを記述すること。

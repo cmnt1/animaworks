@@ -1,11 +1,11 @@
 ハートビートです。以下のプロセスに従って行動してください。
 
 ## Observe（観察）
-**最初に `heartbeat_observe_snapshot` を呼び、固定スコープ観測の一次根拠にしてください。**
+**プロンプトに `Current Pre-Observed Heartbeat Snapshot` があり `status: ok` なら、それを固定スコープ観測の一次根拠として、ツールを重ねて呼ばないでください。事前観測がない場合のみ、フォールバックとして最初に `heartbeat_observe_snapshot` を呼んでください。**
 
 - `heartbeat_observe_snapshot` の結果を Inbox、task_queue、current_state、state/pending、state/task_results、background_notifications、peer_activity、recent_own_files の確認根拠として扱うこと。
 - 通常の Heartbeat Observe では、上記固定スコープを確認するために Bash / shell / `rtk proxy` / `Get-Content` / `ls` / `read_file` / `list_directory` を使わないこと。
-- snapshot が使えない、または error を返す場合は、同じ blocked 経路を繰り返さず、ブロッカーとして `state/current_state.md` への記録または報告に切り替えること。
+- 事前観測と直接呼出しのどちらからも `status: ok` を得られない場合に限り、同じ blocked 経路を繰り返さず、ブロッカーとして `state/current_state.md` への記録または報告に切り替えること。
 
 {checklist}
 

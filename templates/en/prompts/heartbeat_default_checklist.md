@@ -1,4 +1,4 @@
-- **MUST**: Start Observe by calling `heartbeat_observe_snapshot`; use it as evidence for fixed scope checks (Inbox / task_queue / current_state / state/pending / state/task_results / background_notifications / peer_activity / recent_own_files)
+- **MUST**: Use a `Current Pre-Observed Heartbeat Snapshot` with `status: ok` for fixed-scope checks and do not call the tool again. If absent, call `heartbeat_observe_snapshot` as the fallback
 - **MUST**: Check current_state.md for in-progress tasks and state findings as evidence. Always check before deciding "idle" or "waiting"
 - **MUST**: Check task queue for STALE tasks (⚠️ STALE). Cite task_queue in `heartbeat_observe_snapshot` as evidence. Never return HEARTBEAT_OK while STALE tasks exist
 - **MUST**: Check for waiting tasks stalled 24+ hours. If stalled, send status check or reminder
@@ -23,6 +23,6 @@ Report to: Requester (send_message). Critical blockers (30+ min delay): also cal
 - `read_channel` executed with no mentions targeting you
 - Zero STALE / OVERDUE tasks
 - No unaddressed self-assigned tasks in current_state.md
-- `heartbeat_observe_snapshot` executed
+- A `status: ok` pre-observed snapshot or direct `heartbeat_observe_snapshot` result is available
 
 If any condition is unmet, describe the action you are taking.

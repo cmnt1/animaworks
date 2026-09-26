@@ -1,11 +1,11 @@
 This is a Heartbeat. Follow the process below.
 
 ## Observe
-**First call `heartbeat_observe_snapshot` and use it as the primary evidence for fixed-scope observation.**
+**If the prompt contains a `Current Pre-Observed Heartbeat Snapshot` with `status: ok`, use it as the primary evidence for fixed-scope observation and do not call the tool again. Otherwise, call `heartbeat_observe_snapshot` first as the fallback.**
 
 - Treat `heartbeat_observe_snapshot` as the evidence source for Inbox, task_queue, current_state, state/pending, state/task_results, background_notifications, peer_activity, and recent_own_files.
 - During normal Heartbeat Observe, do not use Bash / shell / `rtk proxy` / `Get-Content` / `ls` / `read_file` / `list_directory` to inspect those fixed locations.
-- If the snapshot tool is unavailable or returns an error, do not repeat the same blocked path. Record or report the blocker via `state/current_state.md` or an appropriate report.
+- Only when neither the pre-observed snapshot nor a direct call provides `status: ok`, do not repeat the same blocked path. Record or report the blocker via `state/current_state.md` or an appropriate report.
 
 {checklist}
 

@@ -7,9 +7,9 @@
 시스템 프롬프트의 현재 시각 필드 값을 사용하세요. 이력이나 스케줄에서 추측하지 마세요.
 
 ## 관찰 규칙
-- 먼저 `heartbeat_observe_snapshot`을 호출하고, Inbox / task_queue / current_state / state/pending / state/task_results / background_notifications / peer_activity / recent_own_files 확인 근거로 사용하세요
+- `status: ok`인 `Current Pre-Observed Heartbeat Snapshot`이 있으면 Inbox / task_queue / current_state / state/pending / state/task_results / background_notifications / peer_activity / recent_own_files 확인 근거로 사용하고 도구를 다시 호출하지 마세요. 사전 관찰이 없으면 `heartbeat_observe_snapshot`을 폴백으로 호출하세요
 - 일반 Heartbeat에서는 위 고정 위치 확인을 위해 shell / `rtk proxy` / `Get-Content` / `ls`를 사용하지 마세요
-- snapshot을 사용할 수 없으면 같은 blocked 경로를 반복하지 말고 블로커로 기록하거나 보고하세요
+- 두 snapshot 경로 모두에서 `status: ok`를 얻지 못한 경우에만 같은 blocked 경로를 반복하지 말고 블로커로 기록하거나 보고하세요
 
 ## 체크리스트
 - inbox에 읽지 않은 메시지가 있는가
