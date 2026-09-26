@@ -18,13 +18,13 @@ import pytest
 from core.anima import DigitalAnima
 from core.memory.rag.sqlite_health import quick_check_chroma_sqlite
 from core.memory.streaming_journal import StreamingJournal
-from core.memory.task_queue import TaskQueueManager
 from core.platform.processing_lease import read_processing_lease, write_processing_lease
 from core.schemas import CronTask
 from core.supervisor import task_runner_supervisor
-from core.supervisor.pending_executor import PendingTaskExecutor
 from core.supervisor.scheduler_manager import SchedulerManager
 from core.supervisor.task_runner_supervisor import TaskRunnerError, TaskRunnerJob, TaskRunnerSupervisor
+from core.tasks.pending_executor import PendingTaskExecutor
+from core.tasks.queue import TaskQueueManager
 
 pytestmark = [
     pytest.mark.timeout(60),

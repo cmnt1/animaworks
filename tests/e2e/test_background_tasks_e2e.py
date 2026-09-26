@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.background import BackgroundTask, BackgroundTaskManager, TaskStatus
+from core.tasks.background import BackgroundTask, BackgroundTaskManager, TaskStatus
 from core.tooling.handler import ToolHandler
 
 pytestmark = pytest.mark.e2e

@@ -6,14 +6,14 @@ from datetime import datetime
 from pathlib import Path
 
 from core.i18n import t
-from core.memory.task_queue import (
+from core.tasks.board.models import BoardTask
+from core.tasks.queue import (
     _STALE_TASK_THRESHOLD_SEC,
     _TERMINAL_STATUSES,
     TaskQueueManager,
     _elapsed_seconds,
     _format_elapsed_from_sec,
 )
-from core.taskboard.models import BoardTask
 from core.time_utils import now_local
 
 

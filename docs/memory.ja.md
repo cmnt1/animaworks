@@ -197,7 +197,7 @@ Cowan (2005) の知見に従い、ワーキングメモリを「活性化され�
 
 **deterministic priming gate**: 取得後の `PrimingResult` は `build_priming_plan()` に渡され、チャネルごとに表示可否と render mode を決める。render mode は `anchor`、`guardrail`、`pointer`、`evidence`、`suppress` の5種類である。送信者・直近活動・保留タスクなどの足場情報は anchor として出やすく、関連知識やエピソードはポインタ化できる場合は pointer、根拠確認が必要な文脈では evidence、不要または危険な文脈では suppress になる。外部送信・機密・重複防止・根拠要求に関わる語がある場合は、`require_search_before_action` が立ち、後続の action memory gate と合わせて行動前の確認を強める。
 
-**TaskBoard連携（チャネルE）**: 保留タスクは `core.taskboard` から現在の状態を投影し、プライミング対象にすべきものだけを `filter_for_priming` で選ぶ。TaskBoardが利用できない場合は従来の `TaskQueueManager` にフォールバックする。task result についても TaskBoard 側で注入可否を制御し、処理済み・抑制済みの結果を無駄に再表示しない。
+**TaskBoard連携（チャネルE）**: 保留タスクは `core.tasks.board` から現在の状態を投影し、プライミング対象にすべきものだけを `filter_for_priming` で選ぶ。TaskBoardが利用できない場合は従来の `TaskQueueManager` にフォールバックする。task result についても TaskBoard 側で注入可否を制御し、処理済み・抑制済みの結果を無駄に再表示しない。
 
 **スキルの扱い**: スキルは現在のプライミング本体ではなく、`core/skills/` のカタログ、明示的 activation、router、curator、promotion で扱う。必要なスキルは active skill context、`read_memory_file`、または Skill Hub のカタログ経由で本文またはポインタとして提示される。手続き記憶（`procedures/`）は引き続き長期記憶として残り、実績のある手順は promotion によって `skills/` へ昇格できる。
 

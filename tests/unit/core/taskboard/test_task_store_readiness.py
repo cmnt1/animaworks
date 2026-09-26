@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from core.memory.task_queue import TaskQueueManager
-from core.taskboard.readiness import require_task_store_ready
-from core.taskboard.tasks import TaskStore, task_database_path
+from core.tasks.board.readiness import require_task_store_ready
+from core.tasks.board.tasks import TaskStore, task_database_path
+from core.tasks.queue import TaskQueueManager
 
 
 def _anima(tmp_path: Path) -> Path:

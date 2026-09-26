@@ -9,9 +9,9 @@ which stops message handling and heartbeat.
 Using `animaworks-tool submit` runs the task in the background so you can
 move on to the next task immediately.
 
-At runtime, **BackgroundTaskManager** in `core/background.py` handles tool execution and
+At runtime, **BackgroundTaskManager** in `core/tasks/background.py` handles tool execution and
 persisting state to `state/background_tasks/{task_id}.json`, while **PendingTaskExecutor**
-inside the Anima child process (`core/supervisor/pending_executor.py`) watches the wait queue written by
+inside the Anima child process (`core/tasks/pending_executor.py`) watches the wait queue written by
 `animaworks-tool submit` and hands tasks off to `BackgroundTaskManager`.
 
 ## When to Use submit
@@ -138,7 +138,7 @@ Results are ingested via heartbeat-oriented notification files, so polling or bl
 
 ## Technical Mechanism (Reference)
 
-### BackgroundTaskManager (`core/background.py`)
+### BackgroundTaskManager (`core/tasks/background.py`)
 
 - **Role**: Runs long-running tool calls as `asyncio` background tasks and `await`s the optional async `on_complete` callback on completion or failure. The constructor `mkdir(parents=True)` for `state/background_tasks/`.
 - **Sync tools**: `submit(tool_name, tool_args, execute_fn)` → `execute_fn(name, args) -> str | None` runs on a thread pool via `run_in_executor(None, ...)`.
@@ -157,7 +157,7 @@ Results are ingested via heartbeat-oriented notification files, so polling or bl
 
 ### Other API in the same file: `rotate_dm_logs`
 
-Independently of **background tool execution**, `core/background.py` defines `rotate_dm_logs(shared_dir, max_age_days=7)`. For `shared/dm_logs/*.jsonl`, rows whose entry `ts` is older than the threshold are appended to `{stem}.{YYYYMMDD}.archive.jsonl` and removed from the active file. Actual work is `_rotate_dm_logs_sync`, offloaded with `run_in_executor`.
+Independently of **background tool execution**, `core/tasks/background.py` defines `rotate_dm_logs(shared_dir, max_age_days=7)`. For `shared/dm_logs/*.jsonl`, rows whose entry `ts` is older than the threshold are appended to `{stem}.{YYYYMMDD}.archive.jsonl` and removed from the active file. Actual work is `_rotate_dm_logs_sync`, offloaded with `run_in_executor`.
 
 ### Command-type tasks (`animaworks-tool submit`)
 

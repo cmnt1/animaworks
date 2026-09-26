@@ -418,7 +418,7 @@ class PendingTaskExecutor:
     def _save_task_result(self, task_id: str, summary: str) -> None:
         """Save task result summary to state/task_results/{task_id}.md."""
         from core.memory._io import atomic_write_text
-        from core.taskboard.tasks import current_attempt_identity
+        from core.tasks.board.tasks import current_attempt_identity
 
         results_dir = self._anima_dir / "state" / "task_results"
         results_dir.mkdir(parents=True, exist_ok=True)
@@ -449,7 +449,7 @@ class PendingTaskExecutor:
         if not task_id:
             return
         try:
-            from core.memory.task_queue import TaskQueueManager
+            from core.tasks.queue import TaskQueueManager
 
             patch: dict[str, Any] = {"last_run_ended_at": now_iso(), "last_run_stop_kind": stop_kind}
             if note:
@@ -545,7 +545,7 @@ class PendingTaskExecutor:
         readable.
         """
         try:
-            from core.memory.task_queue import TaskQueueManager
+            from core.tasks.queue import TaskQueueManager
 
             manager = TaskQueueManager(self._anima_dir)
             entry = manager.get_task_by_id(task_id)
@@ -577,7 +577,7 @@ class PendingTaskExecutor:
         if not task_id:
             return None
         try:
-            from core.memory.task_queue import TaskQueueManager
+            from core.tasks.queue import TaskQueueManager
 
             return TaskQueueManager(self._anima_dir).get_task_by_id(task_id)
         except Exception:
@@ -601,7 +601,7 @@ class PendingTaskExecutor:
         Returns an empty string when there are no siblings.
         """
         try:
-            from core.memory.task_queue import TaskQueueManager
+            from core.tasks.queue import TaskQueueManager
 
             entries = TaskQueueManager(self._anima_dir).list_tasks(status="in_progress")
         except Exception:
@@ -679,7 +679,7 @@ class PendingTaskExecutor:
                 return_to_pending({**task_desc, "task_id": task_id}, reason)
                 continue
             try:
-                from core.memory.task_queue import TaskQueueManager
+                from core.tasks.queue import TaskQueueManager
 
                 manager = TaskQueueManager(anima_dir)
                 entry = manager.get_task_by_id(task_id)
@@ -781,8 +781,8 @@ class PendingTaskExecutor:
                             _remove_processing_lease(processing_path)
 
                 # One canonical claim transaction owns task, input, and attempt.
-                from core.memory.task_queue import TaskQueueManager
-                from core.taskboard.tasks import process_identity
+                from core.tasks.board.tasks import process_identity
+                from core.tasks.queue import TaskQueueManager
 
                 store = TaskQueueManager(self._anima_dir).store
                 self._recover_task_attempts(store)
@@ -849,7 +849,7 @@ class PendingTaskExecutor:
 
     def _recover_task_attempts(self, store: Any) -> None:
         """Only proven-dead owners become incomplete; never replay side effects."""
-        from core.taskboard.tasks import identity_liveness
+        from core.tasks.board.tasks import identity_liveness
 
         for attempt in store.active_attempts(self._anima_name):
             if attempt["task_id"] in self._active_task_ids:
@@ -908,8 +908,8 @@ class PendingTaskExecutor:
                 logger.warning("Task wakeup delivery retained for retry: %s", event["task_id"], exc_info=True)
 
     async def _execute_canonical_task(self, task_desc: dict[str, Any]) -> None:
-        from core.memory.task_queue import TaskQueueManager
-        from core.taskboard.tasks import attempt_scope
+        from core.tasks.board.tasks import attempt_scope
+        from core.tasks.queue import TaskQueueManager
 
         task_id = str(task_desc["task_id"])
         token = str(task_desc["_attempt_token"])
@@ -953,7 +953,7 @@ class PendingTaskExecutor:
                 # a result. The sticky cancelled path must not look like a
                 # normally completed run merely because its error was handled.
                 stop_kind = "interrupted"
-            from core.taskboard.tasks import identity_liveness
+            from core.tasks.board.tasks import identity_liveness
 
             active = next((item for item in store.active_attempts(self._anima_name) if item["token"] == token), None)
             child_still_live = False
@@ -1182,7 +1182,7 @@ class PendingTaskExecutor:
 
         # Skip if task was cancelled in task_queue (batch path; single path checks in watcher)
         try:
-            from core.memory.task_queue import TaskQueueManager
+            from core.tasks.queue import TaskQueueManager
 
             entry = TaskQueueManager(self._anima_dir).get_task_by_id(task_id)
             if entry and entry.status == "cancelled":
@@ -1345,7 +1345,7 @@ class PendingTaskExecutor:
         error_suppressed = False
         if had_error or task_failed_reason:
             try:
-                from core.memory.task_queue import TaskQueueManager
+                from core.tasks.queue import TaskQueueManager
 
                 _entry = TaskQueueManager(self._anima_dir).get_task_by_id(task_id)
                 if (
@@ -1639,7 +1639,7 @@ class PendingTaskExecutor:
 
         async def _on_spawned(job: Any) -> None:
             if token := task_desc.get("_attempt_token"):
-                from core.memory.task_queue import TaskQueueManager
+                from core.tasks.queue import TaskQueueManager
 
                 TaskQueueManager(self._anima_dir).store.set_identity(
                     str(token),
@@ -1789,7 +1789,7 @@ class PendingTaskExecutor:
 
         async def _on_spawned(job: Any) -> None:
             if token := task_desc.get("_attempt_token"):
-                from core.memory.task_queue import TaskQueueManager
+                from core.tasks.queue import TaskQueueManager
 
                 TaskQueueManager(self._anima_dir).store.set_identity(
                     str(token),

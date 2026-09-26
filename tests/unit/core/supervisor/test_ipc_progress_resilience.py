@@ -61,9 +61,7 @@ class _StubLink:
 async def test_progress_loop_survives_send_failure_and_heals(monkeypatch) -> None:
     monkeypatch.setattr(task_runner, "_PROGRESS_INTERVAL_SECONDS", 0.01)
     monkeypatch.setattr(task_runner, "_RECONNECT_RETRY_SECONDS", 0.01)
-    identity = IPCV2Identity(
-        job_id="job-p", root_epoch="epoch", attempt=1, lane="task", display_lane="background"
-    )
+    identity = IPCV2Identity(job_id="job-p", root_epoch="epoch", attempt=1, lane="task", display_lane="background")
     broken = _FlakyConnection(fail_first=10_000)  # never recovers on its own
     healed = _FlakyConnection(fail_first=0)
     link = _StubLink(broken, healed)
@@ -86,9 +84,7 @@ async def test_progress_loop_survives_send_failure_and_heals(monkeypatch) -> Non
 
 @pytest.mark.asyncio
 async def test_rootlink_reconnect_single_flight(monkeypatch, tmp_path) -> None:
-    identity = IPCV2Identity(
-        job_id="job-l", root_epoch="epoch", attempt=1, lane="task", display_lane="background"
-    )
+    identity = IPCV2Identity(job_id="job-l", root_epoch="epoch", attempt=1, lane="task", display_lane="background")
     state = IPCV2ConnectionState(identity)
     broken = SimpleNamespace(close=AsyncMock())
     new_conn = SimpleNamespace(close=AsyncMock())
@@ -107,9 +103,7 @@ async def test_rootlink_reconnect_single_flight(monkeypatch, tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_rootlink_reconnect_rejects_foreign_run_contract(monkeypatch, tmp_path) -> None:
-    identity = IPCV2Identity(
-        job_id="job-x", root_epoch="epoch", attempt=1, lane="task", display_lane="background"
-    )
+    identity = IPCV2Identity(job_id="job-x", root_epoch="epoch", attempt=1, lane="task", display_lane="background")
     broken = SimpleNamespace(close=AsyncMock())
     new_conn = SimpleNamespace(close=AsyncMock())
     monkeypatch.setattr(

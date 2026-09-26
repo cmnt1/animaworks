@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from core._anima_heartbeat import HeartbeatMixin, _build_stale_task_scoreboard
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_local
 
 
@@ -30,7 +30,7 @@ async def test_heartbeat_injects_stale_task_scoreboard(tmp_path: Path) -> None:
     anima_dir = tmp_path / "worker"
     manager = TaskQueueManager(anima_dir)
     current = now_local()
-    with patch("core.memory.task_queue.now_iso", return_value=(current - timedelta(hours=25)).isoformat()):
+    with patch("core.tasks.queue.now_iso", return_value=(current - timedelta(hours=25)).isoformat()):
         manager.add_task(
             source="human",
             original_instruction="finish",
@@ -69,7 +69,7 @@ def test_scoreboard_limits_to_twenty_oldest_tasks(tmp_path: Path) -> None:
     current = now_local()
     for index in range(22):
         created = current - timedelta(hours=22 - index)
-        with patch("core.memory.task_queue.now_iso", return_value=created.isoformat()):
+        with patch("core.tasks.queue.now_iso", return_value=created.isoformat()):
             manager.add_task(
                 source="human",
                 original_instruction="finish",

@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.background import BackgroundTask, TaskStatus
+from core.tasks.background import BackgroundTask, TaskStatus
 
 
 class TestSubmitDrainIntegration:

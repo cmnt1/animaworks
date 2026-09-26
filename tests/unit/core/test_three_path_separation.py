@@ -802,7 +802,7 @@ class TestPendingTaskExecutorLLM:
 
             dp = DigitalAnima(anima_dir, shared_dir)
 
-        from core.supervisor.pending_executor import PendingTaskExecutor
+        from core.tasks.pending_executor import PendingTaskExecutor
 
         executor = PendingTaskExecutor(
             anima=dp,
@@ -826,7 +826,7 @@ class TestPendingTaskExecutorLLM:
             dp = DigitalAnima(anima_dir, shared_dir)
             dp.agent.background_manager = MagicMock()
 
-        from core.supervisor.pending_executor import PendingTaskExecutor
+        from core.tasks.pending_executor import PendingTaskExecutor
 
         executor = PendingTaskExecutor(
             anima=dp,
@@ -854,7 +854,7 @@ class TestPendingTaskExecutorLLM:
 
             dp = DigitalAnima(anima_dir, shared_dir)
 
-        from core.supervisor.pending_executor import PendingTaskExecutor
+        from core.tasks.pending_executor import PendingTaskExecutor
 
         executor = PendingTaskExecutor(
             anima=dp,
@@ -969,7 +969,7 @@ class TestPendingExecutorWake:
 
             dp = DigitalAnima(anima_dir, shared_dir)
 
-        from core.supervisor.pending_executor import PendingTaskExecutor
+        from core.tasks.pending_executor import PendingTaskExecutor
 
         executor = PendingTaskExecutor(
             anima=dp,
@@ -989,7 +989,7 @@ class TestPendingExecutorWake:
 
             dp = DigitalAnima(anima_dir, shared_dir)
 
-        from core.supervisor.pending_executor import PendingTaskExecutor
+        from core.tasks.pending_executor import PendingTaskExecutor
 
         executor = PendingTaskExecutor(
             anima=dp,

@@ -38,7 +38,7 @@ submit_tasks(batch_id="hb-20260301-api-test", tasks=[
 `submit_tasks` は検証後、タスクと完全な実行入力を一つの正本 TaskStore に一括保存する。
 実行権の取得と試行履歴はホストが管理する。`in_progress` は閲覧用で、エージェントは `update_task` で `done` / `pending` / `cancelled` を宣言する。中断した pending タスクは同じ ID に `resume: true` を指定して明示的に再開し、別タスクで置き換えない。
 
-**長時間 CLI ツール**（`animaworks-tool submit …`）は別経路で `state/background_tasks/pending/` に書かれ、`BackgroundTaskManager`（`core/background.py`）がバックグラウンド実行する。詳細は `operations/background-tasks.md` を参照。
+**長時間 CLI ツール**（`animaworks-tool submit …`）は別経路で `state/background_tasks/pending/` に書かれ、`BackgroundTaskManager`（`core/tasks/background.py`）がバックグラウンド実行する。詳細は `operations/background-tasks.md` を参照。
 
 **注意**: 保存先を直接編集しない。旧 `state/task_queue.jsonl` と `state/pending/` は移行・エクスポート用の証跡として保存し、稼働中の投入先にしない。
 
@@ -159,9 +159,9 @@ Chat（人間との対話）と TaskExec（実作業）はメインモデルを�
 
 それ以外（例: 実効61分、または43分のように 60 を割り切れない間隔）は **1分ごとのポーリング**（`_heartbeat_check`）で「前回からの経過」により発火する。古い `IntervalTrigger` 由来の不具合回避のための実装。
 
-### バックグラウンドツールと DM ログ（core/background.py）
+### バックグラウンドツールと DM ログ（core/tasks/background.py）
 
-`core/background.py` はハートビート/Cron のスケジュールそのものではなく、**長時間ツール呼び出しのバックグラウンド実行**（状態の JSON 永続化を含む）と **レガシー共有 DM ログ（`shared/dm_logs/`）のローテーション**を担う。運用の詳細・CLI 経路は `operations/background-tasks.md` も参照。
+`core/tasks/background.py` はハートビート/Cron のスケジュールそのものではなく、**長時間ツール呼び出しのバックグラウンド実行**（状態の JSON 永続化を含む）と **レガシー共有 DM ログ（`shared/dm_logs/`）のローテーション**を担う。運用の詳細・CLI 経路は `operations/background-tasks.md` も参照。
 
 #### BackgroundTaskManager
 

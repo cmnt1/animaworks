@@ -44,7 +44,7 @@ def _offline_anima(runtime: Path, anima: str) -> Iterator[None]:
 
 def run_maintenance(args: argparse.Namespace) -> dict[str, Any]:
     from core.paths import get_data_dir
-    from core.taskboard.tasks import TaskStore, task_database_path
+    from core.tasks.board.tasks import TaskStore, task_database_path
 
     runtime = get_data_dir().resolve()
     anima_dir = (runtime / "animas" / args.anima).resolve()

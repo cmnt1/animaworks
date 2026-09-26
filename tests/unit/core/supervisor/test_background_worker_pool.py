@@ -8,11 +8,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.anima import BackgroundWorkerSlot, DigitalAnima
-from core.memory.task_queue import TaskQueueManager
 from core.platform.processing_lease import processing_lease_path, write_processing_lease
-from core.supervisor.pending_executor import PendingTaskExecutor
-from core.taskboard.tasks import process_identity
-from core.tasks_dispatch import publish_tasks
+from core.tasks.board.tasks import process_identity
+from core.tasks.dispatch import publish_tasks
+from core.tasks.pending_executor import PendingTaskExecutor
+from core.tasks.queue import TaskQueueManager
 
 
 def _slot(slot_id: int) -> BackgroundWorkerSlot:

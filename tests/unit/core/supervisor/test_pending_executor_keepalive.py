@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.supervisor.pending_executor import PendingTaskExecutor
+from core.tasks.pending_executor import PendingTaskExecutor
 
 
 class _FakeAnima:

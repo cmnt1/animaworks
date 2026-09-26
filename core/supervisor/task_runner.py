@@ -195,7 +195,7 @@ async def execute_task_contract(anima: DigitalAnima, task_desc: dict[str, Any]) 
     Claim / lease / queue sync stay on the anima root; this contract only
     produces the result string (and related metadata) for the root to apply.
     """
-    from core.supervisor.pending_executor import (
+    from core.tasks.pending_executor import (
         _NON_COMPLETING_SENTINELS,
         PendingTaskExecutor,
     )
@@ -210,8 +210,8 @@ async def execute_task_contract(anima: DigitalAnima, task_desc: dict[str, Any]) 
     completed_results = task_desc.get("_completed_results")
     if not isinstance(completed_results, dict):
         completed_results = None
-    from core.memory.task_queue import TaskQueueManager
-    from core.taskboard.tasks import attempt_scope, process_identity
+    from core.tasks.board.tasks import attempt_scope, process_identity
+    from core.tasks.queue import TaskQueueManager
 
     token = task_desc.get("_attempt_token")
     identity = None
@@ -255,7 +255,7 @@ async def execute_background_contract(
         import subprocess
 
         from core.exceptions import ToolExecutionError
-        from core.supervisor.pending_executor import _PENDING_TASK_SUBPROCESS_TIMEOUT
+        from core.tasks.pending_executor import _PENDING_TASK_SUBPROCESS_TIMEOUT
 
         tool_name = str(payload.get("tool_name") or "")
         subcommand = str(payload.get("subcommand") or "")

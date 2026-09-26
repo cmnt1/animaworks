@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.task_queue import TaskQueueManager
-from core.taskboard.models import AttentionVisibility
-from core.taskboard.store import TaskBoardStore
-from core.taskboard.tasks import process_identity
-from core.tasks_dispatch import publish_tasks
+from core.tasks.board.models import AttentionVisibility
+from core.tasks.board.store import TaskBoardStore
+from core.tasks.board.tasks import process_identity
+from core.tasks.dispatch import publish_tasks
+from core.tasks.queue import TaskQueueManager
 
 pytestmark = pytest.mark.e2e
 

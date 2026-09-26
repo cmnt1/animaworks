@@ -13,8 +13,8 @@ import json
 import logging
 from pathlib import Path
 
-from core.external_tasks.models import Snapshot
 from core.memory._io import atomic_write_text
+from core.tasks.external.models import Snapshot
 
 logger = logging.getLogger("animaworks.external_tasks.store")
 

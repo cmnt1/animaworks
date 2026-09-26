@@ -94,7 +94,7 @@ def _log_session_token_usage(
     if not usage or not any(usage.values()):
         return
     try:
-        from core.memory.token_usage import TokenUsageLogger
+        from core.usage.token_usage import TokenUsageLogger
 
         tul = TokenUsageLogger(anima_dir)
         tul.log(
@@ -264,8 +264,8 @@ class CycleMixin:
 
         now = now_local()
         try:
-            from core.memory.token_budget import calculate_token_budget_status
-            from core.memory.token_usage import TokenUsageLogger
+            from core.usage.token_budget import calculate_token_budget_status
+            from core.usage.token_usage import TokenUsageLogger
 
             consumed = TokenUsageLogger(self.anima_dir).monthly_total(now)
             status = calculate_token_budget_status(budget, consumed)

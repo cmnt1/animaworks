@@ -13,7 +13,7 @@ import json
 import subprocess
 from typing import Any
 
-from core.external_tasks.models import ExternalTask
+from core.tasks.external.models import ExternalTask
 
 _PR_PRIORITY = 90
 _ISSUE_PRIORITY = 75
@@ -43,7 +43,7 @@ def _ensure_gh() -> None:
     unavailable without treating missing tooling as a hard failure.
     """
     # Local import avoids circular import with collector → sources.
-    from core.external_tasks.collector import CredentialNotFoundError
+    from core.tasks.external.collector import CredentialNotFoundError
 
     try:
         subprocess.run(

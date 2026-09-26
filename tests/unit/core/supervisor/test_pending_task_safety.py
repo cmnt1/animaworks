@@ -27,7 +27,7 @@ from core.platform.processing_lease import (
     processing_lease_path,
     write_processing_lease,
 )
-from core.supervisor.pending_executor import PendingTaskExecutor
+from core.tasks.pending_executor import PendingTaskExecutor
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -81,7 +81,7 @@ class TestCommandPendingFileLifecycle:
         task = {"task_id": "cmd-1", "tool_name": "test_tool", "subcommand": "", "raw_args": []}
         (pending_dir / "cmd-1.json").write_text(json.dumps(task))
 
-        with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)):
+        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)):
             await executor.watcher_loop()
 
         assert not (pending_dir / "cmd-1.json").exists()
@@ -103,7 +103,7 @@ class TestCommandPendingFileLifecycle:
 
         executor.execute_pending_task = failing_execute  # type: ignore[assignment]
 
-        with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)):
+        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)):
             await executor.watcher_loop()
 
         assert not (pending_dir / "cmd-fail.json").exists()
@@ -119,7 +119,7 @@ class TestCommandPendingFileLifecycle:
 
         (pending_dir / "bad.json").write_text("{invalid")
 
-        with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)):
+        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)):
             await executor.watcher_loop()
 
         assert not (pending_dir / "bad.json").exists()
@@ -132,7 +132,7 @@ class TestLLMCanonicalLifecycle:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("outcome", ["done", "crash"])
     async def test_attempt_ends_without_destroying_input(self, tmp_path, outcome):
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         executor = _make_executor(tmp_path)
         queue = TaskQueueManager(executor._anima_dir)
@@ -145,7 +145,7 @@ class TestLLMCanonicalLifecycle:
             queue.update_status(task_desc["task_id"], "done")
 
         executor.execute_pending_task = execute
-        with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)):
+        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)):
             await executor.watcher_loop()
         assert queue.get_task_by_id("llm-1").status == ("done" if outcome == "done" else "pending")
         assert queue.store.active_attempts("test-anima") == []
@@ -177,7 +177,7 @@ class TestRecoverProcessing:
         PendingTaskExecutor._recover_processing(tmp_path / "processing")
 
     def test_live_lease_skips_recovery(self, tmp_path: Path) -> None:
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         anima_dir = tmp_path / "test-anima"
         (anima_dir / "state").mkdir(parents=True)
@@ -267,7 +267,7 @@ class TestRecoverProcessing:
     def test_crash_returns_layer2_task_to_pending(self, tmp_path: Path) -> None:
         # A descriptor left in processing/ means the run died without declaring:
         # the ledger entry goes back to pending with a crash stamp.
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         anima_dir = tmp_path / "anima"
         (anima_dir / "state").mkdir(parents=True)
@@ -297,7 +297,7 @@ class TestRecoverProcessing:
 
     def test_layer2_sync_leaves_terminal_tasks_untouched(self, tmp_path: Path) -> None:
         # A task that already reached a terminal state must not be flipped.
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         anima_dir = tmp_path / "anima"
         (anima_dir / "state").mkdir(parents=True)
@@ -328,7 +328,7 @@ class TestRecoverProcessing:
         cmd_processing.mkdir(parents=True)
         (cmd_processing / "orphan-cmd.json").write_text('{"task_id":"oc"}')
 
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         _ = TaskQueueManager(executor._anima_dir).store
 
@@ -336,7 +336,7 @@ class TestRecoverProcessing:
         llm_processing.mkdir(parents=True)
         (llm_processing / "orphan-llm.json").write_text('{"task_id":"ol"}')
 
-        with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)):
+        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=_stop_after_first(executor)):
             await executor.watcher_loop()
 
         assert not list(cmd_processing.glob("*.json"))
@@ -351,10 +351,10 @@ async def test_processing_descriptor_touch_loop_updates_mtime(tmp_path: Path) ->
 
     with (
         patch(
-            "core.supervisor.pending_executor.asyncio.sleep",
+            "core.tasks.pending_executor.asyncio.sleep",
             new=AsyncMock(side_effect=[None, asyncio.CancelledError()]),
         ),
-        patch("core.supervisor.pending_executor.os.utime") as touch,
+        patch("core.tasks.pending_executor.os.utime") as touch,
         pytest.raises(asyncio.CancelledError),
     ):
         await executor._touch_processing_descriptor(processing_path)
@@ -384,7 +384,7 @@ class TestExecuteLLMTaskFailureHandling:
     @pytest.mark.asyncio
     async def test_crash_returns_queue_entry_to_pending(self, tmp_path: Path) -> None:
         """A crashed run puts the ledger entry back to pending with a crash stamp."""
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         executor = _make_executor(tmp_path)
         (executor._anima_dir / "state").mkdir(parents=True, exist_ok=True)
@@ -464,8 +464,8 @@ class TestExecuteLLMTaskFailureHandling:
 
     @pytest.mark.asyncio
     async def test_non_shutdown_cancel_records_durable_attention(self, tmp_path):
-        from core.memory.task_queue import TaskQueueManager
-        from core.taskboard.tasks import process_identity
+        from core.tasks.board.tasks import process_identity
+        from core.tasks.queue import TaskQueueManager
 
         executor = _make_executor(tmp_path)
         queue = TaskQueueManager(executor._anima_dir)
@@ -491,7 +491,7 @@ class TestExecuteLLMTaskFailureHandling:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("shutdown", [True, False])
     async def test_live_child_keeps_claim_until_proven_dead(self, tmp_path, shutdown):
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         executor = _make_executor(tmp_path)
         queue = TaskQueueManager(executor._anima_dir)
@@ -508,17 +508,17 @@ class TestExecuteLLMTaskFailureHandling:
         if shutdown:
             executor._shutdown_event.set()
         with (
-            patch("core.taskboard.tasks.identity_liveness", return_value="live"),
+            patch("core.tasks.board.tasks.identity_liveness", return_value="live"),
             pytest.raises(asyncio.CancelledError),
         ):
             await executor._execute_canonical_task(claim)
         assert queue.get_task_by_id("shutdown").status == "in_progress"
         assert len(queue.store.active_attempts("test-anima")) == 1
         executor._anima.messenger.send.assert_not_called()
-        with patch("core.taskboard.tasks.identity_liveness", return_value="live"):
+        with patch("core.tasks.board.tasks.identity_liveness", return_value="live"):
             executor._recover_task_attempts(queue.store)
         assert len(queue.store.active_attempts("test-anima")) == 1
-        with patch("core.taskboard.tasks.identity_liveness", return_value="dead"):
+        with patch("core.tasks.board.tasks.identity_liveness", return_value="dead"):
             executor._recover_task_attempts(queue.store)
         assert queue.get_task_by_id("shutdown").status == "pending"
         assert queue.store.pending("test-anima") == []

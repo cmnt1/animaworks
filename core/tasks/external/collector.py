@@ -25,11 +25,11 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 from core.config.schemas import ExternalTasksConfig
-from core.external_tasks.models import ExternalTask, Snapshot, SourceHealth
-from core.external_tasks.sources.chatwork import collect_chatwork
-from core.external_tasks.sources.github import collect_github
-from core.external_tasks.sources.gmail import collect_gmail
-from core.external_tasks.sources.slack import collect_slack
+from core.tasks.external.models import ExternalTask, Snapshot, SourceHealth
+from core.tasks.external.sources.chatwork import collect_chatwork
+from core.tasks.external.sources.github import collect_github
+from core.tasks.external.sources.gmail import collect_gmail
+from core.tasks.external.sources.slack import collect_slack
 from core.time_utils import ensure_aware
 
 logger = logging.getLogger("animaworks.external_tasks.collector")

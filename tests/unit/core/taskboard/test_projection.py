@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.memory.task_queue import TaskQueueManager
 from core.schemas import TaskEntry
-from core.taskboard.models import AttentionVisibility, BoardColumn, TaskBoardMetadata
-from core.taskboard.projector import (
+from core.tasks.board.models import AttentionVisibility, BoardColumn, TaskBoardMetadata
+from core.tasks.board.projector import (
     QUEUE_STATUS_TO_COLUMN,
     _project_queue_task,
     project_all,
     project_anima,
 )
-from core.taskboard.store import TaskBoardStore
+from core.tasks.board.store import TaskBoardStore
+from core.tasks.queue import TaskQueueManager
 
 
 def _queue(tmp_path: Path, anima_name: str) -> TaskQueueManager:
@@ -303,7 +303,7 @@ def test_integration_stale_metadata_hidden_from_default_board_view(tmp_path: Pat
 
 
 def test_project_task_matches_full_projection(tmp_path: Path) -> None:
-    from core.taskboard.projector import project_task
+    from core.tasks.board.projector import project_task
 
     sakura = _queue(tmp_path, "sakura")
     rin = _queue(tmp_path, "rin")

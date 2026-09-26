@@ -9,8 +9,8 @@ import importlib
 
 import pytest
 
-from core.background import BackgroundTaskManager
 from core.integrations._base import get_eligible_tools_from_profiles, load_execution_profiles
+from core.tasks.background import BackgroundTaskManager
 
 # ── Module registry ──────────────────────────────────────────
 

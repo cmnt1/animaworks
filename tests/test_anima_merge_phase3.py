@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from core.lifecycle.anima_merge import AnimaMergeService, MergePhase
-from core.memory.task_queue import TaskQueueManager
-from core.taskboard.store import TaskBoardStore
+from core.tasks.board.store import TaskBoardStore
+from core.tasks.queue import TaskQueueManager
 from tests.test_anima_merge import (
     _add_rewrite_refs_fixture,
     _setup_data_dir,

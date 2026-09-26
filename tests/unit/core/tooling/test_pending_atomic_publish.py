@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 
 
 @pytest.fixture()

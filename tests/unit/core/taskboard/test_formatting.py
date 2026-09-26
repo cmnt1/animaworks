@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from core.taskboard.formatting import format_tasks_for_priming
-from core.taskboard.models import AttentionVisibility, BoardColumn, BoardTask
+from core.tasks.board.formatting import format_tasks_for_priming
+from core.tasks.board.models import AttentionVisibility, BoardColumn, BoardTask
 
 
 def _task(task_id: str, status: str, *, meta: dict | None = None) -> BoardTask:

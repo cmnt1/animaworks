@@ -9,9 +9,9 @@
 `animaworks-tool submit` を使うことで、タスクをバックグラウンドで実行し、
 自分自身はすぐに次の作業に移ることができる。
 
-ランタイムでは `core/background.py` の **BackgroundTaskManager** がツール実行と
+ランタイムでは `core/tasks/background.py` の **BackgroundTaskManager** がツール実行と
 `state/background_tasks/{task_id}.json` への状態永続化を担当し、
-Anima 子プロセス内の **PendingTaskExecutor**（`core/supervisor/pending_executor.py`）が
+Anima 子プロセス内の **PendingTaskExecutor**（`core/tasks/pending_executor.py`）が
 `animaworks-tool submit` が書いた待ちキューを監視して `BackgroundTaskManager` に載せ替える。
 
 ## いつ submit を使うか
@@ -137,7 +137,7 @@ submit したらすぐに次の作業に移ること。
 
 ## 技術的な仕組み（参考）
 
-### BackgroundTaskManager（`core/background.py`）
+### BackgroundTaskManager（`core/tasks/background.py`）
 
 - **役割**: 長時間ツール呼び出しを `asyncio` タスクとしてバックグラウンド実行し、完了・失敗時に `on_complete`（任意の非同期コールバック）を `await` する。コンストラクタで `state/background_tasks/` を `mkdir(parents=True)` する。
 - **同期ツール**: `submit(tool_name, tool_args, execute_fn)` → `execute_fn(name, args) -> str | None` を `run_in_executor(None, ...)` でスレッドプール実行。
@@ -156,7 +156,7 @@ submit したらすぐに次の作業に移ること。
 
 ### 同ファイル内のその他 API: `rotate_dm_logs`
 
-`core/background.py` には **バックグラウンドツール実行とは独立**に、`rotate_dm_logs(shared_dir, max_age_days=7)` がある。`shared/dm_logs/*.jsonl` のうち、エントリの `ts` が閾値より古い行を `{stem}.{YYYYMMDD}.archive.jsonl` へ追記アーカイブし、アクティブファイルからは除く。実処理は `_rotate_dm_logs_sync`（`run_in_executor` でオフロード）。
+`core/tasks/background.py` には **バックグラウンドツール実行とは独立**に、`rotate_dm_logs(shared_dir, max_age_days=7)` がある。`shared/dm_logs/*.jsonl` のうち、エントリの `ts` が閾値より古い行を `{stem}.{YYYYMMDD}.archive.jsonl` へ追記アーカイブし、アクティブファイルからは除く。実処理は `_rotate_dm_logs_sync`（`run_in_executor` でオフロード）。
 
 ### コマンド型タスク（`animaworks-tool submit`）
 

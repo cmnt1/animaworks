@@ -38,7 +38,7 @@ submit_tasks(batch_id="hb-20260301-api-test", tasks=[
 `submit_tasks` validates and atomically stores the task and its complete execution input in one canonical TaskStore.
 The host owns execution claims and attempt history. `in_progress` is read-only for agents; declare `done`, `pending`, or `cancelled` with `update_task`. An interrupted pending task is resumed deliberately using the same ID and `resume: true`, not by creating a replacement task.
 
-**Long-running CLI tools** (`animaworks-tool submit …`) are written on a separate path to `state/background_tasks/pending/` and are executed in the background by `BackgroundTaskManager` (`core/background.py`). See `operations/background-tasks.md` for details.
+**Long-running CLI tools** (`animaworks-tool submit …`) are written on a separate path to `state/background_tasks/pending/` and are executed in the background by `BackgroundTaskManager` (`core/tasks/background.py`). See `operations/background-tasks.md` for details.
 
 **Note**: Never write task storage directly. Legacy `state/task_queue.jsonl` and `state/pending/` are preserved only as migration/export evidence, not live submission paths.
 
@@ -164,9 +164,9 @@ When the **effective** interval (after Activity Level and a **minimum 5-minute**
 
 Otherwise (e.g. effective 61 minutes, or 43 minutes so 60 is not evenly divided), firing uses **1-minute polling** (`_heartbeat_check`) based on elapsed time since the last run. This avoids issues inherited from older `IntervalTrigger` behavior.
 
-### Background tools and DM logs (`core/background.py`)
+### Background tools and DM logs (`core/tasks/background.py`)
 
-`core/background.py` does not own Heartbeat/Cron scheduling itself; it handles **background execution of long-running tool calls** (including JSON state persistence) and **rotation of legacy shared DM logs** (`shared/dm_logs/`). For operational details and the CLI path, also see `operations/background-tasks.md`.
+`core/tasks/background.py` does not own Heartbeat/Cron scheduling itself; it handles **background execution of long-running tool calls** (including JSON state persistence) and **rotation of legacy shared DM logs** (`shared/dm_logs/`). For operational details and the CLI path, also see `operations/background-tasks.md`.
 
 #### BackgroundTaskManager
 

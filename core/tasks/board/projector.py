@@ -6,10 +6,10 @@ from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 
-from core.memory.task_queue import TaskEntry, TaskQueueManager
 from core.paths import get_animas_dir
-from core.taskboard.models import AttentionVisibility, BoardColumn, BoardTask, TaskBoardMetadata
-from core.taskboard.store import TaskBoardStore
+from core.tasks.board.models import AttentionVisibility, BoardColumn, BoardTask, TaskBoardMetadata
+from core.tasks.board.store import TaskBoardStore
+from core.tasks.queue import TaskEntry, TaskQueueManager
 
 QUEUE_STATUS_TO_COLUMN: dict[str, BoardColumn] = {
     "pending": BoardColumn.TODO,

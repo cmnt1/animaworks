@@ -214,7 +214,7 @@ def _split_delegation_items(
 
 def _check_task_state(anima_dir: Path, task_id: str) -> str:
     """Inspect canonical status; result files are artifacts, not completion proof."""
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     entry = TaskQueueManager(anima_dir).get_task_by_id(task_id)
     if entry is None:

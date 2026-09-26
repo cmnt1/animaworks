@@ -9,10 +9,10 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
-from core.memory.task_queue import TaskQueueManager
-from core.taskboard.models import AttentionVisibility, BoardColumn, BoardTask
-from core.taskboard.projector import project_all, project_task
-from core.taskboard.store import TaskBoardStore
+from core.tasks.board.models import AttentionVisibility, BoardColumn, BoardTask
+from core.tasks.board.projector import project_all, project_task
+from core.tasks.board.store import TaskBoardStore
+from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_iso
 
 logger = logging.getLogger("animaworks.routes.taskboard")
@@ -490,7 +490,7 @@ def _task_to_response(task: BoardTask) -> dict[str, Any]:
 
 
 def _count_corrupt_task_queue_lines(animas_dir: Path, anima_names: list[str]) -> int:
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     return sum(
         TaskQueueManager(animas_dir / name).store.maintenance_status(name)["invalid_import_rows"]

@@ -12,7 +12,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from core.paths import get_taskboard_db_path
-from core.taskboard.models import AttentionVisibility, BoardColumn, TaskBoardMetadata
+from core.tasks.board.models import AttentionVisibility, BoardColumn, TaskBoardMetadata
 from core.time_utils import now_iso
 
 TASKBOARD_EVENT_TYPES = {

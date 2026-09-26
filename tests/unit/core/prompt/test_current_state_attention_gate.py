@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from core.prompt.builder import _build_group3
-from core.taskboard.store import TaskBoardStore
+from core.tasks.board.store import TaskBoardStore
 from core.time_utils import now_local
 
 _SS = {

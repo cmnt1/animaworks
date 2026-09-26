@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.memory.task_queue import TaskQueueManager
-from core.supervisor.pending_executor import _SENTINEL_CANCELLED, PendingTaskExecutor
+from core.tasks.pending_executor import _SENTINEL_CANCELLED, PendingTaskExecutor
+from core.tasks.queue import TaskQueueManager
 
 
 def _make_executor(tmp_path: Path, stop_kind: str = "normal") -> PendingTaskExecutor:
@@ -121,8 +121,8 @@ async def test_normal_stop_without_declaration_returns_to_pending(tmp_path: Path
 
 @pytest.mark.asyncio
 async def test_undeclared_result_is_saved_for_its_attempt_without_completing(tmp_path: Path) -> None:
-    from core.taskboard.tasks import process_identity
-    from core.tasks_dispatch import publish_tasks
+    from core.tasks.board.tasks import process_identity
+    from core.tasks.dispatch import publish_tasks
 
     executor = _make_executor(tmp_path)
     publish_tasks(executor._anima_dir, [_task("attempt-result")])
@@ -151,8 +151,8 @@ async def test_external_cancel_keeps_terminal_status_and_only_references_real_ar
     tmp_path: Path, has_partial_artifact: bool
 ) -> None:
     """A SIGTERM before child result must not become a successful empty run."""
-    from core.taskboard.tasks import process_identity
-    from core.tasks_dispatch import publish_tasks
+    from core.tasks.board.tasks import process_identity
+    from core.tasks.dispatch import publish_tasks
 
     executor = _make_executor(tmp_path)
     executor._task_isolated = True
@@ -210,8 +210,8 @@ async def test_resumed_attempt_records_its_own_stop_kind(
     tmp_path: Path, stop_kind: str, declare_done: bool, expected_status: str
 ) -> None:
     """A previous crash must not override a resumed run's actual outcome."""
-    from core.taskboard.tasks import process_identity
-    from core.tasks_dispatch import publish_tasks
+    from core.tasks.board.tasks import process_identity
+    from core.tasks.dispatch import publish_tasks
 
     executor = _make_executor(tmp_path, stop_kind)
     task_id = "resumed"
@@ -266,8 +266,8 @@ async def test_resumed_attempt_records_its_own_stop_kind(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("stop_kind", ["crash", "interrupted"])
 async def test_runner_termination_overrides_earlier_normal_cycle_metadata(tmp_path: Path, stop_kind: str) -> None:
-    from core.taskboard.tasks import process_identity
-    from core.tasks_dispatch import publish_tasks
+    from core.tasks.board.tasks import process_identity
+    from core.tasks.dispatch import publish_tasks
 
     executor = _make_executor(tmp_path)
     task_id = "terminated-after-cycle"
@@ -301,8 +301,8 @@ async def test_runner_termination_overrides_earlier_normal_cycle_metadata(tmp_pa
 
 @pytest.mark.asyncio
 async def test_mid_run_cancel_preserves_owners_business_reason(tmp_path: Path) -> None:
-    from core.taskboard.tasks import process_identity
-    from core.tasks_dispatch import publish_tasks
+    from core.tasks.board.tasks import process_identity
+    from core.tasks.dispatch import publish_tasks
 
     executor = _make_executor(tmp_path)
     task_id = "cancelled-duplicate"
@@ -331,7 +331,7 @@ async def test_mid_run_cancel_preserves_owners_business_reason(tmp_path: Path) -
 
 def test_new_cancel_uses_generic_localized_summary(tmp_path: Path) -> None:
     from core.i18n import t
-    from core.supervisor.pending_executor import _classify_task_result
+    from core.tasks.pending_executor import _classify_task_result
 
     executor = _make_executor(tmp_path)
     manager = _queue_task(executor, "new-cancel")
@@ -392,8 +392,8 @@ async def test_budget_skipped_keeps_queue_pending_and_records_activity(tmp_path:
 
 @pytest.mark.asyncio
 async def test_cancelled_batch_result_does_not_start_dependent(tmp_path: Path) -> None:
-    from core.taskboard.tasks import process_identity
-    from core.tasks_dispatch import publish_tasks
+    from core.tasks.board.tasks import process_identity
+    from core.tasks.dispatch import publish_tasks
 
     executor = _make_executor(tmp_path)
     publish_tasks(

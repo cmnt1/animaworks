@@ -1053,7 +1053,7 @@ class SchedulerMixin:
         """Archive old dm_log entries beyond 7 days."""
         logger.info("Starting DM log rotation")
         try:
-            from core.background import rotate_dm_logs
+            from core.tasks.background import rotate_dm_logs
 
             shared_dir = self._get_data_dir() / "shared"
             result = await rotate_dm_logs(shared_dir)

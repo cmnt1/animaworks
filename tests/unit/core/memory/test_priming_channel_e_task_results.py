@@ -103,7 +103,7 @@ class TestChannelETaskResults:
     @pytest.mark.asyncio
     async def test_task_results_coexist_with_queue(self, anima_dir: Path):
         """Task results should appear alongside pending queue entries."""
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         manager = TaskQueueManager(anima_dir)
         manager.add_task(

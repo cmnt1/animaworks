@@ -72,7 +72,7 @@ class RuntimeSessionContext:
     def to_env(self) -> dict[str, str]:
         import json
 
-        from core.taskboard.tasks import current_attempt_identity
+        from core.tasks.board.tasks import current_attempt_identity
 
         identity = current_attempt_identity()
         return {

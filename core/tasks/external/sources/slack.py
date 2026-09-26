@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from core.exceptions import ToolConfigError
-from core.external_tasks.models import ExternalTask
+from core.tasks.external.models import ExternalTask
 
 _PRIORITY = 80
 _LOOKBACK_DAYS = 7
@@ -33,7 +33,7 @@ def collect_slack() -> list[ExternalTask]:
     Task ids: ``slack-{channel_id}-{ts}``.
     """
     # Local import avoids circular import with collector → sources.
-    from core.external_tasks.collector import CredentialNotFoundError
+    from core.tasks.external.collector import CredentialNotFoundError
 
     try:
         from core.integrations._slack_cache import MessageCache

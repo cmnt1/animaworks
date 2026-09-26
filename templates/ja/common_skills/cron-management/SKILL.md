@@ -11,7 +11,7 @@ description: >-
 
 cron の**パース**は `core/schedule_parser.py`（`parse_cron_md` / `parse_schedule`）、**登録・実行・リロード**は `core/supervisor/scheduler_manager.py`（APScheduler、`AsyncIOScheduler(timezone=get_app_timezone())`）が担当する。
 
-### `core/background.py`（cron とは別系統）
+### `core/tasks/background.py`（cron とは別系統）
 
 このモジュールは **cron のスケジューリングをしない**。長時間ツール呼び出しのバックグラウンド実行と、DM ログのローテーションを担当する。cron と混同しないこと。
 

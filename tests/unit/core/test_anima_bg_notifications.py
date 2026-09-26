@@ -8,8 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
-
-from core.background import BackgroundTask, TaskStatus
+from core.tasks.background import BackgroundTask, TaskStatus
 
 
 class TestDrainBackgroundNotifications:
@@ -61,7 +60,8 @@ class TestDrainBackgroundNotifications:
         notif_dir.mkdir(parents=True)
 
         (notif_dir / "task1.md").write_text(
-            "# Task 1 done\n\nDetails here.", encoding="utf-8",
+            "# Task 1 done\n\nDetails here.",
+            encoding="utf-8",
         )
 
         anima = self._make_anima_with_dir(anima_dir)
@@ -315,9 +315,9 @@ class TestOnBackgroundTaskComplete:
         content = (notif_dir / "xyz789abc.md").read_text(encoding="utf-8")
 
         # Verify all required fields are present
-        assert "xyz789abc" in content            # task_id
-        assert "transcribe" in content           # tool_name
-        assert "completed" in content            # status
+        assert "xyz789abc" in content  # task_id
+        assert "transcribe" in content  # tool_name
+        assert "completed" in content  # status
         assert "Transcription: Hello world" in content  # result in summary
 
     async def test_completed_task_has_completed_subject(self, tmp_path):

@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
-from core.memory.task_queue import TaskQueueManager
-from core.tasks_dispatch import dispatch_direct_task
+from core.tasks.dispatch import dispatch_direct_task
+from core.tasks.queue import TaskQueueManager
 
 
 def test_dispatch_direct_task_queues_and_publishes_pending(tmp_path: Path) -> None:

@@ -48,7 +48,7 @@ def read_token_budget_status(
     avoid this helper so unlimited Animas incur no aggregation I/O.
     """
     from core.config.model_config import load_model_config
-    from core.memory.token_usage import TokenUsageLogger
+    from core.usage.token_usage import TokenUsageLogger
 
     model_config = load_model_config(anima_dir)
     consumed = TokenUsageLogger(anima_dir).monthly_total(now or now_local())

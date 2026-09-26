@@ -111,7 +111,7 @@ def test_migrates_common_flat_skill_and_rewrites_common_refs_for_animas(tmp_path
     common_dir.mkdir()
     flat = common_dir / "shared.md"
     flat.write_text("# Shared\n\nA shared legacy skill.\n", encoding="utf-8")
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     queue = TaskQueueManager(anima_dir)
     queue.submit(

@@ -679,7 +679,7 @@ class TaskRunnerSupervisor:
             task_id = task_desc.get("task_id")
             if not task_id:
                 return False
-            from core.memory.task_queue import TaskQueueManager
+            from core.tasks.queue import TaskQueueManager
 
             entry = await asyncio.to_thread(
                 TaskQueueManager(self.anima_dir).get_task_by_id,

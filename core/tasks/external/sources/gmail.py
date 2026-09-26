@@ -15,7 +15,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 
-from core.external_tasks.models import ExternalTask
+from core.tasks.external.models import ExternalTask
 
 logger = logging.getLogger("animaworks.external_tasks.sources.gmail")
 
@@ -33,7 +33,7 @@ def collect_gmail() -> list[ExternalTask]:
     ``search_emails`` so background jobs never trigger interactive OAuth.
     """
     # Local import avoids circular import with collector → sources.
-    from core.external_tasks.collector import CredentialNotFoundError
+    from core.tasks.external.collector import CredentialNotFoundError
 
     try:
         from core.integrations.gmail import GmailClient

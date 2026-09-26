@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_local
 from server.routes.system import create_system_router
 
@@ -172,9 +172,7 @@ class TestRecentActivityContextCompatibility:
         ) as client:
             flat = await client.get("/api/activity/recent?hours=1")
             grouped = await client.get("/api/activity/recent?hours=1&grouped=true")
-            semantic = await client.get(
-                "/api/activity/recent?hours=1&grouped=true&replay=true&semantic=true"
-            )
+            semantic = await client.get("/api/activity/recent?hours=1&grouped=true&replay=true&semantic=true")
 
         assert flat.status_code == 200
         events = flat.json()["events"]
@@ -183,11 +181,7 @@ class TestRecentActivityContextCompatibility:
         assert legacy.get("ctx", "") == ""
 
         assert grouped.status_code == 200
-        grouped_events = [
-            event
-            for group in grouped.json()["groups"]
-            for event in group["events"]
-        ]
+        grouped_events = [event for group in grouped.json()["groups"] for event in group["events"]]
         assert next(e for e in grouped_events if e["summary"] == "Context-aware event")["ctx"] == "task:task-a"
         legacy = next(e for e in grouped_events if e["summary"] == "Context-free legacy event")
         assert legacy.get("ctx", "") == ""

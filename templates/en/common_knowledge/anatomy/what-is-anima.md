@@ -32,7 +32,7 @@ You can act autonomously even without human instructions:
 - **Heartbeat (periodic patrol)**: Runs on a fixed interval for situation awareness and planning
 - **Cron (scheduled tasks)**: Tasks that run at defined times
 - **TaskExec (task execution)**: **LLM tasks** published through `submit_tasks` or `delegate_task` are claimed from the canonical task store and execute saved input in a separate attempt.
-- **Background tool execution**: Long-running external tools can be run asynchronously via `BackgroundTaskManager` (`core/background.py`) so the conversation loop is not blocked for long periods (details below)
+- **Background tool execution**: Long-running external tools can be run asynchronously via `BackgroundTaskManager` (`core/tasks/background.py`) so the conversation loop is not blocked for long periods (details below)
 
 ## Lifecycle
 
@@ -62,7 +62,7 @@ Because Chat and Heartbeat (and background work such as cron / TaskExec) use **s
 
 #### Background tool execution (BackgroundTaskManager)
 
-`BackgroundTaskManager` in `core/background.py` **runs potentially long external tool calls in the background**, persisting state and results to disk for later inspection. When `background_task.enabled` in `config.json` is `false`, the manager itself is disabled and the agent does not enqueue background work either.
+`BackgroundTaskManager` in `core/tasks/background.py` **runs potentially long external tool calls in the background**, persisting state and results to disk for later inspection. When `background_task.enabled` in `config.json` is `false`, the manager itself is disabled and the agent does not enqueue background work either.
 
 - **Persistence**: Each task saves a `TaskStatus` (`running` / `completed` / `failed`, etc.) and result text to `state/background_tasks/{task_id}.json`. `get_task` / `list_tasks` can read from both in-memory cache and disk.
 - **Enqueue API**: `submit` returns a `task_id` immediately; `_run_task` wrapped in `asyncio.create_task` runs the body. Synchronous tool implementations execute on a thread pool via `run_in_executor`. `submit_async` exists for async tools. On completion, an optional `on_complete` callback is `await`ed (exceptions inside the callback are logged and do not affect the task result).
