@@ -115,7 +115,7 @@ AnimaWorks의 통합 설정 파일은 `~/.animaworks/config.json`에 위치합�
 | `speciality` | `str | None` | None |  |
 | `thinking` | `bool | None` | None |  |
 | `thinking_effort` | `str | None` | None |  |
-| `llm_timeout` | `int` | `600` |  |
+| `llm_timeout` | `int` | `1200` |  |
 | `mode_s_auth` | `str | None` | None |  |
 | `max_outbound_per_hour` | `int | None` | None |  |
 | `max_outbound_per_day` | `int | None` | None |  |

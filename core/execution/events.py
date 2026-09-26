@@ -19,6 +19,13 @@ from collections.abc import AsyncIterator, Callable, Mapping
 from functools import wraps
 from typing import Any, Literal, ParamSpec, Required, TypedDict, TypeVar, cast
 
+from core.execution.watchdog import (
+    DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS,
+    Watchdog,
+    install_watchdog,
+    reset_watchdog,
+)
+
 StreamEventType = Literal[
     "text_delta",
     "thinking_start",
@@ -78,7 +85,21 @@ def stream_events(
 
     @wraps(method)
     async def wrapped(*args: _P.args, **kwargs: _P.kwargs) -> AsyncIterator[StreamEvent]:
-        async for item in method(*args, **kwargs):
-            yield as_stream_event(item)
+        watchdog = Watchdog(DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS)
+        token = install_watchdog(watchdog)
+        iterator = method(*args, **kwargs).__aiter__()
+        try:
+            while True:
+                try:
+                    item = await watchdog.wait_for(iterator.__anext__())
+                except StopAsyncIteration:
+                    return
+                watchdog.mark_activity()
+                yield as_stream_event(item)
+        finally:
+            reset_watchdog(token)
+            aclose = getattr(iterator, "aclose", None)
+            if callable(aclose):
+                await aclose()
 
     return wrapped

@@ -66,6 +66,7 @@ from core.execution.reminder import (
     msg_tool_loop_halt,
     msg_tool_loop_warning,
 )
+from core.execution.watchdog import engine_events
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData
 
@@ -412,7 +413,8 @@ class StreamingMixin:
                         }
                     _chunk_count = 0
 
-                async for chunk in response if _use_stream else _empty_aiter():
+                _response_events = response if _use_stream else _empty_aiter()
+                async for chunk in engine_events(_response_events):
                     _chunk_count += 1
                     # DEBUG: raw chunk inspection (first 5 chunks)
                     if _chunk_count <= 5:

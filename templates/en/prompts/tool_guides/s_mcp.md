@@ -1,5 +1,7 @@
 ## AnimaWorks Tools
 
+Run commands that may take up to about 20 minutes in the background and poll their status or output tail every few minutes.
+
 These tools are your core AnimaWorks capabilities, available alongside the host CLI's built-in `Bash` / `Read` / `Write` / `Edit`.
 
 Search, counting, listing and file manipulation go through `Bash` (`rg`, `grep`, `find`, `ls`, `wc`). Reach for `Bash` first; use `Read` / `Write` / `Edit` for reading and writing files.

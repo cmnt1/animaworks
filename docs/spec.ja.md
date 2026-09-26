@@ -502,8 +502,7 @@ Mode X の利用前に `grok` CLI をインストールし、`grok login` で認
 |`session_ttl_days`          |`int \| null`|`7`（`null` で無期限）|UI セッション Cookie の TTL |
 |`ipc_stream_timeout`        |`int`   |`60`   |IPCストリーミングのチャンク単位タイムアウト（秒）    |
 |`keepalive_interval`        |`int`   |`30`   |keep-alive送信間隔（秒）             |
-|`max_streaming_duration`    |`int`   |`1800` |ストリーミング最大持続時間（秒）             |
-|`busy_hang_threshold`       |`int`   |`900`  |子プロセス「busy」無応答とみなす秒数（`HealthConfig` へ反映）|
+|`runner_liveness_timeout`   |`int`   |`900`  |Task runner の IPC keepalive 生死判定 timeout（秒）|
 |`stream_checkpoint_enabled` |`bool`  |`true` |ストリーミング中のツール結果保存             |
 |`stream_retry_max`          |`int`   |`3`    |ストリーム切断時の自動リトライ最大回数          |
 |`stream_retry_delay_s`      |`float` |`5.0`  |リトライ間の待機時間（秒）                |

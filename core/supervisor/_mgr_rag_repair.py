@@ -296,7 +296,7 @@ class RAGRepairMixin:
                 # user-facing turn is not cut off by a repair-triggered stop.
                 await self.stop_anima(
                     anima_name,
-                    drain_timeout=float(self._max_streaming_duration_sec),
+                    drain_timeout=float(self._stream_drain_timeout_sec),
                 )
             return True
         except Exception as exc:

@@ -1,21 +1,11 @@
-"""Unit tests for progress-aware busy hang detection.
-
-Tests that the health check kills processes only when there has been
-no LLM progress for the configured threshold (15 min default), and
-never kills processes that are making progress.
-"""
-
-# AnimaWorks - Digital Anima Framework
-# Copyright (C) 2026 AnimaWorks Authors
-# SPDX-License-Identifier: Apache-2.0
+"""Tests for engine-owned stream timeouts and supervisor process liveness."""
 
 from __future__ import annotations
 
 import asyncio
-import json
-from datetime import timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -24,473 +14,125 @@ from core.supervisor.manager import HealthConfig
 from core.supervisor.process_handle import ProcessHandle, ProcessState, ProcessStats
 from core.time_utils import now_jst
 
-JST = timezone(timedelta(hours=9))
-
 
 def _make_handle(tmp_path: Path, *, started_minutes_ago: int = 5) -> ProcessHandle:
-    h = ProcessHandle(
+    handle = ProcessHandle(
         anima_name="test-anima",
         socket_path=tmp_path / "test.sock",
         animas_dir=tmp_path / "animas",
         shared_dir=tmp_path / "shared",
     )
-    h.state = ProcessState.RUNNING
-    h.stats = ProcessStats(started_at=now_jst() - timedelta(minutes=started_minutes_ago))
-    mock_proc = MagicMock()
-    mock_proc.poll.return_value = None
-    mock_proc.returncode = None
-    mock_proc.pid = 12345
-    h.process = mock_proc
-    return h
+    handle.state = ProcessState.RUNNING
+    handle.stats = ProcessStats(started_at=now_jst() - timedelta(minutes=started_minutes_ago))
+    process = MagicMock()
+    process.poll.return_value = None
+    process.returncode = None
+    process.pid = 12345
+    handle.process = process
+    return handle
 
 
 def _make_supervisor(health_config: HealthConfig | None = None) -> HealthMixin:
-    sup = object.__new__(HealthMixin)
-    sup.health_config = health_config or HealthConfig()
-    sup._shutdown = False
-    sup._permanently_failed = set()
-    sup._failed_log_times = {}
-    sup._restarting = set()
-    sup._restart_counts = {}
-    sup.restart_policy = MagicMock()
-    sup.restart_policy.max_retries = 5
-    sup.restart_policy.backoff_base_sec = 2.0
-    sup.restart_policy.backoff_max_sec = 60.0
-    sup.restart_policy.reset_after_sec = 300.0
-    sup._max_streaming_duration_sec = 1800
-    sup.processes = {}
-    return sup
+    supervisor = object.__new__(HealthMixin)
+    supervisor.health_config = health_config or HealthConfig()
+    supervisor._shutdown = False
+    supervisor._permanently_failed = set()
+    supervisor._failed_log_times = {}
+    supervisor._restarting = set()
+    supervisor._restart_counts = {}
+    supervisor.restart_policy = MagicMock()
+    supervisor.restart_policy.max_retries = 5
+    supervisor.restart_policy.backoff_base_sec = 2.0
+    supervisor.restart_policy.backoff_max_sec = 60.0
+    supervisor.restart_policy.reset_after_sec = 300.0
+    supervisor.processes = {}
+    return supervisor
 
 
-class TestProgressAwareBusyHang:
-    """Tests for progress-aware busy hang detection."""
-
+class TestEngineOwnsBusyTimeout:
     @pytest.mark.asyncio
-    async def test_global_startup_ready_warmup_suppresses_ping(self, tmp_path: Path):
-        """Health checks should not ping/restart during ready+warmup."""
-        from core.infra import startup_progress
-
-        startup_progress._reset_for_testing()
-        startup_progress.begin_startup("booting")
-        startup_progress.set_phase("ready")
-
-        handle = _make_handle(tmp_path)
-        handle.ping = AsyncMock(return_value={"success": False})
-        config = HealthConfig(
-            startup_grace_sec=0.0,
-            health_check_warmup_seconds=300.0,
-            runner_warmup_seconds=0.0,
-        )
-        sup = _make_supervisor(config)
-        sup._handle_process_hang = AsyncMock()
-
-        try:
-            await sup._check_process_health("test-anima", handle)
-        finally:
-            startup_progress._reset_for_testing()
-
-        handle.ping.assert_not_called()
-        sup._handle_process_hang.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_runner_warmup_suppresses_ping(self, tmp_path: Path):
-        """A freshly spawned runner should get an individual health warmup."""
-        handle = _make_handle(tmp_path, started_minutes_ago=0)
-        handle.ping = AsyncMock(return_value={"success": False})
-        config = HealthConfig(
-            startup_grace_sec=0.0,
-            health_check_warmup_seconds=0.0,
-            runner_warmup_seconds=180.0,
-        )
-        sup = _make_supervisor(config)
-        sup._handle_process_hang = AsyncMock()
-
-        await sup._check_process_health("test-anima", handle)
-
-        handle.ping.assert_not_called()
-        sup._handle_process_hang.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_busy_with_recent_progress_not_killed(self, tmp_path: Path):
-        """Process busy with recent progress should NOT be killed."""
-        handle = _make_handle(tmp_path)
-        now = now_jst()
-        handle.ping = AsyncMock(
-            return_value={
-                "success": True,
-                "is_busy": True,
-                "last_progress_at": (now - timedelta(seconds=30)).isoformat(),
-            }
-        )
-
-        sup = _make_supervisor()
-        hang_calls: list[str] = []
-
-        async def mock_hang(name, h):
-            hang_calls.append(name)
-
-        sup._handle_process_hang = mock_hang
-
-        await sup._check_process_health("test-anima", handle)
-
-        assert len(hang_calls) == 0
-        assert handle.stats.missed_pings == 0
-
-    @pytest.mark.asyncio
-    async def test_busy_with_stale_progress_killed(self, tmp_path: Path):
-        """Process busy with no progress for >15min should be killed."""
-        handle = _make_handle(tmp_path)
-        now = now_jst()
-        handle.ping = AsyncMock(
-            return_value={
-                "success": True,
-                "is_busy": True,
-                "last_progress_at": (now - timedelta(minutes=16)).isoformat(),
-            }
-        )
-
-        sup = _make_supervisor()
-        hang_calls: list[str] = []
-
-        async def mock_hang(name, h):
-            hang_calls.append(name)
-
-        sup._handle_process_hang = mock_hang
-
-        await sup._check_process_health("test-anima", handle)
-        await asyncio.sleep(0)  # let create_task execute
-
-        assert len(hang_calls) == 1
-        assert hang_calls[0] == "test-anima"
-
-    @pytest.mark.asyncio
-    async def test_isolated_root_is_not_busy_hang_target(self, tmp_path: Path):
-        """Task-level monitoring owns busy hangs when any isolation flag is enabled."""
-        anima_dir = tmp_path / "animas" / "test-anima"
-        anima_dir.mkdir(parents=True)
-        (anima_dir / "status.json").write_text(
-            json.dumps(
-                {
-                    "process_model": "phase2",
-                    "task_process_isolation": {"cron": True},
-                }
-            ),
-            encoding="utf-8",
-        )
+    async def test_busy_engine_turn_is_not_killed_by_supervisor_idle_threshold(self, tmp_path: Path) -> None:
         handle = _make_handle(tmp_path)
         handle.ping = AsyncMock(
             return_value={
                 "success": True,
                 "is_busy": True,
-                "last_progress_at": (now_jst() - timedelta(minutes=16)).isoformat(),
+                "last_progress_at": (now_jst() - timedelta(hours=4)).isoformat(),
             }
         )
-        sup = _make_supervisor()
-        sup.animas_dir = tmp_path / "animas"
-        sup._handle_process_hang = AsyncMock()
+        supervisor = _make_supervisor()
+        supervisor._handle_process_hang = AsyncMock()
 
-        await sup._check_process_health("test-anima", handle)
+        await supervisor._check_process_health("test-anima", handle)
+
+        supervisor._handle_process_hang.assert_not_called()
+        assert handle.stats.last_busy_since is not None
+
+    @pytest.mark.asyncio
+    async def test_long_stream_is_not_killed_when_runner_process_is_alive(self, tmp_path: Path) -> None:
+        handle = _make_handle(tmp_path, started_minutes_ago=240)
+        handle._streaming = True
+        handle._streaming_started_at = now_jst() - timedelta(hours=4)
+        supervisor = _make_supervisor()
+        supervisor._handle_process_hang = AsyncMock()
+        supervisor._handle_process_failure = AsyncMock()
+
+        await supervisor._check_process_health("test-anima", handle)
+
+        supervisor._handle_process_hang.assert_not_called()
+        supervisor._handle_process_failure.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_dead_streaming_process_is_still_reconciled(self, tmp_path: Path) -> None:
+        handle = _make_handle(tmp_path)
+        handle._streaming = True
+        handle.is_alive = MagicMock(return_value=False)
+        supervisor = _make_supervisor()
+        supervisor._handle_process_failure = AsyncMock()
+
+        await supervisor._check_process_health("test-anima", handle)
         await asyncio.sleep(0)
 
-        sup._handle_process_hang.assert_not_called()
-        assert handle.stats.missed_pings == 0
+        supervisor._handle_process_failure.assert_awaited_once_with("test-anima", handle)
 
     @pytest.mark.asyncio
-    async def test_busy_without_progress_info_fallback(self, tmp_path: Path):
-        """Process busy without last_progress_at should use fallback timer."""
+    async def test_busy_to_idle_resets_last_busy_since(self, tmp_path: Path) -> None:
         handle = _make_handle(tmp_path)
-        handle.ping = AsyncMock(
-            return_value={
-                "success": True,
-                "is_busy": True,
-                "last_progress_at": None,
-            }
-        )
+        handle.stats.last_busy_since = now_jst() - timedelta(minutes=30)
+        handle.ping = AsyncMock(return_value={"success": True, "is_busy": False})
+        supervisor = _make_supervisor()
 
-        sup = _make_supervisor()
-        hang_calls: list[str] = []
+        await supervisor._check_process_health("test-anima", handle)
 
-        async def mock_hang(name, h):
-            hang_calls.append(name)
-
-        sup._handle_process_hang = mock_hang
-
-        # First call: sets last_busy_since
-        await sup._check_process_health("test-anima", handle)
-        assert handle.stats.last_busy_since is not None
-        assert len(hang_calls) == 0
-
-        # Simulate 16 minutes passing
-        handle.stats.last_busy_since = now_jst() - timedelta(minutes=16)
-        await sup._check_process_health("test-anima", handle)
-        await asyncio.sleep(0)  # let create_task execute
-        assert len(hang_calls) == 1
-
-    @pytest.mark.asyncio
-    async def test_busy_to_idle_resets_last_busy_since(self, tmp_path: Path):
-        """When process goes from busy to idle, last_busy_since should reset."""
-        handle = _make_handle(tmp_path)
-
-        # First: busy (no progress info)
-        handle.ping = AsyncMock(
-            return_value={
-                "success": True,
-                "is_busy": True,
-                "last_progress_at": None,
-            }
-        )
-        sup = _make_supervisor()
-        sup._handle_process_hang = AsyncMock()
-        await sup._check_process_health("test-anima", handle)
-        assert handle.stats.last_busy_since is not None
-
-        # Then: idle
-        handle.ping = AsyncMock(
-            return_value={
-                "success": True,
-                "is_busy": False,
-            }
-        )
-        await sup._check_process_health("test-anima", handle)
         assert handle.stats.last_busy_since is None
 
     @pytest.mark.asyncio
-    async def test_custom_threshold_from_config(self, tmp_path: Path):
-        """Custom busy_hang_threshold_sec should be respected."""
-        handle = _make_handle(tmp_path)
-        now = now_jst()
-        handle.ping = AsyncMock(
-            return_value={
-                "success": True,
-                "is_busy": True,
-                "last_progress_at": (now - timedelta(minutes=6)).isoformat(),
-            }
-        )
-
-        # 5-minute threshold (300s)
-        config = HealthConfig(busy_hang_threshold_sec=300.0)
-        sup = _make_supervisor(config)
-        hang_calls: list[str] = []
-
-        async def mock_hang(name, h):
-            hang_calls.append(name)
-
-        sup._handle_process_hang = mock_hang
-
-        await sup._check_process_health("test-anima", handle)
-        await asyncio.sleep(0)  # let create_task execute
-        assert len(hang_calls) == 1
-
-    @pytest.mark.asyncio
-    async def test_progress_at_boundary_not_killed(self, tmp_path: Path):
-        """Process at exactly 15 min should NOT be killed (> not >=)."""
-        handle = _make_handle(tmp_path)
-        now = now_jst()
-        handle.ping = AsyncMock(
-            return_value={
-                "success": True,
-                "is_busy": True,
-                "last_progress_at": (now - timedelta(seconds=899)).isoformat(),
-            }
-        )
-
-        sup = _make_supervisor()
-        hang_calls: list[str] = []
-
-        async def mock_hang(name, h):
-            hang_calls.append(name)
-
-        sup._handle_process_hang = mock_hang
-
-        await sup._check_process_health("test-anima", handle)
-        assert len(hang_calls) == 0
-
-    @pytest.mark.asyncio
-    async def test_ping_failure_resets_last_busy_since(self, tmp_path: Path):
-        """Ping failure should reset last_busy_since."""
-        handle = _make_handle(tmp_path)
-        handle.stats.last_busy_since = now_jst() - timedelta(minutes=5)
-
-        handle.ping = AsyncMock(
-            return_value={
-                "success": False,
-            }
-        )
-
-        sup = _make_supervisor()
-        sup._handle_process_hang = AsyncMock()
-
-        await sup._check_process_health("test-anima", handle)
-        assert handle.stats.last_busy_since is None
-
-    @pytest.mark.asyncio
-    async def test_ping_failure_with_fresh_busy_sidecar_not_killed(self, tmp_path: Path):
-        """A fresh child busy marker should prevent false hang kills when IPC ping times out."""
-        handle = _make_handle(tmp_path)
-        handle.stats.missed_pings = 1
-        handle.ping = AsyncMock(
-            return_value={
-                "success": False,
-            }
-        )
-
-        run_dir = tmp_path / "run"
-        sidecar = run_dir / "animas" / "test-anima.busy.json"
-        sidecar.parent.mkdir(parents=True)
-        sidecar.write_text(
-            json.dumps(
-                {
-                    "anima": "test-anima",
-                    "pid": handle.get_pid(),
-                    "is_busy": True,
-                    "busy_since": (now_jst() - timedelta(minutes=1)).isoformat(),
-                    "last_progress_at": (now_jst() - timedelta(seconds=20)).isoformat(),
-                    "updated_at": now_jst().isoformat(),
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        sup = _make_supervisor()
-        sup.run_dir = run_dir
-        sup._handle_process_hang = AsyncMock()
-
-        await sup._check_process_health("test-anima", handle)
-
-        sup._handle_process_hang.assert_not_called()
-        assert handle.stats.missed_pings == 0
-
-    @pytest.mark.asyncio
-    async def test_ping_failure_with_stale_busy_sidecar_killed(self, tmp_path: Path):
-        """A stale busy marker still triggers progress-aware hang recovery."""
-        handle = _make_handle(tmp_path)
-        handle.ping = AsyncMock(
-            return_value={
-                "success": False,
-            }
-        )
-
-        run_dir = tmp_path / "run"
-        sidecar = run_dir / "animas" / "test-anima.busy.json"
-        sidecar.parent.mkdir(parents=True)
-        sidecar.write_text(
-            json.dumps(
-                {
-                    "anima": "test-anima",
-                    "pid": handle.get_pid(),
-                    "is_busy": True,
-                    "busy_since": (now_jst() - timedelta(minutes=20)).isoformat(),
-                    "last_progress_at": (now_jst() - timedelta(minutes=16)).isoformat(),
-                    "updated_at": (now_jst() - timedelta(minutes=16)).isoformat(),
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        sup = _make_supervisor()
-        sup.run_dir = run_dir
-        sup._handle_process_hang = AsyncMock()
-
-        await sup._check_process_health("test-anima", handle)
-        await asyncio.sleep(0)
-
-        sup._handle_process_hang.assert_awaited_once_with("test-anima", handle)
-
-    @pytest.mark.asyncio
-    async def test_ping_failure_ignores_busy_sidecar_for_old_pid(self, tmp_path: Path):
-        """Stale marker from a previous PID must not suppress normal missed-ping recovery."""
+    async def test_missed_ping_limit_still_detects_unresponsive_runner(self, tmp_path: Path) -> None:
         handle = _make_handle(tmp_path)
         handle.stats.missed_pings = HealthConfig().max_missed_pings
-        handle.ping = AsyncMock(
-            return_value={
-                "success": False,
-            }
-        )
+        handle.ping = AsyncMock(return_value={"success": False})
+        supervisor = _make_supervisor()
+        supervisor._handle_process_hang = AsyncMock()
 
-        run_dir = tmp_path / "run"
-        sidecar = run_dir / "animas" / "test-anima.busy.json"
-        sidecar.parent.mkdir(parents=True)
-        sidecar.write_text(
-            json.dumps(
-                {
-                    "anima": "test-anima",
-                    "pid": int(handle.get_pid()) + 1,
-                    "is_busy": True,
-                    "busy_since": now_jst().isoformat(),
-                    "last_progress_at": now_jst().isoformat(),
-                    "updated_at": now_jst().isoformat(),
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        sup = _make_supervisor()
-        sup.run_dir = run_dir
-        sup._handle_process_hang = AsyncMock()
-
-        await sup._check_process_health("test-anima", handle)
+        await supervisor._check_process_health("test-anima", handle)
         await asyncio.sleep(0)
 
-        sup._handle_process_hang.assert_awaited_once_with("test-anima", handle)
+        supervisor._handle_process_hang.assert_awaited_once_with("test-anima", handle)
 
-    @pytest.mark.asyncio
-    async def test_not_busy_recovered_log(self, tmp_path: Path):
-        """When transitioning from busy to not-busy, 'recovered' is logged."""
-        handle = _make_handle(tmp_path)
-        handle.stats.last_busy_since = now_jst()
 
-        handle.ping = AsyncMock(
-            return_value={
-                "success": True,
-                "is_busy": False,
-            }
-        )
+class TestServerRunnerLivenessTimeout:
+    def test_default_is_900_seconds(self) -> None:
+        from core.config.models import ServerConfig
 
-        sup = _make_supervisor()
-        sup._handle_process_hang = AsyncMock()
+        assert ServerConfig().runner_liveness_timeout == 900
 
-        with patch("core.supervisor._mgr_health.logger") as mock_logger:
-            await sup._check_process_health("test-anima", handle)
-            mock_logger.info.assert_any_call("Process recovered: %s", "test-anima")
+    def test_custom_value(self) -> None:
+        from core.config.models import ServerConfig
+
+        assert ServerConfig(runner_liveness_timeout=1200).runner_liveness_timeout == 1200
 
 
 class TestProcessStatsLastBusySince:
-    """Tests for ProcessStats.last_busy_since field."""
-
-    def test_default_is_none(self):
+    def test_default_is_none(self) -> None:
         stats = ProcessStats(started_at=now_jst())
         assert stats.last_busy_since is None
-
-    def test_can_set_datetime(self):
-        stats = ProcessStats(started_at=now_jst())
-        now = now_jst()
-        stats.last_busy_since = now
-        assert stats.last_busy_since == now
-
-
-class TestHealthConfigDefaults:
-    """Tests for HealthConfig busy_hang_threshold_sec."""
-
-    def test_default_threshold_is_900(self):
-        config = HealthConfig()
-        assert config.busy_hang_threshold_sec == 900.0
-
-    def test_custom_threshold(self):
-        config = HealthConfig(busy_hang_threshold_sec=600.0)
-        assert config.busy_hang_threshold_sec == 600.0
-
-
-class TestServerConfigBusyHangThreshold:
-    """Tests for ServerConfig.busy_hang_threshold."""
-
-    def test_default_is_900(self):
-        from core.config.models import ServerConfig
-
-        config = ServerConfig()
-        assert config.busy_hang_threshold == 900
-
-    def test_custom_value(self):
-        from core.config.models import ServerConfig
-
-        config = ServerConfig(busy_hang_threshold=1200)
-        assert config.busy_hang_threshold == 1200

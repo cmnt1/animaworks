@@ -49,10 +49,12 @@ from core.execution.error_classifier import (
     provider_family_of,
 )
 from core.execution.events import stream_events
+from core.execution.process_runner import ProcessRunner
 from core.execution.rate_guard import get_rate_guard
 from core.execution.session_context import _resolve_session_type
 from core.execution.session_store import SessionRecord, SessionStore
 from core.execution.session_types import is_persistent_codex_session
+from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS, wait_for_engine_event
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.platform.codex import default_home_dir, get_codex_executable
 from core.prompt.context import ContextTracker
@@ -63,26 +65,6 @@ logger = logging.getLogger("animaworks.execution.codex_sdk")
 __all__ = ["CodexSDKExecutor", "clear_codex_thread_id", "clear_codex_thread_ids", "is_codex_sdk_available"]
 
 RESUME_TIMEOUT_SEC = 15.0
-
-
-def _idle_timeout_from_env(env_name: str, default: float) -> float:
-    raw = os.environ.get(env_name, "").strip()
-    if raw:
-        try:
-            value = float(raw)
-            if value > 0:
-                return value
-        except ValueError:
-            logger.warning("Invalid %s=%r; using default %.0fs", env_name, raw, default)
-    return default
-
-
-# GPT-5.5/5.6 (reasoning high〜ultra) は長考や長時間ツール実行中に数分単位で
-# イベント無しが正常動作として起こる（特にgpt-5.6-sol ultraは長考が長い）。
-# 真のハングは supervisor の max_streaming_duration (default 1800s) が別途
-# 検知するため、ここは緩めでよい。時間より正確性優先の運用方針 (2026-07-10)。
-_BACKGROUND_EVENT_IDLE_TIMEOUT_SEC = _idle_timeout_from_env("ANIMAWORKS_CODEX_BG_IDLE_TIMEOUT_SEC", 600.0)
-_FOREGROUND_EVENT_IDLE_TIMEOUT_SEC = _idle_timeout_from_env("ANIMAWORKS_CODEX_FG_IDLE_TIMEOUT_SEC", 1200.0)
 
 # asyncio.StreamReader default limit is 64 KB.  Codex CLI may echo the full
 # context (including system prompt) in a single JSONL line during thread
@@ -428,13 +410,6 @@ def _get_thread_id(thread: Any) -> str | None:
         if val:
             return str(val)
     return None
-
-
-def _event_idle_timeout_seconds(trigger: str) -> float:
-    """Return max idle time between streamed Codex events before treating it as dead."""
-    if trigger == "heartbeat" or trigger.startswith("inbox") or trigger.startswith("cron:"):
-        return _BACKGROUND_EVENT_IDLE_TIMEOUT_SEC
-    return _FOREGROUND_EVENT_IDLE_TIMEOUT_SEC
 
 
 def _is_desktop_extension_codex(executable: str | None) -> bool:
@@ -1113,14 +1088,7 @@ def _finish_codex_client_transport(
 ) -> None:
     """Force-close a Codex SDK transport after the SDK's own cleanup."""
     if proc is not None:
-        try:
-            poll = getattr(proc, "poll", None)
-            is_running = callable(poll) and poll() is None
-            if is_running:
-                proc.kill()
-                proc.wait(timeout=_CODEX_CLIENT_PROCESS_WAIT_TIMEOUT_SEC)
-        except Exception:
-            logger.warning("Failed to reap Codex SDK subprocess during cleanup", exc_info=True)
+        ProcessRunner.terminate_popen_sync(proc, timeout=_CODEX_CLIENT_PROCESS_WAIT_TIMEOUT_SEC)
 
         # Close pipes before joining readers so a blocked readline receives EOF.
         try:
@@ -1727,7 +1695,8 @@ class CodexSDKExecutor(BaseExecutor):
         self._write_codex_config(system_prompt)
         cmd = self._build_cli_exec_command()
         env = self._build_env()
-        proc = await asyncio.create_subprocess_exec(
+        process_runner = ProcessRunner(drain_stderr=False)
+        proc = await process_runner.start(
             *cmd,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
@@ -1736,10 +1705,7 @@ class CodexSDKExecutor(BaseExecutor):
             limit=_SUBPROCESS_STREAM_LIMIT,
         )
         if proc.stdin is None or proc.stdout is None:
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                pass
+            await process_runner.close()
             _close_subprocess_stdio(proc)
             raise RuntimeError("Codex CLI exec fallback missing stdin/stdout")
 
@@ -1773,7 +1739,7 @@ class CodexSDKExecutor(BaseExecutor):
             proc.stdin.close()
 
             while True:
-                line = await proc.stdout.readline()
+                line = await wait_for_engine_event(proc.stdout.readline())
                 if not line:
                     break
                 raw_line = line.decode("utf-8", errors="replace").rstrip("\n")
@@ -1867,6 +1833,7 @@ class CodexSDKExecutor(BaseExecutor):
                     continue
 
             returncode = await proc.wait()
+            await process_runner.close()
             await stderr_task
             stderr_text = b"".join(stderr_chunks).decode("utf-8", errors="replace").strip()
             if returncode != 0:
@@ -1880,12 +1847,7 @@ class CodexSDKExecutor(BaseExecutor):
                 exc.tool_call_records = tool_evidence.to_dicts()
             raise
         finally:
-            if proc.returncode is None:
-                try:
-                    proc.kill()
-                except ProcessLookupError:
-                    pass
-                await proc.wait()
+            await process_runner.close()
             stderr_task.cancel()
             await asyncio.gather(stderr_task, return_exceptions=True)
             _close_subprocess_stdio(proc)
@@ -2189,8 +2151,6 @@ class CodexSDKExecutor(BaseExecutor):
             turn = await _maybe_await(thread.turn(prompt, **self._codex_turn_kwargs()))
             stream = turn.stream()
             event_iter = stream.__aiter__()
-            idle_timeout = _event_idle_timeout_seconds(trigger)
-
             item_text_len: dict[str, int] = {}
             agent_delta_seen: set[str] = set()
             tool_started: set[str] = set()
@@ -2230,15 +2190,12 @@ class CodexSDKExecutor(BaseExecutor):
             try:
                 while True:
                     try:
-                        event = await asyncio.wait_for(
-                            event_iter.__anext__(),
-                            timeout=idle_timeout,
-                        )
+                        event = await wait_for_engine_event(event_iter.__anext__())
                     except StopAsyncIteration:
                         break
                     except TimeoutError as e:
                         raise StreamDisconnectedError(
-                            f"Codex SDK stream idle timeout after {idle_timeout:.0f}s",
+                            f"Codex SDK stream idle timeout after {DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS:.0f}s",
                             partial_text=_current_full_text(),
                             immediate_retry=True,
                         ) from e

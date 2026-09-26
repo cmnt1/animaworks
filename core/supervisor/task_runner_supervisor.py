@@ -91,7 +91,7 @@ class TaskRunnerSupervisor:
         shared_dir: Path,
         *,
         max_concurrent: int | None = None,
-        busy_hang_threshold_sec: float = 900.0,
+        runner_liveness_timeout_sec: float = 900.0,
         busy_status_owner: Any | None = None,
         memory_via_root: bool = False,
     ) -> None:
@@ -106,10 +106,10 @@ class TaskRunnerSupervisor:
         self._jobs: dict[str, TaskRunnerJob] = {}
         self._journal_recovery_lock = asyncio.Lock()
         self._accepting = True
-        self._busy_hang_threshold_sec = max(0.0, float(busy_hang_threshold_sec))
+        self._runner_liveness_timeout_sec = max(0.0, float(runner_liveness_timeout_sec))
         self._hang_check_interval = min(
             _HANG_CHECK_INTERVAL_MAX,
-            max(0.05, self._busy_hang_threshold_sec / 2),
+            max(0.05, self._runner_liveness_timeout_sec / 2),
         )
         self._busy_status_owner = busy_status_owner
         set_provider = getattr(busy_status_owner, "_set_isolated_busy_jobs_provider", None)
@@ -669,7 +669,7 @@ class TaskRunnerSupervisor:
                     await self._terminate_hung_job(job)
                     return
             idle_sec = now - job.last_progress_at
-            if idle_sec <= self._busy_hang_threshold_sec:
+            if idle_sec <= self._runner_liveness_timeout_sec:
                 continue
             job.hang_kill_started = True
             logger.error(
@@ -680,7 +680,7 @@ class TaskRunnerSupervisor:
                 job.pid,
                 job.pgid,
                 idle_sec,
-                self._busy_hang_threshold_sec,
+                self._runner_liveness_timeout_sec,
             )
             await self._terminate_hung_job(job)
             return
@@ -911,7 +911,7 @@ class TaskRunnerSupervisor:
                     envelope = await asyncio.wait_for(connection.receive(), timeout=_RECEIVE_POLL_TIMEOUT_SEC)
                 except TimeoutError:
                     # A quiet interval is not an error: runner liveness is judged
-                    # by the hang watchdog (busy_hang_threshold), not this socket.
+                    # by the liveness watchdog (runner_liveness_timeout), not this socket.
                     # Severing here used to permanently mute healthy runners and
                     # produce mass false hang-kills after root event-loop stalls.
                     current = self._jobs.get(job.identity.job_id)

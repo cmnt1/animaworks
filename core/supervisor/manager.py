@@ -59,7 +59,6 @@ class HealthConfig:
     ping_timeout_sec: float = 5.0  # Ping timeout
     max_missed_pings: int = 6  # Consecutive misses before hang
     startup_grace_sec: float = 30.0  # Grace period after startup
-    busy_hang_threshold_sec: float = 900.0  # 15 min: no-progress timeout for busy processes
     health_check_warmup_seconds: float = 300.0  # Global warmup after startup reaches ready
     runner_warmup_seconds: float = 180.0  # Per-runner warmup after spawn/restart
 
@@ -136,10 +135,9 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         self._bootstrap_retries_file = self.animas_dir / ".bootstrap_retries.json"
         self._load_bootstrap_retries()
 
-        # Maximum streaming duration before hang detection (seconds).
-        # Defaults to 1800s (30 min) to accommodate long tool executions
-        # while still catching truly stuck streams.
-        self._max_streaming_duration_sec: int = 1800
+        # Bounded drain time for administrative stop/recovery operations; this
+        # is not a streaming-duration health kill.
+        self._stream_drain_timeout_sec: int = 1800
         self._anima_startup_ready_timeout: float = 120.0
         self._anima_stop_timeout: float = 60.0
         self._spawn_timeout_sec: float = 300.0
@@ -147,11 +145,6 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             from core.config import load_config
 
             srv = load_config().server
-            self._max_streaming_duration_sec = getattr(
-                srv,
-                "max_streaming_duration",
-                1800,
-            )
             self._anima_startup_ready_timeout = float(
                 getattr(srv, "anima_startup_ready_timeout", 120),
             )

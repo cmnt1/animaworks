@@ -140,6 +140,8 @@ class TestAgentSDKExecutor:
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             env = executor._build_env()
             assert env.get("CLAUDE_CODE_DISABLE_SKILL_IMPROVEMENT") == "true"
+            assert env["BASH_DEFAULT_TIMEOUT_MS"] == "1200000"
+            assert env["BASH_MAX_TIMEOUT_MS"] == "1200000"
 
     def test_build_env_max_plan(self, anima_dir):
         """mode_s_auth=None (default) → Max plan regardless of api_key."""

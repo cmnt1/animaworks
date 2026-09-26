@@ -406,6 +406,38 @@ class TestMigrationSteps:
         result = step_update_version(data_dir, dry_run=False, verbose=True)
         assert result.changed == 1
 
+    def test_step_engine_timeout_config_cleanup_renames_and_removes_keys(self, data_dir: Path) -> None:
+        from core.migrations.steps import step_engine_timeout_config_cleanup
+
+        (data_dir / "config.json").write_text(
+            json.dumps({"server": {"busy_hang_threshold": 450, "max_streaming_duration": 1800}}),
+            encoding="utf-8",
+        )
+
+        result = step_engine_timeout_config_cleanup(data_dir, dry_run=False, verbose=True)
+
+        assert result.error is None
+        assert result.changed == 1
+        server = json.loads((data_dir / "config.json").read_text(encoding="utf-8"))["server"]
+        assert server["runner_liveness_timeout"] == 450
+        assert "busy_hang_threshold" not in server
+        assert "max_streaming_duration" not in server
+
+    def test_step_engine_timeout_config_cleanup_preserves_new_timeout_value(self, data_dir: Path) -> None:
+        from core.migrations.steps import step_engine_timeout_config_cleanup
+
+        (data_dir / "config.json").write_text(
+            json.dumps({"server": {"busy_hang_threshold": 450, "runner_liveness_timeout": 600}}),
+            encoding="utf-8",
+        )
+
+        result = step_engine_timeout_config_cleanup(data_dir, dry_run=False, verbose=True)
+
+        assert result.error is None
+        server = json.loads((data_dir / "config.json").read_text(encoding="utf-8"))["server"]
+        assert server["runner_liveness_timeout"] == 600
+        assert "busy_hang_threshold" not in server
+
     def test_v063_registered_after_v062(self, tmp_path: Path) -> None:
         from core.migrations.steps import register_all_steps
 
@@ -753,10 +785,11 @@ class TestRegisterAllSteps:
         ids = [item["id"] for item in runner.list_steps()]
         assert ids.index("v0144_tool_guide_dedup_resync") == ids.index("rename_core_tools_to_integrations") - 1
 
-    def test_step_rename_core_tools_registered_last(self, tmp_path: Path) -> None:
+    def test_engine_timeout_cleanup_registered_after_tools_rename_and_before_version(self, tmp_path: Path) -> None:
         from core.migrations.steps import register_all_steps
 
         runner = MigrationRunner(tmp_path)
         register_all_steps(runner)
         ids = [item["id"] for item in runner.list_steps()]
-        assert ids.index("rename_core_tools_to_integrations") == ids.index("update_version") - 1
+        assert ids.index("rename_core_tools_to_integrations") < ids.index("engine_timeout_config_cleanup")
+        assert ids.index("engine_timeout_config_cleanup") == ids.index("update_version") - 1

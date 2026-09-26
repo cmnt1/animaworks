@@ -126,6 +126,7 @@ from core.execution.error_classifier import (
     provider_family_of,
 )
 from core.execution.events import stream_events
+from core.execution.process_runner import ProcessRunner
 from core.execution.rate_guard import get_rate_guard
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
@@ -273,26 +274,7 @@ def _kill_sdk_process(pid: int | None, create_time: float | None) -> None:
             )
             return
 
-        children = proc.children(recursive=True)
-        for child in children:
-            try:
-                child.kill()
-            except psutil.NoSuchProcess:
-                pass
-            except Exception:
-                logger.debug(
-                    "SDK cleanup: failed to kill child pid=%s",
-                    getattr(child, "pid", None),
-                    exc_info=True,
-                )
-        try:
-            proc.kill()
-        except psutil.NoSuchProcess:
-            pass
-        except Exception:
-            logger.debug("SDK cleanup: failed to kill pid=%s", pid, exc_info=True)
-            return
-
+        ProcessRunner.terminate_process_tree_sync(pid)
         logger.info("terminated leaked Claude SDK subprocess tree (pid=%s)", pid)
     except Exception:
         logger.debug("SDK cleanup: unexpected error for pid=%s", pid, exc_info=True)

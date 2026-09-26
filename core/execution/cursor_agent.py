@@ -19,7 +19,6 @@ import json
 import logging
 import os
 import shutil
-import signal
 from pathlib import Path
 from typing import Any
 
@@ -36,9 +35,11 @@ from core.execution.error_classifier import (
     guard_key,
     provider_family_of,
 )
+from core.execution.process_runner import ProcessRunner
 from core.execution.rate_guard import get_rate_guard
 from core.execution.session_context import _resolve_session_type
 from core.execution.session_store import SessionRecord, SessionStore
+from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS, wait_for_engine_event
 from core.i18n import t
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
@@ -61,7 +62,7 @@ __all__ = [
 # ── Constants ───────────────────────────────────────────────────
 
 _CURSOR_AGENT_BINARY_NAMES = ("agent", "cursor-agent", "cursor")
-_DEFAULT_TIMEOUT_SECONDS = 600
+_EVENT_IDLE_TIMEOUT_SECONDS = DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS
 _GRACEFUL_KILL_WAIT = 3.0
 _RESUMABLE_TRIGGERS = frozenset({"chat"})
 _MAX_RESUME_TURNS = 10
@@ -342,20 +343,8 @@ class CursorAgentExecutor(BaseExecutor):
             return None
 
     async def _kill_process(self, proc: asyncio.subprocess.Process, timeout: float = _GRACEFUL_KILL_WAIT) -> None:
-        """Graceful kill: SIGTERM → wait → SIGKILL."""
-        if proc.returncode is not None:
-            return
-        try:
-            proc.send_signal(signal.SIGTERM)
-            await asyncio.sleep(timeout)
-        except ProcessLookupError:
-            return
-        if proc.returncode is not None:
-            return
-        try:
-            proc.kill()
-        except ProcessLookupError:
-            pass
+        """Delegate process-tree shutdown to the shared process runner."""
+        await ProcessRunner.terminate_process(proc, timeout=timeout)
 
     def _extract_tool_record(self, tc: dict[str, Any]) -> ToolCallRecord | None:
         """Parse tool_call event data into ToolCallRecord."""
@@ -564,7 +553,8 @@ class CursorAgentExecutor(BaseExecutor):
 
         proc: asyncio.subprocess.Process | None = None
         try:
-            proc = await asyncio.create_subprocess_exec(
+            process_runner = ProcessRunner(graceful_timeout=_GRACEFUL_KILL_WAIT)
+            proc = await process_runner.start(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -572,10 +562,10 @@ class CursorAgentExecutor(BaseExecutor):
             )
 
             try:
-                async with asyncio.timeout(_DEFAULT_TIMEOUT_SECONDS):
+                async with asyncio.timeout(None):
                     assert proc.stdout is not None
                     while True:
-                        line = await proc.stdout.readline()
+                        line = await wait_for_engine_event(proc.stdout.readline())
                         if not line:
                             break
                         if self._check_interrupted():
@@ -626,9 +616,9 @@ class CursorAgentExecutor(BaseExecutor):
                                 current_turn_chunks.append(result_text)
 
             except TimeoutError:
-                logger.warning("Cursor agent timed out after %ds", _DEFAULT_TIMEOUT_SECONDS)
+                logger.warning("Cursor agent timed out after %ds", _EVENT_IDLE_TIMEOUT_SECONDS)
                 await self._kill_process(proc)
-                timeout_msg = t("cursor_agent.timeout", timeout=_DEFAULT_TIMEOUT_SECONDS)
+                timeout_msg = t("cursor_agent.timeout", timeout=_EVENT_IDLE_TIMEOUT_SECONDS)
                 full_text = _full_text()
                 return (
                     ExecutionResult(
@@ -639,8 +629,9 @@ class CursorAgentExecutor(BaseExecutor):
                     True,
                 )
 
-            stderr_bytes = await proc.stderr.read() if proc.stderr else b""
             await proc.wait()
+            await process_runner.close()
+            stderr_bytes = await process_runner.stderr()
 
             if proc.returncode != 0:
                 failed = True
@@ -669,16 +660,9 @@ class CursorAgentExecutor(BaseExecutor):
         finally:
             # Ensure the subprocess is killed on CancelledError or any
             # other exception that bypasses the normal exit path.
-            if proc is not None and proc.returncode is None:
-                logger.warning("Killing orphaned cursor-agent subprocess (PID %s)", proc.pid)
-                try:
-                    proc.kill()
-                except ProcessLookupError:
-                    pass
-                try:
-                    await proc.wait()
-                except Exception:  # noqa: BLE001
-                    pass
+            if proc is not None:
+                logger.debug("Closing cursor-agent process runner (PID %s)", proc.pid)
+                await process_runner.close()
 
         replied_to = self._read_replied_to_file()
         return (
