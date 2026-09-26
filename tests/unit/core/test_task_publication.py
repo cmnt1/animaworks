@@ -40,7 +40,7 @@ def test_full_input_and_model_are_published_once(anima_dir):
 
 def test_all_workspace_validation_precedes_writes(anima_dir):
     with (
-        patch("core.workspace.resolve_workspace", side_effect=ValueError("unknown workspace")),
+        patch("core.org.workspace.resolve_workspace", side_effect=ValueError("unknown workspace")),
         pytest.raises(ValueError, match="workspace"),
     ):
         publish_tasks(anima_dir, [payload(), payload("second", workspace="missing")])

@@ -14,13 +14,13 @@ def cmd_init(args: argparse.Namespace) -> None:
     """Initialize the runtime data directory from templates."""
     from pathlib import Path
 
-    from core.anima_factory import (
+    from core.anima.factory import (
         create_blank,
         create_from_md,
         create_from_template,
         validate_anima_name,
     )
-    from core.init import ensure_runtime_dir, merge_templates
+    from core.infra.runtime_init import ensure_runtime_dir, merge_templates
     from core.paths import get_data_dir
 
     data_dir = get_data_dir()
@@ -101,7 +101,7 @@ def cmd_reset(args: argparse.Namespace) -> None:
         _stop_server,
         cmd_start,
     )
-    from core.init import reset_runtime_dir
+    from core.infra.runtime_init import reset_runtime_dir
     from core.paths import get_data_dir
 
     data_dir = get_data_dir()

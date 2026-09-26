@@ -5,7 +5,7 @@ import types
 
 import pytest
 
-from core._agent_cycle import CycleMixin as _CycleBase
+from core.agent.cycle import CycleMixin as _CycleBase
 
 
 class _DummyToolHandler:
@@ -37,7 +37,7 @@ class _DummyAgent(_CycleBase):
 
 
 async def _collect(agent, thread_id):
-    from core._agent_cycle import CycleMixin
+    from core.agent.cycle import CycleMixin
 
     run = types.MethodType(CycleMixin.run_cycle_streaming, agent)
     return [chunk async for chunk in run("prompt", "message:owner", thread_id=thread_id)]

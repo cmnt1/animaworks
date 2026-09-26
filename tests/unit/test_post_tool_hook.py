@@ -91,8 +91,8 @@ class TestMcpRuleAttachment:
     @pytest.mark.asyncio
     async def test_mcp_tool_does_not_attach_action_rules(self, tmp_path, monkeypatch):
         from core.execution._sdk_hooks import _build_post_tool_hook
-        from core.memory import action_gate
-        from core.memory.action_gate import ActionRule
+        from core.tooling import action_gate
+        from core.tooling.action_gate import ActionRule
 
         found = [ActionRule(rule_id="r1", content="RULE-BODY", score=0.9)]
         calls = []

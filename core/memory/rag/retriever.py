@@ -636,7 +636,7 @@ class MemoryRetriever:
         results: list[tuple[str, str, float, dict]],
     ) -> list[tuple[str, str, float, dict]]:
         try:
-            from core.memory.facts import is_valid_until_active
+            from core.memory.facts.store import is_valid_until_active
         except Exception:
             logger.debug("Failed to import fact validity helper", exc_info=True)
             return results
@@ -697,7 +697,7 @@ class MemoryRetriever:
                 return None
         if path.parts[:1] == ("companies",):
             try:
-                from core.company_resources import get_company_resources, infer_data_dir
+                from core.org.company_resources import get_company_resources, infer_data_dir
 
                 resources = get_company_resources(self.indexer.anima_dir)
                 if resources is None or path.parts[:3] != ("companies", resources.name, "skills"):

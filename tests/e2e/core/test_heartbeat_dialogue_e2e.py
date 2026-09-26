@@ -19,9 +19,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.conversation import ConversationMemory
+from core.memory.conversation.memory import ConversationMemory
 from core.memory.manager import MemoryManager
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.schemas import CycleResult, ModelConfig
 from core.time_utils import now_jst, today_local
 
@@ -38,9 +38,13 @@ def _make_model_config() -> ModelConfig:
 
 def _make_digital_anima(anima_dir: Path, shared_dir: Path):
     """Create a DigitalAnima with heavy deps (AgentCore, MemoryManager, Messenger) mocked."""
-    with patch("core.anima.AgentCore"), patch("core.anima.MemoryManager") as MockMM, patch("core.anima.Messenger"):
+    with (
+        patch("core.anima.digital_anima.AgentCore"),
+        patch("core.anima.digital_anima.MemoryManager") as MockMM,
+        patch("core.anima.digital_anima.Messenger"),
+    ):
         MockMM.return_value.read_model_config.return_value = MagicMock()
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         return DigitalAnima(anima_dir, shared_dir)
 
@@ -129,7 +133,7 @@ class TestCrossContextFlow:
 
     def test_activity_log_records_heartbeat(self, dp, anima_dir):
         """ActivityLogger records heartbeat_end to activity_log/."""
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         activity.log("heartbeat_end", summary="Checked Slack, found 3 unread messages")
@@ -303,7 +307,7 @@ class TestCrossContextFlow:
         4. Verify load_recent_heartbeat_summary returns formatted data
         5. Verify episode recording
         """
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         # Step 1: Write dialogue turns
         config = _make_model_config()
@@ -661,7 +665,7 @@ class TestCurrentStateEmphasis:
         anima_dir = _setup_anima_dir(tmp_path, "tester")
 
         # Write unified activity log entries (replaces heartbeat_history)
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         activity.log(

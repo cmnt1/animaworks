@@ -287,7 +287,7 @@ class TestReceiveExternalThreadTs:
     """Verify external_thread_ts passes through to Message."""
 
     def test_external_thread_ts_stored_in_message(self, tmp_path):
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         shared.mkdir()
@@ -304,7 +304,7 @@ class TestReceiveExternalThreadTs:
         assert msg.external_thread_ts == "1.0"
 
     def test_external_thread_ts_defaults_empty(self, tmp_path):
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared = tmp_path / "shared"
         shared.mkdir()
@@ -326,7 +326,7 @@ class TestBuildReplyInstruction:
     """Tests for _build_reply_instruction with external_thread_ts."""
 
     def test_uses_external_thread_ts_when_present(self):
-        from core._anima_inbox import _build_reply_instruction
+        from core.anima.inbox import _build_reply_instruction
         from core.schemas import Message
 
         m = Message(
@@ -344,7 +344,7 @@ class TestBuildReplyInstruction:
         assert 'thread_ts="2.0"' not in result
 
     def test_falls_back_to_source_message_id(self):
-        from core._anima_inbox import _build_reply_instruction
+        from core.anima.inbox import _build_reply_instruction
         from core.schemas import Message
 
         m = Message(
@@ -361,7 +361,7 @@ class TestBuildReplyInstruction:
         assert 'thread_ts="1.0"' in result
 
     def test_no_thread_when_both_empty(self):
-        from core._anima_inbox import _build_reply_instruction
+        from core.anima.inbox import _build_reply_instruction
         from core.schemas import Message
 
         m = Message(
@@ -378,7 +378,7 @@ class TestBuildReplyInstruction:
         assert "thread_ts=" not in result
 
     def test_observe_intent_returns_observe_hint(self):
-        from core._anima_inbox import _build_reply_instruction
+        from core.anima.inbox import _build_reply_instruction
         from core.schemas import Message
 
         m = Message(
@@ -396,7 +396,7 @@ class TestBuildReplyInstruction:
         assert "slack_channel_post" not in result
 
     def test_chatwork_unaffected(self):
-        from core._anima_inbox import _build_reply_instruction
+        from core.anima.inbox import _build_reply_instruction
         from core.schemas import Message
 
         m = Message(

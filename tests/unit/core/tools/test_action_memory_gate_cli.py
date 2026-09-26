@@ -34,7 +34,7 @@ def test_cli_prints_action_rules_to_stderr_and_executes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     from core.integrations import cli_dispatch
-    from core.memory import action_gate
+    from core.tooling import action_gate
 
     anima_dir = tmp_path / "animas" / "mei"
     (anima_dir / "knowledge").mkdir(parents=True)
@@ -63,7 +63,7 @@ def test_cli_without_rules_still_executes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     from core.integrations import cli_dispatch
-    from core.memory import action_gate
+    from core.tooling import action_gate
 
     anima_dir = tmp_path / "animas" / "mei"
     (anima_dir / "knowledge").mkdir(parents=True)

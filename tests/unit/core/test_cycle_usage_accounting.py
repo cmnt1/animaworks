@@ -21,10 +21,10 @@ def cycle(tmp_path):
     agent._load_stream_retry_config = lambda: {"checkpoint_enabled": False, "retry_max": 0, "retry_delay_s": 0}
     agent._executor.supports_streaming = True
     with (
-        patch("core._agent_cycle.build_system_prompt", return_value=BuildResult(system_prompt="system")),
-        patch("core._agent_cycle._save_prompt_log"),
-        patch("core._agent_cycle._save_prompt_log_end"),
-        patch("core._agent_cycle._log_session_token_usage") as log,
+        patch("core.agent.cycle.build_system_prompt", return_value=BuildResult(system_prompt="system")),
+        patch("core.agent.cycle._save_prompt_log"),
+        patch("core.agent.cycle._save_prompt_log_end"),
+        patch("core.agent.cycle._log_session_token_usage") as log,
     ):
         yield agent, log
 

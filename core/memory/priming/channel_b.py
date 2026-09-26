@@ -15,7 +15,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from core.file_access_policy import find_denied_root, load_denied_roots
+from core.config.file_access_policy import find_denied_root, load_denied_roots
 from core.integrations._async_compat import run_sync
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items
 from core.time_utils import ensure_aware, now_local, today_local
@@ -119,7 +119,7 @@ async def channel_b_recent_activity(
     out so that the limited priming budget contains only actionable
     communication events (messages, channel posts, errors, etc.).
     """
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
 
     denied_roots = load_denied_roots(anima_dir)
     activity = ActivityLogger(anima_dir)
@@ -213,7 +213,7 @@ def read_shared_channels(
     Returns:
         List of ActivityEntry from shared channels.
     """
-    from core.memory.activity import ActivityEntry
+    from core.memory.activity.logger import ActivityEntry
 
     if not shared_dir:
         return []
@@ -233,7 +233,7 @@ def read_shared_channels(
     result: list[ActivityEntry] = []
 
     try:
-        from core.messenger import is_channel_member
+        from core.messaging.messenger import is_channel_member
 
         for unresolved_channel_file in sorted(resolved_channels_dir.glob("*.jsonl")):
             channel_file = _resolved_readable_path(unresolved_channel_file, effective_denied_roots)
@@ -347,7 +347,7 @@ def prioritize_entries_with_ranks(
     keywords: list[str],
 ) -> list[tuple[float, object]]:
     """Return the existing activity priority score with each selected entry."""
-    from core.memory.activity import ActivityEntry
+    from core.memory.activity.logger import ActivityEntry
 
     keywords_lower = {kw.lower() for kw in keywords} if keywords else set()
 

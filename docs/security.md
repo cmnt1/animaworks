@@ -100,7 +100,7 @@ Budget prioritizes trusted/medium content first; untrusted content fills the rem
 
 Daily consolidation reads YAML frontmatter `origin:` from source knowledge files. If any source has external origin (`external_web`, `mixed`, `consolidation_external`), the consolidated output is downgraded to `origin: consolidation_external` (resolves to `untrusted`).
 
-**Key files**: `core/tooling/handler_memory.py` (write_memory_file origin propagation), `core/memory/rag/indexer.py` (origin in chunk metadata), `core/memory/priming.py` (Channel C trust splitting), `core/memory/consolidation.py` (origin chain tracking)
+**Key files**: `core/tooling/handler_memory.py` (write_memory_file origin propagation), `core/memory/rag/indexer.py` (origin in chunk metadata), `core/memory/priming.py` (Channel C trust splitting), `core/memory/maintenance/consolidation.py` (origin chain tracking)
 
 ---
 
@@ -240,7 +240,7 @@ Recent outbound messages (last 2 hours, max 3) are injected into the system prom
 - **Inbox rate limiter**: Cooldown, cascade detection, per-sender rate limit
 - **Fail-closed**: Returns `False` on activity log read failure
 
-**Key files**: `core/tooling/handler_comms.py`, `core/cascade_limiter.py`, `core/supervisor/inbox_rate_limiter.py`, `core/memory/priming.py`
+**Key files**: `core/tooling/handler_comms.py`, `core/messaging/cascade_limiter.py`, `core/supervisor/inbox_rate_limiter.py`, `core/memory/priming.py`
 
 ---
 
@@ -374,7 +374,7 @@ Per-tool trust and `min_trust_seen` persistence integrate with `_SDK_TOOL_TRUST`
 5. Case-insensitive agent name match
 6. **Unknown recipients → RecipientNotFoundError** (fail-closed)
 
-**Key files**: `core/outbound.py`
+**Key files**: `core/messaging/outbound.py`
 
 ---
 
@@ -400,7 +400,7 @@ Inbox directories are created with `0o700` permissions.
 
 Channel posts are limited to `max_length=10000` via Pydantic.
 
-**Key files**: `core/messenger.py`, `core/tooling/handler_comms.py`, `core/tooling/handler_base.py`
+**Key files**: `core/messaging/messenger.py`, `core/tooling/handler_comms.py`, `core/tooling/handler_base.py`
 
 ---
 

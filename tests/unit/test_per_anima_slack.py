@@ -27,7 +27,7 @@ from core.config.models import (
     ExternalMessagingChannelConfig,
     ExternalMessagingConfig,
 )
-from core.outbound import ResolvedRecipient, _send_via_slack, send_external
+from core.messaging.outbound import ResolvedRecipient, _send_via_slack, send_external
 
 # ── 1. _resolve_slack_token tests ─────────────────────────────────────────
 
@@ -94,9 +94,9 @@ class TestResolveSlackToken:
 
 
 class TestSendViaSlackPerAnima:
-    """Tests for core.outbound._send_via_slack per-Anima token behavior."""
+    """Tests for core.messaging.outbound._send_via_slack per-Anima token behavior."""
 
-    @patch("core.outbound._resolve_outbound_icon", return_value="https://example.com/sakura.png")
+    @patch("core.messaging.outbound._resolve_outbound_icon", return_value="https://example.com/sakura.png")
     @patch("core.integrations.slack.SlackClient")
     @patch("core.integrations._base.resolve_env_style_credential", return_value="xoxb-per-anima")
     def test_uses_per_anima_token_when_anima_name_has_token(self, mock_resolve, mock_client_cls, mock_icon):
@@ -116,7 +116,7 @@ class TestSendViaSlackPerAnima:
         )
         assert "sent" in result
 
-    @patch("core.outbound._resolve_outbound_icon", return_value="")
+    @patch("core.messaging.outbound._resolve_outbound_icon", return_value="")
     @patch("core.integrations.slack.SlackClient")
     @patch("core.integrations._base.resolve_env_style_credential", return_value="xoxb-per")
     def test_omits_sender_prefix_when_per_anima_token_used(self, mock_resolve, mock_client_cls, mock_icon):
@@ -133,7 +133,7 @@ class TestSendViaSlackPerAnima:
             icon_url="",
         )
 
-    @patch("core.outbound._resolve_outbound_icon", return_value="")
+    @patch("core.messaging.outbound._resolve_outbound_icon", return_value="")
     @patch("core.integrations.slack.SlackClient")
     @patch("core.integrations._base.resolve_env_style_credential", return_value=None)
     def test_includes_sender_prefix_when_fallback_to_shared_token(self, mock_resolve, mock_client_cls, mock_icon):
@@ -151,7 +151,7 @@ class TestSendViaSlackPerAnima:
             icon_url="",
         )
 
-    @patch("core.outbound._send_via_slack")
+    @patch("core.messaging.outbound._send_via_slack")
     def test_send_external_passes_anima_name_to_send_via_slack(self, mock_send):
         mock_send.return_value = json.dumps({"status": "sent", "channel": "slack"})
         r = ResolvedRecipient(

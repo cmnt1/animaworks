@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -24,7 +25,7 @@ def temp_anima_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def engine(temp_anima_dir: Path):
-    from core.memory.consolidation import ConsolidationEngine
+    from core.memory.maintenance.consolidation import ConsolidationEngine
 
     return ConsolidationEngine(anima_dir=temp_anima_dir, anima_name="test_anima")
 
@@ -102,7 +103,8 @@ def _recent_ts(minutes_ago: int = 60) -> str:
 
 
 def _make_entry(type_: str, ts: str | None = None, **kwargs):
-    from core.memory._activity_models import ActivityEntry
+    from core.memory.activity.models import ActivityEntry
+
     if ts is None:
         ts = _recent_ts(60)
     return ActivityEntry(ts=ts, type=type_, **kwargs)
@@ -113,17 +115,15 @@ class TestCollectActivityEntries:
 
     def test_comm_events_prioritized(self, engine) -> None:
         entries = [
-            _make_entry("message_received", ts=_recent_ts(60),
-                        content="Hello from user", from_person="human"),
-            _make_entry("response_sent", ts=_recent_ts(59),
-                        content="Hello back"),
-            _make_entry("tool_result", ts=_recent_ts(58),
-                        tool="web_search", meta={"result_status": "ok", "result_bytes": 2048}),
-            _make_entry("error", ts=_recent_ts(57),
-                        content="Something failed"),
+            _make_entry("message_received", ts=_recent_ts(60), content="Hello from user", from_person="human"),
+            _make_entry("response_sent", ts=_recent_ts(59), content="Hello back"),
+            _make_entry(
+                "tool_result", ts=_recent_ts(58), tool="web_search", meta={"result_status": "ok", "result_bytes": 2048}
+            ),
+            _make_entry("error", ts=_recent_ts(57), content="Something failed"),
         ]
 
-        with patch("core.memory.activity.ActivityLogger") as MockAL:
+        with patch("core.memory.activity.logger.ActivityLogger") as MockAL:
             mock_instance = MagicMock()
             mock_instance.recent.return_value = entries
             MockAL.return_value = mock_instance
@@ -137,13 +137,13 @@ class TestCollectActivityEntries:
 
     def test_tool_use_excluded(self, engine) -> None:
         entries = [
-            _make_entry("message_received", ts=_recent_ts(60),
-                        content="User message"),
-            _make_entry("tool_result", ts=_recent_ts(59),
-                        tool="search", meta={"result_status": "ok", "result_bytes": 100}),
+            _make_entry("message_received", ts=_recent_ts(60), content="User message"),
+            _make_entry(
+                "tool_result", ts=_recent_ts(59), tool="search", meta={"result_status": "ok", "result_bytes": 100}
+            ),
         ]
 
-        with patch("core.memory.activity.ActivityLogger") as MockAL:
+        with patch("core.memory.activity.logger.ActivityLogger") as MockAL:
             mock_instance = MagicMock()
             mock_instance.recent.return_value = entries
             MockAL.return_value = mock_instance
@@ -154,12 +154,16 @@ class TestCollectActivityEntries:
 
     def test_tool_result_fail_has_content(self, engine) -> None:
         entries = [
-            _make_entry("tool_result", ts=_recent_ts(60),
-                        tool="web_search", content="Connection timeout error",
-                        meta={"result_status": "fail"}),
+            _make_entry(
+                "tool_result",
+                ts=_recent_ts(60),
+                tool="web_search",
+                content="Connection timeout error",
+                meta={"result_status": "fail"},
+            ),
         ]
 
-        with patch("core.memory.activity.ActivityLogger") as MockAL:
+        with patch("core.memory.activity.logger.ActivityLogger") as MockAL:
             mock_instance = MagicMock()
             mock_instance.recent.return_value = entries
             MockAL.return_value = mock_instance
@@ -171,13 +175,16 @@ class TestCollectActivityEntries:
 
     def test_tool_result_ok_is_meta_only(self, engine) -> None:
         entries = [
-            _make_entry("tool_result", ts=_recent_ts(60),
-                        tool="web_search",
-                        content="Very long search result content that should not appear",
-                        meta={"result_status": "ok", "result_bytes": 5120, "result_count": 10}),
+            _make_entry(
+                "tool_result",
+                ts=_recent_ts(60),
+                tool="web_search",
+                content="Very long search result content that should not appear",
+                meta={"result_status": "ok", "result_bytes": 5120, "result_count": 10},
+            ),
         ]
 
-        with patch("core.memory.activity.ActivityLogger") as MockAL:
+        with patch("core.memory.activity.logger.ActivityLogger") as MockAL:
             mock_instance = MagicMock()
             mock_instance.recent.return_value = entries
             MockAL.return_value = mock_instance
@@ -190,7 +197,7 @@ class TestCollectActivityEntries:
         assert "Very long search result" not in result
 
     def test_empty_entries(self, engine) -> None:
-        with patch("core.memory.activity.ActivityLogger") as MockAL:
+        with patch("core.memory.activity.logger.ActivityLogger") as MockAL:
             mock_instance = MagicMock()
             mock_instance.recent.return_value = []
             MockAL.return_value = mock_instance
@@ -207,11 +214,15 @@ class TestFormatToolEntries:
     """Tests for ConsolidationEngine._format_tool_entries()."""
 
     def test_ok_entries_meta_only(self) -> None:
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         entries = [
-            _make_entry("tool_result", ts="2026-03-05T10:00:00+09:00",
-                        tool="search", meta={"result_status": "ok", "result_bytes": 3072, "result_count": 5}),
+            _make_entry(
+                "tool_result",
+                ts="2026-03-05T10:00:00+09:00",
+                tool="search",
+                meta={"result_status": "ok", "result_bytes": 3072, "result_count": 5},
+            ),
         ]
         lines = ConsolidationEngine._format_tool_entries(entries, 1000)
         assert len(lines) == 1
@@ -220,23 +231,31 @@ class TestFormatToolEntries:
         assert "5件" in lines[0]
 
     def test_fail_entries_have_content(self) -> None:
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         entries = [
-            _make_entry("tool_result", ts="2026-03-05T10:00:00+09:00",
-                        tool="api_call", content="Auth failed 401",
-                        meta={"result_status": "fail"}),
+            _make_entry(
+                "tool_result",
+                ts="2026-03-05T10:00:00+09:00",
+                tool="api_call",
+                content="Auth failed 401",
+                meta={"result_status": "fail"},
+            ),
         ]
         lines = ConsolidationEngine._format_tool_entries(entries, 1000)
         assert "fail" in lines[0]
         assert "Auth failed" in lines[0]
 
     def test_budget_respected(self) -> None:
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         entries = [
-            _make_entry("tool_result", ts=f"2026-03-05T10:{i:02d}:00+09:00",
-                        tool=f"tool_{i}", meta={"result_status": "ok", "result_bytes": 100})
+            _make_entry(
+                "tool_result",
+                ts=f"2026-03-05T10:{i:02d}:00+09:00",
+                tool=f"tool_{i}",
+                meta={"result_status": "ok", "result_bytes": 100},
+            )
             for i in range(50)
         ]
         lines = ConsolidationEngine._format_tool_entries(entries, 200)
@@ -244,11 +263,15 @@ class TestFormatToolEntries:
         assert total <= 201
 
     def test_small_bytes_shown_as_B(self) -> None:
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         entries = [
-            _make_entry("tool_result", ts="2026-03-05T10:00:00+09:00",
-                        tool="ping", meta={"result_status": "ok", "result_bytes": 512}),
+            _make_entry(
+                "tool_result",
+                ts="2026-03-05T10:00:00+09:00",
+                tool="ping",
+                meta={"result_status": "ok", "result_bytes": 512},
+            ),
         ]
         lines = ConsolidationEngine._format_tool_entries(entries, 1000)
         assert "512B" in lines[0]

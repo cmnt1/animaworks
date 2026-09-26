@@ -211,7 +211,7 @@ class TestEstimateCost:
         assert cost == pytest.approx(5.0 + 25.0)
 
     def test_unknown_model_warns(self, tul: TokenUsageLogger, caplog):
-        from core.memory.fact_observability import reset_warning_rate_limits
+        from core.memory.facts.observability import reset_warning_rate_limits
 
         reset_warning_rate_limits()
         with caplog.at_level("WARNING", logger="animaworks.token_usage"):
@@ -317,7 +317,7 @@ class TestSummarize:
 
 class TestMergeStreamUsage:
     def test_merge(self):
-        from core._agent_cycle import _merge_stream_usage
+        from core.agent.cycle import _merge_stream_usage
 
         acc = {"input_tokens": 100, "output_tokens": 50, "cache_read_tokens": 0, "cache_write_tokens": 0}
         _merge_stream_usage(acc, {"input_tokens": 200, "output_tokens": 100, "cache_read_tokens": 10})
@@ -326,14 +326,14 @@ class TestMergeStreamUsage:
         assert acc["cache_read_tokens"] == 10
 
     def test_merge_none(self):
-        from core._agent_cycle import _merge_stream_usage
+        from core.agent.cycle import _merge_stream_usage
 
         acc = {"input_tokens": 100, "output_tokens": 50, "cache_read_tokens": 0, "cache_write_tokens": 0}
         _merge_stream_usage(acc, None)
         assert acc["input_tokens"] == 100
 
     def test_merge_empty(self):
-        from core._agent_cycle import _merge_stream_usage
+        from core.agent.cycle import _merge_stream_usage
 
         acc = {"input_tokens": 100, "output_tokens": 50, "cache_read_tokens": 0, "cache_write_tokens": 0}
         _merge_stream_usage(acc, {})

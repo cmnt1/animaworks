@@ -141,7 +141,7 @@ As the primary source for recent activity, `ActivityLogger` records incoming mes
 | AnimaWorks | Brain Process | Description |
 |---|---|---|
 | **Immediate encoding** (session boundary) | Hippocampal rapid one-shot encoding | At conversation end, a differential summary is recorded in episodes/ |
-| **Daily consolidation** (midnight cron) | NREM slow-wave — spindle — ripple cascade | Substantive summarization and extraction are executed by the Anima's tool loop. `ConsolidationEngine` (`core/memory/consolidation.py`) is a module focused on **pre-processing** (episode collection, `issue_resolved` collection) and **post-processing** (RAG index update/rebuild, monthly forgetting invocation, legacy knowledge migration, etc.) |
+| **Daily consolidation** (midnight cron) | NREM slow-wave — spindle — ripple cascade | Substantive summarization and extraction are executed by the Anima's tool loop. `ConsolidationEngine` (`core/memory/maintenance/consolidation.py`) is a module focused on **pre-processing** (episode collection, `issue_resolved` collection) and **post-processing** (RAG index update/rebuild, monthly forgetting invocation, legacy knowledge migration, etc.) |
 | **issue_resolved → procedure** | Proceduralization of resolutions | Nightly knowledge self-correction scans activity_log for `issue_resolved` events; ProceduralDistiller generates procedures (`create_procedures_from_resolved`) |
 | **Weekly integration** | Neocortical long-term consolidation | Deduplication and merging of knowledge/, pattern distillation |
 | **Contradiction scan** | Hippocampal pattern separation | NLI-assisted consistency checks across knowledge files, with LLM resolution for conflicts |

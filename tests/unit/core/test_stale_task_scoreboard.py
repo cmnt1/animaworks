@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from core._anima_heartbeat import HeartbeatMixin, _build_stale_task_scoreboard
+from core.anima.heartbeat import HeartbeatMixin, _build_stale_task_scoreboard
 from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_local
 
@@ -40,9 +40,9 @@ async def test_heartbeat_injects_stale_task_scoreboard(tmp_path: Path) -> None:
         )
 
     with (
-        patch("core._anima_heartbeat.now_local", return_value=current),
-        patch("core._anima_heartbeat.load_prompt", side_effect=_prompt),
-        patch("core._anima_heartbeat._build_curator_review_part", return_value=None),
+        patch("core.anima.heartbeat.now_local", return_value=current),
+        patch("core.anima.heartbeat.load_prompt", side_effect=_prompt),
+        patch("core.anima.heartbeat._build_curator_review_part", return_value=None),
     ):
         parts = await _heartbeat(anima_dir)._build_heartbeat_prompt()
 
@@ -55,8 +55,8 @@ async def test_heartbeat_omits_scoreboard_without_active_tasks(tmp_path: Path) -
     anima_dir.mkdir()
 
     with (
-        patch("core._anima_heartbeat.load_prompt", side_effect=_prompt),
-        patch("core._anima_heartbeat._build_curator_review_part", return_value=None),
+        patch("core.anima.heartbeat.load_prompt", side_effect=_prompt),
+        patch("core.anima.heartbeat._build_curator_review_part", return_value=None),
     ):
         parts = await _heartbeat(anima_dir)._build_heartbeat_prompt()
 
@@ -79,9 +79,9 @@ def test_scoreboard_limits_to_twenty_oldest_tasks(tmp_path: Path) -> None:
             )
 
     with (
-        patch("core._anima_heartbeat.now_local", return_value=current),
-        patch("core._anima_heartbeat.load_prompt", side_effect=_prompt),
-        patch("core._anima_heartbeat.t", return_value="他2件"),
+        patch("core.anima.heartbeat.now_local", return_value=current),
+        patch("core.anima.heartbeat.load_prompt", side_effect=_prompt),
+        patch("core.anima.heartbeat.t", return_value="他2件"),
     ):
         scoreboard = _build_stale_task_scoreboard(anima_dir, "worker")
 
@@ -104,8 +104,8 @@ def test_scoreboard_below_limit_has_no_overflow_line(tmp_path: Path) -> None:
     )
 
     with (
-        patch("core._anima_heartbeat.load_prompt", side_effect=_prompt),
-        patch("core._anima_heartbeat.t", return_value="SHOULD_NOT_APPEAR"),
+        patch("core.anima.heartbeat.load_prompt", side_effect=_prompt),
+        patch("core.anima.heartbeat.t", return_value="SHOULD_NOT_APPEAR"),
     ):
         scoreboard = _build_stale_task_scoreboard(anima_dir, "worker")
 

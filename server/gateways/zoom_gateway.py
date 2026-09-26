@@ -38,7 +38,7 @@ from core.config.models import load_config
 from core.config.schemas import ZoomRTMSConfig
 from core.i18n import t
 from core.integrations._base import get_credential
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.paths import get_shared_dir
 from core.time_utils import now_local
 

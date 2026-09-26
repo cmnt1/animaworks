@@ -6,16 +6,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.memory import fact_invalidation as fact_invalidation_module
-from core.memory import fact_invalidation_llm
-from core.memory.fact_config import DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS
-from core.memory.fact_invalidation import (
+from core.memory.facts import invalidation as fact_invalidation_module
+from core.memory.facts import invalidation_llm as fact_invalidation_llm
+from core.memory.facts.config import DEFAULT_FACT_EXTRACTION_TIMEOUT_SECONDS
+from core.memory.facts.invalidation import (
     FactCandidate,
     ReconcileAction,
     ReconcileConfig,
     reconcile_new_fact,
 )
-from core.memory.facts import FactRecord, append_fact_records, fact_file_for_record, read_fact_records
+from core.memory.facts.store import FactRecord, append_fact_records, fact_file_for_record, read_fact_records
 from core.memory.rag.store import Document, SearchResult
 
 
@@ -284,7 +284,7 @@ def test_reconcile_invalidation_write_failure_skips_new_append(
     new = FactRecord(text="Alice uses rubric B.", recorded_at="2026-06-03T10:00:00+09:00")
 
     monkeypatch.setattr(
-        "core.memory.fact_invalidation.update_fact_records_and_append",
+        "core.memory.facts.invalidation.update_fact_records_and_append",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("rewrite failed")),
     )
 
@@ -352,7 +352,7 @@ def test_reconcile_invalidation_incomplete_and_complement_update_fallbacks(
     new = FactRecord(text="Alice uses rubric B.", recorded_at="2026-06-03T10:00:00+09:00")
 
     monkeypatch.setattr(
-        "core.memory.fact_invalidation.update_fact_records_and_append", lambda *_args, **_kwargs: ([], [])
+        "core.memory.facts.invalidation.update_fact_records_and_append", lambda *_args, **_kwargs: ([], [])
     )
     incomplete = reconcile_new_fact(
         anima_dir,
@@ -364,7 +364,7 @@ def test_reconcile_invalidation_incomplete_and_complement_update_fallbacks(
     assert incomplete.action == ReconcileAction.SKIP
     assert incomplete.reason == "invalidate_incomplete"
 
-    monkeypatch.setattr("core.memory.fact_invalidation.update_fact_record_by_id", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("core.memory.facts.invalidation.update_fact_record_by_id", lambda *_args, **_kwargs: None)
     missing_target = reconcile_new_fact(
         anima_dir,
         new,
@@ -376,7 +376,7 @@ def test_reconcile_invalidation_incomplete_and_complement_update_fallbacks(
     assert missing_target.reason == "complement_target_missing"
 
     monkeypatch.setattr(
-        "core.memory.fact_invalidation.update_fact_record_by_id",
+        "core.memory.facts.invalidation.update_fact_record_by_id",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("update failed")),
     )
     update_failed = reconcile_new_fact(

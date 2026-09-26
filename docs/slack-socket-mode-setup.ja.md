@@ -333,7 +333,7 @@ Per-Anima の `SLACK_*__name` キーを増減したり credential を更新し�
 | `server/reload_manager.py` | 設定/credential 反映時の `SlackSocketModeManager.reload()` |
 | `server/routes/system.py` | `/api/system/hot-reload*` エンドポイント |
 | `server/routes/webhooks.py` | Webhook（`/api/webhooks/slack/events`、署名検証、Webhook 側も上記と同様の整形・intent） |
-| `core/messenger.py` | `receive_external()` — inbox配置 |
+| `core/messaging/messenger.py` | `receive_external()` — inbox配置 |
 | `core/tooling/handler.py` | `use_tool` → 外部モジュールの `dispatch` を直呼び（`slack` + `action` で `slack_*` を実行） |
 | `core/tooling/dispatch.py` | `ExternalToolDispatcher`（コアツールは `get_tool_schemas()` に載ったスキーマ名のみレジストリマッチ） |
 | `core/notification/reply_routing.py` | call_human スレッド返信のAnimaルーティング |

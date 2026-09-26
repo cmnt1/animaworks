@@ -167,7 +167,7 @@ class ImageGenPipeline:
         appearance (ethnicity, hair, features) so the model preserves identity.
         """
         style = "realistic" if self._is_realistic else "anime"
-        from core.asset_reconciler import _resolve_prompt
+        from core.anima.asset_reconciler import _resolve_prompt
 
         try:
             return _resolve_prompt(self._anima_dir, style) or ""

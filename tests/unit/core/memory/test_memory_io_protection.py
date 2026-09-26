@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,12 +12,11 @@ from unittest.mock import patch
 import pytest
 
 from core.exceptions import MemoryWriteError
-from core.memory.conversation import ConversationMemory
+from core.memory.conversation.memory import ConversationMemory
+from core.memory.conversation.shortterm import SessionState, ShortTermMemory
+from core.memory.conversation.streaming_journal import StreamingJournal
 from core.memory.manager import MemoryManager
-from core.memory.shortterm import ShortTermMemory, SessionState
-from core.memory.streaming_journal import StreamingJournal
 from core.schemas import ModelConfig
-
 
 # ── Test 6: manager._read() returns empty on OSError ────────────────────
 
@@ -66,7 +66,8 @@ def test_shortterm_load_handles_oserror_gracefully(tmp_path: Path) -> None:
     anima_dir = tmp_path / "anima"
     (anima_dir / "shortterm" / "chat").mkdir(parents=True)
     (anima_dir / "shortterm" / "chat" / "session_state.json").write_text(
-        '{"session_id":"x"}', encoding="utf-8",
+        '{"session_id":"x"}',
+        encoding="utf-8",
     )
 
     st = ShortTermMemory(anima_dir, session_type="chat")
@@ -86,7 +87,8 @@ def test_conversation_load_handles_oserror(tmp_path: Path) -> None:
     anima_dir.mkdir()
     (anima_dir / "state").mkdir()
     (anima_dir / "state" / "conversation.json").write_text(
-        '{"anima_name":"test","turns":[]}', encoding="utf-8",
+        '{"anima_name":"test","turns":[]}',
+        encoding="utf-8",
     )
 
     model_config = ModelConfig(model="claude-sonnet-4-6")

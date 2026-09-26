@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core._anima_messaging import (
+from core.anima.messaging import (
     _resolve_chat_model_config,
     _run_chat_cycle_with_fallback,
     _run_chat_stream_with_fallback,
@@ -299,7 +299,7 @@ async def test_stream_terminal_chunk_is_suppressed_and_retried_once(
     owner.agent.run_cycle_streaming = _stream
     with (
         patch(
-            "core._anima_messaging.resolve_effective_model_config",
+            "core.anima.messaging.resolve_effective_model_config",
             return_value=fallback,
         ),
         patch(
@@ -345,7 +345,7 @@ async def test_stream_retry_failure_is_exposed_without_third_attempt() -> None:
     owner.agent.run_cycle_streaming = _stream
     with (
         patch(
-            "core._anima_messaging.resolve_effective_model_config",
+            "core.anima.messaging.resolve_effective_model_config",
             return_value=fallback,
         ),
         patch(
@@ -403,7 +403,7 @@ async def test_stream_walks_multiple_fallbacks() -> None:
     owner.agent.run_cycle_streaming = _stream
     with (
         patch(
-            "core._anima_messaging.resolve_effective_model_config",
+            "core.anima.messaging.resolve_effective_model_config",
             side_effect=[first_fallback, second_fallback],
         ),
         patch(
@@ -435,7 +435,7 @@ def test_preflight_fallback_records_activity_event() -> None:
     owner = MagicMock()
     with (
         patch(
-            "core._anima_messaging.resolve_effective_model_config",
+            "core.anima.messaging.resolve_effective_model_config",
             return_value=fallback,
         ),
         patch(
@@ -464,7 +464,12 @@ async def test_reply_mentioning_403_is_not_an_auth_failure(tmp_path) -> None:
     monkey = pytest.MonkeyPatch()
     monkey.setattr(fa, "report_capacity_block", lambda *a, **k: calls.append("blocked"))
     try:
-        cfg = ModelConfig(model="codex/gpt-5.6-luna", execution_mode="c", resolved_mode="C", fallback_models=["a:openai/deepseek-v4-flash"])
+        cfg = ModelConfig(
+            model="codex/gpt-5.6-luna",
+            execution_mode="c",
+            resolved_mode="C",
+            fallback_models=["a:openai/deepseek-v4-flash"],
+        )
         reply = CycleResult(
             trigger="cron:x",
             action="responded",

@@ -10,14 +10,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.company import (
-    BoundaryCheck,
-    check_company_boundary,
-    get_company,
-    get_company_display_name,
-    is_cross_company,
-    read_company_config,
-)
 from core.config.models import (
     AnimaModelConfig,
     AnimaWorksConfig,
@@ -26,8 +18,16 @@ from core.config.models import (
     read_anima_company_checked,
     save_config,
 )
-from core.messenger import Messenger
-from core.org_sync import sync_org_structure
+from core.messaging.messenger import Messenger
+from core.org.company import (
+    BoundaryCheck,
+    check_company_boundary,
+    get_company,
+    get_company_display_name,
+    is_cross_company,
+    read_company_config,
+)
+from core.org.org_sync import sync_org_structure
 from core.tooling.handler import ToolHandler
 from core.tooling.handler_base import meeting_context, meeting_mode
 from core.tooling.handler_delegation import DelegationMixin
@@ -283,7 +283,7 @@ class TestBoundaryCheck:
         _make_anima(tmp_path, "alice", company="alpha")
         _make_anima(tmp_path, "bob", company="beta")
         monkeypatch.setattr(
-            "core.company.get_company_display_name",
+            "core.org.company.get_company_display_name",
             MagicMock(side_effect=PermissionError("denied")),
         )
 

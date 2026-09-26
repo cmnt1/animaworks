@@ -158,7 +158,7 @@ async def test_source_change_after_build_aborts_before_owner_closes_live_db(sour
 
 @pytest.mark.parametrize("owner", ["phase3", "legacy"])
 async def test_publication_failure_restores_db_index_shared_and_bm25_metadata(sources, monkeypatch, owner):
-    from core.memory.bm25 import longterm_bm25_delta_path, longterm_bm25_dirty_path, longterm_bm25_index_path
+    from core.memory.retrieval.bm25 import longterm_bm25_delta_path, longterm_bm25_dirty_path, longterm_bm25_index_path
 
     for path in (
         longterm_bm25_index_path(sources),

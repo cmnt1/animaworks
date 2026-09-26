@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
 from core.time_utils import today_local
 
 # ── Fixtures ──────────────────────────────────────────────────
@@ -148,7 +148,7 @@ def test_error_events_across_phases(anima_dir: Path) -> None:
 def test_heartbeat_history_from_activity_log(anima_dir: Path) -> None:
     """_load_heartbeat_history reads from activity_log, not legacy files."""
     # Import Anima dependencies minimally
-    from core.anima import DigitalAnima
+    from core.anima.digital_anima import DigitalAnima
 
     # Record heartbeat_end events to activity log
     al = ActivityLogger(anima_dir)
@@ -204,14 +204,14 @@ def test_heartbeat_history_from_activity_log(anima_dir: Path) -> None:
 
 def test_append_dm_log_restored() -> None:
     """_append_dm_log method restored on Messenger for legacy fallback writes."""
-    from core.messenger import Messenger
+    from core.messaging.messenger import Messenger
 
     assert hasattr(Messenger, "_append_dm_log"), "_append_dm_log should exist for parallel dm_logs/ writes"
 
 
 def test_append_transcript_removed() -> None:
     """_append_transcript method no longer exists on ConversationMemory."""
-    from core.memory.conversation import ConversationMemory
+    from core.memory.conversation.memory import ConversationMemory
 
     assert not hasattr(ConversationMemory, "_append_transcript"), "_append_transcript should have been removed"
 

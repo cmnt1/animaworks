@@ -197,9 +197,9 @@ def create_internal_router() -> APIRouter:
     @router.get("/internal/company/boundary")
     async def internal_company_boundary(from_anima: str, to_anima: str):
         """Resolve company membership on the host for sandboxed handlers."""
-        from core.anima_factory import validate_anima_name
-        from core.company import get_company_display_name
+        from core.anima.factory import validate_anima_name
         from core.config.models import read_anima_company_checked
+        from core.org.company import get_company_display_name
         from core.paths import get_animas_dir
 
         if validate_anima_name(from_anima) or validate_anima_name(to_anima):
@@ -402,7 +402,7 @@ def create_internal_router() -> APIRouter:
 
         anima_name = getattr(body, "anima_name", None)
         if isinstance(anima_name, str) and anima_name:
-            from core.anima_factory import validate_anima_name
+            from core.anima.factory import validate_anima_name
             from core.config.resolver import resolve_process_model_config
             from core.paths import get_animas_dir
 
@@ -580,7 +580,7 @@ def create_internal_router() -> APIRouter:
             )
 
         def _create() -> Path:
-            from core.anima_factory import create_from_md
+            from core.anima.factory import create_from_md
             from core.paths import get_animas_dir, get_data_dir
 
             md_path = Path(body.character_sheet_path) if body.character_sheet_path else None
@@ -646,7 +646,7 @@ def create_internal_router() -> APIRouter:
         charter: only company shared + work dirs are writable), so it falls
         back here and the host writes the exact message file.
         """
-        from core.anima_factory import validate_anima_name
+        from core.anima.factory import validate_anima_name
         from core.paths import get_shared_dir
         from core.schemas import Message
 
@@ -671,9 +671,9 @@ def create_internal_router() -> APIRouter:
     @router.post("/internal/post-channel")
     async def internal_post_channel(body: InternalPostChannelRequest):
         """Append a channel post outside sandbox EROFS constraints."""
-        from core.anima_factory import validate_anima_name
+        from core.anima.factory import validate_anima_name
         from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
         from core.paths import get_shared_dir
 
         if validate_anima_name(body.from_anima):
@@ -696,7 +696,7 @@ def create_internal_router() -> APIRouter:
     @router.get("/internal/tasks")
     async def internal_tasks(anima_name: str, include_archived: bool = False, task_id: str | None = None):
         """Read a task snapshot for workers without direct database access."""
-        from core.anima_factory import validate_anima_name
+        from core.anima.factory import validate_anima_name
         from core.paths import get_animas_dir
         from core.tasks.queue import TaskQueueManager
 
@@ -725,7 +725,7 @@ def create_internal_router() -> APIRouter:
     @router.post("/internal/submit-tasks")
     async def internal_submit_tasks(body: SubmitTasksPersistRequest):
         """Publish a complete batch on the host; no sandbox DB grant is needed."""
-        from core.anima_factory import validate_anima_name
+        from core.anima.factory import validate_anima_name
         from core.paths import get_animas_dir
         from core.tasks.dispatch import publish_tasks
 
@@ -757,8 +757,8 @@ def create_internal_router() -> APIRouter:
         Sandboxed ``delegate_task`` cannot write the shared task database.
         Mode C handlers use this endpoint for atomic host-side publication.
         """
-        from core.anima_factory import validate_anima_name
-        from core.company import check_company_boundary
+        from core.anima.factory import validate_anima_name
+        from core.org.company import check_company_boundary
         from core.paths import get_animas_dir
         from core.tooling.handler_delegation import _record_taskboard_delegation
 
@@ -864,7 +864,7 @@ def create_internal_router() -> APIRouter:
     @router.post("/internal/task-board-action")
     async def internal_task_board_action(body: TaskBoardActionRequest):
         """Run a lease-guarded task board write for a sandboxed anima CLI."""
-        from core.anima_factory import validate_anima_name
+        from core.anima.factory import validate_anima_name
         from core.tasks.board.board_actions import BoardActionError, run_board_action
 
         if body.actor != "human" and validate_anima_name(body.actor):
@@ -886,7 +886,7 @@ def create_internal_router() -> APIRouter:
     @router.post("/internal/update-task")
     async def internal_update_task(body: UpdateTaskPersistRequest):
         """Persist a task update outside sandbox EROFS constraints."""
-        from core.anima_factory import validate_anima_name
+        from core.anima.factory import validate_anima_name
         from core.paths import get_animas_dir
         from core.tasks.queue import TaskQueueManager
 

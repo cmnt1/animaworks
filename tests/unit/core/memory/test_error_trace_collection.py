@@ -11,7 +11,6 @@ from __future__ import annotations
 """Tests for error trace collection in consolidation engine."""
 
 import json
-from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -29,7 +28,7 @@ def temp_anima_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def consolidation_engine(temp_anima_dir: Path):
-    from core.memory.consolidation import ConsolidationEngine
+    from core.memory.maintenance.consolidation import ConsolidationEngine
 
     return ConsolidationEngine(
         anima_dir=temp_anima_dir,
@@ -48,7 +47,6 @@ def _write_activity(anima_dir: Path, entries: list[dict]) -> None:
 
 
 class TestCollectErrorEntries:
-
     def test_no_activity_log(self, consolidation_engine):
         result = consolidation_engine._collect_error_entries(hours=24)
         assert "エラーなし" in result or "No errors" in result
@@ -181,10 +179,9 @@ class TestCollectErrorEntries:
 
 
 class TestFormatErrorEntry:
-
     def test_format_error_type(self):
-        from core.memory._activity_models import ActivityEntry
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.activity.models import ActivityEntry
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         entry = ActivityEntry(
             ts="2026-03-29T15:30:00+09:00",
@@ -196,8 +193,8 @@ class TestFormatErrorEntry:
         assert result == "[15:30] ERR phase=process_message: rate limit exceeded"
 
     def test_format_tool_fail(self):
-        from core.memory._activity_models import ActivityEntry
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.activity.models import ActivityEntry
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         entry = ActivityEntry(
             ts="2026-03-29T16:00:00+09:00",
@@ -210,8 +207,8 @@ class TestFormatErrorEntry:
         assert result == "[16:00] FAIL tool=slack: 401 Unauthorized"
 
     def test_format_tool_ok_returns_none(self):
-        from core.memory._activity_models import ActivityEntry
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.activity.models import ActivityEntry
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         entry = ActivityEntry(
             ts="2026-03-29T16:00:00+09:00",
@@ -222,8 +219,8 @@ class TestFormatErrorEntry:
         assert ConsolidationEngine._format_error_entry(entry) is None
 
     def test_format_truncates_long_error(self):
-        from core.memory._activity_models import ActivityEntry
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.activity.models import ActivityEntry
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         entry = ActivityEntry(
             ts="2026-03-29T15:30:00+09:00",

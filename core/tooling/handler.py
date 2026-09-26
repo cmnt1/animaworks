@@ -32,8 +32,8 @@ from core.exceptions import AnimaWorksError, ConfigError
 from core.execution.session_context import RuntimeSessionContext, current_runtime_session
 from core.i18n import t
 from core.memory import MemoryManager
-from core.memory.activity import ActivityLogger
-from core.messenger import Messenger
+from core.memory.activity.logger import ActivityLogger
+from core.messaging.messenger import Messenger
 from core.notification.notifier import HumanNotifier
 from core.tasks.background import BackgroundTaskManager
 from core.tooling.dispatch import ExternalToolDispatcher
@@ -552,7 +552,7 @@ class ToolHandler(
     def _attach_action_rules(self, name: str, args: dict[str, Any], result: str) -> str:
         """Append any relevant ACTION-RULE bodies to a side-effect tool result."""
         try:
-            from core.memory.action_gate import (
+            from core.tooling.action_gate import (
                 action_tool_name_for_handler,
                 find_action_rules,
                 format_action_rules,

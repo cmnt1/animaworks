@@ -422,7 +422,7 @@ def _pointer_for_meta(anima_dir: Path, common_skills_dir: Path, meta) -> str:
 
 
 def _pointer_for_path(anima_dir: Path, common_skills_dir: Path, path: Path) -> str:
-    from core.company_resources import company_resource_pointer
+    from core.org.company_resources import company_resource_pointer
 
     company_pointer = company_resource_pointer(path)
     if company_pointer is not None:

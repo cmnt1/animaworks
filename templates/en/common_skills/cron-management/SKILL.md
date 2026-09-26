@@ -304,7 +304,7 @@ After writing, you can verify parsing with:
 
 ```bash
 python -c "
-from core.schedule_parser import parse_cron_md, parse_schedule
+from core.supervisor.schedule_parser import parse_cron_md, parse_schedule
 import pathlib
 
 content = pathlib.Path('$ANIMAWORKS_ANIMA_DIR/cron.md').read_text()

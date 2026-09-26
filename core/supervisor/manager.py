@@ -442,7 +442,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             if bootstrap_file.exists():
                 bootstrap_file.rename(failed_file)
                 try:
-                    from core.bootstrap_state import mark_bootstrap_failed
+                    from core.anima.bootstrap_state import mark_bootstrap_failed
 
                     mark_bootstrap_failed(
                         self.animas_dir / anima_name,
@@ -510,7 +510,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
                     response.error.get("message", "Unknown error"),
                 )
                 try:
-                    from core.bootstrap_state import mark_bootstrap_failed
+                    from core.anima.bootstrap_state import mark_bootstrap_failed
 
                     mark_bootstrap_failed(
                         self.animas_dir / anima_name,
@@ -533,7 +533,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
             result = response.result or {}
             bootstrap_status: dict[str, Any] = {}
             try:
-                from core.bootstrap_state import finalize_bootstrap_run, get_bootstrap_status
+                from core.anima.bootstrap_state import finalize_bootstrap_run, get_bootstrap_status
 
                 bootstrap_status = get_bootstrap_status(self.animas_dir / anima_name)
                 if bootstrap_status.get("validation_errors") == ["bootstrap_file_left_after_definition"]:
@@ -598,7 +598,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         except TimeoutError:
             logger.error("Bootstrap timed out for %s (600s)", anima_name)
             try:
-                from core.bootstrap_state import mark_bootstrap_failed
+                from core.anima.bootstrap_state import mark_bootstrap_failed
 
                 mark_bootstrap_failed(self.animas_dir / anima_name, "timeout")
             except Exception:
@@ -610,7 +610,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
         except Exception:
             logger.exception("Bootstrap error for %s", anima_name)
             try:
-                from core.bootstrap_state import mark_bootstrap_failed
+                from core.anima.bootstrap_state import mark_bootstrap_failed
 
                 mark_bootstrap_failed(self.animas_dir / anima_name, "supervisor_exception")
             except Exception:
@@ -1070,7 +1070,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
 
             status = {"status": "not_found"}
             try:
-                from core.bootstrap_state import get_bootstrap_status
+                from core.anima.bootstrap_state import get_bootstrap_status
 
                 bootstrap_status = get_bootstrap_status(self.animas_dir / anima_name)
                 status.update(
@@ -1097,7 +1097,7 @@ class ProcessSupervisor(HealthMixin, RAGRepairMixin, ReconcileMixin, SchedulerMi
 
         bootstrap_status: dict[str, Any] = {}
         try:
-            from core.bootstrap_state import get_bootstrap_status
+            from core.anima.bootstrap_state import get_bootstrap_status
 
             bootstrap_status = get_bootstrap_status(self.animas_dir / anima_name)
         except Exception:

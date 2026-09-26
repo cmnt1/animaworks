@@ -9,8 +9,8 @@ import pytest
 import requests
 
 from core.config.schemas import AnimaWorksConfig, EventExportConfig
-from core.event_export import EventExporter, get_event_exporter, reset_event_exporters
-from core.memory.activity import ActivityLogger
+from core.infra.event_export import EventExporter, get_event_exporter, reset_event_exporters
+from core.memory.activity.logger import ActivityLogger
 from core.usage.token_usage import TokenUsageLogger
 
 
@@ -59,7 +59,7 @@ def test_unconfigured_hooks_propagate_disable_to_registry(
     config = AnimaWorksConfig()
     get_exporter = Mock(return_value=None)
     monkeypatch.setattr("core.config.load_config", lambda: config)
-    monkeypatch.setattr("core.event_export.get_event_exporter", get_exporter)
+    monkeypatch.setattr("core.infra.event_export.get_event_exporter", get_exporter)
 
     ActivityLogger(anima_dir).log("custom_event", content="local only")
     TokenUsageLogger(anima_dir).log(
@@ -123,7 +123,7 @@ def test_activity_event_type_filter_is_exact(
     )
     exporter = Mock()
     monkeypatch.setattr("core.config.load_config", lambda: config)
-    monkeypatch.setattr("core.event_export.get_event_exporter", lambda *_args: exporter)
+    monkeypatch.setattr("core.infra.event_export.get_event_exporter", lambda *_args: exporter)
     activity = ActivityLogger(anima_dir)
 
     activity.log("external", content="not an exact match")
@@ -166,7 +166,7 @@ def test_token_usage_respects_include_flag(
     )
     exporter = Mock()
     monkeypatch.setattr("core.config.load_config", lambda: config)
-    monkeypatch.setattr("core.event_export.get_event_exporter", lambda *_args: exporter)
+    monkeypatch.setattr("core.infra.event_export.get_event_exporter", lambda *_args: exporter)
 
     TokenUsageLogger(anima_dir).log(
         model="claude-sonnet-4-6",

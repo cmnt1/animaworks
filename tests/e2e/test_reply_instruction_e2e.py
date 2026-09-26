@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -14,8 +15,7 @@ the old [platform=... channel=... ts=...] format.
 import json
 from pathlib import Path
 
-
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 
 
 def _create_external_inbox_message(
@@ -63,7 +63,7 @@ class TestReplyInstructionInInboxFormatting:
         assert len(items) == 1
 
         msg = items[0].msg
-        from core._anima_inbox import _build_reply_instruction
+        from core.anima.inbox import _build_reply_instruction
 
         result = _build_reply_instruction(msg)
 
@@ -91,7 +91,7 @@ class TestReplyInstructionInInboxFormatting:
         items = messenger.receive_with_paths()
         msg = items[0].msg
 
-        from core._anima_inbox import _build_reply_instruction
+        from core.anima.inbox import _build_reply_instruction
 
         result = _build_reply_instruction(msg)
 
@@ -113,7 +113,7 @@ class TestReplyInstructionInInboxFormatting:
         items = messenger.receive_with_paths()
         msg = items[0].msg
 
-        from core._anima_inbox import _build_reply_instruction
+        from core.anima.inbox import _build_reply_instruction
 
         result = _build_reply_instruction(msg)
         assert "thread_ts=" not in result
@@ -133,7 +133,7 @@ class TestReplyInstructionInInboxFormatting:
         items = messenger.receive_with_paths()
         msg = items[0].msg
 
-        from core._anima_inbox import _build_reply_instruction
+        from core.anima.inbox import _build_reply_instruction
 
         result = _build_reply_instruction(msg)
         assert "<@" not in result

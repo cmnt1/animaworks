@@ -89,6 +89,7 @@ class TestReminderSyncThreadSafety:
         q = SystemReminderQueue()
         assert hasattr(q, "_sync_lock")
         import _thread
+
         assert isinstance(q._sync_lock, _thread.LockType)
 
 
@@ -98,27 +99,29 @@ class TestGetDepthLimiterReloadsConfig:
 
     def test_returns_new_instance_each_call(self):
         """Each call returns a different instance."""
-        with patch("core.cascade_limiter.load_config") as mock_cfg:
+        with patch("core.messaging.cascade_limiter.load_config") as mock_cfg:
             mock_cfg.return_value.heartbeat.depth_window_s = 600
             mock_cfg.return_value.heartbeat.max_depth = 6
             mock_cfg.return_value.heartbeat.max_messages_per_hour = 30
             mock_cfg.return_value.heartbeat.max_messages_per_day = 100
 
-            from core.cascade_limiter import get_depth_limiter
+            from core.messaging.cascade_limiter import get_depth_limiter
+
             a = get_depth_limiter()
             b = get_depth_limiter()
             assert a is not b
 
     def test_calls_load_config(self):
         """get_depth_limiter() triggers load_config() via __init__."""
-        with patch("core.cascade_limiter.load_config") as mock_cfg:
+        with patch("core.messaging.cascade_limiter.load_config") as mock_cfg:
             mock_cfg.return_value.heartbeat.depth_window_s = 600
             mock_cfg.return_value.heartbeat.max_depth = 6
             mock_cfg.return_value.heartbeat.max_messages_per_hour = 30
             mock_cfg.return_value.heartbeat.max_messages_per_day = 100
 
             initial_count = mock_cfg.call_count
-            from core.cascade_limiter import get_depth_limiter
+            from core.messaging.cascade_limiter import get_depth_limiter
+
             get_depth_limiter()
             assert mock_cfg.call_count > initial_count
 
@@ -128,7 +131,7 @@ class TestCheckAndRecordDeprecationWarning:
     """check_and_record emits DeprecationWarning."""
 
     def test_emits_deprecation_warning(self):
-        with patch("core.cascade_limiter.load_config") as mock_cfg:
+        with patch("core.messaging.cascade_limiter.load_config") as mock_cfg:
             mock_heartbeat = MagicMock()
             mock_heartbeat.depth_window_s = 600
             mock_heartbeat.max_depth = 6
@@ -136,7 +139,8 @@ class TestCheckAndRecordDeprecationWarning:
             mock_heartbeat.max_messages_per_day = 100
             mock_cfg.return_value.heartbeat = mock_heartbeat
 
-            from core.cascade_limiter import ConversationDepthLimiter
+            from core.messaging.cascade_limiter import ConversationDepthLimiter
+
             limiter = ConversationDepthLimiter()
 
             with pytest.warns(DeprecationWarning, match="check_and_record is deprecated"):
@@ -153,7 +157,7 @@ class TestReadResolutionsTailOnly:
         """Only entries within the specified days are returned."""
         from datetime import timedelta
 
-        from core.memory.resolution_tracker import ResolutionTracker
+        from core.memory.maintenance.resolution_tracker import ResolutionTracker
         from core.time_utils import now_jst
 
         shared_dir = tmp_path / "shared"
@@ -172,7 +176,7 @@ class TestReadResolutionsTailOnly:
             for e in entries:
                 f.write(json.dumps(e) + "\n")
 
-        with patch("core.memory.resolution_tracker.get_shared_dir", return_value=shared_dir):
+        with patch("core.memory.maintenance.resolution_tracker.get_shared_dir", return_value=shared_dir):
             tracker = ResolutionTracker()
             results = tracker.read_resolutions(days=7)
 
@@ -181,7 +185,7 @@ class TestReadResolutionsTailOnly:
 
     def test_handles_large_file_with_deque_limit(self, tmp_path: Path):
         """Files larger than _MAX_LINES_TO_PARSE only parse the tail."""
-        from core.memory.resolution_tracker import ResolutionTracker
+        from core.memory.maintenance.resolution_tracker import ResolutionTracker
         from core.time_utils import now_jst
 
         shared_dir = tmp_path / "shared"
@@ -195,7 +199,7 @@ class TestReadResolutionsTailOnly:
                 entry = {"ts": now.isoformat(), "issue": f"issue-{i}", "resolver": "x"}
                 f.write(json.dumps(entry) + "\n")
 
-        with patch("core.memory.resolution_tracker.get_shared_dir", return_value=shared_dir):
+        with patch("core.memory.maintenance.resolution_tracker.get_shared_dir", return_value=shared_dir):
             tracker = ResolutionTracker()
             results = tracker.read_resolutions(days=7)
 
@@ -203,14 +207,14 @@ class TestReadResolutionsTailOnly:
 
     def test_empty_file_returns_empty(self, tmp_path: Path):
         """Empty file returns empty list."""
-        from core.memory.resolution_tracker import ResolutionTracker
+        from core.memory.maintenance.resolution_tracker import ResolutionTracker
 
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
         path = shared_dir / "resolutions.jsonl"
         path.write_text("", encoding="utf-8")
 
-        with patch("core.memory.resolution_tracker.get_shared_dir", return_value=shared_dir):
+        with patch("core.memory.maintenance.resolution_tracker.get_shared_dir", return_value=shared_dir):
             tracker = ResolutionTracker()
             results = tracker.read_resolutions(days=7)
 
@@ -218,12 +222,12 @@ class TestReadResolutionsTailOnly:
 
     def test_nonexistent_file_returns_empty(self, tmp_path: Path):
         """Missing file returns empty list."""
-        from core.memory.resolution_tracker import ResolutionTracker
+        from core.memory.maintenance.resolution_tracker import ResolutionTracker
 
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
 
-        with patch("core.memory.resolution_tracker.get_shared_dir", return_value=shared_dir):
+        with patch("core.memory.maintenance.resolution_tracker.get_shared_dir", return_value=shared_dir):
             tracker = ResolutionTracker()
             results = tracker.read_resolutions(days=7)
 

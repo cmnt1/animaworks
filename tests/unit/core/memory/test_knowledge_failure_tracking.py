@@ -31,6 +31,8 @@ def anima_dir(tmp_path: Path) -> Path:
     for sub in ("knowledge", "episodes", "skills", "procedures", "state", "shortterm", "activity_log", "archive"):
         (d / sub).mkdir(parents=True)
     return d
+
+
 def _write_knowledge(
     anima_dir: Path,
     name: str,
@@ -127,7 +129,7 @@ class TestMemoryManagerKnowledgeHelpers:
 class TestReportKnowledgeOutcome:
     def _make_handler(self, anima_dir: Path):
         """Create a minimal ToolHandler for testing."""
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
         from core.memory.manager import MemoryManager
         from core.tooling.handler import ToolHandler
 
@@ -225,25 +227,25 @@ class TestReportKnowledgeOutcome:
 
 class TestKnowledgeForgettingProtection:
     def test_success_count_2_is_protected(self, anima_dir: Path) -> None:
-        from core.memory.forgetting import ForgettingEngine
+        from core.memory.maintenance.forgetting import ForgettingEngine
 
         engine = ForgettingEngine(anima_dir, "test_anima")
         assert engine._is_protected_knowledge({"success_count": 2}) is True
 
     def test_success_count_1_is_not_protected(self, anima_dir: Path) -> None:
-        from core.memory.forgetting import ForgettingEngine
+        from core.memory.maintenance.forgetting import ForgettingEngine
 
         engine = ForgettingEngine(anima_dir, "test_anima")
         assert engine._is_protected_knowledge({"success_count": 1}) is False
 
     def test_important_tag_is_protected(self, anima_dir: Path) -> None:
-        from core.memory.forgetting import ForgettingEngine
+        from core.memory.maintenance.forgetting import ForgettingEngine
 
         engine = ForgettingEngine(anima_dir, "test_anima")
         assert engine._is_protected_knowledge({"importance": "important"}) is True
 
     def test_knowledge_type_routes_to_protection(self, anima_dir: Path) -> None:
-        from core.memory.forgetting import ForgettingEngine
+        from core.memory.maintenance.forgetting import ForgettingEngine
 
         engine = ForgettingEngine(anima_dir, "test_anima")
         assert (
@@ -257,7 +259,7 @@ class TestKnowledgeForgettingProtection:
         )
 
     def test_knowledge_no_protection_by_default(self, anima_dir: Path) -> None:
-        from core.memory.forgetting import ForgettingEngine
+        from core.memory.maintenance.forgetting import ForgettingEngine
 
         engine = ForgettingEngine(anima_dir, "test_anima")
         assert (
@@ -272,7 +274,7 @@ class TestKnowledgeForgettingProtection:
 
     def test_success_count_string_coercion(self, anima_dir: Path) -> None:
         """ChromaDB may return metadata values as strings."""
-        from core.memory.forgetting import ForgettingEngine
+        from core.memory.maintenance.forgetting import ForgettingEngine
 
         engine = ForgettingEngine(anima_dir, "test_anima")
         assert engine._is_protected_knowledge({"success_count": "3"}) is True
@@ -284,9 +286,9 @@ class TestKnowledgeForgettingProtection:
 class TestKnowledgeReconsolidation:
     @pytest.fixture
     def engine(self, anima_dir: Path):
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
+        from core.memory.maintenance.reconsolidation import ReconsolidationEngine
         from core.memory.manager import MemoryManager
-        from core.memory.reconsolidation import ReconsolidationEngine
 
         mm = MemoryManager(anima_dir)
         al = ActivityLogger(anima_dir)

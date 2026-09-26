@@ -9,10 +9,8 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
 from core.schemas import CycleResult
-
 
 # ── Fixtures ─────────────────────────────────────────────────────
 
@@ -55,9 +53,7 @@ def test_thinking_text_persisted_in_activity_log(data_dir, make_anima) -> None:
     assert len(entries) >= 1
     response_entries = [e for e in entries if e.type == "response_sent"]
     assert len(response_entries) >= 1
-    assert response_entries[-1].meta.get("thinking_text") == (
-        "I thought about the best way to respond..."
-    )
+    assert response_entries[-1].meta.get("thinking_text") == ("I thought about the best way to respond...")
 
 
 # ── Test: thinking_text in conversation messages ──────────────────
@@ -67,21 +63,27 @@ def test_thinking_text_in_conversation_messages(data_dir, make_anima) -> None:
     """Manually written response_sent with meta.thinking_text surfaces in get_conversation_view."""
     anima_dir = make_anima("conv-thinking-test")
 
-    _write_entry(anima_dir, {
-        "ts": _ts(5),
-        "type": "message_received",
-        "content": "こんにちは",
-        "from": "user",
-        "channel": "chat",
-    })
-    _write_entry(anima_dir, {
-        "ts": _ts(4),
-        "type": "response_sent",
-        "content": "こんにちは！元気ですか？",
-        "to": "user",
-        "channel": "chat",
-        "meta": {"thinking_text": "ユーザーが挨拶してきたので、親しみやすく返事しよう。"},
-    })
+    _write_entry(
+        anima_dir,
+        {
+            "ts": _ts(5),
+            "type": "message_received",
+            "content": "こんにちは",
+            "from": "user",
+            "channel": "chat",
+        },
+    )
+    _write_entry(
+        anima_dir,
+        {
+            "ts": _ts(4),
+            "type": "response_sent",
+            "content": "こんにちは！元気ですか？",
+            "to": "user",
+            "channel": "chat",
+            "meta": {"thinking_text": "ユーザーが挨拶してきたので、親しみやすく返事しよう。"},
+        },
+    )
 
     al = ActivityLogger(anima_dir)
     result = al.get_conversation_view(limit=50)
@@ -92,9 +94,7 @@ def test_thinking_text_in_conversation_messages(data_dir, make_anima) -> None:
     assert len(session["messages"]) >= 2
 
     assistant_msg = next(m for m in session["messages"] if m["role"] == "assistant")
-    assert assistant_msg.get("thinking_text") == (
-        "ユーザーが挨拶してきたので、親しみやすく返事しよう。"
-    )
+    assert assistant_msg.get("thinking_text") == ("ユーザーが挨拶してきたので、親しみやすく返事しよう。")
 
 
 # ── Test: backward compat without thinking_text ───────────────────
@@ -104,21 +104,27 @@ def test_backward_compat_no_thinking(data_dir, make_anima) -> None:
     """Entries without thinking_text do not expose thinking_text key in messages."""
     anima_dir = make_anima("no-thinking-test")
 
-    _write_entry(anima_dir, {
-        "ts": _ts(5),
-        "type": "message_received",
-        "content": "Hello",
-        "from": "user",
-        "channel": "chat",
-    })
-    _write_entry(anima_dir, {
-        "ts": _ts(4),
-        "type": "response_sent",
-        "content": "Hello there!",
-        "to": "user",
-        "channel": "chat",
-        # No meta.thinking_text — legacy entries
-    })
+    _write_entry(
+        anima_dir,
+        {
+            "ts": _ts(5),
+            "type": "message_received",
+            "content": "Hello",
+            "from": "user",
+            "channel": "chat",
+        },
+    )
+    _write_entry(
+        anima_dir,
+        {
+            "ts": _ts(4),
+            "type": "response_sent",
+            "content": "Hello there!",
+            "to": "user",
+            "channel": "chat",
+            # No meta.thinking_text — legacy entries
+        },
+    )
 
     al = ActivityLogger(anima_dir)
     result = al.get_conversation_view(limit=50)

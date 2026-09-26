@@ -166,7 +166,7 @@ def record_meeting_redirect(
         room_id = str(ctx.get("room_id") or "")
         meetings_dir = str(ctx.get("meetings_dir") or "")
         if room_id and meetings_dir:
-            from core.meeting_room_store import append_meeting_redirect
+            from core.messaging.meeting_room_store import append_meeting_redirect
 
             append_meeting_redirect(
                 Path(meetings_dir),

@@ -47,7 +47,7 @@ from core.execution.error_classifier import (
 from core.execution.events import stream_events
 from core.execution.rate_guard import get_rate_guard
 from core.i18n import t
-from core.memory.shortterm import ShortTermMemory
+from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
 

@@ -2,7 +2,7 @@
 
 ## Summary
 
-Action Memory Gate (`core/memory/action_gate.py`) は、副作用ツール実行前に
+Action Memory Gate (`core/tooling/action_gate.py`) は、副作用ツール実行前に
 関連 `[ACTION-RULE]` knowledge の読了を要求する。pi-fix3 で soft-fail 3ケース
 （`no_matching_rule` / `search_failed` / `below_threshold`）の扱いを
 `config.action_gate.fail_mode` で段階制御できるようにした。
@@ -94,7 +94,7 @@ rg 'action_gate_soft_fail.*would_block=True' ...
 
 ```python
 from pathlib import Path
-from core.memory.action_gate import grant_no_rule_allow
+from core.tooling.action_gate import grant_no_rule_allow
 
 grant_no_rule_allow(Path("~/.animaworks/animas/mei").expanduser(), "gmail_send")
 ```

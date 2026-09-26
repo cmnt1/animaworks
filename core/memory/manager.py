@@ -14,14 +14,14 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from core.file_access_policy import find_denied_root, load_denied_roots
+from core.config.file_access_policy import find_denied_root, load_denied_roots
 from core.i18n import t
 from core.memory._io import atomic_write_text
 from core.memory.config_reader import ConfigReader
-from core.memory.cron_logger import CronLogger
 from core.memory.frontmatter import FrontmatterService
-from core.memory.rag_search import RAGMemorySearch
-from core.memory.resolution_tracker import ResolutionTracker
+from core.memory.maintenance.cron_logger import CronLogger
+from core.memory.maintenance.resolution_tracker import ResolutionTracker
+from core.memory.retrieval.rag_search import RAGMemorySearch
 
 # ── Re-exports for backward compatibility ─────────────────
 # These were originally defined in this module.  External code
@@ -290,7 +290,7 @@ class MemoryManager:
             return ""
 
     def _company_vision_path(self) -> tuple[Path, str]:
-        from core.company import get_company
+        from core.org.company import get_company
 
         company = get_company(self.anima_dir.name, animas_dir=self.anima_dir.parent)
         if company is not None:
@@ -682,7 +682,7 @@ class MemoryManager:
 
     def filter_resolutions_by_company(self, resolutions: list[dict[str, str]]) -> list[dict[str, str]]:
         """Keep resolutions whose resolver belongs to this anima's company."""
-        from core.company import get_company
+        from core.org.company import get_company
 
         animas_dir = self.anima_dir.parent
         company = get_company(self.anima_dir.name, animas_dir=animas_dir)

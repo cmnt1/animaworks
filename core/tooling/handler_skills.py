@@ -19,7 +19,7 @@ from core.tooling.handler_base import _error_result
 
 if TYPE_CHECKING:
     from core.memory import MemoryManager
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
     from core.tooling.dispatch import ExternalToolDispatcher
 
 logger = logging.getLogger("animaworks.tool_handler")

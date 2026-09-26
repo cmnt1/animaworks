@@ -17,8 +17,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from core.memory.activity import ActivityLogger
-from core.messenger import Messenger
+from core.memory.activity.logger import ActivityLogger
+from core.messaging.messenger import Messenger
 from core.time_utils import now_iso
 from server.events import emit
 
@@ -104,7 +104,7 @@ def create_channels_router() -> APIRouter:
         if not channels_dir.exists():
             return []
 
-        from core.messenger import load_channel_meta
+        from core.messaging.messenger import load_channel_meta
 
         channels: list[dict] = []
         for f in sorted(channels_dir.glob("*.jsonl")):
@@ -259,7 +259,7 @@ def create_channels_router() -> APIRouter:
         )
         if not sync_disabled:
             try:
-                from core.outbound_auto import BoardSlackSync
+                from core.messaging.outbound_auto import BoardSlackSync
 
                 sync = BoardSlackSync()
                 await sync.sync_board_post(

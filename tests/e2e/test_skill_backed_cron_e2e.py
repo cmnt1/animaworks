@@ -8,20 +8,15 @@ from unittest.mock import patch
 
 import pytest
 
-from core.schedule_parser import parse_cron_md
 from core.skills.cron_context import build_cron_skill_context
 from core.skills.usage import SkillUsageTracker
+from core.supervisor.schedule_parser import parse_cron_md
 
 
 def _write_skill(path: Path, name: str, body: str, extra: str = "") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        "---\n"
-        f"name: {name}\n"
-        "description: e2e skill\n"
-        f"{extra}"
-        "---\n\n"
-        f"{body}\n",
+        f"---\nname: {name}\ndescription: e2e skill\n{extra}---\n\n{body}\n",
         encoding="utf-8",
     )
 

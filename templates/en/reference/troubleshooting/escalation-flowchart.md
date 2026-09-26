@@ -117,7 +117,7 @@ Your report MUST include:
 - **LINE:** Push API. Text is truncated to a maximum of 5000 characters
 - **Telegram:** `parse_mode=HTML`. Subject in `<b>…</b>`; overall length adjusted within 4096 characters (truncate after escaping)
 - **Credentials:** Base `NotificationChannel._resolve_credential_with_vault` order: **config key env → `{key}__{anima_name}` (vault/shared) → plain key**. Slack Bot also has a `get_credential("slack", "notification", …)` fallback (see each `channels/*.py`)
-- **Chat UI:** Streaming responses emit a **`notification_sent`** event (via `core/_anima_messaging.py`; separate path from external channels)
+- **Chat UI:** Streaming responses emit a **`notification_sent`** event (via `core/anima/messaging.py`; separate path from external channels)
 - **Logging:** On `call_human`, the unified activity log records **`human_notify`** (`via` is fixed in implementation as `configured_channels`), plus `tool_result`. Priming “Pending Human Notifications” aggregates **`human_notify` from the past 24 hours, up to 10 entries** (`core/memory/priming/outbound.py`)
 - **Other `HumanNotifier` use:** The framework may notify humans via the **same `HumanNotifier`** for background tool completion, etc. (not only the `call_human` tool; top-level Anima restriction is the same)
 - **Mode S (CLI):** You can send the same style of notification with `animaworks-tool call_human "subject" "body" [--priority …]`

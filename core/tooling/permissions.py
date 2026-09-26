@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 """Shared permission parser for external tool access control.
 
 Both MCP server (``core.mcp.server``) and AgentCore executor
-(``core._agent_executor``) use :func:`get_permitted_tools` (or legacy
+(``core.agent.executor_factory``) use :func:`get_permitted_tools` (or legacy
 :func:`parse_permitted_tools`) to resolve which external tools an Anima
 is allowed to invoke, keeping the logic in a single authoritative location.
 

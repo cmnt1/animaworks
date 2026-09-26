@@ -19,9 +19,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
 from core.schemas import CycleResult
-
 
 # ── Test 1: CycleResult schema ────────────────────────────────────────────
 
@@ -90,11 +89,7 @@ class TestActivityThinkingText:
         logger = ActivityLogger(tmp_path)
         result = logger.get_conversation_view(limit=10)
 
-        all_messages = [
-            m
-            for session in result["sessions"]
-            for m in session["messages"]
-        ]
+        all_messages = [m for session in result["sessions"] for m in session["messages"]]
         assistant_msgs = [m for m in all_messages if m["role"] == "assistant"]
         assert len(assistant_msgs) == 1
         assert assistant_msgs[0]["thinking_text"] == "Let me think about this greeting..."
@@ -127,11 +122,7 @@ class TestActivityThinkingText:
         logger = ActivityLogger(tmp_path)
         result = logger.get_conversation_view(limit=10)
 
-        all_messages = [
-            m
-            for session in result["sessions"]
-            for m in session["messages"]
-        ]
+        all_messages = [m for session in result["sessions"] for m in session["messages"]]
         assistant_msgs = [m for m in all_messages if m["role"] == "assistant"]
         assert len(assistant_msgs) == 1
         assert "thinking_text" not in assistant_msgs[0]

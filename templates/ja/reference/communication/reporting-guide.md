@@ -22,7 +22,7 @@
 - **宛先** は下記「宛先の解決」を参照（Anima 名・人間エイリアス・`slack:` / `chatwork:` 直指定など）
 - **注**: チャットセッション中は人間宛てに send_message は使えない。直接テキストで返答する
 
-### 宛先の解決と外部配信（`core/outbound.py`）
+### 宛先の解決と外部配信（`core/messaging/outbound.py`）
 
 `send_message` の `to` は次の **優先順位** で内部 inbox か外部（Slack / Chatwork）かに解決される。空文字は解決できずエラーになる。
 

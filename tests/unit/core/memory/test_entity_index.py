@@ -10,15 +10,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.memory import entity_index
-from core.memory.entity_index import (
+from core.memory.facts import entity_index
+from core.memory.facts.entity_index import (
     load_entity_registry,
     match_query_entities,
     rebuild_entity_collection,
     sync_entity_collection,
     upsert_entities_from_facts,
 )
-from core.memory.facts import FactRecord, append_fact_records
+from core.memory.facts.store import FactRecord, append_fact_records
 from core.memory.rag.store import (
     CollectionExistence,
     _is_missing_collection_error,

@@ -1,4 +1,4 @@
-"""Unit tests for core/image_artifacts.py."""
+"""Unit tests for core/anima/image_artifacts.py."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.image_artifacts import extract_image_artifacts_from_tool_records, resolve_local_image_paths
+from core.anima.image_artifacts import extract_image_artifacts_from_tool_records, resolve_local_image_paths
 
 
 def test_extract_image_artifacts_from_nested_payload():

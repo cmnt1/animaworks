@@ -59,7 +59,7 @@ class TestHandleCreateAnima:
         fake_anima_dir.mkdir(parents=True)
 
         with (
-            patch("core.anima_factory.create_from_md", return_value=fake_anima_dir) as mock_create,
+            patch("core.anima.factory.create_from_md", return_value=fake_anima_dir) as mock_create,
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
             patch("core.paths.get_data_dir", return_value=tmp_path),
             patch("cli.commands.init_cmd._register_anima_in_config"),
@@ -87,7 +87,7 @@ class TestHandleCreateAnima:
 
         with (
             patch(
-                "core.anima_factory.create_from_md",
+                "core.anima.factory.create_from_md",
                 side_effect=FileExistsError("Anima 'hinata' already exists"),
             ),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
@@ -109,7 +109,7 @@ class TestHandleCreateAnima:
 
         with (
             patch(
-                "core.anima_factory.create_from_md",
+                "core.anima.factory.create_from_md",
                 side_effect=ValueError("Missing required sections: 基本情報"),
             ),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
@@ -141,7 +141,7 @@ class TestCreateAnimaErofsFallback:
 
         with (
             patch(
-                "core.anima_factory.create_from_md",
+                "core.anima.factory.create_from_md",
                 side_effect=OSError(30, "Read-only file system"),
             ),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
@@ -180,7 +180,7 @@ class TestCreateAnimaErofsFallback:
 
         with (
             patch(
-                "core.anima_factory.create_from_md",
+                "core.anima.factory.create_from_md",
                 side_effect=OSError(30, "Read-only file system"),
             ),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
@@ -206,7 +206,7 @@ class TestCreateAnimaErofsFallback:
 
         with (
             patch(
-                "core.anima_factory.create_from_md",
+                "core.anima.factory.create_from_md",
                 side_effect=OSError(30, "Read-only file system"),
             ),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
@@ -227,7 +227,7 @@ class TestCreateAnimaErofsFallback:
 
         with (
             patch(
-                "core.anima_factory.create_from_md",
+                "core.anima.factory.create_from_md",
                 side_effect=OSError(30, "Read-only file system"),
             ),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),

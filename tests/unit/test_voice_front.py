@@ -120,7 +120,7 @@ class TestBuildVoiceFrontPrompt:
 
     def test_reads_specialty_prompt_file(self, tmp_path: Path) -> None:
         # Regression: the real anima file is ``specialty_prompt.md`` (no "i") —
-        # see core/anima_factory.py and core/memory/manager.py.
+        # see core/anima/factory.py and core/memory/manager.py.
         (tmp_path / "specialty_prompt.md").write_text("実務の専門性: 図書館管理", encoding="utf-8")
         prompt = build_voice_front_prompt(tmp_path, anima_name="taro")
         assert "実務の専門性: 図書館管理" in prompt
@@ -446,7 +446,7 @@ class TestVoiceSessionFrontRouting:
         )
         sess._front_lane = _front_lane_stub(healthy=True)
         mock_conv = MagicMock()
-        with patch("core.memory.conversation.ConversationMemory", return_value=mock_conv):
+        with patch("core.memory.conversation.memory.ConversationMemory", return_value=mock_conv):
             sess._audio_buffer.extend(_audio_frames())
             await sess.handle_speech_end()
         roles = [c.args[0] for c in mock_conv.append_turn.call_args_list]

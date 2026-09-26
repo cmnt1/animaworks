@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 from unittest.mock import patch
 
-from core.memory.activity import ActivityEntry, ActivityLogger
+from core.memory.activity.logger import ActivityEntry, ActivityLogger
 from core.time_utils import now_local
 
 

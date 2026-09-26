@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -24,15 +25,15 @@ References:
 import json
 import logging
 from datetime import datetime, timedelta
-from core.time_utils import now_jst, today_local
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from core.memory.activity import ActivityEntry, ActivityLogger
+from core.memory.activity.logger import ActivityEntry, ActivityLogger
 from core.memory.priming import PrimingEngine
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
+from core.time_utils import now_jst, today_local
 
 logger = logging.getLogger(__name__)
 
@@ -160,16 +161,10 @@ class TestSharedChannelVisibleInPriming:
 
         # Shared channel posts should appear in the priming output
         assert result, "Channel B should return non-empty priming text"
-        assert "boto3" in result or "yuki" in result, (
-            "Channel post from yuki should appear in priming output"
-        )
-        assert "sakura" in result or "レビュー" in result, (
-            "Channel post from sakura should appear in priming output"
-        )
+        assert "boto3" in result or "yuki" in result, "Channel post from yuki should appear in priming output"
+        assert "sakura" in result or "レビュー" in result, "Channel post from sakura should appear in priming output"
         # The human @mention should definitely appear
-        assert "メンテナンス" in result or "admin" in result, (
-            "Human @mention post should appear in priming output"
-        )
+        assert "メンテナンス" in result or "admin" in result, "Human @mention post should appear in priming output"
 
 
 class TestMessengerSendCreatesMessageSent:
@@ -249,9 +244,7 @@ class TestDmReceivedFullContentInActivityLog:
         assert len(dm_entries) == 1
 
         stored_content = dm_entries[0].get("content", "")
-        assert len(stored_content) == 500, (
-            f"Full 500-char content should be stored, got {len(stored_content)} chars"
-        )
+        assert len(stored_content) == 500, f"Full 500-char content should be stored, got {len(stored_content)} chars"
         assert stored_content == long_content
 
 
@@ -279,13 +272,13 @@ class TestFormatForPrimingContentTrim:
 
         # With content_trim=100
         result_trimmed = al.format_for_priming(
-            entries, budget_tokens=5000, content_trim=100,
+            entries,
+            budget_tokens=5000,
+            content_trim=100,
         )
         assert result_trimmed, "Should produce non-empty output"
         # The entry should not contain the full 600-char content
-        assert "A" * 600 not in result_trimmed, (
-            "Content should be trimmed when content_trim=100"
-        )
+        assert "A" * 600 not in result_trimmed, "Content should be trimmed when content_trim=100"
         # Should contain the truncation marker
         assert "..." in result_trimmed, "Trimmed content should contain '...'"
 
@@ -309,13 +302,13 @@ class TestFormatForPrimingContentTrim:
 
         # With content_trim=0 (no trimming)
         result_full = al.format_for_priming(
-            entries, budget_tokens=5000, content_trim=0,
+            entries,
+            budget_tokens=5000,
+            content_trim=0,
         )
         assert result_full, "Should produce non-empty output"
         # Full content should be preserved (within budget)
-        assert "B" * 300 in result_full, (
-            "Full content should be preserved when content_trim=0"
-        )
+        assert "B" * 300 in result_full, "Full content should be preserved when content_trim=0"
 
 
 class TestReadDmHistoryExcludesMessageTypes:
@@ -386,12 +379,8 @@ class TestReadDmHistoryExcludesMessageTypes:
 
         # Should NOT contain response_sent or chat message_received content
         all_texts = " ".join(e.get("text", "") for e in history)
-        assert "MSG受信" not in all_texts, (
-            "chat message_received content should not appear in DM history"
-        )
-        assert "MSG送信" not in all_texts, (
-            "response_sent content should not appear in DM history"
-        )
+        assert "MSG受信" not in all_texts, "chat message_received content should not appear in DM history"
+        assert "MSG送信" not in all_texts, "response_sent content should not appear in DM history"
 
         # Should have exactly 2 entries (message_sent + message_received with from_type=anima)
         assert len(history) == 2, f"Expected 2 DM entries, got {len(history)}"
@@ -442,14 +431,10 @@ class TestReadDmHistory30DayRange:
         history = messenger.read_dm_history("peer-anima", limit=20)
 
         # The 10-day-old entries should be retrieved (days=30 covers this)
-        assert len(history) >= 2, (
-            f"Expected at least 2 entries from 10 days ago, got {len(history)}"
-        )
+        assert len(history) >= 2, f"Expected at least 2 entries from 10 days ago, got {len(history)}"
 
         all_texts = " ".join(e.get("text", "") for e in history)
-        assert "OLD_DM_FROM_10_DAYS_AGO" in all_texts, (
-            "10-day-old message_sent should be retrievable with days=30"
-        )
+        assert "OLD_DM_FROM_10_DAYS_AGO" in all_texts, "10-day-old message_sent should be retrievable with days=30"
         assert "OLD_DM_REPLY_FROM_10_DAYS_AGO" in all_texts, (
             "10-day-old message_received should be retrievable with days=30"
         )

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.conversation import (
+from core.memory.conversation.memory import (
     _MAX_HUMAN_CHARS_IN_HISTORY,
     _MAX_RESPONSE_CHARS_IN_HISTORY,
     _MAX_STORED_CONTENT_CHARS,
@@ -128,7 +128,7 @@ class TestPreflightSizeCheck:
 
     def test_constants_defined(self):
         """Size limit constants should be defined."""
-        from core.agent import _PROMPT_HARD_LIMIT_BYTES, _PROMPT_SOFT_LIMIT_BYTES
+        from core.agent.agent_core import _PROMPT_HARD_LIMIT_BYTES, _PROMPT_SOFT_LIMIT_BYTES
 
         assert _PROMPT_SOFT_LIMIT_BYTES == 600_000
         assert _PROMPT_HARD_LIMIT_BYTES == 1_200_000
@@ -155,11 +155,11 @@ class TestPreflightSizeCheck:
 
         with (
             patch(
-                "core._agent_cycle.build_system_prompt", return_value=BuildResult(system_prompt=oversized_system_prompt)
+                "core.agent.cycle.build_system_prompt", return_value=BuildResult(system_prompt=oversized_system_prompt)
             ),
-            patch("core._agent_cycle._save_prompt_log"),
-            patch("core._agent_cycle._save_prompt_log_end"),
-            patch("core._agent_cycle._log_session_token_usage"),
+            patch("core.agent.cycle._save_prompt_log"),
+            patch("core.agent.cycle._save_prompt_log_end"),
+            patch("core.agent.cycle._log_session_token_usage"),
             patch("core.tooling.schemas.load_all_tool_schemas", return_value=[]),
             caplog.at_level(logging.WARNING, logger="animaworks.agent"),
         ):

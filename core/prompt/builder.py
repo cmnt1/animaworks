@@ -27,7 +27,7 @@ from typing import Any, Literal
 
 from core.i18n import t
 from core.memory import MemoryManager
-from core.memory.shortterm import ShortTermMemory
+from core.memory.conversation.shortterm import ShortTermMemory
 from core.paths import get_data_dir, load_prompt, load_prompt_text
 from core.prompt.assembler import (
     _MIN_SYSTEM_BUDGET,  # noqa: F401
@@ -99,7 +99,7 @@ EMOTION_INSTRUCTION = _build_emotion_instruction()
 
 def _read_default_workspace(anima_dir: Path) -> str:
     """Read default_workspace from status.json and resolve via workspace registry."""
-    from core.workspace import resolve_default_workspace
+    from core.org.workspace import resolve_default_workspace
 
     resolved, alias = resolve_default_workspace(anima_dir)
     if not alias:

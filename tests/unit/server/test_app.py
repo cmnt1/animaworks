@@ -22,9 +22,7 @@ class TestCreateApp:
     @patch("server.app.load_config")
     @patch("server.app.ProcessSupervisor")
     @patch("server.app.WebSocketManager")
-    def test_create_app_no_animas_dir(
-        self, mock_ws_cls, mock_sup_cls, mock_load_config, mock_get_data_dir, tmp_path
-    ):
+    def test_create_app_no_animas_dir(self, mock_ws_cls, mock_sup_cls, mock_load_config, mock_get_data_dir, tmp_path):
         from server.app import create_app
 
         animas_dir = tmp_path / "animas"
@@ -46,9 +44,7 @@ class TestCreateApp:
     @patch("server.app.load_config")
     @patch("server.app.ProcessSupervisor")
     @patch("server.app.WebSocketManager")
-    def test_create_app_with_animas(
-        self, mock_ws_cls, mock_sup_cls, mock_load_config, mock_get_data_dir, tmp_path
-    ):
+    def test_create_app_with_animas(self, mock_ws_cls, mock_sup_cls, mock_load_config, mock_get_data_dir, tmp_path):
         from server.app import create_app
 
         animas_dir = tmp_path / "animas"
@@ -139,17 +135,13 @@ class TestCreateApp:
         alice_dir = animas_dir / "alice"
         alice_dir.mkdir()
         (alice_dir / "identity.md").write_text("# Alice", encoding="utf-8")
-        (alice_dir / "status.json").write_text(
-            json.dumps({"enabled": True}), encoding="utf-8"
-        )
+        (alice_dir / "status.json").write_text(json.dumps({"enabled": True}), encoding="utf-8")
 
         # Disabled anima
         bob_dir = animas_dir / "bob"
         bob_dir.mkdir()
         (bob_dir / "identity.md").write_text("# Bob", encoding="utf-8")
-        (bob_dir / "status.json").write_text(
-            json.dumps({"enabled": False}), encoding="utf-8"
-        )
+        (bob_dir / "status.json").write_text(json.dumps({"enabled": False}), encoding="utf-8")
 
         mock_ws_cls.return_value = MagicMock()
         mock_sup_cls.return_value = MagicMock()
@@ -198,13 +190,15 @@ class TestLifespan:
         async def fake_startup_animas(app, *, suppress_errors=True):
             await app.state.supervisor.start_all(app.state.anima_names)
 
-        with patch("core.org_sync.sync_org_structure"), \
-             patch("core.org_sync.detect_orphan_animas"), \
-             patch("server.app._reconcile_assets_at_startup", new_callable=AsyncMock), \
-             patch("server.app._prepare_startup_vector_worker", new_callable=AsyncMock), \
-             patch("server.app._start_usage_governor_if_enabled", new_callable=AsyncMock), \
-             patch("server.app._startup_animas_background", new=fake_startup_animas), \
-             patch("core.config.global_permissions.GlobalPermissionsCache.get") as mock_gp:
+        with (
+            patch("core.org.org_sync.sync_org_structure"),
+            patch("core.org.org_sync.detect_orphan_animas"),
+            patch("server.app._reconcile_assets_at_startup", new_callable=AsyncMock),
+            patch("server.app._prepare_startup_vector_worker", new_callable=AsyncMock),
+            patch("server.app._start_usage_governor_if_enabled", new_callable=AsyncMock),
+            patch("server.app._startup_animas_background", new=fake_startup_animas),
+            patch("core.config.global_permissions.GlobalPermissionsCache.get") as mock_gp,
+        ):
             mock_gp.return_value = MagicMock(loaded=True, check_integrity=MagicMock(return_value=True))
             async with lifespan(mock_app):
                 await asyncio.wait_for(mock_app.state._anima_startup_task, timeout=1.0)

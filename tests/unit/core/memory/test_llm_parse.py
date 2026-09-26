@@ -25,9 +25,9 @@ import pytest
 
 from core.memory._llm_parse import is_none_marker, load_json, strip_code_fence
 from core.memory._llm_utils import supports_structured_output
-from core.memory.distillation import ProceduralDistiller
 from core.memory.extraction.extractor import FactExtractor
-from core.memory.fact_observability import reset_warning_rate_limits
+from core.memory.facts.observability import reset_warning_rate_limits
+from core.memory.maintenance.distillation import ProceduralDistiller
 
 
 def _cfg(model: str = "test-model"):
@@ -74,7 +74,7 @@ def distiller(tmp_path) -> ProceduralDistiller:
 
 class TestStripCodeFence:
     def test_json_fence(self) -> None:
-        assert strip_code_fence('```json\n[]\n```') == "[]"
+        assert strip_code_fence("```json\n[]\n```") == "[]"
 
     def test_markdown_fence(self) -> None:
         text = "```markdown\n# Title\n\nBody.\n```"
@@ -89,10 +89,10 @@ class TestStripCodeFence:
         assert strip_code_fence("plain text") == "plain text"
 
     def test_distiller_delegates(self, distiller) -> None:
-        assert distiller._strip_code_fence('```json\n[1]\n```') == "[1]"
+        assert distiller._strip_code_fence("```json\n[1]\n```") == "[1]"
 
     def test_consolidation_sanitizer_json_fence(self) -> None:
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         assert ConsolidationEngine._sanitize_llm_output('```json\n{"a": 1}\n```') == '{"a": 1}'
 
@@ -102,9 +102,7 @@ class TestStripCodeFence:
 
 class TestLoadJson:
     def test_plain(self) -> None:
-        assert load_json('[{"title": "a", "content": "# A"}]') == [
-            {"title": "a", "content": "# A"}
-        ]
+        assert load_json('[{"title": "a", "content": "# A"}]') == [{"title": "a", "content": "# A"}]
 
     def test_fenced(self) -> None:
         assert load_json('```json\n{"x": 1}\n```') == {"x": 1}
@@ -173,7 +171,7 @@ class TestEnglishProcedureParsing:
 
 class TestEnglishSessionSummary:
     def test_en_state_change_extracts_resolved(self) -> None:
-        from core.memory.conversation_finalize import _parse_session_summary
+        from core.memory.conversation.finalize import _parse_session_summary
 
         raw = (
             "## Episode Summary\nTitle here\n\n"
@@ -217,9 +215,7 @@ class TestStructuredOutputGating:
         assert supports_structured_output("ollama/deepseek-r1") is False
 
     def test_extractor_adds_response_format_only_for_api(self) -> None:
-        good_json = json.dumps(
-            {"entities": [{"name": "A", "entity_type": "Person", "summary": "s"}]}
-        )
+        good_json = json.dumps({"entities": [{"name": "A", "entity_type": "Person", "summary": "s"}]})
         captured_api, _ = _run_extractor(FactExtractor(model="openai/gpt-4o", max_retries=1), good_json)
         assert captured_api.get("response_format") == {"type": "json_object"}
 

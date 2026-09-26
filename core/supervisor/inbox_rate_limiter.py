@@ -20,7 +20,7 @@ from core.config.models import load_config
 from core.schemas import EXTERNAL_PLATFORM_SOURCES
 
 if TYPE_CHECKING:
-    from core.anima import DigitalAnima
+    from core.anima.digital_anima import DigitalAnima
     from core.supervisor.scheduler_manager import SchedulerManager
 
 logger = logging.getLogger(__name__)

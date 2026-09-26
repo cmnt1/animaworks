@@ -14,7 +14,7 @@ import pytest
 from core.memory.rag.indexer import IndexDirectoryResult
 from core.memory.rag.shared_meta import read_shared_hash, shared_index_meta_path, write_shared_hash
 from core.memory.rag.store import CollectionExistence
-from core.memory.rag_search import _compute_dir_hash
+from core.memory.retrieval.rag_search import _compute_dir_hash
 from core.supervisor._mgr_scheduler import _marker_dir
 
 
@@ -199,7 +199,7 @@ async def test_daily_indexing_rebuilds_longterm_bm25(tmp_path: Path) -> None:
         patch("core.memory.rag.MemoryIndexer") as mock_indexer_cls,
         patch("core.paths.get_common_knowledge_dir", return_value=tmp_path / "ck"),
         patch("core.paths.get_common_skills_dir", return_value=tmp_path / "cs"),
-        patch("core.memory.bm25.rebuild_longterm_bm25_index") as mock_rebuild,
+        patch("core.memory.retrieval.bm25.rebuild_longterm_bm25_index") as mock_rebuild,
     ):
         mock_indexer = MagicMock()
         mock_indexer.index_directory = MagicMock(return_value=IndexDirectoryResult())

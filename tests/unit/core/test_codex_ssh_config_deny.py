@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from core.file_access_policy import foreign_owned_ssh_config_dirs
+from core.config.file_access_policy import foreign_owned_ssh_config_dirs
 
 
 def test_own_files_are_not_denied(tmp_path: Path) -> None:

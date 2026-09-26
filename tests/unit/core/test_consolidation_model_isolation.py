@@ -9,9 +9,9 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from core._agent_cycle import CycleMixin
+from core.agent.cycle import CycleMixin
 from core.execution.base import ExecutionResult
-from core.memory.consolidation import ConsolidationEngine
+from core.memory.maintenance.consolidation import ConsolidationEngine
 from core.schemas import CycleResult, ModelConfig
 
 
@@ -118,7 +118,7 @@ class _FakeEngine:
 
 
 def _make_lifecycle(status_config: ModelConfig):
-    from core._anima_lifecycle import LifecycleMixin
+    from core.anima.lifecycle import LifecycleMixin
 
     class FakeAnima(LifecycleMixin):
         pass
@@ -163,7 +163,7 @@ async def test_daily_phase_b_uses_consolidation_model_without_mutating_agent_exe
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
         patch(
-            "core._anima_lifecycle.load_prompt",
+            "core.anima.lifecycle.load_prompt",
             return_value="daily prompt",
         ),
     ):
@@ -203,8 +203,8 @@ async def test_daily_phase_a_uses_previous_local_day_window_and_existing_episode
     with (
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
-        patch("core._anima_lifecycle.now_local", return_value=fixed_now),
-        patch("core._anima_lifecycle.load_prompt", side_effect=fake_load_prompt),
+        patch("core.anima.lifecycle.now_local", return_value=fixed_now),
+        patch("core.anima.lifecycle.load_prompt", side_effect=fake_load_prompt),
         patch("core.memory._llm_utils.one_shot_completion", side_effect=fake_one_shot),
     ):
         await anima._run_daily_consolidation(engine)
@@ -233,8 +233,8 @@ async def test_daily_phase_a_llm_failure_leaves_existing_episode_unchanged(tmp_p
 
     with (
         patch("core.config.load_config", return_value=_mock_config()),
-        patch("core._anima_lifecycle.now_local", return_value=fixed_now),
-        patch("core._anima_lifecycle.load_prompt", return_value="episode prompt"),
+        patch("core.anima.lifecycle.now_local", return_value=fixed_now),
+        patch("core.anima.lifecycle.load_prompt", return_value="episode prompt"),
         patch("core.memory._llm_utils.one_shot_completion", side_effect=RuntimeError("llm timeout")),
         pytest.raises(RuntimeError, match="llm timeout"),
     ):
@@ -263,8 +263,8 @@ async def test_daily_phase_b_timeout_keeps_carryover_source_bundle():
     with (
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
-        patch("core._anima_lifecycle.now_local", return_value=fixed_now),
-        patch("core._anima_lifecycle.load_prompt", return_value="daily prompt"),
+        patch("core.anima.lifecycle.now_local", return_value=fixed_now),
+        patch("core.anima.lifecycle.load_prompt", return_value="daily prompt"),
         pytest.raises(TimeoutError, match="phase b timed out"),
     ):
         await anima._run_daily_consolidation(engine)
@@ -299,8 +299,8 @@ async def test_daily_phase_b_interruption_returns_truncated_and_keeps_carryover(
     with (
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
-        patch("core._anima_lifecycle.now_local", return_value=fixed_now),
-        patch("core._anima_lifecycle.load_prompt", return_value="daily prompt"),
+        patch("core.anima.lifecycle.now_local", return_value=fixed_now),
+        patch("core.anima.lifecycle.load_prompt", return_value="daily prompt"),
     ):
         result = await anima._run_daily_consolidation(engine)
 
@@ -338,8 +338,8 @@ async def test_daily_phase_b_normal_summary_without_truncation_clears_carryover(
     with (
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
-        patch("core._anima_lifecycle.now_local", return_value=fixed_now),
-        patch("core._anima_lifecycle.load_prompt", return_value="daily prompt"),
+        patch("core.anima.lifecycle.now_local", return_value=fixed_now),
+        patch("core.anima.lifecycle.load_prompt", return_value="daily prompt"),
     ):
         result = await anima._run_daily_consolidation(engine)
 
@@ -358,7 +358,7 @@ async def test_weekly_consolidation_uses_consolidation_model_without_mutating_ag
     with (
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
-        patch("core._anima_lifecycle.load_prompt", return_value="weekly prompt"),
+        patch("core.anima.lifecycle.load_prompt", return_value="weekly prompt"),
     ):
         result = await anima._run_weekly_consolidation(_FakeEngine())
 
@@ -415,8 +415,8 @@ async def test_weekly_consolidation_does_not_scan_whole_memory_library(report, e
     with (
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
-        patch("core.memory.hygiene.scan_memory_hygiene", return_value=report) as scan,
-        patch("core._anima_lifecycle.load_prompt", side_effect=capture_prompt),
+        patch("core.memory.maintenance.hygiene.scan_memory_hygiene", return_value=report) as scan,
+        patch("core.anima.lifecycle.load_prompt", side_effect=capture_prompt),
     ):
         await anima._run_weekly_consolidation(_FakeEngine())
 
@@ -427,7 +427,7 @@ async def test_weekly_consolidation_does_not_scan_whole_memory_library(report, e
 @pytest.mark.asyncio
 async def test_weekly_consolidation_passes_forgetting_candidates_to_prompt():
     """Weekly consolidation passes forgetting candidates into the prompt."""
-    from core.memory.forgetting import ForgettingCandidate
+    from core.memory.maintenance.forgetting import ForgettingCandidate
 
     status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
     anima = _make_lifecycle(status_config)
@@ -454,8 +454,8 @@ async def test_weekly_consolidation_passes_forgetting_candidates_to_prompt():
     with (
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
-        patch("core.memory.forgetting.ForgettingEngine", return_value=fake_engine),
-        patch("core._anima_lifecycle.load_prompt", side_effect=capture_prompt),
+        patch("core.memory.maintenance.forgetting.ForgettingEngine", return_value=fake_engine),
+        patch("core.anima.lifecycle.load_prompt", side_effect=capture_prompt),
     ):
         await anima._run_weekly_consolidation(fake_engine)
 
@@ -547,12 +547,12 @@ async def test_run_cycle_override_uses_local_executor_without_mutating_shared_st
     prompt_log_calls = []
 
     with (
-        patch("core._agent_cycle.build_system_prompt", return_value=_simple_prompt_result()),
+        patch("core.agent.cycle.build_system_prompt", return_value=_simple_prompt_result()),
         patch(
-            "core._agent_cycle._save_prompt_log",
+            "core.agent.cycle._save_prompt_log",
             side_effect=lambda *args, **kwargs: prompt_log_calls.append(kwargs),
         ),
-        patch("core._agent_cycle._save_prompt_log_end"),
+        patch("core.agent.cycle._save_prompt_log_end"),
     ):
         result = await agent.run_cycle("hello", trigger="manual", model_config_override=override)
 
@@ -571,12 +571,12 @@ async def test_run_cycle_streaming_override_uses_local_executor_without_mutating
     chunks = []
 
     with (
-        patch("core._agent_cycle.build_system_prompt", return_value=_simple_prompt_result()),
+        patch("core.agent.cycle.build_system_prompt", return_value=_simple_prompt_result()),
         patch(
-            "core._agent_cycle._save_prompt_log",
+            "core.agent.cycle._save_prompt_log",
             side_effect=lambda *args, **kwargs: prompt_log_calls.append(kwargs),
         ),
-        patch("core._agent_cycle._save_prompt_log_end"),
+        patch("core.agent.cycle._save_prompt_log_end"),
     ):
         async for chunk in agent.run_cycle_streaming(
             "hello",
@@ -663,7 +663,7 @@ async def test_process_message_stream_uses_message_specific_voice_effort(
     voice_effort,
     expected_effort,
 ):
-    from core._anima_messaging import MessagingMixin
+    from core.anima.messaging import MessagingMixin
 
     class FakeAnima(MessagingMixin):
         pass

@@ -15,14 +15,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.memory.activity import ActivityLogger
-from core.messenger import InboxItem
-from core.time_utils import now_jst
+from core.memory.activity.logger import ActivityLogger
+from core.messaging.messenger import InboxItem
 from core.schemas import CycleResult
+from core.time_utils import now_jst
 from core.tooling.handler import active_session_type
 
-
 # ── Helpers ───────────────────────────────────────────────
+
 
 def _read_activity_entries(anima_dir: Path) -> list[dict]:
     """Read all JSONL entries from today's activity log."""
@@ -50,6 +50,7 @@ def _make_cycle_result(**kwargs) -> CycleResult:
 
 # ── Heartbeat Start Summary ──────────────────────────────
 
+
 class TestHeartbeatStartSummary:
     """Verify heartbeat_start activity entry includes summary."""
 
@@ -59,12 +60,13 @@ class TestHeartbeatStartSummary:
         anima_dir = make_anima("alice")
         shared_dir = data_dir / "shared"
 
-        with patch("core.anima.AgentCore") as MockAgent, \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger") as MockMsger, \
-             patch("core._anima_heartbeat.ConversationMemory") as MockConvMem, \
-             patch("core._anima_heartbeat.StreamingJournal") as MockJournal:
-
+        with (
+            patch("core.anima.digital_anima.AgentCore") as MockAgent,
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsger,
+            patch("core.anima.heartbeat.ConversationMemory") as MockConvMem,
+            patch("core.anima.heartbeat.StreamingJournal") as MockJournal,
+        ):
             # Setup mocks
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMM.return_value.read_heartbeat_config.return_value = "チェック項目"
@@ -105,7 +107,8 @@ class TestHeartbeatStartSummary:
             mock_agent.background_manager = None
             mock_agent.drain_notifications.return_value = []
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             anima = DigitalAnima(anima_dir, shared_dir)
             anima.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
             await anima.run_heartbeat()
@@ -121,6 +124,7 @@ class TestHeartbeatStartSummary:
 
 # ── Message Received Summary ─────────────────────────────
 
+
 class TestMessageReceivedSummary:
     """Verify message_received activity entry includes summary."""
 
@@ -132,11 +136,12 @@ class TestMessageReceivedSummary:
 
         test_content = "こんにちは、テストメッセージです。"
 
-        with patch("core.anima.AgentCore") as MockAgent, \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger") as MockMsger, \
-             patch("core._anima_messaging.ConversationMemory") as MockConvMem:
-
+        with (
+            patch("core.anima.digital_anima.AgentCore") as MockAgent,
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsger,
+            patch("core.anima.messaging.ConversationMemory") as MockConvMem,
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMsger.return_value.unread_count.return_value = 0
 
@@ -152,7 +157,8 @@ class TestMessageReceivedSummary:
             mock_agent.background_manager = None
             mock_agent.drain_notifications.return_value = []
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             anima = DigitalAnima(anima_dir, shared_dir)
             anima.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
             await anima.process_message(test_content, from_person="user")
@@ -166,6 +172,7 @@ class TestMessageReceivedSummary:
 
 
 # ── DM Received Summary ─────────────────────────────────
+
 
 class TestDmReceivedSummary:
     """Verify dm_received activity entry includes summary.
@@ -182,18 +189,20 @@ class TestDmReceivedSummary:
 
         dm_content = "緊急の報告です。システムに問題が発生しています。"
 
-        with patch("core.anima.AgentCore") as MockAgent, \
-             patch("core.anima.MemoryManager") as MockMM, \
-             patch("core.anima.Messenger") as MockMsger, \
-             patch("core._anima_heartbeat.ConversationMemory") as MockConvMem, \
-             patch("core._anima_inbox.StreamingJournal") as MockJournal:
-
+        with (
+            patch("core.anima.digital_anima.AgentCore") as MockAgent,
+            patch("core.anima.digital_anima.MemoryManager") as MockMM,
+            patch("core.anima.digital_anima.Messenger") as MockMsger,
+            patch("core.anima.heartbeat.ConversationMemory") as MockConvMem,
+            patch("core.anima.inbox.StreamingJournal") as MockJournal,
+        ):
             MockMM.return_value.read_model_config.return_value = MagicMock()
             MockMM.return_value.read_heartbeat_config.return_value = "チェック項目"
             MockMM.return_value.append_episode = MagicMock()
             MockMsger.return_value.unread_count.return_value = 1
 
             from core.schemas import Message as MsgSchema
+
             mock_msg = MsgSchema(
                 from_person="dave",
                 to_person="carol",
@@ -202,7 +211,9 @@ class TestDmReceivedSummary:
                 source="anima",
             )
             MockMsger.return_value.has_unread.return_value = True
-            MockMsger.return_value.receive_with_paths.return_value = [InboxItem(msg=mock_msg, path=Path("/fake/msg.json"))]
+            MockMsger.return_value.receive_with_paths.return_value = [
+                InboxItem(msg=mock_msg, path=Path("/fake/msg.json"))
+            ]
             MockMsger.return_value.archive_paths.return_value = 1
 
             mock_conv = MagicMock()
@@ -237,7 +248,8 @@ class TestDmReceivedSummary:
             mock_agent.background_manager = None
             mock_agent.drain_notifications.return_value = []
 
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
+
             anima = DigitalAnima(anima_dir, shared_dir)
             anima.agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
             await anima.process_inbox_message()
@@ -252,6 +264,7 @@ class TestDmReceivedSummary:
 
 
 # ── ActivityLogger Integration ───────────────────────────
+
 
 class TestActivityLoggerSummaryField:
     """Verify ActivityLogger correctly stores and retrieves summary field."""

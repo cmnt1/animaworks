@@ -8,6 +8,7 @@ Verifies:
 2. Sessions API returns threads list from conversation files
 3. Frontend JS body construction matches backend Pydantic model expectations
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,11 +17,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from core.memory.conversation import ConversationMemory
+from core.memory.conversation.memory import ConversationMemory
 from core.schemas import ModelConfig
-
 from tests.helpers.filesystem import create_anima_dir, create_test_data_dir
-
 
 # ── Paths ────────────────────────────────────────────────────
 
@@ -118,9 +117,7 @@ class TestSessionsAPIThreadsList:
         return app
 
     @pytest.mark.asyncio
-    async def test_sessions_api_lists_threads(
-        self, tmp_path: Path, anima_dir: Path, model_config: ModelConfig
-    ) -> None:
+    async def test_sessions_api_lists_threads(self, tmp_path: Path, anima_dir: Path, model_config: ModelConfig) -> None:
         """GET /api/animas/{name}/sessions returns threads from conversations dir."""
         data_dir = anima_dir.parent.parent  # animas/test-anima -> data_dir
         for tid in ["thread-a", "thread-b"]:

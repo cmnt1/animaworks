@@ -50,9 +50,9 @@ Wave 3
 
 | ファイル | 変更するIssue | 注意点 |
 |---------|--------------|--------|
-| `core/memory/consolidation.py` | 1, 2, 4, 5 | 日次固定化フローへのステージ追加順序を厳守 |
+| `core/memory/maintenance/consolidation.py` | 1, 2, 4, 5 | 日次固定化フローへのステージ追加順序を厳守 |
 | `core/memory/manager.py` | 1, 3, 5 | frontmatter読み書きはIssue 1で基盤構築、Issue 3で拡張 |
-| `core/memory/forgetting.py` | 6 | Issue 6のみ。他Issueとの競合なし |
+| `core/memory/maintenance/forgetting.py` | 6 | Issue 6のみ。他Issueとの競合なし |
 | `core/memory/validation.py` | 1, 2 | Issue 1で新設、Issue 2で拡張 |
 | `core/memory/rag/indexer.py` | 1, 2, 3 | frontmatterストリップ + メタデータ連携 |
 | `core/memory/rag/retriever.py` | 2 | supersededフィルタ追加 |
@@ -68,7 +68,7 @@ Wave 3
 
 > `docs/issues/20260218_consolidation-validation-pipeline.md`
 
-- [x] **Phase 1: YAMLフロントマター基盤 + マイグレーション** — 済: `core/memory/frontmatter.py`, `core/memory/manager.py`, `core/memory/consolidation.py`, `core/memory/rag/indexer.py`
+- [x] **Phase 1: YAMLフロントマター基盤 + マイグレーション** — 済: `core/memory/frontmatter.py`, `core/memory/manager.py`, `core/memory/maintenance/consolidation.py`, `core/memory/rag/indexer.py`
   - [x] 1-1: manager.py にフロントマター読み書きメソッド追加 — `write_knowledge_with_meta`, `read_knowledge_content`, `read_knowledge_metadata`
   - [x] 1-2: indexer.py にフロントマターストリップ処理追加 — `_strip_frontmatter`, `_parse_frontmatter`
   - [x] 1-3: レガシーknowledgeファイルの自動マイグレーション実装 — `_migrate_legacy_knowledge`
@@ -142,7 +142,7 @@ Wave 3
 > 前提: Issue 3 完了
 
 - [x] **Phase 1: 日次固定化の振り分け** — 済/更新: LLM tool-loop と `ProceduralDistiller.classify_and_distill` で実装
-  - [x] 1-1: プロンプト拡張（knowledge/procedures振り分け） — `core/memory/distillation.py`
+  - [x] 1-1: プロンプト拡張（knowledge/procedures振り分け） — `core/memory/maintenance/distillation.py`
   - [x] 1-2: procedures 書き込み実装 — `ProceduralDistiller.save_procedure`
   - [x] 1-3: 重複チェック（RAG類似度検索）実装 — `_check_rag_duplicate`
   - [x] 1-4: ユニットテスト — `tests/unit/core/memory/test_distillation.py`
@@ -157,7 +157,7 @@ Wave 3
 > `docs/issues/20260218_procedural-memory-reconsolidation.md`
 > 前提: Issue 3 完了
 
-- [x] **Phase 1: 再固定化トリガー + LLM Reflection** — 済: `core/memory/reconsolidation.py`
+- [x] **Phase 1: 再固定化トリガー + LLM Reflection** — 済: `core/memory/maintenance/reconsolidation.py`
   - [x] 1-1: 再固定化対象検出メソッド実装 — `find_reconsolidation_targets`
   - [x] 1-2: LLM Reflectionプロンプト + レスポンスパーサー — `_revise_procedure`
   - [x] 1-3: ユニットテスト — `tests/unit/core/memory/test_reconsolidation.py`
@@ -178,7 +178,7 @@ Wave 3
 > `docs/issues/20260218_procedural-memory-utility-forgetting.md`
 > 前提: Issue 3 + Issue 5 完了
 
-- [x] **Phase 1: PROTECTED解除 + 閾値設定** — 済: `core/memory/forgetting.py`
+- [x] **Phase 1: PROTECTED解除 + 閾値設定** — 済: `core/memory/maintenance/forgetting.py`
   - [x] 1-1: PROTECTED_MEMORY_TYPES から procedures 除外 — `PROTECTED_MEMORY_TYPES = {"skills", "shared_users"}`
   - [x] 1-2: _is_protected_procedure() 実装
   - [x] 1-3: _should_downscale_procedure() 実装

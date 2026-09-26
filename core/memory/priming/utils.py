@@ -136,7 +136,7 @@ def build_unified_searcher(
         retriever = get_retriever()
         indexer = getattr(retriever, "indexer", None) if retriever is not None else None
         if indexer is not None:
-            from core.memory.rag_search import RAGMemorySearch
+            from core.memory.retrieval.rag_search import RAGMemorySearch
             from core.paths import get_common_knowledge_dir, get_common_skills_dir
 
             rag_search = RAGMemorySearch(

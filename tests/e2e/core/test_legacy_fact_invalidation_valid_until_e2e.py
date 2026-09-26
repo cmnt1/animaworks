@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from core.memory.backend.legacy import LegacyRAGBackend
-from core.memory.fact_invalidation import FactCandidate, ReconcileAction, ReconcileConfig, reconcile_new_fact
-from core.memory.facts import FactRecord, append_fact_records, fact_file_for_record, read_fact_records
+from core.memory.facts.invalidation import FactCandidate, ReconcileAction, ReconcileConfig, reconcile_new_fact
+from core.memory.facts.store import FactRecord, append_fact_records, fact_file_for_record, read_fact_records
 
 
 @pytest.mark.asyncio

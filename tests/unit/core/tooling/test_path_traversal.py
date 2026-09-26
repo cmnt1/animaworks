@@ -56,7 +56,7 @@ def _make_handler(tmp_path: Path, anima_name: str = "test_anima"):
     handler._process_supervisor = None
     handler._read_paths: set[str] = set()
 
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
 
     handler._activity = MagicMock(spec=ActivityLogger)
 
@@ -281,7 +281,7 @@ class TestCreateAnimaPathTraversal:
         with (
             patch("core.paths.get_animas_dir", return_value=animas_dir),
             patch("core.paths.get_data_dir", return_value=data_dir),
-            patch("core.anima_factory.create_from_md") as mock_create,
+            patch("core.anima.factory.create_from_md") as mock_create,
             patch("cli.commands.init_cmd._register_anima_in_config"),
         ):
             mock_create.return_value = animas_dir / "testchild"

@@ -382,7 +382,7 @@ def test_vector_worker_status_includes_gpu_section(monkeypatch) -> None:
         "detected_at": None,
     }
     with (
-        patch("core.gpu.get_gpu_status", return_value=gpu),
+        patch("core.infra.gpu.get_gpu_status", return_value=gpu),
         TestClient(create_app()) as client,
     ):
         status = client.get("/status").json()

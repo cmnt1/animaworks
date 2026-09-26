@@ -12,7 +12,7 @@ class TestListKnowledgeFilesWithMeta:
     """Tests for ConsolidationEngine._list_knowledge_files_with_meta."""
 
     def _make_engine(self, tmp_path: Path):
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         anima_dir = tmp_path / "animas" / "test"
         anima_dir.mkdir(parents=True)
@@ -83,7 +83,7 @@ class TestFindMergeCandidates:
     """Tests for ConsolidationEngine._find_merge_candidates."""
 
     def _make_engine(self, tmp_path: Path):
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         anima_dir = tmp_path / "animas" / "test"
         anima_dir.mkdir(parents=True)
@@ -238,13 +238,13 @@ class TestFormatHelpers:
     """Tests for _format_knowledge_list and _format_merge_candidates."""
 
     def test_format_knowledge_list_empty(self) -> None:
-        from core._anima_lifecycle import _format_knowledge_list
+        from core.anima.lifecycle import _format_knowledge_list
 
         result = _format_knowledge_list([])
         assert "knowledgeファイルなし" in result
 
     def test_format_knowledge_list_with_data(self) -> None:
-        from core._anima_lifecycle import _format_knowledge_list
+        from core.anima.lifecycle import _format_knowledge_list
 
         files = [
             {
@@ -258,13 +258,13 @@ class TestFormatHelpers:
         assert "0.8" in result
 
     def test_format_merge_candidates_empty(self) -> None:
-        from core._anima_lifecycle import _format_merge_candidates
+        from core.anima.lifecycle import _format_merge_candidates
 
         result = _format_merge_candidates([])
         assert "マージ候補なし" in result
 
     def test_format_merge_candidates_with_data(self) -> None:
-        from core._anima_lifecycle import _format_merge_candidates
+        from core.anima.lifecycle import _format_merge_candidates
 
         candidates = [("a.md", "b.md", 0.85)]
         result = _format_merge_candidates(candidates)
@@ -357,7 +357,7 @@ class TestFindConflictingFactCandidates:
     """Tests for ConsolidationEngine._find_conflicting_fact_candidates."""
 
     def _make_engine(self, tmp_path: Path):
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         anima_dir = tmp_path / "animas" / "test"
         anima_dir.mkdir(parents=True)
@@ -384,12 +384,22 @@ class TestFindConflictingFactCandidates:
     def test_same_entity_attribute_different_value_one_pair(self, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
         self._write_fact(
-            engine, "2026-09-01", source="Anima", target="Policy", edge="HAS_LIMIT",
-            text="daily limit is 100", recorded_at="2026-09-01T00:00:00",
+            engine,
+            "2026-09-01",
+            source="Anima",
+            target="Policy",
+            edge="HAS_LIMIT",
+            text="daily limit is 100",
+            recorded_at="2026-09-01T00:00:00",
         )
         self._write_fact(
-            engine, "2026-09-10", source="Anima", target="Policy", edge="HAS_LIMIT",
-            text="daily limit is 200", recorded_at="2026-09-10T00:00:00",
+            engine,
+            "2026-09-10",
+            source="Anima",
+            target="Policy",
+            edge="HAS_LIMIT",
+            text="daily limit is 200",
+            recorded_at="2026-09-10T00:00:00",
         )
         result = engine._find_conflicting_fact_candidates()
         assert len(result) == 1
@@ -401,37 +411,67 @@ class TestFindConflictingFactCandidates:
     def test_same_value_no_conflict(self, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
         self._write_fact(
-            engine, "2026-09-01", source="Anima", target="Policy", edge="HAS_LIMIT",
-            text="daily limit is 100", recorded_at="2026-09-01T00:00:00",
+            engine,
+            "2026-09-01",
+            source="Anima",
+            target="Policy",
+            edge="HAS_LIMIT",
+            text="daily limit is 100",
+            recorded_at="2026-09-01T00:00:00",
         )
         self._write_fact(
-            engine, "2026-09-10", source="Anima", target="Policy", edge="HAS_LIMIT",
-            text="daily limit is 100", recorded_at="2026-09-10T00:00:00",
+            engine,
+            "2026-09-10",
+            source="Anima",
+            target="Policy",
+            edge="HAS_LIMIT",
+            text="daily limit is 100",
+            recorded_at="2026-09-10T00:00:00",
         )
         assert engine._find_conflicting_fact_candidates() == []
 
     def test_different_attribute_no_conflict(self, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
         self._write_fact(
-            engine, "2026-09-01", source="Anima", target="Policy", edge="HAS_LIMIT",
-            text="daily limit is 100", recorded_at="2026-09-01T00:00:00",
+            engine,
+            "2026-09-01",
+            source="Anima",
+            target="Policy",
+            edge="HAS_LIMIT",
+            text="daily limit is 100",
+            recorded_at="2026-09-01T00:00:00",
         )
         self._write_fact(
-            engine, "2026-09-10", source="Anima", target="Policy", edge="HAS_COLOR",
-            text="color is blue", recorded_at="2026-09-10T00:00:00",
+            engine,
+            "2026-09-10",
+            source="Anima",
+            target="Policy",
+            edge="HAS_COLOR",
+            text="color is blue",
+            recorded_at="2026-09-10T00:00:00",
         )
         assert engine._find_conflicting_fact_candidates() == []
 
     def test_archive_beyond_active_is_ignored(self, tmp_path: Path) -> None:
         engine = self._make_engine(tmp_path)
         self._write_fact_with_valid_until(
-            engine, "2026-09-01", source="Anima", target="Policy", edge="HAS_LIMIT",
-            text="daily limit is 100", recorded_at="2026-09-01T00:00:00",
+            engine,
+            "2026-09-01",
+            source="Anima",
+            target="Policy",
+            edge="HAS_LIMIT",
+            text="daily limit is 100",
+            recorded_at="2026-09-01T00:00:00",
             valid_until="2026-09-05T00:00:00",
         )
         self._write_fact(
-            engine, "2026-09-10", source="Anima", target="Policy", edge="HAS_LIMIT",
-            text="daily limit is 200", recorded_at="2026-09-10T00:00:00",
+            engine,
+            "2026-09-10",
+            source="Anima",
+            target="Policy",
+            edge="HAS_LIMIT",
+            text="daily limit is 200",
+            recorded_at="2026-09-10T00:00:00",
         )
         # The older fact is already invalid (archived) so it is not a live conflict.
         assert engine._find_conflicting_fact_candidates() == []
@@ -440,19 +480,37 @@ class TestFindConflictingFactCandidates:
         engine = self._make_engine(tmp_path)
         for _i, edge in enumerate(("A", "B", "C", "D", "E")):
             self._write_fact(
-                engine, "2026-09-01", source="Anima", target="Policy", edge=edge,
-                text=f"old {edge}", recorded_at="2026-09-01T00:00:00",
+                engine,
+                "2026-09-01",
+                source="Anima",
+                target="Policy",
+                edge=edge,
+                text=f"old {edge}",
+                recorded_at="2026-09-01T00:00:00",
             )
             self._write_fact(
-                engine, "2026-09-10", source="Anima", target="Policy", edge=edge,
-                text=f"new {edge}", recorded_at="2026-09-10T00:00:00",
+                engine,
+                "2026-09-10",
+                source="Anima",
+                target="Policy",
+                edge=edge,
+                text=f"new {edge}",
+                recorded_at="2026-09-10T00:00:00",
             )
         result = engine._find_conflicting_fact_candidates(max_pairs=3)
         assert len(result) == 3
 
     def _write_fact_with_valid_until(
-        self, engine, date_str: str, *, source: str, target: str, edge: str,
-        text: str, recorded_at: str, valid_until: str,
+        self,
+        engine,
+        date_str: str,
+        *,
+        source: str,
+        target: str,
+        edge: str,
+        text: str,
+        recorded_at: str,
+        valid_until: str,
     ):
         import json
 

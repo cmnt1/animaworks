@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -14,8 +15,7 @@ import json
 import time
 from pathlib import Path
 
-
-from core.messenger import InboxItem, Message
+from core.messaging.messenger import InboxItem, Message
 
 
 def _make_inbox_item(
@@ -45,6 +45,7 @@ def _make_inbox_item(
     if age_seconds > 0:
         old_time = time.time() - age_seconds
         import os
+
         os.utime(filepath, (old_time, old_time))
 
     msg = Message(**msg_data)

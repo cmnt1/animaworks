@@ -27,7 +27,7 @@ from core.config.models import (
     save_config,
 )
 from core.integrations.slack import dispatch
-from core.outbound import ResolvedRecipient, send_external
+from core.messaging.outbound import ResolvedRecipient, send_external
 from server.routes.webhooks import create_webhooks_router
 
 SIGNING_SECRET = "e2e_per_anima_slack_secret"

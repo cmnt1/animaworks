@@ -131,19 +131,19 @@ class TestRAGProceduresSearch:
 
     def test_resolve_search_types_knowledge(self):
         """scope=knowledge returns knowledge only."""
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
 
         assert RAGMemorySearch._resolve_search_types("knowledge") == ["knowledge"]
 
     def test_resolve_search_types_procedures(self):
         """scope=procedures returns procedures only."""
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
 
         assert RAGMemorySearch._resolve_search_types("procedures") == ["procedures"]
 
     def test_resolve_search_types_all(self):
         """scope=all returns both knowledge and procedures."""
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
 
         types = RAGMemorySearch._resolve_search_types("all")
         assert "knowledge" in types
@@ -151,13 +151,13 @@ class TestRAGProceduresSearch:
 
     def test_resolve_search_types_common_knowledge(self):
         """scope=common_knowledge returns knowledge."""
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
 
         assert RAGMemorySearch._resolve_search_types("common_knowledge") == ["knowledge"]
 
     def test_procedures_keyword_search(self, anima_dir, data_dir):
         """Procedures are included in keyword search."""
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
         from core.paths import get_common_knowledge_dir, get_common_skills_dir
 
         _write_procedure(anima_dir, "deploy", "Run deploy command here", 0.7)

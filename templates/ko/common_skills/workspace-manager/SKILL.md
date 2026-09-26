@@ -45,7 +45,7 @@ Anima는 평소 "자신의 집" (~/.animaworks/animas/{name}/)에 있습니다.
 
 ### 목록 조회
 
-조직 공유 레지스트리 목록은 `core.workspace.list_workspaces()`로 확인합니다. `read_memory_file(path="config.json")`은 사용하지 않습니다.
+조직 공유 레지스트리 목록은 `core.org.workspace.list_workspaces()`로 확인합니다. `read_memory_file(path="config.json")`은 사용하지 않습니다.
 
 ### 삭제
 

@@ -17,7 +17,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from core.file_access_policy import load_denied_roots, memory_source_is_allowed
+from core.config.file_access_policy import load_denied_roots, memory_source_is_allowed
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items
 from core.memory.priming.utils import build_queries, build_unified_searcher, normalize_trigger
 from core.memory.rag.indexer import MemoryIndexer

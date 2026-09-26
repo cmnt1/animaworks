@@ -8,15 +8,14 @@ Tests:
 - _handle_chunk() processes bootstrap_start / bootstrap_complete / bootstrap_busy
 - statusClass("bootstrapping") maps to the correct CSS class
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 from core.tooling.handler import active_session_type
-
 
 # ── process_message_stream bootstrap guard ────────────────────────
 
@@ -28,19 +27,26 @@ class TestProcessMessageStreamBootstrapGuard:
     async def test_bootstrap_busy_yields_immediately(self, tmp_path: Path):
         """When needs_bootstrap=True and lock is held, stream should
         yield a single bootstrap_busy chunk and return."""
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima_dir = tmp_path / "animas" / "test-anima"
         anima_dir.mkdir(parents=True)
         (anima_dir / "identity.md").write_text("# Test", encoding="utf-8")
         (anima_dir / "bootstrap.md").write_text("# Bootstrap", encoding="utf-8")
         for sub in [
-            "episodes", "knowledge", "procedures", "skills",
-            "state", "shortterm", "shortterm/archive", "transcripts",
+            "episodes",
+            "knowledge",
+            "procedures",
+            "skills",
+            "state",
+            "shortterm",
+            "shortterm/archive",
+            "transcripts",
         ]:
             (anima_dir / sub).mkdir(parents=True, exist_ok=True)
         (anima_dir / "state" / "current_state.md").write_text(
-            "status: idle\n", encoding="utf-8",
+            "status: idle\n",
+            encoding="utf-8",
         )
         (anima_dir / "state" / "pending.md").write_text("", encoding="utf-8")
 
@@ -50,9 +56,9 @@ class TestProcessMessageStreamBootstrapGuard:
         (shared_dir / "users").mkdir(parents=True)
 
         with (
-            patch("core.anima.MemoryManager"),
-            patch("core.anima.AgentCore"),
-            patch("core.anima.Messenger"),
+            patch("core.anima.digital_anima.MemoryManager"),
+            patch("core.anima.digital_anima.AgentCore"),
+            patch("core.anima.digital_anima.Messenger"),
         ):
             dp = DigitalAnima(anima_dir, shared_dir)
 
@@ -76,19 +82,26 @@ class TestProcessMessageStreamBootstrapGuard:
     async def test_no_bootstrap_file_proceeds_normally(self, tmp_path: Path):
         """When needs_bootstrap=False, stream should proceed normally
         even if the lock is held (waits for lock)."""
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima_dir = tmp_path / "animas" / "test-anima"
         anima_dir.mkdir(parents=True)
         (anima_dir / "identity.md").write_text("# Test", encoding="utf-8")
         # No bootstrap.md
         for sub in [
-            "episodes", "knowledge", "procedures", "skills",
-            "state", "shortterm", "shortterm/archive", "transcripts",
+            "episodes",
+            "knowledge",
+            "procedures",
+            "skills",
+            "state",
+            "shortterm",
+            "shortterm/archive",
+            "transcripts",
         ]:
             (anima_dir / sub).mkdir(parents=True, exist_ok=True)
         (anima_dir / "state" / "current_state.md").write_text(
-            "status: idle\n", encoding="utf-8",
+            "status: idle\n",
+            encoding="utf-8",
         )
         (anima_dir / "state" / "pending.md").write_text("", encoding="utf-8")
 
@@ -98,9 +111,9 @@ class TestProcessMessageStreamBootstrapGuard:
         (shared_dir / "users").mkdir(parents=True)
 
         with (
-            patch("core.anima.MemoryManager"),
-            patch("core.anima.AgentCore") as mock_agent_cls,
-            patch("core.anima.Messenger"),
+            patch("core.anima.digital_anima.MemoryManager"),
+            patch("core.anima.digital_anima.AgentCore") as mock_agent_cls,
+            patch("core.anima.digital_anima.Messenger"),
         ):
             dp = DigitalAnima(anima_dir, shared_dir)
 
@@ -118,13 +131,17 @@ class TestProcessMessageStreamBootstrapGuard:
             }
 
         dp.agent.run_cycle_streaming = _mock_stream
-        dp.memory.read_model_config = MagicMock(return_value={
-            "model": "test", "max_tokens": 100, "context_threshold": 0.5,
-            "conversation_history_threshold": 0.3,
-        })
+        dp.memory.read_model_config = MagicMock(
+            return_value={
+                "model": "test",
+                "max_tokens": 100,
+                "context_threshold": 0.5,
+                "conversation_history_threshold": 0.3,
+            }
+        )
 
         # Patch ConversationMemory to avoid file ops
-        with patch("core._anima_messaging.ConversationMemory") as mock_conv:
+        with patch("core.anima.messaging.ConversationMemory") as mock_conv:
             mock_conv_inst = MagicMock()
             mock_conv_inst.compress_if_needed = AsyncMock()
             mock_conv_inst.build_chat_prompt = MagicMock(return_value="prompt")
@@ -172,10 +189,12 @@ class TestHandleChunkBootstrap:
     def test_bootstrap_busy_chunk(self):
         from server.routes.chat import _handle_chunk
 
-        frame, text = _handle_chunk({
-            "type": "bootstrap_busy",
-            "message": "現在初期化中です。しばらくお待ちください。",
-        })
+        frame, text = _handle_chunk(
+            {
+                "type": "bootstrap_busy",
+                "message": "現在初期化中です。しばらくお待ちください。",
+            }
+        )
         assert frame is not None
         assert "event: bootstrap" in frame
         assert '"busy"' in frame
@@ -231,10 +250,12 @@ class TestHandleChunkBootstrap:
         """Ensure existing cycle_done handling is unaffected."""
         from server.routes.chat import _handle_chunk
 
-        frame, text = _handle_chunk({
-            "type": "cycle_done",
-            "cycle_result": {"summary": "done"},
-        })
+        frame, text = _handle_chunk(
+            {
+                "type": "cycle_done",
+                "cycle_result": {"summary": "done"},
+            }
+        )
         assert frame is not None
         assert "event: done" in frame
         assert text == "done"
@@ -250,6 +271,7 @@ class TestStatusClassBootstrapping:
         """The JS function statusClass("bootstrapping") should return
         "status-thinking".  We verify the Python-side equivalent logic
         here by reimplementing the mapping."""
+
         # Reimplementation of statusClass for testing
         def status_class(status: str | None) -> str:
             if not status:
@@ -280,8 +302,8 @@ class TestStreamingHandlerBootstrapNotification:
     async def test_bootstrap_start_emitted(self, tmp_path: Path):
         """When needs_bootstrap is True at stream start, a bootstrap_start
         chunk should be emitted before any anima stream chunks."""
-        from core.supervisor.streaming_handler import StreamingIPCHandler
         from core.supervisor.ipc import IPCRequest
+        from core.supervisor.streaming_handler import StreamingIPCHandler
 
         mock_anima = MagicMock()
         mock_anima.needs_bootstrap = True
@@ -316,8 +338,8 @@ class TestStreamingHandlerBootstrapNotification:
     async def test_bootstrap_complete_emitted_when_finished(self, tmp_path: Path):
         """When needs_bootstrap transitions from True to False during the
         stream, a bootstrap_complete chunk should be emitted."""
-        from core.supervisor.streaming_handler import StreamingIPCHandler
         from core.supervisor.ipc import IPCRequest
+        from core.supervisor.streaming_handler import StreamingIPCHandler
 
         mock_anima = MagicMock()
         # Start as True, then switch to False after stream
@@ -361,8 +383,8 @@ class TestStreamingHandlerBootstrapNotification:
 
     async def test_no_bootstrap_events_when_not_bootstrapping(self, tmp_path: Path):
         """When needs_bootstrap is False, no bootstrap events should appear."""
-        from core.supervisor.streaming_handler import StreamingIPCHandler
         from core.supervisor.ipc import IPCRequest
+        from core.supervisor.streaming_handler import StreamingIPCHandler
 
         mock_anima = MagicMock()
         mock_anima.needs_bootstrap = False

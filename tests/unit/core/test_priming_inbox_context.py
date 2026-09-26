@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from core.memory.activity import ActivityEntry
+from core.memory.activity.logger import ActivityEntry
 
 
 def _make_agent(anima_dir: Path, model: str = "claude-sonnet-4-20250514"):
@@ -23,15 +23,15 @@ def _make_agent(anima_dir: Path, model: str = "claude-sonnet-4-20250514"):
     messenger = MagicMock()
 
     with (
-        patch("core.agent.ToolHandler"),
-        patch("core.agent.AgentCore._check_sdk", return_value=False),
-        patch("core.agent.AgentCore._init_tool_registry", return_value=[]),
-        patch("core.agent.AgentCore._discover_personal_tools", return_value={}),
-        patch("core.agent.AgentCore._create_executor") as mock_create,
+        patch("core.agent.agent_core.ToolHandler"),
+        patch("core.agent.agent_core.AgentCore._check_sdk", return_value=False),
+        patch("core.agent.agent_core.AgentCore._init_tool_registry", return_value=[]),
+        patch("core.agent.agent_core.AgentCore._discover_personal_tools", return_value={}),
+        patch("core.agent.agent_core.AgentCore._create_executor") as mock_create,
     ):
         mock_executor = MagicMock()
         mock_create.return_value = mock_executor
-        from core.agent import AgentCore
+        from core.agent.agent_core import AgentCore
 
         agent = AgentCore(anima_dir, memory, mc, messenger)
         agent._executor = mock_executor
@@ -64,7 +64,7 @@ class TestGetRecentHumanMessagesInbox:
             ),
         ]
 
-        with patch("core.memory.activity.ActivityLogger.recent", return_value=entries) as recent:
+        with patch("core.memory.activity.logger.ActivityLogger.recent", return_value=entries) as recent:
             result = agent._get_recent_human_messages("inbox:alice")
 
         assert result == ["latest", ("new" * 100)[:200], "middle"]
@@ -73,7 +73,7 @@ class TestGetRecentHumanMessagesInbox:
     def test_inbox_trigger_does_not_load_chat_messages(self, tmp_path: Path):
         agent = _make_agent(tmp_path)
 
-        with patch("core.memory.conversation.ConversationMemory") as mock_conv_cls:
+        with patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls:
             result = agent._get_recent_human_messages("inbox:alice")
 
         assert result == []
@@ -90,7 +90,7 @@ class TestGetRecentHumanMessagesInbox:
         mock_state = MagicMock()
         mock_state.turns = [mock_turn]
 
-        with patch("core.memory.conversation.ConversationMemory") as mock_conv_cls:
+        with patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls:
             mock_conv_cls.return_value.load.return_value = mock_state
             result = agent._get_recent_human_messages("message:user1")
 
@@ -118,7 +118,7 @@ class TestGetRecentHumanMessagesInbox:
     def test_inbox_with_multiple_senders_returns_empty(self, tmp_path: Path):
         agent = _make_agent(tmp_path)
 
-        with patch("core.memory.conversation.ConversationMemory") as mock_conv_cls:
+        with patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls:
             result = agent._get_recent_human_messages("inbox:alice, bob")
 
         assert result == []
@@ -131,7 +131,7 @@ class TestGetRecentHumanMessagesInbox:
         mock_state = MagicMock()
         mock_state.turns = []
 
-        with patch("core.memory.conversation.ConversationMemory") as mock_conv_cls:
+        with patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls:
             result = agent._get_recent_human_messages("inbox:alice")
 
         assert result == []
@@ -141,7 +141,7 @@ class TestGetRecentHumanMessagesInbox:
         """If ConversationMemory fails to load, return empty gracefully."""
         agent = _make_agent(tmp_path)
 
-        with patch("core.memory.conversation.ConversationMemory") as mock_conv_cls:
+        with patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls:
             result = agent._get_recent_human_messages("inbox:alice")
 
         assert result == []
@@ -172,8 +172,8 @@ class TestGetRecentHumanMessagesInbox:
         with (
             patch("core.memory.priming.PrimingEngine", return_value=mock_engine),
             patch("core.memory.priming.format_priming_section", return_value=""),
-            patch("core.memory.conversation.ConversationMemory") as mock_conv_cls,
-            patch("core.memory.activity.ActivityLogger.recent", return_value=[inbox_entry]),
+            patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls,
+            patch("core.memory.activity.logger.ActivityLogger.recent", return_value=[inbox_entry]),
             patch("core.paths.get_shared_dir", return_value=tmp_path / "shared"),
         ):
             result = await agent._run_priming(

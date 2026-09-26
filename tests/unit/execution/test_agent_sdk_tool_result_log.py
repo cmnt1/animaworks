@@ -7,7 +7,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-
 from core.time_utils import now_jst
 
 
@@ -18,8 +17,11 @@ class TestLogToolResult:
         from core.execution.agent_sdk import _log_tool_result
 
         _log_tool_result(
-            tmp_path, "web_search", "tu_abc123",
-            "search result content", is_error=False,
+            tmp_path,
+            "web_search",
+            "tu_abc123",
+            "search result content",
+            is_error=False,
         )
 
         today = now_jst().strftime("%Y-%m-%d")
@@ -40,8 +42,11 @@ class TestLogToolResult:
         from core.execution.agent_sdk import _log_tool_result
 
         _log_tool_result(
-            tmp_path, "Bash", "tu_err456",
-            "command not found", is_error=True,
+            tmp_path,
+            "Bash",
+            "tu_err456",
+            "command not found",
+            is_error=True,
         )
 
         today = now_jst().strftime("%Y-%m-%d")
@@ -54,10 +59,12 @@ class TestLogToolResult:
         from core.execution.agent_sdk import _log_tool_result
 
         # Use a path that will cause an error (e.g., read-only or missing dir)
-        with patch("core.memory.activity.ActivityLogger.log", side_effect=RuntimeError("disk full")):
+        with patch("core.memory.activity.logger.ActivityLogger.log", side_effect=RuntimeError("disk full")):
             # Should not raise
             _log_tool_result(
-                tmp_path, "Read", "tu_xyz",
+                tmp_path,
+                "Read",
+                "tu_xyz",
                 "some content",
             )
 
@@ -93,7 +100,10 @@ class TestHandleToolResultBlockWithAnimaDir:
 
         block = self._make_block(content="grep results here")
         _handle_tool_result_block(
-            block, pending, None, "claude-sonnet-4-6",
+            block,
+            pending,
+            None,
+            "claude-sonnet-4-6",
             anima_dir=tmp_path,
         )
 
@@ -121,7 +131,10 @@ class TestHandleToolResultBlockWithAnimaDir:
 
         block = self._make_block(tool_use_id="tu_test2")
         _handle_tool_result_block(
-            block, pending, None, "claude-sonnet-4-6",
+            block,
+            pending,
+            None,
+            "claude-sonnet-4-6",
             # anima_dir not passed (default None)
         )
 

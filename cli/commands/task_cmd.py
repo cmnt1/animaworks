@@ -355,8 +355,8 @@ def _exit_board_error(message: str, exit_code: int, payload: dict | None, as_jso
 
 
 def _cmd_add(args: argparse.Namespace, manager) -> None:
+    from core.org.workspace import resolve_workspace
     from core.tasks.dispatch import publish_tasks
-    from core.workspace import resolve_workspace
 
     source = getattr(args, "source", "anima")
     instruction = getattr(args, "instruction", "")

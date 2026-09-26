@@ -29,7 +29,7 @@ def _make_runner(tmp_path: Path) -> AnimaRunner:
 async def test_compact_ok(tmp_path: Path):
     runner = _make_runner(tmp_path)
     with patch(
-        "core.session_compactor.run_idle_compaction",
+        "core.agent.session_compactor.run_idle_compaction",
         AsyncMock(return_value=True),
     ) as mock_compact:
         result = await runner._handle_compact_session({"thread_id": "alice-chat"})
@@ -41,7 +41,7 @@ async def test_compact_ok(tmp_path: Path):
 async def test_compact_skipped_when_lock_fails(tmp_path: Path):
     runner = _make_runner(tmp_path)
     with patch(
-        "core.session_compactor.run_idle_compaction",
+        "core.agent.session_compactor.run_idle_compaction",
         AsyncMock(return_value=False),
     ) as mock_compact:
         result = await runner._handle_compact_session({})
@@ -54,7 +54,10 @@ async def test_compact_skipped_when_lock_fails(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_compact_invalid_thread_id(tmp_path: Path):
     runner = _make_runner(tmp_path)
-    with patch("core.session_compactor.run_idle_compaction", AsyncMock()) as mock_compact, pytest.raises(ValueError):
+    with (
+        patch("core.agent.session_compactor.run_idle_compaction", AsyncMock()) as mock_compact,
+        pytest.raises(ValueError),
+    ):
         await runner._handle_compact_session({"thread_id": "bad thread id"})
     mock_compact.assert_not_called()
 

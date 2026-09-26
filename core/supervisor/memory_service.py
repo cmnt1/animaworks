@@ -372,7 +372,7 @@ class MemoryService:
             shutil.move(str(archive), str(live))
 
     def _rebuild_bm25_sync(self) -> None:
-        from core.memory.bm25 import rebuild_longterm_bm25_index
+        from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index
 
         rebuild_longterm_bm25_index(self.anima_dir)
 

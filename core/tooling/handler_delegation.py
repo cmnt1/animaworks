@@ -18,8 +18,8 @@ from core.tooling.handler_base import _error_result, build_outgoing_origin_chain
 from core.tooling.org_helpers import OrgHelpersMixin
 
 if TYPE_CHECKING:
-    from core.memory.activity import ActivityLogger
-    from core.messenger import Messenger
+    from core.memory.activity.logger import ActivityLogger
+    from core.messaging.messenger import Messenger
 
 logger = logging.getLogger("animaworks.tool_handler")
 
@@ -84,7 +84,7 @@ class DelegationMixin(OrgHelpersMixin):
         resolved_wd = ""
         if workspace_raw:
             try:
-                from core.workspace import resolve_workspace
+                from core.org.workspace import resolve_workspace
 
                 resolved_wd = str(resolve_workspace(workspace_raw))
             except ValueError as e:
@@ -118,7 +118,7 @@ class DelegationMixin(OrgHelpersMixin):
                     t("tooling.model_list_hint", error=model_err),
                 )
 
-        from core.company import check_company_boundary
+        from core.org.company import check_company_boundary
         from core.paths import get_animas_dir
 
         animas_dir = get_animas_dir()

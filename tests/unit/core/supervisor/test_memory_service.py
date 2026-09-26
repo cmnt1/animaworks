@@ -461,7 +461,7 @@ async def test_root_repair_swaps_reopens_and_queries(tmp_path: Path, monkeypatch
 
 @pytest.mark.asyncio
 async def test_root_repair_verification_failure_rolls_back_vector_and_bm25(tmp_path: Path, monkeypatch) -> None:
-    from core.memory.bm25 import longterm_bm25_index_path
+    from core.memory.retrieval.bm25 import longterm_bm25_index_path
 
     anima_dir = tmp_path / "animas" / "sakura"
     (anima_dir / "state").mkdir(parents=True)

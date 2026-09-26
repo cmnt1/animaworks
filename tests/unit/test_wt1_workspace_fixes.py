@@ -29,7 +29,7 @@ RENDER_UTILS_JS = REPO_ROOT / "server" / "static" / "shared" / "chat" / "render-
 WEBSOCKET_JS = REPO_ROOT / "server" / "static" / "modules" / "websocket.js"
 TIMELINE_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "timeline.js"
 CHAT_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "chat.js"
-ANIMA_PY = REPO_ROOT / "core" / "anima.py"
+ANIMA_PY = REPO_ROOT / "core" / "anima" / "digital_anima.py"
 
 
 # ── Issue A: WS Event Mismatch ────────────────────────
@@ -83,15 +83,16 @@ class TestIssueA_WSEventMismatch:
     def test_chat_response_handler_removed_from_app_js(self) -> None:
         """chat.response WS handler was dead code and must be removed."""
         src = APP_JS.read_text(encoding="utf-8")
-        assert 'onEvent("chat.response"' not in src, (
-            "chat.response handler still present in app.js (should be removed)"
-        )
+        assert 'onEvent("chat.response"' not in src, "chat.response handler still present in app.js (should be removed)"
 
     def test_anima_py_dm_received_has_to_person(self) -> None:
         """message_received (from_type=anima) log call in anima modules must include to_person=self.name."""
         src = "\n".join(
             p.read_text(encoding="utf-8")
-            for p in [ANIMA_PY, *(REPO_ROOT / "core").glob("_anima_*.py")]
+            for p in [
+                REPO_ROOT / "core" / "anima" / f"{name}.py"
+                for name in ("digital_anima", "lifecycle", "messaging", "inbox", "heartbeat")
+            ]
         )
         # Find activity.log("message_received" ...) calls — may span multiple lines
         matches = re.findall(
@@ -100,13 +101,8 @@ class TestIssueA_WSEventMismatch:
         )
         assert len(matches) > 0, "No activity.log('message_received') call found in anima.py"
         # At least one call must have from_type in meta and to_person=self.name
-        anima_dm_calls = [
-            m for m in matches
-            if "from_type" in m and "to_person" in m
-        ]
-        assert len(anima_dm_calls) >= 1, (
-            "No message_received log with from_type meta and to_person found"
-        )
+        anima_dm_calls = [m for m in matches if "from_type" in m and "to_person" in m]
+        assert len(anima_dm_calls) >= 1, "No message_received log with from_type meta and to_person found"
         for call in anima_dm_calls:
             # Accept both self.name (method) and anima_mixin.name (module function)
             assert "to_person=self.name" in call or "to_person=anima_mixin.name" in call, (
@@ -132,7 +128,7 @@ class TestIssueB_ActivitySidebarEmpty:
         """addActivity must use isoTs when provided (not always new Date())."""
         src = ACTIVITY_JS.read_text(encoding="utf-8")
         idx = src.index("function addActivity")
-        block = src[idx:idx + 300]
+        block = src[idx : idx + 300]
         assert "isoTs" in block, "isoTs not used in addActivity body"
         assert "new Date(isoTs)" in block, "addActivity does not parse isoTs into Date"
 
@@ -151,9 +147,7 @@ class TestIssueB_ActivitySidebarEmpty:
         )
         assert match, "loadActivityHistory function body not found"
         body = match.group(0)
-        assert "/api/activity/recent" in body, (
-            "loadActivityHistory does not fetch /api/activity/recent"
-        )
+        assert "/api/activity/recent" in body, "loadActivityHistory does not fetch /api/activity/recent"
 
     def test_activateRightTab_handles_activity(self) -> None:
         """activateRightTab must have an 'activity' case that calls loadActivityHistory."""
@@ -166,9 +160,7 @@ class TestIssueB_ActivitySidebarEmpty:
         assert match, "activateRightTab function not found"
         body = match.group(0)
         assert '"activity"' in body, 'No "activity" case in activateRightTab'
-        assert "loadActivityHistory" in body, (
-            "activateRightTab does not call loadActivityHistory for activity tab"
-        )
+        assert "loadActivityHistory" in body, "activateRightTab does not call loadActivityHistory for activity tab"
 
 
 # ── Issue C: chat.js Integration ──────────────────────
@@ -229,17 +221,14 @@ class TestIssueC_ChatJsIntegration:
         )
         assert match, "_renderTextZoneContent (streaming helper) not found"
         body = match.group(0)
-        assert "afterHeartbeatRelay" in body, (
-            "afterHeartbeatRelay state not handled in streaming text zone"
-        )
+        assert "afterHeartbeatRelay" in body, "afterHeartbeatRelay state not handled in streaming text zone"
 
     def test_resumeConversationStream_exists(self) -> None:
         """resumeConversationStream function must exist for page-reload stream recovery."""
         src = CHAT_STREAMING_JS.read_text(encoding="utf-8")
-        assert (
-            "function resumeConversationStream" in src
-            or "async function resumeConversationStream" in src
-        ), "resumeConversationStream function not found in chat-streaming.js"
+        assert "function resumeConversationStream" in src or "async function resumeConversationStream" in src, (
+            "resumeConversationStream function not found in chat-streaming.js"
+        )
 
     def test_resumeConversationStream_delegates_to_session_manager(self) -> None:
         """resumeConversationStream must delegate to ChatSessionManager."""
@@ -255,9 +244,7 @@ class TestIssueC_ChatJsIntegration:
 
     def test_chat_js_deleted(self) -> None:
         """workspace/modules/chat.js must be deleted (dead code removed)."""
-        assert not CHAT_JS.exists(), (
-            f"chat.js still exists at {CHAT_JS} — should have been deleted"
-        )
+        assert not CHAT_JS.exists(), f"chat.js still exists at {CHAT_JS} — should have been deleted"
 
 
 # ── Issue D: Timeline Filter Expansion ────────────────
@@ -279,36 +266,24 @@ class TestIssueD_TimelineFilterExpansion:
         return match.group(0)
 
     def test_human_notify_type_in_filter_defs(self, filter_defs_block: str) -> None:
-        assert '"human_notify"' in filter_defs_block, (
-            "human_notify type missing from filterDefs"
-        )
+        assert '"human_notify"' in filter_defs_block, "human_notify type missing from filterDefs"
 
     def test_notification_type_in_filter_defs(self, filter_defs_block: str) -> None:
-        assert '"notification"' in filter_defs_block, (
-            "notification type missing from filterDefs"
-        )
+        assert '"notification"' in filter_defs_block, "notification type missing from filterDefs"
 
     def test_error_type_in_filter_defs(self, filter_defs_block: str) -> None:
-        assert '"error"' in filter_defs_block, (
-            "error type missing from filterDefs"
-        )
+        assert '"error"' in filter_defs_block, "error type missing from filterDefs"
 
     def test_issue_resolved_type_in_filter_defs(self, filter_defs_block: str) -> None:
-        assert '"issue_resolved"' in filter_defs_block, (
-            "issue_resolved type missing from filterDefs"
-        )
+        assert '"issue_resolved"' in filter_defs_block, "issue_resolved type missing from filterDefs"
 
     def test_megaphone_label_in_filter_defs(self, filter_defs_block: str) -> None:
         """Megaphone emoji label groups human_notify and notification."""
-        assert "\U0001f4e3" in filter_defs_block, (
-            "Megaphone label missing from filterDefs"
-        )
+        assert "\U0001f4e3" in filter_defs_block, "Megaphone label missing from filterDefs"
 
     def test_warning_label_in_filter_defs(self, filter_defs_block: str) -> None:
         """Warning emoji label groups error and issue_resolved."""
-        assert "\u26a0\ufe0f" in filter_defs_block, (
-            "Warning label missing from filterDefs"
-        )
+        assert "\u26a0\ufe0f" in filter_defs_block, "Warning label missing from filterDefs"
 
     def test_human_notify_and_notification_grouped(self, filter_defs_block: str) -> None:
         """human_notify and notification must be in the same filter entry."""
@@ -319,9 +294,7 @@ class TestIssueD_TimelineFilterExpansion:
         )
         assert match, "No filter entry with human_notify found"
         entry = match.group(0)
-        assert '"notification"' in entry, (
-            "notification not grouped with human_notify in the same filter entry"
-        )
+        assert '"notification"' in entry, "notification not grouped with human_notify in the same filter entry"
 
     def test_error_and_issue_resolved_grouped(self, filter_defs_block: str) -> None:
         """error and issue_resolved must be in the same filter entry."""
@@ -331,6 +304,4 @@ class TestIssueD_TimelineFilterExpansion:
         )
         assert match, "No filter entry with error found"
         entry = match.group(0)
-        assert '"issue_resolved"' in entry, (
-            "issue_resolved not grouped with error in the same filter entry"
-        )
+        assert '"issue_resolved"' in entry, "issue_resolved not grouped with error in the same filter entry"

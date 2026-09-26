@@ -1,4 +1,4 @@
-"""Unit tests for core/agent.py — AgentCore orchestrator."""
+"""Unit tests for core/agent/agent_core.py — AgentCore orchestrator."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -36,15 +36,15 @@ def _make_agent(
     messenger = MagicMock()
 
     with (
-        patch("core.agent.ToolHandler"),
-        patch("core.agent.AgentCore._check_sdk", return_value=False),
-        patch("core.agent.AgentCore._init_tool_registry", return_value=[]),
-        patch("core.agent.AgentCore._discover_personal_tools", return_value={}),
-        patch("core.agent.AgentCore._create_executor") as mock_create,
+        patch("core.agent.agent_core.ToolHandler"),
+        patch("core.agent.agent_core.AgentCore._check_sdk", return_value=False),
+        patch("core.agent.agent_core.AgentCore._init_tool_registry", return_value=[]),
+        patch("core.agent.agent_core.AgentCore._discover_personal_tools", return_value={}),
+        patch("core.agent.agent_core.AgentCore._create_executor") as mock_create,
     ):
         mock_executor = MagicMock()
         mock_create.return_value = mock_executor
-        from core.agent import AgentCore
+        from core.agent.agent_core import AgentCore
 
         agent = AgentCore(anima_dir, memory, mc, messenger)
         agent._executor = mock_executor
@@ -292,8 +292,8 @@ class TestRunCycle:
         agent._executor.execute = AsyncMock(return_value=ExecutionResult(text="", error=True, reason="quota_exhausted"))
 
         with (
-            patch("core._agent_cycle.build_system_prompt", return_value=BuildResult(system_prompt="sysprompt")),
-            patch("core._agent_cycle.ShortTermMemory") as shortterm,
+            patch("core.agent.cycle.build_system_prompt", return_value=BuildResult(system_prompt="sysprompt")),
+            patch("core.agent.cycle.ShortTermMemory") as shortterm,
         ):
             shortterm.return_value.has_pending.return_value = False
             result = await agent.run_cycle("Hello", trigger="cron:test")
@@ -311,9 +311,9 @@ class TestRunCycle:
 
         mock_build_result = BuildResult(system_prompt="sysprompt")
         with (
-            patch("core._agent_cycle.build_system_prompt", return_value=mock_build_result),
-            patch("core._agent_cycle.inject_shortterm", return_value="sysprompt"),
-            patch("core._agent_cycle.ShortTermMemory") as MockST,
+            patch("core.agent.cycle.build_system_prompt", return_value=mock_build_result),
+            patch("core.agent.cycle.inject_shortterm", return_value="sysprompt"),
+            patch("core.agent.cycle.ShortTermMemory") as MockST,
         ):
             MockST.return_value.has_pending.return_value = False
             MockST.return_value.clear = MagicMock()
@@ -332,9 +332,9 @@ class TestRunCycle:
 
         mock_build_result = BuildResult(system_prompt="sysprompt")
         with (
-            patch("core._agent_cycle.build_system_prompt", return_value=mock_build_result),
-            patch("core._agent_cycle.inject_shortterm", return_value="sysprompt"),
-            patch("core._agent_cycle.ShortTermMemory") as MockST,
+            patch("core.agent.cycle.build_system_prompt", return_value=mock_build_result),
+            patch("core.agent.cycle.inject_shortterm", return_value="sysprompt"),
+            patch("core.agent.cycle.ShortTermMemory") as MockST,
         ):
             MockST.return_value.has_pending.return_value = False
             MockST.return_value.clear = MagicMock()
@@ -360,10 +360,10 @@ class TestRunCycle:
 
         mock_build_result = BuildResult(system_prompt="sysprompt")
         with (
-            patch("core._agent_cycle.build_system_prompt", return_value=mock_build_result),
-            patch("core._agent_cycle.inject_shortterm", return_value="sysprompt"),
-            patch("core._agent_cycle.ShortTermMemory") as MockST,
-            patch("core._agent_cycle.ContextTracker") as MockCT,
+            patch("core.agent.cycle.build_system_prompt", return_value=mock_build_result),
+            patch("core.agent.cycle.inject_shortterm", return_value="sysprompt"),
+            patch("core.agent.cycle.ShortTermMemory") as MockST,
+            patch("core.agent.cycle.ContextTracker") as MockCT,
         ):
             MockST.return_value.has_pending.return_value = False
             MockST.return_value.clear = MagicMock()

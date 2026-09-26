@@ -580,7 +580,7 @@ def _build_pre_compact_hook(
 def _log_compaction_event(anima_dir: Path, trigger: str, *, blocked: bool) -> None:
     """Record compaction event to activity log."""
     try:
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         action = "blocked" if blocked else "allowed"
@@ -620,7 +620,7 @@ def _build_post_tool_hook(anima_dir: Path) -> Callable:
         # Attach here only for SDK-native tool names (Bash, Write, ...).
         if not tool_name.startswith("mcp__aw__"):
             try:
-                from core.memory.action_gate import (
+                from core.tooling.action_gate import (
                     action_tool_name_for_sdk,
                     find_action_rules,
                     format_action_rules,

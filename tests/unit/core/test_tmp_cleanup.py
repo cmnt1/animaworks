@@ -4,14 +4,14 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for core/tmp_cleanup.py."""
+"""Unit tests for core/infra/tmp_cleanup.py."""
 
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from core.tmp_cleanup import (
+from core.infra.tmp_cleanup import (
     clean_tmp_dir,
     format_size,
     parse_size,
@@ -56,7 +56,7 @@ class TestTmpCleanup:
         new_file = tmp_root / "new.txt"
         new_file.write_text("new", encoding="utf-8")
 
-        with patch("core.tmp_cleanup.get_data_dir", return_value=data_dir):
+        with patch("core.infra.tmp_cleanup.get_data_dir", return_value=data_dir):
             scan = scan_tmp_dir(tmp_root)
             assert scan.entry_count == 2
             assert scan.total_bytes > 0
@@ -77,7 +77,7 @@ class TestTmpCleanup:
         target = tmp_root / "large.json"
         target.write_text("x" * 1024, encoding="utf-8")
 
-        with patch("core.tmp_cleanup.get_data_dir", return_value=data_dir):
+        with patch("core.infra.tmp_cleanup.get_data_dir", return_value=data_dir):
             result = clean_tmp_dir(tmp_root, clean_all=True)
             assert result.removed_count == 1
             assert not target.exists()
@@ -90,7 +90,7 @@ class TestTmpCleanup:
         target = tmp_root / "keep.txt"
         target.write_text("keep", encoding="utf-8")
 
-        with patch("core.tmp_cleanup.get_data_dir", return_value=data_dir):
+        with patch("core.infra.tmp_cleanup.get_data_dir", return_value=data_dir):
             result = clean_tmp_dir(tmp_root, clean_all=True, dry_run=True)
             assert result.removed_count == 1
             assert target.exists()
@@ -104,6 +104,6 @@ class TestTmpCleanup:
         large = tmp_root / "large.bin"
         large.write_bytes(b"x" * 2048)
 
-        with patch("core.tmp_cleanup.get_data_dir", return_value=data_dir):
+        with patch("core.infra.tmp_cleanup.get_data_dir", return_value=data_dir):
             candidates = select_clean_candidates(tmp_root, older_than_days=None, min_size_bytes=1024)
             assert [entry.path.name for entry in candidates] == ["large.bin"]

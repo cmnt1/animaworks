@@ -7,6 +7,7 @@ Tests the complete pipeline: HTTP request → signature verification →
 channel mapping → Messenger → inbox file creation, using real filesystem
 and config (no mocks on Messenger or config loading).
 """
+
 from __future__ import annotations
 
 import base64
@@ -33,6 +34,7 @@ def e2e_app(data_dir, monkeypatch):
     """Create a full-stack test app with real data_dir and config."""
     # Patch get_data_dir to use test data_dir
     monkeypatch.setattr("server.routes.webhooks.get_data_dir", lambda: data_dir)
+
     # Patch get_credential to return test secrets
     def _mock_get_credential(credential_name, tool_name, **kwargs):
         creds = {
@@ -42,6 +44,7 @@ def e2e_app(data_dir, monkeypatch):
         if credential_name in creds:
             return creds[credential_name]
         raise Exception(f"Unknown credential: {credential_name}")
+
     monkeypatch.setattr("server.routes.webhooks.get_credential", _mock_get_credential)
 
     app = FastAPI()
@@ -58,9 +61,14 @@ def e2e_client(e2e_app):
 def _slack_sign(body: bytes, ts: str | None = None) -> dict[str, str]:
     ts = ts or str(int(time.time()))
     sig_base = f"v0:{ts}:{body.decode('utf-8')}"
-    sig = "v0=" + hmac.new(
-        SIGNING_SECRET.encode(), sig_base.encode(), hashlib.sha256,
-    ).hexdigest()
+    sig = (
+        "v0="
+        + hmac.new(
+            SIGNING_SECRET.encode(),
+            sig_base.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+    )
     return {"X-Slack-Signature": sig, "X-Slack-Request-Timestamp": ts}
 
 
@@ -84,16 +92,18 @@ class TestSlackWebhookE2E:
         save_config(config, data_dir / "config.json")
 
         # Send Slack event
-        payload = json.dumps({
-            "type": "event_callback",
-            "event": {
-                "type": "message",
-                "channel": "C_E2E_TEST",
-                "user": "U_E2E_USER",
-                "text": "E2E test message from Slack",
-                "ts": "9999999999.000001",
-            },
-        })
+        payload = json.dumps(
+            {
+                "type": "event_callback",
+                "event": {
+                    "type": "message",
+                    "channel": "C_E2E_TEST",
+                    "user": "U_E2E_USER",
+                    "text": "E2E test message from Slack",
+                    "ts": "9999999999.000001",
+                },
+            }
+        )
         body = payload.encode("utf-8")
         resp = e2e_client.post(
             "/api/webhooks/slack/events",
@@ -128,16 +138,18 @@ class TestSlackWebhookE2E:
     def test_disabled_slack_drops_silently(self, e2e_client, data_dir):
         """When slack is disabled, messages are accepted but not delivered."""
         # Default config has slack disabled
-        payload = json.dumps({
-            "type": "event_callback",
-            "event": {
-                "type": "message",
-                "channel": "C_ANY",
-                "user": "U_ANY",
-                "text": "should be dropped",
-                "ts": "1.1",
-            },
-        })
+        payload = json.dumps(
+            {
+                "type": "event_callback",
+                "event": {
+                    "type": "message",
+                    "channel": "C_ANY",
+                    "user": "U_ANY",
+                    "text": "should be dropped",
+                    "ts": "1.1",
+                },
+            }
+        )
         body = payload.encode("utf-8")
         resp = e2e_client.post(
             "/api/webhooks/slack/events",
@@ -161,19 +173,22 @@ class TestSlackWebhookE2E:
         save_config(config, data_dir / "config.json")
 
         for i in range(3):
-            payload = json.dumps({
-                "type": "event_callback",
-                "event": {
-                    "type": "message",
-                    "channel": "C_MULTI",
-                    "user": "U_MULTI",
-                    "text": f"message {i}",
-                    "ts": f"100000000{i}.00000{i}",
-                },
-            })
+            payload = json.dumps(
+                {
+                    "type": "event_callback",
+                    "event": {
+                        "type": "message",
+                        "channel": "C_MULTI",
+                        "user": "U_MULTI",
+                        "text": f"message {i}",
+                        "ts": f"100000000{i}.00000{i}",
+                    },
+                }
+            )
             body = payload.encode("utf-8")
             # Small delay to ensure unique message IDs
             import time as _t
+
             _t.sleep(0.01)
             resp = e2e_client.post(
                 "/api/webhooks/slack/events",
@@ -212,15 +227,17 @@ class TestChatworkWebhookE2E:
         )
         save_config(config, data_dir / "config.json")
 
-        body = json.dumps({
-            "webhook_event_type": "message_created",
-            "webhook_event": {
-                "room_id": 99999,
-                "message_id": "e2e_msg_001",
-                "body": "E2E test from Chatwork",
-                "account": {"account_id": 54321, "name": "owner"},
-            },
-        }).encode("utf-8")
+        body = json.dumps(
+            {
+                "webhook_event_type": "message_created",
+                "webhook_event": {
+                    "room_id": 99999,
+                    "message_id": "e2e_msg_001",
+                    "body": "E2E test from Chatwork",
+                    "account": {"account_id": 54321, "name": "owner"},
+                },
+            }
+        ).encode("utf-8")
         resp = e2e_client.post(
             "/api/webhooks/chatwork",
             content=body,
@@ -242,10 +259,12 @@ class TestChatworkWebhookE2E:
 
     def test_invalid_signature_rejected(self, e2e_client):
         """Chatwork requests with wrong signature are rejected."""
-        body = json.dumps({
-            "webhook_event_type": "message_created",
-            "webhook_event": {"body": "test"},
-        }).encode("utf-8")
+        body = json.dumps(
+            {
+                "webhook_event_type": "message_created",
+                "webhook_event": {"body": "test"},
+            }
+        ).encode("utf-8")
         resp = e2e_client.post(
             "/api/webhooks/chatwork",
             content=body,
@@ -260,7 +279,7 @@ class TestChatworkWebhookE2E:
 class TestMessengerReceiveExternalE2E:
     def test_receive_external_creates_file(self, data_dir):
         """Messenger.receive_external writes a valid Message JSON to inbox."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared_dir = data_dir / "shared"
         messenger = Messenger(shared_dir, "test-anima")
@@ -292,7 +311,7 @@ class TestMessengerReceiveExternalE2E:
 
     def test_receive_external_appears_in_receive(self, data_dir):
         """External messages should be readable via receive()."""
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         shared_dir = data_dir / "shared"
         messenger = Messenger(shared_dir, "inbox-test")

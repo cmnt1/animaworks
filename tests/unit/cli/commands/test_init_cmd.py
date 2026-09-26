@@ -14,11 +14,9 @@ import pytest
 class TestCmdInit:
     """Tests for cmd_init function."""
 
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     @patch("core.paths.get_data_dir")
-    def test_first_time_init(
-        self, mock_get_dir, mock_ensure, tmp_path, capsys
-    ):
+    def test_first_time_init(self, mock_get_dir, mock_ensure, tmp_path, capsys):
         from cli.commands.init_cmd import cmd_init
 
         data_dir = tmp_path / ".animaworks"
@@ -26,8 +24,13 @@ class TestCmdInit:
         mock_get_dir.return_value = data_dir
 
         args = argparse.Namespace(
-            force=False, reset=False, template=None,
-            from_md=None, blank=None, skip_anima=False, name=None,
+            force=False,
+            reset=False,
+            template=None,
+            from_md=None,
+            blank=None,
+            skip_anima=False,
+            name=None,
         )
         cmd_init(args)
 
@@ -45,15 +48,20 @@ class TestCmdInit:
         mock_get_dir.return_value = data_dir
 
         args = argparse.Namespace(
-            force=False, reset=False, template=None,
-            from_md=None, blank=None, skip_anima=False, name=None,
+            force=False,
+            reset=False,
+            template=None,
+            from_md=None,
+            blank=None,
+            skip_anima=False,
+            name=None,
         )
         cmd_init(args)
 
         captured = capsys.readouterr()
         assert "already exists" in captured.out
 
-    @patch("core.init.merge_templates")
+    @patch("core.infra.runtime_init.merge_templates")
     @patch("core.paths.get_data_dir")
     def test_force_merge(self, mock_get_dir, mock_merge, tmp_path, capsys):
         from cli.commands.init_cmd import cmd_init
@@ -65,15 +73,20 @@ class TestCmdInit:
         mock_merge.return_value = ["prompts/new.md"]
 
         args = argparse.Namespace(
-            force=True, reset=False, template=None,
-            from_md=None, blank=None, skip_anima=False, name=None,
+            force=True,
+            reset=False,
+            template=None,
+            from_md=None,
+            blank=None,
+            skip_anima=False,
+            name=None,
         )
         cmd_init(args)
 
         captured = capsys.readouterr()
         assert "Merged 1 new file" in captured.out
 
-    @patch("core.init.merge_templates")
+    @patch("core.infra.runtime_init.merge_templates")
     @patch("core.paths.get_data_dir")
     def test_force_no_changes(self, mock_get_dir, mock_merge, tmp_path, capsys):
         from cli.commands.init_cmd import cmd_init
@@ -85,15 +98,20 @@ class TestCmdInit:
         mock_merge.return_value = []
 
         args = argparse.Namespace(
-            force=True, reset=False, template=None,
-            from_md=None, blank=None, skip_anima=False, name=None,
+            force=True,
+            reset=False,
+            template=None,
+            from_md=None,
+            blank=None,
+            skip_anima=False,
+            name=None,
         )
         cmd_init(args)
 
         captured = capsys.readouterr()
         assert "Already up to date" in captured.out
 
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     @patch("core.paths.get_data_dir")
     def test_skip_anima(self, mock_get_dir, mock_ensure, tmp_path, capsys):
         from cli.commands.init_cmd import cmd_init
@@ -103,8 +121,13 @@ class TestCmdInit:
         mock_get_dir.return_value = data_dir
 
         args = argparse.Namespace(
-            force=False, reset=False, template=None,
-            from_md=None, blank=None, skip_anima=True, name=None,
+            force=False,
+            reset=False,
+            template=None,
+            from_md=None,
+            blank=None,
+            skip_anima=True,
+            name=None,
         )
         cmd_init(args)
 
@@ -112,12 +135,10 @@ class TestCmdInit:
         assert "no animas" in captured.out
 
     @patch("cli.commands.init_cmd._register_anima_in_config")
-    @patch("core.anima_factory.create_from_template")
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.anima.factory.create_from_template")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     @patch("core.paths.get_data_dir")
-    def test_template_mode(
-        self, mock_get_dir, mock_ensure, mock_create, mock_register, tmp_path, capsys
-    ):
+    def test_template_mode(self, mock_get_dir, mock_ensure, mock_create, mock_register, tmp_path, capsys):
         from cli.commands.init_cmd import cmd_init
 
         data_dir = tmp_path / ".animaworks"
@@ -130,8 +151,13 @@ class TestCmdInit:
         mock_create.return_value = anima_dir
 
         args = argparse.Namespace(
-            force=False, reset=False, template="basic",
-            from_md=None, blank=None, skip_anima=False, name=None,
+            force=False,
+            reset=False,
+            template="basic",
+            from_md=None,
+            blank=None,
+            skip_anima=False,
+            name=None,
         )
         cmd_init(args)
 
@@ -140,14 +166,11 @@ class TestCmdInit:
         assert "alice" in captured.out
 
     @patch("cli.commands.init_cmd._register_anima_in_config")
-    @patch("core.anima_factory.validate_anima_name")
-    @patch("core.anima_factory.create_blank")
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.anima.factory.validate_anima_name")
+    @patch("core.anima.factory.create_blank")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     @patch("core.paths.get_data_dir")
-    def test_blank_mode(
-        self, mock_get_dir, mock_ensure, mock_create, mock_validate, mock_register,
-        tmp_path, capsys
-    ):
+    def test_blank_mode(self, mock_get_dir, mock_ensure, mock_create, mock_validate, mock_register, tmp_path, capsys):
         from cli.commands.init_cmd import cmd_init
 
         data_dir = tmp_path / ".animaworks"
@@ -161,8 +184,13 @@ class TestCmdInit:
         mock_create.return_value = anima_dir
 
         args = argparse.Namespace(
-            force=False, reset=False, template=None,
-            from_md=None, blank="bob", skip_anima=False, name=None,
+            force=False,
+            reset=False,
+            template=None,
+            from_md=None,
+            blank="bob",
+            skip_anima=False,
+            name=None,
         )
         cmd_init(args)
 
@@ -170,12 +198,10 @@ class TestCmdInit:
         captured = capsys.readouterr()
         assert "bob" in captured.out
 
-    @patch("core.anima_factory.validate_anima_name")
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.anima.factory.validate_anima_name")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     @patch("core.paths.get_data_dir")
-    def test_blank_mode_invalid_name(
-        self, mock_get_dir, mock_ensure, mock_validate, tmp_path, capsys
-    ):
+    def test_blank_mode_invalid_name(self, mock_get_dir, mock_ensure, mock_validate, tmp_path, capsys):
         from cli.commands.init_cmd import cmd_init
 
         data_dir = tmp_path / ".animaworks"
@@ -185,8 +211,13 @@ class TestCmdInit:
         mock_validate.return_value = "Name must be lowercase"
 
         args = argparse.Namespace(
-            force=False, reset=False, template=None,
-            from_md=None, blank="INVALID", skip_anima=False, name=None,
+            force=False,
+            reset=False,
+            template=None,
+            from_md=None,
+            blank="INVALID",
+            skip_anima=False,
+            name=None,
         )
         with pytest.raises(SystemExit):
             cmd_init(args)
@@ -197,6 +228,7 @@ class TestRegisterAnimaInConfig:
 
     def test_register_new_anima(self, tmp_path):
         import json
+
         from cli.commands.init_cmd import _register_anima_in_config
 
         config_path = tmp_path / "config.json"
@@ -222,5 +254,3 @@ class TestRegisterAnimaInConfig:
 
         # No config.json exists — should return silently
         _register_anima_in_config(tmp_path, "alice")
-
-

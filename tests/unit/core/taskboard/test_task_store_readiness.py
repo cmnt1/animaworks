@@ -65,7 +65,7 @@ async def test_server_preflight_blocks_worker_and_infrastructure_start(tmp_path:
     )
     with (
         patch("core.memory.frontmatter.FrontmatterService"),
-        patch("core.infra.ensure_infra_services", new=AsyncMock()) as start_infra,
+        patch("core.infra.services.ensure_infra_services", new=AsyncMock()) as start_infra,
         pytest.raises(RuntimeError, match="task-store migrate"),
     ):
         await _startup_animas_background(app, suppress_errors=False)

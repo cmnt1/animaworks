@@ -36,7 +36,7 @@ Storage (reference):
 
 ## Channel Access Control (ACL)
 
-`is_channel_member()` in `core/messenger.py` performs the check. Channel names must match `^[a-z][a-z0-9_-]{0,30}$` (path traversal prevention).
+`is_channel_member()` in `core/messaging/messenger.py` performs the check. Channel names must match `^[a-z][a-z0-9_-]{0,30}$` (path traversal prevention).
 
 Channels are either **open** or **restricted**.
 

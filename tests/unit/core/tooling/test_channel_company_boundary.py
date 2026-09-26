@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from core.messenger import (
+from core.messaging.messenger import (
     ChannelMeta,
     Messenger,
     is_channel_member,
@@ -55,10 +55,7 @@ def _make_channel(data_dir: Path, channel: str, members: list[str]) -> Path:
     channels_dir.mkdir(parents=True, exist_ok=True)
     channel_file = channels_dir / f"{channel}.jsonl"
     channel_file.write_text(
-        json.dumps(
-            {"ts": "2026-07-20T00:00:00+09:00", "from": members[-1], "text": "secret"}
-        )
-        + "\n",
+        json.dumps({"ts": "2026-07-20T00:00:00+09:00", "from": members[-1], "text": "secret"}) + "\n",
         encoding="utf-8",
     )
     save_channel_meta(data_dir / "shared", channel, ChannelMeta(members=members))
@@ -84,7 +81,7 @@ def test_post_rejects_mixed_company_channel_then_observes_status_change(tmp_path
     )
     limiter = MagicMock()
     limiter.check_global_outbound.return_value = True
-    with patch("core.cascade_limiter.get_depth_limiter", return_value=limiter):
+    with patch("core.messaging.cascade_limiter.get_depth_limiter", return_value=limiter):
         allowed = handler._handle_post_channel({"channel": "team", "text": "hello"})
 
     assert allowed == "Posted to #team"
@@ -135,7 +132,7 @@ def test_company_scoped_open_channel_same_company_allows_post(tmp_path: Path) ->
 
     limiter = MagicMock()
     limiter.check_global_outbound.return_value = True
-    with patch("core.cascade_limiter.get_depth_limiter", return_value=limiter):
+    with patch("core.messaging.cascade_limiter.get_depth_limiter", return_value=limiter):
         result = handler._handle_post_channel({"channel": "general", "text": "hello"})
 
     assert result == "Posted to #general"
@@ -170,7 +167,7 @@ def test_company_scoped_open_channel_unassigned_legacy_allows(tmp_path: Path) ->
 
     limiter = MagicMock()
     limiter.check_global_outbound.return_value = True
-    with patch("core.cascade_limiter.get_depth_limiter", return_value=limiter):
+    with patch("core.messaging.cascade_limiter.get_depth_limiter", return_value=limiter):
         result = handler._handle_post_channel({"channel": "ops", "text": "hello"})
 
     assert result == "Posted to #ops"
@@ -187,7 +184,7 @@ def test_unassigned_open_channel_allows_unassigned_anima(tmp_path: Path) -> None
 
     limiter = MagicMock()
     limiter.check_global_outbound.return_value = True
-    with patch("core.cascade_limiter.get_depth_limiter", return_value=limiter):
+    with patch("core.messaging.cascade_limiter.get_depth_limiter", return_value=limiter):
         result = handler._handle_post_channel({"channel": "general", "text": "hello"})
 
     assert result == "Posted to #general"
@@ -256,9 +253,7 @@ def test_unassigned_anima_can_read_scoped_and_unattributed_open_channels(
     handler = _make_handler(tmp_path, "legacy")
 
     assert "scoped-content" in handler._handle_read_channel({"channel": "scoped"})
-    assert "unattributed-content" in handler._handle_read_channel(
-        {"channel": "unattributed"}
-    )
+    assert "unattributed-content" in handler._handle_read_channel({"channel": "unattributed"})
 
 
 def test_restricted_channel_members_take_precedence_over_company(tmp_path: Path) -> None:
@@ -293,9 +288,7 @@ def test_create_channel_auto_assigns_creator_company(tmp_path: Path) -> None:
     _make_anima(tmp_path, "same", "alpha")
     handler = _make_handler(tmp_path)
 
-    result = handler._handle_manage_channel(
-        {"action": "create", "channel": "alpha-room", "members": ["same"]}
-    )
+    result = handler._handle_manage_channel({"action": "create", "channel": "alpha-room", "members": ["same"]})
 
     assert "alpha-room" in result
     meta = load_channel_meta(tmp_path / "shared", "alpha-room")
@@ -339,9 +332,7 @@ def test_create_channel_rejects_cross_company_member(tmp_path: Path) -> None:
     _write_company(tmp_path, "beta", "Beta Corporation")
     handler = _make_handler(tmp_path)
 
-    result = handler._handle_manage_channel(
-        {"action": "create", "channel": "mixed", "members": ["bob"]}
-    )
+    result = handler._handle_manage_channel({"action": "create", "channel": "mixed", "members": ["bob"]})
 
     assert "Beta Corporation" in result
     assert not (tmp_path / "shared" / "channels" / "mixed.jsonl").exists()
@@ -355,9 +346,7 @@ def test_add_member_rejects_cross_company_member_without_mutation(tmp_path: Path
     _make_channel(tmp_path, "team", ["alice"])
     handler = _make_handler(tmp_path)
 
-    result = handler._handle_manage_channel(
-        {"action": "add_member", "channel": "team", "members": ["bob"]}
-    )
+    result = handler._handle_manage_channel({"action": "add_member", "channel": "team", "members": ["bob"]})
 
     assert "Beta Corporation" in result
     meta = load_channel_meta(tmp_path / "shared", "team")
@@ -370,9 +359,7 @@ def test_unassigned_anima_keeps_legacy_cross_company_access(tmp_path: Path) -> N
     _make_anima(tmp_path, "bob", "beta")
     handler = _make_handler(tmp_path, "legacy")
 
-    result = handler._handle_manage_channel(
-        {"action": "create", "channel": "legacy-team", "members": ["bob"]}
-    )
+    result = handler._handle_manage_channel({"action": "create", "channel": "legacy-team", "members": ["bob"]})
 
     assert "legacy-team" in result
     meta = load_channel_meta(tmp_path / "shared", "legacy-team")

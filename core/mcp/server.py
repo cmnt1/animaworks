@@ -444,7 +444,7 @@ def _get_tool_handler() -> Any:
         memory = MemoryManager(anima_dir)
 
         # ── Messenger ──
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
         from core.paths import get_shared_dir
 
         shared_dir = get_shared_dir()

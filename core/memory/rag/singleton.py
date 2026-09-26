@@ -492,7 +492,7 @@ def _load_embedding_model_on_device(resolved_name: str, device: str) -> Sentence
 
     from sentence_transformers import SentenceTransformer
 
-    from core.gpu import record_component_device
+    from core.infra.gpu import record_component_device
     from core.paths import get_data_dir
 
     cache_dir = get_data_dir() / "models"
@@ -535,7 +535,7 @@ def get_embedding_model(model_name: str | None = None) -> SentenceTransformer:
     global _embedding_model, _embedding_model_name
 
     resolved_name = model_name or _get_configured_model_name()
-    from core.gpu import is_component_degraded, record_gpu_failure, resolve_device
+    from core.infra.gpu import is_component_degraded, record_gpu_failure, resolve_device
 
     device = "cpu" if is_component_degraded("embedding") else resolve_device("embedding")
 
@@ -599,7 +599,7 @@ def thread_safe_encode(
     Bulk callers release the lock between configured model batches so
     waiting interactive callers can run first.
     """
-    from core.gpu import is_cuda_failure, record_gpu_failure
+    from core.infra.gpu import is_cuda_failure, record_gpu_failure
 
     model = get_embedding_model()
     prefixed_texts = _prefix_texts_for_embedding(texts, purpose=purpose)
@@ -979,7 +979,7 @@ def _reset_for_testing():
     global _bulk_yield_count, _direct_disabled_warned, _embedding_model, _embedding_model_device, _embedding_model_name
     global _init_failed, _interactive_waiters, _owner_transport, _owner_anima, _last_error_reset_monotonic
     global _vector_store_lifecycle_gate
-    from core.gpu import reset_gpu_status_for_testing
+    from core.infra.gpu import reset_gpu_status_for_testing
 
     with _error_reset_lock:
         _last_error_reset_monotonic = None

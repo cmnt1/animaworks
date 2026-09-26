@@ -6,30 +6,30 @@
 Verifies that the Facade-based MemoryManager correctly delegates to
 the extracted sub-services while maintaining backward compatibility.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
 
+from core.memory.config_reader import ConfigReader
+from core.memory.frontmatter import FrontmatterService
+from core.memory.maintenance.cron_logger import CronLogger
+from core.memory.maintenance.resolution_tracker import ResolutionTracker
 from core.memory.manager import (
     MemoryManager,
-    # Re-exports from skill_metadata module
-    match_skills_by_description,
-    _normalize_text,
     _extract_bracket_keywords,
     _extract_comma_keywords,
     _match_tier1,
     _match_tier2,
     _match_tier3_vector,
+    _normalize_text,
+    # Re-exports from skill_metadata module
+    match_skills_by_description,
 )
-from core.memory.cron_logger import CronLogger
-from core.memory.resolution_tracker import ResolutionTracker
-from core.memory.config_reader import ConfigReader
+from core.memory.retrieval.rag_search import RAGMemorySearch
 from core.memory.skill_metadata import SkillMetadataService
-from core.memory.rag_search import RAGMemorySearch
-from core.memory.frontmatter import FrontmatterService
-
 
 # ── Import compatibility ─────────────────────────────────
 
@@ -112,7 +112,11 @@ class TestFacadeDelegation:
         from core.time_utils import now_jst
 
         mm.append_cron_command_log(
-            "test-cmd", exit_code=0, stdout="line1", stderr="", duration_ms=100,
+            "test-cmd",
+            exit_code=0,
+            stdout="line1",
+            stderr="",
+            duration_ms=100,
         )
         log_dir = mm.anima_dir / "state" / "cron_logs"
         log_file = log_dir / f"{now_jst().date().isoformat()}.jsonl"
@@ -160,7 +164,9 @@ class TestFacadeDelegation:
     def test_procedure_frontmatter_roundtrip(self, mm: MemoryManager) -> None:
         """Procedure frontmatter write/read works through the facade."""
         mm.write_procedure_with_meta(
-            Path("proc.md"), "do the thing", {"description": "test proc"},
+            Path("proc.md"),
+            "do the thing",
+            {"description": "test proc"},
         )
         content = mm.read_procedure_content(Path("proc.md"))
         assert "do the thing" in content

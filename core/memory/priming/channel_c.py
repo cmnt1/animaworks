@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from core.file_access_policy import load_denied_roots, memory_source_is_allowed
+from core.config.file_access_policy import load_denied_roots, memory_source_is_allowed
 from core.memory.priming.constants import _BUDGET_IMPORTANT_KNOWLEDGE
 from core.memory.priming.items import ItemizedMemory, MemoryItem, render_items, select_within_budget
 from core.memory.priming.utils import build_queries, build_unified_searcher, normalize_trigger
@@ -295,7 +295,7 @@ def _unknown_origin_is_internal(anima_dir: Path, path: str) -> bool:
     if len(parts) < 3 or parts[0] != "companies" or parts[2] not in {"knowledge", "procedures"}:
         return False
     try:
-        from core.company import get_company
+        from core.org.company import get_company
 
         company = get_company(anima_dir.name, animas_dir=anima_dir.parent)
     except Exception:

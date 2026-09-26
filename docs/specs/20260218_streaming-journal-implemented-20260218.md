@@ -39,13 +39,13 @@ process_message_stream()
 | ファイル | 箇所 | 蓄積先 |
 |---------|------|--------|
 | `core/execution/agent_sdk.py:387-593` | `response_text: list[str]` | メモリのみ |
-| `core/agent.py:677-943` | `full_text_parts: list[str]` | メモリ（tool_end時にcheckpointへ） |
-| `core/anima.py:502-563` | `partial_response: str` | メモリ（finally時にconv_memoryへ） |
+| `core/agent/agent_core.py:677-943` | `full_text_parts: list[str]` | メモリ（tool_end時にcheckpointへ） |
+| `core/anima/digital_anima.py:502-563` | `partial_response: str` | メモリ（finally時にconv_memoryへ） |
 
 ### 既存の部分的対策
 
 - **StreamCheckpoint** (`shortterm/stream_checkpoint.json`): `tool_end` イベント時にテキストを保存。ただしツール間のテキスト出力は保存されない
-- **finally ブロック** (`core/anima.py:556-563`): Python例外時には `partial_response` を保存。ハードクラッシュでは無効
+- **finally ブロック** (`core/anima/digital_anima.py:556-563`): Python例外時には `partial_response` を保存。ハードクラッシュでは無効
 
 ## Solution
 
@@ -87,7 +87,7 @@ process_message_stream()
 ### 2. StreamingJournal クラス
 
 ```
-core/memory/streaming_journal.py
+core/memory/conversation/streaming_journal.py
 ```
 
 **主要API:**
@@ -207,18 +207,18 @@ AnimaRunner.run()
 
 | 場所 | イベント | 説明 |
 |---|---|---|
-| `core/anima.py` process_message_stream() | `open()` | ストリーミング開始時（lock取得後） |
-| `core/anima.py` process_message_stream() | `write_text()` | `text_delta` チャンク受信時 |
-| `core/agent.py` run_cycle_streaming() | `write_tool_start()` | ツール実行開始時 |
-| `core/agent.py` run_cycle_streaming() | `write_tool_end()` | ツール実行完了時 |
-| `core/anima.py` process_message_stream() | `finalize()` | `cycle_done` 受信時（正常完了） |
-| `core/anima.py` process_message_stream() | `close()` | finally ブロック（finalize未実行時のフォールバック） |
+| `core/anima/digital_anima.py` process_message_stream() | `open()` | ストリーミング開始時（lock取得後） |
+| `core/anima/digital_anima.py` process_message_stream() | `write_text()` | `text_delta` チャンク受信時 |
+| `core/agent/agent_core.py` run_cycle_streaming() | `write_tool_start()` | ツール実行開始時 |
+| `core/agent/agent_core.py` run_cycle_streaming() | `write_tool_end()` | ツール実行完了時 |
+| `core/anima/digital_anima.py` process_message_stream() | `finalize()` | `cycle_done` 受信時（正常完了） |
+| `core/anima/digital_anima.py` process_message_stream() | `close()` | finally ブロック（finalize未実行時のフォールバック） |
 
 ## Implementation Plan
 
 ### Phase 1: StreamingJournal 基盤
 
-1. `core/memory/streaming_journal.py` — StreamingJournal クラス実装
+1. `core/memory/conversation/streaming_journal.py` — StreamingJournal クラス実装
    - `JournalRecovery` データモデル（dataclass）
    - `open()` / `write_text()` / `write_tool_start()` / `write_tool_end()` — 書き込みAPI
    - `finalize()` / `close()` — ライフサイクル終了
@@ -232,12 +232,12 @@ AnimaRunner.run()
 
 ### Phase 2: ストリーミングへの組み込み
 
-3. `core/anima.py` — `process_message_stream()` にジャーナル書き込み追加
+3. `core/anima/digital_anima.py` — `process_message_stream()` にジャーナル書き込み追加
    - lock取得後に `journal.open()`
    - `text_delta` で `journal.write_text()`
    - `cycle_done` で `journal.finalize()`
    - finally で `journal.close()`（フォールバック）
-4. `core/agent.py` — `run_cycle_streaming()` にツールイベント書き込み追加
+4. `core/agent/agent_core.py` — `run_cycle_streaming()` にツールイベント書き込み追加
    - `tool_start` / `tool_end` でジャーナルに記録
    - StreamingJournal インスタンスは AgentCore に注入（DigitalAnima から渡す）
 
@@ -250,15 +250,15 @@ AnimaRunner.run()
 
 ### Phase 4: heartbeat / cron への拡張
 
-6. `core/anima.py` — `run_heartbeat()` にもジャーナル適用
+6. `core/anima/digital_anima.py` — `run_heartbeat()` にもジャーナル適用
    - heartbeat も長時間ストリーミングする可能性があるため同様にジャーナル化
-7. `core/anima.py` — `run_cron_task()` にもジャーナル適用（同上）
+7. `core/anima/digital_anima.py` — `run_cron_task()` にもジャーナル適用（同上）
 
 ## Scope
 
 ### In Scope
 
-- StreamingJournal クラスの新規実装（`core/memory/streaming_journal.py`）
+- StreamingJournal クラスの新規実装（`core/memory/conversation/streaming_journal.py`）
 - `process_message_stream()` / `run_cycle_streaming()` へのジャーナル書き込み組み込み
 - AnimaRunner起動時のクラッシュリカバリ（orphanジャーナル検出・復元）
 - heartbeat / cron のジャーナル化

@@ -10,6 +10,7 @@ Covers:
 - _render_markdown() tool entries limit (20), input truncation (500 chars),
   and result display
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,12 +20,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.execution._session import handle_session_chaining
-from core.memory.shortterm import (
+from core.memory.conversation.shortterm import (
     SessionState,
     ShortTermMemory,
 )
 from core.prompt.builder import BuildResult
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -404,9 +404,7 @@ class TestSessionStateToolUsesInMarkdown:
 
         assert "(なし)" in md
 
-    def test_tool_uses_section_header_present(
-        self, shortterm: ShortTermMemory
-    ) -> None:
+    def test_tool_uses_section_header_present(self, shortterm: ShortTermMemory) -> None:
         """The markdown includes the tool section header."""
         state = SessionState(
             tool_uses=[{"name": "tool1", "input": "x"}],
@@ -415,9 +413,7 @@ class TestSessionStateToolUsesInMarkdown:
 
         assert "使用したツール" in md
 
-    def test_no_result_field_omits_arrow_line(
-        self, shortterm: ShortTermMemory
-    ) -> None:
+    def test_no_result_field_omits_arrow_line(self, shortterm: ShortTermMemory) -> None:
         """When a tool entry has no result field, no arrow line is added."""
         state = SessionState(
             tool_uses=[
@@ -431,9 +427,7 @@ class TestSessionStateToolUsesInMarkdown:
         # No arrow line because result is missing (empty string is falsy)
         assert "\u2192" not in md
 
-    def test_empty_result_string_omits_arrow_line(
-        self, shortterm: ShortTermMemory
-    ) -> None:
+    def test_empty_result_string_omits_arrow_line(self, shortterm: ShortTermMemory) -> None:
         """When result is an empty string, no arrow line is rendered."""
         state = SessionState(
             tool_uses=[
@@ -455,10 +449,7 @@ class TestRenderMarkdownToolLimits:
     def test_tool_entries_limited_to_20(self, shortterm: ShortTermMemory) -> None:
         """Only the last 20 tool entries are included in the markdown."""
         # Create 30 tool entries
-        tools = [
-            {"name": f"tool_{i:02d}", "input": f"input_{i}", "result": f"result_{i}"}
-            for i in range(30)
-        ]
+        tools = [{"name": f"tool_{i:02d}", "input": f"input_{i}", "result": f"result_{i}"} for i in range(30)]
         state = SessionState(tool_uses=tools)
         md = shortterm._render_markdown(state)
 
@@ -472,10 +463,7 @@ class TestRenderMarkdownToolLimits:
 
     def test_exactly_20_tools_all_shown(self, shortterm: ShortTermMemory) -> None:
         """When exactly 20 tool entries exist, all are shown."""
-        tools = [
-            {"name": f"tool_{i:02d}", "input": f"input_{i}"}
-            for i in range(20)
-        ]
+        tools = [{"name": f"tool_{i:02d}", "input": f"input_{i}"} for i in range(20)]
         state = SessionState(tool_uses=tools)
         md = shortterm._render_markdown(state)
 
@@ -484,10 +472,7 @@ class TestRenderMarkdownToolLimits:
 
     def test_fewer_than_20_tools_all_shown(self, shortterm: ShortTermMemory) -> None:
         """When fewer than 20 tool entries exist, all are shown."""
-        tools = [
-            {"name": f"tool_{i}", "input": f"input_{i}"}
-            for i in range(5)
-        ]
+        tools = [{"name": f"tool_{i}", "input": f"input_{i}"} for i in range(5)]
         state = SessionState(tool_uses=tools)
         md = shortterm._render_markdown(state)
 
@@ -507,9 +492,7 @@ class TestRenderMarkdownToolLimits:
         # But the first 500 chars should appear
         assert "A" * 500 in md
 
-    def test_input_at_exactly_500_not_truncated(
-        self, shortterm: ShortTermMemory
-    ) -> None:
+    def test_input_at_exactly_500_not_truncated(self, shortterm: ShortTermMemory) -> None:
         """Tool input of exactly 500 chars is kept as-is."""
         exact_input = "B" * 500
         state = SessionState(
@@ -532,9 +515,7 @@ class TestRenderMarkdownToolLimits:
         # But the first 500 chars of the result should appear
         assert "R" * 500 in md
 
-    def test_result_at_exactly_500_not_truncated(
-        self, shortterm: ShortTermMemory
-    ) -> None:
+    def test_result_at_exactly_500_not_truncated(self, shortterm: ShortTermMemory) -> None:
         """Tool result of exactly 500 chars is kept as-is."""
         exact_result = "S" * 500
         state = SessionState(
@@ -544,9 +525,7 @@ class TestRenderMarkdownToolLimits:
 
         assert exact_result in md
 
-    def test_result_display_with_arrow_prefix(
-        self, shortterm: ShortTermMemory
-    ) -> None:
+    def test_result_display_with_arrow_prefix(self, shortterm: ShortTermMemory) -> None:
         """Tool results are displayed with arrow prefix on indented line."""
         state = SessionState(
             tool_uses=[
@@ -558,9 +537,7 @@ class TestRenderMarkdownToolLimits:
         # Check the format: "  → result"
         assert "  \u2192 hello" in md  # "  → hello"
 
-    def test_multiple_tools_with_mixed_results(
-        self, shortterm: ShortTermMemory
-    ) -> None:
+    def test_multiple_tools_with_mixed_results(self, shortterm: ShortTermMemory) -> None:
         """Mix of tools with and without results renders correctly."""
         state = SessionState(
             tool_uses=[
@@ -594,9 +571,7 @@ class TestRenderMarkdownToolLimits:
         # int result is stringified
         assert "12345" in md
 
-    def test_missing_name_defaults_to_question_mark(
-        self, shortterm: ShortTermMemory
-    ) -> None:
+    def test_missing_name_defaults_to_question_mark(self, shortterm: ShortTermMemory) -> None:
         """Tool entry without 'name' key shows '?' as the name."""
         state = SessionState(
             tool_uses=[{"input": "some input"}],

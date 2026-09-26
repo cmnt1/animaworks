@@ -7,8 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from core.memory.activity import ActivityEntry, ActivityLogger, build_semantic_replay_events
-
+from core.memory.activity.logger import ActivityEntry, ActivityLogger, build_semantic_replay_events
 
 BASE = "2026-05-14T12:00:00+09:00"
 
@@ -141,11 +140,7 @@ class TestSemanticReplayProjection:
         assert task["group_id"] == "task:Replay semantic events"
 
     def test_error_event_is_high_importance_failed(self) -> None:
-        events = _project(
-            [
-                _make("error", 0, summary="Tool failed", meta={"repo": "animaworks", "number": 82})
-            ]
-        )
+        events = _project([_make("error", 0, summary="Tool failed", meta={"repo": "animaworks", "number": 82})])
 
         error = events[0]
         assert error["kind"] == "error"

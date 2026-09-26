@@ -9,13 +9,13 @@ Tests the cross-cutting changes that enable shared common_knowledge:
 - ToolHandler read_memory_file with common_knowledge/ prefix
 - _ensure_runtime_only_dirs creates common_knowledge directory
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ── MemoryIndexer collection_prefix ──────────────────────────
 
@@ -47,7 +47,10 @@ class TestMemoryIndexerCollectionPrefix:
     def indexer_with_prefix(self, anima_dir: Path):
         """Create a MemoryIndexer with collection_prefix='shared'."""
         return self._make_indexer(
-            MagicMock(), "test_anima", anima_dir, collection_prefix="shared",
+            MagicMock(),
+            "test_anima",
+            anima_dir,
+            collection_prefix="shared",
         )
 
     @pytest.fixture
@@ -56,7 +59,8 @@ class TestMemoryIndexerCollectionPrefix:
         return self._make_indexer(MagicMock(), "alice", anima_dir)
 
     def test_collection_prefix_defaults_to_anima_name(
-        self, indexer_default_prefix,
+        self,
+        indexer_default_prefix,
     ):
         assert indexer_default_prefix.collection_prefix == "alice"
 
@@ -64,7 +68,9 @@ class TestMemoryIndexerCollectionPrefix:
         assert indexer_with_prefix.collection_prefix == "shared"
 
     def test_make_chunk_id_uses_collection_prefix(
-        self, indexer_with_prefix, anima_dir: Path,
+        self,
+        indexer_with_prefix,
+        anima_dir: Path,
     ):
         test_file = anima_dir / "knowledge" / "test.md"
         test_file.write_text("content", encoding="utf-8")
@@ -74,7 +80,9 @@ class TestMemoryIndexerCollectionPrefix:
         assert "test.md" in chunk_id
 
     def test_make_chunk_id_no_path_duplication(
-        self, indexer_with_prefix, anima_dir: Path,
+        self,
+        indexer_with_prefix,
+        anima_dir: Path,
     ):
         """Chunk ID must NOT contain doubled directory (e.g. knowledge/knowledge/)."""
         test_file = anima_dir / "knowledge" / "test.md"
@@ -86,7 +94,9 @@ class TestMemoryIndexerCollectionPrefix:
         assert "knowledge/knowledge/" not in chunk_id
 
     def test_make_chunk_id_no_path_duplication_episodes(
-        self, indexer_default_prefix, anima_dir: Path,
+        self,
+        indexer_default_prefix,
+        anima_dir: Path,
     ):
         """Episode chunk IDs must not double the 'episodes' directory."""
         episodes_dir = anima_dir / "episodes"
@@ -98,7 +108,9 @@ class TestMemoryIndexerCollectionPrefix:
         assert "episodes/episodes/" not in chunk_id
 
     def test_make_chunk_id_common_knowledge(
-        self, indexer_with_prefix, anima_dir: Path,
+        self,
+        indexer_with_prefix,
+        anima_dir: Path,
     ):
         """common_knowledge type should produce clean IDs."""
         ck_dir = anima_dir / "common_knowledge"
@@ -110,7 +122,9 @@ class TestMemoryIndexerCollectionPrefix:
         assert "common_knowledge/common_knowledge/" not in chunk_id
 
     def test_make_chunk_id_default_uses_anima_name(
-        self, indexer_default_prefix, anima_dir: Path,
+        self,
+        indexer_default_prefix,
+        anima_dir: Path,
     ):
         test_file = anima_dir / "knowledge" / "test.md"
         test_file.write_text("content", encoding="utf-8")
@@ -118,32 +132,48 @@ class TestMemoryIndexerCollectionPrefix:
         assert chunk_id.startswith("alice/")
 
     def test_extract_metadata_uses_collection_prefix(
-        self, indexer_with_prefix, anima_dir: Path,
+        self,
+        indexer_with_prefix,
+        anima_dir: Path,
     ):
         test_file = anima_dir / "knowledge" / "test.md"
         test_file.write_text("Some content here", encoding="utf-8")
         metadata = indexer_with_prefix._extract_metadata(
-            test_file, "Some content here", "knowledge", 0, 1,
+            test_file,
+            "Some content here",
+            "knowledge",
+            0,
+            1,
         )
         assert metadata["anima"] == "shared"
 
     def test_extract_metadata_default_uses_anima_name(
-        self, indexer_default_prefix, anima_dir: Path,
+        self,
+        indexer_default_prefix,
+        anima_dir: Path,
     ):
         test_file = anima_dir / "knowledge" / "test.md"
         test_file.write_text("Some content here", encoding="utf-8")
         metadata = indexer_default_prefix._extract_metadata(
-            test_file, "Some content here", "knowledge", 0, 1,
+            test_file,
+            "Some content here",
+            "knowledge",
+            0,
+            1,
         )
         assert metadata["anima"] == "alice"
 
     def test_index_file_uses_collection_prefix_for_collection_name(
-        self, anima_dir: Path,
+        self,
+        anima_dir: Path,
     ):
         """index_file() creates collection named '{prefix}_{memory_type}'."""
         vector_store = MagicMock()
         indexer = self._make_indexer(
-            vector_store, "test_anima", anima_dir, collection_prefix="shared",
+            vector_store,
+            "test_anima",
+            anima_dir,
+            collection_prefix="shared",
         )
         # Mock embedding generation
         indexer._generate_embeddings = MagicMock(
@@ -187,7 +217,9 @@ class TestMemoryRetrieverIncludeShared:
         return MemoryRetriever(mock_vector_store, mock_indexer, knowledge_dir)
 
     def test_search_without_shared(
-        self, retriever, mock_vector_store,
+        self,
+        retriever,
+        mock_vector_store,
     ):
         """Without include_shared, only personal collection is searched."""
         mock_vector_store.query.return_value = []
@@ -207,7 +239,9 @@ class TestMemoryRetrieverIncludeShared:
         assert queried_collection == "alice_knowledge"
 
     def test_search_with_shared_searches_both_collections(
-        self, retriever, mock_vector_store,
+        self,
+        retriever,
+        mock_vector_store,
     ):
         """With include_shared=True, both personal and shared collections are searched."""
         mock_vector_store.query.return_value = []
@@ -222,15 +256,14 @@ class TestMemoryRetrieverIncludeShared:
 
         # Should query both alice_knowledge and shared_common_knowledge
         assert mock_vector_store.query.call_count == 2
-        queried_collections = [
-            call.kwargs.get("collection")
-            for call in mock_vector_store.query.call_args_list
-        ]
+        queried_collections = [call.kwargs.get("collection") for call in mock_vector_store.query.call_args_list]
         assert "alice_knowledge" in queried_collections
         assert "shared_common_knowledge" in queried_collections
 
     def test_search_with_shared_non_knowledge_type_skips_shared(
-        self, retriever, mock_vector_store,
+        self,
+        retriever,
+        mock_vector_store,
     ):
         """include_shared only activates for memory_type='knowledge'."""
         mock_vector_store.query.return_value = []
@@ -247,7 +280,10 @@ class TestMemoryRetrieverIncludeShared:
         assert mock_vector_store.query.call_count == 1
 
     def test_search_with_shared_merges_results(
-        self, retriever, mock_vector_store, mock_indexer,
+        self,
+        retriever,
+        mock_vector_store,
+        mock_indexer,
     ):
         """Shared results are merged with personal results and sorted by score."""
         # Create mock query results
@@ -270,8 +306,8 @@ class TestMemoryRetrieverIncludeShared:
         }
 
         mock_vector_store.query.side_effect = [
-            [personal_result],   # alice_knowledge query
-            [shared_result],     # shared_common_knowledge query
+            [personal_result],  # alice_knowledge query
+            [shared_result],  # shared_common_knowledge query
         ]
 
         results = retriever.search(
@@ -296,7 +332,7 @@ class TestEnsureRuntimeOnlyDirs:
     """Test that _ensure_runtime_only_dirs creates common_knowledge."""
 
     def test_creates_common_knowledge_dir(self, tmp_path: Path):
-        from core.init import _ensure_runtime_only_dirs
+        from core.infra.runtime_init import _ensure_runtime_only_dirs
 
         data_dir = tmp_path / "data"
         data_dir.mkdir()
@@ -306,7 +342,7 @@ class TestEnsureRuntimeOnlyDirs:
         assert (data_dir / "common_knowledge").is_dir()
 
     def test_idempotent(self, tmp_path: Path):
-        from core.init import _ensure_runtime_only_dirs
+        from core.infra.runtime_init import _ensure_runtime_only_dirs
 
         data_dir = tmp_path / "data"
         data_dir.mkdir()
@@ -317,7 +353,7 @@ class TestEnsureRuntimeOnlyDirs:
         assert (data_dir / "common_knowledge").is_dir()
 
     def test_creates_all_expected_dirs(self, tmp_path: Path):
-        from core.init import _ensure_runtime_only_dirs
+        from core.infra.runtime_init import _ensure_runtime_only_dirs
 
         data_dir = tmp_path / "data"
         data_dir.mkdir()
@@ -359,7 +395,9 @@ class TestToolHandlerCommonKnowledgeRead:
         )
 
     def test_common_knowledge_prefix_resolves_to_shared_dir(
-        self, handler, tmp_path: Path,
+        self,
+        handler,
+        tmp_path: Path,
     ):
         ck_dir = tmp_path / "shared_ck"
         ck_dir.mkdir()
@@ -376,7 +414,9 @@ class TestToolHandlerCommonKnowledgeRead:
         assert result == "shared info content"
 
     def test_common_knowledge_prefix_nested_path(
-        self, handler, tmp_path: Path,
+        self,
+        handler,
+        tmp_path: Path,
     ):
         ck_dir = tmp_path / "shared_ck"
         sub = ck_dir / "subdir"
@@ -394,11 +434,14 @@ class TestToolHandlerCommonKnowledgeRead:
         assert result == "deep content"
 
     def test_non_common_knowledge_prefix_uses_anima_dir(
-        self, handler, anima_dir: Path,
+        self,
+        handler,
+        anima_dir: Path,
     ):
         (anima_dir / "knowledge").mkdir(exist_ok=True)
         (anima_dir / "knowledge" / "local.md").write_text(
-            "local content", encoding="utf-8",
+            "local content",
+            encoding="utf-8",
         )
         result = handler.handle(
             "read_memory_file",
@@ -434,7 +477,9 @@ class TestToolHandlerCommonKnowledgeWrite:
         )
 
     def test_write_common_knowledge_resolves_to_shared_dir(
-        self, handler, tmp_path: Path,
+        self,
+        handler,
+        tmp_path: Path,
     ):
         ck_dir = tmp_path / "shared_ck"
         ck_dir.mkdir()
@@ -450,7 +495,9 @@ class TestToolHandlerCommonKnowledgeWrite:
         assert (ck_dir / "new-guide.md").read_text(encoding="utf-8") == "shared content"
 
     def test_write_common_knowledge_nested_creates_parents(
-        self, handler, tmp_path: Path,
+        self,
+        handler,
+        tmp_path: Path,
     ):
         ck_dir = tmp_path / "shared_ck"
         ck_dir.mkdir()
@@ -466,7 +513,9 @@ class TestToolHandlerCommonKnowledgeWrite:
         assert (ck_dir / "ops" / "new.md").read_text(encoding="utf-8") == "nested"
 
     def test_write_common_knowledge_append_mode(
-        self, handler, tmp_path: Path,
+        self,
+        handler,
+        tmp_path: Path,
     ):
         ck_dir = tmp_path / "shared_ck"
         ck_dir.mkdir()
@@ -483,7 +532,9 @@ class TestToolHandlerCommonKnowledgeWrite:
         assert (ck_dir / "existing.md").read_text(encoding="utf-8") == "line1\nline2\n"
 
     def test_write_non_common_knowledge_stays_in_anima_dir(
-        self, handler, anima_dir: Path,
+        self,
+        handler,
+        anima_dir: Path,
     ):
         handler.handle(
             "write_memory_file",
@@ -507,7 +558,9 @@ class TestManagerVectorSearchMemory:
         return d
 
     def test_vector_search_sets_include_shared_for_common_knowledge(
-        self, anima_dir: Path, data_dir: Path,
+        self,
+        anima_dir: Path,
+        data_dir: Path,
     ):
         """scope='common_knowledge' passes include_shared=True to retriever."""
         from core.memory.manager import MemoryManager
@@ -529,7 +582,9 @@ class TestManagerVectorSearchMemory:
             assert call_kwargs.kwargs.get("include_shared") is True
 
     def test_vector_search_sets_include_shared_for_all(
-        self, anima_dir: Path, data_dir: Path,
+        self,
+        anima_dir: Path,
+        data_dir: Path,
     ):
         """scope='all' passes include_shared=True to retriever."""
         from core.memory.manager import MemoryManager
@@ -549,7 +604,9 @@ class TestManagerVectorSearchMemory:
             assert call_kwargs.kwargs.get("include_shared") is True
 
     def test_vector_search_no_shared_for_knowledge_only(
-        self, anima_dir: Path, data_dir: Path,
+        self,
+        anima_dir: Path,
+        data_dir: Path,
     ):
         """scope='knowledge' does NOT pass include_shared=True."""
         from core.memory.manager import MemoryManager

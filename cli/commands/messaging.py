@@ -16,8 +16,8 @@ logger = logging.getLogger("animaworks")
 
 def cmd_send(args: argparse.Namespace) -> None:
     """Send a message from an anima or a human user to an anima (filesystem based)."""
-    from core.init import ensure_runtime_dir
-    from core.messenger import Messenger
+    from core.infra.runtime_init import ensure_runtime_dir
+    from core.messaging.messenger import Messenger
     from core.paths import get_shared_dir
 
     ensure_runtime_dir()
@@ -171,7 +171,7 @@ def cmd_list(args: argparse.Namespace) -> None:
 
 
 def _list_local() -> None:
-    from core.init import ensure_runtime_dir
+    from core.infra.runtime_init import ensure_runtime_dir
     from core.paths import get_animas_dir
 
     ensure_runtime_dir()

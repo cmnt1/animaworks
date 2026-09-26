@@ -18,7 +18,7 @@ from core.config.models import (
     UserAliasConfig,
     save_config,
 )
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.tooling.handler import ToolHandler
 
 # ── Fixtures ──────────────────────────────────────────────
@@ -106,7 +106,7 @@ def make_handler(shared_dir: Path):
 
 
 class TestSendMessageToAlias:
-    @patch("core.outbound._send_via_slack")
+    @patch("core.messaging.outbound._send_via_slack")
     def test_send_to_user_alias_routes_to_slack(
         self,
         mock_slack,
@@ -157,7 +157,7 @@ class TestSendMessageToAlias:
 
         assert "Message sent to kotoha" in result
 
-    @patch("core.outbound._send_via_slack")
+    @patch("core.messaging.outbound._send_via_slack")
     def test_send_to_slack_prefix(
         self,
         mock_slack,
@@ -240,8 +240,8 @@ class TestBoardSlackSyncRouting:
 
         with (
             patch("core.config.models.load_config", return_value=cfg),
-            patch("core.outbound_auto._resolve_bot_token") as mock_token,
-            patch("core.outbound_auto.httpx.AsyncClient") as mock_client,
+            patch("core.messaging.outbound_auto._resolve_bot_token") as mock_token,
+            patch("core.messaging.outbound_auto.httpx.AsyncClient") as mock_client,
         ):
             result = handler.handle(
                 "post_channel",
@@ -258,7 +258,7 @@ class TestBoardSlackSyncRouting:
 
 class TestRobustRecipientHandling:
     @pytest.mark.parametrize("variant", ["USER", "User", "uSeR"])
-    @patch("core.outbound._send_via_slack")
+    @patch("core.messaging.outbound._send_via_slack")
     def test_case_insensitive_alias(
         self,
         mock_slack,
@@ -281,7 +281,7 @@ class TestRobustRecipientHandling:
         data = json.loads(result)
         assert data["status"] == "sent"
 
-    @patch("core.outbound._send_via_slack")
+    @patch("core.messaging.outbound._send_via_slack")
     def test_bare_slack_user_id(
         self,
         mock_slack,
@@ -328,7 +328,7 @@ class TestRobustRecipientHandling:
 
         assert "Message sent to sakura" in result
 
-    @patch("core.outbound._send_via_slack")
+    @patch("core.messaging.outbound._send_via_slack")
     def test_whitespace_in_recipient(
         self,
         mock_slack,
@@ -378,7 +378,7 @@ class TestFallbackBehavior:
         assert parsed["status"] == "error"
         assert parsed["error_type"] == "RecipientResolutionError"
 
-    @patch("core.outbound._send_via_slack")
+    @patch("core.messaging.outbound._send_via_slack")
     def test_activity_timeline_log_on_external(
         self,
         mock_slack,
@@ -402,7 +402,7 @@ class TestFallbackBehavior:
             handler.handle("send_message", {"to": "user", "content": "hello", "intent": "report"})
 
         # ToolHandler._log_tool_activity records dm_sent in unified activity log
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         activity = ActivityLogger(sakura_dir)
         entries = activity.recent(days=1, types=["dm_sent"])

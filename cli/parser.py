@@ -16,7 +16,7 @@ def cli_main() -> None:
     load_dotenv()
 
     from core.config import load_config
-    from core.logging_config import setup_logging
+    from core.infra.logging_config import setup_logging
     from core.paths import get_data_dir
     from core.time_utils import configure_timezone
 

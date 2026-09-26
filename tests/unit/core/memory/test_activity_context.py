@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
-from core.memory.activity import (
+from core.memory.activity.logger import (
     ActivityEntry,
     ActivityLogger,
     activity_context_from_trigger,
@@ -113,7 +113,7 @@ def test_context_is_included_in_live_activity_event(tmp_path: Path) -> None:
         )
     )
 
-    with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+    with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
         activity.log("tool_use", tool="delegate_task")
 
     event_file = next((tmp_path / "run" / "events" / "alice").glob("ta_*.json"))

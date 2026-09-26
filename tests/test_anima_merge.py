@@ -21,7 +21,7 @@ from core.lifecycle.anima_merge import (
     MergePhase,
 )
 from core.lifecycle.anima_merge.verification import source_reference_report
-from core.memory.facts import FactRecord, append_fact_records, iter_fact_records
+from core.memory.facts.store import FactRecord, append_fact_records, iter_fact_records
 from core.tasks.board.store import TaskBoardStore
 from core.time_utils import now_local
 
@@ -1046,7 +1046,7 @@ def test_anima_merge_verify_residual_reference_then_resume_and_tombstone(
     assert source.is_dir()
     assert json.loads((source / "status.json").read_text(encoding="utf-8"))["enabled"] is False
 
-    from core.org_sync import sync_org_structure
+    from core.org.org_sync import sync_org_structure
 
     sync_org_structure(data_dir / "animas", config_path=data_dir / "config.json")
     synced = json.loads((data_dir / "config.json").read_text(encoding="utf-8"))

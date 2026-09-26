@@ -1,4 +1,4 @@
-"""Unit tests for core/messenger.py — file-system messaging."""
+"""Unit tests for core/messaging/messenger.py — file-system messaging."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -16,7 +16,7 @@ import pytest
 
 from core.exceptions import DeliveryError
 from core.i18n import t
-from core.messenger import InboxItem, Messenger
+from core.messaging.messenger import InboxItem, Messenger
 from core.schemas import Message
 from core.time_utils import now_local
 from core.tooling.handler_comms import CommsToolsMixin
@@ -140,7 +140,7 @@ class TestSend:
         (anima_dir / "activity_log").mkdir(parents=True, exist_ok=True)
         messenger.send("bob", "Report", intent="report")
 
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         entries = activity.recent(days=1, types=["message_sent"])
@@ -769,7 +769,7 @@ class TestActivityLoggingWarning:
         mock_activity.log.side_effect = RuntimeError("disk full")
 
         with (
-            patch("core.memory.activity.ActivityLogger", return_value=mock_activity),
+            patch("core.memory.activity.logger.ActivityLogger", return_value=mock_activity),
             caplog.at_level(logging.WARNING, logger="animaworks.messenger"),
         ):
             messenger.send("bob", "activity will fail")
@@ -785,7 +785,7 @@ class TestActivityLoggingWarning:
         mock_activity = MagicMock()
         mock_activity.log.side_effect = RuntimeError("boom")
 
-        with patch("core.memory.activity.ActivityLogger", return_value=mock_activity):
+        with patch("core.memory.activity.logger.ActivityLogger", return_value=mock_activity):
             msg = messenger.send("bob", "should still work")
 
         assert msg.from_person == "alice"

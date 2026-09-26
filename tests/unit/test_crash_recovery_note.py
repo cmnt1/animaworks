@@ -7,6 +7,7 @@ Tests:
 4. _handle_heartbeat_failure receives dynamic unread_count
 5. i18n template anima.recovery_crash_info exists and formats correctly
 """
+
 from __future__ import annotations
 
 import inspect
@@ -15,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from core._anima_lifecycle import LifecycleMixin
+from core.anima.lifecycle import LifecycleMixin
 
 # ── i18n template tests ──────────────────────────────────────────
 
@@ -110,17 +111,17 @@ class TestRecoverStreamingJournalRecoveryNote:
 
         with (
             patch(
-                "core.memory.streaming_journal.StreamingJournal.list_orphan_thread_ids",
+                "core.memory.conversation.streaming_journal.StreamingJournal.list_orphan_thread_ids",
                 return_value=["default"],
             ),
             patch(
-                "core.memory.streaming_journal.StreamingJournal.recover",
+                "core.memory.conversation.streaming_journal.StreamingJournal.recover",
                 return_value=recovery,
             ),
             patch(
-                "core.memory.streaming_journal.StreamingJournal.confirm_recovery",
+                "core.memory.conversation.streaming_journal.StreamingJournal.confirm_recovery",
             ),
-            patch("core.memory.activity.ActivityLogger"),
+            patch("core.memory.activity.logger.ActivityLogger"),
         ):
             runner._recover_streaming_journal()
 
@@ -140,18 +141,18 @@ class TestRecoverStreamingJournalRecoveryNote:
 
         with (
             patch(
-                "core.memory.streaming_journal.StreamingJournal.list_orphan_thread_ids",
+                "core.memory.conversation.streaming_journal.StreamingJournal.list_orphan_thread_ids",
                 side_effect=lambda _dir, st: ["default"] if st == "chat" else [],
             ),
             patch(
-                "core.memory.streaming_journal.StreamingJournal.recover",
+                "core.memory.conversation.streaming_journal.StreamingJournal.recover",
                 return_value=recovery,
             ),
             patch(
-                "core.memory.streaming_journal.StreamingJournal.confirm_recovery",
+                "core.memory.conversation.streaming_journal.StreamingJournal.confirm_recovery",
             ),
-            patch("core.memory.activity.ActivityLogger"),
-            patch("core.memory.conversation.ConversationMemory"),
+            patch("core.memory.activity.logger.ActivityLogger"),
+            patch("core.memory.conversation.memory.ConversationMemory"),
         ):
             runner._recover_streaming_journal()
 
@@ -165,17 +166,17 @@ class TestRecoverStreamingJournalRecoveryNote:
 
         with (
             patch(
-                "core.memory.streaming_journal.StreamingJournal.list_orphan_thread_ids",
+                "core.memory.conversation.streaming_journal.StreamingJournal.list_orphan_thread_ids",
                 side_effect=lambda _dir, st: ["default"] if st == "task_exec" else [],
             ),
             patch(
-                "core.memory.streaming_journal.StreamingJournal.recover",
+                "core.memory.conversation.streaming_journal.StreamingJournal.recover",
                 return_value=recovery,
             ),
             patch(
-                "core.memory.streaming_journal.StreamingJournal.confirm_recovery",
+                "core.memory.conversation.streaming_journal.StreamingJournal.confirm_recovery",
             ),
-            patch("core.memory.activity.ActivityLogger"),
+            patch("core.memory.activity.logger.ActivityLogger"),
         ):
             runner._recover_streaming_journal()
 
@@ -195,17 +196,17 @@ class TestRecoverStreamingJournalRecoveryNote:
 
         with (
             patch(
-                "core.memory.streaming_journal.StreamingJournal.list_orphan_thread_ids",
+                "core.memory.conversation.streaming_journal.StreamingJournal.list_orphan_thread_ids",
                 return_value=["default"],
             ),
             patch(
-                "core.memory.streaming_journal.StreamingJournal.recover",
+                "core.memory.conversation.streaming_journal.StreamingJournal.recover",
                 return_value=recovery,
             ),
             patch(
-                "core.memory.streaming_journal.StreamingJournal.confirm_recovery",
+                "core.memory.conversation.streaming_journal.StreamingJournal.confirm_recovery",
             ),
-            patch("core.memory.activity.ActivityLogger"),
+            patch("core.memory.activity.logger.ActivityLogger"),
         ):
             runner._recover_streaming_journal()
 
@@ -224,17 +225,17 @@ class TestRecoverStreamingJournalRecoveryNote:
 
         with (
             patch(
-                "core.memory.streaming_journal.StreamingJournal.list_orphan_thread_ids",
+                "core.memory.conversation.streaming_journal.StreamingJournal.list_orphan_thread_ids",
                 return_value=["default"],
             ),
             patch(
-                "core.memory.streaming_journal.StreamingJournal.recover",
+                "core.memory.conversation.streaming_journal.StreamingJournal.recover",
                 return_value=recovery,
             ),
             patch(
-                "core.memory.streaming_journal.StreamingJournal.confirm_recovery",
+                "core.memory.conversation.streaming_journal.StreamingJournal.confirm_recovery",
             ),
-            patch("core.memory.activity.ActivityLogger"),
+            patch("core.memory.activity.logger.ActivityLogger"),
         ):
             runner._recover_streaming_journal()
 
@@ -253,17 +254,17 @@ class TestRecoverStreamingJournalRecoveryNote:
 
         with (
             patch(
-                "core.memory.streaming_journal.StreamingJournal.list_orphan_thread_ids",
+                "core.memory.conversation.streaming_journal.StreamingJournal.list_orphan_thread_ids",
                 return_value=["default"],
             ),
             patch(
-                "core.memory.streaming_journal.StreamingJournal.recover",
+                "core.memory.conversation.streaming_journal.StreamingJournal.recover",
                 return_value=recovery,
             ),
             patch(
-                "core.memory.streaming_journal.StreamingJournal.confirm_recovery",
+                "core.memory.conversation.streaming_journal.StreamingJournal.confirm_recovery",
             ),
-            patch("core.memory.activity.ActivityLogger"),
+            patch("core.memory.activity.logger.ActivityLogger"),
         ):
             # Should not raise
             runner._recover_streaming_journal()
@@ -333,17 +334,17 @@ class TestCrashRecoveryE2EFlow:
 
         with (
             patch(
-                "core.memory.streaming_journal.StreamingJournal.list_orphan_thread_ids",
+                "core.memory.conversation.streaming_journal.StreamingJournal.list_orphan_thread_ids",
                 return_value=["default"],
             ),
             patch(
-                "core.memory.streaming_journal.StreamingJournal.recover",
+                "core.memory.conversation.streaming_journal.StreamingJournal.recover",
                 return_value=recovery,
             ),
             patch(
-                "core.memory.streaming_journal.StreamingJournal.confirm_recovery",
+                "core.memory.conversation.streaming_journal.StreamingJournal.confirm_recovery",
             ),
-            patch("core.memory.activity.ActivityLogger"),
+            patch("core.memory.activity.logger.ActivityLogger"),
         ):
             runner._recover_streaming_journal()
 

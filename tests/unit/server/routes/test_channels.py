@@ -16,6 +16,7 @@ from core.time_utils import now_jst
 
 def _make_test_app(shared_dir: Path):
     from fastapi import FastAPI
+
     from server.routes.channels import create_channels_router
 
     app = FastAPI()
@@ -46,7 +47,10 @@ def _write_dm(shared_dir: Path, pair: str, entries: list[dict]) -> None:
 
 
 def _write_activity_log(
-    data_dir: Path, anima_name: str, date_str: str, entries: list[dict],
+    data_dir: Path,
+    anima_name: str,
+    date_str: str,
+    entries: list[dict],
 ) -> None:
     """Write JSONL entries to an Anima's activity_log directory.
 
@@ -85,13 +89,21 @@ class TestListChannels:
     async def test_lists_channels_with_metadata(self, tmp_path: Path):
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
-        _write_channel(shared_dir, "general", [
-            {"ts": "2026-02-17T10:00:00", "from": "sakura", "text": "Hello", "source": "anima"},
-            {"ts": "2026-02-17T11:00:00", "from": "owner", "text": "Hi", "source": "human"},
-        ])
-        _write_channel(shared_dir, "ops", [
-            {"ts": "2026-02-17T09:00:00", "from": "mio", "text": "Server OK", "source": "anima"},
-        ])
+        _write_channel(
+            shared_dir,
+            "general",
+            [
+                {"ts": "2026-02-17T10:00:00", "from": "sakura", "text": "Hello", "source": "anima"},
+                {"ts": "2026-02-17T11:00:00", "from": "owner", "text": "Hi", "source": "human"},
+            ],
+        )
+        _write_channel(
+            shared_dir,
+            "ops",
+            [
+                {"ts": "2026-02-17T09:00:00", "from": "mio", "text": "Server OK", "source": "anima"},
+            ],
+        )
 
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
@@ -403,7 +415,7 @@ class TestPostToChannel:
 
     async def test_post_to_closed_tombstone_returns_403(self, tmp_path: Path):
         """closed meta only (tombstone) → 403 via ChannelAccessDeniedError mapping."""
-        from core.messenger import ChannelMeta, save_channel_meta
+        from core.messaging.messenger import ChannelMeta, save_channel_meta
 
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
@@ -478,11 +490,15 @@ class TestGetChannelMentions:
     async def test_returns_mentions(self, tmp_path: Path):
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
-        _write_channel(shared_dir, "general", [
-            {"ts": "2026-02-17T10:00:00", "from": "mio", "text": "@sakura check this", "source": "anima"},
-            {"ts": "2026-02-17T11:00:00", "from": "kotoha", "text": "No mention here", "source": "anima"},
-            {"ts": "2026-02-17T12:00:00", "from": "owner", "text": "@sakura urgent", "source": "human"},
-        ])
+        _write_channel(
+            shared_dir,
+            "general",
+            [
+                {"ts": "2026-02-17T10:00:00", "from": "mio", "text": "@sakura check this", "source": "anima"},
+                {"ts": "2026-02-17T11:00:00", "from": "kotoha", "text": "No mention here", "source": "anima"},
+                {"ts": "2026-02-17T12:00:00", "from": "owner", "text": "@sakura urgent", "source": "human"},
+            ],
+        )
 
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
@@ -496,9 +512,13 @@ class TestGetChannelMentions:
     async def test_no_mentions_returns_empty(self, tmp_path: Path):
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
-        _write_channel(shared_dir, "general", [
-            {"ts": "2026-02-17T10:00:00", "from": "mio", "text": "Hello", "source": "anima"},
-        ])
+        _write_channel(
+            shared_dir,
+            "general",
+            [
+                {"ts": "2026-02-17T10:00:00", "from": "mio", "text": "Hello", "source": "anima"},
+            ],
+        )
 
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
@@ -528,13 +548,21 @@ class TestListDMPairs:
         """Legacy dm_logs entries are picked up by the fallback path."""
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
-        _write_dm(shared_dir, "alice-bob", [
-            {"ts": "2026-02-17T10:00:00", "from": "alice", "text": "Hi Bob", "source": "anima"},
-            {"ts": "2026-02-17T11:00:00", "from": "bob", "text": "Hi Alice", "source": "anima"},
-        ])
-        _write_dm(shared_dir, "mio-sakura", [
-            {"ts": "2026-02-17T09:00:00", "from": "mio", "text": "Report", "source": "anima"},
-        ])
+        _write_dm(
+            shared_dir,
+            "alice-bob",
+            [
+                {"ts": "2026-02-17T10:00:00", "from": "alice", "text": "Hi Bob", "source": "anima"},
+                {"ts": "2026-02-17T11:00:00", "from": "bob", "text": "Hi Alice", "source": "anima"},
+            ],
+        )
+        _write_dm(
+            shared_dir,
+            "mio-sakura",
+            [
+                {"ts": "2026-02-17T09:00:00", "from": "mio", "text": "Report", "source": "anima"},
+            ],
+        )
 
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
@@ -551,7 +579,9 @@ class TestListDMPairs:
 
     @patch("core.config.models.load_config", side_effect=Exception("no config"))
     async def test_lists_dm_pairs_from_activity_log(
-        self, _mock_load_config: MagicMock, tmp_path: Path,
+        self,
+        _mock_load_config: MagicMock,
+        tmp_path: Path,
     ):
         """Activity log entries (primary source) are aggregated into DM pairs."""
         data_dir = tmp_path
@@ -560,15 +590,43 @@ class TestListDMPairs:
         today = _today()
 
         # Alice sent 2 DMs to Bob
-        _write_activity_log(data_dir, "alice", today, [
-            {"ts": f"{today}T10:00:00", "type": "dm_sent", "content": "Hello Bob", "from": "alice", "to": "bob"},
-            {"ts": f"{today}T10:05:00", "type": "dm_sent", "content": "Are you there?", "from": "alice", "to": "bob"},
-        ])
+        _write_activity_log(
+            data_dir,
+            "alice",
+            today,
+            [
+                {"ts": f"{today}T10:00:00", "type": "dm_sent", "content": "Hello Bob", "from": "alice", "to": "bob"},
+                {
+                    "ts": f"{today}T10:05:00",
+                    "type": "dm_sent",
+                    "content": "Are you there?",
+                    "from": "alice",
+                    "to": "bob",
+                },
+            ],
+        )
         # Bob received them and sent a reply
-        _write_activity_log(data_dir, "bob", today, [
-            {"ts": f"{today}T10:00:00", "type": "dm_received", "content": "Hello Bob", "from": "alice", "to": "bob"},
-            {"ts": f"{today}T10:10:00", "type": "dm_sent", "content": "Yes I am here", "from": "bob", "to": "alice"},
-        ])
+        _write_activity_log(
+            data_dir,
+            "bob",
+            today,
+            [
+                {
+                    "ts": f"{today}T10:00:00",
+                    "type": "dm_received",
+                    "content": "Hello Bob",
+                    "from": "alice",
+                    "to": "bob",
+                },
+                {
+                    "ts": f"{today}T10:10:00",
+                    "type": "dm_sent",
+                    "content": "Yes I am here",
+                    "from": "bob",
+                    "to": "alice",
+                },
+            ],
+        )
 
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
@@ -587,7 +645,9 @@ class TestListDMPairs:
 
     @patch("core.config.models.load_config", side_effect=Exception("no config"))
     async def test_merges_activity_log_and_legacy_dm_logs(
-        self, _mock_load_config: MagicMock, tmp_path: Path,
+        self,
+        _mock_load_config: MagicMock,
+        tmp_path: Path,
     ):
         """Activity log entries and legacy dm_logs are merged into a single pair."""
         data_dir = tmp_path
@@ -596,15 +656,24 @@ class TestListDMPairs:
         today = _today()
 
         # Activity log: 1 entry from alice
-        _write_activity_log(data_dir, "alice", today, [
-            {"ts": f"{today}T12:00:00", "type": "dm_sent", "content": "New message", "from": "alice", "to": "bob"},
-        ])
+        _write_activity_log(
+            data_dir,
+            "alice",
+            today,
+            [
+                {"ts": f"{today}T12:00:00", "type": "dm_sent", "content": "New message", "from": "alice", "to": "bob"},
+            ],
+        )
 
         # Legacy dm_logs: 2 older entries
-        _write_dm(shared_dir, "alice-bob", [
-            {"ts": "2026-01-15T10:00:00", "from": "alice", "text": "Old msg 1", "source": "anima"},
-            {"ts": "2026-01-15T11:00:00", "from": "bob", "text": "Old msg 2", "source": "anima"},
-        ])
+        _write_dm(
+            shared_dir,
+            "alice-bob",
+            [
+                {"ts": "2026-01-15T10:00:00", "from": "alice", "text": "Old msg 1", "source": "anima"},
+                {"ts": "2026-01-15T11:00:00", "from": "bob", "text": "Old msg 2", "source": "anima"},
+            ],
+        )
 
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
@@ -637,7 +706,9 @@ class TestListDMPairs:
 
     @patch("core.config.models.load_config")
     async def test_filters_garbage_pairs_with_valid_names(
-        self, mock_load_config: MagicMock, tmp_path: Path,
+        self,
+        mock_load_config: MagicMock,
+        tmp_path: Path,
     ):
         """Pairs where either participant is not a registered Anima are excluded."""
         data_dir = tmp_path
@@ -646,20 +717,40 @@ class TestListDMPairs:
         today = _today()
 
         # Valid pair: alice-bob
-        _write_activity_log(data_dir, "alice", today, [
-            {"ts": f"{today}T10:00:00", "type": "dm_sent", "content": "Hi Bob", "from": "alice", "to": "bob"},
-        ])
-        _write_activity_log(data_dir, "bob", today, [
-            {"ts": f"{today}T10:05:00", "type": "dm_sent", "content": "Hi Alice", "from": "bob", "to": "alice"},
-        ])
+        _write_activity_log(
+            data_dir,
+            "alice",
+            today,
+            [
+                {"ts": f"{today}T10:00:00", "type": "dm_sent", "content": "Hi Bob", "from": "alice", "to": "bob"},
+            ],
+        )
+        _write_activity_log(
+            data_dir,
+            "bob",
+            today,
+            [
+                {"ts": f"{today}T10:05:00", "type": "dm_sent", "content": "Hi Alice", "from": "bob", "to": "alice"},
+            ],
+        )
 
         # Garbage pair: spam-random (neither is in valid_names)
-        _write_activity_log(data_dir, "spam", today, [
-            {"ts": f"{today}T11:00:00", "type": "dm_sent", "content": "Spam", "from": "spam", "to": "random"},
-        ])
-        _write_activity_log(data_dir, "random", today, [
-            {"ts": f"{today}T11:01:00", "type": "dm_sent", "content": "Reply", "from": "random", "to": "spam"},
-        ])
+        _write_activity_log(
+            data_dir,
+            "spam",
+            today,
+            [
+                {"ts": f"{today}T11:00:00", "type": "dm_sent", "content": "Spam", "from": "spam", "to": "random"},
+            ],
+        )
+        _write_activity_log(
+            data_dir,
+            "random",
+            today,
+            [
+                {"ts": f"{today}T11:01:00", "type": "dm_sent", "content": "Reply", "from": "random", "to": "spam"},
+            ],
+        )
 
         mock_config = MagicMock()
         mock_config.animas = {"alice": MagicMock(), "bob": MagicMock()}
@@ -676,14 +767,20 @@ class TestListDMPairs:
 
     @patch("core.config.models.load_config", side_effect=Exception("no config"))
     async def test_excludes_zero_count_pairs(
-        self, _mock_load_config: MagicMock, tmp_path: Path,
+        self,
+        _mock_load_config: MagicMock,
+        tmp_path: Path,
     ):
         """Pairs with count=0 (e.g. empty dm_logs file) are excluded."""
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
-        _write_dm(shared_dir, "alice-bob", [
-            {"ts": "2026-02-17T10:00:00", "from": "alice", "text": "Hi", "source": "anima"},
-        ])
+        _write_dm(
+            shared_dir,
+            "alice-bob",
+            [
+                {"ts": "2026-02-17T10:00:00", "from": "alice", "text": "Hi", "source": "anima"},
+            ],
+        )
         _write_dm(shared_dir, "zero-pair", [])  # Empty file → count=0
 
         app = _make_test_app(shared_dir)
@@ -697,18 +794,28 @@ class TestListDMPairs:
 
     @patch("core.config.models.load_config")
     async def test_fallback_when_config_load_fails(
-        self, mock_load_config: MagicMock, tmp_path: Path,
+        self,
+        mock_load_config: MagicMock,
+        tmp_path: Path,
     ):
         """When load_config raises, all pairs are shown (no filter)."""
         mock_load_config.side_effect = Exception("config not found")
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
-        _write_dm(shared_dir, "alice-bob", [
-            {"ts": "2026-02-17T10:00:00", "from": "alice", "text": "Hi", "source": "anima"},
-        ])
-        _write_dm(shared_dir, "spam-random", [
-            {"ts": "2026-02-17T11:00:00", "from": "spam", "text": "Spam", "source": "anima"},
-        ])
+        _write_dm(
+            shared_dir,
+            "alice-bob",
+            [
+                {"ts": "2026-02-17T10:00:00", "from": "alice", "text": "Hi", "source": "anima"},
+            ],
+        )
+        _write_dm(
+            shared_dir,
+            "spam-random",
+            [
+                {"ts": "2026-02-17T11:00:00", "from": "spam", "text": "Spam", "source": "anima"},
+            ],
+        )
 
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
@@ -728,7 +835,12 @@ class TestGetDMHistory:
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
         entries = [
-            {"ts": f"2026-02-17T{h:02d}:00:00", "from": "alice" if h % 2 == 0 else "bob", "text": f"msg{h}", "source": "anima"}
+            {
+                "ts": f"2026-02-17T{h:02d}:00:00",
+                "from": "alice" if h % 2 == 0 else "bob",
+                "text": f"msg{h}",
+                "source": "anima",
+            }
             for h in range(10)
         ]
         _write_dm(shared_dir, "alice-bob", entries)
@@ -750,13 +862,23 @@ class TestGetDMHistory:
         shared_dir.mkdir()
         today = _today()
 
-        _write_activity_log(data_dir, "alice", today, [
-            {"ts": f"{today}T10:00:00", "type": "dm_sent", "content": "Hello Bob", "from": "alice", "to": "bob"},
-            {"ts": f"{today}T10:05:00", "type": "dm_sent", "content": "How are you?", "from": "alice", "to": "bob"},
-        ])
-        _write_activity_log(data_dir, "bob", today, [
-            {"ts": f"{today}T10:10:00", "type": "dm_sent", "content": "I am fine", "from": "bob", "to": "alice"},
-        ])
+        _write_activity_log(
+            data_dir,
+            "alice",
+            today,
+            [
+                {"ts": f"{today}T10:00:00", "type": "dm_sent", "content": "Hello Bob", "from": "alice", "to": "bob"},
+                {"ts": f"{today}T10:05:00", "type": "dm_sent", "content": "How are you?", "from": "alice", "to": "bob"},
+            ],
+        )
+        _write_activity_log(
+            data_dir,
+            "bob",
+            today,
+            [
+                {"ts": f"{today}T10:10:00", "type": "dm_sent", "content": "I am fine", "from": "bob", "to": "alice"},
+            ],
+        )
 
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
@@ -786,13 +908,29 @@ class TestGetDMHistory:
         today = _today()
 
         # Alice's log has dm_sent
-        _write_activity_log(data_dir, "alice", today, [
-            {"ts": f"{today}T10:00:00", "type": "dm_sent", "content": "Hello Bob", "from": "alice", "to": "bob"},
-        ])
+        _write_activity_log(
+            data_dir,
+            "alice",
+            today,
+            [
+                {"ts": f"{today}T10:00:00", "type": "dm_sent", "content": "Hello Bob", "from": "alice", "to": "bob"},
+            ],
+        )
         # Bob's log has dm_received for the same message (same ts + content)
-        _write_activity_log(data_dir, "bob", today, [
-            {"ts": f"{today}T10:00:00", "type": "dm_received", "content": "Hello Bob", "from": "alice", "to": "bob"},
-        ])
+        _write_activity_log(
+            data_dir,
+            "bob",
+            today,
+            [
+                {
+                    "ts": f"{today}T10:00:00",
+                    "type": "dm_received",
+                    "content": "Hello Bob",
+                    "from": "alice",
+                    "to": "bob",
+                },
+            ],
+        )
 
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
@@ -812,12 +950,34 @@ class TestGetDMHistory:
         shared_dir.mkdir()
         today = _today()
 
-        _write_activity_log(data_dir, "alice", today, [
-            {"ts": f"{today}T10:00:00", "type": "message_sent", "content": "Hello Bob", "from": "alice", "to": "bob"},
-        ])
-        _write_activity_log(data_dir, "bob", today, [
-            {"ts": f"{today}T10:05:00", "type": "message_sent", "content": "Hi Alice", "from": "bob", "to": "alice"},
-        ])
+        _write_activity_log(
+            data_dir,
+            "alice",
+            today,
+            [
+                {
+                    "ts": f"{today}T10:00:00",
+                    "type": "message_sent",
+                    "content": "Hello Bob",
+                    "from": "alice",
+                    "to": "bob",
+                },
+            ],
+        )
+        _write_activity_log(
+            data_dir,
+            "bob",
+            today,
+            [
+                {
+                    "ts": f"{today}T10:05:00",
+                    "type": "message_sent",
+                    "content": "Hi Alice",
+                    "from": "bob",
+                    "to": "alice",
+                },
+            ],
+        )
 
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
@@ -831,7 +991,8 @@ class TestGetDMHistory:
         assert texts == {"Hello Bob", "Hi Alice"}
 
     async def test_no_duplicate_when_same_message_in_sent_and_received(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ):
         """Only message_sent is read; message_received is ignored, so no duplicate."""
         data_dir = tmp_path
@@ -839,12 +1000,34 @@ class TestGetDMHistory:
         shared_dir.mkdir()
         today = _today()
 
-        _write_activity_log(data_dir, "alice", today, [
-            {"ts": f"{today}T10:00:00", "type": "message_sent", "content": "Hello Bob", "from": "alice", "to": "bob"},
-        ])
-        _write_activity_log(data_dir, "bob", today, [
-            {"ts": f"{today}T10:00:00", "type": "message_received", "content": "Hello Bob", "from": "alice", "to": "bob"},
-        ])
+        _write_activity_log(
+            data_dir,
+            "alice",
+            today,
+            [
+                {
+                    "ts": f"{today}T10:00:00",
+                    "type": "message_sent",
+                    "content": "Hello Bob",
+                    "from": "alice",
+                    "to": "bob",
+                },
+            ],
+        )
+        _write_activity_log(
+            data_dir,
+            "bob",
+            today,
+            [
+                {
+                    "ts": f"{today}T10:00:00",
+                    "type": "message_received",
+                    "content": "Hello Bob",
+                    "from": "alice",
+                    "to": "bob",
+                },
+            ],
+        )
 
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
@@ -862,10 +1045,14 @@ class TestGetDMHistory:
         shared_dir.mkdir()
         # No animas dir at all
 
-        _write_dm(shared_dir, "alice-bob", [
-            {"ts": "2026-01-15T10:00:00", "from": "alice", "text": "Legacy hello", "source": "anima"},
-            {"ts": "2026-01-15T11:00:00", "from": "bob", "text": "Legacy reply", "source": "anima"},
-        ])
+        _write_dm(
+            shared_dir,
+            "alice-bob",
+            [
+                {"ts": "2026-01-15T10:00:00", "from": "alice", "text": "Legacy hello", "source": "anima"},
+                {"ts": "2026-01-15T11:00:00", "from": "bob", "text": "Legacy reply", "source": "anima"},
+            ],
+        )
 
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)
@@ -908,9 +1095,13 @@ class TestGetDMHistory:
     async def test_returns_all_when_limit_exceeds_total(self, tmp_path: Path):
         shared_dir = tmp_path / "shared"
         shared_dir.mkdir()
-        _write_dm(shared_dir, "alice-bob", [
-            {"ts": "2026-02-17T10:00:00", "from": "alice", "text": "Hi", "source": "anima"},
-        ])
+        _write_dm(
+            shared_dir,
+            "alice-bob",
+            [
+                {"ts": "2026-02-17T10:00:00", "from": "alice", "text": "Hi", "source": "anima"},
+            ],
+        )
 
         app = _make_test_app(shared_dir)
         transport = ASGITransport(app=app)

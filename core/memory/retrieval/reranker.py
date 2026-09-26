@@ -35,7 +35,7 @@ class CrossEncoderReranker:
         if self._rerank_url:
             self._device = "cpu"
         else:
-            from core.gpu import is_component_degraded, resolve_device
+            from core.infra.gpu import is_component_degraded, resolve_device
 
             self._device = "cpu" if is_component_degraded("reranker") else resolve_device("reranker")
         self._lock = threading.Lock()
@@ -68,7 +68,7 @@ class CrossEncoderReranker:
             from sentence_transformers import CrossEncoder
 
             self._model = CrossEncoder(self._model_name, device=self._device)
-            from core.gpu import record_component_device
+            from core.infra.gpu import record_component_device
 
             record_component_device("reranker", self._device)
             logger.info(
@@ -80,13 +80,13 @@ class CrossEncoderReranker:
             return True
         except Exception as exc:
             if self._device == "cuda":
-                from core.gpu import record_gpu_failure
+                from core.infra.gpu import record_gpu_failure
 
                 record_gpu_failure("reranker", exc)
                 try:
                     self._device = "cpu"
                     self._model = CrossEncoder(self._model_name, device="cpu")
-                    from core.gpu import record_component_device
+                    from core.infra.gpu import record_component_device
 
                     record_component_device("reranker", "cpu")
                     logger.warning("Cross-encoder GPU load failed; falling back to CPU: %s", exc)
@@ -121,7 +121,7 @@ class CrossEncoderReranker:
             )
             return result
         except Exception as exc:
-            from core.gpu import is_cuda_failure, record_component_device, record_gpu_failure
+            from core.infra.gpu import is_cuda_failure, record_component_device, record_gpu_failure
 
             if self._device == "cuda" and is_cuda_failure(exc):
                 logger.error("GPU failure detected - falling back to CPU reranker", exc_info=True)

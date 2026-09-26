@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core._agent_cycle import CycleMixin
+from core.agent.cycle import CycleMixin
 from core.schemas import ModelConfig
 
 
@@ -47,7 +47,7 @@ async def test_guard_recycles_session(tmp_path: Path, reason: str) -> None:
 
     with (
         patch(
-            "core.session_compactor._extract_recent_chat_context",
+            "core.agent.session_compactor._extract_recent_chat_context",
             return_value={
                 "accumulated_response": "saved context",
                 "tool_uses": [],
@@ -55,7 +55,7 @@ async def test_guard_recycles_session(tmp_path: Path, reason: str) -> None:
                 "timestamp": datetime.now(UTC).isoformat(),
             },
         ),
-        patch("core.memory.activity.ActivityLogger.log") as activity_log,
+        patch("core.memory.activity.logger.ActivityLogger.log") as activity_log,
     ):
         result = await CycleMixin._guard_chat_sdk_session(
             owner,

@@ -343,7 +343,7 @@ async def route_thread_reply(
 
     content = thread_ctx + text if thread_ctx else text
 
-    from core.messenger import Messenger
+    from core.messaging.messenger import Messenger
 
     messenger = Messenger(shared_dir, target)
     messenger.receive_external(
@@ -359,7 +359,7 @@ async def route_thread_reply(
     # Record raw reply on the main-thread conversation view (no thread_ctx).
     # Interactive number replies are logged inside InteractionRouter.resolve.
     try:
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
         from core.paths import get_animas_dir
 
         user_id = str(event.get("user") or "")

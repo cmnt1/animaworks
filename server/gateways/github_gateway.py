@@ -27,7 +27,7 @@ from typing import Any
 from core.config.models import load_config
 from core.config.schemas import GitHubWebhookConfig
 from core.i18n import t
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.paths import get_shared_dir
 
 logger = logging.getLogger("animaworks.github_gateway")

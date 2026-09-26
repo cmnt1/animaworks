@@ -10,8 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory._activity_models import ActivityEntry
-from core.memory.activity_format import (
+from core.memory.activity.format import (
     EVENT_SETS,
     EntryRole,
     clip,
@@ -20,6 +19,7 @@ from core.memory.activity_format import (
     iter_entries,
     pair_tool_events,
 )
+from core.memory.activity.models import ActivityEntry
 from core.time_utils import now_local
 
 
@@ -182,7 +182,7 @@ def test_iter_entries_reads_and_filters(log_dir: Path):
 
 def test_compaction_extraction_golden(log_dir: Path):
     """The migrated compaction path must yield identical structure."""
-    from core.session_compactor import _extract_recent_chat_context
+    from core.agent.session_compactor import _extract_recent_chat_context
 
     _write_entries(
         log_dir,
@@ -271,7 +271,7 @@ def test_entry_text_accepts_dict():
 
 
 def test_audit_extract_content_golden():
-    from core.memory.audit import AuditAggregator
+    from core.memory.activity.audit import AuditAggregator
 
     fx = AuditAggregator._extract_content
     long = "x" * 400
@@ -291,8 +291,8 @@ def test_audit_extract_content_golden():
 
 
 def test_gather_activity_context_golden(log_dir: Path):
-    from core.memory.conversation_finalize import _gather_activity_context
-    from core.memory.conversation_models import ConversationTurn
+    from core.memory.conversation.finalize import _gather_activity_context
+    from core.memory.conversation.models import ConversationTurn
 
     _write_entries(
         log_dir,
@@ -321,7 +321,7 @@ def test_gather_activity_context_golden(log_dir: Path):
 
 
 def test_distillation_format_clusters_golden():
-    from core.memory.distillation import ProceduralDistiller
+    from core.memory.maintenance.distillation import ProceduralDistiller
 
     clusters = [
         [

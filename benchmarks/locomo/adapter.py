@@ -65,7 +65,7 @@ def _ensure_rag_stack() -> None:
 
 # Defer to core (same tokenizer rules as activity BM25) when available
 try:
-    from core.memory.bm25 import tokenize as _bm25_tokenize
+    from core.memory.retrieval.bm25 import tokenize as _bm25_tokenize
 except ImportError:
 
     def _bm25_tokenize(text: str) -> list[str]:

@@ -13,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from core.messenger import Messenger
+from core.messaging.messenger import Messenger
 from core.schemas import TaskEntry
 from core.tasks.board.tasks import TaskStore
 from core.time_utils import now_iso

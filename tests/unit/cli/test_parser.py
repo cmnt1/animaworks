@@ -20,7 +20,7 @@ class TestParserCommands:
         # Instead, patch load_dotenv, setup_logging, and build just the parser.
         with (
             patch("cli.parser.load_dotenv", create=True),
-            patch("core.logging_config.setup_logging", create=True),
+            patch("core.infra.logging_config.setup_logging", create=True),
             patch("core.paths.get_data_dir", return_value=MagicMock()),
             patch("core.config.cli.cmd_config_dispatch"),
             patch("core.config.cli.cmd_config_get"),

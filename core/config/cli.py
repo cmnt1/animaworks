@@ -100,7 +100,7 @@ def cmd_config_dispatch(args: argparse.Namespace) -> None:
     If ``--interactive`` is set, launch the interactive wizard.
     Otherwise, if no subcommand was given, print the help text.
     """
-    from core.init import ensure_runtime_dir
+    from core.infra.runtime_init import ensure_runtime_dir
 
     ensure_runtime_dir()
 
@@ -116,7 +116,7 @@ def cmd_config_dispatch(args: argparse.Namespace) -> None:
 
 def cmd_config_get(args: argparse.Namespace) -> None:
     """Print a single configuration value identified by a dot-notation key."""
-    from core.init import ensure_runtime_dir
+    from core.infra.runtime_init import ensure_runtime_dir
 
     ensure_runtime_dir()
 
@@ -140,7 +140,7 @@ def cmd_config_get(args: argparse.Namespace) -> None:
 
 def cmd_config_set(args: argparse.Namespace) -> None:
     """Set a configuration value identified by a dot-notation key."""
-    from core.init import ensure_runtime_dir
+    from core.infra.runtime_init import ensure_runtime_dir
 
     ensure_runtime_dir()
 
@@ -220,7 +220,7 @@ def cmd_config_set(args: argparse.Namespace) -> None:
 
 def cmd_config_list(args: argparse.Namespace) -> None:
     """List configuration values as flat dot-notation key = value pairs."""
-    from core.init import ensure_runtime_dir
+    from core.infra.runtime_init import ensure_runtime_dir
 
     ensure_runtime_dir()
 
@@ -247,7 +247,7 @@ def cmd_config_list(args: argparse.Namespace) -> None:
 
 def _interactive_setup() -> None:
     """Interactive configuration wizard driven by ``input()``."""
-    from core.init import ensure_runtime_dir
+    from core.infra.runtime_init import ensure_runtime_dir
 
     ensure_runtime_dir()
 

@@ -11,18 +11,21 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ── cmd_send ─────────────────────────────────────────────
 
 
 class TestCmdSend:
     @patch("cli.commands.messaging._notify_server_message_sent")
-    @patch("core.messenger.Messenger")
+    @patch("core.messaging.messenger.Messenger")
     @patch("core.paths.get_shared_dir", return_value=Path("/tmp/shared"))
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_send_success(
-        self, mock_ensure, mock_shared, mock_messenger_cls,
-        mock_notify, capsys,
+        self,
+        mock_ensure,
+        mock_shared,
+        mock_messenger_cls,
+        mock_notify,
+        capsys,
     ):
         from cli.commands.messaging import cmd_send
 
@@ -133,9 +136,7 @@ class TestCmdList:
         ]
         mock_request.return_value = mock_resp
 
-        args = argparse.Namespace(
-            local=False, gateway_url="http://localhost:18500"
-        )
+        args = argparse.Namespace(local=False, gateway_url="http://localhost:18500")
         cmd_list(args)
 
         captured = capsys.readouterr()
@@ -147,9 +148,7 @@ class TestCmdList:
     def test_list_remote_fallback(self, mock_request, mock_local, capsys):
         from cli.commands.messaging import cmd_list
 
-        args = argparse.Namespace(
-            local=False, gateway_url="http://localhost:18500"
-        )
+        args = argparse.Namespace(local=False, gateway_url="http://localhost:18500")
         cmd_list(args)
 
         captured = capsys.readouterr()
@@ -162,7 +161,7 @@ class TestCmdList:
 
 class TestListLocal:
     @patch("core.paths.get_animas_dir")
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_no_animas_dir(self, mock_ensure, mock_dir, tmp_path, capsys):
         from cli.commands.messaging import _list_local
 
@@ -173,7 +172,7 @@ class TestListLocal:
         assert "No animas" in captured.out
 
     @patch("core.paths.get_animas_dir")
-    @patch("core.init.ensure_runtime_dir")
+    @patch("core.infra.runtime_init.ensure_runtime_dir")
     def test_with_animas(self, mock_ensure, mock_dir, tmp_path, capsys):
         from cli.commands.messaging import _list_local
 

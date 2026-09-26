@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.entity_index import load_entity_registry, match_query_entities
-from core.memory.fact_extraction import extract_and_store_facts
-from core.memory.fact_invalidation import ReconcileAction, ReconcileResult
+from core.memory.facts.entity_index import load_entity_registry, match_query_entities
+from core.memory.facts.extraction import extract_and_store_facts
+from core.memory.facts.invalidation import ReconcileAction, ReconcileResult
 from core.memory.ontology.default import ExtractedEntity, ExtractedFact
 from core.memory.retrieval.entity import EntityBoostConfig, apply_entity_boost
 
@@ -49,8 +49,8 @@ async def test_fact_ingest_updates_entity_registry_and_boosts_metadata_candidate
             reason="test_no_candidates",
         )
 
-    monkeypatch.setattr("core.memory.fact_extraction.reconcile_new_fact", add_without_reconciliation)
-    monkeypatch.setattr("core.memory.fact_extraction._index_fact_records", lambda *args, **kwargs: None)
+    monkeypatch.setattr("core.memory.facts.extraction.reconcile_new_fact", add_without_reconciliation)
+    monkeypatch.setattr("core.memory.facts.extraction._index_fact_records", lambda *args, **kwargs: None)
 
     stored = await extract_and_store_facts(
         anima_dir,

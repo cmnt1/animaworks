@@ -10,12 +10,11 @@ ConversationMemory, prompt building, and pre-flight size checks.
 
 from __future__ import annotations
 
-
 import pytest
 
-from core.memory.conversation import (
-    ConversationMemory,
+from core.memory.conversation.memory import (
     _MAX_STORED_CONTENT_CHARS,
+    ConversationMemory,
 )
 from core.schemas import ModelConfig
 
@@ -104,21 +103,25 @@ class TestPreflightConstants:
     """Pre-flight size check constants are properly defined."""
 
     def test_soft_limit_exists(self):
-        from core.agent import _PROMPT_SOFT_LIMIT_BYTES
+        from core.agent.agent_core import _PROMPT_SOFT_LIMIT_BYTES
+
         assert _PROMPT_SOFT_LIMIT_BYTES > 0
 
     def test_hard_limit_exists(self):
-        from core.agent import _PROMPT_HARD_LIMIT_BYTES
+        from core.agent.agent_core import _PROMPT_HARD_LIMIT_BYTES
+
         assert _PROMPT_HARD_LIMIT_BYTES > 0
 
     def test_sdk_buffer_size(self):
         from core.execution.agent_sdk import _SDK_MAX_BUFFER_SIZE
+
         assert _SDK_MAX_BUFFER_SIZE == 4 * 1024 * 1024
 
     def test_limits_ordering(self):
         """Soft < Hard < SDK buffer."""
-        from core.agent import _PROMPT_SOFT_LIMIT_BYTES, _PROMPT_HARD_LIMIT_BYTES
+        from core.agent.agent_core import _PROMPT_HARD_LIMIT_BYTES, _PROMPT_SOFT_LIMIT_BYTES
         from core.execution.agent_sdk import _SDK_MAX_BUFFER_SIZE
+
         assert _PROMPT_SOFT_LIMIT_BYTES < _PROMPT_HARD_LIMIT_BYTES < _SDK_MAX_BUFFER_SIZE
 
 

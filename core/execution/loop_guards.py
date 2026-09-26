@@ -352,7 +352,7 @@ def record_runaway_event(
     event_type = "error" if is_halt else "warning"
     summary = f"{mode} runaway tool loop {'halted' if is_halt else 'warning'}"
     try:
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         ActivityLogger(anima_dir).log(
             event_type,
@@ -374,7 +374,7 @@ def record_runaway_event(
 def record_finalization_failure(anima_dir: Path, *, mode: str, reason: str) -> None:
     """Record why a mandatory tool-free grace turn produced no answer."""
     try:
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         ActivityLogger(anima_dir).log(
             "error",

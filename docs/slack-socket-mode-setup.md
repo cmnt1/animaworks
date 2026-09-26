@@ -333,7 +333,7 @@ Entry: `python -m core.integrations.slack` or `animaworks-tool slack` (see `--he
 | `server/reload_manager.py` | `SlackSocketModeManager.reload()` when applying config/credentials |
 | `server/routes/system.py` | `/api/system/hot-reload*` endpoints |
 | `server/routes/webhooks.py` | Webhook (`/api/webhooks/slack/events`, signature verification; same shaping and intent as above) |
-| `core/messenger.py` | `receive_external()` — inbox placement |
+| `core/messaging/messenger.py` | `receive_external()` — inbox placement |
 | `core/tooling/handler.py` | `use_tool` → direct `dispatch` on external modules (e.g. `slack` + `action` runs `slack_*`) |
 | `core/tooling/dispatch.py` | `ExternalToolDispatcher` (core tools: registry matches only schema names from `get_tool_schemas()`) |
 | `core/notification/reply_routing.py` | Route call_human thread replies to Animas |

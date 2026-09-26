@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from core.anima_factory import create_from_md
+from core.anima.factory import create_from_md
 from core.config import (
     invalidate_cache,
     load_config,

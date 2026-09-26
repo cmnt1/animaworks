@@ -21,7 +21,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ORG_DASHBOARD_JS = REPO_ROOT / "server" / "static" / "workspace" / "modules" / "org-dashboard.js"
@@ -298,7 +298,7 @@ class TestLiveEventEmissionForDashboard:
         return [json.loads(f.read_text(encoding="utf-8")) for f in sorted(event_dir.glob("ta_*.json"))]
 
     def test_message_sent_event_has_to_person(self, activity_logger, tmp_path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+        with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
             activity_logger.log(
                 "message_sent",
                 content="報告: 顧客対応完了",
@@ -314,7 +314,7 @@ class TestLiveEventEmissionForDashboard:
         assert "報告" in data["summary"]
 
     def test_response_sent_event_has_content(self, activity_logger, tmp_path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+        with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
             activity_logger.log(
                 "response_sent",
                 content="見積もりを送付いたします。",
@@ -328,7 +328,7 @@ class TestLiveEventEmissionForDashboard:
         assert "見積もり" in data["content"]
 
     def test_channel_post_event_has_channel(self, activity_logger, tmp_path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+        with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
             activity_logger.log(
                 "channel_post",
                 channel="general",
@@ -341,7 +341,7 @@ class TestLiveEventEmissionForDashboard:
 
     def test_full_flow_multiple_events(self, activity_logger, tmp_path):
         """Simulate a realistic Anima session with multiple dashboard events."""
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+        with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
             activity_logger.log("tool_use", tool="delegate_task", summary="delegate_task: タスク委任")
             activity_logger.log(
                 "message_sent",

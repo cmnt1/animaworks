@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from core.memory.rag.indexer import MemoryIndexer
     from core.memory.rag.retriever import MemoryRetriever
     from core.memory.rag.store import VectorStore
-    from core.memory.rag_search import RAGMemorySearch
+    from core.memory.retrieval.rag_search import RAGMemorySearch
     from core.memory.retrieval.unified_search import UnifiedMemorySearch
 
 logger = logging.getLogger(__name__)
@@ -69,7 +69,7 @@ class LegacyRAGBackend(MemoryBackend):
     def _ensure_rag_search(self) -> RAGMemorySearch:
         """Return a lazily initialised :class:`RAGMemorySearch`."""
         if self._rag_search is None:
-            from core.memory.rag_search import RAGMemorySearch
+            from core.memory.retrieval.rag_search import RAGMemorySearch
 
             self._rag_search = RAGMemorySearch(
                 self._anima_dir,
@@ -353,7 +353,7 @@ class LegacyRAGBackend(MemoryBackend):
 
         if scope is None or scope in {"knowledge", "episodes", "procedures"}:
             try:
-                from core.memory.bm25 import rebuild_longterm_bm25_index
+                from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index
 
                 await asyncio.to_thread(rebuild_longterm_bm25_index, self._anima_dir)
             except Exception:
@@ -389,7 +389,7 @@ class LegacyRAGBackend(MemoryBackend):
             return fact_results
 
         try:
-            from core.memory.bm25 import search_activity_log
+            from core.memory.retrieval.bm25 import search_activity_log
 
             results = await asyncio.to_thread(
                 search_activity_log,

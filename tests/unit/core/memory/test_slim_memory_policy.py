@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.config.schemas import ConsolidationConfig, PrimingConfig, RAGConfig
-from core.memory.consolidation import ConsolidationEngine
+from core.memory.maintenance.consolidation import ConsolidationEngine
 from core.memory.priming.engine import PrimingEngine
 from core.memory.priming.policy import resolve_priming_policy
 
@@ -131,7 +131,7 @@ def test_incremental_phase_b_carryover_keeps_earlier_unfinished_input(tmp_path: 
 
 @pytest.mark.asyncio
 async def test_daily_default_finishes_after_episode_without_tool_loop(tmp_path: Path):
-    from core._anima_lifecycle import LifecycleMixin
+    from core.anima.lifecycle import LifecycleMixin
     from core.config.models import AnimaWorksConfig
 
     anima = SimpleNamespace(name="fixture", anima_dir=tmp_path)
@@ -159,7 +159,7 @@ def test_curator_proposal_cannot_change_access_or_remove_vectors(tmp_path: Path)
 
 @pytest.mark.asyncio
 async def test_daily_repeat_has_zero_generation_calls(tmp_path: Path):
-    from core._anima_lifecycle import LifecycleMixin
+    from core.anima.lifecycle import LifecycleMixin
     from core.config.models import AnimaWorksConfig
 
     anima = SimpleNamespace(name="fixture", anima_dir=tmp_path)
@@ -181,7 +181,7 @@ async def test_daily_repeat_has_zero_generation_calls(tmp_path: Path):
 
 
 def test_explicit_graph_disable_skips_indexer_creation(tmp_path: Path):
-    from core.memory.rag_search import RAGMemorySearch
+    from core.memory.retrieval.rag_search import RAGMemorySearch
 
     search = RAGMemorySearch(tmp_path, tmp_path / "common_knowledge", tmp_path / "common_skills")
     with (

@@ -378,7 +378,7 @@ def _print_bootstrap_status(name: str, status: dict) -> None:
 
 def cmd_anima_repair_bootstrap(args: argparse.Namespace) -> None:
     """Inspect or repair a first-run bootstrap runtime state."""
-    from core.bootstrap_state import (
+    from core.anima.bootstrap_state import (
         get_bootstrap_status,
         repair_bootstrap_complete,
         repair_bootstrap_fresh,
@@ -624,7 +624,7 @@ def cmd_anima_set_role(args: argparse.Namespace) -> None:
     """Change an anima's role."""
     import requests
 
-    from core.anima_factory import SHARED_ROLES_DIR, VALID_ROLES, _apply_role_defaults
+    from core.anima.factory import SHARED_ROLES_DIR, VALID_ROLES, _apply_role_defaults
     from core.config.local_llm import apply_local_llm_role_to_status
     from core.config.models import load_config
     from core.paths import get_animas_dir, get_data_dir
@@ -1122,7 +1122,7 @@ def _parse_since(raw: str | None) -> datetime | None:
         return None
     from datetime import time as _time
 
-    from core.memory.activity import now_local
+    from core.memory.activity.logger import now_local
 
     now = now_local()
     try:
@@ -1146,7 +1146,7 @@ def _parse_date(raw: str | None) -> tuple[datetime, datetime] | None:
     from datetime import time as _time
     from datetime import timedelta
 
-    from core.memory.activity import now_local
+    from core.memory.activity.logger import now_local
 
     now = now_local()
     val = raw.strip().lower()
@@ -1189,7 +1189,7 @@ def cmd_anima_audit(args: argparse.Namespace) -> None:
 
     animas_dir = get_animas_dir()
 
-    from core.memory.audit import AuditAggregator
+    from core.memory.activity.audit import AuditAggregator
 
     if audit_all:
         dirs = sorted([d for d in animas_dir.iterdir() if d.is_dir() and (d / "identity.md").exists()])
@@ -1213,7 +1213,7 @@ def cmd_anima_rename(args: argparse.Namespace) -> None:
     """Rename an anima (directory, config, references)."""
     import requests
 
-    from core.anima_factory import validate_anima_name
+    from core.anima.factory import validate_anima_name
     from core.config.models import rename_anima_in_config
     from core.paths import get_animas_dir, get_data_dir
 

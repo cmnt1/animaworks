@@ -24,7 +24,7 @@ from core.execution.base import (
     StreamDisconnectedError,
 )
 from core.execution.reminder import msg_tool_loop_warning
-from core.memory.shortterm import ShortTermMemory
+from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ModelConfig
 

@@ -17,14 +17,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core._anima_inbox import (
+from core.anima.inbox import (
     _append_episode_off_loop,
     _check_task_state,
     _extract_task_id,
     _handle_delegation_dms,
     _split_delegation_items,
 )
-from core.messenger import InboxItem
+from core.messaging.messenger import InboxItem
 from core.schemas import Message
 
 # ── Fixtures ──────────────────────────────────────────────
@@ -72,7 +72,7 @@ def _setup_anima_dir(tmp_path: Path) -> Path:
 async def test_append_episode_off_loop_uses_to_thread() -> None:
     memory = MagicMock()
 
-    with patch("core._anima_inbox.asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+    with patch("core.anima.inbox.asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
         await _append_episode_off_loop(memory, "episode", origin="anima")
 
     mock_to_thread.assert_awaited_once_with(memory.append_episode, "episode", origin="anima")

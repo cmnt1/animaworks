@@ -113,10 +113,13 @@ class TestAppJsTimestampUsage:
 class TestNewEventHandlers:
     """Verify the three new WebSocket event handlers exist."""
 
-    @pytest.mark.parametrize("event_name", [
-        "anima.proactive_message",
-        "anima.notification",
-    ])
+    @pytest.mark.parametrize(
+        "event_name",
+        [
+            "anima.proactive_message",
+            "anima.notification",
+        ],
+    )
     def test_handler_registered(self, event_name: str) -> None:
         src = APP_JS.read_text(encoding="utf-8")
         assert f'onEvent("{event_name}"' in src
@@ -129,14 +132,14 @@ class TestNewEventHandlers:
     def test_proactive_message_uses_dm_sent_type(self) -> None:
         src = APP_JS.read_text(encoding="utf-8")
         idx = src.index('onEvent("anima.proactive_message"')
-        block = src[idx:idx + 400]
+        block = src[idx : idx + 400]
         assert 'type: "dm_sent"' in block
 
     def test_notification_handler_is_noop(self) -> None:
         """anima.notification handler is a no-op (timeline handled by proactive_message)."""
         src = APP_JS.read_text(encoding="utf-8")
         idx = src.index('onEvent("anima.notification"')
-        block = src[idx:idx + 400]
+        block = src[idx : idx + 400]
         # After Arch-1 fix, the handler no longer adds timeline events
         assert 'type: "human_notify"' not in block
         assert "addTimelineEvent" not in block
@@ -151,19 +154,23 @@ class TestBackendTimestampFormat:
     def test_jst_isoformat_no_z(self) -> None:
         """now_iso() (JST-aware) produces ISO without Z suffix."""
         from core.time_utils import now_iso
+
         ts = now_iso()
         assert not ts.endswith("Z")
 
     def test_jst_isoformat_pattern(self) -> None:
         """Format matches YYYY-MM-DDTHH:MM:SS.ffffff+09:00."""
         from core.time_utils import now_iso
+
         ts = now_iso()
         assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+\+09:00", ts)
 
     def test_activity_logger_uses_now_iso(self) -> None:
         """ActivityLogger.log() must use now_iso() for timezone-aware timestamps."""
-        from core.memory.activity import ActivityLogger
         import inspect
+
+        from core.memory.activity.logger import ActivityLogger
+
         source = inspect.getsource(ActivityLogger.log)
         assert "now_iso()" in source
         # Must not use raw now_jst()

@@ -7,17 +7,17 @@ Verifies that ActivityLogger recordings are correctly surfaced by
 PrimingEngine's Channel B (recent activity) and that the old episodes/
 fallback path works when no activity_log entries exist.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from core.time_utils import today_local
 
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
 from core.memory.priming import PrimingEngine, PrimingResult, format_priming_section
-
+from core.time_utils import today_local
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -242,9 +242,7 @@ async def test_priming_result_format(
 
     # PrimingResult should have recent_activity populated
     assert isinstance(priming_result, PrimingResult)
-    assert priming_result.recent_activity, (
-        "recent_activity should be non-empty when activity_log has entries"
-    )
+    assert priming_result.recent_activity, "recent_activity should be non-empty when activity_log has entries"
 
     # Format the priming section
     section = format_priming_section(priming_result, sender_name="human")

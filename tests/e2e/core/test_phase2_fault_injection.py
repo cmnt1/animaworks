@@ -15,9 +15,9 @@ from typing import Any
 import psutil
 import pytest
 
-from core.anima import DigitalAnima
+from core.anima.digital_anima import DigitalAnima
+from core.memory.conversation.streaming_journal import StreamingJournal
 from core.memory.rag.sqlite_health import quick_check_chroma_sqlite
-from core.memory.streaming_journal import StreamingJournal
 from core.platform.processing_lease import read_processing_lease, write_processing_lease
 from core.schemas import CronTask
 from core.supervisor import task_runner_supervisor

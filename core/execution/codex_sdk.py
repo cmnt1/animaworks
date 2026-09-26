@@ -53,7 +53,7 @@ from core.execution.rate_guard import get_rate_guard
 from core.execution.session_context import _resolve_session_type
 from core.execution.session_store import SessionRecord, SessionStore
 from core.execution.session_types import is_persistent_codex_session
-from core.memory.shortterm import ShortTermMemory
+from core.memory.conversation.shortterm import ShortTermMemory
 from core.platform.codex import default_home_dir, get_codex_executable
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
@@ -1345,12 +1345,12 @@ class CodexSDKExecutor(BaseExecutor):
         provider_config = _resolve_codex_provider_config(self._model_config)
         esc = _escape_toml_string
 
-        from core.config.models import load_permissions
-        from core.file_access_policy import (
+        from core.config.file_access_policy import (
             effective_write_roots,
             resolve_effective_denied_roots,
             shared_tool_cache_write_root,
         )
+        from core.config.models import load_permissions
 
         permissions_config = load_permissions(self._anima_dir)
         write_roots = effective_write_roots(
@@ -1367,7 +1367,7 @@ class CodexSDKExecutor(BaseExecutor):
             )
         )
         if denied_roots:
-            from core.file_access_policy import foreign_owned_ssh_config_dirs, shell_internal_deny_paths
+            from core.config.file_access_policy import foreign_owned_ssh_config_dirs, shell_internal_deny_paths
 
             # Permission profiles and the legacy sandbox settings are mutually
             # exclusive.  Start with broad read access, retain the charter
@@ -1674,8 +1674,8 @@ class CodexSDKExecutor(BaseExecutor):
             # codex 0.151: config.toml keys / -c overrides do NOT enable it.
             "config": {"bypass_hook_trust": True},
         }
+        from core.config.file_access_policy import resolve_effective_denied_roots
         from core.config.models import load_permissions
-        from core.file_access_policy import resolve_effective_denied_roots
 
         permissions_config = load_permissions(self._anima_dir)
         denied_roots = resolve_effective_denied_roots(

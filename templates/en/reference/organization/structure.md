@@ -1,7 +1,7 @@
 # How Organization Structure Works
 
 Organization structure in AnimaWorks is built from each Anima's `status.json` (or `identity.md`) as the Single Source of Truth (SSoT).
-`core/org_sync.py` syncs the **supervisor** on disk into `config.json`, which is used when building prompts.
+`core/org/org_sync.py` syncs the **supervisor** on disk into `config.json`, which is used when building prompts.
 This document explains how organization structure is defined, interpreted, and displayed.
 
 ## Data Sources and Priority
@@ -30,7 +30,7 @@ For custom display (e.g. "Development lead"), add `"speciality": "Development le
 
 ## Syncing config.json via org_sync
 
-`sync_org_structure()` in `core/org_sync.py`:
+`sync_org_structure()` in `core/org/org_sync.py`:
 
 1. Reads `status.json` / `identity.md` per Anima directory (only where `identity.md` exists) and extracts supervisor (`read_anima_supervisor`)
 2. Detects circular references (affected Anima are excluded from sync)
@@ -201,7 +201,7 @@ Characteristics:
 - Helps other Anima decide who to consult or delegate to
 - Unset shows as "(unset)"
 
-**Behavior when creating Anima (`core/anima_factory.py`):**
+**Behavior when creating Anima (`core/anima/factory.py`):**
 - `animaworks anima create --from-md PATH [--role ROLE] [--supervisor NAME] [--name NAME]` writes `supervisor` and `role` to `status.json`
 - **supervisor**: Uses `--supervisor` option if specified; otherwise parses from character sheet basic info table (`| 上司 | name |`)
 - **speciality**: Not included in character sheet basic info table; `_create_status_json` does not write speciality, so it is not set automatically on creation

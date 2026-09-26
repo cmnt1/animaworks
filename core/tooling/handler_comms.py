@@ -25,8 +25,8 @@ from core.tooling.handler_base import (
 )
 
 if TYPE_CHECKING:
-    from core.memory.activity import ActivityLogger
-    from core.messenger import Messenger
+    from core.memory.activity.logger import ActivityLogger
+    from core.messaging.messenger import Messenger
     from core.notification.notifier import HumanNotifier
 
 logger = logging.getLogger("animaworks.tool_handler")
@@ -39,7 +39,7 @@ def _company_boundary_error(
     animas_dir: Any,
 ) -> str | None:
     """Return a stable user-facing error when a company boundary blocks access."""
-    from core.company import check_company_boundary
+    from core.org.company import check_company_boundary
 
     boundary = check_company_boundary(from_anima, to_anima, animas_dir=animas_dir)
     if not boundary.cross_company:
@@ -151,7 +151,7 @@ class CommsToolsMixin:
         # ── Resolve recipient ──
         try:
             from core.config.models import load_config
-            from core.outbound import resolve_recipient, send_external
+            from core.messaging.outbound import resolve_recipient, send_external
             from core.paths import get_animas_dir
 
             config = load_config()
@@ -233,7 +233,7 @@ class CommsToolsMixin:
                 except Exception:
                     logger.exception("on_message_sent callback failed")
 
-            from core.outbound import send_external
+            from core.messaging.outbound import send_external
 
             result = send_external(
                 resolved,
@@ -290,7 +290,7 @@ class CommsToolsMixin:
         try:
             from datetime import datetime, timedelta
 
-            from core.memory.activity import ActivityLogger
+            from core.memory.activity.logger import ActivityLogger
             from core.time_utils import ensure_aware, now_local
 
             activity = ActivityLogger(self._anima_dir)
@@ -354,8 +354,8 @@ class CommsToolsMixin:
         if not self._messenger:
             return None
 
-        from core.company import get_company, get_company_display_name
-        from core.messenger import load_channel_meta
+        from core.messaging.messenger import load_channel_meta
+        from core.org.company import get_company, get_company_display_name
 
         meta = load_channel_meta(self._messenger.shared_dir, channel)
         animas_dir = self._anima_dir.parent
@@ -397,7 +397,7 @@ class CommsToolsMixin:
             return _error_result("InvalidArguments", "channel and text are required")
 
         # ── ACL gate ──
-        from core.messenger import is_channel_member
+        from core.messaging.messenger import is_channel_member
 
         if not is_channel_member(self._messenger.shared_dir, channel, self._anima_name):
             return t("handler.channel_acl_denied", channel=channel)
@@ -421,7 +421,7 @@ class CommsToolsMixin:
             )
 
         # ── Unified outbound budget check (DM + Board share the same pool) ──
-        from core.cascade_limiter import get_depth_limiter
+        from core.messaging.cascade_limiter import get_depth_limiter
         from core.paths import get_animas_dir as _get_animas_dir
 
         _limiter = get_depth_limiter()
@@ -510,7 +510,7 @@ class CommsToolsMixin:
             targets = (named & running) - {self._anima_name}
 
         # ── ACL filter: only notify channel members ──
-        from core.messenger import is_channel_member
+        from core.messaging.messenger import is_channel_member
 
         targets = {t for t in targets if is_channel_member(self._messenger.shared_dir, channel, t)}
 
@@ -565,7 +565,7 @@ class CommsToolsMixin:
         try:
             import asyncio
 
-            from core.outbound_auto import BoardSlackSync
+            from core.messaging.outbound_auto import BoardSlackSync
 
             sync = BoardSlackSync()
             coro = sync.sync_board_post(
@@ -610,7 +610,7 @@ class CommsToolsMixin:
 
         # ── ACL gate ──
         from core.exceptions import RecipientNotFoundError
-        from core.messenger import _validate_name, is_channel_member
+        from core.messaging.messenger import _validate_name, is_channel_member
 
         try:
             _validate_name(channel, "channel name")
@@ -665,7 +665,7 @@ class CommsToolsMixin:
             return _error_result("InvalidArguments", "action and channel are required")
 
         from core.exceptions import RecipientNotFoundError
-        from core.messenger import (
+        from core.messaging.messenger import (
             ChannelMeta,
             _validate_name,
             is_channel_member,
@@ -690,7 +690,7 @@ class CommsToolsMixin:
             company_error = self._cross_company_communication_error(members)
             if company_error is not None:
                 return company_error
-            from core.company import get_company
+            from core.org.company import get_company
 
             creator_company = get_company(self._anima_name, animas_dir=self._anima_dir.parent) or ""
             meta = ChannelMeta(

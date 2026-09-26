@@ -20,7 +20,7 @@ python3 scripts/doc_freshness.py
 [HIGH] templates/ja/reference/operations/task-management.md
        Reason: core/tasks/background.py changed 2026-02-20 (doc: 2026-02-10, 10d stale)
 [MED ] templates/ja/common_skills/cron-management/SKILL.md
-       Reason: core/schedule_parser.py changed 2026-02-22 (doc: 2026-02-18, 4d stale)
+       Reason: core/supervisor/schedule_parser.py changed 2026-02-22 (doc: 2026-02-18, 4d stale)
 ```
 
 深刻度は差分日数で判定: **HIGH**(7日+) / **MED**(3-7日) / **LOW**(1-3日)

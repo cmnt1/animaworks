@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from core.anima_factory import TEMPLATES_DIR, create_from_template
-from core.memory.consolidation import ConsolidationEngine, list_project_archives
+from core.anima.factory import TEMPLATES_DIR, create_from_template
+from core.memory.maintenance.consolidation import ConsolidationEngine, list_project_archives
 from core.schemas import CycleResult
 from core.supervisor.runner import AnimaRunner
 from core.supervisor.task_runner import execute_background_contract
@@ -47,8 +47,8 @@ def test_librarian_template_configuration(tmp_path: Path, locale: str) -> None:
     animas_dir = tmp_path / "animas"
     animas_dir.mkdir()
     with (
-        patch("core.anima_factory.ANIMA_TEMPLATES_DIR", TEMPLATES_DIR / locale / "anima_templates"),
-        patch("core.anima_factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
+        patch("core.anima.factory.ANIMA_TEMPLATES_DIR", TEMPLATES_DIR / locale / "anima_templates"),
+        patch("core.anima.factory.BOOTSTRAP_TEMPLATE", tmp_path / "no"),
     ):
         anima_dir = create_from_template(animas_dir, "librarian")
 

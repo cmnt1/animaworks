@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from core.session_compactor import SessionCompactor
+from core.agent.session_compactor import SessionCompactor
 
 
 def _write_session(anima_dir: Path, thread_id: str, *, session_id: str = "session") -> None:
@@ -42,7 +42,7 @@ async def test_sweep_compacts_old_threads_only(tmp_path: Path) -> None:
     anima = SimpleNamespace(anima_dir=anima_dir, name="test")
     compactor = SessionCompactor(idle_minutes=10)
 
-    with patch("core.session_compactor.run_idle_compaction", new_callable=AsyncMock) as compact:
+    with patch("core.agent.session_compactor.run_idle_compaction", new_callable=AsyncMock) as compact:
         await compactor._sweep_once(anima)
 
     assert {call.args[1] for call in compact.await_args_list} == {"default", "old-thread"}
@@ -55,7 +55,7 @@ async def test_sweep_skips_threads_without_a_session_id(tmp_path: Path) -> None:
     anima = SimpleNamespace(anima_dir=anima_dir, name="test")
     compactor = SessionCompactor(idle_minutes=10)
 
-    with patch("core.session_compactor.run_idle_compaction", new_callable=AsyncMock) as compact:
+    with patch("core.agent.session_compactor.run_idle_compaction", new_callable=AsyncMock) as compact:
         await compactor._sweep_once(anima)
 
     compact.assert_not_awaited()
@@ -70,7 +70,7 @@ async def test_sweep_continues_after_one_thread_fails(tmp_path: Path) -> None:
     compactor = SessionCompactor(idle_minutes=10)
     compact = AsyncMock(side_effect=[RuntimeError("boom"), True])
 
-    with patch("core.session_compactor.run_idle_compaction", compact):
+    with patch("core.agent.session_compactor.run_idle_compaction", compact):
         await compactor._sweep_once(anima)
 
     assert compact.await_count == 2
@@ -89,7 +89,7 @@ async def test_sweep_does_not_recompact_the_same_measurement(tmp_path: Path) -> 
     compactor = SessionCompactor(idle_minutes=10)
     compact = AsyncMock(return_value=True)
 
-    with patch("core.session_compactor.run_idle_compaction", compact):
+    with patch("core.agent.session_compactor.run_idle_compaction", compact):
         await compactor._sweep_once(anima)
         await compactor._sweep_once(anima)
         await compactor._sweep_once(anima)
@@ -112,7 +112,7 @@ async def test_sweep_fires_again_after_fresh_activity(tmp_path: Path) -> None:
     compactor = SessionCompactor(idle_minutes=10)
     compact = AsyncMock(return_value=True)
 
-    with patch("core.session_compactor.run_idle_compaction", compact):
+    with patch("core.agent.session_compactor.run_idle_compaction", compact):
         await compactor._sweep_once(anima)
 
         # Fresh activity, then let it go stale again.

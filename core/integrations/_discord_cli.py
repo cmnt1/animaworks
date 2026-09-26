@@ -142,7 +142,7 @@ def _run_cli_command(client: DiscordClient, args: argparse.Namespace) -> None:
         sent_via_webhook = False
         if anima_name:
             try:
-                from core.discord_webhooks import get_webhook_manager
+                from core.messaging.discord_webhooks import get_webhook_manager
 
                 wm = get_webhook_manager()
                 msg_id = wm.send_as_anima(args.channel_id, anima_name, body)

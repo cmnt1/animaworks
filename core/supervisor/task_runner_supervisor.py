@@ -776,8 +776,8 @@ class TaskRunnerSupervisor:
         def _disk_recovery() -> list[dict[str, Any]]:
             outcomes: list[dict[str, Any]] = []
             try:
-                from core.memory.conversation import ConversationMemory
-                from core.memory.streaming_journal import StreamingJournal
+                from core.memory.conversation.memory import ConversationMemory
+                from core.memory.conversation.streaming_journal import StreamingJournal
             except Exception:
                 return outcomes
             for session_type in session_types:

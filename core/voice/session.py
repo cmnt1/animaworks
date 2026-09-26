@@ -1316,7 +1316,7 @@ class VoiceSession:
         currently no supervisor IPC method to append a conversation turn from
         the server side, so the direct write is kept and the risk documented.
         """
-        from core.memory.conversation import ConversationMemory
+        from core.memory.conversation.memory import ConversationMemory
 
         try:
             from core.paths import get_animas_dir

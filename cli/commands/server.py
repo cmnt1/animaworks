@@ -380,7 +380,7 @@ def _spawn_daemon(args: argparse.Namespace) -> None:
 
     log_path = _get_daemon_log_path()
     try:
-        from core.memory.housekeeping import _rotate_daemon_log
+        from core.memory.maintenance.housekeeping import _rotate_daemon_log
 
         _rotate_daemon_log(log_path, max_size_mb=50, keep_generations=5)
     except Exception:
@@ -610,8 +610,8 @@ def _run_execution_sdk_preflight(animas_dir: Path | None = None) -> None:
 def _run_rag_startup_preflight(*, force_all_vectordb: bool = False) -> None:
     """Repair suspected corrupt RAG DBs before the server imports Chroma."""
     try:
-        from core import startup_progress
         from core.config import load_config
+        from core.infra import startup_progress
 
         startup_progress.set_phase("preflight", detail="Checking RAG vector databases", reset_counts=True)
         startup_progress.raise_if_cancelled()
@@ -725,7 +725,7 @@ def _start_foreground(args: argparse.Namespace) -> None:
 
     import uvicorn
 
-    from core.init import ensure_runtime_dir
+    from core.infra.runtime_init import ensure_runtime_dir
     from core.paths import get_animas_dir, get_shared_dir
     from core.platform.fd_limits import raise_fd_soft_limit
     from server.app import create_app

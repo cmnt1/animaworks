@@ -738,7 +738,7 @@ def create_app() -> FastAPI:
 
     @app.get("/status")
     async def status() -> dict[str, Any]:
-        from core.gpu import get_gpu_status
+        from core.infra.gpu import get_gpu_status
         from core.memory.rag.singleton import (
             is_global_vector_store_init_failed,
             list_vector_store_init_failed_animas,

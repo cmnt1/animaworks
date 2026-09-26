@@ -25,12 +25,12 @@ from core.execution.base import (
     _TOOL_RESULT_DEFAULT_BUDGET,
     tool_result_save_budget,
 )
-from core.memory.conversation import (
+from core.memory.conversation.memory import (
     _MAX_TOOL_RESULT_SUMMARY,
     ConversationMemory,
     ToolRecord,
 )
-from core.memory.shortterm import SessionState, ShortTermMemory
+from core.memory.conversation.shortterm import SessionState, ShortTermMemory
 from core.schemas import ModelConfig
 
 # ---------------------------------------------------------------------------
@@ -174,9 +174,7 @@ class TestDynamicBudgetScaling:
         budget_256k = tool_result_save_budget("Read", 256_000)
         budget_32k = tool_result_save_budget("Read", 32_000)
 
-        assert budget_256k > budget_32k, (
-            f"256K budget ({budget_256k}) should exceed 32K budget ({budget_32k})"
-        )
+        assert budget_256k > budget_32k, f"256K budget ({budget_256k}) should exceed 32K budget ({budget_32k})"
 
     def test_budget_scales_linearly_within_bounds(self):
         """Budget should scale roughly proportionally to context window size."""
@@ -206,9 +204,7 @@ class TestDynamicBudgetScaling:
         budget_bash = tool_result_save_budget("Bash", ctx)
         budget_unknown = tool_result_save_budget("unknown_tool", ctx)
 
-        assert budget_read > budget_bash, (
-            f"Read budget ({budget_read}) should exceed Bash budget ({budget_bash})"
-        )
+        assert budget_read > budget_bash, f"Read budget ({budget_read}) should exceed Bash budget ({budget_bash})"
         assert budget_unknown == _TOOL_RESULT_DEFAULT_BUDGET  # at 128K, scale=1.0
 
     def test_min_and_max_scale_clamping(self):
@@ -333,7 +329,7 @@ class TestPromptLogExtendedFields:
 
     def test_prompt_log_contains_extended_fields(self, tmp_path: Path):
         """Written JSONL entry includes all extended fields."""
-        from core.agent import _save_prompt_log
+        from core.agent.agent_core import _save_prompt_log
 
         anima_dir = tmp_path / "animas" / "log-fields"
         (anima_dir / "prompt_logs").mkdir(parents=True, exist_ok=True)
@@ -384,7 +380,7 @@ class TestPromptLogExtendedFields:
     def test_prompt_log_handles_none_optional_fields(self, tmp_path: Path):
         """When prior_messages and tool_schemas are None, the entry still
         contains the fields with None/0 values."""
-        from core.agent import _save_prompt_log
+        from core.agent.agent_core import _save_prompt_log
 
         anima_dir = tmp_path / "animas" / "log-none"
         (anima_dir / "prompt_logs").mkdir(parents=True, exist_ok=True)
@@ -407,9 +403,7 @@ class TestPromptLogExtendedFields:
         log_files = list((anima_dir / "prompt_logs").glob("*.jsonl"))
         assert len(log_files) == 1
 
-        entry = json.loads(
-            log_files[0].read_text(encoding="utf-8").strip().splitlines()[0]
-        )
+        entry = json.loads(log_files[0].read_text(encoding="utf-8").strip().splitlines()[0])
 
         assert entry["type"] == "request_start"
         assert entry["context_window"] == 0
@@ -428,8 +422,8 @@ class TestPromptLogRotation:
 
     def test_old_files_deleted_recent_kept(self, tmp_path: Path):
         """Log files older than _PROMPT_LOG_RETENTION_DAYS are deleted."""
-        import core._agent_prompt_log as _prompt_log_mod
-        from core.agent import _rotate_prompt_logs
+        import core.agent.prompt_log as _prompt_log_mod
+        from core.agent.agent_core import _rotate_prompt_logs
 
         log_dir = tmp_path / "prompt_logs"
         log_dir.mkdir()
@@ -440,15 +434,16 @@ class TestPromptLogRotation:
 
         try:
             from core.time_utils import now_jst
+
             today = now_jst()
 
             # Create files for today, yesterday, 2 days ago, 4 days ago, 7 days ago
             dates_and_expected = [
-                (today, True),                                     # today -> keep
-                (today - timedelta(days=1), True),                 # yesterday -> keep
-                (today - timedelta(days=2), True),                 # 2 days ago -> keep
-                (today - timedelta(days=4), False),                # 4 days ago -> delete
-                (today - timedelta(days=7), False),                # 7 days ago -> delete
+                (today, True),  # today -> keep
+                (today - timedelta(days=1), True),  # yesterday -> keep
+                (today - timedelta(days=2), True),  # 2 days ago -> keep
+                (today - timedelta(days=4), False),  # 4 days ago -> delete
+                (today - timedelta(days=7), False),  # 7 days ago -> delete
             ]
 
             created_files = []
@@ -473,8 +468,8 @@ class TestPromptLogRotation:
 
     def test_rotation_runs_once_per_day(self, tmp_path: Path):
         """After rotation runs once, a second call on the same day is a no-op."""
-        import core._agent_prompt_log as _prompt_log_mod
-        from core.agent import _rotate_prompt_logs
+        import core.agent.prompt_log as _prompt_log_mod
+        from core.agent.agent_core import _rotate_prompt_logs
 
         log_dir = tmp_path / "prompt_logs"
         log_dir.mkdir()
@@ -485,6 +480,7 @@ class TestPromptLogRotation:
 
         try:
             from core.time_utils import now_jst
+
             today = now_jst()
 
             # Create an old file
@@ -501,16 +497,14 @@ class TestPromptLogRotation:
 
             # Second rotation on the same day: should be a no-op
             _rotate_prompt_logs(log_dir)
-            assert old_file.exists(), (
-                "Second rotation on the same day should be a no-op"
-            )
+            assert old_file.exists(), "Second rotation on the same day should be a no-op"
         finally:
             _prompt_log_mod._last_rotation_date = original_date
 
     def test_rotation_ignores_non_date_files(self, tmp_path: Path):
         """Files that do not match YYYY-MM-DD.jsonl pattern are not deleted."""
-        import core._agent_prompt_log as _prompt_log_mod
-        from core.agent import _rotate_prompt_logs
+        import core.agent.prompt_log as _prompt_log_mod
+        from core.agent.agent_core import _rotate_prompt_logs
 
         log_dir = tmp_path / "prompt_logs"
         log_dir.mkdir()
@@ -525,6 +519,7 @@ class TestPromptLogRotation:
 
             # Create a properly named old file for comparison
             from core.time_utils import now_jst
+
             old_date = now_jst() - timedelta(days=10)
             old_file = log_dir / (old_date.strftime("%Y-%m-%d") + ".jsonl")
             old_file.write_text('{"old": true}\n', encoding="utf-8")

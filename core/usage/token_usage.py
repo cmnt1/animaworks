@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from core.memory._io import atomic_write_text
-from core.memory.fact_observability import warn_rate_limited
+from core.memory.facts.observability import warn_rate_limited
 from core.time_utils import now_local, today_local
 
 logger = logging.getLogger("animaworks.token_usage")
@@ -147,7 +147,7 @@ class TokenUsageLogger:
         if not (self._anima_dir / "state" / "event_export_spool").is_dir():
             return
         try:
-            from core.event_export import get_event_exporter
+            from core.infra.event_export import get_event_exporter
 
             get_event_exporter(self._anima_dir)
         except Exception:
@@ -214,7 +214,7 @@ class TokenUsageLogger:
         """Best-effort export after the local token usage write succeeds."""
         try:
             from core.config import load_config
-            from core.event_export import get_event_exporter
+            from core.infra.event_export import get_event_exporter
 
             config = load_config().event_export
             exporter = get_event_exporter(self._anima_dir, config)

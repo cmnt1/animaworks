@@ -80,7 +80,7 @@ class TestInteractionRouter:
         router = get_interaction_router()
         req = await router.create("test_anima", "approval", ["approve", "reject"])
 
-        with patch("core.messenger.Messenger") as mock_messenger:
+        with patch("core.messaging.messenger.Messenger") as mock_messenger:
             mock_instance = MagicMock()
             mock_messenger.return_value = mock_instance
 
@@ -100,7 +100,7 @@ class TestInteractionRouter:
         router = get_interaction_router()
         req = await router.create("test_anima", "approval", ["approve", "reject"])
 
-        with patch("core.messenger.Messenger") as mock_messenger:
+        with patch("core.messaging.messenger.Messenger") as mock_messenger:
             mock_instance = MagicMock()
             mock_messenger.return_value = mock_instance
 
@@ -129,7 +129,7 @@ class TestInteractionRouter:
         router = get_interaction_router()
         req = await router.create("test_anima", "design_gate", ["go", "stop"])
 
-        with patch("core.messenger.Messenger") as mock_messenger:
+        with patch("core.messaging.messenger.Messenger") as mock_messenger:
             mock_instance = MagicMock()
             mock_messenger.return_value = mock_instance
 
@@ -146,7 +146,7 @@ class TestInteractionRouter:
         router = get_interaction_router()
         req = await router.create("test_anima", "approval", ["approve", "reject"])
 
-        with patch("core.messenger.Messenger"):
+        with patch("core.messaging.messenger.Messenger"):
             result1 = await router.resolve(req.callback_id, "approve", "tester", "slack")
             result2 = await router.resolve(req.callback_id, "reject", "tester2", "slack")
             assert result1 is not None
@@ -155,7 +155,7 @@ class TestInteractionRouter:
     @pytest.mark.asyncio
     async def test_resolve_logs_human_reply_activity(self, _patch_dirs, data_dir, tmp_path):
         """Successful resolve writes human_reply to the anima activity_log."""
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
         from core.notification.interactive import get_interaction_router
 
         anima_dir = tmp_path / "animas" / "test_anima"
@@ -165,7 +165,7 @@ class TestInteractionRouter:
         req = await router.create("test_anima", "approval", ["approve", "reject"])
 
         with (
-            patch("core.messenger.Messenger"),
+            patch("core.messaging.messenger.Messenger"),
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         ):
             result = await router.resolve(
@@ -236,7 +236,7 @@ class TestListResolvedForAnima:
         req_b = await router.create("other", "approval", ["approve", "reject"])
         req_pending = await router.create("natsume", "approval", ["approve"])
 
-        with patch("core.messenger.Messenger"):
+        with patch("core.messaging.messenger.Messenger"):
             await router.resolve(req_a.callback_id, "approve", "xuiltul", "slack")
             await router.resolve(req_b.callback_id, "reject", "bob", "web")
 
@@ -276,7 +276,7 @@ class TestListResolvedForAnima:
         async def _setup():
             router = mod.get_interaction_router()
             req = await router.create("natsume", "approval", ["approve"])
-            with patch("core.messenger.Messenger"):
+            with patch("core.messaging.messenger.Messenger"):
                 await router.resolve(req.callback_id, "approve", "a", "slack")
             return req.callback_id
 

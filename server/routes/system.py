@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from core.schedule_parser import parse_cron_md, parse_schedule
+from core.supervisor.schedule_parser import parse_cron_md, parse_schedule
 from core.time_utils import now_local
 from server.routes.taskboard import summarize_task_board
 
@@ -61,7 +61,7 @@ def _get_frontend_logger() -> logging.Logger:
     # the standard redaction (and cycle) filters here explicitly. Honour the
     # config redaction switch, failing open to on (symmetric with the other
     # setup paths).
-    from core.logging_config import attach_standard_log_filters
+    from core.infra.logging_config import attach_standard_log_filters
 
     try:
         from core.config import load_config
@@ -247,7 +247,7 @@ async def _zoom_gateway_status(request: Request) -> dict:
 
 def _gpu_status() -> dict[str, object]:
     try:
-        from core.gpu import get_gpu_status
+        from core.infra.gpu import get_gpu_status
 
         return get_gpu_status()
     except Exception:
@@ -547,7 +547,7 @@ def create_system_router() -> APIRouter:
         id: str,
     ):
         """Return one complete trigger-based activity group by stable ID."""
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         anima_names = request.app.state.anima_names
         if anima not in anima_names:
@@ -592,7 +592,7 @@ def create_system_router() -> APIRouter:
         filters groups by trigger type: chat, dm, cron, heartbeat, inbox,
         task_exec, task, single.
         """
-        from core.memory.activity import ActivityLogger, build_semantic_replay_events
+        from core.memory.activity.logger import ActivityLogger, build_semantic_replay_events
 
         animas_dir = request.app.state.animas_dir
         anima_names = request.app.state.anima_names
@@ -1156,12 +1156,12 @@ def create_system_router() -> APIRouter:
         if not isinstance(source, str) or not isinstance(target, str) or source == target:
             return JSONResponse({"error": "Invalid source/target"}, status_code=400)
 
-        from core.anima_factory import validate_anima_name
+        from core.anima.factory import validate_anima_name
 
         if validate_anima_name(source) or validate_anima_name(target):
             return JSONResponse({"error": "Invalid source/target"}, status_code=400)
 
-        from core.discord_webhooks import get_webhook_manager
+        from core.messaging.discord_webhooks import get_webhook_manager
 
         discord_updated = get_webhook_manager().rewrite_anima_reference(source, target)
 

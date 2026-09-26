@@ -24,7 +24,7 @@ def anima_dir(tmp_path: Path) -> Path:
 
 
 def test_find_action_rules_only_above_threshold(anima_dir: Path, monkeypatch) -> None:
-    from core.memory import action_gate
+    from core.tooling import action_gate
 
     monkeypatch.setattr(
         action_gate,
@@ -41,14 +41,12 @@ def test_find_action_rules_only_above_threshold(anima_dir: Path, monkeypatch) ->
 
 
 def test_find_action_rules_sorted_by_score_and_capped(anima_dir: Path, monkeypatch) -> None:
-    from core.memory import action_gate
+    from core.tooling import action_gate
 
     monkeypatch.setattr(
         action_gate,
         "_search_action_rules",
-        lambda *a, **k: [
-            FakeRule(f"r{i}", "body", 0.80 + i * 0.02) for i in range(5)
-        ],
+        lambda *a, **k: [FakeRule(f"r{i}", "body", 0.80 + i * 0.02) for i in range(5)],
     )
 
     rules = action_gate.find_action_rules(anima_dir, "gmail_send", {})
@@ -58,7 +56,7 @@ def test_find_action_rules_sorted_by_score_and_capped(anima_dir: Path, monkeypat
 
 
 def test_find_action_rules_truncates_body(anima_dir: Path, monkeypatch) -> None:
-    from core.memory import action_gate
+    from core.tooling import action_gate
 
     monkeypatch.setattr(
         action_gate,
@@ -70,7 +68,7 @@ def test_find_action_rules_truncates_body(anima_dir: Path, monkeypatch) -> None:
 
 
 def test_find_action_rules_empty_when_search_raises(anima_dir: Path, monkeypatch) -> None:
-    from core.memory import action_gate
+    from core.tooling import action_gate
 
     def raise_search(*a, **k):
         raise RuntimeError("down")
@@ -83,17 +81,15 @@ def test_find_action_rules_empty_when_search_raises(anima_dir: Path, monkeypatch
 
 
 def test_format_action_rules_empty_is_empty_string() -> None:
-    from core.memory.action_gate import format_action_rules
+    from core.tooling.action_gate import format_action_rules
 
     assert format_action_rules([]) == ""
 
 
 def test_format_action_rules_includes_tag_and_body() -> None:
-    from core.memory.action_gate import ActionRule, format_action_rules
+    from core.tooling.action_gate import ActionRule, format_action_rules
 
-    rendered = format_action_rules(
-        [ActionRule(rule_id="mei/knowledge/rule.md#0", content="本文", score=0.87)]
-    )
+    rendered = format_action_rules([ActionRule(rule_id="mei/knowledge/rule.md#0", content="本文", score=0.87)])
     assert '<action-rule path="mei/knowledge/rule.md#0" score="0.87">' in rendered
     assert "本文" in rendered
     assert "</action-rule>" in rendered
@@ -103,7 +99,7 @@ def test_format_action_rules_includes_tag_and_body() -> None:
 
 
 def test_cli_argv_mapping() -> None:
-    from core.memory.action_gate import action_tool_name_from_cli_argv
+    from core.tooling.action_gate import action_tool_name_from_cli_argv
 
     assert action_tool_name_from_cli_argv(["gmail", "draft", "--to", "a@example.com"]) == "gmail_draft"
     assert action_tool_name_from_cli_argv(["gmail", "draft-update", "draft-id"]) == "gmail_draft_update"
@@ -117,7 +113,7 @@ def test_cli_argv_mapping() -> None:
 
 
 def test_handler_action_tool_names_are_current() -> None:
-    from core.memory.action_gate import ACTION_TOOL_NAMES, action_tool_name_for_handler
+    from core.tooling.action_gate import ACTION_TOOL_NAMES, action_tool_name_for_handler
 
     assert {
         "call_human",
@@ -136,7 +132,7 @@ def test_handler_action_tool_names_are_current() -> None:
 
 
 def test_sdk_tool_name_normalization() -> None:
-    from core.memory.action_gate import action_tool_name_for_sdk
+    from core.tooling.action_gate import action_tool_name_for_sdk
 
     assert action_tool_name_for_sdk("mcp__aw__send_message") == "send_message"
     assert action_tool_name_for_sdk("mcp__aw__write_memory_file") == "write_memory_file"

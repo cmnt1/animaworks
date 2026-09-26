@@ -518,7 +518,7 @@ class MemoryIndexer:
         Returns:
             Number of chunks indexed
         """
-        from core import startup_progress
+        from core.infra import startup_progress
 
         self._last_index_file_outcome = _IndexFileOutcome(status="failed")
         startup_progress.raise_if_cancelled()
@@ -792,7 +792,7 @@ class MemoryIndexer:
         transient_failures = 0
         failed_sources: list[str] = []
         try:
-            from core import startup_progress
+            from core.infra import startup_progress
 
             track_startup = startup_progress.is_active()
         except Exception:

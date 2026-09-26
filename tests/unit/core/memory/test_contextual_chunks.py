@@ -14,7 +14,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.bm25 import rebuild_longterm_bm25_index, search_longterm_memory_bm25
 from core.memory.rag.contextual_header import (
     apply_contextual_header,
     build_contextual_chunk_header,
@@ -22,7 +21,7 @@ from core.memory.rag.contextual_header import (
     resolve_chunk_date,
     resolve_file_title,
 )
-
+from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index, search_longterm_memory_bm25
 
 # ── Helper unit tests ─────────────────────────────────────────
 
@@ -138,9 +137,7 @@ class TestIndexerContextualHeaders:
         indexer = self._make_indexer(anima_dir)
         f = anima_dir / "knowledge" / "orbit-notes.md"
         f.write_text(
-            "---\ntitle: Orbit Notes\n---\n\n"
-            "## Calibration\n\n"
-            "Telemetry handoff details without the title word.\n",
+            "---\ntitle: Orbit Notes\n---\n\n## Calibration\n\nTelemetry handoff details without the title word.\n",
             encoding="utf-8",
         )
 
@@ -153,9 +150,7 @@ class TestIndexerContextualHeaders:
         indexer = self._make_indexer(anima_dir)
         f = anima_dir / "knowledge" / "stem-file.md"
         f.write_text(
-            "# H1 Document Title\n\n"
-            "## Section Alpha\n\n"
-            "Body content long enough for a real section chunk here.\n",
+            "# H1 Document Title\n\n## Section Alpha\n\nBody content long enough for a real section chunk here.\n",
             encoding="utf-8",
         )
 
@@ -168,8 +163,7 @@ class TestIndexerContextualHeaders:
         indexer = self._make_indexer(anima_dir)
         f = anima_dir / "knowledge" / "unique-stem-xyz.md"
         f.write_text(
-            "## Only Section\n\n"
-            "Body without any top-level title heading at all.\n",
+            "## Only Section\n\nBody without any top-level title heading at all.\n",
             encoding="utf-8",
         )
 
@@ -191,11 +185,7 @@ class TestIndexerContextualHeaders:
     def test_facts_chunk_has_no_header(self, anima_dir: Path) -> None:
         indexer = self._make_indexer(anima_dir)
         f = anima_dir / "facts" / "entities.jsonl"
-        line = (
-            '{"text":"Alice works at Acme",'
-            '"source_entity":"Alice","target_entity":"Acme",'
-            '"edge_type":"WORKS_AT"}\n'
-        )
+        line = '{"text":"Alice works at Acme","source_entity":"Alice","target_entity":"Acme","edge_type":"WORKS_AT"}\n'
         f.write_text(line, encoding="utf-8")
 
         chunks = indexer._chunk_file(f, f.read_text(encoding="utf-8"), "facts")
@@ -260,8 +250,7 @@ def test_bm25_procedures_content_has_no_contextual_header(tmp_path: Path) -> Non
     _write_longterm(
         anima_dir,
         "procedures/runbook.md",
-        "---\ntitle: SecretTitleToken\n---\n\n"
-        "# Runbook\n\nProcedure steps without the secret title in body.\n",
+        "---\ntitle: SecretTitleToken\n---\n\n# Runbook\n\nProcedure steps without the secret title in body.\n",
     )
     rebuild_longterm_bm25_index(anima_dir)
 

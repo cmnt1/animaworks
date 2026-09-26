@@ -33,7 +33,7 @@ class CreateAnimaMixin:
 
     def _handle_create_anima(self, args: dict[str, Any]) -> str:
         """Create a new anima from a character sheet via anima_factory."""
-        from core.anima_factory import create_from_md
+        from core.anima.factory import create_from_md
         from core.paths import get_animas_dir
 
         content = args.get("character_sheet_content")

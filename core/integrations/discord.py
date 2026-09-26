@@ -236,7 +236,7 @@ def dispatch(name: str, args: dict[str, Any]) -> Any:
         # Use webhook manager for Anima identity if available
         if anima_name:
             try:
-                from core.discord_webhooks import get_webhook_manager
+                from core.messaging.discord_webhooks import get_webhook_manager
 
                 wm = get_webhook_manager()
                 msg_id = wm.send_as_anima(args["channel_id"], anima_name, discord_text)

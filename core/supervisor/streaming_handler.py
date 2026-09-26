@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 from core.supervisor.ipc import IPCRequest, IPCResponse
 
 if TYPE_CHECKING:
-    from core.anima import DigitalAnima
+    from core.anima.digital_anima import DigitalAnima
     from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
 
 logger = logging.getLogger(__name__)
@@ -71,7 +71,7 @@ class StreamingIPCHandler:
         """
         logger.info("Stream abort: %s (thread=%s) — session ID preserved", reason, thread_id)
         try:
-            from core.memory.shortterm import ShortTermMemory
+            from core.memory.conversation.shortterm import ShortTermMemory
 
             ShortTermMemory(self._anima_dir, thread_id=thread_id).clear_checkpoint()
             logger.info("Stream checkpoint cleared: %s (thread=%s)", reason, thread_id)

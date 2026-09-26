@@ -723,7 +723,7 @@ def create_assets_router() -> APIRouter:
         prompt = body.prompt or ""
         if body.step == "fullbody":
             if not prompt:
-                from core.asset_reconciler import _resolve_prompt
+                from core.anima.asset_reconciler import _resolve_prompt
 
                 prompt = _resolve_prompt(anima_dir, style="realistic" if style == "realistic" else "anime") or ""
             if not prompt.strip():
@@ -900,7 +900,7 @@ def create_assets_router() -> APIRouter:
         # Resolve prompt (style-aware) — try cached first, then LLM synthesis, then fallback
         prompt = body.prompt
         if not prompt:
-            from core.asset_reconciler import _extract_prompt, _resolve_prompt
+            from core.anima.asset_reconciler import _extract_prompt, _resolve_prompt
 
             # Fast path: check cached prompt files
             prompt = _resolve_prompt(anima_dir, style="realistic" if is_realistic else "anime")
@@ -1305,7 +1305,7 @@ def create_assets_router() -> APIRouter:
 
         # ── Normal cascade rebuild ──
         # Resolve prompt (style-aware)
-        from core.asset_reconciler import _resolve_prompt
+        from core.anima.asset_reconciler import _resolve_prompt
 
         prompt = (
             _resolve_prompt(

@@ -1,0 +1,1738 @@
+from __future__ import annotations
+
+# AnimaWorks - Digital Anima Framework
+# Copyright (C) 2026 AnimaWorks Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# This file is part of AnimaWorks core/server, licensed under Apache-2.0.
+# See LICENSE for the full license text.
+
+
+"""Memory consolidation engine — pre/post-processing helpers.
+
+The actual consolidation (episode summarisation, knowledge extraction,
+contradiction checks, etc.) is now performed by the Anima itself through
+its tool-call loop (see ``Anima.run_consolidation()``).
+
+This module retains:
+- Episode and resolved-event collection (pre-processing for the Anima)
+- RAG index updates and rebuilds (post-processing after the Anima finishes)
+- Legacy knowledge migration
+- LLM output sanitisation (shared utility used by reconsolidation.py)
+"""
+
+import hashlib
+import json
+import logging
+import re
+import shutil
+from datetime import date, datetime, time, timedelta
+from pathlib import Path
+from typing import Any
+
+from core.i18n import t
+from core.time_utils import ensure_aware, get_app_timezone, now_iso, now_local
+
+logger = logging.getLogger("animaworks.consolidation")
+
+
+def list_project_archives(anima_dir: Path) -> list[str]:
+    """List project archive names found below episodes/projects/."""
+    projects_dir = Path(anima_dir) / "episodes" / "projects"
+    if not projects_dir.is_dir():
+        return []
+    return sorted(path.name for path in projects_dir.iterdir() if path.is_dir())
+
+
+# ── ConsolidationEngine ────────────────────────────────────────
+
+
+class ConsolidationEngine:
+    """Pre/post-processing helpers for memory consolidation.
+
+    The Anima itself now drives the consolidation loop via tool calls.
+    This class provides:
+    - **Pre-processing**: episode collection, resolved-event collection
+    - **Post-processing**: RAG index updates and rebuilds
+    - **Utilities**: knowledge file listing, LLM output sanitisation,
+      legacy knowledge migration
+    """
+
+    def __init__(
+        self,
+        anima_dir: Path,
+        anima_name: str,
+        *,
+        rag_store: Any | None = None,
+        project: str | None = None,
+    ) -> None:
+        """Initialize consolidation engine.
+
+        Args:
+            anima_dir: Path to anima's directory (~/.animaworks/animas/{name})
+            anima_name: Name of the anima for logging
+            rag_store: Optional shared RAG vector store instance.
+                When provided, avoids re-creating the singleton internally.
+        """
+        if project is not None and (not isinstance(project, str) or re.fullmatch(r"[A-Za-z0-9_-]+", project) is None):
+            raise ValueError("project must contain only letters, numbers, underscores, or hyphens")
+        self.anima_dir = anima_dir
+        self.anima_name = anima_name
+        self.project = project
+        self._rag_store = rag_store
+        self.episodes_dir = anima_dir / "episodes"
+        self.knowledge_dir = anima_dir / "knowledge"
+        if project is not None:
+            self.episodes_dir /= Path("projects", project)
+            self.knowledge_dir /= Path("projects", project)
+        self._phase_b_carryover_file = (
+            f"consolidation_phase_b_carryover_{project}.json" if project is not None else self.PHASE_B_CARRYOVER_FILE
+        )
+        self.episodes_dir.mkdir(parents=True, exist_ok=True)
+        self.knowledge_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── Daily episode write helpers ──────────────────────────────
+
+    RAW_NOTES_HEADER = "## Raw notes (preserved)"
+    CONSOLIDATED_TIMELINE_HEADER = "## Consolidated timeline"
+    PHASE_B_CARRYOVER_FILE = "consolidation_phase_b_carryover.json"
+    PHASE_B_CARRYOVER_MAX_DAYS = 3
+
+    def unprocessed_activity_chunks(self, target_date: date, chunks: list[str]) -> list[str]:
+        """Exclude inputs whose episode was durably written by an earlier run."""
+        checkpoint = self._load_episode_checkpoint()
+        processed = set(checkpoint.get(target_date.isoformat(), []))
+        return [chunk for chunk in chunks if hashlib.sha256(chunk.encode()).hexdigest() not in processed]
+
+    def _load_episode_checkpoint(self) -> dict[str, list[str]]:
+        path = self.anima_dir / "state" / "consolidation_episode_checkpoint.json"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return (
+                {
+                    key: values
+                    for key, values in data.items()
+                    if isinstance(values, list) and all(isinstance(value, str) for value in values)
+                }
+                if isinstance(data, dict)
+                else {}
+            )
+        except (OSError, ValueError):
+            return {}
+
+    def record_consolidated_chunks(self, target_date: date, chunks: list[str]) -> None:
+        """Advance only after the episode write succeeds; raw inputs stay intact."""
+        from core.memory._io import atomic_write_text
+
+        checkpoint = self._load_episode_checkpoint()
+        key = target_date.isoformat()
+        checkpoint[key] = sorted(
+            set(checkpoint.get(key, [])) | {hashlib.sha256(chunk.encode()).hexdigest() for chunk in chunks}
+        )
+        atomic_write_text(
+            self.anima_dir / "state" / "consolidation_episode_checkpoint.json",
+            json.dumps(checkpoint, ensure_ascii=False),
+        )
+
+    @staticmethod
+    def previous_local_day_window(reference: datetime | None = None) -> tuple[date, datetime, datetime]:
+        """Return the previous local date and its inclusive/exclusive bounds."""
+        now = reference or now_local()
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=get_app_timezone())
+        target_date = now.date() - timedelta(days=1)
+        start = datetime.combine(target_date, time.min, tzinfo=now.tzinfo)
+        end = start + timedelta(days=1)
+        return target_date, start, end
+
+    def episode_path_for_date(self, target_date: date) -> Path:
+        """Return the canonical episode file path for a local date."""
+        return self.episodes_dir / f"{target_date.isoformat()}.md"
+
+    def read_episode_for_date(self, target_date: date) -> str:
+        """Read a daily episode file if it exists."""
+        path = self.episode_path_for_date(target_date)
+        if not path.exists():
+            return ""
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            logger.warning("Failed to read existing episode file %s", path, exc_info=True)
+            return ""
+
+    @classmethod
+    def build_merged_episode_content(cls, existing: str, consolidated_timeline: str) -> str:
+        """Preserve existing notes and append the newly consolidated timeline."""
+        timeline = consolidated_timeline.strip()
+        if not timeline:
+            return existing
+
+        existing = existing.strip()
+        if not existing:
+            return timeline + "\n"
+
+        return f"{cls.RAW_NOTES_HEADER}\n\n{existing}\n\n{cls.CONSOLIDATED_TIMELINE_HEADER}\n\n{timeline}\n"
+
+    def archive_episode_before_write(self, episode_path: Path) -> Path | None:
+        """Copy an existing episode file to archive/episodes before overwriting it."""
+        from core.memory._io import archive_episode_before_write
+
+        return archive_episode_before_write(self.anima_dir, episode_path)
+
+    def write_consolidated_episode(self, target_date: date, consolidated_timeline: str) -> Path:
+        """Merge a consolidated timeline into the target daily episode file."""
+        from core.memory._io import atomic_write_text
+
+        episode_path = self.episode_path_for_date(target_date)
+        existing = self.read_episode_for_date(target_date)
+        merged = self.build_merged_episode_content(existing, consolidated_timeline)
+        if episode_path.exists():
+            self.archive_episode_before_write(episode_path)
+        atomic_write_text(episode_path, merged)
+        return episode_path
+
+    # ── Phase B carry-over helpers ──────────────────────────────
+
+    def phase_b_carryover_path(self) -> Path:
+        """Return the persistent Phase B carry-over state path."""
+        return self.anima_dir / "state" / self._phase_b_carryover_file
+
+    def load_phase_b_carryover(self) -> list[dict[str, Any]]:
+        """Load pending Phase B source bundles from previous runs."""
+        path = self.phase_b_carryover_path()
+        if not path.is_file():
+            return []
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            logger.warning("Failed to read Phase B carry-over state for anima=%s", self.anima_name, exc_info=True)
+            return []
+        if isinstance(raw, dict):
+            items = raw.get("items", [])
+        elif isinstance(raw, list):
+            items = raw
+        else:
+            items = []
+        if not isinstance(items, list):
+            return []
+        normalized: list[dict[str, Any]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            summary = str(item.get("episodes_summary") or "").strip()
+            if not summary:
+                continue
+            normalized.append(
+                {
+                    "date": str(item.get("date") or ""),
+                    "recorded_at": str(item.get("recorded_at") or ""),
+                    "reason": str(item.get("reason") or "phase_b_pending"),
+                    "episodes_summary": summary,
+                }
+            )
+        return normalized
+
+    def record_phase_b_carryover(
+        self,
+        episodes_summary: str,
+        *,
+        target_date: date,
+        reason: str,
+        max_days: int = PHASE_B_CARRYOVER_MAX_DAYS,
+        incremental: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Persist Phase B source so timeout retries can resume from it.
+
+        Knowledge writes performed by the tool loop are already committed as
+        tools succeed.  This state preserves the source bundle until a
+        successful Phase B run clears it, so timed-out runs retry remaining
+        work without losing the source episode context.
+        """
+        summary = episodes_summary.strip()
+        if not summary:
+            return self.load_phase_b_carryover()
+
+        prior = self.load_phase_b_carryover()
+        if incremental:
+            same_day = [
+                str(item.get("episodes_summary", "")) for item in prior if item.get("date") == target_date.isoformat()
+            ]
+            existing = "\n\n".join(part for part in same_day if part)
+            if existing and summary not in existing:
+                summary = existing + "\n\n" + summary
+            elif existing:
+                summary = existing
+        items = [item for item in prior if item.get("date") != target_date.isoformat()]
+        items.append(
+            {
+                "date": target_date.isoformat(),
+                "recorded_at": now_iso(),
+                "reason": reason,
+                "episodes_summary": summary,
+            }
+        )
+        items.sort(key=lambda item: (str(item.get("date") or ""), str(item.get("recorded_at") or "")))
+        dropped = max(0, len(items) - max_days)
+        if dropped:
+            dropped_items = items[:dropped]
+            logger.warning(
+                "Phase B carry-over cap exceeded for anima=%s; dropping %d oldest day(s): %s",
+                self.anima_name,
+                dropped,
+                [item.get("date") for item in dropped_items],
+            )
+            items = items[dropped:]
+
+        from core.memory._io import atomic_write_text
+
+        path = self.phase_b_carryover_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(path, json.dumps({"items": items}, ensure_ascii=False, indent=2) + "\n")
+        return items
+
+    def clear_phase_b_carryover(self) -> None:
+        """Clear pending Phase B carry-over after a successful run."""
+        try:
+            self.phase_b_carryover_path().unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Failed to clear Phase B carry-over for anima=%s", self.anima_name, exc_info=True)
+
+    @staticmethod
+    def format_phase_b_carryover(items: list[dict[str, Any]]) -> str:
+        """Format pending Phase B source bundles for prompt injection."""
+        parts: list[str] = []
+        for item in items:
+            date_text = str(item.get("date") or "unknown-date")
+            reason = str(item.get("reason") or "phase_b_pending")
+            summary = str(item.get("episodes_summary") or "").strip()
+            if summary:
+                parts.append(f"## Carry-over from {date_text} ({reason})\n\n{summary}")
+        return "\n\n".join(parts)
+
+    def count_pending_phase_b_carryover(self) -> int:
+        """Return the number of pending Phase B carry-over bundles."""
+        return len(self.load_phase_b_carryover())
+
+    # ── Legacy Migration ─────────────────────────────────────────
+
+    def _migrate_legacy_knowledge(self) -> int:
+        """Migrate legacy knowledge files to YAML frontmatter format.
+
+        Detects knowledge files without frontmatter, creates backups, then
+        rewrites them with ``---`` YAML frontmatter containing estimated
+        metadata.  Controlled by a ``.migrated`` marker file so it runs
+        only once per anima.
+
+        Returns:
+            Number of files migrated
+        """
+        marker = self.knowledge_dir / ".migrated"
+        if marker.exists():
+            return 0
+
+        from core.memory.manager import MemoryManager
+
+        # Use a lightweight MemoryManager to access frontmatter helpers
+        mm = MemoryManager(self.anima_dir)
+
+        backup_dir = self.anima_dir / "archive" / "pre_migration"
+        migrated = 0
+
+        for path in sorted(self.knowledge_dir.glob("*.md")):
+            try:
+                text = path.read_text(encoding="utf-8")
+
+                # Skip files that already have frontmatter
+                if text.startswith("---"):
+                    continue
+
+                # Create backup
+                backup_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path, backup_dir / path.name)
+
+                # Try to extract created_at from [AUTO-CONSOLIDATED: YYYY-MM-DD HH:MM]
+                created_at = now_iso()
+                ts_match = re.search(
+                    r"\[AUTO-CONSOLIDATED:\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\]",
+                    text,
+                )
+                if ts_match:
+                    try:
+                        parsed = datetime.strptime(ts_match.group(1), "%Y-%m-%d %H:%M")
+                        created_at = parsed.isoformat()
+                    except ValueError:
+                        logger.debug("Failed to parse consolidation timestamp", exc_info=True)
+
+                # Strip code fences that LLM may have wrapped around content
+                content = re.sub(r"^```(?:markdown|md)?\s*\n", "", text, flags=re.MULTILINE)
+                content = re.sub(r"\n```\s*$", "", content, flags=re.MULTILINE)
+                content = content.strip()
+
+                metadata = {
+                    "created_at": created_at,
+                    "confidence": 0.5,
+                    "auto_consolidated": True,
+                    "migrated_from_legacy": True,
+                    "success_count": 0,
+                    "failure_count": 0,
+                    "version": 1,
+                    "last_used": "",
+                }
+
+                mm.write_knowledge_with_meta(path, content, metadata)
+                migrated += 1
+                logger.info("Migrated legacy knowledge file: %s", path.name)
+
+            except Exception:
+                logger.exception("Failed to migrate knowledge file: %s", path.name)
+                continue
+
+        # Write marker
+        try:
+            marker.write_text(
+                now_iso() + "\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            logger.warning("Failed to write migration marker to %s", marker, exc_info=True)
+        if migrated > 0:
+            logger.info(
+                "Legacy knowledge migration complete for anima=%s: migrated=%d",
+                self.anima_name,
+                migrated,
+            )
+        return migrated
+
+    # ── Episode Collection ─────────────────────────────────────
+
+    def _collect_recent_episodes(self, hours: int = 24) -> list[dict[str, str]]:
+        """Collect episode entries from the past N hours.
+
+        Supports both standard (YYYY-MM-DD.md) and suffixed
+        (YYYY-MM-DD_xxx.md) episode filenames.  Files without
+        ``## HH:MM — Title`` headers are treated as single entries
+        using the file's mtime for timestamp.
+
+        Args:
+            hours: Number of hours to look back
+
+        Returns:
+            List of episode entries, each with 'date', 'time', 'content'
+        """
+        cutoff = now_local() - timedelta(hours=hours)
+        entries: list[dict[str, str]] = []
+
+        # Check today and yesterday's episode files
+        for day_offset in range(2):
+            target_date = now_local().date() - timedelta(days=day_offset)
+            episode_files = sorted(self.episodes_dir.glob(f"{target_date}*.md"))
+
+            for episode_file in episode_files:
+                try:
+                    content = episode_file.read_text(encoding="utf-8")
+                except OSError:
+                    logger.warning("Failed to read episode file %s", episode_file, exc_info=True)
+                    continue
+
+                # Parse episode entries (format: ## HH:MM — Title)
+                found_entries = list(
+                    re.finditer(
+                        r"^## (\d{2}:\d{2})\s*—\s*(.+?)(?=^##|\Z)",
+                        content,
+                        re.MULTILINE | re.DOTALL,
+                    )
+                )
+
+                if found_entries:
+                    for match in found_entries:
+                        time_str = match.group(1)
+                        entry_content = match.group(2).strip()
+
+                        # Parse timestamp
+                        try:
+                            entry_dt = ensure_aware(
+                                datetime.strptime(
+                                    f"{target_date} {time_str}",
+                                    "%Y-%m-%d %H:%M",
+                                )
+                            )
+
+                            # Only include if within time window
+                            if entry_dt >= cutoff:
+                                entries.append(
+                                    {
+                                        "date": str(target_date),
+                                        "time": time_str,
+                                        "content": entry_content,
+                                    }
+                                )
+                        except ValueError:
+                            logger.warning(
+                                "Failed to parse episode timestamp: %s %s",
+                                target_date,
+                                time_str,
+                            )
+                else:
+                    # Fallback: treat entire file as a single entry using mtime
+                    file_mtime = ensure_aware(
+                        datetime.fromtimestamp(
+                            episode_file.stat().st_mtime,
+                        )
+                    )
+                    if file_mtime >= cutoff:
+                        entries.append(
+                            {
+                                "date": str(target_date),
+                                "time": file_mtime.strftime("%H:%M"),
+                                "content": content.strip(),
+                            }
+                        )
+
+        # Deduplicate by content prefix (first 200 chars)
+        seen: set[str] = set()
+        unique_entries: list[dict[str, str]] = []
+        for entry in entries:
+            dedup_key = entry["content"][:200].strip()
+            if dedup_key not in seen:
+                seen.add(dedup_key)
+                unique_entries.append(entry)
+        entries = unique_entries
+
+        # Sort by datetime (newest first)
+        entries.sort(
+            key=lambda e: datetime.strptime(f"{e['date']} {e['time']}", "%Y-%m-%d %H:%M"),
+            reverse=True,
+        )
+
+        return entries
+
+    def _collect_resolved_events(self, hours: int = 24) -> list[dict]:
+        """Collect issue_resolved events from activity log."""
+        try:
+            from core.memory.activity.logger import ActivityLogger
+
+            activity = ActivityLogger(self.anima_dir)
+            entries = activity.recent(days=1, limit=50, types=["issue_resolved"])
+            return [{"ts": e.ts, "content": e.content, "summary": e.summary, "meta": e.meta or {}} for e in entries]
+        except Exception:
+            logger.debug("Failed to collect resolved events", exc_info=True)
+            return []
+
+    # ── Error Pattern Collection ─────────────────────────────
+
+    _ERROR_CHAR_BUDGET = 3_000
+    _ERROR_ENTRY_LIMIT = 50
+
+    def _collect_error_entries(self, hours: int = 24) -> str:
+        """Collect error and failed tool_result entries for pattern analysis.
+
+        Extracts ``error`` events and ``tool_result`` entries with
+        ``result_status == "fail"`` from the activity log, formatted for
+        injection into the daily consolidation prompt.
+
+        Args:
+            hours: Number of hours to look back (default 24).
+
+        Returns:
+            Formatted error summary string.  Returns a placeholder
+            message when no errors are found.
+        """
+        try:
+            from core.memory.activity.logger import ActivityLogger
+
+            activity = ActivityLogger(self.anima_dir)
+            entries = activity.recent(
+                days=max(1, (hours + 23) // 24),
+                limit=200,
+                types=["error", "tool_result"],
+            )
+        except Exception:
+            logger.debug("Failed to collect error entries", exc_info=True)
+            return t("consolidation.no_errors")
+
+        if not entries:
+            return t("consolidation.no_errors")
+
+        cutoff = now_local() - timedelta(hours=hours)
+        lines: list[str] = []
+        total_chars = 0
+        count = 0
+
+        for entry in entries:
+            try:
+                ts = ensure_aware(datetime.fromisoformat(entry.ts))
+                if ts < cutoff:
+                    continue
+            except (ValueError, TypeError):
+                pass
+
+            line = self._format_error_entry(entry)
+            if line is None:
+                continue
+
+            if total_chars + len(line) + 1 > self._ERROR_CHAR_BUDGET:
+                break
+            lines.append(line)
+            total_chars += len(line) + 1
+            count += 1
+            if count >= self._ERROR_ENTRY_LIMIT:
+                break
+
+        if not lines:
+            return t("consolidation.no_errors")
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_error_entry(entry: Any) -> str | None:
+        """Format a single error or failed tool_result entry.
+
+        Returns:
+            Formatted line, or ``None`` if the entry should be skipped.
+        """
+        ts_short = entry.ts[11:16] if len(entry.ts) >= 16 else entry.ts
+        meta = entry.meta or {}
+
+        if entry.type == "error":
+            phase = meta.get("phase", "unknown")
+            error_text = meta.get("error", "") or entry.summary or ""
+            if len(error_text) > 120:
+                error_text = error_text[:120] + "..."
+            return f"[{ts_short}] ERR phase={phase}: {error_text}"
+
+        if entry.type == "tool_result":
+            if meta.get("result_status") != "fail":
+                return None
+            tool_name = entry.tool or "unknown"
+            err_hint = (entry.content or entry.summary or "")[:100]
+            return f"[{ts_short}] FAIL tool={tool_name}: {err_hint}"
+
+        return None
+
+    # ── Reflection Extraction ──────────────────────────────────
+
+    @staticmethod
+    def _extract_reflections_from_episodes(episodes_text: str) -> str:
+        """Extract [REFLECTION] tagged entries from episode text.
+
+        Scans for ``[REFLECTION] ... [/REFLECTION]`` blocks and returns
+        them as a bullet list.  Entries shorter than 50 characters are
+        filtered out (too short to be meaningful).
+
+        Args:
+            episodes_text: Raw episodes summary text.
+
+        Returns:
+            Bullet-list string of reflections, or empty string if none found.
+        """
+        if not episodes_text:
+            return ""
+
+        matches = re.findall(
+            r"\[REFLECTION\]\s*\n?(.*?)\n?\s*\[/REFLECTION\]",
+            episodes_text,
+            re.DOTALL,
+        )
+
+        reflections = [m.strip() for m in matches if len(m.strip()) >= 50]
+
+        if not reflections:
+            return ""
+
+        return "\n".join(f"- {r}" for r in reflections)
+
+    # ── Activity Log Collection ──────────────────────────────────
+
+    # Communication event types — these carry the most signal for consolidation.
+    _COMM_TYPES = frozenset(
+        {
+            "message_received",
+            "message_sent",
+            "response_sent",
+            "human_notify",
+            "heartbeat_reflection",
+            "channel_post",
+            "error",
+        }
+    )
+
+    _EXCLUDED_TOOL_NAMES = frozenset(
+        {
+            "read_memory_file",
+            "search_memory",
+            "ToolSearch",
+        }
+    )
+    _EXCLUDED_TOOL_PREFIXES = ("mcp__aw__",)
+
+    _OVERHEAD_TOKENS = 25_000  # system prompt + template overhead
+    _CONTEXT_RATIO = 0.80
+    _CHARS_PER_TOKEN = 3
+
+    # ── Activity log budget & full collection ───────────────────
+
+    @staticmethod
+    def compute_activity_budget(model: str) -> int:
+        """Compute character budget for activity log based on model context window.
+
+        Uses 80% of context window minus overhead for prompt templates.
+        """
+        from core.prompt.context import resolve_context_window
+
+        ctx = resolve_context_window(model)
+        budget_tokens = int(ctx * ConsolidationEngine._CONTEXT_RATIO)
+        available = max(budget_tokens - ConsolidationEngine._OVERHEAD_TOKENS, 10_000)
+        return available * ConsolidationEngine._CHARS_PER_TOKEN
+
+    @staticmethod
+    def _is_excluded_tool(entry: Any) -> bool:
+        """Check if a tool_result/tool_use entry should be excluded."""
+        tool = getattr(entry, "tool", None) or ""
+        if tool in ConsolidationEngine._EXCLUDED_TOOL_NAMES:
+            return True
+        return any(tool.startswith(prefix) for prefix in ConsolidationEngine._EXCLUDED_TOOL_PREFIXES)
+
+    @staticmethod
+    def _format_entry_full(entry: Any) -> str:
+        """Format an activity entry with full content for consolidation.
+
+        Unlike _format_tool_entries (meta-only), this includes the actual
+        content of tool results, messages, etc.
+        """
+        ts_short = entry.ts[11:16] if len(entry.ts) >= 16 else entry.ts
+        meta = entry.meta or {}
+
+        # Build context parts
+        parts: list[str] = []
+        if entry.from_person:
+            parts.append(f"from:{entry.from_person}")
+        if entry.to_person:
+            parts.append(f"to:{entry.to_person}")
+        if entry.channel:
+            parts.append(f"#{entry.channel}")
+        ctx = f" ({', '.join(parts)})" if parts else ""
+
+        type_labels = {
+            "message_received": "MSG_IN",
+            "response_sent": "RESPONSE",
+            "message_sent": "MSG_OUT",
+            "human_notify": "NOTIFY",
+            "heartbeat_reflection": "HB_REFLECT",
+            "channel_post": "CHANNEL",
+            "error": "ERROR",
+            "tool_result": "TOOL_RESULT",
+            "tool_use": "TOOL_USE",
+            "cron_executed": "CRON",
+            "memory_write": "MEM_WRITE",
+            "heartbeat_start": "HB_START",
+            "heartbeat_end": "HB_END",
+            "consolidation_start": "CONSOL_START",
+            "consolidation_end": "CONSOL_END",
+        }
+        label = type_labels.get(entry.type, entry.type.upper())
+
+        # For tool entries, include tool name
+        tool_name = entry.tool or ""
+        if tool_name and entry.type in ("tool_result", "tool_use"):
+            label = f"{label}:{tool_name}"
+
+        # Build status suffix for tool_result
+        status_suffix = ""
+        if entry.type == "tool_result":
+            status = meta.get("result_status", "ok")
+            if status == "fail":
+                status_suffix = " [FAIL]"
+
+        # Content: prefer summary for brief context, fall back to content
+        summary = entry.summary or ""
+        content = entry.content or ""
+
+        # For tool_result, content is the actual result — include it
+        if entry.type == "tool_result" and content:
+            text = content
+        elif summary and content:
+            text = f"{summary}\n{content}" if len(summary) < 200 else summary
+        elif summary:
+            text = summary
+        elif content:
+            text = content
+        else:
+            text = "(no content)"
+
+        header = f"[{ts_short}] {label}{status_suffix}{ctx}"
+
+        # If text is short, put on same line
+        if len(text) <= 200 and "\n" not in text:
+            return f"{header}: {text}"
+
+        # For longer content, use indented block
+        indented = "\n".join(f"  {line}" for line in text.split("\n"))
+        return f"{header}:\n{indented}"
+
+    def count_recent_activity_entries(
+        self,
+        hours: int = 24,
+        *,
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> int:
+        """Count activity-log entries eligible for daily consolidation."""
+        try:
+            from core.memory.activity.logger import ActivityLogger
+
+            activity = ActivityLogger(self.anima_dir)
+            if since is not None or until is not None:
+                entries = activity._load_entries(since=since, until=until)
+            else:
+                entries = activity.recent(
+                    days=max(1, (hours + 23) // 24),
+                    limit=10_000,
+                )
+        except Exception:
+            logger.debug("Failed to count activity entries", exc_info=True)
+            return 0
+
+        cutoff = None if since is not None or until is not None else now_local() - timedelta(hours=hours)
+        count = 0
+        for entry in entries:
+            if entry.type in ("tool_result", "tool_use") and self._is_excluded_tool(entry):
+                continue
+            try:
+                ts = ensure_aware(datetime.fromisoformat(entry.ts))
+                if since is not None and ts < since:
+                    continue
+                if until is not None and ts >= until:
+                    continue
+                if cutoff is not None and ts < cutoff:
+                    continue
+            except (ValueError, TypeError):
+                pass
+            count += 1
+        return count
+
+    def collect_activity_chunks(
+        self,
+        hours: int = 24,
+        model: str | None = None,
+        *,
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> list[str]:
+        """Collect activity entries and split into budget-sized chunks.
+
+        Returns a list of formatted text chunks, each within the model's
+        budget. Chunks are split at natural hour boundaries when possible.
+
+        Args:
+            hours: Number of hours to look back.
+            model: Model name for budget calculation. Uses consolidation
+                model from config if not provided.
+            since: Optional inclusive lower timestamp bound. When provided,
+                it takes precedence over ``hours`` for entry filtering.
+            until: Optional exclusive upper timestamp bound, used with
+                ``since`` for fixed date windows.
+
+        Returns:
+            List of formatted activity text chunks. Empty list if no entries.
+        """
+        if model is None:
+            from core.config import load_config
+
+            cfg = load_config()
+            model = cfg.consolidation.llm_model
+
+        budget = self.compute_activity_budget(model)
+
+        try:
+            from core.memory.activity.logger import ActivityLogger
+
+            activity = ActivityLogger(self.anima_dir)
+
+            if since is not None or until is not None:
+                entries = activity._load_entries(since=since, until=until)
+            else:
+                # Load all entries (no type filter, high limit)
+                entries = activity.recent(
+                    days=max(1, (hours + 23) // 24),
+                    limit=10_000,
+                )
+        except Exception:
+            logger.debug("Failed to collect activity entries", exc_info=True)
+            return []
+
+        if not entries:
+            return []
+
+        cutoff = None if since is not None or until is not None else now_local() - timedelta(hours=hours)
+        filtered: list = []
+        for e in entries:
+            try:
+                ts = ensure_aware(datetime.fromisoformat(e.ts))
+                if since is not None and ts < since:
+                    continue
+                if until is not None and ts >= until:
+                    continue
+                if since is not None or until is not None:
+                    filtered.append(e)
+                    continue
+                if cutoff is not None and ts >= cutoff:
+                    filtered.append(e)
+            except (ValueError, TypeError):
+                if since is None and until is None:
+                    filtered.append(e)
+
+        if not filtered:
+            return []
+
+        # Apply exclusion list
+        included: list = []
+        for e in filtered:
+            if e.type in ("tool_result", "tool_use") and self._is_excluded_tool(e):
+                continue
+            # Skip tool_use for mcp__aw__ (duplicate with tool_result)
+            if e.type == "tool_use":
+                tool = getattr(e, "tool", None) or ""
+                for prefix in self._EXCLUDED_TOOL_PREFIXES:
+                    if tool.startswith(prefix):
+                        break
+                else:
+                    included.append(e)
+                continue
+            included.append(e)
+
+        if not included:
+            return []
+
+        # Format all entries — use date+hour key for cross-day correctness
+        formatted_entries: list[tuple[str, str]] = []  # (date_hour_key, formatted_text)
+        for e in included:
+            text = self._format_entry_full(e)
+            date_hour = e.ts[:13] if len(e.ts) >= 13 else "0000-00-00T00"
+            formatted_entries.append((date_hour, text))
+
+        # Split into budget-sized chunks at hour boundaries
+        return self._split_into_chunks(formatted_entries, budget)
+
+    @staticmethod
+    def _split_into_chunks(
+        entries: list[tuple[str, str]],
+        budget: int,
+    ) -> list[str]:
+        """Split formatted entries into budget-sized chunks.
+
+        Tries to break at hour boundaries for natural segmentation.
+        """
+        if not entries:
+            return []
+
+        chunks: list[str] = []
+        current_lines: list[str] = []
+        current_size = 0
+        current_hour = entries[0][0]
+
+        # Buffer for entries in the current hour
+        hour_buffer: list[str] = []
+        hour_buffer_size = 0
+
+        for hour_key, text in entries:
+            entry_size = len(text) + 1  # +1 for newline
+
+            if hour_key != current_hour:
+                # Hour boundary — check if we should start a new chunk
+                if current_size + hour_buffer_size > budget and current_lines:
+                    # Flush current chunk, start new one with buffer
+                    chunks.append("\n".join(current_lines))
+                    current_lines = list(hour_buffer)
+                    current_size = hour_buffer_size
+                else:
+                    # Add buffer to current chunk
+                    current_lines.extend(hour_buffer)
+                    current_size += hour_buffer_size
+
+                hour_buffer = []
+                hour_buffer_size = 0
+                current_hour = hour_key
+
+            # If single entry exceeds budget, truncate it
+            if entry_size > budget:
+                text = text[: budget - 100] + "\n  ... (truncated)"
+                entry_size = len(text) + 1
+
+            hour_buffer.append(text)
+            hour_buffer_size += entry_size
+
+        # Flush remaining hour buffer
+        if current_size + hour_buffer_size > budget and current_lines:
+            chunks.append("\n".join(current_lines))
+            current_lines = list(hour_buffer)
+        else:
+            current_lines.extend(hour_buffer)
+
+        if current_lines:
+            chunks.append("\n".join(current_lines))
+
+        return chunks
+
+    async def extract_facts_from_text(
+        self,
+        text: str,
+        *,
+        source_episode: str,
+        source_session_id: str = "consolidation:daily",
+    ) -> int:
+        """Extract and store atomic facts from consolidated episode text."""
+        outcome = await self.extract_facts_from_text_outcome(
+            text,
+            source_episode=source_episode,
+            source_session_id=source_session_id,
+        )
+        return outcome.facts_extracted
+
+    async def extract_facts_from_text_outcome(
+        self,
+        text: str,
+        *,
+        source_episode: str,
+        source_session_id: str = "consolidation:daily",
+    ):
+        """Extract/store atomic facts and return operational counters."""
+        try:
+            from core.memory.facts.extraction import FactExtractionOutcome, extract_and_store_facts_with_outcome
+
+            outcome = await extract_and_store_facts_with_outcome(
+                self.anima_dir,
+                text,
+                source_episode=source_episode,
+                source_session_id=source_session_id,
+                origin="consolidation",
+            )
+            logger.info(
+                ("Consolidation atomic fact extraction complete for anima=%s: facts_extracted=%d facts_failed=%d"),
+                self.anima_name,
+                outcome.facts_extracted,
+                outcome.facts_failed,
+            )
+            return outcome
+        except Exception as exc:
+            from core.memory.facts.extraction import FactExtractionOutcome
+            from core.memory.facts.observability import warn_rate_limited
+
+            warn_rate_limited(
+                logger,
+                "fact_extraction.consolidation",
+                "Consolidation atomic fact extraction failed for anima=%s",
+                self.anima_name,
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+            logger.info(
+                ("Consolidation atomic fact extraction complete for anima=%s: facts_extracted=0 facts_failed=1"),
+                self.anima_name,
+            )
+            return FactExtractionOutcome([], True, "consolidation", f"{type(exc).__name__}: {exc}")
+
+    @staticmethod
+    def merge_timeline_parts(parts: list[str]) -> str:
+        """Merge multiple structured timeline parts into a single episode.
+
+        Concatenates timeline parts in order, deduplicating any repeated
+        section headers (## HH:MM-HH:MM Title) that might appear at
+        chunk boundaries.
+        """
+        if not parts:
+            return ""
+        if len(parts) == 1:
+            return parts[0]
+
+        seen_headers: set[str] = set()
+        merged_lines: list[str] = []
+
+        for part in parts:
+            for line in part.split("\n"):
+                # Detect markdown ## headers for dedup
+                stripped = line.strip()
+                if stripped.startswith("## "):
+                    if stripped in seen_headers:
+                        continue
+                    seen_headers.add(stripped)
+                merged_lines.append(line)
+
+        return "\n".join(merged_lines)
+
+    def defrag_recent_episodes(self, days: int = 3) -> list[Path]:
+        """Identify recent episode files that need restructuring.
+
+        Returns paths to episode files from the past N days that exist
+        and could benefit from defragmentation.
+
+        .. note::
+            This is a discovery helper only. The actual defrag rewriting
+            (converting old free-form episodes into structured timelines)
+            is not yet wired into the consolidation pipeline.
+        """
+        today = now_local().date()
+        targets: list[Path] = []
+        for offset in range(days):
+            target_date = today - timedelta(days=offset)
+            for ep_file in sorted(self.episodes_dir.glob(f"{target_date}*.md")):
+                if ep_file.exists() and ep_file.stat().st_size > 0:
+                    targets.append(ep_file)
+        return targets
+
+    def _collect_activity_entries(self, hours: int = 24) -> str:
+        """Collect recent activity log entries for consolidation input.
+
+        Uses a two-phase budget allocation:
+          1. Communication events first (messages, responses, errors, etc.)
+          2. Remaining budget for ``tool_result`` only — fail entries get
+             100-char content, ok entries are meta-only.
+             ``tool_use`` events are excluded (redundant with tool_result).
+
+        Args:
+            hours: Number of hours to look back (default 24).
+
+        Returns:
+            Formatted activity log summary string, truncated to
+            approximately 4000 tokens (12000 chars).  Empty string
+            if no matching entries are found.
+        """
+        _CHAR_BUDGET = 12_000  # ~4000 tokens
+
+        try:
+            from core.memory.activity.logger import ActivityLogger
+
+            activity = ActivityLogger(self.anima_dir)
+            target_types = [
+                "message_received",
+                "response_sent",
+                "heartbeat_reflection",
+                "channel_post",
+                "error",
+                "tool_result",
+            ]
+            entries = activity.recent(
+                days=max(1, (hours + 23) // 24),
+                limit=200,
+                types=target_types,
+            )
+
+            if not entries:
+                return ""
+
+            # Filter by hours cutoff
+            cutoff = now_local() - timedelta(hours=hours)
+            filtered: list = []
+            for e in entries:
+                try:
+                    ts = ensure_aware(datetime.fromisoformat(e.ts))
+                    if ts >= cutoff:
+                        filtered.append(e)
+                except (ValueError, TypeError):
+                    filtered.append(e)
+
+            if not filtered:
+                return ""
+
+            # Phase 1: Communication events
+            comm_entries = [e for e in filtered if e.type in self._COMM_TYPES]
+            tool_result_entries = [e for e in filtered if e.type == "tool_result"]
+
+            lines: list[str] = []
+            total_chars = 0
+
+            for entry in comm_entries:
+                line = self._format_comm_entry(entry)
+                if total_chars + len(line) + 1 > _CHAR_BUDGET:
+                    break
+                lines.append(line)
+                total_chars += len(line) + 1
+
+            # Phase 2: tool_result with remaining budget
+            remaining = _CHAR_BUDGET - total_chars
+            if remaining > 0 and tool_result_entries:
+                tool_lines = self._format_tool_entries(tool_result_entries, remaining)
+                lines.extend(tool_lines)
+
+            return "\n".join(lines)
+
+        except Exception:
+            logger.debug("Failed to collect activity entries", exc_info=True)
+            return ""
+
+    @staticmethod
+    def _format_comm_entry(entry: Any) -> str:
+        """Format a communication entry as a readable line."""
+        ts_short = entry.ts[11:16] if len(entry.ts) >= 16 else entry.ts
+        text = entry.summary or entry.content
+        if len(text) > 300:
+            text = text[:300] + "..."
+
+        parts: list[str] = []
+        if entry.from_person:
+            parts.append(f"from:{entry.from_person}")
+        if entry.to_person:
+            parts.append(f"to:{entry.to_person}")
+        if entry.channel:
+            parts.append(f"#{entry.channel}")
+        ctx = f" ({', '.join(parts)})" if parts else ""
+
+        type_map: dict[str, str] = {
+            "message_received": "MSG<",
+            "message_sent": "MSG>",
+            "response_sent": "RESP>",
+            "human_notify": "NOTIFY",
+            "heartbeat_reflection": "HB",
+            "channel_post": "CH.W",
+            "error": "ERR",
+        }
+        icon = type_map.get(entry.type, "•")
+
+        return f"[{ts_short}] {icon} {entry.type}{ctx}: {text}"
+
+    @staticmethod
+    def _format_tool_entries(entries: list, budget_chars: int) -> list[str]:
+        """Format tool_result entries with budget-aware rendering.
+
+        Fail entries include up to 100 chars of content for debugging.
+        Ok entries are rendered as compact meta-only lines matching the
+        Priming format: ``[HH:MM] TRES tool → ok (N件, XKB)``.
+        """
+        lines: list[str] = []
+        total = 0
+
+        for entry in entries:
+            ts = entry.ts[11:16] if len(entry.ts) >= 16 else entry.ts
+            tool = entry.tool or "unknown"
+            meta = entry.meta or {}
+            status = meta.get("result_status", "ok")
+
+            if status == "fail":
+                err_hint = (entry.content or "")[:100]
+                line = f"[{ts}] TRES {tool} → fail: {err_hint}"
+            else:
+                result_bytes = meta.get("result_bytes", 0)
+                result_count = meta.get("result_count")
+
+                if result_bytes >= 1024:
+                    size_str = f"{result_bytes / 1024:.1f}KB"
+                else:
+                    size_str = f"{result_bytes}B"
+
+                detail_parts: list[str] = []
+                if result_count is not None:
+                    detail_parts.append(f"{result_count}件")
+                detail_parts.append(size_str)
+
+                detail = f" ({', '.join(detail_parts)})" if detail_parts else ""
+                line = f"[{ts}] TRES {tool} → ok{detail}"
+
+            if total + len(line) + 1 > budget_chars:
+                break
+            lines.append(line)
+            total += len(line) + 1
+
+        return lines
+
+    # ── Utilities ────────────────────────────────────────────────
+
+    @staticmethod
+    def _sanitize_llm_output(text: str) -> str:
+        """Remove code fences from LLM output.
+
+        LLMs sometimes wrap their entire response in ```markdown fences.
+        This method strips those wrapper fences while preserving any
+        intentional code blocks within the content.
+
+        Args:
+            text: Raw LLM output
+
+        Returns:
+            Cleaned text with wrapper code fences removed.
+        """
+        from core.memory._llm_parse import strip_code_fence
+
+        return strip_code_fence(text)
+
+    @staticmethod
+    def _is_archive_dir(rel: Path) -> bool:
+        """Check if a path is inside an archive subdirectory.
+
+        Handles all known archive directory naming conventions:
+        ``archive/``, ``_archived/``, ``.archive/``.
+        """
+        if not rel.parts:
+            return False
+        first = rel.parts[0].lower().lstrip("_").lstrip(".")
+        return first == "archive" or first == "archived"
+
+    def _list_knowledge_files(self) -> list[str]:
+        """List all existing knowledge files.
+
+        Returns:
+            List of knowledge file paths (relative to knowledge/)
+        """
+        if not self.knowledge_dir.exists():
+            return []
+
+        files = []
+        for path in self.knowledge_dir.rglob("*.md"):
+            rel_path = path.relative_to(self.knowledge_dir)
+            files.append(str(rel_path))
+
+        return sorted(files)
+
+    # ── Merge Candidate Detection ─────────────────────────────────
+
+    def _list_knowledge_files_with_meta(self) -> list[dict[str, Any]]:
+        """List all existing knowledge files with frontmatter metadata.
+
+        Returns:
+            List of dicts with keys: path, created_at, confidence,
+            auto_consolidated, success_count.  Files in archive/ are excluded.
+        """
+        if not self.knowledge_dir.exists():
+            return []
+
+        from core.memory.frontmatter import parse_frontmatter
+
+        results: list[dict[str, Any]] = []
+        for path in sorted(self.knowledge_dir.rglob("*.md")):
+            rel = path.relative_to(self.knowledge_dir)
+            if self._is_archive_dir(rel):
+                continue
+
+            meta_fields: dict[str, Any] = {"path": str(rel)}
+            try:
+                text = path.read_text(encoding="utf-8")
+                meta, _ = parse_frontmatter(text)
+                meta_fields["created_at"] = meta.get("created_at", "")
+                meta_fields["confidence"] = meta.get("confidence", "")
+                meta_fields["auto_consolidated"] = meta.get("auto_consolidated", False)
+                meta_fields["success_count"] = meta.get("success_count", 0)
+            except Exception:
+                pass
+            results.append(meta_fields)
+
+        return results
+
+    def _find_merge_candidates(
+        self,
+        similarity_threshold: float = 0.75,
+        max_pairs: int = 20,
+    ) -> list[tuple[str, str, float]]:
+        """Find knowledge file pairs that are candidates for merging.
+
+        Uses RAG vector similarity to detect semantically similar files.
+        All knowledge files are eligible (no low-activation requirement).
+        Files in archive/ subdirectories are excluded.
+
+        Args:
+            similarity_threshold: Minimum vector similarity for a pair (0.0-1.0).
+            max_pairs: Maximum number of pairs to return.
+
+        Returns:
+            List of (file_a, file_b, similarity) tuples, sorted by
+            similarity descending.  Paths are relative to knowledge/.
+        """
+        # Read all non-archived knowledge files
+        from core.memory.frontmatter import parse_frontmatter
+
+        file_contents: dict[str, str] = {}
+        for path in sorted(self.knowledge_dir.rglob("*.md")):
+            rel = path.relative_to(self.knowledge_dir)
+            if self._is_archive_dir(rel):
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+                _, body = parse_frontmatter(text)
+                if body.strip():
+                    file_contents[str(rel)] = body.strip()
+            except Exception:
+                continue
+
+        if len(file_contents) < 2:
+            return []
+
+        try:
+            from core.memory.rag import MemoryIndexer
+            from core.memory.rag.retriever import MemoryRetriever
+            from core.memory.rag.singleton import get_vector_store
+
+            vector_store = self._rag_store or get_vector_store(self.anima_name)
+            if vector_store is None:
+                logger.debug("RAG vector store unavailable for merge candidate search")
+                return []
+            indexer = MemoryIndexer(vector_store, self.anima_name, self.anima_dir)
+            retriever = MemoryRetriever(vector_store, indexer, self.knowledge_dir)
+        except (ImportError, Exception) as exc:
+            logger.debug("RAG not available for merge candidate search: %s", exc)
+            return []
+
+        # Query each file against RAG to find similar peers
+        seen_pairs: set[tuple[str, str]] = set()
+        candidates: list[tuple[str, str, float]] = []
+
+        for rel_path, content in file_contents.items():
+            try:
+                results = retriever.search(
+                    query=content[:500],
+                    anima_name=self.anima_name,
+                    memory_type="knowledge",
+                    top_k=5,
+                )
+            except Exception:
+                continue
+
+            for result in results:
+                raw_sim = getattr(result, "source_scores", {}).get("vector", result.score)
+                if raw_sim < similarity_threshold:
+                    continue
+
+                source_file = str(result.metadata.get("source_file", ""))
+                if not source_file:
+                    continue
+
+                # Normalise to relative path under knowledge/
+                if source_file.startswith("knowledge/"):
+                    match_rel = source_file[len("knowledge/") :]
+                elif source_file.startswith("knowledge\\"):
+                    match_rel = source_file[len("knowledge\\") :]
+                else:
+                    match_rel = source_file
+
+                match_rel_path = Path(match_rel)
+                if match_rel == rel_path:
+                    continue
+                if self._is_archive_dir(match_rel_path):
+                    continue
+                # Skip if the matched file isn't in our content map
+                if match_rel not in file_contents:
+                    continue
+
+                pair_key = tuple(sorted([rel_path, match_rel]))
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+
+                candidates.append((rel_path, match_rel, raw_sim))
+
+        # Sort by similarity descending, cap at max_pairs
+        candidates.sort(key=lambda x: x[2], reverse=True)
+        return candidates[:max_pairs]
+
+    # ── Conflicting-fact candidates ────────────────────────────
+
+    def _find_conflicting_fact_candidates(
+        self,
+        max_pairs: int = 20,
+    ) -> list[tuple[str, str, str]]:
+        """Find conflicting fact pairs for the weekly consolidation LLM.
+
+        Reads the legacy atomic facts stored as JSONL under ``{anima_dir}/facts/``.
+        Facts are grouped by entity (``source_entity``) + attribute
+        (``target_entity`` / ``edge_type``).  When two currently-active facts in
+        the same group describe different values (``text``), the pair is a
+        candidate for the weekly consolidation model to resolve (archive the
+        older one or report unresolved).
+
+        Only active facts (no valid_until, or valid_until still in the future)
+        are considered, so superseded/expired records do not surface as
+        conflicts.
+
+        Args:
+            max_pairs: Maximum number of pairs to return.
+
+        Returns:
+            List of (older_fact_path, newer_fact_path, one_line_description)
+            sorted by the newer fact's observed time (newest first).  Paths are
+            relative to the anima_dir and include the JSONL file and fact id so
+            the model can locate the exact record.
+        """
+        from core.memory.facts.store import FactRecord, facts_dir
+
+        facts_dir_path = facts_dir(self.anima_dir)
+        if not facts_dir_path.exists():
+            return []
+
+        # Group by (source_entity, target_entity, edge_type).
+        grouped: dict[tuple[str, str, str], list[dict]] = {}
+        for jsonl in sorted(facts_dir_path.glob("*.jsonl")):
+            try:
+                lines = jsonl.read_text(encoding="utf-8").splitlines()
+            except Exception:
+                continue
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = FactRecord.from_json_line(line)
+                except Exception:
+                    continue
+                if not record.is_active():
+                    continue
+                entity = (record.source_entity, record.target_entity, record.edge_type)
+                observed = record.recorded_at or record.valid_at or ""
+                grouped.setdefault(entity, []).append(
+                    {
+                        "path": f"{jsonl.relative_to(self.anima_dir).as_posix()}#{record.fact_id}",
+                        "text": record.text,
+                        "observed": observed,
+                    }
+                )
+
+        # (older_path, newer_path, description, newer_observed)
+        raw: list[tuple[str, str, str, str]] = []
+        for items in grouped.values():
+            if len(items) < 2:
+                continue
+            # Newest item is compared against every older item with a
+            # different value (source of the conflict).
+            items_sorted = sorted(items, key=lambda i: i["observed"], reverse=True)
+            newest = items_sorted[0]
+            for older in items_sorted[1:]:
+                if older["text"] == newest["text"]:
+                    continue
+                raw.append(
+                    (
+                        older["path"],
+                        newest["path"],
+                        (
+                            f"{newest['text'][:60]!r} (recent) differs from "
+                            f"{older['text'][:60]!r} (earlier) for the same attribute"
+                        ),
+                        newest["observed"],
+                    )
+                )
+
+        raw.sort(key=lambda c: c[3], reverse=True)
+        return [(a, b, d) for a, b, d, _ in raw[:max_pairs]]
+
+    # ── Origin detection ─────────────────────────────────────────
+
+    _EXTERNAL_ORIGINS = frozenset({"external_web", "mixed", "consolidation_external"})
+
+    def _has_external_origin_in_files(self, filenames: list[str]) -> bool:
+        """Check if any knowledge file in *filenames* contains an external origin.
+
+        Reads the YAML frontmatter ``origin:`` field.  Returns ``True`` if
+        at least one file has an origin that indicates external (untrusted)
+        data provenance.
+        """
+        from core.memory.frontmatter import parse_frontmatter
+
+        for filename in filenames:
+            filepath = self.knowledge_dir / filename
+            if not filepath.exists():
+                continue
+            try:
+                text = filepath.read_text(encoding="utf-8")
+                meta, _ = parse_frontmatter(text)
+                origin = meta.get("origin", "")
+                if origin in self._EXTERNAL_ORIGINS:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    # ── Neo4j Backend Ingest ──────────────────────────────────────
+
+    async def ingest_recent_to_backend(self, hours: int = 48) -> dict[str, int]:
+        """Ingest recent episode and knowledge files to Neo4j backend.
+
+        Runs only when ``config.memory.backend == "neo4j"``.  For legacy
+        mode this is a no-op returning zeroes.  Failures are logged but
+        never interrupt the caller.
+
+        Args:
+            hours: Look-back window.  48 h covers daily consolidation even
+                when it runs slightly late.
+
+        Returns:
+            Dict with ``episodes``, ``knowledge``, ``errors`` counts.
+        """
+        stats: dict[str, int] = {"episodes": 0, "knowledge": 0, "errors": 0}
+
+        try:
+            from core.memory.backend.registry import resolve_backend_type
+
+            backend_type = resolve_backend_type(self.anima_dir)
+            if backend_type != "neo4j":
+                return stats
+        except Exception:
+            return stats
+
+        try:
+            from core.memory.backend.registry import get_backend
+
+            backend = get_backend("neo4j", self.anima_dir)
+        except Exception:
+            logger.debug("Neo4j backend unavailable for post-consolidation ingest", exc_info=True)
+            return stats
+
+        cutoff = now_local() - timedelta(hours=hours)
+
+        for ep_file in sorted(self.episodes_dir.glob("*.md")):
+            try:
+                mtime = datetime.fromtimestamp(ep_file.stat().st_mtime)
+                if ensure_aware(mtime) < cutoff:
+                    continue
+                await backend.ingest_file(ep_file)
+                stats["episodes"] += 1
+                logger.info("Neo4j ingest (consolidation_episode): %s", ep_file.name)
+            except Exception:
+                stats["errors"] += 1
+                logger.warning("Neo4j ingest failed (episode): %s", ep_file.name, exc_info=True)
+
+        for kn_file in sorted(self.knowledge_dir.rglob("*.md")):
+            rel = kn_file.relative_to(self.knowledge_dir)
+            if self._is_archive_dir(rel):
+                continue
+            try:
+                mtime = datetime.fromtimestamp(kn_file.stat().st_mtime)
+                if ensure_aware(mtime) < cutoff:
+                    continue
+                await backend.ingest_file(kn_file)
+                stats["knowledge"] += 1
+                logger.info("Neo4j ingest (consolidation_knowledge): %s", kn_file.name)
+            except Exception:
+                stats["errors"] += 1
+                logger.warning("Neo4j ingest failed (knowledge): %s", kn_file.name, exc_info=True)
+
+        if hasattr(backend, "clear_resolver_cache"):
+            backend.clear_resolver_cache()
+
+        try:
+            await backend.close()
+        except Exception:
+            pass
+
+        logger.info(
+            "Post-consolidation Neo4j ingest for %s: episodes=%d knowledge=%d errors=%d",
+            self.anima_name,
+            stats["episodes"],
+            stats["knowledge"],
+            stats["errors"],
+        )
+        return stats
+
+    # ── RAG Index ────────────────────────────────────────────────
+
+    def _update_rag_index(
+        self, filenames: list[str], *, origin: str = "consolidation", source_files: list[str] | None = None
+    ) -> None:
+        """Update RAG index for the specified knowledge files.
+
+        Args:
+            filenames: List of knowledge file names (relative to knowledge/)
+            origin: Provenance origin for the indexed chunks.
+            source_files: Optional list of input knowledge files used in
+                consolidation.  When provided and any contain external
+                origins, *origin* is downgraded to ``consolidation_external``.
+        """
+        if not filenames:
+            return
+
+        effective_origin = origin
+        if source_files and origin == "consolidation":
+            if self._has_external_origin_in_files(source_files):
+                effective_origin = "consolidation_external"
+                logger.info(
+                    "Downgrading consolidation origin to 'consolidation_external' due to external-origin input files",
+                )
+
+        try:
+            from core.memory.rag import MemoryIndexer
+            from core.memory.rag.singleton import get_vector_store
+
+            vector_store = self._rag_store or get_vector_store(self.anima_name)
+            if vector_store is None:
+                logger.debug("RAG vector store unavailable, skipping index update")
+                return
+            indexer = MemoryIndexer(vector_store, self.anima_name, self.anima_dir)
+
+            for filename in filenames:
+                filepath = self.knowledge_dir / filename
+                if filepath.exists():
+                    indexer.index_file(filepath, memory_type="knowledge", origin=effective_origin)
+                    logger.debug("Updated RAG index for: %s (origin=%s)", filename, effective_origin)
+
+        except ImportError:
+            logger.debug("RAG not available, skipping index update")
+        except Exception as e:
+            logger.warning("Failed to update RAG index: %s", e)
+
+    def _rebuild_rag_index(self) -> None:
+        """Rebuild RAG index for all knowledge and episode files."""
+        try:
+            from core.memory.rag import MemoryIndexer
+            from core.memory.rag.singleton import get_vector_store
+
+            vector_store = self._rag_store or get_vector_store(self.anima_name)
+            if vector_store is None:
+                logger.debug("RAG vector store unavailable, skipping index rebuild")
+                self._rebuild_longterm_bm25_index()
+                return
+            indexer = MemoryIndexer(vector_store, self.anima_name, self.anima_dir)
+
+            # Re-index all knowledge files, respecting per-file origin
+            from core.memory.frontmatter import parse_frontmatter as _parse_fm
+
+            for knowledge_file in self.knowledge_dir.rglob("*.md"):
+                file_origin = "consolidation"
+                try:
+                    text = knowledge_file.read_text(encoding="utf-8")
+                    meta, _ = _parse_fm(text)
+                    file_origin = meta.get("origin", file_origin) or file_origin
+                except Exception:
+                    pass
+                indexer.index_file(knowledge_file, memory_type="knowledge", origin=file_origin)
+                logger.debug("Re-indexed knowledge: %s (origin=%s)", knowledge_file.name, file_origin)
+
+            # Re-index all episode files (origin unknown on rebuild)
+            for episode_file in self.episodes_dir.glob("*.md"):
+                indexer.index_file(episode_file, memory_type="episodes")
+                logger.debug("Re-indexed episode: %s", episode_file.name)
+
+            facts_dir = self.anima_dir / "facts"
+            for fact_file in facts_dir.glob("*.jsonl"):
+                indexer.index_file(fact_file, memory_type="facts")
+                logger.debug("Re-indexed facts: %s", fact_file.name)
+
+            try:
+                from core.memory.facts.entity_index import rebuild_entity_collection
+
+                if not rebuild_entity_collection(self.anima_dir, vector_store=vector_store):
+                    logger.warning(
+                        "Failed to rebuild entity collection during RAG rebuild for anima=%s",
+                        self.anima_name,
+                    )
+            except Exception:
+                logger.warning(
+                    "Failed to rebuild entity collection during RAG rebuild for anima=%s",
+                    self.anima_name,
+                    exc_info=True,
+                )
+
+            self._rebuild_longterm_bm25_index()
+
+            logger.info("RAG index rebuild complete for anima=%s", self.anima_name)
+
+        except ImportError:
+            logger.debug("RAG not available, skipping index rebuild")
+        except Exception:
+            logger.exception("Failed to rebuild RAG index")
+
+    def _rebuild_longterm_bm25_index(self) -> None:
+        """Rebuild the persisted long-term BM25 sparse index."""
+        try:
+            from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index
+
+            bm25_result = rebuild_longterm_bm25_index(self.anima_dir)
+            logger.info(
+                "Long-term BM25 index rebuild complete for anima=%s documents=%d path=%s",
+                self.anima_name,
+                bm25_result.documents,
+                bm25_result.path,
+            )
+        except Exception:
+            logger.warning("Failed to rebuild long-term BM25 index for anima=%s", self.anima_name, exc_info=True)

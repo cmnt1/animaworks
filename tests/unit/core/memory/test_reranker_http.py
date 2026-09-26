@@ -68,8 +68,8 @@ class TestRerankerHTTP:
         monkeypatch.setenv("ANIMAWORKS_RERANK_URL", "http://localhost/rerank")
 
         with (
-            patch("core.gpu.is_component_degraded") as mock_degraded,
-            patch("core.gpu.resolve_device") as mock_resolve,
+            patch("core.infra.gpu.is_component_degraded") as mock_degraded,
+            patch("core.infra.gpu.resolve_device") as mock_resolve,
         ):
             from core.memory.retrieval.reranker import CrossEncoderReranker
 

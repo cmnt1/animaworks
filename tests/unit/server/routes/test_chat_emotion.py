@@ -9,8 +9,7 @@ import json
 
 import pytest
 
-from server.routes.chat import extract_emotion, _handle_chunk
-
+from server.routes.chat import _handle_chunk, extract_emotion
 
 # ── extract_emotion ──────────────────────────────────────
 
@@ -104,23 +103,39 @@ class TestExtractEmotion:
         assert emotion == "smile"
 
     def test_multiline_response_with_metadata(self):
-        text = "Line 1\nLine 2\nLine 3\n<!-- emotion: {\"emotion\": \"laugh\"} -->"
+        text = 'Line 1\nLine 2\nLine 3\n<!-- emotion: {"emotion": "laugh"} -->'
         clean, emotion = extract_emotion(text)
         assert clean == "Line 1\nLine 2\nLine 3"
         assert emotion == "laugh"
 
-    @pytest.mark.parametrize("emotion_name", [
-        "neutral", "smile", "laugh", "troubled",
-        "surprised", "thinking", "embarrassed",
-    ])
+    @pytest.mark.parametrize(
+        "emotion_name",
+        [
+            "neutral",
+            "smile",
+            "laugh",
+            "troubled",
+            "surprised",
+            "thinking",
+            "embarrassed",
+        ],
+    )
     def test_all_valid_emotions(self, emotion_name):
         text = f'Test\n<!-- emotion: {{"emotion": "{emotion_name}"}} -->'
         clean, emotion = extract_emotion(text)
         assert emotion == emotion_name
 
-    @pytest.mark.parametrize("invalid", [
-        "happy", "angry", "sad", "normal", "working", "idle",
-    ])
+    @pytest.mark.parametrize(
+        "invalid",
+        [
+            "happy",
+            "angry",
+            "sad",
+            "normal",
+            "working",
+            "idle",
+        ],
+    )
     def test_invalid_emotions_rejected(self, invalid):
         text = f'Test\n<!-- emotion: {{"emotion": "{invalid}"}} -->'
         clean, emotion = extract_emotion(text)
@@ -182,7 +197,7 @@ class TestEmotionParsingUnified:
     chat-, messaging- and voice-paths."""
 
     def _all_emotions(self, text: str) -> list[str]:
-        from core._anima_messaging import _extract_emotion_from_tag
+        from core.anima.messaging import _extract_emotion_from_tag
         from core.voice.front import extract_emotion as voice_extract
 
         chat_emotion = extract_emotion(text)[1]  # server chat route
@@ -200,15 +215,13 @@ class TestEmotionParsingUnified:
         assert vals == ["laugh", "laugh", "laugh"]
 
     def test_newline_json_consistent(self):
-        vals = self._all_emotions(
-            "Hey!\n<!-- emotion: {\n  \"emotion\": \"surprised\"\n} -->"
-        )
+        vals = self._all_emotions('Hey!\n<!-- emotion: {\n  "emotion": "surprised"\n} -->')
         assert vals == ["surprised", "surprised", "surprised"]
 
     def test_clean_text_consistent_across_full_parsers(self):
-        from core._anima_messaging import _extract_emotion_from_tag
+        from core.anima.messaging import _extract_emotion_from_tag
 
-        text = "Body\n<!-- emotion: { \"emotion\": \"thinking\" } -->"
+        text = 'Body\n<!-- emotion: { "emotion": "thinking" } -->'
         chat_clean, chat_emo = extract_emotion(text)
         msg_clean, msg_emo = _extract_emotion_from_tag(text)
         assert chat_clean == msg_clean == "Body"

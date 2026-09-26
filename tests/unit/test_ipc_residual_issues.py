@@ -179,7 +179,7 @@ class TestCallersSendAnimaName:
 
     def test_forgetting_passes_anima_name(self):
         """ForgettingEngine._get_vector_store passes self.anima_name."""
-        from core.memory.forgetting import ForgettingEngine
+        from core.memory.maintenance.forgetting import ForgettingEngine
 
         engine = ForgettingEngine.__new__(ForgettingEngine)
         engine.anima_name = "yuki"
@@ -195,7 +195,7 @@ class TestCallersSendAnimaName:
         (anima_dir / "knowledge").mkdir(parents=True)
         (anima_dir / "knowledge" / "test.md").write_text("test", encoding="utf-8")
 
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(anima_dir, "sakura")
 
@@ -223,7 +223,7 @@ class TestCallersSendAnimaName:
         """ProceduralDistiller uses get_vector_store(self.anima_name)."""
         import inspect
 
-        from core.memory.distillation import ProceduralDistiller
+        from core.memory.maintenance.distillation import ProceduralDistiller
 
         source = inspect.getsource(ProceduralDistiller._check_rag_duplicate)
         assert "get_vector_store(self.anima_name)" in source

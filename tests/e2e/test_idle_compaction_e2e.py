@@ -12,9 +12,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.memory.conversation_compression import CompressionResult
+from core.agent.session_compactor import SessionCompactor, run_idle_compaction
+from core.memory.conversation.compression import CompressionResult
 from core.schemas import CycleResult
-from core.session_compactor import SessionCompactor, run_idle_compaction
 from core.tooling.handler import active_session_type
 
 # ── Fixtures ─────────────────────────────────────────────────────────────
@@ -29,14 +29,14 @@ def anima(data_dir: Path, make_anima):
         anima_dir / "activity_log",
     ]:
         d.mkdir(parents=True, exist_ok=True)
-    with patch("core.anima.AgentCore") as mock_agent_cls:
+    with patch("core.anima.digital_anima.AgentCore") as mock_agent_cls:
         mock_agent = MagicMock()
         mock_agent.background_manager = None
         mock_agent.execution_mode = "a"
         mock_agent._tool_handler = MagicMock()
         mock_agent.model_config = MagicMock()
         mock_agent_cls.return_value = mock_agent
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         return DigitalAnima(anima_dir, shared_dir)
 
@@ -53,7 +53,7 @@ async def test_timer_scheduled_after_process_message_and_fires_compaction(anima,
     with patch("core.config.models.load_config", return_value=mock_config):
         anima_dir = make_anima("test-anima", execution_mode="a", model="claude-sonnet-4-6")
         shared_dir = data_dir / "shared"
-        with patch("core.anima.AgentCore") as mock_agent_cls:
+        with patch("core.anima.digital_anima.AgentCore") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.background_manager = None
             mock_agent.execution_mode = "a"
@@ -61,7 +61,7 @@ async def test_timer_scheduled_after_process_message_and_fires_compaction(anima,
             mock_agent._tool_handler.set_active_session_type = lambda st: active_session_type.set(st)
             mock_agent.model_config = MagicMock()
             mock_agent_cls.return_value = mock_agent
-            from core.anima import DigitalAnima
+            from core.anima.digital_anima import DigitalAnima
 
             anima = DigitalAnima(anima_dir, shared_dir)
 
@@ -98,7 +98,7 @@ async def test_timer_scheduled_after_process_message_and_fires_compaction(anima,
     mock_conv_cls = MagicMock(return_value=mock_conv)
 
     # Patch at source; both process_message and run_idle_compaction import from here
-    with patch("core.memory.conversation.ConversationMemory", mock_conv_cls):
+    with patch("core.memory.conversation.memory.ConversationMemory", mock_conv_cls):
         # Run process_message
         result = await anima.process_message("Hello", from_person="human")
 
@@ -170,7 +170,7 @@ async def test_activity_log_records_idle_compaction_event(anima) -> None:
     """Run compaction; activity_log contains 'idle_compaction' event."""
     # Mock ConversationMemory to avoid LLM
     with patch(
-        "core.session_compactor._compact_mode_a",
+        "core.agent.session_compactor._compact_mode_a",
         new_callable=AsyncMock,
         return_value=True,
     ):

@@ -12,10 +12,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from core.file_access_policy import load_denied_roots, memory_source_is_allowed, resolve_memory_source_path
+from core.config.file_access_policy import load_denied_roots, memory_source_is_allowed, resolve_memory_source_path
 from core.i18n import t
 from core.memory._io import archive_episode_before_write
-from core.memory.scope_policy import (
+from core.memory.retrieval.scope_policy import (
     LEGACY_ONLY_SCOPES,
     LEGACY_ONLY_SCOPES_FOR_ALL,
     NEO4J_SCOPE_MAP,
@@ -27,7 +27,7 @@ from core.memory.scope_policy import (
     neo4j_scope_for,
     title_for_legacy_scope,
 )
-from core.memory.search_metadata import format_result_metadata_line
+from core.memory.retrieval.search_metadata import format_result_metadata_line
 from core.tooling.handler_base import (
     _error_result,
     _extract_first_heading,
@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from core.memory import MemoryManager
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
 
 logger = logging.getLogger("animaworks.tool_handler")
 
@@ -170,7 +170,7 @@ def _normalize_memory_path(raw: str, anima_dir: Path) -> _PathNormResult:
         except ValueError:
             pass
 
-    from core.company_resources import company_resource_pointer, get_company_resources
+    from core.org.company_resources import company_resource_pointer, get_company_resources
 
     company_resources = get_company_resources(anima_dir)
     if company_resources is not None and resolved.is_relative_to(company_resources.root):
@@ -306,7 +306,7 @@ class MemoryToolsMixin:
         if not rel.startswith(("knowledge/", "episodes/", "procedures/")):
             return
         try:
-            from core.memory.bm25 import update_longterm_bm25_source
+            from core.memory.retrieval.bm25 import update_longterm_bm25_source
 
             update_longterm_bm25_source(self._anima_dir, rel)
         except Exception:
@@ -558,7 +558,7 @@ class MemoryToolsMixin:
         if scope == "code":
             if not project:
                 return t("handler.code_search_requires_project")
-            from core.memory.code_index import search_code
+            from core.memory.retrieval.code_index import search_code
 
             code_results = search_code(self._anima_dir, project, query, limit=offset + 10)
             if isinstance(code_results, str):
@@ -882,7 +882,7 @@ class MemoryToolsMixin:
                     "Path traversal detected — access denied.",
                 )
         elif rel.startswith("companies/"):
-            from core.company_resources import get_company_resources
+            from core.org.company_resources import get_company_resources
 
             resources = get_company_resources(self._anima_dir)
             path = (resources.root.parent.parent / rel).resolve() if resources is not None else None

@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
-from core._anima_heartbeat import HeartbeatMixin
+from core.anima.heartbeat import HeartbeatMixin
 from core.config.models import HeartbeatConfig
 
 # ── HeartbeatConfig validation ────────────────────────────────
@@ -293,10 +293,10 @@ class TestHardTimeoutRecoveryNote:
 
         with (
             patch("core.config.models.load_config", return_value=config),
-            patch("core._anima_heartbeat.StreamingJournal"),
-            patch("core._anima_heartbeat.ConversationMemory") as mock_conversation,
-            patch("core._anima_heartbeat.asyncio.wait_for", new=recording_wait_for),
-            patch("core._anima_heartbeat.time.monotonic", side_effect=elapsed_past_hard_timeout),
+            patch("core.anima.heartbeat.StreamingJournal"),
+            patch("core.anima.heartbeat.ConversationMemory") as mock_conversation,
+            patch("core.anima.heartbeat.asyncio.wait_for", new=recording_wait_for),
+            patch("core.anima.heartbeat.time.monotonic", side_effect=elapsed_past_hard_timeout),
             patch("core.tasks.queue.TaskQueueManager") as mock_task_queue,
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         ):
@@ -348,7 +348,7 @@ class TestFinalizeAlwaysRuns:
     """run_heartbeat() must finalize conversation turns even when the cycle dies."""
 
     def _make_anima(self, tmp_path, cycle):
-        from core._anima_lifecycle import LifecycleMixin
+        from core.anima.lifecycle import LifecycleMixin
 
         anima = LifecycleMixin()
         anima.name = "alice"
@@ -381,7 +381,7 @@ class TestFinalizeAlwaysRuns:
         finalize = AsyncMock()
         with (
             patch("core.config.models.load_config", return_value=config),
-            patch("core.memory.conversation.ConversationMemory") as conv,
+            patch("core.memory.conversation.memory.ConversationMemory") as conv,
             patch("core.tooling.handler.active_session_type", SimpleNamespace(reset=MagicMock())),
         ):
             conv.return_value.finalize_if_session_ended = finalize

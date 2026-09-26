@@ -100,7 +100,7 @@ PrimingがRAG経由で関連知識を取得する際、各チャンクの `origi
 
 日次Consolidationがソース知識ファイルのYAMLフロントマター `origin:` を読み取り、外部オリジン（`external_web`, `mixed`, `consolidation_external`）を持つソースがある場合、統合出力を `origin: consolidation_external`（`untrusted` に解決）に格下げ。
 
-**主要ファイル**: `core/tooling/handler_memory.py`（write_memory_fileのオリジン伝播）, `core/memory/rag/indexer.py`（チャンクメタデータのオリジン）, `core/memory/priming.py`（チャネルC信頼分割）, `core/memory/consolidation.py`（オリジンチェーン追跡）
+**主要ファイル**: `core/tooling/handler_memory.py`（write_memory_fileのオリジン伝播）, `core/memory/rag/indexer.py`（チャンクメタデータのオリジン）, `core/memory/priming.py`（チャネルC信頼分割）, `core/memory/maintenance/consolidation.py`（オリジンチェーン追跡）
 
 ---
 
@@ -240,7 +240,7 @@ Mode S（Claude Code の Read/Write/Edit）のパス許可は **§10.2**（`_che
 - **Inboxレートリミッター**: クールダウン、カスケード検出、送信者別レート制限
 - **Fail-closed**: アクティビティログ読み取り失敗時は `False` を返す
 
-**主要ファイル**: `core/tooling/handler_comms.py`, `core/cascade_limiter.py`, `core/supervisor/inbox_rate_limiter.py`, `core/memory/priming.py`
+**主要ファイル**: `core/tooling/handler_comms.py`, `core/messaging/cascade_limiter.py`, `core/supervisor/inbox_rate_limiter.py`, `core/memory/priming.py`
 
 ---
 
@@ -374,7 +374,7 @@ Claude Agent SDK（Mode S）では `PreToolUse` フック（`core/execution/_sdk
 5. 大文字小文字非区別のエージェント名マッチ
 6. **未知の宛先 → RecipientNotFoundError**（fail-closed）
 
-**主要ファイル**: `core/outbound.py`
+**主要ファイル**: `core/messaging/outbound.py`
 
 ---
 
@@ -400,7 +400,7 @@ Inboxディレクトリは `0o700` で作成。
 
 チャネル投稿は Pydantic で `max_length=10000` に制限。
 
-**主要ファイル**: `core/messenger.py`, `core/tooling/handler_comms.py`, `core/tooling/handler_base.py`
+**主要ファイル**: `core/messaging/messenger.py`, `core/tooling/handler_comms.py`, `core/tooling/handler_base.py`
 
 ---
 

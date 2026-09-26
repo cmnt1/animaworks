@@ -114,7 +114,7 @@ class TestNeo4jScopeMap:
 
 class TestScopePolicy:
     def test_scope_policy_defines_neo4j_and_legacy_boundaries(self) -> None:
-        from core.memory.scope_policy import (
+        from core.memory.retrieval.scope_policy import (
             LEGACY_ONLY_SCOPES_FOR_ALL,
             is_legacy_only_scope,
             is_neo4j_backed_scope,

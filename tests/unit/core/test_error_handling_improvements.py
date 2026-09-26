@@ -57,7 +57,7 @@ class TestMessengerErrorHandling:
     @pytest.fixture
     def messenger(self, data_dir: Path, make_anima):
         make_anima("msg-test")
-        from core.messenger import Messenger
+        from core.messaging.messenger import Messenger
 
         return Messenger(
             shared_dir=data_dir / "shared",
@@ -125,7 +125,7 @@ class TestActivityLoggerErrorHandling:
 
     @pytest.fixture
     def activity_logger(self, tmp_path: Path):
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         al = ActivityLogger(anima_dir=tmp_path)
         (tmp_path / "activity_log").mkdir(parents=True, exist_ok=True)
@@ -133,7 +133,7 @@ class TestActivityLoggerErrorHandling:
 
     def test_append_raises_memory_write_error_on_os_error(self, activity_logger, tmp_path):
         """OSError during append should raise MemoryWriteError."""
-        from core.memory.activity import ActivityEntry
+        from core.memory.activity.logger import ActivityEntry
 
         entry = ActivityEntry(
             ts="2026-01-01T00:00:00+09:00",
@@ -176,7 +176,7 @@ class TestConversationMemoryErrorHandling:
     def test_load_context_window_overrides_catches_config_error(self, tmp_path):
         """ConfigError in _load_context_window_overrides should return None."""
         from core.config import invalidate_cache
-        from core.memory.conversation import ConversationMemory
+        from core.memory.conversation.memory import ConversationMemory
 
         invalidate_cache()
         cm = ConversationMemory.__new__(ConversationMemory)
@@ -188,7 +188,7 @@ class TestConversationMemoryErrorHandling:
     def test_load_context_window_overrides_catches_os_error(self, tmp_path):
         """OSError in _load_context_window_overrides should return None."""
         from core.config import invalidate_cache
-        from core.memory.conversation import ConversationMemory
+        from core.memory.conversation.memory import ConversationMemory
 
         invalidate_cache()
         cm = ConversationMemory.__new__(ConversationMemory)
@@ -200,7 +200,7 @@ class TestConversationMemoryErrorHandling:
     def test_load_context_window_overrides_catches_any_exception(self, tmp_path):
         """All exceptions are caught (safe fallback to None)."""
         from core.config import invalidate_cache
-        from core.memory.conversation import ConversationMemory
+        from core.memory.conversation.memory import ConversationMemory
 
         invalidate_cache()
         cm = ConversationMemory.__new__(ConversationMemory)
@@ -218,7 +218,7 @@ class TestAnimaErrorHandling:
 
     def test_read_notifications_handles_os_error(self, tmp_path):
         """OSError in notification read should be handled gracefully."""
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = DigitalAnima.__new__(DigitalAnima)
         agent_mock = MagicMock()
@@ -238,7 +238,7 @@ class TestAnimaErrorHandling:
 
     def test_read_notifications_handles_decode_error(self, tmp_path):
         """UnicodeDecodeError in notification read should be handled."""
-        from core.anima import DigitalAnima
+        from core.anima.digital_anima import DigitalAnima
 
         anima = DigitalAnima.__new__(DigitalAnima)
         agent_mock = MagicMock()

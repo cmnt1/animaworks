@@ -65,7 +65,7 @@
 | `core/tooling/schemas.py` | Modify | `report_procedure_outcome`ツールスキーマ追加 |
 | `core/memory/rag/indexer.py` | Modify | procedures/のfrontmatterストリップ処理追加 |
 | `core/prompt/builder.py`, `core/skills/index.py` | Modify | 現行の SkillIndex / Skill Router / catalog 経路で procedures/ も提示 |
-| `core/memory/conversation.py` | Modify | セッション境界時に注入された手順の成否を追跡・記録 |
+| `core/memory/conversation/memory.py` | Modify | セッション境界時に注入された手順の成否を追跡・記録 |
 
 #### Change 1: procedures frontmatter
 
@@ -190,7 +190,7 @@ async def _handle_report_procedure_outcome(self, args):
 |---|------|--------|
 | 3-1 | write_memory_file後のRAGインデックス自動更新追加 | `core/tooling/handler.py` |
 | 3-2 | `report_procedure_outcome` ツールスキーマ + ハンドラ実装 | `core/tooling/schemas.py`, `core/tooling/handler.py` |
-| 3-3 | builder.pyの注入追跡 → セッション境界時の自動成否判定 | `core/prompt/builder.py`, `core/memory/conversation.py` |
+| 3-3 | builder.pyの注入追跡 → セッション境界時の自動成否判定 | `core/prompt/builder.py`, `core/memory/conversation/memory.py` |
 | 3-4 | Phase 3の統合テスト | `tests/` |
 
 **Completion condition**: write_memory_file後にRAGが更新され、手順の成功/失敗が2経路で追跡される

@@ -136,7 +136,7 @@ class OrgHelpersMixin:
     @staticmethod
     def _read_recent_activity(anima_dir: Path, *, limit: int = 1) -> list:
         """Read recent activity entries from another anima's directory."""
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         al = ActivityLogger(anima_dir)
         return al.recent(days=1, limit=limit)
@@ -148,7 +148,7 @@ class OrgHelpersMixin:
             return None
         from datetime import time as _time
 
-        from core.memory.activity import now_local
+        from core.memory.activity.logger import now_local
 
         now = now_local()
         try:
