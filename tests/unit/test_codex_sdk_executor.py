@@ -718,8 +718,17 @@ class TestConfigWriting:
         assert (config_home / "instructions.md").exists()
         assert (config_home / "hooks.json").exists()
 
-    def test_codex_login_forces_chatgpt_auth_and_strips_api_keys(self, anima_dir, monkeypatch):
+    @pytest.mark.parametrize("has_auth_file", [True, False])
+    def test_codex_login_forces_chatgpt_auth_and_strips_api_keys(self, anima_dir, monkeypatch, tmp_path, has_auth_file):
         from core.schemas import ModelConfig
+
+        fake_home = tmp_path / "user-home"
+        default_config_home = fake_home / ".codex"
+        default_config_home.mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+        monkeypatch.delenv("CODEX_HOME", raising=False)
+        if has_auth_file:
+            (default_config_home / "auth.json").write_text("{}", encoding="utf-8")
 
         login_executor = CodexSDKExecutor(
             model_config=ModelConfig(model="codex/o4-mini", credential="openai", credential_type="codex_login"),
@@ -729,7 +738,9 @@ class TestConfigWriting:
         )
         with patch("core.execution.codex_sdk.is_codex_login_available", return_value=True):
             login_executor._write_codex_config("My prompt")
-        parsed = tomllib.loads((anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8"))
+        config_home = anima_dir / ".codex_home" if has_auth_file else default_config_home
+        assert login_executor._effective_codex_home() == config_home
+        parsed = tomllib.loads((config_home / "config.toml").read_text(encoding="utf-8"))
         assert parsed["preferred_auth_method"] == "chatgpt"
         assert parsed["forced_login_method"] == "chatgpt"
 
