@@ -1,0 +1,1 @@
+{"scenario": "cli_error", "returncode": 1, "stderr": "boom failure"}

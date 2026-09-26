@@ -1,0 +1,46 @@
+{
+  "engine": "agent_sdk",
+  "supports_streaming": true,
+  "path": "execute",
+  "scenario": "happy",
+  "events": null,
+  "result": {
+    "text": "Hello world",
+    "tool_call_records": [
+      {
+        "tool_name": "Read",
+        "tool_id": "tu_1",
+        "input_summary": "{'path': 'README.md'}",
+        "result_summary": "file contents",
+        "is_error": false
+      }
+    ],
+    "usage": {
+      "input_tokens": 1000,
+      "output_tokens": 200,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0
+    },
+    "truncated": false,
+    "error": false,
+    "reason": "",
+    "session_rotated": false,
+    "session_rotation_pending": false,
+    "force_chain": false,
+    "task_compact_requested": false,
+    "session_id": "ses-contract",
+    "num_turns": 1
+  },
+  "raised": null,
+  "activity": [
+    {
+      "type": "tool_result",
+      "content": "file contents",
+      "tool": "Read",
+      "meta": {
+        "tool_use_id": "tu_1",
+        "is_error": false
+      }
+    }
+  ]
+}

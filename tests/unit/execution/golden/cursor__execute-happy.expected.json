@@ -1,0 +1,31 @@
+{
+  "engine": "cursor",
+  "supports_streaming": false,
+  "path": "execute",
+  "scenario": "happy",
+  "events": null,
+  "result": {
+    "text": "Context before the tool call.\n\nFinal answer after the tool call.",
+    "tool_call_records": [
+      {
+        "tool_name": "Read",
+        "tool_id": "",
+        "input_summary": "{'args': {'path': 'README.md'}, 'result': {'success': {'content': 'contents'}}}",
+        "result_summary": "",
+        "is_error": false
+      }
+    ],
+    "usage": null,
+    "truncated": false,
+    "error": false,
+    "reason": "",
+    "session_rotated": false,
+    "session_rotation_pending": false,
+    "force_chain": false,
+    "task_compact_requested": false,
+    "session_id": null,
+    "num_turns": null
+  },
+  "raised": null,
+  "activity": []
+}

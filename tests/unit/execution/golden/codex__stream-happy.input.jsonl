@@ -1,0 +1,4 @@
+{"kind": "text", "text": "Context before the tool call."}
+{"kind": "command", "id": "cmd-1", "command": "printf result", "output": "result", "exit_code": 0}
+{"kind": "final_response", "text": "Final answer after the tool call."}
+{"kind": "usage", "input_tokens": 100, "output_tokens": 50}

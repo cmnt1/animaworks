@@ -1,0 +1,5 @@
+{"method": "session/update", "params": {"update": {"sessionUpdate": "agent_thought_chunk", "content": {"type": "text", "text": "think"}}}}
+{"method": "session/update", "params": {"update": {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Hello "}}}}
+{"method": "session/update", "params": {"update": {"sessionUpdate": "tool_call", "toolCallId": "tool-1", "title": "fallback-name", "rawInput": {"query": "hello"}, "_meta": {"x.ai/tool": {"name": "mcp__aw__search_memory"}}}}}
+{"method": "session/update", "params": {"update": {"sessionUpdate": "tool_call_update", "toolCallId": "tool-1", "status": "completed", "rawOutput": {"answer": "found"}}}}
+{"method": "session/update", "params": {"update": {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "world"}}}}

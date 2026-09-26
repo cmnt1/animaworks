@@ -1,0 +1,56 @@
+{
+  "engine": "litellm",
+  "supports_streaming": true,
+  "path": "execute",
+  "scenario": "happy",
+  "events": null,
+  "result": {
+    "text": "Final answer",
+    "tool_call_records": [
+      {
+        "tool_name": "search_memory",
+        "tool_id": "call_1",
+        "input_summary": "{'query': 'test'}",
+        "result_summary": "<tool_result tool=\"search_memory\" trust=\"trusted\">\nNo results for 'test'\n</tool_result>",
+        "is_error": false
+      }
+    ],
+    "usage": {
+      "input_tokens": 300,
+      "output_tokens": 50,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0
+    },
+    "truncated": false,
+    "error": false,
+    "reason": "",
+    "session_rotated": false,
+    "session_rotation_pending": false,
+    "force_chain": false,
+    "task_compact_requested": false,
+    "session_id": null,
+    "num_turns": null
+  },
+  "raised": null,
+  "activity": [
+    {
+      "type": "tool_use",
+      "summary": "{'query': 'test'}",
+      "tool": "search_memory",
+      "meta": {
+        "tool_use_id": "call_1"
+      }
+    },
+    {
+      "type": "tool_result",
+      "content": "No results for 'test'",
+      "tool": "search_memory",
+      "meta": {
+        "tool_use_id": "call_1",
+        "result_status": "ok",
+        "is_error": false,
+        "result_bytes": 21
+      }
+    }
+  ]
+}

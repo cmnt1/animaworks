@@ -1,0 +1,68 @@
+{
+  "engine": "grok",
+  "supports_streaming": true,
+  "path": "stream",
+  "scenario": "happy",
+  "events": [
+    {
+      "type": "thinking_delta",
+      "text": "think"
+    },
+    {
+      "type": "text_delta",
+      "text": "Hello "
+    },
+    {
+      "type": "tool_start",
+      "tool_name": "search_memory",
+      "tool_id": "tool-1",
+      "tool_detail": "{\"query\": \"hello\"}"
+    },
+    {
+      "type": "tool_end",
+      "tool_name": "search_memory",
+      "tool_id": "tool-1",
+      "result": "{\"answer\": \"found\"}",
+      "is_error": false
+    },
+    {
+      "type": "text_delta",
+      "text": "world"
+    },
+    {
+      "type": "done",
+      "full_text": "Hello world",
+      "result_message": {
+        "num_turns": 1,
+        "session_id": "session-new",
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 4,
+          "cache_read_tokens": 3,
+          "cache_write_tokens": 0
+        }
+      },
+      "tool_call_records": [
+        {
+          "tool_name": "search_memory",
+          "tool_id": "tool-1",
+          "input_summary": "{\"query\": \"hello\"}",
+          "result_summary": "{\"answer\": \"found\"}",
+          "is_error": false
+        }
+      ],
+      "usage": {
+        "input_tokens": 12,
+        "output_tokens": 4,
+        "cache_read_tokens": 3,
+        "cache_write_tokens": 0
+      },
+      "stop_kind": "normal",
+      "session_rotated": false,
+      "session_rotation_pending": false
+    }
+  ],
+  "result": null,
+  "raised": null,
+  "activity": []
+}
