@@ -108,7 +108,7 @@ class TestModeCFallback:
         guard.config.default_block_seconds = 60
 
         with (
-            patch("core.execution.engines.codex.codex_sdk.is_codex_sdk_available", return_value=False),
+            patch("core.execution.engines.codex.setup.is_codex_sdk_available", return_value=False),
             patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
             patch("core.config.model_config.resolve_effective_model_config", return_value=fallback),
             patch("core.execution.fallback_activity.log_model_fallback") as log_fallback,
@@ -126,7 +126,7 @@ class TestModeCFallback:
         agent = _make_agent(tmp_path, model="codex/gpt-5.3-codex", resolved_mode="C")
         agent.model_config.api_key_env = "OPENAI_API_KEY"
         with (
-            patch("core.execution.engines.codex.codex_sdk.is_codex_sdk_available", return_value=False),
+            patch("core.execution.engines.codex.setup.is_codex_sdk_available", return_value=False),
             patch("core.execution.LiteLLMExecutor") as litellm,
             pytest.raises(ExecutorUnavailableError, match="fallback_models"),
         ):
@@ -139,7 +139,7 @@ class TestModeCFallback:
         agent = _make_agent(tmp_path, model="codex/gpt-5.3-codex", resolved_mode="C")
         agent.model_config.api_key = "sk-ant-test"
         with (
-            patch("core.execution.engines.codex.codex_sdk.is_codex_sdk_available", return_value=False),
+            patch("core.execution.engines.codex.setup.is_codex_sdk_available", return_value=False),
             patch("core.execution.LiteLLMExecutor") as litellm,
             pytest.raises(ExecutorUnavailableError),
         ):

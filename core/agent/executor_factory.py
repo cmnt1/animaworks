@@ -11,8 +11,39 @@ are resolved at runtime via MRO when mixed into ``AgentCore``.
 """
 
 import logging
+from collections.abc import Callable
+from importlib import import_module
+from typing import Any
 
 logger = logging.getLogger("animaworks.agent")
+
+# Execution mode -> ("module:ExecutorClass", "module:availability_check" or None).
+# Imported lazily so a missing optional SDK/CLI only disables its own mode.
+ENGINE_ADAPTERS: dict[str, tuple[str, str | None]] = {
+    "s": ("core.execution.engines.claude.agent_sdk:AgentSDKExecutor", None),
+    "c": (
+        "core.execution.engines.codex.codex_sdk:CodexSDKExecutor",
+        "core.execution.engines.codex.setup:is_codex_sdk_available",
+    ),
+    "d": (
+        "core.execution.engines.cursor.cursor_agent:CursorAgentExecutor",
+        "core.execution.engines.cursor.cursor_agent:is_cursor_agent_available",
+    ),
+    "g": (
+        "core.execution.engines.gemini.gemini_cli:GeminiCLIExecutor",
+        "core.execution.engines.gemini.gemini_cli:is_gemini_cli_available",
+    ),
+    "x": (
+        "core.execution.engines.grok.grok_cli:GrokCLIExecutor",
+        "core.execution.engines.grok.grok_cli:is_grok_cli_available",
+    ),
+}
+
+
+def _resolve(path: str) -> Callable[..., Any]:
+    """Import ``module:attr`` and return the attribute."""
+    module_name, _, attr = path.partition(":")
+    return getattr(import_module(module_name), attr)
 
 
 class ExecutorFactoryMixin:
@@ -52,8 +83,6 @@ class ExecutorFactoryMixin:
 
     def _create_executor(self, model_config=None, *, _unavailable_modes=frozenset()):
         """Construct the selected adapter; only configured alternatives may replace it."""
-        from importlib import import_module
-
         from core.config.model_config import resolve_unavailable_model_config
         from core.exceptions import ExecutorUnavailableError
         from core.execution import LiteLLMExecutor
@@ -68,22 +97,16 @@ class ExecutorFactoryMixin:
             "personal_tools": self._personal_tools,
             "interrupt_event": self._interrupt_event,
         }
-        adapters = {
-            "s": ("agent_sdk", "AgentSDKExecutor", None),
-            "c": ("codex_sdk", "CodexSDKExecutor", "is_codex_sdk_available"),
-            "d": ("cursor_agent", "CursorAgentExecutor", "is_cursor_agent_available"),
-            "g": ("gemini_cli", "GeminiCLIExecutor", "is_gemini_cli_available"),
-            "x": ("grok_cli", "GrokCLIExecutor", "is_grok_cli_available"),
-        }
-        if mode in adapters:
-            module_name, class_name, availability = adapters[mode]
+        adapter = ENGINE_ADAPTERS.get(mode)
+        if adapter is not None:
+            executor_path, availability_path = adapter
+            class_name = executor_path.rpartition(":")[2]
             try:
                 if mode == "s" and not self._sdk_available:
                     raise ImportError("claude_agent_sdk unavailable")
-                module = import_module(f"core.execution.{module_name}")
-                if availability and not getattr(module, availability)():
+                if availability_path and not _resolve(availability_path)():
                     raise ImportError(f"{class_name} unavailable")
-                executor_class = getattr(module, class_name)
+                executor_class = _resolve(executor_path)
             except ImportError as exc:
                 unavailable = _unavailable_modes | {mode.upper()}
                 fallback = resolve_unavailable_model_config(active_config, unavailable_modes=unavailable)

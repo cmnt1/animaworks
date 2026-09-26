@@ -482,7 +482,7 @@ async def _try_codex_sdk(
         logger.debug("Codex SDK not available for one-shot fallback")
         return None
 
-    from core.execution.engines.codex.codex_sdk import _default_path_env, _resolve_codex_model
+    from core.execution.engines.codex.setup import _default_path_env, _resolve_codex_model
     from core.platform.codex import default_home_dir, get_codex_executable
 
     env: dict[str, str] = {

@@ -21,15 +21,8 @@ mechanism with thread IDs persisted to the shortterm directory.
 """
 
 import asyncio
-import inspect
-import json
 import logging
-import os
-import shutil
-import sys
-import threading
 from collections.abc import AsyncGenerator
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -38,330 +31,26 @@ from core.execution.base import (
     StreamDisconnectedError,
     TokenUsage,
     ToolCallRecord,
-    _truncate_for_record,
 )
 from core.execution.cli_stream import CLIStreamExecutor
-from core.execution.error_classifier import (
-    FailoverReason,
-    classify_llm_error_message,
-    guard_key,
-    provider_family_of,
-)
 from core.execution.events import stream_events
-from core.execution.process_runner import ProcessRunner
-from core.execution.rate_guard import get_rate_guard
 from core.execution.session_context import _resolve_session_type
 from core.execution.session_store import SessionRecord, SessionStore
 from core.execution.session_types import is_persistent_codex_session
 from core.execution.tool_evidence import ToolEvidence
 from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS, wait_for_engine_event
-from core.platform.codex import default_home_dir, get_codex_executable
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
 
+from . import events, setup
+
 logger = logging.getLogger("animaworks.execution.codex_sdk")
 
-__all__ = ["CodexSDKExecutor", "clear_codex_thread_id", "clear_codex_thread_ids", "is_codex_sdk_available"]
+__all__ = ["CodexSDKExecutor", "clear_codex_thread_id", "clear_codex_thread_ids"]
 
 RESUME_TIMEOUT_SEC = 15.0
-
-# asyncio.StreamReader default limit is 64 KB.  Codex CLI may echo the full
-# context (including system prompt) in a single JSONL line during thread
-# resume, triggering LimitOverrunError.  Skip resume when close to this limit.
 _RESUME_PROMPT_SIZE_LIMIT = 50_000
 _FATAL_STDERR_PATTERNS = ("error: stream closed",)
-
-# Increase the asyncio.StreamReader buffer limit for Codex subprocess pipes.
-# The default 64 KB (2**16) is too small for large prompts that produce JSONL
-# lines exceeding 64 KB on stdout (e.g., thread resume with full context echo).
-# 16 MB provides ample headroom for realistic prompt sizes.
-_SUBPROCESS_STREAM_LIMIT = 16 * 1024 * 1024  # 16 MB
-
-_CODEX_REASONING_SUMMARY_DEFAULT = "concise"
-_CODEX_REASONING_SUMMARY_VALUES = {"auto", "concise", "detailed", "none"}
-_CODEX_CLIENT_PROCESS_WAIT_TIMEOUT_SEC = 2.0
-_CODEX_CLIENT_READER_JOIN_TIMEOUT_SEC = 2.0
-
-
-# ── Model name helpers ───────────────────────────────────────
-
-
-def _resolve_codex_model(model: str) -> str:
-    """Strip supported Codex provider prefixes to get the bare CLI model name."""
-    if model.startswith("codex/"):
-        return model[len("codex/") :]
-    if model.startswith("openai-codex/"):
-        return model[len("openai-codex/") :]
-    return model
-
-
-def is_codex_sdk_available() -> bool:
-    """Return True when ``openai_codex`` is importable."""
-    try:
-        import openai_codex  # noqa: F401
-
-        return True
-    except Exception:
-        return False
-
-
-def _codex_error_metadata(message: str, model: str) -> dict[str, Any]:
-    """Classify a Codex event error, report fleet blocks, and return chunk metadata."""
-    reason, hint = classify_llm_error_message(message)
-    if reason in {
-        FailoverReason.RATE_LIMIT,
-        FailoverReason.OVERLOADED,
-        FailoverReason.QUOTA_EXHAUSTED,
-    }:
-        try:
-            guard = get_rate_guard()
-            cfg = guard.config
-            block_seconds = (
-                cfg.quota_block_seconds if reason is FailoverReason.QUOTA_EXHAUSTED else cfg.default_block_seconds
-            )
-            guard.report_block(
-                guard_key(provider_family_of(model), "codex"),
-                block_seconds,
-                reason.value,
-                reset_in_s=hint.reset_in_s,
-            )
-        except Exception:
-            # Classification must not turn a provider error event into an
-            # executor failure.  The shared guard remains fail-open.
-            logger.debug("failed to report Codex error to rate guard", exc_info=True)
-
-    if hint.is_terminal or not hint.retryable:
-        return {"terminal": True, "reason": reason.value}
-    return {}
-
-
-def _patch_reasoning_effort_enum() -> None:
-    """openai_codex SDKのReasoningEffort enumに未知値を動的追加する。
-
-    Codex CLI (0.144.x+) はgpt-5.6系の新effort値 ``ultra`` をレスポンスに
-    エコーするが、SDK 0.1.0b3のenumは ``xhigh`` までしか定義しておらず
-    pydantic検証（ThreadStartResponse等）で落ちる。``_missing_`` フックで
-    未知の文字列値をメンバーとして遅延生成し、後方互換を保つ。
-    SDK側がenumを更新したら不要になる。
-    """
-    try:
-        from openai_codex.generated.v2_all import ReasoningEffort
-    except Exception:
-        return
-    if getattr(ReasoningEffort, "_animaworks_dynamic_members", False):
-        return
-
-    def _missing_(cls: type, value: object) -> object | None:
-        if not isinstance(value, str):
-            return None
-        member = object.__new__(cls)
-        member._name_ = value
-        member._value_ = value
-        cls._value2member_map_[value] = member
-        return member
-
-    ReasoningEffort._missing_ = classmethod(_missing_)  # type: ignore[method-assign]
-    ReasoningEffort._animaworks_dynamic_members = True  # type: ignore[attr-defined]
-
-
-def _is_openai_api_key(key: str) -> bool:
-    """Return True if *key* looks like a genuine OpenAI API key."""
-    return bool(key) and not key.startswith("sk-ant-")
-
-
-@dataclass(frozen=True)
-class _CodexProviderConfig:
-    model: str
-    provider: str
-    is_azure: bool = False
-    base_url: str | None = None
-    api_version: str | None = None
-    env_key: str = "OPENAI_API_KEY"
-    wire_api: str = "responses"
-
-
-def _is_codex_azure_config(model_config: ModelConfig) -> bool:
-    """Return True when the resolved credential explicitly selects Azure for Codex."""
-    return model_config.credential_type == "codex_azure"
-
-
-def _normalize_azure_openai_base_url(base_url: str) -> str:
-    """Return the Azure OpenAI Codex provider base URL with the required /openai suffix."""
-    normalized = base_url.rstrip("/")
-    if normalized.endswith("/openai"):
-        return normalized
-    return f"{normalized}/openai"
-
-
-def _resolve_codex_provider_config(model_config: ModelConfig) -> _CodexProviderConfig:
-    """Resolve Codex CLI provider settings from the AnimaWorks model config."""
-    extra = model_config.extra_keys or {}
-    model = extra.get("codex_model") or _resolve_codex_model(model_config.model)
-
-    if not _is_codex_azure_config(model_config):
-        return _CodexProviderConfig(model=model, provider="openai")
-
-    if not model_config.api_base_url:
-        raise ValueError("Codex Azure credential requires base_url for the Azure OpenAI resource")
-    api_version = extra.get("api_version")
-    if not api_version:
-        raise ValueError("Codex Azure credential requires keys.api_version")
-
-    return _CodexProviderConfig(
-        model=model,
-        provider="azure",
-        is_azure=True,
-        base_url=_normalize_azure_openai_base_url(model_config.api_base_url),
-        api_version=api_version,
-        env_key="AZURE_OPENAI_API_KEY",
-        wire_api=extra.get("codex_wire_api") or "responses",
-    )
-
-
-def _escape_toml_string(value: str) -> str:
-    """Escape a string for safe embedding in a TOML double-quoted value."""
-    escapes = {
-        "\\": "\\\\",
-        '"': '\\"',
-        "\b": "\\b",
-        "\t": "\\t",
-        "\n": "\\n",
-        "\f": "\\f",
-        "\r": "\\r",
-    }
-    result: list[str] = []
-    for char in value:
-        escaped = escapes.get(char)
-        if escaped is not None:
-            result.append(escaped)
-        elif ord(char) < 0x20 or ord(char) == 0x7F:
-            result.append(f"\\u{ord(char):04X}")
-        else:
-            result.append(char)
-    return "".join(result)
-
-
-def _git_metadata_write_paths(root: Path, *, forbidden_ancestors: list[Path] | None = None) -> list[Path]:
-    """Return git metadata directories that must be writable for *root*.
-
-    Codex remounts a writable root's ``.git`` read-only as a built-in
-    safeguard, which breaks ``git worktree``/``commit`` operations for
-    repository workspaces.  Explicit more-specific rules (or standalone
-    writable roots) override that protection.
-
-    Handles both layouts:
-      - ``root/.git`` is a directory → the repository's own metadata.
-      - ``root/.git`` is a file (linked worktree) → resolve the ``gitdir:``
-        pointer and its ``commondir`` so the primary repository's metadata
-        is writable too.
-
-    ``forbidden_ancestors`` guards the resolved-pointer path: ``root/.git``
-    file contents are writable by the sandboxed model itself, so a
-    hand-crafted ``gitdir:`` must never widen access into runtime or
-    explicitly denied trees.
-    """
-    git_path = root / ".git"
-    forbidden = [p.resolve() for p in (forbidden_ancestors or [])]
-
-    def _allowed(path: Path) -> bool:
-        return not any(path == anc or path.is_relative_to(anc) for anc in forbidden)
-
-    results: list[Path] = []
-    try:
-        if git_path.is_dir():
-            results.append(git_path.resolve())
-        elif git_path.is_file():
-            content = git_path.read_text(encoding="utf-8", errors="replace").strip()
-            if content.startswith("gitdir:"):
-                gitdir = Path(content[len("gitdir:") :].strip())
-                if not gitdir.is_absolute():
-                    gitdir = root / gitdir
-                gitdir = gitdir.resolve()
-                if gitdir.is_dir() and _allowed(gitdir):
-                    results.append(gitdir)
-                    commondir_file = gitdir / "commondir"
-                    if commondir_file.is_file():
-                        common = Path(commondir_file.read_text(encoding="utf-8").strip())
-                        if not common.is_absolute():
-                            common = gitdir / common
-                        common = common.resolve()
-                        if common.is_dir() and _allowed(common):
-                            results.append(common)
-    except OSError:
-        return []
-    # Drop paths already inside a returned ancestor to keep rules minimal.
-    deduped: list[Path] = []
-    for path in results:
-        if not any(path == kept or path.is_relative_to(kept) for kept in deduped):
-            deduped.append(path)
-    return deduped
-
-
-def _default_home_dir() -> str:
-    """Return a stable HOME value for Codex child processes across platforms."""
-    return default_home_dir()
-
-
-def _resolve_animaworks_server_url() -> str:
-    """Resolve ANIMAWORKS_SERVER_URL for MCP subprocess env.
-
-    Preference order:
-      1. Existing process env
-      2. system.worker.gateway_url / system.gateway host+port from config
-      3. http://localhost:18500
-    """
-    existing = os.environ.get("ANIMAWORKS_SERVER_URL", "").strip()
-    if existing:
-        return existing.rstrip("/")
-    try:
-        from core.config.models import load_config
-
-        cfg = load_config()
-        gw_url = (cfg.system.worker.gateway_url or "").strip()
-        if gw_url:
-            return gw_url.rstrip("/")
-        host = (cfg.system.gateway.host or "localhost").strip()
-        if host in ("0.0.0.0", "::", "[::]"):
-            host = "localhost"
-        port = cfg.system.gateway.port or 18500
-        return f"http://{host}:{port}"
-    except Exception:
-        logger.debug(
-            "Failed to resolve server URL from config; using default",
-            exc_info=True,
-        )
-        return "http://localhost:18500"
-
-
-def _default_path_env() -> str:
-    """Return a non-empty PATH fallback for Codex child processes."""
-    path_parts: list[str] = []
-    executable = get_codex_executable()
-    if executable:
-        path_parts.append(str(Path(executable).resolve().parent))
-
-    # Ensure child Codex sessions can resolve helper CLIs installed into the
-    # same Python environment that launched AnimaWorks.
-    python_bin = str(Path(sys.executable).resolve().parent)
-    if python_bin:
-        path_parts.append(python_bin)
-
-    # Editable/dev installs often keep helper entry points in the project venv
-    # even when the parent PATH was started from a different shell profile.
-    try:
-        from core.paths import PROJECT_DIR
-
-        project_venv_bin = PROJECT_DIR / ".venv" / ("Scripts" if os.name == "nt" else "bin")
-        if project_venv_bin.is_dir():
-            path_parts.append(str(project_venv_bin))
-    except Exception:
-        logger.debug("Failed to resolve project venv bin for Codex PATH", exc_info=True)
-
-    existing = os.environ.get("PATH")
-    if existing:
-        path_parts.append(existing)
-    return os.pathsep.join(dict.fromkeys(part for part in path_parts if part))
-
 
 # ── Session (thread) ID persistence ──────────────────────────
 
@@ -400,478 +89,6 @@ def clear_codex_thread_ids(anima_dir: Path, chat_thread_id: str = "default") -> 
 
 
 # ── Helpers ──────────────────────────────────────────────────
-
-
-def _get_thread_id(thread: Any) -> str | None:
-    """Safely extract the thread ID from a Codex Thread object."""
-    for attr in ("id", "thread_id"):
-        val = getattr(thread, attr, None)
-        if val:
-            return str(val)
-    return None
-
-
-def _is_desktop_extension_codex(executable: str | None) -> bool:
-    """Return True when the Codex binary comes from a desktop-app extension bundle."""
-    if not executable:
-        return False
-    norm = executable.replace("/", "\\").lower()
-    return "\\.antigravity\\extensions\\openai.chatgpt-" in norm or "\\windowsapps\\openai.codex_" in norm
-
-
-def _should_prefer_cli_exec(trigger: str) -> bool:
-    """Prefer direct ``codex exec`` for unstable desktop-bundled background sessions."""
-    forced = os.environ.get("ANIMAWORKS_CODEX_FORCE_CLI_EXEC", "").strip().lower()
-    if forced in {"1", "true", "yes", "on"}:
-        return True
-
-    is_background = (
-        trigger == "heartbeat"
-        or trigger.startswith("cron:")
-        or trigger.startswith("inbox")
-        or trigger.startswith("task:")
-    )
-    if not is_background or sys.platform != "win32":
-        return False
-    return _is_desktop_extension_codex(get_codex_executable())
-
-
-def _close_stream_transport(stream: Any, stream_name: str) -> None:
-    """Best-effort close for subprocess stdio objects.
-
-    ``asyncio`` subprocess readers expose the underlying pipe transport via a
-    private ``_transport`` attribute, while writers expose ``close()``.  Close
-    both when available so parent-side pipe descriptors do not linger across
-    repeated background runs.
-    """
-    if stream is None:
-        return
-
-    close = getattr(stream, "close", None)
-    if callable(close):
-        try:
-            close()
-        except Exception:
-            logger.debug("Failed to close Codex subprocess %s stream", stream_name, exc_info=True)
-
-    transport = getattr(stream, "_transport", None) or getattr(stream, "transport", None)
-    if transport is not None:
-        try:
-            transport.close()
-        except Exception:
-            logger.debug("Failed to close Codex subprocess %s transport", stream_name, exc_info=True)
-
-
-def _close_subprocess_stdio(proc: asyncio.subprocess.Process) -> None:
-    """Best-effort close of parent-side subprocess stdio transports."""
-    _close_stream_transport(getattr(proc, "stdin", None), "stdin")
-    _close_stream_transport(getattr(proc, "stdout", None), "stdout")
-    _close_stream_transport(getattr(proc, "stderr", None), "stderr")
-
-
-_ITEM_TYPE_ALIASES = {
-    "agentMessage": "agent_message",
-    "commandExecution": "command_execution",
-    "mcpToolCall": "mcp_tool_call",
-    "fileChange": "file_change",
-    "webSearch": "web_search",
-    "dynamicToolCall": "dynamic_tool_call",
-    "collabAgentToolCall": "collab_agent_tool_call",
-}
-
-
-def _get_attr(obj: Any, name: str, default: Any = None) -> Any:
-    """Return an attribute/key from SDK models, dicts, and lightweight test objects."""
-    if isinstance(obj, dict):
-        return obj.get(name, default)
-    return getattr(obj, name, default)
-
-
-def _get_first_attr(obj: Any, *names: str, default: Any = None) -> Any:
-    for name in names:
-        value = _get_attr(obj, name, default)
-        if value is not default:
-            return value
-    return default
-
-
-def _get_str(obj: Any, *names: str) -> str:
-    for name in names:
-        value = _get_attr(obj, name, None)
-        if isinstance(value, str):
-            return value
-    return ""
-
-
-def _get_list(obj: Any, *names: str) -> list[Any]:
-    for name in names:
-        value = _get_attr(obj, name, None)
-        if isinstance(value, list):
-            return value
-    return []
-
-
-def _unwrap_thread_item(item: Any) -> Any:
-    """Unwrap new SDK ``ThreadItem`` RootModel values while tolerating mocks."""
-    root = _get_attr(item, "root", None)
-    if root is not None and (_get_str(root, "type") or _get_str(root, "id")):
-        return root
-    return item
-
-
-def _normalise_item_type(item_type: str) -> str:
-    if not item_type:
-        return ""
-    return _ITEM_TYPE_ALIASES.get(item_type, item_type)
-
-
-def _item_type(item: Any) -> str:
-    return _normalise_item_type(_get_str(_unwrap_thread_item(item), "type"))
-
-
-def _item_id(item: Any) -> str:
-    return _get_str(_unwrap_thread_item(item), "id")
-
-
-def _event_method(event: Any) -> str:
-    """Return the Codex notification method, normalising old dotted test events."""
-    method = _get_str(event, "method")
-    if method:
-        return method
-    etype = _get_str(event, "type")
-    if "." in etype:
-        return etype.replace(".", "/")
-    return etype
-
-
-def _payload_looks_real(payload: Any) -> bool:
-    if payload is None:
-        return False
-    if _get_str(payload, "thread_id", "threadId", "turn_id", "turnId", "item_id", "itemId"):
-        return True
-    if _get_str(payload, "delta", "message"):
-        return True
-    item = _get_attr(payload, "item", None)
-    if item is not None and _item_type(item):
-        return True
-    turn = _get_attr(payload, "turn", None)
-    return bool(turn is not None and _get_str(turn, "id"))
-
-
-def _event_payload(event: Any) -> Any:
-    payload = _get_attr(event, "payload", None)
-    if _payload_looks_real(payload):
-        return payload
-    return event
-
-
-def _payload_item_id(payload: Any) -> str:
-    return _get_str(payload, "item_id", "itemId")
-
-
-def _payload_delta(payload: Any) -> str:
-    return _get_str(payload, "delta")
-
-
-def _extract_item_text(item: Any) -> str:
-    """Extract text content from a Codex completed item."""
-    item = _unwrap_thread_item(item)
-    content = _get_attr(item, "content", None)
-    if content is not None:
-        if isinstance(content, str):
-            return content
-        if isinstance(content, list):
-            parts: list[str] = []
-            for part in content:
-                part_text = _get_str(part, "text")
-                if part_text:
-                    parts.append(part_text)
-                elif isinstance(part, str):
-                    parts.append(part)
-            return "".join(parts)
-    text = _get_str(item, "text")
-    if text:
-        return text
-    summary = _get_list(item, "summary")
-    if summary:
-        return "".join(str(part) for part in summary)
-    return ""
-
-
-def _codex_item_tool_name(item: Any, item_type: str) -> str:
-    """Derive a human-readable tool name from a Codex item."""
-    item = _unwrap_thread_item(item)
-    item_type = _normalise_item_type(item_type)
-    if item_type == "mcp_tool_call":
-        server = _get_str(item, "server")
-        tool = _get_str(item, "tool")
-        return f"{server}/{tool}" if server else tool or "mcp_tool"
-    if item_type == "command_execution":
-        cmd = _get_str(item, "command")
-        return cmd[:60] if cmd else "command"
-    if item_type == "file_change":
-        return "file_change"
-    if item_type == "web_search":
-        query = _get_str(item, "query")
-        return f"web_search: {query[:48]}" if query else "web_search"
-    return _get_str(item, "name") or item_type or "unknown"
-
-
-def _item_to_tool_record(item: Any) -> ToolCallRecord | None:
-    """Convert a Codex item (command_execution / mcp_tool_call) to a ``ToolCallRecord``."""
-    try:
-        item = _unwrap_thread_item(item)
-        item_type = _item_type(item)
-        tool_id = _item_id(item)
-        if item_type == "mcp_tool_call":
-            name = _codex_item_tool_name(item, item_type)
-            input_data = _get_attr(item, "arguments", {})
-            result_obj = _get_attr(item, "result", None)
-            result_data = str(_get_attr(result_obj, "content", "")) if result_obj else ""
-            error_obj = _get_attr(item, "error", None)
-            is_error = error_obj is not None
-            return ToolCallRecord(
-                tool_name=name,
-                tool_id=tool_id,
-                input_summary=_truncate_for_record(str(input_data), 500),
-                result_summary=_truncate_for_record(result_data, 500),
-                is_error=is_error,
-            )
-        if item_type == "command_execution":
-            cmd = _get_str(item, "command")
-            output = _get_str(item, "aggregated_output", "aggregatedOutput")
-            exit_code = _get_first_attr(item, "exit_code", "exitCode", default=None)
-            is_error = exit_code is not None and exit_code != 0
-            return ToolCallRecord(
-                tool_name=cmd[:80] if cmd else "command",
-                tool_id=tool_id,
-                input_summary=_truncate_for_record(cmd, 500),
-                result_summary=_truncate_for_record(output, 500),
-                is_error=is_error,
-            )
-        if item_type == "file_change":
-            changes = _get_list(item, "changes")
-            detail = _format_file_changes(changes)
-            return ToolCallRecord(
-                tool_name="file_change",
-                tool_id=tool_id,
-                input_summary=_truncate_for_record(detail, 500),
-                result_summary=_truncate_for_record(_get_str(item, "status") or detail, 500),
-                is_error=False,
-            )
-        # Legacy fallback for unknown tool-like items
-        name = _get_str(item, "name") or "unknown"
-        input_data = _get_attr(item, "input", {})
-        result_data = _get_attr(item, "output", "")
-        return ToolCallRecord(
-            tool_name=name,
-            tool_id=tool_id,
-            input_summary=_truncate_for_record(str(input_data), 500),
-            result_summary=_truncate_for_record(str(result_data), 500),
-        )
-    except Exception:
-        return None
-
-
-def _extract_tool_records(items: list[Any]) -> list[ToolCallRecord]:
-    records: list[ToolCallRecord] = []
-    for item in items:
-        itype = _item_type(item)
-        if itype in ("tool_use", "command_execution", "mcp_tool_call", "file_change"):
-            rec = _item_to_tool_record(item)
-            if rec:
-                records.append(rec)
-    return records
-
-
-def _synthesise_fallback(tool_records: list[ToolCallRecord]) -> str:
-    """Build a short fallback text when the model produced no text output."""
-    names = [r.tool_name for r in tool_records[:5]]
-    suffix = ", …" if len(tool_records) > 5 else ""
-    fallback = f"(completed {len(tool_records)} tool call(s): {', '.join(names)}{suffix})"
-    logger.warning(
-        "Codex SDK produced no text output; synthesised fallback (tools=%d)",
-        len(tool_records),
-    )
-    return fallback
-
-
-def _usage_to_dict(usage: Any) -> dict[str, int]:
-    """Normalise a Codex usage object (or dict) to a plain dict."""
-    if isinstance(usage, dict):
-        result: dict[str, int] = {}
-        key_aliases = {
-            "input_tokens": ("input_tokens", "inputTokens", "prompt_tokens", "promptTokens"),
-            "output_tokens": ("output_tokens", "outputTokens", "completion_tokens", "completionTokens"),
-            "cached_input_tokens": ("cached_input_tokens", "cachedInputTokens", "cache_read_tokens"),
-            "cache_write_input_tokens": ("cache_write_input_tokens", "cacheWriteInputTokens", "cache_write_tokens"),
-            "reasoning_output_tokens": ("reasoning_output_tokens", "reasoningOutputTokens"),
-            "total_tokens": ("total_tokens", "totalTokens"),
-        }
-        for out_key, aliases in key_aliases.items():
-            for alias in aliases:
-                val = usage.get(alias)
-                if val is not None:
-                    result[out_key] = int(val)
-                    break
-        return result or usage
-    total_usage = _get_attr(usage, "total", None)
-    if total_usage is not None and any(
-        isinstance(_get_attr(total_usage, key, None), int)
-        for key in ("input_tokens", "output_tokens", "prompt_tokens", "completion_tokens")
-    ):
-        usage = total_usage
-    d: dict[str, int] = {}
-    for key in (
-        "input_tokens",
-        "output_tokens",
-        "prompt_tokens",
-        "completion_tokens",
-        "cached_input_tokens",
-        "cache_write_input_tokens",
-        "reasoning_output_tokens",
-        "total_tokens",
-    ):
-        val = getattr(usage, key, None)
-        if val is not None:
-            d[key] = int(val)
-    return d
-
-
-def _token_usage(usage: Any) -> TokenUsage:
-    """Codex input includes cached tokens; retain that convention explicitly."""
-    raw = _usage_to_dict(usage)
-    return TokenUsage(
-        input_tokens=raw.get("input_tokens", 0) or raw.get("prompt_tokens", 0),
-        output_tokens=raw.get("output_tokens", 0) or raw.get("completion_tokens", 0),
-        cache_read_tokens=raw.get("cached_input_tokens", 0),
-        cache_write_tokens=raw.get("cache_write_input_tokens", 0),
-    )
-
-
-class _CodexUsageAccumulator:
-    """Turn-local deltas from thread totals, including resumed/reset counters.
-
-    The first notification of a resumed thread can include months of usage.
-    Its ``last`` is the first observed request of this turn, not the whole
-    turn. Later monotonic totals supply deltas (also recovering omitted
-    intermediate notifications); counter resets use the new request's last.
-    Repeated snapshots are ignored. A fresh thread has a known zero baseline.
-    """
-
-    def __init__(self, *, fresh_thread: bool = False) -> None:
-        self._fresh_thread = fresh_thread
-        self._previous: dict[str, int] | None = None
-
-    def update(self, raw: Any) -> TokenUsage:
-        total_raw = _get_attr(raw, "total", None)
-        last_raw = _get_attr(raw, "last", None)
-        # Flat usage is already scoped to a turn (CLI/older SDK events).
-        structured = total_raw is not None
-        total = _token_usage(total_raw if structured else raw).to_dict()
-        previous = self._previous
-        if total == previous:
-            return TokenUsage()
-        self._previous = total
-        if previous is None:
-            if structured and not self._fresh_thread:
-                if last_raw is None:
-                    logger.warning("Codex resumed usage has no request breakdown; cumulative total not charged")
-                    return TokenUsage()
-                return _token_usage(last_raw)
-            return TokenUsage(**total)
-        if all(total[key] >= previous[key] for key in total):
-            return TokenUsage(**{key: total[key] - previous[key] for key in total})
-        # Ordered notifications can restart a counter epoch. Do not retain
-        # historic fingerprints: the new epoch can repeat an earlier total.
-        return _token_usage(last_raw) if last_raw is not None else TokenUsage(**total)
-
-
-def _format_file_changes(changes: list[Any]) -> str:
-    parts: list[str] = []
-    for change in changes:
-        kind = _get_attr(change, "kind", "")
-        kind_text = getattr(kind, "value", kind)
-        path = _get_str(change, "path")
-        if kind_text or path:
-            parts.append(f"{kind_text}: {path}".strip(": "))
-    return "; ".join(parts[:10])
-
-
-def _enum_text(value: Any) -> str:
-    return str(getattr(value, "value", value) or "")
-
-
-def _format_plan_update(payload: Any) -> str:
-    """Format Codex plan updates for the existing GUI thinking channel."""
-    lines: list[str] = []
-    explanation = _get_str(payload, "explanation").strip()
-    if explanation:
-        lines.append(explanation)
-
-    for step in _get_list(payload, "plan")[:10]:
-        step_text = _get_str(step, "step", "text").strip()
-        if not step_text:
-            continue
-        status_text = _enum_text(_get_attr(step, "status", "")).strip()
-        if status_text:
-            lines.append(f"[{status_text}] {step_text}")
-        else:
-            lines.append(step_text)
-
-    return "\n".join(lines)
-
-
-def _cli_exec_result_text(result: Any) -> str:
-    """Extract text from a Codex CLI exec result payload."""
-    if isinstance(result, dict):
-        content = result.get("content")
-        if isinstance(content, list):
-            parts: list[str] = []
-            for part in content:
-                if isinstance(part, dict) and part.get("type") == "text":
-                    parts.append(str(part.get("text", "")))
-            if parts:
-                return "".join(parts)
-        if "text" in result:
-            return str(result.get("text", ""))
-    if isinstance(result, str):
-        return result
-    return ""
-
-
-def _cli_exec_item_to_tool_record(item: dict[str, Any]) -> ToolCallRecord | None:
-    """Convert a JSON event item from `codex exec --json` into a ToolCallRecord."""
-    try:
-        item_type = str(item.get("type", ""))
-        tool_id = str(item.get("id", ""))
-        if item_type == "mcp_tool_call":
-            server = str(item.get("server", ""))
-            tool = str(item.get("tool", ""))
-            name = f"{server}/{tool}" if server else tool or "mcp_tool"
-            result_text = _cli_exec_result_text(item.get("result"))
-            return ToolCallRecord(
-                tool_name=name,
-                tool_id=tool_id,
-                input_summary=_truncate_for_record(str(item.get("arguments", {})), 500),
-                result_summary=_truncate_for_record(result_text, 500),
-                is_error=item.get("error") is not None,
-            )
-        if item_type == "command_execution":
-            cmd = str(item.get("command", ""))
-            output = str(item.get("aggregated_output", "") or item.get("output", ""))
-            exit_code = item.get("exit_code")
-            is_error = exit_code is not None and exit_code != 0
-            return ToolCallRecord(
-                tool_name=cmd[:80] if cmd else "command",
-                tool_id=tool_id,
-                input_summary=_truncate_for_record(cmd, 500),
-                result_summary=_truncate_for_record(output, 500),
-                is_error=is_error,
-            )
-    except Exception:
-        return None
-    return None
 
 
 def _stderr_contains_fatal_signal(text: str) -> bool:
@@ -913,154 +130,7 @@ def _is_limit_overrun(exc: BaseException) -> bool:
     return False
 
 
-@dataclass
-class CodexResultMessage:
-    """Adapter providing the ``num_turns`` / ``session_id`` interface
-    expected by ``AgentCore`` session-chaining logic."""
-
-    num_turns: int = 0
-    session_id: str = ""
-    usage: dict[str, int] | None = None
-
-
-def _wrap_result_message(
-    turn: Any,
-    thread: Any | None = None,
-    completed_turns: int = 0,
-) -> CodexResultMessage:
-    """Wrap a Codex turn/event into a ``CodexResultMessage``."""
-    usage_raw = getattr(turn, "usage", None)
-    usage = _usage_to_dict(usage_raw) if usage_raw else None
-    raw_num_turns = getattr(turn, "num_turns", 0)
-    try:
-        num_turns = int(raw_num_turns or 0)
-    except (TypeError, ValueError):
-        num_turns = 0
-    num_turns = num_turns or completed_turns
-    if num_turns <= 0 and turn is not None:
-        num_turns = 1
-    session_id = ""
-    if thread:
-        session_id = _get_thread_id(thread) or ""
-    return CodexResultMessage(
-        num_turns=num_turns,
-        session_id=session_id,
-        usage=usage,
-    )
-
-
-async def _maybe_await(value: Any) -> Any:
-    if inspect.isawaitable(value):
-        return await value
-    return value
-
-
-def _declared_codex_private_attr(owner: Any, attr_name: str) -> Any:
-    """Read a declared SDK private attribute without triggering dynamic mocks."""
-    try:
-        attributes = vars(owner)
-        if attr_name not in attributes:
-            return None
-        return getattr(owner, attr_name, None)
-    except Exception:
-        logger.warning(
-            "Failed to inspect Codex SDK cleanup resource %s",
-            attr_name,
-            exc_info=True,
-        )
-        return None
-
-
-def _codex_client_transport_resources(client: Any) -> tuple[Any, threading.Thread | None, threading.Thread | None]:
-    """Snapshot SDK transport resources before ``close()`` clears them.
-
-    Current ``AsyncCodex`` nests the transport at ``_client._sync``;
-    older/test clients may expose it at ``_sync`` or directly.  These are
-    private SDK details, so every ``getattr`` is deliberately best-effort.
-    """
-    owners = [client]
-    for link_name in ("_client", "_sync"):
-        for owner in tuple(owners):
-            nested = _declared_codex_private_attr(owner, link_name)
-            if nested is not None and all(nested is not existing for existing in owners):
-                owners.append(nested)
-
-    resources: list[Any] = [None, None, None]
-    for attr_name in ("_proc", "_reader_thread", "_stderr_thread"):
-        resource_index = ("_proc", "_reader_thread", "_stderr_thread").index(attr_name)
-        for owner in owners:
-            value = _declared_codex_private_attr(owner, attr_name)
-            if value is not None:
-                resources[resource_index] = value
-                break
-
-    proc, reader_thread, stderr_thread = resources
-    return (
-        proc,
-        reader_thread if isinstance(reader_thread, threading.Thread) else None,
-        stderr_thread if isinstance(stderr_thread, threading.Thread) else None,
-    )
-
-
-def _finish_codex_client_transport(
-    proc: Any,
-    reader_thread: threading.Thread | None,
-    stderr_thread: threading.Thread | None,
-) -> None:
-    """Force-close a Codex SDK transport after the SDK's own cleanup."""
-    if proc is not None:
-        ProcessRunner.terminate_popen_sync(proc, timeout=_CODEX_CLIENT_PROCESS_WAIT_TIMEOUT_SEC)
-
-        # Close pipes before joining readers so a blocked readline receives EOF.
-        try:
-            _close_subprocess_stdio(proc)
-        except Exception:
-            logger.warning("Failed to close Codex SDK subprocess pipes", exc_info=True)
-
-    for thread_name, thread in (
-        ("reader", reader_thread),
-        ("stderr", stderr_thread),
-    ):
-        if thread is None:
-            continue
-        try:
-            if thread.is_alive():
-                thread.join(timeout=_CODEX_CLIENT_READER_JOIN_TIMEOUT_SEC)
-            if thread.is_alive():
-                logger.warning("Codex SDK %s thread is still alive after cleanup", thread_name)
-        except Exception:
-            logger.warning("Failed to join Codex SDK %s thread", thread_name, exc_info=True)
-
-
-async def _close_codex_client(client: Any) -> None:
-    proc, reader_thread, stderr_thread = _codex_client_transport_resources(client)
-
-    try:
-        close = getattr(client, "close", None)
-    except Exception:
-        logger.warning("Failed to inspect Codex SDK close method", exc_info=True)
-        close = None
-    if callable(close):
-        try:
-            await _maybe_await(close())
-        except Exception:
-            logger.warning("Failed to close Codex SDK client", exc_info=True)
-
-    try:
-        await asyncio.to_thread(
-            _finish_codex_client_transport,
-            proc,
-            reader_thread,
-            stderr_thread,
-        )
-    except Exception:
-        logger.warning("Failed to finish Codex SDK transport cleanup", exc_info=True)
-
-
-# ── Executor ─────────────────────────────────────────────────
-
-
-class CodexSDKExecutor(CLIStreamExecutor):
+class CodexSDKExecutor(events.CodexEventsMixin, CLIStreamExecutor):
     """Execute via Codex SDK (Mode C).
 
     The SDK spawns the Codex CLI as a subprocess.  Tool access is secured by
@@ -1087,7 +157,7 @@ class CodexSDKExecutor(CLIStreamExecutor):
 
     def _format_stream_exception(self, error: Exception) -> tuple[str, str]:
         logger.exception("Codex execution failed after observed usage")
-        metadata = _codex_error_metadata(str(error), self._model_config.model)
+        metadata = events._codex_error_metadata(str(error), self._model_config.model)
         return f"[Codex SDK Error: {error}]", str(metadata.get("reason") or "")
 
     def _stream_exception_usage(self, error: Exception) -> TokenUsage | None:
@@ -1099,726 +169,17 @@ class CodexSDKExecutor(CLIStreamExecutor):
     def _stream_result_truncated(self, final_event: dict[str, Any]) -> bool:
         return final_event.get("stop_kind") == "interrupted"
 
-    def _on_stream_cancel(self, error: asyncio.CancelledError, events: list[dict[str, Any]]) -> None:
+    def _on_stream_cancel(self, error: asyncio.CancelledError, stream_events: list[dict[str, Any]]) -> None:
         evidence = ToolEvidence()
         usage = TokenUsage()
-        for event in events:
+        for event in stream_events:
             evidence.observe(event)
             if event.get("type") == "usage":
-                usage.merge(_token_usage(event.get("usage") or {}))
+                usage.merge(events._token_usage(event.get("usage") or {}))
         evidence.merge(getattr(error, "tool_call_records", None) or [])
         error.usage = usage.to_dict()
         error.usage_already_emitted = False
         error.tool_call_records = evidence.to_dicts()
-
-    # ── Environment / config helpers ─────────────────────────
-
-    def _build_env(self) -> dict[str, str]:
-        """Build env dict for the Codex CLI child process."""
-        from core.execution.session_context import current_runtime_session
-        from core.paths import PROJECT_DIR
-
-        env: dict[str, str] = {
-            "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
-            "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
-            "PATH": _default_path_env(),
-            "CODEX_HOME": str(self._codex_home),
-            "HOME": _default_home_dir(),
-        }
-        ctx = current_runtime_session()
-        if ctx is not None:
-            env.update(ctx.to_env())
-        # Windows requires SYSTEMROOT for Winsock/TLS initialisation and
-        # TEMP/TMP for scratch files.  Without these the Codex CLI subprocess
-        # fails with OS error 10106 (WSAEPROVIDERFAILEDINIT).
-        if sys.platform == "win32":
-            for var in ("SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "APPDATA"):
-                val = os.environ.get(var)
-                if val:
-                    env[var] = val
-        api_key = self._resolve_api_key()
-        if _is_codex_azure_config(self._model_config):
-            if api_key:
-                env["AZURE_OPENAI_API_KEY"] = api_key
-            elif os.environ.get("AZURE_OPENAI_API_KEY"):
-                env["AZURE_OPENAI_API_KEY"] = os.environ["AZURE_OPENAI_API_KEY"]
-            from core.execution.github_identity import resolve_github_token_env
-
-            env.update(resolve_github_token_env(self._anima_dir))
-            return env
-
-        if api_key and _is_openai_api_key(api_key):
-            env["OPENAI_API_KEY"] = api_key
-        elif api_key:
-            logger.debug(
-                "Skipping non-OpenAI API key for Codex env (prefix=%s…); relying on cached ChatGPT auth",
-                api_key[:8],
-            )
-        # Only forward api_base_url when it is a genuine OpenAI-compatible
-        # endpoint.  The default credential may point to Ollama
-        # (127.0.0.1:11434) which must NOT be injected as OPENAI_BASE_URL
-        # — the Codex CLI uses model_provider in config.toml for routing.
-        base = self._model_config.api_base_url
-        if base and ":11434" not in base:
-            env["OPENAI_BASE_URL"] = base
-        from core.execution.github_identity import resolve_github_token_env
-
-        env.update(resolve_github_token_env(self._anima_dir))
-        return env
-
-    def _build_mcp_env(self) -> dict[str, str]:
-        """Build env dict for the MCP server subprocess."""
-        from core.execution.session_context import current_runtime_session
-        from core.paths import PROJECT_DIR
-
-        env = {
-            "ANIMAWORKS_ANIMA_DIR": str(self._anima_dir),
-            "ANIMAWORKS_PROJECT_DIR": str(PROJECT_DIR),
-            "PYTHONPATH": str(PROJECT_DIR),
-            "PATH": _default_path_env(),
-            "ANIMAWORKS_SERVER_URL": _resolve_animaworks_server_url(),
-        }
-        for name in ("ANIMAWORKS_EMBED_URL", "ANIMAWORKS_VECTOR_URL", "ANIMAWORKS_RERANK_URL"):
-            if value := os.environ.get(name):
-                env[name] = value
-        ctx = current_runtime_session()
-        if ctx is not None:
-            env.update(ctx.to_env())
-        return env
-
-    def _propagate_auth(self) -> None:
-        """Propagate ``auth.json`` from the default CODEX_HOME into per-anima CODEX_HOME.
-
-        This lets animas share the ChatGPT subscription auth obtained via
-        ``codex auth`` (or ``login_with_device_code``).  Token refreshes
-        propagate automatically when a symlink or hardlink is available.
-        On Windows, symlink creation may be disallowed for non-admin users,
-        so we gracefully fall back to a hardlink and then to a plain file
-        copy.  If the per-anima directory already has a real ``auth.json``
-        (e.g. written by a prior API-key login), it is left untouched.
-        """
-        default_auth = Path.home() / ".codex" / "auth.json"
-        target = self._codex_home / "auth.json"
-
-        if target.exists() and not target.is_symlink():
-            return
-
-        if target.is_symlink():
-            if target.resolve() == default_auth.resolve():
-                return
-            target.unlink()
-
-        if default_auth.is_file():
-            try:
-                target.symlink_to(default_auth)
-                logger.info("Symlinked auth.json -> %s", default_auth)
-                return
-            except OSError as exc:
-                logger.debug("auth.json symlink unavailable; falling back: %s", exc)
-
-            try:
-                os.link(default_auth, target)
-                logger.info("Hardlinked auth.json -> %s", default_auth)
-                return
-            except OSError as exc:
-                logger.debug("auth.json hardlink unavailable; falling back to copy: %s", exc)
-
-            shutil.copy2(default_auth, target)
-            logger.warning(
-                "Copied auth.json from %s into %s; future token refreshes may require re-sync",
-                default_auth,
-                target,
-            )
-
-    # Injected via config.toml ``developer_instructions`` so the Codex
-    # model always produces a visible text response, even when it only
-    # performed tool calls internally.  ``model_instructions_file``
-    # replaces the Codex CLI's built-in system prompt (which contains its
-    # own "preamble messages" guidance), so we must re-introduce the
-    # requirement explicitly.
-    _CODEX_DEVELOPER_INSTRUCTIONS: str = (
-        "IMPORTANT: You MUST always provide a text response to the user. "
-        "After performing any tool calls, write a concise text message "
-        "summarising what you did or responding to the user's message. "
-        "Never end a turn with only tool operations and no text output. "
-        "For conversational messages (greetings, questions, casual chat), "
-        "respond naturally in text before or after any tool use."
-    )
-
-    def _write_codex_config(self, system_prompt: str) -> None:
-        """Write CODEX_HOME config.toml and model instructions file.
-
-        The CODEX_HOME lives at ``{anima_dir}/.codex_home/`` and persists
-        across sessions so that Codex's thread data (``sessions/``) survives.
-        """
-        self._codex_home.mkdir(parents=True, exist_ok=True)
-        self._propagate_auth()
-
-        instructions_file = self._codex_home / "instructions.md"
-        instructions_file.write_text(system_prompt, encoding="utf-8")
-
-        provider_config = _resolve_codex_provider_config(self._model_config)
-        esc = _escape_toml_string
-
-        from core.config.file_access_policy import (
-            effective_write_roots,
-            resolve_effective_denied_roots,
-            shared_tool_cache_write_root,
-        )
-        from core.config.models import load_permissions
-
-        permissions_config = load_permissions(self._anima_dir)
-        write_roots = effective_write_roots(
-            self._anima_dir,
-            permissions_config.file_roots,
-            self._task_cwd,
-        )
-        tool_cache_root = shared_tool_cache_write_root(self._anima_dir)
-
-        denied_roots = list(
-            resolve_effective_denied_roots(
-                self._anima_dir,
-                getattr(permissions_config, "file_roots_denied", []),
-            )
-        )
-        if denied_roots:
-            from core.config.file_access_policy import foreign_owned_ssh_config_dirs, shell_internal_deny_paths
-
-            # Permission profiles and the legacy sandbox settings are mutually
-            # exclusive.  Start with broad read access, retain the charter
-            # writable roots (including temp for workspace-write parity), and
-            # carve denied subtrees out with more-specific ``deny`` rules.
-            root_is_writable = "/" in permissions_config.file_roots
-            data_dir = self._anima_dir.resolve().parent.parent
-
-            # The model-facing shell must not be able to replace trusted
-            # runtime inputs with symlinks that a later host-side prompt
-            # assembly would follow.  Runtime-data writes go through the
-            # constrained MCP APIs instead.
-            shell_filesystem_rules: dict[str, str] = {
-                ":root": "read",
-                ":tmpdir": "write",
-                ":slash_tmp": "write",
-                str(self._anima_dir.resolve()): "write",
-            }
-            git_forbidden = [data_dir, *(Path(r) for r in denied_roots)]
-
-            # The MCP server needs the same writable roots for constrained
-            # memory and messaging tools.  It uses a separate profile and
-            # does not expose arbitrary machine execution while deny is on.
-            mcp_filesystem_rules: dict[str, str] = {
-                ":root": "write" if root_is_writable else "read",
-            }
-            if not root_is_writable:
-                mcp_filesystem_rules[":tmpdir"] = "write"
-                mcp_filesystem_rules[":slash_tmp"] = "write"
-                mcp_filesystem_rules[str(self._anima_dir.resolve())] = "write"
-            for root in write_roots:
-                root_str = str(root)
-                # Charter: only companies/<own>/shared is writable under data_dir.
-                # Pin the company root itself as read so siblings (knowledge/,
-                # skills/, …) cannot inherit write from a looser parent rule.
-                if root.parent.name and root.name == "shared":
-                    company_root_str = str(root.parent)
-                    shell_filesystem_rules.setdefault(company_root_str, "read")
-                    mcp_filesystem_rules.setdefault(company_root_str, "read")
-                shell_filesystem_rules[root_str] = "write"
-                mcp_filesystem_rules[root_str] = "write"
-                for git_path in _git_metadata_write_paths(root, forbidden_ancestors=git_forbidden):
-                    git_path_str = str(git_path)
-                    shell_filesystem_rules[git_path_str] = "write"
-                    mcp_filesystem_rules[git_path_str] = "write"
-
-            for root in denied_roots:
-                resolved_root = str(Path(root).resolve())
-                shell_filesystem_rules[resolved_root] = "deny"
-                mcp_filesystem_rules[resolved_root] = "deny"
-
-            # External-tool caches (Chatwork/Slack message DBs and the
-            # identity map) live outside the Anima directory.  Without write
-            # access even a plain inbox read fails with EROFS.
-            if tool_cache_root is not None:
-                cache_root_str = str(tool_cache_root)
-                shell_filesystem_rules[cache_root_str] = "write"
-                mcp_filesystem_rules[cache_root_str] = "write"
-
-            # Authentication and all runtime state/cache copies must never be
-            # directly readable from the model shell.  The MCP profile keeps
-            # cache access for trusted, source-filtered search services.
-            for internal_path in shell_internal_deny_paths(self._anima_dir):
-                shell_filesystem_rules[str(internal_path)] = "deny"
-
-            # bwrap's user namespace maps root to nobody, so ssh rejects every
-            # root-owned drop-in that /etc/ssh/ssh_config includes ("Bad owner
-            # or permissions on /etc/ssh/ssh_config.d/…", exit 255).  Hiding
-            # the directory makes the Include glob match nothing.
-            for ssh_dropin_dir in foreign_owned_ssh_config_dirs():
-                shell_filesystem_rules[ssh_dropin_dir] = "deny"
-
-            # The sandboxed Anima must not be able to remove or weaken the
-            # policy that will be used to build its next session's profile.
-            # A file-specific read rule is more specific than the writable
-            # Anima root (and remains read-only even when ``:root`` is write).
-            permissions_path = str((self._anima_dir / "permissions.json").resolve())
-            shell_filesystem_rules[permissions_path] = "read"
-            mcp_filesystem_rules[permissions_path] = "read"
-
-            shell_filesystem_lines = "\n".join(
-                f'"{esc(path)}" = "{access}"' for path, access in shell_filesystem_rules.items()
-            )
-            mcp_filesystem_lines = "\n".join(
-                f'"{esc(path)}" = "{access}"' for path, access in mcp_filesystem_rules.items()
-            )
-            sandbox_lines = (
-                'default_permissions = "animaworks"\n'
-                'approval_policy = "never"\n'
-                "\n"
-                "[permissions.animaworks.filesystem]\n"
-                f"{shell_filesystem_lines}\n"
-                "\n"
-                "[permissions.animaworks.network]\n"
-                "enabled = true\n"
-                "\n"
-                "[permissions.animaworks_mcp.filesystem]\n"
-                f"{mcp_filesystem_lines}\n"
-                "\n"
-                "[permissions.animaworks_mcp.network]\n"
-                "enabled = true\n"
-            )
-        elif "/" in permissions_config.file_roots:
-            sandbox_lines = 'sandbox_mode = "danger-full-access"\napproval_policy = "never"\n'
-        else:
-            writable_roots = [str(self._anima_dir), *(str(root) for root in write_roots)]
-            if tool_cache_root is not None:
-                writable_roots.append(str(tool_cache_root))
-            # Standalone entries for git metadata escape Codex's built-in
-            # read-only remount of each writable root's ``.git``.
-            data_dir = self._anima_dir.resolve().parent.parent
-            for root_str in list(writable_roots):
-                for git_path in _git_metadata_write_paths(Path(root_str), forbidden_ancestors=[data_dir]):
-                    if str(git_path) not in writable_roots:
-                        writable_roots.append(str(git_path))
-            roots_list = ", ".join(f'"{esc(r)}"' for r in writable_roots)
-            sandbox_lines = (
-                'sandbox_mode = "workspace-write"\n'
-                'approval_policy = "never"\n'
-                "\n"
-                "[sandbox_workspace_write]\n"
-                f"writable_roots = [{roots_list}]\n"
-                "network_access = true\n"
-            )
-
-        mcp_env = self._build_mcp_env()
-        if denied_roots:
-            # The nested ``codex sandbox`` resolves the named profile from
-            # this per-Anima CODEX_HOME.  Set it explicitly rather than
-            # relying on the MCP launcher inheriting the parent environment.
-            mcp_env["CODEX_HOME"] = str(self._codex_home)
-            mcp_env["ANIMAWORKS_FILE_DENY_ACTIVE"] = "1"
-        mcp_env_lines = "\n".join(f'{k} = "{esc(v)}"' for k, v in mcp_env.items())
-        if denied_roots:
-            mcp_command = get_codex_executable()
-            if not mcp_command:
-                raise RuntimeError(
-                    "Codex CLI executable is required to sandbox the MCP server when file_roots_denied is configured"
-                )
-            mcp_args = [
-                "sandbox",
-                "-P",
-                "animaworks_mcp",
-                "--",
-                sys.executable,
-                "-m",
-                "core.mcp.server",
-            ]
-        else:
-            # Preserve the pre-profile MCP command exactly for Animas that do
-            # not opt in to read-deny enforcement.
-            mcp_command = sys.executable
-            mcp_args = ["-m", "core.mcp.server"]
-        mcp_args_toml = ", ".join(f'"{esc(arg)}"' for arg in mcp_args)
-        provider_section = ""
-        if provider_config.is_azure:
-            provider_section = (
-                f"\n"
-                f"[model_providers.azure]\n"
-                f'name = "Azure"\n'
-                f'base_url = "{esc(provider_config.base_url or "")}"\n'
-                f'env_key = "{esc(provider_config.env_key)}"\n'
-                f'query_params = {{ api-version = "{esc(provider_config.api_version or "")}" }}\n'
-                f'wire_api = "{esc(provider_config.wire_api)}"\n'
-            )
-
-        # Codex CLI側のeffort語彙（gpt-5.6系: low〜ultra）をそのまま渡す。
-        # Claude系のresolve_thinking_effort（maxクランプ）は適用しない。
-        reasoning_effort = (self._model_config.extra_keys or {}).get(
-            "codex_reasoning_effort"
-        ) or self._model_config.thinking_effort
-        effort_line = f'model_reasoning_effort = "{esc(reasoning_effort)}"\n' if reasoning_effort else ""
-        task_compaction_tokens = self._model_config.task_compaction_tokens
-        task_compaction_line = (
-            f"model_auto_compact_token_limit = {task_compaction_tokens}\n" if task_compaction_tokens > 0 else ""
-        )
-
-        config_toml = (
-            f'model = "{esc(provider_config.model)}"\n'
-            f"{effort_line}"
-            f"{task_compaction_line}"
-            f'model_provider = "{esc(provider_config.provider)}"\n'
-            f'model_instructions_file = "{esc(str(instructions_file))}"\n'
-            f'developer_instructions = "{esc(self._CODEX_DEVELOPER_INSTRUCTIONS)}"\n'
-            f'personality = "friendly"\n'
-            f'model_verbosity = "high"\n'
-            f"{sandbox_lines}"
-            f"{provider_section}"
-            f"\n"
-            f"[mcp_servers.aw]\n"
-            f'command = "{esc(mcp_command)}"\n'
-            f"args = [{mcp_args_toml}]\n"
-            f'default_tools_approval_mode = "approve"\n'
-            f"\n"
-            f"[mcp_servers.aw.env]\n"
-            f"{mcp_env_lines}\n"
-        )
-        (self._codex_home / "config.toml").write_text(config_toml, encoding="utf-8")
-        self._write_hooks()
-
-    def _write_hooks(self) -> None:
-        """Point Codex's PreToolUse hook at ``core.tooling.codex_command_hook``.
-
-        The hook runs on the host (outside the sandbox) and denies commands by the
-        global/per-anima deny lists plus the recursive-search guard.  ``-m`` works
-        from any cwd because the venv has an editable install of this repo.
-        """
-        import shlex
-
-        from core.paths import get_global_permissions_path
-
-        hook_cmd = " ".join(
-            shlex.quote(part)
-            for part in (
-                sys.executable,
-                "-m",
-                "core.tooling.codex_command_hook",
-                "--anima-dir",
-                str(self._anima_dir.resolve()),
-                "--global-permissions",
-                str(get_global_permissions_path()),
-            )
-        )
-        hooks = {
-            "hooks": {
-                "PreToolUse": [
-                    {
-                        "matcher": "Bash",
-                        "hooks": [{"type": "command", "command": hook_cmd, "timeout": 30}],
-                    }
-                ]
-            }
-        }
-        (self._codex_home / "hooks.json").write_text(json.dumps(hooks, indent=2) + "\n", encoding="utf-8")
-
-    def _create_codex_client(self) -> Any:
-        """Create an ``AsyncCodex`` SDK client instance."""
-        try:
-            from openai_codex import AsyncCodex, CodexConfig
-        except ModuleNotFoundError as e:
-            raise ImportError("openai_codex is required for Mode C (install openai-codex).") from e
-
-        _patch_reasoning_effort_enum()
-
-        executable = get_codex_executable()
-        config = CodexConfig(
-            codex_bin=executable,
-            cwd=str(self._task_cwd or self._anima_dir),
-            env=self._build_env(),
-            client_name="animaworks",
-            client_title="AnimaWorks",
-        )
-        return AsyncCodex(config)
-
-    def _sdk_approval_mode(self) -> Any:
-        from openai_codex import ApprovalMode
-
-        return ApprovalMode.deny_all
-
-    def _sdk_sandbox(self) -> Any:
-        from openai_codex import Sandbox
-
-        from core.config.models import load_permissions
-
-        permissions_config = load_permissions(self._anima_dir)
-        if "/" in permissions_config.file_roots:
-            return Sandbox.full_access
-        return Sandbox.workspace_write
-
-    def _sdk_reasoning_summary(self) -> Any | None:
-        raw_value = (self._model_config.extra_keys or {}).get(
-            "codex_reasoning_summary",
-            _CODEX_REASONING_SUMMARY_DEFAULT,
-        )
-        value = str(raw_value or _CODEX_REASONING_SUMMARY_DEFAULT).strip().lower()
-        if value in {"default", "true", "yes", "on"}:
-            value = _CODEX_REASONING_SUMMARY_DEFAULT
-        if value == "none":
-            return None
-        if value not in _CODEX_REASONING_SUMMARY_VALUES:
-            logger.warning(
-                "Invalid codex_reasoning_summary=%r; using %s",
-                raw_value,
-                _CODEX_REASONING_SUMMARY_DEFAULT,
-            )
-            value = _CODEX_REASONING_SUMMARY_DEFAULT
-
-        from openai_codex.generated.v2_all import ReasoningSummary, ReasoningSummaryValue
-
-        return ReasoningSummary(root=getattr(ReasoningSummaryValue, value))
-
-    def _codex_thread_kwargs(self, system_prompt: str) -> dict[str, Any]:
-        provider_config = _resolve_codex_provider_config(self._model_config)
-        kwargs: dict[str, Any] = {
-            "approval_mode": self._sdk_approval_mode(),
-            "base_instructions": system_prompt or None,
-            "cwd": str(self._task_cwd or self._anima_dir),
-            "developer_instructions": self._CODEX_DEVELOPER_INSTRUCTIONS,
-            "model": provider_config.model,
-            "model_provider": provider_config.provider,
-            # hooks.json (written by _write_hooks) only runs with persisted hook
-            # trust, which Codex grants via a TUI prompt we never see.  The hook
-            # source is our own module, so bypass the trust gate.  Verified on
-            # codex 0.151: config.toml keys / -c overrides do NOT enable it.
-            "config": {"bypass_hook_trust": True},
-        }
-        from core.config.file_access_policy import resolve_effective_denied_roots
-        from core.config.models import load_permissions
-
-        permissions_config = load_permissions(self._anima_dir)
-        denied_roots = resolve_effective_denied_roots(
-            self._anima_dir,
-            getattr(permissions_config, "file_roots_denied", []),
-        )
-        if not denied_roots:
-            kwargs["sandbox"] = self._sdk_sandbox()
-        return kwargs
-
-    def _codex_turn_kwargs(self) -> dict[str, Any]:
-        provider_config = _resolve_codex_provider_config(self._model_config)
-        kwargs: dict[str, Any] = {
-            "approval_mode": self._sdk_approval_mode(),
-            "cwd": str(self._task_cwd or self._anima_dir),
-            "model": provider_config.model,
-        }
-        # Sandbox is set at thread/config level. Passing the SDK enum per turn
-        # can drop config.toml details such as workspace network_access=true.
-        summary = self._sdk_reasoning_summary()
-        if summary is not None:
-            kwargs["summary"] = summary
-        return kwargs
-
-    def _build_cli_exec_command(self) -> list[str]:
-        """Build the `codex exec --json` command used as a runtime fallback."""
-        executable = get_codex_executable()
-        if not executable:
-            raise RuntimeError("Codex CLI executable not available for exec fallback")
-        return [
-            executable,
-            "exec",
-            "-C",
-            str(self._task_cwd or self._anima_dir),
-            "--skip-git-repo-check",
-            "--dangerously-bypass-hook-trust",  # see _codex_thread_kwargs
-            "--json",
-            "-",
-        ]
-
-    async def _execute_streaming_via_cli_exec(
-        self,
-        system_prompt: str,
-        prompt: str,
-        tracker: ContextTracker,
-        trigger: str = "",
-    ) -> AsyncGenerator[dict[str, Any], None]:
-        """Fallback executor using `codex exec --json` when the SDK transport is unstable."""
-        self._write_codex_config(system_prompt)
-        cmd = self._build_cli_exec_command()
-        env = self._build_env()
-        process_runner = ProcessRunner(drain_stderr=False)
-        proc = await process_runner.start(
-            *cmd,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-            limit=_SUBPROCESS_STREAM_LIMIT,
-        )
-        if proc.stdin is None or proc.stdout is None:
-            await process_runner.close()
-            _close_subprocess_stdio(proc)
-            raise RuntimeError("Codex CLI exec fallback missing stdin/stdout")
-
-        stderr_chunks: list[bytes] = []
-
-        async def _read_stderr() -> None:
-            if proc.stderr is None:
-                return
-            while True:
-                chunk = await proc.stderr.read(4096)
-                if not chunk:
-                    break
-                stderr_chunks.append(chunk)
-
-        stderr_task = asyncio.create_task(_read_stderr())
-        response_parts: list[str] = []
-        tool_records: list[ToolCallRecord] = []
-        tool_evidence = ToolEvidence(self._anima_dir)
-        usage_acc = TokenUsage()
-        emitted_tool_starts: set[str] = set()
-        usage_meter = _CodexUsageAccumulator(fresh_thread=True)
-        completed_turn_count = 0
-        turn_completed = False
-        thread_id = ""
-        usage_dict: dict[str, int] | None = None
-
-        try:
-            proc.stdin.write(prompt.encode("utf-8"))
-            await proc.stdin.drain()
-            proc.stdin.close()
-
-            while True:
-                line = await self.read_line(proc.stdout)
-                if not line:
-                    break
-                payload = self.parse_json_line(line)
-                if payload is None:
-                    continue
-
-                ptype = str(payload.get("type", ""))
-                if ptype == "thread.started":
-                    thread_id = str(payload.get("thread_id", ""))
-                    continue
-                if ptype in ("turn.started",):
-                    # CLI usage is turn-local, unlike native thread totals.
-                    usage_meter = _CodexUsageAccumulator(fresh_thread=True)
-                    turn_completed = False
-                    continue
-
-                if ptype == "item.started":
-                    item = payload.get("item") or {}
-                    item_type = str(item.get("type", ""))
-                    item_id = str(item.get("id", ""))
-                    if (
-                        item_type in ("command_execution", "mcp_tool_call", "file_change")
-                        and item_id not in emitted_tool_starts
-                    ):
-                        emitted_tool_starts.add(item_id)
-                        tool_evidence.started(item_id, _codex_item_tool_name(item, item_type))
-                        yield {
-                            "type": "tool_start",
-                            "tool_name": _codex_item_tool_name(type("Obj", (), item)(), item_type),
-                            "tool_id": item_id,
-                        }
-                    continue
-
-                if ptype == "item.completed":
-                    item = payload.get("item") or {}
-                    item_type = str(item.get("type", ""))
-                    item_id = str(item.get("id", ""))
-
-                    if item_type == "agent_message":
-                        text = str(item.get("text", ""))
-                        if text:
-                            response_parts.append(text)
-                            yield {"type": "text_delta", "text": text}
-                        continue
-
-                    if item_type in ("command_execution", "mcp_tool_call", "file_change"):
-                        tool_evidence.started(item_id, _codex_item_tool_name(item, item_type))
-                        if item_id not in emitted_tool_starts:
-                            emitted_tool_starts.add(item_id)
-                            yield {
-                                "type": "tool_start",
-                                "tool_name": _codex_item_tool_name(type("Obj", (), item)(), item_type),
-                                "tool_id": item_id,
-                            }
-                        if item_type == "command_execution":
-                            command = str(item.get("command", ""))
-                            output = str(item.get("aggregated_output") or item.get("output", ""))
-                            exit_code = item.get("exit_code")
-                            tool_evidence.record_tool_call(
-                                "Bash",
-                                {"command": command},
-                                item_id,
-                                output,
-                                is_error=exit_code is not None and exit_code != 0,
-                                extra_meta={"exit_code": exit_code} if exit_code is not None else None,
-                            )
-                        elif item_type == "file_change":
-                            detail = _format_file_changes(item.get("changes") or [])
-                            tool_evidence.record_tool_call(
-                                "Edit",
-                                {"file_path": detail},
-                                item_id,
-                                item.get("status", "") or detail,
-                            )
-                        rec = _cli_exec_item_to_tool_record(item) or _item_to_tool_record(item)
-                        if rec:
-                            tool_records.append(rec)
-                            tool_evidence.merge([rec])
-                        yield {
-                            "type": "tool_end",
-                            "tool_name": _codex_item_tool_name(type("Obj", (), item)(), item_type),
-                            "tool_id": item_id,
-                        }
-                        continue
-
-                if ptype == "turn.completed":
-                    if not turn_completed:
-                        completed_turn_count += 1
-                        turn_completed = True
-                    usage_dict = _usage_to_dict(payload.get("usage", {}))
-                    delta = usage_meter.update(usage_dict)
-                    usage_acc.merge(delta)
-                    if any(delta.to_dict().values()):
-                        yield {"type": "usage", "usage": delta.to_dict()}
-                    continue
-
-            returncode = await proc.wait()
-            await process_runner.close()
-            await stderr_task
-            stderr_text = b"".join(stderr_chunks).decode("utf-8", errors="replace").strip()
-            if returncode != 0:
-                raise RuntimeError(stderr_text or f"codex exec exited with code {returncode}")
-            if stderr_text:
-                logger.debug("Codex CLI exec stderr: %s", stderr_text[:500])
-        except BaseException as exc:
-            if isinstance(exc, (Exception, asyncio.CancelledError)):
-                exc.usage = usage_acc.to_dict()
-                exc.usage_already_emitted = True
-                exc.tool_call_records = tool_evidence.to_dicts()
-            raise
-        finally:
-            await process_runner.close()
-            stderr_task.cancel()
-            await asyncio.gather(stderr_task, return_exceptions=True)
-            _close_subprocess_stdio(proc)
-
-        full_text = "\n".join(response_parts)
-        if not full_text and tool_records:
-            full_text = _synthesise_fallback(tool_records)
-        replied_to = self._read_replied_to_file()
-        yield {
-            "type": "done",
-            "full_text": full_text,
-            "result_message": CodexResultMessage(
-                num_turns=completed_turn_count or int(bool(full_text or tool_records)),
-                session_id=thread_id,
-                usage=usage_acc.to_dict(),
-            ),
-            "replied_to_from_transcript": replied_to,
-            "tool_call_records": tool_evidence.to_dicts(),
-            "usage": usage_acc.to_dict(),
-            "usage_already_emitted": True,
-        }
 
     async def _execute_via_cli_exec(
         self,
@@ -1836,11 +197,11 @@ class CodexSDKExecutor(CLIStreamExecutor):
             async for ev in self._execute_streaming_via_cli_exec(system_prompt, prompt, tracker, trigger=trigger):
                 tool_evidence.observe(ev)
                 if ev.get("type") == "usage":
-                    usage_acc.merge(_token_usage(ev.get("usage") or {}))
+                    usage_acc.merge(events._token_usage(ev.get("usage") or {}))
                 elif ev.get("type") == "done":
                     final_event = ev
                     if not ev.get("usage_already_emitted"):
-                        usage_acc.merge(_token_usage(ev.get("usage") or {}))
+                        usage_acc.merge(events._token_usage(ev.get("usage") or {}))
         except BaseException as exc:
             if isinstance(exc, (Exception, asyncio.CancelledError)):
                 exc.usage = usage_acc.to_dict()
@@ -1876,7 +237,7 @@ class CodexSDKExecutor(CLIStreamExecutor):
         thread_kwargs = self._codex_thread_kwargs(system_prompt)
         if thread_id:
             try:
-                thread = await _maybe_await(codex.thread_resume(thread_id, **thread_kwargs))
+                thread = await setup._maybe_await(codex.thread_resume(thread_id, **thread_kwargs))
                 logger.info("Resumed Codex thread %s", thread_id)
                 return thread
             except Exception as e:
@@ -1887,7 +248,7 @@ class CodexSDKExecutor(CLIStreamExecutor):
                 )
                 if persist_thread:
                     _clear_thread_id(self._anima_dir, session_type, chat_thread_id)
-        thread = await _maybe_await(codex.thread_start(**thread_kwargs))
+        thread = await setup._maybe_await(codex.thread_start(**thread_kwargs))
         logger.info("Started fresh Codex thread")
         return thread
 
@@ -1904,10 +265,6 @@ class CodexSDKExecutor(CLIStreamExecutor):
             session_type,
             chat_thread_id,
         )
-
-    # ── Blocking execution ───────────────────────────────────
-
-    # ── Streaming execution ──────────────────────────────────
 
     @stream_events
     async def execute_streaming(
@@ -1947,7 +304,7 @@ class CodexSDKExecutor(CLIStreamExecutor):
             }
             return
 
-        if _should_prefer_cli_exec(trigger):
+        if setup._should_prefer_cli_exec(trigger):
             logger.info("Using `codex exec` streaming directly for trigger=%s", trigger)
             async for ev in self._execute_streaming_via_cli_exec(system_prompt, prompt, tracker, trigger=trigger):
                 yield ev
@@ -2034,8 +391,8 @@ class CodexSDKExecutor(CLIStreamExecutor):
                 persist_thread,
             )
             active_thread = thread
-            usage_meter = _CodexUsageAccumulator(fresh_thread=not tid or _get_thread_id(thread) != tid)
-            turn = await _maybe_await(thread.turn(prompt, **self._codex_turn_kwargs()))
+            usage_meter = events._CodexUsageAccumulator(fresh_thread=not tid or events._get_thread_id(thread) != tid)
+            turn = await setup._maybe_await(thread.turn(prompt, **self._codex_turn_kwargs()))
             stream = turn.stream()
             event_iter = stream.__aiter__()
             item_text_len: dict[str, int] = {}
@@ -2086,11 +443,11 @@ class CodexSDKExecutor(CLIStreamExecutor):
                             immediate_retry=True,
                         ) from e
 
-                    method = _event_method(event)
-                    payload = _event_payload(event)
+                    method = events._event_method(event)
+                    payload = events._event_payload(event)
                     if method in ("item/started", "item/updated", "item/completed"):
-                        received_item = _get_attr(payload, "item", None)
-                        received_type = _item_type(received_item)
+                        received_item = events._get_attr(payload, "item", None)
+                        received_type = events._item_type(received_item)
                         if received_type in (
                             "command_execution",
                             "mcp_tool_call",
@@ -2100,21 +457,22 @@ class CodexSDKExecutor(CLIStreamExecutor):
                             "collab_agent_tool_call",
                         ):
                             tool_evidence.started(
-                                _item_id(received_item), _codex_item_tool_name(received_item, received_type)
+                                events._item_id(received_item),
+                                events._codex_item_tool_name(received_item, received_type),
                             )
                     # A stop can race the final usage notification. Account
                     # for already-received usage before honoring interruption.
                     if method == "thread/tokenUsage/updated":
-                        event_turn_id = _get_str(payload, "turn_id", "turnId")
-                        active_turn_id = _get_str(turn, "id")
+                        event_turn_id = events._get_str(payload, "turn_id", "turnId")
+                        active_turn_id = events._get_str(turn, "id")
                         if event_turn_id and active_turn_id and event_turn_id != active_turn_id:
                             continue
-                        usage_chunk = _usage_from_raw(_get_attr(payload, "token_usage", None))
+                        usage_chunk = _usage_from_raw(events._get_attr(payload, "token_usage", None))
                         if usage_chunk:
                             yield usage_chunk
                     elif method == "turn/completed":
                         usage_chunk = _usage_from_raw(
-                            _get_attr(payload, "usage", None) or _get_attr(payload, "token_usage", None)
+                            events._get_attr(payload, "usage", None) or events._get_attr(payload, "token_usage", None)
                         )
                         if usage_chunk:
                             yield usage_chunk
@@ -2130,8 +488,8 @@ class CodexSDKExecutor(CLIStreamExecutor):
                         return
 
                     if method == "item/agentMessage/delta":
-                        item_id = _payload_item_id(payload)
-                        delta = _payload_delta(payload)
+                        item_id = events._payload_item_id(payload)
+                        delta = events._payload_delta(payload)
                         if delta:
                             agent_delta_seen.add(item_id)
                             _remember_agent_delta(item_id, delta)
@@ -2139,8 +497,8 @@ class CodexSDKExecutor(CLIStreamExecutor):
                         continue
 
                     if method in ("item/reasoning/textDelta", "item/reasoning/summaryTextDelta"):
-                        item_id = _payload_item_id(payload)
-                        delta = _payload_delta(payload)
+                        item_id = events._payload_item_id(payload)
+                        delta = events._payload_delta(payload)
                         if delta:
                             if item_id:
                                 item_text_len[item_id] = item_text_len.get(item_id, 0) + len(delta)
@@ -2149,8 +507,8 @@ class CodexSDKExecutor(CLIStreamExecutor):
                         continue
 
                     if method == "item/plan/delta":
-                        item_id = _payload_item_id(payload)
-                        delta = _payload_delta(payload)
+                        item_id = events._payload_item_id(payload)
+                        delta = events._payload_delta(payload)
                         if delta:
                             if item_id:
                                 item_text_len[item_id] = item_text_len.get(item_id, 0) + len(delta)
@@ -2159,53 +517,55 @@ class CodexSDKExecutor(CLIStreamExecutor):
                         continue
 
                     if method == "turn/plan/updated":
-                        detail = _format_plan_update(payload)
+                        detail = events._format_plan_update(payload)
                         if detail:
                             for chunk in _thinking_delta_chunks(detail):
                                 yield chunk
                         continue
 
                     if method == "item/commandExecution/outputDelta":
-                        tool_id = _payload_item_id(payload)
+                        tool_id = events._payload_item_id(payload)
                         start = _tool_start_chunk(tool_id, "command")
                         if start:
                             yield start
-                        detail = _payload_delta(payload)
+                        detail = events._payload_delta(payload)
                         detail_chunk = _tool_detail_chunk(tool_id, "command", detail)
                         if detail_chunk:
                             yield detail_chunk
                         continue
 
                     if method in ("item/fileChange/outputDelta", "item/fileChange/patchUpdated"):
-                        tool_id = _payload_item_id(payload)
+                        tool_id = events._payload_item_id(payload)
                         start = _tool_start_chunk(tool_id, "file_change")
                         if start:
                             yield start
-                        detail = _payload_delta(payload) or _format_file_changes(_get_list(payload, "changes"))
+                        detail = events._payload_delta(payload) or events._format_file_changes(
+                            events._get_list(payload, "changes")
+                        )
                         detail_chunk = _tool_detail_chunk(tool_id, "file_change", detail)
                         if detail_chunk:
                             yield detail_chunk
                         continue
 
                     if method == "item/mcpToolCall/progress":
-                        tool_id = _payload_item_id(payload)
+                        tool_id = events._payload_item_id(payload)
                         start = _tool_start_chunk(tool_id, "mcp_tool")
                         if start:
                             yield start
-                        detail_chunk = _tool_detail_chunk(tool_id, "mcp_tool", _get_str(payload, "message"))
+                        detail_chunk = _tool_detail_chunk(tool_id, "mcp_tool", events._get_str(payload, "message"))
                         if detail_chunk:
                             yield detail_chunk
                         continue
 
                     if method in ("item/started", "item/updated"):
-                        item = _get_attr(payload, "item", None)
+                        item = events._get_attr(payload, "item", None)
                         if item is None:
                             continue
-                        item_type = _item_type(item)
-                        item_id = _item_id(item)
+                        item_type = events._item_type(item)
+                        item_id = events._item_id(item)
 
                         if item_type == "agent_message":
-                            text = _extract_item_text(item)
+                            text = events._extract_item_text(item)
                             if text:
                                 prev_len = item_text_len.get(item_id, 0)
                                 if len(text) > prev_len:
@@ -2216,7 +576,7 @@ class CodexSDKExecutor(CLIStreamExecutor):
                                     yield {"type": "text_delta", "text": delta}
 
                         elif item_type in ("reasoning", "plan"):
-                            text = _extract_item_text(item)
+                            text = events._extract_item_text(item)
                             if text:
                                 prev_len = item_text_len.get(item_id, 0)
                                 if len(text) > prev_len:
@@ -2233,20 +593,20 @@ class CodexSDKExecutor(CLIStreamExecutor):
                             "dynamic_tool_call",
                             "collab_agent_tool_call",
                         ):
-                            start = _tool_start_chunk(item_id, _codex_item_tool_name(item, item_type))
+                            start = _tool_start_chunk(item_id, events._codex_item_tool_name(item, item_type))
                             if start:
                                 yield start
                         continue
 
                     if method == "item/completed":
-                        item = _get_attr(payload, "item", None)
+                        item = events._get_attr(payload, "item", None)
                         if item is None:
                             continue
-                        item_type = _item_type(item)
-                        item_id = _item_id(item)
+                        item_type = events._item_type(item)
+                        item_id = events._item_id(item)
 
                         if item_type == "agent_message":
-                            text = _extract_item_text(item)
+                            text = events._extract_item_text(item)
                             if text:
                                 if item_id in agent_delta_seen:
                                     _set_agent_text(item_id, text)
@@ -2261,7 +621,7 @@ class CodexSDKExecutor(CLIStreamExecutor):
                                 )
 
                         elif item_type in ("reasoning", "plan"):
-                            text = _extract_item_text(item)
+                            text = events._extract_item_text(item)
                             if text:
                                 prev_len = item_text_len.get(item_id, 0)
                                 if len(text) > prev_len:
@@ -2277,20 +637,22 @@ class CodexSDKExecutor(CLIStreamExecutor):
                             "dynamic_tool_call",
                             "collab_agent_tool_call",
                         ):
-                            tool_name = _codex_item_tool_name(item, item_type)
+                            tool_name = events._codex_item_tool_name(item, item_type)
                             start = _tool_start_chunk(item_id, tool_name)
                             if start:
                                 yield start
                             if item_type == "file_change":
-                                detail = _format_file_changes(_get_list(_unwrap_thread_item(item), "changes"))
+                                detail = events._format_file_changes(
+                                    events._get_list(events._unwrap_thread_item(item), "changes")
+                                )
                                 detail_chunk = _tool_detail_chunk(item_id, tool_name, detail)
                                 if detail_chunk:
                                     yield detail_chunk
                             if item_type == "command_execution":
-                                unwrapped = _unwrap_thread_item(item)
-                                command = _get_str(unwrapped, "command")
-                                output = _get_str(unwrapped, "aggregated_output", "aggregatedOutput")
-                                exit_code = _get_first_attr(unwrapped, "exit_code", "exitCode", default=None)
+                                unwrapped = events._unwrap_thread_item(item)
+                                command = events._get_str(unwrapped, "command")
+                                output = events._get_str(unwrapped, "aggregated_output", "aggregatedOutput")
+                                exit_code = events._get_first_attr(unwrapped, "exit_code", "exitCode", default=None)
                                 tool_evidence.record_tool_call(
                                     "Bash",
                                     {"command": command},
@@ -2300,14 +662,14 @@ class CodexSDKExecutor(CLIStreamExecutor):
                                     extra_meta={"exit_code": exit_code} if exit_code is not None else None,
                                 )
                             elif item_type == "file_change":
-                                status = _get_str(_unwrap_thread_item(item), "status")
+                                status = events._get_str(events._unwrap_thread_item(item), "status")
                                 tool_evidence.record_tool_call(
                                     "Edit",
                                     {"file_path": detail},
                                     item_id,
                                     status or detail,
                                 )
-                            rec = _item_to_tool_record(item)
+                            rec = events._item_to_tool_record(item)
                             if rec:
                                 all_tool_records.append(rec)
                                 tool_evidence.merge([rec])
@@ -2320,7 +682,7 @@ class CodexSDKExecutor(CLIStreamExecutor):
                                 }
 
                         else:
-                            text = _extract_item_text(item)
+                            text = events._extract_item_text(item)
                             if text:
                                 logger.info(
                                     "Codex item/completed type=%s has text (%d chars); emitting",
@@ -2342,13 +704,13 @@ class CodexSDKExecutor(CLIStreamExecutor):
 
                     if method == "turn/completed":
                         completed_turn_count += 1
-                        turn_result = _wrap_result_message(payload, thread, completed_turns=completed_turn_count)
-                        saved_tid = _get_thread_id(thread)
+                        turn_result = events._wrap_result_message(payload, thread, completed_turns=completed_turn_count)
+                        saved_tid = events._get_thread_id(thread)
                         if saved_tid and persist_thread:
                             _save_thread_id(self._anima_dir, saved_tid, session_type, chat_thread_id)
-                        turn_obj = _get_attr(payload, "turn", None)
-                        error_obj = _get_attr(turn_obj, "error", None)
-                        error_msg = _get_str(error_obj, "message")
+                        turn_obj = events._get_attr(payload, "turn", None)
+                        error_obj = events._get_attr(turn_obj, "error", None)
+                        error_msg = events._get_str(error_obj, "message")
                         if error_msg:
                             logger.error("Codex turn/completed error: %s", error_msg)
                             end_chunk = _thinking_end_chunk()
@@ -2357,13 +719,13 @@ class CodexSDKExecutor(CLIStreamExecutor):
                             yield {
                                 "type": "error",
                                 "message": f"[Codex turn failed: {error_msg}]",
-                                **_codex_error_metadata(error_msg, self._model_config.model),
+                                **events._codex_error_metadata(error_msg, self._model_config.model),
                             }
                         continue
 
                     if method == "turn/failed":
-                        err_obj = _get_attr(payload, "error", None)
-                        error_msg = _get_str(err_obj, "message") or str(err_obj or "")
+                        err_obj = events._get_attr(payload, "error", None)
+                        error_msg = events._get_str(err_obj, "message") or str(err_obj or "")
                         logger.error("Codex turn.failed: %s", error_msg)
                         end_chunk = _thinking_end_chunk()
                         if end_chunk:
@@ -2371,12 +733,12 @@ class CodexSDKExecutor(CLIStreamExecutor):
                         yield {
                             "type": "error",
                             "message": f"[Codex turn failed: {error_msg}]",
-                            **_codex_error_metadata(error_msg, self._model_config.model),
+                            **events._codex_error_metadata(error_msg, self._model_config.model),
                         }
                         continue
 
                     if method == "error":
-                        error_msg = _get_str(payload, "message") or str(payload)
+                        error_msg = events._get_str(payload, "message") or str(payload)
                         logger.error("Codex error event: %s", error_msg)
                         end_chunk = _thinking_end_chunk()
                         if end_chunk:
@@ -2384,7 +746,7 @@ class CodexSDKExecutor(CLIStreamExecutor):
                         yield {
                             "type": "error",
                             "message": f"[Codex error: {error_msg}]",
-                            **_codex_error_metadata(error_msg, self._model_config.model),
+                            **events._codex_error_metadata(error_msg, self._model_config.model),
                         }
                         continue
 
@@ -2473,13 +835,13 @@ class CodexSDKExecutor(CLIStreamExecutor):
                         ):
                             tool_evidence.observe(ev)
                             if ev.get("type") == "usage":
-                                usage_acc.merge(_token_usage(ev.get("usage") or {}))
+                                usage_acc.merge(events._token_usage(ev.get("usage") or {}))
                             elif ev.get("type") == "done":
                                 # Native requests before transport fallback
                                 # were also billed. Keep every result surface
                                 # consistent with the already-emitted deltas.
                                 if not ev.get("usage_already_emitted"):
-                                    delta = _token_usage(ev.get("usage") or {})
+                                    delta = events._token_usage(ev.get("usage") or {})
                                     usage_acc.merge(delta)
                                     if any(delta.to_dict().values()):
                                         yield {"type": "usage", "usage": delta.to_dict()}
@@ -2504,11 +866,11 @@ class CodexSDKExecutor(CLIStreamExecutor):
             if interrupted and not full_text:
                 full_text = "[Session interrupted by user]"
             if not full_text and all_tool_records:
-                full_text = _synthesise_fallback(all_tool_records)
+                full_text = events._synthesise_fallback(all_tool_records)
             if turn_result is None and (full_text or all_tool_records):
-                turn_result = CodexResultMessage(
+                turn_result = events.CodexResultMessage(
                     num_turns=max(1, completed_turn_count),
-                    session_id=_get_thread_id(active_thread) or "",
+                    session_id=events._get_thread_id(active_thread) or "",
                     usage=usage_acc.to_dict(),
                 )
             elif turn_result is not None:
@@ -2536,4 +898,4 @@ class CodexSDKExecutor(CLIStreamExecutor):
                 exc.tool_call_records = tool_evidence.to_dicts()
             raise
         finally:
-            await _close_codex_client(codex)
+            await setup._close_codex_client(codex)

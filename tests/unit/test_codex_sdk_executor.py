@@ -28,26 +28,30 @@ from core.execution.base import ExecutionResult, TokenUsage
 from core.execution.engines.codex.codex_sdk import (
     CodexSDKExecutor,
     _clear_thread_id,
-    _close_codex_client,
-    _close_subprocess_stdio,
+    _load_thread_id,
+    _save_thread_id,
+    _should_cli_exec_fallback,
+    _stderr_contains_fatal_signal,
+    clear_codex_thread_id,
+    clear_codex_thread_ids,
+)
+from core.execution.engines.codex.events import (
     _codex_item_tool_name,
     _CodexUsageAccumulator,
-    _default_home_dir,
-    _default_path_env,
     _extract_item_text,
     _extract_tool_records,
     _get_thread_id,
-    _is_desktop_extension_codex,
     _item_to_tool_record,
-    _load_thread_id,
-    _resolve_codex_model,
-    _save_thread_id,
-    _should_cli_exec_fallback,
-    _should_prefer_cli_exec,
-    _stderr_contains_fatal_signal,
     _usage_to_dict,
-    clear_codex_thread_id,
-    clear_codex_thread_ids,
+)
+from core.execution.engines.codex.setup import (
+    _close_codex_client,
+    _close_subprocess_stdio,
+    _default_home_dir,
+    _default_path_env,
+    _is_desktop_extension_codex,
+    _resolve_codex_model,
+    _should_prefer_cli_exec,
 )
 from core.prompt.context import ContextTracker
 
@@ -345,9 +349,9 @@ class TestHelpers:
 
     def test_should_prefer_cli_exec_for_windows_background_desktop_bundle(self, monkeypatch):
         monkeypatch.delenv("ANIMAWORKS_CODEX_FORCE_CLI_EXEC", raising=False)
-        monkeypatch.setattr("core.execution.engines.codex.codex_sdk.sys.platform", "win32")
+        monkeypatch.setattr("core.execution.engines.codex.setup.sys.platform", "win32")
         monkeypatch.setattr(
-            "core.execution.engines.codex.codex_sdk.get_codex_executable",
+            "core.execution.engines.codex.setup.get_codex_executable",
             lambda: (
                 r"C:\Users\cmnt\.antigravity\extensions\openai.chatgpt-26.313.41514-win32-x64\bin\windows-x86_64\codex.exe"
             ),
@@ -482,7 +486,7 @@ class TestExecutorInit:
         assert executor.supports_streaming is True
 
     def test_build_env_includes_api_key(self, executor):
-        with patch("core.execution.engines.codex.codex_sdk.PROJECT_DIR", "/fake/project", create=True):
+        with patch("core.paths.PROJECT_DIR", "/fake/project", create=True):
             env = executor._build_env()
         assert env.get("OPENAI_API_KEY") == "test-key-123"
         assert "CODEX_HOME" in env
@@ -564,7 +568,7 @@ class TestExecutorInit:
             codex_exe = "/opt/codex/bin/codex"
             base_path = "/usr/bin"
         with (
-            patch("core.execution.engines.codex.codex_sdk.get_codex_executable", return_value=codex_exe),
+            patch("core.execution.engines.codex.setup.get_codex_executable", return_value=codex_exe),
             patch.dict("os.environ", {"PATH": base_path}, clear=True),
         ):
             value = _default_path_env()
@@ -579,8 +583,8 @@ class TestExecutorInit:
             py_exe = "/home/user/proj/.venv/bin/python3"
             base_path = "/usr/bin"
         with (
-            patch("core.execution.engines.codex.codex_sdk.get_codex_executable", return_value=None),
-            patch("core.execution.engines.codex.codex_sdk.sys.executable", py_exe),
+            patch("core.execution.engines.codex.setup.get_codex_executable", return_value=None),
+            patch("core.execution.engines.codex.setup.sys.executable", py_exe),
             patch.dict("os.environ", {"PATH": base_path}, clear=True),
         ):
             value = _default_path_env()
@@ -592,7 +596,7 @@ class TestExecutorInit:
         fake_config = MagicMock()
 
         with (
-            patch("core.execution.engines.codex.codex_sdk.get_codex_executable", return_value=r"C:\Tools\codex.exe"),
+            patch("core.execution.engines.codex.setup.get_codex_executable", return_value=r"C:\Tools\codex.exe"),
             patch("openai_codex.CodexConfig", return_value=fake_config) as mock_config,
             patch("openai_codex.AsyncCodex", return_value=fake_client) as mock_codex,
         ):
@@ -675,7 +679,7 @@ class TestConfigWriting:
         permissions = SimpleNamespace(file_roots=["/"], file_roots_denied=[])
         with patch("core.config.models.load_permissions", return_value=permissions):
             assert executor._codex_thread_kwargs("prompt")["config"] == {"bypass_hook_trust": True}
-        with patch("core.execution.engines.codex.codex_sdk.get_codex_executable", return_value="/usr/bin/codex"):
+        with patch("core.execution.engines.codex.setup.get_codex_executable", return_value="/usr/bin/codex"):
             assert "--dangerously-bypass-hook-trust" in executor._build_cli_exec_command()
 
     def test_write_codex_config_toml_content(self, executor, anima_dir):
@@ -751,7 +755,7 @@ class TestConfigWriting:
 
         with (
             patch("core.config.models.load_permissions", return_value=permissions),
-            patch("core.execution.engines.codex.codex_sdk.get_codex_executable", return_value="/opt/codex/bin/codex"),
+            patch("core.execution.engines.codex.setup.get_codex_executable", return_value="/opt/codex/bin/codex"),
         ):
             exc._write_codex_config("prompt")
 
@@ -828,7 +832,7 @@ class TestConfigWriting:
 
         with (
             patch("core.config.models.load_permissions", return_value=permissions),
-            patch("core.execution.engines.codex.codex_sdk.get_codex_executable", return_value="/opt/codex/bin/codex"),
+            patch("core.execution.engines.codex.setup.get_codex_executable", return_value="/opt/codex/bin/codex"),
         ):
             exc._write_codex_config("prompt")
 
@@ -863,7 +867,7 @@ class TestConfigWriting:
 
         with (
             patch("core.config.models.load_permissions", return_value=permissions),
-            patch("core.execution.engines.codex.codex_sdk.get_codex_executable", return_value="/opt/codex/bin/codex"),
+            patch("core.execution.engines.codex.setup.get_codex_executable", return_value="/opt/codex/bin/codex"),
         ):
             exc._write_codex_config("prompt")
 
@@ -890,7 +894,7 @@ class TestConfigWriting:
 
         with (
             patch("core.config.models.load_permissions", return_value=permissions),
-            patch("core.execution.engines.codex.codex_sdk.get_codex_executable", return_value="/opt/codex/bin/codex"),
+            patch("core.execution.engines.codex.setup.get_codex_executable", return_value="/opt/codex/bin/codex"),
         ):
             exc._write_codex_config("prompt")
 
@@ -908,7 +912,7 @@ class TestConfigWriting:
 
         with (
             patch("core.config.models.load_permissions", return_value=permissions),
-            patch("core.execution.engines.codex.codex_sdk.get_codex_executable", return_value=None),
+            patch("core.execution.engines.codex.setup.get_codex_executable", return_value=None),
             pytest.raises(RuntimeError, match="sandbox the MCP server"),
         ):
             exc._write_codex_config("prompt")
@@ -932,7 +936,7 @@ class TestConfigWriting:
         from openai_codex.generated.v2_all import ReasoningEffort
         from pydantic import BaseModel
 
-        from core.execution.engines.codex.codex_sdk import _patch_reasoning_effort_enum
+        from core.execution.engines.codex.setup import _patch_reasoning_effort_enum
 
         class PreBuilt(BaseModel):
             effort: ReasoningEffort
@@ -1037,7 +1041,7 @@ class TestConfigWriting:
 
     def test_toml_escapes_special_characters(self, model_config, anima_dir):
         """Paths with quotes/backslashes are escaped in TOML output."""
-        from core.execution.engines.codex.codex_sdk import _escape_toml_string
+        from core.execution.engines.codex.setup import _escape_toml_string
 
         assert _escape_toml_string('path/with"quote') == 'path/with\\"quote'
         assert _escape_toml_string("path\\back") == "path\\\\back"
@@ -1050,9 +1054,9 @@ class TestConfigWriting:
         source_auth.write_text('{"token":"abc"}', encoding="utf-8")
 
         with (
-            patch("core.execution.engines.codex.codex_sdk.Path.home", return_value=default_codex.parent),
+            patch("core.execution.engines.codex.setup.Path.home", return_value=default_codex.parent),
             patch("pathlib.Path.symlink_to", side_effect=OSError("symlink blocked")),
-            patch("core.execution.engines.codex.codex_sdk.os.link", side_effect=OSError("hardlink blocked")),
+            patch("core.execution.engines.codex.setup.os.link", side_effect=OSError("hardlink blocked")),
         ):
             executor._codex_home.mkdir(parents=True, exist_ok=True)
             executor._propagate_auth()
@@ -1082,7 +1086,7 @@ class TestConfigWriting:
             codex_home=worker_one_home,
         )
 
-        with patch("core.execution.engines.codex.codex_sdk.Path.home", return_value=default_codex.parent):
+        with patch("core.execution.engines.codex.setup.Path.home", return_value=default_codex.parent):
             zero._write_codex_config("slot zero prompt")
             one._write_codex_config("slot one prompt")
 
@@ -1117,7 +1121,7 @@ def test_agent_executor_factory_forwards_worker_codex_home(model_config, anima_d
 
     sentinel = SimpleNamespace()
     with (
-        patch("core.execution.engines.codex.codex_sdk.is_codex_sdk_available", return_value=True),
+        patch("core.execution.engines.codex.setup.is_codex_sdk_available", return_value=True),
         patch("core.execution.engines.codex.codex_sdk.CodexSDKExecutor", return_value=sentinel) as constructor,
     ):
         result = factory._create_executor()
@@ -1212,7 +1216,7 @@ class TestBlockingExecution:
         mock_codex = _mock_codex(mock_thread)
 
         with (
-            patch("core.execution.engines.codex.codex_sdk._should_prefer_cli_exec", return_value=False),
+            patch("core.execution.engines.codex.setup._should_prefer_cli_exec", return_value=False),
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
         ):
             result = await executor.execute(
@@ -1238,7 +1242,7 @@ class TestBlockingExecution:
         _save_thread_id(anima_dir, "old-chat", "chat")
         _save_thread_id(anima_dir, "stale-inbox", "inbox", "inbox")
         with (
-            patch("core.execution.engines.codex.codex_sdk._should_prefer_cli_exec", return_value=False),
+            patch("core.execution.engines.codex.setup._should_prefer_cli_exec", return_value=False),
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
         ):
             result = await executor.execute(
@@ -1305,7 +1309,7 @@ class TestBlockingExecution:
             yield {"type": "done", "full_text": "cli preferred", "usage": {}}
 
         with (
-            patch("core.execution.engines.codex.codex_sdk._should_prefer_cli_exec", return_value=True),
+            patch("core.execution.engines.codex.setup._should_prefer_cli_exec", return_value=True),
             patch.object(executor, "_execute_streaming_via_cli_exec", side_effect=fallback) as mock_fallback,
             patch.object(executor, "_create_codex_client") as mock_client,
         ):
@@ -1431,7 +1435,7 @@ class TestStreamingExecution:
         events = []
 
         with (
-            patch("core.execution.engines.codex.codex_sdk._should_prefer_cli_exec", return_value=True),
+            patch("core.execution.engines.codex.setup._should_prefer_cli_exec", return_value=True),
             patch.object(executor, "_execute_streaming_via_cli_exec", side_effect=cli_events) as mock_fallback,
             patch.object(executor, "_create_codex_client") as mock_client,
         ):
@@ -1550,7 +1554,7 @@ class TestStreamingExecution:
 
         events = []
         with (
-            patch("core.execution.engines.codex.codex_sdk._should_prefer_cli_exec", return_value=False),
+            patch("core.execution.engines.codex.setup._should_prefer_cli_exec", return_value=False),
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
         ):
             tracker = ContextTracker(model="codex/o4-mini")
@@ -2334,7 +2338,7 @@ class TestProgressiveStreaming:
         events = []
         with (
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
-            patch("core.execution.engines.codex.codex_sdk.get_rate_guard", return_value=guard),
+            patch("core.execution.engines.codex.events.get_rate_guard", return_value=guard),
         ):
             tracker = ContextTracker(model="codex/o4-mini")
             async for ev in executor.execute_streaming(
@@ -2393,7 +2397,7 @@ class TestProgressiveStreaming:
         events = []
         with (
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
-            patch("core.execution.engines.codex.codex_sdk.get_rate_guard", return_value=guard),
+            patch("core.execution.engines.codex.events.get_rate_guard", return_value=guard),
         ):
             tracker = ContextTracker(model="codex/o4-mini")
             async for event in executor.execute_streaming(
@@ -2473,7 +2477,7 @@ class TestProgressiveStreaming:
         from core.execution.watchdog import Watchdog
 
         with (
-            patch("core.execution.engines.codex.codex_sdk._should_prefer_cli_exec", return_value=False),
+            patch("core.execution.engines.codex.setup._should_prefer_cli_exec", return_value=False),
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
             patch("core.execution.events.Watchdog", return_value=Watchdog(0.01)),
         ):
@@ -2756,7 +2760,7 @@ class TestCodexUsageDeltas:
             patch.object(executor, "_build_cli_exec_command", return_value=["codex", "exec"]),
             patch.object(executor, "_build_env", return_value={}),
             patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)),
-            patch("core.execution.engines.codex.codex_sdk._should_prefer_cli_exec", return_value=True),
+            patch("core.execution.engines.codex.setup._should_prefer_cli_exec", return_value=True),
         ):
             if blocking:
                 result = await executor.execute(prompt="p", trigger="task:test")
@@ -2877,7 +2881,7 @@ class TestPartialToolEvidence:
             patch.object(executor, "_build_cli_exec_command", return_value=["codex", "exec"]),
             patch.object(executor, "_build_env", return_value={}),
             patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)),
-            patch("core.execution.engines.codex.codex_sdk._should_prefer_cli_exec", return_value=True),
+            patch("core.execution.engines.codex.setup._should_prefer_cli_exec", return_value=True),
         ):
             if blocking:
                 result = await executor.execute(prompt="p", trigger="task:test")
