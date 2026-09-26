@@ -30,6 +30,7 @@ from core.execution.base import (
     tool_input_save_budget,
     tool_result_save_budget,
 )
+from core.execution.tool_evidence import ToolEvidence, sanitise_tool_args, summarise_tool_input
 from core.execution.watchdog import wait_for_engine_event
 from core.prompt.context import resolve_context_window
 
@@ -39,35 +40,13 @@ logger = logging.getLogger("animaworks.execution.agent_sdk")
 
 
 def _summarise_tool_input(tool_name: str, tool_input: dict[str, Any]) -> str:
-    """Return a concise one-line summary of tool_input for activity log content."""
-    if tool_name == "Bash":
-        cmd = tool_input.get("command", "")
-        return cmd[:300] if cmd else "(empty)"
-    if tool_name in ("Read", "Write", "Edit"):
-        return tool_input.get("file_path", "(no path)")
-    if tool_name == "Grep":
-        return tool_input.get("pattern", "(no pattern)")
-    if tool_name == "Glob":
-        return tool_input.get("pattern", "(no pattern)")
-    return str(tool_input)[:300]
+    """Return the shared activity summary for a tool input."""
+    return summarise_tool_input(tool_name, tool_input)
 
 
 def _sanitise_tool_args(tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
-    """Strip large payload fields from tool_input before logging."""
-    if tool_name == "Write":
-        sanitised = {k: v for k, v in tool_input.items() if k != "content"}
-        if "content" in tool_input:
-            sanitised["content_length"] = len(tool_input["content"])
-        return sanitised
-    if tool_name == "Edit":
-        sanitised = {}
-        for k, v in tool_input.items():
-            if k in ("old_string", "new_string"):
-                sanitised[k] = v[:200] if isinstance(v, str) else v
-            else:
-                sanitised[k] = v
-        return sanitised
-    return tool_input
+    """Return shared sanitized arguments for a tool input."""
+    return sanitise_tool_args(tool_name, tool_input)
 
 
 def _log_tool_use(
@@ -80,25 +59,13 @@ def _log_tool_use(
     block_reason: str = "",
 ) -> None:
     """Record a tool call to the activity log (best-effort, never raises)."""
-    try:
-        from core.memory.activity.logger import ActivityLogger
-
-        activity = ActivityLogger(anima_dir)
-        meta: dict[str, Any] = {"args": _sanitise_tool_args(tool_name, tool_input)}
-        if tool_use_id:
-            meta["tool_use_id"] = tool_use_id
-        if blocked:
-            meta["blocked"] = True
-            meta["reason"] = block_reason
-        activity.log(
-            "tool_use",
-            tool=tool_name,
-            content=_summarise_tool_input(tool_name, tool_input),
-            meta=meta,
-        )
-    except Exception:
-        # Never let logging failures disrupt tool execution.
-        logger.debug("Failed to log tool_use for %s", tool_name, exc_info=True)
+    ToolEvidence(anima_dir).record_tool_use(
+        tool_name,
+        tool_input,
+        tool_use_id=tool_use_id,
+        blocked=blocked,
+        block_reason=block_reason,
+    )
 
 
 def _log_tool_result(
@@ -116,22 +83,13 @@ def _log_tool_result(
     the existing ``tool_use_id`` / ``is_error`` keys.  When omitted the output
     is identical to the previous behaviour.
     """
-    try:
-        from core.memory.activity.logger import ActivityLogger
-
-        activity = ActivityLogger(anima_dir)
-        meta: dict[str, Any] = {"tool_use_id": tool_use_id, "is_error": is_error}
-        if extra_meta:
-            for key, value in extra_meta.items():
-                meta.setdefault(key, value)
-        activity.log(
-            "tool_result",
-            tool=tool_name,
-            content=result_content[:20_000] if len(result_content) > 20_000 else result_content,
-            meta=meta,
-        )
-    except Exception:
-        logger.debug("Failed to log tool_result for %s", tool_name, exc_info=True)
+    ToolEvidence(anima_dir).record_tool_result(
+        tool_name,
+        tool_use_id,
+        result_content,
+        is_error=is_error,
+        extra_meta=extra_meta,
+    )
 
 
 # ── Stream block handlers ────────────────────────────────────

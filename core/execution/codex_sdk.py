@@ -29,11 +29,10 @@ import shutil
 import sys
 import threading
 from collections.abc import AsyncGenerator
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from core.execution._sdk_stream import _log_tool_result, _log_tool_use
 from core.execution.base import (
     ExecutionResult,
     StreamDisconnectedError,
@@ -54,6 +53,7 @@ from core.execution.rate_guard import get_rate_guard
 from core.execution.session_context import _resolve_session_type
 from core.execution.session_store import SessionRecord, SessionStore
 from core.execution.session_types import is_persistent_codex_session
+from core.execution.tool_evidence import ToolEvidence
 from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS, wait_for_engine_event
 from core.platform.codex import default_home_dir, get_codex_executable
 from core.prompt.context import ContextTracker
@@ -749,48 +749,6 @@ def _token_usage(usage: Any) -> TokenUsage:
     )
 
 
-class _CodexToolEvidence:
-    """Retain attempted tools when a stream ends before its final result.
-
-    A completed record replaces its provisional start by tool ID. Started
-    tools are not assumed safe to replay just because completion was lost.
-    """
-
-    def __init__(self) -> None:
-        self._records: dict[str, dict[str, Any]] = {}
-
-    def started(self, tool_id: str, tool_name: str) -> None:
-        key = tool_id or f"unknown:{tool_name}"
-        self._records.setdefault(
-            key,
-            asdict(
-                ToolCallRecord(
-                    tool_id=tool_id,
-                    tool_name=tool_name,
-                    result_summary="completion_not_observed",
-                    is_error=True,
-                )
-            ),
-        )
-
-    def merge(self, records: list[Any]) -> None:
-        for record in records:
-            data = asdict(record) if isinstance(record, ToolCallRecord) else dict(record)
-            key = data.get("tool_id") or f"unknown:{data.get('tool_name', '')}"
-            self._records[key] = data
-
-    def observe(self, event: dict[str, Any]) -> None:
-        if event.get("type") == "tool_start":
-            self.started(str(event.get("tool_id") or ""), str(event.get("tool_name") or ""))
-        self.merge(event.get("tool_call_records") or [])
-
-    def to_dicts(self) -> list[dict[str, Any]]:
-        return list(self._records.values())
-
-    def __bool__(self) -> bool:
-        return bool(self._records)
-
-
 class _CodexUsageAccumulator:
     """Turn-local deltas from thread totals, including resumed/reset counters.
 
@@ -914,42 +872,6 @@ def _cli_exec_item_to_tool_record(item: dict[str, Any]) -> ToolCallRecord | None
     except Exception:
         return None
     return None
-
-
-def _log_codex_command_activity(
-    anima_dir: Path,
-    item_id: str,
-    command: str,
-    output: str,
-    exit_code: int | None,
-) -> None:
-    """Record a command_execution item as a Bash tool in the activity log (best-effort)."""
-    try:
-        _log_tool_use(anima_dir, "Bash", {"command": command}, tool_use_id=item_id)
-        _log_tool_result(
-            anima_dir,
-            "Bash",
-            item_id,
-            output,
-            is_error=exit_code is not None and exit_code != 0,
-            extra_meta={"exit_code": exit_code} if exit_code is not None else None,
-        )
-    except Exception:
-        logger.debug("Failed to log codex command activity", exc_info=True)
-
-
-def _log_codex_file_change_activity(
-    anima_dir: Path,
-    item_id: str,
-    detail: str,
-    status: str,
-) -> None:
-    """Record a file_change item as an Edit tool in the activity log (best-effort)."""
-    try:
-        _log_tool_use(anima_dir, "Edit", {"file_path": detail}, tool_use_id=item_id)
-        _log_tool_result(anima_dir, "Edit", item_id, status or detail, is_error=False)
-    except Exception:
-        logger.debug("Failed to log codex file change activity", exc_info=True)
 
 
 def _stderr_contains_fatal_signal(text: str) -> bool:
@@ -1178,7 +1100,7 @@ class CodexSDKExecutor(CLIStreamExecutor):
         return final_event.get("stop_kind") == "interrupted"
 
     def _on_stream_cancel(self, error: asyncio.CancelledError, events: list[dict[str, Any]]) -> None:
-        evidence = _CodexToolEvidence()
+        evidence = ToolEvidence()
         usage = TokenUsage()
         for event in events:
             evidence.observe(event)
@@ -1748,10 +1670,9 @@ class CodexSDKExecutor(CLIStreamExecutor):
         stderr_task = asyncio.create_task(_read_stderr())
         response_parts: list[str] = []
         tool_records: list[ToolCallRecord] = []
-        tool_evidence = _CodexToolEvidence()
+        tool_evidence = ToolEvidence(self._anima_dir)
         usage_acc = TokenUsage()
         emitted_tool_starts: set[str] = set()
-        activity_logged: set[str] = set()
         usage_meter = _CodexUsageAccumulator(fresh_thread=True)
         completed_turn_count = 0
         turn_completed = False
@@ -1819,19 +1740,26 @@ class CodexSDKExecutor(CLIStreamExecutor):
                                 "tool_name": _codex_item_tool_name(type("Obj", (), item)(), item_type),
                                 "tool_id": item_id,
                             }
-                        if item_id not in activity_logged:
-                            if item_type == "command_execution":
-                                command = str(item.get("command", ""))
-                                output = str(item.get("aggregated_output") or item.get("output", ""))
-                                exit_code = item.get("exit_code")
-                                _log_codex_command_activity(self._anima_dir, item_id, command, output, exit_code)
-                                activity_logged.add(item_id)
-                            elif item_type == "file_change":
-                                detail = _format_file_changes(item.get("changes") or [])
-                                _log_codex_file_change_activity(
-                                    self._anima_dir, item_id, detail, item.get("status", "")
-                                )
-                                activity_logged.add(item_id)
+                        if item_type == "command_execution":
+                            command = str(item.get("command", ""))
+                            output = str(item.get("aggregated_output") or item.get("output", ""))
+                            exit_code = item.get("exit_code")
+                            tool_evidence.record_tool_call(
+                                "Bash",
+                                {"command": command},
+                                item_id,
+                                output,
+                                is_error=exit_code is not None and exit_code != 0,
+                                extra_meta={"exit_code": exit_code} if exit_code is not None else None,
+                            )
+                        elif item_type == "file_change":
+                            detail = _format_file_changes(item.get("changes") or [])
+                            tool_evidence.record_tool_call(
+                                "Edit",
+                                {"file_path": detail},
+                                item_id,
+                                item.get("status", "") or detail,
+                            )
                         rec = _cli_exec_item_to_tool_record(item) or _item_to_tool_record(item)
                         if rec:
                             tool_records.append(rec)
@@ -1903,7 +1831,7 @@ class CodexSDKExecutor(CLIStreamExecutor):
         tracker = tracker or ContextTracker(model=self._model_config.model)
         final_event: dict[str, Any] | None = None
         usage_acc = TokenUsage()
-        tool_evidence = _CodexToolEvidence()
+        tool_evidence = ToolEvidence()
         try:
             async for ev in self._execute_streaming_via_cli_exec(system_prompt, prompt, tracker, trigger=trigger):
                 tool_evidence.observe(ev)
@@ -2049,7 +1977,7 @@ class CodexSDKExecutor(CLIStreamExecutor):
         response_item_order: list[str] = []
         response_text_by_item: dict[str, str] = {}
         all_tool_records: list[ToolCallRecord] = []
-        tool_evidence = _CodexToolEvidence()
+        tool_evidence = ToolEvidence(self._anima_dir)
         turn_result: Any = None
         active_thread: Any = None
         usage_acc = TokenUsage()
@@ -2114,7 +2042,6 @@ class CodexSDKExecutor(CLIStreamExecutor):
             agent_delta_seen: set[str] = set()
             tool_started: set[str] = set()
             tool_ended: set[str] = set()
-            activity_logged: set[str] = set()
 
             def _tool_start_chunk(tool_id: str, tool_name: str) -> dict[str, Any] | None:
                 tool_evidence.started(tool_id, tool_name)
@@ -2359,18 +2286,27 @@ class CodexSDKExecutor(CLIStreamExecutor):
                                 detail_chunk = _tool_detail_chunk(item_id, tool_name, detail)
                                 if detail_chunk:
                                     yield detail_chunk
-                            if item_id not in activity_logged:
-                                if item_type == "command_execution":
-                                    unwrapped = _unwrap_thread_item(item)
-                                    command = _get_str(unwrapped, "command")
-                                    output = _get_str(unwrapped, "aggregated_output", "aggregatedOutput")
-                                    exit_code = _get_first_attr(unwrapped, "exit_code", "exitCode", default=None)
-                                    _log_codex_command_activity(self._anima_dir, item_id, command, output, exit_code)
-                                    activity_logged.add(item_id)
-                                elif item_type == "file_change":
-                                    status = _get_str(_unwrap_thread_item(item), "status")
-                                    _log_codex_file_change_activity(self._anima_dir, item_id, detail, status)
-                                    activity_logged.add(item_id)
+                            if item_type == "command_execution":
+                                unwrapped = _unwrap_thread_item(item)
+                                command = _get_str(unwrapped, "command")
+                                output = _get_str(unwrapped, "aggregated_output", "aggregatedOutput")
+                                exit_code = _get_first_attr(unwrapped, "exit_code", "exitCode", default=None)
+                                tool_evidence.record_tool_call(
+                                    "Bash",
+                                    {"command": command},
+                                    item_id,
+                                    output,
+                                    is_error=exit_code is not None and exit_code != 0,
+                                    extra_meta={"exit_code": exit_code} if exit_code is not None else None,
+                                )
+                            elif item_type == "file_change":
+                                status = _get_str(_unwrap_thread_item(item), "status")
+                                tool_evidence.record_tool_call(
+                                    "Edit",
+                                    {"file_path": detail},
+                                    item_id,
+                                    status or detail,
+                                )
                             rec = _item_to_tool_record(item)
                             if rec:
                                 all_tool_records.append(rec)
