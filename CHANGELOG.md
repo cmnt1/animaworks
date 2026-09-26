@@ -7,6 +7,20 @@ adhering to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Internal layout reorganized so each package has one concern: `core/` keeps only `paths`, `exceptions`, `schemas` and `time_utils` at the top and groups the rest into `core/agent/`, `core/anima/`, `core/messaging/`, `core/org/` and `core/infra/`; task code moves to `core/tasks/` and token usage to `core/usage/`; `core/memory/` gains `activity/`, `conversation/`, `facts/`, `maintenance/` and a larger `retrieval/`; engine executors move under `core/execution/engines/<engine>/`; Slack/Discord/Zoom/GitHub gateways move to `server/gateways/`; external service tools move from `core/tools/` to `core/integrations/`. `core.tools` stays as an alias package (runtime `common_tools/`, older `animaworks-tool` scripts), and a startup migration rewrites `core.tools` references in runtime tools and skills (originals backed up under `backups/`).
+- Engine middle layer: all engines share L0 stream event types, a `SessionStore`, a `ProcessRunner`, one event-idle `Watchdog`, `ToolEvidence`, and (for the CLI engines) `CLIStreamExecutor`. Cursor (Mode D) now streams. Mode A retries only through the shared classified retry loop (5–15 s jitter) and never retries a request whose stream already started.
+- Timeouts are unified: every engine aborts only after 1200 seconds without an engine event, with no total cap (tool execution counts). The Claude Bash tool limit is 1200 seconds. The supervisor no longer kills busy or long-streaming processes; ping and task-runner keepalive liveness checks stay.
+- Vector store access goes over HTTP for every process that does not own the Chroma DB; a phase3 root calls its own MemoryService in-process. `HttpVectorStore` is the only client, with a pluggable transport, and the single retry on an unavailable owner applies to both paths.
+
+### Removed
+
+- `AnthropicFallbackExecutor` (the S Fallback path for prompts above 1.2 MB). Oversized prompts now log a warning and continue with the configured executor.
+- The root-IPC vector path (`ipc_store.py`, `ANIMAWORKS_MEMORY_VIA_ROOT`, the task runner's memory RPC).
+- Config keys `server.busy_hang_threshold` and `server.max_streaming_duration`. A migration removes them and moves the old busy-hang value to the new `server.runner_liveness_timeout`.
+- Unused modules (dead command reaper, duplicate `core/fd_limits.py`, and others) and 29 one-off analysis scripts; the `migrate_*.py` scripts now live in `scripts/migrations/`.
+
 ## [0.14.0] - 2026-09-24
 
 ### Added

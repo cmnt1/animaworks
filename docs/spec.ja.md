@@ -58,111 +58,67 @@ Digital Animaは、AIエージェントを「1人の人間」としてカプセ�
 ```
 animaworks/
 ├── core/
-│   ├── anima.py               # DigitalAnimaクラス
-│   ├── agent.py               # AgentCore（実行モード選択・サイクル管理）
-│   ├── anima_factory.py       # Anima生成（テンプレート/空白/MD）
-│   ├── init.py                # ランタイム初期化
-│   ├── schemas.py             # データモデル（Message, CycleResult等）
-│   ├── paths.py               # パス解決
-│   ├── messenger.py           # Anima間メッセージ送受信
-│   ├── lifecycle/             # ハートビート・cron・Inbox（パッケージ、APScheduler）
-│   │   ├── __init__.py        #   LifecycleManager 互換層と lifecycle mixin 再エクスポート
-│   │   ├── scheduler.py       #   スケジュール登録
-│   │   ├── inbox_watcher.py   #   Inbox 監視
-│   │   ├── rate_limiter.py    #   メッセージ連鎖・クールダウン
-│   │   └── system_consolidation.py # ProcessSupervisor が使うシステム consolidation ハンドラ
-│   ├── outbound.py            # 統一アウトバウンドルーティング（Slack/Chatwork/内部自動判定）
-│   ├── background.py          # バックグラウンドタスク管理
-│   ├── asset_reconciler.py    # アセット自動生成
-│   ├── org_sync.py            # 組織構造同期（status.json → config.json）
-│   ├── schedule_parser.py     # cron.md/heartbeat.mdパーサー
-│   ├── logging_config.py      # ログ設定
-│   ├── memory/                # 記憶サブシステム（詳細は memory.ja.md 参照）
-│   │   ├── manager.py         #   書庫型記憶の検索・書き込み
-│   │   ├── conversation.py    #   会話記憶（エントリ）
-│   │   ├── conversation_*.py  #   圧縮・確定・モデル・プロンプト等（分割モジュール）
-│   │   ├── shortterm.py       #   短期記憶（chat/heartbeat分離）
-│   │   ├── activity.py        #   統一アクティビティログ（JSONL時系列）
-│   │   ├── streaming_journal.py #  ストリーミングジャーナル（WAL）
-│   │   ├── priming/           #   自動想起レイヤー（多ソース並列取得、gate、A/B/C/E/F/G）
-│   │   ├── consolidation.py   #   記憶統合（日次/週次）
-│   │   ├── forgetting.py      #   能動的忘却（3段階）
-│   │   ├── reconsolidation.py #   記憶再統合
-│   │   ├── action_gate.py     #   副作用のある行動前の記憶確認
-│   │   ├── task_queue.py      #   永続タスクキュー
-│   │   ├── taskboard_housekeeping.py # TaskBoard状態の整理
-│   │   ├── resolution_tracker.py # 解決レジストリ
-│   │   ├── rag_search.py      #   検索オーケストレーション
-│   │   └── rag/               #   RAGエンジン（ChromaDB + sentence-transformers）
-│   │       ├── indexer.py, retriever.py, graph.py, store.py, http_store.py
-│   │       ├── vector_worker.py, vector_worker_client.py # 隔離ワーカー
-│   │       ├── repair_service.py, repair_rebuild.py # RAG修復
-│   │       └── watcher.py     #   ファイル変更監視
-│   ├── skills/                # Skill Hub・activation・router・curator・promotion
-│   ├── taskboard/             # TaskBoard ストア・状態・クリーンアップ
-│   ├── supervisor/            # プロセス監視
-│   │   ├── manager.py         #   ProcessSupervisor（子プロセス起動・監視）
-│   │   ├── ipc.py             #   Unix Domain Socket IPC
-│   │   ├── runner.py          #   Animaプロセスランナー
-│   │   ├── process_handle.py  #   プロセスハンドル管理
-│   │   ├── pending_executor.py #   TaskExec（state/pending/ タスク実行）
-│   │   ├── scheduler_manager.py #  子プロセス側スケジューラ
-│   │   ├── inbox_rate_limiter.py, streaming_handler.py, transport.py 等
-│   │   └── _mgr_*.py          #   ヘルス・調整など内部補助
-│   ├── notification/          # 人間通知
-│   │   ├── notifier.py        #   HumanNotifier（call_human統合）
-│   │   ├── reply_routing.py   #   返信ルーティング
-│   │   └── channels/          #   Slack, Chatwork, LINE, Telegram, ntfy
-│   ├── voice/                 # 音声チャットサブシステム
-│   │   ├── stt.py             #   VoiceSTT（faster-whisper）
-│   │   ├── tts_*.py           #   TTSプロバイダ（VOICEVOX, ElevenLabs, SBV2）
-│   │   └── session.py         #   VoiceSession（STT→Chat IPC→TTS）
-│   ├── mcp/                   # stdio MCP（Mode S: ツール名 `mcp__aw__*`）
-│   │   └── server.py
-│   ├── config/                # 設定管理
-│   │   ├── models.py          #   公開ファサード（load_config / load_permissions 等の再エクスポート）
-│   │   ├── schemas.py         #   Pydantic モデル定義（AnimaWorksConfig 本体）
-│   │   ├── io.py              #   config.json 読み書き・キャッシュ
-│   │   ├── model_mode.py      #   resolve_execution_mode / DEFAULT_MODEL_MODE_PATTERNS
-│   │   ├── resolver.py        #   status.json マージ解決
-│   │   ├── vault.py           #   VaultManager（~/.animaworks/vault.json + vault.key）
-│   │   └── cli.py ほか        #   migrate, anima_registry, model_config, global_permissions 等
-│   ├── prompt/                # プロンプト・コンテキスト管理
-│   │   ├── builder.py         #   システムプロンプト構築（6グループ構造）
-│   │   ├── assembler.py, sections.py, org_context.py, messaging.py
-│   │   └── context.py         #   コンテキストウィンドウ追跡
-│   ├── tooling/               # ツール基盤
-│   │   ├── handler.py         #   ToolHandler 本体（ディスパッチ集約）
-│   │   ├── handler_base.py, handler_memory.py, handler_comms.py, handler_skills.py
-│   │   ├── handler_perms.py, handler_org.py, handler_org_dashboard.py
-│   │   ├── handler_delegation.py, handler_subordinate_control.py, handler_create_anima.py
-│   │   ├── schemas/           #   ツールスキーマ（ドメイン別 Python モジュール）
-│   │   ├── guide.py, dispatch.py, permissions.py, skill_tool.py, skill_creator.py
-│   │   └── prompt_db.py, org_helpers.py
+│   ├── paths.py, exceptions.py, schemas.py, time_utils.py  # 全層が使う基礎部品
+│   ├── anima/                 # DigitalAnima
+│   │   ├── digital_anima.py   #   DigitalAnima 本体（ファサード）
+│   │   ├── lifecycle.py, messaging.py, inbox.py, heartbeat.py  # Mixin
+│   │   ├── factory.py, roster.py, bootstrap_state.py         # 生成と検出
+│   │   └── asset_reconciler.py, image_artifacts.py, emotion_tag.py, inbox_overflow.py 等
+│   ├── agent/                 # AgentCore
+│   │   ├── agent_core.py      #   実行モード選択・プロンプト構築の入口
+│   │   ├── cycle.py           #   エージェントサイクル（ストリーミング／非ストリーミング）
+│   │   ├── priming.py, executor_factory.py, prompt_log.py
+│   │   └── session_compactor.py
 │   ├── execution/             # 実行エンジン
-│   │   ├── base.py            #   BaseExecutor ABC
-│   │   ├── agent_sdk.py       #   Mode S: Claude Agent SDK
-│   │   ├── codex_sdk.py       #   Mode C: Codex CLI
-│   │   ├── cursor_agent.py    #   Mode D: Cursor Agent CLI
-│   │   ├── gemini_cli.py      #   Mode G: Gemini CLI
-│   │   ├── grok_cli.py        #   Mode X: Grok Build CLI（ACP stdio）
-│   │   ├── litellm_loop.py    #   Mode A: LiteLLM + tool_use
-│   │   ├── assisted.py        #   Mode B: フレームワーク補助
-│   │   └── _session.py ほか   #   セッション・SDK ストリーム・サニタイズ等
-│   ├── i18n/                  #   ユーザー向け文言（t() / _STRINGS）
-│   └── tools/                 # 外部ツール実装
-│       ├── web_search.py, x_search.py, slack.py, chatwork.py
-│       ├── gmail.py, github.py, google_calendar.py, google_tasks.py
-│       ├── discord.py, notion.py, machine.py
-│       ├── call_human.py, transcribe.py, aws_collector.py, local_llm.py
-│       ├── image_gen.py       #   画像・3D（サブパッケージ image/）
-│       └── …
+│   │   ├── base.py            #   BaseExecutor / ExecutionResult
+│   │   ├── events.py          #   L0: ストリームイベントの契約
+│   │   ├── session_store.py, process_runner.py, watchdog.py, tool_evidence.py  # L1 共通部品
+│   │   ├── cli_stream.py      #   L2: CLIStreamExecutor（G/D/X と Codex の CLI 経路）
+│   │   ├── error_classifier.py, rate_guard.py, backoff.py, loop_guards.py 等
+│   │   └── engines/
+│   │       ├── claude/        #   Mode S: Claude Agent SDK
+│   │       ├── codex/         #   Mode C: Codex SDK / CLI
+│   │       ├── litellm/       #   Mode A: LiteLLM + tool_use
+│   │       ├── grok/          #   Mode X: Grok Build CLI（ACP stdio）
+│   │       ├── cursor/        #   Mode D: Cursor Agent CLI
+│   │       └── gemini/        #   Mode G: Gemini CLI
+│   ├── messaging/             # Messenger・外部送信ルーティング・連鎖制限・会議室
+│   ├── org/                   # 会社・組織同期（status.json → config.json）・ワークスペース
+│   ├── infra/                 # ログ設定・ランタイム初期化・GPU・tmp 掃除・自動更新・起動進捗
+│   ├── lifecycle/             # Heartbeat・cron・Inbox（APScheduler）
+│   ├── tasks/                 # タスクキュー・タスクボード・委譲/バックグラウンド実行
+│   │   ├── queue.py, dispatch.py, background.py, pending_executor.py
+│   │   ├── board/             #   タスクボードの保存・通知・掃除
+│   │   └── external/          #   外部タスクソース
+│   ├── usage/                 # トークン使用量と予算
+│   ├── memory/                # 記憶サブシステム（詳細は memory.md）
+│   │   ├── manager.py         #   アーカイブ型記憶の検索・書き込み
+│   │   ├── activity/          #   統一アクティビティログ（JSONL・リプレイ・ローテーション）
+│   │   ├── conversation/      #   会話記憶・短期記憶・ストリーミングジャーナル
+│   │   ├── facts/             #   原子的事実・抽出・無効化・エンティティ索引
+│   │   ├── maintenance/       #   統合・蒸留・忘却・ハウスキーピング
+│   │   ├── priming/           #   自動想起レイヤー
+│   │   ├── retrieval/         #   ハイブリッド検索（BM25・RRF・リランク・RAG 検索）
+│   │   ├── backend/, graph/, extraction/, ontology/, migration/
+│   │   └── rag/               #   ベクトルストア: クライアントは HttpVectorStore のみ。
+│   │                          #   phase3 の root は自分の MemoryService を直接呼ぶ
+│   ├── supervisor/            # プロセス監視（ProcessSupervisor・runner・task runner・IPC）
+│   ├── notification/          # 人間への通知（call_human・返信ルーティング・チャネル）
+│   ├── voice/                 # 音声チャット（STT・TTS・セッション）
+│   ├── mcp/                   # stdio MCP（Mode S: ツール名 `mcp__aw__*`）
+│   ├── config/                # 設定（schemas・io・model_mode・vault・ファイルアクセス方針）
+│   ├── prompt/                # プロンプト構築とコンテキスト追跡
+│   ├── tooling/               # ToolHandler・ツールスキーマ・権限・action gate
+│   ├── skills/                # Skill Hub・有効化・ルーター・キュレーター
+│   ├── migrations/            # ランタイムデータの移行（起動時に自動実行）
+│   ├── integrations/          # 外部サービス連携ツール（Slack・Chatwork・Gmail・GitHub・Web検索 等）
+│   └── tools/                 # core.integrations の互換エイリアス（旧 import・animaworks-tool 用）
 ├── cli/                       # CLIパッケージ
 │   ├── parser.py              #   argparse定義 + cli_main()
 │   └── commands/              #   サブコマンド実装
 ├── server/
 │   ├── app.py                 # FastAPI（lifespan・ミドルウェア・静的配信・ルータ登録）
-│   ├── slack_socket.py        # Slack Socket Mode クライアント
+│   ├── gateways/              # 受信ゲートウェイ（Slack Socket Mode・Discord・Zoom・GitHub Webhook）
 │   ├── websocket.py           # WebSocketManager（ダッシュボード用 `/ws`）
 │   ├── stream_registry.py     # チャット/SSE ストリームのプロデューサー登録・掃除
 │   ├── reload_manager.py      # ConfigReloadManager（設定ホットリロード）
