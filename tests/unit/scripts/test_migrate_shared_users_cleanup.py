@@ -1,16 +1,15 @@
-"""Unit tests for scripts/migrate_shared_users_cleanup.py (temp dirs only)."""
+"""Unit tests for scripts/migrations/migrate_shared_users_cleanup.py (temp dirs only)."""
 
 from __future__ import annotations
 
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-
 import json
 from datetime import date
 from pathlib import Path
 
-from scripts.migrate_shared_users_cleanup import execute_cleanup, plan_moves, build_match_names
+from scripts.migrations.migrate_shared_users_cleanup import build_match_names, execute_cleanup, plan_moves
 
 
 def _layout(tmp_path: Path) -> Path:

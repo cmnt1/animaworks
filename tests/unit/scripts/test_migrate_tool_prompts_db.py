@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from core.paths import load_prompt, load_prompt_text
 from core.prompt.tool_content import apply_prompt_descriptions, load_guide
-from scripts.migrate_tool_prompts_db import main, migrate
+from scripts.migrations.migrate_tool_prompts_db import main, migrate
 
 
 def _create_db(path: Path, *, with_locale: bool = False) -> None:

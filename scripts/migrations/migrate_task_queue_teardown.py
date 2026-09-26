@@ -13,8 +13,8 @@ This older script never rewrites legacy evidence or the canonical database.
 
 Usage::
 
-    python scripts/migrate_task_queue_teardown.py --dry-run
-    python scripts/migrate_task_queue_teardown.py --dry-run --animas-dir /path/to/animas
+    python scripts/migrations/migrate_task_queue_teardown.py --dry-run
+    python scripts/migrations/migrate_task_queue_teardown.py --dry-run --animas-dir /path/to/animas
 """
 
 import argparse
