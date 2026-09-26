@@ -83,7 +83,7 @@ Primary files:
 - `core/supervisor/process_handle.py`
 - `core/supervisor/manager.py`
 - `core/tooling/handler_files.py`
-- `core/tools/machine.py`
+- `core/integrations/machine.py`
 
 Current assumptions:
 

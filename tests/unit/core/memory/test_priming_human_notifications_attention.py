@@ -8,7 +8,7 @@ import pytest
 
 from core.memory.priming import PrimingEngine
 from core.notification import notification_key_for
-from core.taskboard.store import TaskBoardStore
+from core.tasks.board.store import TaskBoardStore
 from core.time_utils import now_iso, now_local
 
 

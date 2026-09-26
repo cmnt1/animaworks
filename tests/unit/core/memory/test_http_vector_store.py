@@ -414,8 +414,9 @@ def test_circuit_open_logs_once_and_reports_suppressed_on_resume(caplog):
 
 def test_http_failures_are_aggregated_by_path_status_and_collection(caplog):
     store = _make_store(anima_name="sora")
+    # A plain 503 without Retry-After is a persistent, non-retryable failure.
     response = MagicMock(status_code=503)
-    response.headers = {"Retry-After": "30"}
+    response.headers = {}
     response.raise_for_status.side_effect = httpx.HTTPError("service unavailable")
     store._client = MagicMock()
     store._client.post.return_value = response
@@ -431,5 +432,4 @@ def test_http_failures_are_aggregated_by_path_status_and_collection(caplog):
     messages = [record.getMessage() for record in caplog.records if "HTTP vector request" in record.getMessage()]
     assert len(messages) == 2
     assert "status=503" in messages[0]
-    assert "retry_after=30" in messages[0]
     assert "suppressed=2" in messages[1]

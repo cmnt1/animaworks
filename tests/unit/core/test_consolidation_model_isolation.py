@@ -529,7 +529,7 @@ class _FakeCycle(CycleMixin):
         }
 
     async def _preflight_size_check(self, system_prompt, prompt, conv_memory, **kwargs):
-        return system_prompt, prompt, False
+        return system_prompt, prompt
 
     @staticmethod
     def _extract_sender(prompt: str, trigger: str) -> str:

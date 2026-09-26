@@ -5,7 +5,7 @@
 
 Stands up an in-process ``asyncio`` WebSocket mock of Zoom's RTMS signaling
 and media servers (using the real :mod:`websockets` library) and drives the
-real :class:`server.zoom_gateway.ZoomRTMSManager` through the full path:
+real :class:`server.gateways.zoom_gateway.ZoomRTMSManager` through the full path:
 
     rtms_started webhook
       → signaling WS connect + HMAC-SHA256 handshake
@@ -42,13 +42,13 @@ import pytest
 
 import core.messenger as messenger_mod
 from core.config import invalidate_cache
-from server.zoom_gateway import ZoomRTMSManager
+from server.gateways.zoom_gateway import ZoomRTMSManager
 
 websockets = pytest.importorskip("websockets")
 
 pytestmark = pytest.mark.e2e
 
-# ── RTMS protocol constants (mirror server/zoom_gateway.py) ───────────────
+# ── RTMS protocol constants (mirror server/gateways/zoom_gateway.py) ───────────────
 MSG_SIGNALING_HANDSHAKE_REQ = 1
 MSG_SIGNALING_HANDSHAKE_RESP = 2
 MSG_DATA_HANDSHAKE_REQ = 3
@@ -161,9 +161,7 @@ class MockRTMSServer:
                             )
                         )
                         continue
-                    self.signaling_connect_count[meeting_uuid] = (
-                        self.signaling_connect_count.get(meeting_uuid, 0) + 1
-                    )
+                    self.signaling_connect_count[meeting_uuid] = self.signaling_connect_count.get(meeting_uuid, 0) + 1
                     await ws.send(
                         json.dumps(
                             {

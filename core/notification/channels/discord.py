@@ -9,9 +9,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from core.integrations._discord_markdown import md_to_discord
 from core.notification.interactive import InteractionRequest
 from core.notification.notifier import NotificationChannel, register_channel
-from core.tools._discord_markdown import md_to_discord
 
 logger = logging.getLogger("animaworks.notification.discord")
 
@@ -87,7 +87,7 @@ class DiscordChannel(NotificationChannel):
             bot_token = self._resolve_env("bot_token_env")
         if not bot_token:
             try:
-                from core.tools._base import get_credential
+                from core.integrations._base import get_credential
 
                 bot_token = get_credential("discord", "discord", env_var="DISCORD_BOT_TOKEN")
             except Exception:
@@ -149,7 +149,7 @@ class DiscordChannel(NotificationChannel):
     ) -> str:
         """Send a DM to a Discord user."""
         try:
-            from core.tools._discord_client import DiscordClient
+            from core.integrations._discord_client import DiscordClient
 
             client = DiscordClient(token=token)
             dm = client.create_dm(user_id)
@@ -216,7 +216,7 @@ class DiscordChannel(NotificationChannel):
             if anima_name:
                 payload["username"] = anima_name
                 try:
-                    from core.tools._anima_icon_url import resolve_anima_icon_url
+                    from core.integrations._anima_icon_url import resolve_anima_icon_url
 
                     avatar = resolve_anima_icon_url(anima_name)
                     if avatar:

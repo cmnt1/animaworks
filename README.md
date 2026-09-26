@@ -521,7 +521,7 @@ failed GitHub Actions logs with `gh`, asks a configured Architect fixer to edit 
 | Configuration & migration | Pydantic 2.0+ / JSON / Markdown, `core/migrations/` (startup migrations) |
 | Internationalization | `core/i18n` `t()`; wizard in 17 languages, dashboard in ja/en/ko |
 | Skill system | Skill Hub, explicit skill activation, router, curator, procedure-to-skill promotion |
-| Extended tools | Auto-registration from `core/tools/*.py` plus scans of `~/.animaworks/common_tools/` and `animas/<name>/tools/` |
+| Extended tools | Auto-registration from `core/integrations/*.py` plus scans of `~/.animaworks/common_tools/` and `animas/<name>/tools/` |
 | Voice chat | faster-whisper (STT) + VOICEVOX / SBV2 / ElevenLabs / Irodori (TTS) + local front-lane model |
 | Messaging in/out | Slack Socket Mode, Chatwork webhook, Discord gateway, Zoom RTMS (inbound); Slack, Chatwork, Discord, LINE, Telegram, ntfy (human notification) |
 | Image generation | NovelAI, fal.ai (Flux), Meshy (3D), Codex image gen, local Diffusers |

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.token_usage import TokenUsageLogger
+from core.usage.token_usage import TokenUsageLogger
 
 
 def _write_usage(anima_dir: Path, day: str, *totals: int) -> None:

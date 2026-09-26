@@ -12,9 +12,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from core.memory.task_queue import TaskQueueManager
 from core.skills.hub import SkillHub
-from core.taskboard.store import TaskBoardStore
+from core.tasks.board.store import TaskBoardStore
+from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_iso
 
 from ._common import (
@@ -72,7 +72,7 @@ def import_hermes(options: HermesImportOptions) -> MigrationReport:
     if options.apply:
         backup_targets = _planned_backup_targets(source, options, migration_dir)
         if options.target_anima:
-            from core.taskboard.tasks import TaskStore, task_database_path
+            from core.tasks.board.tasks import TaskStore, task_database_path
 
             task_store = TaskStore(task_database_path(_anima_dir(options)))
             task_backup = migration_dir / f"{batch_id}_taskboard.sqlite3"

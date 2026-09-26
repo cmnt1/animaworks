@@ -6,6 +6,7 @@
 These tests call the actual gltf-transform CLI via npx to verify real-world behavior.
 They require node/npx to be installed and will be skipped if unavailable.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -13,7 +14,6 @@ import struct
 from pathlib import Path
 
 import pytest
-
 
 _has_npx = shutil.which("npx") is not None
 _has_node = shutil.which("node") is not None
@@ -94,7 +94,7 @@ class TestStripMeshE2E:
     @skip_no_node
     def test_strip_mesh_reduces_file_size(self, tmp_path):
         """strip_mesh_from_glb should remove mesh data from a GLB file."""
-        from core.tools.image_gen import strip_mesh_from_glb
+        from core.integrations.image_gen import strip_mesh_from_glb
 
         glb_path = tmp_path / "anim_test.glb"
         _create_minimal_glb(glb_path, with_mesh=True)
@@ -115,7 +115,7 @@ class TestStripMeshE2E:
     @skip_no_node
     def test_strip_mesh_on_meshless_glb(self, tmp_path):
         """strip_mesh_from_glb should succeed on a GLB without meshes."""
-        from core.tools.image_gen import strip_mesh_from_glb
+        from core.integrations.image_gen import strip_mesh_from_glb
 
         glb_path = tmp_path / "anim_empty.glb"
         _create_minimal_glb(glb_path, with_mesh=False)
@@ -127,7 +127,7 @@ class TestStripMeshE2E:
     @skip_no_node
     def test_strip_mesh_node_path_resolves_modules(self, tmp_path):
         """Verify NODE_PATH approach properly resolves @gltf-transform modules."""
-        from core.tools.image_gen import strip_mesh_from_glb
+        from core.integrations.image_gen import strip_mesh_from_glb
 
         glb_path = tmp_path / "test_resolve.glb"
         _create_minimal_glb(glb_path, with_mesh=True)
@@ -137,8 +137,7 @@ class TestStripMeshE2E:
         # packages to a persistent cache and sets NODE_PATH.
         result = strip_mesh_from_glb(glb_path)
         assert result is True, (
-            "strip_mesh_from_glb failed — NODE_PATH may not be resolving "
-            "@gltf-transform modules correctly"
+            "strip_mesh_from_glb failed — NODE_PATH may not be resolving @gltf-transform modules correctly"
         )
 
 
@@ -149,7 +148,7 @@ class TestOptimizeGlbE2E:
     @skip_no_node
     def test_draco_compression(self, tmp_path):
         """optimize_glb should apply Draco compression to a GLB."""
-        from core.tools.image_gen import optimize_glb
+        from core.integrations.image_gen import optimize_glb
 
         glb_path = tmp_path / "model.glb"
         _create_minimal_glb(glb_path, with_mesh=True)
@@ -170,7 +169,7 @@ class TestSimplifyGlbE2E:
     @skip_no_node
     def test_simplify_preserves_valid_glb(self, tmp_path):
         """simplify_glb should produce a valid GLB file."""
-        from core.tools.image_gen import simplify_glb
+        from core.integrations.image_gen import simplify_glb
 
         glb_path = tmp_path / "model.glb"
         _create_minimal_glb(glb_path, with_mesh=True)
@@ -185,7 +184,7 @@ class TestSimplifyGlbE2E:
     @skip_no_node
     def test_simplify_custom_ratio(self, tmp_path):
         """simplify_glb with ratio=1.0 should keep all polygons."""
-        from core.tools.image_gen import simplify_glb
+        from core.integrations.image_gen import simplify_glb
 
         glb_path = tmp_path / "model.glb"
         _create_minimal_glb(glb_path, with_mesh=True)
@@ -205,7 +204,7 @@ class TestCompressTexturesE2E:
     @skip_no_node
     def test_compress_textures_on_textureless_glb(self, tmp_path):
         """compress_textures should handle GLBs without textures gracefully."""
-        from core.tools.image_gen import compress_textures
+        from core.integrations.image_gen import compress_textures
 
         glb_path = tmp_path / "model.glb"
         _create_minimal_glb(glb_path, with_mesh=True)
@@ -318,7 +317,7 @@ class TestOptimizeAssetsCommandE2E:
 
         # Mock strip/optimize to avoid needing npx
         with patch("core.paths.get_animas_dir", return_value=tmp_path):
-            with patch("core.tools.image_gen.strip_mesh_from_glb", return_value=True):
+            with patch("core.integrations.image_gen.strip_mesh_from_glb", return_value=True):
                 _run(args)
 
         # Verify backup was created
@@ -334,7 +333,8 @@ class TestFbx2gltfE2E:
 
     def _reset_cache(self):
         """Reset module-level _FBX2GLTF_PATH cache between tests."""
-        import core.tools.image_gen as mod
+        import core.integrations.image_gen as mod
+
         mod._FBX2GLTF_PATH = None
 
     @skip_no_npm
@@ -346,16 +346,13 @@ class TestFbx2gltfE2E:
         available, we skip rather than fail — the unit tests cover the logic
         exhaustively.
         """
-        from core.tools.image_gen import _ensure_fbx2gltf
+        from core.integrations.image_gen import _ensure_fbx2gltf
 
         self._reset_cache()
         try:
             result = _ensure_fbx2gltf()
             if result is None:
-                pytest.skip(
-                    "fbx2gltf binary not available after npm install "
-                    "(platform may lack .bin symlink)"
-                )
+                pytest.skip("fbx2gltf binary not available after npm install (platform may lack .bin symlink)")
             assert result.exists(), f"fbx2gltf binary not found at {result}"
         finally:
             self._reset_cache()
@@ -363,7 +360,7 @@ class TestFbx2gltfE2E:
     @skip_no_npm
     def test_fbx2gltf_handles_invalid_fbx_gracefully(self, tmp_path):
         """_convert_fbx_to_glb should return False for a non-FBX file."""
-        from core.tools.image_gen import _convert_fbx_to_glb, _ensure_fbx2gltf
+        from core.integrations.image_gen import _convert_fbx_to_glb, _ensure_fbx2gltf
 
         self._reset_cache()
         try:

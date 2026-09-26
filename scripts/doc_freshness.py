@@ -20,7 +20,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 # ── Constants ────────────────────────────────────────────────────────
@@ -93,24 +93,24 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     ],
     # ── common_knowledge — operations ──
     "reference/operations/task-management.md": [
-        "core/background.py",
+        "core/tasks/background.py",
         "core/tooling/",
-        "core/memory/task_queue.py",
+        "core/tasks/queue.py",
     ],
     "common_knowledge/operations/task-delegation-guide.md": [
         "core/tooling/handler_delegation.py",
-        "core/memory/task_queue.py",
+        "core/tasks/queue.py",
         "core/_anima_heartbeat.py",
         "core/execution/_sdk_hooks.py",
     ],
     "reference/operations/heartbeat-cron-guide.md": [
-        "core/background.py",
+        "core/tasks/background.py",
         "core/schedule_parser.py",
         "core/_anima_heartbeat.py",
     ],
     "common_knowledge/operations/background-tasks.md": [
-        "core/background.py",
-        "core/supervisor/pending_executor.py",
+        "core/tasks/background.py",
+        "core/tasks/pending_executor.py",
     ],
     "common_knowledge/operations/task-board-guide.md": [
         "server/routes/tasks.py",
@@ -125,7 +125,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     ],
     "reference/operations/tool-usage-overview.md": [
         "core/tooling/",
-        "core/tools/",
+        "core/integrations/",
     ],
     "reference/operations/voice-chat-guide.md": [
         "core/voice/",
@@ -134,7 +134,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     # ── common_knowledge — anatomy ──
     "common_knowledge/anatomy/what-is-anima.md": [
         "core/anima.py",
-        "core/background.py",
+        "core/tasks/background.py",
         "core/lifecycle.py",
     ],
     "reference/anatomy/anima-anatomy.md": [
@@ -183,10 +183,10 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     ],
     "common_skills/cron-management/SKILL.md": [
         "core/schedule_parser.py",
-        "core/background.py",
+        "core/tasks/background.py",
     ],
     "common_skills/image-posting/SKILL.md": [
-        "core/tools/image_gen.py",
+        "core/integrations/image_gen.py",
         "core/image_artifacts.py",
     ],
     "common_skills/skill-creator/SKILL.md": [
@@ -207,11 +207,11 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/tooling/handler_org.py",
         "core/tooling/schemas.py",
     ],
-    "common_skills/tool-creator/SKILL.md": ["core/tooling/", "core/tools/"],
+    "common_skills/tool-creator/SKILL.md": ["core/tooling/", "core/integrations/"],
     "common_skills/discord-tool/SKILL.md": [
-        "core/tools/discord.py",
-        "core/tools/_discord_client.py",
-        "core/tools/_discord_cli.py",
+        "core/integrations/discord.py",
+        "core/integrations/_discord_client.py",
+        "core/integrations/_discord_cli.py",
     ],
     # ── docs (OSS公開リポジトリ同期ドキュメント) ──
     # publish.sh で公開リポジトリに同期されるファイル。
@@ -228,7 +228,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/prompt/builder.py",
     ],
     "docs/slack-socket-mode-setup": [
-        "core/tools/slack.py",
+        "core/integrations/slack.py",
         "server/routes/webhooks.py",
     ],
     # ── root-level files ──

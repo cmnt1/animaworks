@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
-from core.memory.task_queue import TaskQueueManager
-from core.tasks_dispatch import is_task_permission_error, publish_delegation, publish_tasks
+from core.tasks.dispatch import is_task_permission_error, publish_delegation, publish_tasks
+from core.tasks.queue import TaskQueueManager
 
 
 @pytest.fixture
@@ -212,7 +212,7 @@ def test_command_tasks_are_not_accepted_at_llm_publication_boundary(anima_dir):
 def test_host_update_identity_cannot_be_supplied_by_model(anima_dir):
     import json
 
-    from core.taskboard.tasks import attempt_scope
+    from core.tasks.board.tasks import attempt_scope
     from core.tooling.handler_skills import SkillsToolsMixin
 
     entry = publish_tasks(anima_dir, [payload()])[0]
@@ -238,7 +238,7 @@ def test_host_update_identity_cannot_be_supplied_by_model(anima_dir):
 
 
 def test_host_publication_propagates_execution_attempt_identity(anima_dir):
-    from core.taskboard.tasks import attempt_scope
+    from core.tasks.board.tasks import attempt_scope
 
     entry = publish_tasks(anima_dir, [payload()])[0]
     response = MagicMock()

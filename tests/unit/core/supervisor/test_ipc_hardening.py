@@ -39,6 +39,22 @@ def _identity(job_id: str = "job-h") -> IPCV2Identity:
     )
 
 
+def test_phase3_child_env_reaches_vector_store_over_http(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Phase3 task children get the vector and embed URLs so they use HTTP."""
+    supervisor = _supervisor(tmp_path)
+    monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://vector.test/internal/vector")
+    env = supervisor._build_child_environment(
+        {
+            "ANIMAWORKS_EMBED_URL": "http://embed.test",
+            "ANIMAWORKS_VECTOR_URL": "http://vector.test/internal/vector",
+        },
+        attempt=1,
+        display_lane="background",
+    )
+    assert env["ANIMAWORKS_VECTOR_URL"] == "http://vector.test/internal/vector"
+    assert env["ANIMAWORKS_EMBED_URL"] == "http://embed.test"
+
+
 # ── Task 1: received result is kept even when the child exits nonzero ───
 
 
@@ -82,9 +98,7 @@ async def _spawn_with_nonzero_exit(
 
 
 @pytest.mark.asyncio
-async def test_nonzero_exit_result_is_kept(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog
-) -> None:
+async def test_nonzero_exit_result_is_kept(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog) -> None:
     supervisor = _supervisor(tmp_path)
     terminal = {"result": {"task_type": "llm", "result": "ok", "success": True}}
 
@@ -180,9 +194,7 @@ def test_cleanup_descendants_terms_then_kills(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_recover_task_journals_runs_file_io_in_thread(
-    tmp_path: Path, monkeypatch
-) -> None:
+async def test_recover_task_journals_runs_file_io_in_thread(tmp_path: Path, monkeypatch) -> None:
     supervisor = _supervisor(tmp_path)
     real_to_thread = asyncio.to_thread
     thread_calls: list[str] = []

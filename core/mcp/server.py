@@ -269,9 +269,9 @@ def _build_background_manager(anima_dir: Path) -> Any:
         if not config.background_task.enabled:
             return None
 
-        from core.background import BackgroundTaskManager
-        from core.tools import TOOL_MODULES
-        from core.tools._base import load_execution_profiles
+        from core.integrations import TOOL_MODULES
+        from core.integrations._base import load_execution_profiles
+        from core.tasks.background import BackgroundTaskManager
 
         profiles = load_execution_profiles(TOOL_MODULES)
         config_eligible = {name: tc.threshold_s for name, tc in config.background_task.eligible_tools.items()}
@@ -388,8 +388,8 @@ def _has_subordinates_for_anima() -> bool:
 def _has_newstaff_skill_for_anima() -> bool:
     """Check if this Anima has the newstaff skill (hire permission).
 
-    Mirrors ``anthropic_fallback._has_newstaff_skill``:
-    ``ANIMAWORKS_ANIMA_DIR/skills/newstaff/SKILL.md`` or ``skills/newstaff.md``.
+    Looks for ``ANIMAWORKS_ANIMA_DIR/skills/newstaff/SKILL.md`` or
+    ``skills/newstaff.md``.
 
     Evaluated once at first call and cached. Falls back to False (safe side —
     hides create_anima when check fails).
@@ -467,7 +467,7 @@ def _get_tool_handler() -> Any:
         tool_registry: list[str] = []
         personal_tools: dict[str, str] = {}
         try:
-            from core.tools import (
+            from core.integrations import (
                 discover_common_tools,
                 discover_personal_tools,
             )
@@ -816,10 +816,9 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextCon
 
 async def main() -> None:
     """Run the MCP stdio server."""
-    # The parent task runner owns its IPC connection and Python requester;
-    # neither survives exec into this MCP process. Keep the server URLs and
-    # route via the host proxy, which forwards phase3 requests to that owner.
-    os.environ.pop("ANIMAWORKS_MEMORY_VIA_ROOT", None)
+    # The parent task runner owns its IPC connection; this MCP process keeps
+    # the server URLs and routes via the host proxy, which forwards phase3
+    # requests to that owner.
     logger.info("AnimaWorks MCP server starting (name=aw)")
     async with stdio_server() as (read_stream, write_stream):
         await server.run(

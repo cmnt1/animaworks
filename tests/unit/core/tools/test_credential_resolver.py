@@ -16,7 +16,7 @@ from core.config.models import (
     invalidate_cache,
     save_config,
 )
-from core.tools._base import ToolConfigError, get_credential
+from core.integrations._base import ToolConfigError, get_credential
 
 
 @pytest.fixture(autouse=True)
@@ -45,16 +45,22 @@ class TestConfigJsonPriority:
     """config.json should be checked first."""
 
     def test_resolves_from_config_json(self, config_dir):
-        _write_config(config_dir, {
-            "chatwork": {"type": "api_token", "api_key": "cwt-from-config"},
-        })
+        _write_config(
+            config_dir,
+            {
+                "chatwork": {"type": "api_token", "api_key": "cwt-from-config"},
+            },
+        )
         result = get_credential("chatwork", "chatwork", env_var="CHATWORK_API_TOKEN")
         assert result == "cwt-from-config"
 
     def test_config_json_wins_over_env(self, config_dir, monkeypatch):
-        _write_config(config_dir, {
-            "chatwork": {"type": "api_token", "api_key": "cwt-from-config"},
-        })
+        _write_config(
+            config_dir,
+            {
+                "chatwork": {"type": "api_token", "api_key": "cwt-from-config"},
+            },
+        )
         monkeypatch.setenv("CHATWORK_API_TOKEN", "cwt-from-env")
         result = get_credential("chatwork", "chatwork", env_var="CHATWORK_API_TOKEN")
         assert result == "cwt-from-config"
@@ -70,9 +76,12 @@ class TestEnvVarFallback:
         assert result == "cwt-from-env"
 
     def test_falls_back_when_api_key_empty(self, config_dir, monkeypatch):
-        _write_config(config_dir, {
-            "chatwork": {"type": "api_token", "api_key": ""},
-        })
+        _write_config(
+            config_dir,
+            {
+                "chatwork": {"type": "api_token", "api_key": ""},
+            },
+        )
         monkeypatch.setenv("CHATWORK_API_TOKEN", "cwt-from-env")
         result = get_credential("chatwork", "chatwork", env_var="CHATWORK_API_TOKEN")
         assert result == "cwt-from-env"
@@ -106,36 +115,49 @@ class TestMultiKeyCredential:
     """Test keys dict for credentials with multiple keys."""
 
     def test_resolve_from_keys_dict(self, config_dir):
-        _write_config(config_dir, {
-            "some_tool": {
-                "type": "oauth_client",
-                "keys": {"client_id": "id-123", "client_secret": "sec-456"},
+        _write_config(
+            config_dir,
+            {
+                "some_tool": {
+                    "type": "oauth_client",
+                    "keys": {"client_id": "id-123", "client_secret": "sec-456"},
+                },
             },
-        })
+        )
         cid = get_credential("some_tool", "some_tool", key_name="client_id")
         assert cid == "id-123"
         csec = get_credential("some_tool", "some_tool", key_name="client_secret")
         assert csec == "sec-456"
 
     def test_keys_not_found_falls_to_env(self, config_dir, monkeypatch):
-        _write_config(config_dir, {
-            "some_tool": {"type": "api_key", "keys": {}},
-        })
+        _write_config(
+            config_dir,
+            {
+                "some_tool": {"type": "api_key", "keys": {}},
+            },
+        )
         monkeypatch.setenv("SOME_TOOL_SECRET", "from-env")
         result = get_credential(
-            "some_tool", "some_tool",
-            key_name="secret_key", env_var="SOME_TOOL_SECRET",
+            "some_tool",
+            "some_tool",
+            key_name="secret_key",
+            env_var="SOME_TOOL_SECRET",
         )
         assert result == "from-env"
 
     def test_keys_empty_string_falls_to_env(self, config_dir, monkeypatch):
-        _write_config(config_dir, {
-            "some_tool": {"type": "api_key", "keys": {"secret_key": ""}},
-        })
+        _write_config(
+            config_dir,
+            {
+                "some_tool": {"type": "api_key", "keys": {"secret_key": ""}},
+            },
+        )
         monkeypatch.setenv("SOME_TOOL_SECRET", "from-env")
         result = get_credential(
-            "some_tool", "some_tool",
-            key_name="secret_key", env_var="SOME_TOOL_SECRET",
+            "some_tool",
+            "some_tool",
+            key_name="secret_key",
+            env_var="SOME_TOOL_SECRET",
         )
         assert result == "from-env"
 
@@ -156,9 +178,12 @@ class TestSharedCredentialsJson:
         assert result == "cwt-shared"
 
     def test_config_json_wins_over_shared(self, config_dir):
-        _write_config(config_dir, {
-            "chatwork": {"type": "api_token", "api_key": "cwt-from-config"},
-        })
+        _write_config(
+            config_dir,
+            {
+                "chatwork": {"type": "api_token", "api_key": "cwt-from-config"},
+            },
+        )
         self._write_shared_creds(config_dir, {"CHATWORK_API_TOKEN": "cwt-shared"})
         result = get_credential("chatwork", "chatwork", env_var="CHATWORK_API_TOKEN")
         assert result == "cwt-from-config"
@@ -214,9 +239,7 @@ class TestSharedCredentialsJson:
         assert result == "cwt-from-env"
 
     @pytest.mark.parametrize("content", ["null", "[]", '"token"'])
-    def test_falls_through_when_legacy_json_is_not_object(
-        self, config_dir, monkeypatch, caplog, content
-    ):
+    def test_falls_through_when_legacy_json_is_not_object(self, config_dir, monkeypatch, caplog, content):
         shared_dir = config_dir / "shared"
         shared_dir.mkdir(parents=True, exist_ok=True)
         (shared_dir / "credentials.json").write_text(content, encoding="utf-8")
@@ -245,31 +268,40 @@ class TestSharedCredentialsJson:
 class TestAllToolCredentials:
     """Verify each migrated tool's credential resolution."""
 
-    @pytest.mark.parametrize("cred_name,tool_name,env_var,token", [
-        ("chatwork", "chatwork", "CHATWORK_API_TOKEN", "cwt-test"),
-        ("slack", "slack", "SLACK_BOT_TOKEN", "xoxb-test"),
-        ("brave", "web_search", "BRAVE_API_KEY", "BSA-test"),
-        ("x_twitter", "x_search", "TWITTER_BEARER_TOKEN", "AAAA-test"),
-        ("novelai", "image_gen", "NOVELAI_TOKEN", "nai-test"),
-        ("fal", "image_gen", "FAL_KEY", "fal-test"),
-        ("meshy", "image_gen", "MESHY_API_KEY", "meshy-test"),
-    ])
+    @pytest.mark.parametrize(
+        "cred_name,tool_name,env_var,token",
+        [
+            ("chatwork", "chatwork", "CHATWORK_API_TOKEN", "cwt-test"),
+            ("slack", "slack", "SLACK_BOT_TOKEN", "xoxb-test"),
+            ("brave", "web_search", "BRAVE_API_KEY", "BSA-test"),
+            ("x_twitter", "x_search", "TWITTER_BEARER_TOKEN", "AAAA-test"),
+            ("novelai", "image_gen", "NOVELAI_TOKEN", "nai-test"),
+            ("fal", "image_gen", "FAL_KEY", "fal-test"),
+            ("meshy", "image_gen", "MESHY_API_KEY", "meshy-test"),
+        ],
+    )
     def test_from_config_json(self, config_dir, cred_name, tool_name, env_var, token):
-        _write_config(config_dir, {
-            cred_name: {"api_key": token},
-        })
+        _write_config(
+            config_dir,
+            {
+                cred_name: {"api_key": token},
+            },
+        )
         result = get_credential(cred_name, tool_name, env_var=env_var)
         assert result == token
 
-    @pytest.mark.parametrize("cred_name,tool_name,env_var,token", [
-        ("chatwork", "chatwork", "CHATWORK_API_TOKEN", "cwt-env"),
-        ("slack", "slack", "SLACK_BOT_TOKEN", "xoxb-env"),
-        ("brave", "web_search", "BRAVE_API_KEY", "BSA-env"),
-        ("x_twitter", "x_search", "TWITTER_BEARER_TOKEN", "AAAA-env"),
-        ("novelai", "image_gen", "NOVELAI_TOKEN", "nai-env"),
-        ("fal", "image_gen", "FAL_KEY", "fal-env"),
-        ("meshy", "image_gen", "MESHY_API_KEY", "meshy-env"),
-    ])
+    @pytest.mark.parametrize(
+        "cred_name,tool_name,env_var,token",
+        [
+            ("chatwork", "chatwork", "CHATWORK_API_TOKEN", "cwt-env"),
+            ("slack", "slack", "SLACK_BOT_TOKEN", "xoxb-env"),
+            ("brave", "web_search", "BRAVE_API_KEY", "BSA-env"),
+            ("x_twitter", "x_search", "TWITTER_BEARER_TOKEN", "AAAA-env"),
+            ("novelai", "image_gen", "NOVELAI_TOKEN", "nai-env"),
+            ("fal", "image_gen", "FAL_KEY", "fal-env"),
+            ("meshy", "image_gen", "MESHY_API_KEY", "meshy-env"),
+        ],
+    )
     def test_from_env_fallback(self, config_dir, monkeypatch, cred_name, tool_name, env_var, token):
         _write_config(config_dir, {})
         monkeypatch.setenv(env_var, token)

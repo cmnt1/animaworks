@@ -9,9 +9,9 @@
 `animaworks-tool submit` を使うことで、タスクをバックグラウンドで実行し、
 自分自身はすぐに次の作業に移ることができる。
 
-ランタイムでは `core/background.py` の **BackgroundTaskManager** がツール実行と
+ランタイムでは `core/tasks/background.py` の **BackgroundTaskManager** がツール実行と
 `state/background_tasks/{task_id}.json` への状態永続化を担当し、
-Anima 子プロセス内の **PendingTaskExecutor**（`core/supervisor/pending_executor.py`）が
+Anima 子プロセス内の **PendingTaskExecutor**（`core/tasks/pending_executor.py`）が
 `animaworks-tool submit` が書いた待ちキューを監視して `BackgroundTaskManager` に載せ替える。
 
 ## いつ submit を使うか
@@ -137,7 +137,7 @@ submit したらすぐに次の作業に移ること。
 
 ## 技術的な仕組み（参考）
 
-### BackgroundTaskManager（`core/background.py`）
+### BackgroundTaskManager（`core/tasks/background.py`）
 
 - **役割**: 長時間ツール呼び出しを `asyncio` タスクとしてバックグラウンド実行し、完了・失敗時に `on_complete`（任意の非同期コールバック）を `await` する。コンストラクタで `state/background_tasks/` を `mkdir(parents=True)` する。
 - **同期ツール**: `submit(tool_name, tool_args, execute_fn)` → `execute_fn(name, args) -> str | None` を `run_in_executor(None, ...)` でスレッドプール実行。
@@ -149,14 +149,14 @@ submit したらすぐに次の作業に移ること。
 - **資格あるツール名**（`is_eligible`）は次の **3 層**をマージ（後勝ち）。キーはそのまま辞書照合（Mode A のスキーマ名 `generate_3d_model` と Mode S 提出用の `image_gen:3d` の**両方**があり得る）:
   1. コード内デフォルト `_DEFAULT_ELIGIBLE_TOOLS`（値は目安秒数。現状のキー）:
      `generate_character_assets`, `generate_fullbody`, `generate_bustup`, `generate_icon`, `generate_chibi`, `generate_3d_model`, `generate_rigged_model`, `generate_animations`（各 30）、`local_llm` / `run_command`（各 60）
-  2. `BackgroundTaskManager.from_profiles` 経由で、各モジュールの `EXECUTION_PROFILE` から `background_eligible: true` のサブコマンドを抽出（`core.tools._base.get_eligible_tools_from_profiles`）。キーは `"{tool_name}:{subcmd}"`、秒数は `expected_seconds`（未設定時 60）
+  2. `BackgroundTaskManager.from_profiles` 経由で、各モジュールの `EXECUTION_PROFILE` から `background_eligible: true` のサブコマンドを抽出（`core.integrations._base.get_eligible_tools_from_profiles`）。キーは `"{tool_name}:{subcmd}"`、秒数は `expected_seconds`（未設定時 60）
   3. `config.json` の `background_task.eligible_tools` — 各キーに対し `threshold_s` を秒数として上書き
 - **無効化**: `config.json` で `background_task.enabled: false` にすると `BackgroundTaskManager` 自体が作られない（その場合、submit キューは取り込まれても実行側で警告になる）。
 - **掃除**: `cleanup_old_tasks(max_age_hours=24)` は、(1) `completed` / `failed` で `completed_at` が **24 時間超**過去の JSON を削除、(2) `running` のまま `created_at` が **48 時間超**過去のファイル（プロセスクラッシュ等の孤児）を削除。戻り値は削除件数。`config.json` の `background_task.result_retention_hours` はスキーマに存在するが、**現行の `BackgroundTaskManager` 実装からは参照されない**（呼び出し側が `cleanup_old_tasks` に任意の `max_age_hours` を渡す API のみ）。
 
 ### 同ファイル内のその他 API: `rotate_dm_logs`
 
-`core/background.py` には **バックグラウンドツール実行とは独立**に、`rotate_dm_logs(shared_dir, max_age_days=7)` がある。`shared/dm_logs/*.jsonl` のうち、エントリの `ts` が閾値より古い行を `{stem}.{YYYYMMDD}.archive.jsonl` へ追記アーカイブし、アクティブファイルからは除く。実処理は `_rotate_dm_logs_sync`（`run_in_executor` でオフロード）。
+`core/tasks/background.py` には **バックグラウンドツール実行とは独立**に、`rotate_dm_logs(shared_dir, max_age_days=7)` がある。`shared/dm_logs/*.jsonl` のうち、エントリの `ts` が閾値より古い行を `{stem}.{YYYYMMDD}.archive.jsonl` へ追記アーカイブし、アクティブファイルからは除く。実処理は `_rotate_dm_logs_sync`（`run_in_executor` でオフロード）。
 
 ### コマンド型タスク（`animaworks-tool submit`）
 

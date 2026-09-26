@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from core.execution.base import TokenUsage
-from core.memory.token_usage import TokenUsageLogger
+from core.usage.token_usage import TokenUsageLogger
 
 JST = timezone(timedelta(hours=9))
 
@@ -260,7 +260,7 @@ class TestCustomPricing:
         pricing_file.write_text(json.dumps(custom_pricing))
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("core.memory.token_usage.TokenUsageLogger._load_pricing_table", lambda self: custom_pricing)
+            mp.setattr("core.usage.token_usage.TokenUsageLogger._load_pricing_table", lambda self: custom_pricing)
             tul = TokenUsageLogger(logger_dir)
             tul._pricing = custom_pricing
             cost = tul.estimate_cost("test-model", input_tokens=1_000_000, output_tokens=500_000)

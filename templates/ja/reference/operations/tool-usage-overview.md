@@ -9,7 +9,7 @@ description: "ツール体系の全体像と使い方ガイド"
 ツールは次の3層で構成されます。
 
 1. **フレームワーク内蔵ツール** — `ToolHandler` が名前でディスパッチ（記憶・メッセージ・タスク・ファイル操作など）。定義は `core/tooling/handler.py` の `_dispatch` が一次情報です。
-2. **外部ツールモジュール** — `core/tools/` 直下の公開モジュール（`_*` で始まるファイルは除外）。`get_tool_schemas()` / `dispatch()` / `cli_main()` を持ち、`animaworks-tool <モジュール名> …` からも呼べます。加えて `~/.animaworks/common_tools/` および各 Anima の `tools/*.py`（個人用）を実行時に読み込みます（`core/tools/__init__.py` の `discover_*`）。
+2. **外部ツールモジュール** — `core/integrations/` 直下の公開モジュール（`_*` で始まるファイルは除外）。`get_tool_schemas()` / `dispatch()` / `cli_main()` を持ち、`animaworks-tool <モジュール名> …` からも呼べます。加えて `~/.animaworks/common_tools/` および各 Anima の `tools/*.py`（個人用）を実行時に読み込みます（`core/integrations/__init__.py` の `discover_*`）。
 3. **`animaworks-tool` CLI** — 上記モジュールのサブコマンド実行、長時間処理の `submit`、および一部メイン CLI へのフォールバック転送。
 
 **実行モードによって「LLM に見えるツール一覧」は異なります。** 同一のハンドラ実装でも、スキーマの束ね方が変わります。
@@ -154,9 +154,9 @@ Mode A/B の統合スキーマでは **PascalCase 名**です。`ToolHandler` �
 | **check_background_task** / **list_background_tasks** | バックグラウンドツール実行の確認 |
 | **use_tool** | 外部ツール名+アクションの統一ディスパッチ（スキーマが有効な構成でのみ） |
 
-## `core/tools/` の外部モジュール（CLI / dispatch 用）
+## `core/integrations/` の外部モジュール（CLI / dispatch 用）
 
-`core/tools/__init__.py` の `discover_core_tools()` が `core/tools/*.py` を走査し、先頭が `_` でないファイルをモジュール名として登録します（実装の追加・リネームに追随するため、最新一覧はリポジトリの `core/tools/*.py` を参照）。
+`core/integrations/__init__.py` の `discover_core_tools()` が `core/integrations/*.py` を走査し、先頭が `_` でないファイルをモジュール名として登録します（実装の追加・リネームに追随するため、最新一覧はリポジトリの `core/integrations/*.py` を参照）。
 
 | モジュール | 主な用途 |
 |-----------|----------|
@@ -184,8 +184,8 @@ Mode A/B の統合スキーマでは **PascalCase 名**です。`ToolHandler` �
 animaworks-tool <ツール名> <サブコマンド> [引数…]
 ```
 
-- **`animaworks-tool submit <ツール名> [引数…]`** — 長時間処理をバックグラウンド投入。記述子は **`state/background_tasks/pending/`** に保存され、ワッチャーが実行します（`core/tools/__init__.py` の `_handle_submit`）。対象サブコマンドが `EXECUTION_PROFILE` で `background_eligible` でない場合は警告のみ（投入は行われる）。
-- 利用可能な名前は **`core/tools` のコアモジュール** + **`~/.animaworks/common_tools/`** + **`ANIMAWORKS_ANIMA_DIR` 下の `tools/`** の和集合。`--help` で一覧表示されます。
+- **`animaworks-tool submit <ツール名> [引数…]`** — 長時間処理をバックグラウンド投入。記述子は **`state/background_tasks/pending/`** に保存され、ワッチャーが実行します（`core/integrations/__init__.py` の `_handle_submit`）。対象サブコマンドが `EXECUTION_PROFILE` で `background_eligible` でない場合は警告のみ（投入は行われる）。
+- 利用可能な名前は **`core/integrations` のコアモジュール** + **`~/.animaworks/common_tools/`** + **`ANIMAWORKS_ANIMA_DIR` 下の `tools/`** の和集合。`--help` で一覧表示されます。
 - `ANIMAWORKS_ANIMA_DIR` が設定されているとき、サブコマンドは **`load_permissions` + `is_action_gated`** で拒否される場合があります（例: Discord の `channel_post`）。
 - 未定義の第1引数は、メイン CLI のサブコマンド（`anima`, `vault` 等）へフォールバックされる場合があります。
 

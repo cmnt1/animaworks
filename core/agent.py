@@ -41,11 +41,11 @@ from core._agent_prompt_log import (  # noqa: F401
     _save_prompt_log,
     _save_prompt_log_end,
 )
-from core.background import BackgroundTaskManager
 from core.exceptions import AnimaWorksError  # noqa: F401
 from core.memory import MemoryManager
 from core.messenger import Messenger
 from core.schemas import ModelConfig
+from core.tasks.background import BackgroundTaskManager
 from core.tooling.handler import ToolHandler
 
 logger = logging.getLogger("animaworks.agent")
@@ -271,8 +271,8 @@ class AgentCore(
             if not config.background_task.enabled:
                 return None
 
-            from core.tools import TOOL_MODULES
-            from core.tools._base import load_execution_profiles
+            from core.integrations import TOOL_MODULES
+            from core.integrations._base import load_execution_profiles
 
             profiles = load_execution_profiles(TOOL_MODULES)
             config_eligible = {name: tc.threshold_s for name, tc in config.background_task.eligible_tools.items()}

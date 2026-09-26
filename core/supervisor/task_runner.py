@@ -10,9 +10,7 @@ import asyncio
 import logging
 import os
 import sys
-import threading
 import traceback
-import uuid
 from pathlib import Path
 from typing import Any
 
@@ -48,50 +46,6 @@ _TERMINAL_ACK_RETRY_SLEEP_SECONDS = 2.0
 
 # Module-level registry of open StreamingJournal instances for grace flush.
 _ACTIVE_JOURNALS: list[Any] = []
-
-
-class _MemoryRpcClient:
-    """Bridge synchronous VectorStore operations to the task runner's async IPC."""
-
-    def __init__(self, connection: IPCV2Connection) -> None:
-        self.connection = connection
-        self.loop = asyncio.get_running_loop()
-        self.loop_thread = threading.get_ident()
-        self.pending: dict[str, asyncio.Future[dict[str, Any]]] = {}
-
-    def request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
-        if threading.get_ident() == self.loop_thread:
-            raise RuntimeError("synchronous memory read attempted on the task runner event loop")
-        future = asyncio.run_coroutine_threadsafe(self._request(method, params), self.loop)
-        return future.result(timeout=120.0)
-
-    async def _request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
-        request_id = f"memory-{uuid.uuid4()}"
-        response = self.loop.create_future()
-        self.pending[request_id] = response
-        try:
-            await self.connection.send_request(request_id, method, params)
-            return await asyncio.wait_for(response, timeout=120.0)
-        finally:
-            self.pending.pop(request_id, None)
-
-    def accept_response(self, envelope: IPCV2Envelope) -> bool:
-        request_id = envelope.body["request_id"]
-        response = self.pending.get(request_id)
-        if response is None:
-            return False
-        error = envelope.body.get("error")
-        if error is not None:
-            response.set_exception(RuntimeError(f"{error['code']}: {error['message']}"))
-        else:
-            response.set_result(envelope.body["result"])
-        return True
-
-    def close(self) -> None:
-        for response in self.pending.values():
-            if not response.done():
-                response.set_exception(RuntimeError("root memory IPC closed"))
-        self.pending.clear()
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -195,7 +149,7 @@ async def execute_task_contract(anima: DigitalAnima, task_desc: dict[str, Any]) 
     Claim / lease / queue sync stay on the anima root; this contract only
     produces the result string (and related metadata) for the root to apply.
     """
-    from core.supervisor.pending_executor import (
+    from core.tasks.pending_executor import (
         _NON_COMPLETING_SENTINELS,
         PendingTaskExecutor,
     )
@@ -210,8 +164,8 @@ async def execute_task_contract(anima: DigitalAnima, task_desc: dict[str, Any]) 
     completed_results = task_desc.get("_completed_results")
     if not isinstance(completed_results, dict):
         completed_results = None
-    from core.memory.task_queue import TaskQueueManager
-    from core.taskboard.tasks import attempt_scope, process_identity
+    from core.tasks.board.tasks import attempt_scope, process_identity
+    from core.tasks.queue import TaskQueueManager
 
     token = task_desc.get("_attempt_token")
     identity = None
@@ -255,7 +209,7 @@ async def execute_background_contract(
         import subprocess
 
         from core.exceptions import ToolExecutionError
-        from core.supervisor.pending_executor import _PENDING_TASK_SUBPROCESS_TIMEOUT
+        from core.tasks.pending_executor import _PENDING_TASK_SUBPROCESS_TIMEOUT
 
         tool_name = str(payload.get("tool_name") or "")
         subcommand = str(payload.get("subcommand") or "")
@@ -420,13 +374,11 @@ class _RootLink:
         socket_path: Path,
         state: IPCV2ConnectionState,
         request_id: str,
-        memory_client: _MemoryRpcClient | None = None,
     ) -> None:
         self.connection = connection
         self._socket_path = socket_path
         self._state = state
         self._request_id = request_id
-        self.memory_client = memory_client
         self._lock = asyncio.Lock()
 
     async def send_event(self, event: str, data: dict[str, Any] | None = None) -> int:
@@ -446,8 +398,6 @@ class _RootLink:
                 await connection.close()
                 raise IPCV2ConnectionError("reconnect returned a different run contract")
             self.connection = connection
-            if self.memory_client is not None:
-                self.memory_client.connection = connection
             logger.info("Task runner IPC reconnected to anima root")
             return connection
 
@@ -684,14 +634,7 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
         await connection.close()
         return 2
 
-    memory_client: _MemoryRpcClient | None = None
-    if os.environ.get("ANIMAWORKS_MEMORY_VIA_ROOT") == "1":
-        from core.memory.rag.singleton import configure_ipc_vector_requester
-
-        memory_client = _MemoryRpcClient(connection)
-        configure_ipc_vector_requester(memory_client.request, anima_name=args.anima)
-
-    link = _RootLink(connection, socket_path, state, request_id, memory_client)
+    link = _RootLink(connection, socket_path, state, request_id)
 
     try:
         execution_control: dict[str, Any] = {}
@@ -757,11 +700,10 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
                     receiver = asyncio.create_task(_receive_after_reconnect(link, connection))
                     continue
                 if control.kind == "response":
-                    if memory_client is None or not memory_client.accept_response(control):
-                        execution.cancel()
-                        raise IPCV2ConnectionError("unexpected response from anima root")
-                    receiver = asyncio.create_task(connection.receive())
-                    continue
+                    # The only request this runner sends is the run contract, which
+                    # is consumed during connect; any other response is unexpected.
+                    execution.cancel()
+                    raise IPCV2ConnectionError("unexpected response from anima root")
                 if control.kind == "event" and control.body["event"] == "grace":
                     # A-07: stop work (finally flushes journals) → grace_ack → exit.
                     grace_seq = 0
@@ -862,11 +804,6 @@ async def run_task(args: argparse.Namespace, socket_path: Path, identity: IPCV2I
         )
         return 0
     finally:
-        if memory_client is not None:
-            from core.memory.rag.singleton import configure_ipc_vector_requester
-
-            memory_client.close()
-            configure_ipc_vector_requester(None)
         progress.cancel()
         parent_monitor.cancel()
         if receiver is not None:

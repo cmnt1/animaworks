@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.memory.task_queue import TaskQueueManager
-from core.taskboard.store import TaskBoardStore
+from core.tasks.board.store import TaskBoardStore
+from core.tasks.queue import TaskQueueManager
 
 
 def _setup(tmp_path: Path) -> tuple[TaskQueueManager, TaskBoardStore]:

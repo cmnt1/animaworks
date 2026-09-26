@@ -17,7 +17,7 @@ from tests.unit.core.test_agent import _make_agent
 def cycle(tmp_path):
     agent = _make_agent(tmp_path, model="codex/test-model", resolved_mode="C")
     agent._run_priming = AsyncMock(return_value=("", ""))
-    agent._preflight_size_check = AsyncMock(return_value=("system", "prompt", False))
+    agent._preflight_size_check = AsyncMock(return_value=("system", "prompt"))
     agent._load_stream_retry_config = lambda: {"checkpoint_enabled": False, "retry_max": 0, "retry_delay_s": 0}
     agent._executor.supports_streaming = True
     with (

@@ -1,4 +1,4 @@
-"""Tests for core/tools/x_search.py — X/Twitter search tool."""
+"""Tests for core/integrations/x_search.py — X/Twitter search tool."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -10,20 +10,19 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from core.tools._base import ToolConfigError
-from core.tools.x_search import (
+from core.integrations._base import ToolConfigError
+from core.integrations.x_search import (
     XSearchClient,
     _format_tweet_text,
     get_tool_schemas,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────────
 
 
 @pytest.fixture(autouse=True)
 def _set_twitter_token():
-    with patch("core.tools.x_search.get_credential", return_value="test-bearer-token"):
+    with patch("core.integrations.x_search.get_credential", return_value="test-bearer-token"):
         yield
 
 
@@ -66,7 +65,7 @@ class TestXSearchClient:
         assert client.bearer_token == "test-bearer-token"
 
     def test_init_missing_token(self):
-        with patch("core.tools.x_search.get_credential", side_effect=ToolConfigError("no token")):
+        with patch("core.integrations.x_search.get_credential", side_effect=ToolConfigError("no token")):
             with pytest.raises(ToolConfigError):
                 XSearchClient()
 
@@ -75,10 +74,11 @@ class TestXSearchClientRequest:
     def test_request_sets_auth_header(self):
         client = XSearchClient(bearer_token="tok123")
         mock_resp = httpx.Response(
-            200, json={"data": []},
+            200,
+            json={"data": []},
             request=httpx.Request("GET", "https://api.twitter.com/2/test"),
         )
-        with patch("core.tools.x_search.httpx.get", return_value=mock_resp) as mock_get:
+        with patch("core.integrations.x_search.httpx.get", return_value=mock_resp) as mock_get:
             client._request("test", {})
         headers = mock_get.call_args.kwargs["headers"]
         assert headers["Authorization"] == "Bearer tok123"
@@ -86,30 +86,33 @@ class TestXSearchClientRequest:
     def test_rate_limit_error(self):
         client = XSearchClient(bearer_token="tok")
         resp = httpx.Response(
-            429, text="Rate limited",
+            429,
+            text="Rate limited",
             request=httpx.Request("GET", "https://api.twitter.com/2/test"),
         )
-        with patch("core.tools.x_search.httpx.get", return_value=resp):
+        with patch("core.integrations.x_search.httpx.get", return_value=resp):
             with pytest.raises(RuntimeError, match="Rate limit"):
                 client._request("test", {})
 
     def test_unauthorized_error(self):
         client = XSearchClient(bearer_token="bad")
         resp = httpx.Response(
-            401, text="Unauthorized",
+            401,
+            text="Unauthorized",
             request=httpx.Request("GET", "https://api.twitter.com/2/test"),
         )
-        with patch("core.tools.x_search.httpx.get", return_value=resp):
+        with patch("core.integrations.x_search.httpx.get", return_value=resp):
             with pytest.raises(RuntimeError, match="Invalid bearer token"):
                 client._request("test", {})
 
     def test_forbidden_error(self):
         client = XSearchClient(bearer_token="tok")
         resp = httpx.Response(
-            403, text="Forbidden",
+            403,
+            text="Forbidden",
             request=httpx.Request("GET", "https://api.twitter.com/2/test"),
         )
-        with patch("core.tools.x_search.httpx.get", return_value=resp):
+        with patch("core.integrations.x_search.httpx.get", return_value=resp):
             with pytest.raises(RuntimeError, match="Access forbidden"):
                 client._request("test", {})
 
@@ -118,7 +121,7 @@ class TestSearchRecent:
     def test_search_recent_success(self):
         client = XSearchClient(bearer_token="tok")
         mock_resp = _make_x_response()
-        with patch("core.tools.x_search.httpx.get", return_value=mock_resp):
+        with patch("core.integrations.x_search.httpx.get", return_value=mock_resp):
             tweets = client.search_recent("hello")
         assert len(tweets) == 1
         assert tweets[0]["text"] == "Hello world"
@@ -128,7 +131,7 @@ class TestSearchRecent:
     def test_search_recent_clamps_max_results(self):
         client = XSearchClient(bearer_token="tok")
         mock_resp = _make_x_response([])
-        with patch("core.tools.x_search.httpx.get", return_value=mock_resp) as mock_get:
+        with patch("core.integrations.x_search.httpx.get", return_value=mock_resp) as mock_get:
             client.search_recent("q", max_results=5)
         params = mock_get.call_args.kwargs["params"]
         assert params["max_results"] == 10  # minimum is 10
@@ -136,7 +139,7 @@ class TestSearchRecent:
     def test_search_recent_sets_start_time(self):
         client = XSearchClient(bearer_token="tok")
         mock_resp = _make_x_response([])
-        with patch("core.tools.x_search.httpx.get", return_value=mock_resp) as mock_get:
+        with patch("core.integrations.x_search.httpx.get", return_value=mock_resp) as mock_get:
             client.search_recent("q", days=3)
         params = mock_get.call_args.kwargs["params"]
         assert "start_time" in params
@@ -152,7 +155,7 @@ class TestGetUserTweets:
         )
         tweets_resp = _make_x_response(meta={})
         responses = [user_resp, tweets_resp]
-        with patch("core.tools.x_search.httpx.get", side_effect=responses):
+        with patch("core.integrations.x_search.httpx.get", side_effect=responses):
             tweets = client.get_user_tweets("testuser", max_results=1)
         assert len(tweets) == 1
         assert tweets[0]["username"] == "testuser"
@@ -164,7 +167,7 @@ class TestGetUserTweets:
             json={"errors": [{"detail": "not found"}]},
             request=httpx.Request("GET", "https://api.twitter.com/2/users/by/username/nobody"),
         )
-        with patch("core.tools.x_search.httpx.get", return_value=user_resp):
+        with patch("core.integrations.x_search.httpx.get", return_value=user_resp):
             with pytest.raises(RuntimeError, match="not found"):
                 client.get_user_tweets("nobody")
 

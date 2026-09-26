@@ -126,8 +126,8 @@ async def channel_e_pending_tasks(
     if denied_roots and unresolved_queue_path.is_symlink():
         queue_path = None
 
-    from core.taskboard.store import taskboard_db_path_for_anima
-    from core.taskboard.tasks import task_database_path
+    from core.tasks.board.store import taskboard_db_path_for_anima
+    from core.tasks.board.tasks import task_database_path
 
     taskboard_path = _resolved_readable_path(taskboard_db_path_for_anima(anima_dir), denied_roots)
     task_store_path = _resolved_readable_path(task_database_path(anima_dir), denied_roots)
@@ -135,9 +135,9 @@ async def channel_e_pending_tasks(
     try:
         if queue_path is None or task_store_path is None or taskboard_path is None:
             raise PermissionError("pending task source is explicitly denied")
-        from core.taskboard.formatting import format_tasks_for_priming
-        from core.taskboard.projector import project_anima
-        from core.taskboard.store import TaskBoardStore
+        from core.tasks.board.formatting import format_tasks_for_priming
+        from core.tasks.board.projector import project_anima
+        from core.tasks.board.store import TaskBoardStore
 
         store = TaskBoardStore(taskboard_path)
         board_tasks = await asyncio.to_thread(
@@ -156,7 +156,7 @@ async def channel_e_pending_tasks(
             parts.append(queue_summary)
     except Exception:
         logger.debug("Channel E TaskBoard projection failed; falling back to task_queue formatter", exc_info=True)
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         try:
             if queue_path is None or task_store_path is None:
@@ -230,7 +230,7 @@ async def channel_e_pending_tasks(
             ]
             canonical_ids: dict[Path, str] = {}
             if queue_path is not None and task_store_path is not None:
-                from core.memory.task_queue import TaskQueueManager
+                from core.tasks.queue import TaskQueueManager
 
                 entries = await asyncio.to_thread(TaskQueueManager(anima_dir).store.read, anima_dir.name, archived=True)
                 for entry in entries.values():

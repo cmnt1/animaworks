@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from server.discord_channel_sync import _board_to_channel_name, _channel_to_board_name
+from server.gateways.discord_channel_sync import _board_to_channel_name, _channel_to_board_name
 
 
 class TestChannelToBoardName:

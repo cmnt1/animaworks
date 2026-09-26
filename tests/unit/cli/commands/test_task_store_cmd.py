@@ -9,7 +9,7 @@ import pytest
 
 from cli.commands.task_store_cmd import run_maintenance
 from core.schemas import TaskEntry
-from core.taskboard.tasks import TaskStore, task_database_path
+from core.tasks.board.tasks import TaskStore, task_database_path
 
 
 def entry(task_id: str, status: str = "pending") -> TaskEntry:

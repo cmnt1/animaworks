@@ -509,7 +509,7 @@ CLIはパワーユーザーと自動化向けです。日常操作はWeb UIで�
 | 設定・マイグレーション | Pydantic 2.0+ / JSON / Markdown、`core/migrations/`（起動時マイグレーション） |
 | 国際化 | `core/i18n` の `t()`。ウィザード17言語・ダッシュボード ja/en/ko |
 | スキル基盤 | Skill Hub、明示的skill activation、router、curator、procedure-to-skill promotion |
-| 拡張ツール | `core/tools/*.py` の自動登録に加え、`~/.animaworks/common_tools/` と `animas/<名>/tools/` をスキャン |
+| 拡張ツール | `core/integrations/*.py` の自動登録に加え、`~/.animaworks/common_tools/` と `animas/<名>/tools/` をスキャン |
 | 音声チャット | faster-whisper (STT) + VOICEVOX / SBV2 / ElevenLabs / Irodori (TTS) + ローカルフロントレーンモデル |
 | メッセージング | 受信: Slack Socket Mode, Chatwork Webhook, Discord Gateway, Zoom RTMS ／ 人間通知: Slack, Chatwork, Discord, LINE, Telegram, ntfy |
 | 画像生成 | NovelAI, fal.ai (Flux), Meshy (3D), Codex画像生成, ローカルDiffusers |

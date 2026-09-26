@@ -31,7 +31,7 @@ Anima は **ツールではなく、自律的に思考・判断・行動する�
 - **Heartbeat（定期巡回）**: 一定間隔で自動起動し、状況確認・計画立案を行う
 - **Cron（定時タスク）**: 決まった時間に必ず実行するタスクを持てる
 - **TaskExec（タスク実行）**: `submit_tasks` または `delegate_task` で登録された **LLM タスク**を正規タスクストアから取得し、保存済み入力を別の試行で実行する。
-- **バックグラウンドツール実行**: 長時間の外部ツールは `BackgroundTaskManager`（`core/background.py`）に載せて非同期実行でき、会話ループを長時間ブロックしない（詳細は下記）
+- **バックグラウンドツール実行**: 長時間の外部ツールは `BackgroundTaskManager`（`core/tasks/background.py`）に載せて非同期実行でき、会話ループを長時間ブロックしない（詳細は下記）
 
 ## ライフサイクル
 
@@ -62,7 +62,7 @@ Chat と Heartbeat（および cron / TaskExec などのバックグラウンド
 
 #### バックグラウンドツール実行（BackgroundTaskManager）
 
-`core/background.py` の `BackgroundTaskManager` は、**長時間になりがちな外部ツール呼び出しをバックグラウンドで実行**し、状態と結果をディスクに残して後から参照できるようにする。`config.json` の `background_task.enabled` が `false` のときはマネージャ自体が無効化され、エージェント経由のバックグラウンド投入も行われない。
+`core/tasks/background.py` の `BackgroundTaskManager` は、**長時間になりがちな外部ツール呼び出しをバックグラウンドで実行**し、状態と結果をディスクに残して後から参照できるようにする。`config.json` の `background_task.enabled` が `false` のときはマネージャ自体が無効化され、エージェント経由のバックグラウンド投入も行われない。
 
 - **永続化**: 各タスクは `TaskStatus`（`running` / `completed` / `failed` など）と結果文字列を `state/background_tasks/{task_id}.json` に保存する。メモリ上のキャッシュとディスクの両方から `get_task` / `list_tasks` で参照できる。
 - **投入 API**: `submit` は `task_id` を即返し、`asyncio.create_task` でラップした `_run_task` が本体を走らせる。同期ツール実装は `run_in_executor` でスレッドプール上で実行される。非同期ツール向けに `submit_async` もある。完了時は任意の `on_complete` コールバックを `await` する（コールバック内の例外はログに落ち、タスク結果には影響しない）。

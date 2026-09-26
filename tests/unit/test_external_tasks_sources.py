@@ -15,12 +15,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.exceptions import ToolConfigError
-from core.external_tasks.collector import CredentialNotFoundError
-from core.external_tasks.sources import chatwork as chatwork_src
-from core.external_tasks.sources import github as github_src
-from core.external_tasks.sources import gmail as gmail_src
-from core.external_tasks.sources import slack as slack_src
-
+from core.tasks.external.collector import CredentialNotFoundError
+from core.tasks.external.sources import chatwork as chatwork_src
+from core.tasks.external.sources import github as github_src
+from core.tasks.external.sources import gmail as gmail_src
+from core.tasks.external.sources import slack as slack_src
 
 # ── GitHub ──────────────────────────────────────────────
 
@@ -62,7 +61,7 @@ def test_github_collects_prs_and_issues() -> None:
             return subprocess.CompletedProcess(cmd, 0, json.dumps(issue_payload), "")
         raise AssertionError(f"unexpected gh command: {cmd}")
 
-    with patch("core.external_tasks.sources.github.subprocess.run", side_effect=fake_run):
+    with patch("core.tasks.external.sources.github.subprocess.run", side_effect=fake_run):
         tasks = github_src.collect_github()
 
     assert len(tasks) == 2
@@ -85,21 +84,25 @@ def test_github_collects_prs_and_issues() -> None:
 
 
 def test_github_credential_missing_when_gh_not_installed() -> None:
-    with patch(
-        "core.external_tasks.sources.github.subprocess.run",
-        side_effect=FileNotFoundError("gh"),
+    with (
+        patch(
+            "core.tasks.external.sources.github.subprocess.run",
+            side_effect=FileNotFoundError("gh"),
+        ),
+        pytest.raises(CredentialNotFoundError),
     ):
-        with pytest.raises(CredentialNotFoundError):
-            github_src.collect_github()
+        github_src.collect_github()
 
 
 def test_github_credential_missing_when_unauthenticated() -> None:
-    with patch(
-        "core.external_tasks.sources.github.subprocess.run",
-        side_effect=subprocess.CalledProcessError(1, ["gh", "auth", "status"]),
+    with (
+        patch(
+            "core.tasks.external.sources.github.subprocess.run",
+            side_effect=subprocess.CalledProcessError(1, ["gh", "auth", "status"]),
+        ),
+        pytest.raises(CredentialNotFoundError),
     ):
-        with pytest.raises(CredentialNotFoundError):
-            github_src.collect_github()
+        github_src.collect_github()
 
 
 def test_github_api_error_propagates() -> None:
@@ -108,7 +111,7 @@ def test_github_api_error_propagates() -> None:
             return subprocess.CompletedProcess(cmd, 0, "", "")
         return subprocess.CompletedProcess(cmd, 1, "", "API rate limit exceeded")
 
-    with patch("core.external_tasks.sources.github.subprocess.run", side_effect=fake_run):
+    with patch("core.tasks.external.sources.github.subprocess.run", side_effect=fake_run):
         with pytest.raises(RuntimeError, match="gh command failed"):
             github_src.collect_github()
 
@@ -134,7 +137,7 @@ def test_github_id_deterministic() -> None:
             return subprocess.CompletedProcess(cmd, 0, "[]", "")
         raise AssertionError(cmd)
 
-    with patch("core.external_tasks.sources.github.subprocess.run", side_effect=fake_run):
+    with patch("core.tasks.external.sources.github.subprocess.run", side_effect=fake_run):
         a = github_src.collect_github()
         b = github_src.collect_github()
     assert a[0].id == b[0].id == "github-pr-o-r-42"
@@ -167,8 +170,8 @@ def test_slack_collects_unreplied_mentions() -> None:
     mock_cache.find_unreplied.return_value = [mention]
 
     with (
-        patch("core.tools._slack_client.SlackClient", return_value=mock_client),
-        patch("core.tools._slack_cache.MessageCache", return_value=mock_cache),
+        patch("core.integrations._slack_client.SlackClient", return_value=mock_client),
+        patch("core.integrations._slack_cache.MessageCache", return_value=mock_cache),
     ):
         tasks = slack_src.collect_slack()
 
@@ -186,12 +189,14 @@ def test_slack_collects_unreplied_mentions() -> None:
 
 
 def test_slack_credential_missing() -> None:
-    with patch(
-        "core.tools._slack_client.SlackClient",
-        side_effect=ToolConfigError("missing slack token"),
+    with (
+        patch(
+            "core.integrations._slack_client.SlackClient",
+            side_effect=ToolConfigError("missing slack token"),
+        ),
+        pytest.raises(CredentialNotFoundError, match="missing slack token"),
     ):
-        with pytest.raises(CredentialNotFoundError, match="missing slack token"):
-            slack_src.collect_slack()
+        slack_src.collect_slack()
 
 
 def test_slack_api_error_propagates() -> None:
@@ -199,11 +204,11 @@ def test_slack_api_error_propagates() -> None:
     mock_client.auth_test.side_effect = RuntimeError("slack down")
 
     with (
-        patch("core.tools._slack_client.SlackClient", return_value=mock_client),
-        patch("core.tools._slack_cache.MessageCache"),
+        patch("core.integrations._slack_client.SlackClient", return_value=mock_client),
+        patch("core.integrations._slack_cache.MessageCache"),
+        pytest.raises(RuntimeError, match="slack down"),
     ):
-        with pytest.raises(RuntimeError, match="slack down"):
-            slack_src.collect_slack()
+        slack_src.collect_slack()
 
 
 def test_slack_is_actionable_mention_filters_old_and_self() -> None:
@@ -224,12 +229,11 @@ def test_slack_import_error_becomes_credential_not_found() -> None:
 
     # Force ImportError for slack tool modules without breaking other imports.
     blocked = {
-        "core.tools._slack_client": None,
-        "core.tools._slack_cache": None,
+        "core.integrations._slack_client": None,
+        "core.integrations._slack_cache": None,
     }
-    with patch.dict(sys.modules, blocked):
-        with pytest.raises(CredentialNotFoundError, match="Slack dependencies"):
-            slack_src.collect_slack()
+    with patch.dict(sys.modules, blocked), pytest.raises(CredentialNotFoundError, match="Slack dependencies"):
+        slack_src.collect_slack()
 
 
 def test_slack_missing_user_id_raises() -> None:
@@ -238,11 +242,11 @@ def test_slack_missing_user_id_raises() -> None:
     mock_client.auth_test.return_value = {}
 
     with (
-        patch("core.tools._slack_client.SlackClient", return_value=mock_client),
-        patch("core.tools._slack_cache.MessageCache"),
+        patch("core.integrations._slack_client.SlackClient", return_value=mock_client),
+        patch("core.integrations._slack_cache.MessageCache"),
+        pytest.raises(RuntimeError, match="user_id"),
     ):
-        with pytest.raises(RuntimeError, match="user_id"):
-            slack_src.collect_slack()
+        slack_src.collect_slack()
 
 
 def test_slack_build_permalink_deterministic() -> None:
@@ -318,15 +322,15 @@ def test_chatwork_collects_open_tasks() -> None:
 
     with (
         patch(
-            "core.tools._base.resolve_env_style_credential",
+            "core.integrations._base.resolve_env_style_credential",
             return_value="owner-token",
         ) as resolve_cred,
-        patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client) as client_cls,
+        patch("core.integrations._chatwork_client.ChatworkClient", return_value=mock_client) as client_cls,
         patch(
-            "core.tools._chatwork_cache.resolve_cache_db_path",
+            "core.integrations._chatwork_cache.resolve_cache_db_path",
             return_value=MagicMock(),
         ),
-        patch("core.tools._chatwork_cache.MessageCache", return_value=mock_cache),
+        patch("core.integrations._chatwork_cache.MessageCache", return_value=mock_cache),
     ):
         tasks = chatwork_src.collect_chatwork()
 
@@ -361,13 +365,13 @@ def test_chatwork_no_limit_time_uses_epoch() -> None:
     mock_cache.find_unreplied.return_value = []
 
     with (
-        patch("core.tools._base.resolve_env_style_credential", return_value="owner-token"),
-        patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client),
+        patch("core.integrations._base.resolve_env_style_credential", return_value="owner-token"),
+        patch("core.integrations._chatwork_client.ChatworkClient", return_value=mock_client),
         patch(
-            "core.tools._chatwork_cache.resolve_cache_db_path",
+            "core.integrations._chatwork_cache.resolve_cache_db_path",
             return_value=MagicMock(),
         ),
-        patch("core.tools._chatwork_cache.MessageCache", return_value=mock_cache),
+        patch("core.integrations._chatwork_cache.MessageCache", return_value=mock_cache),
     ):
         tasks = chatwork_src.collect_chatwork()
 
@@ -396,13 +400,13 @@ def test_chatwork_collects_unreplied_mentions() -> None:
     ]
 
     with (
-        patch("core.tools._base.resolve_env_style_credential", return_value="owner-token"),
-        patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client),
+        patch("core.integrations._base.resolve_env_style_credential", return_value="owner-token"),
+        patch("core.integrations._chatwork_client.ChatworkClient", return_value=mock_client),
         patch(
-            "core.tools._chatwork_cache.resolve_cache_db_path",
+            "core.integrations._chatwork_cache.resolve_cache_db_path",
             return_value=MagicMock(),
         ),
-        patch("core.tools._chatwork_cache.MessageCache", return_value=mock_cache),
+        patch("core.integrations._chatwork_cache.MessageCache", return_value=mock_cache),
     ):
         tasks = chatwork_src.collect_chatwork()
 
@@ -415,12 +419,14 @@ def test_chatwork_collects_unreplied_mentions() -> None:
 
 
 def test_chatwork_credential_missing() -> None:
-    with patch(
-        "core.tools._base.resolve_env_style_credential",
-        return_value=None,
+    with (
+        patch(
+            "core.integrations._base.resolve_env_style_credential",
+            return_value=None,
+        ),
+        pytest.raises(CredentialNotFoundError, match="CHATWORK_API_TOKEN__owner"),
     ):
-        with pytest.raises(CredentialNotFoundError, match="CHATWORK_API_TOKEN__owner"):
-            chatwork_src.collect_chatwork()
+        chatwork_src.collect_chatwork()
 
 
 def test_chatwork_api_error_propagates() -> None:
@@ -428,8 +434,8 @@ def test_chatwork_api_error_propagates() -> None:
     mock_client.my_tasks.side_effect = RuntimeError("chatwork 500")
 
     with (
-        patch("core.tools._base.resolve_env_style_credential", return_value="owner-token"),
-        patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client),
+        patch("core.integrations._base.resolve_env_style_credential", return_value="owner-token"),
+        patch("core.integrations._chatwork_client.ChatworkClient", return_value=mock_client),
     ):
         with pytest.raises(RuntimeError, match="chatwork 500"):
             chatwork_src.collect_chatwork()
@@ -441,8 +447,8 @@ def test_chatwork_mentions_skipped_when_me_fails() -> None:
     mock_client.me.side_effect = RuntimeError("me failed")
 
     with (
-        patch("core.tools._base.resolve_env_style_credential", return_value="owner-token"),
-        patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client),
+        patch("core.integrations._base.resolve_env_style_credential", return_value="owner-token"),
+        patch("core.integrations._chatwork_client.ChatworkClient", return_value=mock_client),
     ):
         tasks = chatwork_src.collect_chatwork()
 
@@ -455,8 +461,8 @@ def test_chatwork_mentions_skipped_when_account_id_empty() -> None:
     mock_client.me.return_value = {}
 
     with (
-        patch("core.tools._base.resolve_env_style_credential", return_value="owner-token"),
-        patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client),
+        patch("core.integrations._base.resolve_env_style_credential", return_value="owner-token"),
+        patch("core.integrations._chatwork_client.ChatworkClient", return_value=mock_client),
     ):
         tasks = chatwork_src.collect_chatwork()
 
@@ -481,13 +487,13 @@ def test_chatwork_mentions_filter_old_and_incomplete_rows() -> None:
     ]
 
     with (
-        patch("core.tools._base.resolve_env_style_credential", return_value="owner-token"),
-        patch("core.tools._chatwork_client.ChatworkClient", return_value=mock_client),
+        patch("core.integrations._base.resolve_env_style_credential", return_value="owner-token"),
+        patch("core.integrations._chatwork_client.ChatworkClient", return_value=mock_client),
         patch(
-            "core.tools._chatwork_cache.resolve_cache_db_path",
+            "core.integrations._chatwork_cache.resolve_cache_db_path",
             return_value=MagicMock(),
         ),
-        patch("core.tools._chatwork_cache.MessageCache", return_value=mock_cache),
+        patch("core.integrations._chatwork_cache.MessageCache", return_value=mock_cache),
     ):
         tasks = chatwork_src.collect_chatwork()
 
@@ -521,7 +527,7 @@ def test_gmail_collects_unread(tmp_path) -> None:
     mock_client = _gmail_client_with_token(tmp_path)
     mock_client.search_emails.return_value = [email]
 
-    with patch("core.tools.gmail.GmailClient", return_value=mock_client):
+    with patch("core.integrations.gmail.GmailClient", return_value=mock_client):
         tasks = gmail_src.collect_gmail()
 
     assert len(tasks) == 1
@@ -539,12 +545,14 @@ def test_gmail_collects_unread(tmp_path) -> None:
 
 
 def test_gmail_credential_missing_on_import_error() -> None:
-    with patch(
-        "core.tools.gmail.GmailClient",
-        side_effect=ImportError("google-api packages missing"),
+    with (
+        patch(
+            "core.integrations.gmail.GmailClient",
+            side_effect=ImportError("google-api packages missing"),
+        ),
+        pytest.raises(CredentialNotFoundError, match="google-api"),
     ):
-        with pytest.raises(CredentialNotFoundError, match="google-api"):
-            gmail_src.collect_gmail()
+        gmail_src.collect_gmail()
 
 
 def test_gmail_no_token_skips_interactive_oauth(tmp_path) -> None:
@@ -553,11 +561,9 @@ def test_gmail_no_token_skips_interactive_oauth(tmp_path) -> None:
     mock_client.token_path = tmp_path / "no-token.json"
     mock_client.mcp_token_path = tmp_path / "no-mcp.json"
     # If search_emails were reached, _get_credentials could run_local_server.
-    mock_client.search_emails.side_effect = AssertionError(
-        "search_emails must not be called without token"
-    )
+    mock_client.search_emails.side_effect = AssertionError("search_emails must not be called without token")
 
-    with patch("core.tools.gmail.GmailClient", return_value=mock_client):
+    with patch("core.integrations.gmail.GmailClient", return_value=mock_client):
         with pytest.raises(CredentialNotFoundError, match="token not found"):
             gmail_src.collect_gmail()
 
@@ -568,7 +574,7 @@ def test_gmail_credential_missing_on_value_error(tmp_path) -> None:
     mock_client = _gmail_client_with_token(tmp_path)
     mock_client.search_emails.side_effect = ValueError("No OAuth credentials found")
 
-    with patch("core.tools.gmail.GmailClient", return_value=mock_client):
+    with patch("core.integrations.gmail.GmailClient", return_value=mock_client):
         with pytest.raises(CredentialNotFoundError, match="OAuth"):
             gmail_src.collect_gmail()
 
@@ -577,7 +583,7 @@ def test_gmail_api_error_propagates(tmp_path) -> None:
     mock_client = _gmail_client_with_token(tmp_path)
     mock_client.search_emails.side_effect = RuntimeError("quota exceeded")
 
-    with patch("core.tools.gmail.GmailClient", return_value=mock_client):
+    with patch("core.integrations.gmail.GmailClient", return_value=mock_client):
         with pytest.raises(RuntimeError, match="quota exceeded"):
             gmail_src.collect_gmail()
 
@@ -594,7 +600,7 @@ def test_gmail_id_deterministic(tmp_path) -> None:
     mock_client = _gmail_client_with_token(tmp_path)
     mock_client.search_emails.return_value = [email]
 
-    with patch("core.tools.gmail.GmailClient", return_value=mock_client):
+    with patch("core.integrations.gmail.GmailClient", return_value=mock_client):
         a = gmail_src.collect_gmail()
         b = gmail_src.collect_gmail()
     assert a[0].id == b[0].id == "gmail-stable-id"

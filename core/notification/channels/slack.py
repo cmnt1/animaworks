@@ -15,7 +15,7 @@ from core.notification.notifier import NotificationChannel, register_channel
 
 if TYPE_CHECKING:
     from core.notification.interactive import InteractionRequest
-from core.tools.slack import md_to_slack_mrkdwn
+from core.integrations.slack import md_to_slack_mrkdwn
 
 logger = logging.getLogger("animaworks.notification.slack")
 
@@ -82,13 +82,13 @@ class SlackChannel(NotificationChannel):
         if not bot_token:
             bot_token = self._resolve_env("bot_token_env")
         if not bot_token and anima_name:
-            from core.tools._base import resolve_env_style_credential
+            from core.integrations._base import resolve_env_style_credential
 
             per_key = f"SLACK_BOT_TOKEN__{anima_name}"
             bot_token = resolve_env_style_credential(per_key) or ""
         if not bot_token and self._config.get("channel"):
             try:
-                from core.tools._base import get_credential
+                from core.integrations._base import get_credential
 
                 bot_token = get_credential("slack", "notification", env_var="SLACK_BOT_TOKEN")
             except Exception:
@@ -142,7 +142,7 @@ class SlackChannel(NotificationChannel):
             payload["username"] = anima_name
             icon_url = ""
             try:
-                from core.tools._anima_icon_url import resolve_anima_icon_url
+                from core.integrations._anima_icon_url import resolve_anima_icon_url
 
                 icon_url = resolve_anima_icon_url(
                     anima_name,

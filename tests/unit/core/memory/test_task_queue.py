@@ -4,20 +4,20 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for core.memory.task_queue — TaskQueueManager and task lifecycle."""
+"""Unit tests for core.tasks.queue — TaskQueueManager and task lifecycle."""
 
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from core.memory.task_queue import (
+from core.tasks.board.tasks import TaskStore, task_database_path
+from core.tasks.queue import (
     _ACTIVE_STATUSES,
     _TERMINAL_STATUSES,
     TaskPersistenceError,
     TaskQueueManager,
 )
-from core.taskboard.tasks import TaskStore, task_database_path
 
 # ── Test 1: _append raises TaskPersistenceError on OSError ─────────────
 
@@ -175,7 +175,7 @@ def test_task_tracker_completed_includes_cancelled(tmp_path: Path) -> None:
     (hinata_dir / "state").mkdir(exist_ok=True)
 
     # Create delegated task in sakura's queue
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     sakura_tqm = TaskQueueManager(sakura_dir)
     hinata_tqm = TaskQueueManager(hinata_dir)
@@ -239,7 +239,7 @@ def test_task_tracker_active_excludes_cancelled(tmp_path: Path) -> None:
     (sakura_dir / "state").mkdir(exist_ok=True)
     (hinata_dir / "state").mkdir(exist_ok=True)
 
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     sakura_tqm = TaskQueueManager(sakura_dir)
     hinata_tqm = TaskQueueManager(hinata_dir)
@@ -608,8 +608,8 @@ def _tqm_with_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: st
 
 def test_update_status_terminal_archives_existing_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Terminal status closes existing TaskBoard metadata to archived/done."""
-    from core.taskboard.models import AttentionVisibility, BoardColumn
-    from core.taskboard.store import TaskBoardStore
+    from core.tasks.board.models import AttentionVisibility, BoardColumn
+    from core.tasks.board.store import TaskBoardStore
 
     tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
     entry = tqm.add_task(
@@ -653,8 +653,8 @@ def test_update_status_terminal_archives_existing_metadata(tmp_path: Path, monke
 def test_update_status_pending_reactivates_archived_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Re-queueing an archived task to pending revives the board card so the
     pending attention gate does not cancel it as "archived by TaskBoard"."""
-    from core.taskboard.models import AttentionVisibility, BoardColumn
-    from core.taskboard.store import TaskBoardStore
+    from core.tasks.board.models import AttentionVisibility, BoardColumn
+    from core.tasks.board.store import TaskBoardStore
 
     tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
     entry = tqm.add_task(
@@ -698,7 +698,7 @@ def test_update_status_pending_reactivates_archived_metadata(tmp_path: Path, mon
 
 def test_update_status_terminal_does_not_create_metadata_row(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Terminal status must not invent a TaskBoard metadata row when none exists."""
-    from core.taskboard.store import TaskBoardStore
+    from core.tasks.board.store import TaskBoardStore
 
     tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
     entry = tqm.add_task(
@@ -725,8 +725,8 @@ def test_update_status_terminal_preserves_suppressed_visibility(
     visibility: str,
 ) -> None:
     """Terminal queue sync must not replace a more specific suppression reason."""
-    from core.taskboard.models import AttentionVisibility
-    from core.taskboard.store import TaskBoardStore
+    from core.tasks.board.models import AttentionVisibility
+    from core.tasks.board.store import TaskBoardStore
 
     tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
     entry = tqm.add_task(
@@ -772,7 +772,7 @@ def test_update_status_succeeds_when_taskboard_store_raises(tmp_path: Path, monk
         def upsert_metadata(self, *args, **kwargs):
             raise RuntimeError("store down")
 
-    with patch("core.taskboard.store.TaskBoardStore", return_value=_BoomStore()):
+    with patch("core.tasks.board.store.TaskBoardStore", return_value=_BoomStore()):
         result = tqm.update_status(entry.task_id, "done")
 
     assert result is not None
@@ -784,8 +784,8 @@ def test_update_status_succeeds_when_taskboard_store_raises(tmp_path: Path, monk
 
 def test_update_status_non_terminal_does_not_touch_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Non-terminal transitions leave TaskBoard metadata unchanged."""
-    from core.taskboard.models import AttentionVisibility, BoardColumn
-    from core.taskboard.store import TaskBoardStore
+    from core.tasks.board.models import AttentionVisibility, BoardColumn
+    from core.tasks.board.store import TaskBoardStore
 
     tqm, data_dir = _tqm_with_data_dir(tmp_path, monkeypatch)
     entry = tqm.add_task(

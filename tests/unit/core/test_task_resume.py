@@ -12,8 +12,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.memory.task_queue import TaskQueueManager
-from core.tasks_dispatch import publish_tasks, update_task
+from core.tasks.dispatch import publish_tasks, update_task
+from core.tasks.queue import TaskQueueManager
 
 
 @pytest.fixture
@@ -104,7 +104,7 @@ def test_resume_missing_id_raises_not_found(anima_dir):
 
 
 def test_resume_rejects_stale_attempt_identity(anima_dir):
-    from core.taskboard.tasks import attempt_scope
+    from core.tasks.board.tasks import attempt_scope
 
     publish_tasks(anima_dir, [payload()])
     manager = TaskQueueManager(anima_dir)

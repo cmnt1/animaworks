@@ -12,7 +12,6 @@ from unittest.mock import MagicMock, patch
 
 from core.memory.frontmatter import parse_frontmatter
 from core.memory.rag.store import Document, SearchResult
-from core.skills.context import build_cron_skill_context
 from core.skills.curator import SkillCurator
 from core.skills.index import SkillIndex
 from core.skills.models import SkillLifecycleState, SkillMetadata, SkillUsageEventType
@@ -63,7 +62,9 @@ def test_usage_stats_drive_lifecycle_suggestions_and_protected_skips_archive(tmp
     anima_dir = tmp_path / "alice"
     anima_dir.mkdir()
     old = SkillMetadata(name="old", last_used_at=datetime.now(UTC) - timedelta(days=181))
-    protected = SkillMetadata(name="protected-old", protected=True, last_used_at=datetime.now(UTC) - timedelta(days=181))
+    protected = SkillMetadata(
+        name="protected-old", protected=True, last_used_at=datetime.now(UTC) - timedelta(days=181)
+    )
     flaky = SkillMetadata(name="flaky")
     patched = SkillMetadata(name="patched")
     tracker = SkillUsageTracker(anima_dir)
@@ -326,12 +327,7 @@ def test_rag_retriever_filters_archived_common_skill_chunks_from_shared_vectors(
         skill_dir = common_dir / name
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
-            "---\n"
-            f"name: {name}\n"
-            f"description: {name} shared workflow\n"
-            "use_when: [shared workflow]\n"
-            "---\n\n"
-            f"# {name}\n",
+            f"---\nname: {name}\ndescription: {name} shared workflow\nuse_when: [shared workflow]\n---\n\n# {name}\n",
             encoding="utf-8",
         )
     SkillCurator(anima_dir).archive_skill("old-common", reason="unused")
@@ -366,121 +362,6 @@ def test_rag_retriever_filters_archived_common_skill_chunks_from_shared_vectors(
         results = retriever.search("shared workflow", "alice", memory_type="skills", top_k=5, include_shared=True)
 
     assert [result.doc_id for result in results] == ["shared/common_skills/new-common/SKILL.md#0"]
-
-
-def test_cron_skill_context_attaches_allowed_and_records_rejected_reason(tmp_path: Path) -> None:
-    anima_dir = tmp_path / "alice"
-    common_dir = tmp_path / "common_skills"
-    common_dir.mkdir()
-    _write_skill(anima_dir, "active-skill")
-    _write_skill(anima_dir, "old-skill")
-    SkillCurator(anima_dir).archive_skill("old-skill", reason="unused")
-
-    with patch("core.paths.get_common_skills_dir", return_value=common_dir):
-        result = build_cron_skill_context(anima_dir, ["active-skill", "old-skill", "missing-skill"])
-
-    rendered = result.render()
-    assert "## Cron Skills" in rendered
-    assert "active-skill" in rendered
-    assert "old-skill: curator_archived" in rendered
-    assert "missing-skill: not_found" in rendered
-
-
-def test_cron_skill_context_rejects_quarantined_skill_refs(tmp_path: Path) -> None:
-    anima_dir = tmp_path / "alice"
-    common_dir = tmp_path / "common_skills"
-    common_dir.mkdir()
-    _write_skill(anima_dir, "draft-skill", extra="trust_level: quarantine\n")
-    nested_dir = anima_dir / "skills" / "quarantine" / "nested-draft"
-    nested_dir.mkdir(parents=True)
-    (nested_dir / "SKILL.md").write_text(
-        "---\nname: nested-draft\ndescription: Quarantine draft\ntrust_level: quarantine\n---\n\n# Nested Draft\n",
-        encoding="utf-8",
-    )
-
-    with patch("core.paths.get_common_skills_dir", return_value=common_dir):
-        result = build_cron_skill_context(
-            anima_dir,
-            ["draft-skill", "skills/quarantine/nested-draft/SKILL.md"],
-        )
-
-    assert not result.attachments
-    assert [(item.ref, item.reason) for item in result.rejections] == [
-        ("draft-skill", "trust_level_quarantine"),
-        ("skills/quarantine/nested-draft/SKILL.md", "trust_level_quarantine"),
-    ]
-
-
-def test_cron_skill_context_handles_empty_refs_and_canonical_paths(tmp_path: Path) -> None:
-    anima_dir = tmp_path / "alice"
-    common_dir = tmp_path / "common_skills"
-    common_dir.mkdir()
-    _write_skill(anima_dir, "active-skill")
-    common_skill_dir = common_dir / "common-skill"
-    common_skill_dir.mkdir()
-    (common_skill_dir / "SKILL.md").write_text(
-        "---\n"
-        "name: common-skill\n"
-        "description: Shared workflow\n"
-        "use_when: [shared workflow]\n"
-        "---\n\n"
-        "# Common Skill\n",
-        encoding="utf-8",
-    )
-
-    empty = build_cron_skill_context(anima_dir, [])
-    assert empty.render() == ""
-
-    with (
-        patch("core.paths.get_common_skills_dir", return_value=common_dir),
-        patch("core.paths.get_data_dir", return_value=tmp_path),
-    ):
-        result = build_cron_skill_context(
-            anima_dir,
-            [
-                "skills/active-skill/SKILL.md",
-                "common_skills/common-skill/SKILL.md",
-                "skills/active-skill/README.md",
-            ],
-        )
-
-    assert [item.name for item in result.attachments] == ["active-skill", "common-skill"]
-    assert result.attachments[0].path == "skills/active-skill/SKILL.md"
-    assert result.attachments[1].path == "common_skills/common-skill/SKILL.md"
-    assert [(item.ref, item.reason) for item in result.rejections] == [
-        ("skills/active-skill/README.md", "not_found")
-    ]
-
-
-def test_cron_skill_context_reports_read_failures(tmp_path: Path) -> None:
-    anima_dir = tmp_path / "alice"
-    common_dir = tmp_path / "common_skills"
-    common_dir.mkdir()
-    _write_skill(anima_dir, "active-skill")
-
-    with (
-        patch("core.paths.get_common_skills_dir", return_value=common_dir),
-        patch("core.skills.cron_context.load_skill_body", side_effect=OSError("boom")),
-    ):
-        result = build_cron_skill_context(anima_dir, ["active-skill"])
-
-    assert not result.attachments
-    assert [(item.ref, item.reason) for item in result.rejections] == [("active-skill", "read_failed")]
-
-
-def test_cron_skill_context_rejects_absolute_and_traversal_paths(tmp_path: Path) -> None:
-    anima_dir = tmp_path / "alice"
-    common_dir = tmp_path / "common_skills"
-    common_dir.mkdir()
-
-    with patch("core.paths.get_common_skills_dir", return_value=common_dir):
-        result = build_cron_skill_context(
-            anima_dir,
-            ["/etc/passwd", "skills/../secrets/SKILL.md", "procedures/task.md"],
-        )
-
-    assert not result.attachments
-    assert [item.reason for item in result.rejections] == ["not_found", "not_found", "not_found"]
 
 
 def test_rag_indexer_refreshes_curator_replay_when_state_file_changes(tmp_path: Path) -> None:

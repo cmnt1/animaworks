@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from core.memory.task_queue import TaskQueueManager
-from core.taskboard.store import TaskBoardStore
+from core.tasks.board.store import TaskBoardStore
+from core.tasks.queue import TaskQueueManager
 
 pytestmark = pytest.mark.e2e
 

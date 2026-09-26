@@ -11,7 +11,6 @@ import pytest
 
 from core.notification.channels.slack import SlackChannel
 
-
 # ── Helpers ──────────────────────────────────────────────────
 
 
@@ -105,8 +104,9 @@ class TestBotTokenMode:
         """Neither bot_token nor webhook_url returns error."""
         ch = _make_channel({})
         ch._resolve_env = MagicMock(return_value="")
-        from core.tools._base import ToolConfigError
-        with patch("core.tools._base.get_credential", side_effect=ToolConfigError("no cred")):
+        from core.integrations._base import ToolConfigError
+
+        with patch("core.integrations._base.get_credential", side_effect=ToolConfigError("no cred")):
             result = await ch.send("Subject", "Body")
         assert "neither bot_token nor webhook_url configured" in result
 
@@ -186,11 +186,13 @@ class TestUsernameOverride:
     @pytest.mark.asyncio
     async def test_icon_url_from_template(self):
         """When icon_path_template is configured, icon_url is set in payload."""
-        ch = _make_channel({
-            "bot_token": "xoxb-test",
-            "channel": "C123",
-            "icon_path_template": "https://cdn.example.com/{name}/icon.png",
-        })
+        ch = _make_channel(
+            {
+                "bot_token": "xoxb-test",
+                "channel": "C123",
+                "icon_path_template": "https://cdn.example.com/{name}/icon.png",
+            }
+        )
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -200,9 +202,8 @@ class TestUsernameOverride:
         with (
             patch("httpx.AsyncClient") as mock_client_cls,
             # Suppress higher-priority avatar sources so template resolution is tested
-            patch("core.tools._base._lookup_vault_credential", return_value=""),
-            patch("core.tools._base._lookup_shared_credentials", return_value=""),
-            patch("server.slack_avatar_upload.get_avatar_public_url", return_value=""),
+            patch("core.integrations._base._lookup_vault_credential", return_value=""),
+            patch("core.integrations._base._lookup_shared_credentials", return_value=""),
         ):
             mock_client = AsyncMock()
             mock_client.post.return_value = mock_resp
@@ -228,10 +229,9 @@ class TestUsernameOverride:
 
         with (
             patch("httpx.AsyncClient") as mock_client_cls,
-            patch("core.tools._base._lookup_vault_credential", return_value=""),
-            patch("core.tools._base._lookup_shared_credentials", return_value=""),
-            patch("server.slack_avatar_upload.get_avatar_public_url", return_value=""),
-            patch("core.tools._anima_icon_url.resolve_anima_icon_url", return_value=""),
+            patch("core.integrations._base._lookup_vault_credential", return_value=""),
+            patch("core.integrations._base._lookup_shared_credentials", return_value=""),
+            patch("core.integrations._anima_icon_url.resolve_anima_icon_url", return_value=""),
         ):
             mock_client = AsyncMock()
             mock_client.post.return_value = mock_resp
@@ -259,10 +259,12 @@ class TestWebhookFallback:
         mock_resp.status_code = 200
         mock_resp.raise_for_status = MagicMock()
 
-        from core.tools._base import ToolConfigError
+        from core.integrations._base import ToolConfigError
 
-        with patch("core.tools._base.get_credential", side_effect=ToolConfigError("no cred")), \
-             patch("httpx.AsyncClient") as mock_client_cls:
+        with (
+            patch("core.integrations._base.get_credential", side_effect=ToolConfigError("no cred")),
+            patch("httpx.AsyncClient") as mock_client_cls,
+        ):
             mock_client = AsyncMock()
             mock_client.post.return_value = mock_resp
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)

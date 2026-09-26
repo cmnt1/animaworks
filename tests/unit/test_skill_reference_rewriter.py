@@ -99,7 +99,7 @@ def test_collect_reference_rewrite_changes_covers_allowed_metadata_paths(tmp_pat
     (anima_dir / "state").mkdir(parents=True)
     (anima_dir / "goals").mkdir()
     (anima_dir / "cron.md").write_text("## Daily\nskills: [old-skill, kept]\n", encoding="utf-8")
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     TaskQueueManager(anima_dir).add_task(
         source="human",

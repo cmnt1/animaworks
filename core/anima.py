@@ -28,7 +28,6 @@ from pathlib import Path
 from typing import Any
 
 from core.agent import AgentCore
-from core.background import BackgroundTask
 from core.exceptions import (  # noqa: F401
     AnimaWorksError,
     ExecutionError,
@@ -42,6 +41,7 @@ from core.memory.activity import ActivityLogger
 from core.messenger import Messenger
 from core.schemas import AnimaStatus, ModelConfig
 from core.session_compactor import SessionCompactor
+from core.tasks.background import BackgroundTask
 from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.anima")

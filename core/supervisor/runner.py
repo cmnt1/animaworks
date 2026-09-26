@@ -36,9 +36,9 @@ from core.memory.streaming_journal import StreamingJournal
 from core.platform.locks import acquire_file_lock, release_file_lock
 from core.supervisor.inbox_rate_limiter import InboxRateLimiter
 from core.supervisor.ipc import IPCRequest, IPCResponse, IPCServer
-from core.supervisor.pending_executor import PendingTaskExecutor
 from core.supervisor.scheduler_manager import SchedulerManager
 from core.supervisor.streaming_handler import StreamingIPCHandler
+from core.tasks.pending_executor import PendingTaskExecutor
 from core.time_utils import ensure_aware, now_local
 
 logger = logging.getLogger(__name__)
@@ -87,7 +87,7 @@ class AnimaRunner:
         self._inbox_limiter: InboxRateLimiter | None = None
         self._pending_executor: PendingTaskExecutor | None = None
         self._streaming_handler: StreamingIPCHandler | None = None
-        self._root_memory_requester_installed = False
+        self._owner_vector_transport_installed = False
 
     @staticmethod
     def _conversation_contains_recovery(conv_memory: Any, recovered_text: str, saved_text: str) -> bool:
@@ -236,7 +236,7 @@ class AnimaRunner:
 
             logger.info("Initializing Anima: %s", self.anima_name)
 
-            from core.taskboard.readiness import require_task_store_ready
+            from core.tasks.board.readiness import require_task_store_ready
 
             require_task_store_ready(self._anima_dir)
             process_config = resolve_process_model_config(self._anima_dir)
@@ -255,7 +255,7 @@ class AnimaRunner:
                 anima_dir=self._anima_dir,
                 emit_event=self._emit_event,
             )
-            self._configure_root_memory_requester()
+            self._configure_owner_vector_transport()
             self._inbox_limiter = InboxRateLimiter(
                 anima=self.anima,
                 anima_name=self.anima_name,
@@ -395,15 +395,22 @@ class AnimaRunner:
                     task.cancel()
             await asyncio.gather(ack_task, shutdown_task, return_exceptions=True)
 
-    def _configure_root_memory_requester(self) -> None:
-        """Route root inbox/tool retrieval to the same DB owner as child jobs."""
+    def _configure_owner_vector_transport(self) -> None:
+        """Let the phase3 root reach its own MemoryService directly.
+
+        The root owns the native Chroma handle, so inbox/tool retrieval is
+        routed to the owner MemoryService in-process (no loop-back HTTP).
+        Children that inherit this process's URLs still talk to it over HTTP.
+        """
         supervisor = self._scheduler_mgr._task_runner_supervisor if self._scheduler_mgr is not None else None
         if supervisor is None or supervisor._memory_service is None:
             return
-        from core.memory.rag.ipc_store import root_memory_requester
-        from core.memory.rag.singleton import configure_ipc_vector_requester
+        from core.memory.rag.owner_transport import owner_transport
+        from core.memory.rag.singleton import configure_owner_transport
 
-        async def request(method: str, params: dict[str, Any]) -> dict[str, Any]:
+        loop = asyncio.get_running_loop()
+
+        async def handle_memory(method: str, params: dict[str, Any]) -> dict[str, Any]:
             if self.shutdown_event.is_set():
                 from core.supervisor.memory_service import MemoryServiceUnavailable
 
@@ -413,8 +420,8 @@ class AnimaRunner:
             await supervisor.start()
             return await supervisor.handle_memory(method, params)
 
-        configure_ipc_vector_requester(root_memory_requester(request), anima_name=self.anima_name)
-        self._root_memory_requester_installed = True
+        configure_owner_transport(owner_transport(handle_memory, loop), anima_name=self.anima_name)
+        self._owner_vector_transport_installed = True
 
     def _start_autonomous_services(self) -> None:
         """Start autonomous background services after startup ack."""
@@ -1201,11 +1208,11 @@ class AnimaRunner:
             self._scheduler_mgr.shutdown()
             await self._scheduler_mgr.shutdown_task_runners()
 
-        if getattr(self, "_root_memory_requester_installed", False):
-            from core.memory.rag.singleton import configure_ipc_vector_requester
+        if getattr(self, "_owner_vector_transport_installed", False):
+            from core.memory.rag.singleton import configure_owner_transport
 
-            configure_ipc_vector_requester(None)
-            self._root_memory_requester_installed = False
+            configure_owner_transport(None)
+            self._owner_vector_transport_installed = False
 
         # Stop IPC server
         if self.ipc_server:

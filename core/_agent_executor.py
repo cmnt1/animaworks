@@ -40,7 +40,7 @@ class ExecutorFactoryMixin:
     def _discover_personal_tools(self) -> dict[str, str]:
         """Discover common and personal tool modules."""
         try:
-            from core.tools import discover_common_tools, discover_personal_tools
+            from core.integrations import discover_common_tools, discover_personal_tools
 
             common = discover_common_tools()
             personal = discover_personal_tools(self.anima_dir)
@@ -131,19 +131,3 @@ class ExecutorFactoryMixin:
         if engine is None:
             return None
         return getattr(engine, "_retriever", None)
-
-    def _create_fallback_executor(self, model_config=None):
-        """Create an AnthropicFallbackExecutor for when S mode SDK can't handle the prompt."""
-        from core.execution import AnthropicFallbackExecutor
-
-        active_config = model_config or self.model_config
-        logger.info("Creating AnthropicFallbackExecutor for oversized prompt")
-        return AnthropicFallbackExecutor(
-            model_config=active_config,
-            anima_dir=self.anima_dir,
-            tool_handler=self._tool_handler,
-            tool_registry=self._tool_registry,
-            memory=self.memory,
-            personal_tools=self._personal_tools,
-            interrupt_event=self._interrupt_event,
-        )

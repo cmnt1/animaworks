@@ -26,8 +26,7 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from sentence_transformers import SentenceTransformer
 
-    from core.memory.rag.http_store import HttpVectorStore
-    from core.memory.rag.ipc_store import IpcVectorStore, MemoryRequester
+    from core.memory.rag.http_store import HttpVectorStore, VectorTransport
     from core.memory.rag.store import VectorStore
 
 logger = logging.getLogger(__name__)
@@ -39,9 +38,9 @@ _native_ops_lock = threading.Lock()
 _vector_stores: dict[str | None, VectorStore | None] = {}
 _vector_store_init_failed: set[str | None] = set()
 _http_stores: dict[tuple[str, str | None], HttpVectorStore] = {}
-_ipc_stores: dict[tuple[str, str | None], IpcVectorStore] = {}
-_ipc_vector_requester: MemoryRequester | None = None
-_ipc_vector_owner: str | None = None
+_owner_transport: VectorTransport | None = None
+_owner_anima: str | None = None
+_owner_stores: dict[str, HttpVectorStore] = {}
 _embedding_model: SentenceTransformer | None = None
 _embedding_model_name: str | None = None
 _embedding_model_device: str | None = None
@@ -256,63 +255,59 @@ def _get_http_store(base_url: str, anima_name: str | None) -> HttpVectorStore:
     return _http_stores[key]
 
 
-def configure_ipc_vector_requester(requester: MemoryRequester | None, *, anima_name: str | None = None) -> None:
-    """Install the task runner's root-memory requester for phase3 operations."""
-    global _ipc_vector_requester, _ipc_vector_owner
+def configure_owner_transport(transport: VectorTransport | None, *, anima_name: str | None = None) -> None:
+    """Install the phase3 root's own MemoryService transport.
+
+    The root owns the native Chroma handle, so its inbox/tool work uses the
+    owner transport (direct function call) instead of a loop back through
+    HTTP. Children still reach the owner over HTTP.
+    """
+    global _owner_transport, _owner_anima
 
     with _lock:
-        _ipc_vector_requester = requester
-        _ipc_vector_owner = anima_name if requester is not None else None
-        _ipc_stores.clear()
+        _owner_transport = transport
+        _owner_anima = anima_name if transport is not None else None
+        _owner_stores.clear()
 
 
-def _get_ipc_store(base_url: str, anima_name: str | None) -> IpcVectorStore | None:
-    requester = _ipc_vector_requester
-    if requester is None:
+def _get_owner_store(anima_name: str | None) -> HttpVectorStore | None:
+    transport = _owner_transport
+    if transport is None:
         return None
-    if _ipc_vector_owner is not None and anima_name != _ipc_vector_owner:
-        logger.warning("Root vector store owner mismatch: requested=%s owner=%s", anima_name, _ipc_vector_owner)
+    if _owner_anima is not None and anima_name != _owner_anima:
+        logger.warning("Root vector store owner mismatch: requested=%s owner=%s", anima_name, _owner_anima)
         return None
-    normalized_url = base_url.rstrip("/")
-    key = (normalized_url, anima_name)
-    if key not in _ipc_stores:
+    if anima_name not in _owner_stores:
         with _lock:
-            if key not in _ipc_stores:
-                from core.memory.rag.ipc_store import IpcVectorStore
+            if anima_name not in _owner_stores:
+                from core.memory.rag.http_store import HttpVectorStore
 
-                _ipc_stores[key] = IpcVectorStore(normalized_url, anima_name, requester)
-    return _ipc_stores[key]
+                _owner_stores[anima_name] = HttpVectorStore("", anima_name, transport=transport)
+    return _owner_stores.get(anima_name)
 
 
 def get_vector_store(anima_name: str | None = None) -> VectorStore | None:
     """Return process-level singleton VectorStore per anima.
 
-    When ``ANIMAWORKS_VECTOR_URL`` is set, delegates to the server's
-    vector API via HttpVectorStore. Otherwise uses ChromaVectorStore
-    with local ChromaDB.
+    A phase3 root uses its own in-process owner transport when one is
+    installed; otherwise ``ANIMAWORKS_VECTOR_URL`` (when set) delegates to
+    the server's vector API via ``HttpVectorStore``, and only processes
+    that are allowed direct Chroma access (the vector worker and
+    ``MemoryService``) open a local store.
 
     Args:
         anima_name: Anima name for per-anima DB isolation.
             When ``None``, uses the legacy shared directory.
 
     Returns:
-        VectorStore instance (ChromaVectorStore or HttpVectorStore),
-        or ``None`` if ChromaDB failed to initialize
-        (e.g., Python 3.14 + pydantic.v1 incompatibility).
+        VectorStore instance (HttpVectorStore or ChromaVectorStore),
+        or ``None`` if no vector backend is available.
     """
     global _direct_disabled_warned, _init_failed
 
     vector_url = os.environ.get("ANIMAWORKS_VECTOR_URL")
-    # A phase3 root also executes inbox/tool work locally. Its registered
-    # requester must win over the HTTP proxy to avoid a server round trip to
-    # this same owner. The env flag is inherited by disposable task children.
-    if _ipc_vector_requester is not None:
-        return _get_ipc_store(vector_url or "", anima_name)
-    if os.environ.get("ANIMAWORKS_MEMORY_VIA_ROOT") == "1":
-        if vector_url:
-            return _get_ipc_store(vector_url, anima_name)
-        logger.warning("IPC vector store unavailable: ANIMAWORKS_VECTOR_URL is missing")
-        return None
+    if _owner_transport is not None:
+        return _get_owner_store(anima_name)
     if vector_url:
         return _get_http_store(vector_url, anima_name)
 
@@ -739,6 +734,7 @@ def reset_vector_store(anima_name: str | None = None) -> None:
 
             http_keys = [key for key in _http_stores if key[1] == anima_name]
             http_stores = [(key[1], _http_stores.pop(key, None)) for key in http_keys]
+            owner_store = _owner_stores.pop(anima_name, None) if anima_name is not None else None
             _init_failed = False
 
         def close_removed_stores() -> None:
@@ -749,6 +745,8 @@ def reset_vector_store(anima_name: str | None = None) -> None:
                     _clear_chroma_system_cache()
                 for owner, store in http_stores:
                     _close_store(store, owner)
+                if owner_store is not None:
+                    _close_store(owner_store, anima_name)
             finally:
                 close_finished.set()
 
@@ -814,8 +812,10 @@ def close_all_vector_stores() -> None:
         with _lock:
             stores = list(_vector_stores.items())
             http_stores = list(_http_stores.items())
+            owner_stores = list(_owner_stores.items())
             _vector_stores.clear()
             _http_stores.clear()
+            _owner_stores.clear()
             _vector_store_init_failed.clear()
             _init_failed = False
 
@@ -827,6 +827,8 @@ def close_all_vector_stores() -> None:
                     _clear_chroma_system_cache()
                 for (_base_url, anima_name), store in http_stores:
                     _close_store(store, anima_name)
+                for _anima_name, store in owner_stores:
+                    _close_store(store, _anima_name)
             finally:
                 close_finished.set()
 
@@ -975,7 +977,7 @@ def get_embedding_e5_prefix_enabled() -> bool:
 def _reset_for_testing():
     """Reset singletons for test isolation."""
     global _bulk_yield_count, _direct_disabled_warned, _embedding_model, _embedding_model_device, _embedding_model_name
-    global _init_failed, _interactive_waiters, _ipc_vector_requester, _ipc_vector_owner, _last_error_reset_monotonic
+    global _init_failed, _interactive_waiters, _owner_transport, _owner_anima, _last_error_reset_monotonic
     global _vector_store_lifecycle_gate
     from core.gpu import reset_gpu_status_for_testing
 
@@ -986,9 +988,9 @@ def _reset_for_testing():
         _vector_stores.clear()
         _vector_store_init_failed.clear()
         _http_stores.clear()
-        _ipc_stores.clear()
-        _ipc_vector_requester = None
-        _ipc_vector_owner = None
+        _owner_stores.clear()
+        _owner_transport = None
+        _owner_anima = None
         _embedding_model = None
         _embedding_model_name = None
         _embedding_model_device = None

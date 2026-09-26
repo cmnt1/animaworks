@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.supervisor.pending_executor import PendingTaskExecutor
+from core.tasks.pending_executor import PendingTaskExecutor
 
 
 def _prepare_anima_dirs(tmp_path: Path) -> tuple[Path, Path]:

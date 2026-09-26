@@ -15,6 +15,7 @@ import pytest
 
 # ── Hierarchy availability ───────────────────────────────────
 
+
 class TestExceptionHierarchyAvailability:
     """Verify core.exceptions is importable and complete."""
 
@@ -24,6 +25,7 @@ class TestExceptionHierarchyAvailability:
             AnimaWorksError,
             DeliveryError,
         )
+
         # All should be classes
         assert isinstance(AnimaWorksError, type)
         assert isinstance(DeliveryError, type)
@@ -49,13 +51,24 @@ class TestExceptionHierarchyAvailability:
             ToolExecutionError,
             ToolNotFoundError,
         )
+
         leaves = [
-            LLMAPIError, LLMTimeoutError, StreamDisconnectedError,
-            ToolConfigError, ToolExecutionError, ToolNotFoundError,
-            MemoryReadError, MemoryWriteError, MemoryCorruptedError,
-            AnimaNotFoundError, AnimaNotRunningError, IPCConnectionError,
-            ConfigNotFoundError, ConfigValidationError,
-            RecipientNotFoundError, DeliveryError,
+            LLMAPIError,
+            LLMTimeoutError,
+            StreamDisconnectedError,
+            ToolConfigError,
+            ToolExecutionError,
+            ToolNotFoundError,
+            MemoryReadError,
+            MemoryWriteError,
+            MemoryCorruptedError,
+            AnimaNotFoundError,
+            AnimaNotRunningError,
+            IPCConnectionError,
+            ConfigNotFoundError,
+            ConfigValidationError,
+            RecipientNotFoundError,
+            DeliveryError,
         ]
         for exc_cls in leaves:
             try:
@@ -68,6 +81,7 @@ class TestExceptionHierarchyAvailability:
 
 # ── Re-export compatibility ──────────────────────────────────
 
+
 class TestReExportCompatibility:
     """Verify backward-compatible re-exports from original modules."""
 
@@ -75,42 +89,49 @@ class TestReExportCompatibility:
         """StreamDisconnectedError importable from core.execution.base."""
         from core.exceptions import StreamDisconnectedError as FromExceptions
         from core.execution.base import StreamDisconnectedError as FromBase
+
         assert FromBase is FromExceptions
 
     def test_stream_disconnected_error_partial_text(self):
         """StreamDisconnectedError preserves partial_text attribute."""
         from core.execution.base import StreamDisconnectedError
+
         exc = StreamDisconnectedError("disconnected", partial_text="partial response")
         assert exc.partial_text == "partial response"
         assert str(exc) == "disconnected"
 
     def test_tool_config_error_re_export(self):
-        """ToolConfigError importable from core.tools._base."""
+        """ToolConfigError importable from core.integrations._base."""
         from core.exceptions import ToolConfigError as FromExceptions
-        from core.tools._base import ToolConfigError as FromBase
+        from core.integrations._base import ToolConfigError as FromBase
+
         assert FromBase is FromExceptions
 
 
 # ── Integration: exception imports in core modules ───────────
 
+
 class TestCoreModuleImports:
     """Verify that core modules have imported domain exceptions."""
 
-    @pytest.mark.parametrize("module_path", [
-        "core.execution.agent_sdk",
-        "core.execution.litellm_loop",
-        "core.supervisor.manager",
-        "core.supervisor.runner",
-        "core.supervisor.ipc",
-        "core.tooling.handler",
-        "core.tooling.dispatch",
-        "core.anima",
-        "core.agent",
-        "core.messenger",
-        "core.lifecycle",
-        "core.outbound",
-        "core.background",
-    ])
+    @pytest.mark.parametrize(
+        "module_path",
+        [
+            "core.execution.agent_sdk",
+            "core.execution.litellm_loop",
+            "core.supervisor.manager",
+            "core.supervisor.runner",
+            "core.supervisor.ipc",
+            "core.tooling.handler",
+            "core.tooling.dispatch",
+            "core.anima",
+            "core.agent",
+            "core.messenger",
+            "core.lifecycle",
+            "core.outbound",
+            "core.tasks.background",
+        ],
+    )
     def test_module_imports_successfully(self, module_path):
         """Core module imports without error after exception hierarchy changes."""
         mod = importlib.import_module(module_path)
@@ -119,51 +140,54 @@ class TestCoreModuleImports:
 
 # ── Zero silent passes verification ──────────────────────────
 
+
 class TestNoSilentPasses:
     """Verify no silent 'except Exception: pass' remains in core/."""
 
     # Files with intentional 'except Exception: pass' (documented reason required).
-    _ALLOWED_FILES = frozenset({
-        # streaming_handler.py: last-resort fallback when error-response enqueue
-        # itself fails (queue corruption) — recovery delegated to SENTINEL.
-        "streaming_handler.py",
-        # builder.py: status.json parse failure falls back to None defaults
-        # for supervisor/speciality/role in org tree construction.
-        "builder.py",
-        # session.py, messenger.py, _sdk_hooks.py, agent_sdk.py, consolidation.py:
-        # documented last-resort fallbacks (e.g. IPC cleanup, config parse).
-        "session.py",
-        "messenger.py",
-        "_sdk_hooks.py",
-        "agent_sdk.py",
-        "consolidation.py",
-        # org_context.py: status.json parse failure per-anima falls back to
-        # None defaults for role/model in org tree construction (same as builder.py).
-        "org_context.py",
-        # _sdk_options.py: best-effort wake-file I/O in agent mode — failure
-        # is non-fatal and must not interrupt SDK session startup.
-        "_sdk_options.py",
-        # tracker.py: _resolve_version() tries importlib.metadata then pyproject.toml;
-        # each fallback uses 'pass' to chain to the next resolution strategy.
-        "tracker.py",
-        # handler_memory.py: best-effort anima name matching in search hint;
-        # failure is non-fatal and returns None.
-        "handler_memory.py",
-        # permissions.py: config unavailable at import time — skip filtering.
-        "permissions.py",
-        # _mgr_reconcile.py: governor state file read is best-effort;
-        # failure defaults to empty suspended set.
-        "_mgr_reconcile.py",
-        # claude_code.py: best-effort bundled CLI path discovery;
-        # returns None on any failure.
-        "claude_code.py",
-        # diffusers_local.py: best-effort GPU optimization calls
-        # (VAE slicing, attention slicing, SCRFD detection); non-fatal.
-        "diffusers_local.py",
-        # messaging.py: best-effort locale detection from config;
-        # falls back to "ja" default.
-        "messaging.py",
-    })
+    _ALLOWED_FILES = frozenset(
+        {
+            # streaming_handler.py: last-resort fallback when error-response enqueue
+            # itself fails (queue corruption) — recovery delegated to SENTINEL.
+            "streaming_handler.py",
+            # builder.py: status.json parse failure falls back to None defaults
+            # for supervisor/speciality/role in org tree construction.
+            "builder.py",
+            # session.py, messenger.py, _sdk_hooks.py, agent_sdk.py, consolidation.py:
+            # documented last-resort fallbacks (e.g. IPC cleanup, config parse).
+            "session.py",
+            "messenger.py",
+            "_sdk_hooks.py",
+            "agent_sdk.py",
+            "consolidation.py",
+            # org_context.py: status.json parse failure per-anima falls back to
+            # None defaults for role/model in org tree construction (same as builder.py).
+            "org_context.py",
+            # _sdk_options.py: best-effort wake-file I/O in agent mode — failure
+            # is non-fatal and must not interrupt SDK session startup.
+            "_sdk_options.py",
+            # tracker.py: _resolve_version() tries importlib.metadata then pyproject.toml;
+            # each fallback uses 'pass' to chain to the next resolution strategy.
+            "tracker.py",
+            # handler_memory.py: best-effort anima name matching in search hint;
+            # failure is non-fatal and returns None.
+            "handler_memory.py",
+            # permissions.py: config unavailable at import time — skip filtering.
+            "permissions.py",
+            # _mgr_reconcile.py: governor state file read is best-effort;
+            # failure defaults to empty suspended set.
+            "_mgr_reconcile.py",
+            # claude_code.py: best-effort bundled CLI path discovery;
+            # returns None on any failure.
+            "claude_code.py",
+            # diffusers_local.py: best-effort GPU optimization calls
+            # (VAE slicing, attention slicing, SCRFD detection); non-fatal.
+            "diffusers_local.py",
+            # messaging.py: best-effort locale detection from config;
+            # falls back to "ja" default.
+            "messaging.py",
+        }
+    )
 
     def test_no_except_exception_pass_in_core(self):
         """Scan core/ for multiline 'except Exception:\\n    pass' — must find zero (excluding allowlist)."""
@@ -173,14 +197,9 @@ class TestNoSilentPasses:
         # Use multiline grep (-Pz) to match except/pass across lines
         result = subprocess.run(
             ["grep", "-Przl", r"except\s+Exception\s*:\s*\n\s+pass\b", str(core_dir)],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
-        matched_files = [
-            Path(f).name
-            for f in result.stdout.strip().splitlines()
-            if f.strip()
-        ]
+        matched_files = [Path(f).name for f in result.stdout.strip().splitlines() if f.strip()]
         unexpected = [f for f in matched_files if f not in self._ALLOWED_FILES]
-        assert unexpected == [], (
-            f"Found silent 'except Exception: pass' in core/: {unexpected}"
-        )
+        assert unexpected == [], f"Found silent 'except Exception: pass' in core/: {unexpected}"

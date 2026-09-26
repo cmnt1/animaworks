@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from core.paths import get_taskboard_db_path
-from core.taskboard.models import AttentionVisibility, BoardColumn
-from core.taskboard.store import TaskBoardStore
+from core.tasks.board.models import AttentionVisibility, BoardColumn
+from core.tasks.board.store import TaskBoardStore
 
 
 def _open_fd_count() -> int:
@@ -52,7 +52,7 @@ def test_store_closes_sqlite_connections(monkeypatch: pytest.MonkeyPatch, tmp_pa
         kwargs["factory"] = TrackingConnection
         return real_connect(*args, **kwargs)
 
-    monkeypatch.setattr("core.taskboard.store.sqlite3.connect", tracking_connect)
+    monkeypatch.setattr("core.tasks.board.store.sqlite3.connect", tracking_connect)
 
     store = TaskBoardStore(tmp_path / "taskboard.sqlite3")
     store.upsert_metadata(anima_name="sakura", task_id="task-1", actor="alice")

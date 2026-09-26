@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 
 from core.config.schemas import GitHubWebhookConfig
 from core.schemas import Message
-from server.github_gateway import GitHubWebhookManager
+from server.gateways.github_gateway import GitHubWebhookManager
 from server.routes.webhooks import create_webhooks_router
 
 pytestmark = pytest.mark.e2e

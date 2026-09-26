@@ -729,21 +729,14 @@ class SchedulerMixin:
 
                 process_config = resolve_process_model_config(anima_dir)
                 if process_config.valid and process_config.process_model == "phase3":
-                    from core.memory.rag.ipc_store import IpcVectorStore
+                    from core.memory.rag.http_store import HttpVectorStore
+                    from core.memory.rag.vector_ops import supervisor_transport
 
-                    def request_root_memory(method: str, params: dict, _anima_name: str = anima_name) -> dict:
-                        future = asyncio.run_coroutine_threadsafe(
-                            self.send_request(
-                                _anima_name,
-                                "memory",
-                                {"method": method, "params": params},
-                                timeout=120.0,
-                            ),
-                            loop,
-                        )
-                        return future.result(timeout=125.0)
-
-                    vector_store = IpcVectorStore("", anima_name, request_root_memory)
+                    vector_store = HttpVectorStore(
+                        base_url="",
+                        anima_name=anima_name,
+                        transport=supervisor_transport(self.send_request, anima_name),
+                    )
                 else:
                     from core.memory.rag.sqlite_health import check_anima_vectordb_health_via_worker_or_direct
 
@@ -1053,7 +1046,7 @@ class SchedulerMixin:
         """Archive old dm_log entries beyond 7 days."""
         logger.info("Starting DM log rotation")
         try:
-            from core.background import rotate_dm_logs
+            from core.tasks.background import rotate_dm_logs
 
             shared_dir = self._get_data_dir() / "shared"
             result = await rotate_dm_logs(shared_dir)

@@ -843,11 +843,11 @@ def cli_main() -> None:
 
     _first_arg = _sys.argv[1] if len(_sys.argv) > 1 else None
     if _first_arg and not _first_arg.startswith("-"):
-        from core.tools import TOOL_MODULES
+        from core.integrations import TOOL_MODULES
 
         if _first_arg in TOOL_MODULES or _first_arg == "submit":
             _sys.argv[0] = "animaworks-tool"
-            from core.tools import cli_dispatch
+            from core.integrations import cli_dispatch
 
             cli_dispatch()
             return

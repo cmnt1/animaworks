@@ -12,8 +12,8 @@ import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
-from core.memory.task_queue import TaskQueueManager
-from core.taskboard.store import TaskBoardStore
+from core.tasks.board.store import TaskBoardStore
+from core.tasks.queue import TaskQueueManager
 
 pytestmark = pytest.mark.e2e
 
@@ -111,10 +111,10 @@ async def test_taskboard_route_static_assets_and_api_smoke(tmp_path: Path) -> No
         board_resp = await client.get("/api/task-board", params={"include_missing": "true"})
 
     assert index_resp.status_code == 200
-    assert '#/task-board' in index_resp.text
+    assert "#/task-board" in index_resp.text
     assert 'data-route="/task-board"' in index_resp.text
     assert "task-board.css" in index_resp.text
-    assert '#/board' in index_resp.text
+    assert "#/board" in index_resp.text
 
     assert page_resp.status_code == 200
     assert "/api/task-board" in page_resp.text

@@ -297,7 +297,7 @@ class TestHardTimeoutRecoveryNote:
             patch("core._anima_heartbeat.ConversationMemory") as mock_conversation,
             patch("core._anima_heartbeat.asyncio.wait_for", new=recording_wait_for),
             patch("core._anima_heartbeat.time.monotonic", side_effect=elapsed_past_hard_timeout),
-            patch("core.memory.task_queue.TaskQueueManager") as mock_task_queue,
+            patch("core.tasks.queue.TaskQueueManager") as mock_task_queue,
             patch("core.paths.get_animas_dir", return_value=tmp_path / "animas"),
         ):
             mock_conversation.return_value.finalize_if_session_ended = AsyncMock()

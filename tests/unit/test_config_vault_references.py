@@ -11,7 +11,7 @@ import pytest
 
 from core.config.io import invalidate_cache, load_config, save_config
 from core.config.vault import VaultError, VaultManager
-from scripts.migrate_credentials_to_vault import main
+from scripts.migrations.migrate_credentials_to_vault import main
 
 
 def _write_config(data_dir: Path, credentials: dict) -> Path:

@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 from core.tooling.handler import ToolHandler
 
 

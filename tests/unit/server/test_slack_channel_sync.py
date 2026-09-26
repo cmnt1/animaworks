@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from core.messenger import ChannelMeta, load_channel_meta, save_channel_meta
-from server.slack_channel_sync import SlackChannelSync, _ensure_board
+from server.gateways.slack_channel_sync import SlackChannelSync, _ensure_board
 
 
 class _FakeSlackManager:
@@ -72,19 +72,19 @@ async def test_sync_marks_missing_slack_channel_and_skips_reverse_recreate(
     cfg.external_messaging.slack.board_mapping = {"C123": "general"}
     save_calls: list[object] = []
 
-    monkeypatch.setattr("server.slack_channel_sync.get_shared_dir", lambda: shared_dir)
-    monkeypatch.setattr("server.slack_socket.SlackSocketModeManager", _FakeSlackManager)
+    monkeypatch.setattr("server.gateways.slack_channel_sync.get_shared_dir", lambda: shared_dir)
+    monkeypatch.setattr("server.gateways.slack_socket.SlackSocketModeManager", _FakeSlackManager)
 
     async def _list_public_channels(_token: str):
         return []
 
-    monkeypatch.setattr("server.slack_channel_sync._list_public_channels", _list_public_channels)
+    monkeypatch.setattr("server.gateways.slack_channel_sync._list_public_channels", _list_public_channels)
 
     async def _create_channel(*_args, **_kwargs):
         raise AssertionError("deleted Slack channel should not be recreated")
 
-    monkeypatch.setattr("server.slack_channel_sync._create_channel", _create_channel)
-    monkeypatch.setattr("server.slack_channel_sync._join_channel_if_needed", lambda *_a, **_k: False)
+    monkeypatch.setattr("server.gateways.slack_channel_sync._create_channel", _create_channel)
+    monkeypatch.setattr("server.gateways.slack_channel_sync._join_channel_if_needed", lambda *_a, **_k: False)
     monkeypatch.setattr("core.config.models.load_config", lambda: cfg)
     monkeypatch.setattr("core.config.models.save_config", lambda updated: save_calls.append(updated))
 
@@ -124,8 +124,8 @@ async def test_sync_clears_tombstone_when_slack_channel_returns(
     )
 
     cfg = _mock_config()
-    monkeypatch.setattr("server.slack_channel_sync.get_shared_dir", lambda: shared_dir)
-    monkeypatch.setattr("server.slack_socket.SlackSocketModeManager", _FakeSlackManager)
+    monkeypatch.setattr("server.gateways.slack_channel_sync.get_shared_dir", lambda: shared_dir)
+    monkeypatch.setattr("server.gateways.slack_socket.SlackSocketModeManager", _FakeSlackManager)
 
     async def _list_public_channels(_token: str):
         return [{"id": "C999", "name": "general", "is_private": False}]
@@ -136,9 +136,9 @@ async def test_sync_clears_tombstone_when_slack_channel_returns(
     async def _create_channel(*_args, **_kwargs):
         raise AssertionError("existing Slack channel should not be recreated")
 
-    monkeypatch.setattr("server.slack_channel_sync._list_public_channels", _list_public_channels)
-    monkeypatch.setattr("server.slack_channel_sync._join_channel_if_needed", _join_channel_if_needed)
-    monkeypatch.setattr("server.slack_channel_sync._create_channel", _create_channel)
+    monkeypatch.setattr("server.gateways.slack_channel_sync._list_public_channels", _list_public_channels)
+    monkeypatch.setattr("server.gateways.slack_channel_sync._join_channel_if_needed", _join_channel_if_needed)
+    monkeypatch.setattr("server.gateways.slack_channel_sync._create_channel", _create_channel)
     monkeypatch.setattr("core.config.models.load_config", lambda: cfg)
     monkeypatch.setattr("core.config.models.save_config", lambda _updated: None)
 
@@ -174,8 +174,8 @@ async def test_sync_falls_back_to_available_bot_when_default_missing(
         ),
     )
 
-    monkeypatch.setattr("server.slack_channel_sync.get_shared_dir", lambda: shared_dir)
-    monkeypatch.setattr("server.slack_socket.SlackSocketModeManager", _FakeSlackManager)
+    monkeypatch.setattr("server.gateways.slack_channel_sync.get_shared_dir", lambda: shared_dir)
+    monkeypatch.setattr("server.gateways.slack_socket.SlackSocketModeManager", _FakeSlackManager)
 
     list_channels_calls: list[str] = []
 
@@ -186,8 +186,8 @@ async def test_sync_falls_back_to_available_bot_when_default_missing(
     async def _join_channel_if_needed(*_args, **_kwargs):
         return False
 
-    monkeypatch.setattr("server.slack_channel_sync._list_public_channels", _list_public_channels)
-    monkeypatch.setattr("server.slack_channel_sync._join_channel_if_needed", _join_channel_if_needed)
+    monkeypatch.setattr("server.gateways.slack_channel_sync._list_public_channels", _list_public_channels)
+    monkeypatch.setattr("server.gateways.slack_channel_sync._join_channel_if_needed", _join_channel_if_needed)
     monkeypatch.setattr("core.config.models.load_config", lambda: cfg)
     monkeypatch.setattr("core.config.models.save_config", lambda _updated: None)
 
@@ -259,8 +259,8 @@ async def test_sync_returns_empty_when_no_bots_available(
         ),
     )
 
-    monkeypatch.setattr("server.slack_channel_sync.get_shared_dir", lambda: shared_dir)
-    monkeypatch.setattr("server.slack_socket.SlackSocketModeManager", _FakeSlackManager)
+    monkeypatch.setattr("server.gateways.slack_channel_sync.get_shared_dir", lambda: shared_dir)
+    monkeypatch.setattr("server.gateways.slack_socket.SlackSocketModeManager", _FakeSlackManager)
     monkeypatch.setattr("core.config.models.load_config", lambda: cfg)
 
     # No bots available at all (only __shared__ which is excluded)

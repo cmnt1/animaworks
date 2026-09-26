@@ -6,13 +6,13 @@ import time
 from datetime import timedelta
 from pathlib import Path
 
-from core.memory.task_queue import TaskQueueManager
-from core.memory.taskboard_housekeeping import (
+from core.tasks.board.housekeeping import (
     _archive_current_state_for_housekeeping,
     _cleanup_current_state,
     cleanup_taskboard_stale_artifacts,
 )
-from core.taskboard.store import TaskBoardStore
+from core.tasks.board.store import TaskBoardStore
+from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_local
 
 

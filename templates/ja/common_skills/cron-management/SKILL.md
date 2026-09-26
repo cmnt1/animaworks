@@ -11,7 +11,7 @@ description: >-
 
 cron の**パース**は `core/schedule_parser.py`（`parse_cron_md` / `parse_schedule`）、**登録・実行・リロード**は `core/supervisor/scheduler_manager.py`（APScheduler、`AsyncIOScheduler(timezone=get_app_timezone())`）が担当する。
 
-### `core/background.py`（cron とは別系統）
+### `core/tasks/background.py`（cron とは別系統）
 
 このモジュールは **cron のスケジューリングをしない**。長時間ツール呼び出しのバックグラウンド実行と、DM ログのローテーションを担当する。cron と混同しないこと。
 
@@ -26,7 +26,7 @@ cron の**パース**は `core/schedule_parser.py`（`parse_cron_md` / `parse_sc
   - `cleanup_old_tasks(max_age_hours=24)` — 完了・失敗タスクを **24 時間**超で削除。加えて `running` のまま **48 時間**超経過した JSON（クラッシュ孤児）も削除。
 - **`from_profiles(anima_dir, ..., profiles, config_eligible)`**: バックグラウンド対象ツール集合は次の **3 層マージ**（後勝ち）。
   1. コード内デフォルト `_DEFAULT_ELIGIBLE_TOOLS`（Mode A 互換の固定一覧）
-  2. 各ツールモジュールの `EXECUTION_PROFILE` から `background_eligible: true` のエントリ（`core.tools._base.get_eligible_tools_from_profiles`）。キーは `"{tool}:{subcommand}"` 形式（Mode S の `submit` と整合）
+  2. 各ツールモジュールの `EXECUTION_PROFILE` から `background_eligible: true` のエントリ（`core.integrations._base.get_eligible_tools_from_profiles`）。キーは `"{tool}:{subcommand}"` 形式（Mode S の `submit` と整合）
   3. `config.json` 等から渡る `config_eligible`（明示上書き）
 - **`is_eligible(tool_name)`**: 次のどちらの名前でも照合可能 — スキーマ名（例: `generate_3d_model`）、プロファイルキー（例: `image_gen:3d`）。
 - **デフォルトで `_DEFAULT_ELIGIBLE_TOOLS` に含まれる例**（値は目安秒）: `generate_character_assets` / `generate_fullbody` / `generate_bustup` / `generate_icon` / `generate_chibi` / `generate_3d_model` / `generate_rigged_model` / `generate_animations`（各 30）、`local_llm` / `run_command`（各 60）。

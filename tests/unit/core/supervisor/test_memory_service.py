@@ -4,17 +4,15 @@ import asyncio
 import json
 import shutil
 import threading
-import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.memory.rag.ipc_store import IpcVectorStore
+from core.memory.rag.http_store import HttpVectorStore, VectorStoreRetryableError
+from core.memory.rag.owner_transport import owner_transport
 from core.memory.rag.store import CollectionExistence, Document, SearchResult
-from core.supervisor.ipc_v2 import IPCV2Connection, IPCV2ConnectionState, IPCV2Identity, ipc_v2_error
 from core.supervisor.memory_service import MemoryService, MemoryServiceUnavailable
-from core.supervisor.task_runner import _MemoryRpcClient
 
 
 def _store() -> MagicMock:
@@ -323,7 +321,7 @@ async def test_memory_service_serializes_parallel_writes(tmp_path: Path) -> None
 
 
 @pytest.mark.asyncio
-async def test_memory_ipc_round_trip_and_checked_unavailable(tmp_path: Path) -> None:
+async def test_owner_transport_round_trip_and_checked_unavailable(tmp_path: Path) -> None:
     native = _store()
     written: dict[str, Document] = {}
 
@@ -337,44 +335,12 @@ async def test_memory_ipc_round_trip_and_checked_unavailable(tmp_path: Path) -> 
     native._upsert_once.side_effect = upsert
     native._query_once.side_effect = query
     service = MemoryService("sakura", tmp_path / "sakura", opener=lambda: native)
-    identity = IPCV2Identity(
-        job_id="job-memory",
-        root_epoch=str(uuid.uuid4()),
-        attempt=1,
-        lane="cron",
-        display_lane="background",
-    )
-    server_state = IPCV2ConnectionState(identity)
+    loop = asyncio.get_running_loop()
 
-    async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        connection = IPCV2Connection(reader, writer, server_state)
-        try:
-            for _ in range(3):
-                request = await connection.receive()
-                try:
-                    result = await service.handle(request.body["method"], request.body["params"])
-                except MemoryServiceUnavailable as exc:
-                    await connection.send_response(
-                        request.body["request_id"],
-                        error=ipc_v2_error("UNAVAILABLE", str(exc), retryable=True),
-                    )
-                else:
-                    await connection.send_response(request.body["request_id"], result=result)
-        finally:
-            await connection.close()
+    async def handle(method: str, params: dict) -> dict:
+        return await service.handle(method, params)
 
-    server = await asyncio.start_server(handle, "127.0.0.1", 0)
-    port = server.sockets[0].getsockname()[1]
-    reader, writer = await asyncio.open_connection("127.0.0.1", port)
-    connection = IPCV2Connection(reader, writer, IPCV2ConnectionState(identity))
-    rpc = _MemoryRpcClient(connection)
-    store = IpcVectorStore("http://vector.invalid", "sakura", rpc.request)
-
-    async def receive_responses() -> None:
-        for _ in range(3):
-            assert rpc.accept_response(await connection.receive())
-
-    receiver = asyncio.create_task(receive_responses())
+    store = HttpVectorStore("http://vector.invalid", "sakura", transport=owner_transport(handle, loop))
     assert await asyncio.to_thread(
         store.upsert,
         "sakura_knowledge",
@@ -385,51 +351,41 @@ async def test_memory_ipc_round_trip_and_checked_unavailable(tmp_path: Path) -> 
 
     service._repair_fenced = lambda: True
     assert await asyncio.to_thread(store.list_collections_checked) is None
-    await receiver
 
-    rpc.close()
-    await connection.close()
-    server.close()
-    await server.wait_closed()
     await service.close()
 
 
-def test_ipc_vector_store_routes_writes_to_root() -> None:
-    requester = MagicMock(return_value={"ok": True})
-    store = IpcVectorStore("http://vector.invalid", "sakura", requester)
+def test_owner_store_routes_writes_to_root() -> None:
+    transport = MagicMock(return_value={"ok": True})
+    store = HttpVectorStore("http://vector.invalid", "sakura", transport=transport)
 
     assert store.create_collection("sakura_knowledge") is True
-    requester.assert_called_once_with("memory.create_collection", {"collection": "sakura_knowledge"})
+    call_path, call_payload = transport.call_args.args
+    assert call_path == "/create-collection"
+    assert call_payload["collection"] == "sakura_knowledge"
     assert store._client is None
 
 
-def test_ipc_vector_store_marks_unavailable_write_as_transient() -> None:
-    responses = iter([RuntimeError("root busy"), {"ok": True}])
+def test_owner_store_marks_unavailable_write_as_transient() -> None:
+    def transport(_path: str, _payload: dict) -> dict:
+        raise VectorStoreRetryableError("owner unavailable", retry_after_ms=100)
 
-    def requester(_method: str, _params: dict) -> dict:
-        response = next(responses)
-        if isinstance(response, Exception):
-            raise response
-        return response
-
-    store = IpcVectorStore("http://vector.invalid", "sakura", requester)
+    store = HttpVectorStore("http://vector.invalid", "sakura", transport=transport)
 
     assert store.create_collection("sakura_knowledge") is False
     assert store.is_transient_write_failure("sakura_knowledge") is True
-    assert store.create_collection("sakura_knowledge") is True
-    assert store.is_transient_write_failure("sakura_knowledge") is False
 
 
-def test_ipc_vector_store_collection_existence_is_three_state() -> None:
-    available = IpcVectorStore(
+def test_owner_store_collection_existence_is_three_state() -> None:
+    available = HttpVectorStore(
         "http://vector.invalid",
         "sakura",
-        lambda _method, _params: {"collections": ["sakura_knowledge"]},
+        transport=lambda _path, _payload: {"collections": ["sakura_knowledge"]},
     )
-    unavailable = IpcVectorStore(
+    unavailable = HttpVectorStore(
         "http://vector.invalid",
         "sakura",
-        MagicMock(side_effect=RuntimeError("root down")),
+        transport=lambda _path, _payload: (_ for _ in ()).throw(RuntimeError("root down")),
     )
 
     assert available.collection_exists("sakura_knowledge") is CollectionExistence.EXISTS

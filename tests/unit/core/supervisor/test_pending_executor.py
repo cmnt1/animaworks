@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.supervisor.pending_executor import PendingTaskExecutor
+from core.tasks.pending_executor import PendingTaskExecutor
 
 
 def _make_executor(tmp_path: Path) -> PendingTaskExecutor:
@@ -257,7 +257,7 @@ class TestWatcherLoop:
             executor._shutdown_event.set()
             raise TimeoutError
 
-        with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=stop_after_first):
+        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=stop_after_first):
             await executor.watcher_loop()
 
         assert not (pending_dir / "task1.json").exists()
@@ -277,7 +277,7 @@ class TestWatcherLoop:
             executor._shutdown_event.set()
             raise TimeoutError
 
-        with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=stop_after_first):
+        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=stop_after_first):
             await executor.watcher_loop()
 
         assert not (pending_dir / "bad.json").exists()
@@ -325,8 +325,8 @@ class TestStreamErrorSuppression:
         with (
             patch("core.paths.load_prompt", return_value="test prompt"),
             patch("core.memory.activity.ActivityLogger") as mock_activity,
-            patch("core.supervisor.pending_executor._resolve_default_workspace", return_value=""),
-            patch("core.memory.task_queue.TaskQueueManager") as mock_tqm,
+            patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
+            patch("core.tasks.queue.TaskQueueManager") as mock_tqm,
         ):
             mock_activity.return_value.log = MagicMock()
             mock_tqm.return_value.get_task_by_id.return_value = mock_entry
@@ -337,7 +337,7 @@ class TestStreamErrorSuppression:
     @pytest.mark.asyncio
     async def test_raises_when_queue_is_not_done(self, tmp_path):
         """Stream error should raise TaskExecError when queue status is not 'done'."""
-        from core.supervisor.pending_executor import TaskExecError
+        from core.tasks.pending_executor import TaskExecError
 
         executor = _make_executor(tmp_path)
         bg_event = asyncio.Event()
@@ -364,8 +364,8 @@ class TestStreamErrorSuppression:
         with (
             patch("core.paths.load_prompt", return_value="test prompt"),
             patch("core.memory.activity.ActivityLogger") as mock_activity,
-            patch("core.supervisor.pending_executor._resolve_default_workspace", return_value=""),
-            patch("core.memory.task_queue.TaskQueueManager") as mock_tqm,
+            patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
+            patch("core.tasks.queue.TaskQueueManager") as mock_tqm,
         ):
             mock_activity.return_value.log = MagicMock()
             mock_tqm.return_value.get_task_by_id.return_value = mock_entry
@@ -376,7 +376,7 @@ class TestStreamErrorSuppression:
     @pytest.mark.asyncio
     async def test_raises_when_queue_lookup_fails(self, tmp_path):
         """Stream error should raise TaskExecError when queue lookup raises."""
-        from core.supervisor.pending_executor import TaskExecError
+        from core.tasks.pending_executor import TaskExecError
 
         executor = _make_executor(tmp_path)
         bg_event = asyncio.Event()
@@ -400,8 +400,8 @@ class TestStreamErrorSuppression:
         with (
             patch("core.paths.load_prompt", return_value="test prompt"),
             patch("core.memory.activity.ActivityLogger") as mock_activity,
-            patch("core.supervisor.pending_executor._resolve_default_workspace", return_value=""),
-            patch("core.memory.task_queue.TaskQueueManager") as mock_tqm,
+            patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
+            patch("core.tasks.queue.TaskQueueManager") as mock_tqm,
         ):
             mock_activity.return_value.log = MagicMock()
             mock_tqm.return_value.get_task_by_id.side_effect = OSError("disk error")
@@ -412,7 +412,7 @@ class TestStreamErrorSuppression:
     @pytest.mark.asyncio
     async def test_raises_when_task_not_in_queue(self, tmp_path):
         """Stream error should raise when task is not found in queue (None)."""
-        from core.supervisor.pending_executor import TaskExecError
+        from core.tasks.pending_executor import TaskExecError
 
         executor = _make_executor(tmp_path)
         bg_event = asyncio.Event()
@@ -436,8 +436,8 @@ class TestStreamErrorSuppression:
         with (
             patch("core.paths.load_prompt", return_value="test prompt"),
             patch("core.memory.activity.ActivityLogger") as mock_activity,
-            patch("core.supervisor.pending_executor._resolve_default_workspace", return_value=""),
-            patch("core.memory.task_queue.TaskQueueManager") as mock_tqm,
+            patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
+            patch("core.tasks.queue.TaskQueueManager") as mock_tqm,
         ):
             mock_activity.return_value.log = MagicMock()
             mock_tqm.return_value.get_task_by_id.return_value = None
@@ -474,7 +474,7 @@ class TestStreamErrorSuppression:
         with (
             patch("core.paths.load_prompt", return_value="test prompt"),
             patch("core.memory.activity.ActivityLogger") as mock_activity,
-            patch("core.supervisor.pending_executor._resolve_default_workspace", return_value=""),
+            patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
         ):
             mock_activity.return_value.log = MagicMock()
             result = await executor._run_llm_task(task_desc)
@@ -512,7 +512,7 @@ class TestLlmTaskFailurePropagation:
         with (
             patch("core.paths.load_prompt", return_value="test prompt"),
             patch("core.memory.activity.ActivityLogger") as mock_activity,
-            patch("core.supervisor.pending_executor._resolve_default_workspace", return_value=""),
+            patch("core.tasks.pending_executor._resolve_default_workspace", return_value=""),
         ):
             mock_activity.return_value.log = MagicMock()
             with pytest.raises(RuntimeError, match="stream retry exhausted"):

@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from core.memory.priming import PrimingEngine
-from core.memory.task_queue import TaskQueueManager
-from core.taskboard.store import TaskBoardStore
+from core.tasks.board.store import TaskBoardStore
+from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_local
 
 
@@ -48,7 +48,7 @@ def _append_task_entry(
     }
     with queue_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    from core.taskboard.tasks import TaskStore, task_database_path
+    from core.tasks.board.tasks import TaskStore, task_database_path
 
     TaskStore(task_database_path(anima_dir)).import_legacy(anima_dir)
 

@@ -1,4 +1,4 @@
-"""Tests for core/tools/transcribe.py — Whisper speech-to-text tool."""
+"""Tests for core/integrations/transcribe.py — Whisper speech-to-text tool."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.tools.transcribe import (
+from core.integrations.transcribe import (
     _load_prompt,
     _prompt_cache,
     get_tool_schemas,
@@ -33,7 +33,7 @@ class TestLoadPrompt:
 
     def test_fallback_prompt(self, tmp_path: Path):
         """When no prompt file exists, returns a minimal fallback."""
-        with patch("core.tools.transcribe._PROMPTS_DIR", tmp_path / "nonexistent"):
+        with patch("core.integrations.transcribe._PROMPTS_DIR", tmp_path / "nonexistent"):
             result = _load_prompt("xx")
         assert "system_prompt" in result
         assert "user_template" in result
@@ -47,12 +47,12 @@ class TestLoadPrompt:
         }
         (prompts_dir / "en.json").write_text(json.dumps(prompt_data), encoding="utf-8")
 
-        with patch("core.tools.transcribe._PROMPTS_DIR", prompts_dir):
+        with patch("core.integrations.transcribe._PROMPTS_DIR", prompts_dir):
             result = _load_prompt("en")
         assert result["system_prompt"] == "Custom system prompt"
 
     def test_caches_result(self, tmp_path: Path):
-        with patch("core.tools.transcribe._PROMPTS_DIR", tmp_path / "none"):
+        with patch("core.integrations.transcribe._PROMPTS_DIR", tmp_path / "none"):
             result1 = _load_prompt("zz")
             result2 = _load_prompt("zz")
         assert result1 is result2
@@ -71,7 +71,7 @@ class TestLoadPrompt:
             encoding="utf-8",
         )
 
-        with patch("core.tools.transcribe._PROMPTS_DIR", prompts_dir):
+        with patch("core.integrations.transcribe._PROMPTS_DIR", prompts_dir):
             result = _load_prompt("en-US")
         assert "English" in result["system_prompt"]
 
@@ -98,7 +98,7 @@ class TestTranscribe:
         mock_model = MagicMock()
         mock_model.transcribe.return_value = ([mock_segment], mock_info)
 
-        with patch("core.tools.transcribe._get_whisper_model", return_value=mock_model):
+        with patch("core.integrations.transcribe._get_whisper_model", return_value=mock_model):
             result = transcribe("/fake/audio.wav")
 
         assert result["raw_text"] == "Hello world"
@@ -116,7 +116,7 @@ class TestTranscribe:
         mock_model = MagicMock()
         mock_model.transcribe.return_value = ([], mock_info)
 
-        with patch("core.tools.transcribe._get_whisper_model", return_value=mock_model):
+        with patch("core.integrations.transcribe._get_whisper_model", return_value=mock_model):
             result = transcribe("/fake/silence.wav")
         assert result["raw_text"] == ""
         assert result["segments"] == []
@@ -136,7 +136,7 @@ class TestRefineWithLlm:
         mock_client = MagicMock()
         mock_client.chat.return_value = "Refined text output"
 
-        with patch("core.tools.local_llm.OllamaClient", return_value=mock_client):
+        with patch("core.integrations.local_llm.OllamaClient", return_value=mock_client):
             result = refine_with_llm("raw text input", model="test-model")
         assert result["refined_text"] == "Refined text output"
         assert result["model"] == "test-model"
@@ -145,7 +145,7 @@ class TestRefineWithLlm:
         mock_client = MagicMock()
         mock_client.chat.return_value = "Custom refined text"
 
-        with patch("core.tools.local_llm.OllamaClient", return_value=mock_client):
+        with patch("core.integrations.local_llm.OllamaClient", return_value=mock_client):
             result = refine_with_llm(
                 "raw",
                 custom_prompt="Also fix names",
@@ -156,7 +156,7 @@ class TestRefineWithLlm:
         mock_client = MagicMock()
         mock_client.chat.return_value = "Contextual refined text"
 
-        with patch("core.tools.local_llm.OllamaClient", return_value=mock_client):
+        with patch("core.integrations.local_llm.OllamaClient", return_value=mock_client):
             result = refine_with_llm(
                 "raw text",
                 context_hint="This is a tech meeting",
@@ -169,7 +169,7 @@ class TestRefineWithLlm:
         mock_client.chat.return_value = "X"  # Much shorter than raw
 
         raw = "This is a long raw text that should not be replaced by something too short"
-        with patch("core.tools.local_llm.OllamaClient", return_value=mock_client):
+        with patch("core.integrations.local_llm.OllamaClient", return_value=mock_client):
             result = refine_with_llm(raw)
         assert result["refined_text"] == raw  # falls back
 
@@ -190,7 +190,7 @@ class TestProcessAudio:
             "segments": [],
         }
 
-        with patch("core.tools.transcribe.transcribe", return_value=mock_transcribe_result):
+        with patch("core.integrations.transcribe.transcribe", return_value=mock_transcribe_result):
             result = process_audio("/fake.wav", raw_only=True, quiet=True)
         assert result["raw_text"] == "Hello from whisper"
         assert result["refined_text"] is None
@@ -213,8 +213,8 @@ class TestProcessAudio:
         }
 
         with (
-            patch("core.tools.transcribe.transcribe", return_value=mock_transcribe_result),
-            patch("core.tools.transcribe.refine_with_llm", return_value=mock_refine_result),
+            patch("core.integrations.transcribe.transcribe", return_value=mock_transcribe_result),
+            patch("core.integrations.transcribe.refine_with_llm", return_value=mock_refine_result),
         ):
             result = process_audio("/fake.wav", quiet=True)
         assert result["refined_text"] == "polished text"
@@ -232,7 +232,7 @@ class TestProcessAudio:
             "segments": [],
         }
 
-        with patch("core.tools.transcribe.transcribe", return_value=mock_transcribe_result):
+        with patch("core.integrations.transcribe.transcribe", return_value=mock_transcribe_result):
             result = process_audio("/fake.wav", quiet=True)
         assert result["refined_text"] is None
 

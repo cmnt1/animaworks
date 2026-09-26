@@ -20,6 +20,9 @@ from server.events import emit
 
 logger = logging.getLogger("animaworks.routes.internal")
 
+# Owner-unavailable 503s tell vector clients how long to wait before their single retry.
+_ROOT_RETRY_AFTER_MS = 250
+
 _native_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=4,
     thread_name_prefix="native-ops",
@@ -410,19 +413,11 @@ def create_internal_router() -> APIRouter:
                 # MCP/CLI subprocesses cannot share a task runner's Python IPC
                 # requester. This is transport forwarding only: the phase3
                 # root retains the sole native handle, queue and repair fence.
-                methods = {
-                    "/query": "memory.query",
-                    "/upsert": "memory.upsert",
-                    "/update-metadata": "memory.update_metadata",
-                    "/delete-documents": "memory.delete_documents",
-                    "/get-by-metadata": "memory.get_by_metadata",
-                    "/get-by-ids": "memory.get_by_ids",
-                    "/create-collection": "memory.create_collection",
-                    "/delete-collection": "memory.delete_collection",
-                    "/list-collections": "memory.list_collections_checked",
-                }
-                method = methods.get(path)
-                if method is None:
+                from core.memory.rag.vector_ops import UnsupportedVectorPath, to_owner_interaction
+
+                try:
+                    method, params = to_owner_interaction(path, _body_payload(body))
+                except UnsupportedVectorPath:
                     # Reset/repair/health must not open a second native owner.
                     return JSONResponse(
                         status_code=409,
@@ -432,16 +427,14 @@ def create_internal_router() -> APIRouter:
                 if supervisor is None:
                     return JSONResponse(
                         status_code=503,
-                        content={"detail": t("rag.root_unavailable")},
+                        content={"detail": t("rag.root_unavailable"), "retry_after_ms": _ROOT_RETRY_AFTER_MS},
                         headers={"Retry-After": "1"},
                     )
-                payload = _body_payload(body)
-                payload.pop("anima_name", None)
                 try:
                     result = await supervisor.send_request(
                         anima_name,
                         "memory",
-                        {"method": method, "params": payload},
+                        {"method": method, "params": params},
                         timeout=120.0,
                     )
                 except Exception:
@@ -450,13 +443,13 @@ def create_internal_router() -> APIRouter:
                     )
                     return JSONResponse(
                         status_code=503,
-                        content={"detail": t("rag.root_unavailable")},
+                        content={"detail": t("rag.root_unavailable"), "retry_after_ms": _ROOT_RETRY_AFTER_MS},
                         headers={"Retry-After": "1"},
                     )
                 if not isinstance(result, dict) or result.get("ok") is False:
                     return JSONResponse(
                         status_code=503,
-                        content={"detail": t("rag.root_operation_failed")},
+                        content={"detail": t("rag.root_operation_failed"), "retry_after_ms": _ROOT_RETRY_AFTER_MS},
                         headers={"Retry-After": "1"},
                     )
                 return result
@@ -704,8 +697,8 @@ def create_internal_router() -> APIRouter:
     async def internal_tasks(anima_name: str, include_archived: bool = False, task_id: str | None = None):
         """Read a task snapshot for workers without direct database access."""
         from core.anima_factory import validate_anima_name
-        from core.memory.task_queue import TaskQueueManager
         from core.paths import get_animas_dir
+        from core.tasks.queue import TaskQueueManager
 
         if validate_anima_name(anima_name):
             return JSONResponse(status_code=400, content={"detail": "Invalid anima name"})
@@ -734,7 +727,7 @@ def create_internal_router() -> APIRouter:
         """Publish a complete batch on the host; no sandbox DB grant is needed."""
         from core.anima_factory import validate_anima_name
         from core.paths import get_animas_dir
-        from core.tasks_dispatch import publish_tasks
+        from core.tasks.dispatch import publish_tasks
 
         if validate_anima_name(body.anima_name):
             return JSONResponse(status_code=400, content={"detail": "Invalid anima name"})
@@ -743,7 +736,7 @@ def create_internal_router() -> APIRouter:
             return JSONResponse(status_code=404, content={"detail": "Anima directory not found"})
 
         def _publish():
-            from core.taskboard.tasks import attempt_scope
+            from core.tasks.board.tasks import attempt_scope
 
             with attempt_scope(body.attempt_identity):
                 return publish_tasks(anima_dir, body.tasks, source=body.source, meta=body.meta, host_fallback=False)
@@ -808,8 +801,8 @@ def create_internal_router() -> APIRouter:
         def _persist() -> dict[str, str]:
             from datetime import UTC, datetime
 
-            from core.taskboard.tasks import attempt_scope
-            from core.tasks_dispatch import publish_delegation
+            from core.tasks.board.tasks import attempt_scope
+            from core.tasks.dispatch import publish_delegation
 
             payload = {
                 "task_type": "llm",
@@ -872,7 +865,7 @@ def create_internal_router() -> APIRouter:
     async def internal_task_board_action(body: TaskBoardActionRequest):
         """Run a lease-guarded task board write for a sandboxed anima CLI."""
         from core.anima_factory import validate_anima_name
-        from core.taskboard.board_actions import BoardActionError, run_board_action
+        from core.tasks.board.board_actions import BoardActionError, run_board_action
 
         if body.actor != "human" and validate_anima_name(body.actor):
             return JSONResponse(status_code=400, content={"detail": "Invalid actor"})
@@ -894,8 +887,8 @@ def create_internal_router() -> APIRouter:
     async def internal_update_task(body: UpdateTaskPersistRequest):
         """Persist a task update outside sandbox EROFS constraints."""
         from core.anima_factory import validate_anima_name
-        from core.memory.task_queue import TaskQueueManager
         from core.paths import get_animas_dir
+        from core.tasks.queue import TaskQueueManager
 
         if validate_anima_name(body.anima_name):
             return JSONResponse(status_code=400, content={"detail": "Invalid anima name"})
@@ -916,7 +909,7 @@ def create_internal_router() -> APIRouter:
             )
 
         def _persist() -> Any:
-            from core.taskboard.tasks import attempt_scope
+            from core.tasks.board.tasks import attempt_scope
 
             manager = TaskQueueManager(anima_dir)
             with attempt_scope(body.attempt_identity), manager.store.transaction():

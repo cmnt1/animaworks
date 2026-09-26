@@ -13,7 +13,7 @@ AnimaWorks의 도구는 3가지로 분류됩니다:
 
 | 유형 | 배치 위치 | 탐색 방법 |
 |------|----------|----------|
-| **코어 도구** | `core/tools/*.py` | `discover_core_tools()` → TOOL_MODULES (시작 시 고정) |
+| **코어 도구** | `core/integrations/*.py` | `discover_core_tools()` → TOOL_MODULES (시작 시 고정) |
 | **공유 도구** | `{data_dir}/common_tools/*.py` | discover_common_tools() |
 | **개인 도구** | `{anima_dir}/tools/*.py` | discover_personal_tools() |
 
@@ -133,7 +133,7 @@ class MyAPIClient:
     """API 클라이언트."""
 
     def __init__(self) -> None:
-        from core.tools._base import get_credential
+        from core.integrations._base import get_credential
         self._api_key = get_credential(
             "myapi", "myapi_tool", env_var="MYAPI_KEY",
         )
@@ -245,7 +245,7 @@ animaworks-tool myapi query "검색어" [--limit 10]
 API 키 등은 `get_credential()`을 통해 취득합니다. 하드코딩하지 마세요.
 
 ```python
-from core.tools._base import get_credential
+from core.integrations._base import get_credential
 
 api_key = get_credential(
     credential_name="myapi",   # config.json의 credentials 키
@@ -302,4 +302,4 @@ api_key = get_credential(
 - 생성한 도구는 `refresh_tools` 호출로 즉시 탐색됩니다 (핫 리로드)
 - 개인/공유 도구는 permissions.json의 "외부 도구" 섹션에 등록 불필요. `refresh_tools`로 탐색되면 Bash + animaworks-tool에서 사용 가능
 - 스키마명은 `{tool_name}_{action}` 형식. 다른 도구와 충돌하지 않도록 고유하게 유지하세요
-- 코어 도구와 동명의 개인/공유 도구는 섀도잉되어 건너뛰어집니다 (`core/tools/__init__.py`)
+- 코어 도구와 동명의 개인/공유 도구는 섀도잉되어 건너뛰어집니다 (`core/integrations/__init__.py`)

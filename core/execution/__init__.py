@@ -16,7 +16,6 @@ Each engine implements one execution mode:
   - ``GeminiCLIExecutor`` (G): Gemini CLI -- gemini subprocess with stream-json
   - ``GrokCLIExecutor`` (X): Grok Build CLI -- ACP subprocess over stdio
   - ``LiteLLMExecutor``   (A): LiteLLM + tool_use loop -- any model with tool support
-  - ``AnthropicFallbackExecutor``: Anthropic SDK direct -- fallback when Agent SDK unavailable
 """
 
 # AgentSDKExecutor requires claude_agent_sdk which may not be installed.
@@ -50,13 +49,11 @@ try:
 except ImportError:  # pragma: no cover
     GrokCLIExecutor = None  # type: ignore[assignment,misc]
 
-from core.execution.anthropic_fallback import AnthropicFallbackExecutor
 from core.execution.base import BaseExecutor, ExecutionResult
 from core.execution.litellm_loop import LiteLLMExecutor
 
 __all__ = [
     "AgentSDKExecutor",
-    "AnthropicFallbackExecutor",
     "BaseExecutor",
     "CodexSDKExecutor",
     "CursorAgentExecutor",

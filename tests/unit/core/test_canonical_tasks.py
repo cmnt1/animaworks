@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from core.memory.task_queue import TaskQueueManager
-from core.taskboard.tasks import TaskStore, attempt_scope, process_identity, task_database_path
+from core.tasks.board.tasks import TaskStore, attempt_scope, process_identity, task_database_path
+from core.tasks.queue import TaskQueueManager
 
 
 def _claim(db: str, name: str, task_id: str):
@@ -183,7 +183,7 @@ def test_quiesce_survives_new_store(queue):
 
 @pytest.mark.asyncio
 async def test_incomplete_attempt_creates_retryable_wakeup_not_retry(queue):
-    from core.supervisor.pending_executor import PendingTaskExecutor
+    from core.tasks.pending_executor import PendingTaskExecutor
 
     queue.submit(_payload(reply_to="manager"))
     claim = queue.store.claim("worker", "task", process_identity())
@@ -203,7 +203,7 @@ async def test_incomplete_attempt_creates_retryable_wakeup_not_retry(queue):
 
 
 def test_dead_attempt_is_not_automatically_reexecuted(queue):
-    from core.supervisor.pending_executor import PendingTaskExecutor
+    from core.tasks.pending_executor import PendingTaskExecutor
 
     queue.submit(_payload())
     queue.store.claim("worker", "task", {"pid": 999999999, "process_start_time": 0})
@@ -243,9 +243,9 @@ def test_dependency_waits_for_finished_attempt_and_cancel_notifies(queue):
 
 @pytest.mark.asyncio
 async def test_nonisolated_quiet_model_can_be_cancelled_without_heartbeat(queue, monkeypatch):
-    from core.supervisor.pending_executor import PendingTaskExecutor
+    from core.tasks.pending_executor import PendingTaskExecutor
 
-    monkeypatch.setattr("core.supervisor.pending_executor._CANCEL_POLL_SECONDS", 0.01)
+    monkeypatch.setattr("core.tasks.pending_executor._CANCEL_POLL_SECONDS", 0.01)
     queue.submit(_payload())
     claim = queue.store.claim("worker", "task", process_identity())
     entered = asyncio.Event()
@@ -267,7 +267,7 @@ async def test_nonisolated_quiet_model_can_be_cancelled_without_heartbeat(queue,
 
 
 def test_completion_notification_failure_does_not_undo_completion(queue):
-    from core.supervisor.pending_executor import PendingTaskExecutor
+    from core.tasks.pending_executor import PendingTaskExecutor
 
     queue.submit(_payload(reply_to="manager"))
     claim = queue.store.claim("worker", "task", process_identity())
@@ -295,9 +295,9 @@ def test_durable_inbox_delivery_deduplicates_after_archive(queue):
 
 
 def test_presentation_updates_run_only_after_task_transaction_commits(queue, monkeypatch):
-    from core.taskboard.store import TaskBoardStore
+    from core.tasks.board.store import TaskBoardStore
 
-    monkeypatch.setattr("core.taskboard.store.get_taskboard_db_path", lambda: queue.store.db_path)
+    monkeypatch.setattr("core.tasks.board.store.get_taskboard_db_path", lambda: queue.store.db_path)
     board = TaskBoardStore()
     queue.submit(_payload())
     board.upsert_metadata(anima_name="worker", task_id="task", actor="worker", visibility="active")

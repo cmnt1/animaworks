@@ -23,12 +23,12 @@ import pytest
 from core.memory.bm25 import rebuild_longterm_bm25_index
 from core.memory.rag.sqlite_health import quick_check_chroma_sqlite
 from core.memory.rag_search import RAGMemorySearch
-from core.memory.task_queue import TaskQueueManager
 from core.platform.processing_lease import write_processing_lease
 from core.schemas import CronTask
 from core.supervisor.memory_service import MemoryService
 from core.supervisor.process_handle import ProcessHandle
 from core.supervisor.task_runner_supervisor import TaskRunnerSupervisor
+from core.tasks.queue import TaskQueueManager
 
 pytestmark = [
     pytest.mark.timeout(90),

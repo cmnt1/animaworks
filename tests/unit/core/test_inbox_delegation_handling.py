@@ -165,7 +165,7 @@ class TestCanonicalDelegation:
         [("pending", "pending"), ("in_progress", "processing"), ("done", "completed"), ("cancelled", "terminal")],
     )
     def test_status_comes_from_task_record(self, tmp_path, status, expected):
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         directory = _setup_anima_dir(tmp_path)
         queue = TaskQueueManager(directory)
@@ -192,7 +192,7 @@ class TestCanonicalDelegation:
 
     @pytest.mark.asyncio
     async def test_existing_task_dm_is_archived_and_recorded_without_republication(self, tmp_path):
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         directory = _setup_anima_dir(tmp_path)
         queue = TaskQueueManager(directory)

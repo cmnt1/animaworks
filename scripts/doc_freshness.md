@@ -18,7 +18,7 @@ python3 scripts/doc_freshness.py
 === Stale Documents: 42/52 ===
 
 [HIGH] templates/ja/reference/operations/task-management.md
-       Reason: core/background.py changed 2026-02-20 (doc: 2026-02-10, 10d stale)
+       Reason: core/tasks/background.py changed 2026-02-20 (doc: 2026-02-10, 10d stale)
 [MED ] templates/ja/common_skills/cron-management/SKILL.md
        Reason: core/schedule_parser.py changed 2026-02-22 (doc: 2026-02-18, 4d stale)
 ```

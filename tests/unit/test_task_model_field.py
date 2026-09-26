@@ -12,9 +12,9 @@ pending task_desc) must carry the model through.
 
 from __future__ import annotations
 
-from core.external_tasks.models import ExternalTask
 from core.schemas import TaskEntry
-from core.taskboard.models import AttentionVisibility, BoardColumn, BoardTask
+from core.tasks.board.models import AttentionVisibility, BoardColumn, BoardTask
+from core.tasks.external.models import ExternalTask
 
 
 def _entry(**overrides) -> TaskEntry:

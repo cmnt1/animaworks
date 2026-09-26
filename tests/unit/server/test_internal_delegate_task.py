@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 
 
 def _make_test_app():
@@ -78,7 +78,7 @@ def anyio_backend() -> str:
 class TestInternalDelegateTask:
     @pytest.mark.anyio
     async def test_sandbox_proxy_preserves_complete_execution_input(self, tmp_path, monkeypatch):
-        from core.tasks_dispatch import publish_delegation
+        from core.tasks.dispatch import publish_delegation
 
         animas = _setup_animas(tmp_path)
         monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(tmp_path))

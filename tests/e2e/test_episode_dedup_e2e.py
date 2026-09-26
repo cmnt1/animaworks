@@ -19,6 +19,7 @@ from core.time_utils import today_local
 
 # ── Fire-and-forget removal verification ─────────────────────
 
+
 class TestFireAndForgetRemoved:
     """Verify fire-and-forget finalize_session calls are removed from anima.py."""
 
@@ -48,13 +49,12 @@ class TestFireAndForgetRemoved:
                 in_process_message = False
                 in_process_message_stream = False
 
-            if (in_process_message or in_process_message_stream):
+            if in_process_message or in_process_message_stream:
                 if "create_task" in line and "finalize_session" in line:
                     fire_and_forget_lines.append(f"Line {i}: {line.strip()}")
 
-        assert fire_and_forget_lines == [], (
-            "Fire-and-forget finalize_session calls found in anima.py:\n"
-            + "\n".join(fire_and_forget_lines)
+        assert fire_and_forget_lines == [], "Fire-and-forget finalize_session calls found in anima.py:\n" + "\n".join(
+            fire_and_forget_lines
         )
 
     def test_heartbeat_calls_finalize_if_session_ended(self):
@@ -67,9 +67,7 @@ class TestFireAndForgetRemoved:
         core_dir = Path(__file__).resolve().parents[2] / "core"
         lifecycle = (core_dir / "_anima_lifecycle.py").read_text(encoding="utf-8")
 
-        assert "finalize_if_session_ended" in lifecycle, (
-            "finalize_if_session_ended() not found in _anima_lifecycle.py"
-        )
+        assert "finalize_if_session_ended" in lifecycle, "finalize_if_session_ended() not found in _anima_lifecycle.py"
 
         run_hb_idx = lifecycle.find("async def run_heartbeat")
         assert run_hb_idx >= 0, "run_heartbeat() not found"
@@ -79,10 +77,7 @@ class TestFireAndForgetRemoved:
         body_end = min(candidates) if candidates else len(lifecycle)
         run_hb_body = lifecycle[run_hb_idx:body_end]
         # Direct call or private helper that itself calls finalize_if_session_ended.
-        asserts_finalize = (
-            "finalize_if_session_ended" in run_hb_body
-            or "_finalize_session_if_ended" in run_hb_body
-        )
+        asserts_finalize = "finalize_if_session_ended" in run_hb_body or "_finalize_session_if_ended" in run_hb_body
         assert asserts_finalize, (
             "run_heartbeat() must invoke session-boundary finalize "
             "(finalize_if_session_ended or _finalize_session_if_ended)"
@@ -104,6 +99,7 @@ class TestFireAndForgetRemoved:
 
 
 # ── Differential finalization E2E ─────────────────────────────
+
 
 class TestDifferentialFinalizationE2E:
     """End-to-end test for differential episode recording."""
@@ -167,13 +163,15 @@ class TestDifferentialFinalizationE2E:
 
         # Verify new tasks are NOT auto-registered from session summary (disabled per 9198efcc)
         # Auto-detection produced noise (wrong assignees, stale items); heartbeat covers this.
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
+
         tqm = TaskQueueManager(anima_dir)
         active = tqm.load_active_tasks()
         assert not any("デプロイ作業" in t.summary for t in active.values())
 
         # Verify resolution was recorded
         from core.memory.manager import MemoryManager
+
         mm = MemoryManager(anima_dir)
         resolutions = mm.read_resolutions(days=1)
         assert len(resolutions) >= 1
@@ -202,10 +200,7 @@ class TestDifferentialFinalizationE2E:
         conv = ConversationMemory(anima_dir, model_config)
 
         state = conv.load()
-        state.turns = [
-            ConversationTurn(role="human", content=f"message {i}")
-            for i in range(4)
-        ]
+        state.turns = [ConversationTurn(role="human", content=f"message {i}") for i in range(4)]
         conv.save()
 
         summary_resp = make_litellm_response(
@@ -224,6 +219,7 @@ class TestDifferentialFinalizationE2E:
 
 
 # ── Resolution propagation E2E ────────────────────────────────
+
 
 class TestResolutionPropagationE2E:
     """End-to-end test for resolution propagation across components."""

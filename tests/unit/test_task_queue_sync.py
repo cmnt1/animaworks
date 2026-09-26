@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from core.memory.task_queue import TaskQueueManager
-from core.taskboard.tasks import TaskStore, task_database_path
+from core.tasks.board.tasks import TaskStore, task_database_path
+from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_iso
 
 

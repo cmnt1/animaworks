@@ -177,7 +177,7 @@ Anima 表示名・アイコン付きで `chat.postMessage` する場合は、ワ
 | `default_anima` | string | `""` | チャンネルが anima_mapping にない場合のフォールバックAnima |
 | `app_id_mapping` | object | `{}` | Slack API App ID → Anima名（Webhook モードで複数Appを使う場合） |
 
-**共有Botのマッピングは接続を張り直さずに反映される**: `server/slack_socket.py` は受信ごとに `load_config()` し、`anima_mapping` / `default_anima` の変更は次のメッセージから有効（WebSocket は維持）。
+**共有Botのマッピングは接続を張り直さずに反映される**: `server/gateways/slack_socket.py` は受信ごとに `load_config()` し、`anima_mapping` / `default_anima` の変更は次のメッセージから有効（WebSocket は維持）。
 
 ### チャンネルIDの確認方法
 
@@ -201,7 +201,7 @@ Slackでチャンネル名を右クリック → 「チャンネル詳細を表�
 }
 ```
 
-Per-Anima Bot の一覧は、上記 `SLACK_BOT_TOKEN__*` キーを vault / `credentials.json` から走査して決まる（`server/slack_socket.SlackSocketModeManager._discover_per_anima_bots`）。
+Per-Anima Bot の一覧は、上記 `SLACK_BOT_TOKEN__*` キーを vault / `credentials.json` から走査して決まる（`server/gateways/slack_socket.SlackSocketModeManager._discover_per_anima_bots`）。
 
 Per-Anima Bot と共有Bot（`SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN`）は併用可能。共有Botは `anima_mapping` と `default_anima` でチャンネルベースのルーティングを行う。
 
@@ -267,22 +267,22 @@ Per-Anima の `SLACK_*__name` キーを増減したり credential を更新し�
 
 1. Slackユーザーがマッピングされたチャンネルにメッセージ送信
 2. Slack → WebSocket（Socket Mode）または HTTP POST（Webhook）でイベント受信
-3. **重複抑制**: 同一メッセージで `message` と `app_mention` の両方が届くことがある。`ts` を短い TTL（約10秒）で記録し、二度目は無視する（`server/slack_socket.py` の `_is_duplicate_ts`）
+3. **重複抑制**: 同一メッセージで `message` と `app_mention` の両方が届くことがある。`ts` を短い TTL（約10秒）で記録し、二度目は無視する（`server/gateways/slack_socket.py` の `_is_duplicate_ts`）
 4. **call_human スレッド返信**: メッセージがスレッド返信かつ `route_thread_reply` でマッピング済みの場合、元の通知を送ったAnimaのinboxにルーティング（`core/notification/reply_routing.py`）
 5. **ルーティング解決**:
    - **Socket Mode Per-Anima Bot**: そのBotの全メッセージを対応Animaに直接配送
    - **Socket Mode 共有Bot**: 受信のたびに、チャンネルが `anima_mapping` にあればその値（空文字なら無視）、なければ `default_anima`（設定ホット反映）
    - **Webhook**: `app_id_mapping.get(api_app_id)` でAnimaを取得 → なければ上と同じ `anima_mapping` / `default_anima` の規則
 6. **スレッドコンテキスト**: `thread_ts` がある場合、親メッセージの一行要約と返信数を `[Thread context]` ブロックとして本文先頭に付与（`conversations.replies`、最大10件相当の取得ロジック）
-7. **本文整形**: `<@U...>` を表示名に展開し、Slack マークアップを平文化（`core/tools/_slack_markdown.py` の `clean_slack_markup`）
+7. **本文整形**: `<@U...>` を表示名に展開し、Slack マークアップを平文化（`core/integrations/_slack_markdown.py` の `clean_slack_markup`）
 8. **アノテーション**: `[slack:DM]` またはチャンネルで Bot/エイリアスへのメンション有無を示す行を先頭に付与（`_build_slack_annotation`）
 9. **intent**: Bot の `<@BOT>` または `user_aliases` に登録した `slack_user_id` へのメンション → `question`。それ以外は DM のみ `question`（`_detect_mention_intent` / `_detect_slack_intent`）
 10. `Messenger.receive_external()` が `~/.animaworks/shared/inbox/{anima_name}/{msg_id}.json` にメッセージ配置
 11. Animaが次のrunサイクル（heartbeat/cron/手動）でinboxを処理
 
-## Slack ツール（`core/tools/slack.py` との関係）
+## Slack ツール（`core/integrations/slack.py` との関係）
 
-受信（Socket/Webhook）とは独立に、**Slack Web API** 呼び出しは `core/tools/slack.py` をエントリに、実装は分割モジュール（`_slack_client.py`, `_slack_cache.py`, `_slack_markdown.py`, `_slack_cli.py`）に分かれている。
+受信（Socket/Webhook）とは独立に、**Slack Web API** 呼び出しは `core/integrations/slack.py` をエントリに、実装は分割モジュール（`_slack_client.py`, `_slack_cache.py`, `_slack_markdown.py`, `_slack_cli.py`）に分かれている。
 
 ### スキーマ（`get_tool_schemas()`）と `dispatch()` の役割分担
 
@@ -320,15 +320,15 @@ Per-Anima の `SLACK_*__name` キーを増減したり credential を更新し�
 
 ### CLI
 
-`core/tools/_slack_cli.py` の **`get_cli_guide()`** にあるサブコマンド: **`channels`**, **`messages`**, **`send`**, **`search`**, **`unreplied`**。いずれも CLI では **`ANIMAWORKS_ANIMA_DIR` があると Per-Anima の `SLACK_BOT_TOKEN__{名}`** を優先。表示名・アイコン付与は **`send` のみ**（`messages` 等はトークン解決のみ）。**`react` / チャンネル ID 固定投稿 / 更新は CLI に無く**、エージェントの `slack_react`・`slack_channel_post`・`slack_channel_update`（および `use_tool` 経由）で利用する。
+`core/integrations/_slack_cli.py` の **`get_cli_guide()`** にあるサブコマンド: **`channels`**, **`messages`**, **`send`**, **`search`**, **`unreplied`**。いずれも CLI では **`ANIMAWORKS_ANIMA_DIR` があると Per-Anima の `SLACK_BOT_TOKEN__{名}`** を優先。表示名・アイコン付与は **`send` のみ**（`messages` 等はトークン解決のみ）。**`react` / チャンネル ID 固定投稿 / 更新は CLI に無く**、エージェントの `slack_react`・`slack_channel_post`・`slack_channel_update`（および `use_tool` 経由）で利用する。
 
-エントリ: `python -m core.tools.slack` または `animaworks-tool slack`（`--help` で確認）。
+エントリ: `python -m core.integrations.slack` または `animaworks-tool slack`（`--help` で確認）。
 
 ## 関連ファイル
 
 | ファイル | 役割 |
 |----------|------|
-| `server/slack_socket.py` | `SlackSocketModeManager`（Socket Mode、Per-Anima / 共有Bot、デデュープ、スレッドコンテキスト、mention/intent） |
+| `server/gateways/slack_socket.py` | `SlackSocketModeManager`（Socket Mode、Per-Anima / 共有Bot、デデュープ、スレッドコンテキスト、mention/intent） |
 | `server/app.py`（lifespan 付近） | `SlackSocketModeManager` の起動・停止 |
 | `server/reload_manager.py` | 設定/credential 反映時の `SlackSocketModeManager.reload()` |
 | `server/routes/system.py` | `/api/system/hot-reload*` エンドポイント |
@@ -338,10 +338,10 @@ Per-Anima の `SLACK_*__name` キーを増減したり credential を更新し�
 | `core/tooling/dispatch.py` | `ExternalToolDispatcher`（コアツールは `get_tool_schemas()` に載ったスキーマ名のみレジストリマッチ） |
 | `core/notification/reply_routing.py` | call_human スレッド返信のAnimaルーティング |
 | `core/config/schemas.py` | `UserAliasConfig`, `ExternalMessagingChannelConfig`, `ExternalMessagingConfig` |
-| `core/tools/slack.py` | `get_tool_schemas`（channel_post/update のみ）・`dispatch`・`EXECUTION_PROFILE`・再エクスポート |
-| `core/tools/_anima_icon_url.py` | `resolve_anima_icon_identity`（`slack_send` / `slack_channel_post` の表示名・アイコン） |
-| `core/tools/_slack_client.py` | `SlackClient`（Web API・ページング・429リトライ） |
-| `core/tools/_slack_cache.py` | `MessageCache`（SQLite） |
+| `core/integrations/slack.py` | `get_tool_schemas`（channel_post/update のみ）・`dispatch`・`EXECUTION_PROFILE`・再エクスポート |
+| `core/integrations/_anima_icon_url.py` | `resolve_anima_icon_identity`（`slack_send` / `slack_channel_post` の表示名・アイコン） |
+| `core/integrations/_slack_client.py` | `SlackClient`（Web API・ページング・429リトライ） |
+| `core/integrations/_slack_cache.py` | `MessageCache`（SQLite） |
 
 ## トラブルシューティング
 

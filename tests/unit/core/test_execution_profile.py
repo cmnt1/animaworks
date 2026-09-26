@@ -9,24 +9,23 @@ import importlib
 
 import pytest
 
-from core.background import BackgroundTaskManager
-from core.tools._base import get_eligible_tools_from_profiles, load_execution_profiles
-
+from core.integrations._base import get_eligible_tools_from_profiles, load_execution_profiles
+from core.tasks.background import BackgroundTaskManager
 
 # ── Module registry ──────────────────────────────────────────
 
 # All core tool modules that should define EXECUTION_PROFILE
 _TOOL_MODULES = {
-    "image_gen": "core.tools.image_gen",
-    "local_llm": "core.tools.local_llm",
-    "transcribe": "core.tools.transcribe",
-    "web_search": "core.tools.web_search",
-    "x_search": "core.tools.x_search",
-    "slack": "core.tools.slack",
-    "chatwork": "core.tools.chatwork",
-    "gmail": "core.tools.gmail",
-    "github": "core.tools.github",
-    "aws_collector": "core.tools.aws_collector",
+    "image_gen": "core.integrations.image_gen",
+    "local_llm": "core.integrations.local_llm",
+    "transcribe": "core.integrations.transcribe",
+    "web_search": "core.integrations.web_search",
+    "x_search": "core.integrations.x_search",
+    "slack": "core.integrations.slack",
+    "chatwork": "core.integrations.chatwork",
+    "gmail": "core.integrations.gmail",
+    "github": "core.integrations.github",
+    "aws_collector": "core.integrations.aws_collector",
 }
 
 # Expected background-eligible subcommands per tool
@@ -90,12 +89,8 @@ class TestExecutionProfileExists:
         for subcmd, info in profile.items():
             assert isinstance(subcmd, str), f"{tool_name}.{subcmd}: key must be str"
             assert isinstance(info, dict), f"{tool_name}.{subcmd}: value must be dict"
-            assert "expected_seconds" in info, (
-                f"{tool_name}.{subcmd}: missing expected_seconds"
-            )
-            assert "background_eligible" in info, (
-                f"{tool_name}.{subcmd}: missing background_eligible"
-            )
+            assert "expected_seconds" in info, f"{tool_name}.{subcmd}: missing expected_seconds"
+            assert "background_eligible" in info, f"{tool_name}.{subcmd}: missing background_eligible"
             assert isinstance(info["expected_seconds"], (int, float))
             assert isinstance(info["background_eligible"], bool)
 
@@ -105,15 +100,14 @@ class TestExecutionProfileExists:
 
 class TestBackgroundEligibility:
     @pytest.mark.parametrize(
-        "tool_name,expected_subcmds", list(_EXPECTED_BG_ELIGIBLE.items()),
+        "tool_name,expected_subcmds",
+        list(_EXPECTED_BG_ELIGIBLE.items()),
     )
     def test_eligible_subcommands(self, tool_name: str, expected_subcmds: set[str]):
         """Tools with long-running subcommands should have them marked eligible."""
         mod = _try_import(_TOOL_MODULES[tool_name], tool_name)
         profile = mod.EXECUTION_PROFILE
-        actual_eligible = {
-            name for name, info in profile.items() if info.get("background_eligible")
-        }
+        actual_eligible = {name for name, info in profile.items() if info.get("background_eligible")}
         assert actual_eligible == expected_subcmds
 
     def test_short_tools_not_eligible(self):
@@ -121,24 +115,16 @@ class TestBackgroundEligibility:
         for tool_name in ("web_search", "github", "aws_collector"):
             mod = _try_import(_TOOL_MODULES[tool_name], tool_name)
             profile = mod.EXECUTION_PROFILE
-            eligible = [
-                name for name, info in profile.items() if info.get("background_eligible")
-            ]
-            assert not eligible, (
-                f"{tool_name} should have no eligible subcommands, got {eligible}"
-            )
+            eligible = [name for name, info in profile.items() if info.get("background_eligible")]
+            assert not eligible, f"{tool_name} should have no eligible subcommands, got {eligible}"
 
     def test_optional_short_tools_not_eligible(self):
         """Tools with optional deps (gmail) should have no eligible subcommands."""
         for tool_name in ("gmail",):
             mod = _try_import(_TOOL_MODULES[tool_name], tool_name)
             profile = mod.EXECUTION_PROFILE
-            eligible = [
-                name for name, info in profile.items() if info.get("background_eligible")
-            ]
-            assert not eligible, (
-                f"{tool_name} should have no eligible subcommands, got {eligible}"
-            )
+            eligible = [name for name, info in profile.items() if info.get("background_eligible")]
+            assert not eligible, f"{tool_name} should have no eligible subcommands, got {eligible}"
 
 
 # ── load_execution_profiles ──────────────────────────────────
@@ -147,7 +133,7 @@ class TestBackgroundEligibility:
 class TestLoadExecutionProfiles:
     def test_loads_core_profiles(self):
         """load_execution_profiles loads EXECUTION_PROFILE from core tool modules."""
-        from core.tools import TOOL_MODULES
+        from core.integrations import TOOL_MODULES
 
         profiles = load_execution_profiles(TOOL_MODULES)
         # Should have entries for all tools with EXECUTION_PROFILE
@@ -209,7 +195,9 @@ class TestFromProfiles:
             },
         }
         mgr = BackgroundTaskManager.from_profiles(
-            anima_dir, anima_name="test", profiles=profiles,
+            anima_dir,
+            anima_name="test",
+            profiles=profiles,
         )
         # Default tools should still be eligible
         assert mgr.is_eligible("generate_3d_model")
@@ -230,7 +218,9 @@ class TestFromProfiles:
             },
         }
         mgr = BackgroundTaskManager.from_profiles(
-            anima_dir, anima_name="test", profiles=profiles,
+            anima_dir,
+            anima_name="test",
+            profiles=profiles,
         )
         # custom:slow should be eligible from profiles
         assert mgr.is_eligible("custom:slow")

@@ -38,7 +38,7 @@ def _get_gated_actions(tool_name: str) -> set[str]:
         Set of action/subcommand names that are gated.
     """
     try:
-        from core.tools import TOOL_MODULES
+        from core.integrations import TOOL_MODULES
 
         if tool_name not in TOOL_MODULES:
             return set()

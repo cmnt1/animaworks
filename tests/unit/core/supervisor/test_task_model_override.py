@@ -19,7 +19,7 @@ import pytest
 
 from core.config.schemas import AnimaWorksConfig, CredentialConfig
 from core.schemas import ModelConfig
-from core.supervisor.pending_executor import PendingTaskExecutor
+from core.tasks.pending_executor import PendingTaskExecutor
 
 
 @pytest.fixture(autouse=True)

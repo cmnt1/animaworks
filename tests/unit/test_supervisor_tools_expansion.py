@@ -408,7 +408,7 @@ class TestDelegateTask:
         assert "委譲しました" in result
         assert "hinata" in result
 
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         subordinate_tasks = TaskQueueManager(tmp_path / "animas" / "hinata").list_tasks()
         own_tasks = TaskQueueManager(tmp_path / "animas" / "sakura").list_tasks()
@@ -471,7 +471,7 @@ class TestDelegateTask:
             )
 
         assert "メッセンジャー未設定" in result
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         assert len(TaskQueueManager(tmp_path / "animas" / "hinata").list_tasks()) == 1
 
@@ -509,7 +509,7 @@ class TestDelegateTask:
             result = handler.handle("disable_subordinate", {"name": "hinata", "reason": "maintenance"})
 
         assert "maintenance" in result
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         records = [entry.model_dump() for entry in TaskQueueManager(tmp_path / "animas" / "sakura").list_tasks()]
         assert len(records) == 1

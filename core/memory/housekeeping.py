@@ -307,7 +307,7 @@ async def run_housekeeping(
         results["anima_runtime_artifacts"] = {"error": True}
 
     try:
-        from core.memory.taskboard_housekeeping import cleanup_taskboard_stale_artifacts
+        from core.tasks.board.housekeeping import cleanup_taskboard_stale_artifacts
 
         r = await loop.run_in_executor(
             None,
@@ -1525,7 +1525,7 @@ def _cleanup_pending_failed(
     animas_dir: Path,
     retention_days: int,
 ) -> dict[str, Any]:
-    from core.memory.pending_housekeeping import cleanup_pending_failed
+    from core.tasks.pending_housekeeping import cleanup_pending_failed
 
     return cleanup_pending_failed(animas_dir, retention_days)
 
