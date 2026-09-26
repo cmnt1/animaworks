@@ -1,0 +1,54 @@
+{
+  "engine": "gemini",
+  "supports_streaming": true,
+  "path": "stream",
+  "scenario": "happy",
+  "events": [
+    {
+      "type": "text_delta",
+      "text": "Hello "
+    },
+    {
+      "type": "text_delta",
+      "text": "world!"
+    },
+    {
+      "type": "tool_start",
+      "tool_name": "search_memory",
+      "tool_id": "t1",
+      "input": {
+        "query": "golden"
+      }
+    },
+    {
+      "type": "tool_end",
+      "tool_id": "t1",
+      "tool_name": "search_memory",
+      "result": "found result",
+      "is_error": false
+    },
+    {
+      "type": "done",
+      "full_text": "Hello world!",
+      "result_message": null,
+      "tool_call_records": [
+        {
+          "tool_name": "search_memory",
+          "tool_id": "t1",
+          "input_summary": "{\"query\": \"golden\"}",
+          "result_summary": "found result",
+          "is_error": false
+        }
+      ],
+      "usage": {
+        "input_tokens": 30,
+        "output_tokens": 5,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    }
+  ],
+  "result": null,
+  "raised": null,
+  "activity": []
+}

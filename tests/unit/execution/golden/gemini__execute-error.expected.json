@@ -1,0 +1,23 @@
+{
+  "engine": "gemini",
+  "supports_streaming": true,
+  "path": "execute",
+  "scenario": "error",
+  "events": null,
+  "result": {
+    "text": "[Gemini CLI Error (exit 1): boom failure]",
+    "tool_call_records": [],
+    "usage": null,
+    "truncated": false,
+    "error": false,
+    "reason": "",
+    "session_rotated": false,
+    "session_rotation_pending": false,
+    "force_chain": false,
+    "task_compact_requested": false,
+    "session_id": null,
+    "num_turns": null
+  },
+  "raised": null,
+  "activity": []
+}

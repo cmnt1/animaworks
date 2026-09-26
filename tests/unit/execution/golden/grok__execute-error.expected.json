@@ -1,0 +1,28 @@
+{
+  "engine": "grok",
+  "supports_streaming": true,
+  "path": "execute",
+  "scenario": "error",
+  "events": null,
+  "result": {
+    "text": "[Grok CLI Error: session/prompt: boom failure]",
+    "tool_call_records": [],
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0
+    },
+    "truncated": false,
+    "error": true,
+    "reason": "unknown",
+    "session_rotated": false,
+    "session_rotation_pending": false,
+    "force_chain": false,
+    "task_compact_requested": false,
+    "session_id": "session-new",
+    "num_turns": 0
+  },
+  "raised": null,
+  "activity": []
+}

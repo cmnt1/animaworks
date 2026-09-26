@@ -1,0 +1,5 @@
+{"type": "message", "role": "assistant", "content": "Hello ", "delta": true}
+{"type": "message", "role": "assistant", "content": "world!", "delta": true}
+{"type": "tool_use", "tool_name": "mcp_aw_search_memory", "tool_id": "t1", "parameters": {"query": "golden"}}
+{"type": "tool_result", "tool_id": "t1", "status": "success", "output": "found result"}
+{"type": "result", "status": "success", "stats": {"input_tokens": 30, "output_tokens": 5}}

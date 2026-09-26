@@ -1,0 +1,2 @@
+{"kind": "response", "content": "", "tool_calls": [{"id": "call_1", "name": "search_memory", "arguments": "{\"query\": \"test\"}"}], "usage": {"prompt_tokens": 100, "completion_tokens": 10}}
+{"kind": "response", "content": "Final answer", "tool_calls": null, "usage": {"prompt_tokens": 200, "completion_tokens": 40}}

@@ -1,0 +1,36 @@
+{
+  "engine": "grok",
+  "supports_streaming": true,
+  "path": "execute",
+  "scenario": "happy",
+  "events": null,
+  "result": {
+    "text": "Hello world",
+    "tool_call_records": [
+      {
+        "tool_name": "search_memory",
+        "tool_id": "tool-1",
+        "input_summary": "{\"query\": \"hello\"}",
+        "result_summary": "{\"answer\": \"found\"}",
+        "is_error": false
+      }
+    ],
+    "usage": {
+      "input_tokens": 12,
+      "output_tokens": 4,
+      "cache_read_tokens": 3,
+      "cache_write_tokens": 0
+    },
+    "truncated": false,
+    "error": false,
+    "reason": "",
+    "session_rotated": false,
+    "session_rotation_pending": false,
+    "force_chain": false,
+    "task_compact_requested": false,
+    "session_id": "session-new",
+    "num_turns": 1
+  },
+  "raised": null,
+  "activity": []
+}
