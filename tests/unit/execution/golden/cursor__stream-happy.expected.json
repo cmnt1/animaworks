@@ -1,0 +1,52 @@
+{
+  "engine": "cursor",
+  "supports_streaming": true,
+  "path": "stream",
+  "scenario": "happy",
+  "events": [
+    {
+      "type": "text_delta",
+      "text": "Context before the tool call."
+    },
+    {
+      "type": "tool_start",
+      "tool_name": "Read",
+      "tool_id": "",
+      "input": "{'args': {'path': 'README.md'}, 'result': {'success': {'content': 'contents'}}}"
+    },
+    {
+      "type": "tool_end",
+      "tool_name": "Read",
+      "tool_id": "",
+      "result": "",
+      "is_error": false
+    },
+    {
+      "type": "text_delta",
+      "text": "Final answer after the tool call."
+    },
+    {
+      "type": "done",
+      "full_text": "Context before the tool call.\n\nFinal answer after the tool call.",
+      "result_message": null,
+      "replied_to_from_transcript": [],
+      "tool_call_records": [
+        {
+          "tool_name": "Read",
+          "tool_id": "",
+          "input_summary": "{'args': {'path': 'README.md'}, 'result': {'success': {'content': 'contents'}}}",
+          "result_summary": "",
+          "is_error": false
+        }
+      ],
+      "usage": null,
+      "session_rotated": false,
+      "session_rotation_pending": false,
+      "truncated": false,
+      "stop_kind": "normal"
+    }
+  ],
+  "result": null,
+  "raised": null,
+  "activity": []
+}

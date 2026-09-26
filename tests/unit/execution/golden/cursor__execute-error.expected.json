@@ -1,6 +1,6 @@
 {
   "engine": "cursor",
-  "supports_streaming": false,
+  "supports_streaming": true,
   "path": "execute",
   "scenario": "error",
   "events": null,

@@ -35,13 +35,13 @@ from typing import Any
 
 from core.execution._sdk_stream import _log_tool_result, _log_tool_use
 from core.execution.base import (
-    BaseExecutor,
     ExecutionResult,
     StreamDisconnectedError,
     TokenUsage,
     ToolCallRecord,
     _truncate_for_record,
 )
+from core.execution.cli_stream import CLIStreamExecutor
 from core.execution.error_classifier import (
     FailoverReason,
     classify_llm_error_message,
@@ -55,7 +55,6 @@ from core.execution.session_context import _resolve_session_type
 from core.execution.session_store import SessionRecord, SessionStore
 from core.execution.session_types import is_persistent_codex_session
 from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS, wait_for_engine_event
-from core.memory.conversation.shortterm import ShortTermMemory
 from core.platform.codex import default_home_dir, get_codex_executable
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
@@ -1139,7 +1138,7 @@ async def _close_codex_client(client: Any) -> None:
 # ── Executor ─────────────────────────────────────────────────
 
 
-class CodexSDKExecutor(BaseExecutor):
+class CodexSDKExecutor(CLIStreamExecutor):
     """Execute via Codex SDK (Mode C).
 
     The SDK spawns the Codex CLI as a subprocess.  Tool access is secured by
@@ -1163,6 +1162,32 @@ class CodexSDKExecutor(BaseExecutor):
     @property
     def supports_streaming(self) -> bool:  # noqa: D102
         return True
+
+    def _format_stream_exception(self, error: Exception) -> tuple[str, str]:
+        logger.exception("Codex execution failed after observed usage")
+        metadata = _codex_error_metadata(str(error), self._model_config.model)
+        return f"[Codex SDK Error: {error}]", str(metadata.get("reason") or "")
+
+    def _stream_exception_usage(self, error: Exception) -> TokenUsage | None:
+        return self._token_usage(error.usage) if hasattr(error, "usage") else TokenUsage()
+
+    def _stream_error_text(self, message: str, final_event: dict[str, Any], current_text: str) -> str:
+        return current_text or message
+
+    def _stream_result_truncated(self, final_event: dict[str, Any]) -> bool:
+        return final_event.get("stop_kind") == "interrupted"
+
+    def _on_stream_cancel(self, error: asyncio.CancelledError, events: list[dict[str, Any]]) -> None:
+        evidence = _CodexToolEvidence()
+        usage = TokenUsage()
+        for event in events:
+            evidence.observe(event)
+            if event.get("type") == "usage":
+                usage.merge(_token_usage(event.get("usage") or {}))
+        evidence.merge(getattr(error, "tool_call_records", None) or [])
+        error.usage = usage.to_dict()
+        error.usage_already_emitted = False
+        error.tool_call_records = evidence.to_dicts()
 
     # ── Environment / config helpers ─────────────────────────
 
@@ -1739,14 +1764,11 @@ class CodexSDKExecutor(BaseExecutor):
             proc.stdin.close()
 
             while True:
-                line = await wait_for_engine_event(proc.stdout.readline())
+                line = await self.read_line(proc.stdout)
                 if not line:
                     break
-                raw_line = line.decode("utf-8", errors="replace").rstrip("\n")
-                try:
-                    payload = json.loads(raw_line)
-                except json.JSONDecodeError:
-                    logger.debug("Ignoring non-JSON codex exec output: %s", raw_line[:200])
+                payload = self.parse_json_line(line)
+                if payload is None:
                     continue
 
                 ptype = str(payload.get("type", ""))
@@ -1956,69 +1978,6 @@ class CodexSDKExecutor(BaseExecutor):
         )
 
     # ── Blocking execution ───────────────────────────────────
-
-    async def execute(
-        self,
-        prompt: str,
-        system_prompt: str = "",
-        tracker: ContextTracker | None = None,
-        shortterm: ShortTermMemory | None = None,
-        trigger: str = "",
-        images: list[ImageData] | None = None,
-        prior_messages: list[dict[str, Any]] | None = None,
-        thread_id: str = "default",
-    ) -> ExecutionResult:
-        """Collect the same metered event stream used by interactive execution.
-
-        SDK run() exposes only the final thread-wide usage snapshot, so it
-        cannot account for a resumed multi-request turn. Keep one event path.
-        """
-        usage = TokenUsage()
-        final_event: dict[str, Any] = {}
-        error_message = ""
-        error_reason = ""
-        tool_evidence = _CodexToolEvidence()
-        try:
-            async for event in self.execute_streaming(
-                system_prompt,
-                prompt,
-                tracker or ContextTracker(model=self._model_config.model),
-                images=images,
-                prior_messages=prior_messages,
-                trigger=trigger,
-                thread_id=thread_id,
-            ):
-                tool_evidence.observe(event)
-                if event.get("type") == "usage":
-                    usage.merge(_token_usage(event.get("usage") or {}))
-                elif event.get("type") == "done":
-                    final_event = event
-                    if not event.get("usage_already_emitted"):
-                        usage.merge(_token_usage(event.get("usage") or {}))
-                elif event.get("type") == "error":
-                    error_message = str(event.get("message") or "")
-                    error_reason = str(event.get("reason") or "")
-        except asyncio.CancelledError as exc:
-            exc.usage = usage.to_dict()
-            exc.usage_already_emitted = False
-            tool_evidence.merge(getattr(exc, "tool_call_records", None) or [])
-            exc.tool_call_records = tool_evidence.to_dicts()
-            raise
-        except Exception as exc:
-            tool_evidence.merge(getattr(exc, "tool_call_records", None) or [])
-            error_message = f"[Codex SDK Error: {exc}]"
-            error_reason = str(_codex_error_metadata(str(exc), self._model_config.model).get("reason") or "")
-            logger.exception("Codex execution failed after observed usage")
-        return ExecutionResult(
-            text=str(final_event.get("full_text") or error_message),
-            result_message=final_event.get("result_message"),
-            replied_to_from_transcript=final_event.get("replied_to_from_transcript", set()),
-            tool_call_records=[ToolCallRecord(**record) for record in tool_evidence.to_dicts()],
-            usage=usage,
-            error=bool(error_message),
-            reason=error_reason,
-            truncated=final_event.get("stop_kind") == "interrupted",
-        )
 
     # ── Streaming execution ──────────────────────────────────
 

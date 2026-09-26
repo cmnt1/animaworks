@@ -28,13 +28,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from core.execution.base import (
-    BaseExecutor,
-    ExecutionResult,
-    TokenUsage,
-    ToolCallRecord,
-    _truncate_for_record,
-)
+from core.execution.base import TokenUsage, ToolCallRecord, _truncate_for_record
+from core.execution.cli_stream import CLIStreamExecutor
 from core.execution.error_classifier import (
     FailoverReason,
     classify_llm_error_message,
@@ -46,9 +41,8 @@ from core.execution.process_runner import ProcessRunner
 from core.execution.rate_guard import get_rate_guard
 from core.execution.session_context import _resolve_session_type
 from core.execution.session_store import SessionRecord, SessionStore
-from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS, wait_for_engine_event
+from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS
 from core.i18n import t
-from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig
 
@@ -275,7 +269,7 @@ class _ACPError(RuntimeError):
         super().__init__(f"{method}: {detail}")
 
 
-class GrokCLIExecutor(BaseExecutor):
+class GrokCLIExecutor(CLIStreamExecutor):
     """Execute Grok Build CLI turns through ACP stdio (Mode X)."""
 
     @property
@@ -449,12 +443,7 @@ class GrokCLIExecutor(BaseExecutor):
         stripped = line.strip()
         if not stripped:
             return None
-        try:
-            value = json.loads(stripped)
-        except json.JSONDecodeError:
-            logger.debug("Ignoring non-JSON Grok ACP output: %s", stripped[:200])
-            return None
-        return value if isinstance(value, dict) else None
+        return CLIStreamExecutor.parse_json_line(stripped)
 
     @staticmethod
     def _tool_name(update: dict[str, Any]) -> str:
@@ -654,7 +643,7 @@ class GrokCLIExecutor(BaseExecutor):
         while True:
             if self._check_interrupted():
                 raise asyncio.CancelledError
-            line = await wait_for_engine_event(proc.stdout.readline())
+            line = await self.read_line(proc.stdout)
             if not line:
                 raise _ACPError(method, "unexpected EOF")
             message = self._parse_ndjson_event(line)
@@ -876,7 +865,7 @@ class GrokCLIExecutor(BaseExecutor):
                         await self._cancel_session(proc, state.session_id, next_id)
                         break
 
-                    line = await wait_for_engine_event(proc.stdout.readline())
+                    line = await self.read_line(proc.stdout)
                     if not line:
                         raise _ACPError("session/prompt", "unexpected EOF")
                     message = self._parse_ndjson_event(line)
@@ -1021,50 +1010,6 @@ class GrokCLIExecutor(BaseExecutor):
                         os.close(fd)
                     except OSError:
                         logger.debug("Failed closing Grok sandbox PTY fd", exc_info=True)
-
-    async def execute(
-        self,
-        prompt: str,
-        system_prompt: str = "",
-        tracker: ContextTracker | None = None,
-        shortterm: ShortTermMemory | None = None,
-        trigger: str = "",
-        images: list[ImageData] | None = None,
-        prior_messages: list[dict[str, Any]] | None = None,
-        thread_id: str = "default",
-    ) -> ExecutionResult:
-        """Run a Grok ACP turn and collect its streaming events."""
-        done: dict[str, Any] | None = None
-        terminal_error: dict[str, Any] | None = None
-        async for event in self.execute_streaming(
-            system_prompt,
-            prompt,
-            tracker or ContextTracker(model=self._model_config.model),
-            images=images,
-            prior_messages=prior_messages,
-            trigger=trigger,
-            thread_id=thread_id,
-        ):
-            if event.get("type") == "done":
-                done = event
-            elif event.get("type") == "error" and event.get("terminal") is True:
-                terminal_error = event
-
-        if done is None:
-            done = self._done_event("", [], TokenUsage(), "", 0)
-        records = [ToolCallRecord(**record) for record in done["tool_call_records"]]
-        usage_dict = done["usage"]
-        result_message = done["result_message"]
-        return ExecutionResult(
-            text=str((terminal_error or {}).get("message") or done["full_text"]),
-            result_message=result_message,
-            tool_call_records=records,
-            usage=TokenUsage(**usage_dict),
-            session_rotated=bool(done.get("session_rotated", False)),
-            session_rotation_pending=bool(done.get("session_rotation_pending", False)),
-            error=terminal_error is not None,
-            reason=str((terminal_error or {}).get("reason") or ""),
-        )
 
     @staticmethod
     def _done_event(

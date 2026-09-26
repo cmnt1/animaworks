@@ -19,27 +19,24 @@ import json
 import logging
 import os
 import shutil
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
-from core.execution.base import (
-    BaseExecutor,
-    ExecutionResult,
-    ToolCallRecord,
-    _truncate_for_record,
-    join_answer_parts,
-)
+from core.execution.base import ExecutionResult, ToolCallRecord, _truncate_for_record, join_answer_parts
+from core.execution.cli_stream import CLIStreamExecutor
 from core.execution.error_classifier import (
     FailoverReason,
     classify_llm_error_message,
     guard_key,
     provider_family_of,
 )
+from core.execution.events import stream_events
 from core.execution.process_runner import ProcessRunner
 from core.execution.rate_guard import get_rate_guard
 from core.execution.session_context import _resolve_session_type
 from core.execution.session_store import SessionRecord, SessionStore
-from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS, wait_for_engine_event
+from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS
 from core.i18n import t
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
@@ -177,7 +174,7 @@ def _format_current_time() -> str:
 # ── Executor ───────────────────────────────────────────────────
 
 
-class CursorAgentExecutor(BaseExecutor):
+class CursorAgentExecutor(CLIStreamExecutor):
     """Execute via cursor-agent CLI (Mode D).
 
     Spawns cursor-agent as a subprocess with NDJSON streaming output.
@@ -186,7 +183,7 @@ class CursorAgentExecutor(BaseExecutor):
 
     @property
     def supports_streaming(self) -> bool:  # noqa: D102
-        return False
+        return True
 
     def __init__(
         self,
@@ -336,11 +333,7 @@ class CursorAgentExecutor(BaseExecutor):
         line = stdout_line.strip()
         if not line:
             return None
-        try:
-            return json.loads(line)
-        except json.JSONDecodeError as e:
-            logger.warning("Failed to parse NDJSON line: %s", e)
-            return None
+        return self.parse_json_line(line)
 
     async def _kill_process(self, proc: asyncio.subprocess.Process, timeout: float = _GRACEFUL_KILL_WAIT) -> None:
         """Delegate process-tree shutdown to the shared process runner."""
@@ -402,7 +395,7 @@ class CursorAgentExecutor(BaseExecutor):
 
     # ── Execution ───────────────────────────────────────────────
 
-    async def execute(
+    async def _execute_cli_turn(
         self,
         prompt: str,
         system_prompt: str = "",
@@ -412,6 +405,7 @@ class CursorAgentExecutor(BaseExecutor):
         images: list[ImageData] | None = None,
         prior_messages: list[dict[str, Any]] | None = None,
         thread_id: str = "default",
+        _event_sink: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> ExecutionResult:
         """Run cursor-agent subprocess and parse NDJSON output.
 
@@ -482,7 +476,11 @@ class CursorAgentExecutor(BaseExecutor):
                 thread_id,
             )
 
-        result, session_id, failed = await self._run_subprocess(combined_prompt, resume_chat_id=resume_chat_id)
+        result, session_id, failed = await self._run_subprocess(
+            combined_prompt,
+            resume_chat_id=resume_chat_id,
+            event_sink=_event_sink,
+        )
 
         if failed and resume_chat_id:
             logger.warning(
@@ -496,7 +494,11 @@ class CursorAgentExecutor(BaseExecutor):
                 )
             else:
                 fresh_prompt = time_prefix + "\n\n" + prompt
-            result, session_id, _failed = await self._run_subprocess(fresh_prompt, resume_chat_id=None)
+            result, session_id, _failed = await self._run_subprocess(
+                fresh_prompt,
+                resume_chat_id=None,
+                event_sink=_event_sink,
+            )
             session_rotated = True
 
         # ── Persist session state ──────────────────────────
@@ -523,11 +525,70 @@ class CursorAgentExecutor(BaseExecutor):
 
         return result
 
+    @stream_events
+    async def execute_streaming(
+        self,
+        system_prompt: str,
+        prompt: str,
+        tracker: ContextTracker,
+        images: list[ImageData] | None = None,
+        prior_messages: list[dict[str, Any]] | None = None,
+        trigger: str = "",
+        thread_id: str = "default",
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Stream normalized Cursor CLI events while the child is running."""
+        queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+        async def _run_turn() -> ExecutionResult:
+            try:
+                return await self._execute_cli_turn(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    tracker=tracker,
+                    trigger=trigger,
+                    images=images,
+                    prior_messages=prior_messages,
+                    thread_id=thread_id,
+                    _event_sink=queue.put,
+                )
+            finally:
+                queue.put_nowait(None)
+
+        task = asyncio.create_task(_run_turn())
+        streamed_text = False
+        try:
+            while True:
+                event = await queue.get()
+                if event is None:
+                    break
+                streamed_text = streamed_text or event.get("type") == "text_delta"
+                yield event
+            result = await task
+            if result.text and not streamed_text:
+                yield {"type": "text_delta", "text": result.text}
+            yield {
+                "type": "done",
+                "full_text": result.text,
+                "result_message": result.result_message,
+                "replied_to_from_transcript": result.replied_to_from_transcript,
+                "tool_call_records": [record.__dict__ for record in result.tool_call_records],
+                "usage": result.usage.to_dict() if result.usage else None,
+                "session_rotated": result.session_rotated,
+                "session_rotation_pending": result.session_rotation_pending,
+                "truncated": result.truncated,
+                "stop_kind": "interrupted" if self._check_interrupted() else "normal",
+            }
+        finally:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
     async def _run_subprocess(
         self,
         combined_prompt: str,
         *,
         resume_chat_id: str | None = None,
+        event_sink: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> tuple[ExecutionResult, str | None, bool]:
         """Spawn cursor-agent and parse its NDJSON output.
 
@@ -542,6 +603,11 @@ class CursorAgentExecutor(BaseExecutor):
         tool_records: list[ToolCallRecord] = []
         session_id: str | None = None
         failed = False
+        started_tools: set[str] = set()
+
+        async def _emit(event: dict[str, Any]) -> None:
+            if event_sink is not None:
+                await event_sink(event)
 
         def _flush_current_turn() -> None:
             if current_turn_chunks:
@@ -564,10 +630,7 @@ class CursorAgentExecutor(BaseExecutor):
             try:
                 async with asyncio.timeout(None):
                     assert proc.stdout is not None
-                    while True:
-                        line = await wait_for_engine_event(proc.stdout.readline())
-                        if not line:
-                            break
+                    async for line in self.iter_lines(proc.stdout):
                         if self._check_interrupted():
                             await self._kill_process(proc)
                             return (
@@ -600,26 +663,61 @@ class CursorAgentExecutor(BaseExecutor):
                                     parts.append(item)
                             if parts:
                                 current_turn_chunks.extend(parts)
+                                for text_part in parts:
+                                    await _emit({"type": "text_delta", "text": text_part})
 
                         elif etype == "tool_call":
                             _flush_current_turn()
                             subtype = event.get("subtype", "")
                             tc = event.get("tool_call", {})
-                            if subtype == "completed":
-                                record = self._extract_tool_record(tc)
-                                if record:
+                            record = self._extract_tool_record(tc)
+                            if record:
+                                tool_key = record.tool_id or f"{record.tool_name}:{len(started_tools)}"
+                                if subtype == "started" and tool_key not in started_tools:
+                                    started_tools.add(tool_key)
+                                    await _emit(
+                                        {
+                                            "type": "tool_start",
+                                            "tool_name": record.tool_name,
+                                            "tool_id": record.tool_id,
+                                            "input": record.input_summary,
+                                        }
+                                    )
+                                elif subtype == "completed":
+                                    if tool_key not in started_tools:
+                                        started_tools.add(tool_key)
+                                        await _emit(
+                                            {
+                                                "type": "tool_start",
+                                                "tool_name": record.tool_name,
+                                                "tool_id": record.tool_id,
+                                                "input": record.input_summary,
+                                            }
+                                        )
                                     tool_records.append(record)
+                                    await _emit(
+                                        {
+                                            "type": "tool_end",
+                                            "tool_name": record.tool_name,
+                                            "tool_id": record.tool_id,
+                                            "result": record.result_summary,
+                                            "is_error": record.is_error,
+                                        }
+                                    )
 
                         elif etype == "result":
                             result_text = event.get("result", "")
                             if result_text and not _full_text():
                                 current_turn_chunks.append(result_text)
+                                await _emit({"type": "text_delta", "text": result_text})
 
             except TimeoutError:
                 logger.warning("Cursor agent timed out after %ds", _EVENT_IDLE_TIMEOUT_SECONDS)
                 await self._kill_process(proc)
                 timeout_msg = t("cursor_agent.timeout", timeout=_EVENT_IDLE_TIMEOUT_SECONDS)
                 full_text = _full_text()
+                timeout_text = f"\n\n{timeout_msg}" if full_text else timeout_msg
+                await _emit({"type": "text_delta", "text": timeout_text})
                 return (
                     ExecutionResult(
                         text=full_text + f"\n\n{timeout_msg}" if full_text else timeout_msg,
@@ -647,16 +745,24 @@ class CursorAgentExecutor(BaseExecutor):
                     or "login" in stderr_text.lower()
                     or "unauthorized" in stderr_text.lower()
                 ):
-                    return (ExecutionResult(text=t("cursor_agent.not_authenticated")), session_id, False)
+                    error_text = t("cursor_agent.not_authenticated")
+                    await _emit({"type": "text_delta", "text": error_text})
+                    return (ExecutionResult(text=error_text), session_id, False)
                 if not _full_text():
-                    current_turn_chunks.append(f"[Cursor Agent Error (exit {proc.returncode}): {stderr_text[:500]}]")
+                    error_text = f"[Cursor Agent Error (exit {proc.returncode}): {stderr_text[:500]}]"
+                    current_turn_chunks.append(error_text)
+                    await _emit({"type": "text_delta", "text": error_text})
 
         except FileNotFoundError:
-            return (ExecutionResult(text=t("cursor_agent.not_installed")), None, True)
+            error_text = t("cursor_agent.not_installed")
+            await _emit({"type": "text_delta", "text": error_text})
+            return (ExecutionResult(text=error_text), None, True)
         except Exception as e:
             logger.exception("Cursor agent execution error")
             _cursor_error_metadata(str(e), self._model_config.model)
-            return (ExecutionResult(text=f"[Cursor Agent Error: {e}]"), None, True)
+            error_text = f"[Cursor Agent Error: {e}]"
+            await _emit({"type": "text_delta", "text": error_text})
+            return (ExecutionResult(text=error_text), None, True)
         finally:
             # Ensure the subprocess is killed on CancelledError or any
             # other exception that bypasses the normal exit path.
