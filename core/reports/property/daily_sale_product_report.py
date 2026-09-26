@@ -72,14 +72,6 @@ def load_listing_csv(path: Path | None) -> pd.DataFrame | None:
     return pd.read_csv(path)
 
 
-def latest_previous_csv(report_date: str) -> Path | None:
-    prev_dt = datetime.strptime(report_date, "%Y-%m-%d") - timedelta(days=1)
-    prev_dir = data_dir_for_date(DATA_ROOT, prev_dt.strftime("%Y-%m-%d"))
-    prev_ymd = prev_dt.strftime("%Y%m%d")
-    candidates = sorted(prev_dir.glob(f"P-*_{SLUG_PREFIX}-{prev_ymd}.csv"))
-    return candidates[0] if candidates else None
-
-
 def prepare_diff_frame(df: pd.DataFrame | None, *, source_label: str) -> pd.DataFrame:
     pd = _load_pandas()
     if df is None or df.empty:
@@ -117,11 +109,65 @@ def prepare_diff_frame(df: pd.DataFrame | None, *, source_label: str) -> pd.Data
     return out
 
 
-def diff_rows_to_markdown(rows: list[dict], *, empty_message: str = "該当なし") -> str:
-    header = "| 媒体名 | タイトル/物件名 | URL | 価格 | 表面利回り | 種別 |"
-    separator = "|---|---|---|---:|---:|---|"
+def _observed_portals(csv_path: Path) -> set[str]:
+    """Portals fetched that day according to the sibling scraper JSON (empty if unreadable)."""
+    try:
+        runs = json.loads(csv_path.with_suffix(".json").read_text(encoding="utf-8-sig")).get("portal_runs") or []
+    except (OSError, json.JSONDecodeError, AttributeError):
+        return set()
+    return {str(run.get("portal_label")) for run in runs if run.get("fetched")}
+
+
+def sale_observation(date: str, csv_path: Path, fetched_portals: set[str] | None = None) -> Observation:
+    """One day's listings keyed by match key; portals present in the CSV count as fetched."""
+    frame = prepare_diff_frame(load_listing_csv(csv_path), source_label=date)
+    items = {row["_match_key"]: (str(row["portal_label"]), row) for row in frame.to_dict("records")}
+    observed = _observed_portals(csv_path) if fetched_portals is None else set(fetched_portals)
+    return date, items, observed
+
+
+def load_sale_history(before_date: str, root: Path | None = None) -> list[Observation]:
+    """Observations for each saved day before `before_date` (first CSV per day)."""
+    root = root or DATA_ROOT
+    before_ymd = before_date.replace("-", "")
+    by_day: dict[str, Path] = {}
+    for path in sorted(root.glob(f"*/*/*/P-*_{SLUG_PREFIX}-*.csv")):
+        ymd = path.stem.rsplit("-", 1)[-1]
+        if len(ymd) == 8 and ymd.isdigit() and ymd < before_ymd:
+            by_day.setdefault(ymd, path)
+    history = []
+    for ymd, path in sorted(by_day.items()):
+        try:
+            history.append(sale_observation(f"{ymd[0:4]}-{ymd[4:6]}-{ymd[6:8]}", path))
+        except Exception:  # noqa: BLE001 - one unreadable day must not break the report
+            continue
+    return history
+
+
+def _listing_start(row: dict) -> str:
+    return escape_md_cell(row.get("listing_start"))
+
+
+_DAY_COLUMNS = {
+    "listed": (
+        ("掲載開始", "---", _listing_start),
+        ("掲載日目", "---:", lambda r: days_cell(r.get("listing_day"), bool(r.get("start_uncertain")), "日目")),
+    ),
+    "withdrawn": (
+        ("掲載開始", "---", _listing_start),
+        ("最終確認", "---", lambda r: escape_md_cell(r.get("last_seen"))),
+        ("掲載日数", "---:", lambda r: days_cell(r.get("listing_days"), bool(r.get("start_uncertain")), "日")),
+    ),
+}
+
+
+def diff_rows_to_markdown(rows: list[dict], *, days: str, empty_message: str = "該当なし") -> str:
+    """days: "listed" (掲載開始/掲載日目) or "withdrawn" (掲載開始/最終確認/掲載日数)."""
+    columns = _DAY_COLUMNS[days]
+    header = "| 媒体名 | タイトル/物件名 | URL | 価格 | 表面利回り | 種別 | " + " | ".join(c[0] for c in columns) + " |"
+    separator = "|---|---|---|---:|---:|---|" + "|".join(c[1] for c in columns) + "|"
     if not rows:
-        return "\n".join([header, separator, f"| {empty_message} | - | - | - | - | - |"])
+        return "\n".join([header, separator, f"| {empty_message} | - | - | - | - | - |" + " - |" * len(columns)])
 
     lines = [header, separator]
     for row in rows:
@@ -136,69 +182,30 @@ def diff_rows_to_markdown(rows: list[dict], *, empty_message: str = "該当な�
         property_type = None if _is_missing(property_type) else property_type
         property_type = escape_md_cell(property_type or "-")
         url_cell = f"[{url}]({url})" if url and url != "-" else "-"
-        lines.append(f"| {portal} | {title} | {url_cell} | {price} | {yield_} | {property_type} |")
+        day_cells = " | ".join(cell(row) for _, _, cell in columns)
+        lines.append(f"| {portal} | {title} | {url_cell} | {price} | {yield_} | {property_type} | {day_cells} |")
     return "\n".join(lines)
 
 
-def build_url_diff_report(current_csv: Path, previous_csv: Path | None) -> dict[str, object]:
-    pd = _load_pandas()
-    current_df = prepare_diff_frame(load_listing_csv(current_csv), source_label="current")
-    previous_df = prepare_diff_frame(load_listing_csv(previous_csv), source_label="previous")
-
-    comparison_available = previous_csv is not None and previous_csv.exists()
-    if not comparison_available or previous_df.empty:
-        return {
-            "comparison_available": False,
-            "message": "前日データなしのため比較不可",
-            "current_csv": str(current_csv),
-            "previous_csv": str(previous_csv) if previous_csv else None,
-            "current_count": int(current_df["_match_key"].nunique()) if not current_df.empty else 0,
-            "previous_count": int(previous_df["_match_key"].nunique()) if not previous_df.empty else 0,
-            "new_count": None,
-            "continued_count": None,
-            "deleted_count": None,
-            "new_rows": [],
-            "continued_rows": [],
-            "deleted_rows": [],
-            "comparison_key": "URL（fragment除去・空白除去）",
-        }
-
-    current_map = current_df.set_index("_match_key", drop=False) if not current_df.empty else pd.DataFrame()
-    previous_map = previous_df.set_index("_match_key", drop=False) if not previous_df.empty else pd.DataFrame()
-    current_urls = set(current_map.index) if not current_map.empty else set()
-    previous_urls = set(previous_map.index) if not previous_map.empty else set()
-
-    new_urls = sorted(current_urls - previous_urls)
-    continued_urls = sorted(current_urls & previous_urls)
-    deleted_urls = sorted(previous_urls - current_urls)
-
-    def _rows_for(urls: list[str], frame: pd.DataFrame) -> list[dict]:
-        rows: list[dict] = []
-        if frame.empty:
-            return rows
-        for url in urls:
-            if url in frame.index:
-                item = frame.loc[url]
-                if isinstance(item, pd.DataFrame):
-                    item = item.iloc[0]
-                rows.append(item.to_dict())
-        return rows
-
-    return {
-        "comparison_available": True,
-        "message": "",
+def build_url_diff_report(
+    current_csv: Path,
+    report_date: str,
+    *,
+    history: list[Observation],
+    fetched_portals: set[str] | None = None,
+) -> dict[str, object]:
+    """Classify today's listings against every earlier observation of their portal."""
+    today = sale_observation(report_date, current_csv, fetched_portals)
+    base = {
         "current_csv": str(current_csv),
-        "previous_csv": str(previous_csv) if previous_csv else None,
-        "current_count": len(current_urls),
-        "previous_count": len(previous_urls),
-        "new_count": len(new_urls),
-        "continued_count": len(continued_urls),
-        "deleted_count": len(deleted_urls),
-        "new_rows": _rows_for(new_urls, current_map),
-        "continued_rows": _rows_for(continued_urls, current_map),
-        "deleted_rows": _rows_for(deleted_urls, previous_map),
+        "current_count": len(today[1]),
         "comparison_key": "URL（fragment除去・空白除去）",
     }
+    if not history:
+        return {**base, "comparison_available": False, "message": "過去データなしのため比較不可"}
+    rows = classify_listings(history, today)
+    counts = {name.replace("_rows", "_count"): len(value) for name, value in rows.items()}
+    return {**base, "comparison_available": True, "previous_date": history[-1][0], **counts, **rows}
 
 
 JST = timezone(timedelta(hours=9))
@@ -207,6 +214,7 @@ PROJECT_DIR = Path(r"E:\OneDriveBiz\Tools\General\animaworks")
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
+from core.reports.property._listing_runs import MAX_OBSERVATION_GAP_DAYS, Observation, classify_listings, days_cell
 from core.tools.property_portal_scraper import result_to_dict, run_scan, write_outputs
 
 PRODUCT_ROOT = Path(r"E:\OneDriveBiz\Obsidian\_products")
@@ -393,37 +401,59 @@ def render_product(
     blocked_lines = "\n".join(_blocked_line(run) for run in blocked) or "- なし"
     diff_section: list[str] = []
     if comparison and comparison.get("comparison_available"):
+        unconfirmed = list(comparison.get("unconfirmed_rows", []))
         diff_section.extend(
             [
-                "## 前日差分（URL単位）",
+                "## 前回差分（URL単位）",
                 "",
                 "- 比較キー: " + str(comparison.get("comparison_key") or "-"),
                 "- 現在CSV: `" + str(comparison.get("current_csv") or "-") + "`",
-                "- 前日CSV: `" + str(comparison.get("previous_csv") or "-") + "`",
+                "- 比較対象: 各媒体の前回取得日（前回データ: " + str(comparison.get("previous_date")) + "）",
                 "- 新規で見つかった物件: **" + str(comparison.get("new_count")) + "件**",
-                "- 前日から継続して載っている物件: **" + str(comparison.get("continued_count")) + "件**",
-                "- 前日から消えた物件: **" + str(comparison.get("deleted_count")) + "件**",
+                "- 前回から継続して載っている物件: **" + str(comparison.get("continued_count")) + "件**",
+                "- 前回から消えた物件: **" + str(comparison.get("deleted_count")) + "件**",
+            ]
+        )
+        if unconfirmed:
+            diff_section.append(
+                f"- 当日取得に失敗した媒体のため判定保留: **{len(unconfirmed)}件**（取り下げとはみなさない）"
+            )
+        diff_section.extend(
+            [
+                "- 掲載日目＝初めて確認した日を1日目とした暦日数。掲載日数＝初回確認〜最終確認の暦日数"
+                "（取り下げはその翌日〜当日の間）。媒体の取得失敗日は飛ばして数える。",
+                "- 「以上」＝データ開始前、または媒体の取得が"
+                f"{MAX_OBSERVATION_GAP_DAYS}日を超えて空いた間に掲載が始まったため、実際はそれより長い。",
                 "",
                 "### 新規で見つかった物件",
                 "",
-                diff_rows_to_markdown(list(comparison.get("new_rows", []))),
+                diff_rows_to_markdown(list(comparison.get("new_rows", [])), days="listed"),
                 "",
-                "### 前日から継続して載っている物件",
+                "### 前回から継続して載っている物件",
                 "",
-                diff_rows_to_markdown(list(comparison.get("continued_rows", []))),
+                diff_rows_to_markdown(list(comparison.get("continued_rows", [])), days="listed"),
                 "",
-                "### 前日から消えた物件",
+                "### 前回から消えた物件",
                 "",
-                diff_rows_to_markdown(list(comparison.get("deleted_rows", []))),
+                diff_rows_to_markdown(list(comparison.get("deleted_rows", [])), days="withdrawn"),
                 "",
             ]
         )
+        if unconfirmed:
+            diff_section.extend(
+                [
+                    "### 判定保留（当日取得に失敗した媒体）",
+                    "",
+                    diff_rows_to_markdown(unconfirmed, days="listed"),
+                    "",
+                ]
+            )
     else:
         diff_section.extend(
             [
-                "## 前日差分（URL単位）",
+                "## 前回差分（URL単位）",
                 "",
-                "- " + str(comparison.get("message") if comparison else "前日データなしのため比較不可"),
+                "- " + str(comparison.get("message") if comparison else "過去データなしのため比較不可"),
                 "",
             ]
         )
@@ -646,7 +676,6 @@ def main(argv: list[str] | None = None) -> int:
     data_json_copy = data_dir / f"{code}_{SLUG_PREFIX}-{report_date.replace('-', '')}.json"
     data_md_copy = data_dir / f"{code}_{SLUG_PREFIX}-{report_date.replace('-', '')}.md"
     data_csv_copy = data_dir / f"{code}_{SLUG_PREFIX}-{report_date.replace('-', '')}.csv"
-    previous_csv = latest_previous_csv(report_date)
 
     shutil.copyfile(scraper_json, data_json_copy)
     shutil.copyfile(scraper_md, data_md_copy)
@@ -655,7 +684,12 @@ def main(argv: list[str] | None = None) -> int:
     if sha256_file(data_json_copy) != digest:
         raise RuntimeError("Copied scraper JSON SHA-256 mismatch")
 
-    comparison = build_url_diff_report(data_csv_copy, previous_csv)
+    comparison = build_url_diff_report(
+        data_csv_copy,
+        report_date,
+        history=load_sale_history(report_date),
+        fetched_portals={str(run["portal_label"]) for run in result["portal_runs"] if run.get("fetched")},
+    )
     now = datetime.now(JST).replace(microsecond=0).isoformat()
     out_md.write_text(
         render_product(

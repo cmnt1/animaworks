@@ -23,6 +23,14 @@ for path in (PROJECT_DIR, ABCONFIG_DIR):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
+from core.reports.property._listing_runs import (
+    MAX_OBSERVATION_GAP_DAYS,
+    Observation,
+    classify_listings,
+    days_between,
+    days_cell,
+)
+
 EXTRACT_SCRIPT = Path(r"E:\OneDriveBiz\Tools\Property\py_mod\extract_anjo_1k_daily.py")
 DATA_ROOT = Path(r"E:\OneDriveBiz\Obsidian\_data\Property\Suumo")
 PRODUCT_DATA_ROOT = Path(r"E:\OneDriveBiz\Obsidian\_data\Property\Products")
@@ -546,11 +554,6 @@ def build_minimini_listing_section(minimini: dict) -> str:
 """
 
 
-# Observation gaps longer than this (e.g. the 2026-08-24 reCAPTCHA outage) make a
-# room's listing start uncertain; the normal Sun/Mon no-capture gap is 3 days.
-MINIMINI_MAX_OBSERVATION_GAP_DAYS = 4
-
-
 def _minimini_observed_rooms(snapshot: dict | None) -> list[dict] | None:
     """Rooms of a successfully fetched minimini snapshot, or None when not observed."""
     if not isinstance(snapshot, dict) or snapshot.get("fetch_status") != "success":
@@ -580,58 +583,23 @@ def load_minimini_history(before_date: str, root: Path | None = None) -> list[tu
     return sorted(history, key=lambda item: item[0])
 
 
-def _days_between(start: str, end: str) -> int:
-    return (datetime.strptime(end, "%Y-%m-%d") - datetime.strptime(start, "%Y-%m-%d")).days
-
-
 def build_minimini_diff(report_date: str, snapshot: dict | None, history: list[tuple[str, list[dict]]]) -> dict:
-    """New / continued / deleted rooms vs the previous observed day, keyed by detail URL.
-
-    A listing run starts on the first observed day a URL appears and ends on the
-    first observed day it is missing; days without a fetched list are skipped.
-    """
+    """New / continued / deleted rooms vs earlier observed days, keyed by detail URL."""
     current = _minimini_observed_rooms(snapshot)
     if current is None:
         return {"available": False, "message": "当日のminimini一覧が取得できていないため比較不可"}
     if not history:
         return {"available": False, "message": "比較できる過去のminimini取得データなし"}
 
-    runs: dict[str, dict] = {}
-    ended: dict[str, dict] = {}
-    prev_date = None
-    for date, rooms in [*history, (report_date, current)]:
-        by_url = {room["detail_url"]: room for room in rooms}
-        for url in [url for url in runs if url not in by_url]:
-            ended[url] = runs.pop(url)
-        for url, room in by_url.items():
-            if url in runs:
-                runs[url].update(last=date, room=room)
-            else:
-                uncertain = prev_date is None or _days_between(prev_date, date) > MINIMINI_MAX_OBSERVATION_GAP_DAYS
-                runs[url] = {"start": date, "last": date, "start_uncertain": uncertain, "room": room}
-        prev_date = date
+    def observation(date: str, rooms: list[dict]) -> Observation:
+        return date, {room["detail_url"]: ("minimini", room) for room in rooms}, {"minimini"}
 
-    previous_date, previous_rooms = history[-1]
-    previous_urls = {room["detail_url"] for room in previous_rooms}
-    current_urls = {room["detail_url"] for room in current}
-
-    def listed(url: str) -> dict:
-        run = runs[url]
-        return {**run["room"], "listing_start": run["start"], "start_uncertain": run["start_uncertain"],
-                "listing_day": _days_between(run["start"], report_date) + 1}
-
-    def withdrawn(room: dict) -> dict:
-        run = ended[room["detail_url"]]
-        return {**room, "listing_start": run["start"], "start_uncertain": run["start_uncertain"],
-                "last_seen": run["last"], "listing_days": _days_between(run["start"], run["last"]) + 1}
-
+    previous_date = history[-1][0]
     return {
         "available": True,
         "previous_date": previous_date,
-        "gap_days": _days_between(previous_date, report_date),
-        "new_rows": [listed(r["detail_url"]) for r in current if r["detail_url"] not in previous_urls],
-        "continued_rows": [listed(r["detail_url"]) for r in current if r["detail_url"] in previous_urls],
-        "deleted_rows": [withdrawn(r) for r in previous_rooms if r["detail_url"] not in current_urls],
+        "gap_days": days_between(previous_date, report_date),
+        **classify_listings([observation(*day) for day in history], observation(report_date, current)),
     }
 
 
@@ -647,9 +615,6 @@ def build_minimini_diff_section(diff: dict | None) -> str:
     def name(row: dict) -> str:
         return f"**【自社】{cell(row.get('bname'))}**" if row.get("is_own") else cell(row.get("bname"))
 
-    def days(n: int, uncertain: bool, unit: str) -> str:
-        return f"{n}{unit}以上" if uncertain else f"{n}{unit}"
-
     def base(row: dict) -> str:
         detail = row.get("detail_url")
         return (
@@ -663,7 +628,7 @@ def build_minimini_diff_section(diff: dict | None) -> str:
         lines = [head + " | 掲載日目 | 詳細 |", "|---|---|---:|---:|---|---:|---|---:|---|"]
         for row in rows:
             left, link = base(row)
-            lines.append(f"{left} | {days(row['listing_day'], row['start_uncertain'], '日目')} | {link} |")
+            lines.append(f"{left} | {days_cell(row['listing_day'], row['start_uncertain'], '日目')} | {link} |")
         if not rows:
             lines.append("| 該当なし | - | - | - | - | - | - | - | - |")
         return "\n".join(lines)
@@ -673,14 +638,14 @@ def build_minimini_diff_section(diff: dict | None) -> str:
         for row in rows:
             left, link = base(row)
             lines.append(
-                f"{left} | {cell(row.get('last_seen'))} | {days(row['listing_days'], row['start_uncertain'], '日')} | {link} |"
+                f"{left} | {cell(row.get('last_seen'))} | {days_cell(row['listing_days'], row['start_uncertain'], '日')} | {link} |"
             )
         if not rows:
             lines.append("| 該当なし | - | - | - | - | - | - | - | - | - |")
         return "\n".join(lines)
 
     gap_note = ""
-    if diff["gap_days"] > MINIMINI_MAX_OBSERVATION_GAP_DAYS:
+    if diff["gap_days"] > MAX_OBSERVATION_GAP_DAYS:
         gap_note = (
             f"\n- 前回取得から{diff['gap_days']}日空いているため、新規は「この間に掲載」、"
             "削除は「この間に取り下げ」の意味。"

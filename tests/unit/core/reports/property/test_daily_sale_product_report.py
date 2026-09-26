@@ -83,3 +83,71 @@ reviewer: sakura
     assert evidence["script_sha256"] == provenance["script_sha256"]
     assert evidence["script_py_compile_ok"] is True
     assert evidence["read_after_write_checks"]["script_preflight_ok"] is True
+
+
+CSV_HEAD = "portal_label,title,property_type,price_text,price_jpy,gross_yield_percent,review_status,url\n"
+
+
+def _put_day(root: Path, ymd: str, rows: list[tuple[str, str]], fetched: list[str]) -> Path:
+    import json
+
+    day = root / ymd[:4] / ymd[4:6] / ymd[6:]
+    csv_path = day / f"P-{ymd[4:]}_{report.SLUG_PREFIX}-{ymd}.csv"
+    body = "".join(f"{portal},{key},,,,,,https://example.test/{key}\n" for portal, key in rows)
+    write_text(csv_path, CSV_HEAD + body)
+    runs = [{"portal_label": p, "fetched": True} for p in fetched]
+    write_text(csv_path.with_suffix(".json"), json.dumps({"portal_runs": runs}))
+    return csv_path
+
+
+def _classify(tmp_path: Path, today: str, cur: Path, fetched: set[str]) -> dict:
+    history = report.load_sale_history(today, root=tmp_path)
+    return report.build_url_diff_report(cur, today, history=history, fetched_portals=fetched)
+
+
+def _titles(rows: list[dict]) -> dict:
+    return {r["title"]: r for r in rows}
+
+
+def test_sale_diff_adds_listing_days_and_holds_unfetched_portals(tmp_path: Path) -> None:
+    _put_day(tmp_path, "20260920", [("楽待", "a"), ("健美家", "k")], ["楽待", "健美家"])
+    _put_day(tmp_path, "20260921", [("楽待", "a"), ("楽待", "b"), ("健美家", "k")], ["楽待", "健美家"])
+    # 09-22: 健美家 fetch failed -> its listing is neither deleted nor restarted
+    _put_day(tmp_path, "20260922", [("楽待", "a"), ("楽待", "b")], ["楽待"])
+    _put_day(tmp_path, "20260923", [("楽待", "a"), ("楽待", "b"), ("健美家", "k")], ["楽待", "健美家"])
+    cur = _put_day(tmp_path, "20260924", [("楽待", "a"), ("楽待", "c")], ["楽待"])
+
+    diff = _classify(tmp_path, "2026-09-24", cur, {"楽待"})
+    assert diff["previous_date"] == "2026-09-23"
+    new, cont = _titles(diff["new_rows"]), _titles(diff["continued_rows"])
+    gone, held = _titles(diff["deleted_rows"]), _titles(diff["unconfirmed_rows"])
+    assert new["c"]["listing_day"] == 1 and new["c"]["start_uncertain"] is False
+    assert cont["a"]["listing_day"] == 5 and cont["a"]["start_uncertain"] is True  # first data day
+    assert set(gone) == {"b"} and diff["deleted_count"] == 1
+    assert gone["b"]["listing_start"] == "2026-09-21" and gone["b"]["last_seen"] == "2026-09-23"
+    assert gone["b"]["listing_days"] == 3
+    assert set(held) == {"k"} and held["k"]["listing_start"] == "2026-09-20"
+
+    md = report.diff_rows_to_markdown(diff["deleted_rows"], days="withdrawn")
+    assert "| 掲載開始 | 最終確認 | 掲載日数 |" in md and "| 3日 |" in md
+    assert "| 5日目以上 |" in report.diff_rows_to_markdown(diff["continued_rows"], days="listed")
+    assert "| 該当なし | - | - | - | - | - | - | - |" in report.diff_rows_to_markdown([], days="listed")
+
+
+def test_sale_diff_uses_last_observation_not_yesterdays_file(tmp_path: Path) -> None:
+    _put_day(tmp_path, "20260920", [("楽待", "a"), ("健美家", "k"), ("健美家", "m")], ["楽待", "健美家"])
+    # 09-21: 健美家 failed (k, m kept open); 09-22: no files at all
+    _put_day(tmp_path, "20260921", [("楽待", "a")], ["楽待"])
+    cur = _put_day(tmp_path, "20260923", [("楽待", "a"), ("健美家", "k")], ["楽待", "健美家"])
+
+    diff = _classify(tmp_path, "2026-09-23", cur, {"楽待", "健美家"})
+    assert diff["comparison_available"] is True  # yesterday's CSV is missing
+    assert _titles(diff["new_rows"]) == {}  # k is continued, not new after its portal recovered
+    assert _titles(diff["continued_rows"])["k"]["listing_start"] == "2026-09-20"
+    assert set(_titles(diff["deleted_rows"])) == {"m"}  # withdrawn while 健美家 was failing
+
+
+def test_sale_diff_without_history_is_unavailable(tmp_path: Path) -> None:
+    cur = _put_day(tmp_path, "20260924", [("楽待", "b")], ["楽待"])
+    diff = _classify(tmp_path, "2026-09-24", cur, {"楽待"})
+    assert diff["comparison_available"] is False and diff["current_count"] == 1
