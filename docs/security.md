@@ -58,7 +58,7 @@ Every piece of data entering an agent's context is tagged with a trust level. Th
 
 **Origin chain propagation**: When data flows through multiple systems (e.g., web → RAG index → Priming), the trust level degrades to the **minimum** in the chain. `resolve_trust(origin, origin_chain)` computes the conservative minimum across all nodes in the chain plus the current origin.
 
-**Session-level trust tracking**: `_min_trust_seen` tracks the minimum trust rank (2=trusted, 1=medium, 0=untrusted) across all tool calls in a session. Updated in Mode S (`PreToolUse` hook + `run/min_trust_seen` file), Mode A (`litellm_loop` and `anthropic_fallback`). Reset at each interaction cycle start.
+**Session-level trust tracking**: `_min_trust_seen` tracks the minimum trust rank (2=trusted, 1=medium, 0=untrusted) across all tool calls in a session. Updated in Mode S (`PreToolUse` hook + `run/min_trust_seen` file) and Mode A (`litellm_loop`). Reset at each interaction cycle start.
 
 **Trigger- and tier-specific injection conditions** (`core/prompt/builder.py`):
 

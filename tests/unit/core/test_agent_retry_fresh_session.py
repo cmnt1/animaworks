@@ -123,7 +123,7 @@ class TestRetryFreshSession:
             patch("core.execution._sdk_session._clear_session_id", side_effect=_spy_clear),
             patch("core.agent.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
         ):
-            mock_preflight.return_value = ("mocked system prompt", "test prompt", False)
+            mock_preflight.return_value = ("mocked system prompt", "test prompt")
             mock_retry_cfg.return_value = {
                 "checkpoint_enabled": False,
                 "retry_max": 2,
@@ -177,7 +177,7 @@ class TestRetryFreshSession:
             patch("core.execution._sdk_session._clear_session_id"),
             patch("core.agent.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
         ):
-            mock_preflight.return_value = ("mocked system prompt", "test prompt", False)
+            mock_preflight.return_value = ("mocked system prompt", "test prompt")
             mock_retry_cfg.return_value = {
                 "checkpoint_enabled": False,
                 "retry_max": 2,
@@ -235,7 +235,7 @@ class TestRetryFreshSession:
             patch("core.execution._sdk_session._clear_session_id", side_effect=_spy_clear),
             patch("core.agent.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
         ):
-            mock_preflight.return_value = ("mocked system prompt", "test prompt", False)
+            mock_preflight.return_value = ("mocked system prompt", "test prompt")
             mock_retry_cfg.return_value = {
                 "checkpoint_enabled": False,
                 "retry_max": 3,
@@ -286,7 +286,7 @@ class TestRetryExhausted:
             patch("core.execution._sdk_session._clear_session_id"),
             patch("core.agent.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
         ):
-            mock_preflight.return_value = ("mocked system prompt", "test prompt", False)
+            mock_preflight.return_value = ("mocked system prompt", "test prompt")
             mock_retry_cfg.return_value = {
                 "checkpoint_enabled": False,
                 "retry_max": 1,
@@ -358,7 +358,7 @@ class TestTerminalErrorChunk:
             patch("core.execution.codex_sdk.clear_codex_thread_ids") as mock_clear,
             patch("core.agent.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
         ):
-            mock_preflight.return_value = ("mocked system prompt", "test prompt", False)
+            mock_preflight.return_value = ("mocked system prompt", "test prompt")
             mock_retry_cfg.return_value = {
                 "checkpoint_enabled": False,
                 "retry_max": 2,

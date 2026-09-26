@@ -430,7 +430,7 @@ class ContextTracker:
     # ── Legacy convenience methods (delegate to update()) ─
 
     def update_from_usage(self, usage: dict) -> bool:
-        """Update from per-request API usage (Mode A / Fallback).
+        """Update from per-request API usage (Mode A).
 
         Uses ``input_tokens`` alone as the fullness measure because output
         tokens from prior turns are already included in the next request's
