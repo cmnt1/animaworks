@@ -727,7 +727,8 @@ class TestConfigWriting:
             tool_registry=[],
             personal_tools={},
         )
-        login_executor._write_codex_config("My prompt")
+        with patch("core.execution.codex_sdk.is_codex_login_available", return_value=True):
+            login_executor._write_codex_config("My prompt")
         parsed = tomllib.loads((anima_dir / ".codex_home" / "config.toml").read_text(encoding="utf-8"))
         assert parsed["preferred_auth_method"] == "chatgpt"
         assert parsed["forced_login_method"] == "chatgpt"
