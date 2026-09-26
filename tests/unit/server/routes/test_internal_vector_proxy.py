@@ -115,7 +115,7 @@ async def test_vector_proxy_phase3_without_root_fails_closed(tmp_path: Path) -> 
             )
 
     assert response.status_code == 503
-    assert response.json() == {"detail": "Root memory service unavailable"}
+    assert response.json() == {"detail": "Root memory service unavailable", "retry_after_ms": 250}
     assert worker.calls == []
 
 

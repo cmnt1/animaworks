@@ -61,9 +61,7 @@ class _StubLink:
 async def test_progress_loop_survives_send_failure_and_heals(monkeypatch) -> None:
     monkeypatch.setattr(task_runner, "_PROGRESS_INTERVAL_SECONDS", 0.01)
     monkeypatch.setattr(task_runner, "_RECONNECT_RETRY_SECONDS", 0.01)
-    identity = IPCV2Identity(
-        job_id="job-p", root_epoch="epoch", attempt=1, lane="task", display_lane="background"
-    )
+    identity = IPCV2Identity(job_id="job-p", root_epoch="epoch", attempt=1, lane="task", display_lane="background")
     broken = _FlakyConnection(fail_first=10_000)  # never recovers on its own
     healed = _FlakyConnection(fail_first=0)
     link = _StubLink(broken, healed)
@@ -86,30 +84,24 @@ async def test_progress_loop_survives_send_failure_and_heals(monkeypatch) -> Non
 
 @pytest.mark.asyncio
 async def test_rootlink_reconnect_single_flight(monkeypatch, tmp_path) -> None:
-    identity = IPCV2Identity(
-        job_id="job-l", root_epoch="epoch", attempt=1, lane="task", display_lane="background"
-    )
+    identity = IPCV2Identity(job_id="job-l", root_epoch="epoch", attempt=1, lane="task", display_lane="background")
     state = IPCV2ConnectionState(identity)
     broken = SimpleNamespace(close=AsyncMock())
     new_conn = SimpleNamespace(close=AsyncMock())
     connect_mock = AsyncMock(return_value=(new_conn, SimpleNamespace(body={"request_id": "req-1"})))
     monkeypatch.setattr(task_runner, "_connect", connect_mock)
 
-    memory_client = SimpleNamespace(connection=broken)
-    link = _RootLink(broken, tmp_path / "sock", state, "req-1", memory_client)
+    link = _RootLink(broken, tmp_path / "sock", state, "req-1")
 
     results = await asyncio.gather(link.reconnect(broken), link.reconnect(broken))
     assert results == [new_conn, new_conn]
     assert connect_mock.await_count == 1, "reconnect must be single-flight"
     assert link.connection is new_conn
-    assert memory_client.connection is new_conn
 
 
 @pytest.mark.asyncio
 async def test_rootlink_reconnect_rejects_foreign_run_contract(monkeypatch, tmp_path) -> None:
-    identity = IPCV2Identity(
-        job_id="job-x", root_epoch="epoch", attempt=1, lane="task", display_lane="background"
-    )
+    identity = IPCV2Identity(job_id="job-x", root_epoch="epoch", attempt=1, lane="task", display_lane="background")
     broken = SimpleNamespace(close=AsyncMock())
     new_conn = SimpleNamespace(close=AsyncMock())
     monkeypatch.setattr(
@@ -117,7 +109,7 @@ async def test_rootlink_reconnect_rejects_foreign_run_contract(monkeypatch, tmp_
         "_connect",
         AsyncMock(return_value=(new_conn, SimpleNamespace(body={"request_id": "other"}))),
     )
-    link = _RootLink(broken, tmp_path / "sock", IPCV2ConnectionState(identity), "req-1", None)
+    link = _RootLink(broken, tmp_path / "sock", IPCV2ConnectionState(identity), "req-1")
     with pytest.raises(IPCV2ConnectionError):
         await link.reconnect(broken)
     new_conn.close.assert_awaited()
