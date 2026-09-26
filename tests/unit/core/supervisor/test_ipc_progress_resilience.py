@@ -91,14 +91,12 @@ async def test_rootlink_reconnect_single_flight(monkeypatch, tmp_path) -> None:
     connect_mock = AsyncMock(return_value=(new_conn, SimpleNamespace(body={"request_id": "req-1"})))
     monkeypatch.setattr(task_runner, "_connect", connect_mock)
 
-    memory_client = SimpleNamespace(connection=broken)
-    link = _RootLink(broken, tmp_path / "sock", state, "req-1", memory_client)
+    link = _RootLink(broken, tmp_path / "sock", state, "req-1")
 
     results = await asyncio.gather(link.reconnect(broken), link.reconnect(broken))
     assert results == [new_conn, new_conn]
     assert connect_mock.await_count == 1, "reconnect must be single-flight"
     assert link.connection is new_conn
-    assert memory_client.connection is new_conn
 
 
 @pytest.mark.asyncio
@@ -111,7 +109,7 @@ async def test_rootlink_reconnect_rejects_foreign_run_contract(monkeypatch, tmp_
         "_connect",
         AsyncMock(return_value=(new_conn, SimpleNamespace(body={"request_id": "other"}))),
     )
-    link = _RootLink(broken, tmp_path / "sock", IPCV2ConnectionState(identity), "req-1", None)
+    link = _RootLink(broken, tmp_path / "sock", IPCV2ConnectionState(identity), "req-1")
     with pytest.raises(IPCV2ConnectionError):
         await link.reconnect(broken)
     new_conn.close.assert_awaited()

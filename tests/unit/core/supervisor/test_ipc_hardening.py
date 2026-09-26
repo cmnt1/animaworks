@@ -39,6 +39,22 @@ def _identity(job_id: str = "job-h") -> IPCV2Identity:
     )
 
 
+def test_phase3_child_env_reaches_vector_store_over_http(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Phase3 task children get the vector and embed URLs so they use HTTP."""
+    supervisor = _supervisor(tmp_path)
+    monkeypatch.setenv("ANIMAWORKS_VECTOR_URL", "http://vector.test/internal/vector")
+    env = supervisor._build_child_environment(
+        {
+            "ANIMAWORKS_EMBED_URL": "http://embed.test",
+            "ANIMAWORKS_VECTOR_URL": "http://vector.test/internal/vector",
+        },
+        attempt=1,
+        display_lane="background",
+    )
+    assert env["ANIMAWORKS_VECTOR_URL"] == "http://vector.test/internal/vector"
+    assert env["ANIMAWORKS_EMBED_URL"] == "http://embed.test"
+
+
 # ── Task 1: received result is kept even when the child exits nonzero ───
 
 
