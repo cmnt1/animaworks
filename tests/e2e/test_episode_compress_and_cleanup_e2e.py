@@ -13,7 +13,7 @@ Validates:
 NOTE: TestSuffixedEpisodeCompression and TestEpisodeCompressionBackup were
 removed because _compress_old_episodes is no longer a method on
 ConsolidationEngine. Episode compression is now handled by the Anima's
-tool-call loop via run_consolidation(). See core/memory/consolidation.py.
+tool-call loop via run_consolidation(). See core/memory/maintenance/consolidation.py.
 """
 
 import json

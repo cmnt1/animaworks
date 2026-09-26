@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from core.memory.backend.legacy import LegacyRAGBackend
-from core.memory.facts import FactRecord
-from core.memory.rag_search import RAGMemorySearch
+from core.memory.facts.store import FactRecord
+from core.memory.retrieval.rag_search import RAGMemorySearch
 
 
 def _write_fact_store(anima_dir: Path) -> None:

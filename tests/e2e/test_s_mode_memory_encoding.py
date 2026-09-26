@@ -21,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.consolidation import ConsolidationEngine
-from core.memory.conversation import ConversationMemory, ToolRecord
+from core.memory.conversation.memory import ConversationMemory, ToolRecord
+from core.memory.maintenance.consolidation import ConsolidationEngine
 from core.time_utils import now_local as now_jst
 
 # =====================================================================
@@ -348,7 +348,7 @@ class TestConversationSummaryKeywordSearch:
             encoding="utf-8",
         )
 
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
 
         rag_search = RAGMemorySearch(
             anima_dir,
@@ -391,7 +391,7 @@ class TestConversationSummaryKeywordSearch:
             encoding="utf-8",
         )
 
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
 
         rag_search = RAGMemorySearch(
             anima_dir,
@@ -424,7 +424,7 @@ class TestConversationSummaryKeywordSearch:
         if conv_path.exists():
             conv_path.unlink()
 
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
 
         rag_search = RAGMemorySearch(
             anima_dir,

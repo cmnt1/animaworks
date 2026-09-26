@@ -74,7 +74,7 @@ def _queue_task(executor: PendingTaskExecutor, task_id: str, *, status: str = "i
 def _execution_patches():
     with (
         patch("core.paths.load_prompt", return_value="prompt"),
-        patch("core.memory.activity.ActivityLogger"),
+        patch("core.memory.activity.logger.ActivityLogger"),
     ):
         yield
 
@@ -380,7 +380,7 @@ async def test_budget_skipped_keeps_queue_pending_and_records_activity(tmp_path:
 
     with (
         patch("core.paths.load_prompt", return_value="prompt"),
-        patch("core.memory.activity.ActivityLogger") as activity,
+        patch("core.memory.activity.logger.ActivityLogger") as activity,
     ):
         await executor._execute_llm_task(_task("budget"))
 

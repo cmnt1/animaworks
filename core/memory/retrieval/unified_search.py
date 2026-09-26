@@ -20,7 +20,7 @@ from time import perf_counter
 from typing import Any
 
 try:
-    from core.memory.bm25 import search_activity_log
+    from core.memory.retrieval.bm25 import search_activity_log
 except ImportError:
     search_activity_log = None  # type: ignore[assignment,misc]
 
@@ -607,7 +607,7 @@ class UnifiedMemorySearch:
 
     def _ensure_rag_search(self) -> Any:
         if self._rag_search is None:
-            from core.memory.rag_search import RAGMemorySearch
+            from core.memory.retrieval.rag_search import RAGMemorySearch
 
             self._rag_search = RAGMemorySearch(
                 self._anima_dir,

@@ -7,10 +7,12 @@ thread isolation, orphan detection, and ChatRequest thread_id handling.
 from __future__ import annotations
 
 import asyncio
-import pytest
 from pathlib import Path
-from core.memory.conversation import ConversationMemory
-from core.memory.streaming_journal import StreamingJournal
+
+import pytest
+
+from core.memory.conversation.memory import ConversationMemory
+from core.memory.conversation.streaming_journal import StreamingJournal
 from core.schemas import ModelConfig
 
 
@@ -38,28 +40,20 @@ class TestConversationMemoryThreadIsolation:
         assert conv._state_path == anima_dir / "state" / "conversation.json"
         assert conv.thread_id == "default"
 
-    def test_explicit_default_thread_uses_legacy_path(
-        self, anima_dir: Path, model_config: ModelConfig
-    ) -> None:
+    def test_explicit_default_thread_uses_legacy_path(self, anima_dir: Path, model_config: ModelConfig) -> None:
         conv = ConversationMemory(anima_dir, model_config, thread_id="default")
         assert conv._state_path == anima_dir / "state" / "conversation.json"
 
-    def test_custom_thread_uses_thread_path(
-        self, anima_dir: Path, model_config: ModelConfig
-    ) -> None:
+    def test_custom_thread_uses_thread_path(self, anima_dir: Path, model_config: ModelConfig) -> None:
         conv = ConversationMemory(anima_dir, model_config, thread_id="abc123")
         assert conv._state_path == anima_dir / "state" / "conversations" / "abc123.json"
 
-    def test_different_threads_different_files(
-        self, anima_dir: Path, model_config: ModelConfig
-    ) -> None:
+    def test_different_threads_different_files(self, anima_dir: Path, model_config: ModelConfig) -> None:
         conv_a = ConversationMemory(anima_dir, model_config, thread_id="thread-a")
         conv_b = ConversationMemory(anima_dir, model_config, thread_id="thread-b")
         assert conv_a._state_path != conv_b._state_path
 
-    def test_thread_history_isolation(
-        self, anima_dir: Path, model_config: ModelConfig
-    ) -> None:
+    def test_thread_history_isolation(self, anima_dir: Path, model_config: ModelConfig) -> None:
         """Verify that appending to thread A does not affect thread B."""
         conv_a = ConversationMemory(anima_dir, model_config, thread_id="thread-a")
         conv_b = ConversationMemory(anima_dir, model_config, thread_id="thread-b")
@@ -81,9 +75,7 @@ class TestConversationMemoryThreadIsolation:
         assert len(state_b.turns) == 1
         assert state_b.turns[0].content == "Hello from thread B"
 
-    def test_class_locks_per_thread(
-        self, anima_dir: Path, model_config: ModelConfig
-    ) -> None:
+    def test_class_locks_per_thread(self, anima_dir: Path, model_config: ModelConfig) -> None:
         """Verify different threads get different class locks."""
         conv_a = ConversationMemory(anima_dir, model_config, thread_id="t1")
         conv_b = ConversationMemory(anima_dir, model_config, thread_id="t2")
@@ -93,9 +85,7 @@ class TestConversationMemoryThreadIsolation:
 class TestConversationMemoryBackwardCompat:
     """Test that ConversationMemory without thread_id uses legacy conversation.json."""
 
-    def test_no_thread_id_uses_legacy_path(
-        self, anima_dir: Path, model_config: ModelConfig
-    ) -> None:
+    def test_no_thread_id_uses_legacy_path(self, anima_dir: Path, model_config: ModelConfig) -> None:
         """Default thread_id uses existing conversation.json."""
         conv = ConversationMemory(anima_dir, model_config)
         assert conv._state_path == anima_dir / "state" / "conversation.json"
@@ -107,19 +97,11 @@ class TestStreamingJournalThreadIsolation:
 
     def test_default_thread_uses_legacy_path(self, anima_dir: Path) -> None:
         journal = StreamingJournal(anima_dir, session_type="chat")
-        assert (
-            journal._journal_path
-            == anima_dir / "shortterm" / "streaming_journal_chat.jsonl"
-        )
+        assert journal._journal_path == anima_dir / "shortterm" / "streaming_journal_chat.jsonl"
 
     def test_custom_thread_uses_thread_path(self, anima_dir: Path) -> None:
-        journal = StreamingJournal(
-            anima_dir, session_type="chat", thread_id="abc123"
-        )
-        assert (
-            journal._journal_path
-            == anima_dir / "shortterm" / "chat" / "abc123" / "streaming_journal.jsonl"
-        )
+        journal = StreamingJournal(anima_dir, session_type="chat", thread_id="abc123")
+        assert journal._journal_path == anima_dir / "shortterm" / "chat" / "abc123" / "streaming_journal.jsonl"
 
     def test_has_orphan_detects_thread_journal(self, anima_dir: Path) -> None:
         """has_orphan() should detect journals in thread subdirectories."""
@@ -150,17 +132,12 @@ class TestStreamingJournalThreadIsolation:
         thread_dir = anima_dir / "shortterm" / "chat" / "test-thread"
         thread_dir.mkdir(parents=True)
         journal_content = (
-            '{"ev":"start","trigger":"message:user","from":"user","session_id":"",'
-            '"ts":"2026-01-01T00:00:00"}\n'
+            '{"ev":"start","trigger":"message:user","from":"user","session_id":"","ts":"2026-01-01T00:00:00"}\n'
         )
-        journal_content += (
-            '{"ev":"text","t":"Hello world","ts":"2026-01-01T00:00:01"}\n'
-        )
+        journal_content += '{"ev":"text","t":"Hello world","ts":"2026-01-01T00:00:01"}\n'
         (thread_dir / "streaming_journal.jsonl").write_text(journal_content)
 
-        recovery = StreamingJournal.recover(
-            anima_dir, "chat", thread_id="test-thread"
-        )
+        recovery = StreamingJournal.recover(anima_dir, "chat", thread_id="test-thread")
         assert recovery is not None
         assert recovery.recovered_text == "Hello world"
         assert recovery.trigger == "message:user"
@@ -171,6 +148,7 @@ class TestAnimaThreadLock:
 
     def test_get_thread_lock_returns_same_for_same_id(self) -> None:
         """Same thread_id should return the same lock instance."""
+
         class MockAnima:
             _MAX_THREAD_LOCKS = 20
             _conversation_locks: dict[str, asyncio.Lock] = {}
@@ -192,6 +170,7 @@ class TestAnimaThreadLock:
 
     def test_get_thread_lock_returns_different_for_different_id(self) -> None:
         """Different thread_ids should return different lock instances."""
+
         class MockAnima:
             _MAX_THREAD_LOCKS = 20
             _conversation_locks: dict[str, asyncio.Lock] = {}
@@ -213,6 +192,7 @@ class TestAnimaThreadLock:
 
     def test_lock_eviction_when_max_reached(self) -> None:
         """When max locks reached, idle locks should be evicted."""
+
         class MockAnima:
             _MAX_THREAD_LOCKS = 3
             _conversation_locks: dict[str, asyncio.Lock] = {}
@@ -299,20 +279,44 @@ class TestConversationViewThreadFilter:
     def test_filter_by_thread_id(self, anima_dir: Path) -> None:
         """Entries with different thread_ids should be separated."""
         import json
-        from core.memory.activity import ActivityLogger
+
+        from core.memory.activity.logger import ActivityLogger
 
         log_dir = anima_dir / "activity_log"
         log_dir.mkdir(parents=True, exist_ok=True)
 
         from datetime import datetime
+
         today = datetime.now().strftime("%Y-%m-%d")
         log_file = log_dir / f"{today}.jsonl"
 
         entries = [
-            {"ts": "2026-02-27T10:00:00+09:00", "type": "message_received", "content": "hello default", "from": "human", "meta": {"thread_id": "default"}},
-            {"ts": "2026-02-27T10:00:01+09:00", "type": "response_sent", "content": "hi from default", "meta": {"thread_id": "default"}},
-            {"ts": "2026-02-27T10:00:02+09:00", "type": "message_received", "content": "hello thread-a", "from": "human", "meta": {"thread_id": "thread-a"}},
-            {"ts": "2026-02-27T10:00:03+09:00", "type": "response_sent", "content": "hi from thread-a", "meta": {"thread_id": "thread-a"}},
+            {
+                "ts": "2026-02-27T10:00:00+09:00",
+                "type": "message_received",
+                "content": "hello default",
+                "from": "human",
+                "meta": {"thread_id": "default"},
+            },
+            {
+                "ts": "2026-02-27T10:00:01+09:00",
+                "type": "response_sent",
+                "content": "hi from default",
+                "meta": {"thread_id": "default"},
+            },
+            {
+                "ts": "2026-02-27T10:00:02+09:00",
+                "type": "message_received",
+                "content": "hello thread-a",
+                "from": "human",
+                "meta": {"thread_id": "thread-a"},
+            },
+            {
+                "ts": "2026-02-27T10:00:03+09:00",
+                "type": "response_sent",
+                "content": "hi from thread-a",
+                "meta": {"thread_id": "thread-a"},
+            },
         ]
         log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
@@ -337,18 +341,32 @@ class TestConversationViewThreadFilter:
     def test_no_thread_id_filter_returns_all(self, anima_dir: Path) -> None:
         """Without thread_id filter, all entries should be returned."""
         import json
-        from core.memory.activity import ActivityLogger
+
+        from core.memory.activity.logger import ActivityLogger
 
         log_dir = anima_dir / "activity_log"
         log_dir.mkdir(parents=True, exist_ok=True)
 
         from datetime import datetime
+
         today = datetime.now().strftime("%Y-%m-%d")
         log_file = log_dir / f"{today}.jsonl"
 
         entries = [
-            {"ts": "2026-02-27T10:00:00+09:00", "type": "message_received", "content": "hello default", "from": "human", "meta": {"thread_id": "default"}},
-            {"ts": "2026-02-27T10:00:01+09:00", "type": "message_received", "content": "hello thread-a", "from": "human", "meta": {"thread_id": "thread-a"}},
+            {
+                "ts": "2026-02-27T10:00:00+09:00",
+                "type": "message_received",
+                "content": "hello default",
+                "from": "human",
+                "meta": {"thread_id": "default"},
+            },
+            {
+                "ts": "2026-02-27T10:00:01+09:00",
+                "type": "message_received",
+                "content": "hello thread-a",
+                "from": "human",
+                "meta": {"thread_id": "thread-a"},
+            },
         ]
         log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
@@ -365,18 +383,32 @@ class TestConversationViewThreadFilter:
     def test_entries_without_thread_id_treated_as_default(self, anima_dir: Path) -> None:
         """Entries without meta.thread_id should be treated as 'default'."""
         import json
-        from core.memory.activity import ActivityLogger
+
+        from core.memory.activity.logger import ActivityLogger
 
         log_dir = anima_dir / "activity_log"
         log_dir.mkdir(parents=True, exist_ok=True)
 
         from datetime import datetime
+
         today = datetime.now().strftime("%Y-%m-%d")
         log_file = log_dir / f"{today}.jsonl"
 
         entries = [
-            {"ts": "2026-02-27T10:00:00+09:00", "type": "message_received", "content": "old entry no thread", "from": "human", "meta": {}},
-            {"ts": "2026-02-27T10:00:01+09:00", "type": "message_received", "content": "new entry with thread", "from": "human", "meta": {"thread_id": "abc123"}},
+            {
+                "ts": "2026-02-27T10:00:00+09:00",
+                "type": "message_received",
+                "content": "old entry no thread",
+                "from": "human",
+                "meta": {},
+            },
+            {
+                "ts": "2026-02-27T10:00:01+09:00",
+                "type": "message_received",
+                "content": "new entry with thread",
+                "from": "human",
+                "meta": {"thread_id": "abc123"},
+            },
         ]
         log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 

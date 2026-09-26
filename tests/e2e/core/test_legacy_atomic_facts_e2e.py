@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from core.memory.backend.legacy import LegacyRAGBackend
-from core.memory.facts import FactRecord, append_fact_records
+from core.memory.facts.store import FactRecord, append_fact_records
 
 
 @pytest.mark.asyncio

@@ -22,18 +22,18 @@ from core.memory._llm_parse import (
     SESSION_HEADINGS,
     SESSION_NONE_VALUES,
 )
-from core.memory.conversation_compression import (
+from core.memory.conversation.compression import (
     _call_llm,
     _format_turns_for_compression,
     _generate_compression_summary,
 )
-from core.memory.conversation_models import (
+from core.memory.conversation.models import (
     SESSION_GAP_MINUTES,
     ConversationState,
     ConversationTurn,
     ParsedSessionSummary,
 )
-from core.memory.fact_observability import warn_rate_limited
+from core.memory.facts.observability import warn_rate_limited
 from core.paths import load_prompt
 from core.time_utils import ensure_aware, now_local, today_local
 
@@ -44,7 +44,7 @@ _FACT_EXTRACTION_TASKS: set[asyncio.Task[tuple[int, int]]] = set()
 def _gather_activity_context(anima_dir: Path, turns: list[ConversationTurn]) -> str:
     """Gather non-conversation activities from activity log for episode enrichment."""
     try:
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
 
@@ -72,7 +72,7 @@ def _gather_activity_context(anima_dir: Path, turns: list[ConversationTurn]) -> 
         if not session_entries:
             return ""
 
-        from core.memory.activity_format import entry_text
+        from core.memory.activity.format import entry_text
 
         lines = [t("conversation.activity_context_header")]
         for e in session_entries:
@@ -110,7 +110,7 @@ async def _extract_session_facts_nonfatal(
     reference_time: str | None,
 ) -> tuple[int, int]:
     try:
-        from core.memory.fact_extraction import extract_and_store_facts_with_outcome
+        from core.memory.facts.extraction import extract_and_store_facts_with_outcome
 
         outcome = await extract_and_store_facts_with_outcome(
             anima_dir,
@@ -156,7 +156,7 @@ def _schedule_session_fact_extraction(
     session_id: str,
 ) -> str:
     try:
-        from core.memory.fact_extraction import _facts_extraction_enabled, format_turns_for_fact_extraction
+        from core.memory.facts.extraction import _facts_extraction_enabled, format_turns_for_fact_extraction
 
         if not _facts_extraction_enabled():
             return "disabled"
@@ -360,7 +360,7 @@ async def finalize_session(
 
     fact_extraction_status = _schedule_session_fact_extraction(anima_dir, new_turns, session_id=session_id)
 
-    from core.memory.conversation_state_update import (
+    from core.memory.conversation.state_update import (
         _record_resolutions,
     )
 

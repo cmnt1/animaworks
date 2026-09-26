@@ -100,7 +100,7 @@ PrimingがRAG経由で関連知識を取得する際、各チャンクの `origi
 
 日次Consolidationがソース知識ファイルのYAMLフロントマター `origin:` を読み取り、外部オリジン（`external_web`, `mixed`, `consolidation_external`）を持つソースがある場合、統合出力を `origin: consolidation_external`（`untrusted` に解決）に格下げ。
 
-**主要ファイル**: `core/tooling/handler_memory.py`（write_memory_fileのオリジン伝播）, `core/memory/rag/indexer.py`（チャンクメタデータのオリジン）, `core/memory/priming.py`（チャネルC信頼分割）, `core/memory/consolidation.py`（オリジンチェーン追跡）
+**主要ファイル**: `core/tooling/handler_memory.py`（write_memory_fileのオリジン伝播）, `core/memory/rag/indexer.py`（チャンクメタデータのオリジン）, `core/memory/priming.py`（チャネルC信頼分割）, `core/memory/maintenance/consolidation.py`（オリジンチェーン追跡）
 
 ---
 

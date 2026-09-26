@@ -46,6 +46,7 @@ def anima_dir(tmp_path, monkeypatch):
 
     # Invalidate cached paths so the monkeypatch takes effect
     from core.paths import _prompt_cache
+
     _prompt_cache.clear()
 
     anima_dir = data_dir / "animas" / "test_anima"
@@ -72,8 +73,7 @@ def anima_dir(tmp_path, monkeypatch):
     )
 
     (anima_dir / "knowledge" / "important-rule.md").write_text(
-        "# 重要ルール\n\n"
-        "## ルール\n\n[IMPORTANT] この情報は絶対に忘れてはいけない。\n",
+        "# 重要ルール\n\n## ルール\n\n[IMPORTANT] この情報は絶対に忘れてはいけない。\n",
         encoding="utf-8",
     )
 
@@ -135,9 +135,7 @@ def test_access_frequency_full_pipeline(anima_dir, vector_store, indexer, retrie
     assert len(all_data["ids"]) > 0, "Should have indexed chunks"
 
     for meta in all_data["metadatas"]:
-        assert meta["access_count"] == 0, (
-            f"New chunks should have access_count=0, got {meta['access_count']}"
-        )
+        assert meta["access_count"] == 0, f"New chunks should have access_count=0, got {meta['access_count']}"
         assert meta["activation_level"] == "normal", (
             f"New chunks should have activation_level='normal', got {meta['activation_level']}"
         )
@@ -160,12 +158,8 @@ def test_access_frequency_full_pipeline(anima_dir, vector_store, indexer, retrie
     verified_data = coll.get(ids=accessed_ids, include=["metadatas"])
 
     for meta in verified_data["metadatas"]:
-        assert meta["access_count"] == 1, (
-            f"After first access, access_count should be 1, got {meta['access_count']}"
-        )
-        assert meta["last_accessed_at"] != "", (
-            "last_accessed_at should be set after record_access"
-        )
+        assert meta["access_count"] == 1, f"After first access, access_count should be 1, got {meta['access_count']}"
+        assert meta["last_accessed_at"] != "", "last_accessed_at should be set after record_access"
         # Verify it's a valid ISO timestamp
         datetime.fromisoformat(str(meta["last_accessed_at"]))
 
@@ -180,18 +174,13 @@ def test_access_frequency_full_pipeline(anima_dir, vector_store, indexer, retrie
 
     verified_data2 = coll.get(ids=accessed_ids, include=["metadatas"])
     for meta in verified_data2["metadatas"]:
-        assert meta["access_count"] == 2, (
-            f"After second access, access_count should be 2, got {meta['access_count']}"
-        )
+        assert meta["access_count"] == 2, f"After second access, access_count should be 2, got {meta['access_count']}"
 
     # -- Step 4: Verify frequency boost affects score --
     # Get all chunk IDs
     all_data_after = coll.get(include=["metadatas"])
     accessed_set = set(accessed_ids)
-    non_accessed_ids = [
-        doc_id for doc_id in all_data_after["ids"]
-        if doc_id not in accessed_set
-    ]
+    non_accessed_ids = [doc_id for doc_id in all_data_after["ids"] if doc_id not in accessed_set]
 
     if non_accessed_ids:
         # Search with a broad query that should hit both accessed and non-accessed
@@ -208,9 +197,7 @@ def test_access_frequency_full_pipeline(anima_dir, vector_store, indexer, retrie
         if accessed_results and non_accessed_results:
             # Accessed chunks should have a frequency boost > 0
             for r in accessed_results:
-                assert r.source_scores.get("frequency", 0) > 0, (
-                    "Accessed chunks should have a positive frequency boost"
-                )
+                assert r.source_scores.get("frequency", 0) > 0, "Accessed chunks should have a positive frequency boost"
 
             # Non-accessed chunks should have frequency boost = 0
             for r in non_accessed_results:
@@ -232,7 +219,7 @@ def test_synaptic_downscaling_e2e(anima_dir, vector_store, indexer):
     4. Verify chunks are marked activation_level="low"
     5. Verify protected chunks (importance="important") are NOT marked
     """
-    from core.memory.forgetting import ForgettingEngine
+    from core.memory.maintenance.forgetting import ForgettingEngine
 
     knowledge_dir = anima_dir / "knowledge"
 
@@ -260,10 +247,7 @@ def test_synaptic_downscaling_e2e(anima_dir, vector_store, indexer):
     # Simulate old, unaccessed chunks (100 days ago)
     old_date = (now_jst() - timedelta(days=100)).isoformat()
     all_ids = all_data["ids"]
-    old_metas = [
-        {"last_accessed_at": old_date, "access_count": 0}
-        for _ in all_ids
-    ]
+    old_metas = [{"last_accessed_at": old_date, "access_count": 0} for _ in all_ids]
     # Set updated_at to old date as well (for fallback logic)
     for meta in old_metas:
         meta["updated_at"] = old_date
@@ -289,9 +273,7 @@ def test_synaptic_downscaling_e2e(anima_dir, vector_store, indexer):
         assert meta["activation_level"] == "low", (
             f"Normal chunk {doc_id} should be marked low, got {meta['activation_level']}"
         )
-        assert meta["low_activation_since"] != "", (
-            f"low_activation_since should be set for {doc_id}"
-        )
+        assert meta["low_activation_since"] != "", f"low_activation_since should be set for {doc_id}"
 
     # Verify important chunks are NOT marked
     for doc_id in important_ids:
@@ -315,7 +297,7 @@ def test_list_forgetting_candidates_e2e(anima_dir, vector_store, indexer):
     4. Verify candidates are returned with paths and reasons
     5. Verify chunks are NOT deleted and source files are NOT moved
     """
-    from core.memory.forgetting import ForgettingEngine
+    from core.memory.maintenance.forgetting import ForgettingEngine
 
     knowledge_dir = anima_dir / "knowledge"
 

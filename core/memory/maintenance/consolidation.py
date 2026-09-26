@@ -509,7 +509,7 @@ class ConsolidationEngine:
     def _collect_resolved_events(self, hours: int = 24) -> list[dict]:
         """Collect issue_resolved events from activity log."""
         try:
-            from core.memory.activity import ActivityLogger
+            from core.memory.activity.logger import ActivityLogger
 
             activity = ActivityLogger(self.anima_dir)
             entries = activity.recent(days=1, limit=50, types=["issue_resolved"])
@@ -538,7 +538,7 @@ class ConsolidationEngine:
             message when no errors are found.
         """
         try:
-            from core.memory.activity import ActivityLogger
+            from core.memory.activity.logger import ActivityLogger
 
             activity = ActivityLogger(self.anima_dir)
             entries = activity.recent(
@@ -778,7 +778,7 @@ class ConsolidationEngine:
     ) -> int:
         """Count activity-log entries eligible for daily consolidation."""
         try:
-            from core.memory.activity import ActivityLogger
+            from core.memory.activity.logger import ActivityLogger
 
             activity = ActivityLogger(self.anima_dir)
             if since is not None or until is not None:
@@ -844,7 +844,7 @@ class ConsolidationEngine:
         budget = self.compute_activity_budget(model)
 
         try:
-            from core.memory.activity import ActivityLogger
+            from core.memory.activity.logger import ActivityLogger
 
             activity = ActivityLogger(self.anima_dir)
 
@@ -997,7 +997,7 @@ class ConsolidationEngine:
     ):
         """Extract/store atomic facts and return operational counters."""
         try:
-            from core.memory.fact_extraction import FactExtractionOutcome, extract_and_store_facts_with_outcome
+            from core.memory.facts.extraction import FactExtractionOutcome, extract_and_store_facts_with_outcome
 
             outcome = await extract_and_store_facts_with_outcome(
                 self.anima_dir,
@@ -1014,8 +1014,8 @@ class ConsolidationEngine:
             )
             return outcome
         except Exception as exc:
-            from core.memory.fact_extraction import FactExtractionOutcome
-            from core.memory.fact_observability import warn_rate_limited
+            from core.memory.facts.extraction import FactExtractionOutcome
+            from core.memory.facts.observability import warn_rate_limited
 
             warn_rate_limited(
                 logger,
@@ -1098,7 +1098,7 @@ class ConsolidationEngine:
         _CHAR_BUDGET = 12_000  # ~4000 tokens
 
         try:
-            from core.memory.activity import ActivityLogger
+            from core.memory.activity.logger import ActivityLogger
 
             activity = ActivityLogger(self.anima_dir)
             target_types = [
@@ -1447,7 +1447,7 @@ class ConsolidationEngine:
             relative to the anima_dir and include the JSONL file and fact id so
             the model can locate the exact record.
         """
-        from core.memory.facts import FactRecord, facts_dir
+        from core.memory.facts.store import FactRecord, facts_dir
 
         facts_dir_path = facts_dir(self.anima_dir)
         if not facts_dir_path.exists():
@@ -1699,7 +1699,7 @@ class ConsolidationEngine:
                 logger.debug("Re-indexed facts: %s", fact_file.name)
 
             try:
-                from core.memory.entity_index import rebuild_entity_collection
+                from core.memory.facts.entity_index import rebuild_entity_collection
 
                 if not rebuild_entity_collection(self.anima_dir, vector_store=vector_store):
                     logger.warning(
@@ -1725,7 +1725,7 @@ class ConsolidationEngine:
     def _rebuild_longterm_bm25_index(self) -> None:
         """Rebuild the persisted long-term BM25 sparse index."""
         try:
-            from core.memory.bm25 import rebuild_longterm_bm25_index
+            from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index
 
             bm25_result = rebuild_longterm_bm25_index(self.anima_dir)
             logger.info(

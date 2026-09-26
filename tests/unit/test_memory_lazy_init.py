@@ -58,7 +58,7 @@ class TestMemoryManagerLazyIndexer:
         with (
             patch("core.memory.rag.singleton.get_vector_store", return_value=dummy_store),
             patch("core.memory.rag.MemoryIndexer", return_value=dummy_indexer),
-            patch("core.memory.rag_search.RAGMemorySearch._check_shared_collections"),
+            patch("core.memory.retrieval.rag_search.RAGMemorySearch._check_shared_collections"),
         ):
             mgr._get_indexer()
             assert mgr._indexer_initialized is True

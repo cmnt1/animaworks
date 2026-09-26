@@ -27,7 +27,7 @@ from typing import Any, Literal
 
 from core.i18n import t
 from core.memory import MemoryManager
-from core.memory.shortterm import ShortTermMemory
+from core.memory.conversation.shortterm import ShortTermMemory
 from core.paths import get_data_dir, load_prompt, load_prompt_text
 from core.prompt.assembler import (
     _MIN_SYSTEM_BUDGET,  # noqa: F401

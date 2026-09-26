@@ -402,7 +402,7 @@ class TestFallbackBehavior:
             handler.handle("send_message", {"to": "user", "content": "hello", "intent": "report"})
 
         # ToolHandler._log_tool_activity records dm_sent in unified activity log
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         activity = ActivityLogger(sakura_dir)
         entries = activity.recent(days=1, types=["dm_sent"])

@@ -103,7 +103,7 @@ meta={"phase": "process_message_stream", "error_code": error_code, "error": str(
 
 ### Fix 3: JOSNLフィールド名を `from`/`to` に統一
 
-**対象:** `core/memory/activity.py`
+**対象:** `core/memory/activity/logger.py`
 
 #### 3a: `to_dict()` の出力変換 (line 51-54)
 
@@ -158,7 +158,7 @@ ACKメッセージ等のツールハンドラ非経由パスは低重要度。�
 
 #### 5b: `_append_transcript` 削除
 
-**対象:** `core/memory/conversation.py:153-176`
+**対象:** `core/memory/conversation/memory.py:153-176`
 
 メソッド本体を削除。
 

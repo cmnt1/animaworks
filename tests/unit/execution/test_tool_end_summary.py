@@ -7,10 +7,10 @@ Verifies that the completed_tools list built during streaming correctly
 uses record.result_summary when available (LiteLLM path) and falls back
 to tool_name when record is absent (Agent SDK path).
 """
+
 from __future__ import annotations
 
 from typing import Any
-
 
 from core.execution.base import ToolCallRecord
 
@@ -18,10 +18,7 @@ from core.execution.base import ToolCallRecord
 def _extract_summary(chunk: dict[str, Any]) -> str:
     """Replicate the summary extraction logic from _agent_cycle.py tool_end handler."""
     record = chunk.get("record")
-    return (
-        (getattr(record, "result_summary", "") if record else "")
-        or chunk.get("tool_name", "unknown")
-    )
+    return (getattr(record, "result_summary", "") if record else "") or chunk.get("tool_name", "unknown")
 
 
 # ── LiteLLM path: record with result_summary ────────────────────
@@ -123,10 +120,7 @@ class TestCompletedToolsConstruction:
 
     def _build_completed_tool(self, chunk: dict[str, Any]) -> dict[str, str]:
         record = chunk.get("record")
-        summary = (
-            (getattr(record, "result_summary", "") if record else "")
-            or chunk.get("tool_name", "unknown")
-        )
+        summary = (getattr(record, "result_summary", "") if record else "") or chunk.get("tool_name", "unknown")
         return {
             "tool_name": chunk.get("tool_name", ""),
             "tool_id": chunk.get("tool_id", ""),
@@ -190,8 +184,8 @@ class TestRetryPromptWithRealSummary:
     """Verify that the retry prompt reads better with real summaries."""
 
     def test_retry_prompt_contains_result_summary(self) -> None:
-        from core.memory.shortterm import StreamCheckpoint
         from core.execution._session import build_stream_retry_prompt
+        from core.memory.conversation.shortterm import StreamCheckpoint
 
         cp = StreamCheckpoint(
             original_prompt="Search for Python best practices",
@@ -214,8 +208,8 @@ class TestRetryPromptWithRealSummary:
         assert "web_search: web_search" not in prompt
 
     def test_retry_prompt_with_fallback_summary(self) -> None:
-        from core.memory.shortterm import StreamCheckpoint
         from core.execution._session import build_stream_retry_prompt
+        from core.memory.conversation.shortterm import StreamCheckpoint
 
         cp = StreamCheckpoint(
             original_prompt="Deploy application",

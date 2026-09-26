@@ -154,7 +154,7 @@ def test_depth_check_fail_closed(workspace: Path) -> None:
 
     limiter = _make_limiter(max_depth=6)
 
-    with patch("core.memory.activity.ActivityLogger.recent", side_effect=OSError("disk error")):
+    with patch("core.memory.activity.logger.ActivityLogger.recent", side_effect=OSError("disk error")):
         result = limiter.check_depth("alice", "bob", alice_dir)
 
     assert result is False, "check_depth should be fail-closed when activity_log read fails"

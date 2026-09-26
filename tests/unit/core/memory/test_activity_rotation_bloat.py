@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
 
 
 def test_activity_log_over_max_file_size_rotates_to_bloated_backup(tmp_path, caplog) -> None:

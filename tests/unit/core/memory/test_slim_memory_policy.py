@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core.config.schemas import ConsolidationConfig, PrimingConfig, RAGConfig
-from core.memory.consolidation import ConsolidationEngine
+from core.memory.maintenance.consolidation import ConsolidationEngine
 from core.memory.priming.engine import PrimingEngine
 from core.memory.priming.policy import resolve_priming_policy
 
@@ -181,7 +181,7 @@ async def test_daily_repeat_has_zero_generation_calls(tmp_path: Path):
 
 
 def test_explicit_graph_disable_skips_indexer_creation(tmp_path: Path):
-    from core.memory.rag_search import RAGMemorySearch
+    from core.memory.retrieval.rag_search import RAGMemorySearch
 
     search = RAGMemorySearch(tmp_path, tmp_path / "common_knowledge", tmp_path / "common_skills")
     with (

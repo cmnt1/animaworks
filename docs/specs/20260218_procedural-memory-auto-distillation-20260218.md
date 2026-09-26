@@ -8,23 +8,23 @@
 
 ### Current State
 
-- 日次固定化（`_summarize_episodes()`）はエピソードから抽出した内容を**すべてknowledge/に格納**する — `core/memory/consolidation.py:288-323`
+- 日次固定化（`_summarize_episodes()`）はエピソードから抽出した内容を**すべてknowledge/に格納**する — `core/memory/maintenance/consolidation.py:288-323`
 - プロンプト（L311-312）には「手順・ワークフロー・プロセスの記録」を抽出対象として明記しているが、出力先はknowledge/のみ
 - 手続き記憶は**エージェントの意図的記銘のみ**で作成される。エピソードから手順を自動抽出するパスが存在しない
 - エージェントが「これは手順として保存すべき」と自律的に判断しない限り、有用なワークフローが記憶されない
 
 ### Root Cause
 
-1. **固定化プロンプトの出力先がknowledge/のみ**: `_summarize_episodes()` のプロンプトが `knowledge/xxx.md` への出力のみ指示しており、`procedures/` への振り分けが設計されていない — `core/memory/consolidation.py:311-323`
+1. **固定化プロンプトの出力先がknowledge/のみ**: `_summarize_episodes()` のプロンプトが `knowledge/xxx.md` への出力のみ指示しており、`procedures/` への振り分けが設計されていない — `core/memory/maintenance/consolidation.py:311-323`
 2. **繰り返しパターン検出の不在**: 同じタイプのタスクを何度も実行しても、その共通手順が自動的に抽出される仕組みがない
 
 ### Impact
 
 | Component | Impact | Description |
 |-----------|--------|-------------|
-| `core/memory/consolidation.py` | Direct | 日次固定化プロンプト拡張、procedures/への書き込みパス追加、週次パターン検出 |
+| `core/memory/maintenance/consolidation.py` | Direct | 日次固定化プロンプト拡張、procedures/への書き込みパス追加、週次パターン検出 |
 | `core/memory/manager.py` | Direct | procedures/への自動書き込み（frontmatter付き） |
-| `core/memory/activity.py` | Indirect | パターン検出のデータソース |
+| `core/memory/activity/logger.py` | Indirect | パターン検出のデータソース |
 
 ## Decided Approach / 確定方針
 
@@ -51,12 +51,12 @@
 
 | Module | Change Type | Description |
 |--------|------------|-------------|
-| `core/memory/consolidation.py` | Modify | 日次固定化プロンプト拡張（knowledge/procedures振り分け）、`_merge_to_procedures()`追加、週次パターン検出 |
+| `core/memory/maintenance/consolidation.py` | Modify | 日次固定化プロンプト拡張（knowledge/procedures振り分け）、`_merge_to_procedures()`追加、週次パターン検出 |
 | `core/memory/manager.py` | Modify | procedures/への自動書き込み（frontmatter付き） |
 
 #### Change 1: 日次固定化プロンプト拡張
 
-**Target**: `core/memory/consolidation.py` — `_summarize_episodes()`
+**Target**: `core/memory/maintenance/consolidation.py` — `_summarize_episodes()`
 
 ```
 # Before: knowledge/への出力のみ
@@ -92,7 +92,7 @@
 
 #### Change 2: 週次パターン検出
 
-**Target**: `core/memory/consolidation.py` — `weekly_integrate()`
+**Target**: `core/memory/maintenance/consolidation.py` — `weekly_integrate()`
 
 ```python
 async def _detect_repeated_patterns(self) -> list[dict]:
@@ -121,9 +121,9 @@ async def _detect_repeated_patterns(self) -> list[dict]:
 
 | # | Task | Target |
 |---|------|--------|
-| 1-1 | `_summarize_episodes()` プロンプト拡張（knowledge/procedures振り分け） | `core/memory/consolidation.py` |
-| 1-2 | `_merge_to_procedures()` メソッド実装（パーサー + frontmatter付き書き込み） | `core/memory/consolidation.py` |
-| 1-3 | 重複チェック（RAG類似度検索）実装 | `core/memory/consolidation.py` |
+| 1-1 | `_summarize_episodes()` プロンプト拡張（knowledge/procedures振り分け） | `core/memory/maintenance/consolidation.py` |
+| 1-2 | `_merge_to_procedures()` メソッド実装（パーサー + frontmatter付き書き込み） | `core/memory/maintenance/consolidation.py` |
+| 1-3 | 重複チェック（RAG類似度検索）実装 | `core/memory/maintenance/consolidation.py` |
 | 1-4 | Phase 1のユニットテスト | `tests/` |
 
 **Completion condition**: 日次固定化でエピソードがknowledge/とprocedures/に振り分けられる
@@ -132,9 +132,9 @@ async def _detect_repeated_patterns(self) -> list[dict]:
 
 | # | Task | Target |
 |---|------|--------|
-| 2-1 | activity_logからのタスクパターンクラスタリング実装 | `core/memory/consolidation.py` |
-| 2-2 | LLMによる共通手順蒸留プロンプト実装 | `core/memory/consolidation.py` |
-| 2-3 | `weekly_integrate()` へのパターン検出ステージ組み込み | `core/memory/consolidation.py` |
+| 2-1 | activity_logからのタスクパターンクラスタリング実装 | `core/memory/maintenance/consolidation.py` |
+| 2-2 | LLMによる共通手順蒸留プロンプト実装 | `core/memory/maintenance/consolidation.py` |
+| 2-3 | `weekly_integrate()` へのパターン検出ステージ組み込み | `core/memory/maintenance/consolidation.py` |
 | 2-4 | Phase 2の統合テスト | `tests/` |
 
 **Completion condition**: 週次統合で繰り返しパターンが検出され、手順書が自動蒸留される
@@ -174,11 +174,11 @@ async def _detect_repeated_patterns(self) -> list[dict]:
 
 ## References
 
-- `core/memory/consolidation.py:258-362` — `_summarize_episodes()` 現行プロンプト
-- `core/memory/consolidation.py:311-312` — 「手順・ワークフロー」の抽出指示（knowledge/に出力）
-- `core/memory/consolidation.py:364-469` — `_merge_to_knowledge()` パーサー
-- `core/memory/consolidation.py:500-584` — `weekly_integrate()` 週次統合
-- `core/memory/activity.py` — ActivityLogger（パターン検出のデータソース）
+- `core/memory/maintenance/consolidation.py:258-362` — `_summarize_episodes()` 現行プロンプト
+- `core/memory/maintenance/consolidation.py:311-312` — 「手順・ワークフロー」の抽出指示（knowledge/に出力）
+- `core/memory/maintenance/consolidation.py:364-469` — `_merge_to_knowledge()` パーサー
+- `core/memory/maintenance/consolidation.py:500-584` — `weekly_integrate()` 週次統合
+- `core/memory/activity/logger.py` — ActivityLogger（パターン検出のデータソース）
 - `20260218_procedural-memory-foundation.md` — 前提Issue（frontmatter基盤）
 - [AWM](https://arxiv.org/abs/2409.07429) — エージェントワークフロー記憶（スノーボール効果）
 - [ExpeL](https://arxiv.org/abs/2308.10144) — 経験からの洞察抽出

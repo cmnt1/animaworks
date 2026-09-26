@@ -12,7 +12,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ── Phase 1: ShortTermMemory thread_id ───────────────────────
 
 
@@ -20,21 +19,21 @@ class TestShortTermMemoryThreadId:
     """ShortTermMemory creates separate directories per thread_id."""
 
     def test_default_thread_uses_existing_path(self, tmp_path: Path) -> None:
-        from core.memory.shortterm import ShortTermMemory
+        from core.memory.conversation.shortterm import ShortTermMemory
 
         stm = ShortTermMemory(tmp_path, session_type="chat", thread_id="default")
         assert stm.shortterm_dir == tmp_path / "shortterm" / "chat"
         assert stm.shortterm_dir.exists()
 
     def test_custom_thread_creates_subdirectory(self, tmp_path: Path) -> None:
-        from core.memory.shortterm import ShortTermMemory
+        from core.memory.conversation.shortterm import ShortTermMemory
 
         stm = ShortTermMemory(tmp_path, session_type="chat", thread_id="thread-abc")
         assert stm.shortterm_dir == tmp_path / "shortterm" / "chat" / "thread-abc"
         assert stm.shortterm_dir.exists()
 
     def test_different_threads_are_isolated(self, tmp_path: Path) -> None:
-        from core.memory.shortterm import ShortTermMemory, SessionState
+        from core.memory.conversation.shortterm import SessionState, ShortTermMemory
 
         stm_a = ShortTermMemory(tmp_path, thread_id="thread-a")
         stm_b = ShortTermMemory(tmp_path, thread_id="thread-b")
@@ -52,14 +51,14 @@ class TestShortTermMemoryThreadId:
         assert loaded_b is not None and loaded_b.session_id == "b"
 
     def test_default_thread_omitted_is_backward_compatible(self, tmp_path: Path) -> None:
-        from core.memory.shortterm import ShortTermMemory
+        from core.memory.conversation.shortterm import ShortTermMemory
 
         stm_no_arg = ShortTermMemory(tmp_path)
         stm_explicit = ShortTermMemory(tmp_path, thread_id="default")
         assert stm_no_arg.shortterm_dir == stm_explicit.shortterm_dir
 
     def test_heartbeat_session_type_unaffected(self, tmp_path: Path) -> None:
-        from core.memory.shortterm import ShortTermMemory
+        from core.memory.conversation.shortterm import ShortTermMemory
 
         stm = ShortTermMemory(tmp_path, session_type="heartbeat", thread_id="default")
         assert stm.shortterm_dir == tmp_path / "shortterm" / "heartbeat"
@@ -171,9 +170,7 @@ class TestStatusSlotsCompoundKey:
     @patch("core.anima.AgentCore")
     @patch("core.anima.Messenger")
     @patch("core.anima.MemoryManager")
-    def test_primary_status_from_conversation_slots(
-        self, mock_mm, mock_msg, mock_agent, tmp_path: Path
-    ) -> None:
+    def test_primary_status_from_conversation_slots(self, mock_mm, mock_msg, mock_agent, tmp_path: Path) -> None:
         from core.anima import DigitalAnima
 
         mock_mm.return_value.read_model_config.return_value = MagicMock()
@@ -206,9 +203,7 @@ class TestStatusSlotsCompoundKey:
     @patch("core.anima.AgentCore")
     @patch("core.anima.Messenger")
     @patch("core.anima.MemoryManager")
-    def test_primary_task_from_conversation_slots(
-        self, mock_mm, mock_msg, mock_agent, tmp_path: Path
-    ) -> None:
+    def test_primary_task_from_conversation_slots(self, mock_mm, mock_msg, mock_agent, tmp_path: Path) -> None:
         from core.anima import DigitalAnima
 
         mock_mm.return_value.read_model_config.return_value = MagicMock()
@@ -251,7 +246,7 @@ class TestCodexThreadIdPath:
         assert p == tmp_path / "shortterm" / "chat" / "thread-xyz" / "codex_thread_id.txt"
 
     def test_save_load_roundtrip(self, tmp_path: Path) -> None:
-        from core.execution.codex_sdk import _save_thread_id, _load_thread_id
+        from core.execution.codex_sdk import _load_thread_id, _save_thread_id
 
         _save_thread_id(tmp_path, "tid-123", "chat", "my-thread")
         loaded = _load_thread_id(tmp_path, "chat", "my-thread")
@@ -275,7 +270,7 @@ class TestSDKSessionIdPath:
         assert _session_file("chat", "thread-1") == "current_session_chat_thread-1.json"
 
     def test_save_load_roundtrip(self, tmp_path: Path) -> None:
-        from core.execution._sdk_session import _save_session_id, _load_session_id
+        from core.execution._sdk_session import _load_session_id, _save_session_id
 
         state_dir = tmp_path / "state"
         state_dir.mkdir()

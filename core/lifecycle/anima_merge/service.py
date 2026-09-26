@@ -24,7 +24,7 @@ from typing import Any
 from core.anima_factory import validate_anima_name
 from core.memory._io import atomic_write_text
 from core.memory.backend.registry import resolve_backend_type
-from core.memory.facts import FactRecord, append_fact_records, iter_fact_records
+from core.memory.facts.store import FactRecord, append_fact_records, iter_fact_records
 from core.platform.locks import acquire_file_lock, release_file_lock
 from core.time_utils import now_iso, now_local
 
@@ -1098,7 +1098,7 @@ class AnimaMergeService:
         return vector_store, MemoryIndexer(vector_store, self.target, self.target_dir)
 
     def _rebuild_entities(self) -> dict[str, Any]:
-        from core.memory.entity_index import rebuild_entity_registry, sync_entity_collection
+        from core.memory.facts.entity_index import rebuild_entity_registry, sync_entity_collection
 
         registry = rebuild_entity_registry(self.target_dir)
         vector_store, _indexer = self._target_vector_components()
@@ -1108,7 +1108,7 @@ class AnimaMergeService:
         return {"entities": len(entities) if isinstance(entities, dict) else 0}
 
     def _rebuild_bm25(self) -> dict[str, Any]:
-        from core.memory.bm25 import rebuild_longterm_bm25_index
+        from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index
 
         result = rebuild_longterm_bm25_index(self.target_dir)
         return {"documents": result.documents, "path": str(result.path)}
@@ -1252,8 +1252,8 @@ class AnimaMergeService:
         }
 
     def _build_memory_probes(self, journal: MergeJournal) -> list[dict[str, Any]]:
-        from core.memory.entity_index import normalize_entity_key
-        from core.memory.facts import fact_entity_names
+        from core.memory.facts.entity_index import normalize_entity_key
+        from core.memory.facts.store import fact_entity_names
 
         from .verification import probe_query
 
@@ -1363,7 +1363,7 @@ class AnimaMergeService:
             return ""
 
     def _search_memory_probe(self, query: str, scope: str) -> list[dict[str, Any]]:
-        from core.memory.rag_search import RAGMemorySearch
+        from core.memory.retrieval.rag_search import RAGMemorySearch
 
         search = RAGMemorySearch(
             self.target_dir,
@@ -1401,7 +1401,7 @@ class AnimaMergeService:
         # 検証目的は「sourceのエンティティがtargetのregistryへ移行済みか」。
         # query側の抽出器はタイムスタンプ等の低品質エンティティ名を認識しないため、
         # registry直接照合で判定する(query経由だと移行成功でも偽陰性になる)。
-        from core.memory.entity_index import load_entity_registry, normalize_entity_key
+        from core.memory.facts.entity_index import load_entity_registry, normalize_entity_key
 
         registry = load_entity_registry(self.target_dir, rebuild_on_corrupt=False)
         entities = registry.get("entities", {})

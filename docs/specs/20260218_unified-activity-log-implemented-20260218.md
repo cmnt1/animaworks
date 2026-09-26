@@ -95,7 +95,7 @@ Channel B・Eが活動記録を扱っているが、データソースが別々�
 ### 2. ActivityLogger クラス
 
 ```
-core/memory/activity.py
+core/memory/activity/logger.py
 ```
 
 **責務:**
@@ -208,7 +208,7 @@ activities = activity_log から session 期間のエントリ全件
 
 ### Phase 1: ActivityLogger 基盤
 
-1. `core/memory/activity.py` — ActivityLogger クラス実装
+1. `core/memory/activity/logger.py` — ActivityLogger クラス実装
    - `ActivityEntry` データモデル（Pydantic）
    - `log()` — append-only JSONL 書き込み
    - `recent()` — 日数/件数/タイプでのフィルタ読み込み
@@ -239,7 +239,7 @@ activities = activity_log から session 期間のエントリ全件
 
 ### Phase 5: エピソード化拡張
 
-16. `core/memory/conversation.py::finalize_session()` — 入力ソースをactivity_logに拡大
+16. `core/memory/conversation/memory.py::finalize_session()` — 入力ソースをactivity_logに拡大
 17. 統合エピソード形式の定義とテスト
 
 ## Scope

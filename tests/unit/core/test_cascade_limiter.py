@@ -110,7 +110,7 @@ class TestCheckDepth:
         anima_dir.mkdir(parents=True)
 
         limiter = ConversationDepthLimiter(window_s=600, max_depth=3)
-        with patch("core.memory.activity.ActivityLogger.recent", side_effect=OSError("disk error")):
+        with patch("core.memory.activity.logger.ActivityLogger.recent", side_effect=OSError("disk error")):
             assert limiter.check_depth("alice", "bob", anima_dir) is False
 
     def test_old_entries_not_counted(self, tmp_path: Path, _patch_config):
@@ -183,7 +183,7 @@ class TestCheckGlobalOutbound:
 
         limiter = ConversationDepthLimiter(max_per_hour=3, max_per_day=5)
         with patch(
-            "core.memory.activity.ActivityLogger",
+            "core.memory.activity.logger.ActivityLogger",
             side_effect=OSError("read failed"),
         ):
             result = limiter.check_global_outbound("alice", anima_dir)

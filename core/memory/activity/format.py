@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from core.i18n import t
-from core.memory._activity_models import (
+from core.memory.activity.models import (
     CHARS_PER_TOKEN,
     ActivityEntry,
     EntryGroup,
@@ -198,7 +198,7 @@ def iter_entries(
     Centralises JSONL reading so callers need not open ``activity_log/*.jsonl``
     themselves.  Args mirror :meth:`ActivityLogger.recent`.
     """
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
 
     logger = ActivityLogger(anima_dir)
     entries = logger.recent(

@@ -16,7 +16,7 @@ from core.execution.error_classifier import (
 from core.schemas import ModelConfig
 
 if TYPE_CHECKING:
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
 
 _T = TypeVar("_T")
 
@@ -86,7 +86,7 @@ def preflight_fallback_config(
     if effective is base_config:
         return base_config
     try:
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         log_model_fallback(
             ActivityLogger(anima_dir),
@@ -186,7 +186,7 @@ def runtime_fallback_config(
     ):
         return None
     try:
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         log_model_fallback(
             ActivityLogger(anima_dir),

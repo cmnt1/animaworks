@@ -12,8 +12,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from core.memory.entity_index import normalize_entity_key
-from core.memory.facts import fact_entity_names, iter_fact_records
+from core.memory.facts.entity_index import normalize_entity_key
+from core.memory.facts.store import fact_entity_names, iter_fact_records
 
 _ATTRIBUTION_FIELDS = frozenset(
     {

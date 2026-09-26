@@ -636,7 +636,7 @@ class MemoryRetriever:
         results: list[tuple[str, str, float, dict]],
     ) -> list[tuple[str, str, float, dict]]:
         try:
-            from core.memory.facts import is_valid_until_active
+            from core.memory.facts.store import is_valid_until_active
         except Exception:
             logger.debug("Failed to import fact validity helper", exc_info=True)
             return results

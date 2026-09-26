@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
-from core.memory.consolidation import ConsolidationEngine
+from core.memory.maintenance.consolidation import ConsolidationEngine
 
 
 @dataclass
@@ -253,9 +253,9 @@ class TestCommTypes:
 class TestCollectActivityChunks:
     """Tests for ConsolidationEngine.collect_activity_chunks."""
 
-    @patch("core.memory.consolidation.ConsolidationEngine.compute_activity_budget")
-    @patch("core.memory.activity.ActivityLogger")
-    @patch("core.memory.consolidation.now_local")
+    @patch("core.memory.maintenance.consolidation.ConsolidationEngine.compute_activity_budget")
+    @patch("core.memory.activity.logger.ActivityLogger")
+    @patch("core.memory.maintenance.consolidation.now_local")
     def test_collect_respects_exclusions_and_formats(
         self,
         mock_now_local: MagicMock,
@@ -291,9 +291,9 @@ class TestCollectActivityChunks:
         assert "read_memory_file" not in text
         assert "skip" not in text
 
-    @patch("core.memory.consolidation.ConsolidationEngine.compute_activity_budget")
-    @patch("core.memory.activity.ActivityLogger")
-    @patch("core.memory.consolidation.now_local")
+    @patch("core.memory.maintenance.consolidation.ConsolidationEngine.compute_activity_budget")
+    @patch("core.memory.activity.logger.ActivityLogger")
+    @patch("core.memory.maintenance.consolidation.now_local")
     def test_collect_empty_returns_empty(
         self,
         mock_now_local: MagicMock,
@@ -310,8 +310,8 @@ class TestCollectActivityChunks:
         engine = ConsolidationEngine(tmp_path / "anima", "t")
         assert engine.collect_activity_chunks(hours=24, model="m") == []
 
-    @patch("core.memory.consolidation.ConsolidationEngine.compute_activity_budget")
-    @patch("core.memory.activity.ActivityLogger")
+    @patch("core.memory.maintenance.consolidation.ConsolidationEngine.compute_activity_budget")
+    @patch("core.memory.activity.logger.ActivityLogger")
     def test_collect_uses_fixed_date_window(
         self,
         mock_logger_cls: MagicMock,
@@ -383,7 +383,7 @@ class TestDailyEpisodeWriteHelpers:
         episode_path.write_text(original, encoding="utf-8")
 
         with patch(
-            "core.memory.consolidation.now_local",
+            "core.memory.maintenance.consolidation.now_local",
             return_value=datetime(2026, 6, 10, 2, 0, tzinfo=ZoneInfo("Asia/Tokyo")),
         ):
             written = engine.write_consolidated_episode(

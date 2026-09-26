@@ -381,7 +381,7 @@ class TestFinalizeAlwaysRuns:
         finalize = AsyncMock()
         with (
             patch("core.config.models.load_config", return_value=config),
-            patch("core.memory.conversation.ConversationMemory") as conv,
+            patch("core.memory.conversation.memory.ConversationMemory") as conv,
             patch("core.tooling.handler.active_session_type", SimpleNamespace(reset=MagicMock())),
         ):
             conv.return_value.finalize_if_session_ended = finalize

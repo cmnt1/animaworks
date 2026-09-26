@@ -211,7 +211,7 @@ class TestEstimateCost:
         assert cost == pytest.approx(5.0 + 25.0)
 
     def test_unknown_model_warns(self, tul: TokenUsageLogger, caplog):
-        from core.memory.fact_observability import reset_warning_rate_limits
+        from core.memory.facts.observability import reset_warning_rate_limits
 
         reset_warning_rate_limits()
         with caplog.at_level("WARNING", logger="animaworks.token_usage"):

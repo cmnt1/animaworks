@@ -83,7 +83,7 @@ from core.execution.reminder import (
     msg_tool_loop_warning,
 )
 from core.memory import MemoryManager
-from core.memory.shortterm import ShortTermMemory
+from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.builder import build_system_prompt
 from core.prompt.context import ContextTracker
 from core.schemas import ImageData, ModelConfig

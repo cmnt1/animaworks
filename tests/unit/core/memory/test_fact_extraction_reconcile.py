@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from core.memory import fact_extraction
-from core.memory.fact_extraction import extract_and_store_facts
-from core.memory.fact_invalidation import ReconcileAction, ReconcileResult
-from core.memory.facts import FactRecord
+from core.memory.facts import extraction as fact_extraction
+from core.memory.facts.extraction import extract_and_store_facts
+from core.memory.facts.invalidation import ReconcileAction, ReconcileResult
+from core.memory.facts.store import FactRecord
 
 
 @pytest.mark.asyncio

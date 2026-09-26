@@ -91,7 +91,7 @@ def _log_tool_use(
 ) -> None:
     """Record a tool call to the activity log (best-effort, never raises)."""
     try:
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         meta: dict[str, Any] = {"args": _sanitise_tool_args(tool_name, tool_input)}
@@ -127,7 +127,7 @@ def _log_tool_result(
     is identical to the previous behaviour.
     """
     try:
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         meta: dict[str, Any] = {"tool_use_id": tool_use_id, "is_error": is_error}

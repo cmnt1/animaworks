@@ -277,7 +277,7 @@ def cli_dispatch():
     # Attach relevant ACTION-RULES to stderr (before loading tool modules).
     if anima_dir_str:
         try:
-            from core.memory.action_gate import (
+            from core.tooling.action_gate import (
                 action_tool_name_from_cli_argv,
                 find_action_rules,
                 format_action_rules,

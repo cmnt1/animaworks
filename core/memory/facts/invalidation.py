@@ -14,8 +14,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from core.memory.fact_invalidation_llm import classify_fact_relation as _classify_fact_relation
-from core.memory.facts import (
+from core.memory.facts.invalidation_llm import classify_fact_relation as _classify_fact_relation
+from core.memory.facts.store import (
     FactRecord,
     FactRecordUpdate,
     fact_entity_names,

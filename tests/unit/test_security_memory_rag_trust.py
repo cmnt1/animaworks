@@ -383,7 +383,7 @@ class TestConsolidationOriginChain:
     """ConsolidationEngine respects origin during RAG index updates."""
 
     def test_has_external_origin_detects_external_web(self, tmp_path):
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(tmp_path, "test")
         knowledge_dir = tmp_path / "knowledge"
@@ -395,7 +395,7 @@ class TestConsolidationOriginChain:
         assert engine._has_external_origin_in_files(["external.md"]) is True
 
     def test_has_external_origin_detects_mixed(self, tmp_path):
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(tmp_path, "test")
         knowledge_dir = tmp_path / "knowledge"
@@ -407,7 +407,7 @@ class TestConsolidationOriginChain:
         assert engine._has_external_origin_in_files(["mixed.md"]) is True
 
     def test_has_external_origin_clean_files_return_false(self, tmp_path):
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(tmp_path, "test")
         knowledge_dir = tmp_path / "knowledge"
@@ -419,7 +419,7 @@ class TestConsolidationOriginChain:
         assert engine._has_external_origin_in_files(["clean.md"]) is False
 
     def test_has_external_origin_no_frontmatter_returns_false(self, tmp_path):
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(tmp_path, "test")
         knowledge_dir = tmp_path / "knowledge"
@@ -431,14 +431,14 @@ class TestConsolidationOriginChain:
         assert engine._has_external_origin_in_files(["legacy.md"]) is False
 
     def test_has_external_origin_nonexistent_file(self, tmp_path):
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(tmp_path, "test")
         assert engine._has_external_origin_in_files(["nonexistent.md"]) is False
 
     def test_update_rag_index_downgrades_with_external_source(self, tmp_path):
         """When source_files contain external origins, origin is downgraded."""
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(tmp_path, "test")
         knowledge_dir = tmp_path / "knowledge"
@@ -472,7 +472,7 @@ class TestConsolidationOriginChain:
 
     def test_update_rag_index_keeps_consolidation_without_external(self, tmp_path):
         """When no external sources, origin stays 'consolidation'."""
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(tmp_path, "test")
         knowledge_dir = tmp_path / "knowledge"
@@ -505,7 +505,7 @@ class TestConsolidationOriginChain:
             assert call_kwargs[1].get("origin") == "consolidation"
 
     def test_consolidation_external_is_in_external_origins(self):
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         assert "consolidation_external" in ConsolidationEngine._EXTERNAL_ORIGINS
         assert "external_web" in ConsolidationEngine._EXTERNAL_ORIGINS

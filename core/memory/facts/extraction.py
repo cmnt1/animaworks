@@ -12,10 +12,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from core.memory.fact_config import _resolve_extraction_config
-from core.memory.fact_invalidation import ReconcileAction, ReconcileResult, reconcile_new_fact
-from core.memory.fact_observability import warn_rate_limited
-from core.memory.facts import FactRecord, append_fact_records, fact_file_for_record
+from core.memory.facts.config import _resolve_extraction_config
+from core.memory.facts.invalidation import ReconcileAction, ReconcileResult, reconcile_new_fact
+from core.memory.facts.observability import warn_rate_limited
+from core.memory.facts.store import FactRecord, append_fact_records, fact_file_for_record
 from core.memory.ontology.default import ExtractedEntity, ExtractedFact
 from core.time_utils import now_iso
 
@@ -379,7 +379,7 @@ def _reconcile_extracted_facts(
 
 def _upsert_fact_entities(anima_dir: Path, records: list[FactRecord]) -> dict[str, Any] | None:
     try:
-        from core.memory.entity_index import upsert_entities_from_facts
+        from core.memory.facts.entity_index import upsert_entities_from_facts
 
         return upsert_entities_from_facts(anima_dir, records)
     except Exception as exc:
@@ -394,7 +394,7 @@ def _upsert_fact_entities(anima_dir: Path, records: list[FactRecord]) -> dict[st
 
 def _entity_keys_for_records(registry: dict[str, Any], records: list[FactRecord]) -> set[str]:
     try:
-        from core.memory.entity_index import entity_keys_for_records
+        from core.memory.facts.entity_index import entity_keys_for_records
 
         return entity_keys_for_records(registry, records)
     except Exception as exc:
@@ -447,7 +447,7 @@ def _sync_entity_collection(
     entity_keys: set[str] | None = None,
 ) -> bool:
     try:
-        from core.memory.entity_index import sync_entity_collection
+        from core.memory.facts.entity_index import sync_entity_collection
 
         indexer = memory._rag._get_indexer()
         vector_store = getattr(indexer, "vector_store", None) if indexer is not None else None

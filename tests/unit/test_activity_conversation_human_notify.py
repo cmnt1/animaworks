@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.activity import ActivityEntry, ActivityLogger
+from core.memory.activity.logger import ActivityEntry, ActivityLogger
 
 
 @pytest.fixture
@@ -146,9 +146,7 @@ class TestEntriesToMessages:
 
 
 class TestConversationViewLoad:
-    def test_human_events_appear_on_default_thread(
-        self, activity_logger: ActivityLogger, anima_dir: Path
-    ) -> None:
+    def test_human_events_appear_on_default_thread(self, activity_logger: ActivityLogger, anima_dir: Path) -> None:
         activity_logger.log(
             "human_notify",
             content="Body text",
@@ -169,9 +167,7 @@ class TestConversationViewLoad:
         assert "human_notify" in types
         assert "human_reply" in types
 
-    def test_inbox_ctx_human_events_still_on_default(
-        self, activity_logger: ActivityLogger
-    ) -> None:
+    def test_inbox_ctx_human_events_still_on_default(self, activity_logger: ActivityLogger) -> None:
         """human_notify/human_reply with inbox channel still appear on default."""
         activity_logger.log(
             "human_notify",

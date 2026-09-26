@@ -11,13 +11,13 @@ entry boundaries and timestamps).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
-from core.memory.consolidation import ConsolidationEngine
+from core.memory.maintenance.consolidation import ConsolidationEngine
 
-_FIXED_NOW = datetime(2026, 8, 20, 12, 0, 0, tzinfo=timezone.utc)
+_FIXED_NOW = datetime(2026, 8, 20, 12, 0, 0, tzinfo=UTC)
 
 _EMDASH = "\u2014"
 
@@ -55,7 +55,7 @@ class TestEmitDashEpisodeHeading:
         engine = self._make_engine(tmp_path)
         _write_episode(engine.episodes_dir)
 
-        with patch("core.memory.consolidation.now_local", return_value=_FIXED_NOW):
+        with patch("core.memory.maintenance.consolidation.now_local", return_value=_FIXED_NOW):
             entries = engine._collect_recent_episodes(hours=24)
 
         # Two em-dash sections should be split into two entries (not a single
@@ -77,7 +77,7 @@ class TestEmitDashEpisodeHeading:
         path = engine.episodes_dir / f"{target}.md"
         path.write_text("## 09:00-11:00 レガシー形式\n\n- 何らかの内容\n", encoding="utf-8")
 
-        with patch("core.memory.consolidation.now_local", return_value=_FIXED_NOW):
+        with patch("core.memory.maintenance.consolidation.now_local", return_value=_FIXED_NOW):
             entries = engine._collect_recent_episodes(hours=24)
 
         assert len(entries) == 1

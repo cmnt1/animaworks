@@ -1438,7 +1438,7 @@ def test_atomic_rebuild_reset_failure_keeps_live_db(data_dir: Path, monkeypatch)
 
 
 def test_atomic_rebuild_verify_failure_rolls_back_vector_and_bm25(data_dir: Path, monkeypatch) -> None:
-    from core.memory.bm25 import longterm_bm25_dirty_path, longterm_bm25_index_path
+    from core.memory.retrieval.bm25 import longterm_bm25_dirty_path, longterm_bm25_index_path
 
     anima_dir = data_dir / "animas" / "sora"
     (anima_dir / "knowledge").mkdir(parents=True)

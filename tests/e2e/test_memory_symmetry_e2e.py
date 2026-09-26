@@ -45,13 +45,23 @@ def anima_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("ANIMAWORKS_DATA_DIR", str(data_dir))
 
     from core.paths import _prompt_cache
+
     _prompt_cache.clear()
 
     anima = data_dir / "animas" / "test_anima"
     anima.mkdir(parents=True)
 
-    for sub in ("knowledge", "episodes", "skills", "procedures", "state",
-                "vectordb", "shortterm", "activity_log", "archive"):
+    for sub in (
+        "knowledge",
+        "episodes",
+        "skills",
+        "procedures",
+        "state",
+        "vectordb",
+        "shortterm",
+        "activity_log",
+        "archive",
+    ):
         (anima / sub).mkdir()
 
     yield anima
@@ -83,21 +93,26 @@ def _write_skill(base_dir: Path, name: str, description: str, body: str) -> Path
 
 def test_knowledge_lifecycle_report_and_protection(anima_dir):
     """Full lifecycle: create → report success → verify protection from forgetting."""
-    from core.memory.activity import ActivityLogger
-    from core.memory.forgetting import ForgettingEngine
+    from core.memory.activity.logger import ActivityLogger
+    from core.memory.maintenance.forgetting import ForgettingEngine
     from core.memory.manager import MemoryManager
     from core.memory.rag.indexer import MemoryIndexer
     from core.memory.rag.store import ChromaVectorStore
     from core.tooling.handler import ToolHandler
 
     # Step 1: Create knowledge with tracking metadata
-    _write_knowledge(anima_dir, "policy.md", "# Policy\n\nImportant rules for deployment and operations.\n\n## Details\n\nThis policy document covers the comprehensive guidelines for system administration, security protocols, and operational procedures. All team members must follow these rules. The policy includes multiple sections for adequate indexing length.\n\n## Security\n\nAll access must be authenticated and authorized.\n", {
-        "confidence": 0.7,
-        "success_count": 0,
-        "failure_count": 0,
-        "version": 1,
-        "last_used": "",
-    })
+    _write_knowledge(
+        anima_dir,
+        "policy.md",
+        "# Policy\n\nImportant rules for deployment and operations.\n\n## Details\n\nThis policy document covers the comprehensive guidelines for system administration, security protocols, and operational procedures. All team members must follow these rules. The policy includes multiple sections for adequate indexing length.\n\n## Security\n\nAll access must be authenticated and authorized.\n",
+        {
+            "confidence": 0.7,
+            "success_count": 0,
+            "failure_count": 0,
+            "version": 1,
+            "last_used": "",
+        },
+    )
 
     # Step 2: Report success twice via handler
     mm = MemoryManager(anima_dir)
@@ -105,14 +120,17 @@ def test_knowledge_lifecycle_report_and_protection(anima_dir):
     handler._anima_dir = anima_dir
     handler._memory = mm
     from unittest.mock import MagicMock
+
     handler._model_config = MagicMock()
     handler._activity = ActivityLogger(anima_dir)
 
     for _ in range(2):
-        result = handler._handle_report_knowledge_outcome({
-            "path": "knowledge/policy.md",
-            "success": True,
-        })
+        result = handler._handle_report_knowledge_outcome(
+            {
+                "path": "knowledge/policy.md",
+                "success": True,
+            }
+        )
         assert "成功" in result
 
     # Step 3: Verify metadata
@@ -146,35 +164,52 @@ def test_knowledge_lifecycle_report_and_protection(anima_dir):
 @pytest.mark.asyncio
 async def test_reconsolidation_targets_e2e(anima_dir):
     """Files with any failure or confidence < 0.6 become targets."""
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
+    from core.memory.maintenance.reconsolidation import ReconsolidationEngine
     from core.memory.manager import MemoryManager
-    from core.memory.reconsolidation import ReconsolidationEngine
 
     # Create files with varying quality signals
-    _write_knowledge(anima_dir, "failing.md", "Bad info.", {
-        "confidence": 0.3,
-        "success_count": 0,
-        "failure_count": 3,
-        "version": 1,
-    })
-    _write_knowledge(anima_dir, "healthy.md", "Good info.", {
-        "confidence": 0.9,
-        "success_count": 5,
-        "failure_count": 0,
-        "version": 1,
-    })
-    _write_knowledge(anima_dir, "borderline.md", "Okay info.", {
-        "confidence": 0.55,
-        "success_count": 1,
-        "failure_count": 1,
-        "version": 1,
-    })
+    _write_knowledge(
+        anima_dir,
+        "failing.md",
+        "Bad info.",
+        {
+            "confidence": 0.3,
+            "success_count": 0,
+            "failure_count": 3,
+            "version": 1,
+        },
+    )
+    _write_knowledge(
+        anima_dir,
+        "healthy.md",
+        "Good info.",
+        {
+            "confidence": 0.9,
+            "success_count": 5,
+            "failure_count": 0,
+            "version": 1,
+        },
+    )
+    _write_knowledge(
+        anima_dir,
+        "borderline.md",
+        "Okay info.",
+        {
+            "confidence": 0.55,
+            "success_count": 1,
+            "failure_count": 1,
+            "version": 1,
+        },
+    )
 
     mm = MemoryManager(anima_dir)
     al = ActivityLogger(anima_dir)
     engine = ReconsolidationEngine(
-        anima_dir, "test_anima",
-        memory_manager=mm, activity_logger=al,
+        anima_dir,
+        "test_anima",
+        memory_manager=mm,
+        activity_logger=al,
     )
 
     targets = await engine.find_knowledge_reconsolidation_targets()
@@ -190,8 +225,8 @@ async def test_reconsolidation_targets_e2e(anima_dir):
 
 def test_backward_compatibility_legacy_knowledge(anima_dir):
     """Knowledge files without new metadata fields should work without errors."""
-    from core.memory.activity import ActivityLogger
-    from core.memory.forgetting import ForgettingEngine
+    from core.memory.activity.logger import ActivityLogger
+    from core.memory.maintenance.forgetting import ForgettingEngine
     from core.memory.manager import MemoryManager
     from core.tooling.handler import ToolHandler
 
@@ -199,10 +234,15 @@ def test_backward_compatibility_legacy_knowledge(anima_dir):
     _write_knowledge(anima_dir, "legacy_no_meta.md", "Old content without frontmatter")
 
     # Legacy file: only confidence
-    _write_knowledge(anima_dir, "legacy_partial.md", "Content with partial meta", {
-        "confidence": 0.7,
-        "created_at": "2026-01-01",
-    })
+    _write_knowledge(
+        anima_dir,
+        "legacy_partial.md",
+        "Content with partial meta",
+        {
+            "confidence": 0.7,
+            "created_at": "2026-01-01",
+        },
+    )
 
     mm = MemoryManager(anima_dir)
 
@@ -222,10 +262,12 @@ def test_backward_compatibility_legacy_knowledge(anima_dir):
     handler._model_config = MagicMock()
     handler._activity = ActivityLogger(anima_dir)
 
-    result = handler._handle_report_knowledge_outcome({
-        "path": "knowledge/legacy_partial.md",
-        "success": True,
-    })
+    result = handler._handle_report_knowledge_outcome(
+        {
+            "path": "knowledge/legacy_partial.md",
+            "success": True,
+        }
+    )
     assert "成功" in result
 
     meta_after = mm.read_knowledge_metadata(anima_dir / "knowledge" / "legacy_partial.md")

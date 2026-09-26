@@ -7,9 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-
-from core.memory.activity import ActivityEntry, ActivityLogger
-
+from core.memory.activity.logger import ActivityEntry, ActivityLogger
 
 # ── Helpers ───────────────────────────────────────────────
 
@@ -85,8 +83,7 @@ class TestChatTriggerGrouping:
     def test_user_chat_grouped(self) -> None:
         """message_received(human) → tool_use → response_sent → 1 chat group."""
         entries = [
-            _make("message_received", _ts(BASE, 0), from_person="admin",
-                  content="hello", meta={"from_type": "human"}),
+            _make("message_received", _ts(BASE, 0), from_person="admin", content="hello", meta={"from_type": "human"}),
             _make("tool_use", _ts(BASE, 1), tool="web_search"),
             _make("response_sent", _ts(BASE, 2), content="result"),
         ]
@@ -99,8 +96,7 @@ class TestChatTriggerGrouping:
     def test_chat_open_without_response(self) -> None:
         """message_received without response_sent → is_open=True."""
         entries = [
-            _make("message_received", _ts(BASE, 0), from_person="admin",
-                  content="hello", meta={"from_type": "human"}),
+            _make("message_received", _ts(BASE, 0), from_person="admin", content="hello", meta={"from_type": "human"}),
             _make("tool_use", _ts(BASE, 1), tool="read_file"),
         ]
         groups = _group(entries)
@@ -115,8 +111,9 @@ class TestDmTriggerGrouping:
     def test_anima_dm_grouped(self) -> None:
         """message_received(anima) → response_sent → 1 dm group."""
         entries = [
-            _make("message_received", _ts(BASE, 0), from_person="taro",
-                  content="task done", meta={"from_type": "anima"}),
+            _make(
+                "message_received", _ts(BASE, 0), from_person="taro", content="task done", meta={"from_type": "anima"}
+            ),
             _make("response_sent", _ts(BASE, 1), content="thanks"),
         ]
         groups = _group(entries)
@@ -165,10 +162,8 @@ class TestToolPairing:
         """tool_use + tool_result with same tool_use_id → merged."""
         entries = [
             _make("heartbeat_start", _ts(BASE, 0)),
-            _make("tool_use", _ts(BASE, 1), tool="web_search",
-                  meta={"tool_use_id": "tu_001"}),
-            _make("tool_result", _ts(BASE, 1), tool="web_search",
-                  content="3 results", meta={"tool_use_id": "tu_001"}),
+            _make("tool_use", _ts(BASE, 1), tool="web_search", meta={"tool_use_id": "tu_001"}),
+            _make("tool_result", _ts(BASE, 1), tool="web_search", content="3 results", meta={"tool_use_id": "tu_001"}),
             _make("heartbeat_end", _ts(BASE, 2)),
         ]
         groups = _group(entries)
@@ -186,8 +181,7 @@ class TestToolPairing:
         """tool_use without matching tool_result → tool_result=None in event dict."""
         entries = [
             _make("heartbeat_start", _ts(BASE, 0)),
-            _make("tool_use", _ts(BASE, 1), tool="web_search",
-                  meta={"tool_use_id": "tu_orphan"}),
+            _make("tool_use", _ts(BASE, 1), tool="web_search", meta={"tool_use_id": "tu_orphan"}),
             _make("heartbeat_end", _ts(BASE, 2)),
         ]
         groups = _group(entries)
@@ -199,8 +193,13 @@ class TestToolPairing:
     def test_orphan_tool_result_becomes_single(self) -> None:
         """tool_result without matching tool_use → single group."""
         entries = [
-            _make("tool_result", _ts(BASE, 0), tool="web_search",
-                  content="orphan result", meta={"tool_use_id": "tu_missing"}),
+            _make(
+                "tool_result",
+                _ts(BASE, 0),
+                tool="web_search",
+                content="orphan result",
+                meta={"tool_use_id": "tu_missing"},
+            ),
         ]
         groups = _group(entries)
         assert len(groups) == 1
@@ -242,12 +241,10 @@ class TestMixedTriggerGrouping:
             # channel_post at +5 is within time window of heartbeat → absorbed
             _make("channel_post", _ts(BASE, 5), channel="ops"),
             # Chat (1 group)
-            _make("message_received", _ts(BASE, 10), from_person="admin",
-                  meta={"from_type": "human"}, content="hi"),
+            _make("message_received", _ts(BASE, 10), from_person="admin", meta={"from_type": "human"}, content="hi"),
             _make("response_sent", _ts(BASE, 11), content="hello"),
             # DM (1 group)
-            _make("message_received", _ts(BASE, 20), from_person="taro",
-                  meta={"from_type": "anima"}, content="report"),
+            _make("message_received", _ts(BASE, 20), from_person="taro", meta={"from_type": "anima"}, content="report"),
             _make("response_sent", _ts(BASE, 21), content="acknowledged"),
             # Cron (1 group)
             _make("cron_executed", _ts(BASE, 30), meta={"task_name": "backup"}),
@@ -413,9 +410,7 @@ class TestCtxAwareParallelGrouping:
         assert hb["event_count"] == 3
         assert hb["summary"] == "ok"
         # Heartbeat must not swallow task events
-        assert not any(
-            (e.get("ctx") or "").startswith("task:") for e in hb["events"]
-        )
+        assert not any((e.get("ctx") or "").startswith("task:") for e in hb["events"])
 
     def test_empty_ctx_legacy_serial_matches_prior_behaviour(self) -> None:
         """Empty-ctx stream remains anima-serial (golden: one open slot)."""
@@ -479,10 +474,7 @@ class TestCtxAwareParallelGrouping:
 
         # channel_post absorbed into most recent finalized (heartbeat) or single
         non_task = [g for g in groups if g["type"] != "task_exec"]
-        assert any(
-            any(e["type"] == "channel_post" for e in g["events"])
-            for g in non_task
-        )
+        assert any(any(e["type"] == "channel_post" for e in g["events"]) for g in non_task)
 
     def test_group_exposes_ctx_field(self) -> None:
         entries = [

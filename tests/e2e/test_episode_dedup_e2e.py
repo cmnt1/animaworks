@@ -107,7 +107,7 @@ class TestDifferentialFinalizationE2E:
     @pytest.mark.asyncio
     async def test_finalize_full_flow(self, data_dir):
         """Full finalization: turns → episode → state update → resolution."""
-        from core.memory.conversation import ConversationMemory, ConversationTurn
+        from core.memory.conversation.memory import ConversationMemory, ConversationTurn
         from core.schemas import ModelConfig
         from tests.helpers.filesystem import create_anima_dir
         from tests.helpers.mocks import make_litellm_response, patch_litellm
@@ -187,7 +187,7 @@ class TestDifferentialFinalizationE2E:
     @pytest.mark.asyncio
     async def test_no_duplicate_episodes_on_double_finalize(self, data_dir):
         """Calling finalize_session twice does not create duplicate episodes."""
-        from core.memory.conversation import ConversationMemory, ConversationTurn
+        from core.memory.conversation.memory import ConversationMemory, ConversationTurn
         from core.schemas import ModelConfig
         from tests.helpers.filesystem import create_anima_dir
         from tests.helpers.mocks import make_litellm_response, patch_litellm

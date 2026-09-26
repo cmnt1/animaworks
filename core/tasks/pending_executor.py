@@ -1025,7 +1025,7 @@ class PendingTaskExecutor:
         worker_slot: BackgroundWorkerSlot | None = None,
     ) -> str:
         """Run an LLM task and record its complete activity lifecycle."""
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         task_id, title, _description = _task_activity_identity(task_desc)
         submitted_by = str(task_desc.get("submitted_by") or "unknown")
@@ -1099,7 +1099,7 @@ class PendingTaskExecutor:
         default and is never failed.  Returns ``None`` when no override
         applies.
         """
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         requested = task_desc.get("model")
         if not isinstance(requested, str) or not requested.strip():
@@ -1207,7 +1207,7 @@ class PendingTaskExecutor:
         if completed_results:
             dep_context = self._build_dependency_context(task_desc, completed_results)
 
-        from core.memory.streaming_journal import StreamingJournal
+        from core.memory.conversation.streaming_journal import StreamingJournal
         from core.paths import load_prompt
 
         trigger = f"task:{task_id}"

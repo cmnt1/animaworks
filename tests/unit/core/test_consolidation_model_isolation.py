@@ -11,7 +11,7 @@ import pytest
 
 from core._agent_cycle import CycleMixin
 from core.execution.base import ExecutionResult
-from core.memory.consolidation import ConsolidationEngine
+from core.memory.maintenance.consolidation import ConsolidationEngine
 from core.schemas import CycleResult, ModelConfig
 
 
@@ -415,7 +415,7 @@ async def test_weekly_consolidation_does_not_scan_whole_memory_library(report, e
     with (
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
-        patch("core.memory.hygiene.scan_memory_hygiene", return_value=report) as scan,
+        patch("core.memory.maintenance.hygiene.scan_memory_hygiene", return_value=report) as scan,
         patch("core._anima_lifecycle.load_prompt", side_effect=capture_prompt),
     ):
         await anima._run_weekly_consolidation(_FakeEngine())
@@ -427,7 +427,7 @@ async def test_weekly_consolidation_does_not_scan_whole_memory_library(report, e
 @pytest.mark.asyncio
 async def test_weekly_consolidation_passes_forgetting_candidates_to_prompt():
     """Weekly consolidation passes forgetting candidates into the prompt."""
-    from core.memory.forgetting import ForgettingCandidate
+    from core.memory.maintenance.forgetting import ForgettingCandidate
 
     status_config = ModelConfig(model="bedrock/qwen.qwen3-next-80b-a3b", resolved_mode="S")
     anima = _make_lifecycle(status_config)
@@ -454,7 +454,7 @@ async def test_weekly_consolidation_passes_forgetting_candidates_to_prompt():
     with (
         patch("core.config.load_config", return_value=_mock_config()),
         patch("core.config.resolve_execution_mode", return_value="D"),
-        patch("core.memory.forgetting.ForgettingEngine", return_value=fake_engine),
+        patch("core.memory.maintenance.forgetting.ForgettingEngine", return_value=fake_engine),
         patch("core._anima_lifecycle.load_prompt", side_effect=capture_prompt),
     ):
         await anima._run_weekly_consolidation(fake_engine)

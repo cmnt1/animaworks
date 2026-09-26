@@ -281,7 +281,7 @@ class Messenger:
         # Activity Log: record message_sent for all send paths (S/A/B/CLI)
         if not skip_logging:
             try:
-                from core.memory.activity import ActivityLogger
+                from core.memory.activity.logger import ActivityLogger
 
                 anima_dir = self.shared_dir.parent / "animas" / self.anima_name
                 if anima_dir.exists():
@@ -573,7 +573,7 @@ class Messenger:
 
         # New source: unified activity log
         try:
-            from core.memory.activity import ActivityLogger
+            from core.memory.activity.logger import ActivityLogger
 
             anima_dir = self.shared_dir.parent / "animas" / self.anima_name
             if anima_dir.exists():

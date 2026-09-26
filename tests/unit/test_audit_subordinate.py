@@ -101,17 +101,23 @@ class TestAuditSubordinateSummary:
         handler = _make_handler(tmp_path, "sakura")
         sub_dir = _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        _write_activity(sub_dir, [
-            {"type": "tool_use", "tool": "read_file", "summary": "read foo.py"},
-            {"type": "tool_use", "tool": "read_file", "summary": "read bar.py"},
-            {"type": "tool_use", "tool": "execute_command", "summary": "ls"},
-            {"type": "message_sent", "to": "sakura", "content": "done"},
-        ])
+        _write_activity(
+            sub_dir,
+            [
+                {"type": "tool_use", "tool": "read_file", "summary": "read foo.py"},
+                {"type": "tool_use", "tool": "read_file", "summary": "read bar.py"},
+                {"type": "tool_use", "tool": "execute_command", "summary": "ls"},
+                {"type": "message_sent", "to": "sakura", "content": "done"},
+            ],
+        )
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"name": "hinata"})
 
@@ -122,10 +128,13 @@ class TestAuditSubordinateSummary:
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura", model="openai/gpt-4.1")
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"name": "hinata"})
 
@@ -135,10 +144,13 @@ class TestAuditSubordinateSummary:
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"name": "hinata"})
 
@@ -148,15 +160,21 @@ class TestAuditSubordinateSummary:
         handler = _make_handler(tmp_path, "sakura")
         sub_dir = _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        _write_activity(sub_dir, [
-            {"type": "error", "summary": "API timeout on tool call", "meta": {"phase": "tool_use"}},
-            {"type": "error", "summary": "Connection refused", "meta": {"phase": "heartbeat"}},
-        ])
+        _write_activity(
+            sub_dir,
+            [
+                {"type": "error", "summary": "API timeout on tool call", "meta": {"phase": "tool_use"}},
+                {"type": "error", "summary": "Connection refused", "meta": {"phase": "heartbeat"}},
+            ],
+        )
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"name": "hinata"})
 
@@ -167,15 +185,21 @@ class TestAuditSubordinateSummary:
         handler = _make_handler(tmp_path, "sakura")
         sub_dir = _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        _write_activity(sub_dir, [
-            {"type": "message_sent", "to": "sakura", "content": "report"},
-            {"type": "message_sent", "to": "rin", "content": "hi"},
-        ])
+        _write_activity(
+            sub_dir,
+            [
+                {"type": "message_sent", "to": "sakura", "content": "report"},
+                {"type": "message_sent", "to": "rin", "content": "hi"},
+            ],
+        )
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"name": "hinata"})
 
@@ -191,16 +215,22 @@ class TestAuditSubordinateReport:
         handler = _make_handler(tmp_path, "sakura")
         sub_dir = _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        _write_activity(sub_dir, [
-            {"type": "heartbeat_end", "summary": "Checked pending tasks, all clear"},
-            {"type": "tool_use", "tool": "github_pr_review", "content": "Reviewed PR #42"},
-            {"type": "message_sent", "to": "rin", "content": "Task complete"},
-        ])
+        _write_activity(
+            sub_dir,
+            [
+                {"type": "heartbeat_end", "summary": "Checked pending tasks, all clear"},
+                {"type": "tool_use", "tool": "github_pr_review", "content": "Reviewed PR #42"},
+                {"type": "message_sent", "to": "rin", "content": "Task complete"},
+            ],
+        )
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"name": "hinata", "mode": "report"})
 
@@ -221,16 +251,22 @@ class TestAuditSubordinateReport:
         handler = _make_handler(tmp_path, "sakura")
         sub_dir = _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        _write_activity(sub_dir, [
-            {"type": "tool_use", "tool": "Read", "content": "read foo"},
-            {"type": "tool_use", "tool": "Read", "content": "read bar"},
-            {"type": "tool_use", "tool": "Write", "content": "write baz"},
-        ])
+        _write_activity(
+            sub_dir,
+            [
+                {"type": "tool_use", "tool": "Read", "content": "read foo"},
+                {"type": "tool_use", "tool": "Read", "content": "read bar"},
+                {"type": "tool_use", "tool": "Write", "content": "write baz"},
+            ],
+        )
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"name": "hinata", "mode": "report"})
 
@@ -247,16 +283,22 @@ class TestAuditSubordinateReport:
         handler = _make_handler(tmp_path, "sakura")
         sub_dir = _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        _write_activity(sub_dir, [
-            {"type": "heartbeat_end", "summary": "check"},
-            {"type": "tool_use", "tool": "web_search", "content": "searching"},
-            {"type": "error", "summary": "timeout", "meta": {"phase": "tool_use"}},
-        ])
+        _write_activity(
+            sub_dir,
+            [
+                {"type": "heartbeat_end", "summary": "check"},
+                {"type": "tool_use", "tool": "web_search", "content": "searching"},
+                {"type": "error", "summary": "timeout", "meta": {"phase": "tool_use"}},
+            ],
+        )
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"name": "hinata", "mode": "report"})
 
@@ -266,10 +308,13 @@ class TestAuditSubordinateReport:
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"name": "hinata", "mode": "report"})
 
@@ -280,18 +325,24 @@ class TestAuditSubordinateReport:
         handler = _make_handler(tmp_path, "sakura")
         sub_dir = _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        _write_activity(sub_dir, [
-            {
-                "type": "response_sent",
-                "content": "Here is my answer",
-                "meta": {"thinking_text": "SECRET_INTERNAL_THOUGHT"},
-            },
-        ])
+        _write_activity(
+            sub_dir,
+            [
+                {
+                    "type": "response_sent",
+                    "content": "Here is my answer",
+                    "meta": {"thinking_text": "SECRET_INTERNAL_THOUGHT"},
+                },
+            ],
+        )
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"name": "hinata", "mode": "report"})
 
@@ -307,11 +358,14 @@ class TestAuditSubordinatePermissions:
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
         _setup_subordinate(tmp_path, "rin", supervisor="hinata")
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "rin": {"supervisor": "hinata"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "rin": {"supervisor": "hinata"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"name": "rin"})
 
@@ -322,10 +376,13 @@ class TestAuditSubordinatePermissions:
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "mio", supervisor="owner")
 
-        p1, p2, _ = _patches(tmp_path, {
-            "sakura": {},
-            "mio": {"supervisor": "owner"},
-        })
+        p1, p2, _ = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "mio": {"supervisor": "owner"},
+            },
+        )
         with p1:
             result = handler.handle("audit_subordinate", {"name": "mio"})
 
@@ -350,11 +407,14 @@ class TestAuditSubordinateBatch:
         _write_activity(dir_h, [{"type": "heartbeat_end", "summary": "hinata check"}])
         _write_activity(dir_r, [{"type": "heartbeat_end", "summary": "rin check"}])
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "rin": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "rin": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {})
 
@@ -378,11 +438,14 @@ class TestAuditSubordinateBatch:
 
         _write_activity(dir_h, [{"type": "heartbeat_end", "summary": "hinata only"}])
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "rin": {"supervisor": "hinata"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "rin": {"supervisor": "hinata"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"direct_only": True})
 
@@ -397,10 +460,13 @@ class TestAuditSubordinateParams:
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"name": "hinata"})
 
@@ -410,10 +476,13 @@ class TestAuditSubordinateParams:
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"name": "hinata", "hours": 48})
 
@@ -423,10 +492,13 @@ class TestAuditSubordinateParams:
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"name": "hinata", "hours": 999})
 
@@ -436,10 +508,13 @@ class TestAuditSubordinateParams:
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"name": "hinata", "hours": 0})
 
@@ -450,10 +525,13 @@ class TestAuditSubordinateParams:
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"name": "hinata", "days": 3})
 
@@ -464,10 +542,13 @@ class TestAuditSubordinateParams:
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"name": "hinata", "hours": 12, "days": 3})
 
@@ -488,19 +569,30 @@ class TestAuditSubordinateSince:
         ts_early = base.replace(hour=8, minute=0, second=0, microsecond=0).isoformat()
         ts_late = base.replace(hour=14, minute=0, second=0, microsecond=0).isoformat()
 
-        _write_activity(sub_dir, [
-            {"type": "heartbeat_end", "summary": "Early HB", "ts": ts_early},
-            {"type": "heartbeat_end", "summary": "Late HB", "ts": ts_late},
-        ])
+        _write_activity(
+            sub_dir,
+            [
+                {"type": "heartbeat_end", "summary": "Early HB", "ts": ts_early},
+                {"type": "heartbeat_end", "summary": "Late HB", "ts": ts_late},
+            ],
+        )
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
-            result = handler.handle("audit_subordinate", {
-                "name": "hinata", "mode": "report", "since": "13:00",
-            })
+            result = handler.handle(
+                "audit_subordinate",
+                {
+                    "name": "hinata",
+                    "mode": "report",
+                    "since": "13:00",
+                },
+            )
 
         assert "Late HB" in result
         assert "Early HB" not in result
@@ -510,14 +602,22 @@ class TestAuditSubordinateSince:
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
-            result = handler.handle("audit_subordinate", {
-                "name": "hinata", "mode": "report", "since": "09:00",
-            })
+            result = handler.handle(
+                "audit_subordinate",
+                {
+                    "name": "hinata",
+                    "mode": "report",
+                    "since": "09:00",
+                },
+            )
 
         assert "09:00" in result
         assert "24h" not in result
@@ -527,14 +627,21 @@ class TestAuditSubordinateSince:
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
-            result = handler.handle("audit_subordinate", {
-                "name": "hinata", "since": "10:30",
-            })
+            result = handler.handle(
+                "audit_subordinate",
+                {
+                    "name": "hinata",
+                    "since": "10:30",
+                },
+            )
 
         assert "10:30" in result
 
@@ -544,11 +651,14 @@ class TestAuditSubordinateSince:
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
         _setup_subordinate(tmp_path, "rin", supervisor="sakura")
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "rin": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "rin": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"since": "09:00"})
 
@@ -560,14 +670,21 @@ class TestAuditSubordinateSince:
         handler = _make_handler(tmp_path, "sakura")
         _setup_subordinate(tmp_path, "hinata", supervisor="sakura")
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
-            result = handler.handle("audit_subordinate", {
-                "name": "hinata", "since": "invalid",
-            })
+            result = handler.handle(
+                "audit_subordinate",
+                {
+                    "name": "hinata",
+                    "since": "invalid",
+                },
+            )
 
         assert "24h" in result
         assert "PermissionDenied" not in result
@@ -588,15 +705,21 @@ class TestMergedTimeline:
         ts_mid = (base - timedelta(hours=2)).isoformat()
         ts_late = (base - timedelta(hours=1)).isoformat()
 
-        _write_activity(dir_a, [
-            {"type": "heartbeat_end", "summary": "Alice HB", "ts": ts_early},
-            {"type": "response_sent", "content": "Alice response", "ts": ts_late},
-        ])
-        _write_activity(dir_b, [
-            {"type": "error", "summary": "Bob error", "ts": ts_mid, "meta": {"phase": "tool_use"}},
-        ])
+        _write_activity(
+            dir_a,
+            [
+                {"type": "heartbeat_end", "summary": "Alice HB", "ts": ts_early},
+                {"type": "response_sent", "content": "Alice response", "ts": ts_late},
+            ],
+        )
+        _write_activity(
+            dir_b,
+            [
+                {"type": "error", "summary": "Bob error", "ts": ts_mid, "meta": {"phase": "tool_use"}},
+            ],
+        )
 
-        from core.memory.audit import AuditAggregator
+        from core.memory.activity.audit import AuditAggregator
 
         result = AuditAggregator.generate_merged_timeline([dir_a, dir_b], hours=24)
 
@@ -610,11 +733,14 @@ class TestMergedTimeline:
     def test_merged_timeline_includes_anima_names(self, tmp_path):
         """Each timeline entry is prefixed with the anima name."""
         dir_a = _setup_subordinate(tmp_path, "alice", supervisor="boss")
-        _write_activity(dir_a, [
-            {"type": "heartbeat_end", "summary": "checking tasks"},
-        ])
+        _write_activity(
+            dir_a,
+            [
+                {"type": "heartbeat_end", "summary": "checking tasks"},
+            ],
+        )
 
-        from core.memory.audit import AuditAggregator
+        from core.memory.activity.audit import AuditAggregator
 
         result = AuditAggregator.generate_merged_timeline([dir_a], hours=24)
 
@@ -625,15 +751,21 @@ class TestMergedTimeline:
         dir_a = _setup_subordinate(tmp_path, "alice", supervisor="boss")
         dir_b = _setup_subordinate(tmp_path, "bob", supervisor="boss")
 
-        _write_activity(dir_a, [
-            {"type": "tool_use", "tool": "Read", "content": "foo"},
-            {"type": "tool_use", "tool": "Read", "content": "bar"},
-        ])
-        _write_activity(dir_b, [
-            {"type": "tool_use", "tool": "Write", "content": "baz"},
-        ])
+        _write_activity(
+            dir_a,
+            [
+                {"type": "tool_use", "tool": "Read", "content": "foo"},
+                {"type": "tool_use", "tool": "Read", "content": "bar"},
+            ],
+        )
+        _write_activity(
+            dir_b,
+            [
+                {"type": "tool_use", "tool": "Write", "content": "baz"},
+            ],
+        )
 
-        from core.memory.audit import AuditAggregator
+        from core.memory.activity.audit import AuditAggregator
 
         result = AuditAggregator.generate_merged_timeline([dir_a, dir_b], hours=24)
 
@@ -644,12 +776,15 @@ class TestMergedTimeline:
         """tool_use events must not appear as individual timeline entries."""
         dir_a = _setup_subordinate(tmp_path, "alice", supervisor="boss")
 
-        _write_activity(dir_a, [
-            {"type": "tool_use", "tool": "Read", "content": "reading"},
-            {"type": "heartbeat_end", "summary": "HB done"},
-        ])
+        _write_activity(
+            dir_a,
+            [
+                {"type": "tool_use", "tool": "Read", "content": "reading"},
+                {"type": "heartbeat_end", "summary": "HB done"},
+            ],
+        )
 
-        from core.memory.audit import AuditAggregator
+        from core.memory.activity.audit import AuditAggregator
 
         result = AuditAggregator.generate_merged_timeline([dir_a], hours=24)
 
@@ -660,7 +795,7 @@ class TestMergedTimeline:
         """Empty anima dirs produce no-activity message."""
         dir_a = _setup_subordinate(tmp_path, "alice", supervisor="boss")
 
-        from core.memory.audit import AuditAggregator
+        from core.memory.activity.audit import AuditAggregator
 
         result = AuditAggregator.generate_merged_timeline([dir_a], hours=24)
 
@@ -671,15 +806,21 @@ class TestMergedTimeline:
         dir_a = _setup_subordinate(tmp_path, "alice", supervisor="boss")
         dir_b = _setup_subordinate(tmp_path, "bob", supervisor="boss")
 
-        _write_activity(dir_a, [
-            {"type": "heartbeat_end", "summary": "HB1"},
-            {"type": "tool_use", "tool": "Read", "content": "x"},
-        ])
-        _write_activity(dir_b, [
-            {"type": "error", "summary": "timeout", "meta": {}},
-        ])
+        _write_activity(
+            dir_a,
+            [
+                {"type": "heartbeat_end", "summary": "HB1"},
+                {"type": "tool_use", "tool": "Read", "content": "x"},
+            ],
+        )
+        _write_activity(
+            dir_b,
+            [
+                {"type": "error", "summary": "timeout", "meta": {}},
+            ],
+        )
 
-        from core.memory.audit import AuditAggregator
+        from core.memory.activity.audit import AuditAggregator
 
         result = AuditAggregator.generate_merged_timeline([dir_a, dir_b], hours=24)
 
@@ -692,18 +833,27 @@ class TestMergedTimeline:
         dir_a = _setup_subordinate(tmp_path, "alice", supervisor="sakura")
         dir_b = _setup_subordinate(tmp_path, "bob", supervisor="sakura")
 
-        _write_activity(dir_a, [
-            {"type": "heartbeat_end", "summary": "Alice check"},
-        ])
-        _write_activity(dir_b, [
-            {"type": "response_sent", "content": "Bob reply"},
-        ])
+        _write_activity(
+            dir_a,
+            [
+                {"type": "heartbeat_end", "summary": "Alice check"},
+            ],
+        )
+        _write_activity(
+            dir_b,
+            [
+                {"type": "response_sent", "content": "Bob reply"},
+            ],
+        )
 
-        p1, p2, p3 = _patches(tmp_path, {
-            "sakura": {},
-            "alice": {"supervisor": "sakura"},
-            "bob": {"supervisor": "sakura"},
-        })
+        p1, p2, p3 = _patches(
+            tmp_path,
+            {
+                "sakura": {},
+                "alice": {"supervisor": "sakura"},
+                "bob": {"supervisor": "sakura"},
+            },
+        )
         with p1, p2, p3:
             result = handler.handle("audit_subordinate", {"mode": "report"})
 

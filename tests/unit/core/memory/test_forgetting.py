@@ -24,7 +24,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.forgetting import (
+from core.memory.maintenance.forgetting import (
     ForgettingEngine,
 )
 from core.time_utils import now_jst
@@ -498,12 +498,18 @@ class TestListForgettingCandidates:
         old_low = (now_jst() - timedelta(days=120)).isoformat()
         chunks = [
             _make_chunk(
-                doc_id="a", access_count=0, activation_level="low",
-                low_activation_since=old_low, source_file="knowledge/same.md",
+                doc_id="a",
+                access_count=0,
+                activation_level="low",
+                low_activation_since=old_low,
+                source_file="knowledge/same.md",
             ),
             _make_chunk(
-                doc_id="b", access_count=0, activation_level="low",
-                low_activation_since=old_low, source_file="knowledge/same.md",
+                doc_id="b",
+                access_count=0,
+                activation_level="low",
+                low_activation_since=old_low,
+                source_file="knowledge/same.md",
             ),
         ]
         with (
@@ -519,8 +525,11 @@ class TestListForgettingCandidates:
         old_low = (now_jst() - timedelta(days=120)).isoformat()
         chunks = [
             _make_chunk(
-                doc_id=f"c{i}", access_count=0, activation_level="low",
-                low_activation_since=old_low, source_file=f"knowledge/f{i}.md",
+                doc_id=f"c{i}",
+                access_count=0,
+                activation_level="low",
+                low_activation_since=old_low,
+                source_file=f"knowledge/f{i}.md",
             )
             for i in range(5)
         ]
@@ -537,12 +546,18 @@ class TestListForgettingCandidates:
         old = (now_jst() - timedelta(days=100)).isoformat()
         chunks = [
             _make_chunk(
-                doc_id="older", access_count=0, activation_level="low",
-                low_activation_since=very_old, source_file="knowledge/older.md",
+                doc_id="older",
+                access_count=0,
+                activation_level="low",
+                low_activation_since=very_old,
+                source_file="knowledge/older.md",
             ),
             _make_chunk(
-                doc_id="younger", access_count=0, activation_level="low",
-                low_activation_since=old, source_file="knowledge/younger.md",
+                doc_id="younger",
+                access_count=0,
+                activation_level="low",
+                low_activation_since=old,
+                source_file="knowledge/younger.md",
             ),
         ]
         with (

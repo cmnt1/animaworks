@@ -92,7 +92,7 @@ class ExecutorFactoryMixin:
                         t("executor.unavailable_no_configured_fallback", mode=mode.upper(), model=active_config.model)
                     ) from exc
                 from core.execution.fallback_activity import log_model_fallback
-                from core.memory.activity import ActivityLogger
+                from core.memory.activity.logger import ActivityLogger
 
                 log_model_fallback(
                     ActivityLogger(self.anima_dir),

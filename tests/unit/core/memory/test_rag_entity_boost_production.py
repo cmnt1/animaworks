@@ -6,11 +6,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.memory.entity_index import upsert_entities_from_facts
-from core.memory.facts import FactRecord, append_fact_records
-from core.memory.rag_search import RAGMemorySearch
+from core.memory.facts.entity_index import upsert_entities_from_facts
+from core.memory.facts.store import FactRecord, append_fact_records
 from core.memory.retrieval.entity import EntityBoostConfig, apply_entity_boost
 from core.memory.retrieval.pipeline import PipelineResult
+from core.memory.retrieval.rag_search import RAGMemorySearch
 
 
 @pytest.fixture
@@ -97,7 +97,7 @@ def test_production_config_default_disabled_does_not_pass_entity_boost(rag_searc
         patch.object(rag_search, "_load_rag_pipeline_settings", return_value=_settings(enabled=False)),
         patch.object(rag_search, "_vector_search_primary", return_value=[{"content": "x", "score": 1.0}]),
         patch.object(rag_search, "_graph_episodes_search", return_value=[]),
-        patch("core.memory.rag_search.search_activity_log", return_value=[]),
+        patch("core.memory.retrieval.rag_search.search_activity_log", return_value=[]),
         patch("core.memory.retrieval.pipeline.RetrievalPipeline", return_value=mock_pipeline),
     ):
         rag_search.search_memory_text(
@@ -135,7 +135,7 @@ def test_production_config_enabled_passes_registry_entities_to_hybrid(rag_search
         patch.object(rag_search, "_load_rag_pipeline_settings", return_value=_settings(enabled=True)),
         patch.object(rag_search, "_vector_search_primary", return_value=[{"content": "x", "score": 1.0}]),
         patch.object(rag_search, "_graph_episodes_search", return_value=[]),
-        patch("core.memory.rag_search.search_activity_log", return_value=[]),
+        patch("core.memory.retrieval.rag_search.search_activity_log", return_value=[]),
         patch("core.memory.retrieval.pipeline.RetrievalPipeline", return_value=mock_pipeline),
     ):
         rag_search.search_memory_text(

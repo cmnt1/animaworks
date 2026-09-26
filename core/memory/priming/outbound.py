@@ -38,7 +38,7 @@ async def collect_recent_outbound(anima_dir: Path, max_entries: int = 3) -> str:
     ensuring builder.py never reads ActivityLogger directly (hippocampus model).
     """
     try:
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         activity = ActivityLogger(anima_dir)
         entries = activity.recent(
@@ -101,7 +101,7 @@ async def collect_pending_human_notifications(anima_dir: Path, *, channel: str =
     if channel not in ("chat", "heartbeat") and not channel.startswith("message:"):
         return ""
 
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
     from core.notification import notification_key_for
 
     activity = ActivityLogger(anima_dir)

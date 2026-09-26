@@ -9,7 +9,7 @@ from __future__ import annotations
 
 """Conversation view mixin for ActivityLogger.
 
-Internal module — import from :mod:`core.memory.activity` instead.
+Internal module — import from :mod:`core.memory.activity.logger` instead.
 """
 
 import json
@@ -18,11 +18,11 @@ from datetime import timedelta
 from typing import Any
 
 from core.i18n import t
-from core.memory._activity_models import (
+from core.memory.activity.format import EVENT_SETS
+from core.memory.activity.models import (
     ActivityEntry,
     time_diff,
 )
-from core.memory.activity_format import EVENT_SETS
 from core.time_utils import now_local
 
 logger = logging.getLogger("animaworks.activity")
@@ -225,7 +225,7 @@ class ConversationMixin:
         entries: list[ActivityEntry],
     ) -> list[dict[str, Any]]:
         """Convert raw activity entries to conversation messages (pair + nest tools)."""
-        from core.memory.activity_format import pair_tool_events
+        from core.memory.activity.format import pair_tool_events
 
         result_by_use_id: dict[int, ActivityEntry] = {
             id(ex.tool_use): ex.result for ex in pair_tool_events(entries) if ex.result is not None

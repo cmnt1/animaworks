@@ -18,8 +18,8 @@ from core.execution._sanitize import (
     ORIGIN_HUMAN,
     ORIGIN_UNKNOWN,
 )
-from core.memory._activity_models import ActivityEntry
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
+from core.memory.activity.models import ActivityEntry
 from core.schemas import Message
 
 # ── Message.origin_chain ──────────────────────────────────────
@@ -140,10 +140,7 @@ class TestActivityEntryOrigin:
             "content": "old entry",
             "from": "alice",
         }
-        filtered = {
-            k: v for k, v in raw.items()
-            if k in ActivityEntry.__dataclass_fields__
-        }
+        filtered = {k: v for k, v in raw.items() if k in ActivityEntry.__dataclass_fields__}
         if "from" in raw:
             filtered["from_person"] = raw["from"]
         entry = ActivityEntry(**filtered)
@@ -192,7 +189,9 @@ class TestActivityLoggerOrigin:
         assert entry.origin_chain == ["external_platform"]
 
     def test_origin_persisted_to_jsonl(
-        self, logger: ActivityLogger, anima_dir: Path,
+        self,
+        logger: ActivityLogger,
+        anima_dir: Path,
     ) -> None:
         logger.log(
             "message_received",
@@ -212,7 +211,9 @@ class TestActivityLoggerOrigin:
         assert data["origin_chain"] == ["external_platform"]
 
     def test_origin_empty_not_persisted(
-        self, logger: ActivityLogger, anima_dir: Path,
+        self,
+        logger: ActivityLogger,
+        anima_dir: Path,
     ) -> None:
         """Empty origin fields are not written to JSONL."""
         logger.log("heartbeat_start", summary="check")
@@ -227,7 +228,8 @@ class TestActivityLoggerOrigin:
         assert "origin_chain" not in data
 
     def test_origin_survives_load_entries(
-        self, logger: ActivityLogger,
+        self,
+        logger: ActivityLogger,
     ) -> None:
         """Origin fields are restored when loading entries from JSONL."""
         logger.log(
@@ -242,18 +244,22 @@ class TestActivityLoggerOrigin:
         assert entries[0].origin_chain == ["external_platform"]
 
     def test_old_entries_without_origin_load_ok(
-        self, anima_dir: Path,
+        self,
+        anima_dir: Path,
     ) -> None:
         """Pre-Phase 2 entries without origin fields load with defaults."""
         from core.time_utils import now_jst
+
         log_dir = anima_dir / "activity_log"
         today = now_jst().strftime("%Y-%m-%d")
-        entry = json.dumps({
-            "ts": now_jst().isoformat(),
-            "type": "message_received",
-            "content": "legacy entry",
-            "from": "alice",
-        })
+        entry = json.dumps(
+            {
+                "ts": now_jst().isoformat(),
+                "type": "message_received",
+                "content": "legacy entry",
+                "from": "alice",
+            }
+        )
         (log_dir / f"{today}.jsonl").write_text(entry + "\n", encoding="utf-8")
 
         al = ActivityLogger(anima_dir)
@@ -272,6 +278,7 @@ class TestReceiveExternalOrigin:
     @pytest.fixture
     def messenger(self, tmp_path: Path) -> Any:
         from core.messenger import Messenger
+
         shared = tmp_path / "shared"
         shared.mkdir(parents=True)
         return Messenger(shared, "test-anima")
@@ -293,7 +300,8 @@ class TestReceiveExternalOrigin:
         assert msg.origin_chain == [ORIGIN_EXTERNAL_PLATFORM]
 
     def test_receive_external_persists_origin_chain(
-        self, messenger: Any,
+        self,
+        messenger: Any,
     ) -> None:
         """origin_chain survives JSON serialization to inbox file."""
         msg = messenger.receive_external(
@@ -307,7 +315,8 @@ class TestReceiveExternalOrigin:
         assert data["origin_chain"] == ["external_platform"]
 
     def test_receive_external_message_source_preserved(
-        self, messenger: Any,
+        self,
+        messenger: Any,
     ) -> None:
         """source field retains platform name (not origin category)."""
         msg = messenger.receive_external(
@@ -325,22 +334,27 @@ class TestSourceToOriginMapping:
 
     def test_slack_maps_to_external_platform(self) -> None:
         from core._anima_inbox import _SOURCE_TO_ORIGIN
+
         assert _SOURCE_TO_ORIGIN["slack"] == ORIGIN_EXTERNAL_PLATFORM
 
     def test_chatwork_maps_to_external_platform(self) -> None:
         from core._anima_inbox import _SOURCE_TO_ORIGIN
+
         assert _SOURCE_TO_ORIGIN["chatwork"] == ORIGIN_EXTERNAL_PLATFORM
 
     def test_human_maps_to_human(self) -> None:
         from core._anima_inbox import _SOURCE_TO_ORIGIN
+
         assert _SOURCE_TO_ORIGIN["human"] == ORIGIN_HUMAN
 
     def test_anima_maps_to_anima(self) -> None:
         from core._anima_inbox import _SOURCE_TO_ORIGIN
+
         assert _SOURCE_TO_ORIGIN["anima"] == ORIGIN_ANIMA
 
     def test_unknown_source_fallback(self) -> None:
         from core._anima_inbox import _SOURCE_TO_ORIGIN
+
         assert _SOURCE_TO_ORIGIN.get("future_platform", ORIGIN_UNKNOWN) == ORIGIN_UNKNOWN
 
 

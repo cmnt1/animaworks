@@ -202,7 +202,7 @@ def _index_shared_collections(
     from core.memory.rag.repair import is_repair_locked
     from core.memory.rag.shared_meta import read_shared_hash, reset_shared_for_company_change, write_shared_hash
     from core.memory.rag.singleton import get_vector_store
-    from core.memory.rag_search import _compute_dir_hash
+    from core.memory.retrieval.rag_search import _compute_dir_hash
 
     ck_dir = base_dir / "common_knowledge"
     cs_dir = base_dir / "common_skills"
@@ -297,10 +297,10 @@ def _index_shared_collections(
 def index_command(args: argparse.Namespace) -> None:
     """Execute the index command."""
     try:
-        from core.memory.bm25 import rebuild_longterm_bm25_index
         from core.memory.rag import MemoryIndexer
         from core.memory.rag.repair import is_repair_locked
         from core.memory.rag.singleton import get_vector_store
+        from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index
     except ImportError:
         logger.error("RAG dependencies not installed. Run: pip install 'animaworks[rag]'")
         return
@@ -425,7 +425,7 @@ def index_command(args: argparse.Namespace) -> None:
                 logger.info("  Indexed %d chunks from conversation_summary", chunks)
 
         if not args.dry_run:
-            from core.memory.entity_index import rebuild_entity_collection
+            from core.memory.facts.entity_index import rebuild_entity_collection
 
             logger.info("Rebuilding entity collection...")
             if rebuild_entity_collection(anima_dir, vector_store=vector_store):

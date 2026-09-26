@@ -256,10 +256,10 @@ async def test_daily_consolidation_timeout_logs_once_and_continues(
     mock_forgetter = MagicMock()
     mock_forgetter.synaptic_downscaling.return_value = {"scanned": 1}
     monkeypatch.setattr(
-        "core.memory.consolidation.ConsolidationEngine",
+        "core.memory.maintenance.consolidation.ConsolidationEngine",
         _RecentEpisodesEngine,
     )
-    monkeypatch.setattr("core.memory.forgetting.ForgettingEngine", lambda *_args: mock_forgetter)
+    monkeypatch.setattr("core.memory.maintenance.forgetting.ForgettingEngine", lambda *_args: mock_forgetter)
     monkeypatch.setattr(
         "core.lifecycle.system_consolidation.run_knowledge_self_correction_if_enabled",
         AsyncMock(),

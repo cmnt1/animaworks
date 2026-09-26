@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
 from core.time_utils import today_local
 from core.tooling.handler import active_session_type
 
@@ -122,7 +122,7 @@ class TestHeartbeatReflectionE2E:
 
         with (
             patch("core.anima.AgentCore"),
-            patch("core.memory.rag_search.RAGMemorySearch.index_file", return_value=None),
+            patch("core.memory.retrieval.rag_search.RAGMemorySearch.index_file", return_value=None),
             patch("core._anima_heartbeat.ConversationMemory") as MockConv,
             patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
         ):
@@ -192,7 +192,7 @@ class TestHeartbeatReflectionE2E:
 
         with (
             patch("core.anima.AgentCore"),
-            patch("core.memory.rag_search.RAGMemorySearch.index_file", return_value=None),
+            patch("core.memory.retrieval.rag_search.RAGMemorySearch.index_file", return_value=None),
             patch("core._anima_heartbeat.ConversationMemory") as MockConv,
             patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
         ):
@@ -254,7 +254,7 @@ class TestHeartbeatReflectionE2E:
 
         with (
             patch("core.anima.AgentCore"),
-            patch("core.memory.rag_search.RAGMemorySearch.index_file", return_value=None),
+            patch("core.memory.retrieval.rag_search.RAGMemorySearch.index_file", return_value=None),
             patch("core._anima_heartbeat.ConversationMemory") as MockConv,
             patch("core._anima_heartbeat.load_prompt", return_value="prompt"),
         ):

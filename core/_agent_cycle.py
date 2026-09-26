@@ -27,7 +27,7 @@ from core._agent_prompt_log import _save_prompt_log, _save_prompt_log_end
 from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
 from core.execution.session_types import is_clean_start_session, resolve_runtime_session_type, trigger_uses_chat_session
 from core.i18n import t
-from core.memory.shortterm import SessionState, ShortTermMemory
+from core.memory.conversation.shortterm import SessionState, ShortTermMemory
 from core.prompt.builder import build_system_prompt, inject_shortterm  # noqa: F401
 from core.prompt.context import ContextTracker
 from core.prompt.tokens import estimate_tokens
@@ -172,7 +172,7 @@ class CycleMixin:
             notes="Auto-saved before session recycling",
         )
         try:
-            from core.memory.activity import ActivityLogger
+            from core.memory.activity.logger import ActivityLogger
 
             ActivityLogger(self.anima_dir).log(
                 "session_recycled",
@@ -276,7 +276,7 @@ class CycleMixin:
                 exc_info=True,
             )
             try:
-                from core.memory.activity import ActivityLogger
+                from core.memory.activity.logger import ActivityLogger
 
                 ActivityLogger(self.anima_dir).log(
                     "budget_check_failed",
@@ -309,7 +309,7 @@ class CycleMixin:
             "trigger": trigger,
         }
         try:
-            from core.memory.activity import ActivityLogger
+            from core.memory.activity.logger import ActivityLogger
 
             ActivityLogger(self.anima_dir).log(
                 "budget_exceeded",
@@ -958,7 +958,7 @@ class CycleMixin:
         # Pre-flight: check prompt size to prevent Agent SDK buffer overflow
         conv_memory = None
         if uses_chat_session:
-            from core.memory.conversation import ConversationMemory
+            from core.memory.conversation.memory import ConversationMemory
 
             conv_memory = ConversationMemory(self.anima_dir, active_model_config, thread_id=thread_id)
         system_prompt, prompt = await self._preflight_size_check(
@@ -1302,7 +1302,7 @@ class CycleMixin:
         # Pre-flight size check for streaming path
         conv_memory = None
         if uses_chat_session:
-            from core.memory.conversation import ConversationMemory
+            from core.memory.conversation.memory import ConversationMemory
 
             conv_memory = ConversationMemory(self.anima_dir, active_model_config, thread_id=thread_id)
         system_prompt, prompt = await self._preflight_size_check(
@@ -1462,7 +1462,7 @@ class CycleMixin:
                                     "summary": summary,
                                 }
                             )
-                            from core.memory.shortterm import StreamCheckpoint
+                            from core.memory.conversation.shortterm import StreamCheckpoint
 
                             shortterm.save_checkpoint(
                                 StreamCheckpoint(
@@ -1481,7 +1481,7 @@ class CycleMixin:
                             elif chunk["type"] == "thinking_delta":
                                 thinking_text_parts.append(chunk.get("text", ""))
                             if chunk["type"] == "context_update" and task_compaction_after_pending is not None:
-                                from core.memory.activity import ActivityLogger
+                                from core.memory.activity.logger import ActivityLogger
 
                                 ActivityLogger(self.anima_dir).log(
                                     "task_compacted_after",
@@ -1615,7 +1615,7 @@ class CycleMixin:
 
                     # Load checkpoint and build retry prompt
                     from core.execution._session import build_stream_retry_prompt
-                    from core.memory.shortterm import StreamCheckpoint
+                    from core.memory.conversation.shortterm import StreamCheckpoint
 
                     checkpoint = shortterm.load_checkpoint()
                     if checkpoint is None:
@@ -1696,7 +1696,7 @@ class CycleMixin:
                     tracker._input_tokens,
                 )
                 try:
-                    from core.memory.activity import ActivityLogger
+                    from core.memory.activity.logger import ActivityLogger
 
                     ActivityLogger(self.anima_dir).log(
                         "task_compacted",

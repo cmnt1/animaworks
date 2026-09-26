@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.memory.streaming_journal import StreamingJournal
+from core.memory.conversation.streaming_journal import StreamingJournal
 from core.platform.processing_lease import (
     read_processing_lease,
     write_processing_lease,

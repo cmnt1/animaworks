@@ -93,7 +93,7 @@ class TestLegacyCommunityContext:
     def legacy_backend(self, tmp_path: Path):
         with (
             patch("core.memory.rag.singleton.get_vector_store", return_value=MagicMock()),
-            patch("core.memory.rag_search.RAGMemorySearch"),
+            patch("core.memory.retrieval.rag_search.RAGMemorySearch"),
         ):
             from core.memory.backend.legacy import LegacyRAGBackend
 
@@ -108,7 +108,7 @@ class TestLegacyCommunityContext:
             {"content": "fact one", "score": 0.9, "source": "activity_log/2026-04-22.jsonl"},
             {"content": "fact two", "score": 0.7, "source": "activity_log/2026-04-22.jsonl"},
         ]
-        with patch("core.memory.bm25.search_activity_log", return_value=bm25_results):
+        with patch("core.memory.retrieval.bm25.search_activity_log", return_value=bm25_results):
             result = await legacy_backend.get_recent_facts("test query")
 
         assert len(result) == 2
@@ -119,7 +119,7 @@ class TestLegacyCommunityContext:
 
     async def test_legacy_recent_facts_bm25_failure(self, legacy_backend) -> None:
         with patch(
-            "core.memory.bm25.search_activity_log",
+            "core.memory.retrieval.bm25.search_activity_log",
             side_effect=RuntimeError("BM25 failed"),
         ):
             result = await legacy_backend.get_recent_facts("test query")

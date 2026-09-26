@@ -56,7 +56,7 @@ def _make_handler(tmp_path: Path, anima_name: str = "test_anima"):
     handler._process_supervisor = None
     handler._read_paths: set[str] = set()
 
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
 
     handler._activity = MagicMock(spec=ActivityLogger)
 

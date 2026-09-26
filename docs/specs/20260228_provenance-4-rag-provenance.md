@@ -69,7 +69,7 @@ Day 2: 別の人間が Anima A にチャット → priming._channel_c_related_kn
 | `core/memory/rag/indexer.py` | Modify | `index_file()` / `_extract_metadata()` に `origin` 引数追加 |
 | `core/memory/manager.py` | Modify | `append_episode()` / `write_knowledge()` に `origin` 引数追加、`index_file()` に伝播 |
 | `core/memory/priming.py` | Modify | `_channel_c_related_knowledge()` で検索結果を trust 別に分離出力 |
-| `core/memory/consolidation.py` | Modify | consolidation で knowledge 書き込み時に `origin="consolidation"` を付与 |
+| `core/memory/maintenance/consolidation.py` | Modify | consolidation で knowledge 書き込み時に `origin="consolidation"` を付与 |
 
 #### Change 1: MemoryIndexer.index_file() / _extract_metadata() 拡張
 
@@ -237,7 +237,7 @@ class PrimingResult:
 
 #### Change 6: Consolidation での origin 付与
 
-**Target**: `core/memory/consolidation.py`
+**Target**: `core/memory/maintenance/consolidation.py`
 
 `write_knowledge()` / `write_knowledge_with_meta()` 呼び出し時に `origin="consolidation"` を引数で渡す。これにより、consolidation で生成された knowledge チャンクは `origin="consolidation"` → trust="medium" として扱われる。
 
@@ -269,7 +269,7 @@ class PrimingResult:
 | # | Task | Target |
 |---|------|--------|
 | 4-2-1 | `_process_inbox_messages()` で `append_episode(entry, origin=msg_origin)` | `core/anima.py` |
-| 4-2-2 | Consolidation で `write_knowledge(..., origin="consolidation")` | `core/memory/consolidation.py` |
+| 4-2-2 | Consolidation で `write_knowledge(..., origin="consolidation")` | `core/memory/maintenance/consolidation.py` |
 
 **Completion condition**: 外部メッセージ由来の episode チャンクに `origin="external_platform"` が付くこと
 

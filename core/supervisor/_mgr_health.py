@@ -146,7 +146,7 @@ class HealthMixin:
             if animas_dir is not None:
                 anima_dir = Path(animas_dir) / anima_name
                 if (anima_dir / "activity_log").is_dir():
-                    from core.memory.activity import ActivityLogger
+                    from core.memory.activity.logger import ActivityLogger
 
                     recent: list[dict[str, Any]] = []
                     for e in ActivityLogger(anima_dir).recent(days=1)[-3:]:

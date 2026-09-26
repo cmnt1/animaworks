@@ -13,11 +13,11 @@ and correctly fall back to ``get_consolidation_llm_kwargs()["model"]`` or
 ``AnimaDefaults().model`` at runtime.
 
 Modified files under test:
-  - core/memory/consolidation.py
+  - core/memory/maintenance/consolidation.py
   - core/memory/contradiction.py
-  - core/memory/distillation.py
-  - core/memory/forgetting.py
-  - core/memory/reconsolidation.py
+  - core/memory/maintenance/distillation.py
+  - core/memory/maintenance/forgetting.py
+  - core/memory/maintenance/reconsolidation.py
   - core/prompt/context.py
   - core/lifecycle.py
   - core/supervisor/manager.py
@@ -111,10 +111,10 @@ class TestNoHardcodedModelDefaults:
     # The modified files
     MODIFIED_FILES = [
         "core/lifecycle.py",
-        "core/memory/consolidation.py",
-        "core/memory/distillation.py",
-        "core/memory/forgetting.py",
-        "core/memory/reconsolidation.py",
+        "core/memory/maintenance/consolidation.py",
+        "core/memory/maintenance/distillation.py",
+        "core/memory/maintenance/forgetting.py",
+        "core/memory/maintenance/reconsolidation.py",
         "core/prompt/context.py",
         "core/supervisor/manager.py",
     ]
@@ -130,9 +130,7 @@ class TestNoHardcodedModelDefaults:
         root = self._project_root()
 
         # Pattern: model: str = "anthropic/claude-sonnet-4-*"
-        hardcoded_pattern = re.compile(
-            r'model:\s*str\s*=\s*["\']anthropic/claude-sonnet-4'
-        )
+        hardcoded_pattern = re.compile(r'model:\s*str\s*=\s*["\']anthropic/claude-sonnet-4')
 
         violations: list[str] = []
         for relpath in self.MODIFIED_FILES:
@@ -144,10 +142,7 @@ class TestNoHardcodedModelDefaults:
                 if hardcoded_pattern.search(line):
                     violations.append(f"{relpath}:{i}: {line.strip()}")
 
-        assert not violations, (
-            "Found hardcoded model defaults in function signatures:\n"
-            + "\n".join(violations)
-        )
+        assert not violations, "Found hardcoded model defaults in function signatures:\n" + "\n".join(violations)
 
     def test_no_hardcoded_model_in_local_assignments(self):
         """No local variable should be assigned the old hardcoded model string."""
@@ -155,9 +150,7 @@ class TestNoHardcodedModelDefaults:
 
         # Pattern: model = "anthropic/claude-sonnet-4-*" as a local assignment
         # Exclude ConsolidationConfig class definition (llm_model field is expected)
-        assignment_pattern = re.compile(
-            r'^\s+model\s*=\s*["\']anthropic/claude-sonnet-4'
-        )
+        assignment_pattern = re.compile(r'^\s+model\s*=\s*["\']anthropic/claude-sonnet-4')
 
         violations: list[str] = []
         for relpath in self.MODIFIED_FILES:
@@ -172,10 +165,7 @@ class TestNoHardcodedModelDefaults:
                         continue
                     violations.append(f"{relpath}:{i}: {line.strip()}")
 
-        assert not violations, (
-            "Found hardcoded model in local variable assignments:\n"
-            + "\n".join(violations)
-        )
+        assert not violations, "Found hardcoded model in local variable assignments:\n" + "\n".join(violations)
 
     def test_empty_string_default_pattern_present(self):
         """Verify that the empty-string default pattern (model: str = '') is used."""
@@ -208,8 +198,8 @@ class TestNoHardcodedModelDefaults:
         # NOTE: contradiction.py deleted and forgetting.py's LLM merge removed
         # when machine memory reorganization was retired.
         expected_fallback_files = [
-            "core/memory/distillation.py",
-            "core/memory/reconsolidation.py",
+            "core/memory/maintenance/distillation.py",
+            "core/memory/maintenance/reconsolidation.py",
         ]
 
         fallback_pattern = re.compile(
@@ -226,9 +216,8 @@ class TestNoHardcodedModelDefaults:
             if not fallback_pattern.search(content):
                 missing.append(relpath)
 
-        assert not missing, (
-            "Expected 'if not model: ... get_consolidation_llm_kwargs()[\"model\"]' in:\n"
-            + "\n".join(missing)
+        assert not missing, "Expected 'if not model: ... get_consolidation_llm_kwargs()[\"model\"]' in:\n" + "\n".join(
+            missing
         )
 
 

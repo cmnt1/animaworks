@@ -15,12 +15,12 @@ Note: ``_fetch_related_knowledge`` was removed in the consolidation
 refactor; its tests have been removed accordingly.
 """
 
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from core.memory.consolidation import ConsolidationEngine
+import pytest
 
+from core.memory.maintenance.consolidation import ConsolidationEngine
 
 # ── Fixtures ────────────────────────────────────────────
 
@@ -69,13 +69,16 @@ class TestUpdateRagIndexInjection:
 
         # Create a test knowledge file
         (anima_dir / "knowledge" / "test.md").write_text(
-            "test content", encoding="utf-8",
+            "test content",
+            encoding="utf-8",
         )
 
-        with patch("core.memory.rag.MemoryIndexer") as MockIndexer, \
-             patch(
-                 "core.memory.rag.singleton.get_vector_store",
-             ) as mock_get_vs:
+        with (
+            patch("core.memory.rag.MemoryIndexer") as MockIndexer,
+            patch(
+                "core.memory.rag.singleton.get_vector_store",
+            ) as mock_get_vs,
+        ):
             mock_indexer_inst = MagicMock()
             MockIndexer.return_value = mock_indexer_inst
 
@@ -92,13 +95,16 @@ class TestUpdateRagIndexInjection:
         engine = ConsolidationEngine(anima_dir, "test")  # No rag_store
 
         (anima_dir / "knowledge" / "test.md").write_text(
-            "test content", encoding="utf-8",
+            "test content",
+            encoding="utf-8",
         )
 
-        with patch("core.memory.rag.MemoryIndexer") as MockIndexer, \
-             patch(
-                 "core.memory.rag.singleton.get_vector_store",
-             ) as mock_get_vs:
+        with (
+            patch("core.memory.rag.MemoryIndexer") as MockIndexer,
+            patch(
+                "core.memory.rag.singleton.get_vector_store",
+            ) as mock_get_vs,
+        ):
             singleton_store = MagicMock()
             mock_get_vs.return_value = singleton_store
             mock_indexer_inst = MagicMock()
@@ -109,7 +115,9 @@ class TestUpdateRagIndexInjection:
             # Should call get_vector_store since no injected store
             mock_get_vs.assert_called_once_with("test")
             MockIndexer.assert_called_once_with(
-                singleton_store, "test", anima_dir,
+                singleton_store,
+                "test",
+                anima_dir,
             )
 
     def test_noop_when_filenames_empty(self, anima_dir: Path):
@@ -135,16 +143,20 @@ class TestRebuildRagIndexInjection:
 
         # Create test files to index
         (anima_dir / "knowledge" / "k1.md").write_text(
-            "knowledge", encoding="utf-8",
+            "knowledge",
+            encoding="utf-8",
         )
         (anima_dir / "episodes" / "2026-02-19.md").write_text(
-            "episode", encoding="utf-8",
+            "episode",
+            encoding="utf-8",
         )
 
-        with patch("core.memory.rag.MemoryIndexer") as MockIndexer, \
-             patch(
-                 "core.memory.rag.singleton.get_vector_store",
-             ) as mock_get_vs:
+        with (
+            patch("core.memory.rag.MemoryIndexer") as MockIndexer,
+            patch(
+                "core.memory.rag.singleton.get_vector_store",
+            ) as mock_get_vs,
+        ):
             mock_indexer_inst = MagicMock()
             MockIndexer.return_value = mock_indexer_inst
 
@@ -160,13 +172,16 @@ class TestRebuildRagIndexInjection:
         engine = ConsolidationEngine(anima_dir, "test")
 
         (anima_dir / "knowledge" / "k1.md").write_text(
-            "knowledge", encoding="utf-8",
+            "knowledge",
+            encoding="utf-8",
         )
 
-        with patch("core.memory.rag.MemoryIndexer") as MockIndexer, \
-             patch(
-                 "core.memory.rag.singleton.get_vector_store",
-             ) as mock_get_vs:
+        with (
+            patch("core.memory.rag.MemoryIndexer") as MockIndexer,
+            patch(
+                "core.memory.rag.singleton.get_vector_store",
+            ) as mock_get_vs,
+        ):
             singleton_store = MagicMock()
             mock_get_vs.return_value = singleton_store
             mock_indexer_inst = MagicMock()
@@ -176,5 +191,7 @@ class TestRebuildRagIndexInjection:
 
             mock_get_vs.assert_called_once_with("test")
             MockIndexer.assert_called_once_with(
-                singleton_store, "test", anima_dir,
+                singleton_store,
+                "test",
+                anima_dir,
             )

@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.memory.activity import ActivityLogger
+from core.memory.activity.logger import ActivityLogger
 
 
 @pytest.fixture()
@@ -21,7 +21,7 @@ def activity_logger(tmp_path: Path) -> ActivityLogger:
 
 class TestEmitLiveEvent:
     def test_visible_tool_use_emits_event_file(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+        with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
             activity_logger.log("tool_use", tool="delegate_task", summary="task delegation")
 
         event_dir = tmp_path / "run" / "events" / "testanima"
@@ -35,7 +35,7 @@ class TestEmitLiveEvent:
         assert data["data"]["tool"] == "delegate_task"
 
     def test_any_tool_use_emits(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+        with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
             activity_logger.log("tool_use", tool="Read", summary="/foo/bar.py")
 
         event_dir = tmp_path / "run" / "events" / "testanima"
@@ -46,7 +46,7 @@ class TestEmitLiveEvent:
         assert data["tool"] == "Read"
 
     def test_tool_result_emits_normalized_payload(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+        with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
             activity_logger.log(
                 "tool_result",
                 tool="Bash",
@@ -67,8 +67,8 @@ class TestEmitLiveEvent:
         other_logger = ActivityLogger(other_dir)
 
         with (
-            patch("core.memory.activity.get_data_dir", return_value=tmp_path),
-            patch("core.memory.activity.time.monotonic", return_value=100.0),
+            patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path),
+            patch("core.memory.activity.logger.time.monotonic", return_value=100.0),
         ):
             for index in range(7):
                 activity_logger.log("tool_use", tool="Read", summary=str(index))
@@ -79,8 +79,8 @@ class TestEmitLiveEvent:
         assert len(list((tmp_path / "run" / "events" / "other").glob("ta_*.json"))) == 1
 
         with (
-            patch("core.memory.activity.get_data_dir", return_value=tmp_path),
-            patch("core.memory.activity.time.monotonic", return_value=101.0),
+            patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path),
+            patch("core.memory.activity.logger.time.monotonic", return_value=101.0),
         ):
             activity_logger.log("tool_result", tool="Read", content="ok")
 
@@ -89,7 +89,7 @@ class TestEmitLiveEvent:
         assert next(event for event in events if event["kind"] == "tool_result")["dropped"] == 2
 
     def test_inbox_processing_start_emits(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+        with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
             activity_logger.log("inbox_processing_start", summary="processing")
 
         event_dir = tmp_path / "run" / "events" / "testanima"
@@ -97,14 +97,14 @@ class TestEmitLiveEvent:
         assert len(files) == 1
 
     def test_non_live_event_does_not_emit(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+        with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
             activity_logger.log("message_received", content="hello")
 
         event_dir = tmp_path / "run" / "events" / "testanima"
         assert not event_dir.exists() or len(list(event_dir.glob("ta_*.json"))) == 0
 
     def test_heartbeat_start_does_not_emit(self, activity_logger: ActivityLogger, tmp_path: Path):
-        with patch("core.memory.activity.get_data_dir", return_value=tmp_path):
+        with patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path):
             activity_logger.log("heartbeat_start", summary="heartbeat")
 
         event_dir = tmp_path / "run" / "events" / "testanima"
@@ -112,7 +112,7 @@ class TestEmitLiveEvent:
 
     def test_emit_failure_does_not_break_log(self, activity_logger: ActivityLogger, tmp_path: Path):
         """_emit_live_event failure should not prevent the log entry from being written."""
-        with patch("core.memory.activity.get_data_dir", side_effect=OSError("disk full")):
+        with patch("core.memory.activity.logger.get_data_dir", side_effect=OSError("disk full")):
             entry = activity_logger.log("tool_use", tool="Bash", summary="ls")
 
         assert entry.tool == "Bash"
@@ -125,8 +125,8 @@ class TestEmitLiveEvent:
 def test_task_lifecycle_survives_tool_rate_limit(activity_logger, tmp_path, event_type):
     """A task completion must reach observers even when tool traffic is limited."""
     with (
-        patch("core.memory.activity.get_data_dir", return_value=tmp_path),
-        patch("core.memory.activity.time.monotonic", return_value=100.0),
+        patch("core.memory.activity.logger.get_data_dir", return_value=tmp_path),
+        patch("core.memory.activity.logger.time.monotonic", return_value=100.0),
     ):
         for _ in range(7):
             activity_logger.log("tool_use", tool="Read")

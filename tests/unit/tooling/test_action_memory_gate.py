@@ -38,7 +38,7 @@ def handler(anima_dir: Path):
 
 
 def test_find_action_rules_returns_only_above_threshold(anima_dir: Path, monkeypatch) -> None:
-    from core.memory import action_gate
+    from core.tooling import action_gate
 
     results = [
         FakeRule("r-high", "## [ACTION-RULE] high", 0.95),
@@ -52,7 +52,7 @@ def test_find_action_rules_returns_only_above_threshold(anima_dir: Path, monkeyp
 
 
 def test_find_action_rules_sorts_by_score_desc(anima_dir: Path, monkeypatch) -> None:
-    from core.memory import action_gate
+    from core.tooling import action_gate
 
     results = [
         FakeRule("r1", "body", 0.81),
@@ -67,7 +67,7 @@ def test_find_action_rules_sorts_by_score_desc(anima_dir: Path, monkeypatch) -> 
 
 
 def test_find_action_rules_caps_at_three(anima_dir: Path, monkeypatch) -> None:
-    from core.memory import action_gate
+    from core.tooling import action_gate
 
     results = [FakeRule(f"r{i}", "body", 0.90 + i * 0.01) for i in range(6)]
     monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: results)
@@ -78,7 +78,7 @@ def test_find_action_rules_caps_at_three(anima_dir: Path, monkeypatch) -> None:
 
 
 def test_find_action_rules_truncates_body_to_2000(anima_dir: Path, monkeypatch) -> None:
-    from core.memory import action_gate
+    from core.tooling import action_gate
 
     long_body = "x" * 5000
     monkeypatch.setattr(
@@ -93,7 +93,7 @@ def test_find_action_rules_truncates_body_to_2000(anima_dir: Path, monkeypatch) 
 
 
 def test_find_action_rules_returns_empty_on_search_exception(anima_dir: Path, monkeypatch) -> None:
-    from core.memory import action_gate
+    from core.tooling import action_gate
 
     def raise_search(*args, **kwargs):
         raise RuntimeError("search unavailable")
@@ -104,13 +104,13 @@ def test_find_action_rules_returns_empty_on_search_exception(anima_dir: Path, mo
 
 
 def test_find_action_rules_empty_tool_name(anima_dir: Path) -> None:
-    from core.memory import action_gate
+    from core.tooling import action_gate
 
     assert action_gate.find_action_rules(anima_dir, "", {}) == []
 
 
 def test_format_action_rules_contains_tag_and_body() -> None:
-    from core.memory.action_gate import ActionRule, format_action_rules
+    from core.tooling.action_gate import ActionRule, format_action_rules
 
     rendered = format_action_rules(
         [ActionRule(rule_id="mei/knowledge/rule.md#0", content="## [ACTION-RULE] check", score=0.87)]
@@ -122,13 +122,13 @@ def test_format_action_rules_contains_tag_and_body() -> None:
 
 
 def test_format_action_rules_empty_returns_empty_string() -> None:
-    from core.memory.action_gate import format_action_rules
+    from core.tooling.action_gate import format_action_rules
 
     assert format_action_rules([]) == ""
 
 
 def test_handler_appends_rules_to_result(anima_dir: Path, handler, monkeypatch) -> None:
-    from core.memory import action_gate
+    from core.tooling import action_gate
 
     rule = FakeRule(
         "rule-1",
@@ -145,7 +145,7 @@ def test_handler_appends_rules_to_result(anima_dir: Path, handler, monkeypatch) 
 
 
 def test_handler_without_action_rules_returns_result_unchanged(anima_dir: Path, handler, monkeypatch) -> None:
-    from core.memory import action_gate
+    from core.tooling import action_gate
 
     monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [])
 
@@ -155,7 +155,7 @@ def test_handler_without_action_rules_returns_result_unchanged(anima_dir: Path, 
 
 
 def test_handler_attaches_for_core_side_effect_tool(anima_dir: Path, handler, monkeypatch) -> None:
-    from core.memory import action_gate
+    from core.tooling import action_gate
     from core.tooling.handler import ToolHandler
 
     memory = MagicMock()

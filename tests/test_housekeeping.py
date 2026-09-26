@@ -4,7 +4,7 @@ from __future__ import annotations
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for core.memory.housekeeping and related modules."""
+"""Tests for core.memory.maintenance.housekeeping and related modules."""
 
 import json
 import os
@@ -121,7 +121,7 @@ class TestHousekeepingConfig:
 
     @pytest.mark.asyncio
     async def test_run_housekeeping_rotates_vector_worker_log(self, tmp_path: Path):
-        from core.memory.housekeeping import run_housekeeping
+        from core.memory.maintenance.housekeeping import run_housekeeping
 
         logs = tmp_path / "logs"
         logs.mkdir()
@@ -138,7 +138,7 @@ class TestHousekeepingConfig:
 
     @pytest.mark.asyncio
     async def test_run_housekeeping_rotates_suppressed_messages_log(self, tmp_path: Path):
-        from core.memory.housekeeping import run_housekeeping
+        from core.memory.maintenance.housekeeping import run_housekeeping
 
         state_dir = tmp_path / "animas" / "alice" / "state"
         state_dir.mkdir(parents=True)
@@ -256,14 +256,14 @@ class TestRotateDaemonLog:
     """Test daemon log rotation."""
 
     def test_skips_when_file_not_found(self, tmp_path: Path):
-        from core.memory.housekeeping import _rotate_daemon_log
+        from core.memory.maintenance.housekeeping import _rotate_daemon_log
 
         result = _rotate_daemon_log(tmp_path / "nonexistent.log", 100, 5)
         assert result["skipped"] is True
         assert result["reason"] == "file_not_found"
 
     def test_skips_when_under_size(self, tmp_path: Path):
-        from core.memory.housekeeping import _rotate_daemon_log
+        from core.memory.maintenance.housekeeping import _rotate_daemon_log
 
         log = tmp_path / "server-daemon.log"
         log.write_text("small content")
@@ -271,7 +271,7 @@ class TestRotateDaemonLog:
         assert result["skipped"] is True
 
     def test_prunes_generations_when_current_under_size(self, tmp_path: Path):
-        from core.memory.housekeeping import _rotate_daemon_log
+        from core.memory.maintenance.housekeeping import _rotate_daemon_log
 
         log = tmp_path / "server-daemon.log"
         log.write_text("small content")
@@ -288,7 +288,7 @@ class TestRotateDaemonLog:
         assert not (tmp_path / "server-daemon.log.3").exists()
 
     def test_rotates_when_over_size(self, tmp_path: Path):
-        from core.memory.housekeeping import _rotate_daemon_log
+        from core.memory.maintenance.housekeeping import _rotate_daemon_log
 
         log = tmp_path / "server-daemon.log"
         log.write_bytes(b"x" * (2 * 1024 * 1024))  # 2MB
@@ -300,7 +300,7 @@ class TestRotateDaemonLog:
         assert (tmp_path / "server-daemon.log.1").exists()
 
     def test_shifts_existing_generations(self, tmp_path: Path):
-        from core.memory.housekeeping import _rotate_daemon_log
+        from core.memory.maintenance.housekeeping import _rotate_daemon_log
 
         log = tmp_path / "server-daemon.log"
         log.write_bytes(b"x" * (2 * 1024 * 1024))
@@ -314,7 +314,7 @@ class TestRotateDaemonLog:
         assert (tmp_path / "server-daemon.log.3").read_text() == "gen2"
 
     def test_deletes_over_limit_generations(self, tmp_path: Path):
-        from core.memory.housekeeping import _rotate_daemon_log
+        from core.memory.maintenance.housekeeping import _rotate_daemon_log
 
         log = tmp_path / "server-daemon.log"
         log.write_bytes(b"x" * (2 * 1024 * 1024))
@@ -333,13 +333,13 @@ class TestCleanupDmArchives:
     """Test DM archive cleanup."""
 
     def test_skips_when_dir_not_found(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_dm_archives
+        from core.memory.maintenance.housekeeping import _cleanup_dm_archives
 
         result = _cleanup_dm_archives(tmp_path / "nonexistent", 30)
         assert result["skipped"] is True
 
     def test_deletes_old_archives(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_dm_archives
+        from core.memory.maintenance.housekeeping import _cleanup_dm_archives
 
         old_archive = tmp_path / "alice-bob.20260101.archive.jsonl"
         old_archive.write_text("{}\n")
@@ -355,7 +355,7 @@ class TestCleanupDmArchives:
         assert recent_archive.exists()
 
     def test_ignores_non_archive_files(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_dm_archives
+        from core.memory.maintenance.housekeeping import _cleanup_dm_archives
 
         normal = tmp_path / "alice-bob.jsonl"
         normal.write_text("{}\n")
@@ -374,13 +374,13 @@ class TestCleanupCronLogs:
     """Test cron log cleanup."""
 
     def test_skips_when_dir_not_found(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_cron_logs
+        from core.memory.maintenance.housekeeping import _cleanup_cron_logs
 
         result = _cleanup_cron_logs(tmp_path / "nonexistent", 30)
         assert result["skipped"] is True
 
     def test_deletes_old_cron_logs(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_cron_logs
+        from core.memory.maintenance.housekeeping import _cleanup_cron_logs
 
         cron_dir = tmp_path / "alice" / "state" / "cron_logs"
         cron_dir.mkdir(parents=True)
@@ -396,7 +396,7 @@ class TestCleanupCronLogs:
         assert (cron_dir / f"{today}.jsonl").exists()
 
     def test_retention_never_exceeds_14_days(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_cron_logs
+        from core.memory.maintenance.housekeeping import _cleanup_cron_logs
 
         cron_dir = tmp_path / "alice" / "state" / "cron_logs"
         cron_dir.mkdir(parents=True)
@@ -410,7 +410,7 @@ class TestCleanupCronLogs:
         assert not old_path.exists()
 
     def test_skips_anima_without_cron_logs(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_cron_logs
+        from core.memory.maintenance.housekeeping import _cleanup_cron_logs
 
         (tmp_path / "bob").mkdir()
         result = _cleanup_cron_logs(tmp_path, retention_days=30)
@@ -424,13 +424,13 @@ class TestCleanupShortterm:
     """Test shortterm cleanup."""
 
     def test_skips_when_dir_not_found(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_shortterm
+        from core.memory.maintenance.housekeeping import _cleanup_shortterm
 
         result = _cleanup_shortterm(tmp_path / "nonexistent", 7)
         assert result["skipped"] is True
 
     def test_deletes_old_session_files(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_shortterm
+        from core.memory.maintenance.housekeeping import _cleanup_shortterm
 
         chat_dir = tmp_path / "alice" / "shortterm" / "chat"
         chat_dir.mkdir(parents=True)
@@ -449,7 +449,7 @@ class TestCleanupShortterm:
         assert recent_file.exists()
 
     def test_preserves_current_session_files(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_shortterm
+        from core.memory.maintenance.housekeeping import _cleanup_shortterm
 
         chat_dir = tmp_path / "alice" / "shortterm" / "chat"
         chat_dir.mkdir(parents=True)
@@ -464,7 +464,7 @@ class TestCleanupShortterm:
         assert protected.exists()
 
     def test_preserves_streaming_journal_files(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_shortterm
+        from core.memory.maintenance.housekeeping import _cleanup_shortterm
 
         thread_dir = tmp_path / "alice" / "shortterm" / "chat" / "thread-123"
         thread_dir.mkdir(parents=True)
@@ -480,7 +480,7 @@ class TestCleanupShortterm:
         assert thread_dir.exists()
 
     def test_cleans_both_chat_and_heartbeat(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_shortterm
+        from core.memory.maintenance.housekeeping import _cleanup_shortterm
 
         old_time = time.time() - (14 * 86400)
         for sub in ("chat", "heartbeat"):
@@ -495,7 +495,7 @@ class TestCleanupShortterm:
 
     def test_cleans_thread_subdirectories(self, tmp_path: Path):
         # F13(c): per-thread subdirectories must be swept too.
-        from core.memory.housekeeping import _cleanup_shortterm
+        from core.memory.maintenance.housekeeping import _cleanup_shortterm
 
         thread_dir = tmp_path / "alice" / "shortterm" / "chat" / "thread-xyz"
         thread_dir.mkdir(parents=True)
@@ -509,7 +509,7 @@ class TestCleanupShortterm:
         assert not old_file.exists()
 
     def test_archive_uses_separate_retention_window(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_shortterm
+        from core.memory.maintenance.housekeeping import _cleanup_shortterm
 
         archive_dir = tmp_path / "alice" / "shortterm" / "chat" / "archive"
         archive_dir.mkdir(parents=True)
@@ -534,7 +534,7 @@ class TestCleanupShortterm:
         tmp_path: Path,
         archive_retention_days: int,
     ):
-        from core.memory.housekeeping import _cleanup_shortterm
+        from core.memory.maintenance.housekeeping import _cleanup_shortterm
 
         archive_dir = tmp_path / "alice" / "shortterm" / "chat" / "archive"
         archive_dir.mkdir(parents=True)
@@ -554,7 +554,7 @@ class TestCleanupShortterm:
         assert result["skipped_substeps"]["archive_cleanup"] == "archive_retention_days_must_be_positive"
 
     def test_cleans_cron_inbox_and_task(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_shortterm
+        from core.memory.maintenance.housekeeping import _cleanup_shortterm
 
         old_time = time.time() - (14 * 86400)
         files = []
@@ -579,7 +579,7 @@ class TestCleanupShortterm:
         assert all(not path.exists() for path in files)
 
     def test_deletes_stale_thread_directory(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_shortterm
+        from core.memory.maintenance.housekeeping import _cleanup_shortterm
 
         thread_dir = tmp_path / "alice" / "shortterm" / "chat" / "stale-thread"
         thread_dir.mkdir(parents=True)
@@ -595,7 +595,7 @@ class TestCleanupShortterm:
         assert not thread_dir.exists()
 
     def test_recent_current_session_protects_thread_directory(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_shortterm
+        from core.memory.maintenance.housekeeping import _cleanup_shortterm
 
         thread_dir = tmp_path / "alice" / "shortterm" / "chat" / "active-thread"
         thread_dir.mkdir(parents=True)
@@ -614,7 +614,7 @@ class TestCleanupShortterm:
         tmp_path: Path,
         thread_gc_days: int,
     ):
-        from core.memory.housekeeping import _cleanup_shortterm
+        from core.memory.maintenance.housekeeping import _cleanup_shortterm
 
         thread_dir = tmp_path / "alice" / "shortterm" / "chat" / "stale-thread"
         thread_dir.mkdir(parents=True)
@@ -630,7 +630,7 @@ class TestCleanupShortterm:
         assert result["skipped_substeps"]["thread_gc"] == "thread_gc_days_must_be_positive"
 
     def test_thread_gc_rechecks_mtime_before_rmtree(self, tmp_path: Path, monkeypatch):
-        import core.memory.housekeeping as housekeeping
+        import core.memory.maintenance.housekeeping as housekeeping
 
         thread_dir = tmp_path / "alice" / "shortterm" / "chat" / "racing-thread"
         thread_dir.mkdir(parents=True)
@@ -661,7 +661,7 @@ class TestCleanupShortterm:
     def test_episodifies_abandoned_chat_session_before_delete(self, tmp_path: Path, monkeypatch):
         # F13(b): an expired session_state.json is preserved as an episode
         # before it is deleted.
-        from core.memory.housekeeping import _cleanup_shortterm
+        from core.memory.maintenance.housekeeping import _cleanup_shortterm
 
         chat_dir = tmp_path / "alice" / "shortterm" / "chat"
         chat_dir.mkdir(parents=True)
@@ -698,7 +698,7 @@ class TestCleanupShortterm:
 
     def test_skips_delete_when_episode_save_fails(self, tmp_path: Path, monkeypatch):
         # F13(b): if the episode write fails, the state file is kept for retry.
-        from core.memory.housekeeping import _cleanup_shortterm
+        from core.memory.maintenance.housekeeping import _cleanup_shortterm
 
         chat_dir = tmp_path / "alice" / "shortterm" / "chat"
         chat_dir.mkdir(parents=True)
@@ -732,7 +732,7 @@ class TestCleanupFactsLocks:
     """Test stale empty facts lock cleanup."""
 
     def test_deletes_only_stale_empty_locks(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_facts_locks
+        from core.memory.maintenance.housekeeping import _cleanup_facts_locks
 
         facts_dir = tmp_path / "alice" / "facts"
         facts_dir.mkdir(parents=True)
@@ -762,7 +762,7 @@ class TestCleanupFactsLocks:
 
     def test_preserves_lock_held_by_another_file_descriptor(self, tmp_path: Path):
         fcntl = pytest.importorskip("fcntl")
-        from core.memory.housekeeping import _cleanup_facts_locks
+        from core.memory.maintenance.housekeeping import _cleanup_facts_locks
 
         facts_dir = tmp_path / "alice" / "facts"
         facts_dir.mkdir(parents=True)
@@ -781,7 +781,7 @@ class TestCleanupFactsLocks:
 
     @pytest.mark.parametrize("stale_hours", [0, -1])
     def test_non_positive_stale_hours_skips_cleanup(self, tmp_path: Path, stale_hours: int):
-        from core.memory.housekeeping import _cleanup_facts_locks
+        from core.memory.maintenance.housekeeping import _cleanup_facts_locks
 
         facts_dir = tmp_path / "alice" / "facts"
         facts_dir.mkdir(parents=True)
@@ -799,7 +799,7 @@ class TestCleanupFactsLocks:
     def test_fcntl_unavailable_fails_closed(self, tmp_path: Path):
         from unittest.mock import patch
 
-        from core.memory.housekeeping import _cleanup_facts_locks
+        from core.memory.maintenance.housekeeping import _cleanup_facts_locks
 
         facts_dir = tmp_path / "alice" / "facts"
         facts_dir.mkdir(parents=True)
@@ -867,7 +867,7 @@ class TestRunHousekeeping:
         old_pf.write_text("{}")
         os.utime(old_pf, (old_time, old_time))
 
-        from core.memory.housekeeping import run_housekeeping
+        from core.memory.maintenance.housekeeping import run_housekeeping
 
         results = await run_housekeeping(
             data_dir,
@@ -901,7 +901,7 @@ class TestRunHousekeeping:
 
     @pytest.mark.asyncio
     async def test_handles_missing_dirs_gracefully(self, tmp_path: Path):
-        from core.memory.housekeeping import run_housekeeping
+        from core.memory.maintenance.housekeeping import run_housekeeping
 
         results = await run_housekeeping(tmp_path)
 
@@ -948,7 +948,7 @@ class TestRunHousekeeping:
         old_mtime = time.time() - (40 * 86400)
         os.utime(old_processed, (old_mtime, old_mtime))
 
-        from core.memory.housekeeping import run_housekeeping
+        from core.memory.maintenance.housekeeping import run_housekeeping
 
         results = await run_housekeeping(
             data_dir,
@@ -980,11 +980,11 @@ class TestMemoryHygieneFallback:
     ) -> None:
         from datetime import date
 
-        from core.memory.housekeeping import _archive_stale_merge_leftovers
+        from core.memory.maintenance.housekeeping import _archive_stale_merge_leftovers
 
         fixed_today = date(2026, 7, 18)
-        monkeypatch.setattr("core.memory.hygiene.today_local", lambda: fixed_today)
-        monkeypatch.setattr("core.memory.housekeeping.today_local", lambda: fixed_today)
+        monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: fixed_today)
+        monkeypatch.setattr("core.memory.maintenance.housekeeping.today_local", lambda: fixed_today)
 
         anima_dir = tmp_path / "animas" / "alice"
         knowledge = anima_dir / "knowledge"
@@ -1037,11 +1037,11 @@ class TestMemoryHygieneFallback:
     ) -> None:
         from datetime import date
 
-        from core.memory.housekeeping import _archive_stale_merge_leftovers
+        from core.memory.maintenance.housekeeping import _archive_stale_merge_leftovers
 
         fixed_today = date(2026, 7, 18)
-        monkeypatch.setattr("core.memory.hygiene.today_local", lambda: fixed_today)
-        monkeypatch.setattr("core.memory.housekeeping.today_local", lambda: fixed_today)
+        monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: fixed_today)
+        monkeypatch.setattr("core.memory.maintenance.housekeeping.today_local", lambda: fixed_today)
 
         anima_dir = tmp_path / "animas" / "alice"
         knowledge = anima_dir / "knowledge"
@@ -1071,11 +1071,11 @@ class TestMemoryHygieneFallback:
     def test_suffixes_archive_destination_when_name_exists(self, tmp_path: Path, monkeypatch) -> None:
         from datetime import date
 
-        from core.memory.housekeeping import _archive_stale_merge_leftovers
+        from core.memory.maintenance.housekeeping import _archive_stale_merge_leftovers
 
         fixed_today = date(2026, 7, 18)
-        monkeypatch.setattr("core.memory.hygiene.today_local", lambda: fixed_today)
-        monkeypatch.setattr("core.memory.housekeeping.today_local", lambda: fixed_today)
+        monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: fixed_today)
+        monkeypatch.setattr("core.memory.maintenance.housekeeping.today_local", lambda: fixed_today)
 
         anima_dir = tmp_path / "animas" / "alice"
         knowledge = anima_dir / "knowledge"
@@ -1108,11 +1108,11 @@ class TestMemoryHygieneFallback:
         from datetime import date
         from unittest.mock import MagicMock, patch
 
-        from core.memory.housekeeping import _archive_stale_merge_leftovers
+        from core.memory.maintenance.housekeeping import _archive_stale_merge_leftovers
 
         fixed_today = date(2026, 7, 18)
-        monkeypatch.setattr("core.memory.hygiene.today_local", lambda: fixed_today)
-        monkeypatch.setattr("core.memory.housekeeping.today_local", lambda: fixed_today)
+        monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: fixed_today)
+        monkeypatch.setattr("core.memory.maintenance.housekeeping.today_local", lambda: fixed_today)
 
         anima_dir = tmp_path / "animas" / "alice"
         episodes = anima_dir / "episodes"
@@ -1163,9 +1163,7 @@ class TestMemoryHygieneFallback:
         mock_store.delete_documents.assert_called_once_with("alice_episodes", ["chunk-1"])
 
         refreshed = json.loads((state / "memory_hygiene.json").read_text(encoding="utf-8"))
-        assert [item["path"] for item in refreshed["noncanonical_episodes"]] == [
-            "episodes/inbox-recent.md"
-        ]
+        assert [item["path"] for item in refreshed["noncanonical_episodes"]] == ["episodes/inbox-recent.md"]
 
     def test_noncanonical_episode_move_succeeds_when_index_delete_fails(
         self,
@@ -1175,11 +1173,11 @@ class TestMemoryHygieneFallback:
         from datetime import date
         from unittest.mock import patch
 
-        from core.memory.housekeeping import _archive_stale_merge_leftovers
+        from core.memory.maintenance.housekeeping import _archive_stale_merge_leftovers
 
         fixed_today = date(2026, 7, 18)
-        monkeypatch.setattr("core.memory.hygiene.today_local", lambda: fixed_today)
-        monkeypatch.setattr("core.memory.housekeeping.today_local", lambda: fixed_today)
+        monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: fixed_today)
+        monkeypatch.setattr("core.memory.maintenance.housekeeping.today_local", lambda: fixed_today)
 
         anima_dir = tmp_path / "animas" / "bob"
         episodes = anima_dir / "episodes"
@@ -1189,13 +1187,7 @@ class TestMemoryHygieneFallback:
         state = anima_dir / "state"
         state.mkdir()
         (state / "memory_hygiene.json").write_text(
-            json.dumps(
-                {
-                    "noncanonical_episodes": [
-                        {"path": "episodes/recovered_old.md", "first_seen": "2026-06-26"}
-                    ]
-                }
-            ),
+            json.dumps({"noncanonical_episodes": [{"path": "episodes/recovered_old.md", "first_seen": "2026-06-26"}]}),
             encoding="utf-8",
         )
 
@@ -1213,11 +1205,11 @@ class TestMemoryHygieneFallback:
         from datetime import date
         from unittest.mock import patch
 
-        from core.memory.housekeeping import _archive_stale_merge_leftovers
+        from core.memory.maintenance.housekeeping import _archive_stale_merge_leftovers
 
         fixed_today = date(2026, 7, 18)
-        monkeypatch.setattr("core.memory.hygiene.today_local", lambda: fixed_today)
-        monkeypatch.setattr("core.memory.housekeeping.today_local", lambda: fixed_today)
+        monkeypatch.setattr("core.memory.maintenance.hygiene.today_local", lambda: fixed_today)
+        monkeypatch.setattr("core.memory.maintenance.housekeeping.today_local", lambda: fixed_today)
 
         anima_dir = tmp_path / "animas" / "alice"
         episodes = anima_dir / "episodes"
@@ -1231,13 +1223,7 @@ class TestMemoryHygieneFallback:
         state = anima_dir / "state"
         state.mkdir()
         (state / "memory_hygiene.json").write_text(
-            json.dumps(
-                {
-                    "noncanonical_episodes": [
-                        {"path": "episodes/inbox-note.md", "first_seen": "2026-06-26"}
-                    ]
-                }
-            ),
+            json.dumps({"noncanonical_episodes": [{"path": "episodes/inbox-note.md", "first_seen": "2026-06-26"}]}),
             encoding="utf-8",
         )
 
@@ -1257,7 +1243,7 @@ class TestCleanupTaskResults:
     """Tests for _cleanup_task_results."""
 
     def test_deletes_old_files(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_task_results
+        from core.memory.maintenance.housekeeping import _cleanup_task_results
 
         results_dir = tmp_path / "alice" / "state" / "task_results"
         results_dir.mkdir(parents=True)
@@ -1276,20 +1262,20 @@ class TestCleanupTaskResults:
         assert new_file.exists()
 
     def test_skips_missing_dir(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_task_results
+        from core.memory.maintenance.housekeeping import _cleanup_task_results
 
         result = _cleanup_task_results(tmp_path / "nonexistent", retention_days=7)
         assert result["skipped"] is True
 
     def test_skips_anima_without_task_results(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_task_results
+        from core.memory.maintenance.housekeeping import _cleanup_task_results
 
         (tmp_path / "alice" / "state").mkdir(parents=True)
         result = _cleanup_task_results(tmp_path, retention_days=7)
         assert result["deleted_files"] == 0
 
     def test_cleans_multiple_animas(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_task_results
+        from core.memory.maintenance.housekeeping import _cleanup_task_results
 
         old_time = time.time() - (10 * 86400)
         for name in ("alice", "bob"):
@@ -1310,7 +1296,7 @@ class TestCleanupPendingFailed:
     """Tests for _cleanup_pending_failed."""
 
     def test_deletes_old_llm_failed(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_pending_failed
+        from core.memory.maintenance.housekeeping import _cleanup_pending_failed
 
         failed_dir = tmp_path / "alice" / "state" / "pending" / "failed"
         failed_dir.mkdir(parents=True)
@@ -1329,7 +1315,7 @@ class TestCleanupPendingFailed:
         assert new_file.exists()
 
     def test_deletes_old_cmd_failed(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_pending_failed
+        from core.memory.maintenance.housekeeping import _cleanup_pending_failed
 
         failed_dir = tmp_path / "alice" / "state" / "background_tasks" / "pending" / "failed"
         failed_dir.mkdir(parents=True)
@@ -1344,7 +1330,7 @@ class TestCleanupPendingFailed:
         assert not old_file.exists()
 
     def test_cleans_both_failed_dirs(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_pending_failed
+        from core.memory.maintenance.housekeeping import _cleanup_pending_failed
 
         old_time = time.time() - (20 * 86400)
 
@@ -1364,7 +1350,7 @@ class TestCleanupPendingFailed:
         assert result["deleted_files"] == 2
 
     def test_skips_missing_dir(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_pending_failed
+        from core.memory.maintenance.housekeeping import _cleanup_pending_failed
 
         result = _cleanup_pending_failed(tmp_path / "nonexistent", retention_days=14)
         assert result["skipped"] is True
@@ -1374,7 +1360,7 @@ class TestRuntimeBloatRetention:
     """Tests for recurring runtime bloat retention helpers."""
 
     def test_keeps_latest_two_corrupt_vectordb_archives(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_corrupt_vectordb_archives
+        from core.memory.maintenance.housekeeping import _cleanup_corrupt_vectordb_archives
 
         archive = tmp_path / "sakura" / "archive"
         archive.mkdir(parents=True)
@@ -1400,7 +1386,7 @@ class TestRuntimeBloatRetention:
         assert (archive / "corrupt-vectordb-20260501010101").exists()
 
     def test_runtime_tmp_deletes_old_top_level_entries(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_runtime_tmp
+        from core.memory.maintenance.housekeeping import _cleanup_runtime_tmp
 
         tmp_dir = tmp_path / "tmp"
         tmp_dir.mkdir()
@@ -1436,7 +1422,7 @@ class TestRuntimeBloatRetention:
         assert recent_attachment.exists()
 
     def test_backup_dirs_delete_only_old_backup_patterns(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_backup_dirs
+        from core.memory.maintenance.housekeeping import _cleanup_backup_dirs
 
         anima = tmp_path / "sakura"
         old_backup = anima / "assets_backup_20260201"
@@ -1462,7 +1448,7 @@ class TestRuntimeBloatRetention:
         assert nested_memory_backup.exists()
 
     def test_anima_runtime_logs_delete_old_and_cap_directory(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_anima_runtime_logs
+        from core.memory.maintenance.housekeeping import _cleanup_anima_runtime_logs
 
         logs_dir = tmp_path / "logs" / "animas" / "sakura"
         logs_dir.mkdir(parents=True)
@@ -1495,7 +1481,7 @@ class TestRuntimeBloatRetention:
         assert keep_stderr.exists()
 
     def test_codex_execution_logs_delete_only_oversized_log_db_bundle(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_codex_execution_logs
+        from core.memory.maintenance.housekeeping import _cleanup_codex_execution_logs
 
         codex_home = tmp_path / "sakura" / ".codex_home"
         codex_home.mkdir(parents=True)
@@ -1522,7 +1508,7 @@ class TestRuntimeBloatRetention:
         assert session.exists()
 
     def test_codex_tmp_deletes_old_temp_entries(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_codex_tmp_dirs
+        from core.memory.maintenance.housekeeping import _cleanup_codex_tmp_dirs
 
         codex_home = tmp_path / "sakura" / ".codex_home"
         old_tmp = codex_home / ".tmp" / "plugins"
@@ -1543,7 +1529,7 @@ class TestRuntimeBloatRetention:
         assert recent_tmp.exists()
 
     def test_frontend_logs_keep_latest_backups(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_frontend_logs
+        from core.memory.maintenance.housekeeping import _cleanup_frontend_logs
 
         log_dir = tmp_path / "logs" / "frontend"
         log_dir.mkdir(parents=True)
@@ -1566,7 +1552,7 @@ class TestRuntimeBloatRetention:
         assert not legacy_old.exists()
 
     def test_anima_runtime_artifacts_delete_tmp_gitdirs_and_local_logs(self, tmp_path: Path):
-        from core.memory.housekeeping import _cleanup_anima_runtime_artifacts
+        from core.memory.maintenance.housekeeping import _cleanup_anima_runtime_artifacts
 
         anima = tmp_path / "sakura"
         tmp_gitdir = anima / "tmp_gitdirs" / "work.git"
@@ -1605,14 +1591,14 @@ class TestEpisodeifyReadErrors:
     """R3: transient read errors must not discard recoverable sessions."""
 
     def test_json_decode_error_is_deletable(self, tmp_path: Path):
-        from core.memory.housekeeping import _episodeify_abandoned_session
+        from core.memory.maintenance.housekeeping import _episodeify_abandoned_session
 
         state = tmp_path / "session_state.json"
         state.write_text("{not json", encoding="utf-8")
         assert _episodeify_abandoned_session(tmp_path, state) is True
 
     def test_os_error_defers_deletion(self, tmp_path: Path, monkeypatch):
-        from core.memory.housekeeping import _episodeify_abandoned_session
+        from core.memory.maintenance.housekeeping import _episodeify_abandoned_session
 
         state = tmp_path / "session_state.json"
         state.write_text("{}", encoding="utf-8")
@@ -1633,7 +1619,7 @@ class TestEpisodifiedUnlinkFailure:
     """R6: unlink failure after episodify must not re-episodify next run."""
 
     def test_unlink_failure_renames_state_file(self, tmp_path: Path, monkeypatch):
-        from core.memory.housekeeping import _cleanup_shortterm
+        from core.memory.maintenance.housekeeping import _cleanup_shortterm
 
         chat_dir = tmp_path / "alice" / "shortterm" / "chat"
         chat_dir.mkdir(parents=True)

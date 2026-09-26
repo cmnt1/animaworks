@@ -110,7 +110,7 @@ def evaluate_daily_consolidation_gate(
     hours: int = 24,
 ) -> DailyConsolidationGate:
     """Return whether daily consolidation should run for one anima."""
-    from core.memory.consolidation import ConsolidationEngine
+    from core.memory.maintenance.consolidation import ConsolidationEngine
 
     engine = ConsolidationEngine(anima_dir, anima_name)
     episode_count = 0
@@ -161,7 +161,7 @@ async def run_daily_consolidation_post_processing(
     """Run framework-side daily consolidation post-processing."""
     if getattr(consolidation_cfg, "synaptic_downscaling_enabled", False) is True:
         try:
-            from core.memory.forgetting import ForgettingEngine
+            from core.memory.maintenance.forgetting import ForgettingEngine
 
             forgetter = ForgettingEngine(anima_dir, anima_name)
             downscaling_result = forgetter.synaptic_downscaling()
@@ -177,7 +177,7 @@ async def run_daily_consolidation_post_processing(
     )
 
     try:
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(anima_dir, anima_name)
         engine._rebuild_rag_index()
@@ -185,7 +185,7 @@ async def run_daily_consolidation_post_processing(
         logger.exception("RAG index rebuild failed for anima=%s", anima_name)
 
     try:
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(anima_dir, anima_name)
         await engine.ingest_recent_to_backend(hours=48)
@@ -207,7 +207,7 @@ async def run_weekly_integration_post_processing(
         await run_weekly_pattern_distillation(anima_dir, anima_name, model=model)
 
     try:
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(anima_dir, anima_name)
         engine._rebuild_rag_index()
@@ -215,7 +215,7 @@ async def run_weekly_integration_post_processing(
         logger.exception("RAG index rebuild failed for anima=%s", anima_name)
 
     try:
-        from core.memory.consolidation import ConsolidationEngine
+        from core.memory.maintenance.consolidation import ConsolidationEngine
 
         engine = ConsolidationEngine(anima_dir, anima_name)
         await engine.ingest_recent_to_backend(hours=168)
@@ -233,7 +233,7 @@ async def run_weekly_pattern_distillation(
 ) -> None:
     """Distill repeated activity patterns into procedures during weekly post-processing."""
     try:
-        from core.memory.distillation import ProceduralDistiller
+        from core.memory.maintenance.distillation import ProceduralDistiller
 
         distiller = ProceduralDistiller(anima_dir, anima_name)
         result = await distiller.weekly_pattern_distill(model=model, days=7)

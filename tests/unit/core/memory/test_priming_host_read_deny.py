@@ -64,7 +64,7 @@ async def test_channel_b_does_not_open_denied_activity_tree(tmp_path: Path) -> N
     activity_dir.mkdir(parents=True)
     _write_permissions(anima_dir, [activity_dir])
 
-    with patch("core.memory.activity.ActivityLogger.recent", side_effect=AssertionError("must not read")):
+    with patch("core.memory.activity.logger.ActivityLogger.recent", side_effect=AssertionError("must not read")):
         result = await channel_b_recent_activity(anima_dir, None, "human", [])
 
     assert result == ""

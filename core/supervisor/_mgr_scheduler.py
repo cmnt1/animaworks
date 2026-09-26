@@ -299,7 +299,7 @@ class SchedulerMixin:
         timeout_s: float,
     ) -> None:
         """Run consolidation once for each non-empty project archive."""
-        from core.memory.consolidation import list_project_archives
+        from core.memory.maintenance.consolidation import list_project_archives
 
         projects: list[str] = []
         for project in list_project_archives(anima_dir):
@@ -660,9 +660,9 @@ class SchedulerMixin:
         logger.info("Starting system-wide daily RAG indexing")
 
         try:
-            from core.memory.bm25 import rebuild_longterm_bm25_index
             from core.memory.rag import MemoryIndexer
             from core.memory.rag.singleton import get_vector_store
+            from core.memory.retrieval.bm25 import rebuild_longterm_bm25_index
         except ImportError:
             logger.warning("RAG dependencies not available, skipping daily indexing")
             return
@@ -696,7 +696,7 @@ class SchedulerMixin:
                 return
 
         from core.memory.rag.shared_meta import read_shared_hash, write_shared_hash
-        from core.memory.rag_search import _compute_dir_hash
+        from core.memory.retrieval.rag_search import _compute_dir_hash
 
         quick_check_timeout = 10.0
         try:
@@ -921,7 +921,7 @@ class SchedulerMixin:
         )
 
         try:
-            from core.memory.activity import ActivityLogger
+            from core.memory.activity.logger import ActivityLogger
 
             results = ActivityLogger.rotate_all(
                 self.animas_dir,
@@ -997,7 +997,7 @@ class SchedulerMixin:
             inbox_cfg = InboxConfig()
 
         try:
-            from core.memory.housekeeping import run_housekeeping
+            from core.memory.maintenance.housekeeping import run_housekeeping
 
             results = await run_housekeeping(
                 self._get_data_dir(),

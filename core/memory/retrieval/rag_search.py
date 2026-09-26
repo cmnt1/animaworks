@@ -22,7 +22,7 @@ from core.company_resources import (
     infer_data_dir,
 )
 from core.config.models import read_anima_company_checked
-from core.memory.fact_observability import warn_rate_limited
+from core.memory.facts.observability import warn_rate_limited
 from core.memory.rag.shared_check_registry import (
     SharedCheckOutcome,
     make_shared_check_key,
@@ -36,7 +36,7 @@ logger = logging.getLogger("animaworks.memory")
 _INDEX_RETRY_SECONDS = 30.0
 
 try:
-    from core.memory.bm25 import search_activity_log, search_longterm_memory_bm25
+    from core.memory.retrieval.bm25 import search_activity_log, search_longterm_memory_bm25
 except ImportError:
     search_activity_log = None  # type: ignore[assignment,misc]
     search_longterm_memory_bm25 = None  # type: ignore[assignment,misc]
@@ -654,7 +654,7 @@ class RAGMemorySearch:
         query_entities: tuple[str, ...] = ()
         if registry_enabled:
             try:
-                from core.memory.entity_index import match_query_entities
+                from core.memory.facts.entity_index import match_query_entities
 
                 query_entities = tuple(sorted(match_query_entities(self._anima_dir, query)))
             except Exception:
@@ -1166,7 +1166,7 @@ class RAGMemorySearch:
             return []
 
         try:
-            from core.memory.facts import FactRecord
+            from core.memory.facts.store import FactRecord
         except ImportError:
             return []
 
@@ -1307,7 +1307,7 @@ class RAGMemorySearch:
 
     def _update_longterm_bm25_source(self, path: Path, memory_type: str) -> None:
         try:
-            from core.memory.bm25 import LONGTERM_BM25_MEMORY_TYPES, update_longterm_bm25_source
+            from core.memory.retrieval.bm25 import LONGTERM_BM25_MEMORY_TYPES, update_longterm_bm25_source
 
             if memory_type in LONGTERM_BM25_MEMORY_TYPES:
                 update_longterm_bm25_source(self._anima_dir, str(path.relative_to(self._anima_dir)))
@@ -1323,7 +1323,7 @@ class RAGMemorySearch:
         rebuilding on every query.
         """
         try:
-            from core.memory.bm25 import maybe_rebuild_dirty_longterm_bm25
+            from core.memory.retrieval.bm25 import maybe_rebuild_dirty_longterm_bm25
 
             maybe_rebuild_dirty_longterm_bm25(self._anima_dir)
         except Exception:

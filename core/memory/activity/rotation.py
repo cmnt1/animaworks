@@ -9,7 +9,7 @@ from __future__ import annotations
 
 """Rotation mixin for ActivityLogger.
 
-Internal module — import from :mod:`core.memory.activity` instead.
+Internal module — import from :mod:`core.memory.activity.logger` instead.
 """
 
 import logging
@@ -148,7 +148,7 @@ class RotationMixin:
         Returns:
             Dict mapping anima name to rotation result.
         """
-        from core.memory.activity import ActivityLogger
+        from core.memory.activity.logger import ActivityLogger
 
         results: dict[str, dict[str, Any]] = {}
         if not animas_dir.exists():

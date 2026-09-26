@@ -119,7 +119,7 @@ async def channel_b_recent_activity(
     out so that the limited priming budget contains only actionable
     communication events (messages, channel posts, errors, etc.).
     """
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
 
     denied_roots = load_denied_roots(anima_dir)
     activity = ActivityLogger(anima_dir)
@@ -213,7 +213,7 @@ def read_shared_channels(
     Returns:
         List of ActivityEntry from shared channels.
     """
-    from core.memory.activity import ActivityEntry
+    from core.memory.activity.logger import ActivityEntry
 
     if not shared_dir:
         return []
@@ -347,7 +347,7 @@ def prioritize_entries_with_ranks(
     keywords: list[str],
 ) -> list[tuple[float, object]]:
     """Return the existing activity priority score with each selected entry."""
-    from core.memory.activity import ActivityEntry
+    from core.memory.activity.logger import ActivityEntry
 
     keywords_lower = {kw.lower() for kw in keywords} if keywords else set()
 

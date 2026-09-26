@@ -14,7 +14,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from core.memory.conversation import ConversationMemory
+    from core.memory.conversation.memory import ConversationMemory
 
 from core._agent_prompt_log import _PROMPT_HARD_LIMIT_BYTES, _PROMPT_SOFT_LIMIT_BYTES
 from core.prompt.builder import build_system_prompt
@@ -177,8 +177,8 @@ class PrimingMixin:
 
         if trigger.startswith("inbox:"):
             try:
-                from core.memory.activity import ActivityLogger
-                from core.memory.activity_format import entry_text
+                from core.memory.activity.format import entry_text
+                from core.memory.activity.logger import ActivityLogger
 
                 animas_dir = self.anima_dir.parent
                 anima_names = {path.name.casefold() for path in animas_dir.iterdir() if path.is_dir()}
@@ -205,7 +205,7 @@ class PrimingMixin:
         if not trigger.startswith("message:") or not trigger_uses_chat_session(trigger):
             return []
         try:
-            from core.memory.conversation import ConversationMemory
+            from core.memory.conversation.memory import ConversationMemory
 
             conv = ConversationMemory(self.anima_dir, model_config or self.model_config)
             state = conv.load()
@@ -225,8 +225,8 @@ class PrimingMixin:
         full heartbeat prompt template.
         """
         try:
-            from core.memory.activity import ActivityLogger
-            from core.memory.activity_format import entry_text
+            from core.memory.activity.format import entry_text
+            from core.memory.activity.logger import ActivityLogger
 
             activity = ActivityLogger(self.anima_dir)
             entries = activity.recent(

@@ -1,4 +1,4 @@
-"""Unit tests for core/memory/rag_search.py — RAGMemorySearch."""
+"""Unit tests for core/memory/retrieval/rag_search.py — RAGMemorySearch."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.memory.rag.retriever import AccessBatch, MemoryRetriever, RetrievalResult
-from core.memory.rag_search import (
+from core.memory.retrieval.rag_search import (
     RAGMemorySearch,
     _keyword_token_matches,
     _read_keyword_file,
@@ -179,7 +179,11 @@ class TestLongtermBM25Refresh:
         anima_dir: Path,
         knowledge_dir: Path,
     ) -> None:
-        from core.memory.bm25 import is_longterm_bm25_dirty, rebuild_longterm_bm25_index, search_longterm_memory_bm25
+        from core.memory.retrieval.bm25 import (
+            is_longterm_bm25_dirty,
+            rebuild_longterm_bm25_index,
+            search_longterm_memory_bm25,
+        )
 
         (knowledge_dir / "old.md").write_text("# Old\n\nBaseline memo.", encoding="utf-8")
         rebuild_longterm_bm25_index(anima_dir)
@@ -408,7 +412,7 @@ class TestSearchMemoryTextKeywordOnly:
         procedures_dir: Path,
         common_knowledge_dir: Path,
     ) -> None:
-        with patch("core.memory.rag_search.search_activity_log", return_value=[]) as search:
+        with patch("core.memory.retrieval.rag_search.search_activity_log", return_value=[]) as search:
             rag.search_memory_text(
                 "meeting",
                 scope="activity_log",

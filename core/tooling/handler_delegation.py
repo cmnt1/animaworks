@@ -18,7 +18,7 @@ from core.tooling.handler_base import _error_result, build_outgoing_origin_chain
 from core.tooling.org_helpers import OrgHelpersMixin
 
 if TYPE_CHECKING:
-    from core.memory.activity import ActivityLogger
+    from core.memory.activity.logger import ActivityLogger
     from core.messenger import Messenger
 
 logger = logging.getLogger("animaworks.tool_handler")

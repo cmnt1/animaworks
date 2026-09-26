@@ -190,7 +190,7 @@ class TestHandleRouting:
             "search_method": "bm25",
             "last_scan": "2026-08-13T00:00:00+00:00",
         }
-        with patch("core.memory.code_index.search_code", return_value=[code_result]) as search:
+        with patch("core.memory.retrieval.code_index.search_code", return_value=[code_result]) as search:
             result = handler.handle(
                 "search_memory",
                 {"query": "LibrarianNeedle", "scope": "code", "project": "demo"},

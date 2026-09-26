@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from core.memory._io import atomic_write_text
-from core.memory.fact_observability import warn_rate_limited
+from core.memory.facts.observability import warn_rate_limited
 from core.time_utils import now_local, today_local
 
 logger = logging.getLogger("animaworks.token_usage")

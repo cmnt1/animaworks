@@ -18,10 +18,10 @@ from core.file_access_policy import find_denied_root, load_denied_roots
 from core.i18n import t
 from core.memory._io import atomic_write_text
 from core.memory.config_reader import ConfigReader
-from core.memory.cron_logger import CronLogger
 from core.memory.frontmatter import FrontmatterService
-from core.memory.rag_search import RAGMemorySearch
-from core.memory.resolution_tracker import ResolutionTracker
+from core.memory.maintenance.cron_logger import CronLogger
+from core.memory.maintenance.resolution_tracker import ResolutionTracker
+from core.memory.retrieval.rag_search import RAGMemorySearch
 
 # ── Re-exports for backward compatibility ─────────────────
 # These were originally defined in this module.  External code
