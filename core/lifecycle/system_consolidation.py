@@ -343,7 +343,7 @@ async def detect_communities_if_neo4j(anima_dir: Path, anima_name: str) -> None:
 
 
 class SystemConsolidationMixin:
-    """Mixin providing daily/weekly/monthly consolidation handlers."""
+    """Mixin providing daily and weekly consolidation handlers."""
 
     async def _handle_daily_consolidation(self, scheduled: bool = False) -> None:
         """Run daily consolidation for all animas.
@@ -600,105 +600,6 @@ class SystemConsolidationMixin:
                     }
                 )
 
-    async def _handle_monthly_forgetting(self, scheduled: bool = False) -> None:
-        """Run monthly forgetting for all animas.
-
-        When ``scheduled`` is True, skip if a successful run already occurred
-        within the current calendar month.
-        """
-        from core.lifecycle.system_status import (
-            already_ran_within_interval,
-            build_status_payload,
-            mark_failed,
-            mark_started,
-            mark_succeeded,
-        )
-
-        if scheduled and already_ran_within_interval("monthly"):
-            logger.info("Monthly forgetting skipped: last success was less than 30 days ago")
-            return
-
-        lock = self._system_job_locks["monthly"]
-        if lock.locked():
-            logger.info("Monthly forgetting skipped: already running")
-            return
-        async with lock:
-            mark_started("monthly")
-            if self._ws_broadcast:
-                try:
-                    await self._ws_broadcast({"type": "system.consolidation_status", "data": build_status_payload()})
-                except Exception:
-                    logger.debug("Failed to broadcast consolidation_status", exc_info=True)
-            try:
-                await self._handle_monthly_forgetting_inner()
-                mark_succeeded("monthly")
-            except Exception as exc:
-                mark_failed("monthly", str(exc))
-                raise
-            finally:
-                if self._ws_broadcast:
-                    try:
-                        await self._ws_broadcast(
-                            {"type": "system.consolidation_status", "data": build_status_payload()}
-                        )
-                    except Exception:
-                        logger.debug("Failed to broadcast consolidation_status", exc_info=True)
-
-    async def _handle_monthly_forgetting_inner(self) -> None:
-        """Inner implementation of monthly forgetting."""
-        logger.info("Starting system-wide monthly forgetting")
-
-        config = load_config()
-        consolidation_cfg = getattr(config, "consolidation", None)
-
-        # Default config
-        enabled = True
-
-        if consolidation_cfg:
-            enabled = getattr(consolidation_cfg, "monthly_forgetting_enabled", True)
-
-        if not enabled:
-            logger.info("Monthly forgetting is disabled in config")
-            return
-
-        # Run forgetting for each anima
-        for anima_name, anima in self.animas.items():
-            try:
-                from core.memory.consolidation import ConsolidationEngine
-
-                engine = ConsolidationEngine(
-                    anima_dir=anima.memory.anima_dir,
-                    anima_name=anima_name,
-                )
-
-                result = await engine.monthly_forget()
-
-                logger.info(
-                    "Monthly forgetting for %s: forgotten=%d archived=%d",
-                    anima_name,
-                    result.get("forgotten_chunks", 0),
-                    len(result.get("archived_files", [])),
-                )
-
-                # Broadcast result
-                if self._ws_broadcast:
-                    await self._ws_broadcast(
-                        {
-                            "type": "system.consolidation",
-                            "data": {
-                                "anima": anima_name,
-                                "type": "monthly_forgetting",
-                                "result": result,
-                            },
-                        }
-                    )
-
-            except Exception:
-                logger.exception("Monthly forgetting failed for anima=%s", anima_name)
-
-    # ── Community detection helper ────────────────────────────
-
-    @staticmethod
     async def _run_knowledge_self_correction_if_enabled(
         anima,  # noqa: ANN001
         anima_name: str,

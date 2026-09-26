@@ -96,6 +96,13 @@ class TestConsolidationModelEndpoint:
 
 
 class TestRunEndpoint:
+    @pytest.mark.parametrize("method", ["get", "post"])
+    def test_monthly_is_retired(self, client, method):
+        resp = getattr(client, method)("/api/system/consolidation/monthly/run")
+        assert resp.status_code == 410
+        assert resp.json() == {"error": "monthly_retired", "replacement": "weekly"}
+        client.app.state.supervisor.start_system_consolidation.assert_not_called()
+
     def test_starts_job(self, client):
         resp = client.post("/api/system/consolidation/daily/run")
         assert resp.status_code == 200

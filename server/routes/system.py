@@ -1313,7 +1313,9 @@ def create_system_router() -> APIRouter:
     @router.post("/system/consolidation/{job_type}/run")
     async def run_consolidation(request: Request, job_type: str):
         """Manually trigger a consolidation job (fire-and-forget)."""
-        if job_type not in ("daily", "weekly", "monthly"):
+        if job_type == "monthly":
+            return JSONResponse({"error": "monthly_retired", "replacement": "weekly"}, status_code=410)
+        if job_type not in ("daily", "weekly"):
             return JSONResponse(
                 {"error": f"Invalid job type: {job_type}"},
                 status_code=400,
@@ -1346,11 +1348,12 @@ def create_system_router() -> APIRouter:
         URLs:
           /api/system/consolidation/daily/run
           /api/system/consolidation/weekly/run
-          /api/system/consolidation/monthly/run
         """
         from starlette.responses import RedirectResponse
 
-        if job_type not in ("daily", "weekly", "monthly"):
+        if job_type == "monthly":
+            return JSONResponse({"error": "monthly_retired", "replacement": "weekly"}, status_code=410)
+        if job_type not in ("daily", "weekly"):
             return JSONResponse(
                 {"error": f"Invalid job type: {job_type}"},
                 status_code=400,

@@ -394,6 +394,17 @@ class TestAlreadyRanWithinInterval:
 
 
 class TestBuildStatusPayload:
+    def test_monthly_history_is_preserved_but_never_due(self, status_dir):
+        from core.lifecycle.system_status import build_status_payload, mark_succeeded
+
+        with patch("core.lifecycle.system_status.now_local", return_value=datetime(2026, 1, 1, 3, 0, tzinfo=JST)):
+            previous = mark_succeeded("monthly")
+        with patch("core.lifecycle.system_status.now_local", return_value=datetime(2026, 4, 11, 10, 0, tzinfo=JST)):
+            payload = build_status_payload()
+        assert payload["monthly"]["retired"] is True
+        assert payload["monthly"]["missed"] is False
+        assert payload["monthly"]["last_success_at"] == previous["last_success_at"]
+
     def test_includes_missed_flags(self, status_dir):
         from core.lifecycle.system_status import build_status_payload
 
@@ -473,6 +484,33 @@ class TestLockPreventsDoubleExecution:
 # ── Manual run returns already_running ────────────────────
 
 class TestManualRunState:
+    @pytest.mark.asyncio
+    async def test_monthly_cannot_start_directly(self, status_dir):
+        from core.supervisor._mgr_scheduler import SchedulerMixin
+
+        mgr = SchedulerMixin.__new__(SchedulerMixin)
+        assert "error" in mgr.start_system_consolidation("monthly")
+        assert "error" in await mgr.run_system_consolidation_now("monthly")
+
+    @pytest.mark.asyncio
+    async def test_catchup_ignores_monthly(self, status_dir):
+        from unittest.mock import AsyncMock
+
+        from core.supervisor._mgr_scheduler import SchedulerMixin
+
+        mgr = SchedulerMixin.__new__(SchedulerMixin)
+        mgr._run_daily_consolidation = AsyncMock()
+        mgr._run_weekly_integration = AsyncMock()
+        with (
+            patch("core.lifecycle.system_status.is_daily_missed", return_value=True),
+            patch("core.lifecycle.system_status.is_weekly_missed", return_value=True),
+            patch("core.lifecycle.system_status.is_monthly_missed", return_value=True),
+        ):
+            result = await mgr.run_missed_system_consolidations()
+        assert result["ran"] == ["daily", "weekly"]
+        mgr._run_daily_consolidation.assert_awaited_once()
+        mgr._run_weekly_integration.assert_awaited_once()
+
     @pytest.mark.asyncio
     async def test_stale_persisted_running_state_does_not_block(self, status_dir):
         from core.lifecycle.system_status import mark_started

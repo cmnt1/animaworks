@@ -48,6 +48,8 @@ class TestSupervisorSchedulerInit:
             daily_time="02:00",
             weekly_enabled=True,
             weekly_time="sun:03:00",
+            monthly_enabled=True,
+            monthly_time="1:03:00",
             indexing_enabled=True,
             indexing_time="04:00",
         )
@@ -67,6 +69,7 @@ class TestSupervisorSchedulerInit:
         job_ids = [j.id for j in jobs]
         assert "system_daily_consolidation" in job_ids
         assert "system_weekly_integration" in job_ids
+        assert not any("monthly" in job_id for job_id in job_ids)
 
         sup.scheduler.shutdown(wait=False)
 

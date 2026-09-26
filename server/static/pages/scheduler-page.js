@@ -387,7 +387,6 @@ export function destroy() {
 const _CONSOLIDATION_JOBS = [
   { key: "daily", labelKey: "server.consolidation_daily" },
   { key: "weekly", labelKey: "server.consolidation_weekly" },
-  { key: "monthly", labelKey: "server.consolidation_monthly" },
 ];
 
 function _modelMetaFromId(modelId, option = {}) {

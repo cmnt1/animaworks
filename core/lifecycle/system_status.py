@@ -288,6 +288,8 @@ def build_status_payload() -> dict:
     }
     for jt in JOB_TYPES:
         status[jt]["missed"] = missed_checks[jt](now)
+    status["monthly"]["missed"] = False
+    status["monthly"]["retired"] = True
     return status
 
 

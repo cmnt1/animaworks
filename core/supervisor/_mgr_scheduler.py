@@ -122,33 +122,6 @@ class SchedulerMixin:
             )
             logger.info("System cron: Weekly integration on %s at %s:%s", day_of_week, time_parts[0], time_parts[1])
 
-        # Monthly forgetting
-        monthly_enabled = True
-        monthly_time = "1:04:00"
-        if consolidation_cfg:
-            monthly_enabled = getattr(consolidation_cfg, "monthly_enabled", True)
-            monthly_time = getattr(consolidation_cfg, "monthly_time", "1:04:00")
-
-        if monthly_enabled:
-            parts = monthly_time.split(":")
-            day_of_month = int(parts[0]) if len(parts) == 3 else 1
-            time_parts = parts[-2:]
-            hour, minute = int(time_parts[0]), int(time_parts[1])
-            self.scheduler.add_job(
-                self._run_monthly_forgetting,
-                CronTrigger(day=day_of_month, hour=hour, minute=minute),
-                id="system_monthly_forgetting",
-                name="System: Monthly Forgetting",
-                replace_existing=True,
-                misfire_grace_time=600,
-                kwargs={"scheduled": True},
-            )
-            logger.info(
-                "System cron: Monthly forgetting on day %d at %02d:%02d",
-                day_of_month,
-                hour,
-                minute,
-            )
 
         indexing_enabled = True
         indexing_time = "04:00"
@@ -898,81 +871,6 @@ class SchedulerMixin:
 
         _write_marker(_marker_dir(self._get_data_dir()) / "last_weekly_integration")
 
-    async def _run_monthly_forgetting(self, scheduled: bool = False) -> None:
-        """Run monthly forgetting for all animas.
-
-        When ``scheduled`` is True, skip if a successful run already occurred
-        within the current calendar month.
-        """
-        from core.lifecycle.system_status import (
-            already_ran_within_interval,
-            build_status_payload,
-            mark_failed,
-            mark_started,
-            mark_succeeded,
-        )
-
-        if scheduled and already_ran_within_interval("monthly"):
-            logger.info("Monthly forgetting skipped: last success was less than 30 days ago")
-            return
-
-        lock = self._system_job_locks["monthly"]
-        if lock.locked():
-            logger.info("Monthly forgetting skipped: already running")
-            return
-        async with lock:
-            maintenance_lock = self._system_memory_maintenance_lock
-            if maintenance_lock.locked():
-                logger.info("Monthly forgetting waiting for another memory maintenance job")
-            async with maintenance_lock:
-                mark_started("monthly")
-                try:
-                    await self._broadcast_event("system.consolidation_status", build_status_payload())
-                except Exception:
-                    logger.debug("Failed to broadcast consolidation_status", exc_info=True)
-                try:
-                    await self._run_monthly_forgetting_inner()
-                    mark_succeeded("monthly")
-                except Exception as exc:
-                    mark_failed("monthly", str(exc))
-                    raise
-                finally:
-                    try:
-                        await self._broadcast_event("system.consolidation_status", build_status_payload())
-                    except Exception:
-                        logger.debug("Failed to broadcast consolidation_status", exc_info=True)
-
-    async def _run_monthly_forgetting_inner(self) -> None:
-        """Inner implementation of monthly forgetting."""
-        logger.info("Starting system-wide monthly forgetting")
-
-        for anima_name, anima_dir in self._iter_consolidation_targets():
-            try:
-                from core.memory.consolidation import ConsolidationEngine
-
-                engine = ConsolidationEngine(
-                    anima_dir=anima_dir,
-                    anima_name=anima_name,
-                )
-
-                result = await engine.monthly_forget()
-
-                logger.info(
-                    "Monthly forgetting for %s: forgotten=%d, archived=%d files",
-                    anima_name,
-                    result.get("forgotten_chunks", 0),
-                    len(result.get("archived_files", [])),
-                )
-
-                if not result.get("skipped"):
-                    await self._broadcast_event(
-                        "system.consolidation",
-                        {"anima": anima_name, "type": "monthly_forgetting", "result": result},
-                    )
-            except Exception:
-                logger.exception("Monthly forgetting failed for %s", anima_name)
-
-        _write_marker(_marker_dir(self._get_data_dir()) / "last_monthly_forgetting")
 
     async def _run_daily_indexing(self) -> None:
         """Run daily RAG indexing for all animas.
@@ -981,7 +879,7 @@ class SchedulerMixin:
         procedures, skills, facts) into each anima's per-anima vectordb.
         Also indexes shared collections (common_knowledge, common_skills).
         Runs at 04:00 (configured TZ), after consolidation (02:00) and
-        weekly/monthly jobs (03:00) to capture all generated/modified files.
+        weekly jobs (03:00) to capture all generated/modified files.
         """
         logger.info("Starting system-wide daily RAG indexing")
 
@@ -1468,7 +1366,6 @@ class SchedulerMixin:
     _CONSOLIDATION_HANDLERS: dict[str, str] = {
         "daily": "_run_daily_consolidation",
         "weekly": "_run_weekly_integration",
-        "monthly": "_run_monthly_forgetting",
     }
 
     def _consolidation_task_map(self) -> dict[str, asyncio.Task[dict]]:
@@ -1555,7 +1452,6 @@ class SchedulerMixin:
         from core.lifecycle.system_status import (
             build_status_payload,
             is_daily_missed,
-            is_monthly_missed,
             is_weekly_missed,
         )
 
@@ -1564,7 +1460,6 @@ class SchedulerMixin:
         checks = [
             ("daily", is_daily_missed),
             ("weekly", is_weekly_missed),
-            ("monthly", is_monthly_missed),
         ]
         for job_type, check_fn in checks:
             if check_fn(now):
