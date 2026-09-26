@@ -53,6 +53,23 @@ STRINGS: dict[str, dict[str, str]] = {
             "[작업 실패 알림]\n작업 ID: {task_id}\n작업: {title}\n오류: {error}\n실행된 조치와 결과를 확인하고 재개, 조건 대기, 취소를 판단하세요. 원래 입력은 보존됩니다."
         ),
     },
+    "pending_executor.task_undeclared_notify": {
+        "ja": (
+            "[タスク未完了通知]\nタスクID: {task_id}\nタスク: {title}\n"
+            "実行は正常に終わりましたが、完了（done）・取り消し（cancelled）・待ち（pending）の宣言がありませんでした。"
+            "実行済みの操作・成果を確認し、継続、条件待ち、取り消しを判断してください。元の入力は保存されています。"
+        ),
+        "en": (
+            "[Task Not Closed]\nTask ID: {task_id}\nTask: {title}\n"
+            "The run ended normally without declaring done, cancelled, or pending. "
+            "Check existing effects and artifacts, then decide whether to resume, wait for a condition, or cancel. Original input is retained."
+        ),
+        "ko": (
+            "[작업 미완료 알림]\n작업 ID: {task_id}\n작업: {title}\n"
+            "실행은 정상 종료되었지만 완료(done)·취소(cancelled)·대기(pending) 선언이 없었습니다. "
+            "실행된 조치와 결과를 확인하고 재개, 조건 대기, 취소를 판단하세요. 원래 입력은 보존됩니다."
+        ),
+    },
     "pending_executor.workspace_not_specified": {
         "ja": "(指定なし)",
         "en": "(not specified)",
