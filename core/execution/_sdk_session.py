@@ -10,17 +10,15 @@ from __future__ import annotations
 
 """Mode S session persistence, SDK input helpers, and cleanup utilities.
 
-Leaf module in the dependency graph — no internal framework imports
-(except ``core.schemas``).
+Leaf module in the dependency graph — depends only on the shared session
+store and ``core.schemas``.
 """
 
 import asyncio
 import json
 import logging
-import os
 import shutil
 import sys
-import tempfile
 import threading
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
@@ -28,6 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from core.execution.session_store import SessionStore
 from core.schemas import ImageData
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
@@ -139,7 +138,7 @@ def _now_iso() -> str:
 
 
 def _session_state_path(anima_dir: Path, session_type: str, thread_id: str) -> Path:
-    return anima_dir / "state" / _session_file(session_type, thread_id)
+    return SessionStore.path_for("agent_sdk", anima_dir, session_type, thread_id)
 
 
 def _state_from_dict(data: dict[str, Any]) -> SessionContextState | None:
@@ -189,7 +188,7 @@ def load_session_state(
     """Load persisted SDK session metadata, including legacy files."""
     path = _session_state_path(anima_dir, session_type, thread_id)
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = SessionStore(path).read_json()
     except (json.JSONDecodeError, OSError):
         return None
     if not isinstance(data, dict):
@@ -199,30 +198,7 @@ def load_session_state(
 
 def _write_session_state(path: Path, data: dict[str, Any]) -> None:
     """Atomically replace a session state file in its own directory."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp_name: str | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as temp:
-            temp_name = temp.name
-            json.dump(data, temp, ensure_ascii=False)
-            temp.write("\n")
-            temp.flush()
-            os.fsync(temp.fileno())
-        os.replace(temp_name, path)
-        temp_name = None
-    finally:
-        if temp_name:
-            try:
-                os.unlink(temp_name)
-            except OSError:
-                pass
+    SessionStore(path).write_json(data)
 
 
 def _state_to_dict(state: SessionContextState) -> dict[str, Any]:
@@ -288,9 +264,7 @@ from core.execution.session_context import _resolve_session_type  # noqa: F401 (
 
 def _session_file(session_type: str, thread_id: str = "default") -> str:
     """Return the session file name for the given session type."""
-    if thread_id != "default":
-        return f"current_session_{session_type}_{thread_id}.json"
-    return f"current_session_{session_type}.json"
+    return SessionStore.sdk_state_filename(session_type, thread_id)
 
 
 def _load_session_id(
@@ -385,7 +359,7 @@ def mark_session_swept(
 
 def _clear_session_id(anima_dir: Path, session_type: str = "chat", thread_id: str = "default") -> None:
     """Clear persisted session ID (e.g., after resume failure)."""
-    path = anima_dir / "state" / _session_file(session_type, thread_id)
+    path = _session_state_path(anima_dir, session_type, thread_id)
     with _session_state_lock:
         if path.exists():
             logger.debug(
@@ -394,7 +368,7 @@ def _clear_session_id(anima_dir: Path, session_type: str = "chat", thread_id: st
                 anima_dir.name,
                 thread_id,
             )
-            path.unlink(missing_ok=True)
+            SessionStore(path).clear()
 
 
 def clear_session_id_for_type(anima_dir: Path, session_type: str, thread_id: str = "default") -> None:

@@ -43,8 +43,10 @@ from core.execution.error_classifier import (
     guard_key,
     provider_family_of,
 )
+from core.execution.events import stream_events
 from core.execution.rate_guard import get_rate_guard
 from core.execution.session_context import _resolve_session_type
+from core.execution.session_store import SessionRecord, SessionStore
 from core.i18n import t
 from core.memory.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
@@ -116,7 +118,7 @@ def _resolve_grok_model(model: str) -> str:
 
 def _session_id_path(anima_dir: Path, session_type: str, thread_id: str = "default") -> Path:
     """Return the per-trigger, per-thread Grok session state path."""
-    return anima_dir / "shortterm" / session_type / thread_id / "grok_session_id.txt"
+    return SessionStore.path_for("grok", anima_dir, session_type, thread_id)
 
 
 def _save_session_id(
@@ -126,9 +128,10 @@ def _save_session_id(
     thread_id: str = "default",
     turn_count: int = 1,
 ) -> None:
-    path = _session_id_path(anima_dir, session_type, thread_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"{session_id}\n{turn_count}", encoding="utf-8")
+    SessionStore(_session_id_path(anima_dir, session_type, thread_id)).write_text_record(
+        SessionRecord(session_id, turn_count),
+        with_turn_count=True,
+    )
 
 
 def _load_session_id(
@@ -137,25 +140,17 @@ def _load_session_id(
     thread_id: str = "default",
 ) -> tuple[str | None, int]:
     """Load a session ID and turn count, accepting a legacy one-line file."""
-    path = _session_id_path(anima_dir, session_type, thread_id)
-    if not path.is_file():
+    record = SessionStore(_session_id_path(anima_dir, session_type, thread_id)).read_text_record(
+        with_turn_count=True,
+        ignore_read_errors=True,
+    )
+    if record is None:
         return (None, 0)
-    try:
-        lines = path.read_text(encoding="utf-8").strip().splitlines()
-    except OSError:
-        return (None, 0)
-    session_id = lines[0].strip() if lines else ""
-    if not session_id:
-        return (None, 0)
-    try:
-        turn_count = int(lines[1].strip()) if len(lines) > 1 else 0
-    except (ValueError, IndexError):
-        turn_count = 0
-    return (session_id, turn_count)
+    return (record.session_id, record.turn_count)
 
 
 def _clear_session_id(anima_dir: Path, session_type: str, thread_id: str = "default") -> None:
-    _session_id_path(anima_dir, session_type, thread_id).unlink(missing_ok=True)
+    SessionStore(_session_id_path(anima_dir, session_type, thread_id)).clear()
 
 
 def _resolve_real_error(
@@ -1167,6 +1162,7 @@ class GrokCLIExecutor(BaseExecutor):
             "session_rotation_pending": session_rotation_pending,
         }
 
+    @stream_events
     async def execute_streaming(
         self,
         system_prompt: str,
@@ -1196,7 +1192,7 @@ class GrokCLIExecutor(BaseExecutor):
         session_rotated = False
         if is_resumable:
             resume_session_id, turn_count = _load_session_id(self._anima_dir, session_type, thread_id)
-            if resume_session_id and turn_count >= _MAX_RESUME_TURNS:
+            if resume_session_id and SessionStore.turn_limit_reached(turn_count, _MAX_RESUME_TURNS):
                 _clear_session_id(self._anima_dir, session_type, thread_id)
                 resume_session_id = None
                 turn_count = 0

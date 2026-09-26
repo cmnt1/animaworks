@@ -38,6 +38,7 @@ from core.execution.error_classifier import (
 )
 from core.execution.rate_guard import get_rate_guard
 from core.execution.session_context import _resolve_session_type
+from core.execution.session_store import SessionRecord, SessionStore
 from core.i18n import t
 from core.memory.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
@@ -126,10 +127,7 @@ def is_cursor_agent_available() -> bool:
 
 
 def _chat_id_path(anima_dir: Path, session_type: str, thread_id: str = "default") -> Path:
-    base = anima_dir / "shortterm" / session_type
-    if thread_id != "default":
-        return base / thread_id / "cursor_chat_id.txt"
-    return base / "cursor_chat_id.txt"
+    return SessionStore.path_for("cursor", anima_dir, session_type, thread_id)
 
 
 def _save_chat_id(
@@ -139,9 +137,10 @@ def _save_chat_id(
     thread_id: str = "default",
     turn_count: int = 1,
 ) -> None:
-    p = _chat_id_path(anima_dir, session_type, thread_id)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(f"{chat_id}\n{turn_count}", encoding="utf-8")
+    SessionStore(_chat_id_path(anima_dir, session_type, thread_id)).write_text_record(
+        SessionRecord(chat_id, turn_count),
+        with_turn_count=True,
+    )
 
 
 def _load_chat_id(
@@ -154,26 +153,17 @@ def _load_chat_id(
     Returns ``(chat_id, turn_count)``.  Backward-compatible with
     the legacy 1-line format (returns turn_count=0).
     """
-    p = _chat_id_path(anima_dir, session_type, thread_id)
-    if not p.is_file():
+    record = SessionStore(_chat_id_path(anima_dir, session_type, thread_id)).read_text_record(
+        with_turn_count=True,
+        ignore_read_errors=True,
+    )
+    if record is None:
         return (None, 0)
-    try:
-        lines = p.read_text(encoding="utf-8").strip().splitlines()
-    except OSError:
-        return (None, 0)
-    chat_id = lines[0].strip() if lines else None
-    if not chat_id:
-        return (None, 0)
-    try:
-        turn_count = int(lines[1].strip()) if len(lines) > 1 else 0
-    except (ValueError, IndexError):
-        turn_count = 0
-    return (chat_id, turn_count)
+    return (record.session_id, record.turn_count)
 
 
 def _clear_chat_id(anima_dir: Path, session_type: str, thread_id: str = "default") -> None:
-    p = _chat_id_path(anima_dir, session_type, thread_id)
-    p.unlink(missing_ok=True)
+    SessionStore(_chat_id_path(anima_dir, session_type, thread_id)).clear()
 
 
 def _format_current_time() -> str:
@@ -471,7 +461,7 @@ class CursorAgentExecutor(BaseExecutor):
         session_rotated = False
         resume_chat_id = loaded_chat_id
 
-        if loaded_chat_id and turn_count >= _MAX_RESUME_TURNS:
+        if loaded_chat_id and SessionStore.turn_limit_reached(turn_count, _MAX_RESUME_TURNS):
             session_rotated = True
             _clear_chat_id(self._anima_dir, session_type, thread_id)
             resume_chat_id = None

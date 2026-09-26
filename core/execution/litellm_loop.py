@@ -61,6 +61,7 @@ from core.execution.error_classifier import (
     litellm_realm_of,
     provider_family_of,
 )
+from core.execution.events import stream_events
 from core.execution.loop_guards import (
     FINAL_RESPONSE_ERROR_TEXT,
     EmptyResponseTracker,
@@ -587,6 +588,7 @@ class LiteLLMExecutor(
 
     # ── Streaming execution ──────────────────────────────────
 
+    @stream_events
     async def execute_streaming(
         self,
         system_prompt: str,
