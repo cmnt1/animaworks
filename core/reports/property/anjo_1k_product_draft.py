@@ -249,6 +249,7 @@ def validate_minimini_snapshot(data: dict) -> dict:
     detail_cached = None
     detail_failed = None
     detail_stale = None
+    detail_skipped = None
     if not isinstance(listings, dict):
         reasons.append("listings_missing")
     else:
@@ -270,7 +271,10 @@ def validate_minimini_snapshot(data: dict) -> dict:
             detail_cached = enriched.get("cached", 0)
             detail_failed = enriched.get("failed", 0)
             detail_stale = enriched.get("stale", 0)
-            detail_counts = (detail_fetched, detail_cached, detail_failed, detail_stale)
+            # Chrome-captured lists never fetch detail pages (reCAPTCHA); uncached
+            # rooms are reported with unknown parking rather than as failures.
+            detail_skipped = enriched.get("skipped", 0)
+            detail_counts = (detail_fetched, detail_cached, detail_failed, detail_stale, detail_skipped)
             detail_counts_valid = all(
                 isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in detail_counts
             )
@@ -282,8 +286,10 @@ def validate_minimini_snapshot(data: dict) -> dict:
                 if detail_stale != 0:
                     reasons.append(f"detail_cache_stale={detail_stale}")
                 if isinstance(listing_count, int) and not isinstance(listing_count, bool):
-                    if detail_fetched + detail_cached != listing_count:
-                        reasons.append(f"detail_coverage_mismatch={detail_fetched}+{detail_cached}/{listing_count}")
+                    if detail_fetched + detail_cached + detail_skipped != listing_count:
+                        reasons.append(
+                            f"detail_coverage_mismatch={detail_fetched}+{detail_cached}+{detail_skipped}/{listing_count}"
+                        )
 
     return {
         "ok": not reasons,
@@ -295,6 +301,7 @@ def validate_minimini_snapshot(data: dict) -> dict:
         "detail_cached": detail_cached,
         "detail_failed": detail_failed,
         "detail_stale": detail_stale,
+        "detail_skipped": detail_skipped,
         "fetched_at": snapshot.get("fetched_at"),
         "url": snapshot.get("url"),
         "error": snapshot.get("error") or snapshot.get("listings_error"),
@@ -523,7 +530,8 @@ def build_minimini_listing_section(minimini: dict) -> str:
     if enriched:
         park_note = (
             f"\n- 駐車場は各物件の詳細ページから取得"
-            f"（取得 {enriched.get('fetched', 0)}件／失敗 {enriched.get('failed', 0)}件）。"
+            f"（取得 {enriched.get('fetched', 0)}件／キャッシュ {enriched.get('cached', 0)}件"
+            f"／失敗 {enriched.get('failed', 0)}件／未取得 {enriched.get('skipped', 0)}件）。"
             f"「◯◯円」=敷地内月額、「近隣」=近隣斡旋、「無」=なし、空欄=未取得。"
         )
     return f"""
@@ -535,6 +543,164 @@ def build_minimini_listing_section(minimini: dict) -> str:
 | 新着順 | 建物名 | 所在地 | 築年 | 最寄駅 | 階数 | 賃料 | 管理費 | 敷金 | 礼金 | 間取り | 専有面積 | 駐車場 | 入居可能時期 | 詳細 |
 |---:|---|---|---|---|---|---:|---:|---|---|---|---:|---|---|---|
 {body}
+"""
+
+
+# Observation gaps longer than this (e.g. the 2026-08-24 reCAPTCHA outage) make a
+# room's listing start uncertain; the normal Sun/Mon no-capture gap is 3 days.
+MINIMINI_MAX_OBSERVATION_GAP_DAYS = 4
+
+
+def _minimini_observed_rooms(snapshot: dict | None) -> list[dict] | None:
+    """Rooms of a successfully fetched minimini snapshot, or None when not observed."""
+    if not isinstance(snapshot, dict) or snapshot.get("fetch_status") != "success":
+        return None
+    rooms = (snapshot.get("listings") or {}).get("rooms")
+    if not isinstance(rooms, list):
+        return None
+    return [room for room in rooms if isinstance(room, dict) and room.get("detail_url")]
+
+
+def load_minimini_history(before_date: str, root: Path | None = None) -> list[tuple[str, list[dict]]]:
+    """(date, rooms) for each day before `before_date` whose minimini list was fetched."""
+    root = root or DATA_ROOT
+    before_ymd = before_date.replace("-", "")
+    history = []
+    for path in root.glob("*/*/*/anjo_1k_market_metrics_*.json"):
+        ymd = path.stem.rsplit("_", 1)[-1]
+        if not (len(ymd) == 8 and ymd.isdigit() and ymd < before_ymd):
+            continue
+        try:
+            snapshot = json.loads(path.read_text(encoding="utf-8-sig")).get("minimini_url_snapshot")
+        except (OSError, json.JSONDecodeError, AttributeError):
+            continue
+        rooms = _minimini_observed_rooms(snapshot)
+        if rooms is not None:
+            history.append((f"{ymd[0:4]}-{ymd[4:6]}-{ymd[6:8]}", rooms))
+    return sorted(history, key=lambda item: item[0])
+
+
+def _days_between(start: str, end: str) -> int:
+    return (datetime.strptime(end, "%Y-%m-%d") - datetime.strptime(start, "%Y-%m-%d")).days
+
+
+def build_minimini_diff(report_date: str, snapshot: dict | None, history: list[tuple[str, list[dict]]]) -> dict:
+    """New / continued / deleted rooms vs the previous observed day, keyed by detail URL.
+
+    A listing run starts on the first observed day a URL appears and ends on the
+    first observed day it is missing; days without a fetched list are skipped.
+    """
+    current = _minimini_observed_rooms(snapshot)
+    if current is None:
+        return {"available": False, "message": "当日のminimini一覧が取得できていないため比較不可"}
+    if not history:
+        return {"available": False, "message": "比較できる過去のminimini取得データなし"}
+
+    runs: dict[str, dict] = {}
+    ended: dict[str, dict] = {}
+    prev_date = None
+    for date, rooms in [*history, (report_date, current)]:
+        by_url = {room["detail_url"]: room for room in rooms}
+        for url in [url for url in runs if url not in by_url]:
+            ended[url] = runs.pop(url)
+        for url, room in by_url.items():
+            if url in runs:
+                runs[url].update(last=date, room=room)
+            else:
+                uncertain = prev_date is None or _days_between(prev_date, date) > MINIMINI_MAX_OBSERVATION_GAP_DAYS
+                runs[url] = {"start": date, "last": date, "start_uncertain": uncertain, "room": room}
+        prev_date = date
+
+    previous_date, previous_rooms = history[-1]
+    previous_urls = {room["detail_url"] for room in previous_rooms}
+    current_urls = {room["detail_url"] for room in current}
+
+    def listed(url: str) -> dict:
+        run = runs[url]
+        return {**run["room"], "listing_start": run["start"], "start_uncertain": run["start_uncertain"],
+                "listing_day": _days_between(run["start"], report_date) + 1}
+
+    def withdrawn(room: dict) -> dict:
+        run = ended[room["detail_url"]]
+        return {**room, "listing_start": run["start"], "start_uncertain": run["start_uncertain"],
+                "last_seen": run["last"], "listing_days": _days_between(run["start"], run["last"]) + 1}
+
+    return {
+        "available": True,
+        "previous_date": previous_date,
+        "gap_days": _days_between(previous_date, report_date),
+        "new_rows": [listed(r["detail_url"]) for r in current if r["detail_url"] not in previous_urls],
+        "continued_rows": [listed(r["detail_url"]) for r in current if r["detail_url"] in previous_urls],
+        "deleted_rows": [withdrawn(r) for r in previous_rooms if r["detail_url"] not in current_urls],
+    }
+
+
+def build_minimini_diff_section(diff: dict | None) -> str:
+    if not diff:
+        return ""
+    if not diff.get("available"):
+        return f"\n\n### minimini前回差分（部屋単位）\n\n- {diff.get('message')}\n"
+
+    def cell(value: object) -> str:
+        return "-" if value is None or value == "" else str(value).replace("|", "\\|")
+
+    def name(row: dict) -> str:
+        return f"**【自社】{cell(row.get('bname'))}**" if row.get("is_own") else cell(row.get("bname"))
+
+    def days(n: int, uncertain: bool, unit: str) -> str:
+        return f"{n}{unit}以上" if uncertain else f"{n}{unit}"
+
+    def base(row: dict) -> str:
+        detail = row.get("detail_url")
+        return (
+            f"| {name(row)} | {cell(row.get('floor'))} | {cell(row.get('rent'))} | {cell(row.get('mgmt_fee'))} "
+            f"| {cell(row.get('layout'))} | {cell(row.get('area'))} | {cell(row.get('listing_start'))}"
+        ), (f"[詳細]({detail})" if detail else "-")
+
+    head = "| 建物名 | 階数 | 賃料 | 管理費 | 間取り | 専有面積 | 掲載開始"
+
+    def listed_table(rows: list[dict]) -> str:
+        lines = [head + " | 掲載日目 | 詳細 |", "|---|---|---:|---:|---|---:|---|---:|---|"]
+        for row in rows:
+            left, link = base(row)
+            lines.append(f"{left} | {days(row['listing_day'], row['start_uncertain'], '日目')} | {link} |")
+        if not rows:
+            lines.append("| 該当なし | - | - | - | - | - | - | - | - |")
+        return "\n".join(lines)
+
+    def deleted_table(rows: list[dict]) -> str:
+        lines = [head + " | 最終確認 | 掲載日数 | 詳細 |", "|---|---|---:|---:|---|---:|---|---|---:|---|"]
+        for row in rows:
+            left, link = base(row)
+            lines.append(
+                f"{left} | {cell(row.get('last_seen'))} | {days(row['listing_days'], row['start_uncertain'], '日')} | {link} |"
+            )
+        if not rows:
+            lines.append("| 該当なし | - | - | - | - | - | - | - | - | - |")
+        return "\n".join(lines)
+
+    gap_note = ""
+    if diff["gap_days"] > MINIMINI_MAX_OBSERVATION_GAP_DAYS:
+        gap_note = (
+            f"\n- 前回取得から{diff['gap_days']}日空いているため、新規は「この間に掲載」、"
+            "削除は「この間に取り下げ」の意味。"
+        )
+    return f"""
+
+### minimini前回差分（部屋単位・詳細URLで照合）
+- 比較対象: 前回取得日 {diff["previous_date"]}（{diff["gap_days"]}日前。未取得日は飛ばす）
+- 新規: **{len(diff["new_rows"])}件** ／ 継続: **{len(diff["continued_rows"])}件** ／ 削除: **{len(diff["deleted_rows"])}件**
+- 掲載日目＝初めて確認した日を1日目とした暦日数。掲載日数＝初回確認〜最終確認の暦日数（取り下げはその翌日〜当日の間）。
+- 「以上」＝取得データの開始前、または取得の空白期間中に掲載が始まったため、実際はそれより長い。{gap_note}
+
+#### 新規
+{listed_table(diff["new_rows"])}
+
+#### 継続
+{listed_table(diff["continued_rows"])}
+
+#### 削除（取り下げ）
+{deleted_table(diff["deleted_rows"])}
 """
 
 
@@ -550,6 +716,7 @@ def render_markdown(
     confirmed: str,
     task_results_dir: Path = TASK_RESULTS_DIR,
     prev_minimini_count: int | None = None,
+    minimini_diff: dict | None = None,
 ) -> str:
     d = data["latest_date"]
     prev = data["prev_date"]
@@ -590,7 +757,7 @@ def render_markdown(
 | 取得方法 | {minimini.get("method", "-")} |
 | 取得URL | {minimini.get("url", "-")} |
 | HTTPステータス | {minimini.get("http_status", "-")} |
-{build_minimini_listing_section(minimini)}"""
+{build_minimini_diff_section(minimini_diff)}{build_minimini_listing_section(minimini)}"""
     else:
         minimini_summary_line = "\n- minimini掲載一覧: **取得未完了（注記付き完了可）**"
         minimini_section = f"""
@@ -934,6 +1101,9 @@ def main(argv: list[str] | None = None) -> int:
         raise RuntimeError("Copied JSON SHA-256 mismatch")
 
     prev_minimini_count = get_prev_minimini_count(data.get("prev_date", ""))
+    minimini_diff = build_minimini_diff(
+        report_date, data.get("minimini_url_snapshot"), load_minimini_history(report_date)
+    )
     updated = datetime.now(JST).replace(microsecond=0).isoformat()
     out_md.write_text(
         render_markdown(
@@ -948,6 +1118,7 @@ def main(argv: list[str] | None = None) -> int:
             confirmed,
             task_results_dir=task_results_dir,
             prev_minimini_count=prev_minimini_count,
+            minimini_diff=minimini_diff,
         ),
         encoding="utf-8",
         newline="\n",

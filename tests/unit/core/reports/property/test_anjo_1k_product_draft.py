@@ -103,6 +103,30 @@ def test_minimini_gate_reports_failed_or_incomplete_snapshot() -> None:
     assert "listing_count_missing_or_invalid" in gate["reasons"]
 
 
+def test_minimini_gate_accepts_capture_with_skipped_details() -> None:
+    def snapshot(enriched: dict) -> dict:
+        return {
+            "minimini_url_snapshot": {
+                "fetch_status": "success",
+                "listing_count": 3,
+                "listings": {
+                    "room_count": 3,
+                    "rooms": [{}, {}, {}],
+                    "parking_enriched": enriched,
+                },
+            }
+        }
+
+    gate = report.validate_minimini_snapshot(
+        snapshot({"fetched": 0, "failed": 0, "cached": 2, "stale": 0, "skipped": 1})
+    )
+    assert gate["ok"] is True
+    assert gate["detail_skipped"] == 1
+
+    gate = report.validate_minimini_snapshot(snapshot({"fetched": 0, "failed": 0, "cached": 2, "stale": 0}))
+    assert "detail_coverage_mismatch=0+2+0/3" in gate["reasons"]
+
+
 def test_write_evidence_allows_minimini_unavailable_with_note(tmp_path: Path) -> None:
     report_path = tmp_path / "products" / "Property" / "P-00002_anjo-1k-20260613.md"
     data_json = tmp_path / "data" / "P-00002_anjo-1k-20260613_data.json"
@@ -378,3 +402,74 @@ def test_render_markdown_switches_to_sqm_from_20260626() -> None:
     assert "2,153.8" in markdown
     assert "1,915.7" in markdown
     assert "2,180.5" in markdown
+
+
+def _mm_room(url: str, **extra) -> dict:
+    return {"detail_url": f"https://minimini.jp/detail/{url}/", "bname": f"建物{url}", "rent": "5.0万円", **extra}
+
+
+def _mm_snapshot(*urls: str) -> dict:
+    return {"fetch_status": "success", "listings": {"rooms": [_mm_room(u) for u in urls]}}
+
+
+def test_minimini_diff_tracks_new_continued_deleted_and_listing_days() -> None:
+    history = [
+        ("2026-09-01", [_mm_room("a"), _mm_room("b")]),
+        ("2026-09-02", [_mm_room("a"), _mm_room("b"), _mm_room("c")]),
+        # 09-03..09-04 not observed (no capture): normal gap, runs continue.
+        ("2026-09-05", [_mm_room("a"), _mm_room("c"), _mm_room("d")]),
+    ]
+    diff = report.build_minimini_diff("2026-09-08", _mm_snapshot("a", "d", "e"), history)
+
+    assert diff["available"] is True
+    assert diff["previous_date"] == "2026-09-05"
+    new = {r["detail_url"]: r for r in diff["new_rows"]}
+    cont = {r["detail_url"]: r for r in diff["continued_rows"]}
+    gone = {r["detail_url"]: r for r in diff["deleted_rows"]}
+    url = "https://minimini.jp/detail/{}/".format
+
+    assert set(new) == {url("e")} and new[url("e")]["listing_day"] == 1
+    assert cont[url("a")]["listing_day"] == 8 and cont[url("a")]["start_uncertain"] is True  # first data day
+    assert cont[url("d")]["listing_day"] == 4 and cont[url("d")]["start_uncertain"] is False
+    assert set(gone) == {url("c")}
+    assert gone[url("c")]["listing_start"] == "2026-09-02"
+    assert gone[url("c")]["last_seen"] == "2026-09-05"
+    assert gone[url("c")]["listing_days"] == 4
+
+
+def test_minimini_diff_relisting_restarts_and_long_gap_is_uncertain() -> None:
+    history = [
+        ("2026-08-01", [_mm_room("x")]),
+        ("2026-08-02", [_mm_room("y")]),  # x withdrawn
+        ("2026-08-03", [_mm_room("x"), _mm_room("y")]),  # x relisted
+    ]
+    diff = report.build_minimini_diff("2026-09-26", _mm_snapshot("x", "z"), history)
+    cont = {r["detail_url"]: r for r in diff["continued_rows"]}
+    new = {r["detail_url"]: r for r in diff["new_rows"]}
+    assert cont["https://minimini.jp/detail/x/"]["listing_start"] == "2026-08-03"
+    assert new["https://minimini.jp/detail/z/"]["start_uncertain"] is True  # 54-day gap
+    section = report.build_minimini_diff_section(diff)
+    assert "前回取得から54日空いている" in section
+    assert "1日目以上" in section
+    assert "| 該当なし |" not in section.split("#### 削除")[0]
+
+
+def test_minimini_diff_unavailable_without_current_or_history() -> None:
+    assert report.build_minimini_diff("2026-09-26", {"fetch_status": "failed"}, [])["available"] is False
+    diff = report.build_minimini_diff("2026-09-26", _mm_snapshot("a"), [])
+    assert diff["available"] is False
+    assert "比較できる過去" in report.build_minimini_diff_section(diff)
+
+
+def test_load_minimini_history_skips_failed_and_future_days(tmp_path: Path) -> None:
+    def put(ymd: str, snapshot: dict) -> None:
+        write_text(
+            tmp_path / ymd[:4] / ymd[4:6] / ymd[6:] / f"anjo_1k_market_metrics_{ymd}.json",
+            json.dumps({"minimini_url_snapshot": snapshot}),
+        )
+
+    put("20260901", _mm_snapshot("a"))
+    put("20260902", {"fetch_status": "failed"})
+    put("20260926", _mm_snapshot("b"))
+    history = report.load_minimini_history("2026-09-26", root=tmp_path)
+    assert [date for date, _ in history] == ["2026-09-01"]
