@@ -39,9 +39,8 @@ def _queue_dir() -> Path:
 @contextmanager
 def _locked(queue_dir: Path):
     queue_dir.mkdir(parents=True, exist_ok=True)
-    with (queue_dir / ".lock").open("a") as fh:
-        with file_lock(fh, exclusive=True):
-            yield
+    with (queue_dir / ".lock").open("a") as fh, file_lock(fh, exclusive=True):
+        yield
 
 
 def queue_task_notice(
