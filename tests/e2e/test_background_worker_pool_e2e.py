@@ -10,9 +10,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.config.models import invalidate_cache
-from core.memory.task_queue import TaskQueueManager
-from core.supervisor.pending_executor import PendingTaskExecutor
-from core.tasks_dispatch import publish_tasks
+from core.tasks.dispatch import publish_tasks
+from core.tasks.pending_executor import PendingTaskExecutor
+from core.tasks.queue import TaskQueueManager
 from tests.helpers.filesystem import create_anima_dir, create_test_data_dir
 
 

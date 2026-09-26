@@ -254,7 +254,7 @@ class TestReExportToolsBase:
 
 class TestReExportTaskPersistenceError:
     def test_re_export_from_task_queue(self) -> None:
-        from core.memory.task_queue import TaskPersistenceError as ReExported
+        from core.tasks.queue import TaskPersistenceError as ReExported
 
         assert ReExported is TaskPersistenceError
 

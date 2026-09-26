@@ -57,7 +57,7 @@ def _patch_queue(monkeypatch, status: str):
     queue = MagicMock()
     queue.get_task_by_id.return_value = SimpleNamespace(status=status)
     monkeypatch.setattr(
-        "core.memory.task_queue.TaskQueueManager",
+        "core.tasks.queue.TaskQueueManager",
         lambda *a, **k: queue,
     )
     return queue
@@ -111,7 +111,7 @@ def test_watch_job_does_not_terminate_when_not_cancelled(monkeypatch) -> None:
 
 
 def test_return_to_pending_skips_cancelled_entry(tmp_path) -> None:
-    from core.supervisor.pending_executor import PendingTaskExecutor
+    from core.tasks.pending_executor import PendingTaskExecutor
 
     anima_dir = tmp_path / "animas" / "test-anima"
     anima_dir.mkdir(parents=True, exist_ok=True)
@@ -126,7 +126,7 @@ def test_return_to_pending_skips_cancelled_entry(tmp_path) -> None:
     queue.get_task_by_id.return_value = SimpleNamespace(status="cancelled")
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(
-            "core.memory.task_queue.TaskQueueManager",
+            "core.tasks.queue.TaskQueueManager",
             lambda *a, **k: queue,
         )
         executor._return_task_to_pending(

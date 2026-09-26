@@ -215,7 +215,7 @@ def _cmd_task_tracker(args: argparse.Namespace) -> None:
     anima_dir = _get_anima_dir()
     status_filter = getattr(args, "status", "delegated")
 
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     manager = TaskQueueManager(anima_dir)
     tasks = manager.list_tasks(status=status_filter)

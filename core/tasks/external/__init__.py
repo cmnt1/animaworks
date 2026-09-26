@@ -7,9 +7,9 @@
 
 """External tasks snapshot store and multi-source collector skeleton."""
 
-from core.external_tasks.collector import CredentialNotFoundError, collect_all
-from core.external_tasks.models import ExternalTask, Snapshot, SourceHealth
-from core.external_tasks.store import ExternalTaskStore
+from core.tasks.external.collector import CredentialNotFoundError, collect_all
+from core.tasks.external.models import ExternalTask, Snapshot, SourceHealth
+from core.tasks.external.store import ExternalTaskStore
 
 __all__ = [
     "CredentialNotFoundError",

@@ -5,13 +5,13 @@ from unittest.mock import patch
 
 import pytest
 
-from core.memory.task_queue import (
+from core.schemas import TaskEntry
+from core.tasks.queue import (
     _STALE_TASK_THRESHOLD_SEC,
     TaskQueueManager,
     _elapsed_seconds,
     _format_elapsed_from_sec,
 )
-from core.schemas import TaskEntry
 
 JST = timezone(timedelta(hours=9))
 
@@ -376,7 +376,7 @@ class TestFormatForPrimingWithStaleness:
         updated_at = (now - timedelta(minutes=15)).isoformat()
         self._write_task_entry(task_queue, updated_at=updated_at)
 
-        with patch("core.memory.task_queue.now_local", return_value=now):
+        with patch("core.tasks.queue.now_local", return_value=now):
             output = task_queue.format_for_priming()
 
         assert "\u23f1\ufe0f 15\u5206\u7d4c\u904e" in output
@@ -387,7 +387,7 @@ class TestFormatForPrimingWithStaleness:
         updated_at = (now - timedelta(minutes=45)).isoformat()
         self._write_task_entry(task_queue, updated_at=updated_at)
 
-        with patch("core.memory.task_queue.now_local", return_value=now):
+        with patch("core.tasks.queue.now_local", return_value=now):
             output = task_queue.format_for_priming()
 
         assert "\u26a0\ufe0f STALE" in output
@@ -398,7 +398,7 @@ class TestFormatForPrimingWithStaleness:
         updated_at = (now - timedelta(minutes=5)).isoformat()
         self._write_task_entry(task_queue, updated_at=updated_at)
 
-        with patch("core.memory.task_queue.now_local", return_value=now):
+        with patch("core.tasks.queue.now_local", return_value=now):
             output = task_queue.format_for_priming()
 
         assert "\u26a0\ufe0f STALE" not in output
@@ -415,7 +415,7 @@ class TestFormatForPrimingWithStaleness:
         row["deadline"] = "2026-03-01T14:00:00+09:00"  # in the past relative to `now`
         task_queue.store.apply(task_queue.anima_dir.name, row)
 
-        with patch("core.memory.task_queue.now_local", return_value=now):
+        with patch("core.tasks.queue.now_local", return_value=now):
             output = task_queue.format_for_priming()
 
         assert "Test task" in output
@@ -439,7 +439,7 @@ class TestFormatForPrimingWithStaleness:
         task_queue.store.apply(task_queue.anima_dir.name, entry)
 
         now = datetime(2026, 3, 1, 12, 0, 0, tzinfo=JST)
-        with patch("core.memory.task_queue.now_local", return_value=now):
+        with patch("core.tasks.queue.now_local", return_value=now):
             # Should not raise
             output = task_queue.format_for_priming()
 
@@ -478,7 +478,7 @@ class TestGetStaleTasks:
         old_time = (now - timedelta(minutes=45)).isoformat()
         task_id = self._write_task_entry(task_queue, updated_at=old_time)
 
-        with patch("core.memory.task_queue.now_local", return_value=now):
+        with patch("core.tasks.queue.now_local", return_value=now):
             stale = task_queue.get_stale_tasks()
 
         assert len(stale) == 1
@@ -490,7 +490,7 @@ class TestGetStaleTasks:
         recent_time = (now - timedelta(minutes=10)).isoformat()
         self._write_task_entry(task_queue, updated_at=recent_time)
 
-        with patch("core.memory.task_queue.now_local", return_value=now):
+        with patch("core.tasks.queue.now_local", return_value=now):
             stale = task_queue.get_stale_tasks()
 
         assert len(stale) == 0
@@ -506,7 +506,7 @@ class TestGetStaleTasks:
         old_time = (now - timedelta(minutes=45)).isoformat()
         self._write_task_entry(task_queue, updated_at=old_time, status="done")
 
-        with patch("core.memory.task_queue.now_local", return_value=now):
+        with patch("core.tasks.queue.now_local", return_value=now):
             stale = task_queue.get_stale_tasks()
 
         assert len(stale) == 0

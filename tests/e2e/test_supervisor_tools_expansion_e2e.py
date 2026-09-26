@@ -9,7 +9,6 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-
 from core.config.models import AnimaModelConfig
 from core.memory.manager import MemoryManager
 from core.tooling.handler import ToolHandler
@@ -18,10 +17,7 @@ from core.tooling.handler import ToolHandler
 def _build_config(animas: dict[str, dict]) -> MagicMock:
     config = MagicMock()
     config.locale = "ja"
-    config.animas = {
-        name: AnimaModelConfig(**fields)
-        for name, fields in animas.items()
-    }
+    config.animas = {name: AnimaModelConfig(**fields) for name, fields in animas.items()}
     config.heartbeat = MagicMock()
     config.heartbeat.channel_post_cooldown_s = 0
     return config
@@ -46,7 +42,8 @@ def _setup_org(tmp_path: Path) -> tuple[Path, dict[str, Path]]:
         if sup:
             status["supervisor"] = sup
         (animas_dir / name / "status.json").write_text(
-            json.dumps(status), encoding="utf-8",
+            json.dumps(status),
+            encoding="utf-8",
         )
 
     return animas_dir, dirs
@@ -58,11 +55,13 @@ class TestDelegationWorkflowE2E:
     def test_full_delegation_cycle(self, tmp_path):
         animas_dir, dirs = _setup_org(tmp_path)
 
-        mock_cfg = _build_config({
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "natsume": {"supervisor": "hinata"},
-        })
+        mock_cfg = _build_config(
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "natsume": {"supervisor": "hinata"},
+            }
+        )
 
         messenger = MagicMock()
         msg_mock = MagicMock()
@@ -101,12 +100,15 @@ class TestDelegationWorkflowE2E:
             assert "(なし)" in result
 
             # 4. Delegate task to hinata
-            result = handler.handle("delegate_task", {
-                "name": "hinata",
-                "instruction": "natsume にデータ収集を指示して結果をまとめてください",
-                "summary": "データ収集まとめ",
-                "deadline": "3h",
-            })
+            result = handler.handle(
+                "delegate_task",
+                {
+                    "name": "hinata",
+                    "instruction": "natsume にデータ収集を指示して結果をまとめてください",
+                    "summary": "データ収集まとめ",
+                    "deadline": "3h",
+                },
+            )
             assert "委譲しました" in result
             assert "hinata" in result
 
@@ -121,7 +123,8 @@ class TestDelegationWorkflowE2E:
             assert parsed[0]["subordinate_status"] == "pending"
 
             # 6. Simulate subordinate completing the task
-            from core.memory.task_queue import TaskQueueManager
+            from core.tasks.queue import TaskQueueManager
+
             sub_tqm = TaskQueueManager(dirs["hinata"])
             tasks = sub_tqm.list_tasks()
             assert len(tasks) == 1
@@ -146,11 +149,13 @@ class TestPermissionBoundariesE2E:
         """An anima with no subordinates gets rejected by descendant checks."""
         animas_dir, dirs = _setup_org(tmp_path)
 
-        mock_cfg = _build_config({
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "natsume": {"supervisor": "hinata"},
-        })
+        mock_cfg = _build_config(
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "natsume": {"supervisor": "hinata"},
+            }
+        )
 
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
@@ -168,22 +173,27 @@ class TestPermissionBoundariesE2E:
             assert "配下の Anima はいません" in result
 
             # Cannot delegate to sakura (not a subordinate)
-            result = handler.handle("delegate_task", {
-                "name": "sakura",
-                "instruction": "test",
-                "deadline": "1h",
-            })
+            result = handler.handle(
+                "delegate_task",
+                {
+                    "name": "sakura",
+                    "instruction": "test",
+                    "deadline": "1h",
+                },
+            )
             assert "PermissionDenied" in result
 
     def test_delegate_only_to_direct_subordinate(self, tmp_path):
         """Cannot delegate to grandchild — only direct subordinates."""
         animas_dir, dirs = _setup_org(tmp_path)
 
-        mock_cfg = _build_config({
-            "sakura": {},
-            "hinata": {"supervisor": "sakura"},
-            "natsume": {"supervisor": "hinata"},
-        })
+        mock_cfg = _build_config(
+            {
+                "sakura": {},
+                "hinata": {"supervisor": "sakura"},
+                "natsume": {"supervisor": "hinata"},
+            }
+        )
 
         with (
             patch("core.config.models.load_config", return_value=mock_cfg),
@@ -196,10 +206,13 @@ class TestPermissionBoundariesE2E:
                 tool_registry=[],
             )
 
-            result = handler.handle("delegate_task", {
-                "name": "natsume",
-                "instruction": "test",
-                "deadline": "1h",
-            })
+            result = handler.handle(
+                "delegate_task",
+                {
+                    "name": "natsume",
+                    "instruction": "test",
+                    "deadline": "1h",
+                },
+            )
             assert "PermissionDenied" in result
             assert "直属部下ではありません" in result

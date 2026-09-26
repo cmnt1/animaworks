@@ -16,8 +16,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.cascade_limiter import ConversationDepthLimiter
-from core.background import _rotate_dm_logs_sync
 from core.messenger import Messenger
+from core.tasks.background import _rotate_dm_logs_sync
 from core.time_utils import now_jst
 
 
@@ -157,9 +157,7 @@ def test_depth_check_fail_closed(workspace: Path) -> None:
     with patch("core.memory.activity.ActivityLogger.recent", side_effect=OSError("disk error")):
         result = limiter.check_depth("alice", "bob", alice_dir)
 
-    assert result is False, (
-        "check_depth should be fail-closed when activity_log read fails"
-    )
+    assert result is False, "check_depth should be fail-closed when activity_log read fails"
 
 
 # ── Test 4: DM log rotation end-to-end ───────────────────────────────────────

@@ -116,7 +116,7 @@ class DashboardMixin(OrgHelpersMixin):
                 entry["current_state"] = t("handler.current_state_none")
 
             try:
-                from core.memory.task_queue import TaskQueueManager
+                from core.tasks.queue import TaskQueueManager
 
                 tqm = TaskQueueManager(desc_dir)
                 active = tqm.get_all_active()

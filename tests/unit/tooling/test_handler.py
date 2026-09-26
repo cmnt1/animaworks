@@ -2643,7 +2643,7 @@ class TestDeniedCommandEnforcement:
 
 class TestListTasksCompact:
     def test_detail_default_drops_verbose_fields(self, anima_dir: Path, memory: MagicMock):
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         tqm = TaskQueueManager(anima_dir)
         tqm.add_task(
@@ -2683,7 +2683,7 @@ class TestListTasksCompact:
         assert "task_desc" not in item["meta"]
 
     def test_detail_true_returns_all_fields(self, anima_dir: Path, memory: MagicMock):
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         tqm = TaskQueueManager(anima_dir)
         tqm.add_task(
@@ -2705,7 +2705,7 @@ class TestListTasksCompact:
         assert item["task_id"] == "t1"
 
     def test_short_instruction_not_truncated(self, anima_dir: Path, memory: MagicMock):
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         tqm = TaskQueueManager(anima_dir)
         tqm.add_task(
@@ -2774,7 +2774,7 @@ class TestDelegateTaskDmConfig:
                 },
             )
         messenger.send.assert_not_called()
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         pending = TaskQueueManager(animas_dir / "alice").store.pending("alice")
         assert len(pending) == 1, result
@@ -2802,7 +2802,7 @@ class TestDelegateTaskDmConfig:
                 },
             )
         assert messenger.send.call_count == 1
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         pending = TaskQueueManager(animas_dir / "alice").store.pending("alice")
         assert len(pending) == 1, result

@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 from core.exceptions import TaskPersistenceError
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 from core.tooling.handler import ToolHandler
 
 
@@ -89,7 +89,7 @@ class TestDelegateTaskErofsFallback:
         assert TaskQueueManager(target).list_tasks() == []
 
     def test_alias_write_denied_rolls_back_subordinate_before_proxy(self, tmp_path):
-        from core.taskboard.tasks import TaskStore
+        from core.tasks.board.tasks import TaskStore
 
         handler = _make_handler(tmp_path)
         target = _setup_target(tmp_path)

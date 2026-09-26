@@ -252,7 +252,7 @@ def _purge_stale_metadata(store: Any | None, retention_days: int) -> dict[str, i
 def _live_queue_task_ids(anima_dir: Path) -> set[str] | None:
     """Return task_ids present in the live queue, or None if unreadable."""
     try:
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         return set(TaskQueueManager(anima_dir)._load_all().keys())
     except Exception:
@@ -268,7 +268,7 @@ def _iter_anima_dirs(animas_dir: Path) -> list[Path]:
 
 def _taskboard_store_for_housekeeping(data_dir: Path) -> Any | None:
     try:
-        from core.taskboard.store import TaskBoardStore
+        from core.tasks.board.store import TaskBoardStore
 
         return TaskBoardStore(data_dir / "shared" / "taskboard.sqlite3")
     except Exception:
@@ -308,7 +308,7 @@ def _has_active_visible_task(anima_dir: Path, store: Any | None, now: datetime) 
     Board visibility is presentation metadata, never evidence that work ended.
     """
     try:
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         return bool(TaskQueueManager(anima_dir).load_active_tasks())
     except Exception:

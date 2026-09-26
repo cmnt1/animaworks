@@ -108,7 +108,7 @@ def _build_curator_review_part(anima_dir: Path, name: str) -> str | None:
 def _build_stale_task_scoreboard(anima_dir: Path, name: str) -> str | None:
     """Build the oldest-first non-terminal task scoreboard for heartbeat."""
     try:
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         now = now_local()
         rows: list[tuple[float, str]] = []
@@ -807,8 +807,8 @@ class HeartbeatMixin:
 
             # Sync delegated tasks then compact task queue after heartbeat
             try:
-                from core.memory.task_queue import TaskQueueManager
                 from core.paths import get_animas_dir
+                from core.tasks.queue import TaskQueueManager
 
                 _tqm = TaskQueueManager(self.anima_dir)
                 _synced = _tqm.sync_delegated(get_animas_dir())

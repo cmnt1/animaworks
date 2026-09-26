@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.task_queue import TaskQueueManager
 from core.skills.reference_rewriter import apply_skill_pointer_rewrites
+from core.tasks.queue import TaskQueueManager
 
 
 def test_skill_pointer_rewrite_updates_canonical_input_without_republishing(tmp_path: Path) -> None:

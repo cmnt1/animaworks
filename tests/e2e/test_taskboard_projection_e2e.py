@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.task_queue import TaskQueueManager
-from core.taskboard.models import AttentionVisibility, BoardColumn
-from core.taskboard.projector import project_all
-from core.taskboard.store import TaskBoardStore
+from core.tasks.board.models import AttentionVisibility, BoardColumn
+from core.tasks.board.projector import project_all
+from core.tasks.board.store import TaskBoardStore
+from core.tasks.queue import TaskQueueManager
 
 pytestmark = pytest.mark.e2e
 
@@ -128,6 +128,5 @@ def test_terminal_status_syncs_metadata_and_hides_from_active_board(
     assert by_id[task.task_id].column == BoardColumn.DONE
     assert by_id[task.task_id].queue_status == "done"
     assert any(
-        event["event_type"] == "archived"
-        for event in store.list_events(anima_name="sakura", task_id=task.task_id)
+        event["event_type"] == "archived" for event in store.list_events(anima_name="sakura", task_id=task.task_id)
     )

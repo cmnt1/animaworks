@@ -18,12 +18,12 @@ from core.platform.processing_lease import (
     write_processing_lease,
 )
 from core.supervisor.ipc_v2 import IPCV2ConnectionState, IPCV2Identity
-from core.supervisor.pending_executor import PendingTaskExecutor
 from core.supervisor.task_runner_supervisor import (
     TaskRunnerError,
     TaskRunnerJob,
     TaskRunnerSupervisor,
 )
+from core.tasks.pending_executor import PendingTaskExecutor
 
 
 def _anima_double(tmp_path: Path, *, pool_size: int = 1) -> MagicMock:
@@ -248,9 +248,9 @@ async def test_child_crash_returns_task_to_pending_and_root_continues(tmp_path: 
 
 @pytest.mark.asyncio
 async def test_child_crash_during_shutdown_stays_for_startup_recovery(tmp_path: Path) -> None:
-    from core.memory.task_queue import TaskQueueManager
-    from core.taskboard.tasks import process_identity
-    from core.tasks_dispatch import publish_tasks
+    from core.tasks.board.tasks import process_identity
+    from core.tasks.dispatch import publish_tasks
+    from core.tasks.queue import TaskQueueManager
 
     executor, anima, anima_dir = _executor(tmp_path, task_isolated=True)
     assert executor._task_runner_supervisor is not None
@@ -279,7 +279,7 @@ async def test_child_crash_during_shutdown_stays_for_startup_recovery(tmp_path: 
     claim = store.claim("sakura", task_desc["task_id"], process_identity())
     assert claim is not None
     executor._shutdown_event.set()
-    with patch("core.taskboard.tasks.identity_liveness", return_value="unknown"):
+    with patch("core.tasks.board.tasks.identity_liveness", return_value="unknown"):
         await executor._execute_canonical_task(claim)
         executor._recover_task_attempts(store)
     # An owner with uncertain liveness retains its exact attempt fence.
@@ -288,7 +288,7 @@ async def test_child_crash_during_shutdown_stays_for_startup_recovery(tmp_path: 
     assert store.claim("sakura", task_desc["task_id"], process_identity()) is None
     assert store.wakeups("sakura") == []
     anima.messenger.send.assert_not_called()
-    with patch("core.taskboard.tasks.identity_liveness", return_value="dead"):
+    with patch("core.tasks.board.tasks.identity_liveness", return_value="dead"):
         executor._recover_task_attempts(store)
     # Proven death ends ownership, preserves input, and requests attention;
     # it does not automatically replay possibly completed side effects.
@@ -322,7 +322,7 @@ async def test_same_attempt_not_reclaimed_while_lease_live(tmp_path: Path) -> No
         process_start_time=1.0,
     )
     with patch(
-        "core.supervisor.pending_executor.is_processing_lease_live",
+        "core.tasks.pending_executor.is_processing_lease_live",
         return_value=True,
     ):
         # Force attempt tracker to same attempt as lease.
@@ -404,7 +404,7 @@ async def test_background_flag_false_uses_legacy_command_path(tmp_path: Path) ->
 
 @pytest.mark.asyncio
 async def test_background_flag_true_spawns_child(tmp_path: Path) -> None:
-    from core.background import BackgroundTaskManager, TaskStatus
+    from core.tasks.background import BackgroundTaskManager, TaskStatus
 
     executor, anima, anima_dir = _executor(tmp_path, background_isolated=True)
     manager = BackgroundTaskManager(anima_dir)
@@ -444,7 +444,7 @@ async def test_background_flag_true_spawns_child(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_isolated_command_failure_is_saved_and_notified(tmp_path: Path) -> None:
-    from core.background import BackgroundTaskManager, TaskStatus
+    from core.tasks.background import BackgroundTaskManager, TaskStatus
 
     executor, anima, anima_dir = _executor(tmp_path, background_isolated=True)
     manager = BackgroundTaskManager(anima_dir)

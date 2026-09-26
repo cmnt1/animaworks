@@ -36,9 +36,9 @@ from core.memory.streaming_journal import StreamingJournal
 from core.platform.locks import acquire_file_lock, release_file_lock
 from core.supervisor.inbox_rate_limiter import InboxRateLimiter
 from core.supervisor.ipc import IPCRequest, IPCResponse, IPCServer
-from core.supervisor.pending_executor import PendingTaskExecutor
 from core.supervisor.scheduler_manager import SchedulerManager
 from core.supervisor.streaming_handler import StreamingIPCHandler
+from core.tasks.pending_executor import PendingTaskExecutor
 from core.time_utils import ensure_aware, now_local
 
 logger = logging.getLogger(__name__)
@@ -236,7 +236,7 @@ class AnimaRunner:
 
             logger.info("Initializing Anima: %s", self.anima_name)
 
-            from core.taskboard.readiness import require_task_store_ready
+            from core.tasks.board.readiness import require_task_store_ready
 
             require_task_store_ready(self._anima_dir)
             process_config = resolve_process_model_config(self._anima_dir)

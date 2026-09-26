@@ -129,7 +129,7 @@ class TestCoreModuleImports:
             "core.messenger",
             "core.lifecycle",
             "core.outbound",
-            "core.background",
+            "core.tasks.background",
         ],
     )
     def test_module_imports_successfully(self, module_path):

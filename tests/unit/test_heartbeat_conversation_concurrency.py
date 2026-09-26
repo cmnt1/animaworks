@@ -293,7 +293,7 @@ class TestConcurrentLockAcquisition:
         from core._anima_inbox import InboxMixin
         from core._anima_lifecycle import LifecycleMixin
         from core._anima_messaging import MessagingMixin
-        from core.supervisor.pending_executor import PendingTaskExecutor
+        from core.tasks.pending_executor import PendingTaskExecutor
 
         def guarded(obj, *helpers) -> bool:
             sources = [inspect.getsource(obj)]

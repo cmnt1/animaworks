@@ -25,7 +25,7 @@ from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from core.background import _rotate_dm_logs_sync
+from core.tasks.background import _rotate_dm_logs_sync
 from core.time_utils import now_jst
 
 
@@ -159,9 +159,12 @@ class TestRotateDmLogs:
         dm_logs.mkdir(parents=True)
         path = dm_logs / "pair.jsonl"
         path.write_text(
-            json.dumps(_make_dm_entry("a", "b", "valid", ts=old_ts), ensure_ascii=False) + "\n"
+            json.dumps(_make_dm_entry("a", "b", "valid", ts=old_ts), ensure_ascii=False)
+            + "\n"
             + "{not valid json}\n"
-            + "{\"ts\":\"" + (base - timedelta(days=1)).isoformat() + "\",\"from\":\"x\",\"to\":\"y\",\"text\":\"ok\"}\n"
+            + '{"ts":"'
+            + (base - timedelta(days=1)).isoformat()
+            + '","from":"x","to":"y","text":"ok"}\n'
         )
 
         result = _rotate_dm_logs_sync(tmp_path, max_age_days=7)

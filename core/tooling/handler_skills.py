@@ -526,7 +526,7 @@ class SkillsToolsMixin:
     # ── Task queue handlers ───────────────────────────────────
 
     def _handle_backlog_task(self, args: dict[str, Any]) -> str:
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         manager = TaskQueueManager(self._anima_dir)
         source = args.get("source", "anima")
@@ -563,8 +563,8 @@ class SkillsToolsMixin:
         return _json.dumps(entry.model_dump(), ensure_ascii=False, indent=2)
 
     def _handle_update_task(self, args: dict[str, Any]) -> str:
-        from core.memory.task_queue import TaskQueueManager
-        from core.tasks_dispatch import update_task
+        from core.tasks.dispatch import update_task
+        from core.tasks.queue import TaskQueueManager
 
         manager = TaskQueueManager(self._anima_dir)
         task_id = args.get("task_id", "")
@@ -619,7 +619,7 @@ class SkillsToolsMixin:
         return _json.dumps(entry.model_dump(), ensure_ascii=False, indent=2)
 
     def _handle_list_tasks(self, args: dict[str, Any]) -> str:
-        from core.memory.task_queue import TaskQueueManager, mark_executability
+        from core.tasks.queue import TaskQueueManager, mark_executability
 
         manager = TaskQueueManager(self._anima_dir)
         status_filter = args.get("status")
@@ -663,7 +663,7 @@ class SkillsToolsMixin:
 
     def _handle_submit_tasks(self, args: dict[str, Any]) -> str:
         """Validate a complete DAG batch, then publish it in one transaction."""
-        from core.tasks_dispatch import publish_tasks
+        from core.tasks.dispatch import publish_tasks
 
         batch_id = args.get("batch_id", "")
         tasks = args.get("tasks", [])
@@ -745,7 +745,7 @@ class SkillsToolsMixin:
         if mgr is None:
             return _error_result("NotEnabled", t("handler.bg_not_enabled"))
 
-        from core.background import TaskStatus
+        from core.tasks.background import TaskStatus
 
         status_filter: TaskStatus | None = None
         raw_status = args.get("status")

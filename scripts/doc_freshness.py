@@ -93,24 +93,24 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     ],
     # ── common_knowledge — operations ──
     "reference/operations/task-management.md": [
-        "core/background.py",
+        "core/tasks/background.py",
         "core/tooling/",
-        "core/memory/task_queue.py",
+        "core/tasks/queue.py",
     ],
     "common_knowledge/operations/task-delegation-guide.md": [
         "core/tooling/handler_delegation.py",
-        "core/memory/task_queue.py",
+        "core/tasks/queue.py",
         "core/_anima_heartbeat.py",
         "core/execution/_sdk_hooks.py",
     ],
     "reference/operations/heartbeat-cron-guide.md": [
-        "core/background.py",
+        "core/tasks/background.py",
         "core/schedule_parser.py",
         "core/_anima_heartbeat.py",
     ],
     "common_knowledge/operations/background-tasks.md": [
-        "core/background.py",
-        "core/supervisor/pending_executor.py",
+        "core/tasks/background.py",
+        "core/tasks/pending_executor.py",
     ],
     "common_knowledge/operations/task-board-guide.md": [
         "server/routes/tasks.py",
@@ -134,7 +134,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     # ── common_knowledge — anatomy ──
     "common_knowledge/anatomy/what-is-anima.md": [
         "core/anima.py",
-        "core/background.py",
+        "core/tasks/background.py",
         "core/lifecycle.py",
     ],
     "reference/anatomy/anima-anatomy.md": [
@@ -183,7 +183,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     ],
     "common_skills/cron-management/SKILL.md": [
         "core/schedule_parser.py",
-        "core/background.py",
+        "core/tasks/background.py",
     ],
     "common_skills/image-posting/SKILL.md": [
         "core/integrations/image_gen.py",

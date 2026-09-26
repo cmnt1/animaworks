@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 from core.memory.housekeeping import run_housekeeping
-from core.memory.task_queue import TaskQueueManager
-from core.taskboard.store import TaskBoardStore
+from core.tasks.board.store import TaskBoardStore
+from core.tasks.queue import TaskQueueManager
 from core.time_utils import now_local
 
 pytestmark = pytest.mark.e2e

@@ -697,8 +697,8 @@ def create_internal_router() -> APIRouter:
     async def internal_tasks(anima_name: str, include_archived: bool = False, task_id: str | None = None):
         """Read a task snapshot for workers without direct database access."""
         from core.anima_factory import validate_anima_name
-        from core.memory.task_queue import TaskQueueManager
         from core.paths import get_animas_dir
+        from core.tasks.queue import TaskQueueManager
 
         if validate_anima_name(anima_name):
             return JSONResponse(status_code=400, content={"detail": "Invalid anima name"})
@@ -727,7 +727,7 @@ def create_internal_router() -> APIRouter:
         """Publish a complete batch on the host; no sandbox DB grant is needed."""
         from core.anima_factory import validate_anima_name
         from core.paths import get_animas_dir
-        from core.tasks_dispatch import publish_tasks
+        from core.tasks.dispatch import publish_tasks
 
         if validate_anima_name(body.anima_name):
             return JSONResponse(status_code=400, content={"detail": "Invalid anima name"})
@@ -736,7 +736,7 @@ def create_internal_router() -> APIRouter:
             return JSONResponse(status_code=404, content={"detail": "Anima directory not found"})
 
         def _publish():
-            from core.taskboard.tasks import attempt_scope
+            from core.tasks.board.tasks import attempt_scope
 
             with attempt_scope(body.attempt_identity):
                 return publish_tasks(anima_dir, body.tasks, source=body.source, meta=body.meta, host_fallback=False)
@@ -801,8 +801,8 @@ def create_internal_router() -> APIRouter:
         def _persist() -> dict[str, str]:
             from datetime import UTC, datetime
 
-            from core.taskboard.tasks import attempt_scope
-            from core.tasks_dispatch import publish_delegation
+            from core.tasks.board.tasks import attempt_scope
+            from core.tasks.dispatch import publish_delegation
 
             payload = {
                 "task_type": "llm",
@@ -865,7 +865,7 @@ def create_internal_router() -> APIRouter:
     async def internal_task_board_action(body: TaskBoardActionRequest):
         """Run a lease-guarded task board write for a sandboxed anima CLI."""
         from core.anima_factory import validate_anima_name
-        from core.taskboard.board_actions import BoardActionError, run_board_action
+        from core.tasks.board.board_actions import BoardActionError, run_board_action
 
         if body.actor != "human" and validate_anima_name(body.actor):
             return JSONResponse(status_code=400, content={"detail": "Invalid actor"})
@@ -887,8 +887,8 @@ def create_internal_router() -> APIRouter:
     async def internal_update_task(body: UpdateTaskPersistRequest):
         """Persist a task update outside sandbox EROFS constraints."""
         from core.anima_factory import validate_anima_name
-        from core.memory.task_queue import TaskQueueManager
         from core.paths import get_animas_dir
+        from core.tasks.queue import TaskQueueManager
 
         if validate_anima_name(body.anima_name):
             return JSONResponse(status_code=400, content={"detail": "Invalid anima name"})
@@ -909,7 +909,7 @@ def create_internal_router() -> APIRouter:
             )
 
         def _persist() -> Any:
-            from core.taskboard.tasks import attempt_scope
+            from core.tasks.board.tasks import attempt_scope
 
             manager = TaskQueueManager(anima_dir)
             with attempt_scope(body.attempt_identity), manager.store.transaction():

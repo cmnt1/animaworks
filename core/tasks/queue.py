@@ -23,7 +23,7 @@ from core.time_utils import ensure_aware, now_iso, now_local
 logger = logging.getLogger("animaworks.task_queue")
 
 if TYPE_CHECKING:
-    from core.taskboard.tasks import TaskStore
+    from core.tasks.board.tasks import TaskStore
 
 # Valid task statuses. "blocked" and "unblock_check" were retired: an anima
 # that cannot proceed uses "cancelled" and messages the requester with the
@@ -76,7 +76,7 @@ def _descriptor_ids(anima_dir: Path) -> set[str]:
     try:
         return TaskQueueManager(anima_dir).store.executable_ids(anima_dir.name)
     except (OSError, sqlite3.OperationalError) as exc:
-        from core.tasks_dispatch import is_task_permission_error, read_executable_ids_via_server
+        from core.tasks.dispatch import is_task_permission_error, read_executable_ids_via_server
 
         if not is_task_permission_error(exc):
             raise
@@ -125,10 +125,10 @@ class TaskQueueManager:
 
     @property
     def store(self) -> TaskStore:
-        from core.taskboard.tasks import TaskStore, task_database_path
+        from core.tasks.board.tasks import TaskStore, task_database_path
 
         if self._store is None:
-            from core.taskboard.readiness import require_task_store_ready
+            from core.tasks.board.readiness import require_task_store_ready
 
             require_task_store_ready(self.anima_dir)
             candidate = TaskStore(task_database_path(self.anima_dir))
@@ -390,8 +390,8 @@ class TaskQueueManager:
         swallowed so the queue update remains authoritative.
         """
         try:
-            from core.taskboard.models import AttentionVisibility
-            from core.taskboard.store import TaskBoardStore
+            from core.tasks.board.models import AttentionVisibility
+            from core.tasks.board.store import TaskBoardStore
 
             anima_name = self.anima_dir.name
             store = TaskBoardStore()
@@ -426,8 +426,8 @@ class TaskQueueManager:
         deliberate suppressions and stay untouched.
         """
         try:
-            from core.taskboard.models import AttentionVisibility
-            from core.taskboard.store import TaskBoardStore
+            from core.tasks.board.models import AttentionVisibility
+            from core.tasks.board.store import TaskBoardStore
 
             anima_name = self.anima_dir.name
             store = TaskBoardStore()
@@ -494,7 +494,7 @@ class TaskQueueManager:
         try:
             return self.store.read(self.anima_dir.name, archived=include_archived)
         except (OSError, sqlite3.OperationalError) as exc:
-            from core.tasks_dispatch import is_task_permission_error, read_tasks_via_server
+            from core.tasks.dispatch import is_task_permission_error, read_tasks_via_server
 
             if not is_task_permission_error(exc):
                 raise
@@ -535,7 +535,7 @@ class TaskQueueManager:
         try:
             return self.store.get(self.anima_dir.name, task_id)
         except (OSError, sqlite3.OperationalError) as exc:
-            from core.tasks_dispatch import is_task_permission_error, read_tasks_via_server
+            from core.tasks.dispatch import is_task_permission_error, read_tasks_via_server
 
             if not is_task_permission_error(exc):
                 raise
@@ -570,8 +570,8 @@ class TaskQueueManager:
 
     def _goal_task_suppressed_by_taskboard(self, task_id: str) -> bool:
         try:
-            from core.taskboard.models import AttentionVisibility
-            from core.taskboard.store import TaskBoardStore
+            from core.tasks.board.models import AttentionVisibility
+            from core.tasks.board.store import TaskBoardStore
 
             metadata = TaskBoardStore().get_metadata(self.anima_dir.name, task_id)
             if metadata is None:

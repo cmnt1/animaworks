@@ -12,9 +12,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cli.commands.task_cmd import _cmd_update
-from core.memory.task_queue import TaskQueueManager
-from core.taskboard.tasks import attempt_scope
-from core.tasks_dispatch import publish_tasks
+from core.tasks.board.tasks import attempt_scope
+from core.tasks.dispatch import publish_tasks
+from core.tasks.queue import TaskQueueManager
 
 
 @pytest.fixture

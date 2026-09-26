@@ -44,7 +44,7 @@ class TestChannelE:
 
     @pytest.mark.asyncio
     async def test_channel_e_with_tasks(self, temp_anima_dir):
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         manager = TaskQueueManager(temp_anima_dir)
         manager.add_task(
@@ -120,7 +120,7 @@ class TestChannelEOverflowInbox:
 class TestPrimeMemoriesIncludesChannelE:
     @pytest.mark.asyncio
     async def test_prime_memories_returns_pending_tasks(self, temp_anima_dir, monkeypatch):
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         manager = TaskQueueManager(temp_anima_dir)
         manager.add_task(

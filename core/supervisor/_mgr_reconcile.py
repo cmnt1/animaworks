@@ -37,7 +37,7 @@ class ReconcileMixin:
 
     async def _flush_task_notices(self) -> None:
         """Send batched task board notices whose actor has gone quiet."""
-        from core.taskboard.notices import flush_task_notices
+        from core.tasks.board.notices import flush_task_notices
 
         try:
             await asyncio.to_thread(flush_task_notices)

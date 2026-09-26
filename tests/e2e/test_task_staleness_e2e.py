@@ -17,11 +17,11 @@ from pathlib import Path
 
 import pytest
 
-from core.memory.task_queue import (
+from core.paths import _prompt_cache, load_prompt
+from core.tasks.queue import (
     _STALE_TASK_THRESHOLD_SEC,
     TaskQueueManager,
 )
-from core.paths import _prompt_cache, load_prompt
 from core.time_utils import now_jst
 
 # ── Fixtures ──────────────────────────────────────────────────

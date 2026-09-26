@@ -28,7 +28,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from core.background import BackgroundTaskManager
 from core.exceptions import AnimaWorksError, ConfigError
 from core.execution.session_context import RuntimeSessionContext, current_runtime_session
 from core.i18n import t
@@ -36,6 +35,7 @@ from core.memory import MemoryManager
 from core.memory.activity import ActivityLogger
 from core.messenger import Messenger
 from core.notification.notifier import HumanNotifier
+from core.tasks.background import BackgroundTaskManager
 from core.tooling.dispatch import ExternalToolDispatcher
 
 # ── Re-export all handler_base symbols for backward compatibility ──

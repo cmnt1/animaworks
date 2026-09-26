@@ -20,7 +20,7 @@ from unittest.mock import patch
 import pytest
 
 from core.config.models import AnimaModelConfig, AnimaWorksConfig
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 
 # ── TestSubmitTasksWorkspace ─────────────────────────────────────
 

@@ -32,8 +32,8 @@ def _record_taskboard_delegation(
     tracking_task_id: str | None = None,
 ) -> None:
     """Record optional TaskBoard presentation metadata after canonical publication."""
-    from core.taskboard.models import AttentionVisibility, BoardColumn
-    from core.taskboard.store import TaskBoardStore
+    from core.tasks.board.models import AttentionVisibility, BoardColumn
+    from core.tasks.board.store import TaskBoardStore
 
     store = TaskBoardStore()
     store.upsert_metadata(
@@ -140,7 +140,7 @@ class DelegationMixin(OrgHelpersMixin):
         # 1つの ID を委譲側・受け側の両方で共有する（旧データは _resolve の双方向フォールバックで解決）
         sub_task_id = uuid.uuid4().hex[:12]
         tracking_task_id = sub_task_id
-        from core.tasks_dispatch import publish_delegation
+        from core.tasks.dispatch import publish_delegation
 
         task_desc = {
             "task_type": "llm",
@@ -262,7 +262,7 @@ class DelegationMixin(OrgHelpersMixin):
         """Track progress of delegated tasks."""
         status_filter = args.get("status", "active")
 
-        from core.memory.task_queue import TaskQueueManager
+        from core.tasks.queue import TaskQueueManager
 
         own_tqm = TaskQueueManager(self._anima_dir)
         delegated = [

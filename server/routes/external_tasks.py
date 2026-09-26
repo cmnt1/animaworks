@@ -16,8 +16,8 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from core.external_tasks.store import ExternalTaskStore
 from core.paths import get_external_tasks_store_path
+from core.tasks.external.store import ExternalTaskStore
 from core.time_utils import ensure_aware
 
 logger = logging.getLogger("animaworks.routes.external_tasks")

@@ -18,7 +18,7 @@ import json
 import pytest
 
 from core.memory import MemoryManager
-from core.memory.task_queue import TaskQueueManager
+from core.tasks.queue import TaskQueueManager
 from core.tooling.handler import ToolHandler
 
 
@@ -105,7 +105,7 @@ class TestCliTaskAdd:
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
         import cli.commands.task_cmd as task_cmd
-        from core.taskboard.tasks import TaskStore
+        from core.tasks.board.tasks import TaskStore
 
         original_submit = TaskStore.submit
 
@@ -207,7 +207,7 @@ class TestListTasksExecutability:
 
     def test_mark_executability_queries_canonical_input_ids_once(self, tmp_path, monkeypatch):
         """One canonical input lookup serves the whole listing, without file scans."""
-        import core.memory.task_queue as tq
+        import core.tasks.queue as tq
 
         anima_dir = tmp_path / "aoi"
         (anima_dir / "state" / "pending").mkdir(parents=True)
@@ -269,7 +269,7 @@ class TestSubmitTasksInvariant:
             assert stored[field] == task[field]
 
     def test_batch_failure_never_leaves_partial_work_or_compensating_cancel(self, tmp_path, monkeypatch):
-        from core.taskboard.tasks import TaskStore
+        from core.tasks.board.tasks import TaskStore
 
         anima_dir = tmp_path / "aoi"
         handler = _make_handler(anima_dir)

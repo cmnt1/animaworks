@@ -6,8 +6,8 @@ import asyncio
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from core.memory.task_queue import TaskQueueManager
-from core.supervisor.pending_executor import PendingTaskExecutor, _classify_task_result
+from core.tasks.pending_executor import PendingTaskExecutor, _classify_task_result
+from core.tasks.queue import TaskQueueManager
 
 
 def _make_executor(tmp_path: Path) -> PendingTaskExecutor:

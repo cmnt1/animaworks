@@ -15,11 +15,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.exceptions import ToolConfigError
-from core.external_tasks.collector import CredentialNotFoundError
-from core.external_tasks.sources import chatwork as chatwork_src
-from core.external_tasks.sources import github as github_src
-from core.external_tasks.sources import gmail as gmail_src
-from core.external_tasks.sources import slack as slack_src
+from core.tasks.external.collector import CredentialNotFoundError
+from core.tasks.external.sources import chatwork as chatwork_src
+from core.tasks.external.sources import github as github_src
+from core.tasks.external.sources import gmail as gmail_src
+from core.tasks.external.sources import slack as slack_src
 
 # ── GitHub ──────────────────────────────────────────────
 
@@ -61,7 +61,7 @@ def test_github_collects_prs_and_issues() -> None:
             return subprocess.CompletedProcess(cmd, 0, json.dumps(issue_payload), "")
         raise AssertionError(f"unexpected gh command: {cmd}")
 
-    with patch("core.external_tasks.sources.github.subprocess.run", side_effect=fake_run):
+    with patch("core.tasks.external.sources.github.subprocess.run", side_effect=fake_run):
         tasks = github_src.collect_github()
 
     assert len(tasks) == 2
@@ -86,7 +86,7 @@ def test_github_collects_prs_and_issues() -> None:
 def test_github_credential_missing_when_gh_not_installed() -> None:
     with (
         patch(
-            "core.external_tasks.sources.github.subprocess.run",
+            "core.tasks.external.sources.github.subprocess.run",
             side_effect=FileNotFoundError("gh"),
         ),
         pytest.raises(CredentialNotFoundError),
@@ -97,7 +97,7 @@ def test_github_credential_missing_when_gh_not_installed() -> None:
 def test_github_credential_missing_when_unauthenticated() -> None:
     with (
         patch(
-            "core.external_tasks.sources.github.subprocess.run",
+            "core.tasks.external.sources.github.subprocess.run",
             side_effect=subprocess.CalledProcessError(1, ["gh", "auth", "status"]),
         ),
         pytest.raises(CredentialNotFoundError),
@@ -111,7 +111,7 @@ def test_github_api_error_propagates() -> None:
             return subprocess.CompletedProcess(cmd, 0, "", "")
         return subprocess.CompletedProcess(cmd, 1, "", "API rate limit exceeded")
 
-    with patch("core.external_tasks.sources.github.subprocess.run", side_effect=fake_run):
+    with patch("core.tasks.external.sources.github.subprocess.run", side_effect=fake_run):
         with pytest.raises(RuntimeError, match="gh command failed"):
             github_src.collect_github()
 
@@ -137,7 +137,7 @@ def test_github_id_deterministic() -> None:
             return subprocess.CompletedProcess(cmd, 0, "[]", "")
         raise AssertionError(cmd)
 
-    with patch("core.external_tasks.sources.github.subprocess.run", side_effect=fake_run):
+    with patch("core.tasks.external.sources.github.subprocess.run", side_effect=fake_run):
         a = github_src.collect_github()
         b = github_src.collect_github()
     assert a[0].id == b[0].id == "github-pr-o-r-42"

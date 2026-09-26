@@ -1,7 +1,7 @@
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for pending task watcher in core/supervisor/pending_executor.py.
+"""Tests for pending task watcher in core/tasks/pending_executor.py.
 
 Validates ``watcher_loop()`` and ``execute_pending_task()``:
 - Watcher picks up pending JSON files and deletes them
@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.exceptions import ToolExecutionError
-from core.supervisor.pending_executor import PendingTaskExecutor
+from core.tasks.pending_executor import PendingTaskExecutor
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -110,7 +110,7 @@ class TestPendingTaskWatcherLoop:
         task_path = _write_pending_task(executor._anima_dir)
         assert task_path.exists()
 
-        with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
+        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
             await executor.watcher_loop()
 
         assert not task_path.exists()
@@ -127,7 +127,7 @@ class TestPendingTaskWatcherLoop:
 
         executor.execute_pending_task = capture_execute  # type: ignore[assignment]
 
-        with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
+        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
             await executor.watcher_loop()
 
         assert len(executed_tasks) == 1
@@ -141,14 +141,14 @@ class TestPendingTaskWatcherLoop:
         corrupt_path = pending_dir / "corrupt.json"
         corrupt_path.write_text("{invalid json content", encoding="utf-8")
 
-        with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
+        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
             await executor.watcher_loop()
 
         assert not corrupt_path.exists()
 
     async def test_preserves_non_object_legacy_llm_evidence_after_explicit_import(self, tmp_path: Path) -> None:
         """Only command descriptors are swept; imported legacy LLM evidence remains untouched."""
-        from core.taskboard.tasks import TaskStore, task_database_path
+        from core.tasks.board.tasks import TaskStore, task_database_path
 
         executor = _make_executor_with_anima(tmp_path)
         llm_pending_dir = executor._anima_dir / "state" / "pending"
@@ -157,7 +157,7 @@ class TestPendingTaskWatcherLoop:
         junk.write_text("[]", encoding="utf-8")
         TaskStore(task_database_path(executor._anima_dir)).import_legacy(executor._anima_dir)
 
-        with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
+        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
             await executor.watcher_loop()
 
         assert junk.read_text(encoding="utf-8") == "[]"
@@ -178,7 +178,7 @@ class TestPendingTaskWatcherLoop:
 
         executor.execute_pending_task = capture_execute  # type: ignore[assignment]
 
-        with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
+        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
             await executor.watcher_loop()
 
         for p in paths:
@@ -191,7 +191,7 @@ class TestPendingTaskWatcherLoop:
         pending_dir = executor._anima_dir / "state" / "background_tasks" / "pending"
         assert not pending_dir.exists()
 
-        with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
+        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=self._stop_after_first(executor)):
             await executor.watcher_loop()
 
         assert pending_dir.is_dir()
@@ -204,7 +204,7 @@ class TestPendingTaskWatcherLoop:
             coro.close()
             raise asyncio.CancelledError()
 
-        with patch("core.supervisor.pending_executor.asyncio.wait_for", side_effect=cancel_wait):
+        with patch("core.tasks.pending_executor.asyncio.wait_for", side_effect=cancel_wait):
             await executor.watcher_loop()
 
 

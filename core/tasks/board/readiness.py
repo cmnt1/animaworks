@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 
 from core.i18n import t
-from core.taskboard.tasks import task_database_path
+from core.tasks.board.tasks import task_database_path
 
 
 def require_task_store_ready(anima_dir: Path) -> None:

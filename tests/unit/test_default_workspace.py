@@ -127,7 +127,7 @@ class TestPendingExecutorDefaultWorkspaceFallback:
         anima_dir = _write_status(data_dir, "test-anima", model="claude-sonnet-4-6", default_workspace="proj")
         (anima_dir / "state" / "pending").mkdir(parents=True, exist_ok=True)
 
-        from core.supervisor.pending_executor import _resolve_default_workspace
+        from core.tasks.pending_executor import _resolve_default_workspace
 
         with patch("core.workspace.resolve_workspace", return_value=Path("/abs/path/proj")):
             resolved = _resolve_default_workspace(anima_dir)
@@ -138,7 +138,7 @@ class TestPendingExecutorDefaultWorkspaceFallback:
         """_resolve_default_workspace returns empty when not set."""
         anima_dir = _write_status(data_dir, "test-anima", model="claude-sonnet-4-6")
 
-        from core.supervisor.pending_executor import _resolve_default_workspace
+        from core.tasks.pending_executor import _resolve_default_workspace
 
         resolved = _resolve_default_workspace(anima_dir)
 

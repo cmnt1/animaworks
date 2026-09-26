@@ -16,9 +16,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 from core.exceptions import TaskPersistenceError
-from core.memory.task_queue import TaskQueueManager
 from core.paths import get_animas_dir
 from core.schemas import TaskEntry
+from core.tasks.queue import TaskQueueManager
 
 logger = logging.getLogger("animaworks.tasks_dispatch")
 
@@ -31,7 +31,7 @@ def _post_tasks(endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Retry a lost response with the same IDs, never publish new work IDs."""
     import httpx
 
-    from core.taskboard.tasks import current_attempt_identity
+    from core.tasks.board.tasks import current_attempt_identity
 
     payload = {**payload, "attempt_identity": current_attempt_identity()}
     for attempt in range(2):
@@ -217,7 +217,7 @@ def _validate_task_dependencies(
     known_ids: set[str] | None = None,
     check_membership: bool = True,
 ) -> None:
-    from core.supervisor.pending_executor import _topological_sort
+    from core.tasks.pending_executor import _topological_sort
 
     ids = {task["task_id"] for task in prepared}
     if len(ids) != len(prepared):

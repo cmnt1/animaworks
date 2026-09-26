@@ -269,9 +269,9 @@ def _build_background_manager(anima_dir: Path) -> Any:
         if not config.background_task.enabled:
             return None
 
-        from core.background import BackgroundTaskManager
         from core.integrations import TOOL_MODULES
         from core.integrations._base import load_execution_profiles
+        from core.tasks.background import BackgroundTaskManager
 
         profiles = load_execution_profiles(TOOL_MODULES)
         config_eligible = {name: tc.threshold_s for name, tc in config.background_task.eligible_tools.items()}

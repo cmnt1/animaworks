@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from core.memory.priming import PrimingEngine
-from core.memory.task_queue import TaskQueueManager
-from core.taskboard.store import TaskBoardStore
+from core.tasks.board.store import TaskBoardStore
+from core.tasks.queue import TaskQueueManager
 
 pytestmark = pytest.mark.e2e
 

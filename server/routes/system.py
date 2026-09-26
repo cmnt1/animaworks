@@ -166,7 +166,7 @@ def _collect_running_background_tasks(
     malformed or concurrently replaced sidecar is treated as an empty state so
     the activity page remains available while workers update their marker.
     """
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     sidecar_dir = shared_dir.parent / "run" / "animas"
     result: list[dict[str, object]] = []
@@ -1041,8 +1041,8 @@ def create_system_router() -> APIRouter:
         days: int = 30,
     ):
         """Return token usage summary and estimated cost."""
-        from core.memory.token_usage import TokenUsageLogger
         from core.paths import get_data_dir
+        from core.usage.token_usage import TokenUsageLogger
 
         animas_dir = get_data_dir() / "animas"
         if anima:
@@ -1068,8 +1068,8 @@ def create_system_router() -> APIRouter:
         anima: str | None = None,
     ):
         """Return current-month token budget status for each Anima."""
-        from core.memory.token_budget import read_token_budget_status
         from core.paths import get_data_dir
+        from core.usage.token_budget import read_token_budget_status
 
         current = now_local()
         animas_dir = get_data_dir() / "animas"

@@ -6,8 +6,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from core.messenger import Messenger
-from core.taskboard.models import BoardColumn
-from core.taskboard.store import TaskBoardStore
+from core.tasks.board.models import BoardColumn
+from core.tasks.board.store import TaskBoardStore
 from core.tooling.handler_delegation import DelegationMixin
 
 
@@ -73,7 +73,7 @@ def test_delegate_task_records_taskboard_metadata(monkeypatch, tmp_path: Path) -
     assert by_anima["boss"].column == BoardColumn.WAITING
     assert by_anima["boss"].source_ref == f"task_queue:boss:{by_anima['boss'].task_id}"
 
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     worker_queue = TaskQueueManager(worker_dir)._load_all()
     boss_queue = TaskQueueManager(boss_dir)._load_all()
@@ -104,7 +104,7 @@ def test_delegate_task_keeps_queue_entries_when_taskboard_write_fails(monkeypatc
         patch("core.config.models.load_config", return_value=config),
         patch("core.paths.get_animas_dir", return_value=animas_dir),
         patch("core.paths.get_data_dir", return_value=tmp_path),
-        patch("core.taskboard.store.TaskBoardStore.upsert_metadata", side_effect=RuntimeError("sqlite down")),
+        patch("core.tasks.board.store.TaskBoardStore.upsert_metadata", side_effect=RuntimeError("sqlite down")),
     ):
         result = harness._handle_delegate_task(
             {
@@ -115,7 +115,7 @@ def test_delegate_task_keeps_queue_entries_when_taskboard_write_fails(monkeypatc
         )
 
     assert "worker" in result
-    from core.memory.task_queue import TaskQueueManager
+    from core.tasks.queue import TaskQueueManager
 
     assert len(TaskQueueManager(worker_dir).list_tasks()) == 1
     assert len(TaskQueueManager(boss_dir).get_delegated_tasks()) == 1

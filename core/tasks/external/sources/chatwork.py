@@ -16,7 +16,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from core.exceptions import ToolConfigError
-from core.external_tasks.models import ExternalTask
+from core.tasks.external.models import ExternalTask
 
 logger = logging.getLogger("animaworks.external_tasks.sources.chatwork")
 
@@ -40,7 +40,7 @@ def collect_chatwork() -> list[ExternalTask]:
       - ``chatwork-msg-{room_id}-{message_id}`` for unreplied mentions
     """
     # Local import avoids circular import with collector → sources.
-    from core.external_tasks.collector import CredentialNotFoundError
+    from core.tasks.external.collector import CredentialNotFoundError
 
     try:
         from core.integrations._base import resolve_env_style_credential

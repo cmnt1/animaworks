@@ -34,7 +34,7 @@ class BoardActionError(Exception):
 
 def get_task_store():
     from core.paths import get_taskboard_db_path
-    from core.taskboard.tasks import TaskStore
+    from core.tasks.board.tasks import TaskStore
 
     return TaskStore(get_taskboard_db_path())
 
@@ -113,7 +113,7 @@ def notify_task_delegator(
 def _send_task_notice(
     actor: str, to: str, task_id: str, action: str, detail: str, *, owner: str | None = None
 ) -> str | None:
-    from core.taskboard.notices import queue_task_notice
+    from core.tasks.board.notices import queue_task_notice
 
     return queue_task_notice(actor, to, task_id, action, detail, owner=owner)
 
@@ -132,8 +132,8 @@ def run_board_action(
     Raises ``BoardActionError`` for refusals. Storage errors propagate so the
     CLI can decide whether to retry through the host.
     """
-    from core.memory.task_queue import TaskQueueManager
     from core.paths import get_animas_dir
+    from core.tasks.queue import TaskQueueManager
 
     if action not in LEASE_ACTIONS:
         raise BoardActionError(f"unknown board action: {action}", 2)
