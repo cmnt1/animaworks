@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.execution._sdk_session import _load_session_id, _save_session_id
-from core.execution.codex_sdk import _load_thread_id, _save_thread_id
+from core.execution.engines.claude._sdk_session import _load_session_id, _save_session_id
+from core.execution.engines.codex.codex_sdk import _load_thread_id, _save_thread_id
 from core.memory.conversation.memory import ConversationMemory
 from core.memory.conversation.streaming_journal import StreamingJournal
 from core.schemas import ModelConfig

@@ -34,13 +34,12 @@ except ModuleNotFoundError:
     sys.modules["claude_agent_sdk"] = _mock_sdk
     sys.modules["claude_agent_sdk.types"] = _mock_types
 
-from core.execution._sdk_hooks import (  # noqa: E402
+from core.execution.engines.claude._sdk_hooks import (  # noqa: E402
     _build_pre_compact_hook,
     _build_pre_tool_hook,
     _log_compaction_event,
 )
 from core.prompt.context import CHARS_PER_TOKEN  # noqa: E402
-
 
 # ── Fixtures ─────────────────────────────────────────────────
 

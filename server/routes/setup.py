@@ -392,7 +392,7 @@ async def _resolve_codex_setup_model() -> str:
     try:
         from openai_codex import AsyncCodex, CodexConfig
 
-        from core.execution.codex_sdk import _patch_reasoning_effort_enum
+        from core.execution.engines.codex.setup import _patch_reasoning_effort_enum
         from core.platform.codex import get_codex_executable
 
         _patch_reasoning_effort_enum()

@@ -14,7 +14,7 @@ class TestLogToolResult:
     """Test the _log_tool_result() helper function."""
 
     def test_writes_tool_result_entry(self, tmp_path: Path) -> None:
-        from core.execution.agent_sdk import _log_tool_result
+        from core.execution.engines.claude.agent_sdk import _log_tool_result
 
         _log_tool_result(
             tmp_path,
@@ -39,7 +39,7 @@ class TestLogToolResult:
         assert raw["meta"]["is_error"] is False
 
     def test_writes_error_flag(self, tmp_path: Path) -> None:
-        from core.execution.agent_sdk import _log_tool_result
+        from core.execution.engines.claude.agent_sdk import _log_tool_result
 
         _log_tool_result(
             tmp_path,
@@ -56,7 +56,7 @@ class TestLogToolResult:
 
     def test_never_raises(self, tmp_path: Path) -> None:
         """_log_tool_result should silently swallow errors."""
-        from core.execution.agent_sdk import _log_tool_result
+        from core.execution.engines.claude.agent_sdk import _log_tool_result
 
         # Use a path that will cause an error (e.g., read-only or missing dir)
         with patch("core.memory.activity.logger.ActivityLogger.log", side_effect=RuntimeError("disk full")):
@@ -85,8 +85,8 @@ class TestHandleToolResultBlockWithAnimaDir:
         )
 
     def test_logs_to_activity_with_anima_dir(self, tmp_path: Path) -> None:
-        from core.execution.agent_sdk import _handle_tool_result_block
         from core.execution.base import ToolCallRecord
+        from core.execution.engines.claude.agent_sdk import _handle_tool_result_block
 
         pending = {
             "tu_test": ToolCallRecord(
@@ -116,8 +116,8 @@ class TestHandleToolResultBlockWithAnimaDir:
         assert raw["tool"] == "Grep"
 
     def test_no_activity_log_without_anima_dir(self, tmp_path: Path) -> None:
-        from core.execution.agent_sdk import _handle_tool_result_block
         from core.execution.base import ToolCallRecord
+        from core.execution.engines.claude.agent_sdk import _handle_tool_result_block
 
         pending = {
             "tu_test2": ToolCallRecord(

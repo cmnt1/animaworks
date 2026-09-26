@@ -241,7 +241,7 @@ Claude Agent SDKは `PreToolUse` フック機構を提供しており（`claude_
 
 #### 1. PreToolUseフックの追加
 
-**変更ファイル**: `core/execution/agent_sdk.py`
+**変更ファイル**: `core/execution/engines/claude/agent_sdk.py`
 
 ```python
 async def _pre_tool_hook(
@@ -411,7 +411,7 @@ options = ClaudeAgentOptions(
 | Phase | 内容 | 変更ファイル | 難易度 |
 |---|---|---|---|
 | **Phase 3a** | ToolHandler層のハードニング | `core/tooling/handler.py` | 中 |
-| **Phase 3b** | A1モードPreToolUseフック | `core/execution/agent_sdk.py` | 中 |
+| **Phase 3b** | A1モードPreToolUseフック | `core/execution/engines/claude/agent_sdk.py` | 中 |
 
 ## Related Issues
 
@@ -425,7 +425,7 @@ options = ClaudeAgentOptions(
 - `core/tooling/handler.py:242-264` — _handle_edit_file
 - `core/tooling/handler.py:266-295` — _handle_execute_command
 - `core/tooling/handler.py:454-487` — _check_file_permission（person_dir内は全許可）
-- `core/execution/agent_sdk.py:168-179` — ClaudeAgentOptions（PostToolUseフックのみ）
+- `core/execution/engines/claude/agent_sdk.py:168-179` — ClaudeAgentOptions（PostToolUseフックのみ）
 - `core/agent/agent_core.py:186-195` — AgentSDKExecutor生成（ToolHandler未使用）
 - `core/agent/agent_core.py:230-238` — LiteLLMExecutor生成（ToolHandler使用）
 - `claude_agent_sdk/types.py` — PreToolUseHookSpecificOutput, permissionDecision

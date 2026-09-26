@@ -15,7 +15,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 from unittest.mock import AsyncMock
 
-from core.execution.agent_sdk import StreamDisconnectedError
+from core.execution.engines.claude.agent_sdk import StreamDisconnectedError
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.builder import BuildResult
 from tests.helpers.mocks import (

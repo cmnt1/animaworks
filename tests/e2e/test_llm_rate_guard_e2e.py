@@ -52,7 +52,7 @@ def shared_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _make_executor(anima_dir: Path):
-    from core.execution.litellm_loop import LiteLLMExecutor
+    from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
     from core.memory import MemoryManager
     from core.tooling.handler import ToolHandler
 
@@ -93,7 +93,7 @@ async def test_rate_error_records_block_in_shared_file(shared_data_dir: Path) ->
     mock = AsyncMock(side_effect=_RateLimit429())
 
     with (
-        patch("core.execution.litellm_loop.decorrelated_jitter", return_value=0.0),
+        patch("core.execution.engines.litellm.litellm_loop.decorrelated_jitter", return_value=0.0),
         patch("litellm.acompletion", mock),
         pytest.raises(LLMAPIError),
     ):
@@ -179,7 +179,7 @@ def test_grok_quota_block_selects_sonnet_fallback(
     shared_data_dir: Path,
 ) -> None:
     from core.config.model_config import resolve_effective_model_config
-    from core.execution.grok_cli import _grok_error_metadata
+    from core.execution.engines.grok.grok_cli import _grok_error_metadata
 
     primary = ModelConfig(
         model="grok/grok-4.5",

@@ -87,8 +87,10 @@ class TestTryDeferredTrigger:
         limiter._anima._background_lock.locked.return_value = False
         limiter._deferred_timer = MagicMock()
 
-        with patch.object(limiter, "is_in_cooldown", return_value=False), \
-             patch.object(limiter, "message_triggered_inbox", new_callable=AsyncMock):
+        with (
+            patch.object(limiter, "is_in_cooldown", return_value=False),
+            patch.object(limiter, "message_triggered_inbox", new_callable=AsyncMock),
+        ):
             await limiter.try_deferred_trigger()
             assert limiter._pending_trigger is True
             assert limiter._deferred_timer is None
@@ -100,8 +102,10 @@ class TestTryDeferredTrigger:
         limiter._anima.messenger.has_unread.return_value = True
         limiter._deferred_timer = MagicMock()
 
-        with patch.object(limiter, "is_in_cooldown", return_value=True), \
-             patch.object(limiter, "schedule_deferred_trigger") as mock_sched:
+        with (
+            patch.object(limiter, "is_in_cooldown", return_value=True),
+            patch.object(limiter, "schedule_deferred_trigger") as mock_sched,
+        ):
             await limiter.try_deferred_trigger()
             mock_sched.assert_called_once()
             assert limiter._pending_trigger is False
@@ -115,8 +119,10 @@ class TestTryDeferredTrigger:
         limiter._anima._inbox_lock.locked.return_value = True
         limiter._deferred_timer = MagicMock()
 
-        with patch.object(limiter, "is_in_cooldown", return_value=False), \
-             patch.object(limiter, "schedule_deferred_trigger") as mock_sched:
+        with (
+            patch.object(limiter, "is_in_cooldown", return_value=False),
+            patch.object(limiter, "schedule_deferred_trigger") as mock_sched,
+        ):
             await limiter.try_deferred_trigger()
             mock_sched.assert_called_once()
 
@@ -249,13 +255,13 @@ class TestAnimaRunnerCleanupDelegation:
         mock_limiter = MagicMock(spec=InboxRateLimiter)
         runner._inbox_limiter = mock_limiter
 
-        with patch("core.execution._litellm_tools.shutdown_tool_executors") as shutdown_executors:
+        with patch("core.execution.engines.litellm._litellm_tools.shutdown_tool_executors") as shutdown_executors:
             await runner._cleanup()
         mock_limiter.cancel_deferred_timer.assert_called_once()
         shutdown_executors.assert_called_once_with()
 
     def test_mode_a_executor_shutdown_cancels_pending_work(self):
-        from core.execution import _litellm_tools
+        from core.execution.engines.litellm import _litellm_tools
 
         quick_executor = MagicMock()
         background_executor = MagicMock()

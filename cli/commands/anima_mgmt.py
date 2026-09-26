@@ -734,7 +734,7 @@ def _is_codex_mode_anima(anima_dir: Path, status_data: dict[str, object]) -> boo
 
 def _refresh_codex_yolo_config(anima_dir: Path) -> Path:
     from core.config.model_config import load_model_config
-    from core.execution.codex_sdk import CodexSDKExecutor
+    from core.execution.engines.codex.codex_sdk import CodexSDKExecutor
 
     instructions_path = anima_dir / ".codex_home" / "instructions.md"
     system_prompt = ""

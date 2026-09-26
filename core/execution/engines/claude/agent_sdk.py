@@ -42,24 +42,25 @@ if TYPE_CHECKING:
 from pathlib import Path
 
 from core.exceptions import ExecutionError, LLMAPIError, MemoryWriteError  # noqa: F401
-from core.execution import _sdk_session
-from core.execution._sdk_patch import apply_sdk_transport_patch
+from core.execution.engines.claude import _sdk_session
+from core.execution.engines.claude._sdk_patch import apply_sdk_transport_patch
 
 apply_sdk_transport_patch()
 
 # ── Re-exports from submodules (backward compatibility) ──────
-from core.execution._sdk_hooks import (  # noqa: F401
+from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, TokenUsage, ToolCallRecord
+from core.execution.engines.claude._sdk_hooks import (  # noqa: F401
     _build_post_tool_hook,
     _build_pre_compact_hook,
     _build_pre_tool_hook,
     _cache_subordinate_paths,
 )
-from core.execution._sdk_interrupt import (  # noqa: F401
+from core.execution.engines.claude._sdk_interrupt import (  # noqa: F401
     _graceful_interrupt_blocking,
     _graceful_interrupt_stream,
 )
-from core.execution._sdk_options import SDKOptionsMixin  # noqa: F401
-from core.execution._sdk_security import (  # noqa: F401
+from core.execution.engines.claude._sdk_options import SDKOptionsMixin  # noqa: F401
+from core.execution.engines.claude._sdk_security import (  # noqa: F401
     _BASH_HEAD_BYTES,
     _BASH_TAIL_BYTES,
     _BASH_TRUNCATE_BYTES,
@@ -76,7 +77,7 @@ from core.execution._sdk_security import (  # noqa: F401
     _guard_grep,
     _guard_read,
 )
-from core.execution._sdk_session import (  # noqa: F401
+from core.execution.engines.claude._sdk_session import (  # noqa: F401
     _CONTEXT_AUTOCOMPACT_SAFETY,
     _PROMPT_FILE_THRESHOLD,
     _RESUMABLE_SESSION_TYPES,
@@ -105,7 +106,7 @@ from core.execution._sdk_session import (  # noqa: F401
     load_session_state,
     record_session_measurement,
 )
-from core.execution._sdk_stream import (  # noqa: F401
+from core.execution.engines.claude._sdk_stream import (  # noqa: F401
     StreamingContext,
     StreamingState,
     _finalize_pending_records,
@@ -118,7 +119,6 @@ from core.execution._sdk_stream import (  # noqa: F401
     _tool_result_content_len,
     process_stream_messages,
 )
-from core.execution.base import BaseExecutor, ExecutionResult, StreamDisconnectedError, TokenUsage, ToolCallRecord
 from core.execution.error_classifier import (
     classify_llm_error_message,
     detect_cli_error_envelope,

@@ -16,13 +16,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from core.execution.base import ExecutionResult
-from core.execution.cursor_agent import (
+from core.execution.engines.cursor.cursor_agent import (
     _MAX_RESUME_TURNS,
     _RESUMABLE_TRIGGERS,
-    _cursor_error_metadata,
     CursorAgentExecutor,
     _chat_id_path,
     _clear_chat_id,
+    _cursor_error_metadata,
     _find_cursor_agent_binary,
     _load_chat_id,
     _resolve_session_type,
@@ -88,11 +88,13 @@ class TestBinaryDiscovery:
             assert _find_cursor_agent_binary() is None
 
     def test_is_available_true(self):
-        with patch("core.execution.cursor_agent._find_cursor_agent_binary", return_value="/usr/bin/agent"):
+        with patch(
+            "core.execution.engines.cursor.cursor_agent._find_cursor_agent_binary", return_value="/usr/bin/agent"
+        ):
             assert is_cursor_agent_available() is True
 
     def test_is_available_false(self):
-        with patch("core.execution.cursor_agent._find_cursor_agent_binary", return_value=None):
+        with patch("core.execution.engines.cursor.cursor_agent._find_cursor_agent_binary", return_value=None):
             assert is_cursor_agent_available() is False
 
 
@@ -1141,7 +1143,7 @@ class TestCursorErrorMetadata:
         guard_path = tmp_path / "llm_rate_guard.json"
         guard = LlmRateGuard(config=LlmRateGuardConfig(quota_block_seconds=1800), path=guard_path)
 
-        with patch("core.execution.cursor_agent.get_rate_guard", return_value=guard):
+        with patch("core.execution.engines.cursor.cursor_agent.get_rate_guard", return_value=guard):
             metadata = _cursor_error_metadata("quota exceeded", "cursor/claude-4-sonnet")
 
         state = json.loads(guard_path.read_text(encoding="utf-8"))
@@ -1156,7 +1158,7 @@ class TestCursorErrorMetadata:
         guard_path = tmp_path / "llm_rate_guard.json"
         guard = LlmRateGuard(config=LlmRateGuardConfig(), path=guard_path)
 
-        with patch("core.execution.cursor_agent.get_rate_guard", return_value=guard):
+        with patch("core.execution.engines.cursor.cursor_agent.get_rate_guard", return_value=guard):
             metadata = _cursor_error_metadata("some random internal thing", "cursor/claude-4-sonnet")
 
         assert metadata == {"terminal": True, "reason": "unknown"}

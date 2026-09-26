@@ -92,7 +92,7 @@ def _make_mock_client(
 @pytest.mark.usefixtures("_mock_sdk")
 async def test_stream_interrupt_saves_session_id_from_result_message(anima_dir: Path) -> None:
     """interrupt() succeeds → ResultMessage session_id is saved."""
-    from core.execution.agent_sdk import _graceful_interrupt_stream
+    from core.execution.engines.claude.agent_sdk import _graceful_interrupt_stream
 
     result = _ResultMessage(session_id="result-session-123")
     client = _make_mock_client(messages_after_interrupt=[result])
@@ -119,7 +119,7 @@ async def test_stream_interrupt_saves_session_id_from_result_message(anima_dir: 
 @pytest.mark.usefixtures("_mock_sdk")
 async def test_stream_interrupt_fallback_to_stream_event_session_id(anima_dir: Path) -> None:
     """interrupt() times out → StreamEvent captured session_id is saved."""
-    from core.execution.agent_sdk import _graceful_interrupt_stream
+    from core.execution.engines.claude.agent_sdk import _graceful_interrupt_stream
 
     client = _make_mock_client(interrupt_side_effect=TimeoutError())
 
@@ -144,7 +144,7 @@ async def test_stream_interrupt_fallback_to_stream_event_session_id(anima_dir: P
 @pytest.mark.usefixtures("_mock_sdk")
 async def test_stream_interrupt_no_stream_event_no_save(anima_dir: Path) -> None:
     """interrupt() fails and no StreamEvent captured → no session_id saved."""
-    from core.execution.agent_sdk import _graceful_interrupt_stream
+    from core.execution.engines.claude.agent_sdk import _graceful_interrupt_stream
 
     client = _make_mock_client(interrupt_side_effect=TimeoutError())
 
@@ -167,7 +167,7 @@ async def test_stream_interrupt_no_stream_event_no_save(anima_dir: Path) -> None
 @pytest.mark.usefixtures("_mock_sdk")
 async def test_blocking_interrupt_saves_session_id(anima_dir: Path) -> None:
     """Blocking interrupt() succeeds → ResultMessage session_id is saved."""
-    from core.execution.agent_sdk import _graceful_interrupt_blocking
+    from core.execution.engines.claude.agent_sdk import _graceful_interrupt_blocking
 
     result = _ResultMessage(session_id="blocking-session-789")
     client = _make_mock_client(response_after_interrupt=[result])
@@ -193,7 +193,7 @@ async def test_blocking_interrupt_saves_session_id(anima_dir: Path) -> None:
 @pytest.mark.usefixtures("_mock_sdk")
 async def test_blocking_interrupt_timeout_no_save(anima_dir: Path) -> None:
     """Blocking interrupt() times out → no session_id saved."""
-    from core.execution.agent_sdk import _graceful_interrupt_blocking
+    from core.execution.engines.claude.agent_sdk import _graceful_interrupt_blocking
 
     client = _make_mock_client(interrupt_side_effect=TimeoutError())
 
@@ -215,7 +215,7 @@ async def test_blocking_interrupt_timeout_no_save(anima_dir: Path) -> None:
 @pytest.mark.usefixtures("_mock_sdk")
 async def test_stream_interrupt_non_resumable_session_not_saved(anima_dir: Path) -> None:
     """Heartbeat/cron/task sessions should not be saved even on interrupt."""
-    from core.execution.agent_sdk import _graceful_interrupt_stream
+    from core.execution.engines.claude.agent_sdk import _graceful_interrupt_stream
 
     result = _ResultMessage(session_id="hb-session-nope")
     client = _make_mock_client(messages_after_interrupt=[result])
@@ -239,7 +239,7 @@ async def test_stream_interrupt_non_resumable_session_not_saved(anima_dir: Path)
 @pytest.mark.usefixtures("_mock_sdk")
 async def test_stream_interrupt_thread_specific_session(anima_dir: Path) -> None:
     """Session file is thread-specific when thread_id != 'default'."""
-    from core.execution.agent_sdk import _graceful_interrupt_stream
+    from core.execution.engines.claude.agent_sdk import _graceful_interrupt_stream
 
     result = _ResultMessage(session_id="thread-session-42")
     client = _make_mock_client(messages_after_interrupt=[result])
@@ -263,6 +263,6 @@ async def test_stream_interrupt_thread_specific_session(anima_dir: Path) -> None
 
 def test_interrupt_timeout_constant() -> None:
     """INTERRUPT_TIMEOUT_SEC is defined and reasonable."""
-    from core.execution._sdk_session import INTERRUPT_TIMEOUT_SEC
+    from core.execution.engines.claude._sdk_session import INTERRUPT_TIMEOUT_SEC
 
     assert INTERRUPT_TIMEOUT_SEC == 5.0

@@ -101,7 +101,7 @@ Phase 2ではDB ownerを変更しない。phase3→phase2/legacy rollbackも同�
 | 経路 | 保護位置 | 結果 |
 |---|---|---|
 | ToolHandler/MCP/LiteLLMの`write_memory_file`, `write_file`, `edit_file` | protected set `core/tooling/handler_base.py:82-92`; canonical判定 `core/tooling/handler_base.py:344-372`; own anima適用 `core/tooling/handler_perms.py:242-249` | `PermissionDenied`。`Path.resolve()`により自己statusへのsymlinkも拒否 |
-| Mode S native Write/Edit | protected set `core/execution/_sdk_security.py:32-40`; check `core/execution/_sdk_security.py:66-150`; hook `core/execution/_sdk_hooks.py:795-819` | write/edit拒否、read許可 |
+| Mode S native Write/Edit | protected set `core/execution/engines/claude/_sdk_security.py:32-40`; check `core/execution/engines/claude/_sdk_security.py:66-150`; hook `core/execution/engines/claude/_sdk_hooks.py:795-819` | write/edit拒否、read許可 |
 
 read pathはwrite flagを立てないため変更しない。回帰testは `tests/unit/tooling/test_handler.py` でstatus write拒否・内容不変・status read許可・通常knowledge write成功を、`tests/unit/execution/test_agent_sdk_security.py` でMode S status write拒否/read許可・通常knowledge write許可を検証する。
 
@@ -111,11 +111,11 @@ read pathはwrite flagを立てないため変更しない。回帰testは `test
 
 | 残存経路 | 現状と理由 |
 |---|---|
-| `execute_command` / Mode S Bash | protected-file predicateを通らず、redirectやscriptでwrite可能（`core/tooling/handler_perms.py:362-474`, `core/execution/_sdk_security.py:153-283`）。command sandboxの仕様変更は別PR |
-| Mode C shell / bwrap相当profile | deny有効時もMCP profileはanima rootを書込み可とし、file-specific read-onlyは`permissions.json`だけ（`core/execution/codex_sdk.py:1266-1315`）。denyなしworkspace-write/danger-full-accessも直接write可能 |
-| Mode X Grok sandbox | anima rootが`read_write`で、条件によりsandbox自体を無効化する（`core/execution/grok_cli.py:317-385`） |
-| superuser/debug mode | ToolHandler/Mode Sの保護を明示的にbypassする（`core/tooling/handler_perms.py:185-186`, `core/execution/_sdk_security.py:82-83`） |
-| supervisorの汎用file toolによる配下anima status | descendant management fileとしてwrite許可が先に評価される（`core/tooling/handler.py:204-215`, `core/tooling/handler_perms.py:281-284`, `core/execution/_sdk_security.py:121-125`）。本PRの「animaが自分で書換える穴」とは別 |
+| `execute_command` / Mode S Bash | protected-file predicateを通らず、redirectやscriptでwrite可能（`core/tooling/handler_perms.py:362-474`, `core/execution/engines/claude/_sdk_security.py:153-283`）。command sandboxの仕様変更は別PR |
+| Mode C shell / bwrap相当profile | deny有効時もMCP profileはanima rootを書込み可とし、file-specific read-onlyは`permissions.json`だけ（`core/execution/engines/codex/codex_sdk.py:1266-1315`）。denyなしworkspace-write/danger-full-accessも直接write可能 |
+| Mode X Grok sandbox | anima rootが`read_write`で、条件によりsandbox自体を無効化する（`core/execution/engines/grok/grok_cli.py:317-385`） |
+| superuser/debug mode | ToolHandler/Mode Sの保護を明示的にbypassする（`core/tooling/handler_perms.py:185-186`, `core/execution/engines/claude/_sdk_security.py:82-83`） |
+| supervisorの汎用file toolによる配下anima status | descendant management fileとしてwrite許可が先に評価される（`core/tooling/handler.py:204-215`, `core/tooling/handler_perms.py:281-284`, `core/execution/engines/claude/_sdk_security.py:121-125`）。本PRの「animaが自分で書換える穴」とは別 |
 | 専用subordinate management tool | enable/disable/model等の固定fieldを意図的にwriteする `core/tooling/handler_subordinate_control.py:35-64,104-134,260-286`。汎用file toolではなく管理API |
 | human-origin workspace grant | 明示human origin gate後に`default_workspace`を更新する `core/tooling/handler_workspace.py:47-139,241-255` |
 | trusted host/server/CLI/factory/migration/reconcile | management planeとして正当にwriteする。例: `core/anima/factory.py:468-570`, `server/routes/animas.py:427-470`, `core/config/cli.py:168-193,320-344`, `core/supervisor/_mgr_reconcile.py:101-125` |

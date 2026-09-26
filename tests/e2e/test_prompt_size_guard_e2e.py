@@ -113,14 +113,14 @@ class TestPreflightConstants:
         assert _PROMPT_HARD_LIMIT_BYTES > 0
 
     def test_sdk_buffer_size(self):
-        from core.execution.agent_sdk import _SDK_MAX_BUFFER_SIZE
+        from core.execution.engines.claude.agent_sdk import _SDK_MAX_BUFFER_SIZE
 
         assert _SDK_MAX_BUFFER_SIZE == 4 * 1024 * 1024
 
     def test_limits_ordering(self):
         """Soft < Hard < SDK buffer."""
         from core.agent.agent_core import _PROMPT_HARD_LIMIT_BYTES, _PROMPT_SOFT_LIMIT_BYTES
-        from core.execution.agent_sdk import _SDK_MAX_BUFFER_SIZE
+        from core.execution.engines.claude.agent_sdk import _SDK_MAX_BUFFER_SIZE
 
         assert _PROMPT_SOFT_LIMIT_BYTES < _PROMPT_HARD_LIMIT_BYTES < _SDK_MAX_BUFFER_SIZE
 

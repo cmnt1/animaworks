@@ -176,7 +176,9 @@ class TestLitellmCommentUpdated:
 
     def test_litellm_comment_updated(self):
         """litellm_loop.py should say 'handled by AgentCore', not 'NOT handled'."""
-        litellm_path = Path(__file__).resolve().parents[2] / "core" / "execution" / "litellm_loop.py"
+        litellm_path = (
+            Path(__file__).resolve().parents[2] / "core" / "execution" / "engines" / "litellm" / "litellm_loop.py"
+        )
         content = litellm_path.read_text(encoding="utf-8")
         assert "handled by AgentCore" in content, (
             "litellm_loop.py should say session chaining is 'handled by AgentCore'"

@@ -127,13 +127,13 @@ class CycleMixin:
         """Recycle an overgrown or over-aged Mode S session before resume."""
         if mode != "s" or not uses_chat_session:
             return None
-        from core.execution._sdk_session import SESSION_TYPE_CHAT, load_session_state
+        from core.execution.engines.claude._sdk_session import SESSION_TYPE_CHAT, load_session_state
 
         state = load_session_state(self.anima_dir, SESSION_TYPE_CHAT, thread_id)
         if state is None:
             return None
         if not state.session_id:
-            from core.execution._sdk_session import _clear_session_id
+            from core.execution.engines.claude._sdk_session import _clear_session_id
 
             _clear_session_id(self.anima_dir, SESSION_TYPE_CHAT, thread_id)
             return None
@@ -388,21 +388,21 @@ class CycleMixin:
             logger.debug("Failed to clear non-chat shortterm state", exc_info=True)
 
         try:
-            from core.execution._sdk_session import clear_session_id_for_type
+            from core.execution.engines.claude._sdk_session import clear_session_id_for_type
 
             clear_session_id_for_type(self.anima_dir, session_type, thread_id)
         except Exception:
             logger.debug("Failed to clear non-chat SDK session ID", exc_info=True)
 
         try:
-            from core.execution.codex_sdk import clear_codex_thread_id
+            from core.execution.engines.codex.codex_sdk import clear_codex_thread_id
 
             clear_codex_thread_id(self.anima_dir, session_type, thread_id)
         except Exception:
             logger.debug("Failed to clear non-chat Codex thread ID", exc_info=True)
 
         try:
-            from core.execution.grok_cli import _clear_session_id as clear_grok_session_id
+            from core.execution.engines.grok.grok_cli import _clear_session_id as clear_grok_session_id
 
             clear_grok_session_id(self.anima_dir, session_type, thread_id)
         except Exception:
@@ -697,7 +697,7 @@ class CycleMixin:
                     )
                 )
                 try:
-                    from core.execution.codex_sdk import clear_codex_thread_ids
+                    from core.execution.engines.codex.codex_sdk import clear_codex_thread_ids
 
                     clear_codex_thread_ids(self.anima_dir, thread_id)
                 except Exception:
@@ -1028,7 +1028,7 @@ class CycleMixin:
             # Clear SDK session ID so the next session starts fresh
             if mode == "s":
                 try:
-                    from core.execution._sdk_session import (
+                    from core.execution.engines.claude._sdk_session import (
                         _RESUMABLE_SESSION_TYPES,
                         _clear_session_id,
                         _resolve_session_type,
@@ -1578,14 +1578,14 @@ class CycleMixin:
                     if retry_count == 1:
                         try:
                             if mode == "c" and uses_chat_session:
-                                from core.execution.codex_sdk import clear_codex_thread_ids
+                                from core.execution.engines.codex.codex_sdk import clear_codex_thread_ids
 
                                 clear_codex_thread_ids(self.anima_dir, thread_id)
                             elif mode == "x" and uses_chat_session:
-                                from core.execution.grok_cli import (
+                                from core.execution.engines.grok.grok_cli import (
                                     _clear_session_id as clear_grok_session_id,
                                 )
-                                from core.execution.grok_cli import (
+                                from core.execution.engines.grok.grok_cli import (
                                     _resolve_session_type as resolve_grok_session_type,
                                 )
 
@@ -1595,7 +1595,7 @@ class CycleMixin:
                                     thread_id,
                                 )
                             elif mode not in ("c", "x"):
-                                from core.execution._sdk_session import (
+                                from core.execution.engines.claude._sdk_session import (
                                     _RESUMABLE_SESSION_TYPES,
                                     _clear_session_id,
                                     _resolve_session_type,
@@ -1817,7 +1817,7 @@ class CycleMixin:
             # Clear SDK session ID so the next session starts fresh
             if mode == "s":
                 try:
-                    from core.execution._sdk_session import (
+                    from core.execution.engines.claude._sdk_session import (
                         _RESUMABLE_SESSION_TYPES,
                         _clear_session_id,
                         _resolve_session_type,
@@ -1830,17 +1830,17 @@ class CycleMixin:
                     logger.debug("Failed to clear session ID for deferred chain", exc_info=True)
             elif mode == "c":
                 try:
-                    from core.execution.codex_sdk import clear_codex_thread_ids
+                    from core.execution.engines.codex.codex_sdk import clear_codex_thread_ids
 
                     clear_codex_thread_ids(self.anima_dir, thread_id)
                 except Exception:
                     logger.debug("Failed to clear Codex thread ID for deferred chain", exc_info=True)
             elif mode == "x":
                 try:
-                    from core.execution.grok_cli import (
+                    from core.execution.engines.grok.grok_cli import (
                         _clear_session_id as clear_grok_session_id,
                     )
-                    from core.execution.grok_cli import (
+                    from core.execution.engines.grok.grok_cli import (
                         _resolve_session_type as resolve_grok_session_type,
                     )
 

@@ -58,7 +58,7 @@ class TestAgentToolHardBlockE2E:
     @pytest.mark.asyncio
     async def test_hook_hard_blocks_agent_no_pending(self, anima_dir: Path):
         """Full hook flow: Agent tool → hard-blocked → NO pending file."""
-        from core.execution._sdk_hooks import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         hook = _build_pre_tool_hook(
             anima_dir,
@@ -87,7 +87,7 @@ class TestAgentToolHardBlockE2E:
     @pytest.mark.asyncio
     async def test_agent_output_blocked(self, anima_dir: Path):
         """AgentOutput is blocked (Agent/Task disabled)."""
-        from core.execution._sdk_hooks import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         hook = _build_pre_tool_hook(
             anima_dir,
@@ -107,7 +107,7 @@ class TestAgentToolHardBlockE2E:
     @pytest.mark.asyncio
     async def test_task_output_blocked(self, anima_dir: Path):
         """TaskOutput is blocked."""
-        from core.execution._sdk_hooks import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         hook = _build_pre_tool_hook(
             anima_dir,
@@ -131,7 +131,7 @@ class TestBypassPermissionsConfig:
         from tests.helpers.mocks import patch_agent_sdk
 
         with patch_agent_sdk():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
             from core.schemas import ModelConfig
 
             config = ModelConfig(

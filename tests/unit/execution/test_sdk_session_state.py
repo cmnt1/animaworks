@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from core.execution._sdk_session import (
+from core.execution.engines.claude._sdk_session import (
     _load_session_id,
     _save_session_id,
     load_session_state,

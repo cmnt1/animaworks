@@ -39,7 +39,7 @@ def test_runtime_session_scope_resets():
 
 
 def test_agent_sdk_env_includes_runtime_session(tmp_path):
-    from core.execution.agent_sdk import AgentSDKExecutor
+    from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
     from core.execution.session_context import RuntimeSessionContext, runtime_session_scope
     from core.schemas import ModelConfig
 
@@ -63,7 +63,7 @@ def test_agent_sdk_env_includes_runtime_session(tmp_path):
 
 
 def test_no_runtime_session_env_when_unscoped(tmp_path):
-    from core.execution.agent_sdk import AgentSDKExecutor
+    from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
     from core.schemas import ModelConfig
 
     executor = AgentSDKExecutor(ModelConfig(model="claude-sonnet-4-6"), tmp_path)

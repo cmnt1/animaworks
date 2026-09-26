@@ -160,7 +160,7 @@ class TestMinTrustSeenLiteLLMTools:
     @pytest.mark.asyncio
     async def test_execute_tool_call_updates_trust_untrusted(self, tmp_path):
         """Calling web_search should set min_trust_seen to 0 (untrusted)."""
-        from core.execution._litellm_tools import ToolProcessingMixin, _ToolCallShim
+        from core.execution.engines.litellm._litellm_tools import ToolProcessingMixin, _ToolCallShim
 
         mixin = ToolProcessingMixin()
         handler = _make_handler(tmp_path)
@@ -179,7 +179,7 @@ class TestMinTrustSeenLiteLLMTools:
     @pytest.mark.asyncio
     async def test_execute_tool_call_stays_trusted(self, tmp_path):
         """Calling search_memory should keep min_trust_seen at 2 (trusted)."""
-        from core.execution._litellm_tools import ToolProcessingMixin, _ToolCallShim
+        from core.execution.engines.litellm._litellm_tools import ToolProcessingMixin, _ToolCallShim
 
         mixin = ToolProcessingMixin()
         handler = _make_handler(tmp_path)
@@ -197,7 +197,7 @@ class TestMinTrustSeenLiteLLMTools:
     @pytest.mark.asyncio
     async def test_execute_tool_call_medium_trust(self, tmp_path):
         """Calling read_file should set min_trust_seen to 1 (medium)."""
-        from core.execution._litellm_tools import ToolProcessingMixin, _ToolCallShim
+        from core.execution.engines.litellm._litellm_tools import ToolProcessingMixin, _ToolCallShim
 
         mixin = ToolProcessingMixin()
         handler = _make_handler(tmp_path)
@@ -215,7 +215,7 @@ class TestMinTrustSeenLiteLLMTools:
     @pytest.mark.asyncio
     async def test_min_trust_seen_takes_minimum(self, tmp_path):
         """After trusted then untrusted, min_trust_seen should be 0."""
-        from core.execution._litellm_tools import ToolProcessingMixin, _ToolCallShim
+        from core.execution.engines.litellm._litellm_tools import ToolProcessingMixin, _ToolCallShim
 
         mixin = ToolProcessingMixin()
         handler = _make_handler(tmp_path)

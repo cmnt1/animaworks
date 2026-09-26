@@ -38,7 +38,7 @@ process_message_stream()
 
 | ファイル | 箇所 | 蓄積先 |
 |---------|------|--------|
-| `core/execution/agent_sdk.py:387-593` | `response_text: list[str]` | メモリのみ |
+| `core/execution/engines/claude/agent_sdk.py:387-593` | `response_text: list[str]` | メモリのみ |
 | `core/agent/agent_core.py:677-943` | `full_text_parts: list[str]` | メモリ（tool_end時にcheckpointへ） |
 | `core/anima/digital_anima.py:502-563` | `partial_response: str` | メモリ（finally時にconv_memoryへ） |
 

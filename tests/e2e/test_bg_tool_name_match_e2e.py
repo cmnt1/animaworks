@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 
 from core.config.models import BackgroundTaskConfig
-from core.execution.litellm_loop import LiteLLMExecutor
+from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
 from core.tasks.background import _DEFAULT_ELIGIBLE_TOOLS
 
 

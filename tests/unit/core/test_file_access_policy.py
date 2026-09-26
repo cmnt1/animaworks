@@ -22,7 +22,7 @@ from core.config.file_access_policy import (
     shared_tool_cache_write_root,
     shell_internal_deny_paths,
 )
-from core.execution._sdk_security import _check_a1_file_access
+from core.execution.engines.claude._sdk_security import _check_a1_file_access
 from core.tooling.handler import ToolHandler
 
 

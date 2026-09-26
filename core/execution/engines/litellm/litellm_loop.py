@@ -30,20 +30,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.exceptions import ConfigError, LLMAPIError, ToolExecutionError  # noqa: F401
-from core.execution._litellm_context import ContextMixin, _extract_tool_uses_from_messages
-from core.execution._litellm_streaming import StreamingMixin, _make_rate_guard_reporter
-
-# ── Mixin imports ──────────────────────────────────────────
-# ── Backward-compatible re-exports ────────────────────────
-from core.execution._litellm_tools import (  # noqa: F401
-    _WRITE_TOOLS,
-    ToolProcessingMixin,
-    _bg_tool_executor,
-    _convert_litellm_tool_calls,
-    _partition_tool_calls,
-    _tool_executor,
-    _ToolCallShim,
-)
 from core.execution._session import handle_session_chaining
 from core.execution._streaming import try_parse_text_tool_call
 from core.execution.backoff import decorrelated_jitter
@@ -54,6 +40,20 @@ from core.execution.base import (
     ToolCallRecord,
     join_answer_parts,
     strip_thinking_tags,
+)
+from core.execution.engines.litellm._litellm_context import ContextMixin, _extract_tool_uses_from_messages
+from core.execution.engines.litellm._litellm_streaming import StreamingMixin, _make_rate_guard_reporter
+
+# ── Mixin imports ──────────────────────────────────────────
+# ── Backward-compatible re-exports ────────────────────────
+from core.execution.engines.litellm._litellm_tools import (  # noqa: F401
+    _WRITE_TOOLS,
+    ToolProcessingMixin,
+    _bg_tool_executor,
+    _convert_litellm_tool_calls,
+    _partition_tool_calls,
+    _tool_executor,
+    _ToolCallShim,
 )
 from core.execution.error_classifier import (
     classify_llm_error,

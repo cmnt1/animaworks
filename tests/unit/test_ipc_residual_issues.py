@@ -25,7 +25,7 @@ class TestSettingSourcesDisabled:
         """_build_sdk_options() should include setting_sources=[] for ClaudeAgentOptions."""
         import inspect
 
-        from core.execution.agent_sdk import AgentSDKExecutor
+        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
         # Options construction is extracted to _build_sdk_options()
         source = inspect.getsource(AgentSDKExecutor._build_sdk_options)
@@ -35,7 +35,7 @@ class TestSettingSourcesDisabled:
         """execute_streaming() uses _build_sdk_options which includes setting_sources=[]."""
         import inspect
 
-        from core.execution.agent_sdk import AgentSDKExecutor
+        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
         # Verify execute() and execute_streaming() both call _build_sdk_options
         exec_source = inspect.getsource(AgentSDKExecutor.execute)

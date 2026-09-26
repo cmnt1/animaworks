@@ -55,14 +55,14 @@ class TestSessionImmortal:
     """_load_session_id() returns session ID regardless of age (no TTL)."""
 
     def test_recent_session_returns_id(self, anima_dir: Path) -> None:
-        from core.execution._sdk_session import _load_session_id, _save_session_id
+        from core.execution.engines.claude._sdk_session import _load_session_id, _save_session_id
 
         _save_session_id(anima_dir, "sess-recent", "chat")
         assert _load_session_id(anima_dir, "chat") == "sess-recent"
 
     def test_old_session_still_returns_id(self, anima_dir: Path) -> None:
         """Sessions are immortal — old sessions are always returned."""
-        from core.execution._sdk_session import _load_session_id
+        from core.execution.engines.claude._sdk_session import _load_session_id
 
         path = anima_dir / "state" / "current_session_chat.json"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -77,7 +77,7 @@ class TestSessionImmortal:
 
     def test_very_old_session_still_returns_id(self, anima_dir: Path) -> None:
         """Even week-old sessions are returned (TTL was removed)."""
-        from core.execution._sdk_session import _load_session_id
+        from core.execution.engines.claude._sdk_session import _load_session_id
 
         path = anima_dir / "state" / "current_session_chat.json"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,7 +92,7 @@ class TestSessionImmortal:
 
     def test_naive_timestamp_handled_gracefully(self, anima_dir: Path) -> None:
         """Legacy files without timezone info should still return session ID."""
-        from core.execution._sdk_session import _load_session_id
+        from core.execution.engines.claude._sdk_session import _load_session_id
 
         path = anima_dir / "state" / "current_session_chat.json"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -112,7 +112,7 @@ class TestSessionImmortal:
 
     def test_missing_timestamp_still_returns_id(self, anima_dir: Path) -> None:
         """Files without timestamp field (edge case) resume unconditionally."""
-        from core.execution._sdk_session import _load_session_id
+        from core.execution.engines.claude._sdk_session import _load_session_id
 
         path = anima_dir / "state" / "current_session_chat.json"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -124,7 +124,7 @@ class TestSessionImmortal:
 
     def test_heartbeat_old_session_returns_id(self, anima_dir: Path) -> None:
         """Heartbeat sessions are also immortal."""
-        from core.execution._sdk_session import _load_session_id
+        from core.execution.engines.claude._sdk_session import _load_session_id
 
         path = anima_dir / "state" / "current_session_heartbeat.json"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -145,7 +145,7 @@ class TestClearSessionId:
     """_clear_session_id() removes the session file."""
 
     def test_removes_existing_file(self, anima_dir: Path) -> None:
-        from core.execution.agent_sdk import _clear_session_id, _save_session_id
+        from core.execution.engines.claude.agent_sdk import _clear_session_id, _save_session_id
 
         _save_session_id(anima_dir, "sess-001", "chat")
         path = anima_dir / "state" / "current_session_chat.json"
@@ -155,14 +155,14 @@ class TestClearSessionId:
         assert not path.exists()
 
     def test_noop_when_no_file(self, anima_dir: Path) -> None:
-        from core.execution.agent_sdk import _clear_session_id
+        from core.execution.engines.claude.agent_sdk import _clear_session_id
 
         # Should not raise
         _clear_session_id(anima_dir, "chat")
         _clear_session_id(anima_dir, "heartbeat")
 
     def test_clears_heartbeat_session(self, anima_dir: Path) -> None:
-        from core.execution.agent_sdk import _clear_session_id, _save_session_id
+        from core.execution.engines.claude.agent_sdk import _clear_session_id, _save_session_id
 
         _save_session_id(anima_dir, "sess-hb", "heartbeat")
         path = anima_dir / "state" / "current_session_heartbeat.json"
@@ -176,7 +176,7 @@ class TestSessionTypeConstants:
     """_RESUMABLE_SESSION_TYPES and _resolve_session_type() correctness."""
 
     def test_only_chat_is_resumable(self) -> None:
-        from core.execution._sdk_session import (
+        from core.execution.engines.claude._sdk_session import (
             _RESUMABLE_SESSION_TYPES,
             SESSION_TYPE_CHAT,
             SESSION_TYPE_CRON,
@@ -192,7 +192,7 @@ class TestSessionTypeConstants:
         assert SESSION_TYPE_INBOX not in _RESUMABLE_SESSION_TYPES
 
     def test_resolve_session_type(self) -> None:
-        from core.execution._sdk_session import (
+        from core.execution.engines.claude._sdk_session import (
             SESSION_TYPE_CHAT,
             SESSION_TYPE_CRON,
             SESSION_TYPE_HEARTBEAT,
@@ -210,7 +210,7 @@ class TestSessionTypeConstants:
         assert _resolve_session_type("unknown") == SESSION_TYPE_TASK
 
     def test_clear_session_id_for_chat(self, anima_dir: Path) -> None:
-        from core.execution._sdk_session import (
+        from core.execution.engines.claude._sdk_session import (
             _clear_session_id,
             _save_session_id,
         )
@@ -223,7 +223,7 @@ class TestSessionTypeConstants:
         assert not chat_path.exists()
 
     def test_clear_session_id_for_type_clears_non_chat_thread(self, anima_dir: Path) -> None:
-        from core.execution._sdk_session import (
+        from core.execution.engines.claude._sdk_session import (
             _load_session_id,
             _save_session_id,
             clear_session_id_for_type,
@@ -240,12 +240,12 @@ class TestResumeTimeoutConstant:
     """RESUME_TIMEOUT_SEC is defined with a reasonable value."""
 
     def test_resume_timeout_defined(self) -> None:
-        from core.execution.agent_sdk import RESUME_TIMEOUT_SEC
+        from core.execution.engines.claude.agent_sdk import RESUME_TIMEOUT_SEC
 
         assert RESUME_TIMEOUT_SEC == 15.0
 
     def test_resume_timeout_is_positive(self) -> None:
-        from core.execution.agent_sdk import RESUME_TIMEOUT_SEC
+        from core.execution.engines.claude.agent_sdk import RESUME_TIMEOUT_SEC
 
         assert RESUME_TIMEOUT_SEC > 0
 
@@ -255,8 +255,8 @@ class TestNonChatSessionCleanup:
     async def test_blocking_inbox_clears_stale_session_and_does_not_save(
         self, model_config: ModelConfig, anima_dir: Path
     ) -> None:
-        from core.execution._sdk_session import _load_session_id, _save_session_id
-        from core.execution.agent_sdk import AgentSDKExecutor
+        from core.execution.engines.claude._sdk_session import _load_session_id, _save_session_id
+        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
         from core.prompt.context import ContextTracker
         from tests.helpers.mocks import patch_agent_sdk
 
@@ -282,8 +282,8 @@ class TestNonChatSessionCleanup:
     async def test_streaming_inbox_clears_stale_session_and_does_not_save(
         self, model_config: ModelConfig, anima_dir: Path
     ) -> None:
-        from core.execution._sdk_session import _load_session_id, _save_session_id
-        from core.execution.agent_sdk import AgentSDKExecutor
+        from core.execution.engines.claude._sdk_session import _load_session_id, _save_session_id
+        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
         from core.prompt.context import ContextTracker
         from tests.helpers.mocks import MockAssistantMessage, MockResultMessage, MockStreamEvent, MockTextBlock
 
@@ -385,7 +385,7 @@ class TestResumeTimeoutGuard:
         self, model_config: ModelConfig, anima_dir: Path
     ) -> None:
         """When a session_id is present, asyncio.wait_for wraps first-event receive."""
-        from core.execution.agent_sdk import _save_session_id
+        from core.execution.engines.claude.agent_sdk import _save_session_id
         from tests.helpers.mocks import MockAssistantMessage, MockResultMessage, MockStreamEvent, MockTextBlock
 
         # Persist a session ID so execute_streaming takes the resume path
@@ -411,7 +411,7 @@ class TestResumeTimeoutGuard:
             return await original_wait_for(coro, timeout=timeout, **kwargs)
 
         with _patch_sdk_for_streaming(messages):
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
             from core.prompt.context import ContextTracker
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
@@ -427,7 +427,7 @@ class TestResumeTimeoutGuard:
                     events.append(event)
 
         # asyncio.wait_for should have been called with RESUME_TIMEOUT_SEC
-        from core.execution.agent_sdk import RESUME_TIMEOUT_SEC
+        from core.execution.engines.claude.agent_sdk import RESUME_TIMEOUT_SEC
 
         timeout_values = [c["timeout"] for c in wait_for_calls]
         assert RESUME_TIMEOUT_SEC in timeout_values, (
@@ -460,7 +460,7 @@ class TestResumeTimeoutGuard:
             return await original_wait_for(coro, timeout=timeout, **kwargs)
 
         with _patch_sdk_for_streaming(messages):
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
             from core.prompt.context import ContextTracker
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
@@ -476,7 +476,7 @@ class TestResumeTimeoutGuard:
                     events.append(event)
 
         # No wait_for should have been called for resume timeout
-        from core.execution.agent_sdk import RESUME_TIMEOUT_SEC
+        from core.execution.engines.claude.agent_sdk import RESUME_TIMEOUT_SEC
 
         resume_timeout_calls = [c for c in wait_for_calls if c["timeout"] == RESUME_TIMEOUT_SEC]
         assert resume_timeout_calls == [], (
@@ -487,7 +487,7 @@ class TestResumeTimeoutGuard:
     async def test_clear_session_id_called_on_resume_timeout(self, model_config: ModelConfig, anima_dir: Path) -> None:
         """When resume times out, _clear_session_id is called and falls back to
         fresh session."""
-        from core.execution.agent_sdk import _save_session_id
+        from core.execution.engines.claude.agent_sdk import _save_session_id
         from tests.helpers.mocks import MockAssistantMessage, MockResultMessage, MockStreamEvent, MockTextBlock
 
         _save_session_id(anima_dir, "stale-session-for-timeout", "chat")
@@ -517,7 +517,7 @@ class TestResumeTimeoutGuard:
 
         async def _timeout_on_first_then_succeed(coro, timeout=None, **kwargs):
             """Raise TimeoutError on the first call (resume), succeed thereafter."""
-            from core.execution.agent_sdk import RESUME_TIMEOUT_SEC
+            from core.execution.engines.claude.agent_sdk import RESUME_TIMEOUT_SEC
 
             if timeout == RESUME_TIMEOUT_SEC and call_count[0] == 0:
                 call_count[0] += 1
@@ -525,7 +525,7 @@ class TestResumeTimeoutGuard:
             return await coro
 
         with _patch_sdk_for_streaming(fresh_messages):
-            from core.execution.agent_sdk import AgentSDKExecutor, _clear_session_id
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor, _clear_session_id
             from core.prompt.context import ContextTracker
 
             original_clear = _clear_session_id
@@ -535,7 +535,7 @@ class TestResumeTimeoutGuard:
 
             with (
                 patch("asyncio.wait_for", side_effect=_timeout_on_first_then_succeed),
-                patch("core.execution._sdk_session._clear_session_id", side_effect=_spy_clear),
+                patch("core.execution.engines.claude._sdk_session._clear_session_id", side_effect=_spy_clear),
             ):
                 events = []
                 async for event in executor.execute_streaming(

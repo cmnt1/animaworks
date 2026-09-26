@@ -15,7 +15,7 @@ class TestBuildPostToolHook:
     """Tests for _build_post_tool_hook factory."""
 
     def _make_hook(self, anima_dir: Path):
-        from core.execution._sdk_hooks import _build_post_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_post_tool_hook
 
         return _build_post_tool_hook(anima_dir)
 
@@ -90,7 +90,7 @@ class TestMcpRuleAttachment:
 
     @pytest.mark.asyncio
     async def test_mcp_tool_does_not_attach_action_rules(self, tmp_path, monkeypatch):
-        from core.execution._sdk_hooks import _build_post_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_post_tool_hook
         from core.tooling import action_gate
         from core.tooling.action_gate import ActionRule
 
@@ -120,7 +120,7 @@ class TestUpdateKnowledgeFrontmatter:
 
     @pytest.mark.asyncio
     async def test_updates_version_and_timestamp(self, tmp_path):
-        from core.execution._sdk_hooks import _update_knowledge_frontmatter
+        from core.execution.engines.claude._sdk_hooks import _update_knowledge_frontmatter
 
         knowledge_file = tmp_path / "test.md"
         knowledge_file.write_text(
@@ -141,7 +141,7 @@ class TestUpdateKnowledgeFrontmatter:
 
     @pytest.mark.asyncio
     async def test_skips_file_without_frontmatter(self, tmp_path):
-        from core.execution._sdk_hooks import _update_knowledge_frontmatter
+        from core.execution.engines.claude._sdk_hooks import _update_knowledge_frontmatter
 
         knowledge_file = tmp_path / "no_fm.md"
         original = "# Just a title\n\nNo frontmatter here."
@@ -153,7 +153,7 @@ class TestUpdateKnowledgeFrontmatter:
 
     @pytest.mark.asyncio
     async def test_skips_empty_frontmatter(self, tmp_path):
-        from core.execution._sdk_hooks import _update_knowledge_frontmatter
+        from core.execution.engines.claude._sdk_hooks import _update_knowledge_frontmatter
 
         knowledge_file = tmp_path / "empty_fm.md"
         original = "---\n---\n\n# Content"
@@ -165,7 +165,7 @@ class TestUpdateKnowledgeFrontmatter:
 
     @pytest.mark.asyncio
     async def test_handles_missing_version(self, tmp_path):
-        from core.execution._sdk_hooks import _update_knowledge_frontmatter
+        from core.execution.engines.claude._sdk_hooks import _update_knowledge_frontmatter
 
         knowledge_file = tmp_path / "no_version.md"
         knowledge_file.write_text(
@@ -182,7 +182,7 @@ class TestUpdateKnowledgeFrontmatter:
 
     @pytest.mark.asyncio
     async def test_preserves_body_content(self, tmp_path):
-        from core.execution._sdk_hooks import _update_knowledge_frontmatter
+        from core.execution.engines.claude._sdk_hooks import _update_knowledge_frontmatter
 
         knowledge_file = tmp_path / "preserve.md"
         knowledge_file.write_text(
@@ -203,14 +203,14 @@ class TestUpdateKnowledgeFrontmatter:
 
     @pytest.mark.asyncio
     async def test_handles_nonexistent_file(self, tmp_path):
-        from core.execution._sdk_hooks import _update_knowledge_frontmatter
+        from core.execution.engines.claude._sdk_hooks import _update_knowledge_frontmatter
 
         await _update_knowledge_frontmatter(tmp_path / "does_not_exist.md")
 
     @pytest.mark.asyncio
     async def test_knowledge_subdirectory(self, tmp_path):
         """Verify hook fires for files in knowledge/ subdirectories."""
-        from core.execution._sdk_hooks import _build_post_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_post_tool_hook
 
         knowledge_dir = tmp_path / "knowledge" / "subdir"
         knowledge_dir.mkdir(parents=True)

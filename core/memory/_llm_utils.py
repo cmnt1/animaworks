@@ -428,7 +428,7 @@ async def _try_agent_sdk(
     sdk_model = _strip_provider_prefix(model)
     env = _build_sdk_env()
 
-    from core.execution._sdk_options import _resolve_sdk_cli_path
+    from core.execution.engines.claude._sdk_options import _resolve_sdk_cli_path
 
     _cli = _resolve_sdk_cli_path()
     # env は ClaudeAgentOptions.env で渡す（SDKが継承環境に上書きマージする）。
@@ -482,7 +482,7 @@ async def _try_codex_sdk(
         logger.debug("Codex SDK not available for one-shot fallback")
         return None
 
-    from core.execution.codex_sdk import _default_path_env, _resolve_codex_model
+    from core.execution.engines.codex.setup import _default_path_env, _resolve_codex_model
     from core.platform.codex import default_home_dir, get_codex_executable
 
     env: dict[str, str] = {

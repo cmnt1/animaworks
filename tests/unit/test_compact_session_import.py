@@ -34,7 +34,7 @@ def anima_dir_with_session(tmp_path: Path) -> Path:
     d = tmp_path / "animas" / "test"
     d.mkdir(parents=True)
     (d / "state").mkdir(parents=True)
-    from core.execution._sdk_session import _save_session_id
+    from core.execution.engines.claude._sdk_session import _save_session_id
 
     _save_session_id(d, "sess-compact-test", "chat", "default")
     return d
@@ -119,7 +119,7 @@ class TestCompactSessionImportPath:
             return original_import(name, *args, **kwargs)
 
         with patch.object(builtins, "__import__", side_effect=_spy_import), _patch_sdk_available():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir_with_session)
             result = await executor.compact_session(
@@ -138,7 +138,7 @@ class TestCompactSessionImportPath:
     ) -> None:
         """When claude_agent_sdk is not available, compact_session returns False gracefully."""
         with _patch_sdk_unavailable():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir_with_session)
             result = await executor.compact_session(
@@ -155,7 +155,7 @@ class TestCompactSessionImportPath:
     ) -> None:
         """compact_session uses ClaudeSDKClient (not ClaudeCodeSDKClient)."""
         with _patch_sdk_available() as mock_module:
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir_with_session)
             result = await executor.compact_session(

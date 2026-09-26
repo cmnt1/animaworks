@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from core.execution.codex_sdk import CodexSDKExecutor
+from core.execution.engines.codex.codex_sdk import CodexSDKExecutor
 from core.schemas import ModelConfig
 
 

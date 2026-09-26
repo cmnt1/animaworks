@@ -152,7 +152,7 @@ async def test_async_retry_respects_max_delay():
 
 def _make_context_mixin():
     """Create a minimal ContextMixin instance for testing."""
-    from core.execution._litellm_context import ContextMixin
+    from core.execution.engines.litellm._litellm_context import ContextMixin
 
     class FakeExecutor(ContextMixin):
         def __init__(self):

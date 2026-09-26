@@ -11,6 +11,7 @@ to ``litellm.acompletion``.  Behaviour:
 - ``thinking=False``                 → ``think=False`` (explicit off)
 - ``thinking=None`` + non-ollama     → ``think`` key absent
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -39,6 +40,7 @@ def anima_dir(tmp_path: Path) -> Path:
 def memory(anima_dir: Path) -> MagicMock:
     """Mock MemoryManager with minimal stubs."""
     from core.memory import MemoryManager
+
     m = MagicMock(spec=MemoryManager)
     m.read_permissions.return_value = ""
     m.search_memory_text.return_value = []
@@ -50,6 +52,7 @@ def memory(anima_dir: Path) -> MagicMock:
 def tool_handler(anima_dir: Path, memory: MagicMock) -> MagicMock:
     """Mock ToolHandler (avoids loading real tool schemas)."""
     from core.tooling.handler import ToolHandler
+
     th = MagicMock(spec=ToolHandler)
     th._human_notifier = None
     return th
@@ -65,7 +68,8 @@ def _make_litellm_executor(
     memory: MagicMock,
 ):
     """Instantiate a LiteLLMExecutor with minimal dependencies."""
-    from core.execution.litellm_loop import LiteLLMExecutor
+    from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
+
     return LiteLLMExecutor(
         model_config=model_config,
         anima_dir=anima_dir,
@@ -82,7 +86,10 @@ class TestLiteLLMThinkingOption:
     """Verify ``think`` kwarg in LiteLLMExecutor._build_llm_kwargs()."""
 
     def test_ollama_model_thinking_none_defaults_to_false(
-        self, anima_dir, tool_handler, memory,
+        self,
+        anima_dir,
+        tool_handler,
+        memory,
     ):
         """Ollama model + thinking=None → think=False (auto-off)."""
         cfg = ModelConfig(model="ollama/glm-4", thinking=None, api_key="k")
@@ -92,7 +99,10 @@ class TestLiteLLMThinkingOption:
         assert kwargs["think"] is False
 
     def test_ollama_model_thinking_true_overrides(
-        self, anima_dir, tool_handler, memory,
+        self,
+        anima_dir,
+        tool_handler,
+        memory,
     ):
         """Ollama model + thinking=True → think=True (explicit override)."""
         cfg = ModelConfig(model="ollama/qwen3", thinking=True, api_key="k")
@@ -101,7 +111,10 @@ class TestLiteLLMThinkingOption:
         assert kwargs["think"] is True
 
     def test_ollama_model_thinking_false_explicit(
-        self, anima_dir, tool_handler, memory,
+        self,
+        anima_dir,
+        tool_handler,
+        memory,
     ):
         """Ollama model + thinking=False → think=False (explicit off)."""
         cfg = ModelConfig(model="ollama/deepseek-r1", thinking=False, api_key="k")
@@ -110,7 +123,10 @@ class TestLiteLLMThinkingOption:
         assert kwargs["think"] is False
 
     def test_non_ollama_model_thinking_none_no_think_key(
-        self, anima_dir, tool_handler, memory,
+        self,
+        anima_dir,
+        tool_handler,
+        memory,
     ):
         """Non-ollama model + thinking=None → ``think`` key absent."""
         cfg = ModelConfig(model="openai/gpt-4o", thinking=None, api_key="k")
@@ -119,7 +135,10 @@ class TestLiteLLMThinkingOption:
         assert "think" not in kwargs
 
     def test_openai_model_thinking_true_sets_extra_body(
-        self, anima_dir, tool_handler, memory,
+        self,
+        anima_dir,
+        tool_handler,
+        memory,
     ):
         """openai/* model + thinking=True → extra_body.enable_thinking=True."""
         cfg = ModelConfig(model="openai/gpt-4o", thinking=True, api_key="k")
@@ -129,7 +148,10 @@ class TestLiteLLMThinkingOption:
         assert "think" not in kwargs
 
     def test_non_ollama_model_thinking_false_sets_think(
-        self, anima_dir, tool_handler, memory,
+        self,
+        anima_dir,
+        tool_handler,
+        memory,
     ):
         """Non-ollama model + thinking=False → think=False."""
         cfg = ModelConfig(model="google/gemini-2.5-pro", thinking=False, api_key="k")

@@ -14,7 +14,7 @@ from __future__ import annotations
 import inspect
 from pathlib import Path
 
-from core.execution.agent_sdk import AgentSDKExecutor
+from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 from core.schemas import ModelConfig
 
 
@@ -38,12 +38,10 @@ class TestSDKSkillsDisabled:
 
     def test_skills_guard_is_version_aware(self) -> None:
         """The skills kwarg must be guarded so older SDKs without the field still work."""
-        from core.execution.agent_sdk import AgentSDKExecutor
+        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
         source = inspect.getsource(AgentSDKExecutor._build_sdk_options)
-        assert "hasattr(ClaudeAgentOptions, \"skills\")" in source, (
+        assert 'hasattr(ClaudeAgentOptions, "skills")' in source, (
             "skills must be assigned conditionally (hasattr) for SDK compatibility"
         )
-        assert "kwargs[\"skills\"]" in source, (
-            "_build_sdk_options must set kwargs properly has guard"
-        )
+        assert 'kwargs["skills"]' in source, "_build_sdk_options must set kwargs properly has guard"

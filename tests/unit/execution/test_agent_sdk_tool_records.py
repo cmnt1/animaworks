@@ -1,7 +1,7 @@
 """Tests for agent_sdk tool record helper functions.
 
 Tests for _handle_tool_use_block(), _handle_tool_result_block(),
-and _finalize_pending_records() extracted from core.execution.agent_sdk.
+and _finalize_pending_records() extracted from core.execution.engines.claude.agent_sdk.
 """
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
@@ -11,14 +11,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-
-from core.execution.agent_sdk import (
+from core.execution.base import ToolCallRecord
+from core.execution.engines.claude.agent_sdk import (
     _finalize_pending_records,
     _handle_tool_result_block,
     _handle_tool_use_block,
 )
-from core.execution.base import ToolCallRecord
-
 
 # ── Fake block types for testing ─────────────────────────────────
 
@@ -109,7 +107,9 @@ class TestHandleToolResultBlock:
     MODEL = "claude-sonnet-4-6"
 
     def _make_pending(
-        self, tool_name: str = "web_search", tool_id: str = "toolu_1",
+        self,
+        tool_name: str = "web_search",
+        tool_id: str = "toolu_1",
     ) -> dict[str, ToolCallRecord]:
         """Create a pending_records dict with a single pre-registered record."""
         record = ToolCallRecord(
@@ -228,12 +228,16 @@ class TestFinalizePendingRecords:
         """Should return all records from pending_records."""
         pending = {
             "toolu_1": ToolCallRecord(
-                tool_name="Bash", tool_id="toolu_1",
-                input_summary="ls", result_summary="file listing",
+                tool_name="Bash",
+                tool_id="toolu_1",
+                input_summary="ls",
+                result_summary="file listing",
             ),
             "toolu_2": ToolCallRecord(
-                tool_name="Read", tool_id="toolu_2",
-                input_summary="/file", result_summary="content",
+                tool_name="Read",
+                tool_id="toolu_2",
+                input_summary="/file",
+                result_summary="content",
             ),
         }
 
@@ -247,8 +251,10 @@ class TestFinalizePendingRecords:
         """Records with empty result_summary should be marked is_error=True."""
         pending = {
             "toolu_1": ToolCallRecord(
-                tool_name="Bash", tool_id="toolu_1",
-                input_summary="ls", result_summary="",
+                tool_name="Bash",
+                tool_id="toolu_1",
+                input_summary="ls",
+                result_summary="",
             ),
         }
 
@@ -261,13 +267,17 @@ class TestFinalizePendingRecords:
         """Records with result_summary should keep their original is_error value."""
         pending = {
             "toolu_1": ToolCallRecord(
-                tool_name="Bash", tool_id="toolu_1",
-                input_summary="ls", result_summary="ok",
+                tool_name="Bash",
+                tool_id="toolu_1",
+                input_summary="ls",
+                result_summary="ok",
                 is_error=False,
             ),
             "toolu_2": ToolCallRecord(
-                tool_name="web_search", tool_id="toolu_2",
-                input_summary="q", result_summary="error output",
+                tool_name="web_search",
+                tool_id="toolu_2",
+                input_summary="q",
+                result_summary="error output",
                 is_error=True,
             ),
         }
@@ -287,13 +297,17 @@ class TestFinalizePendingRecords:
         """Mix of records with and without results."""
         pending = {
             "toolu_ok": ToolCallRecord(
-                tool_name="Read", tool_id="toolu_ok",
-                input_summary="/f", result_summary="data",
+                tool_name="Read",
+                tool_id="toolu_ok",
+                input_summary="/f",
+                result_summary="data",
                 is_error=False,
             ),
             "toolu_no_result": ToolCallRecord(
-                tool_name="Bash", tool_id="toolu_no_result",
-                input_summary="cmd", result_summary="",
+                tool_name="Bash",
+                tool_id="toolu_no_result",
+                input_summary="cmd",
+                result_summary="",
             ),
         }
 

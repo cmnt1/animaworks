@@ -117,8 +117,8 @@ class TestCoreModuleImports:
     @pytest.mark.parametrize(
         "module_path",
         [
-            "core.execution.agent_sdk",
-            "core.execution.litellm_loop",
+            "core.execution.engines.claude.agent_sdk",
+            "core.execution.engines.litellm.litellm_loop",
             "core.supervisor.manager",
             "core.supervisor.runner",
             "core.supervisor.ipc",

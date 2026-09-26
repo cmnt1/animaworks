@@ -108,7 +108,7 @@ class TestModeCFallback:
         guard.config.default_block_seconds = 60
 
         with (
-            patch("core.execution.codex_sdk.is_codex_sdk_available", return_value=False),
+            patch("core.execution.engines.codex.setup.is_codex_sdk_available", return_value=False),
             patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
             patch("core.config.model_config.resolve_effective_model_config", return_value=fallback),
             patch("core.execution.fallback_activity.log_model_fallback") as log_fallback,
@@ -126,7 +126,7 @@ class TestModeCFallback:
         agent = _make_agent(tmp_path, model="codex/gpt-5.3-codex", resolved_mode="C")
         agent.model_config.api_key_env = "OPENAI_API_KEY"
         with (
-            patch("core.execution.codex_sdk.is_codex_sdk_available", return_value=False),
+            patch("core.execution.engines.codex.setup.is_codex_sdk_available", return_value=False),
             patch("core.execution.LiteLLMExecutor") as litellm,
             pytest.raises(ExecutorUnavailableError, match="fallback_models"),
         ):
@@ -139,7 +139,7 @@ class TestModeCFallback:
         agent = _make_agent(tmp_path, model="codex/gpt-5.3-codex", resolved_mode="C")
         agent.model_config.api_key = "sk-ant-test"
         with (
-            patch("core.execution.codex_sdk.is_codex_sdk_available", return_value=False),
+            patch("core.execution.engines.codex.setup.is_codex_sdk_available", return_value=False),
             patch("core.execution.LiteLLMExecutor") as litellm,
             pytest.raises(ExecutorUnavailableError),
         ):
@@ -156,7 +156,7 @@ def test_missing_claude_sdk_does_not_construct_unusable_adapter(tmp_path):
 
     agent = _make_agent(tmp_path, model="claude-sonnet-4-6", resolved_mode="S")
     with (
-        patch("core.execution.agent_sdk.AgentSDKExecutor") as sdk,
+        patch("core.execution.engines.claude.agent_sdk.AgentSDKExecutor") as sdk,
         pytest.raises(ExecutorUnavailableError),
     ):
         agent._create_executor()
@@ -187,7 +187,7 @@ class TestModeXExecutor:
         guard.config.default_block_seconds = 60
 
         with (
-            patch("core.execution.grok_cli.is_grok_cli_available", return_value=False),
+            patch("core.execution.engines.grok.grok_cli.is_grok_cli_available", return_value=False),
             patch("core.execution.rate_guard.get_rate_guard", return_value=guard),
             patch("core.config.model_config.resolve_effective_model_config", return_value=fallback),
             patch("core.execution.fallback_activity.log_model_fallback") as log_fallback,
@@ -208,8 +208,8 @@ class TestModeXExecutor:
         sentinel_executor = MagicMock(name="grok_executor")
 
         with (
-            patch("core.execution.grok_cli.is_grok_cli_available", return_value=True),
-            patch("core.execution.grok_cli.GrokCLIExecutor", return_value=sentinel_executor) as mock_grok,
+            patch("core.execution.engines.grok.grok_cli.is_grok_cli_available", return_value=True),
+            patch("core.execution.engines.grok.grok_cli.GrokCLIExecutor", return_value=sentinel_executor) as mock_grok,
         ):
             created = agent._create_executor()
 
@@ -227,7 +227,7 @@ class TestModeXExecutor:
 
         agent = _make_agent(tmp_path, model="grok/grok-4.5", resolved_mode="X")
         with (
-            patch("core.execution.grok_cli.is_grok_cli_available", return_value=False),
+            patch("core.execution.engines.grok.grok_cli.is_grok_cli_available", return_value=False),
             patch("core.execution.LiteLLMExecutor") as litellm,
             pytest.raises(ExecutorUnavailableError),
         ):

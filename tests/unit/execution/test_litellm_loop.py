@@ -1,4 +1,4 @@
-"""Tests for core.execution.litellm_loop — Mode A: LiteLLM tool_use loop."""
+"""Tests for core.execution.engines.litellm.litellm_loop — Mode A: LiteLLM tool_use loop."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -91,7 +91,7 @@ def executor(
     tool_handler: ToolHandler,
     memory: MagicMock,
 ):
-    from core.execution.litellm_loop import LiteLLMExecutor
+    from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
 
     return LiteLLMExecutor(
         model_config=model_config,
@@ -128,7 +128,7 @@ class TestBuildBaseTools:
     def test_excludes_use_tool_in_mode_a(self, anima_dir, model_config, memory):
         """use_tool is NOT included in Mode A (LiteLLM) — Mode B only."""
         th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=["chatwork"])
-        from core.execution.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
 
         ex = LiteLLMExecutor(
             model_config=model_config,
@@ -172,7 +172,7 @@ class TestBuildLlmKwargs:
     def test_includes_api_base(self, model_config: ModelConfig, anima_dir: Path, memory: MagicMock):
         model_config.api_base_url = "http://localhost:11434/v1"
         th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
-        from core.execution.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
 
         ex = LiteLLMExecutor(
             model_config=model_config,
@@ -317,7 +317,7 @@ class TestExecuteContextTracking:
         _install_litellm_mock(mock)
         with (
             patch("litellm.acompletion", mock),
-            patch("core.execution.litellm_loop.build_system_prompt", return_value="sys"),
+            patch("core.execution.engines.litellm.litellm_loop.build_system_prompt", return_value="sys"),
             patch("core.execution._session.load_prompt", return_value="continue"),
         ):
             result = await executor.execute(
@@ -334,7 +334,7 @@ class TestExecuteContextTracking:
 
 class TestPartitionToolCalls:
     def test_all_reads_are_parallel(self):
-        from core.execution.litellm_loop import _partition_tool_calls
+        from core.execution.engines.litellm.litellm_loop import _partition_tool_calls
 
         tc1 = make_tool_call("read_file", {"path": "/a"}, "call_1")
         tc2 = make_tool_call("search_memory", {"query": "x"}, "call_2")
@@ -343,7 +343,7 @@ class TestPartitionToolCalls:
         assert serial == []
 
     def test_writes_to_different_paths_are_parallel(self):
-        from core.execution.litellm_loop import _partition_tool_calls
+        from core.execution.engines.litellm.litellm_loop import _partition_tool_calls
 
         tc1 = make_tool_call("write_file", {"path": "/a"}, "call_1")
         tc2 = make_tool_call("write_file", {"path": "/b"}, "call_2")
@@ -352,7 +352,7 @@ class TestPartitionToolCalls:
         assert serial == []
 
     def test_writes_to_same_path_serialised(self):
-        from core.execution.litellm_loop import _partition_tool_calls
+        from core.execution.engines.litellm.litellm_loop import _partition_tool_calls
 
         tc1 = make_tool_call("write_file", {"path": "/a"}, "call_1")
         tc2 = make_tool_call("write_file", {"path": "/a"}, "call_2")
@@ -388,7 +388,7 @@ class TestUseTool:
     async def test_use_tool_in_loop_returns_result(self, anima_dir, model_config, memory):
         """use_tool is callable in the loop and returns tool result to LLM."""
         th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=["chatwork"])
-        from core.execution.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
 
         ex = LiteLLMExecutor(
             model_config=model_config,
@@ -526,7 +526,7 @@ class TestSessionChainingExecutionMode:
 
         with (
             patch("litellm.acompletion", mock),
-            patch("core.execution.litellm_loop.build_system_prompt", build_spy),
+            patch("core.execution.engines.litellm.litellm_loop.build_system_prompt", build_spy),
             patch("core.execution._session.load_prompt", return_value="continue"),
         ):
             await executor.execute(
@@ -550,7 +550,7 @@ class TestSessionChainingExecutionMode:
 class TestBgPoolTools:
     def test_contains_image_gen_schema_names(self):
         """_BG_POOL_TOOLS includes all image_gen tool schema names."""
-        from core.execution.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
 
         expected_image_tools = {
             "generate_character_assets",
@@ -567,14 +567,14 @@ class TestBgPoolTools:
 
     def test_contains_other_bg_tools(self):
         """_BG_POOL_TOOLS includes local_llm and run_command."""
-        from core.execution.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
 
         assert "local_llm" in LiteLLMExecutor._BG_POOL_TOOLS
         assert "run_command" in LiteLLMExecutor._BG_POOL_TOOLS
 
     def test_does_not_contain_category_names(self):
         """_BG_POOL_TOOLS must NOT contain old category name 'image_generation'."""
-        from core.execution.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
 
         assert "image_generation" not in LiteLLMExecutor._BG_POOL_TOOLS
 
@@ -606,7 +606,7 @@ class TestBuildLlmKwargsTimeoutAndNumCtx:
             max_chains=2,
         )
         th = ToolHandler(anima_dir=anima_dir, memory=memory, tool_registry=[])
-        from core.execution.litellm_loop import LiteLLMExecutor
+        from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
 
         ex = LiteLLMExecutor(
             model_config=ollama_config,

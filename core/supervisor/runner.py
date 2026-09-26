@@ -1220,7 +1220,7 @@ class AnimaRunner:
 
         # These pools are process-global and must remain available throughout
         # the runner lifetime.  Shut them down only from this terminal cleanup.
-        from core.execution._litellm_tools import shutdown_tool_executors
+        from core.execution.engines.litellm._litellm_tools import shutdown_tool_executors
 
         shutdown_tool_executors()
 

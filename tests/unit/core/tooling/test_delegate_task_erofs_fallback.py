@@ -158,7 +158,7 @@ class TestDelegateTaskErofsFallback:
 
     def test_mcp_env_includes_server_url(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Codex MCP env must inject ANIMAWORKS_SERVER_URL (contract for EROFS fallback)."""
-        from core.execution.codex_sdk import CodexSDKExecutor
+        from core.execution.engines.codex.codex_sdk import CodexSDKExecutor
         from core.schemas import ModelConfig
 
         anima_dir = tmp_path / "animas" / "rin"

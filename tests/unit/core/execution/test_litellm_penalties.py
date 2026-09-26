@@ -3,6 +3,7 @@
 Verifies that penalty parameters flow from models.json through ModelConfig
 to _build_llm_kwargs() for LLM degenerate repetition defense.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -56,7 +57,7 @@ def _make_litellm_executor(
     memory: MagicMock,
 ):
     """Instantiate a LiteLLMExecutor with minimal dependencies."""
-    from core.execution.litellm_loop import LiteLLMExecutor
+    from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
 
     return LiteLLMExecutor(
         model_config=model_config,
@@ -134,9 +135,7 @@ class TestResolvePenalties:
 class TestBuildLlmKwargsPenalties:
     """Verify _build_llm_kwargs() includes penalty params when configured."""
 
-    def test_build_llm_kwargs_includes_penalties(
-        self, anima_dir, tool_handler, memory
-    ):
+    def test_build_llm_kwargs_includes_penalties(self, anima_dir, tool_handler, memory):
         """When resolve_penalties returns values, kwargs include them."""
         cfg = ModelConfig(model="claude-sonnet-4-6", api_key="k")
         ex = _make_litellm_executor(cfg, anima_dir, tool_handler, memory)
@@ -148,9 +147,7 @@ class TestBuildLlmKwargsPenalties:
         assert kwargs["frequency_penalty"] == 0.4
         assert kwargs["presence_penalty"] == 0.2
 
-    def test_build_llm_kwargs_model_config_overrides_models_json(
-        self, anima_dir, tool_handler, memory
-    ):
+    def test_build_llm_kwargs_model_config_overrides_models_json(self, anima_dir, tool_handler, memory):
         """ModelConfig.frequency_penalty overrides models.json value."""
         cfg = ModelConfig(
             model="claude-sonnet-4-6",
@@ -167,9 +164,7 @@ class TestBuildLlmKwargsPenalties:
         assert kwargs["frequency_penalty"] == 0.8
         assert kwargs["presence_penalty"] == 0.5
 
-    def test_build_llm_kwargs_no_penalties_when_unconfigured(
-        self, anima_dir, tool_handler, memory
-    ):
+    def test_build_llm_kwargs_no_penalties_when_unconfigured(self, anima_dir, tool_handler, memory):
         """When no penalties configured, kwargs omit them (backward-compatible)."""
         cfg = ModelConfig(model="claude-sonnet-4-6", api_key="k")
         ex = _make_litellm_executor(cfg, anima_dir, tool_handler, memory)

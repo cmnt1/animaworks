@@ -388,7 +388,7 @@ class PermissionsMixin:
         # Layer 1: Injection vectors — same rollout switch as the SDK path
         # (sdk_bash_injection.mode: off / log / enforce, default log).
         from core.config.global_permissions import GlobalPermissionsCache
-        from core.execution._sdk_security import _log_sdk_bash_injection_hit, _matching_injection_pattern
+        from core.execution.engines.claude._sdk_security import _log_sdk_bash_injection_hit, _matching_injection_pattern
 
         cache = GlobalPermissionsCache.get()
         injection_mode = cache.config.sdk_bash_injection.mode if cache.loaded and cache.config else "log"

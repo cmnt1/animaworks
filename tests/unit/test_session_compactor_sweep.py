@@ -104,7 +104,7 @@ async def test_sweep_does_not_recompact_the_same_measurement(tmp_path: Path) -> 
 @pytest.mark.asyncio
 async def test_sweep_fires_again_after_fresh_activity(tmp_path: Path) -> None:
     """A new measurement moves ``updated_at`` past the marker."""
-    from core.execution._sdk_session import record_session_measurement
+    from core.execution.engines.claude._sdk_session import record_session_measurement
 
     anima_dir = tmp_path / "anima"
     _write_session(anima_dir, "default")

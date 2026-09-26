@@ -12,12 +12,14 @@ from pathlib import Path
 import pytest
 
 from core.config.global_permissions import GlobalPermissionsCache
-from core.execution.agent_sdk import (
+from core.execution.engines.claude.agent_sdk import (
     _check_a1_bash_command,
     _log_tool_use,
 )
 
-_GLOBAL_PERMS_TEMPLATE = Path(__file__).resolve().parents[2] / "templates" / "_shared" / "config_defaults" / "permissions.global.json"
+_GLOBAL_PERMS_TEMPLATE = (
+    Path(__file__).resolve().parents[2] / "templates" / "_shared" / "config_defaults" / "permissions.global.json"
+)
 
 
 @pytest.fixture(autouse=True)

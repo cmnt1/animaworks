@@ -1,4 +1,4 @@
-"""Tests for core.execution.agent_sdk — Mode A1: Claude Agent SDK executor."""
+"""Tests for core.execution.engines.claude.agent_sdk — Mode A1: Claude Agent SDK executor."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -95,7 +95,7 @@ def anima_dir(tmp_path: Path) -> Path:
 class TestAgentSDKExecutor:
     def _make_executor(self, model_config, anima_dir, **kwargs):
         with patch_agent_sdk():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             return AgentSDKExecutor(
                 model_config=model_config,
@@ -106,14 +106,14 @@ class TestAgentSDKExecutor:
     def test_resolve_agent_sdk_model_strips_prefix(self, model_config, anima_dir):
         model_config.model = "anthropic/claude-sonnet-4-6"
         with patch_agent_sdk():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             assert executor._resolve_agent_sdk_model() == "claude-sonnet-4-6"
 
     def test_resolve_agent_sdk_model_no_prefix(self, model_config, anima_dir):
         with patch_agent_sdk():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             assert executor._resolve_agent_sdk_model() == "claude-sonnet-4-6"
@@ -123,7 +123,7 @@ class TestAgentSDKExecutor:
         model_config.api_base_url = "https://custom.api"
         model_config.mode_s_auth = "api"
         with patch_agent_sdk():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             env = executor._build_env()
@@ -135,7 +135,7 @@ class TestAgentSDKExecutor:
 
     def test_build_env_disables_skill_improvement(self, model_config, anima_dir):
         with patch_agent_sdk():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             env = executor._build_env()
@@ -147,7 +147,7 @@ class TestAgentSDKExecutor:
         """mode_s_auth=None (default) → Max plan regardless of api_key."""
         config = ModelConfig(model="claude-sonnet-4-6", api_key="sk-test")
         with patch_agent_sdk():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=config, anima_dir=anima_dir)
             env = executor._build_env()
@@ -159,7 +159,7 @@ class TestAgentSDKExecutor:
         """mode_s_auth='max' → Max plan explicitly."""
         config = ModelConfig(model="claude-sonnet-4-6", api_key="sk-test", mode_s_auth="max")
         with patch_agent_sdk():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=config, anima_dir=anima_dir)
             env = executor._build_env()
@@ -178,7 +178,7 @@ class TestAgentSDKExecutor:
             },
         )
         with patch_agent_sdk():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=config, anima_dir=anima_dir)
             env = executor._build_env()
@@ -201,7 +201,7 @@ class TestAgentSDKExecutor:
             },
         )
         with patch_agent_sdk():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=config, anima_dir=anima_dir)
             env = executor._build_env()
@@ -220,7 +220,7 @@ class TestAgentSDKExecutor:
             mode_s_auth="api",
         )
         with patch_agent_sdk():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=config, anima_dir=anima_dir)
             with patch.dict(os.environ, {}, clear=False):
@@ -230,7 +230,7 @@ class TestAgentSDKExecutor:
 
     async def test_execute_returns_text(self, model_config, anima_dir):
         with patch_agent_sdk(response_text="Hello from Agent SDK"):
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             result = await executor.execute("test prompt", system_prompt="sys")
@@ -241,7 +241,7 @@ class TestAgentSDKExecutor:
             response_text="Response",
             usage={"input_tokens": 500, "output_tokens": 100},
         ):
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             result = await executor.execute("test")
@@ -250,7 +250,7 @@ class TestAgentSDKExecutor:
 
     async def test_execute_empty_response(self, model_config, anima_dir):
         with patch_agent_sdk(response_text=""):
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             result = await executor.execute("test")
@@ -270,7 +270,7 @@ class TestAgentSDKExecutor:
         ]
 
         with _patch_agent_sdk_sequences([first_messages, second_messages]):
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             result = await executor.execute("test", system_prompt="sys")
@@ -290,7 +290,7 @@ class TestAgentSDKExecutor:
         ]
 
         with _patch_agent_sdk_sequences([first_messages]):
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=config, anima_dir=anima_dir)
             result = await executor.execute("test", system_prompt="sys")
@@ -307,7 +307,7 @@ class TestAgentSDKExecutor:
             response_text="tracked response",
             usage={"input_tokens": 1000, "output_tokens": 200},
         ):
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             result = await executor.execute("test", tracker=tracker)
@@ -324,7 +324,7 @@ class TestAgentSDKExecutorStreaming:
         tracker = ContextTracker(model="claude-sonnet-4-6")
 
         with patch_agent_sdk_streaming(text_deltas=["Hello ", "World"]):
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
 
@@ -352,7 +352,7 @@ class TestAgentSDKExecutorStreaming:
             text_deltas=["test"],
             usage={"input_tokens": 500, "output_tokens": 100},
         ):
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
 
@@ -442,7 +442,7 @@ class TestAgentSDKExecutorStreaming:
         tracker = ContextTracker(model="claude-sonnet-4-6")
 
         with _patch_with_historical_messages():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
 
@@ -481,7 +481,7 @@ class TestAgentSDKExecutorStreaming:
         tracker = ContextTracker(model="claude-sonnet-4-6")
 
         with patch_agent_sdk_streaming(text_deltas=["hi"]):
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             original_build = AgentSDKExecutor._build_sdk_options
@@ -560,7 +560,7 @@ class TestAgentSDKExecutorStreaming:
         tracker = ContextTracker(model="claude-sonnet-4-6")
 
         with _patch_without_stream_events():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             events = []
@@ -602,7 +602,7 @@ class TestAgentSDKExecutorStreaming:
         tracker = ContextTracker(model="claude-sonnet-4-6")
 
         with _patch_agent_sdk_sequences([first_messages, second_messages]):
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             events = []
@@ -624,7 +624,7 @@ class TestAgentSDKExecutorStreaming:
 @pytest.mark.parametrize("signal", ["result_error", "result_subtype", "assistant_error", "cli_envelope"])
 @pytest.mark.parametrize("streaming", [False, True])
 async def test_sdk_provider_failures_are_not_successful_answers(model_config, anima_dir, signal, streaming):
-    from core.execution.agent_sdk import AgentSDKExecutor
+    from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
     from core.prompt.context import ContextTracker
 
     text = "API Error: ConnectionRefused: Unable to connect to the API"
@@ -670,7 +670,7 @@ async def test_sdk_provider_failures_are_not_successful_answers(model_config, an
     ],
 )
 async def test_normal_sdk_answers_mentioning_errors_stay_successful(model_config, anima_dir, text):
-    from core.execution.agent_sdk import AgentSDKExecutor
+    from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
     from core.prompt.context import ContextTracker
 
     sequence = [MockAssistantMessage([MockTextBlock(text)]), MockResultMessage()]
@@ -689,7 +689,7 @@ async def test_normal_sdk_answers_mentioning_errors_stay_successful(model_config
 
 
 async def test_structured_sdk_failure_without_assistant_text_uses_error_details(model_config, anima_dir):
-    from core.execution.agent_sdk import AgentSDKExecutor
+    from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
     result = MockResultMessage()
     result.is_error = True
@@ -711,7 +711,7 @@ async def test_structured_sdk_failure_without_assistant_text_uses_error_details(
     ],
 )
 async def test_structured_assistant_error_preserves_provider_reason(model_config, anima_dir, error, reason):
-    from core.execution.agent_sdk import AgentSDKExecutor
+    from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
     from core.prompt.context import ContextTracker
 
     assistant = MockAssistantMessage([MockTextBlock("Provider request failed")])
@@ -733,7 +733,7 @@ class TestAgentSDKImageInput:
 
     def _make_executor(self, model_config, anima_dir, **kwargs):
         with patch_agent_sdk():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             return AgentSDKExecutor(
                 model_config=model_config,
@@ -744,7 +744,7 @@ class TestAgentSDKImageInput:
     async def test_build_sdk_query_input_text_only(self, model_config, anima_dir):
         """Text-only prompt returns a plain string."""
         with patch_agent_sdk():
-            from core.execution.agent_sdk import _build_sdk_query_input
+            from core.execution.engines.claude.agent_sdk import _build_sdk_query_input
 
             result = _build_sdk_query_input("hello", None)
             assert isinstance(result, str)
@@ -753,7 +753,7 @@ class TestAgentSDKImageInput:
     async def test_build_sdk_query_input_with_images(self, model_config, anima_dir):
         """Images present → returns an async generator with content blocks."""
         with patch_agent_sdk():
-            from core.execution.agent_sdk import _build_sdk_query_input
+            from core.execution.engines.claude.agent_sdk import _build_sdk_query_input
 
             images = [{"media_type": "image/jpeg", "data": "dGVzdA=="}]
             result = _build_sdk_query_input("describe this", images)
@@ -778,7 +778,7 @@ class TestAgentSDKImageInput:
     async def test_build_sdk_query_input_multiple_images(self, model_config, anima_dir):
         """Multiple images produce multiple image blocks before the text block."""
         with patch_agent_sdk():
-            from core.execution.agent_sdk import _build_sdk_query_input
+            from core.execution.engines.claude.agent_sdk import _build_sdk_query_input
 
             images = [
                 {"media_type": "image/png", "data": "aW1nMQ=="},
@@ -798,7 +798,7 @@ class TestAgentSDKImageInput:
     async def test_execute_with_images_passes_to_query(self, model_config, anima_dir):
         """execute() with images should build multimodal prompt (no warning log)."""
         with patch_agent_sdk(response_text="I see a cat"):
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             images = [{"media_type": "image/jpeg", "data": "dGVzdA=="}]
@@ -812,7 +812,7 @@ class TestAgentSDKImageInput:
         tracker = ContextTracker(model="claude-sonnet-4-6")
 
         with patch_agent_sdk_streaming(text_deltas=["I see ", "a cat"]):
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=model_config, anima_dir=anima_dir)
             images = [{"media_type": "image/jpeg", "data": "dGVzdA=="}]
@@ -834,7 +834,7 @@ class TestAgentSDKImageInput:
     async def test_build_sdk_query_input_empty_images(self, model_config, anima_dir):
         """Empty images list is treated as text-only."""
         with patch_agent_sdk():
-            from core.execution.agent_sdk import _build_sdk_query_input
+            from core.execution.engines.claude.agent_sdk import _build_sdk_query_input
 
             result = _build_sdk_query_input("hello", [])
             assert isinstance(result, str)

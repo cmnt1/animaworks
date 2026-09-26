@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from core.execution.grok_cli import GrokCLIExecutor
+from core.execution.engines.grok.grok_cli import GrokCLIExecutor
 from core.platform.grok import is_grok_authenticated, is_grok_cli_available
 from core.schemas import ModelConfig
 

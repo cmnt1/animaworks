@@ -4,7 +4,7 @@ AnimaWorksはツールアクセス・永続記憶・エージェント間通信�
 
 本ドキュメントでは、多層防御セキュリティモデルと、最新のLLM/エージェント攻撃研究（OWASP Top 10 for LLM 2025、AdapTools、MemoryGraft、ChatInject、RoguePilot、MCP Tool Poisoning、RAGPoison、Confused Deputy攻撃）に基づく敵対的脅威分析を記述する。
 
-**最終監査**: 2026-03-25（Mode S 実装: `core/execution/_sdk_security.py` の純粋関数に準拠。組織パス列の解決は `core/execution/_sdk_hooks.py` の `_cache_subordinate_paths` がフック構築時に実行）
+**最終監査**: 2026-03-25（Mode S 実装: `core/execution/engines/claude/_sdk_security.py` の純粋関数に準拠。組織パス列の解決は `core/execution/engines/claude/_sdk_hooks.py` の `_cache_subordinate_paths` がフック構築時に実行）
 
 ---
 
@@ -149,7 +149,7 @@ ToolHandler でも Mode S でも、`permissions.global.json` の `commands.deny`
 
 **パイプライン個別チェック**: パイプで連結された各セグメントは独立にチェック。
 
-**主要ファイル**: `core/tooling/handler_base.py`（`_get_injection_re`, `_get_blocked_patterns`, `_PROTECTED_FILES`）, `core/tooling/handler_perms.py`（`_check_command_permission`）, `core/config/global_permissions.py`（`permissions.global.json`）, `core/execution/_sdk_security.py`（Mode S Bash）
+**主要ファイル**: `core/tooling/handler_base.py`（`_get_injection_re`, `_get_blocked_patterns`, `_PROTECTED_FILES`）, `core/tooling/handler_perms.py`（`_check_command_permission`）, `core/config/global_permissions.py`（`permissions.global.json`）, `core/execution/engines/claude/_sdk_security.py`（Mode S Bash）
 
 #### 外部ツールのアクションゲート（`external_tools.allow`）
 
@@ -306,7 +306,7 @@ Mode S（Claude Code の Read/Write/Edit）のパス許可は **§10.2**（`_che
 
 ### 10. Mode S（Agent SDK）セキュリティ
 
-Claude Agent SDK（Mode S）では `PreToolUse` フック（`core/execution/_sdk_hooks.py`）が **`core/execution/_sdk_security.py`** の純粋関数で検査・出力制御を行う。`_sdk_security.py` はフレームワーク状態を持たないリーフモジュールで、保護ファイル集合 `_PROTECTED_FILES`、書き込み系コマンド集合 `_WRITE_COMMANDS`、および Bash/Read/Grep/Glob の既定上限（バイト・行・件数）は同ファイル内の定数として定義されている。
+Claude Agent SDK（Mode S）では `PreToolUse` フック（`core/execution/engines/claude/_sdk_hooks.py`）が **`core/execution/engines/claude/_sdk_security.py`** の純粋関数で検査・出力制御を行う。`_sdk_security.py` はフレームワーク状態を持たないリーフモジュールで、保護ファイル集合 `_PROTECTED_FILES`、書き込み系コマンド集合 `_WRITE_COMMANDS`、および Bash/Read/Grep/Glob の既定上限（バイト・行・件数）は同ファイル内の定数として定義されている。
 
 **組織パス**: 上司・同僚・配下向けの例外パス一覧は、フック生成時に `_sdk_hooks._cache_subordinate_paths(anima_dir)` が `load_config()` と `get_animas_dir()` から解決し、`PreToolUse` にクロージャで渡す。
 
@@ -359,7 +359,7 @@ Claude Agent SDK（Mode S）では `PreToolUse` フック（`core/execution/_sdk
 
 ツール別信頼と `min_trust_seen` の永続化は `_sdk_hooks.py` 側の `_SDK_TOOL_TRUST` / `TOOL_TRUST_LEVELS` と連携（本節のファイルアクセス・Bash・出力ガードとは独立）。
 
-**主要ファイル**: `core/execution/_sdk_security.py`（検査・出力ガード本体）, `core/execution/_sdk_hooks.py`（`PreToolUse`・パスキャッシュ）, `core/config/global_permissions.py`（`GlobalPermissionsCache`）
+**主要ファイル**: `core/execution/engines/claude/_sdk_security.py`（検査・出力ガード本体）, `core/execution/engines/claude/_sdk_hooks.py`（`PreToolUse`・パスキャッシュ）, `core/config/global_permissions.py`（`GlobalPermissionsCache`）
 
 ---
 

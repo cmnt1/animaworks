@@ -15,10 +15,10 @@ import pytest
 from core.exceptions import ExecutorUnavailableError
 
 _OPTIONAL_ADAPTERS = (
-    ("core.execution.codex_sdk.is_codex_sdk_available", "codex/o4-mini"),
-    ("core.execution.cursor_agent.is_cursor_agent_available", "cursor/auto"),
-    ("core.execution.gemini_cli.is_gemini_cli_available", "gemini/gemini-2.5-pro"),
-    ("core.execution.grok_cli.is_grok_cli_available", "grok/grok-4.5"),
+    ("core.execution.engines.codex.setup.is_codex_sdk_available", "codex/o4-mini"),
+    ("core.execution.engines.cursor.cursor_agent.is_cursor_agent_available", "cursor/auto"),
+    ("core.execution.engines.gemini.gemini_cli.is_gemini_cli_available", "gemini/gemini-2.5-pro"),
+    ("core.execution.engines.grok.grok_cli.is_grok_cli_available", "grok/grok-4.5"),
 )
 
 

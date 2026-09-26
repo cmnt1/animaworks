@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -11,8 +12,7 @@ file saving, truncation, and cleanup behavior.
 import subprocess
 from pathlib import Path
 
-
-from core.execution.agent_sdk import (
+from core.execution.engines.claude.agent_sdk import (
     _BASH_HEAD_BYTES,
     _BASH_TAIL_BYTES,
     _BASH_TRUNCATE_BYTES,

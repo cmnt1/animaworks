@@ -36,7 +36,7 @@ class _AuthError(Exception):
 @pytest.fixture(autouse=True)
 def _fast_backoff():
     """Zero backoff so retry tests do not sleep."""
-    with patch("core.execution.litellm_loop.decorrelated_jitter", return_value=0.0):
+    with patch("core.execution.engines.litellm.litellm_loop.decorrelated_jitter", return_value=0.0):
         yield
 
 
@@ -46,7 +46,7 @@ def _mock_rate_guard():
     guard.blocked_remaining.return_value = 0.0
     guard.config.default_block_seconds = 60
     guard.config.quota_block_seconds = 1800
-    with patch("core.execution.litellm_loop.get_rate_guard", return_value=guard):
+    with patch("core.execution.engines.litellm.litellm_loop.get_rate_guard", return_value=guard):
         yield guard
 
 
@@ -89,7 +89,7 @@ def tool_handler(anima_dir: Path, memory: MagicMock) -> ToolHandler:
 
 
 def _make_executor(model_config, anima_dir, tool_handler, memory, interrupt_event=None):
-    from core.execution.litellm_loop import LiteLLMExecutor
+    from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
 
     return LiteLLMExecutor(
         model_config=model_config,
@@ -136,7 +136,7 @@ class TestInLoopRetry:
         _mock_rate_guard.report_block.assert_called_once_with("openai:api", 1800, "auth", reset_in_s=None)
 
     async def test_streaming_reporter_blocks_quota_and_auth(self):
-        from core.execution._litellm_streaming import _make_rate_guard_reporter
+        from core.execution.engines.litellm._litellm_streaming import _make_rate_guard_reporter
         from core.execution.error_classifier import classify_llm_error_message
 
         guard = MagicMock()
@@ -324,7 +324,7 @@ class TestStreamingRetry:
         mock = AsyncMock(side_effect=[_RateLimitError("too many requests"), final])
         with (
             patch("litellm.acompletion", mock),
-            patch("core.execution._litellm_streaming.decorrelated_jitter", return_value=0.0),
+            patch("core.execution.engines.litellm._litellm_streaming.decorrelated_jitter", return_value=0.0),
         ):
             events = await self._collect(
                 ollama_executor.execute_streaming(
@@ -347,7 +347,7 @@ class TestStreamingRetry:
         mock = AsyncMock(side_effect=[resp_tool, err, err, err, err])
         with (
             patch("litellm.acompletion", mock),
-            patch("core.execution._litellm_streaming.decorrelated_jitter", return_value=0.0),
+            patch("core.execution.engines.litellm._litellm_streaming.decorrelated_jitter", return_value=0.0),
             pytest.raises(StreamDisconnectedError),
         ):
             await self._collect(
