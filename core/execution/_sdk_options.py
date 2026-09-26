@@ -175,6 +175,8 @@ class SDKOptionsMixin:
             "CLAUDE_CODE_DISABLE_SKILL_IMPROVEMENT": "true",
             "ENABLE_TOOL_SEARCH": "false",
             "CLAUDECODE": "",
+            "BASH_DEFAULT_TIMEOUT_MS": "1200000",
+            "BASH_MAX_TIMEOUT_MS": "1200000",
         }
         ctx = current_runtime_session()
         if ctx is not None:

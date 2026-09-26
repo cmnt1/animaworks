@@ -501,8 +501,7 @@ Mode X requires the `grok` CLI to be installed and authenticated with `grok logi
 |`session_ttl_days`             |`int \| null`|`7` (`null` = unlimited)|UI session cookie TTL |
 |`ipc_stream_timeout`           |`int`    |`60`    |IPC streaming per-chunk timeout (seconds)|
 |`keepalive_interval`           |`int`    |`30`    |Keep-alive send interval (seconds) |
-|`max_streaming_duration`       |`int`    |`1800`  |Maximum streaming duration (seconds)|
-|`busy_hang_threshold`          |`int`    |`900`   |Seconds before child process "busy" is treated as unresponsive (reflected in `HealthConfig`)|
+|`runner_liveness_timeout`      |`int`    |`900`   |Task-runner IPC keepalive liveness timeout (seconds)|
 |`stream_checkpoint_enabled`    |`bool`   |`true`  |Save tool results during streaming |
 |`stream_retry_max`             |`int`    |`3`     |Maximum auto-retry count on stream disconnection|
 |`stream_retry_delay_s`         |`float`  |`5.0`   |Wait time between retries (seconds)|

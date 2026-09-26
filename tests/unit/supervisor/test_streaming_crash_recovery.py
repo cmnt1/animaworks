@@ -1,33 +1,25 @@
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Unit tests for streaming crash recovery (Agent SDK crash detection).
+"""Tests for process liveness during streams and keepalive behavior."""
 
-Tests the three fixes:
-1. ProcessHandle._streaming_started_at tracking
-2. _check_process_health during streaming
-3. _keepalive_producer stops when producer finishes
-"""
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import timedelta
-
-from core.time_utils import now_jst
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.supervisor.manager import HealthConfig, ProcessSupervisor
 from core.supervisor.process_handle import ProcessHandle, ProcessState, ProcessStats
-from core.supervisor.manager import ProcessSupervisor, HealthConfig
+from core.time_utils import now_jst
 
 
 class TestStreamingTimestamp:
-    """Test ProcessHandle._streaming_started_at tracking."""
-
-    def test_initial_state(self, tmp_path: Path):
-        """_streaming_started_at is None initially."""
+    def test_initial_state(self, tmp_path: Path) -> None:
         handle = ProcessHandle(
             anima_name="test",
             socket_path=tmp_path / "test.sock",
@@ -39,8 +31,6 @@ class TestStreamingTimestamp:
 
 
 class TestHealthCheckDuringStreaming:
-    """Test _check_process_health behavior during streaming."""
-
     @pytest.fixture
     def supervisor(self, tmp_path: Path) -> ProcessSupervisor:
         anima_dir = tmp_path / "animas" / "test"
@@ -63,13 +53,11 @@ class TestHealthCheckDuringStreaming:
         )
         handle.state = ProcessState.RUNNING
         handle._streaming = True
-        handle._streaming_started_at = now_jst()
+        handle._streaming_started_at = now_jst() - timedelta(hours=4)
         handle.stats = ProcessStats(started_at=now_jst() - timedelta(minutes=5))
-        # Mock process
         handle.process = MagicMock()
-        handle.process.poll.return_value = None  # alive
+        handle.process.poll.return_value = None
         handle.process.pid = 12345
-        # Mock IPC client
         handle.ipc_client = MagicMock()
         handle.ipc_client.writer = MagicMock()
         handle.ipc_client.writer.is_closing.return_value = False
@@ -78,163 +66,66 @@ class TestHealthCheckDuringStreaming:
     @pytest.mark.asyncio
     async def test_streaming_process_death_detected(
         self, supervisor: ProcessSupervisor, streaming_handle: ProcessHandle
-    ):
-        """During streaming, process death is detected."""
-        # Simulate process exit
+    ) -> None:
         streaming_handle.process.poll.return_value = 1
         supervisor.processes["test"] = streaming_handle
 
-        with patch.object(supervisor, "_handle_process_failure", new_callable=AsyncMock) as mock_failure:
+        with patch.object(supervisor, "_handle_process_failure", new_callable=AsyncMock) as failure:
             await supervisor._check_process_health("test", streaming_handle)
-            # Give the created task time to start
-            await asyncio.sleep(0.1)
-            mock_failure.assert_called_once()
+            await asyncio.sleep(0)
+            failure.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_streaming_failed_state_detected(
         self, supervisor: ProcessSupervisor, streaming_handle: ProcessHandle
-    ):
-        """During streaming, FAILED state is detected."""
+    ) -> None:
         streaming_handle.state = ProcessState.FAILED
         supervisor.processes["test"] = streaming_handle
 
-        with patch.object(supervisor, "_handle_process_failure", new_callable=AsyncMock) as mock_failure:
+        with patch.object(supervisor, "_handle_process_failure", new_callable=AsyncMock) as failure:
             await supervisor._check_process_health("test", streaming_handle)
-            await asyncio.sleep(0.1)
-            mock_failure.assert_called_once()
+            await asyncio.sleep(0)
+            failure.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_streaming_timeout_detected(
+    async def test_four_hour_stream_is_not_killed_while_process_is_alive(
         self, supervisor: ProcessSupervisor, streaming_handle: ProcessHandle
-    ):
-        """Streaming exceeding max duration triggers hang detection."""
-        # Set started_at far in the past
-        streaming_handle._streaming_started_at = now_jst() - timedelta(hours=1)
-        supervisor._max_streaming_duration_sec = 60  # 60s for testing
-        supervisor.processes["test"] = streaming_handle
-
-        with patch.object(supervisor, "_handle_process_hang", new_callable=AsyncMock) as mock_hang:
-            await supervisor._check_process_health("test", streaming_handle)
-            await asyncio.sleep(0.1)
-            mock_hang.assert_called_once()
-
-    def _write_busy_sidecar(
-        self,
-        supervisor: ProcessSupervisor,
-        anima_name: str,
-        pid: int,
-        last_progress_at,
     ) -> None:
-        import json
-
-        path = supervisor.run_dir / "animas" / f"{anima_name}.busy.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(
-                {
-                    "is_busy": True,
-                    "pid": pid,
-                    "last_progress_at": last_progress_at.isoformat(),
-                }
-            ),
-            encoding="utf-8",
-        )
-
-    @pytest.mark.asyncio
-    async def test_streaming_over_max_with_fresh_progress_not_killed(
-        self, supervisor: ProcessSupervisor, streaming_handle: ProcessHandle
-    ):
-        """A stream past max duration survives while progress is fresh."""
-        streaming_handle._streaming_started_at = now_jst() - timedelta(hours=1)
-        supervisor._max_streaming_duration_sec = 60
         supervisor.processes["test"] = streaming_handle
-        self._write_busy_sidecar(supervisor, "test", 12345, now_jst())
 
-        with patch.object(supervisor, "_handle_process_hang", new_callable=AsyncMock) as mock_hang:
+        with (
+            patch.object(supervisor, "_handle_process_failure", new_callable=AsyncMock) as failure,
+            patch.object(supervisor, "_handle_process_hang", new_callable=AsyncMock) as hang,
+        ):
             await supervisor._check_process_health("test", streaming_handle)
-            await asyncio.sleep(0.1)
-            mock_hang.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_streaming_stalled_progress_killed_before_max(
-        self, supervisor: ProcessSupervisor, streaming_handle: ProcessHandle
-    ):
-        """A stream with stale progress is killed even before max duration."""
-        streaming_handle._streaming_started_at = now_jst() - timedelta(minutes=20)
-        supervisor._max_streaming_duration_sec = 7200
-        supervisor.processes["test"] = streaming_handle
-        stale = now_jst() - timedelta(seconds=supervisor.health_config.busy_hang_threshold_sec + 60)
-        self._write_busy_sidecar(supervisor, "test", 12345, stale)
-
-        with patch.object(supervisor, "_handle_process_hang", new_callable=AsyncMock) as mock_hang:
-            await supervisor._check_process_health("test", streaming_handle)
-            await asyncio.sleep(0.1)
-            mock_hang.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_streaming_sidecar_pid_mismatch_falls_back_to_timeout(
-        self, supervisor: ProcessSupervisor, streaming_handle: ProcessHandle
-    ):
-        """A sidecar from another PID is ignored; legacy timeout applies."""
-        streaming_handle._streaming_started_at = now_jst() - timedelta(hours=1)
-        supervisor._max_streaming_duration_sec = 60
-        supervisor.processes["test"] = streaming_handle
-        self._write_busy_sidecar(supervisor, "test", 99999, now_jst())
-
-        with patch.object(supervisor, "_handle_process_hang", new_callable=AsyncMock) as mock_hang:
-            await supervisor._check_process_health("test", streaming_handle)
-            await asyncio.sleep(0.1)
-            mock_hang.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_streaming_normal_not_triggered(
-        self, supervisor: ProcessSupervisor, streaming_handle: ProcessHandle
-    ):
-        """Normal streaming should not trigger failure/hang detection."""
-        supervisor._max_streaming_duration_sec = 1800
-        supervisor.processes["test"] = streaming_handle
-
-        with patch.object(supervisor, "_handle_process_failure", new_callable=AsyncMock) as mock_failure:
-            with patch.object(supervisor, "_handle_process_hang", new_callable=AsyncMock) as mock_hang:
-                await supervisor._check_process_health("test", streaming_handle)
-                await asyncio.sleep(0.1)
-                mock_failure.assert_not_called()
-                mock_hang.assert_not_called()
+            await asyncio.sleep(0)
+            failure.assert_not_called()
+            hang.assert_not_called()
 
 
 class TestKeepaliveProducerStop:
-    """Test that keepalive producer stops when stream producer finishes."""
-
     @pytest.mark.asyncio
-    async def test_keepalive_stops_when_producer_done(self):
-        """Keepalive should stop when producer_task is done."""
-
+    async def test_keepalive_stops_when_producer_done(self) -> None:
         queue: asyncio.Queue = asyncio.Queue()
-        last_chunk_time_holder = [0.0]
+        last_chunk_time_holder = [time.monotonic()]
+        assert queue.empty()
+        assert last_chunk_time_holder[0] > 0
 
-        import time
-        last_chunk_time_holder[0] = time.monotonic()
-
-        # Create a producer_task that completes immediately (simulating crash)
-        async def instant_crash():
+        async def instant_crash() -> None:
             raise RuntimeError("Agent SDK crashed")
 
         producer_task = asyncio.create_task(instant_crash())
-        # Wait for it to finish
-        try:
+        with pytest.raises(RuntimeError, match="Agent SDK crashed"):
             await producer_task
-        except RuntimeError:
-            pass
 
-        # Now create keepalive producer that checks producer_task
         keepalive_started = asyncio.Event()
         keepalive_stopped = asyncio.Event()
 
-        async def keepalive_producer():
+        async def keepalive_producer() -> None:
             keepalive_started.set()
             try:
                 while True:
-                    await asyncio.sleep(0.1)  # Short interval for testing
+                    await asyncio.sleep(0.1)
                     if producer_task.done():
                         keepalive_stopped.set()
                         return
@@ -243,14 +134,6 @@ class TestKeepaliveProducerStop:
 
         task = asyncio.create_task(keepalive_producer())
         await keepalive_started.wait()
-
-        # Wait for keepalive to detect producer death
         async with asyncio.timeout(2.0):
             await keepalive_stopped.wait()
-
-        assert keepalive_stopped.is_set()
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        await task

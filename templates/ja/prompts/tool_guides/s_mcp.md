@@ -1,5 +1,7 @@
 ## AnimaWorks Tools
 
+20分近くかかるコマンドはバックグラウンドで実行し、数分おきに状態または出力末尾を確認する。
+
 これらのツールはAnimaWorksのコア機能です。ホスト CLI の組込みツール `Bash` / `Read` / `Write` / `Edit` と併用できます。
 
 検索・集計・一覧・ファイル操作は `Bash` で行う（`rg`, `grep`, `find`, `ls`, `wc` 等）。`Bash` を第一手段とし、ファイルの読み書きだけ `Read` / `Write` / `Edit` を使う。

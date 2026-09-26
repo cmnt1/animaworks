@@ -1233,10 +1233,13 @@ class TestTerminalPaths:
             return b""
 
         proc.stdout.readline = stall_after_session  # type: ignore[method-assign]
-        with patch("core.execution.grok_cli._IDLE_TIMEOUT_SECONDS", 0.01):
-            events = await _stream(executor, proc)
-        assert len([event for event in events if event["type"] == "done"]) == 1
-        assert "grok" in next(event for event in events if event["type"] == "error")["message"].lower()
+        from core.execution.watchdog import Watchdog
+
+        with (
+            patch("core.execution.events.Watchdog", return_value=Watchdog(0.01)),
+            pytest.raises(TimeoutError, match="idle"),
+        ):
+            await _stream(executor, proc)
         assert signal.SIGTERM in proc.sent_signals
 
     @pytest.mark.asyncio

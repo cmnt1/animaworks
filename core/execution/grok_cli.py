@@ -15,12 +15,10 @@ persisting Grok's session ID for conversational triggers.
 """
 
 import asyncio
-import inspect
 import json
 import logging
 import os
 import shutil
-import signal
 import subprocess
 import sys
 import time
@@ -44,9 +42,11 @@ from core.execution.error_classifier import (
     provider_family_of,
 )
 from core.execution.events import stream_events
+from core.execution.process_runner import ProcessRunner
 from core.execution.rate_guard import get_rate_guard
 from core.execution.session_context import _resolve_session_type
 from core.execution.session_store import SessionRecord, SessionStore
+from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS, wait_for_engine_event
 from core.i18n import t
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
@@ -70,14 +70,8 @@ __all__ = [
 ]
 
 _GROK_BINARY_NAMES = ("grok",)
-_DEFAULT_TIMEOUT_SECONDS = 600
-# Progress-aware (sidecar-style) timeouts: instead of one absolute wall-clock
-# limit that kills healthy long-running tasks, we bound the *idle* gap between
-# ACP stream events. Every event (thinking chunk, message chunk, tool update,
-# response) counts as progress and resets the idle clock. A generous absolute
-# hard cap remains only as a runaway backstop.
-_IDLE_TIMEOUT_SECONDS = 900  # max silence between stream events before kill
-_HARD_CAP_SECONDS = 14400  # 4h absolute backstop against a wedged child
+_EVENT_IDLE_TIMEOUT_SECONDS = DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS
+_GRACEFUL_KILL_WAIT = 3.0
 # ACP NDJSON lines carry whole tool outputs / context blobs in one line;
 # asyncio's default 64KiB StreamReader limit truncates them (LimitOverrunError).
 _STDOUT_LIMIT_BYTES = 16 * 1024 * 1024
@@ -660,7 +654,7 @@ class GrokCLIExecutor(BaseExecutor):
         while True:
             if self._check_interrupted():
                 raise asyncio.CancelledError
-            line = await asyncio.wait_for(proc.stdout.readline(), _IDLE_TIMEOUT_SECONDS)
+            line = await wait_for_engine_event(proc.stdout.readline())
             if not line:
                 raise _ACPError(method, "unexpected EOF")
             message = self._parse_ndjson_event(line)
@@ -699,71 +693,8 @@ class GrokCLIExecutor(BaseExecutor):
         proc: asyncio.subprocess.Process,
         timeout: float = _GRACEFUL_KILL_WAIT,
     ) -> None:
-        """Terminate the child, then escalate to SIGKILL after *timeout*.
-
-        The child is spawned with ``os.setsid()``, so signalling the process
-        alone leaves its own descendants (the bash tool's shells and whatever
-        they spawned) running — they get reparented to ``systemd --user`` and
-        can burn CPU indefinitely. Signal the whole process group instead.
-        """
-        if proc.returncode is not None:
-            return
-        # Captured before the child dies: getpgid() fails once it is reaped.
-        pgid = self._process_group_of(proc)
-        try:
-            try:
-                sent = proc.send_signal(signal.SIGTERM)
-                if inspect.isawaitable(sent):  # accommodates asyncio test doubles
-                    await sent
-            except ProcessLookupError:
-                return
-            self._signal_process_group(pgid, signal.SIGTERM)
-            try:
-                await asyncio.wait_for(proc.wait(), timeout=timeout)
-                if proc.returncode is not None:
-                    return
-            except TimeoutError:
-                pass
-            try:
-                killed = proc.kill()
-                if inspect.isawaitable(killed):  # accommodates asyncio test doubles
-                    await killed
-            except ProcessLookupError:
-                return
-            try:
-                await proc.wait()
-            except Exception:  # noqa: BLE001
-                logger.debug("Failed waiting for killed Grok CLI", exc_info=True)
-        finally:
-            # Always sweep the group: the CLI exiting says nothing about the
-            # shells it spawned, and orphans here have burned hours of CPU.
-            self._signal_process_group(pgid, signal.SIGKILL)
-
-    @staticmethod
-    def _process_group_of(proc: asyncio.subprocess.Process) -> int | None:
-        """Return the child's process group id, or None when unavailable.
-
-        Never returns our own group — signalling that would kill the daemon.
-        """
-        if os.name != "posix":
-            return None
-        try:
-            pgid = os.getpgid(proc.pid)
-        except (ProcessLookupError, PermissionError, TypeError, OSError):
-            return None
-        if pgid in (os.getpgrp(), 0, 1):
-            return None
-        return pgid
-
-    @staticmethod
-    def _signal_process_group(pgid: int | None, sig: signal.Signals) -> None:
-        """Best-effort signal to the child's whole process group."""
-        if pgid is None:
-            return
-        try:
-            os.killpg(pgid, sig)
-        except (ProcessLookupError, PermissionError, OSError):
-            pass
+        """Delegate the process-tree shutdown to the shared process runner."""
+        await ProcessRunner.terminate_process(proc, timeout=timeout)
 
     @staticmethod
     async def _drain_stderr(proc: asyncio.subprocess.Process) -> str:
@@ -781,7 +712,7 @@ class GrokCLIExecutor(BaseExecutor):
 
     def _translated_error(self, detail: str, *, timed_out: bool = False) -> str:
         if timed_out:
-            return t("grok_cli.timeout", timeout=_IDLE_TIMEOUT_SECONDS)
+            return t("grok_cli.timeout", timeout=_EVENT_IDLE_TIMEOUT_SECONDS)
         if self._auth_error(detail):
             return t("grok_cli.not_authenticated")
         return f"[Grok CLI Error: {detail}]"
@@ -813,6 +744,7 @@ class GrokCLIExecutor(BaseExecutor):
         env["GROK_CLAUDE_SKILLS_ENABLED"] = "false"
 
         proc: asyncio.subprocess.Process | None = None
+        process_runner = ProcessRunner(graceful_timeout=_GRACEFUL_KILL_WAIT, drain_stderr=False)
         stderr_task: asyncio.Task[str] | None = None
         pending_tools: dict[str, dict[str, Any]] = {}
         next_id = 1
@@ -859,7 +791,7 @@ class GrokCLIExecutor(BaseExecutor):
                 "env": env,
             }
             try:
-                proc = await asyncio.create_subprocess_exec(
+                proc = await process_runner.start(
                     *cmd,
                     **spawn_kwargs,
                     **pty_spawn_kwargs,
@@ -877,14 +809,14 @@ class GrokCLIExecutor(BaseExecutor):
                 pty_master_fd = None
                 pty_slave_fd = None
                 pty_spawn_kwargs = {}
-                proc = await asyncio.create_subprocess_exec(*cmd, **spawn_kwargs)
+                proc = await process_runner.start(*cmd, **spawn_kwargs)
 
             if pty_slave_fd is not None:
                 os.close(pty_slave_fd)
                 pty_slave_fd = None
             stderr_task = asyncio.create_task(self._drain_stderr(proc))
 
-            async with asyncio.timeout(_HARD_CAP_SECONDS):
+            async with asyncio.timeout(None):
                 await self._send_request(
                     proc,
                     next_id,
@@ -944,7 +876,7 @@ class GrokCLIExecutor(BaseExecutor):
                         await self._cancel_session(proc, state.session_id, next_id)
                         break
 
-                    line = await asyncio.wait_for(proc.stdout.readline(), _IDLE_TIMEOUT_SECONDS)
+                    line = await wait_for_engine_event(proc.stdout.readline())
                     if not line:
                         raise _ACPError("session/prompt", "unexpected EOF")
                     message = self._parse_ndjson_event(line)
@@ -1056,8 +988,8 @@ class GrokCLIExecutor(BaseExecutor):
             state.resume_failed = resume_session_id is not None and not self._auth_error(str(exc))
             state.error_text = self._translated_error(str(exc))
         finally:
-            if proc is not None and proc.returncode is None:
-                await self._kill_process(proc)
+            if proc is not None:
+                await process_runner.close()
             if stderr_task is not None:
                 try:
                     state.stderr = await stderr_task

@@ -363,7 +363,7 @@ class _RootLink:
     """Owns the connection to the anima root and re-dials it when it breaks.
 
     The hang watchdog kills any runner whose progress stops for
-    busy_hang_threshold seconds, so a broken control socket must never
+    runner_liveness_timeout seconds, so a broken control socket must never
     permanently silence a healthy runner: every consumer goes through this
     link and any of them may heal it (single-flight via the lock).
     """
@@ -406,7 +406,7 @@ async def _progress_loop(link: _RootLink, identity: IPCV2Identity) -> None:
     """Send progress heartbeats forever; survive and heal IPC failures.
 
     This loop must never die while execution is alive — a silent runner is
-    hang-killed after busy_hang_threshold even when it is working fine.
+    hang-killed after runner_liveness_timeout even when it is working fine.
     """
     while True:
         connection = link.connection

@@ -12,11 +12,9 @@ import asyncio
 import json
 import logging
 import time
-from datetime import datetime as _dt
 from pathlib import Path
 from typing import Any
 
-from core.config.resolver import resolve_process_model_config
 from core.supervisor.process_handle import ProcessHandle, ProcessState
 from core.time_utils import ensure_aware, now_local
 
@@ -33,14 +31,6 @@ class HealthMixin:
     def is_consolidating(self, anima_name: str) -> bool:
         """Return True if the anima is currently running daily/weekly consolidation."""
         return anima_name in getattr(self, "_consolidating", set())
-
-    def _runner_busy_hang_exempt(self, anima_name: str) -> bool:
-        """Return whether task-level monitoring owns busy-hang recovery."""
-        animas_dir = getattr(self, "animas_dir", None)
-        if animas_dir is None:
-            return False
-        config = resolve_process_model_config(Path(animas_dir) / anima_name)
-        return config.valid and any(config.task_process_isolation.model_dump().values())
 
     def _busy_sidecar_path(self, anima_name: str) -> Path | None:
         """Return the IPC-independent busy marker path, if run_dir is available."""
@@ -76,58 +66,6 @@ class HealthMixin:
         if last_progress:
             data["last_progress_at"] = last_progress
         return data
-
-    def _streaming_progress_idle_sec(
-        self,
-        anima_name: str,
-        handle: ProcessHandle,
-    ) -> float | None:
-        """Return seconds since the runner last reported progress, if known.
-
-        Reads the busy sidecar written by the child process (updated via the
-        agent progress callback and the busy keepalive).  Returns ``None``
-        when no trustworthy progress information exists.
-        """
-        sidecar = self._read_busy_sidecar(anima_name, handle)
-        if not sidecar:
-            return None
-        last_progress_iso = sidecar.get("last_progress_at")
-        if not last_progress_iso:
-            return None
-        try:
-            last_progress = ensure_aware(_dt.fromisoformat(str(last_progress_iso)))
-        except (ValueError, TypeError):
-            logger.warning(
-                "Invalid last_progress_at from %s: %r",
-                anima_name,
-                last_progress_iso,
-            )
-            return None
-        return (now_local() - last_progress).total_seconds()
-
-    def _warn_streaming_overrun(
-        self,
-        anima_name: str,
-        streaming_sec: float,
-        idle_sec: float,
-    ) -> None:
-        """Log (throttled) that a stream exceeded max duration but is healthy."""
-        warned = getattr(self, "_streaming_overrun_warned_at", None)
-        if warned is None:
-            warned = {}
-            self._streaming_overrun_warned_at = warned
-        now_mono = time.monotonic()
-        last = warned.get(anima_name)
-        if last is not None and now_mono - last < 300.0:
-            return
-        warned[anima_name] = now_mono
-        logger.warning(
-            "Streaming exceeds max duration for %s (%.0fs > %ds) but progress is fresh (idle=%.0fs) — not killing",
-            anima_name,
-            streaming_sec,
-            self._max_streaming_duration_sec,
-            idle_sec,
-        )
 
     def _log_hang_context(self, anima_name: str, handle: ProcessHandle) -> None:
         """Emit a one-line JSON hang context (sidecar + activity-log tail)."""
@@ -167,65 +105,6 @@ class HealthMixin:
             )
         except Exception:
             logger.debug("Failed to collect hang context for %s", anima_name, exc_info=True)
-
-    def _handle_busy_health(
-        self,
-        anima_name: str,
-        handle: ProcessHandle,
-        *,
-        last_progress_iso: Any,
-    ) -> None:
-        """Apply progress-aware hang detection for a known-busy process."""
-        handle.stats.missed_pings = 0
-        # Skip hang detection during bootstrap (LLM may take a long time)
-        if self.is_bootstrapping(anima_name):
-            logger.debug(
-                "Skipping hang detection for %s (bootstrapping)",
-                anima_name,
-            )
-            return
-        # Skip hang detection during daily/weekly consolidation
-        if self.is_consolidating(anima_name):
-            logger.debug(
-                "Skipping hang detection for %s (consolidating)",
-                anima_name,
-            )
-            return
-        if last_progress_iso:
-            try:
-                last_progress = ensure_aware(_dt.fromisoformat(str(last_progress_iso)))
-            except (ValueError, TypeError):
-                logger.warning(
-                    "Invalid last_progress_at from %s: %r",
-                    anima_name,
-                    last_progress_iso,
-                )
-                last_progress = None
-
-            if last_progress is not None:
-                idle_sec = (now_local() - last_progress).total_seconds()
-                if idle_sec > self.health_config.busy_hang_threshold_sec:
-                    logger.error(
-                        "Process busy hang (no progress): %s (idle=%.0fs > %ds)",
-                        anima_name,
-                        idle_sec,
-                        int(self.health_config.busy_hang_threshold_sec),
-                    )
-                    self._log_hang_context(anima_name, handle)
-                    asyncio.create_task(self._handle_process_hang(anima_name, handle))
-                return
-        if handle.stats.last_busy_since is None:
-            handle.stats.last_busy_since = now_local()
-        busy_duration = (now_local() - handle.stats.last_busy_since).total_seconds()
-        if busy_duration > self.health_config.busy_hang_threshold_sec:
-            logger.error(
-                "Process busy hang (no progress info, fallback): %s (busy=%.0fs > %ds)",
-                anima_name,
-                busy_duration,
-                int(self.health_config.busy_hang_threshold_sec),
-            )
-            self._log_hang_context(anima_name, handle)
-            asyncio.create_task(self._handle_process_hang(anima_name, handle))
 
     def _health_warmup_reason(self, anima_name: str, handle: ProcessHandle) -> str | None:
         """Return a reason to suppress unresponsive-runner restarts, if any."""
@@ -314,8 +193,8 @@ class HealthMixin:
         if handle.state == ProcessState.RESTARTING:
             return
 
-        # During streaming: skip ping (IPC lock held) but still check
-        # process liveness and streaming duration timeout.
+        # During streaming the IPC lock is held. Retain process liveness
+        # detection, but leave turn-idle timeout enforcement to the engine.
         if handle.is_streaming:
             # Detect process death during streaming
             if handle.state == ProcessState.FAILED:
@@ -333,41 +212,6 @@ class HealthMixin:
                 )
                 asyncio.create_task(self._handle_process_failure(anima_name, handle))
                 return
-            if self._runner_busy_hang_exempt(anima_name):
-                return
-            # Streaming stall detection: progress-aware, mirroring
-            # _handle_busy_health.  A long stream is healthy as long as the
-            # runner keeps reporting progress (busy sidecar last_progress_at,
-            # updated by the agent progress callback); wall-clock duration
-            # alone must not kill a working task.
-            started_at = handle.streaming_started_at
-            if started_at is not None:
-                streaming_sec = (now_local() - ensure_aware(started_at)).total_seconds()
-                idle_sec = self._streaming_progress_idle_sec(anima_name, handle)
-                if idle_sec is not None:
-                    if idle_sec > self.health_config.busy_hang_threshold_sec:
-                        logger.error(
-                            "Streaming stalled (no progress) for %s (idle=%.0fs > %ds, streaming=%.0fs)",
-                            anima_name,
-                            idle_sec,
-                            int(self.health_config.busy_hang_threshold_sec),
-                            streaming_sec,
-                        )
-                        self._log_hang_context(anima_name, handle)
-                        asyncio.create_task(self._handle_process_hang(anima_name, handle))
-                    elif streaming_sec > self._max_streaming_duration_sec:
-                        self._warn_streaming_overrun(anima_name, streaming_sec, idle_sec)
-                elif streaming_sec > self._max_streaming_duration_sec:
-                    # No progress information available (sidecar missing or
-                    # stale-PID) — fall back to the legacy absolute timeout.
-                    logger.error(
-                        "Streaming timeout for %s (%.0fs > %ds, no progress info)",
-                        anima_name,
-                        streaming_sec,
-                        self._max_streaming_duration_sec,
-                    )
-                    self._log_hang_context(anima_name, handle)
-                    asyncio.create_task(self._handle_process_hang(anima_name, handle))
             return
 
         # Direct state check: detect IPC connection loss
@@ -454,15 +298,9 @@ class HealthMixin:
 
         if success:
             if is_busy:
-                if self._runner_busy_hang_exempt(anima_name):
-                    handle.stats.missed_pings = 0
-                    handle.stats.last_busy_since = None
-                    return
-                self._handle_busy_health(
-                    anima_name,
-                    handle,
-                    last_progress_iso=ping_result.get("last_progress_at"),
-                )
+                handle.stats.missed_pings = 0
+                if handle.stats.last_busy_since is None:
+                    handle.stats.last_busy_since = now_local()
                 return
 
             if handle.stats.missed_pings > 0 or handle.stats.last_busy_since is not None:
@@ -471,19 +309,6 @@ class HealthMixin:
             return
 
         # Ping failed
-        busy_sidecar = self._read_busy_sidecar(anima_name, handle)
-        if busy_sidecar is not None and not self._runner_busy_hang_exempt(anima_name):
-            logger.debug(
-                "Ping failed for %s, but busy sidecar is present; using progress-aware health check",
-                anima_name,
-            )
-            self._handle_busy_health(
-                anima_name,
-                handle,
-                last_progress_iso=busy_sidecar.get("last_progress_at"),
-            )
-            return
-
         handle.stats.last_busy_since = None
         logger.warning(
             "Health check failed: %s (missed=%d/%d)",

@@ -1073,7 +1073,6 @@ def create_app(
 
     health_cfg = HealthConfig()
     try:
-        health_cfg.busy_hang_threshold_sec = float(config.server.busy_hang_threshold)
         health_cfg.health_check_warmup_seconds = float(config.server.health_check_warmup_seconds)
         health_cfg.runner_warmup_seconds = float(config.server.runner_warmup_seconds)
     except Exception:

@@ -18,7 +18,6 @@ Also provides ``StreamingContext`` / ``StreamingState`` and the
 ``AgentSDKExecutor.execute_streaming``.
 """
 
-import asyncio
 import logging
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
@@ -31,19 +30,10 @@ from core.execution.base import (
     tool_input_save_budget,
     tool_result_save_budget,
 )
+from core.execution.watchdog import wait_for_engine_event
 from core.prompt.context import resolve_context_window
 
 logger = logging.getLogger("animaworks.execution.agent_sdk")
-
-# Maximum seconds to wait between consecutive SDK messages.  When the CLI
-# subprocess dies or hangs (e.g. after a broken hook callback), the message
-# stream stops producing events.  Without this timeout the Python side would
-# wait indefinitely, holding the per-anima processing lock and blocking all
-# subsequent messages.  45 s is long enough for any legitimate API response
-# or tool execution, but short enough to detect a dead CLI promptly and
-# give the user a timely error instead of a 2+ minute frozen UI.
-_SDK_MESSAGE_TIMEOUT_SEC: float = 120.0
-
 
 # ── Tool logging helpers ─────────────────────────────────────
 
@@ -379,19 +369,12 @@ async def process_stream_messages(
     _msg_aiter = client.receive_messages().__aiter__()
     while True:
         try:
-            message = await asyncio.wait_for(
-                _msg_aiter.__anext__(),
-                timeout=_SDK_MESSAGE_TIMEOUT_SEC,
-            )
+            message = await wait_for_engine_event(_msg_aiter.__anext__())
         except StopAsyncIteration:
             break
         except TimeoutError:
-            logger.error(
-                "SDK message stream timed out — no message received for %.0fs; "
-                "CLI subprocess may have died or become unresponsive",
-                _SDK_MESSAGE_TIMEOUT_SEC,
-            )
-            raise TimeoutError(f"SDK stream timed out (no message for {_SDK_MESSAGE_TIMEOUT_SEC:.0f}s)") from None
+            logger.error("SDK message stream timed out — CLI subprocess may have died or become unresponsive")
+            raise
 
         if ctx.check_interrupted():
             logger.info("Agent SDK streaming interrupted — sending graceful interrupt")

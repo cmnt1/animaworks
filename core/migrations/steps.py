@@ -1607,6 +1607,48 @@ def step_tool_prompts_db_to_md(data_dir: Path, dry_run: bool, verbose: bool) -> 
 # ── Category 5: Version tracking ────────────────────────────────
 
 
+def step_engine_timeout_config_cleanup(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
+    """Drop supervisor stream-kill settings and rename runner liveness timeout."""
+    del verbose
+    config_path = data_dir / "config.json"
+    if not config_path.is_file():
+        return StepResult(changed=0, skipped=1, details=["config.json not found; skip"])
+
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8") or "{}")
+        if not isinstance(config, dict):
+            return StepResult(changed=0, skipped=1, details=["config.json root is not an object"])
+        server = config.get("server")
+        if server is None:
+            server = {}
+            config["server"] = server
+        if not isinstance(server, dict):
+            return StepResult(changed=0, skipped=1, details=["config.json server section is not an object"])
+
+        details: list[str] = []
+        if "busy_hang_threshold" in server:
+            if "runner_liveness_timeout" not in server:
+                server["runner_liveness_timeout"] = server["busy_hang_threshold"]
+                details.append("Moved server.busy_hang_threshold to server.runner_liveness_timeout")
+            else:
+                details.append("Preserved server.runner_liveness_timeout")
+            del server["busy_hang_threshold"]
+        if "max_streaming_duration" in server:
+            del server["max_streaming_duration"]
+            details.append("Removed server.max_streaming_duration")
+
+        if not details:
+            return StepResult(changed=0, skipped=1, details=["No retired engine timeout settings found"])
+        if dry_run:
+            return StepResult(changed=1, skipped=0, details=[f"Would {detail.lower()}" for detail in details])
+
+        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return StepResult(changed=1, skipped=0, details=details)
+    except Exception as exc:
+        logger.exception("step_engine_timeout_config_cleanup failed")
+        return StepResult(changed=0, skipped=0, details=[], error=str(exc))
+
+
 def step_update_version(data_dir: Path, dry_run: bool, verbose: bool) -> StepResult:
     """No-op step for display; version update is handled by runner."""
     return StepResult(changed=1, skipped=0, details=["migration_state.json"])
@@ -1804,6 +1846,12 @@ def register_all_steps(runner: Any) -> None:
             "Rewrite core.tools references in runtime tools/skills to core.integrations",
             "structural",
             step_rename_core_tools_to_integrations,
+        ),
+        MigrationStep(
+            "engine_timeout_config_cleanup",
+            "Remove retired engine timeout settings and rename runner liveness timeout",
+            "structural",
+            step_engine_timeout_config_cleanup,
         ),
         MigrationStep("update_version", "Update migration_state.json", "version", step_update_version),
     ]

@@ -25,7 +25,7 @@ def _make_supervisor() -> TaskRunnerSupervisor:
     supervisor.anima_dir = Path("/tmp/animas/sumire")
     supervisor._jobs = {}
     supervisor._hang_check_interval = 0.01
-    supervisor._busy_hang_threshold_sec = 99999.0
+    supervisor._runner_liveness_timeout_sec = 99999.0
     supervisor._terminate_hung_job = AsyncMock()
     return supervisor
 

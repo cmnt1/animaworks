@@ -34,7 +34,6 @@ from core.execution.codex_sdk import (
     _CodexUsageAccumulator,
     _default_home_dir,
     _default_path_env,
-    _event_idle_timeout_seconds,
     _extract_item_text,
     _extract_tool_records,
     _get_thread_id,
@@ -321,9 +320,10 @@ class TestHelpers:
         assert record.tool_name == "file_change"
         assert record.input_summary == "update: core/demo.py"
 
-    def test_event_idle_timeout_prefers_background_triggers(self):
-        assert _event_idle_timeout_seconds("heartbeat") < _event_idle_timeout_seconds("chat")
-        assert _event_idle_timeout_seconds("inbox:sakura") == _event_idle_timeout_seconds("heartbeat")
+    def test_all_triggers_share_the_engine_event_idle_timeout(self):
+        from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS
+
+        assert DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS == 1200
 
     def test_stderr_contains_fatal_signal_detects_stream_closed(self):
         assert _stderr_contains_fatal_signal("error: Stream closed")
@@ -2470,10 +2470,12 @@ class TestProgressiveStreaming:
         mock_thread.id = "idle-thread"
         mock_codex = _mock_codex(mock_thread)
 
+        from core.execution.watchdog import Watchdog
+
         with (
             patch("core.execution.codex_sdk._should_prefer_cli_exec", return_value=False),
             patch.object(executor, "_create_codex_client", return_value=mock_codex),
-            patch("core.execution.codex_sdk._BACKGROUND_EVENT_IDLE_TIMEOUT_SEC", 0.01),
+            patch("core.execution.events.Watchdog", return_value=Watchdog(0.01)),
         ):
             tracker = ContextTracker(model="codex/o4-mini")
             with pytest.raises(Exception) as exc_info:
@@ -2485,7 +2487,7 @@ class TestProgressiveStreaming:
                 ):
                     pass
 
-        assert "idle timeout" in str(exc_info.value)
+        assert "idle" in str(exc_info.value)
 
 
 # ── Mode resolution tests ────────────────────────────────────

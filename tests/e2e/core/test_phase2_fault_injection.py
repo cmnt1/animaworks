@@ -268,7 +268,7 @@ async def test_hang_kills_only_stalled_group_while_other_lane_continues(
         _ANIMA,
         anima_dir,
         shared_dir,
-        busy_hang_threshold_sec=30,
+        runner_liveness_timeout_sec=30,
     )
     supervisor._hang_check_interval = 0.25
     monkeypatch.setattr(task_runner_supervisor, "_TASK_RUNNER_TERM_TIMEOUT", 0.1)
@@ -278,7 +278,7 @@ async def test_hang_kills_only_stalled_group_while_other_lane_continues(
     try:
         job = await _wait_for(lambda: _job(supervisor, "stalled"))
         await _wait_for(lambda: job.connection is not None and job.last_progress)
-        supervisor._busy_hang_threshold_sec = threshold
+        supervisor._runner_liveness_timeout_sec = threshold
         job.last_progress_at = asyncio.get_running_loop().time()
         stopped_at = asyncio.get_running_loop().time()
         os.kill(job.pid or 0, signal.SIGSTOP)

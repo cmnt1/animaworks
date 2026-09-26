@@ -12,7 +12,6 @@ from unittest.mock import MagicMock, patch
 import psutil
 import pytest
 
-
 # ── Layer 1: _extract_sdk_pid ────────────────────────────────
 
 
@@ -109,7 +108,8 @@ class TestKillSdkProcess:
         with patch("core.execution.agent_sdk.psutil.Process", return_value=mock_proc):
             _kill_sdk_process(123, 1000.0)
 
-        mock_proc.kill.assert_called_once()
+        mock_proc.terminate.assert_called_once()
+        mock_proc.kill.assert_not_called()
 
     def test_kills_process_without_create_time_check(self) -> None:
         from core.execution.agent_sdk import _kill_sdk_process
@@ -121,7 +121,8 @@ class TestKillSdkProcess:
         with patch("core.execution.agent_sdk.psutil.Process", return_value=mock_proc):
             _kill_sdk_process(123, None)
 
-        mock_proc.kill.assert_called_once()
+        mock_proc.terminate.assert_called_once()
+        mock_proc.kill.assert_not_called()
 
     def test_skips_non_claude_process(self) -> None:
         from core.execution.agent_sdk import _kill_sdk_process
@@ -136,7 +137,7 @@ class TestKillSdkProcess:
 
         mock_proc.kill.assert_not_called()
 
-    def test_kills_children_recursively(self) -> None:
+    def test_terminates_children_recursively(self) -> None:
         from core.execution.agent_sdk import _kill_sdk_process
 
         child1 = MagicMock()
@@ -152,16 +153,16 @@ class TestKillSdkProcess:
         with patch("core.execution.agent_sdk.psutil.Process", return_value=mock_proc):
             _kill_sdk_process(123, 1000.0)
 
-        child1.kill.assert_called_once()
-        child2.kill.assert_called_once()
-        mock_proc.kill.assert_called_once()
+        child1.terminate.assert_called_once()
+        child2.terminate.assert_called_once()
+        mock_proc.terminate.assert_called_once()
 
     def test_handles_child_already_dead(self) -> None:
         from core.execution.agent_sdk import _kill_sdk_process
 
         child = MagicMock()
         child.pid = 200
-        child.kill.side_effect = psutil.NoSuchProcess(200)
+        child.terminate.side_effect = psutil.NoSuchProcess(200)
 
         mock_proc = MagicMock()
         mock_proc.create_time.return_value = 1000.0
@@ -171,7 +172,7 @@ class TestKillSdkProcess:
         with patch("core.execution.agent_sdk.psutil.Process", return_value=mock_proc):
             _kill_sdk_process(123, 1000.0)
 
-        mock_proc.kill.assert_called_once()
+        mock_proc.terminate.assert_called_once()
 
 
 # ── Layer 2: _cleanup_orphaned_claude_processes ──────────────
@@ -180,7 +181,7 @@ class TestKillSdkProcess:
 class TestCleanupOrphanedClaudeProcesses:
     """Tests for AnimaRunner._cleanup_orphaned_claude_processes."""
 
-    def _make_runner(self) -> "AnimaRunner":  # noqa: F821
+    def _make_runner(self) -> AnimaRunner:  # noqa: F821
         from core.supervisor.runner import AnimaRunner
 
         runner = AnimaRunner.__new__(AnimaRunner)
@@ -320,7 +321,6 @@ class TestOrphanCleanupLoop:
         runner.shutdown_event = asyncio.Event()
 
         call_count = 0
-        original_interval = runner_module._ORPHAN_CHECK_INTERVAL_SEC
 
         with (
             patch.object(runner_module, "_ORPHAN_CHECK_INTERVAL_SEC", 0.01),

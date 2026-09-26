@@ -25,7 +25,6 @@ import json
 import logging
 import os
 import shutil
-import signal
 import tempfile
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -45,7 +44,9 @@ from core.execution.error_classifier import (
     provider_family_of,
 )
 from core.execution.events import stream_events
+from core.execution.process_runner import ProcessRunner
 from core.execution.rate_guard import get_rate_guard
+from core.execution.watchdog import DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS, wait_for_engine_event
 from core.i18n import t
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
@@ -58,7 +59,7 @@ __all__ = ["GeminiCLIExecutor", "is_gemini_cli_available"]
 # ── Constants ───────────────────────────────────────────────────
 
 _GEMINI_BINARY_NAMES = ("gemini",)
-_DEFAULT_TIMEOUT_SECONDS = 600
+_EVENT_IDLE_TIMEOUT_SECONDS = DEFAULT_EVENT_IDLE_TIMEOUT_SECONDS
 _GRACEFUL_KILL_WAIT = 3.0
 
 
@@ -306,20 +307,8 @@ class GeminiCLIExecutor(BaseExecutor):
             return None
 
     async def _kill_process(self, proc: asyncio.subprocess.Process, timeout: float = _GRACEFUL_KILL_WAIT) -> None:
-        """Graceful kill: SIGTERM → wait → SIGKILL."""
-        if proc.returncode is not None:
-            return
-        try:
-            proc.send_signal(signal.SIGTERM)
-            await asyncio.sleep(timeout)
-        except ProcessLookupError:
-            return
-        if proc.returncode is not None:
-            return
-        try:
-            proc.kill()
-        except ProcessLookupError:
-            pass
+        """Delegate process-tree shutdown to the shared process runner."""
+        await ProcessRunner.terminate_process(proc, timeout=timeout)
 
     def _extract_tool_record(self, event: dict[str, Any], result_event: dict[str, Any] | None = None) -> ToolCallRecord:
         """Build a ToolCallRecord from a tool_use event, optionally paired with tool_result."""
@@ -395,8 +384,9 @@ class GeminiCLIExecutor(BaseExecutor):
         usage: TokenUsage | None = None
 
         proc: asyncio.subprocess.Process | None = None
+        process_runner = ProcessRunner(graceful_timeout=_GRACEFUL_KILL_WAIT)
         try:
-            proc = await asyncio.create_subprocess_exec(
+            proc = await process_runner.start(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -405,10 +395,10 @@ class GeminiCLIExecutor(BaseExecutor):
             )
 
             try:
-                async with asyncio.timeout(_DEFAULT_TIMEOUT_SECONDS):
+                async with asyncio.timeout(None):
                     assert proc.stdout is not None
                     while True:
-                        line = await proc.stdout.readline()
+                        line = await wait_for_engine_event(proc.stdout.readline())
                         if not line:
                             break
                         if self._check_interrupted():
@@ -460,17 +450,18 @@ class GeminiCLIExecutor(BaseExecutor):
                                 logger.debug("Gemini CLI warning: %s", msg)
 
             except TimeoutError:
-                logger.warning("Gemini CLI timed out after %ds", _DEFAULT_TIMEOUT_SECONDS)
+                logger.warning("Gemini CLI idle timeout after %ds", _EVENT_IDLE_TIMEOUT_SECONDS)
                 await self._kill_process(proc)
-                timeout_msg = t("gemini_cli.timeout", timeout=_DEFAULT_TIMEOUT_SECONDS)
+                timeout_msg = t("gemini_cli.timeout", timeout=_EVENT_IDLE_TIMEOUT_SECONDS)
                 return ExecutionResult(
                     text=accumulated_text + f"\n\n{timeout_msg}" if accumulated_text else timeout_msg,
                     tool_call_records=tool_records,
                     usage=usage,
                 )
 
-            stderr_bytes = await proc.stderr.read() if proc.stderr else b""
             await proc.wait()
+            await process_runner.close()
+            stderr_bytes = await process_runner.stderr()
 
             if proc.returncode != 0:
                 stderr_text = stderr_bytes.decode("utf-8", errors="replace")
@@ -494,16 +485,8 @@ class GeminiCLIExecutor(BaseExecutor):
         finally:
             # Ensure the subprocess is killed on CancelledError or any
             # other exception that bypasses the normal exit path.
-            if proc is not None and proc.returncode is None:
-                logger.warning("Killing orphaned gemini CLI subprocess (PID %s)", proc.pid)
-                try:
-                    proc.kill()
-                except ProcessLookupError:
-                    pass
-                try:
-                    await proc.wait()
-                except Exception:  # noqa: BLE001
-                    pass
+            if proc is not None:
+                await process_runner.close()
             self._cleanup_prompt_files()
 
         return ExecutionResult(
@@ -559,8 +542,9 @@ class GeminiCLIExecutor(BaseExecutor):
         usage: TokenUsage | None = None
 
         proc: asyncio.subprocess.Process | None = None
+        process_runner = ProcessRunner(graceful_timeout=_GRACEFUL_KILL_WAIT)
         try:
-            proc = await asyncio.create_subprocess_exec(
+            proc = await process_runner.start(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -569,10 +553,10 @@ class GeminiCLIExecutor(BaseExecutor):
             )
 
             try:
-                async with asyncio.timeout(_DEFAULT_TIMEOUT_SECONDS):
+                async with asyncio.timeout(None):
                     assert proc.stdout is not None
                     while True:
-                        line = await proc.stdout.readline()
+                        line = await wait_for_engine_event(proc.stdout.readline())
                         if not line:
                             break
                         if self._check_interrupted():
@@ -638,13 +622,14 @@ class GeminiCLIExecutor(BaseExecutor):
                                 logger.warning("Gemini CLI error event: %s", msg)
 
             except TimeoutError:
-                logger.warning("Gemini CLI timed out after %ds", _DEFAULT_TIMEOUT_SECONDS)
+                logger.warning("Gemini CLI idle timeout after %ds", _EVENT_IDLE_TIMEOUT_SECONDS)
                 await self._kill_process(proc)
-                timeout_msg = t("gemini_cli.timeout", timeout=_DEFAULT_TIMEOUT_SECONDS)
+                timeout_msg = t("gemini_cli.timeout", timeout=_EVENT_IDLE_TIMEOUT_SECONDS)
                 yield {"type": "text_delta", "text": f"\n\n{timeout_msg}"}
 
-            stderr_bytes = await proc.stderr.read() if proc.stderr else b""
             await proc.wait()
+            await process_runner.close()
+            stderr_bytes = await process_runner.stderr()
 
             if proc.returncode != 0:
                 stderr_text = stderr_bytes.decode("utf-8", errors="replace")
@@ -667,18 +652,8 @@ class GeminiCLIExecutor(BaseExecutor):
             yield {"type": "text_delta", "text": err}
             accumulated_text = err
         finally:
-            # Ensure the subprocess is killed on CancelledError or any
-            # other exception that bypasses the normal exit path.
-            if proc is not None and proc.returncode is None:
-                logger.warning("Killing orphaned gemini CLI subprocess (PID %s)", proc.pid)
-                try:
-                    proc.kill()
-                except ProcessLookupError:
-                    pass
-                try:
-                    await proc.wait()
-                except Exception:  # noqa: BLE001
-                    pass
+            if proc is not None:
+                await process_runner.close()
             self._cleanup_prompt_files()
 
         yield {

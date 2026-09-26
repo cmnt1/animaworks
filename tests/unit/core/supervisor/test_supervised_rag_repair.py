@@ -100,7 +100,7 @@ async def test_supervised_rag_repair_legacy_mode_stops_repairs_and_restarts(tmp_
     sup._rag_repair_stop_anima = lambda: True
 
     async def stop_anima(name: str, *, drain_timeout: float | None = None) -> None:
-        assert drain_timeout == float(sup._max_streaming_duration_sec)
+        assert drain_timeout == float(sup._stream_drain_timeout_sec)
         calls.append(("stop", name))
         sup.processes.pop(name, None)
 

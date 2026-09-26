@@ -728,17 +728,8 @@ class BaseExecutor(ABC):
                     kwargs[key] = val
 
     def _resolve_llm_timeout(self) -> int:
-        """Resolve LLM API call timeout in seconds.
-
-        Priority:
-          1. Explicit ``llm_timeout`` in ModelConfig (per-anima setting)
-          2. Automatic: 300s for ``ollama/`` models, 600s for API models
-        """
-        if self._model_config.llm_timeout is not None:
-            return self._model_config.llm_timeout
-        if self._model_config.model.startswith("ollama/"):
-            return 300
-        return 600
+        """Return the shared 20-minute maximum interval for an engine response."""
+        return 1200
 
     def _resolve_num_retries(self) -> int:
         """Resolve LLM API retry count from ``config.server.llm_num_retries``."""

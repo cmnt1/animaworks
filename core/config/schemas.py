@@ -715,8 +715,7 @@ class ServerConfig(BaseModel):
     usage_governor: UsageGovernorConfig = UsageGovernorConfig()
     ipc_stream_timeout: int = 60  # per-chunk timeout in seconds
     keepalive_interval: int = 30  # keep-alive emission interval in seconds
-    max_streaming_duration: int = 1800  # max streaming duration before hang (seconds)
-    busy_hang_threshold: int = 900  # no-progress timeout for busy processes (seconds)
+    runner_liveness_timeout: int = Field(default=900, ge=1)
     anima_startup_ready_timeout: int = Field(default=120, ge=1)
     anima_stop_timeout: float = Field(default=60.0, gt=0)
     health_check_warmup_seconds: int = Field(default=300, ge=0)

@@ -122,7 +122,7 @@ class SchedulerManager:
                 anima_dir=anima_dir,
                 shared_dir=Path(anima.shared_dir),
                 max_concurrent=pool_size,
-                busy_hang_threshold_sec=float(load_config().server.busy_hang_threshold),
+                runner_liveness_timeout_sec=float(load_config().server.runner_liveness_timeout),
                 busy_status_owner=anima,
                 memory_via_root=process_config.process_model == "phase3",
             )

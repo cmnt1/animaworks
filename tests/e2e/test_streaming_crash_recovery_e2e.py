@@ -6,14 +6,14 @@
 from __future__ import annotations
 
 import asyncio
-from core.time_utils import now_jst
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-from core.supervisor.manager import ProcessSupervisor, HealthConfig
+from core.supervisor.manager import HealthConfig, ProcessSupervisor
 from core.supervisor.process_handle import ProcessHandle, ProcessState, ProcessStats
+from core.time_utils import now_jst
 
 
 @pytest.mark.asyncio
@@ -28,7 +28,7 @@ async def test_health_check_detects_crash_during_streaming(tmp_path: Path):
             startup_grace_sec=0,
         ),
     )
-    supervisor._max_streaming_duration_sec = 60
+    supervisor._stream_drain_timeout_sec = 60
 
     # Create handle simulating streaming + dead process
     handle = ProcessHandle(
@@ -52,7 +52,6 @@ async def test_health_check_detects_crash_during_streaming(tmp_path: Path):
 
     # Run health check
     failure_detected = asyncio.Event()
-    original_handler = supervisor._handle_process_failure
 
     async def capture_failure(name, h):
         failure_detected.set()
@@ -62,9 +61,7 @@ async def test_health_check_detects_crash_during_streaming(tmp_path: Path):
     await supervisor._check_process_health("crash-test", handle)
     await asyncio.sleep(0.2)
 
-    assert failure_detected.is_set(), (
-        "Health check should detect process death during streaming"
-    )
+    assert failure_detected.is_set(), "Health check should detect process death during streaming"
 
 
 @pytest.mark.asyncio
