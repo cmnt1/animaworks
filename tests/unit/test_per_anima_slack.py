@@ -5,7 +5,7 @@ Covers:
 - core/outbound._send_via_slack, send_external anima_name passthrough
 - core/config/models.ExternalMessagingChannelConfig.app_id_mapping
 - server/routes/webhooks per-Anima signing secret and api_app_id routing
-- server/slack_socket.SlackSocketModeManager per-Anima discovery and handlers
+- server/gateways/slack_socket.SlackSocketModeManager per-Anima discovery and handlers
 - core/notification/channels/slack per-Anima token resolution
 """
 # AnimaWorks - Digital Anima Framework
@@ -28,7 +28,6 @@ from core.config.models import (
     ExternalMessagingConfig,
 )
 from core.outbound import ResolvedRecipient, _send_via_slack, send_external
-
 
 # ── 1. _resolve_slack_token tests ─────────────────────────────────────────
 
@@ -100,9 +99,7 @@ class TestSendViaSlackPerAnima:
     @patch("core.outbound._resolve_outbound_icon", return_value="https://example.com/sakura.png")
     @patch("core.tools.slack.SlackClient")
     @patch("core.tools._base.resolve_env_style_credential", return_value="xoxb-per-anima")
-    def test_uses_per_anima_token_when_anima_name_has_token(
-        self, mock_resolve, mock_client_cls, mock_icon
-    ):
+    def test_uses_per_anima_token_when_anima_name_has_token(self, mock_resolve, mock_client_cls, mock_icon):
         mock_client = MagicMock()
         mock_client.post_message.return_value = {"ts": "123.456", "channel": "U1"}
         mock_client_cls.return_value = mock_client
@@ -112,48 +109,56 @@ class TestSendViaSlackPerAnima:
         mock_resolve.assert_called_once_with("SLACK_BOT_TOKEN__sakura")
         mock_client_cls.assert_called_once_with(token="xoxb-per-anima")
         mock_client.post_message.assert_called_once_with(
-            "U1", "hello", username="sakura", icon_url="https://example.com/sakura.png",
+            "U1",
+            "hello",
+            username="sakura",
+            icon_url="https://example.com/sakura.png",
         )
         assert "sent" in result
 
     @patch("core.outbound._resolve_outbound_icon", return_value="")
     @patch("core.tools.slack.SlackClient")
     @patch("core.tools._base.resolve_env_style_credential", return_value="xoxb-per")
-    def test_omits_sender_prefix_when_per_anima_token_used(
-        self, mock_resolve, mock_client_cls, mock_icon
-    ):
+    def test_omits_sender_prefix_when_per_anima_token_used(self, mock_resolve, mock_client_cls, mock_icon):
         mock_client = MagicMock()
         mock_client.post_message.return_value = {"ts": "1.1", "channel": "U1"}
         mock_client_cls.return_value = mock_client
 
-        result = _send_via_slack("U1", "content", "sakura", anima_name="sakura")
+        _send_via_slack("U1", "content", "sakura", anima_name="sakura")
 
         mock_client.post_message.assert_called_once_with(
-            "U1", "content", username="sakura", icon_url="",
+            "U1",
+            "content",
+            username="sakura",
+            icon_url="",
         )
 
     @patch("core.outbound._resolve_outbound_icon", return_value="")
     @patch("core.tools.slack.SlackClient")
     @patch("core.tools._base.resolve_env_style_credential", return_value=None)
-    def test_includes_sender_prefix_when_fallback_to_shared_token(
-        self, mock_resolve, mock_client_cls, mock_icon
-    ):
+    def test_includes_sender_prefix_when_fallback_to_shared_token(self, mock_resolve, mock_client_cls, mock_icon):
         mock_client = MagicMock()
         mock_client.post_message.return_value = {"ts": "1.1", "channel": "U1"}
         mock_client_cls.return_value = mock_client
 
-        result = _send_via_slack("U1", "content", "sakura", anima_name="")
+        _send_via_slack("U1", "content", "sakura", anima_name="")
 
         mock_client_cls.assert_called_once_with(token=None)
         mock_client.post_message.assert_called_once_with(
-            "U1", "[sakura] content", username="sakura", icon_url="",
+            "U1",
+            "[sakura] content",
+            username="sakura",
+            icon_url="",
         )
 
     @patch("core.outbound._send_via_slack")
     def test_send_external_passes_anima_name_to_send_via_slack(self, mock_send):
         mock_send.return_value = json.dumps({"status": "sent", "channel": "slack"})
         r = ResolvedRecipient(
-            is_internal=False, name="user", channel="slack", slack_user_id="U1",
+            is_internal=False,
+            name="user",
+            channel="slack",
+            slack_user_id="U1",
         )
         send_external(r, "hello", sender_name="sumire", anima_name="sumire")
         mock_send.assert_called_once_with("U1", "hello", "sumire", "sumire")
@@ -190,11 +195,14 @@ class TestExternalMessagingChannelConfigAppIdMapping:
 
 def _make_slack_signature(body: bytes, timestamp: str, secret: str) -> str:
     sig_basestring = f"v0:{timestamp}:{body.decode('utf-8')}"
-    return "v0=" + hmac.new(
-        secret.encode("utf-8"),
-        sig_basestring.encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
+    return (
+        "v0="
+        + hmac.new(
+            secret.encode("utf-8"),
+            sig_basestring.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+    )
 
 
 class TestWebhookPerAnimaRouting:
@@ -203,7 +211,9 @@ class TestWebhookPerAnimaRouting:
     @pytest.fixture
     def app(self):
         from fastapi import FastAPI
+
         from server.routes.webhooks import create_webhooks_router
+
         app = FastAPI()
         app.include_router(create_webhooks_router(), prefix="/api")
         return app
@@ -211,6 +221,7 @@ class TestWebhookPerAnimaRouting:
     @pytest.fixture
     def client(self, app):
         from fastapi.testclient import TestClient
+
         return TestClient(app)
 
     @patch("core.tools._base._lookup_shared_credentials", return_value=None)
@@ -234,17 +245,19 @@ class TestWebhookPerAnimaRouting:
             ),
         )
 
-        payload = json.dumps({
-            "type": "event_callback",
-            "api_app_id": "A01234PERANIMA",
-            "event": {
-                "type": "message",
-                "channel": "C123",
-                "user": "U999",
-                "text": "Hello Sakura",
-                "ts": "1234567890.123456",
-            },
-        })
+        payload = json.dumps(
+            {
+                "type": "event_callback",
+                "api_app_id": "A01234PERANIMA",
+                "event": {
+                    "type": "message",
+                    "channel": "C123",
+                    "user": "U999",
+                    "text": "Hello Sakura",
+                    "ts": "1234567890.123456",
+                },
+            }
+        )
         body = payload.encode("utf-8")
         ts = str(int(time.time()))
         headers = {
@@ -258,9 +271,7 @@ class TestWebhookPerAnimaRouting:
 
     @patch("server.routes.webhooks.get_data_dir")
     @patch("server.routes.webhooks.load_config")
-    def test_api_app_id_not_in_mapping_uses_shared_signing_secret(
-        self, mock_config, mock_data_dir, client, tmp_path
-    ):
+    def test_api_app_id_not_in_mapping_uses_shared_signing_secret(self, mock_config, mock_data_dir, client, tmp_path):
         shared_secret = "shared_signing_secret_xyz"
         mock_data_dir.return_value = tmp_path
 
@@ -275,17 +286,19 @@ class TestWebhookPerAnimaRouting:
         )
 
         with patch("server.routes.webhooks.get_credential", return_value=shared_secret):
-            payload = json.dumps({
-                "type": "event_callback",
-                "api_app_id": "A_UNKNOWN_APP",
-                "event": {
-                    "type": "message",
-                    "channel": "C123",
-                    "user": "U999",
-                    "text": "Hello",
-                    "ts": "1.1",
-                },
-            })
+            payload = json.dumps(
+                {
+                    "type": "event_callback",
+                    "api_app_id": "A_UNKNOWN_APP",
+                    "event": {
+                        "type": "message",
+                        "channel": "C123",
+                        "user": "U999",
+                        "text": "Hello",
+                        "ts": "1.1",
+                    },
+                }
+            )
             body = payload.encode("utf-8")
             ts = str(int(time.time()))
             headers = {
@@ -316,17 +329,19 @@ class TestWebhookPerAnimaRouting:
             ),
         )
 
-        payload = json.dumps({
-            "type": "event_callback",
-            "api_app_id": "A_KOTOHA_APP",
-            "event": {
-                "type": "message",
-                "channel": "C_ANY",
-                "user": "U_USER",
-                "text": "Message for Kotoha",
-                "ts": "9999999999.999999",
-            },
-        })
+        payload = json.dumps(
+            {
+                "type": "event_callback",
+                "api_app_id": "A_KOTOHA_APP",
+                "event": {
+                    "type": "message",
+                    "channel": "C_ANY",
+                    "user": "U_USER",
+                    "text": "Message for Kotoha",
+                    "ts": "9999999999.999999",
+                },
+            }
+        )
         body = payload.encode("utf-8")
         ts = str(int(time.time()))
         headers = {
@@ -348,12 +363,12 @@ class TestWebhookPerAnimaRouting:
 
 
 class TestSlackSocketModeManagerPerAnima:
-    """Tests for server/slack_socket.SlackSocketModeManager per-Anima support."""
+    """Tests for server/gateways/slack_socket.SlackSocketModeManager per-Anima support."""
 
     @patch.dict("os.environ", {}, clear=True)
-    @patch("server.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.get_data_dir")
     def test_discover_per_anima_bots_finds_keys_in_vault(self, mock_get_data_dir, tmp_path):
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         mock_get_data_dir.return_value = tmp_path
 
@@ -373,46 +388,47 @@ class TestSlackSocketModeManagerPerAnima:
 
     @patch.dict("os.environ", {}, clear=True)
     def test_discover_per_anima_bots_finds_keys_in_shared_credentials(self, tmp_path):
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         cred_file = tmp_path / "shared" / "credentials.json"
         cred_file.parent.mkdir(parents=True, exist_ok=True)
         cred_file.write_text(
-            json.dumps({
-                "SLACK_BOT_TOKEN__sumire": "xoxb-sumire",
-                "OTHER_KEY": "ignored",
-            }),
+            json.dumps(
+                {
+                    "SLACK_BOT_TOKEN__sumire": "xoxb-sumire",
+                    "OTHER_KEY": "ignored",
+                }
+            ),
             encoding="utf-8",
         )
 
-        with patch("server.slack_socket.get_data_dir", return_value=tmp_path):
+        with patch("server.gateways.slack_socket.get_data_dir", return_value=tmp_path):
             found = SlackSocketModeManager._discover_per_anima_bots()
 
         assert "sumire" in found
 
-    @patch("server.slack_socket._lookup_shared_credentials", return_value=None)
-    @patch("server.slack_socket._lookup_vault_credential", return_value="xoxb-from-vault")
-    def test_get_per_anima_credential_resolves_from_vault_first(
-        self, mock_vault, mock_shared
-    ):
-        from server.slack_socket import SlackSocketModeManager
+    @patch("server.gateways.slack_socket._lookup_shared_credentials", return_value=None)
+    @patch("server.gateways.slack_socket._lookup_vault_credential", return_value="xoxb-from-vault")
+    def test_get_per_anima_credential_resolves_from_vault_first(self, mock_vault, mock_shared):
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         result = SlackSocketModeManager._get_per_anima_credential(
-            "SLACK_BOT_TOKEN", "sakura",
+            "SLACK_BOT_TOKEN",
+            "sakura",
         )
         assert result == "xoxb-from-vault"
         mock_vault.assert_called_once_with("SLACK_BOT_TOKEN__sakura")
         mock_shared.assert_not_called()
 
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.SlackSocketModeManager._get_per_anima_credential")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.SlackSocketModeManager._get_per_anima_credential")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_is_connected_returns_true_when_handlers_exist(
         self, mock_config, mock_cred, mock_get_per_anima, mock_app_cls, mock_handler_cls
     ):
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         mock_get_per_anima.return_value = "xoxb-bot"
         mock_cred.side_effect = lambda *a, **kw: "token"
@@ -422,23 +438,21 @@ class TestSlackSocketModeManagerPerAnima:
             external_messaging=MagicMock(slack=slack_cfg),
         )
 
-        with patch.object(
-            SlackSocketModeManager, "_discover_per_anima_bots", return_value=["sakura"]
-        ):
+        with patch.object(SlackSocketModeManager, "_discover_per_anima_bots", return_value=["sakura"]):
             mgr = SlackSocketModeManager()
             await mgr.start()
 
         assert mgr.is_connected is True
 
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.SlackSocketModeManager._get_per_anima_credential")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.SlackSocketModeManager._get_per_anima_credential")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_start_registers_per_anima_bots_plus_shared_bot(
         self, mock_config, mock_cred, mock_get_per_anima, mock_app_cls, mock_handler_cls
     ):
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         mock_get_per_anima.return_value = "xoxb-per"
         mock_cred.return_value = "xoxb-shared"
@@ -448,23 +462,21 @@ class TestSlackSocketModeManagerPerAnima:
             external_messaging=MagicMock(slack=slack_cfg),
         )
 
-        with patch.object(
-            SlackSocketModeManager, "_discover_per_anima_bots", return_value=["sumire"]
-        ):
+        with patch.object(SlackSocketModeManager, "_discover_per_anima_bots", return_value=["sumire"]):
             mgr = SlackSocketModeManager()
             await mgr.start()
 
         assert len(mgr._handlers) >= 1
         assert len(mgr._apps) >= 1
 
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket._resolve_bot_user_id", new_callable=AsyncMock, return_value="U_SUMIRE")
-    @patch("server.slack_socket.SlackSocketModeManager._get_per_anima_credential", return_value="xoxb-per")
-    @patch("server.slack_socket.get_credential", side_effect=Exception("no shared"))
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket._resolve_bot_user_id", new_callable=AsyncMock, return_value="U_SUMIRE")
+    @patch("server.gateways.slack_socket.SlackSocketModeManager._get_per_anima_credential", return_value="xoxb-per")
+    @patch("server.gateways.slack_socket.get_credential", side_effect=Exception("no shared"))
+    @patch("server.gateways.slack_socket.load_config")
     async def test_per_anima_handler_routes_to_correct_anima(
         self,
         mock_config,
@@ -477,7 +489,7 @@ class TestSlackSocketModeManagerPerAnima:
         mock_get_data_dir,
         tmp_path,
     ):
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         mock_get_data_dir.return_value = tmp_path
         slack_cfg = MagicMock(enabled=True, mode="socket", anima_mapping={}, default_anima="sumire")
@@ -492,15 +504,14 @@ class TestSlackSocketModeManagerPerAnima:
             def decorator(func):
                 captured_handlers.setdefault(event_type, []).append(func)
                 return func
+
             return decorator
 
         mock_async_app.event = _capture_event
         mock_app_cls.return_value = mock_async_app
         mock_handler_cls.return_value = AsyncMock()
 
-        with patch.object(
-            SlackSocketModeManager, "_discover_per_anima_bots", return_value=["sumire"]
-        ):
+        with patch.object(SlackSocketModeManager, "_discover_per_anima_bots", return_value=["sumire"]):
             mgr = SlackSocketModeManager()
             await mgr.start()
 
@@ -533,6 +544,7 @@ class TestSlackNotificationChannelPerAnima:
     @pytest.fixture
     def slack_channel(self):
         from core.notification.channels.slack import SlackChannel
+
         return SlackChannel(config={"channel": "C123", "bot_token": ""})
 
     @patch("core.notification.channels.slack.SlackChannel._send_via_bot")
@@ -544,7 +556,10 @@ class TestSlackNotificationChannelPerAnima:
         mock_send_bot.return_value = "slack: OK"
 
         result = await slack_channel.send(
-            "Subject", "Body", "normal", anima_name="sakura",
+            "Subject",
+            "Body",
+            "normal",
+            anima_name="sakura",
         )
 
         assert result == "slack: OK"
@@ -562,7 +577,10 @@ class TestSlackNotificationChannelPerAnima:
         mock_send_bot.return_value = "slack: OK"
 
         result = await slack_channel.send(
-            "Subject", "Body", "normal", anima_name="sakura",
+            "Subject",
+            "Body",
+            "normal",
+            anima_name="sakura",
         )
 
         assert result == "slack: OK"

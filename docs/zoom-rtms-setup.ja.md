@@ -12,7 +12,7 @@ RTMS は会議の音声/映像/**話者ID+timestamp付きトランスクリプ�
 [Zoom 会議] ──meeting.rtms_started webhook──▶ [POST /api/webhooks/zoom]
                                                        │
                                                        ▼
-[Zoom RTMS signaling/media WS] ◀──HMAC署名ハンドシェイク── [ZoomRTMSManager (server/zoom_gateway.py)]
+[Zoom RTMS signaling/media WS] ◀──HMAC署名ハンドシェイク── [ZoomRTMSManager (server/gateways/zoom_gateway.py)]
         │ transcript発話（文単位）                          │ 発話をバッファ
         └────────────────────────────────────────────────▶ │ chunk_interval_seconds 経過 or
                                                        │    chunk_max_chars 到達でフラッシュ
@@ -273,7 +273,7 @@ curl -s https://<あなたのサーバー>/api/system/health | jq '.zoom_gateway
 
 | ファイル | 役割 |
 |----------|------|
-| `server/zoom_gateway.py` | `ZoomRTMSManager`（signaling/media WS 接続、HMAC ハンドシェイク、transcript 購読、keep-alive、発話バッファ、チャンクフラッシュ、`receive_external` 注入、再接続） |
+| `server/gateways/zoom_gateway.py` | `ZoomRTMSManager`（signaling/media WS 接続、HMAC ハンドシェイク、transcript 購読、keep-alive、発話バッファ、チャンクフラッシュ、`receive_external` 注入、再接続） |
 | `server/routes/webhooks.py` | `POST /api/webhooks/zoom`（URL validation 応答、`x-zm-signature` 検証、`meeting.rtms_started`/`meeting.rtms_stopped` の Manager 委譲） |
 | `server/app.py`（lifespan 付近） | `ZoomRTMSManager` の起動・停止 |
 | `server/reload_manager.py` | Zoom 設定の reload 対応 |

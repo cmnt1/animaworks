@@ -14,19 +14,19 @@ class TestFetchThreadContext:
     """Tests for the _fetch_thread_context helper in slack_socket."""
 
     def test_returns_empty_when_no_thread_ts(self):
-        from server.slack_socket import _fetch_thread_context
+        from server.gateways.slack_socket import _fetch_thread_context
 
         assert _fetch_thread_context("xoxb-token", "C123", "") == ""
 
     def test_returns_empty_when_no_token(self):
-        from server.slack_socket import _fetch_thread_context
+        from server.gateways.slack_socket import _fetch_thread_context
 
         assert _fetch_thread_context("", "C123", "1234.5678") == ""
 
     @patch("core.tools.slack.SlackClient", autospec=True)
     def test_returns_empty_when_single_reply(self, mock_cls):
         """Single message (root only, no replies) should return empty."""
-        from server.slack_socket import _fetch_thread_context
+        from server.gateways.slack_socket import _fetch_thread_context
 
         mock_client = mock_cls.return_value
         mock_client.thread_replies.return_value = [
@@ -38,9 +38,10 @@ class TestFetchThreadContext:
     @patch("core.tools.slack.SlackClient", autospec=True)
     def test_formats_thread_context(self, mock_cls):
         """Normal thread with root + 2 replies: parent summary + reply count."""
-        from server.slack_socket import _fetch_thread_context, _user_name_cache
+        from core.notification.slack_names import user_name_cache
+        from server.gateways.slack_socket import _fetch_thread_context
 
-        _user_name_cache.clear()
+        user_name_cache.clear()
 
         mock_client = mock_cls.return_value
         mock_client.thread_replies.return_value = [
@@ -58,9 +59,10 @@ class TestFetchThreadContext:
     @patch("core.tools.slack.SlackClient", autospec=True)
     def test_summary_includes_parent_and_reply_count(self, mock_cls):
         """Concise summary: parent message (truncated) + reply count only."""
-        from server.slack_socket import _fetch_thread_context, _user_name_cache
+        from core.notification.slack_names import user_name_cache
+        from server.gateways.slack_socket import _fetch_thread_context
 
-        _user_name_cache.clear()
+        user_name_cache.clear()
 
         replies = [{"user": f"U{i}", "text": f"msg {i}", "ts": f"{i}.0"} for i in range(15)]
         mock_client = mock_cls.return_value
@@ -74,7 +76,7 @@ class TestFetchThreadContext:
     @patch("core.tools.slack.SlackClient", autospec=True)
     def test_api_failure_returns_empty(self, mock_cls):
         """API errors are caught and return empty string."""
-        from server.slack_socket import _fetch_thread_context
+        from server.gateways.slack_socket import _fetch_thread_context
 
         mock_client = mock_cls.return_value
         mock_client.thread_replies.side_effect = RuntimeError("API error")
@@ -88,17 +90,17 @@ class TestFetchThreadContext:
 class TestPerAnimaHandlerThreadInjection:
     """Per-Anima Socket Mode message handler injects thread context."""
 
-    @patch("server.slack_socket._build_slack_annotation", return_value="")
-    @patch("server.slack_socket._resolve_slack_mentions", side_effect=lambda t, tok: t)
-    @patch("server.slack_socket._fetch_thread_context", return_value="")
-    @patch("server.slack_socket._resolve_channel_name", return_value="")
-    @patch("server.slack_socket._detect_external_addressees", return_value=[])
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket._build_slack_annotation", return_value="")
+    @patch("server.gateways.slack_socket.resolve_slack_mentions", side_effect=lambda t, tok: t)
+    @patch("server.gateways.slack_socket._fetch_thread_context", return_value="")
+    @patch("server.gateways.slack_socket._resolve_channel_name", return_value="")
+    @patch("server.gateways.slack_socket._detect_external_addressees", return_value=[])
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_top_level_message_no_thread_context(
         self,
         mock_config,
@@ -115,7 +117,7 @@ class TestPerAnimaHandlerThreadInjection:
         tmp_path,
     ):
         """Top-level messages (no thread_ts) skip thread context fetch."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         slack_cfg = MagicMock(enabled=True, mode="socket", anima_mapping={"C1": "anima1"})
         mock_config.return_value = MagicMock(external_messaging=MagicMock(slack=slack_cfg))
@@ -142,17 +144,17 @@ class TestPerAnimaHandlerThreadInjection:
         call_kw = mock_messenger.receive_external.call_args
         assert call_kw.kwargs.get("external_thread_ts", call_kw[1].get("external_thread_ts", "")) == ""
 
-    @patch("server.slack_socket._build_slack_annotation", return_value="")
-    @patch("server.slack_socket._resolve_slack_mentions", side_effect=lambda t, tok: t)
-    @patch("server.slack_socket._fetch_thread_context")
-    @patch("server.slack_socket._resolve_channel_name", return_value="")
-    @patch("server.slack_socket._detect_external_addressees", return_value=[])
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket._build_slack_annotation", return_value="")
+    @patch("server.gateways.slack_socket.resolve_slack_mentions", side_effect=lambda t, tok: t)
+    @patch("server.gateways.slack_socket._fetch_thread_context")
+    @patch("server.gateways.slack_socket._resolve_channel_name", return_value="")
+    @patch("server.gateways.slack_socket._detect_external_addressees", return_value=[])
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_thread_reply_injects_context(
         self,
         mock_config,
@@ -169,7 +171,7 @@ class TestPerAnimaHandlerThreadInjection:
         tmp_path,
     ):
         """Thread replies prepend thread context to content."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         slack_cfg = MagicMock(enabled=True, mode="socket", anima_mapping={"C1": "anima1"})
         mock_config.return_value = MagicMock(external_messaging=MagicMock(slack=slack_cfg))
@@ -213,17 +215,17 @@ class TestPerAnimaHandlerThreadInjection:
 class TestSharedHandlerThreadInjection:
     """Shared Socket Mode handlers inject thread context."""
 
-    @patch("server.slack_socket._build_slack_annotation", return_value="")
-    @patch("server.slack_socket._resolve_slack_mentions", side_effect=lambda t, tok: t)
-    @patch("server.slack_socket._fetch_thread_context")
-    @patch("server.slack_socket._resolve_channel_name", return_value="")
-    @patch("server.slack_socket._detect_external_addressees", return_value=[])
-    @patch("server.slack_socket.get_data_dir")
-    @patch("server.slack_socket.Messenger")
-    @patch("server.slack_socket.AsyncSocketModeHandler")
-    @patch("server.slack_socket.AsyncApp")
-    @patch("server.slack_socket.get_credential")
-    @patch("server.slack_socket.load_config")
+    @patch("server.gateways.slack_socket._build_slack_annotation", return_value="")
+    @patch("server.gateways.slack_socket.resolve_slack_mentions", side_effect=lambda t, tok: t)
+    @patch("server.gateways.slack_socket._fetch_thread_context")
+    @patch("server.gateways.slack_socket._resolve_channel_name", return_value="")
+    @patch("server.gateways.slack_socket._detect_external_addressees", return_value=[])
+    @patch("server.gateways.slack_socket.get_data_dir")
+    @patch("server.gateways.slack_socket.Messenger")
+    @patch("server.gateways.slack_socket.AsyncSocketModeHandler")
+    @patch("server.gateways.slack_socket.AsyncApp")
+    @patch("server.gateways.slack_socket.get_credential")
+    @patch("server.gateways.slack_socket.load_config")
     async def test_shared_message_thread_injects_context(
         self,
         mock_config,
@@ -240,7 +242,7 @@ class TestSharedHandlerThreadInjection:
         tmp_path,
     ):
         """Shared message handler injects thread context for thread replies."""
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         slack_cfg = MagicMock(enabled=True, mode="socket", anima_mapping={"C1": "sakura"}, default_anima="sakura")
         mock_config.return_value = MagicMock(external_messaging=MagicMock(slack=slack_cfg))

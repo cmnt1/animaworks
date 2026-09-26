@@ -177,7 +177,7 @@ If the channel message body **contains this ID** in the form `<@U01234567>`, it 
 | `default_anima` | string | `""` | Fallback Anima when the channel is not in anima_mapping |
 | `app_id_mapping` | object | `{}` | Slack API App ID → Anima name (multiple apps in Webhook mode) |
 
-**Shared-bot mapping applies without reconnecting**: `server/slack_socket.py` calls `load_config()` on each message, so changes to `anima_mapping` / `default_anima` take effect from the next message onward (the WebSocket stays up).
+**Shared-bot mapping applies without reconnecting**: `server/gateways/slack_socket.py` calls `load_config()` on each message, so changes to `anima_mapping` / `default_anima` take effect from the next message onward (the WebSocket stays up).
 
 ### Finding the channel ID
 
@@ -201,7 +201,7 @@ You can configure a dedicated Slack bot per Anima. Adding `SLACK_BOT_TOKEN__{ani
 }
 ```
 
-The list of Per-Anima bots is determined by scanning `SLACK_BOT_TOKEN__*` keys in vault / `credentials.json` (`server/slack_socket.SlackSocketModeManager._discover_per_anima_bots`).
+The list of Per-Anima bots is determined by scanning `SLACK_BOT_TOKEN__*` keys in vault / `credentials.json` (`server/gateways/slack_socket.SlackSocketModeManager._discover_per_anima_bots`).
 
 Per-Anima bots and the shared bot (`SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN`) can be used together. The shared bot routes by channel using `anima_mapping` and `default_anima`.
 
@@ -267,7 +267,7 @@ Implementation: `server/reload_manager.py` → `SlackSocketModeManager.reload()`
 
 1. A Slack user sends a message in a mapped channel
 2. Slack delivers the event via WebSocket (Socket Mode) or HTTP POST (Webhook)
-3. **Deduplication**: The same message can produce both `message` and `app_mention` events. `ts` is recorded with a short TTL (~10 s); the second delivery is ignored (`_is_duplicate_ts` in `server/slack_socket.py`)
+3. **Deduplication**: The same message can produce both `message` and `app_mention` events. `ts` is recorded with a short TTL (~10 s); the second delivery is ignored (`_is_duplicate_ts` in `server/gateways/slack_socket.py`)
 4. **call_human thread replies**: If the message is a thread reply and mapped via `route_thread_reply`, it is routed to the inbox of the Anima that sent the original notification (`core/notification/reply_routing.py`)
 5. **Routing resolution**:
    - **Socket Mode Per-Anima bot**: All messages to that bot go directly to the corresponding Anima
@@ -328,7 +328,7 @@ Entry: `python -m core.tools.slack` or `animaworks-tool slack` (see `--help`).
 
 | File | Role |
 |------|------|
-| `server/slack_socket.py` | `SlackSocketModeManager` (Socket Mode, Per-Anima / shared bot, deduplication, thread context, mention/intent) |
+| `server/gateways/slack_socket.py` | `SlackSocketModeManager` (Socket Mode, Per-Anima / shared bot, deduplication, thread context, mention/intent) |
 | `server/app.py` (near lifespan) | Start/stop `SlackSocketModeManager` |
 | `server/reload_manager.py` | `SlackSocketModeManager.reload()` when applying config/credentials |
 | `server/routes/system.py` | `/api/system/hot-reload*` endpoints |

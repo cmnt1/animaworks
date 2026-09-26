@@ -22,9 +22,15 @@ from typing import Any
 from core.config.models import load_config
 from core.exceptions import ChannelAccessDeniedError, ChannelNotFoundError
 from core.messenger import Messenger
+from core.notification.slack_names import (
+    cache_user_name,
+    get_cached_user_name,
+    resolve_slack_mentions,
+    user_name_snapshot,
+)
 from core.paths import get_data_dir
 from core.tools._base import _lookup_shared_credentials, _lookup_vault_credential, get_credential
-from server.slack_interactive import register_interactive_handlers
+from server.gateways.slack_interactive import register_interactive_handlers
 
 try:
     from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
@@ -60,10 +66,6 @@ _DEDUP_TTL_SEC = 10
 _dedup_lock = threading.Lock()
 _recent_ts: collections.OrderedDict[str, float] = collections.OrderedDict()
 
-_USER_NAME_CACHE_MAX = 500
-_cache_lock = threading.Lock()
-_user_name_cache: dict[str, str] = {}
-
 _CHANNEL_NAME_CACHE_MAX = 200
 _channel_name_lock = threading.Lock()
 _channel_name_cache: dict[str, str] = {}
@@ -97,23 +99,6 @@ def _is_duplicate_ts(ts: str, handler_name: str = "") -> bool:
         return False
 
 
-def _cache_user_name(uid: str, name: str) -> None:
-    """Thread-safe bounded insert into the user-name cache."""
-    with _cache_lock:
-        if len(_user_name_cache) >= _USER_NAME_CACHE_MAX and uid not in _user_name_cache:
-            try:
-                _user_name_cache.pop(next(iter(_user_name_cache)))
-            except StopIteration:
-                pass
-        _user_name_cache[uid] = name
-
-
-def _get_cached_user_name(uid: str) -> str | None:
-    """Thread-safe lookup from the user-name cache."""
-    with _cache_lock:
-        return _user_name_cache.get(uid)
-
-
 def _detect_slack_intent(text: str, channel_id: str, bot_user_id: str) -> str:
     """Return ``"question"`` if the message is a DM or mentions the bot."""
     if channel_id.startswith("D"):
@@ -121,32 +106,6 @@ def _detect_slack_intent(text: str, channel_id: str, bot_user_id: str) -> str:
     if bot_user_id and f"<@{bot_user_id}>" in (text or ""):
         return "question"
     return ""
-
-
-def _resolve_slack_mentions(text: str, token: str) -> str:
-    """Resolve <@U...> mentions and Slack markup to human-readable text.
-
-    Extracts all user IDs, resolves unknown ones via Slack API (cached),
-    then applies clean_slack_markup() for full conversion.
-    """
-    if not text:
-        return text
-    user_ids = set(re.findall(r"<@(U[A-Z0-9]+)>", text))
-    unknown = {uid for uid in user_ids if _get_cached_user_name(uid) is None}
-    if unknown and token:
-        try:
-            from core.tools.slack import SlackClient
-
-            client = SlackClient(token=token)
-            for uid in unknown:
-                _cache_user_name(uid, client.resolve_user_name(uid))
-        except Exception:
-            logger.debug("Failed to resolve Slack user mentions", exc_info=True)
-    from core.tools._slack_markdown import clean_slack_markup
-
-    with _cache_lock:
-        snapshot = dict(_user_name_cache)
-    return clean_slack_markup(text, cache=snapshot)
 
 
 def _resolve_channel_name(token: str, channel_id: str) -> str:
@@ -203,7 +162,7 @@ def _detect_external_addressees(
 
     names: list[str] = []
     for uid in sorted(external_uids):
-        cached = _get_cached_user_name(uid)
+        cached = get_cached_user_name(uid)
         if cached:
             names.append(cached)
         elif token:
@@ -212,7 +171,7 @@ def _detect_external_addressees(
 
                 client = SlackClient(token=token)
                 display = client.resolve_user_name(uid)
-                _cache_user_name(uid, display)
+                cache_user_name(uid, display)
                 names.append(display)
             except Exception:
                 names.append(uid)
@@ -368,14 +327,13 @@ def _fetch_thread_context(token: str, channel_id: str, thread_ts: str, *, limit:
         parent_user = parent.get("user", "unknown")
         parent_text = parent.get("text", "").replace("\n", " ")[:_THREAD_CTX_SUMMARY_LIMIT]
         # Resolve parent author display name
-        if _get_cached_user_name(parent_user) is None:
+        if get_cached_user_name(parent_user) is None:
             try:
-                _cache_user_name(parent_user, client.resolve_user_name(parent_user))
+                cache_user_name(parent_user, client.resolve_user_name(parent_user))
             except Exception:
                 pass
-        parent_display = _get_cached_user_name(parent_user) or parent_user
-        with _cache_lock:
-            snapshot = dict(_user_name_cache)
+        parent_display = get_cached_user_name(parent_user) or parent_user
+        snapshot = user_name_snapshot()
         parent_text = clean_slack_markup(parent_text, cache=snapshot)
         reply_count = len(replies) - 1
         lines = [
@@ -722,7 +680,7 @@ class SlackSocketModeManager:
                     )
                     token_for_resolve = self._get_per_anima_credential("SLACK_BOT_TOKEN", anima_name) or ""
                     raw_text = event.get("text", "")
-                    text = await asyncio.to_thread(_resolve_slack_mentions, raw_text, token_for_resolve)
+                    text = await asyncio.to_thread(resolve_slack_mentions, raw_text, token_for_resolve)
                     _route_to_board(channel_id, text, bot_name, ts=ts)
                 return
 
@@ -767,7 +725,7 @@ class SlackSocketModeManager:
                 if ctx:
                     text = ctx + text
 
-            text = await asyncio.to_thread(_resolve_slack_mentions, text, token)
+            text = await asyncio.to_thread(resolve_slack_mentions, text, token)
 
             # ── Decide whether to deliver to inbox ──
             # DM: always.  @mention: always.
@@ -789,7 +747,7 @@ class SlackSocketModeManager:
             #   - no mention → default_anima's handler
             # This prevents N handlers from each posting the same message.
             if not is_dm and (bool(mention_intent) or is_default):
-                user_name = _get_cached_user_name(sender) or sender
+                user_name = get_cached_user_name(sender) or sender
                 _route_to_board(channel_id, text, user_name, ts=ts)
 
             if should_deliver:
@@ -852,7 +810,7 @@ class SlackSocketModeManager:
                 if ctx:
                     text = ctx + text
 
-            text = await asyncio.to_thread(_resolve_slack_mentions, text, _mention_token)
+            text = await asyncio.to_thread(resolve_slack_mentions, text, _mention_token)
             annotation = _build_slack_annotation(channel_id, True, channel_name=ch_name)
             text = annotation + text
 
@@ -961,10 +919,10 @@ class SlackSocketModeManager:
                 if ctx:
                     text = ctx + text
 
-            text = await asyncio.to_thread(_resolve_slack_mentions, text, _shared_token)
+            text = await asyncio.to_thread(resolve_slack_mentions, text, _shared_token)
 
             # Route to AnimaWorks board BEFORE adding inbox annotations
-            user_name = _get_cached_user_name(event.get("user", "")) or event.get("user", "")
+            user_name = get_cached_user_name(event.get("user", "")) or event.get("user", "")
             _route_to_board(channel_id, text, user_name, ts=ts)
 
             shared_dir = get_data_dir() / "shared"
@@ -1053,7 +1011,7 @@ class SlackSocketModeManager:
                 if ctx:
                     text = ctx + text
 
-            text = await asyncio.to_thread(_resolve_slack_mentions, text, _shared_tok)
+            text = await asyncio.to_thread(resolve_slack_mentions, text, _shared_tok)
             annotation = _build_slack_annotation(channel_id, True, channel_name=ch_name)
             text = annotation + text
 

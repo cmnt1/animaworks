@@ -546,7 +546,7 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
             pass
 
         try:
-            from server.slack_socket import SlackSocketModeManager
+            from server.gateways.slack_socket import SlackSocketModeManager
 
             socket_manager = SlackSocketModeManager()
             await asyncio.wait_for(socket_manager.start(), timeout=30)
@@ -571,7 +571,7 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
 
         # ── Discord Gateway ────────────────────────────────────
         try:
-            from server.discord_gateway import DiscordGatewayManager
+            from server.gateways.discord_gateway import DiscordGatewayManager
 
             discord_manager = DiscordGatewayManager()
             await asyncio.wait_for(discord_manager.start(), timeout=35)
@@ -590,7 +590,7 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
         # ── Discord channel → board sync (initial) ───────────
         if app.state.discord_gateway_manager is not None:
             try:
-                from server.discord_channel_sync import DiscordChannelSync
+                from server.gateways.discord_channel_sync import DiscordChannelSync
 
                 discord_sync = DiscordChannelSync()
                 await discord_sync.sync(app.state.discord_gateway_manager)
@@ -603,7 +603,7 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
 
         # ── Zoom RTMS Gateway ──────────────────────────────────
         try:
-            from server.zoom_gateway import ZoomRTMSManager
+            from server.gateways.zoom_gateway import ZoomRTMSManager
 
             zoom_manager = ZoomRTMSManager()
             await asyncio.wait_for(zoom_manager.start(), timeout=35)
@@ -621,7 +621,7 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
 
         # ── GitHub Webhook Gateway ─────────────────────────────
         try:
-            from server.github_gateway import GitHubWebhookManager
+            from server.gateways.github_gateway import GitHubWebhookManager
 
             github_manager = GitHubWebhookManager()
             await github_manager.start()
@@ -637,7 +637,7 @@ async def _startup_animas_background(app: FastAPI, *, suppress_errors: bool = Tr
         # ── Slack channel → board sync (initial) ──────────────
         if app.state.slack_socket_manager is not None:
             try:
-                from server.slack_channel_sync import SlackChannelSync
+                from server.gateways.slack_channel_sync import SlackChannelSync
 
                 channel_sync = SlackChannelSync()
                 await channel_sync.sync(app.state.slack_socket_manager)

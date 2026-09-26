@@ -291,9 +291,9 @@ async def route_thread_reply(
                 user_id = str(event.get("user") or "")
                 actor = user_id
                 try:
-                    from server.slack_socket import _get_cached_user_name
+                    from core.notification.slack_names import get_cached_user_name
 
-                    actor = _get_cached_user_name(user_id) or user_id
+                    actor = get_cached_user_name(user_id) or user_id
                 except Exception:
                     logger.debug(
                         "Failed to resolve Slack display name for text_reply actor",
@@ -365,9 +365,9 @@ async def route_thread_reply(
         user_id = str(event.get("user") or "")
         from_person = user_id
         try:
-            from server.slack_socket import _get_cached_user_name
+            from core.notification.slack_names import get_cached_user_name
 
-            from_person = _get_cached_user_name(user_id) or user_id
+            from_person = get_cached_user_name(user_id) or user_id
         except Exception:
             logger.debug(
                 "Failed to resolve Slack display name for human_reply log",
@@ -423,15 +423,15 @@ def _fetch_thread_context_for_reply(
         parent = replies[0]
         parent_user = parent.get("user", "unknown")
         parent_text = parent.get("text", "").replace("\n", " ")[:_THREAD_CTX_SUMMARY_LIMIT]
-        from server.slack_socket import _resolve_slack_mentions, _user_name_cache
+        from core.notification.slack_names import cache_user_name, get_cached_user_name, resolve_slack_mentions
 
-        if parent_user not in _user_name_cache:
+        if get_cached_user_name(parent_user) is None:
             try:
-                _user_name_cache[parent_user] = client.resolve_user_name(parent_user)
+                cache_user_name(parent_user, client.resolve_user_name(parent_user))
             except Exception:
                 logger.debug("Failed to resolve display name for user %s, using raw ID", parent_user)
-        parent_display = _user_name_cache.get(parent_user, parent_user)
-        parent_text = _resolve_slack_mentions(parent_text, token)
+        parent_display = get_cached_user_name(parent_user) or parent_user
+        parent_text = resolve_slack_mentions(parent_text, token)
         reply_count = len(replies) - 1
         lines = [
             "[Thread context — this message is a reply in a Slack thread]",
@@ -453,9 +453,9 @@ def sanitize_slack_reply(text: str, max_length: int = _MAX_REPLY_LENGTH) -> str:
     URLs, channels, and HTML entities are converted by clean_slack_markup().
     """
     try:
-        from server.slack_socket import _resolve_slack_mentions
+        from core.notification.slack_names import resolve_slack_mentions
 
-        text = _resolve_slack_mentions(text, "")
+        text = resolve_slack_mentions(text, "")
     except Exception:
         from core.tools._slack_markdown import clean_slack_markup
 

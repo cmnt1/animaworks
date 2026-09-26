@@ -284,7 +284,7 @@ class SlackChannelSync:
         Returns:
             The updated board_mapping (channel_id -> board_name).
         """
-        from server.slack_socket import SlackSocketModeManager
+        from server.gateways.slack_socket import SlackSocketModeManager
 
         if not isinstance(manager, SlackSocketModeManager):
             return self.board_mapping

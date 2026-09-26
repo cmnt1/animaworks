@@ -177,7 +177,7 @@ Anima 表示名・アイコン付きで `chat.postMessage` する場合は、ワ
 | `default_anima` | string | `""` | チャンネルが anima_mapping にない場合のフォールバックAnima |
 | `app_id_mapping` | object | `{}` | Slack API App ID → Anima名（Webhook モードで複数Appを使う場合） |
 
-**共有Botのマッピングは接続を張り直さずに反映される**: `server/slack_socket.py` は受信ごとに `load_config()` し、`anima_mapping` / `default_anima` の変更は次のメッセージから有効（WebSocket は維持）。
+**共有Botのマッピングは接続を張り直さずに反映される**: `server/gateways/slack_socket.py` は受信ごとに `load_config()` し、`anima_mapping` / `default_anima` の変更は次のメッセージから有効（WebSocket は維持）。
 
 ### チャンネルIDの確認方法
 
@@ -201,7 +201,7 @@ Slackでチャンネル名を右クリック → 「チャンネル詳細を表�
 }
 ```
 
-Per-Anima Bot の一覧は、上記 `SLACK_BOT_TOKEN__*` キーを vault / `credentials.json` から走査して決まる（`server/slack_socket.SlackSocketModeManager._discover_per_anima_bots`）。
+Per-Anima Bot の一覧は、上記 `SLACK_BOT_TOKEN__*` キーを vault / `credentials.json` から走査して決まる（`server/gateways/slack_socket.SlackSocketModeManager._discover_per_anima_bots`）。
 
 Per-Anima Bot と共有Bot（`SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN`）は併用可能。共有Botは `anima_mapping` と `default_anima` でチャンネルベースのルーティングを行う。
 
@@ -267,7 +267,7 @@ Per-Anima の `SLACK_*__name` キーを増減したり credential を更新し�
 
 1. Slackユーザーがマッピングされたチャンネルにメッセージ送信
 2. Slack → WebSocket（Socket Mode）または HTTP POST（Webhook）でイベント受信
-3. **重複抑制**: 同一メッセージで `message` と `app_mention` の両方が届くことがある。`ts` を短い TTL（約10秒）で記録し、二度目は無視する（`server/slack_socket.py` の `_is_duplicate_ts`）
+3. **重複抑制**: 同一メッセージで `message` と `app_mention` の両方が届くことがある。`ts` を短い TTL（約10秒）で記録し、二度目は無視する（`server/gateways/slack_socket.py` の `_is_duplicate_ts`）
 4. **call_human スレッド返信**: メッセージがスレッド返信かつ `route_thread_reply` でマッピング済みの場合、元の通知を送ったAnimaのinboxにルーティング（`core/notification/reply_routing.py`）
 5. **ルーティング解決**:
    - **Socket Mode Per-Anima Bot**: そのBotの全メッセージを対応Animaに直接配送
@@ -328,7 +328,7 @@ Per-Anima の `SLACK_*__name` キーを増減したり credential を更新し�
 
 | ファイル | 役割 |
 |----------|------|
-| `server/slack_socket.py` | `SlackSocketModeManager`（Socket Mode、Per-Anima / 共有Bot、デデュープ、スレッドコンテキスト、mention/intent） |
+| `server/gateways/slack_socket.py` | `SlackSocketModeManager`（Socket Mode、Per-Anima / 共有Bot、デデュープ、スレッドコンテキスト、mention/intent） |
 | `server/app.py`（lifespan 付近） | `SlackSocketModeManager` の起動・停止 |
 | `server/reload_manager.py` | 設定/credential 反映時の `SlackSocketModeManager.reload()` |
 | `server/routes/system.py` | `/api/system/hot-reload*` エンドポイント |
