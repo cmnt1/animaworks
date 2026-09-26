@@ -69,8 +69,8 @@ def _response_retry_after_ms(resp: Any, retry_after_header: str) -> int:
         body = resp.json()
         if isinstance(body, dict) and body.get("retry_after_ms") is not None:
             return int(body["retry_after_ms"])
-    except Exception:
-        pass
+    except (ValueError, TypeError):
+        logger.debug("503 body has no usable retry_after_ms; using Retry-After header")
     try:
         return int(float(retry_after_header) * 1000)
     except (TypeError, ValueError):
