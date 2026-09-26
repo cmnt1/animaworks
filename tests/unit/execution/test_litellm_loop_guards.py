@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -357,5 +358,89 @@ class TestStreamingRetry:
                 )
             )
         # iteration 0 succeeded, iteration 1 failed once — no retry attempts
-        # (pre-existing fail-fast behavior preserved after partial yield)
+        # (pre-existing fail-fast behavior preserved after partial yield).
         assert mock.call_count == 2
+        assert all(call.kwargs.get("num_retries") == 0 for call in mock.call_args_list)
+
+    async def test_context_overflow_at_later_iteration_compacts_and_resends_once(self, ollama_executor):
+        """A later iteration is a fresh request: overflow is rejected before any chunk, so compact and resend."""
+        from core.prompt.context import ContextTracker
+
+        tc = make_tool_call("search_memory", {"query": "x"})
+        resp_tool = make_litellm_response(content="working on it", tool_calls=[tc])
+        resp_done = make_litellm_response(content="done")
+        overflow = RuntimeError("maximum context length exceeded")
+        mock = AsyncMock(side_effect=[resp_tool, overflow, resp_done])
+        compact = AsyncMock(return_value=True)
+        with (
+            patch("litellm.acompletion", mock),
+            patch.object(ollama_executor, "_try_compact_messages", compact),
+        ):
+            await self._collect(
+                ollama_executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="test",
+                    tracker=ContextTracker(model="ollama/qwen3:8b"),
+                )
+            )
+
+        assert mock.call_count == 3
+        compact.assert_awaited_once()
+        assert all(call.kwargs.get("num_retries") == 0 for call in mock.call_args_list)
+
+    async def test_transient_error_at_later_iteration_is_not_retried(self, ollama_executor):
+        from core.exceptions import StreamDisconnectedError
+        from core.prompt.context import ContextTracker
+
+        tc = make_tool_call("search_memory", {"query": "x"})
+        resp_tool = make_litellm_response(content="working on it", tool_calls=[tc])
+        mock = AsyncMock(side_effect=[resp_tool, _RateLimitError("too many requests")])
+        compact = AsyncMock(return_value=True)
+        with (
+            patch("litellm.acompletion", mock),
+            patch.object(ollama_executor, "_try_compact_messages", compact),
+            pytest.raises(StreamDisconnectedError),
+        ):
+            await self._collect(
+                ollama_executor.execute_streaming(
+                    system_prompt="sys",
+                    prompt="test",
+                    tracker=ContextTracker(model="ollama/qwen3:8b"),
+                )
+            )
+
+        assert mock.call_count == 2
+        compact.assert_not_awaited()
+
+    async def test_token_stream_failure_after_chunk_is_not_retried(self, executor):
+        from core.exceptions import StreamDisconnectedError
+        from core.prompt.context import ContextTracker
+
+        async def broken_stream():
+            yield SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(content="partial", tool_calls=None, reasoning_content=None),
+                        finish_reason=None,
+                    )
+                ],
+                usage=None,
+            )
+            raise _RateLimitError("too many requests")
+
+        mock = AsyncMock(return_value=broken_stream())
+        emitted = []
+        with (
+            patch("litellm.acompletion", mock),
+            pytest.raises(StreamDisconnectedError),
+        ):
+            async for event in executor.execute_streaming(
+                system_prompt="sys",
+                prompt="test",
+                tracker=ContextTracker(model="openai/gpt-4o"),
+            ):
+                emitted.append(event)
+
+        assert emitted[0] == {"type": "text_delta", "text": "partial"}
+        assert mock.call_count == 1
+        assert mock.call_args.kwargs.get("num_retries") == 0
