@@ -58,21 +58,21 @@ export function render(container) {
           <div class="usage-loading">${t("common.loading")}</div>
         </div>
       </div>
-      <div class="usage-card" id="usageCardGemini">
-        <div class="usage-card-header">
-          <span class="usage-provider-name">Gemini</span>
-          <span class="usage-sub-type" id="usageGeminiSub"></span>
-        </div>
-        <div class="usage-card-body" id="usageGeminiBody">
-          <div class="usage-loading">${t("common.loading")}</div>
-        </div>
-      </div>
       <div class="usage-card" id="usageCardNanogpt">
         <div class="usage-card-header">
           <span class="usage-provider-name">nanoGPT</span>
           <span class="usage-sub-type" id="usageNanogptSub"></span>
         </div>
         <div class="usage-card-body" id="usageNanogptBody">
+          <div class="usage-loading">${t("common.loading")}</div>
+        </div>
+      </div>
+      <div class="usage-card" id="usageCardJev">
+        <div class="usage-card-header">
+          <span class="usage-provider-name">Jev</span>
+          <span class="usage-sub-type" id="usageJevSub"></span>
+        </div>
+        <div class="usage-card-body" id="usageJevBody">
           <div class="usage-loading">${t("common.loading")}</div>
         </div>
       </div>
@@ -728,7 +728,7 @@ function _usageCanRelogin(errorCode) {
   // Mirror the governor bar: only genuine auth problems get a re-auth button.
   // ``rate_limited`` is a usage-endpoint 429, not an expired token, so a
   // re-login can never clear it — showing the button just loops.
-  return new Set(["unauthorized", "no_credentials"]).has(errorCode);
+  return new Set(["unauthorized", "no_credentials", "scope_insufficient"]).has(errorCode);
 }
 
 function _renderGovernorReason(reasonText) {
@@ -854,7 +854,11 @@ function _renderClaudeUsage(data, opts = {}) {
     const at = opts.snapshotAt ? _resetToJst(opts.snapshotAt) : "";
     html += `<div class="usage-stale">&#x26A0; 使用量を取得できず前回値を表示中${at ? `（${escapeHtml(at)}時点）` : ""}</div>`;
   }
+  if (data.live_error && _usageCanRelogin(data.live_error.error)) {
+    html += _renderUsageError("claude", data.live_error, data.live_error.message || data.live_error.error);
+  }
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
+  el.querySelector("[data-provider='claude']")?.addEventListener("click", () => _runUsageRelogin("claude"));
 }
 
 function _renderOpenaiUsage(data, opts = {}) {
@@ -884,36 +888,169 @@ function _renderOpenaiUsage(data, opts = {}) {
   el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
 }
 
-function _renderGeminiUsage(data, opts = {}) {
-  const el = document.getElementById("usageGeminiBody");
-  const subEl = document.getElementById("usageGeminiSub");
-  if (!el) return;
+// -- Jev (TypeSafe System One) ------------------------------
+// Jev publishes no balance endpoint, so the card shows a balance the server
+// reconstructs (console reading minus the local spend ledger) plus the same
+// spend-against-budget bar Claude's extra credits use.
+
+// While the inline balance/budget form is open the 60s poll must not wipe what
+// is being typed.
+let _jevEditOpen = false;
+
+function _fmtUsd(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const abs = Math.abs(value);
+  // Jev calls cost fractions of a cent, so a fixed 2 decimals would render a
+  // month of real spend as "$0.00".
+  const digits = abs === 0 ? 2 : abs < 0.01 ? 6 : abs < 1 ? 3 : 2;
+  let text = value.toFixed(digits);
+  // Trim padding zeros but never below cents, so $0 reads as "$0.00".
+  if (digits > 2) text = text.replace(/(\.\d{2}\d*?)0+$/, "$1");
+  return `$${text}`;
+}
+
+function _jevDayLabel(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const jst = new Date(d.getTime() + 9 * 3600000);
+  const mm = String(jst.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(jst.getUTCDate()).padStart(2, "0");
+  return `${mm}/${dd}`;
+}
+
+function _renderJevUsage(data, opts = {}) {
+  const el = document.getElementById("usageJevBody");
+  const subEl = document.getElementById("usageJevSub");
+  if (!el || _jevEditOpen) return;
 
   if (data.error) {
     if (subEl) subEl.textContent = "";
     const msg = data.error === "no_credentials"
-      ? (data.message || t("home.usage_no_credentials"))
+      ? t("home.usage_no_credentials")
       : data.message || data.error;
-    el.innerHTML = _renderUsageError("gemini", data, msg);
+    el.innerHTML = _renderUsageError("jev", data, msg);
     return;
   }
 
-  const stale = !!opts.stale;
-  // Order windows: 5h → daily (Free tier) → Week
-  const order = ["five_hour", "daily", "Week"];
-  const labels = { five_hour: "5h", daily: "Daily", Week: "Week" };
-  let html = "";
-  const modelIds = [];
-  for (const key of order) {
-    const win = data[key];
-    if (!win || typeof win !== "object" || win.utilization === undefined) continue;
-    if (win.model_id && !modelIds.includes(win.model_id)) modelIds.push(win.model_id);
-    html += _renderUsageBar(labels[key] || key, win.utilization, win.resets_at, win.window_seconds, null, { stale });
+  const month = data.month || {};
+  const balance = data.balance || null;
+  const spendStr = _fmtUsd(month.spend_usd) ?? "$0.00";
+  const budgetStr = _fmtUsd(month.budget_usd);
+
+  if (subEl) {
+    const balStr = balance ? _fmtUsd(balance.balance_usd) : null;
+    subEl.textContent = balStr
+      ? `${t("home.usage_jev_balance")} ${balStr}`
+      : t("home.usage_jev_balance_unset");
   }
-  // Surface which model's quota is being displayed (the provider API returns
-  // the tightest per-model bucket, so this can differ from the configured model).
-  if (subEl) subEl.textContent = modelIds.map(m => m.replace(/^gemini-/, "")).join(" / ");
-  el.innerHTML = html || `<div class="usage-ok">${t("home.usage_within_limit")}</div>`;
+
+  let html = "";
+  if (typeof month.utilization === "number" && budgetStr) {
+    html += _renderUsageBar(
+      `Month (${spendStr}/${budgetStr})`,
+      month.utilization,
+      month.resets_at,
+      month.window_seconds,
+      null,
+      {},
+    );
+  } else {
+    html += `<div class="usage-row"><div class="usage-row-header">`
+      + `<span class="usage-label">Month</span>`
+      + `<span class="usage-pct">${escapeHtml(spendStr)}</span></div>`
+      + `<div class="usage-reset">${escapeHtml(t("home.usage_jev_budget_unset"))}</div></div>`;
+  }
+
+  const meta = [];
+  if (balance) {
+    const baseStr = _fmtUsd(balance.baseline_usd) ?? "-";
+    const spentStr = _fmtUsd(balance.spent_since_usd) ?? "$0.00";
+    const at = _jevDayLabel(balance.checked_at);
+    meta.push(`${t("home.usage_jev_baseline")} ${baseStr}${at ? ` (${at})` : ""} − ${spentStr}`);
+  } else {
+    meta.push(t("home.usage_jev_balance_hint"));
+  }
+  if (!data.ledger_present) meta.push(t("home.usage_jev_no_ledger"));
+
+  html += `<div class="usage-jev-meta">`
+    + `<span>${escapeHtml(meta.join(" · "))}</span>`
+    + `<button type="button" class="usage-jev-edit" id="usageJevEditBtn"`
+    + ` title="${escapeAttr(t("home.usage_jev_edit"))}">&#x270E;</button></div>`;
+
+  el.innerHTML = html;
+  el.querySelector("#usageJevEditBtn")?.addEventListener("click", () => _openJevEditor(data));
+}
+
+function _openJevEditor(data) {
+  const el = document.getElementById("usageJevBody");
+  if (!el) return;
+  _jevEditOpen = true;
+  const baseline = data.balance && typeof data.balance.baseline_usd === "number"
+    ? data.balance.baseline_usd : "";
+  const budget = data.month && typeof data.month.budget_usd === "number"
+    ? data.month.budget_usd : "";
+
+  el.innerHTML = `
+    <div class="usage-jev-form">
+      <label>${t("home.usage_jev_balance")}
+        <input type="number" step="0.01" min="0" id="usageJevBalanceInput" value="${escapeAttr(String(baseline))}" />
+      </label>
+      <label>${t("home.usage_jev_budget")}
+        <input type="number" step="0.01" min="0" id="usageJevBudgetInput" value="${escapeAttr(String(budget))}" />
+      </label>
+      <div class="usage-jev-form-actions">
+        <button type="button" class="btn-secondary" id="usageJevSaveBtn">${t("home.usage_jev_save")}</button>
+        <button type="button" class="btn-secondary" id="usageJevCancelBtn">${t("home.usage_jev_cancel")}</button>
+      </div>
+      <div class="usage-jev-hint" id="usageJevHint">${t("home.usage_jev_form_hint")}</div>
+    </div>`;
+
+  const close = () => {
+    _jevEditOpen = false;
+    _loadUsage(true);
+  };
+  el.querySelector("#usageJevCancelBtn")?.addEventListener("click", close);
+
+  const saveBtn = el.querySelector("#usageJevSaveBtn");
+  saveBtn?.addEventListener("click", async () => {
+    const hint = el.querySelector("#usageJevHint");
+    const readField = (id) => {
+      const raw = (el.querySelector(id)?.value ?? "").trim();
+      if (raw === "") return { value: null, ok: true };
+      const num = Number(raw);
+      return { value: num, ok: Number.isFinite(num) && num >= 0 };
+    };
+    const bal = readField("#usageJevBalanceInput");
+    const bud = readField("#usageJevBudgetInput");
+    if (!bal.ok || !bud.ok) {
+      if (hint) hint.textContent = t("home.usage_jev_invalid");
+      return;
+    }
+    saveBtn.disabled = true;
+    try {
+      const res = await fetch(`${basePath}/api/usage/jev/settings`, {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        // balance_checked_at is stamped server-side: the baseline only means
+        // something together with the moment it was read.
+        body: JSON.stringify({ balance_usd: bal.value, monthly_budget_usd: bud.value }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (hint) hint.textContent = `${t("home.usage_jev_save_failed")}: ${body.error || res.status}`;
+        saveBtn.disabled = false;
+        return;
+      }
+      _jevEditOpen = false;
+      if (body.usage) _renderJevUsage(body.usage);
+      else _loadUsage(true);
+    } catch (e) {
+      if (hint) hint.textContent = `${t("home.usage_jev_save_failed")}: ${e}`;
+      saveBtn.disabled = false;
+    }
+  });
 }
 
 function _renderNanogptUsage(data, opts = {}) {
@@ -1245,8 +1382,8 @@ async function _loadUsage(forceRefresh = false) {
 
     if (data.claude) _renderClaudeUsage(data.claude, { stale: staleProviders.has("claude"), snapshotAt });
     if (data.openai) _renderOpenaiUsage(data.openai, { stale: staleProviders.has("openai") });
-    if (data.gemini) _renderGeminiUsage(data.gemini, { stale: staleProviders.has("gemini") });
     if (data.nanogpt) _renderNanogptUsage(data.nanogpt, { stale: staleProviders.has("nanogpt") });
+    if (data.jev) _renderJevUsage(data.jev);
     _renderAuthAlerts(data.auth_alerts);
     _renderGovernor(data.governor);
     const serverFetchedAt = data.snapshot_cached_at ?? data.cached_at ?? null;
@@ -1254,13 +1391,13 @@ async function _loadUsage(forceRefresh = false) {
   } catch (err) {
     const claudeEl = document.getElementById("usageClaudeBody");
     const openaiEl = document.getElementById("usageOpenaiBody");
-    const geminiEl = document.getElementById("usageGeminiBody");
     const nanogptEl = document.getElementById("usageNanogptBody");
+    const jevEl = document.getElementById("usageJevBody");
     const msg = `<div class="usage-error">${escapeHtml(err.message)}</div>`;
     if (claudeEl) claudeEl.innerHTML = msg;
     if (openaiEl) openaiEl.innerHTML = msg;
-    if (geminiEl) geminiEl.innerHTML = msg;
     if (nanogptEl) nanogptEl.innerHTML = msg;
+    if (jevEl && !_jevEditOpen) jevEl.innerHTML = msg;
   }
 }
 

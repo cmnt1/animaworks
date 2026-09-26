@@ -164,7 +164,14 @@ def _merge_usage_snapshot(live_payload: dict[str, Any]) -> dict[str, Any]:
         snapshot_provider = snapshot.get(provider_key)
         if not isinstance(snapshot_provider, dict) or snapshot_provider.get("error"):
             continue
-        merged[provider_key] = snapshot_provider
+        # Keep the latest failure alongside the last good values. Otherwise
+        # snapshot fallback hides auth failures and the UI loses its login button.
+        restored = dict(snapshot_provider)
+        restored.pop("live_error", None)
+        live_provider = live_payload.get(provider_key)
+        if isinstance(live_provider, dict) and live_provider.get("error"):
+            restored["live_error"] = live_provider
+        merged[provider_key] = restored
         used.append(provider_key)
 
     if used:
@@ -1247,6 +1254,57 @@ def _fetch_gemini_usage(skip_cache: bool = False) -> dict[str, Any]:
     return parsed
 
 
+# ── Jev (TypeSafe System One prepaid credits) ───────────────────────────────
+# Jev has no balance endpoint, so this reads the shared local spend ledger and
+# the balance baseline from config instead of calling out.  Still cached: the
+# dashboard polls this alongside the network providers.
+
+
+def _fetch_jev_usage(skip_cache: bool = False) -> dict[str, Any]:
+    if not skip_cache:
+        cached = _cached("jev")
+        if cached is not None:
+            return cached
+    try:
+        from core.jev_credits import build_status
+
+        result = build_status()
+    except Exception as e:
+        logger.warning("Jev credit status failed: %s", e)
+        return {"provider": "jev", "error": "fetch_failed", "message": str(e)[:200]}
+    _set_cache("jev", result)
+    return result
+
+
+def _jev_settings_payload() -> dict[str, Any]:
+    from core.config.models import JevConfig, load_config
+
+    cfg = getattr(load_config(), "jev", None)
+    if not isinstance(cfg, JevConfig):
+        cfg = JevConfig()
+    return {
+        "balance_usd": cfg.balance_usd,
+        "balance_checked_at": cfg.balance_checked_at,
+        "monthly_budget_usd": cfg.monthly_budget_usd,
+        "input_usd_per_mtok": cfg.input_usd_per_mtok,
+        "output_usd_per_mtok": cfg.output_usd_per_mtok,
+    }
+
+
+def _coerce_usd(value: Any) -> tuple[float | None, bool]:
+    """Return ``(amount, ok)``; ``None`` clears the field."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None, True
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return None, False
+    # ``not amount >= 0`` also rejects NaN, which every comparison answers False.
+    if not amount >= 0 or amount == float("inf"):
+        return None, False
+    return amount, True
+
+
 def create_usage_router() -> APIRouter:
     router = APIRouter()
 
@@ -1329,6 +1387,7 @@ def create_usage_router() -> APIRouter:
             "openai": _fetch_openai_usage(skip_cache=skip_cache),
             "gemini": _fetch_gemini_usage(skip_cache=skip_cache),
             "nanogpt": _fetch_nanogpt_usage(skip_cache=skip_cache),
+            "jev": _fetch_jev_usage(skip_cache=skip_cache),
             "cached_at": time.time(),
             "governor": governor_info,
             "auth_alerts": auth_alerts,
@@ -1374,6 +1433,74 @@ def create_usage_router() -> APIRouter:
             except Exception:
                 pass
         return JSONResponse(payload, status_code=status_code)
+
+    @router.get("/usage/jev/settings")
+    async def get_jev_settings() -> dict[str, Any]:
+        """Return the Jev balance baseline and monthly budget."""
+        return _jev_settings_payload()
+
+    @router.put("/usage/jev/settings")
+    async def set_jev_settings(request: Request):
+        """Update the Jev balance baseline and/or monthly budget.
+
+        Body: ``{"balance_usd": float|null, "monthly_budget_usd": float|null,
+        "balance_checked_at": str|null}``.  Only the keys present are touched.
+        A new ``balance_usd`` without an explicit ``balance_checked_at`` is
+        stamped with the current time — the baseline is worthless without the
+        moment it was read.
+        """
+        from core.config.models import JevConfig, load_config, save_config
+        from core.time_utils import now_iso, now_local
+
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+        if not isinstance(body, dict):
+            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+
+        config = load_config()
+        cfg = getattr(config, "jev", None)
+        if not isinstance(cfg, JevConfig):
+            cfg = JevConfig()
+        updates = cfg.model_dump()
+
+        for key in ("balance_usd", "monthly_budget_usd"):
+            if key not in body:
+                continue
+            amount, ok = _coerce_usd(body[key])
+            if not ok:
+                return JSONResponse({"error": f"{key} must be a non-negative number or null"}, status_code=400)
+            updates[key] = amount
+
+        if "balance_checked_at" in body:
+            raw = body["balance_checked_at"]
+            if raw is None or (isinstance(raw, str) and not raw.strip()):
+                updates["balance_checked_at"] = None
+            else:
+                from core.jev_credits import parse_ts
+
+                parsed = parse_ts(raw)
+                if parsed is None:
+                    return JSONResponse({"error": "balance_checked_at must be ISO 8601 or null"}, status_code=400)
+                updates["balance_checked_at"] = parsed.isoformat()
+        elif "balance_usd" in body and updates["balance_usd"] is not None:
+            updates["balance_checked_at"] = now_iso()
+
+        config.jev = JevConfig(**updates)
+        save_config(config)
+        _CACHE.pop("jev", None)
+        logger.info(
+            "Jev credit settings updated (balance=%s budget=%s)",
+            updates["balance_usd"],
+            updates["monthly_budget_usd"],
+        )
+        return {
+            "ok": True,
+            **_jev_settings_payload(),
+            "usage": _fetch_jev_usage(skip_cache=True),
+            "now": now_local().isoformat(),
+        }
 
     @router.get("/usage/policy")
     async def get_policy(request: Request) -> dict[str, Any]:

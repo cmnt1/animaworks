@@ -981,5 +981,18 @@
   "meeting.make_chair": "의장으로 지정",
   "assets.generation_model": "생성 모델",
   "chat.model_default": "아니마 기본",
-  "chat.model_selector": "이 메시지의 모델"
+  "chat.model_selector": "이 메시지의 모델",
+  "home.usage_jev_balance": "잔액",
+  "home.usage_jev_balance_unset": "잔액 미등록",
+  "home.usage_jev_baseline": "기준",
+  "home.usage_jev_budget": "월간 예산",
+  "home.usage_jev_budget_unset": "월간 예산 미설정",
+  "home.usage_jev_balance_hint": "콘솔에 표시된 잔액을 등록하세요",
+  "home.usage_jev_no_ledger": "소비 기록 없음",
+  "home.usage_jev_edit": "잔액·월간 예산 갱신",
+  "home.usage_jev_form_hint": "TypeSafe 콘솔의 잔액과 확인 시각을 기록합니다. 이후 소비는 장부에서 차감됩니다.",
+  "home.usage_jev_save": "저장",
+  "home.usage_jev_cancel": "취소",
+  "home.usage_jev_invalid": "0 이상의 숫자를 입력하거나 비워 두세요",
+  "home.usage_jev_save_failed": "저장에 실패했습니다"
 }

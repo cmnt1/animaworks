@@ -829,6 +829,70 @@
   gap: 8px;
 }
 
+/* Jev card: the balance line under the month bar, plus its inline editor.
+   The balance is reconstructed from a console reading, so the reading itself
+   (baseline and date) stays visible next to the derived number. */
+.usage-jev-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  font-size: 0.72rem;
+  color: var(--aw-color-text-faint);
+}
+
+.usage-jev-edit {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 0.8rem;
+  line-height: 1;
+  color: var(--aw-color-text-faint);
+}
+
+.usage-jev-edit:hover,
+.usage-jev-edit:active {
+  color: var(--aw-color-text-primary);
+}
+
+.usage-jev-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.78rem;
+}
+
+.usage-jev-form label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.usage-jev-form input {
+  width: 8em;
+  padding: 2px 6px;
+  font-size: 0.78rem;
+}
+
+.usage-jev-form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.usage-jev-form-actions button {
+  font-size: 0.75rem;
+  padding: 2px 10px;
+}
+
+.usage-jev-hint {
+  font-size: 0.7rem;
+  color: var(--aw-color-text-faint);
+}
+
 .usage-panel--compact .usage-card-body {
   flex: 1;
   min-width: 0;

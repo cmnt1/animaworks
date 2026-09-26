@@ -20,6 +20,7 @@ function loadHomeHelpers() {
   let source = readFileSync(path, "utf8");
   // Strip single-line and multi-line import declarations
   source = source.replace(/(?:^|\n)\s*import\b[\s\S]*?;/g, "\n");
+  source += "\nexport { _renderClaudeUsage };";
 
   const preamble = `
     const t = (k, params = {}) => {
@@ -100,6 +101,29 @@ function loadHomeHelpers() {
 function loadI18n(locale) {
   return JSON.parse(readFileSync(resolve(I18N_DIR, `${locale}.json`), "utf8"));
 }
+
+describe("Claude login recovery", () => {
+  it("keeps a login button beside stale values only for current auth failures", async () => {
+    const home = await loadHomeHelpers();
+    const previousDocument = globalThis.document;
+    const el = { innerHTML: "", querySelector: () => null };
+    globalThis.document = { getElementById: () => el };
+    try {
+      for (const error of ["unauthorized", "no_credentials", "scope_insufficient"]) {
+        home._renderClaudeUsage({ live_error: { error, message: "Login <required>" } }, { stale: true });
+        assert.match(el.innerHTML, /前回値/);
+        assert.match(el.innerHTML, /data-provider="claude"/);
+        assert.match(el.innerHTML, /Login &lt;required&gt;/);
+      }
+      home._renderClaudeUsage({ live_error: { error: "rate_limited" } }, { stale: true });
+      assert.doesNotMatch(el.innerHTML, /usage-auth-btn/);
+      home._renderClaudeUsage({});
+      assert.doesNotMatch(el.innerHTML, /usage-auth-btn/);
+    } finally {
+      globalThis.document = previousDocument;
+    }
+  });
+});
 
 describe("attentionSummaryChips", () => {
   it("builds blocked/pending/in_progress/external chips with counts", async () => {

@@ -1133,5 +1133,18 @@
   "tb.deploy_done": "Deployed!",
   "tb.deploy_go_animas": "Go to Anima Management",
   "chat.model_default": "Anima default",
-  "chat.model_selector": "Model for this message"
+  "chat.model_selector": "Model for this message",
+  "home.usage_jev_balance": "Balance",
+  "home.usage_jev_balance_unset": "Balance not set",
+  "home.usage_jev_baseline": "Baseline",
+  "home.usage_jev_budget": "Monthly budget",
+  "home.usage_jev_budget_unset": "No monthly budget set",
+  "home.usage_jev_balance_hint": "Record the balance shown in the console",
+  "home.usage_jev_no_ledger": "No spend recorded yet",
+  "home.usage_jev_edit": "Update balance / monthly budget",
+  "home.usage_jev_form_hint": "Records the TypeSafe console balance and when you read it. Later spend is subtracted from the ledger.",
+  "home.usage_jev_save": "Save",
+  "home.usage_jev_cancel": "Cancel",
+  "home.usage_jev_invalid": "Enter a number of 0 or more, or leave it blank",
+  "home.usage_jev_save_failed": "Save failed"
 }

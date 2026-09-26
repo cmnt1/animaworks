@@ -1093,5 +1093,18 @@
   "tb.deploy_done": "デプロイ済み!",
   "tb.deploy_go_animas": "Anima管理へ",
   "chat.model_default": "anima既定",
-  "chat.model_selector": "このメッセージのモデル"
+  "chat.model_selector": "このメッセージのモデル",
+  "home.usage_jev_balance": "残高",
+  "home.usage_jev_balance_unset": "残高 未登録",
+  "home.usage_jev_baseline": "基準",
+  "home.usage_jev_budget": "月次予算",
+  "home.usage_jev_budget_unset": "月次予算 未設定",
+  "home.usage_jev_balance_hint": "コンソールの残高を登録してください",
+  "home.usage_jev_no_ledger": "消費ログなし",
+  "home.usage_jev_edit": "残高・月次予算を更新",
+  "home.usage_jev_form_hint": "TypeSafe コンソールの残高と、その確認時刻を記録します。以降の消費は台帳から差し引かれます。",
+  "home.usage_jev_save": "保存",
+  "home.usage_jev_cancel": "キャンセル",
+  "home.usage_jev_invalid": "0 以上の数値か空欄を入力してください",
+  "home.usage_jev_save_failed": "保存に失敗しました"
 }

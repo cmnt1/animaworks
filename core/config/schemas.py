@@ -1354,6 +1354,49 @@ class ChatworkToolConfig(BaseModel):
     grants: dict[str, dict[str, str]] = {}
 
 
+class JevConfig(BaseModel):
+    """Jev (TypeSafe System One) prepaid-credit display settings.
+
+    Jev publishes no balance or billing endpoint, so the dashboard derives the
+    balance: ``balance_usd`` is what the TypeSafe console showed at
+    ``balance_checked_at``, and everything the local spend ledger recorded
+    since is subtracted from it.  ``monthly_budget_usd`` drives the same
+    spend-against-budget bar that Claude's extra-credit window uses.
+    """
+
+    monthly_budget_usd: float | None = Field(
+        default=None,
+        ge=0,
+        description="Monthly Jev spend budget in USD. None hides the budget bar.",
+    )
+    balance_usd: float | None = Field(
+        default=None,
+        ge=0,
+        description="Credit balance in USD as read from the TypeSafe console.",
+    )
+    balance_checked_at: str | None = Field(
+        default=None,
+        description=(
+            "ISO 8601 timestamp of the balance_usd reading. Ledger rows from "
+            "this moment on are subtracted from it. None means 'as of now'."
+        ),
+    )
+    input_usd_per_mtok: float = Field(
+        default=0.042,
+        ge=0,
+        description="Input price per 1M tokens, used only for ledger rows that carry no cost_usd.",
+    )
+    output_usd_per_mtok: float = Field(
+        default=0.0,
+        ge=0,
+        description="Output price per 1M tokens (free on jev-1.13.0).",
+    )
+    ledger_dir: str = Field(
+        default="",
+        description="Spend-ledger directory override. Empty uses <abconfig>/jev_usage.",
+    )
+
+
 class AnimaWorksConfig(BaseModel):
     version: int = 1
     setup_complete: bool = False
@@ -1392,6 +1435,7 @@ class AnimaWorksConfig(BaseModel):
     housekeeping: HousekeepingConfig = HousekeepingConfig()
     inbox: InboxConfig = InboxConfig()
     local_llm: LocalLLMConfig = LocalLLMConfig()
+    jev: JevConfig = JevConfig()
     workspaces: dict[str, str] = {}  # alias → absolute path
     # company slug → GitHub account name (e.g. {"fs": "animaworks-dev-team"})
     # Used by executors to inject GH_TOKEN and pin push identity.
@@ -1454,6 +1498,7 @@ __all__ = [
     "HumanNotificationConfig",
     "ImageGenConfig",
     "InboxConfig",
+    "JevConfig",
     "InteractionConfig",
     "IrodoriConfig",
     "LlmRateGuardConfig",

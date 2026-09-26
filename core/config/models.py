@@ -91,6 +91,7 @@ from core.config.schemas import (
     HumanNotificationConfig,
     ImageGenConfig,
     InboxConfig,
+    JevConfig,
     LlmRateGuardConfig,
     LocalLLMConfig,
     LoggingConfig,

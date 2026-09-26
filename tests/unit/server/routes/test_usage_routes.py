@@ -603,14 +603,24 @@ def test_refresh_claude_token_does_not_send_or_persist_scopes(tmp_path: Path, mo
     # ratchet.  Neither may happen.
     cred = tmp_path / "creds.json"
     cred.write_text(
-        json.dumps({"claudeAiOauth": {"accessToken": "old", "refreshToken": "r1", "scopes": ["user:inference", "user:profile"]}}),
+        json.dumps(
+            {
+                "claudeAiOauth": {
+                    "accessToken": "old",
+                    "refreshToken": "r1",
+                    "scopes": ["user:inference", "user:profile"],
+                }
+            }
+        ),
         encoding="utf-8",
     )
     captured: dict[str, object] = {}
 
     def fake_urlopen(req, timeout=0, context=None):
         captured["body"] = json.loads(req.data.decode("utf-8"))
-        return _FakeResponse({"access_token": "new-tok", "refresh_token": "r2", "expires_in": 3600, "scope": "user:inference"})
+        return _FakeResponse(
+            {"access_token": "new-tok", "refresh_token": "r2", "expires_in": 3600, "scope": "user:inference"}
+        )
 
     monkeypatch.setattr(usage_routes.urllib.request, "urlopen", fake_urlopen)
 
@@ -710,13 +720,35 @@ def test_merge_usage_snapshot_restores_window_timing_after_error(tmp_path: Path,
     # dashboard needs to draw the progress bar at all.
     snap = tmp_path / "usage_snapshot.json"
     monkeypatch.setattr(usage_routes, "_usage_snapshot_path", lambda: snap)
-    good = {"provider": "claude", "five_hour": {"utilization": 8.0, "resets_at": "2026-07-19T10:00:00+00:00", "window_seconds": 18000}}
+    good = {
+        "provider": "claude",
+        "five_hour": {"utilization": 8.0, "resets_at": "2026-07-19T10:00:00+00:00", "window_seconds": 18000},
+    }
     usage_routes._save_usage_snapshot({"claude": good})
 
     merged = usage_routes._merge_usage_snapshot({"claude": {"error": "scope_insufficient"}})
 
     assert merged["claude"]["five_hour"]["resets_at"] == "2026-07-19T10:00:00+00:00"
     assert merged["snapshot_used"] == ["claude"]
+    assert merged["claude"]["live_error"] == {"error": "scope_insufficient"}
+
+
+def test_snapshot_preserves_current_auth_failure_and_clears_on_recovery(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(usage_routes, "_usage_snapshot_path", lambda: tmp_path / "usage.json")
+    good = {"provider": "claude", "five_hour": {"utilization": 8.0}}
+    usage_routes._save_usage_snapshot({"claude": good})
+    failure = {"error": "unauthorized", "message": "Token expired, re-login to Claude Code"}
+    merged = usage_routes._merge_usage_snapshot({"claude": failure})
+    assert merged["claude"]["five_hour"] == good["five_hour"]
+    assert merged["claude"]["live_error"] == failure
+    usage_routes._save_usage_snapshot(merged)
+
+    # A subsequent rate limit must replace the old auth failure, not keep the button.
+    limited = usage_routes._merge_usage_snapshot({"claude": {"error": "rate_limited"}})
+    assert limited["claude"]["live_error"] == {"error": "rate_limited"}
+    recovered = usage_routes._merge_usage_snapshot({"claude": good})
+    assert recovered["claude"] == good
+    assert "snapshot_used" not in recovered
 
 
 def test_refresh_claude_token_warns_when_profile_scope_dropped(tmp_path: Path, monkeypatch, caplog):
@@ -730,7 +762,9 @@ def test_refresh_claude_token_warns_when_profile_scope_dropped(tmp_path: Path, m
     monkeypatch.setattr(
         usage_routes.urllib.request,
         "urlopen",
-        lambda req, timeout=0, context=None: _FakeResponse({"access_token": "new", "expires_in": 3600, "scope": "user:inference"}),
+        lambda req, timeout=0, context=None: _FakeResponse(
+            {"access_token": "new", "expires_in": 3600, "scope": "user:inference"}
+        ),
     )
 
     with caplog.at_level(logging.WARNING):
@@ -751,3 +785,108 @@ def test_fetch_claude_usage_success_clears_backoff(monkeypatch):
 
     assert result["provider"] == "claude"
     assert "claude" not in usage_routes._RATE_LIMIT_UNTIL
+
+
+# ── Jev (TypeSafe System One prepaid credits) ───────────────────────────────
+
+
+def _jev_client(tmp_path: Path, monkeypatch, store: dict):
+    """Router with config load/save redirected into *store*."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from core.config import models as config_models
+
+    monkeypatch.setenv("JEV_USAGE_LEDGER_DIR", str(tmp_path / "ledger"))
+    monkeypatch.setenv("ANIMAWORKS_JEV_SECRETS_PATH", str(tmp_path / "no_secrets.py"))
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+
+    class _Config:
+        def __init__(self):
+            self.jev = store.get("jev", config_models.JevConfig())
+
+    def _load_config():
+        return _Config()
+
+    def _save_config(config):
+        store["jev"] = config.jev
+
+    monkeypatch.setattr(config_models, "load_config", _load_config)
+    monkeypatch.setattr(config_models, "save_config", _save_config)
+    usage_routes._CACHE.pop("jev", None)
+
+    app = FastAPI()
+    app.include_router(usage_routes.create_usage_router(), prefix="/api")
+    return TestClient(app)
+
+
+def test_jev_settings_put_stamps_the_reading_time(tmp_path: Path, monkeypatch):
+    store: dict = {}
+    client = _jev_client(tmp_path, monkeypatch, store)
+
+    res = client.put("/api/usage/jev/settings", json={"balance_usd": 20.0, "monthly_budget_usd": 5.0})
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["balance_usd"] == 20.0
+    assert body["monthly_budget_usd"] == 5.0
+    # A baseline is meaningless without the moment it was read.
+    assert body["balance_checked_at"]
+    assert store["jev"].balance_checked_at == body["balance_checked_at"]
+    assert body["usage"]["balance"]["balance_usd"] == 20.0
+
+
+def test_jev_settings_put_keeps_absent_fields(tmp_path: Path, monkeypatch):
+    from core.config.models import JevConfig
+
+    store = {"jev": JevConfig(balance_usd=8.0, balance_checked_at="2026-09-01T00:00:00+09:00")}
+    client = _jev_client(tmp_path, monkeypatch, store)
+
+    res = client.put("/api/usage/jev/settings", json={"monthly_budget_usd": 3.0})
+
+    assert res.status_code == 200
+    assert res.json()["balance_usd"] == 8.0
+    assert store["jev"].balance_checked_at == "2026-09-01T00:00:00+09:00"
+
+
+def test_jev_settings_put_clears_with_null(tmp_path: Path, monkeypatch):
+    from core.config.models import JevConfig
+
+    store = {"jev": JevConfig(balance_usd=8.0, monthly_budget_usd=2.0)}
+    client = _jev_client(tmp_path, monkeypatch, store)
+
+    res = client.put("/api/usage/jev/settings", json={"balance_usd": None, "monthly_budget_usd": None})
+
+    assert res.status_code == 200
+    assert res.json()["balance_usd"] is None
+    assert store["jev"].monthly_budget_usd is None
+
+
+def test_jev_settings_put_rejects_bad_numbers(tmp_path: Path, monkeypatch):
+    client = _jev_client(tmp_path, monkeypatch, {})
+
+    assert client.put("/api/usage/jev/settings", json={"balance_usd": -1}).status_code == 400
+    assert client.put("/api/usage/jev/settings", json={"monthly_budget_usd": "abc"}).status_code == 400
+    assert client.put("/api/usage/jev/settings", json={"balance_checked_at": "not-a-date"}).status_code == 400
+
+
+def test_jev_settings_put_invalidates_the_usage_cache(tmp_path: Path, monkeypatch):
+    client = _jev_client(tmp_path, monkeypatch, {})
+    usage_routes._set_cache("jev", {"provider": "jev", "month": {"budget_usd": None}})
+
+    client.put("/api/usage/jev/settings", json={"monthly_budget_usd": 4.0})
+
+    assert usage_routes._fetch_jev_usage()["month"]["budget_usd"] == 4.0
+
+
+def test_fetch_jev_usage_survives_a_broken_ledger(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        "core.jev_credits.build_status",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    usage_routes._CACHE.pop("jev", None)
+
+    result = usage_routes._fetch_jev_usage(skip_cache=True)
+
+    assert result["error"] == "fetch_failed"
+    assert "boom" in result["message"]
