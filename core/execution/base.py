@@ -23,6 +23,7 @@ from typing import Any, Protocol, runtime_checkable
 
 # ── Streaming error ──────────────────────────────────────────
 from core.exceptions import StreamDisconnectedError  # noqa: F401 – re-export
+from core.execution.events import stream_events
 from core.execution.reminder import SystemReminderQueue
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
@@ -806,6 +807,7 @@ class BaseExecutor(ABC):
         """
         ...
 
+    @stream_events
     async def execute_streaming(
         self,
         system_prompt: str,

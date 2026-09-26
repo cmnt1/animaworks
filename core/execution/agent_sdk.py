@@ -125,6 +125,7 @@ from core.execution.error_classifier import (
     guard_key,
     provider_family_of,
 )
+from core.execution.events import stream_events
 from core.execution.rate_guard import get_rate_guard
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.prompt.context import ContextTracker
@@ -642,6 +643,7 @@ class AgentSDKExecutor(SDKOptionsMixin, BaseExecutor):
 
     # ── Streaming execution ──────────────────────────────────
 
+    @stream_events
     async def execute_streaming(
         self,
         system_prompt: str,

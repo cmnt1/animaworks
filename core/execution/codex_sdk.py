@@ -48,8 +48,10 @@ from core.execution.error_classifier import (
     guard_key,
     provider_family_of,
 )
+from core.execution.events import stream_events
 from core.execution.rate_guard import get_rate_guard
 from core.execution.session_context import _resolve_session_type
+from core.execution.session_store import SessionRecord, SessionStore
 from core.execution.session_types import is_persistent_codex_session
 from core.memory.conversation.shortterm import ShortTermMemory
 from core.platform.codex import default_home_dir, get_codex_executable
@@ -384,29 +386,25 @@ def _default_path_env() -> str:
 
 
 def _thread_id_path(anima_dir: Path, session_type: str, chat_thread_id: str = "default") -> Path:
-    base = anima_dir / "shortterm" / session_type
-    if chat_thread_id != "default":
-        return base / chat_thread_id / "codex_thread_id.txt"
-    return base / "codex_thread_id.txt"
+    return SessionStore.path_for("codex", anima_dir, session_type, chat_thread_id)
 
 
 def _save_thread_id(anima_dir: Path, thread_id: str, session_type: str, chat_thread_id: str = "default") -> None:
-    p = _thread_id_path(anima_dir, session_type, chat_thread_id)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(thread_id, encoding="utf-8")
+    SessionStore(_thread_id_path(anima_dir, session_type, chat_thread_id)).write_text_record(
+        SessionRecord(thread_id),
+        with_turn_count=False,
+    )
 
 
 def _load_thread_id(anima_dir: Path, session_type: str, chat_thread_id: str = "default") -> str | None:
-    p = _thread_id_path(anima_dir, session_type, chat_thread_id)
-    if p.is_file():
-        tid = p.read_text(encoding="utf-8").strip()
-        return tid or None
-    return None
+    record = SessionStore(_thread_id_path(anima_dir, session_type, chat_thread_id)).read_text_record(
+        with_turn_count=False,
+    )
+    return record.session_id if record is not None else None
 
 
 def _clear_thread_id(anima_dir: Path, session_type: str, chat_thread_id: str = "default") -> None:
-    p = _thread_id_path(anima_dir, session_type, chat_thread_id)
-    p.unlink(missing_ok=True)
+    SessionStore(_thread_id_path(anima_dir, session_type, chat_thread_id)).clear()
 
 
 def clear_codex_thread_id(anima_dir: Path, session_type: str, chat_thread_id: str = "default") -> None:
@@ -2062,6 +2060,7 @@ class CodexSDKExecutor(BaseExecutor):
 
     # ── Streaming execution ──────────────────────────────────
 
+    @stream_events
     async def execute_streaming(
         self,
         system_prompt: str,
@@ -2115,7 +2114,7 @@ class CodexSDKExecutor(BaseExecutor):
             codex_thread_id = None
 
         prompt_bytes = len(system_prompt.encode("utf-8"))
-        if codex_thread_id and prompt_bytes > _RESUME_PROMPT_SIZE_LIMIT:
+        if codex_thread_id and SessionStore.prompt_size_exceeded(prompt_bytes, _RESUME_PROMPT_SIZE_LIMIT):
             logger.info(
                 "Skipping Codex resume (prompt=%d bytes > %d limit) to avoid LimitOverrunError; using fresh thread",
                 prompt_bytes,
