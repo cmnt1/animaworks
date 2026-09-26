@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -10,8 +11,7 @@ tools to prevent context bloat in Agent SDK sessions.
 
 from pathlib import Path
 
-
-from core.execution.agent_sdk import (
+from core.execution.engines.claude.agent_sdk import (
     _BASH_HEAD_BYTES,
     _BASH_TAIL_BYTES,
     _BASH_TRUNCATE_BYTES,
@@ -25,7 +25,6 @@ from core.execution.agent_sdk import (
     _guard_grep,
     _guard_read,
 )
-
 
 # ── _guard_bash tests ────────────────────────────────────────
 
@@ -204,7 +203,9 @@ class TestBuildOutputGuard:
     def test_read_dispatches(self, tmp_path: Path) -> None:
         """Read tool dispatches to _guard_read."""
         result = _build_output_guard(
-            "Read", {"file_path": "/f"}, tmp_path,
+            "Read",
+            {"file_path": "/f"},
+            tmp_path,
         )
         assert result is not None
         assert result["limit"] == _READ_DEFAULT_LIMIT
@@ -212,7 +213,9 @@ class TestBuildOutputGuard:
     def test_grep_dispatches(self, tmp_path: Path) -> None:
         """Grep tool dispatches to _guard_grep."""
         result = _build_output_guard(
-            "Grep", {"pattern": "x"}, tmp_path,
+            "Grep",
+            {"pattern": "x"},
+            tmp_path,
         )
         assert result is not None
         assert result["head_limit"] == _GREP_DEFAULT_HEAD_LIMIT
@@ -220,7 +223,9 @@ class TestBuildOutputGuard:
     def test_glob_dispatches(self, tmp_path: Path) -> None:
         """Glob tool dispatches to _guard_glob."""
         result = _build_output_guard(
-            "Glob", {"pattern": "*.py"}, tmp_path,
+            "Glob",
+            {"pattern": "*.py"},
+            tmp_path,
         )
         assert result is not None
         assert result["head_limit"] == _GLOB_DEFAULT_HEAD_LIMIT
@@ -228,35 +233,45 @@ class TestBuildOutputGuard:
     def test_write_returns_none(self, tmp_path: Path) -> None:
         """Write tool returns None (not guarded)."""
         result = _build_output_guard(
-            "Write", {"file_path": "/f", "content": "x"}, tmp_path,
+            "Write",
+            {"file_path": "/f", "content": "x"},
+            tmp_path,
         )
         assert result is None
 
     def test_edit_returns_none(self, tmp_path: Path) -> None:
         """Edit tool returns None (not guarded)."""
         result = _build_output_guard(
-            "Edit", {"file_path": "/f"}, tmp_path,
+            "Edit",
+            {"file_path": "/f"},
+            tmp_path,
         )
         assert result is None
 
     def test_unknown_tool_returns_none(self, tmp_path: Path) -> None:
         """Unknown tool returns None."""
         result = _build_output_guard(
-            "SomeOtherTool", {}, tmp_path,
+            "SomeOtherTool",
+            {},
+            tmp_path,
         )
         assert result is None
 
     def test_read_with_explicit_limit_returns_none(self, tmp_path: Path) -> None:
         """Read with explicit limit returns None (no modification needed)."""
         result = _build_output_guard(
-            "Read", {"file_path": "/f", "limit": 100}, tmp_path,
+            "Read",
+            {"file_path": "/f", "limit": 100},
+            tmp_path,
         )
         assert result is None
 
     def test_grep_with_explicit_head_limit_returns_none(self, tmp_path: Path) -> None:
         """Grep with explicit head_limit returns None."""
         result = _build_output_guard(
-            "Grep", {"pattern": "x", "head_limit": 50}, tmp_path,
+            "Grep",
+            {"pattern": "x", "head_limit": 50},
+            tmp_path,
         )
         assert result is None
 

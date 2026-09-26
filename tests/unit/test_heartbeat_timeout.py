@@ -180,7 +180,7 @@ class TestPreToolHookSoftTimeout:
 
     @pytest.mark.asyncio
     async def test_hook_injects_warning_on_expired(self, tmp_path, session_stats_expired):
-        from core.execution._sdk_hooks import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         hook = _build_pre_tool_hook(
             tmp_path,
@@ -204,7 +204,7 @@ class TestPreToolHookSoftTimeout:
 
     @pytest.mark.asyncio
     async def test_hook_no_warning_before_timeout(self, tmp_path, session_stats_not_expired):
-        from core.execution._sdk_hooks import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         hook = _build_pre_tool_hook(
             tmp_path,
@@ -219,7 +219,7 @@ class TestPreToolHookSoftTimeout:
 
     @pytest.mark.asyncio
     async def test_hook_no_warning_for_chat_trigger(self, tmp_path, session_stats_chat_trigger):
-        from core.execution._sdk_hooks import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         hook = _build_pre_tool_hook(
             tmp_path,

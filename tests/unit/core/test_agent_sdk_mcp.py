@@ -24,7 +24,7 @@ def _make_executor(
     extra_mcp_servers: dict[str, dict] | None = None,
 ) -> AgentSDKExecutor:
     """Create an AgentSDKExecutor with minimal config."""
-    from core.execution.agent_sdk import AgentSDKExecutor
+    from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
     mc = ModelConfig(model=model, api_key="test-key", extra_mcp_servers=extra_mcp_servers or {})
     return AgentSDKExecutor(model_config=mc, anima_dir=anima_dir)
@@ -396,19 +396,19 @@ class TestBashSendRemoved:
 
     def test_bash_send_re_not_on_module(self) -> None:
         """_BASH_SEND_RE attribute does NOT exist on the module."""
-        import core.execution.agent_sdk as mod
+        import core.execution.engines.claude.agent_sdk as mod
 
         assert not hasattr(mod, "_BASH_SEND_RE")
 
     def test_check_unconfirmed_sends_not_on_class(self) -> None:
         """_check_unconfirmed_sends method does NOT exist on AgentSDKExecutor."""
-        from core.execution.agent_sdk import AgentSDKExecutor
+        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
         assert not hasattr(AgentSDKExecutor, "_check_unconfirmed_sends")
 
     def test_pending_sends_not_in_pre_tool_hook_signature(self) -> None:
         """pending_sends is NOT in the _build_pre_tool_hook signature."""
-        from core.execution.agent_sdk import _build_pre_tool_hook
+        from core.execution.engines.claude.agent_sdk import _build_pre_tool_hook
 
         sig = inspect.signature(_build_pre_tool_hook)
         assert "pending_sends" not in sig.parameters
@@ -510,7 +510,7 @@ class TestMcpStatusLogging:
                     "claude_agent_sdk.types": mock_types,
                 },
             ),
-            patch("core.execution.agent_sdk.logger") as mock_logger,
+            patch("core.execution.engines.claude.agent_sdk.logger") as mock_logger,
         ):
             await executor.execute(prompt="hello", system_prompt="sys")
 
@@ -568,7 +568,7 @@ class TestMcpStatusLogging:
                     "claude_agent_sdk.types": mock_types,
                 },
             ),
-            patch("core.execution.agent_sdk.logger") as mock_logger,
+            patch("core.execution.engines.claude.agent_sdk.logger") as mock_logger,
         ):
             result = await executor.execute(prompt="hello", system_prompt="sys")
 
@@ -624,7 +624,7 @@ class TestMcpStatusLogging:
                     "claude_agent_sdk.types": mock_types,
                 },
             ),
-            patch("core.execution.agent_sdk.logger") as mock_logger,
+            patch("core.execution.engines.claude.agent_sdk.logger") as mock_logger,
         ):
             await executor.execute(prompt="hello", system_prompt="sys")
 

@@ -23,8 +23,8 @@ from core.agent.session_compactor import (
     run_idle_compaction,
 )
 from core.config.models import HeartbeatConfig
-from core.execution._sdk_session import _load_session_id
-from core.execution.codex_sdk import CodexSDKExecutor
+from core.execution.engines.claude._sdk_session import _load_session_id
+from core.execution.engines.codex.codex_sdk import CodexSDKExecutor
 from core.memory.conversation.compression import CompressionResult
 from core.schemas import ModelConfig
 
@@ -246,12 +246,12 @@ class TestCompactTimeoutSec:
     """COMPACT_TIMEOUT_SEC is independent from RESUME_TIMEOUT_SEC."""
 
     def test_compact_timeout_defined(self) -> None:
-        from core.execution._sdk_session import COMPACT_TIMEOUT_SEC
+        from core.execution.engines.claude._sdk_session import COMPACT_TIMEOUT_SEC
 
         assert COMPACT_TIMEOUT_SEC == 300.0
 
     def test_compact_timeout_independent_from_resume(self) -> None:
-        from core.execution._sdk_session import COMPACT_TIMEOUT_SEC, RESUME_TIMEOUT_SEC
+        from core.execution.engines.claude._sdk_session import COMPACT_TIMEOUT_SEC, RESUME_TIMEOUT_SEC
 
         assert COMPACT_TIMEOUT_SEC != RESUME_TIMEOUT_SEC
         assert COMPACT_TIMEOUT_SEC > RESUME_TIMEOUT_SEC
@@ -260,7 +260,7 @@ class TestCompactTimeoutSec:
         """compact_sdk_session source references COMPACT_TIMEOUT_SEC, not RESUME_TIMEOUT_SEC."""
         import inspect
 
-        from core.execution._sdk_session import compact_sdk_session
+        from core.execution.engines.claude._sdk_session import compact_sdk_session
 
         src = inspect.getsource(compact_sdk_session)
         assert "COMPACT_TIMEOUT_SEC" in src
@@ -275,7 +275,7 @@ class TestCompactSdkSessionLogLevel:
         import ast
         import inspect
 
-        from core.execution._sdk_session import compact_sdk_session
+        from core.execution.engines.claude._sdk_session import compact_sdk_session
 
         src = inspect.getsource(compact_sdk_session)
         tree = ast.parse(src)
@@ -513,7 +513,7 @@ class TestModeSpecificCompaction:
         """_compact_mode_c calls compress, shortterm save, clear_thread_id, finalize."""
         with (
             patch("core.memory.conversation.memory.ConversationMemory") as mock_conv_cls,
-            patch("core.execution.codex_sdk._clear_thread_id") as mock_clear,
+            patch("core.execution.engines.codex.codex_sdk._clear_thread_id") as mock_clear,
             patch("core.memory.conversation.shortterm.ShortTermMemory") as mock_stm_cls,
         ):
             mock_conv = MagicMock()

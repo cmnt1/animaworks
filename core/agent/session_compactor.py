@@ -149,7 +149,7 @@ class SessionCompactor:
         target = anima or self._sweep_anima
         if target is None:
             return
-        from core.execution._sdk_session import load_session_state, mark_session_swept
+        from core.execution.engines.claude._sdk_session import load_session_state, mark_session_swept
 
         state_dir = target.anima_dir / "state"
         prefix = "current_session_chat"
@@ -381,7 +381,7 @@ async def _compact_mode_s_shared(
     notes: str = "",
 ) -> bool:
     """Extract context, save shortterm, and discard a Mode S session."""
-    from core.execution._sdk_session import SESSION_TYPE_CHAT, _clear_session_id
+    from core.execution.engines.claude._sdk_session import SESSION_TYPE_CHAT, _clear_session_id
     from core.memory.conversation.shortterm import SessionState, ShortTermMemory
 
     logger.debug("_compact_mode_s: entry (anima=%s, thread=%s)", anima_name, thread_id)
@@ -461,7 +461,7 @@ async def _compact_mode_b(anima: DigitalAnima, thread_id: str) -> dict[str, Any]
 
 async def _compact_mode_c(anima: DigitalAnima, thread_id: str) -> dict[str, Any]:
     """Mode C: conversation compress + shortterm save + codex thread discard."""
-    from core.execution.codex_sdk import _clear_thread_id
+    from core.execution.engines.codex.codex_sdk import _clear_thread_id
     from core.memory.conversation.memory import ConversationMemory
     from core.memory.conversation.shortterm import SessionState, ShortTermMemory
     from core.time_utils import now_local

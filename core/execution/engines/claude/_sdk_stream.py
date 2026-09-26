@@ -314,8 +314,12 @@ async def process_stream_messages(
     Extracted from ``AgentSDKExecutor.execute_streaming`` inner
     ``_stream_messages`` to keep the executor class thin.
     """
-    from core.execution._sdk_interrupt import _graceful_interrupt_stream
-    from core.execution._sdk_session import _RESUMABLE_SESSION_TYPES, _build_sdk_query_input, _save_session_id
+    from core.execution.engines.claude._sdk_interrupt import _graceful_interrupt_stream
+    from core.execution.engines.claude._sdk_session import (
+        _RESUMABLE_SESSION_TYPES,
+        _build_sdk_query_input,
+        _save_session_id,
+    )
 
     got_stream_event = False
     _in_thinking_block = False

@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from core.execution.agent_sdk import AgentSDKExecutor
+from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 from core.schemas import ModelConfig
 
 # ── _build_env() ─────────────────────────────────────────
@@ -32,9 +32,7 @@ class TestBuildEnvPathAndProjectDir:
 
         assert "PATH" in env
         path_entries = env["PATH"].split(":")
-        assert str(anima_dir) == path_entries[0], (
-            "anima_dir must be the first entry in PATH"
-        )
+        assert str(anima_dir) == path_entries[0], "anima_dir must be the first entry in PATH"
 
     def test_system_path_preserved(self, tmp_path: Path) -> None:
         """System PATH entries should be preserved after anima_dir."""

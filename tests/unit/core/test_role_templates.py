@@ -31,7 +31,7 @@ from core.config.models import (
     invalidate_cache,
     resolve_anima_config,
 )
-from core.execution.agent_sdk import _PROTECTED_FILES
+from core.execution.engines.claude.agent_sdk import _PROTECTED_FILES
 
 # ── Fixtures ─────────────────────────────────────────────────────
 
@@ -827,7 +827,7 @@ class TestReadSpecialtyPrompt:
 
 
 class TestProtectedFiles:
-    """Tests for _PROTECTED_FILES in core/execution/agent_sdk.py."""
+    """Tests for _PROTECTED_FILES in core/execution/engines/claude/agent_sdk.py."""
 
     def test_specialty_prompt_not_protected(self) -> None:
         """specialty_prompt.md is intentionally NOT protected (Animas can evolve)."""

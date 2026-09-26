@@ -30,7 +30,7 @@ class TestPostToolUseActionAttachment:
     async def test_mcp_tool_rule_attached_only_handler_side(self, anima_dir, monkeypatch):
         """MCP aw tools attach ACTION-RULE bodies handler-side, so PostToolUse
         must NOT add them again (single attachment)."""
-        from core.execution._sdk_hooks import _build_post_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_post_tool_hook
         from core.tooling import action_gate
 
         monkeypatch.setattr(
@@ -56,7 +56,7 @@ class TestPostToolUseActionAttachment:
 
     @pytest.mark.asyncio
     async def test_action_tool_with_no_rules_returns_empty(self, anima_dir, monkeypatch):
-        from core.execution._sdk_hooks import _build_post_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_post_tool_hook
         from core.tooling import action_gate
 
         monkeypatch.setattr(action_gate, "_search_action_rules", lambda *args, **kwargs: [])
@@ -71,7 +71,7 @@ class TestPostToolUseActionAttachment:
 
     @pytest.mark.asyncio
     async def test_non_action_tool_returns_empty(self, anima_dir):
-        from core.execution._sdk_hooks import _build_post_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_post_tool_hook
 
         hook = _build_post_tool_hook(anima_dir)
         result = await hook(
@@ -83,7 +83,7 @@ class TestPostToolUseActionAttachment:
 
     @pytest.mark.asyncio
     async def test_search_error_fails_open_to_empty(self, anima_dir, monkeypatch):
-        from core.execution._sdk_hooks import _build_post_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_post_tool_hook
         from core.tooling import action_gate
 
         def raise_search(*args, **kwargs):
@@ -102,7 +102,7 @@ class TestPostToolUseActionAttachment:
     @pytest.mark.asyncio
     async def test_write_edit_still_runs(self, anima_dir):
         """The original Write/Edit frontmatter path still fires for knowledge files."""
-        from core.execution._sdk_hooks import _build_post_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_post_tool_hook
 
         (anima_dir / "knowledge" / "topic.md").write_text("# H1", encoding="utf-8")
         hook = _build_post_tool_hook(anima_dir)

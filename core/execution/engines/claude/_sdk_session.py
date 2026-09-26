@@ -468,7 +468,7 @@ async def compact_sdk_session(
     try:
         from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 
-        from core.execution._sdk_options import _resolve_sdk_cli_path
+        from core.execution.engines.claude._sdk_options import _resolve_sdk_cli_path
 
         _cli = _resolve_sdk_cli_path()
         options = ClaudeAgentOptions(

@@ -41,14 +41,13 @@ _mock_types.HookContext = dict
 sys.modules.setdefault("claude_agent_sdk", _mock_sdk)
 sys.modules.setdefault("claude_agent_sdk.types", _mock_types)
 
-from core.execution.agent_sdk import (  # noqa: E402
-    _build_pre_tool_hook,
+from core.execution.base import ExecutionResult  # noqa: E402
+from core.execution.engines.claude.agent_sdk import (  # noqa: E402
     _CONTEXT_AUTOCOMPACT_SAFETY,
+    _build_pre_tool_hook,
     _tool_result_content_len,
 )
-from core.execution.base import ExecutionResult  # noqa: E402
 from core.prompt.context import CHARS_PER_TOKEN, ContextTracker  # noqa: E402
-
 
 # ── Fixtures ─────────────────────────────────────────────────
 
@@ -58,8 +57,13 @@ def anima_dir(tmp_path: Path) -> Path:
     """Create a minimal anima directory structure."""
     d = tmp_path / "animas" / "test-autocompact"
     for sub in (
-        "state", "episodes", "knowledge", "procedures",
-        "skills", "shortterm", "activity_log",
+        "state",
+        "episodes",
+        "knowledge",
+        "procedures",
+        "skills",
+        "shortterm",
+        "activity_log",
     ):
         (d / sub).mkdir(parents=True)
     (d / "identity.md").write_text("# Test Anima", encoding="utf-8")
@@ -161,7 +165,8 @@ class TestPreToolHookContextAutoCompact:
 
     @pytest.mark.asyncio
     async def test_security_checks_still_work_after_budget_check(
-        self, anima_dir: Path,
+        self,
+        anima_dir: Path,
     ):
         """Write path security check still blocks even when budget is fine."""
         session_stats = _make_session_stats(
@@ -214,7 +219,8 @@ class TestPreToolHookContextAutoCompact:
 
     @pytest.mark.asyncio
     async def test_result_bytes_accumulation_logs_budget_warning(
-        self, anima_dir: Path,
+        self,
+        anima_dir: Path,
     ):
         """Large total_result_bytes triggers budget observation but allows tool call."""
         max_tokens = 4096
@@ -242,7 +248,8 @@ class TestPreToolHookContextAutoCompact:
 
     @pytest.mark.asyncio
     async def test_multiple_calls_accumulate_tool_call_count(
-        self, anima_dir: Path,
+        self,
+        anima_dir: Path,
     ):
         """Each hook call increments tool_call_count."""
         session_stats = _make_session_stats(system_prompt_tokens=100)
@@ -270,14 +277,14 @@ class TestSessionStatsAccumulation:
 
     def test_tool_result_content_len_with_list_content(self):
         """_tool_result_content_len correctly sums list content text lengths."""
-        block = SimpleNamespace(content=[
-            {"text": "line 1 of output\n"},
-            {"text": "line 2 of output\n"},
-            {"text": "line 3 of output\n"},
-        ])
-        expected = sum(
-            len(t["text"]) for t in block.content
+        block = SimpleNamespace(
+            content=[
+                {"text": "line 1 of output\n"},
+                {"text": "line 2 of output\n"},
+                {"text": "line 3 of output\n"},
+            ]
         )
+        expected = sum(len(t["text"]) for t in block.content)
         assert _tool_result_content_len(block) == expected
 
     def test_tool_result_content_len_with_string_content(self):
@@ -299,10 +306,12 @@ class TestSessionStatsAccumulation:
             SimpleNamespace(content="A" * 10_000),
             SimpleNamespace(content=[{"text": "B" * 5_000}]),
             SimpleNamespace(content="C" * 20_000),
-            SimpleNamespace(content=[
-                {"text": "D" * 3_000},
-                {"text": "E" * 7_000},
-            ]),
+            SimpleNamespace(
+                content=[
+                    {"text": "D" * 3_000},
+                    {"text": "E" * 7_000},
+                ]
+            ),
         ]
 
         for block in blocks:
@@ -323,11 +332,7 @@ class TestSessionStatsAccumulation:
         user_prompt_tokens = 2_000
         total_result_bytes = 200_000
 
-        estimated = (
-            system_prompt_tokens
-            + user_prompt_tokens
-            + total_result_bytes // CHARS_PER_TOKEN
-        )
+        estimated = system_prompt_tokens + user_prompt_tokens + total_result_bytes // CHARS_PER_TOKEN
         assert estimated == 5_000 + 2_000 + 50_000
         assert estimated == 57_000
 
@@ -556,14 +561,14 @@ class TestAutoCompactBoundaryConditions:
         """Verify the budget formula matches the implementation."""
         test_cases = [
             # (max_tokens, context_window, system_prompt_tokens, user_prompt_tokens, total_bytes, should_trigger)
-            (4096, 200_000, 191_808, 0, 0, False),    # remaining == budget exactly
-            (4096, 200_000, 191_809, 0, 0, True),      # remaining == budget - 1
-            (512, 8_000, 6_976, 0, 0, False),          # 8K: remaining == 8000-6976=1024 == budget
-            (512, 8_000, 6_977, 0, 0, True),           # 8K: remaining == 8000-6977=1023 < 1024
-            (8192, 200_000, 183_616, 0, 0, False),     # large max_tokens: remaining==16384
-            (8192, 200_000, 183_617, 0, 0, True),      # large max_tokens: remaining==16383
+            (4096, 200_000, 191_808, 0, 0, False),  # remaining == budget exactly
+            (4096, 200_000, 191_809, 0, 0, True),  # remaining == budget - 1
+            (512, 8_000, 6_976, 0, 0, False),  # 8K: remaining == 8000-6976=1024 == budget
+            (512, 8_000, 6_977, 0, 0, True),  # 8K: remaining == 8000-6977=1023 < 1024
+            (8192, 200_000, 183_616, 0, 0, False),  # large max_tokens: remaining==16384
+            (8192, 200_000, 183_617, 0, 0, True),  # large max_tokens: remaining==16383
             (4096, 200_000, 190_000, 1_808, 0, False),  # user_prompt contributes to boundary
-            (4096, 200_000, 190_000, 1_809, 0, True),   # user_prompt pushes over boundary
+            (4096, 200_000, 190_000, 1_809, 0, True),  # user_prompt pushes over boundary
         ]
 
         for max_tokens, cw, spt, upt, total_bytes, expected in test_cases:

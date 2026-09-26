@@ -19,48 +19,48 @@ class TestExtractSdkPid:
     """Tests for _extract_sdk_pid helper."""
 
     def test_returns_pid_from_valid_client(self) -> None:
-        from core.execution.agent_sdk import _extract_sdk_pid
+        from core.execution.engines.claude.agent_sdk import _extract_sdk_pid
 
         client = MagicMock()
         client._transport._process.pid = 12345
         assert _extract_sdk_pid(client) == 12345
 
     def test_returns_none_when_no_transport(self) -> None:
-        from core.execution.agent_sdk import _extract_sdk_pid
+        from core.execution.engines.claude.agent_sdk import _extract_sdk_pid
 
         client = MagicMock(spec=[])
         assert _extract_sdk_pid(client) is None
 
     def test_returns_none_when_transport_is_none(self) -> None:
-        from core.execution.agent_sdk import _extract_sdk_pid
+        from core.execution.engines.claude.agent_sdk import _extract_sdk_pid
 
         client = MagicMock()
         client._transport = None
         assert _extract_sdk_pid(client) is None
 
     def test_returns_none_when_process_is_none(self) -> None:
-        from core.execution.agent_sdk import _extract_sdk_pid
+        from core.execution.engines.claude.agent_sdk import _extract_sdk_pid
 
         client = MagicMock()
         client._transport._process = None
         assert _extract_sdk_pid(client) is None
 
     def test_returns_none_when_pid_is_zero(self) -> None:
-        from core.execution.agent_sdk import _extract_sdk_pid
+        from core.execution.engines.claude.agent_sdk import _extract_sdk_pid
 
         client = MagicMock()
         client._transport._process.pid = 0
         assert _extract_sdk_pid(client) is None
 
     def test_returns_none_when_pid_is_negative(self) -> None:
-        from core.execution.agent_sdk import _extract_sdk_pid
+        from core.execution.engines.claude.agent_sdk import _extract_sdk_pid
 
         client = MagicMock()
         client._transport._process.pid = -1
         assert _extract_sdk_pid(client) is None
 
     def test_returns_none_on_exception(self) -> None:
-        from core.execution.agent_sdk import _extract_sdk_pid
+        from core.execution.engines.claude.agent_sdk import _extract_sdk_pid
 
         client = MagicMock()
         type(client)._transport = property(lambda self: (_ for _ in ()).throw(RuntimeError("boom")))
@@ -74,71 +74,71 @@ class TestKillSdkProcess:
     """Tests for _kill_sdk_process helper."""
 
     def test_noop_when_pid_is_none(self) -> None:
-        from core.execution.agent_sdk import _kill_sdk_process
+        from core.execution.engines.claude.agent_sdk import _kill_sdk_process
 
         _kill_sdk_process(None, None)
 
     def test_noop_when_process_not_found(self) -> None:
-        from core.execution.agent_sdk import _kill_sdk_process
+        from core.execution.engines.claude.agent_sdk import _kill_sdk_process
 
-        with patch("core.execution.agent_sdk.psutil.Process", side_effect=psutil.NoSuchProcess(99999)):
+        with patch("core.execution.engines.claude.agent_sdk.psutil.Process", side_effect=psutil.NoSuchProcess(99999)):
             _kill_sdk_process(99999, None)
 
     def test_skips_kill_on_pid_reuse(self) -> None:
-        from core.execution.agent_sdk import _kill_sdk_process
+        from core.execution.engines.claude.agent_sdk import _kill_sdk_process
 
         mock_proc = MagicMock()
         mock_proc.create_time.return_value = 1000.0
         mock_proc.name.return_value = "claude"
         mock_proc.children.return_value = []
 
-        with patch("core.execution.agent_sdk.psutil.Process", return_value=mock_proc):
+        with patch("core.execution.engines.claude.agent_sdk.psutil.Process", return_value=mock_proc):
             _kill_sdk_process(123, 900.0)
 
         mock_proc.kill.assert_not_called()
 
     def test_kills_process_when_create_time_matches(self) -> None:
-        from core.execution.agent_sdk import _kill_sdk_process
+        from core.execution.engines.claude.agent_sdk import _kill_sdk_process
 
         mock_proc = MagicMock()
         mock_proc.create_time.return_value = 1000.5
         mock_proc.name.return_value = "claude"
         mock_proc.children.return_value = []
 
-        with patch("core.execution.agent_sdk.psutil.Process", return_value=mock_proc):
+        with patch("core.execution.engines.claude.agent_sdk.psutil.Process", return_value=mock_proc):
             _kill_sdk_process(123, 1000.0)
 
         mock_proc.terminate.assert_called_once()
         mock_proc.kill.assert_not_called()
 
     def test_kills_process_without_create_time_check(self) -> None:
-        from core.execution.agent_sdk import _kill_sdk_process
+        from core.execution.engines.claude.agent_sdk import _kill_sdk_process
 
         mock_proc = MagicMock()
         mock_proc.name.return_value = "node"
         mock_proc.children.return_value = []
 
-        with patch("core.execution.agent_sdk.psutil.Process", return_value=mock_proc):
+        with patch("core.execution.engines.claude.agent_sdk.psutil.Process", return_value=mock_proc):
             _kill_sdk_process(123, None)
 
         mock_proc.terminate.assert_called_once()
         mock_proc.kill.assert_not_called()
 
     def test_skips_non_claude_process(self) -> None:
-        from core.execution.agent_sdk import _kill_sdk_process
+        from core.execution.engines.claude.agent_sdk import _kill_sdk_process
 
         mock_proc = MagicMock()
         mock_proc.create_time.return_value = 1000.0
         mock_proc.name.return_value = "python3"
         mock_proc.children.return_value = []
 
-        with patch("core.execution.agent_sdk.psutil.Process", return_value=mock_proc):
+        with patch("core.execution.engines.claude.agent_sdk.psutil.Process", return_value=mock_proc):
             _kill_sdk_process(123, 1000.0)
 
         mock_proc.kill.assert_not_called()
 
     def test_terminates_children_recursively(self) -> None:
-        from core.execution.agent_sdk import _kill_sdk_process
+        from core.execution.engines.claude.agent_sdk import _kill_sdk_process
 
         child1 = MagicMock()
         child1.pid = 200
@@ -150,7 +150,7 @@ class TestKillSdkProcess:
         mock_proc.name.return_value = "claude"
         mock_proc.children.return_value = [child1, child2]
 
-        with patch("core.execution.agent_sdk.psutil.Process", return_value=mock_proc):
+        with patch("core.execution.engines.claude.agent_sdk.psutil.Process", return_value=mock_proc):
             _kill_sdk_process(123, 1000.0)
 
         child1.terminate.assert_called_once()
@@ -158,7 +158,7 @@ class TestKillSdkProcess:
         mock_proc.terminate.assert_called_once()
 
     def test_handles_child_already_dead(self) -> None:
-        from core.execution.agent_sdk import _kill_sdk_process
+        from core.execution.engines.claude.agent_sdk import _kill_sdk_process
 
         child = MagicMock()
         child.pid = 200
@@ -169,7 +169,7 @@ class TestKillSdkProcess:
         mock_proc.name.return_value = "claude"
         mock_proc.children.return_value = [child]
 
-        with patch("core.execution.agent_sdk.psutil.Process", return_value=mock_proc):
+        with patch("core.execution.engines.claude.agent_sdk.psutil.Process", return_value=mock_proc):
             _kill_sdk_process(123, 1000.0)
 
         mock_proc.terminate.assert_called_once()

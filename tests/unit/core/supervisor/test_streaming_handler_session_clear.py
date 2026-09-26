@@ -67,7 +67,7 @@ class TestSessionPreservedOnDoneFalse:
         with (
             patch("core.config.load_config") as mock_config,
             patch(
-                "core.execution._sdk_session._clear_session_id",
+                "core.execution.engines.claude._sdk_session._clear_session_id",
                 side_effect=fake_clear_session_id,
             ),
             patch("core.memory.conversation.shortterm.ShortTermMemory") as mock_stm_class,
@@ -161,7 +161,7 @@ class TestSessionPreservedOnTimeoutError:
         with (
             patch("core.config.load_config") as mock_config,
             patch(
-                "core.execution._sdk_session._clear_session_id",
+                "core.execution.engines.claude._sdk_session._clear_session_id",
                 side_effect=fake_clear_session_id,
             ),
             patch("core.memory.conversation.shortterm.ShortTermMemory"),
@@ -223,7 +223,7 @@ class TestSessionPreservedOnException:
         with (
             patch("core.config.load_config") as mock_config,
             patch(
-                "core.execution._sdk_session._clear_session_id",
+                "core.execution.engines.claude._sdk_session._clear_session_id",
                 side_effect=fake_clear_session_id,
             ),
             patch("core.memory.conversation.shortterm.ShortTermMemory"),
@@ -316,7 +316,7 @@ class TestNoSessionClearOnSuccess:
         with (
             patch("core.config.load_config") as mock_config,
             patch(
-                "core.execution._sdk_session._clear_session_id",
+                "core.execution.engines.claude._sdk_session._clear_session_id",
                 side_effect=fake_clear_session_id,
             ),
             patch("core.memory.conversation.shortterm.ShortTermMemory"),

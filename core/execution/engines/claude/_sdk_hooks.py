@@ -25,13 +25,13 @@ from pathlib import Path
 from typing import Any
 
 from core.execution._sanitize import TOOL_TRUST_LEVELS
-from core.execution._sdk_security import (
+from core.execution.engines.claude._sdk_security import (
     _build_output_guard,
     _check_a1_bash_command,
     _check_a1_file_access,
 )
-from core.execution._sdk_session import _CONTEXT_AUTOCOMPACT_SAFETY
-from core.execution._sdk_stream import _log_tool_use
+from core.execution.engines.claude._sdk_session import _CONTEXT_AUTOCOMPACT_SAFETY
+from core.execution.engines.claude._sdk_stream import _log_tool_use
 from core.prompt.context import CHARS_PER_TOKEN
 from core.tooling.schemas import submit_tasks_enabled_for_trigger
 

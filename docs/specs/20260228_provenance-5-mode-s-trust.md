@@ -10,7 +10,7 @@
 
 ### Current State
 
-- Mode A（LiteLLM）/ Mode B（Assisted）では `wrap_tool_result()` がツール結果に trust タグを付与する — `core/execution/litellm_loop.py:319`, `core/execution/assisted.py:573`
+- Mode A（LiteLLM）/ Mode B（Assisted）では `wrap_tool_result()` がツール結果に trust タグを付与する — `core/execution/engines/litellm/litellm_loop.py:319`, `core/execution/assisted.py:573`
 - Mode S（Agent SDK + MCP）では `core/mcp/server.py` の `call_tool()` が `handler.handle()` の生の出力をそのまま返しており、`wrap_tool_result()` を通さない — `core/mcp/server.py:498-499`
 
 ```python
@@ -134,6 +134,6 @@ MCP サーバーのツール結果パスに `wrap_tool_result()` が組み込ま
 - `core/mcp/server.py:456-514` — call_tool() 関数
 - `core/mcp/server.py:498-499` — 現在のラップなしの結果返却
 - `core/execution/_sanitize.py:70-84` — wrap_tool_result()
-- `core/execution/litellm_loop.py:319` — Mode A でのラップ処理（参考）
+- `core/execution/engines/litellm/litellm_loop.py:319` — Mode A でのラップ処理（参考）
 - `core/execution/assisted.py:573` — Mode B でのラップ処理（参考）
 - セキュリティ検証チャット — Mode S ラベル欠落の発見

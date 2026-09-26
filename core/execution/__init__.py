@@ -21,36 +21,36 @@ Each engine implements one execution mode:
 # AgentSDKExecutor requires claude_agent_sdk which may not be installed.
 # Import it lazily so the rest of the package works regardless.
 try:
-    from core.execution.agent_sdk import AgentSDKExecutor
+    from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 except ImportError:  # pragma: no cover
     AgentSDKExecutor = None  # type: ignore[assignment,misc]
 
 # CodexSDKExecutor requires openai_codex (optional dependency).
 try:
-    from core.execution.codex_sdk import CodexSDKExecutor
+    from core.execution.engines.codex.codex_sdk import CodexSDKExecutor
 except ImportError:  # pragma: no cover
     CodexSDKExecutor = None  # type: ignore[assignment,misc]
 
 # CursorAgentExecutor requires cursor-agent CLI (optional).
 try:
-    from core.execution.cursor_agent import CursorAgentExecutor
+    from core.execution.engines.cursor.cursor_agent import CursorAgentExecutor
 except ImportError:  # pragma: no cover
     CursorAgentExecutor = None  # type: ignore[assignment,misc]
 
 # GeminiCLIExecutor requires gemini CLI (optional).
 try:
-    from core.execution.gemini_cli import GeminiCLIExecutor
+    from core.execution.engines.gemini.gemini_cli import GeminiCLIExecutor
 except ImportError:  # pragma: no cover
     GeminiCLIExecutor = None  # type: ignore[assignment,misc]
 
 # GrokCLIExecutor requires grok CLI (optional).
 try:
-    from core.execution.grok_cli import GrokCLIExecutor
+    from core.execution.engines.grok.grok_cli import GrokCLIExecutor
 except ImportError:  # pragma: no cover
     GrokCLIExecutor = None  # type: ignore[assignment,misc]
 
 from core.execution.base import BaseExecutor, ExecutionResult
-from core.execution.litellm_loop import LiteLLMExecutor
+from core.execution.engines.litellm.litellm_loop import LiteLLMExecutor
 
 __all__ = [
     "AgentSDKExecutor",

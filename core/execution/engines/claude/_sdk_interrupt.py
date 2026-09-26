@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     except ImportError:
         pass
 
-from core.execution._sdk_session import (
+from core.execution.engines.claude._sdk_session import (
     _RESUMABLE_SESSION_TYPES,
     INTERRUPT_TIMEOUT_SEC,
     _save_session_id,

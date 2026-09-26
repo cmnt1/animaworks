@@ -82,7 +82,7 @@ class TestAgentSDKEnvE2E:
         )
 
         with patch_agent_sdk():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=config, anima_dir=anima_dir)
             env = executor._build_env()
@@ -105,7 +105,7 @@ class TestAgentSDKEnvE2E:
         )
 
         with patch_agent_sdk():
-            from core.execution.agent_sdk import AgentSDKExecutor
+            from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
             executor = AgentSDKExecutor(model_config=config, anima_dir=anima_dir)
             env = executor._build_env()

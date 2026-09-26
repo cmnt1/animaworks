@@ -70,7 +70,7 @@ def _common_patches(*, spy_clear=None, retry_max=2):
         patch("core.agent.agent_core.AgentCore._preflight_size_check"),
         patch("core.agent.agent_core.AgentCore._load_stream_retry_config"),
         patch("core.agent.cycle._save_prompt_log"),
-        patch("core.execution._sdk_session._clear_session_id", side_effect=clear_side_effect),
+        patch("core.execution.engines.claude._sdk_session._clear_session_id", side_effect=clear_side_effect),
         patch("core.agent.agent_core.AgentCore._run_priming", new_callable=AsyncMock, return_value=("", "")),
     ]
 
@@ -120,7 +120,7 @@ class TestRetryFreshSession:
             patch("core.agent.agent_core.AgentCore._preflight_size_check") as mock_preflight,
             patch("core.agent.agent_core.AgentCore._load_stream_retry_config") as mock_retry_cfg,
             patch("core.agent.cycle._save_prompt_log"),
-            patch("core.execution._sdk_session._clear_session_id", side_effect=_spy_clear),
+            patch("core.execution.engines.claude._sdk_session._clear_session_id", side_effect=_spy_clear),
             patch("core.agent.agent_core.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
         ):
             mock_preflight.return_value = ("mocked system prompt", "test prompt")
@@ -174,7 +174,7 @@ class TestRetryFreshSession:
             patch("core.agent.agent_core.AgentCore._preflight_size_check") as mock_preflight,
             patch("core.agent.agent_core.AgentCore._load_stream_retry_config") as mock_retry_cfg,
             patch("core.agent.cycle._save_prompt_log"),
-            patch("core.execution._sdk_session._clear_session_id"),
+            patch("core.execution.engines.claude._sdk_session._clear_session_id"),
             patch("core.agent.agent_core.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
         ):
             mock_preflight.return_value = ("mocked system prompt", "test prompt")
@@ -232,7 +232,7 @@ class TestRetryFreshSession:
             patch("core.agent.agent_core.AgentCore._preflight_size_check") as mock_preflight,
             patch("core.agent.agent_core.AgentCore._load_stream_retry_config") as mock_retry_cfg,
             patch("core.agent.cycle._save_prompt_log"),
-            patch("core.execution._sdk_session._clear_session_id", side_effect=_spy_clear),
+            patch("core.execution.engines.claude._sdk_session._clear_session_id", side_effect=_spy_clear),
             patch("core.agent.agent_core.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
         ):
             mock_preflight.return_value = ("mocked system prompt", "test prompt")
@@ -283,7 +283,7 @@ class TestRetryExhausted:
             patch("core.agent.agent_core.AgentCore._preflight_size_check") as mock_preflight,
             patch("core.agent.agent_core.AgentCore._load_stream_retry_config") as mock_retry_cfg,
             patch("core.agent.cycle._save_prompt_log"),
-            patch("core.execution._sdk_session._clear_session_id"),
+            patch("core.execution.engines.claude._sdk_session._clear_session_id"),
             patch("core.agent.agent_core.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
         ):
             mock_preflight.return_value = ("mocked system prompt", "test prompt")
@@ -355,7 +355,7 @@ class TestTerminalErrorChunk:
             patch("core.agent.agent_core.AgentCore._preflight_size_check") as mock_preflight,
             patch("core.agent.agent_core.AgentCore._load_stream_retry_config") as mock_retry_cfg,
             patch("core.agent.cycle._save_prompt_log"),
-            patch("core.execution.codex_sdk.clear_codex_thread_ids") as mock_clear,
+            patch("core.execution.engines.codex.codex_sdk.clear_codex_thread_ids") as mock_clear,
             patch("core.agent.agent_core.AgentCore._run_priming", new_callable=AsyncMock) as mock_priming,
         ):
             mock_preflight.return_value = ("mocked system prompt", "test prompt")

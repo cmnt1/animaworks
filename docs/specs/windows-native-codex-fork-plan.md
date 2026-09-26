@@ -125,7 +125,7 @@ plus propagation of the shared `~/.codex/auth.json`.
 
 Primary files:
 
-- `core/execution/codex_sdk.py`
+- `core/execution/engines/codex/codex_sdk.py`
 - `README.md`
 
 Completed in this branch:

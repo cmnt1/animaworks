@@ -30,12 +30,12 @@ if TYPE_CHECKING:
     except ImportError:
         pass
 
-from core.execution._sdk_hooks import (
+from core.execution.engines.claude._sdk_hooks import (
     _build_post_tool_hook,
     _build_pre_compact_hook,
     _build_pre_tool_hook,
 )
-from core.execution._sdk_session import (
+from core.execution.engines.claude._sdk_session import (
     _PROMPT_FILE_THRESHOLD,
     _SDK_MAX_BUFFER_SIZE,
     _is_debug_superuser,

@@ -106,7 +106,7 @@ class TestOnContextOverflow:
 
 
 def _make_mixin(model: str = "openai/deepseek-v4-flash", thinking: bool | None = True, effort: str | None = "high"):
-    from core.execution._litellm_context import ContextMixin
+    from core.execution.engines.litellm._litellm_context import ContextMixin
 
     obj = ContextMixin()
     obj._model_config = SimpleNamespace(

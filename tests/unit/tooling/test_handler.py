@@ -1178,7 +1178,7 @@ class TestInjectionRe:
         anima_dir: Path,
     ):
         from core.config.global_permissions import GlobalPermissionsCache
-        from core.execution._sdk_security import _check_a1_bash_command
+        from core.execution.engines.claude._sdk_security import _check_a1_bash_command
 
         config = GlobalPermissionsCache.get().config
         assert config is not None

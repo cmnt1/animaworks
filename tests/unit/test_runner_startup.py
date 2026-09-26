@@ -26,7 +26,7 @@ def _isolate_process_global_tool_executors(monkeypatch: pytest.MonkeyPatch) -> N
     """
 
     monkeypatch.setattr(
-        "core.execution._litellm_tools.shutdown_tool_executors",
+        "core.execution.engines.litellm._litellm_tools.shutdown_tool_executors",
         MagicMock(),
     )
 

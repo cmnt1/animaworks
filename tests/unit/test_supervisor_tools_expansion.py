@@ -889,7 +889,7 @@ class TestSdkHooksDescendantManagementFiles:
     """_cache_subordinate_paths should include grandchild management files."""
 
     def test_grandchild_mgmt_files_in_cache(self, tmp_path):
-        from core.execution._sdk_hooks import _cache_subordinate_paths
+        from core.execution.engines.claude._sdk_hooks import _cache_subordinate_paths
 
         animas_dir = tmp_path / "animas"
         sakura_dir = animas_dir / "sakura"
@@ -918,7 +918,7 @@ class TestSdkHooksDescendantManagementFiles:
         assert mgmt_names == {"cron.md", "heartbeat.md", "status.json", "injection.md"}
 
     def test_direct_child_mgmt_files_still_present(self, tmp_path):
-        from core.execution._sdk_hooks import _cache_subordinate_paths
+        from core.execution.engines.claude._sdk_hooks import _cache_subordinate_paths
 
         animas_dir = tmp_path / "animas"
         sakura_dir = animas_dir / "sakura"

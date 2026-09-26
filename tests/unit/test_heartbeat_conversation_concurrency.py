@@ -326,18 +326,18 @@ class TestSessionFilesSeparation:
     """Verify session ID files are correctly separated by session type."""
 
     def test_session_file_chat(self) -> None:
-        from core.execution.agent_sdk import _session_file
+        from core.execution.engines.claude.agent_sdk import _session_file
 
         assert _session_file("chat") == "current_session_chat.json"
 
     def test_session_file_heartbeat(self) -> None:
-        from core.execution.agent_sdk import _session_file
+        from core.execution.engines.claude.agent_sdk import _session_file
 
         assert _session_file("heartbeat") == "current_session_heartbeat.json"
 
     def test_load_save_independent(self, tmp_path: Path) -> None:
         """Chat and heartbeat session IDs should not interfere."""
-        from core.execution.agent_sdk import _load_session_id, _save_session_id
+        from core.execution.engines.claude.agent_sdk import _load_session_id, _save_session_id
 
         anima_dir = tmp_path / "test-anima"
         (anima_dir / "state").mkdir(parents=True)

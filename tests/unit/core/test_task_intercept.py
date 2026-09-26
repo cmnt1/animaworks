@@ -24,13 +24,15 @@ class TestPreToolHookTaskBranch:
         except ImportError:
             pytest.skip("claude_agent_sdk not installed")
 
-        from core.execution.agent_sdk import _build_pre_tool_hook
+        from core.execution.engines.claude.agent_sdk import _build_pre_tool_hook
 
         anima_dir = tmp_path / "animas" / "hook_test"
         anima_dir.mkdir(parents=True)
         (anima_dir / "state" / "pending").mkdir(parents=True)
 
-        with patch("core.execution._sdk_hooks._cache_subordinate_paths", return_value=([], [], [], [], [])):
+        with patch(
+            "core.execution.engines.claude._sdk_hooks._cache_subordinate_paths", return_value=([], [], [], [], [])
+        ):
             return _build_pre_tool_hook(anima_dir, has_subordinates=True)
 
     @pytest.fixture()
@@ -41,7 +43,7 @@ class TestPreToolHookTaskBranch:
         except ImportError:
             pytest.skip("claude_agent_sdk not installed")
 
-        from core.execution.agent_sdk import _build_pre_tool_hook
+        from core.execution.engines.claude.agent_sdk import _build_pre_tool_hook
 
         anima_dir = tmp_path / "animas" / "hook_cb_test"
         anima_dir.mkdir(parents=True)
@@ -49,7 +51,9 @@ class TestPreToolHookTaskBranch:
 
         callback = MagicMock()
 
-        with patch("core.execution._sdk_hooks._cache_subordinate_paths", return_value=([], [], [], [], [])):
+        with patch(
+            "core.execution.engines.claude._sdk_hooks._cache_subordinate_paths", return_value=([], [], [], [], [])
+        ):
             hook_fn = _build_pre_tool_hook(anima_dir, on_task_intercepted=callback, has_subordinates=True)
 
         return hook_fn, callback, anima_dir
@@ -64,7 +68,7 @@ class TestPreToolHookTaskBranch:
             },
         }
 
-        with patch("core.execution._sdk_hooks._log_tool_use"):
+        with patch("core.execution.engines.claude._sdk_hooks._log_tool_use"):
             result = await hook(input_data, "tool-id-1", {})
 
         output = result.get("hookSpecificOutput", {})
@@ -82,7 +86,7 @@ class TestPreToolHookTaskBranch:
             },
         }
 
-        with patch("core.execution._sdk_hooks._log_tool_use"):
+        with patch("core.execution.engines.claude._sdk_hooks._log_tool_use"):
             await hook(input_data, "tool-id-2", {})
 
         pending_dir = tmp_path / "animas" / "hook_test" / "state" / "pending"
@@ -98,7 +102,7 @@ class TestPreToolHookTaskBranch:
             "tool_input": {"description": "test", "prompt": "test"},
         }
 
-        with patch("core.execution._sdk_hooks._log_tool_use"):
+        with patch("core.execution.engines.claude._sdk_hooks._log_tool_use"):
             await hook_fn(input_data, "tool-id-3", {})
 
         callback.assert_not_called()
@@ -111,9 +115,9 @@ class TestPreToolHookTaskBranch:
         }
 
         with (
-            patch("core.execution._sdk_hooks._log_tool_use"),
-            patch("core.execution._sdk_hooks._check_a1_file_access", return_value=None),
-            patch("core.execution._sdk_hooks._build_output_guard", return_value=None),
+            patch("core.execution.engines.claude._sdk_hooks._log_tool_use"),
+            patch("core.execution.engines.claude._sdk_hooks._check_a1_file_access", return_value=None),
+            patch("core.execution.engines.claude._sdk_hooks._build_output_guard", return_value=None),
         ):
             result = await hook(input_data, "tool-id-4", {})
 
@@ -128,9 +132,9 @@ class TestPreToolHookTaskBranch:
         }
 
         with (
-            patch("core.execution._sdk_hooks._log_tool_use"),
-            patch("core.execution._sdk_hooks._check_a1_bash_command", return_value=None),
-            patch("core.execution._sdk_hooks._build_output_guard", return_value=None),
+            patch("core.execution.engines.claude._sdk_hooks._log_tool_use"),
+            patch("core.execution.engines.claude._sdk_hooks._check_a1_bash_command", return_value=None),
+            patch("core.execution.engines.claude._sdk_hooks._build_output_guard", return_value=None),
         ):
             result = await hook(input_data, "tool-id-5", {})
 
@@ -144,9 +148,9 @@ class TestPreToolHookTaskBranch:
         }
 
         with (
-            patch("core.execution._sdk_hooks._log_tool_use") as log_tool,
-            patch("core.execution._sdk_hooks._check_a1_bash_command", return_value="injection") as check,
-            patch("core.execution._sdk_hooks._build_output_guard", return_value=None),
+            patch("core.execution.engines.claude._sdk_hooks._log_tool_use") as log_tool,
+            patch("core.execution.engines.claude._sdk_hooks._check_a1_bash_command", return_value="injection") as check,
+            patch("core.execution.engines.claude._sdk_hooks._build_output_guard", return_value=None),
         ):
             result = await hook(input_data, "tool-id-injection", {})
 
@@ -167,7 +171,7 @@ class TestPreToolHookTaskBranch:
             "tool_name": "TaskOutput",
             "tool_input": {"task_id": "fake-id", "block": False, "timeout": 5000},
         }
-        with patch("core.execution._sdk_hooks._log_tool_use"):
+        with patch("core.execution.engines.claude._sdk_hooks._log_tool_use"):
             out_result = await hook(out_input, "tool-id-out", {})
 
         out = out_result.get("hookSpecificOutput", {})

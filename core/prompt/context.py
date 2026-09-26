@@ -327,7 +327,7 @@ class ContextTracker:
 
         if persist and self.anima_dir is not None and self.session_type:
             try:
-                from core.execution._sdk_session import record_session_measurement
+                from core.execution.engines.claude._sdk_session import record_session_measurement
 
                 record_session_measurement(
                     self.anima_dir,

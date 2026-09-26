@@ -35,7 +35,7 @@ class TestPreToolHookAgentHardBlock:
     """Test the PreToolUse hook hard-blocks Agent/Task without creating pending tasks."""
 
     def _build_hook(self, anima_dir: Path, *, has_subordinates: bool = False):
-        from core.execution._sdk_hooks import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         return _build_pre_tool_hook(
             anima_dir,
@@ -151,7 +151,7 @@ class TestPreToolHookAgentHardBlock:
         """on_task_intercepted callback should NOT fire for hard-blocked Agent."""
         callback_called = []
 
-        from core.execution._sdk_hooks import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         hook = _build_pre_tool_hook(
             anima_dir,
@@ -169,7 +169,7 @@ class TestPreToolHookAgentHardBlock:
         assert len(callback_called) == 0, "Callback should NOT fire for hard-blocked Agent"
 
     def _build_hook_with_trigger(self, anima_dir: Path, trigger: str):
-        from core.execution._sdk_hooks import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         return _build_pre_tool_hook(
             anima_dir,
@@ -210,7 +210,7 @@ class TestPreToolHookAgentHardBlock:
         """Agent tool blocked in heartbeat (soft timeout fires once, then block)."""
         import time
 
-        from core.execution._sdk_hooks import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         stats = {
             "tool_call_count": 0,
@@ -274,7 +274,7 @@ class TestSubmitTasksInterceptDenyReason:
         }
 
     def _build_hook(self, anima_dir: Path, *, has_subordinates: bool = False, session_stats: dict | None = None):
-        from core.execution._sdk_hooks import _build_pre_tool_hook
+        from core.execution.engines.claude._sdk_hooks import _build_pre_tool_hook
 
         return _build_pre_tool_hook(
             anima_dir,

@@ -101,7 +101,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/tooling/handler_delegation.py",
         "core/tasks/queue.py",
         "core/anima/heartbeat.py",
-        "core/execution/_sdk_hooks.py",
+        "core/execution/engines/claude/_sdk_hooks.py",
     ],
     "reference/operations/heartbeat-cron-guide.md": [
         "core/tasks/background.py",
@@ -116,8 +116,8 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "server/routes/tasks.py",
     ],
     "reference/operations/mode-s-auth-guide.md": [
-        "core/execution/agent_sdk.py",
-        "core/execution/_sdk_security.py",
+        "core/execution/engines/claude/agent_sdk.py",
+        "core/execution/engines/claude/_sdk_security.py",
     ],
     "reference/operations/project-setup.md": [
         "core/infra/runtime_init.py",
@@ -200,8 +200,8 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
         "core/tooling/skill_creator.py",
     ],
     "common_skills/subagent-cli/SKILL.md": [
-        "core/execution/agent_sdk.py",
-        "core/execution/codex_sdk.py",
+        "core/execution/engines/claude/agent_sdk.py",
+        "core/execution/engines/codex/codex_sdk.py",
     ],
     "common_skills/subordinate-management/SKILL.md": [
         "core/tooling/handler_org.py",
@@ -223,7 +223,7 @@ DOC_SOURCE_MAP: dict[str, list[str]] = {
     "docs/brain-mapping": ["core/memory/", "core/prompt/"],
     "docs/security": [
         "core/execution/_sanitize.py",
-        "core/execution/_sdk_security.py",
+        "core/execution/engines/claude/_sdk_security.py",
         "core/tooling/handler.py",
         "core/prompt/builder.py",
     ],

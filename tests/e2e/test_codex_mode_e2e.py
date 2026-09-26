@@ -70,7 +70,7 @@ class TestExecutorCreation:
         with (
             patch.dict("sys.modules", {"openai_codex": None}),
             patch(
-                "core.execution.codex_sdk.CodexSDKExecutor",
+                "core.execution.engines.codex.codex_sdk.CodexSDKExecutor",
                 side_effect=ImportError("No module named 'openai_codex'"),
             ),
             pytest.raises(ExecutorUnavailableError),
@@ -98,7 +98,9 @@ class TestRunCycle:
 
         mock_codex = _mock_codex(mock_thread)
 
-        with patch("core.execution.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex):
+        with patch(
+            "core.execution.engines.codex.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex
+        ):
             result = await agent.run_cycle(
                 prompt="Hello from test",
                 trigger="message:test-user",
@@ -121,7 +123,9 @@ class TestRunCycle:
 
         mock_codex = _mock_codex(mock_thread)
 
-        with patch("core.execution.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex):
+        with patch(
+            "core.execution.engines.codex.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex
+        ):
             result = await agent.run_cycle(
                 prompt="Heartbeat check",
                 trigger="heartbeat",
@@ -144,7 +148,9 @@ class TestRunCycle:
 
         mock_codex = _mock_codex(mock_thread)
 
-        with patch("core.execution.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex):
+        with patch(
+            "core.execution.engines.codex.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex
+        ):
             result = await agent.run_cycle(
                 prompt="Run daily report",
                 trigger="cron:daily_report",
@@ -167,7 +173,9 @@ class TestRunCycle:
 
         mock_codex = _mock_codex(mock_thread)
 
-        with patch("core.execution.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex):
+        with patch(
+            "core.execution.engines.codex.codex_sdk.CodexSDKExecutor._create_codex_client", return_value=mock_codex
+        ):
             result = await agent.run_cycle(
                 prompt="Execute pending task",
                 trigger="task:task-001",

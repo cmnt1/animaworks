@@ -1,4 +1,4 @@
-"""Tests for A1 mode security functions in core.execution.agent_sdk."""
+"""Tests for A1 mode security functions in core.execution.engines.claude.agent_sdk."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -12,8 +12,8 @@ from pathlib import Path
 import pytest
 
 from core.config.global_permissions import GlobalPermissionsCache
-from core.execution._sdk_hooks import _collect_all_subordinates
-from core.execution.agent_sdk import (
+from core.execution.engines.claude._sdk_hooks import _collect_all_subordinates
+from core.execution.engines.claude.agent_sdk import (
     _PROTECTED_FILES,
     _WRITE_COMMANDS,
     _check_a1_bash_command,
@@ -128,7 +128,9 @@ class TestCheckA1FileAccess:
         assert result is None
 
     def test_read_other_anima_blocked(
-        self, anima_dir: Path, other_anima_dir: Path,
+        self,
+        anima_dir: Path,
+        other_anima_dir: Path,
     ):
         path = str(other_anima_dir / "identity.md")
         result = _check_a1_file_access(path, anima_dir, write=False)
@@ -136,7 +138,9 @@ class TestCheckA1FileAccess:
         assert "other anima" in result.lower()
 
     def test_write_other_anima_blocked(
-        self, anima_dir: Path, other_anima_dir: Path,
+        self,
+        anima_dir: Path,
+        other_anima_dir: Path,
     ):
         path = str(other_anima_dir / "episodes" / "log.md")
         result = _check_a1_file_access(path, anima_dir, write=True)
@@ -149,7 +153,10 @@ class TestCheckA1FileAccess:
         assert result is None
 
     def test_write_permissions_global_json_blocked(
-        self, anima_dir: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        anima_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ):
         from core.paths import get_data_dir
 
@@ -177,93 +184,133 @@ class TestCheckA1FileAccess:
     # ── subordinate_management_files (direct subordinate r/w) ──
 
     def test_read_subordinate_injection_via_mgmt(
-        self, anima_dir: Path, other_anima_dir: Path,
+        self,
+        anima_dir: Path,
+        other_anima_dir: Path,
     ):
         """Supervisor can read direct subordinate's injection.md."""
         mgmt = [other_anima_dir / "injection.md"]
         path = str(other_anima_dir / "injection.md")
         result = _check_a1_file_access(
-            path, anima_dir, write=False, subordinate_management_files=mgmt,
+            path,
+            anima_dir,
+            write=False,
+            subordinate_management_files=mgmt,
         )
         assert result is None
 
     def test_write_subordinate_injection_via_mgmt(
-        self, anima_dir: Path, other_anima_dir: Path,
+        self,
+        anima_dir: Path,
+        other_anima_dir: Path,
     ):
         """Supervisor can write direct subordinate's injection.md."""
         mgmt = [other_anima_dir / "injection.md"]
         path = str(other_anima_dir / "injection.md")
         result = _check_a1_file_access(
-            path, anima_dir, write=True, subordinate_management_files=mgmt,
+            path,
+            anima_dir,
+            write=True,
+            subordinate_management_files=mgmt,
         )
         assert result is None
 
     def test_read_subordinate_status_via_mgmt(
-        self, anima_dir: Path, other_anima_dir: Path,
+        self,
+        anima_dir: Path,
+        other_anima_dir: Path,
     ):
         mgmt = [other_anima_dir / "status.json"]
         path = str(other_anima_dir / "status.json")
         result = _check_a1_file_access(
-            path, anima_dir, write=False, subordinate_management_files=mgmt,
+            path,
+            anima_dir,
+            write=False,
+            subordinate_management_files=mgmt,
         )
         assert result is None
 
     # ── descendant_read_files (read-only) ──
 
     def test_read_descendant_identity_allowed(
-        self, anima_dir: Path, other_anima_dir: Path,
+        self,
+        anima_dir: Path,
+        other_anima_dir: Path,
     ):
         desc_read = [other_anima_dir / "identity.md"]
         path = str(other_anima_dir / "identity.md")
         result = _check_a1_file_access(
-            path, anima_dir, write=False, descendant_read_files=desc_read,
+            path,
+            anima_dir,
+            write=False,
+            descendant_read_files=desc_read,
         )
         assert result is None
 
     def test_write_descendant_identity_blocked(
-        self, anima_dir: Path, other_anima_dir: Path,
+        self,
+        anima_dir: Path,
+        other_anima_dir: Path,
     ):
         """descendant_read_files should NOT grant write access."""
         desc_read = [other_anima_dir / "identity.md"]
         path = str(other_anima_dir / "identity.md")
         result = _check_a1_file_access(
-            path, anima_dir, write=True, descendant_read_files=desc_read,
+            path,
+            anima_dir,
+            write=True,
+            descendant_read_files=desc_read,
         )
         assert result is not None
 
     def test_read_descendant_injection_allowed(
-        self, anima_dir: Path, other_anima_dir: Path,
+        self,
+        anima_dir: Path,
+        other_anima_dir: Path,
     ):
         desc_read = [other_anima_dir / "injection.md"]
         path = str(other_anima_dir / "injection.md")
         result = _check_a1_file_access(
-            path, anima_dir, write=False, descendant_read_files=desc_read,
+            path,
+            anima_dir,
+            write=False,
+            descendant_read_files=desc_read,
         )
         assert result is None
 
     # ── descendant_read_dirs (read-only directory) ──
 
     def test_read_descendant_pending_dir_allowed(
-        self, anima_dir: Path, other_anima_dir: Path,
+        self,
+        anima_dir: Path,
+        other_anima_dir: Path,
     ):
         pending_dir = other_anima_dir / "state" / "pending"
         pending_dir.mkdir(parents=True, exist_ok=True)
         desc_dirs = [pending_dir]
         path = str(pending_dir / "task_001.json")
         result = _check_a1_file_access(
-            path, anima_dir, write=False, descendant_read_dirs=desc_dirs,
+            path,
+            anima_dir,
+            write=False,
+            descendant_read_dirs=desc_dirs,
         )
         assert result is None
 
     def test_write_descendant_pending_dir_blocked(
-        self, anima_dir: Path, other_anima_dir: Path,
+        self,
+        anima_dir: Path,
+        other_anima_dir: Path,
     ):
         pending_dir = other_anima_dir / "state" / "pending"
         pending_dir.mkdir(parents=True, exist_ok=True)
         desc_dirs = [pending_dir]
         path = str(pending_dir / "task_001.json")
         result = _check_a1_file_access(
-            path, anima_dir, write=True, descendant_read_dirs=desc_dirs,
+            path,
+            anima_dir,
+            write=True,
+            descendant_read_dirs=desc_dirs,
         )
         assert result is not None
 
@@ -273,7 +320,9 @@ class TestCheckA1FileAccess:
 
 class TestCheckA1BashCommand:
     def test_cp_to_other_anima_blocked(
-        self, anima_dir: Path, other_anima_dir: Path,
+        self,
+        anima_dir: Path,
+        other_anima_dir: Path,
     ):
         cmd = f"cp {other_anima_dir}/identity.md ./stolen.md"
         result = _check_a1_bash_command(cmd, anima_dir)
@@ -281,7 +330,9 @@ class TestCheckA1BashCommand:
         assert "other anima" in result.lower()
 
     def test_mv_to_other_anima_blocked(
-        self, anima_dir: Path, other_anima_dir: Path,
+        self,
+        anima_dir: Path,
+        other_anima_dir: Path,
     ):
         cmd = f"mv ./file.md {other_anima_dir}/file.md"
         result = _check_a1_bash_command(cmd, anima_dir)
@@ -302,7 +353,9 @@ class TestCheckA1BashCommand:
         assert result is None
 
     def test_non_write_command_to_other_anima_allowed(
-        self, anima_dir: Path, other_anima_dir: Path,
+        self,
+        anima_dir: Path,
+        other_anima_dir: Path,
     ):
         """Non-write commands like 'cat' are not checked."""
         cmd = f"cat {other_anima_dir}/identity.md"
@@ -319,7 +372,9 @@ class TestCheckA1BashCommand:
         assert result is None
 
     def test_rsync_to_other_anima_blocked(
-        self, anima_dir: Path, other_anima_dir: Path,
+        self,
+        anima_dir: Path,
+        other_anima_dir: Path,
     ):
         cmd = f"rsync -a ./data/ {other_anima_dir}/data/"
         result = _check_a1_bash_command(cmd, anima_dir)
@@ -540,11 +595,15 @@ class TestLogToolUse:
         anima_dir.mkdir(parents=True)
         (anima_dir / "activity_log").mkdir()
 
-        _log_tool_use(anima_dir, "Edit", {
-            "file_path": "/tmp/f.py",
-            "old_string": "a" * 500,
-            "new_string": "b" * 500,
-        })
+        _log_tool_use(
+            anima_dir,
+            "Edit",
+            {
+                "file_path": "/tmp/f.py",
+                "old_string": "a" * 500,
+                "new_string": "b" * 500,
+            },
+        )
 
         log_files = list((anima_dir / "activity_log").glob("*.jsonl"))
         entries = [json.loads(line) for line in log_files[0].read_text().strip().split("\n")]
@@ -565,11 +624,14 @@ class TestSanitiseToolArgs:
         assert result["file_path"] == "/f.py"
 
     def test_edit_truncates_old_new(self):
-        result = _sanitise_tool_args("Edit", {
-            "file_path": "/f.py",
-            "old_string": "a" * 500,
-            "new_string": "b" * 500,
-        })
+        result = _sanitise_tool_args(
+            "Edit",
+            {
+                "file_path": "/f.py",
+                "old_string": "a" * 500,
+                "new_string": "b" * 500,
+            },
+        )
         assert len(result["old_string"]) == 200
         assert len(result["new_string"]) == 200
 

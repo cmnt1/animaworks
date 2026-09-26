@@ -21,7 +21,6 @@ from dataclasses import asdict
 from functools import partial
 from typing import Any, cast
 
-from core.execution._litellm_tools import _convert_litellm_tool_calls
 from core.execution._streaming import (
     accumulate_tool_call_chunks,
     parse_accumulated_tool_calls,
@@ -40,6 +39,7 @@ from core.execution.base import (
     strip_untagged_thinking,
     supports_streaming_tool_use,
 )
+from core.execution.engines.litellm._litellm_tools import _convert_litellm_tool_calls
 from core.execution.error_classifier import (
     FailoverReason,
     classify_llm_error,

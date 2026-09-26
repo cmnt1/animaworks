@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -158,11 +159,11 @@ class TestSendPatternsRemoved:
     """Verify _SEND_PATTERNS and _parse_replied_to are removed from agent_sdk."""
 
     def test_send_patterns_not_in_module(self):
-        import core.execution.agent_sdk as mod
+        import core.execution.engines.claude.agent_sdk as mod
 
         assert not hasattr(mod, "_SEND_PATTERNS")
 
     def test_parse_replied_to_not_in_executor(self):
-        from core.execution.agent_sdk import AgentSDKExecutor
+        from core.execution.engines.claude.agent_sdk import AgentSDKExecutor
 
         assert not hasattr(AgentSDKExecutor, "_parse_replied_to")

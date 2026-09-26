@@ -3,7 +3,7 @@
 Mode S (Claude Agent SDK)에서 사용하는 인증 방식을 Anima별로 전환하는 방법입니다.
 인증 모드는 **`mode_s_auth`**라는 명시적인 설정으로 지정합니다 (credential의 자동 판별이 아님).
 
-구현: `core/execution/agent_sdk.py`의 `_build_env()`가 Claude Code 자식 프로세스의 환경 변수를 구성합니다.
+구현: `core/execution/engines/claude/agent_sdk.py`의 `_build_env()`가 Claude Code 자식 프로세스의 환경 변수를 구성합니다.
 
 ## 인증 모드 목록
 

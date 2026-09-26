@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from core.execution._sdk_session import _save_session_id, _session_state_path
-from core.execution.codex_sdk import _save_thread_id, _thread_id_path
-from core.execution.cursor_agent import _chat_id_path, _save_chat_id
-from core.execution.grok_cli import _save_session_id as _save_grok_session_id
-from core.execution.grok_cli import _session_id_path as _grok_session_id_path
+from core.execution.engines.claude._sdk_session import _save_session_id, _session_state_path
+from core.execution.engines.codex.codex_sdk import _save_thread_id, _thread_id_path
+from core.execution.engines.cursor.cursor_agent import _chat_id_path, _save_chat_id
+from core.execution.engines.grok.grok_cli import _save_session_id as _save_grok_session_id
+from core.execution.engines.grok.grok_cli import _session_id_path as _grok_session_id_path
 from core.execution.session_store import SessionRecord, SessionStore
 
 

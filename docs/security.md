@@ -4,7 +4,7 @@ AnimaWorks runs autonomous AI agents with tool access, persistent memory, and in
 
 This document describes the layered security model and an adversarial threat analysis based on cutting-edge LLM/agent attack research (OWASP Top 10 for LLM 2025, AdapTools, MemoryGraft, ChatInject, RoguePilot, MCP Tool Poisoning, RAGPoison, Confused Deputy attacks).
 
-**Last audited**: 2026-03-25 (Mode S implementation: aligned with pure functions in `core/execution/_sdk_security.py`. Organization path resolution runs at hook construction time via `_cache_subordinate_paths` in `core/execution/_sdk_hooks.py`.)
+**Last audited**: 2026-03-25 (Mode S implementation: aligned with pure functions in `core/execution/engines/claude/_sdk_security.py`. Organization path resolution runs at hook construction time via `_cache_subordinate_paths` in `core/execution/engines/claude/_sdk_hooks.py`.)
 
 ---
 
@@ -149,7 +149,7 @@ Command arguments are checked for path traversal patterns (`../`).
 
 **Per-pipeline-segment checks**: Each segment of a piped command is checked independently.
 
-**Key files**: `core/tooling/handler_base.py` (`_get_injection_re`, `_get_blocked_patterns`, `_PROTECTED_FILES`), `core/tooling/handler_perms.py` (`_check_command_permission`), `core/config/global_permissions.py` (`permissions.global.json`), `core/execution/_sdk_security.py` (Mode S Bash)
+**Key files**: `core/tooling/handler_base.py` (`_get_injection_re`, `_get_blocked_patterns`, `_PROTECTED_FILES`), `core/tooling/handler_perms.py` (`_check_command_permission`), `core/config/global_permissions.py` (`permissions.global.json`), `core/execution/engines/claude/_sdk_security.py` (Mode S Bash)
 
 #### External tool action gates (`external_tools.allow`)
 
@@ -306,7 +306,7 @@ The media proxy (`/api/media/proxy`) fetches external images for display in the 
 
 ### 10. Mode S (Agent SDK) Security
 
-On Claude Agent SDK (Mode S), `PreToolUse` hooks (`core/execution/_sdk_hooks.py`) perform inspection and output control via **pure functions** in **`core/execution/_sdk_security.py`**. `_sdk_security.py` is a leaf module with no framework state; the protected-file set `_PROTECTED_FILES`, the write-oriented command set `_WRITE_COMMANDS`, and default limits for Bash / Read / Grep / Glob (bytes, lines, counts) are defined as constants in that file.
+On Claude Agent SDK (Mode S), `PreToolUse` hooks (`core/execution/engines/claude/_sdk_hooks.py`) perform inspection and output control via **pure functions** in **`core/execution/engines/claude/_sdk_security.py`**. `_sdk_security.py` is a leaf module with no framework state; the protected-file set `_PROTECTED_FILES`, the write-oriented command set `_WRITE_COMMANDS`, and default limits for Bash / Read / Grep / Glob (bytes, lines, counts) are defined as constants in that file.
 
 **Organization paths**: Exception path lists for supervisors, peers, and subordinates are resolved when hooks are built by `_sdk_hooks._cache_subordinate_paths(anima_dir)` using `load_config()` and `get_animas_dir()`, and passed into `PreToolUse` via a closure.
 
@@ -359,7 +359,7 @@ When `debug_superuser` in `status.json` is true, `_check_a1_file_access` and `_c
 
 Per-tool trust and `min_trust_seen` persistence integrate with `_SDK_TOOL_TRUST` / `TOOL_TRUST_LEVELS` in `_sdk_hooks.py` (independent of file access, Bash, and output guards in this section).
 
-**Key files**: `core/execution/_sdk_security.py` (inspection and output-guard core), `core/execution/_sdk_hooks.py` (`PreToolUse`, path cache), `core/config/global_permissions.py` (`GlobalPermissionsCache`)
+**Key files**: `core/execution/engines/claude/_sdk_security.py` (inspection and output-guard core), `core/execution/engines/claude/_sdk_hooks.py` (`PreToolUse`, path cache), `core/config/global_permissions.py` (`GlobalPermissionsCache`)
 
 ---
 

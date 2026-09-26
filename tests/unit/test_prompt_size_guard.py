@@ -115,7 +115,7 @@ class TestAgentSDKBufferSize:
 
     def test_buffer_size_constant(self):
         """The constant should be 4 MB."""
-        from core.execution.agent_sdk import _SDK_MAX_BUFFER_SIZE
+        from core.execution.engines.claude.agent_sdk import _SDK_MAX_BUFFER_SIZE
 
         assert _SDK_MAX_BUFFER_SIZE == 4 * 1024 * 1024
 
