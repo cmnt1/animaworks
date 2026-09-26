@@ -12,7 +12,7 @@ The Zoom RTMS gateway injects meeting transcripts into your inbox as chunks ever
 
 ## Format of Incoming Messages
 
-The header strings below are emitted in Japanese by the gateway implementation (`server/zoom_gateway.py`); the English meaning is shown in parentheses. Match against the Japanese text as-is.
+The header strings below are emitted in Japanese by the gateway implementation (`server/gateways/zoom_gateway.py`); the English meaning is shown in parentheses. Match against the Japanese text as-is.
 
 | Type | Header | Meaning |
 |------|--------|---------|

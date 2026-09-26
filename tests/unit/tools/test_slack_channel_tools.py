@@ -23,27 +23,27 @@ class TestExecutionProfile:
     """Gated flags in EXECUTION_PROFILE."""
 
     def test_channel_post_is_gated(self):
-        from core.tools.slack import EXECUTION_PROFILE
+        from core.integrations.slack import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["channel_post"]["gated"] is True
 
     def test_channel_update_is_gated(self):
-        from core.tools.slack import EXECUTION_PROFILE
+        from core.integrations.slack import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["channel_update"]["gated"] is True
 
     def test_channel_post_not_background_eligible(self):
-        from core.tools.slack import EXECUTION_PROFILE
+        from core.integrations.slack import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["channel_post"]["background_eligible"] is False
 
     def test_channel_update_not_background_eligible(self):
-        from core.tools.slack import EXECUTION_PROFILE
+        from core.integrations.slack import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["channel_update"]["background_eligible"] is False
 
     def test_send_is_gated(self):
-        from core.tools.slack import EXECUTION_PROFILE
+        from core.integrations.slack import EXECUTION_PROFILE
 
         assert EXECUTION_PROFILE["send"]["gated"] is True
 
@@ -55,19 +55,19 @@ class TestToolSchemas:
     """Schema definitions returned by get_tool_schemas()."""
 
     def test_returns_two_schemas(self):
-        from core.tools.slack import get_tool_schemas
+        from core.integrations.slack import get_tool_schemas
 
         schemas = get_tool_schemas()
         assert len(schemas) == 2
 
     def test_schema_names(self):
-        from core.tools.slack import get_tool_schemas
+        from core.integrations.slack import get_tool_schemas
 
         names = {s["name"] for s in get_tool_schemas()}
         assert names == {"slack_channel_post", "slack_channel_update"}
 
     def test_channel_post_required_fields(self):
-        from core.tools.slack import get_tool_schemas
+        from core.integrations.slack import get_tool_schemas
 
         schema = next(s for s in get_tool_schemas() if s["name"] == "slack_channel_post")
         required = schema["input_schema"]["required"]
@@ -75,14 +75,14 @@ class TestToolSchemas:
         assert "text" in required
 
     def test_channel_post_supports_optional_thread_ts(self):
-        from core.tools.slack import get_tool_schemas
+        from core.integrations.slack import get_tool_schemas
 
         schema = next(s for s in get_tool_schemas() if s["name"] == "slack_channel_post")
         properties = schema["input_schema"]["properties"]
         assert "thread_ts" in properties
 
     def test_channel_update_required_fields(self):
-        from core.tools.slack import get_tool_schemas
+        from core.integrations.slack import get_tool_schemas
 
         schema = next(s for s in get_tool_schemas() if s["name"] == "slack_channel_update")
         required = schema["input_schema"]["required"]
@@ -97,11 +97,11 @@ class TestToolSchemas:
 class TestDispatchChannelPost:
     """dispatch('slack_channel_post', ...) routing."""
 
-    @patch("core.tools.slack._resolve_slack_identity", return_value=("sakura", ""))
-    @patch("core.tools.slack._resolve_slack_token", return_value="xoxb-test")
-    @patch("core.tools.slack.SlackClient")
+    @patch("core.integrations.slack._resolve_slack_identity", return_value=("sakura", ""))
+    @patch("core.integrations.slack._resolve_slack_token", return_value="xoxb-test")
+    @patch("core.integrations.slack.SlackClient")
     def test_posts_message_and_returns_ts(self, mock_cls, mock_token, mock_identity):
-        from core.tools.slack import dispatch
+        from core.integrations.slack import dispatch
 
         mock_client = MagicMock()
         mock_client.post_message.return_value = {"ok": True, "ts": "1234567890.123456"}
@@ -122,11 +122,11 @@ class TestDispatchChannelPost:
         call_kwargs = mock_client.post_message.call_args
         assert call_kwargs[0][0] == "C123ABC"
 
-    @patch("core.tools.slack._resolve_slack_identity", return_value=("mei", "https://cdn/mei.png"))
-    @patch("core.tools.slack._resolve_slack_token", return_value="xoxb-test")
-    @patch("core.tools.slack.SlackClient")
+    @patch("core.integrations.slack._resolve_slack_identity", return_value=("mei", "https://cdn/mei.png"))
+    @patch("core.integrations.slack._resolve_slack_token", return_value="xoxb-test")
+    @patch("core.integrations.slack.SlackClient")
     def test_passes_identity(self, mock_cls, mock_token, mock_identity):
-        from core.tools.slack import dispatch
+        from core.integrations.slack import dispatch
 
         mock_client = MagicMock()
         mock_client.post_message.return_value = {"ok": True, "ts": "123"}
@@ -138,11 +138,11 @@ class TestDispatchChannelPost:
         assert kwargs["username"] == "mei"
         assert kwargs["icon_url"] == "https://cdn/mei.png"
 
-    @patch("core.tools.slack._resolve_slack_identity", return_value=("mei", "https://cdn/mei.png"))
-    @patch("core.tools.slack._resolve_slack_token", return_value="xoxb-test")
-    @patch("core.tools.slack.SlackClient")
+    @patch("core.integrations.slack._resolve_slack_identity", return_value=("mei", "https://cdn/mei.png"))
+    @patch("core.integrations.slack._resolve_slack_token", return_value="xoxb-test")
+    @patch("core.integrations.slack.SlackClient")
     def test_passes_thread_ts(self, mock_cls, mock_token, mock_identity):
-        from core.tools.slack import dispatch
+        from core.integrations.slack import dispatch
 
         mock_client = MagicMock()
         mock_client.post_message.return_value = {"ok": True, "ts": "123"}
@@ -160,10 +160,10 @@ class TestDispatchChannelPost:
 class TestDispatchChannelUpdate:
     """dispatch('slack_channel_update', ...) routing."""
 
-    @patch("core.tools.slack._resolve_slack_token", return_value="xoxb-test")
-    @patch("core.tools.slack.SlackClient")
+    @patch("core.integrations.slack._resolve_slack_token", return_value="xoxb-test")
+    @patch("core.integrations.slack.SlackClient")
     def test_updates_message(self, mock_cls, mock_token):
-        from core.tools.slack import dispatch
+        from core.integrations.slack import dispatch
 
         mock_client = MagicMock()
         mock_client.update_message.return_value = {"ok": True}
@@ -194,7 +194,7 @@ class TestTaskboardMdToSlack:
     """Markdown task-board → Slack mrkdwn conversion."""
 
     def test_converts_table_rows_to_bullets(self):
-        from core.tools.slack import taskboard_md_to_slack
+        from core.integrations.slack import taskboard_md_to_slack
 
         md = """\
 ## 🟡 進行中
@@ -206,7 +206,7 @@ class TestTaskboardMdToSlack:
         assert "• B1: API修正（sakura）" in result
 
     def test_strips_completed_section(self):
-        from core.tools.slack import taskboard_md_to_slack
+        from core.integrations.slack import taskboard_md_to_slack
 
         md = """\
 ## 🟡 進行中
@@ -224,19 +224,19 @@ class TestTaskboardMdToSlack:
         assert "Fix bug" in result
 
     def test_adds_footer(self):
-        from core.tools.slack import taskboard_md_to_slack
+        from core.integrations.slack import taskboard_md_to_slack
 
         result = taskboard_md_to_slack("## Title\nSome text")
         assert "shared/task-board.md" in result
 
     def test_section_headers_bold(self):
-        from core.tools.slack import taskboard_md_to_slack
+        from core.integrations.slack import taskboard_md_to_slack
 
         result = taskboard_md_to_slack("## 🔴 ブロック中\nNothing here")
         assert "*🔴 ブロック中*" in result
 
     def test_skips_table_separator(self):
-        from core.tools.slack import taskboard_md_to_slack
+        from core.integrations.slack import taskboard_md_to_slack
 
         md = """\
 | # | タスク | 担当 |
@@ -253,9 +253,9 @@ class TestTaskboardMdToSlack:
 class TestSlackClientUpdateMessage:
     """SlackClient.update_message() method."""
 
-    @patch("core.tools._slack_client._require_slack_sdk")
+    @patch("core.integrations._slack_client._require_slack_sdk")
     def test_calls_chat_update(self, mock_sdk):
-        from core.tools.slack import SlackClient
+        from core.integrations.slack import SlackClient
 
         client = SlackClient.__new__(SlackClient)
         client._call = MagicMock(return_value={"ok": True})
@@ -272,9 +272,9 @@ class TestSlackClientUpdateMessage:
 class TestSlackClientPinsAdd:
     """SlackClient.pins_add() method."""
 
-    @patch("core.tools._slack_client._require_slack_sdk")
+    @patch("core.integrations._slack_client._require_slack_sdk")
     def test_calls_pins_add(self, mock_sdk):
-        from core.tools.slack import SlackClient
+        from core.integrations.slack import SlackClient
 
         client = SlackClient.__new__(SlackClient)
         client._call = MagicMock(return_value={"ok": True})

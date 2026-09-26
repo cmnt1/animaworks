@@ -18,8 +18,8 @@ from typing import Any
 
 import httpx
 
+from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential
 from core.messenger import InboxItem
-from core.tools._base import _lookup_shared_credentials, _lookup_vault_credential
 
 logger = logging.getLogger("animaworks.outbound_auto")
 
@@ -31,11 +31,11 @@ _MAX_SLACK_TEXT = 40000
 def _resolve_avatar_url(anima_name: str) -> str:
     """Resolve avatar URL for Slack icon_url.
 
-    Delegates to :func:`core.tools._anima_icon_url.resolve_anima_icon_url`
+    Delegates to :func:`core.integrations._anima_icon_url.resolve_anima_icon_url`
     which applies the 3-tier resolution (per-Anima / env / config / channel / asset).
     """
     try:
-        from core.tools._anima_icon_url import resolve_anima_icon_url
+        from core.integrations._anima_icon_url import resolve_anima_icon_url
 
         return resolve_anima_icon_url(anima_name, channel_config=None)
     except Exception:
@@ -103,7 +103,7 @@ class SlackAutoResponder:
             )
             return []
 
-        from core.tools._slack_markdown import md_to_slack_mrkdwn
+        from core.integrations._slack_markdown import md_to_slack_mrkdwn
 
         slack_text = md_to_slack_mrkdwn(response_text)[:_MAX_SLACK_TEXT]
 
@@ -244,7 +244,7 @@ class DiscordAutoResponder:
             logger.warning("DiscordAutoResponder: webhook manager not available")
             return []
 
-        from core.tools._discord_markdown import md_to_discord
+        from core.integrations._discord_markdown import md_to_discord
 
         discord_text = md_to_discord(response_text)
 
@@ -357,7 +357,7 @@ class BoardSlackSync:
             logger.warning("BoardSlackSync: no token for board '%s' sync", board_name)
             return None
 
-        from core.tools._slack_markdown import md_to_slack_mrkdwn
+        from core.integrations._slack_markdown import md_to_slack_mrkdwn
 
         slack_text = md_to_slack_mrkdwn(text)[:_MAX_SLACK_TEXT]
         icon_url = _resolve_avatar_url(from_person)

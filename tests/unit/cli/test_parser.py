@@ -589,8 +589,8 @@ class TestCliMainToolFallback:
         mock_dispatch = MagicMock()
         with (
             patch.object(sys, "argv", ["animaworks", "slack", "send", "#general", "hello"]),
-            patch("core.tools.cli_dispatch", mock_dispatch),
-            patch("core.tools.TOOL_MODULES", {"slack": "core.tools.slack"}),
+            patch("core.integrations.cli_dispatch", mock_dispatch),
+            patch("core.integrations.TOOL_MODULES", {"slack": "core.integrations.slack"}),
         ):
             from cli.parser import cli_main
 
@@ -604,8 +604,8 @@ class TestCliMainToolFallback:
         mock_dispatch = MagicMock()
         with (
             patch.object(sys, "argv", ["animaworks", "submit", "image_gen", "pipeline"]),
-            patch("core.tools.cli_dispatch", mock_dispatch),
-            patch("core.tools.TOOL_MODULES", {"image_gen": "core.tools.image_gen"}),
+            patch("core.integrations.cli_dispatch", mock_dispatch),
+            patch("core.integrations.TOOL_MODULES", {"image_gen": "core.integrations.image_gen"}),
         ):
             from cli.parser import cli_main
 
@@ -620,8 +620,8 @@ class TestCliMainToolFallback:
         mock_func = MagicMock()
         with (
             patch.object(sys, "argv", ["animaworks", "anima", "list"]),
-            patch("core.tools.cli_dispatch", mock_dispatch),
-            patch("core.tools.TOOL_MODULES", {"slack": "core.tools.slack"}),
+            patch("core.integrations.cli_dispatch", mock_dispatch),
+            patch("core.integrations.TOOL_MODULES", {"slack": "core.integrations.slack"}),
         ):
             from cli.parser import cli_main
 
@@ -636,8 +636,8 @@ class TestCliMainToolFallback:
         mock_dispatch = MagicMock()
         with (
             patch.object(sys, "argv", ["animaworks", "--help"]),
-            patch("core.tools.cli_dispatch", mock_dispatch),
-            patch("core.tools.TOOL_MODULES", {"slack": "core.tools.slack"}),
+            patch("core.integrations.cli_dispatch", mock_dispatch),
+            patch("core.integrations.TOOL_MODULES", {"slack": "core.integrations.slack"}),
         ):
             from cli.parser import cli_main
 

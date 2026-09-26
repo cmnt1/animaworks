@@ -31,7 +31,7 @@ def load_external_schemas(tool_registry: list[str]) -> list[dict[str, Any]]:
     if not tool_registry:
         return []
 
-    from core.tools import TOOL_MODULES
+    from core.integrations import TOOL_MODULES
 
     schemas: list[dict[str, Any]] = []
     for tool_name in tool_registry:
@@ -84,7 +84,7 @@ def load_external_schemas_by_category(
     *categories* is a set of tool module names (e.g. ``{"chatwork", "slack"}``).
     Only schemas belonging to those modules are returned.
     """
-    from core.tools import TOOL_MODULES
+    from core.integrations import TOOL_MODULES
 
     filtered_registry = [name for name in TOOL_MODULES if name in categories]
     return load_external_schemas(filtered_registry)

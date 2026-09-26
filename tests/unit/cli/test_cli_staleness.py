@@ -140,8 +140,11 @@ class TestLocalDeprecation:
         mock_anima_cls.return_value = mock_anima
 
         args = argparse.Namespace(
-            local=True, anima="alice", message="Hi",
-            from_person="human", gateway_url=None,
+            local=True,
+            anima="alice",
+            message="Hi",
+            from_person="human",
+            gateway_url=None,
         )
 
         with pytest.warns(DeprecationWarning, match="--local is deprecated"):
@@ -184,14 +187,12 @@ class TestLocalDeprecation:
 
 
 class TestCallHumanExitCode:
-    """Tests for call_human CLI exit code (core.tools.call_human)."""
+    """Tests for call_human CLI exit code (core.integrations.call_human)."""
 
-    @patch("core.tools.call_human._load_config")
-    def test_cli_main_exits_1_when_all_not_supported(
-        self, mock_load_config: MagicMock
-    ) -> None:
+    @patch("core.integrations.call_human._load_config")
+    def test_cli_main_exits_1_when_all_not_supported(self, mock_load_config: MagicMock) -> None:
         """Configure channels with only non-slack types; assert SystemExit 1."""
-        from core.tools.call_human import cli_main
+        from core.integrations.call_human import cli_main
 
         mock_load_config.return_value = {
             "human_notification": {
@@ -208,9 +209,9 @@ class TestCallHumanExitCode:
 
         assert exc_info.value.code == 1
 
-    @patch("core.tools.call_human._send_slack", new_callable=AsyncMock)
-    @patch("core.tools.call_human._get_bot_token")
-    @patch("core.tools.call_human._load_config")
+    @patch("core.integrations.call_human._send_slack", new_callable=AsyncMock)
+    @patch("core.integrations.call_human._get_bot_token")
+    @patch("core.integrations.call_human._load_config")
     def test_cli_main_exits_0_when_slack_ok(
         self,
         mock_load_config: MagicMock,
@@ -218,7 +219,7 @@ class TestCallHumanExitCode:
         mock_send_slack: AsyncMock,
     ) -> None:
         """Configure slack channel; mock _send_slack to return OK; assert exit 0."""
-        from core.tools.call_human import cli_main
+        from core.integrations.call_human import cli_main
 
         mock_load_config.return_value = {
             "human_notification": {
@@ -238,9 +239,9 @@ class TestCallHumanExitCode:
         cli_main(["Subject", "Body"])
         mock_send_slack.assert_called_once()
 
-    @patch("core.tools.call_human._send_slack", new_callable=AsyncMock)
-    @patch("core.tools.call_human._get_bot_token")
-    @patch("core.tools.call_human._load_config")
+    @patch("core.integrations.call_human._send_slack", new_callable=AsyncMock)
+    @patch("core.integrations.call_human._get_bot_token")
+    @patch("core.integrations.call_human._load_config")
     def test_cli_main_exits_1_when_slack_error(
         self,
         mock_load_config: MagicMock,
@@ -248,7 +249,7 @@ class TestCallHumanExitCode:
         mock_send_slack: AsyncMock,
     ) -> None:
         """Configure slack; mock _send_slack to return ERROR; assert SystemExit 1."""
-        from core.tools.call_human import cli_main
+        from core.integrations.call_human import cli_main
 
         mock_load_config.return_value = {
             "human_notification": {

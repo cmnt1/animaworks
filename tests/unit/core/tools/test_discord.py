@@ -16,16 +16,16 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from core.tools._discord_cache import MessageCache
-from core.tools._discord_client import DiscordAPIError, DiscordClient
-from core.tools._discord_markdown import (
+from core.integrations._discord_cache import MessageCache
+from core.integrations._discord_client import DiscordAPIError, DiscordClient
+from core.integrations._discord_markdown import (
     DISCORD_MESSAGE_LIMIT,
     clean_discord_markup,
     format_discord_timestamp,
     md_to_discord,
     truncate,
 )
-from core.tools.discord import EXECUTION_PROFILE, dispatch, get_tool_schemas
+from core.integrations.discord import EXECUTION_PROFILE, dispatch, get_tool_schemas
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -48,14 +48,14 @@ def _mock_response(
 
 @pytest.fixture
 def _patch_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("core.tools._discord_cache.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("core.integrations._discord_cache.get_data_dir", lambda: tmp_path)
 
 
 # ── TestDiscordMarkdown ─────────────────────────────────────
 
 
 class TestDiscordMarkdown:
-    """Tests for core.tools._discord_markdown."""
+    """Tests for core.integrations._discord_markdown."""
 
     def test_clean_user_mention(self) -> None:
         assert clean_discord_markup("<@123456>") == "@123456"
@@ -291,7 +291,7 @@ class TestDiscordClient:
         mock_http.request.return_value = _mock_response(
             json_data=[{"id": "1", "name": "G"}],
         )
-        with patch("core.tools._discord_client.httpx.Client", return_value=mock_http):
+        with patch("core.integrations._discord_client.httpx.Client", return_value=mock_http):
             client = DiscordClient(token="fake-token")
             try:
                 assert client.guilds() == [{"id": "1", "name": "G"}]
@@ -310,7 +310,7 @@ class TestDiscordClient:
             {"id": "a1", "name": "announce", "type": 5},
         ]
         mock_http.request.return_value = _mock_response(json_data=payload)
-        with patch("core.tools._discord_client.httpx.Client", return_value=mock_http):
+        with patch("core.integrations._discord_client.httpx.Client", return_value=mock_http):
             client = DiscordClient(token="fake-token")
             try:
                 chans = client.channels("guild-x")
@@ -322,7 +322,7 @@ class TestDiscordClient:
     def test_send_message(self) -> None:
         mock_http = MagicMock()
         mock_http.request.return_value = _mock_response(json_data={"id": "msg1", "content": "hi"})
-        with patch("core.tools._discord_client.httpx.Client", return_value=mock_http):
+        with patch("core.integrations._discord_client.httpx.Client", return_value=mock_http):
             client = DiscordClient(token="fake-token")
             try:
                 out = client.send_message("ch1", "hello")
@@ -336,7 +336,7 @@ class TestDiscordClient:
     def test_send_message_with_reply(self) -> None:
         mock_http = MagicMock()
         mock_http.request.return_value = _mock_response(json_data={"id": "m2"})
-        with patch("core.tools._discord_client.httpx.Client", return_value=mock_http):
+        with patch("core.integrations._discord_client.httpx.Client", return_value=mock_http):
             client = DiscordClient(token="fake-token")
             try:
                 client.send_message("ch1", "reply text", reply_to="orig")
@@ -353,7 +353,7 @@ class TestDiscordClient:
     def test_channel_history(self) -> None:
         mock_http = MagicMock()
         mock_http.request.return_value = _mock_response(json_data=[{"id": "h1"}])
-        with patch("core.tools._discord_client.httpx.Client", return_value=mock_http):
+        with patch("core.integrations._discord_client.httpx.Client", return_value=mock_http):
             client = DiscordClient(token="fake-token")
             try:
                 assert client.channel_history("ch1", limit=10) == [{"id": "h1"}]
@@ -365,7 +365,7 @@ class TestDiscordClient:
     def test_add_reaction(self) -> None:
         mock_http = MagicMock()
         mock_http.request.return_value = _mock_response(json_data=None)
-        with patch("core.tools._discord_client.httpx.Client", return_value=mock_http):
+        with patch("core.integrations._discord_client.httpx.Client", return_value=mock_http):
             client = DiscordClient(token="fake-token")
             try:
                 client.add_reaction("c1", "m1", "👍")
@@ -387,8 +387,8 @@ class TestDiscordClient:
             _mock_response(json_data=[{"id": "ok"}]),
         ]
         with (
-            patch("core.tools._discord_client.httpx.Client", return_value=mock_http),
-            patch("core.tools._retry.time.sleep", lambda _s: None),
+            patch("core.integrations._discord_client.httpx.Client", return_value=mock_http),
+            patch("core.integrations._retry.time.sleep", lambda _s: None),
         ):
             client = DiscordClient(token="fake-token")
             try:
@@ -403,7 +403,7 @@ class TestDiscordClient:
             status_code=404,
             json_data={"message": "Unknown Channel", "code": 10003},
         )
-        with patch("core.tools._discord_client.httpx.Client", return_value=mock_http):
+        with patch("core.integrations._discord_client.httpx.Client", return_value=mock_http):
             client = DiscordClient(token="fake-token")
             try:
                 with pytest.raises(DiscordAPIError) as exc_info:
@@ -430,7 +430,7 @@ class TestDiscordClient:
                 {"id": "voice", "name": "VC", "type": 2},
             ],
         )
-        with patch("core.tools._discord_client.httpx.Client", return_value=mock_http):
+        with patch("core.integrations._discord_client.httpx.Client", return_value=mock_http):
             client = DiscordClient(token="fake-token")
             try:
                 cid = client.resolve_channel("guild-a", "#general")
@@ -443,10 +443,10 @@ class TestDiscordClient:
 
 
 class TestDiscordDispatch:
-    """Tests for core.tools.discord dispatch and metadata."""
+    """Tests for core.integrations.discord dispatch and metadata."""
 
     def test_dispatch_discord_guilds(self) -> None:
-        with patch("core.tools.discord.DiscordClient") as MockClient:
+        with patch("core.integrations.discord.DiscordClient") as MockClient:
             mock_inst = MockClient.return_value
             mock_inst.guilds.return_value = [{"id": "g"}]
             out = dispatch("discord_guilds", {})

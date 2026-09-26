@@ -11,11 +11,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import ASGITransport, AsyncClient
 
 from core.config.models import ImageGenConfig
-from core.tools.image_gen import PipelineResult
+from core.integrations.image_gen import PipelineResult
 
 
 def _make_test_app(animas_dir: Path | None = None):
     from fastapi import FastAPI
+
     from server.routes.assets import create_assets_router
 
     app = FastAPI()
@@ -97,9 +98,7 @@ class TestGetAssetMetadata:
         animas_dir = tmp_path / "animas"
         anima_dir = animas_dir / "alice"
         anima_dir.mkdir(parents=True)
-        (anima_dir / "identity.md").write_text(
-            "# Alice\nイメージカラー: ピンク #FF69B4\n", encoding="utf-8"
-        )
+        (anima_dir / "identity.md").write_text("# Alice\nイメージカラー: ピンク #FF69B4\n", encoding="utf-8")
         (anima_dir / "assets").mkdir()
 
         app = _make_test_app(animas_dir=animas_dir)
@@ -435,7 +434,7 @@ class TestGenerateAssets:
         assert resp.status_code == 400
         assert "prompt is required" in resp.json()["detail"]
 
-    @patch("core.tools.image_gen.ImageGenPipeline")
+    @patch("core.integrations.image_gen.ImageGenPipeline")
     async def test_generate_success(self, mock_pipeline_cls, tmp_path):
         anima_dir = tmp_path / "alice"
         anima_dir.mkdir()
@@ -465,7 +464,7 @@ class TestGenerateAssets:
         assert resp.status_code == 200
         assert resp.json()["status"] == "done"
 
-    @patch("core.tools.image_gen.ImageGenPipeline")
+    @patch("core.integrations.image_gen.ImageGenPipeline")
     @patch("core.config.models.load_config")
     async def test_generate_uses_global_image_backend(self, mock_load_config, mock_pipeline_cls, tmp_path):
         anima_dir = tmp_path / "alice"
@@ -498,6 +497,7 @@ class TestGenerateAssets:
         config = mock_pipeline_cls.call_args.kwargs["config"]
         assert config.backend == "diffusers"
         assert config.image_style == "realistic"
+
 
 # ── GET /animas/{name}/assets/metadata (icon cross-mode fallback) ──
 
@@ -577,7 +577,7 @@ class TestRegenerateAssetStep:
         assert "prompt is required" in resp.json()["detail"]
 
     @patch("server.routes.assets.emit", new_callable=AsyncMock)
-    @patch("core.tools.image_gen.ImageGenPipeline")
+    @patch("core.integrations.image_gen.ImageGenPipeline")
     async def test_icon_step_ok_and_emits(self, mock_pipeline_cls, mock_emit, tmp_path):
         anima_dir = tmp_path / "alice"
         (anima_dir / "assets").mkdir(parents=True)
@@ -616,7 +616,7 @@ class TestRegenerateAssetStep:
 
 
 class TestRemakePreview:
-    @patch("core.tools.image_gen.ImageGenPipeline")
+    @patch("core.integrations.image_gen.ImageGenPipeline")
     @patch("core.config.models.load_config")
     async def test_without_style_from_ignores_global_style_reference(
         self,

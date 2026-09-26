@@ -464,7 +464,7 @@ class TestReconcileAnimaAssets:
         mock_result.errors = []
         mock_result.skipped = []
 
-        with patch("core.tools.image_gen.ImageGenPipeline") as mock_cls:
+        with patch("core.integrations.image_gen.ImageGenPipeline") as mock_cls:
             mock_pipeline = MagicMock()
             mock_pipeline.generate_all.return_value = mock_result
             mock_cls.return_value = mock_pipeline
@@ -494,7 +494,7 @@ class TestReconcileAnimaAssets:
         )
 
         with patch(
-            "core.tools.image_gen.ImageGenPipeline",
+            "core.integrations.image_gen.ImageGenPipeline",
             side_effect=RuntimeError("API down"),
         ):
             result = await reconcile_anima_assets(anima_dir)
@@ -571,7 +571,7 @@ class TestReconcileAllAssets:
         mock_result.errors = []
         mock_result.skipped = []
 
-        with patch("core.tools.image_gen.ImageGenPipeline") as mock_cls:
+        with patch("core.integrations.image_gen.ImageGenPipeline") as mock_cls:
             mock_pipeline = MagicMock()
             mock_pipeline.generate_all.return_value = mock_result
             mock_cls.return_value = mock_pipeline
@@ -606,7 +606,7 @@ class TestReconcileAllAssets:
 
         ws_manager = AsyncMock()
 
-        with patch("core.tools.image_gen.ImageGenPipeline") as mock_cls:
+        with patch("core.integrations.image_gen.ImageGenPipeline") as mock_cls:
             mock_pipeline = MagicMock()
             mock_pipeline.generate_all.return_value = mock_result
             mock_cls.return_value = mock_pipeline

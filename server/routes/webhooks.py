@@ -25,9 +25,9 @@ from fastapi.responses import HTMLResponse
 
 from core.config.models import load_config
 from core.i18n import t
+from core.integrations._base import ToolConfigError, get_credential
 from core.messenger import Messenger
 from core.paths import get_data_dir
-from core.tools._base import ToolConfigError, get_credential
 
 logger = logging.getLogger("animaworks.webhooks")
 
@@ -102,7 +102,7 @@ def create_webhooks_router() -> APIRouter:
 
     def _resolve_per_anima_signing_secret(anima_name: str) -> str | None:
         """Resolve per-Anima signing secret from vault/shared credentials."""
-        from core.tools._base import _lookup_shared_credentials, _lookup_vault_credential
+        from core.integrations._base import _lookup_shared_credentials, _lookup_vault_credential
 
         key = f"SLACK_SIGNING_SECRET__{anima_name}"
         secret = _lookup_vault_credential(key)
@@ -169,7 +169,7 @@ def create_webhooks_router() -> APIRouter:
                     from slack_sdk.web.async_client import AsyncWebClient
 
                     if anima_from_app:
-                        from server.slack_socket import SlackSocketModeManager
+                        from server.gateways.slack_socket import SlackSocketModeManager
 
                         _token = SlackSocketModeManager._get_per_anima_credential(
                             "SLACK_BOT_TOKEN",
@@ -188,7 +188,7 @@ def create_webhooks_router() -> APIRouter:
             # Resolve token if not yet resolved (for thread context / reply routing)
             if _token is None:
                 if anima_from_app:
-                    from server.slack_socket import SlackSocketModeManager
+                    from server.gateways.slack_socket import SlackSocketModeManager
 
                     _token = SlackSocketModeManager._get_per_anima_credential(
                         "SLACK_BOT_TOKEN",
@@ -215,7 +215,8 @@ def create_webhooks_router() -> APIRouter:
 
             import asyncio
 
-            from server.slack_socket import (
+            from core.notification.slack_names import resolve_slack_mentions
+            from server.gateways.slack_socket import (
                 _build_slack_annotation,
                 _detect_external_addressees,
                 _detect_mention_intent,
@@ -223,7 +224,6 @@ def create_webhooks_router() -> APIRouter:
                 _fetch_thread_context,
                 _load_alias_user_ids,
                 _resolve_channel_name,
-                _resolve_slack_mentions,
             )
 
             alias_ids = _load_alias_user_ids()
@@ -245,7 +245,7 @@ def create_webhooks_router() -> APIRouter:
                 if ctx:
                     text = ctx + text
 
-            text = await asyncio.to_thread(_resolve_slack_mentions, text, _token or "")
+            text = await asyncio.to_thread(resolve_slack_mentions, text, _token or "")
             has_mention = bool(mention_intent)
             annotation = _build_slack_annotation(
                 channel_id,

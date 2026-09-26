@@ -36,7 +36,7 @@ def collect_gmail() -> list[ExternalTask]:
     from core.external_tasks.collector import CredentialNotFoundError
 
     try:
-        from core.tools.gmail import GmailClient
+        from core.integrations.gmail import GmailClient
     except ImportError as exc:
         raise CredentialNotFoundError(f"Gmail dependencies unavailable: {exc}") from exc
 
@@ -46,7 +46,7 @@ def collect_gmail() -> list[ExternalTask]:
         raise CredentialNotFoundError(str(exc)) from exc
 
     # Block interactive OAuth: only proceed when a token file already exists.
-    # (core/tools/gmail.py is left unchanged; expired+unrefreshable tokens
+    # (core/integrations/gmail.py is left unchanged; expired+unrefreshable tokens
     # still surface via RefreshError → CredentialNotFoundError below.)
     token_path = getattr(client, "token_path", None)
     mcp_token_path = getattr(client, "mcp_token_path", None)

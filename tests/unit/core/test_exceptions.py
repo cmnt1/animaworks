@@ -41,31 +41,63 @@ from core.exceptions import (
 
 ALL_EXCEPTIONS = [
     AnimaWorksError,
-    ExecutionError, LLMAPIError, LLMTimeoutError, StreamDisconnectedError,
+    ExecutionError,
+    LLMAPIError,
+    LLMTimeoutError,
+    StreamDisconnectedError,
     ExecutorUnavailableError,
-    ToolError, ToolConfigError, ToolExecutionError, ToolNotFoundError,
-    MemoryIOError, MemoryReadError, MemoryWriteError, MemoryCorruptedError,
+    ToolError,
+    ToolConfigError,
+    ToolExecutionError,
+    ToolNotFoundError,
+    MemoryIOError,
+    MemoryReadError,
+    MemoryWriteError,
+    MemoryCorruptedError,
     TaskPersistenceError,
-    ProcessError, AnimaNotFoundError, AnimaNotRunningError, IPCConnectionError,
-    ConfigError, ConfigNotFoundError, ConfigValidationError,
-    MessagingError, RecipientNotFoundError, DeliveryError,
-    ChannelNotFoundError, ChannelAccessDeniedError,
+    ProcessError,
+    AnimaNotFoundError,
+    AnimaNotRunningError,
+    IPCConnectionError,
+    ConfigError,
+    ConfigNotFoundError,
+    ConfigValidationError,
+    MessagingError,
+    RecipientNotFoundError,
+    DeliveryError,
+    ChannelNotFoundError,
+    ChannelAccessDeniedError,
 ]
 
 LEAF_EXCEPTIONS = [
-    LLMAPIError, LLMTimeoutError, StreamDisconnectedError, ExecutorUnavailableError,
-    ToolConfigError, ToolExecutionError, ToolNotFoundError,
-    MemoryReadError, MemoryWriteError, MemoryCorruptedError,
+    LLMAPIError,
+    LLMTimeoutError,
+    StreamDisconnectedError,
+    ExecutorUnavailableError,
+    ToolConfigError,
+    ToolExecutionError,
+    ToolNotFoundError,
+    MemoryReadError,
+    MemoryWriteError,
+    MemoryCorruptedError,
     TaskPersistenceError,
-    AnimaNotFoundError, AnimaNotRunningError, IPCConnectionError,
-    ConfigNotFoundError, ConfigValidationError,
-    RecipientNotFoundError, DeliveryError,
-    ChannelNotFoundError, ChannelAccessDeniedError,
+    AnimaNotFoundError,
+    AnimaNotRunningError,
+    IPCConnectionError,
+    ConfigNotFoundError,
+    ConfigValidationError,
+    RecipientNotFoundError,
+    DeliveryError,
+    ChannelNotFoundError,
+    ChannelAccessDeniedError,
 ]
 
 FAMILY_MAP: dict[type[AnimaWorksError], list[type[AnimaWorksError]]] = {
     ExecutionError: [
-        LLMAPIError, LLMTimeoutError, StreamDisconnectedError, ExecutorUnavailableError,
+        LLMAPIError,
+        LLMTimeoutError,
+        StreamDisconnectedError,
+        ExecutorUnavailableError,
     ],
     ToolError: [ToolConfigError, ToolExecutionError, ToolNotFoundError],
     MemoryIOError: [MemoryReadError, MemoryWriteError, MemoryCorruptedError, TaskPersistenceError],
@@ -105,9 +137,7 @@ class TestFamilyHierarchy:
         children: list[type[AnimaWorksError]],
     ) -> None:
         for child in children:
-            assert issubclass(child, parent), (
-                f"{child.__name__} should be a subclass of {parent.__name__}"
-            )
+            assert issubclass(child, parent), f"{child.__name__} should be a subclass of {parent.__name__}"
             assert issubclass(child, AnimaWorksError)
 
 
@@ -214,7 +244,7 @@ class TestReExportExecutionBase:
 
 class TestReExportToolsBase:
     def test_re_export_tools_base(self) -> None:
-        from core.tools._base import ToolConfigError as ReExported
+        from core.integrations._base import ToolConfigError as ReExported
 
         assert ReExported is ToolConfigError
 

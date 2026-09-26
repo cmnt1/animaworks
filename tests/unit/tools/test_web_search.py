@@ -1,4 +1,4 @@
-"""Tests for core/tools/web_search.py — dual-backend Web Search tool."""
+"""Tests for core/integrations/web_search.py — dual-backend Web Search tool."""
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
@@ -10,7 +10,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from core.tools.web_search import (
+from core.integrations.web_search import (
     _DDG_HTML_URL,
     _extract_ddg_url,
     _resolve_backend,
@@ -69,11 +69,11 @@ def _make_brave_response(data: dict | None = None, status: int = 200) -> httpx.R
 
 class TestResolveBackend:
     def test_brave_when_key_available(self):
-        with patch("core.tools._base.get_credential", return_value="fake-key"):
+        with patch("core.integrations._base.get_credential", return_value="fake-key"):
             assert _resolve_backend() == "brave"
 
     def test_duckduckgo_when_no_key(self):
-        with patch("core.tools._base.get_credential", side_effect=Exception("no key")):
+        with patch("core.integrations._base.get_credential", side_effect=Exception("no key")):
             assert _resolve_backend() == "duckduckgo"
 
 
@@ -83,8 +83,8 @@ class TestResolveBackend:
 class TestSearch:
     def test_uses_brave_when_available(self):
         with (
-            patch("core.tools.web_search._resolve_backend", return_value="brave"),
-            patch("core.tools.web_search._search_brave") as mock_brave,
+            patch("core.integrations.web_search._resolve_backend", return_value="brave"),
+            patch("core.integrations.web_search._search_brave") as mock_brave,
         ):
             mock_brave.return_value = [{"title": "B", "url": "U", "description": "D"}]
             results = search("test query")
@@ -93,8 +93,8 @@ class TestSearch:
 
     def test_falls_back_to_ddg(self):
         with (
-            patch("core.tools.web_search._resolve_backend", return_value="duckduckgo"),
-            patch("core.tools.web_search._search_duckduckgo") as mock_ddg,
+            patch("core.integrations.web_search._resolve_backend", return_value="duckduckgo"),
+            patch("core.integrations.web_search._search_duckduckgo") as mock_ddg,
         ):
             mock_ddg.return_value = [{"title": "D", "url": "U", "description": "D"}]
             search("test query")
@@ -102,16 +102,16 @@ class TestSearch:
 
     def test_count_clamped_min(self):
         with (
-            patch("core.tools.web_search._resolve_backend", return_value="duckduckgo"),
-            patch("core.tools.web_search.httpx.post", return_value=_make_ddg_response()),
+            patch("core.integrations.web_search._resolve_backend", return_value="duckduckgo"),
+            patch("core.integrations.web_search.httpx.post", return_value=_make_ddg_response()),
         ):
             results = search("test", count=-5)
             assert isinstance(results, list)
 
     def test_count_clamped_max(self):
         with (
-            patch("core.tools.web_search._resolve_backend", return_value="duckduckgo"),
-            patch("core.tools.web_search.httpx.post", return_value=_make_ddg_response()),
+            patch("core.integrations.web_search._resolve_backend", return_value="duckduckgo"),
+            patch("core.integrations.web_search.httpx.post", return_value=_make_ddg_response()),
         ):
             results = search("test", count=100)
             assert isinstance(results, list)
@@ -124,8 +124,8 @@ class TestDuckDuckGo:
     def test_successful_search(self):
         mock_resp = _make_ddg_response()
         with (
-            patch("core.tools.web_search._resolve_backend", return_value="duckduckgo"),
-            patch("core.tools.web_search.httpx.post", return_value=mock_resp),
+            patch("core.integrations.web_search._resolve_backend", return_value="duckduckgo"),
+            patch("core.integrations.web_search.httpx.post", return_value=mock_resp),
         ):
             results = search("python programming")
         assert len(results) == 2
@@ -135,8 +135,8 @@ class TestDuckDuckGo:
     def test_http_error_propagated(self):
         error_resp = _make_ddg_response(status=500)
         with (
-            patch("core.tools.web_search._resolve_backend", return_value="duckduckgo"),
-            patch("core.tools.web_search.httpx.post", return_value=error_resp),
+            patch("core.integrations.web_search._resolve_backend", return_value="duckduckgo"),
+            patch("core.integrations.web_search.httpx.post", return_value=error_resp),
             pytest.raises(httpx.HTTPStatusError),
         ):
             search("test")
@@ -144,8 +144,8 @@ class TestDuckDuckGo:
     def test_empty_results(self):
         mock_resp = _make_ddg_response("<html><body></body></html>")
         with (
-            patch("core.tools.web_search._resolve_backend", return_value="duckduckgo"),
-            patch("core.tools.web_search.httpx.post", return_value=mock_resp),
+            patch("core.integrations.web_search._resolve_backend", return_value="duckduckgo"),
+            patch("core.integrations.web_search.httpx.post", return_value=mock_resp),
         ):
             results = search("obscure query")
         assert results == []
@@ -165,8 +165,8 @@ class TestDuckDuckGo:
 """
         mock_resp = _make_ddg_response(html_with_ad)
         with (
-            patch("core.tools.web_search._resolve_backend", return_value="duckduckgo"),
-            patch("core.tools.web_search.httpx.post", return_value=mock_resp),
+            patch("core.integrations.web_search._resolve_backend", return_value="duckduckgo"),
+            patch("core.integrations.web_search.httpx.post", return_value=mock_resp),
         ):
             results = search("test")
         assert len(results) == 1
@@ -180,9 +180,9 @@ class TestBrave:
     def test_successful_search(self):
         mock_resp = _make_brave_response()
         with (
-            patch("core.tools.web_search._resolve_backend", return_value="brave"),
-            patch("core.tools._base.get_credential", return_value="fake-key"),
-            patch("core.tools.web_search.httpx.get", return_value=mock_resp),
+            patch("core.integrations.web_search._resolve_backend", return_value="brave"),
+            patch("core.integrations._base.get_credential", return_value="fake-key"),
+            patch("core.integrations.web_search.httpx.get", return_value=mock_resp),
         ):
             results = search("test")
         assert len(results) == 2
@@ -192,9 +192,9 @@ class TestBrave:
     def test_http_error_propagated(self):
         error_resp = _make_brave_response(status=500)
         with (
-            patch("core.tools.web_search._resolve_backend", return_value="brave"),
-            patch("core.tools._base.get_credential", return_value="fake-key"),
-            patch("core.tools.web_search.httpx.get", return_value=error_resp),
+            patch("core.integrations.web_search._resolve_backend", return_value="brave"),
+            patch("core.integrations._base.get_credential", return_value="fake-key"),
+            patch("core.integrations.web_search.httpx.get", return_value=error_resp),
             pytest.raises(httpx.HTTPStatusError),
         ):
             search("test")
@@ -265,19 +265,19 @@ class TestFormatResults:
 class TestDispatch:
     """Dispatch function parameter mapping tests."""
 
-    @patch("core.tools.web_search.search")
+    @patch("core.integrations.web_search.search")
     def test_limit_mapped_to_count(self, mock_search):
         mock_search.return_value = [{"title": "T", "url": "U", "description": "D"}]
         dispatch("web_search", {"query": "test", "limit": 3})
         mock_search.assert_called_once_with(query="test", count=3)
 
-    @patch("core.tools.web_search.search")
+    @patch("core.integrations.web_search.search")
     def test_count_passed_directly(self, mock_search):
         mock_search.return_value = []
         dispatch("web_search", {"query": "test", "count": 7})
         mock_search.assert_called_once_with(query="test", count=7)
 
-    @patch("core.tools.web_search.search")
+    @patch("core.integrations.web_search.search")
     def test_anima_dir_stripped(self, mock_search):
         mock_search.return_value = []
         dispatch("web_search", {"query": "test", "anima_dir": "/tmp/a"})

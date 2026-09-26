@@ -43,8 +43,8 @@ def collect_chatwork() -> list[ExternalTask]:
     from core.external_tasks.collector import CredentialNotFoundError
 
     try:
-        from core.tools._base import resolve_env_style_credential
-        from core.tools._chatwork_client import ChatworkClient
+        from core.integrations._base import resolve_env_style_credential
+        from core.integrations._chatwork_client import ChatworkClient
     except ImportError as exc:
         raise CredentialNotFoundError(f"Chatwork dependencies unavailable: {exc}") from exc
 
@@ -112,7 +112,7 @@ def _collect_unreplied_mentions(client: Any) -> list[ExternalTask]:
     tasks still surface.
     """
     try:
-        from core.tools._chatwork_cache import MessageCache, resolve_cache_db_path
+        from core.integrations._chatwork_cache import MessageCache, resolve_cache_db_path
     except ImportError:
         logger.debug("Chatwork MessageCache unavailable; skipping unreplied mentions")
         return []

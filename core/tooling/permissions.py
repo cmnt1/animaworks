@@ -70,7 +70,7 @@ def _disabled_service_tools() -> set[str]:
 
 def get_permitted_tools(config: PermissionsConfig) -> set[str]:
     """Get permitted tool names from structured permissions config."""
-    from core.tools import TOOL_MODULES
+    from core.integrations import TOOL_MODULES
 
     all_tools = set(TOOL_MODULES.keys()) - _disabled_service_tools()
 
@@ -98,7 +98,7 @@ def parse_permitted_tools(text: str) -> set[str]:
       4. Section present but no matching entries → ALL tools
 
     Returns:
-        Set of permitted names: tool module names (keys from ``core.tools.TOOL_MODULES``)
+        Set of permitted names: tool module names (keys from ``core.integrations.TOOL_MODULES``)
         and action-level permits (e.g. ``gmail_send``).
     """
     from core.config.models import ExternalToolsPermission, PermissionsConfig
@@ -147,7 +147,7 @@ def _load_execution_profile(tool_name: str) -> dict[str, dict[str, object]] | No
         The module's EXECUTION_PROFILE dict, or None if not found or load fails.
     """
     try:
-        from core.tools import TOOL_MODULES
+        from core.integrations import TOOL_MODULES
 
         if tool_name not in TOOL_MODULES:
             return None

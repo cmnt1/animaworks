@@ -163,7 +163,7 @@ class BackgroundTaskManager:
         2. ``profiles`` — EXECUTION_PROFILE from tool modules
         3. ``config_eligible`` — explicit config.json overrides
         """
-        from core.tools._base import get_eligible_tools_from_profiles
+        from core.integrations._base import get_eligible_tools_from_profiles
 
         eligible = dict(_DEFAULT_ELIGIBLE_TOOLS)  # Layer 1
         if profiles:

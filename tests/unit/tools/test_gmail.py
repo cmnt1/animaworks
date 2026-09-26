@@ -1,9 +1,9 @@
 # AnimaWorks - Digital Anima Framework
 # Copyright (C) 2026 AnimaWorks Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for core/tools/gmail.py — Gmail integration.
+"""Tests for core/integrations/gmail.py — Gmail integration.
 
-We mock google API modules before importing core.tools.gmail
+We mock google API modules before importing core.integrations.gmail
 since the google packages are optional dependencies.
 """
 
@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# ── Mock google modules before importing core.tools.gmail ─────────
+# ── Mock google modules before importing core.integrations.gmail ─────────
 
 _google_mocks: dict[str, MagicMock] = {}
 
@@ -41,7 +41,7 @@ _GOOGLE_MODULES = [
 @pytest.fixture(autouse=True, scope="module")
 def _mock_google_modules():
     """Inject mock google modules into sys.modules for the test session."""
-    saved_gmail = sys.modules.get("core.tools.gmail")
+    saved_gmail = sys.modules.get("core.integrations.gmail")
     saved = {}
     for mod_name in _GOOGLE_MODULES:
         saved[mod_name] = sys.modules.get(mod_name)
@@ -58,10 +58,10 @@ def _mock_google_modules():
     sys.modules["googleapiclient.discovery"].build = build_mock
 
     # Reload the gmail module so it picks up our mocks
-    if "core.tools.gmail" in sys.modules:
-        importlib.reload(sys.modules["core.tools.gmail"])
+    if "core.integrations.gmail" in sys.modules:
+        importlib.reload(sys.modules["core.integrations.gmail"])
     else:
-        import core.tools.gmail  # noqa: F401
+        import core.integrations.gmail  # noqa: F401
 
     yield
 
@@ -72,20 +72,20 @@ def _mock_google_modules():
         else:
             sys.modules[mod_name] = saved[mod_name]
     if saved_gmail is None:
-        sys.modules.pop("core.tools.gmail", None)
+        sys.modules.pop("core.integrations.gmail", None)
     else:
         # Reload the original module in place. Other test modules may already
         # hold classes whose methods reference this module's globals.
-        sys.modules["core.tools.gmail"] = saved_gmail
+        sys.modules["core.integrations.gmail"] = saved_gmail
         importlib.reload(saved_gmail)
 
 
-# Now import from core.tools.gmail (after mocks are in place)
+# Now import from core.integrations.gmail (after mocks are in place)
 # We use a function to get the module to avoid import-time issues
 
 
 def _get_gmail():
-    import core.tools.gmail as gmail_mod
+    import core.integrations.gmail as gmail_mod
 
     return gmail_mod
 

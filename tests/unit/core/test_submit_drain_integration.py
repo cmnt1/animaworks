@@ -8,6 +8,7 @@ Validates the full lifecycle of background task execution:
 2. ``_on_background_task_complete()`` writes notification to inbox
 3. ``drain_background_notifications()`` reads and deletes notifications
 """
+
 from __future__ import annotations
 
 import json
@@ -23,10 +24,12 @@ class TestSubmitDrainIntegration:
     """Integration test: submit -> pending -> notification -> drain chain."""
 
     def test_submit_creates_pending_that_watcher_expects(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Verify pending file format matches what _execute_pending_task expects."""
-        from core.tools import _handle_submit
+        from core.integrations import _handle_submit
 
         anima_dir = tmp_path / "animas" / "test-anima"
         anima_dir.mkdir(parents=True)
@@ -127,10 +130,12 @@ class TestSubmitDrainIntegration:
         assert anima.drain_background_notifications() == []
 
     def test_pending_file_has_all_watcher_required_fields(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Verify pending JSON has every field _execute_pending_task reads via .get()."""
-        from core.tools import _handle_submit
+        from core.integrations import _handle_submit
 
         anima_dir = tmp_path / "animas" / "sakura"
         anima_dir.mkdir(parents=True)
@@ -144,6 +149,4 @@ class TestSubmitDrainIntegration:
 
         # Fields accessed by _execute_pending_task via .get()
         watcher_fields = {"task_id", "tool_name", "subcommand", "raw_args", "anima_dir"}
-        assert watcher_fields.issubset(desc.keys()), (
-            f"Missing fields: {watcher_fields - set(desc.keys())}"
-        )
+        assert watcher_fields.issubset(desc.keys()), f"Missing fields: {watcher_fields - set(desc.keys())}"

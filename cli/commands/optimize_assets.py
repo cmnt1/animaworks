@@ -65,13 +65,13 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _run(args: argparse.Namespace) -> None:
-    from core.paths import get_animas_dir
-    from core.tools.image_gen import (
+    from core.integrations.image_gen import (
         compress_textures,
         optimize_glb,
         simplify_glb,
         strip_mesh_from_glb,
     )
+    from core.paths import get_animas_dir
 
     animas_dir = get_animas_dir()
     if not animas_dir.exists():

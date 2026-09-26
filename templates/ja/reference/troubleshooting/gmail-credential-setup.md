@@ -99,4 +99,4 @@ token.jsonに含まれる `client_id` は、そのトークンを最初に生成
 | `~/.animaworks/credentials/gmail/token.json` | OAuth認証トークン（必須） |
 | `~/.animaworks/credentials/gmail/credentials.json` | OAuthクライアント情報（新規フロー時のみ） |
 | `~/.animaworks/shared/credentials.json` | 環境変数設定（`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`） |
-| `core/tools/gmail.py` | Gmail toolの実装 |
+| `core/integrations/gmail.py` | Gmail toolの実装 |

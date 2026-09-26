@@ -1112,8 +1112,8 @@ class FileToolsMixin:
                 "count": limit,
                 "anima_dir": str(self._anima_dir),
             }
-            from core.tools.web_search import dispatch as ws_dispatch
-            from core.tools.web_search import format_results
+            from core.integrations.web_search import dispatch as ws_dispatch
+            from core.integrations.web_search import format_results
 
             result = ws_dispatch("web_search", ext_args)
             logger.info("WebSearch query=%s limit=%d", query[:60], limit)

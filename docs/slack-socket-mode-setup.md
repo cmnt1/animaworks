@@ -177,7 +177,7 @@ If the channel message body **contains this ID** in the form `<@U01234567>`, it 
 | `default_anima` | string | `""` | Fallback Anima when the channel is not in anima_mapping |
 | `app_id_mapping` | object | `{}` | Slack API App ID → Anima name (multiple apps in Webhook mode) |
 
-**Shared-bot mapping applies without reconnecting**: `server/slack_socket.py` calls `load_config()` on each message, so changes to `anima_mapping` / `default_anima` take effect from the next message onward (the WebSocket stays up).
+**Shared-bot mapping applies without reconnecting**: `server/gateways/slack_socket.py` calls `load_config()` on each message, so changes to `anima_mapping` / `default_anima` take effect from the next message onward (the WebSocket stays up).
 
 ### Finding the channel ID
 
@@ -201,7 +201,7 @@ You can configure a dedicated Slack bot per Anima. Adding `SLACK_BOT_TOKEN__{ani
 }
 ```
 
-The list of Per-Anima bots is determined by scanning `SLACK_BOT_TOKEN__*` keys in vault / `credentials.json` (`server/slack_socket.SlackSocketModeManager._discover_per_anima_bots`).
+The list of Per-Anima bots is determined by scanning `SLACK_BOT_TOKEN__*` keys in vault / `credentials.json` (`server/gateways/slack_socket.SlackSocketModeManager._discover_per_anima_bots`).
 
 Per-Anima bots and the shared bot (`SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN`) can be used together. The shared bot routes by channel using `anima_mapping` and `default_anima`.
 
@@ -267,22 +267,22 @@ Implementation: `server/reload_manager.py` → `SlackSocketModeManager.reload()`
 
 1. A Slack user sends a message in a mapped channel
 2. Slack delivers the event via WebSocket (Socket Mode) or HTTP POST (Webhook)
-3. **Deduplication**: The same message can produce both `message` and `app_mention` events. `ts` is recorded with a short TTL (~10 s); the second delivery is ignored (`_is_duplicate_ts` in `server/slack_socket.py`)
+3. **Deduplication**: The same message can produce both `message` and `app_mention` events. `ts` is recorded with a short TTL (~10 s); the second delivery is ignored (`_is_duplicate_ts` in `server/gateways/slack_socket.py`)
 4. **call_human thread replies**: If the message is a thread reply and mapped via `route_thread_reply`, it is routed to the inbox of the Anima that sent the original notification (`core/notification/reply_routing.py`)
 5. **Routing resolution**:
    - **Socket Mode Per-Anima bot**: All messages to that bot go directly to the corresponding Anima
    - **Socket Mode shared bot**: On each message, `anima_mapping[channel_id]` if the channel is listed (an empty value ignores the channel), otherwise `default_anima` (config hot-reloads)
    - **Webhook**: Resolve Anima with `app_id_mapping.get(api_app_id)` → otherwise the same `anima_mapping` / `default_anima` rule as above
 6. **Thread context**: When `thread_ts` is present, a one-line parent summary and reply count are prepended as a `[Thread context]` block (`conversations.replies`, logic equivalent to fetching up to ~10 items)
-7. **Body normalization**: Expand `<@U...>` to display names and convert Slack markup to plain text (`clean_slack_markup` in `core/tools/_slack_markdown.py`)
+7. **Body normalization**: Expand `<@U...>` to display names and convert Slack markup to plain text (`clean_slack_markup` in `core/integrations/_slack_markdown.py`)
 8. **Annotation**: Prepend a line indicating `[slack:DM]` or whether the channel message mentions the bot or an alias (`_build_slack_annotation`)
 9. **intent**: Mentions of the bot `<@BOT>` or of a `slack_user_id` from `user_aliases` → `question`. Otherwise only DMs get `question` (`_detect_mention_intent` / `_detect_slack_intent`)
 10. `Messenger.receive_external()` writes the message to `~/.animaworks/shared/inbox/{anima_name}/{msg_id}.json`
 11. The Anima processes the inbox on its next run cycle (heartbeat / cron / manual)
 
-## Slack tools (relationship to `core/tools/slack.py`)
+## Slack tools (relationship to `core/integrations/slack.py`)
 
-Ingest (Socket/Webhook) is separate from **Slack Web API** calls: the entry point is `core/tools/slack.py`, with implementation split across `_slack_client.py`, `_slack_cache.py`, `_slack_markdown.py`, and `_slack_cli.py`.
+Ingest (Socket/Webhook) is separate from **Slack Web API** calls: the entry point is `core/integrations/slack.py`, with implementation split across `_slack_client.py`, `_slack_cache.py`, `_slack_markdown.py`, and `_slack_cli.py`.
 
 ### Schemas (`get_tool_schemas()`) and `dispatch()` responsibilities
 
@@ -320,15 +320,15 @@ Default directory: `~/.animaworks/cache/slack/` (`MessageCache` / SQLite).
 
 ### CLI
 
-Subcommands from **`get_cli_guide()`** in `core/tools/_slack_cli.py`: **`channels`**, **`messages`**, **`send`**, **`search`**, **`unreplied`**. In the CLI, when **`ANIMAWORKS_ANIMA_DIR`** is set, **`SLACK_BOT_TOKEN__{name}`** is preferred per Anima. Display name and icon attachment apply to **`send` only** (`messages` etc. resolve the token only). **`react`**, fixed channel-ID post, and **update** are **not** in the CLI—use agent tools `slack_react`, `slack_channel_post`, and `slack_channel_update` (or `use_tool`).
+Subcommands from **`get_cli_guide()`** in `core/integrations/_slack_cli.py`: **`channels`**, **`messages`**, **`send`**, **`search`**, **`unreplied`**. In the CLI, when **`ANIMAWORKS_ANIMA_DIR`** is set, **`SLACK_BOT_TOKEN__{name}`** is preferred per Anima. Display name and icon attachment apply to **`send` only** (`messages` etc. resolve the token only). **`react`**, fixed channel-ID post, and **update** are **not** in the CLI—use agent tools `slack_react`, `slack_channel_post`, and `slack_channel_update` (or `use_tool`).
 
-Entry: `python -m core.tools.slack` or `animaworks-tool slack` (see `--help`).
+Entry: `python -m core.integrations.slack` or `animaworks-tool slack` (see `--help`).
 
 ## Related files
 
 | File | Role |
 |------|------|
-| `server/slack_socket.py` | `SlackSocketModeManager` (Socket Mode, Per-Anima / shared bot, deduplication, thread context, mention/intent) |
+| `server/gateways/slack_socket.py` | `SlackSocketModeManager` (Socket Mode, Per-Anima / shared bot, deduplication, thread context, mention/intent) |
 | `server/app.py` (near lifespan) | Start/stop `SlackSocketModeManager` |
 | `server/reload_manager.py` | `SlackSocketModeManager.reload()` when applying config/credentials |
 | `server/routes/system.py` | `/api/system/hot-reload*` endpoints |
@@ -338,10 +338,10 @@ Entry: `python -m core.tools.slack` or `animaworks-tool slack` (see `--help`).
 | `core/tooling/dispatch.py` | `ExternalToolDispatcher` (core tools: registry matches only schema names from `get_tool_schemas()`) |
 | `core/notification/reply_routing.py` | Route call_human thread replies to Animas |
 | `core/config/schemas.py` | `UserAliasConfig`, `ExternalMessagingChannelConfig`, `ExternalMessagingConfig` |
-| `core/tools/slack.py` | `get_tool_schemas` (channel_post/update only), `dispatch`, `EXECUTION_PROFILE`, re-exports |
-| `core/tools/_anima_icon_url.py` | `resolve_anima_icon_identity` (display name/icon for `slack_send` / `slack_channel_post`) |
-| `core/tools/_slack_client.py` | `SlackClient` (Web API, paging, 429 retries) |
-| `core/tools/_slack_cache.py` | `MessageCache` (SQLite) |
+| `core/integrations/slack.py` | `get_tool_schemas` (channel_post/update only), `dispatch`, `EXECUTION_PROFILE`, re-exports |
+| `core/integrations/_anima_icon_url.py` | `resolve_anima_icon_identity` (display name/icon for `slack_send` / `slack_channel_post`) |
+| `core/integrations/_slack_client.py` | `SlackClient` (Web API, paging, 429 retries) |
+| `core/integrations/_slack_cache.py` | `MessageCache` (SQLite) |
 
 ## Troubleshooting
 

@@ -16,12 +16,12 @@ import pytest
 from PIL import Image
 
 from core.config.models import ImageGenConfig
-from core.tools.image.codex import (
+from core.integrations.image.codex import (
     CodexFirstClient,
     CodexImageClient,
     codex_available,
 )
-from core.tools.image_gen import _build_fullbody_client, _build_reference_client
+from core.integrations.image_gen import _build_fullbody_client, _build_reference_client
 
 
 def _png_bytes(width: int, height: int, color: tuple[int, int, int, int] = (10, 20, 30, 255)) -> bytes:
@@ -64,46 +64,48 @@ def _mock_codex_writes_png(
 
 class TestCodexAvailable:
     def test_true_when_which_finds_binary(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("core.tools.image.codex.shutil.which", lambda _n: "/usr/bin/codex")
+        monkeypatch.setattr("core.integrations.image.codex.shutil.which", lambda _n: "/usr/bin/codex")
         assert codex_available() is True
 
     def test_false_when_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("core.tools.image.codex.shutil.which", lambda _n: None)
+        monkeypatch.setattr("core.integrations.image.codex.shutil.which", lambda _n: None)
         assert codex_available() is False
 
 
 class TestCodexImageClient:
     def test_generate_fullbody_resizes_to_target(self) -> None:
         client = CodexImageClient(ImageGenConfig(image_style="anime"))
-        with patch("core.tools.image.codex.subprocess.run", side_effect=_mock_codex_writes_png((80, 120))):
+        with patch("core.integrations.image.codex.subprocess.run", side_effect=_mock_codex_writes_png((80, 120))):
             out = client.generate_fullbody(prompt="1girl, black hair", width=1024, height=1536)
         assert isinstance(out, bytes)
         assert _decode_size(out) == (1024, 1536)
 
     def test_codex_stdin_is_detached(self) -> None:
         client = CodexImageClient(ImageGenConfig(image_style="anime"))
-        with patch("core.tools.image.codex.subprocess.run", side_effect=_mock_codex_writes_png((80, 120))) as run:
+        with patch(
+            "core.integrations.image.codex.subprocess.run", side_effect=_mock_codex_writes_png((80, 120))
+        ) as run:
             client.generate_fullbody(prompt="p", width=100, height=100)
         assert run.call_args.kwargs["stdin"] is subprocess.DEVNULL
 
     def test_cover_crop_from_square_to_portrait(self) -> None:
         """Square mock output must become 1024x1536 without stretch."""
         client = CodexImageClient()
-        with patch("core.tools.image.codex.subprocess.run", side_effect=_mock_codex_writes_png((200, 200))):
+        with patch("core.integrations.image.codex.subprocess.run", side_effect=_mock_codex_writes_png((200, 200))):
             out = client.generate_fullbody(prompt="subject", width=1024, height=1536)
         assert _decode_size(out) == (1024, 1536)
 
     def test_generate_from_reference_aspect_1_1(self) -> None:
         client = CodexImageClient(ImageGenConfig(image_style="realistic"))
         ref = _png_bytes(32, 32)
-        with patch("core.tools.image.codex.subprocess.run", side_effect=_mock_codex_writes_png((90, 90))):
+        with patch("core.integrations.image.codex.subprocess.run", side_effect=_mock_codex_writes_png((90, 90))):
             out = client.generate_from_reference(reference_image=ref, prompt="icon", aspect_ratio="1:1")
         assert _decode_size(out) == (1024, 1024)
 
     def test_generate_from_reference_aspect_3_4(self) -> None:
         client = CodexImageClient()
         ref = _png_bytes(32, 48)
-        with patch("core.tools.image.codex.subprocess.run", side_effect=_mock_codex_writes_png((100, 100))):
+        with patch("core.integrations.image.codex.subprocess.run", side_effect=_mock_codex_writes_png((100, 100))):
             out = client.generate_from_reference(reference_image=ref, prompt="bust", aspect_ratio="3:4")
         assert _decode_size(out) == (1024, 1365)
 
@@ -111,7 +113,7 @@ class TestCodexImageClient:
         client = CodexImageClient()
         with (
             patch(
-                "core.tools.image.codex.subprocess.run",
+                "core.integrations.image.codex.subprocess.run",
                 side_effect=_mock_codex_writes_png(missing_out=True),
             ),
             pytest.raises(RuntimeError, match="out.png"),
@@ -122,7 +124,7 @@ class TestCodexImageClient:
         client = CodexImageClient()
         with (
             patch(
-                "core.tools.image.codex.subprocess.run",
+                "core.integrations.image.codex.subprocess.run",
                 side_effect=_mock_codex_writes_png(returncode=1),
             ),
             pytest.raises(RuntimeError, match="failed"),
@@ -139,7 +141,7 @@ class TestCodexImageClient:
 
         vibe = _png_bytes(8, 8, (1, 0, 0, 255))
         face = _png_bytes(8, 8, (0, 1, 0, 255))
-        with patch("core.tools.image.codex.subprocess.run", side_effect=_run):
+        with patch("core.integrations.image.codex.subprocess.run", side_effect=_run):
             client.generate_fullbody(
                 prompt="char",
                 vibe_image=vibe,
@@ -164,7 +166,7 @@ class TestCodexFirstClient:
         client = CodexFirstClient(fallback_factory=lambda: fallback)
 
         with patch(
-            "core.tools.image.codex.subprocess.run",
+            "core.integrations.image.codex.subprocess.run",
             side_effect=_mock_codex_writes_png(missing_out=True),
         ):
             out = client.generate_fullbody(prompt="p", width=100, height=200)
@@ -183,7 +185,7 @@ class TestCodexFirstClient:
         ref = _png_bytes(16, 16)
 
         with patch(
-            "core.tools.image.codex.subprocess.run",
+            "core.integrations.image.codex.subprocess.run",
             side_effect=_mock_codex_writes_png(returncode=2),
         ):
             out = client.generate_from_reference(reference_image=ref, prompt="icon", aspect_ratio="1:1")
@@ -198,7 +200,7 @@ class TestCodexFirstClient:
     def test_success_does_not_call_fallback_factory(self) -> None:
         factory = MagicMock(side_effect=RuntimeError("factory should not run"))
         client = CodexFirstClient(fallback_factory=factory)
-        with patch("core.tools.image.codex.subprocess.run", side_effect=_mock_codex_writes_png((40, 40))):
+        with patch("core.integrations.image.codex.subprocess.run", side_effect=_mock_codex_writes_png((40, 40))):
             out = client.generate_fullbody(prompt="ok", width=64, height=64)
         assert _decode_size(out) == (64, 64)
         factory.assert_not_called()
@@ -206,34 +208,34 @@ class TestCodexFirstClient:
 
 class TestClientBuilders:
     def test_codex_unavailable_uses_api_clients(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("core.tools.image_gen.codex_available", lambda: False)
+        monkeypatch.setattr("core.integrations.image_gen.codex_available", lambda: False)
         monkeypatch.setenv("NOVELAI_TOKEN", "tok")
         monkeypatch.setenv("FAL_KEY", "fal-tok")
         cfg = ImageGenConfig(image_style="anime", backend="api", prefer_codex=True)
         fullbody = _build_fullbody_client(cfg)
         ref = _build_reference_client(cfg)
-        from core.tools.image.fal import FluxKontextClient
-        from core.tools.image.novelai import NovelAIClient
+        from core.integrations.image.fal import FluxKontextClient
+        from core.integrations.image.novelai import NovelAIClient
 
         assert isinstance(fullbody, NovelAIClient)
         assert isinstance(ref, FluxKontextClient)
 
     def test_prefer_codex_false_skips_codex(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("core.tools.image_gen.codex_available", lambda: True)
+        monkeypatch.setattr("core.integrations.image_gen.codex_available", lambda: True)
         monkeypatch.setenv("NOVELAI_TOKEN", "tok")
         monkeypatch.setenv("FAL_KEY", "fal-tok")
         cfg = ImageGenConfig(image_style="anime", backend="api", prefer_codex=False)
         fullbody = _build_fullbody_client(cfg)
         ref = _build_reference_client(cfg)
-        from core.tools.image.fal import FluxKontextClient
-        from core.tools.image.novelai import NovelAIClient
+        from core.integrations.image.fal import FluxKontextClient
+        from core.integrations.image.novelai import NovelAIClient
 
         assert isinstance(fullbody, NovelAIClient)
         assert isinstance(ref, FluxKontextClient)
         assert not isinstance(fullbody, CodexFirstClient)
 
     def test_prefer_codex_true_and_available_wraps(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("core.tools.image_gen.codex_available", lambda: True)
+        monkeypatch.setattr("core.integrations.image_gen.codex_available", lambda: True)
         cfg = ImageGenConfig(image_style="anime", backend="api", prefer_codex=True)
         fullbody = _build_fullbody_client(cfg)
         ref = _build_reference_client(cfg)
@@ -241,10 +243,10 @@ class TestClientBuilders:
         assert isinstance(ref, CodexFirstClient)
 
     def test_diffusers_backend_ignores_codex(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("core.tools.image_gen.codex_available", lambda: True)
+        monkeypatch.setattr("core.integrations.image_gen.codex_available", lambda: True)
         cfg = ImageGenConfig(backend="diffusers", prefer_codex=True)
 
-        with patch("core.tools.image_gen.LocalDiffusersClient") as client:
+        with patch("core.integrations.image_gen.LocalDiffusersClient") as client:
             assert _build_fullbody_client(cfg) is client.return_value
             assert _build_reference_client(cfg) is client.return_value
         assert client.call_count == 2

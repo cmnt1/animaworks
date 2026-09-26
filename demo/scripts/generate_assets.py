@@ -11,6 +11,7 @@ Pipeline per style:
   anime:     NovelAI fullbody → Flux Kontext bustup/chibi
   realistic: Flux fullbody/bustup + shared chibi (no _realistic suffix)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -106,10 +107,7 @@ def _build_prompt_for_style(appearance: str, style: str, gender: str = "female")
     """Convert appearance description to a generation prompt."""
     if style == "anime":
         tag = "1boy" if gender == "male" else "1girl"
-        return (
-            f"{tag}, {appearance}, full body, standing, white background, "
-            "anime illustration, high quality, detailed"
-        )
+        return f"{tag}, {appearance}, full body, standing, white background, anime illustration, high quality, detailed"
     person = "a young man" if gender == "male" else "a young woman"
     return (
         f"A professional photo of {person}: {appearance}. "
@@ -172,7 +170,7 @@ def _generate_with_clients(
     Returns:
         The fullbody image bytes.
     """
-    from core.tools._image_clients import _CHIBI_PROMPT
+    from core.integrations._image_clients import _CHIBI_PROMPT
 
     assets_dir.mkdir(parents=True, exist_ok=True)
 
@@ -196,7 +194,7 @@ def _generate_with_clients(
             print("    fullbody: SKIP (no FAL_KEY for vibe transfer)")
             return None
         print("    fullbody: generating with Flux Kontext (vibe transfer)...")
-        from core.tools._image_clients import FluxKontextClient
+        from core.integrations._image_clients import FluxKontextClient
 
         kontext = FluxKontextClient()
         vibe_prompt = (
@@ -218,13 +216,13 @@ def _generate_with_clients(
                 print("    fullbody: SKIP (no FAL_KEY)")
                 return None
             print("    fullbody: generating with Fal Flux Pro...")
-            from core.tools._image_clients import FalTextToImageClient
+            from core.integrations._image_clients import FalTextToImageClient
 
             client = FalTextToImageClient()
             fullbody_bytes = client.generate_fullbody(prompt=prompt)
         else:
             print("    fullbody: generating with NovelAI...")
-            from core.tools._image_clients import NovelAIClient
+            from core.integrations._image_clients import NovelAIClient
 
             client = NovelAIClient()
             fullbody_bytes = client.generate_fullbody(prompt=prompt)
@@ -241,10 +239,10 @@ def _generate_with_clients(
         if not os.environ.get("FAL_KEY"):
             print("    bustup: SKIP (no FAL_KEY)")
         else:
-            from core.tools._image_clients import (
-                FluxKontextClient,
+            from core.integrations._image_clients import (
                 _BUSTUP_PROMPT,
                 _REALISTIC_BUSTUP_PROMPT,
+                FluxKontextClient,
             )
 
             print("    bustup: generating with Flux Kontext...")
@@ -267,7 +265,7 @@ def _generate_with_clients(
         if not os.environ.get("FAL_KEY"):
             print("    chibi: SKIP (no FAL_KEY)")
         else:
-            from core.tools._image_clients import FluxKontextClient
+            from core.integrations._image_clients import FluxKontextClient
 
             print("    chibi: generating with Flux Kontext...")
             kontext = FluxKontextClient()

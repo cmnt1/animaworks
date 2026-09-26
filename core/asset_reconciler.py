@@ -296,7 +296,7 @@ async def reconcile_anima_assets(
 
         try:
             from core.config.models import ImageGenConfig, load_config
-            from core.tools.image_gen import ImageGenPipeline
+            from core.integrations.image_gen import ImageGenPipeline
 
             try:
                 image_config = load_config().image_gen.model_copy(
@@ -429,7 +429,7 @@ def _resolve_prompt(anima_dir: Path, style: str) -> str | None:
         if anime_path.exists():
             anime_text = anime_path.read_text(encoding="utf-8").strip()
             if anime_text:
-                from core.tools._image_clients import _convert_anime_to_realistic
+                from core.integrations._image_clients import _convert_anime_to_realistic
 
                 return _convert_anime_to_realistic(anime_text)
         return None
@@ -519,7 +519,7 @@ async def _extract_prompt(
         raw = _extract_appearance_field(text)
         if raw:
             if style == "realistic":
-                from core.tools._image_clients import _convert_anime_to_realistic
+                from core.integrations._image_clients import _convert_anime_to_realistic
 
                 return _convert_anime_to_realistic(raw)
             return raw

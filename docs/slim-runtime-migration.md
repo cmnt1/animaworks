@@ -9,7 +9,7 @@ S/C/D/G/X/A/B、自動ルーティング、背景モデル、明示override、�
 既存のタスクJSONLやLLM pendingファイルがある担当者は、明示的な移行が必要です。
 新コードの通常起動・読取で勝手に取り込まず、移行が必要というエラーで停止します。
 旧コードと新コードを同じランタイムで同時に実行しないでください。
-`scripts/migrate_task_queue_teardown.py` の変更操作は廃止し、dry-runのみ残しています。
+`scripts/migrations/migrate_task_queue_teardown.py` の変更操作は廃止し、dry-runのみ残しています。
 
 タスク正本は既存の `shared/taskboard.sqlite3` に統合しました。
 LLMタスクの `state/pending/*.json` と `task_queue.jsonl` は実行条件ではありません。
@@ -120,6 +120,6 @@ exportは現在ready/pendingの入力だけを旧形式の実行対象にし、�
 
 ## 検証と限界
 
-再現用スクリプトと匿名fixtureは [tests/fixtures/slim_runtime/README.md](../tests/fixtures/slim_runtime/README.md) を参照。
+合成fixtureによる再現用スクリプトは2026-09-26に撤去しました（履歴は git log を参照）。
 Dockerの実server/worker試験と、実モデルの回答比較は別です。
 合成fixtureの成功は実務受入率、人間の修正時間、全組織の費用削減を保証しません。

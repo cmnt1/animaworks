@@ -58,7 +58,7 @@ class ChatworkChannel(NotificationChannel):
             web_url = load_config().interaction.web_base_url
             body = body + "\n" + build_text_fallback(interaction, web_base_url=web_url)
 
-        from core.tools.chatwork import md_to_chatwork
+        from core.integrations.chatwork import md_to_chatwork
 
         body = md_to_chatwork(body)
         prefix = f"[{priority.upper()}] " if priority in ("high", "urgent") else ""

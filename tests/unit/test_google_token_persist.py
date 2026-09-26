@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.tools.google_calendar import GoogleCalendarClient
-from core.tools.google_tasks import GoogleTasksClient
+from core.integrations.google_calendar import GoogleCalendarClient
+from core.integrations.google_tasks import GoogleTasksClient
 
 _EROFS = OSError(30, "Read-only file system")
 _CLIENTS = [GoogleCalendarClient, GoogleTasksClient]

@@ -279,11 +279,11 @@ def _build_channel_order(resolved: ResolvedRecipient) -> list[str]:
 
 
 def _resolve_outbound_icon(anima_name: str) -> str:
-    """Resolve icon_url for outbound Slack messages (see :mod:`core.tools._anima_icon_url`)."""
+    """Resolve icon_url for outbound Slack messages (see :mod:`core.integrations._anima_icon_url`)."""
     if not anima_name:
         return ""
     try:
-        from core.tools._anima_icon_url import resolve_anima_icon_url
+        from core.integrations._anima_icon_url import resolve_anima_icon_url
 
         return resolve_anima_icon_url(anima_name, channel_config=None)
     except Exception:
@@ -293,8 +293,8 @@ def _resolve_outbound_icon(anima_name: str) -> str:
 
 def _send_via_slack(user_id: str, content: str, sender_name: str, anima_name: str = "") -> str:
     """Send a DM via Slack API."""
-    from core.tools._base import resolve_env_style_credential
-    from core.tools.slack import SlackClient, md_to_slack_mrkdwn
+    from core.integrations._base import resolve_env_style_credential
+    from core.integrations.slack import SlackClient, md_to_slack_mrkdwn
 
     token = None
     if anima_name:
@@ -333,9 +333,9 @@ def _send_via_slack(user_id: str, content: str, sender_name: str, anima_name: st
 
 def _send_via_discord(user_id: str, content: str, sender_name: str, anima_name: str = "") -> str:
     """Send a DM via Discord API using the bot token."""
-    from core.tools._base import get_credential
-    from core.tools._discord_client import DiscordClient
-    from core.tools._discord_markdown import md_to_discord
+    from core.integrations._base import get_credential
+    from core.integrations._discord_client import DiscordClient
+    from core.integrations._discord_markdown import md_to_discord
 
     token = get_credential("discord", "discord", env_var="DISCORD_BOT_TOKEN")
     client = DiscordClient(token=token)
@@ -377,8 +377,8 @@ def _send_via_chatwork(
     anima_name: str = "",
 ) -> str:
     """Send a message via Chatwork API."""
-    from core.tools._chatwork_identity import resolve_identity
-    from core.tools.chatwork import ChatworkClient, md_to_chatwork
+    from core.integrations._chatwork_identity import resolve_identity
+    from core.integrations.chatwork import ChatworkClient, md_to_chatwork
 
     prefix = f"[{sender_name}] " if sender_name else ""
     body = f"{prefix}{content}"

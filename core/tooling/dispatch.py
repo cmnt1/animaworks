@@ -97,7 +97,7 @@ class ExternalToolDispatcher:
         Convention: name is {tool}_{action}. Matches against registry
         and personal tools, preferring longest match (e.g. image_gen over image).
         """
-        from core.tools import TOOL_MODULES
+        from core.integrations import TOOL_MODULES
 
         all_tools = set(self._registry) | set(self._personal_tools.keys()) | set(TOOL_MODULES.keys())
         best_tool: str | None = None
@@ -139,7 +139,7 @@ class ExternalToolDispatcher:
 
         import importlib
 
-        from core.tools import TOOL_MODULES
+        from core.integrations import TOOL_MODULES
 
         tool_names = self._candidate_tool_names(name, TOOL_MODULES, set(self._registry))
         if not tool_names:

@@ -111,7 +111,7 @@ def _cmd_check_permissions(args: argparse.Namespace, anima_dir: Path) -> None:
 
     perm_path = anima_dir / "permissions.md"
     if not perm_path.is_file():
-        from core.tools import TOOL_MODULES
+        from core.integrations import TOOL_MODULES
 
         permitted = set(TOOL_MODULES.keys())
     else:

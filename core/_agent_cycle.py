@@ -961,7 +961,7 @@ class CycleMixin:
             from core.memory.conversation import ConversationMemory
 
             conv_memory = ConversationMemory(self.anima_dir, active_model_config, thread_id=thread_id)
-        system_prompt, prompt, use_fallback = await self._preflight_size_check(
+        system_prompt, prompt = await self._preflight_size_check(
             system_prompt,
             prompt,
             conv_memory,
@@ -974,26 +974,14 @@ class CycleMixin:
             thread_id=thread_id,
             shortterm_text=shortterm_text,
         )
-        if use_fallback:
-            executor = self._create_fallback_executor(active_model_config)
-            result = await executor.execute(
-                prompt=prompt,
-                system_prompt=system_prompt,
-                tracker=tracker,
-                trigger=trigger,
-                images=images,
-                prior_messages=prior_messages,
-                thread_id=thread_id,
-            )
-        else:
-            result = await active_executor.execute(
-                prompt=prompt,
-                system_prompt=system_prompt,
-                tracker=tracker,
-                trigger=trigger,
-                images=images,
-                thread_id=thread_id,
-            )
+        result = await active_executor.execute(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            tracker=tracker,
+            trigger=trigger,
+            images=images,
+            thread_id=thread_id,
+        )
         # Merge transcript-parsed replied_to for S mode
         if result.replied_to_from_transcript:
             self._tool_handler.merge_replied_to(result.replied_to_from_transcript)
@@ -1317,7 +1305,7 @@ class CycleMixin:
             from core.memory.conversation import ConversationMemory
 
             conv_memory = ConversationMemory(self.anima_dir, active_model_config, thread_id=thread_id)
-        system_prompt, prompt, use_fallback = await self._preflight_size_check(
+        system_prompt, prompt = await self._preflight_size_check(
             system_prompt,
             prompt,
             conv_memory,
@@ -1330,23 +1318,6 @@ class CycleMixin:
             thread_id=thread_id,
             shortterm_text=shortterm_text,
         )
-        if use_fallback:
-            logger.warning("Streaming fallback: using blocking S Fallback for oversized prompt")
-            cycle = await self._run_cycle_inner_scoped(
-                prompt,
-                trigger,
-                message_intent=message_intent,
-                images=images,
-                thread_id=thread_id,
-                model_config_override=model_config_override,
-            )
-            yield {"type": "text_delta", "text": cycle.summary}
-            yield {
-                "type": "cycle_done",
-                "cycle_result": cycle.model_dump(mode="json"),
-            }
-            return
-
         if mode == "c":
             _update_tracker_from_prompt_estimate(tracker, system_prompt, prompt)
 

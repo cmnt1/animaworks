@@ -25,8 +25,8 @@ _MENTION_LIMIT = 200
 def collect_slack() -> list[ExternalTask]:
     """Collect unreplied Slack mentions from the local message cache.
 
-    Uses :class:`~core.tools._slack_client.SlackClient` for auth / identity
-    and :class:`~core.tools._slack_cache.MessageCache` for mention detection
+    Uses :class:`~core.integrations._slack_client.SlackClient` for auth / identity
+    and :class:`~core.integrations._slack_cache.MessageCache` for mention detection
     (same approach as the ``slack_unreplied`` tool). Does not hit the network
     for message search; only ``auth_test``. Permalinks are built deterministically.
 
@@ -36,8 +36,8 @@ def collect_slack() -> list[ExternalTask]:
     from core.external_tasks.collector import CredentialNotFoundError
 
     try:
-        from core.tools._slack_cache import MessageCache
-        from core.tools._slack_client import SlackClient
+        from core.integrations._slack_cache import MessageCache
+        from core.integrations._slack_client import SlackClient
     except ImportError as exc:
         raise CredentialNotFoundError(f"Slack dependencies unavailable: {exc}") from exc
 

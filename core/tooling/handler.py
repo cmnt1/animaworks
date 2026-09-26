@@ -743,7 +743,7 @@ class ToolHandler(
         """
         import importlib
 
-        from core.tools import TOOL_MODULES
+        from core.integrations import TOOL_MODULES
 
         tool_name = args.get("tool_name", "")
         action = args.get("action", "")

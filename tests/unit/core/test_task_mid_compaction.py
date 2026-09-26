@@ -17,7 +17,7 @@ def task_cycle(tmp_path):
     agent.model_config.task_compaction_tokens = 100
     agent.model_config.task_compaction_max = 6
     agent._run_priming = AsyncMock(return_value=("", ""))
-    agent._preflight_size_check = AsyncMock(return_value=("system", "prompt", False))
+    agent._preflight_size_check = AsyncMock(return_value=("system", "prompt"))
     agent._load_stream_retry_config = lambda: {
         "checkpoint_enabled": False,
         "retry_max": 0,

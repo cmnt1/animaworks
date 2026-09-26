@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for animaworks-tool submit CLI command.
 
-Validates ``_handle_submit()`` in ``core/tools/__init__.py``:
+Validates ``_handle_submit()`` in ``core/integrations/__init__.py``:
 - Pending JSON file creation in ``state/background_tasks/pending/``
 - JSON output with task_id, status, tool, subcommand
 - Error handling for missing arguments and missing environment variables
@@ -30,7 +30,7 @@ class TestHandleSubmit:
         anima_dir.mkdir(parents=True)
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
-        from core.tools import _handle_submit
+        from core.integrations import _handle_submit
 
         captured = io.StringIO()
         with patch("builtins.print", side_effect=lambda *a, **kw: captured.write(str(a[0]) + "\n")):
@@ -59,7 +59,7 @@ class TestHandleSubmit:
         anima_dir.mkdir(parents=True)
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
-        from core.tools import _handle_submit
+        from core.integrations import _handle_submit
 
         captured = io.StringIO()
         with patch("builtins.print", side_effect=lambda *a, **kw: captured.write(str(a[0]) + "\n")):
@@ -79,7 +79,7 @@ class TestHandleSubmit:
         anima_dir.mkdir(parents=True)
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
-        from core.tools import _handle_submit
+        from core.integrations import _handle_submit
 
         captured = io.StringIO()
         with patch("builtins.print", side_effect=lambda *a, **kw: captured.write(str(a[0]) + "\n")):
@@ -103,7 +103,7 @@ class TestHandleSubmit:
         anima_dir.mkdir(parents=True)
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
-        from core.tools import _handle_submit
+        from core.integrations import _handle_submit
 
         captured = io.StringIO()
         with patch("builtins.print", side_effect=lambda *a, **kw: captured.write(str(a[0]) + "\n")):
@@ -117,7 +117,7 @@ class TestHandleSubmit:
         """submit with no args calls sys.exit(1)."""
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", "/tmp/fake")
 
-        from core.tools import _handle_submit
+        from core.integrations import _handle_submit
 
         with pytest.raises(SystemExit) as exc_info:
             _handle_submit([])
@@ -127,7 +127,7 @@ class TestHandleSubmit:
         """submit without ANIMAWORKS_ANIMA_DIR calls sys.exit(1)."""
         monkeypatch.delenv("ANIMAWORKS_ANIMA_DIR", raising=False)
 
-        from core.tools import _handle_submit
+        from core.integrations import _handle_submit
 
         with pytest.raises(SystemExit) as exc_info:
             _handle_submit(["image_gen", "3d"])
@@ -143,7 +143,7 @@ class TestHandleSubmit:
         anima_dir.mkdir(parents=True)
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
-        from core.tools import _handle_submit
+        from core.integrations import _handle_submit
 
         captured = io.StringIO()
         with patch("builtins.print", side_effect=lambda *a, **kw: captured.write(str(a[0]) + "\n")):
@@ -183,7 +183,7 @@ class TestHandleSubmit:
         anima_dir.mkdir(parents=True)
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
-        from core.tools import _handle_submit
+        from core.integrations import _handle_submit
 
         captured = io.StringIO()
         with patch("builtins.print", side_effect=lambda *a, **kw: captured.write(str(a[0]) + "\n")):
@@ -204,7 +204,7 @@ class TestHandleSubmit:
         anima_dir.mkdir(parents=True)
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
-        from core.tools import _handle_submit
+        from core.integrations import _handle_submit
 
         captured = io.StringIO()
         with patch("builtins.print", side_effect=lambda *a, **kw: captured.write(str(a[0]) + "\n")):
@@ -226,7 +226,7 @@ class TestHandleSubmit:
         anima_dir.mkdir(parents=True)
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
-        from core.tools import _handle_submit
+        from core.integrations import _handle_submit
 
         captured = io.StringIO()
         with patch("builtins.print", side_effect=lambda *a, **kw: captured.write(str(a[0]) + "\n")):
@@ -246,7 +246,7 @@ class TestHandleSubmit:
         anima_dir.mkdir(parents=True)
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
-        from core.tools import _handle_submit
+        from core.integrations import _handle_submit
 
         captured = io.StringIO()
         with patch("builtins.print", side_effect=lambda *a, **kw: captured.write(str(a[0]) + "\n")):
@@ -275,7 +275,7 @@ class TestHandleSubmit:
         anima_dir.mkdir(parents=True)
         monkeypatch.setenv("ANIMAWORKS_ANIMA_DIR", str(anima_dir))
 
-        from core.tools import _handle_submit
+        from core.integrations import _handle_submit
 
         task_ids = []
         for _ in range(5):

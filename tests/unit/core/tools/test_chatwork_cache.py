@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.tools import _chatwork_cache
+from core.integrations import _chatwork_cache
 
 
 @pytest.fixture

@@ -10,8 +10,8 @@ from typing import Any
 import pytest
 
 from core.config.schemas import GitHubWebhookConfig
-from server import github_gateway
-from server.github_gateway import GitHubWebhookManager, locked_dispatch_state
+from server.gateways import github_gateway
+from server.gateways.github_gateway import GitHubWebhookManager, locked_dispatch_state
 
 REPO = "example-org/example-repo"
 BOT_LOGIN = "example-bot"

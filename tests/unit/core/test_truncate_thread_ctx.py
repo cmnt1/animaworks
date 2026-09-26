@@ -142,7 +142,7 @@ class TestFetchThreadContextForReply:
             {"user": "U_HUMAN", "text": "Reply 2", "ts": "3.0"},
         ]
         monkeypatch.setattr(
-            "core.tools.slack.SlackClient",
+            "core.integrations.slack.SlackClient",
             lambda token: mock_client,
         )
         result = _fetch_thread_context_for_reply("xoxb-token", "C123", "1.0")
